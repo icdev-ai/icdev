@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}AADC Monitoring{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+
+  <!-- Header -->
+  <div class="d-flex align-items-center gap-3 mb-3">
+    <a href="/agentic-ai/" class="btn btn-sm btn-outline-secondary">← Designs</a>
+    <div>
+      <h4 class="mb-0">🔔 Portfolio Monitoring</h4>
+      <small class="text-muted">Score drift &amp; alert tracking &middot; {{ data.generated_at[:19] }} UTC</small>
+    </div>
+    <div class="ms-auto d-flex gap-2">
+      {% for level, color in [('CRITICAL','danger'),('HIGH','warning'),('MEDIUM','info'),('OK','success')] %}
+      {% set cnt = data.summary.get(level.lower(), 0) %}
+      <span class="badge bg-{{ color }} {{ 'text-dark' if level in ['HIGH','MEDIUM'] else '' }} fs-6 px-3">
+        {{ level }}: {{ cnt }}
+      </span>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Summary cards -->
+  <div class="row g-3 mb-3">
+    <div class="col-md-3">
+      <div class="card text-center {{ 'border-danger' if data.summary.critical > 0 else '' }}">
+        <div class="card-body py-3">
+          <div class="fs-2 fw-bold {{ 'text-danger' if data.summary.critical > 0 else 'text-success' }}">
+            {{ data.summary.critical }}
+          </div>
+          <div class="text-muted small">Critical Drift (≥20pts)</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center {{ 'border-warning' if data.summary.high > 0 else '' }}">
+        <div class="card-body py-3">
+          <div class="fs-2 fw-bold {{ 'text-warning' if data.summary.high > 0 else 'text-success' }}">
+            {{ data.summary.high }}
+          </div>
+          <div class="text-muted small">High Drift (≥10pts)</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center">
+        <div class="card-body py-3">
+          <div class="fs-2 fw-bold text-info">{{ data.summary.medium }}</div>
+          <div class="text-muted small">Medium Drift (≥5pts)</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card text-center">
+        <div class="card-body py-3">
+          <div class="fs-2 fw-bold text-secondary">{{ data.summary.total_designs }}</div>
+          <div class="text-muted small">Total Designs ({{ data.summary.assessed }} assessed)</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Design alert table -->
+  <div class="card">
+    <div class="card-header fw-semibold py-2">Design Score Monitor</div>
+    <div class="card-body p-0">
+      <table class="table table-sm table-hover mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Design</th>
+            <th>Current Score</th>
+            <th>Baseline</th>
+            <th>Drift</th>
+            <th>Alert</th>
+            <th>Score History</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in data.design_alerts %}
+          <tr class="{{ 'table-danger' if d.alert_level == 'CRITICAL' else 'table-warning' if d.alert_level == 'HIGH' else '' }}">
+            <td>
+              <a href="/agentic-ai/canvas/{{ d.design_id }}" class="fw-semibold text-decoration-none">
+                {{ d.design_name }}
+              </a>
+            </td>
+            <td>
+              {% if d.current_score is not none %}
+              <span class="fw-semibold
+                {{ 'text-success' if d.current_score >= 70 else 'text-warning' if d.current_score >= 50 else 'text-danger' }}">
+                {{ d.current_score }}%
+              </span>
+              {% else %}
+              <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td class="text-muted small">
+              {% if d.baseline_score is not none %}{{ d.baseline_score }}%{% else %}—{% endif %}
+            </td>
+            <td>
+              {% if d.baseline_score is not none and d.current_score is not none %}
+              <span class="{{ 'text-success fw-semibold' if d.drift > 0 else 'text-danger fw-semibold' if d.drift < 0 else 'text-muted' }}">
+                {{ '+' if d.drift > 0 else '' }}{{ d.drift }}pts
+              </span>
+              {% else %}
+              <span class="text-muted">—</span>
+              {% endif %}
+            </td>
+            <td>
+              <span class="badge bg-{{ d.color }} {{ 'text-dark' if d.alert_level in ['HIGH','MEDIUM'] else '' }}">
+                {{ d.alert_level }}
+              </span>
+            </td>
+            <td style="min-width:120px">
+              {% if d.history %}
+              <div class="d-flex align-items-end gap-1" style="height:24px">
+                {% for h in d.history %}
+                {% set ht = (h.score / 100 * 24)|round(0)|int %}
+                <div class="rounded-top
+                  {{ 'bg-success' if h.score >= 70 else 'bg-warning' if h.score >= 50 else 'bg-danger' }}"
+                  style="width:8px;height:{{ [ht,4]|max }}px" title="{{ h.score }}%"></div>
+                {% endfor %}
+              </div>
+              {% else %}
+              <span class="text-muted small">no history</span>
+              {% endif %}
+            </td>
+            <td>
+              <div class="d-flex gap-1">
+                <a href="/agentic-ai/assessments/{{ d.design_id }}" class="btn btn-xs btn-outline-primary" style="font-size:10px;padding:2px 6px">Assess</a>
+                <a href="/agentic-ai/scorecard/{{ d.design_id }}" class="btn btn-xs btn-outline-info" style="font-size:10px;padding:2px 6px">Score</a>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

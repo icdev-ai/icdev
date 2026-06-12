@@ -1,0 +1,358 @@
+<!-- CUI // SP-CTI — BDC cATO Twin: Continuous Authority to Operate Digital Twin -->
+{% extends "base.html" %}
+{% from "includes/twin_verdict_banner.html" import twin_css, verdict_js %}
+{% block title %}cATO Twin — {{ project.name }} — ICDEV™{% endblock %}
+{% block extra_css %}{{ twin_css() }}{% endblock %}
+
+{% block content %}
+<div class="twin-header">
+  <a href="/boundary/" class="twin-back">← Boundary Canvas</a>
+  <h1>cATO Twin — {{ project.name }}</h1>
+  <p>Continuous Authority to Operate digital twin. Snapshot compliance state, simulate policy deltas, and export OSCAL artifacts.</p>
+</div>
+
+<div class="twin-layout">
+
+  <!-- LEFT: snapshot + delta input -->
+  <div>
+    <!-- Snapshot panel -->
+    <div class="twin-panel" style="margin-bottom:16px;" id="snapPanel">
+      <h2>1. Compliance Snapshot</h2>
+      {% if snapshots %}
+      <ul class="snap-list" id="snapList">
+        {% for s in snapshots %}
+        <li class="snap-item {% if loop.first %}active{% endif %}"
+            data-id="{{ s.snapshot_id }}"
+            onclick="selectSnap(this,'{{ s.snapshot_id }}')">
+          <span>{{ s.framework_id }} · {{ s.taken_at[:10] if s.taken_at else '—' }}</span>
+          <span class="snap-meta">{{ s.control_count }} controls · {{ s.evidence_count }} evidence</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p style="color:#5a6e8c;font-size:12px;">No snapshots yet — run an assessor to generate one.</p>
+      {% endif %}
+      <button class="btn btn-primary btn-sm" onclick="takeSnapshot()">Snapshot Now</button>
+      <span id="snapSpinner" class="spinner" style="vertical-align:middle;margin-left:8px;"></span>
+      <p class="hint">Freezes current cross-framework control state. Append-only — existing snapshots are never modified.</p>
+    </div>
+
+    <!-- What-if delta input -->
+    <div class="twin-panel">
+      <h2>2. Policy Delta (What-If)</h2>
+      <p class="hint" style="margin-bottom:8px;">Paste a JSON array of control changes, or use the tools below to generate one automatically.</p>
+
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <button class="btn btn-primary btn-sm" onclick="loadCurrentTopology()">Load from Canvas</button>
+        <span style="font-size:11px;color:#5a6e8c;">Loads current boundary design context for AI chat</span>
+      </div>
+      <div id="topoPreview" style="display:none;background:#0a1628;border:1px solid #1e3a6e;border-radius:4px;padding:8px;margin-bottom:8px;max-height:110px;overflow-y:auto;">
+        <div style="font-size:10px;color:#5a6e8c;margin-bottom:4px;">CURRENT DESIGN (context for chat)</div>
+        <pre id="topoPreviewText" style="font-size:11px;color:#7a8cb0;margin:0;white-space:pre-wrap;"></pre>
+      </div>
+
+      <textarea id="deltaInput" class="twin-textarea" rows="10"
+        placeholder='[{"control_id":"AC-2","implementation_status":"satisfied","evidence_ref":"evidence/ac-2-proc.pdf"},{"control_id":"AU-6","implementation_status":"not_satisfied"}]'></textarea>
+
+      <div style="margin-top:12px;border-top:1px solid #1e3a6e;padding-top:10px;">
+        <strong style="font-size:12px;color:#7a8cb0;">DESCRIBE YOUR CHANGE</strong>
+        <p class="hint" style="margin:4px 0 6px;">Describe the compliance change in plain English — AI maps it to NIST controls and generates the JSON.</p>
+        <div style="display:flex;gap:8px;align-items:flex-start;">
+          <textarea id="chatInput" style="flex:1;background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:8px;font-size:12px;resize:vertical;min-height:56px;"
+            placeholder="e.g. Mark account management as satisfied with the new HR onboarding procedure, mark audit review as not satisfied..."></textarea>
+          <button class="btn btn-success btn-sm" style="white-space:nowrap;" onclick="sendChatDelta()">Generate JSON</button>
+        </div>
+        <span id="chatSpinner" class="spinner" style="margin-top:4px;"></span>
+        <div id="chatExplanation" style="display:none;margin-top:6px;padding:8px;background:#0f3460;border-radius:4px;border-left:3px solid #3498db;">
+          <span style="font-size:12px;color:#eaeaea;" id="chatExplanationText"></span>
+        </div>
+        <p id="chatError" style="color:#e74c3c;font-size:12px;margin-top:4px;display:none;"></p>
+      </div>
+
+      <div style="margin-top:8px;">
+        <label style="font-size:12px;color:#7a8cb0;margin-right:8px;">Framework:</label>
+        <select id="frameworkSelect" style="background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:4px 8px;font-size:12px;">
+          {% for fw in frameworks %}
+          <option value="{{ fw }}">{{ fw }}</option>
+          {% else %}
+          <option value="FedRAMP Moderate">FedRAMP Moderate</option>
+          <option value="CMMC Level 2">CMMC Level 2</option>
+          <option value="NIST 800-53">NIST 800-53</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:10px;">
+        <button class="btn btn-success" onclick="runSimulation()">Simulate</button>
+        <span id="simSpinner" class="spinner"></span>
+      </div>
+      <p id="simError" style="color:#e74c3c;font-size:12px;margin-top:6px;display:none;"></p>
+    </div>
+  </div>
+
+  <!-- RIGHT: results -->
+  <div>
+    <div id="simResults" class="twin-panel" style="display:none;">
+      <h2>3. Simulation Results</h2>
+
+      <div id="verdictBanner" class="verdict-banner"></div>
+
+      <!-- Readiness score gauge + compliance donut -->
+      <div style="display:flex;gap:16px;margin-bottom:16px;align-items:flex-start;">
+        <div style="flex:0 0 160px;">
+          <strong style="font-size:11px;color:#7a8cb0;letter-spacing:.5px;text-transform:uppercase;">Readiness</strong>
+          <div id="readinessGauge" style="margin-top:6px;"></div>
+          <div class="metric-row" style="margin-top:6px;justify-content:center;gap:12px;">
+            <div class="metric-stat"><div class="val val-pass" style="font-size:16px;" id="ctrlScore">—</div><div class="lbl">Controls</div></div>
+            <div class="metric-stat"><div class="val val-warn" style="font-size:16px;" id="evScore">—</div><div class="lbl">Evidence</div></div>
+          </div>
+        </div>
+        <div style="flex:1;min-width:0;">
+          <strong style="font-size:11px;color:#7a8cb0;letter-spacing:.5px;text-transform:uppercase;">Compliance Delta</strong>
+          <div id="complianceDonut" style="margin-top:6px;"></div>
+        </div>
+      </div>
+
+      <!-- Numeric summary -->
+      <div style="margin-bottom:16px;">
+        <div class="metric-row">
+          <div class="metric-stat"><div class="val val-info" id="readinessScore">—</div><div class="lbl">Overall</div></div>
+          <div class="metric-stat"><div class="val val-fail" id="critGaps">—</div><div class="lbl">Crit. Gaps</div></div>
+          <div class="metric-stat"><div class="val val-pass" id="deltaResolved">—</div><div class="lbl">Resolved</div></div>
+          <div class="metric-stat"><div class="val val-fail" id="deltaNew">—</div><div class="lbl">New Gaps</div></div>
+          <div class="metric-stat"><div class="val val-info" id="deltaTotal">—</div><div class="lbl">Total</div></div>
+        </div>
+      </div>
+
+      <!-- Violations -->
+      <div style="margin-bottom:12px;">
+        <strong style="font-size:12px;color:#7a8cb0;">VIOLATIONS</strong>
+        <ul class="finding-list" id="violationList" style="margin-top:8px;"></ul>
+        <p id="noViolations" style="font-size:12px;color:#2ecc71;display:none;">No new violations — delta is safe.</p>
+      </div>
+
+      <!-- OSCAL export button -->
+      <div style="border-top:1px solid #1e3a6e;padding-top:12px;margin-top:4px;">
+        <strong style="font-size:12px;color:#7a8cb0;">OSCAL EXPORT</strong>
+        <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+          <button class="btn btn-primary btn-sm" onclick="exportOscal('ssp')">SSP</button>
+          <button class="btn btn-primary btn-sm" onclick="exportOscal('poam')">POA&amp;M</button>
+          <button class="btn btn-primary btn-sm" onclick="exportOscal('ar')">Assessment Results</button>
+          <button class="btn btn-primary btn-sm" onclick="exportOscal('cd')">Component Def.</button>
+        </div>
+      </div>
+
+      <p class="hint" style="margin-top:12px;" id="simId"></p>
+    </div>
+
+    <div class="twin-panel" id="noResultsHint" style="color:#5a6e8c;font-size:13px;text-align:center;padding:40px 20px;">
+      Run a simulation to see cATO readiness impact here.
+    </div>
+  </div>
+
+</div>
+
+<!-- Crosswalk drift panel (full-width) -->
+<div style="padding:0 30px 30px;">
+  <div class="twin-panel">
+    <h2>Crosswalk Drift Detector</h2>
+    <p class="hint" style="margin-bottom:10px;">Surfaces controls that are satisfied in one framework but not another (e.g., NIST AC-2 satisfied but CMMC AC.L2-3.1.1 not_satisfied).</p>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <select id="fwSrc" style="background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:4px 8px;font-size:12px;">
+        <option>NIST 800-53</option><option>FedRAMP Moderate</option>
+      </select>
+      <span style="color:#7a8cb0;font-size:12px;">↔</span>
+      <select id="fwTgt" style="background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:4px 8px;font-size:12px;">
+        <option>CMMC Level 2</option><option>NIST 800-171</option><option>FedRAMP Moderate</option>
+      </select>
+      <button class="btn btn-primary btn-sm" onclick="runDrift()">Detect Drift</button>
+      <span id="driftSpinner" class="spinner"></span>
+    </div>
+    <div id="driftResults" style="margin-top:12px;display:none;">
+      <ul class="finding-list" id="driftList"></ul>
+      <p id="noDrift" style="font-size:12px;color:#2ecc71;display:none;">No crosswalk drift detected between selected frameworks.</p>
+    </div>
+  </div>
+</div>
+
+{{ verdict_js() }}
+<script>
+const PROJECT_ID = "{{ project.id }}";
+let selectedSnapId = {% if snapshots %}"{{ snapshots[0].snapshot_id }}"{% else %}null{% endif %};
+
+function selectSnap(el, snapId) {
+  document.querySelectorAll('.snap-item').forEach(i => i.classList.remove('active'));
+  el.classList.add('active');
+  selectedSnapId = snapId;
+}
+
+async function takeSnapshot() {
+  const spinner = document.getElementById('snapSpinner');
+  spinner.style.display = 'inline-block';
+  const fw = document.getElementById('frameworkSelect').value;
+  try {
+    const r = await fetch(`/boundary/api/twin/${PROJECT_ID}/snapshot`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({project_id: PROJECT_ID, framework_id: fw})
+    });
+    const data = await r.json();
+    if (!r.ok) { alert('Snapshot failed: ' + (data.error || r.status)); return; }
+    const ul = document.getElementById('snapList') || (() => {
+      const newUl = document.createElement('ul');
+      newUl.id = 'snapList'; newUl.className = 'snap-list';
+      document.getElementById('snapPanel').insertBefore(newUl, document.querySelector('#snapPanel button'));
+      return newUl;
+    })();
+    const li = document.createElement('li');
+    li.className = 'snap-item active';
+    li.dataset.id = data.snapshot_id;
+    li.onclick = () => selectSnap(li, data.snapshot_id);
+    li.innerHTML = `<span>${fw} · ${new Date().toISOString().slice(0,10)}</span><span class="snap-meta">${data.control_count} controls · ${data.evidence_count} evidence</span>`;
+    ul.prepend(li);
+    document.querySelectorAll('.snap-item').forEach(i => i.classList.remove('active'));
+    li.classList.add('active');
+    selectedSnapId = data.snapshot_id;
+  } catch(e) { alert('Error: ' + e.message); }
+  finally { spinner.style.display = 'none'; }
+}
+
+async function runSimulation() {
+  const raw = document.getElementById('deltaInput').value.trim();
+  const errEl = document.getElementById('simError');
+  errEl.style.display = 'none';
+  if (!raw) { errEl.textContent = 'Paste a policy delta JSON first.'; errEl.style.display='block'; return; }
+  let delta;
+  try { delta = JSON.parse(raw); }
+  catch(e) { errEl.textContent = 'Invalid JSON: ' + e.message; errEl.style.display='block'; return; }
+
+  const spinner = document.getElementById('simSpinner');
+  spinner.style.display = 'inline-block';
+  try {
+    const body = { project_id: PROJECT_ID, delta, framework_id: document.getElementById('frameworkSelect').value };
+    if (selectedSnapId) body.baseline_snap_id = selectedSnapId;
+    const r = await fetch(`/boundary/api/twin/${PROJECT_ID}/simulate`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    const data = await r.json();
+    if (!r.ok) { errEl.textContent = data.error || ('HTTP ' + r.status); errEl.style.display='block'; return; }
+    renderResults(data);
+  } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display='block'; }
+  finally { spinner.style.display = 'none'; }
+}
+
+function renderResults(d) {
+  document.getElementById('simResults').style.display = 'block';
+  document.getElementById('noResultsHint').style.display = 'none';
+
+  renderVerdict(document.getElementById('verdictBanner'), d.rating || d.verdict);
+
+  const score = d.score ?? 0;
+  document.getElementById('readinessScore').textContent = Math.round(score * 100) + '%';
+  document.getElementById('ctrlScore').textContent = Math.round((d.control_score ?? 0) * 100) + '%';
+  document.getElementById('evScore').textContent = Math.round((d.evidence_score ?? 0) * 100) + '%';
+  document.getElementById('critGaps').textContent = d.critical_gaps ?? 0;
+
+  const delta = d.compliance_delta || {};
+  const resolved  = delta.resolved  ?? 0;
+  const newGaps   = delta.new_gaps  ?? 0;
+  const totalGaps = delta.total     ?? 0;
+  document.getElementById('deltaResolved').textContent = resolved;
+  document.getElementById('deltaNew').textContent      = newGaps;
+  document.getElementById('deltaTotal').textContent    = totalGaps;
+
+  // ── Readiness gauge ───────────────────────────────────────────────────────
+  if (window.ICDEV) {
+    ICDEV.gaugeChart('readinessGauge', {
+      value: score,
+      label: Math.round(score * 100) + '% Ready',
+      thresholds: { good: 0.7, warning: 0.4 },
+      size: 155
+    });
+  }
+
+  // ── Compliance delta donut ────────────────────────────────────────────────
+  if ((resolved + newGaps) > 0 && window.ICDEV) {
+    ICDEV.donutChart('complianceDonut', {
+      segments: [
+        { label: 'Resolved',  value: resolved,  color: '#2ecc71' },
+        { label: 'New Gaps',  value: newGaps,   color: '#e74c3c' },
+        { label: 'Unchanged', value: Math.max(0, totalGaps - newGaps - resolved), color: '#3498db' }
+      ].filter(s => s.value > 0),
+      centerLabel: totalGaps + '',
+      centerSubLabel: 'Total Gaps',
+      size: 140, showLegend: true
+    });
+  }
+
+  renderFindingList(document.getElementById('violationList'), d.violations || [], document.getElementById('noViolations'));
+  document.getElementById('simId').textContent = d.simulation_id ? 'Simulation ID: ' + d.simulation_id : '';
+}
+
+async function exportOscal(artifactType) {
+  if (!selectedSnapId) { alert('Take or select a snapshot first.'); return; }
+  window.open(`/boundary/api/twin/${PROJECT_ID}/oscal-export?snapshot_id=${selectedSnapId}&artifact_type=${artifactType}&format=json`, '_blank');
+}
+
+let _loadedGraphJson = null;
+
+async function loadCurrentTopology() {
+  try {
+    const r = await fetch(`/boundary/api/twin/${PROJECT_ID}/current-topology`);
+    const data = await r.json();
+    if (!r.ok) { alert(data.error || 'Failed to load design'); return; }
+    _loadedGraphJson = data.graph_json;
+    const raw = JSON.stringify(data.graph_json, null, 2);
+    document.getElementById('topoPreviewText').textContent =
+      raw.slice(0, 600) + (raw.length > 600 ? '\n…' : '');
+    document.getElementById('topoPreview').style.display = 'block';
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function sendChatDelta() {
+  const msg = document.getElementById('chatInput').value.trim();
+  if (!msg) return;
+  const spinner = document.getElementById('chatSpinner');
+  const errEl  = document.getElementById('chatError');
+  errEl.style.display = 'none';
+  spinner.style.display = 'inline-block';
+  try {
+    const body = { message: msg };
+    if (_loadedGraphJson) body.graph_json = _loadedGraphJson;
+    const r = await fetch(`/boundary/api/twin/${PROJECT_ID}/chat-delta`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    const data = await r.json();
+    if (data.error) { errEl.textContent = data.error; errEl.style.display='block'; return; }
+    document.getElementById('deltaInput').value = JSON.stringify(data.delta, null, 2);
+    if (data.explanation) {
+      document.getElementById('chatExplanationText').textContent = data.explanation;
+      document.getElementById('chatExplanation').style.display = 'block';
+    }
+  } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display='block'; }
+  finally { spinner.style.display = 'none'; }
+}
+
+async function runDrift() {
+  const spinner = document.getElementById('driftSpinner');
+  spinner.style.display = 'inline-block';
+  const src = document.getElementById('fwSrc').value;
+  const tgt = document.getElementById('fwTgt').value;
+  try {
+    const r = await fetch(`/boundary/api/twin/${PROJECT_ID}/crosswalk-drift?fw_src=${encodeURIComponent(src)}&fw_tgt=${encodeURIComponent(tgt)}`);
+    const data = await r.json();
+    if (!r.ok) { alert(data.error || 'Drift detection failed'); return; }
+    document.getElementById('driftResults').style.display = 'block';
+    renderFindingList(
+      document.getElementById('driftList'),
+      (data.drifts || []).map(d => ({
+        severity: d.drift ? 'high' : 'low',
+        id: d.control_id,
+        title: `${d.framework_src}: ${d.status_src} → ${d.framework_tgt}: ${d.status_tgt}`,
+        recommendation: d.recommendation || ''
+      })),
+      document.getElementById('noDrift')
+    );
+  } catch(e) { alert('Error: ' + e.message); }
+  finally { spinner.style.display = 'none'; }
+}
+</script>
+{% endblock %}

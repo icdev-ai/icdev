@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block title %}Risk Register — {{ design.name }}{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;">⚠ Risk Register — {{ design.name }}</h2>
+    <p style="color:#7a8cb0;font-size:13px;margin:4px 0 0;">AI system risk items · NIST AI RMF MANAGE function</p>
+  </div>
+  <div style="display:flex;gap:8px;">
+    <a href="/agentic-ai/canvas/{{ design.id }}" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">← Canvas</a>
+    <button onclick="importFindings()" style="background:#4f46e5;color:#fff;padding:8px 16px;border-radius:5px;border:none;cursor:pointer;font-size:13px;">⬇ Import Findings</button>
+    <button onclick="showAddRisk()" style="background:#059669;color:#fff;padding:8px 16px;border-radius:5px;border:none;cursor:pointer;font-size:13px;">+ Add Risk</button>
+  </div>
+</div>
+
+<!-- Summary cards -->
+<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:20px;">
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:12px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:#eaeaea;">{{ summary.total }}</div>
+    <div style="color:#7a8cb0;font-size:11px;">Total Risks</div>
+  </div>
+  <div style="background:#16213e;border:1px solid {% if summary.open > 0 %}#f97316{% else %}#1e3a6e{% endif %};border-radius:8px;padding:12px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:{% if summary.open > 0 %}#fb923c{% else %}#4ade80{% endif %};">{{ summary.open }}</div>
+    <div style="color:#7a8cb0;font-size:11px;">Open</div>
+  </div>
+  <div style="background:#16213e;border:1px solid {% if summary.critical_open > 0 %}#ef4444{% else %}#1e3a6e{% endif %};border-radius:8px;padding:12px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:{% if summary.critical_open > 0 %}#f87171{% else %}#4ade80{% endif %};">{{ summary.critical_open }}</div>
+    <div style="color:#7a8cb0;font-size:11px;">Critical Open</div>
+  </div>
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:12px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:#4ade80;">{{ summary.by_status.get('mitigated', 0) }}</div>
+    <div style="color:#7a8cb0;font-size:11px;">Mitigated</div>
+  </div>
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:12px;text-align:center;">
+    {% set rr = summary.residual_risk %}
+    <div style="font-size:18px;font-weight:700;color:{% if rr=='HIGH' %}#f87171{% elif rr=='MEDIUM' %}#fb923c{% else %}#4ade80{% endif %};">{{ rr }}</div>
+    <div style="color:#7a8cb0;font-size:11px;">Residual Risk</div>
+  </div>
+</div>
+
+<!-- Risk table -->
+<div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;overflow:hidden;">
+  <table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <thead>
+      <tr style="background:#0f172a;">
+        <th style="padding:10px 14px;color:#7a8cb0;text-align:left;font-weight:500;">Title</th>
+        <th style="padding:10px 10px;color:#7a8cb0;text-align:left;font-weight:500;">Category</th>
+        <th style="padding:10px 10px;color:#7a8cb0;text-align:left;font-weight:500;">Severity</th>
+        <th style="padding:10px 10px;color:#7a8cb0;text-align:left;font-weight:500;">Status</th>
+        <th style="padding:10px 10px;color:#7a8cb0;text-align:left;font-weight:500;">Owner</th>
+        <th style="padding:10px 10px;color:#7a8cb0;text-align:left;font-weight:500;">Actions</th>
+      </tr>
+    </thead>
+    <tbody id="risk-tbody">
+    {% for r in risks %}
+    <tr id="row-{{ r.id }}" style="border-top:1px solid #1e3a6e;">
+      <td style="padding:10px 14px;color:#eaeaea;max-width:260px;">
+        <div style="font-weight:500;">{{ r.title }}</div>
+        {% if r.description %}<div style="color:#64748b;font-size:10px;margin-top:2px;">{{ r.description[:80] }}{% if r.description|length > 80 %}…{% endif %}</div>{% endif %}
+      </td>
+      <td style="padding:10px;color:#94a3b8;">{{ categories.get(r.risk_category, r.risk_category) }}</td>
+      <td style="padding:10px;">
+        <span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;
+          background:{% if r.severity=='CRITICAL' %}#450a0a{% elif r.severity=='HIGH' %}#431407{% elif r.severity=='MEDIUM' %}#422006{% elif r.severity=='LOW' %}#0f2721{% else %}#1e293b{% endif %};
+          color:{% if r.severity=='CRITICAL' %}#f87171{% elif r.severity=='HIGH' %}#fb923c{% elif r.severity=='MEDIUM' %}#fbbf24{% elif r.severity=='LOW' %}#34d399{% else %}#94a3b8{% endif %};">
+          {{ r.severity }}
+        </span>
+      </td>
+      <td style="padding:10px;">
+        <span style="padding:2px 8px;border-radius:10px;font-size:10px;
+          background:{% if r.status=='open' %}#431407{% elif r.status=='mitigated' %}#0f2721{% elif r.status=='closed' %}#1e293b{% else %}#1e293b{% endif %};
+          color:{% if r.status=='open' %}#fb923c{% elif r.status=='mitigated' %}#34d399{% elif r.status=='closed' %}#64748b{% else %}#94a3b8{% endif %};">
+          {{ r.status }}
+        </span>
+      </td>
+      <td style="padding:10px;color:#94a3b8;">{{ r.owner or '—' }}</td>
+      <td style="padding:10px;">
+        <button onclick="editRisk('{{ r.id }}')" style="background:#0f3460;color:#7ab3f0;border:none;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:10px;margin-right:4px;">Edit</button>
+        <button onclick="deleteRisk('{{ r.id }}')" style="background:#450a0a;color:#fca5a5;border:none;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:10px;">Delete</button>
+      </td>
+    </tr>
+    {% else %}
+    <tr><td colspan="6" style="padding:24px;text-align:center;color:#475569;">No risk items yet — import findings or add manually.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Add/Edit Risk Modal -->
+<div id="risk-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:500;align-items:center;justify-content:center;">
+  <div style="background:#0f172a;border:1px solid #1e3a6e;border-radius:10px;padding:0;width:520px;max-height:85vh;overflow-y:auto;box-shadow:0 12px 48px rgba(0,0,0,0.8);">
+    <div style="padding:14px 18px;border-bottom:1px solid #1e3a6e;display:flex;justify-content:space-between;align-items:center;">
+      <span id="risk-modal-title" style="color:#eaeaea;font-size:14px;font-weight:600;">Add Risk Item</span>
+      <button onclick="closeRiskModal()" style="background:none;border:none;color:#7a8cb0;cursor:pointer;font-size:16px;">✕</button>
+    </div>
+    <div style="padding:18px;">
+      <input type="hidden" id="risk-id">
+      <label style="color:#94a3b8;font-size:11px;display:block;margin-bottom:4px;">Title *</label>
+      <input id="risk-title" placeholder="Risk title" style="width:100%;background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:7px 10px;border-radius:4px;font-size:12px;margin-bottom:10px;box-sizing:border-box;">
+      <label style="color:#94a3b8;font-size:11px;display:block;margin-bottom:4px;">Description</label>
+      <textarea id="risk-desc" rows="2" placeholder="Describe the risk..." style="width:100%;background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:7px 10px;border-radius:4px;font-size:12px;margin-bottom:10px;box-sizing:border-box;resize:vertical;"></textarea>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+        <div>
+          <label style="color:#94a3b8;font-size:11px;display:block;margin-bottom:4px;">Category</label>
+          <select id="risk-category" style="width:100%;background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:6px 8px;border-radius:4px;font-size:12px;">
+            {% for k, v in categories.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label style="color:#94a3b8;font-size:11px;display:block;margin-bottom:4px;">Severity</label>
+          <select id="risk-severity" style="width:100%;background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:6px 8px;border-radius:4px;font-size:12px;">
+            {% for s in severity_levels %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label style="color:#94a3b8;font-size:11px;display:block;margin-bottom:4px;">Likelihood</label>
+          <select id="risk-likelihood" style="width:100%;background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:6px 8px;border-radius:4px;font-size:12px;">
+            {% for s in severity_levels %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label style="color:#94a3b8;font-size:11px;display:block;margin-bottom:4px;">Status</label>
+          <select id="risk-status" style="width:100%;background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:6px 8px;border-radius:4px;font-size:12px;">
+            {% for s in risk_statuses %}<option value="{{ s }}">{{ s }}</option>{% endfor %}
+          </select>
+        </div>
+      </div>
+      <label style="color:#94a3b8;font-size:11px;display:block;margin-bottom:4px;">Owner</label>
+      <input id="risk-owner" placeholder="Risk owner (team or person)" style="width:100%;background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:7px 10px;border-radius:4px;font-size:12px;margin-bottom:10px;box-sizing:border-box;">
+      <label style="color:#94a3b8;font-size:11px;display:block;margin-bottom:4px;">Mitigation Plan</label>
+      <textarea id="risk-mitigation" rows="2" placeholder="Describe the mitigation approach..." style="width:100%;background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:7px 10px;border-radius:4px;font-size:12px;margin-bottom:14px;box-sizing:border-box;resize:vertical;"></textarea>
+      <button onclick="saveRisk()" style="background:#4f46e5;color:#fff;padding:8px 20px;border:none;border-radius:4px;cursor:pointer;font-size:13px;font-weight:600;">Save Risk</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const DESIGN_ID = "{{ design.id }}";
+
+function showAddRisk() {
+  document.getElementById('risk-id').value = '';
+  document.getElementById('risk-modal-title').textContent = 'Add Risk Item';
+  ['title','desc','owner','mitigation'].forEach(f => document.getElementById('risk-'+f).value = '');
+  document.getElementById('risk-category').value = 'operational';
+  document.getElementById('risk-severity').value = 'MEDIUM';
+  document.getElementById('risk-likelihood').value = 'MEDIUM';
+  document.getElementById('risk-status').value = 'open';
+  document.getElementById('risk-modal').style.display = 'flex';
+}
+
+function editRisk(rid) {
+  // Load from inline data and populate modal
+  const row = document.getElementById('row-' + rid);
+  if (!row) return;
+  document.getElementById('risk-id').value = rid;
+  document.getElementById('risk-modal-title').textContent = 'Edit Risk Item';
+  document.getElementById('risk-modal').style.display = 'flex';
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/risks')
+    .then(r => r.json())
+    .then(data => {
+      const risk = data.risks.find(r => r.id === rid);
+      if (!risk) return;
+      document.getElementById('risk-title').value = risk.title || '';
+      document.getElementById('risk-desc').value = risk.description || '';
+      document.getElementById('risk-category').value = risk.risk_category || 'operational';
+      document.getElementById('risk-severity').value = risk.severity || 'MEDIUM';
+      document.getElementById('risk-likelihood').value = risk.likelihood || 'MEDIUM';
+      document.getElementById('risk-status').value = risk.status || 'open';
+      document.getElementById('risk-owner').value = risk.owner || '';
+      document.getElementById('risk-mitigation').value = risk.mitigation || '';
+    });
+}
+
+function closeRiskModal() {
+  document.getElementById('risk-modal').style.display = 'none';
+}
+
+function saveRisk() {
+  const rid = document.getElementById('risk-id').value;
+  const payload = {
+    title: document.getElementById('risk-title').value,
+    description: document.getElementById('risk-desc').value,
+    risk_category: document.getElementById('risk-category').value,
+    severity: document.getElementById('risk-severity').value,
+    likelihood: document.getElementById('risk-likelihood').value,
+    status: document.getElementById('risk-status').value,
+    owner: document.getElementById('risk-owner').value,
+    mitigation: document.getElementById('risk-mitigation').value,
+  };
+  const url = rid
+    ? '/agentic-ai/api/designs/' + DESIGN_ID + '/risks/' + rid
+    : '/agentic-ai/api/designs/' + DESIGN_ID + '/risks';
+  fetch(url, {method: rid ? 'PUT' : 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload)})
+    .then(() => location.reload());
+}
+
+function deleteRisk(rid) {
+  if (!confirm('Delete this risk item?')) return;
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/risks/' + rid, {method: 'DELETE'})
+    .then(() => location.reload());
+}
+
+function importFindings() {
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/risks/import-findings', {method: 'POST'})
+    .then(r => r.json())
+    .then(d => { alert('Imported ' + d.imported + ' risk items from latest assessment.'); location.reload(); });
+}
+</script>
+{% endblock %}

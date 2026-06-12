@@ -1,0 +1,324 @@
+<!-- CUI // SP-CTI — Data Mesh: CSP Sync (AWS DataZone · Azure Purview · GCP Dataplex) -->
+{% extends "base.html" %}
+{% block title %}CSP Sync — Data Mesh — ICDEV{% endblock %}
+{% block content %}
+<style>
+/* ── Data Mesh Tab Nav ── */
+.dm-nav { display:flex; gap:4px; padding:10px 30px 0; border-bottom:1px solid #1e3a6e; flex-wrap:wrap; align-items:flex-end; }
+.dm-nav .dm-label { font-size:9px; color:#5a6e8c; padding:0 6px 8px; text-transform:uppercase; letter-spacing:.6px; }
+.dm-nav a { padding:5px 11px; border-radius:6px 6px 0 0; font-size:11px; font-weight:600; text-decoration:none; color:#7a8cb0; background:#0f1e36; border:1px solid #1e3a6e; border-bottom:none; transition:color .15s; }
+.dm-nav a.active { color:#ff9800; background:#16213e; border-color:#ff9800; }
+.dm-nav a:hover:not(.active) { color:#eaeaea; }
+
+/* ── Hero ── */
+.csp-hero { padding:16px 30px 14px; }
+.csp-hero h1 { font-size:20px; margin:0 0 4px; color:#ff9800; }
+.csp-hero p  { color:#7a8cb0; font-size:12px; margin:0; }
+
+/* ── Provider Cards ── */
+.csp-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(300px, 1fr)); gap:16px; padding:0 30px 24px; }
+.csp-card { background:#16213e; border:1px solid #1e3a6e; border-radius:8px; padding:18px; }
+.csp-card-header { display:flex; align-items:center; gap:10px; margin-bottom:14px; }
+.csp-logo { width:36px; height:36px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:16px; font-weight:700; flex-shrink:0; }
+.logo-aws   { background:#1a2a1a; color:#ff9900; }
+.logo-azure { background:#1a1e2a; color:#0089d6; }
+.logo-gcp   { background:#1a2220; color:#4285f4; }
+.csp-card-title { font-size:14px; font-weight:700; color:#eaeaea; }
+.csp-card-sub   { font-size:11px; color:#5a6e8c; margin-top:1px; }
+.badge { display:inline-block; padding:2px 8px; border-radius:3px; font-size:10px; font-weight:700; margin-right:4px; }
+.badge-ok   { background:#1a3a1a; color:#66bb6a; border:1px solid #66bb6a44; }
+.badge-warn { background:#2a1a0a; color:#ff9800; border:1px solid #ff980044; }
+.badge-err  { background:#2a1010; color:#ef5350; border:1px solid #ef535044; }
+.csp-badges { margin-bottom:12px; display:flex; gap:6px; flex-wrap:wrap; }
+.csp-field { margin-bottom:10px; }
+.csp-field label { display:block; font-size:10px; color:#5a6e8c; text-transform:uppercase; letter-spacing:.5px; margin-bottom:4px; }
+.csp-field select { width:100%; padding:5px 8px; background:#0f1e36; border:1px solid #1e3a6e; border-radius:5px; color:#eaeaea; font-size:12px; }
+.csp-field select:focus { outline:none; border-color:#ff9800; }
+.toggle-row { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
+.toggle-row label { font-size:12px; color:#7a8cb0; }
+.toggle { position:relative; width:36px; height:20px; }
+.toggle input { opacity:0; width:0; height:0; }
+.slider { position:absolute; inset:0; background:#1e3a6e; border-radius:10px; cursor:pointer; transition:.2s; }
+.slider:before { content:''; position:absolute; width:14px; height:14px; left:3px; bottom:3px; background:#7a8cb0; border-radius:50%; transition:.2s; }
+.toggle input:checked + .slider { background:#ff9800; }
+.toggle input:checked + .slider:before { transform:translateX(16px); background:#fff; }
+.btn-sync { width:100%; padding:9px; background:#ff9800; color:#0a1628; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; transition:background .15s; }
+.btn-sync:hover { background:#e68900; }
+.btn-sync:disabled { background:#5a6e8c; cursor:not-allowed; }
+
+/* ── Sync Result Panel ── */
+.csp-result { margin:0 30px 24px; padding:14px 18px; background:#0f1e36; border:1px solid #1e3a6e; border-radius:8px; display:none; }
+.csp-result.visible { display:block; }
+.csp-result h3 { font-size:13px; margin:0 0 10px; color:#eaeaea; }
+.result-row { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:10px; }
+.result-stat { text-align:center; }
+.result-stat .val { font-size:22px; font-weight:700; color:#ff9800; }
+.result-stat .lbl { font-size:10px; color:#5a6e8c; }
+.err-list { list-style:none; margin:0; padding:0; }
+.err-list li { font-size:11px; color:#ef5350; padding:3px 0; border-bottom:1px solid #1e3a6e22; }
+.err-list li:last-child { border-bottom:none; }
+
+/* ── Sync History Table ── */
+.csp-section { padding:0 30px 30px; }
+.csp-section h2 { font-size:14px; color:#eaeaea; margin:0 0 12px; border-bottom:1px solid #1e3a6e; padding-bottom:8px; }
+.tbl { width:100%; border-collapse:collapse; font-size:12px; }
+.tbl th { text-align:left; padding:6px 10px; color:#5a6e8c; font-size:10px; text-transform:uppercase; border-bottom:1px solid #1e3a6e; }
+.tbl td { padding:7px 10px; border-bottom:1px solid #1e3a6e22; color:#eaeaea; }
+.tbl tr:hover td { background:#1a2a4a22; }
+.tbl .empty { color:#5a6e8c; text-align:center; padding:20px; }
+.status-ok   { color:#66bb6a; font-weight:700; }
+.status-error{ color:#ef5350; font-weight:700; }
+</style>
+
+<!-- Data Mesh Tab Nav -->
+<div class="dm-nav">
+  <span class="dm-label">Data Mesh</span>
+  <a href="/data/domains">Domains</a>
+  <a href="/data/products">Products</a>
+  <a href="/data/contracts">Contracts</a>
+  <a href="/data/governance">Governance</a>
+  <a href="/data/csp" class="active">CSP</a>
+  <a href="/data/mesh">Mesh Hub</a>
+</div>
+
+<div class="csp-hero">
+  <h1>Cloud Service Provider Sync</h1>
+  <p>Sync Data Mesh domains and products to AWS DataZone, Azure Purview, or GCP Dataplex.</p>
+</div>
+
+<!-- Provider Cards -->
+<div class="csp-grid">
+
+  <!-- AWS DataZone -->
+  {% set aws = csp_status.aws %}
+  <div class="csp-card" id="card-aws">
+    <div class="csp-card-header">
+      <div class="csp-logo logo-aws">AWS</div>
+      <div>
+        <div class="csp-card-title">AWS DataZone</div>
+        <div class="csp-card-sub">Data catalog and governance for AWS</div>
+      </div>
+    </div>
+    <div class="csp-badges">
+      <span class="badge {{ 'badge-ok' if aws.available else 'badge-err' }}">
+        SDK: {{ 'Available' if aws.available else 'Not Installed' }}
+      </span>
+      <span class="badge {{ 'badge-ok' if aws.configured else 'badge-warn' }}">
+        Credentials: {{ 'Configured' if aws.configured else 'Not Set' }}
+      </span>
+    </div>
+    <div class="csp-field">
+      <label>Domain IDs (multi-select)</label>
+      <select id="aws-domains" multiple size="3">
+        <option value="">— all domains —</option>
+      </select>
+    </div>
+    <div class="toggle-row">
+      <label class="toggle"><input type="checkbox" id="aws-dryrun" checked><span class="slider"></span></label>
+      <label for="aws-dryrun">Dry Run</label>
+    </div>
+    <button class="btn-sync" onclick="syncProvider('aws')">Sync AWS DataZone</button>
+  </div>
+
+  <!-- Azure Purview -->
+  {% set azure = csp_status.azure %}
+  <div class="csp-card" id="card-azure">
+    <div class="csp-card-header">
+      <div class="csp-logo logo-azure">Az</div>
+      <div>
+        <div class="csp-card-title">Azure Purview</div>
+        <div class="csp-card-sub">Unified data governance for Azure</div>
+      </div>
+    </div>
+    <div class="csp-badges">
+      <span class="badge {{ 'badge-ok' if azure.available else 'badge-err' }}">
+        SDK: {{ 'Available' if azure.available else 'Not Installed' }}
+      </span>
+      <span class="badge {{ 'badge-ok' if azure.configured else 'badge-warn' }}">
+        Credentials: {{ 'Configured' if azure.configured else 'Not Set' }}
+      </span>
+    </div>
+    <div class="csp-field">
+      <label>Domain IDs (multi-select)</label>
+      <select id="azure-domains" multiple size="3">
+        <option value="">— all domains —</option>
+      </select>
+    </div>
+    <div class="toggle-row">
+      <label class="toggle"><input type="checkbox" id="azure-dryrun" checked><span class="slider"></span></label>
+      <label for="azure-dryrun">Dry Run</label>
+    </div>
+    <button class="btn-sync" onclick="syncProvider('azure')">Sync Azure Purview</button>
+  </div>
+
+  <!-- GCP Dataplex -->
+  {% set gcp = csp_status.gcp %}
+  <div class="csp-card" id="card-gcp">
+    <div class="csp-card-header">
+      <div class="csp-logo logo-gcp">GCP</div>
+      <div>
+        <div class="csp-card-title">GCP Dataplex</div>
+        <div class="csp-card-sub">Intelligent data fabric for Google Cloud</div>
+      </div>
+    </div>
+    <div class="csp-badges">
+      <span class="badge {{ 'badge-ok' if gcp.available else 'badge-err' }}">
+        SDK: {{ 'Available' if gcp.available else 'Not Installed' }}
+      </span>
+      <span class="badge {{ 'badge-ok' if gcp.configured else 'badge-warn' }}">
+        Credentials: {{ 'Configured' if gcp.configured else 'Not Set' }}
+      </span>
+    </div>
+    <div class="csp-field">
+      <label>Domain IDs (multi-select)</label>
+      <select id="gcp-domains" multiple size="3">
+        <option value="">— all domains —</option>
+      </select>
+    </div>
+    <div class="toggle-row">
+      <label class="toggle"><input type="checkbox" id="gcp-dryrun" checked><span class="slider"></span></label>
+      <label for="gcp-dryrun">Dry Run</label>
+    </div>
+    <button class="btn-sync" onclick="syncProvider('gcp')">Sync GCP Dataplex</button>
+  </div>
+
+</div>
+
+<!-- Sync Result Panel -->
+<div class="csp-result" id="sync-result">
+  <h3>Sync Result — <span id="res-provider"></span> <span class="badge" id="res-method-badge"></span></h3>
+  <div class="result-row">
+    <div class="result-stat">
+      <div class="val" id="res-synced">0</div>
+      <div class="lbl">Synced</div>
+    </div>
+    <div class="result-stat">
+      <div class="val" id="res-errors" style="color:#ef5350;">0</div>
+      <div class="lbl">Errors</div>
+    </div>
+  </div>
+  <ul class="err-list" id="res-err-list"></ul>
+</div>
+
+<!-- Sync History Table -->
+<div class="csp-section">
+  <h2>Sync History</h2>
+  <table class="tbl">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Provider</th>
+        <th>Operation</th>
+        <th>Status</th>
+        <th>Synced</th>
+        <th>Domains</th>
+        <th>Error</th>
+        <th>Timestamp</th>
+      </tr>
+    </thead>
+    <tbody id="history-tbody">
+      <tr><td colspan="8" class="empty">Loading…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+var _domains = [];
+
+function loadDomains() {
+  fetch('/data/api/dm/domains')
+    .then(function(r) { return r.ok ? r.json() : []; })
+    .then(function(data) {
+      _domains = Array.isArray(data) ? data : (data.domains || []);
+      ['aws','azure','gcp'].forEach(function(p) {
+        var sel = document.getElementById(p + '-domains');
+        if (!sel) return;
+        sel.innerHTML = '<option value="">— all domains —</option>';
+        _domains.forEach(function(d) {
+          var opt = document.createElement('option');
+          opt.value = d.id || d.domain_id || '';
+          opt.textContent = d.name || d.id || '(unnamed)';
+          sel.appendChild(opt);
+        });
+      });
+    })
+    .catch(function() {});
+}
+
+function loadHistory() {
+  fetch('/data/api/dm/csp/history')
+    .then(function(r) { return r.ok ? r.json() : []; })
+    .then(function(rows) {
+      var tbody = document.getElementById('history-tbody');
+      if (!rows || !rows.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="empty">No sync history yet.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.slice(0, 20).map(function(r) {
+        var sc = r.status === 'ok'
+          ? '<span class="status-ok">ok</span>'
+          : '<span class="status-error">error</span>';
+        return '<tr>' +
+          '<td style="font-family:monospace;font-size:10px;">' + (r.id || '') + '</td>' +
+          '<td>' + (r.provider || '') + '</td>' +
+          '<td>' + (r.operation || '') + '</td>' +
+          '<td>' + sc + '</td>' +
+          '<td>' + (r.synced_count || 0) + '</td>' +
+          '<td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (r.domain_id || '—') + '</td>' +
+          '<td style="color:#ef5350;font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (r.error_detail || '—') + '</td>' +
+          '<td style="font-size:10px;color:#5a6e8c;">' + (r.created_at || '') + '</td>' +
+          '</tr>';
+      }).join('');
+    })
+    .catch(function() {});
+}
+
+function syncProvider(provider) {
+  var sel = document.getElementById(provider + '-domains');
+  var dryrun = document.getElementById(provider + '-dryrun');
+  var btn = document.querySelector('#card-' + provider + ' .btn-sync');
+  var domainIds = [];
+  if (sel) {
+    for (var i = 0; i < sel.options.length; i++) {
+      if (sel.options[i].selected && sel.options[i].value) {
+        domainIds.push(sel.options[i].value);
+      }
+    }
+  }
+  var isDryRun = dryrun ? dryrun.checked : true;
+  if (btn) { btn.disabled = true; btn.textContent = 'Syncing…'; }
+
+  fetch('/data/api/dm/csp/sync', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({provider: provider, domain_ids: domainIds, dry_run: isDryRun})
+  })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var panel = document.getElementById('sync-result');
+      panel.classList.add('visible');
+      document.getElementById('res-provider').textContent = provider.toUpperCase();
+      var mb = document.getElementById('res-method-badge');
+      mb.textContent = data.method || (isDryRun ? 'dry_run' : 'live');
+      mb.className = 'badge ' + (data.ok ? 'badge-ok' : 'badge-warn');
+      document.getElementById('res-synced').textContent = data.synced_count || 0;
+      var errs = data.errors || [];
+      document.getElementById('res-errors').textContent = errs.length;
+      var el = document.getElementById('res-err-list');
+      el.innerHTML = errs.map(function(e) { return '<li>' + e + '</li>'; }).join('');
+      loadHistory();
+    })
+    .catch(function(e) {
+      alert('Sync error: ' + e);
+    })
+    .finally(function() {
+      if (btn) { btn.disabled = false; btn.textContent = 'Sync ' + ({aws:'AWS DataZone',azure:'Azure Purview',gcp:'GCP Dataplex'}[provider] || provider); }
+    });
+}
+
+loadDomains();
+loadHistory();
+</script>
+{% endblock %}

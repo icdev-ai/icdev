@@ -1,0 +1,1131 @@
+{% extends "base.html" %}
+{# CUI // SP-CTI #}
+
+{% block title %}System Graph — ICDEV™{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ============================================================
+   SYSTEM GRAPH — Full-bleed professional layout
+   ============================================================ */
+
+/* Escape base.html padding — belt-and-suspenders approach */
+.main-content:has(#sg-root),
+.main-content:has(#sg-root) {
+  padding: 0 !important;
+  max-width: 100% !important;
+  width: 100% !important;
+  margin: 0 !important;
+  overflow: visible !important;
+}
+/* Fallback for browsers without :has() — injected by JS */
+.sg-fullbleed-active {
+  padding: 0 !important;
+  max-width: 100% !important;
+  width: 100% !important;
+  margin: 0 !important;
+}
+
+/* Root wrapper */
+#sg-root {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 120px);
+  min-height: 540px;
+  background: #080818;
+  color: #c8ccd4;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 13px;
+  overflow: hidden;
+}
+
+/* ── Page header ─────────────────────────────────────────── */
+#sg-header {
+  flex-shrink: 0;
+  background: #111127;
+  border-bottom: 1px solid #1e1e3a;
+  padding: 0 16px;
+}
+#sg-header-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 48px;
+}
+#sg-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e2e4ea;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: 6px;
+}
+#sg-title svg { opacity: 0.7; }
+#sg-search-wrap {
+  position: relative;
+  flex: 1;
+  max-width: 320px;
+}
+#sg-search-wrap svg {
+  position: absolute;
+  left: 9px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: #5a6070;
+  pointer-events: none;
+}
+#sg-search {
+  width: 100%;
+  padding: 6px 10px 6px 30px;
+  background: #1a1a30;
+  border: 1px solid #252545;
+  border-radius: 6px;
+  color: #c8ccd4;
+  font-size: 12px;
+  outline: none;
+  transition: border-color .15s;
+}
+#sg-search:focus { border-color: #3b6fd4; }
+#sg-search::placeholder { color: #454560; }
+
+.sg-select {
+  padding: 5px 8px;
+  background: #1a1a30;
+  border: 1px solid #252545;
+  border-radius: 6px;
+  color: #c8ccd4;
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+}
+.sg-select:focus { border-color: #3b6fd4; }
+
+.sg-divider-v {
+  width: 1px;
+  height: 22px;
+  background: #1e1e3a;
+  flex-shrink: 0;
+  margin: 0 2px;
+}
+
+.sg-hbtn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 11px;
+  background: transparent;
+  border: 1px solid #252545;
+  border-radius: 6px;
+  color: #9aa0b0;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .15s, border-color .15s, color .15s;
+  user-select: none;
+}
+.sg-hbtn:hover { background: #1a1a30; color: #c8ccd4; border-color: #3b4060; }
+.sg-hbtn.active { background: #1e3a70; border-color: #3b6fd4; color: #7aadff; }
+.sg-hbtn svg { width: 13px; height: 13px; flex-shrink: 0; }
+
+/* stats strip */
+#sg-stats-strip {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  height: 30px;
+  font-size: 11.5px;
+  color: #5a6070;
+  border-top: 1px solid #1a1a30;
+}
+.sg-stat {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.sg-stat-val {
+  color: #7aadff;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 36px;
+}
+.sg-source-chips {
+  margin-left: auto;
+  display: flex;
+  gap: 5px;
+}
+.sg-chip {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 10.5px;
+  border: 1px solid #252545;
+  color: #6a7080;
+  background: transparent;
+  cursor: pointer;
+  transition: .15s;
+  user-select: none;
+}
+.sg-chip.on { background: #1e2e50; border-color: #3b5090; color: #90b8ff; }
+
+/* ── Body (sidebar + canvas + detail) ───────────────────── */
+#sg-body {
+  flex: 1 1 0;
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  overflow: hidden;
+  min-height: 0;
+  position: relative;
+}
+
+/* ── Left legend panel ───────────────────────────────────── */
+#sg-left {
+  width: 200px;
+  flex-shrink: 0;
+  background: #0e0e22;
+  border-right: 1px solid #1a1a30;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: width .2s;
+}
+#sg-left.collapsed { width: 0; overflow: hidden; }
+
+#sg-legend-header {
+  padding: 10px 12px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: #3b4060;
+  flex-shrink: 0;
+}
+#sg-legend-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px 8px;
+}
+#sg-legend-scroll::-webkit-scrollbar { width: 4px; }
+#sg-legend-scroll::-webkit-scrollbar-thumb { background: #1e1e3a; border-radius: 2px; }
+
+.sg-litem {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background .12s;
+  margin-bottom: 1px;
+}
+.sg-litem:hover { background: rgba(255,255,255,0.04); }
+.sg-litem.dimmed { opacity: 0.28; }
+.sg-ldot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.sg-lname {
+  flex: 1;
+  font-size: 12px;
+  color: #9aa0b0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sg-lcount {
+  font-size: 10px;
+  color: #3b4060;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Canvas area ─────────────────────────────────────────── */
+#sg-canvas-wrap {
+  flex: 1 1 0;
+  min-width: 0;
+  position: relative;
+  background: #080818;
+  overflow: hidden;
+}
+#sigma-container {
+  width: 100%;
+  height: 100%;
+}
+
+/* Loading overlay */
+#sg-loading {
+  position: absolute;
+  inset: 0;
+  background: rgba(8,8,24,.88);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  z-index: 20;
+}
+.sg-spinner {
+  width: 34px; height: 34px;
+  border: 3px solid #1e1e3a;
+  border-top-color: #3b6fd4;
+  border-radius: 50%;
+  animation: sg-spin .75s linear infinite;
+}
+@keyframes sg-spin { to { transform: rotate(360deg); } }
+#sg-loading-msg { font-size: 12px; color: #5a6070; }
+
+/* Mini zoom controls */
+#sg-zoom-controls {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 10;
+}
+.sg-zoom-btn {
+  width: 30px; height: 30px;
+  background: #111127;
+  border: 1px solid #1e1e3a;
+  border-radius: 6px;
+  color: #6a7080;
+  font-size: 16px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: .15s;
+  user-select: none;
+}
+.sg-zoom-btn:hover { background: #1a1a38; color: #c8ccd4; }
+
+/* Canvas badge (graph empty hint) */
+#sg-empty-hint {
+  position: absolute;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  color: #3b4060;
+  pointer-events: none;
+  z-index: 5;
+}
+#sg-empty-hint svg { width: 48px; height: 48px; opacity: .35; }
+#sg-empty-hint p { font-size: 13px; }
+
+/* Tooltip */
+#sg-tooltip {
+  position: absolute;
+  background: #14142a;
+  border: 1px solid #252545;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: #c8ccd4;
+  pointer-events: none;
+  z-index: 30;
+  max-width: 240px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.5);
+  display: none;
+}
+#sg-tooltip strong { display: block; margin-bottom: 3px; color: #e2e4ea; }
+
+/* ── Right detail panel ──────────────────────────────────── */
+#sg-detail-panel {
+  width: 0;
+  flex-shrink: 0;
+  background: #0e0e22;
+  border-left: 1px solid #1a1a30;
+  overflow: hidden;
+  transition: width .22s cubic-bezier(.4,0,.2,1);
+  display: flex;
+  flex-direction: column;
+}
+#sg-detail-panel.open { width: 280px; }
+
+#sg-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px 8px;
+  border-bottom: 1px solid #1a1a30;
+  flex-shrink: 0;
+}
+#sg-detail-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: #3b4060;
+}
+#sg-detail-close {
+  width: 22px; height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #3b4060;
+  transition: .12s;
+}
+#sg-detail-close:hover { background: rgba(255,255,255,.06); color: #9aa0b0; }
+
+#sg-detail-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px;
+}
+#sg-detail-body::-webkit-scrollbar { width: 4px; }
+#sg-detail-body::-webkit-scrollbar-thumb { background: #1e1e3a; border-radius: 2px; }
+
+.sg-node-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #e2e4ea;
+  word-break: break-all;
+  line-height: 1.4;
+  margin-bottom: 10px;
+}
+.sg-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 7px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+  margin-bottom: 10px;
+  border: 1px solid rgba(255,255,255,.1);
+}
+.sg-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px solid #12122a;
+  font-size: 11.5px;
+}
+.sg-meta-row:last-child { border-bottom: none; }
+.sg-meta-key { color: #454565; }
+.sg-meta-val { color: #9aa0b0; text-align: right; max-width: 160px; word-break: break-all; }
+
+.sg-health-dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  margin-right: 5px;
+}
+.sg-h-ok    { background: #4ade80; }
+.sg-h-warn  { background: #fbbf24; }
+.sg-h-error { background: #f87171; }
+.sg-h-unk   { background: #4b5563; }
+
+.sg-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: #3b4060;
+  margin: 14px 0 6px;
+}
+
+.sg-conn-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background .12s;
+  margin-bottom: 2px;
+  font-size: 12px;
+}
+.sg-conn-item:hover { background: rgba(255,255,255,.04); }
+.sg-conn-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.sg-conn-label { flex: 1; color: #8090a8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sg-conn-badge {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255,255,255,.06);
+  color: #454565;
+  flex-shrink: 0;
+}
+.sg-dir-label {
+  font-size: 10px;
+  color: #3b4060;
+  margin: 8px 0 3px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── Collapse toggle for left panel ─────────────────────── */
+#sg-toggle-legend {
+  position: absolute;
+  left: 190px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 15;
+  width: 16px; height: 32px;
+  background: #0e0e22;
+  border: 1px solid #1a1a30;
+  border-left: none;
+  border-radius: 0 4px 4px 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #3b4060;
+  transition: left .2s, color .12s;
+  font-size: 11px;
+}
+#sg-toggle-legend:hover { color: #7aadff; }
+#sg-toggle-legend.collapsed { left: 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="sg-root">
+
+  <!-- ── Header ──────────────────────────────────────────── -->
+  <div id="sg-header">
+    <div id="sg-header-top">
+
+      <div id="sg-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/><circle cx="4" cy="6" r="2"/><circle cx="20" cy="6" r="2"/><circle cx="4" cy="18" r="2"/><circle cx="20" cy="18" r="2"/>
+          <line x1="6" y1="6" x2="10" y2="11"/><line x1="18" y1="6" x2="14" y2="11"/><line x1="6" y1="18" x2="10" y2="13"/><line x1="18" y1="18" x2="14" y2="13"/>
+        </svg>
+        System Graph
+      </div>
+
+      <div id="sg-search-wrap">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="text" id="sg-search" placeholder="Search nodes…" autocomplete="off" oninput="sgSearch()" />
+      </div>
+
+      <select class="sg-select" id="sg-type-filter" onchange="sgRefresh()">
+        <option value="">All types</option>
+        {% for t in node_types %}
+        <option value="{{ t }}">{{ t }}</option>
+        {% endfor %}
+      </select>
+
+      <select class="sg-select" id="sg-health-filter" onchange="sgRefresh()">
+        <option value="">All health</option>
+        <option value="ok">● OK</option>
+        <option value="warn">● Warn</option>
+        <option value="error">● Error</option>
+        <option value="unknown">Unknown</option>
+      </select>
+
+      <div class="sg-divider-v"></div>
+
+      <button class="sg-hbtn active" id="sg-cluster-btn" onclick="sgToggleClusters()" title="Toggle community clusters">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"/></svg>
+        Clusters
+      </button>
+
+      <button class="sg-hbtn" onclick="sgResetCamera()" title="Fit all nodes in view">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>
+        </svg>
+        Fit
+      </button>
+
+      <button class="sg-hbtn" onclick="sgRefresh()" title="Rebuild graph">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+        </svg>
+        Refresh
+      </button>
+
+    </div>
+
+    <!-- Stats strip -->
+    <div id="sg-stats-strip">
+      <div class="sg-stat">
+        <span class="sg-stat-val" id="sg-stat-nodes">—</span>
+        <span>nodes</span>
+      </div>
+      <div class="sg-stat">
+        <span class="sg-stat-val" id="sg-stat-edges">—</span>
+        <span>edges</span>
+      </div>
+      <div class="sg-stat">
+        <span class="sg-stat-val" id="sg-stat-clusters">—</span>
+        <span>clusters</span>
+      </div>
+      <div class="sg-stat">
+        <span class="sg-stat-val" id="sg-stat-ms">—</span>
+        <span>ms</span>
+      </div>
+
+      <div class="sg-source-chips">
+        <span class="sg-chip on" data-src="awareness_kg" onclick="sgToggleSource(this)">Awareness KG</span>
+        <span class="sg-chip on" data-src="canvas_kg"   onclick="sgToggleSource(this)">Canvas KG</span>
+        <span class="sg-chip on" data-src="kanban_deps" onclick="sgToggleSource(this)">Kanban</span>
+        <span class="sg-chip on" data-src="goals"       onclick="sgToggleSource(this)">Goals</span>
+        <span class="sg-chip on" data-src="migrations"  onclick="sgToggleSource(this)">Migrations</span>
+        <span class="sg-chip on" data-src="codebase"    onclick="sgToggleSource(this)">Codebase</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Body ─────────────────────────────────────────────── -->
+  <div id="sg-body">
+
+    <!-- Left legend panel -->
+    <div id="sg-left">
+      <div id="sg-legend-header">Node Types</div>
+      <div id="sg-legend-scroll">
+        <div id="sg-legend-items"></div>
+      </div>
+    </div>
+
+    <!-- Legend collapse toggle -->
+    <div id="sg-toggle-legend" onclick="sgToggleLegend()" title="Toggle legend">‹</div>
+
+    <!-- Canvas -->
+    <div id="sg-canvas-wrap">
+      <div id="sg-loading">
+        <div class="sg-spinner"></div>
+        <div id="sg-loading-msg">Federating graph sources…</div>
+      </div>
+
+      <div id="sg-empty-hint">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="3"/><circle cx="4" cy="6" r="2"/><circle cx="20" cy="6" r="2"/><circle cx="4" cy="18" r="2"/><circle cx="20" cy="18" r="2"/></svg>
+        <p>No nodes match the current filters.</p>
+      </div>
+
+      <div id="sigma-container"></div>
+
+      <div id="sg-tooltip"></div>
+
+      <!-- Zoom controls -->
+      <div id="sg-zoom-controls">
+        <div class="sg-zoom-btn" onclick="sgZoom(1.4)" title="Zoom in">+</div>
+        <div class="sg-zoom-btn" onclick="sgZoom(0.7)" title="Zoom out">−</div>
+        <div class="sg-zoom-btn" onclick="sgResetCamera()" title="Reset" style="font-size:11px;">⊞</div>
+      </div>
+    </div>
+
+    <!-- Right detail panel -->
+    <div id="sg-detail-panel">
+      <div id="sg-detail-header">
+        <span id="sg-detail-title">Node Detail</span>
+        <div id="sg-detail-close" onclick="sgCloseDetail()" title="Close">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </div>
+      </div>
+      <div id="sg-detail-body">
+        <p style="color:#3b4060;font-size:12px;margin-top:20px;text-align:center;">Click a node to inspect it.</p>
+      </div>
+    </div>
+
+  </div><!-- /#sg-body -->
+</div><!-- /#sg-root -->
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/sigma/graphology.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/sigma/sigma.min.js') }}"></script>
+
+<script>
+/* =============================================================
+   System Graph — Sigma.js 3.x Professional Controller
+   ============================================================= */
+
+const SIGMA_CONTAINER = document.getElementById('sigma-container');
+let _sigma = null;
+let _graph = null;
+let _graphData = null;
+let _clustersOn = true;
+let _activeType = null;
+let _legendCollapsed = false;
+let _nodeTypeMeta = {};   // { type: { color, label } }
+let _nodeTypeCounts = {}; // { type: count } — computed after load
+
+/* ── Boot ─────────────────────────────────────────────────── */
+
+window.addEventListener('DOMContentLoaded', async () => {
+  // Fallback: apply full-bleed class if :has() selector isn't supported
+  const mc = document.querySelector('.main-content');
+  if (mc) {
+    mc.classList.add('sg-fullbleed-active');
+    mc.style.padding = '0';
+    mc.style.maxWidth = '100%';
+    mc.style.margin = '0';
+  }
+  // Force explicit row layout on sg-body via inline styles (belt-and-suspenders)
+  const body = document.getElementById('sg-body');
+  if (body) {
+    body.style.display = 'flex';
+    body.style.flexDirection = 'row';
+    body.style.flexWrap = 'nowrap';
+  }
+  // Size sg-root to fill available height precisely
+  const nav = document.querySelector('.navbar');
+  const navH = nav ? nav.offsetHeight : 46;
+  const root = document.getElementById('sg-root');
+  if (root) root.style.height = (window.innerHeight - navH) + 'px';
+  window.addEventListener('resize', () => {
+    if (root) root.style.height = (window.innerHeight - navH) + 'px';
+  });
+
+  await loadNodeTypes();
+  sgRefresh();
+});
+
+/* ── Node type meta ──────────────────────────────────────── */
+
+async function loadNodeTypes() {
+  try {
+    const r = await fetch('/api/system-graph/node-types');
+    const d = await r.json();
+    _nodeTypeMeta = d.node_types || {};
+    renderLegend();
+  } catch (_) {}
+}
+
+function renderLegend() {
+  const wrap = document.getElementById('sg-legend-items');
+  wrap.innerHTML = '';
+  const sorted = Object.entries(_nodeTypeMeta).sort((a, b) =>
+    (_nodeTypeCounts[b[0]] || 0) - (_nodeTypeCounts[a[0]] || 0)
+  );
+  for (const [key, meta] of sorted) {
+    const count = _nodeTypeCounts[key] || 0;
+    const el = document.createElement('div');
+    el.className = 'sg-litem' + (_activeType && _activeType !== key ? ' dimmed' : '');
+    el.dataset.type = key;
+    el.innerHTML = `
+      <div class="sg-ldot" style="background:${meta.color}"></div>
+      <span class="sg-lname">${meta.label || key}</span>
+      ${count ? `<span class="sg-lcount">${count}</span>` : ''}
+    `;
+    el.onclick = () => sgFilterByType(key);
+    wrap.appendChild(el);
+  }
+}
+
+function sgFilterByType(t) {
+  if (_activeType === t) {
+    _activeType = null;
+    document.getElementById('sg-type-filter').value = '';
+  } else {
+    _activeType = t;
+    document.getElementById('sg-type-filter').value = t;
+  }
+  // Update legend dimming
+  document.querySelectorAll('.sg-litem').forEach(el => {
+    el.classList.toggle('dimmed', !!_activeType && el.dataset.type !== _activeType);
+  });
+  // Apply client-side filter using Sigma reducers (no server round-trip)
+  _applyTypeFilter();
+}
+
+function _applyTypeFilter() {
+  if (!_sigma) return;
+  if (!_activeType) {
+    // Clear reducers — show everything
+    _sigma.setSetting('nodeReducer', null);
+    _sigma.setSetting('edgeReducer', null);
+    _sigma.refresh();
+    // Update empty hint
+    document.getElementById('sg-empty-hint').style.display = 'none';
+    return;
+  }
+  // Build set of visible node IDs for this type
+  const visibleIds = new Set();
+  _graph.forEachNode((node, attrs) => {
+    if (attrs.ntype === _activeType) visibleIds.add(node);
+  });
+  // Show/hide nodes via Sigma nodeReducer
+  _sigma.setSetting('nodeReducer', (node, data) => {
+    if (!visibleIds.has(node)) return { ...data, hidden: true, size: 0 };
+    return data;
+  });
+  // Hide edges where either endpoint is hidden
+  _sigma.setSetting('edgeReducer', (edge, data) => {
+    const src = _graph.source(edge);
+    const tgt = _graph.target(edge);
+    if (!visibleIds.has(src) || !visibleIds.has(tgt)) return { ...data, hidden: true };
+    return data;
+  });
+  _sigma.refresh();
+  // Show empty hint if no matching nodes
+  document.getElementById('sg-empty-hint').style.display =
+    visibleIds.size === 0 ? 'flex' : 'none';
+}
+
+/* ── Source chips ────────────────────────────────────────── */
+
+function sgToggleSource(chip) {
+  chip.classList.toggle('on');
+  sgRefresh();
+}
+
+function getActiveSources() {
+  return Array.from(document.querySelectorAll('.sg-chip.on')).map(c => c.dataset.src);
+}
+
+/* ── Data loading ────────────────────────────────────────── */
+
+let _refreshTimer = null;
+
+async function sgRefresh() {
+  clearTimeout(_refreshTimer);
+  showLoading('Federating graph sources…');
+
+  // Legend type filter is applied client-side — don't send it to server on full refresh
+  const health = document.getElementById('sg-health-filter').value;
+  const q      = document.getElementById('sg-search').value.trim();
+  const sources = getActiveSources();
+
+  const params = new URLSearchParams();
+  if (health)         params.set('health', health);
+  if (q)              params.set('q', q);
+  if (sources.length < 6) params.set('sources', sources.join(','));
+
+  try {
+    const r = await fetch('/api/system-graph/graph?' + params.toString());
+    _graphData = await r.json();
+    // Reset active type when doing a full server refresh
+    _activeType = null;
+    document.getElementById('sg-type-filter').value = '';
+    document.querySelectorAll('.sg-litem').forEach(el => el.classList.remove('dimmed'));
+    renderGraph(_graphData);
+    updateStats(_graphData.stats || {});
+  } catch (err) {
+    hideLoading();
+    document.getElementById('sg-loading-msg').textContent = 'Error: ' + err.message;
+  }
+}
+
+function sgSearch() {
+  clearTimeout(window._sgSearchTimer);
+  window._sgSearchTimer = setTimeout(sgRefresh, 380);
+}
+
+/* ── Sigma rendering ─────────────────────────────────────── */
+
+function renderGraph(data) {
+  if (_sigma) { _sigma.kill(); _sigma = null; }
+
+  _graph = new graphology.Graph({ type: 'directed', multi: false });
+
+  // Count by type for legend
+  _nodeTypeCounts = {};
+  const nodeSet = new Set();
+
+  for (const n of data.nodes || []) {
+    if (nodeSet.has(n.id)) continue;
+    nodeSet.add(n.id);
+    _nodeTypeCounts[n.type] = (_nodeTypeCounts[n.type] || 0) + 1;
+    const meta = _nodeTypeMeta[n.type] || {};
+    const color = _clustersOn && n.cluster_id >= 0
+      ? n.cluster_color
+      : (meta.color || '#556070');
+    _graph.addNode(n.id, {
+      label:        n.label,
+      x:            n.x || 0,
+      y:            n.y || 0,
+      size:         Math.max(3, Math.min(18, n.size || 5)),
+      color:        color,
+      ntype:        n.type,
+      health:       n.health,
+      source:       n.source,
+      cluster_id:   n.cluster_id,
+      cluster_color: n.cluster_color,
+      type_color:   meta.color || '#556070',
+      properties:   n.properties || {},
+    });
+  }
+
+  const edgeSet = new Set();
+  for (const e of data.edges || []) {
+    const key = `${e.source}⟶${e.target}`;
+    if (edgeSet.has(key) || !_graph.hasNode(e.source) || !_graph.hasNode(e.target)) continue;
+    edgeSet.add(key);
+    try {
+      _graph.addEdge(e.source, e.target, {
+        relationship: e.type || 'related',
+        type:  'line',
+        size:  1,
+        color: '#1c1c38',
+      });
+    } catch (_) {}
+  }
+
+  // Refresh legend with counts
+  renderLegend();
+
+  // Size sigma container explicitly
+  const wrap = document.getElementById('sg-canvas-wrap');
+  const wrapH = wrap.clientHeight || window.innerHeight - 200;
+  SIGMA_CONTAINER.style.height = Math.max(wrapH, 400) + 'px';
+
+  // Empty hint
+  document.getElementById('sg-empty-hint').style.display =
+    (_graph.order === 0) ? 'flex' : 'none';
+
+  if (_graph.order === 0) { hideLoading(); return; }
+
+  _sigma = new Sigma(_graph, SIGMA_CONTAINER, {
+    renderEdgeLabels:     false,
+    defaultEdgeColor:     '#1c1c38',
+    defaultNodeColor:     '#3b6fd4',
+    labelFont:            'Inter, system-ui, sans-serif',
+    labelSize:            11,
+    labelWeight:          '500',
+    labelColor:           { color: '#8090a8' },
+    labelDensity:         0.07,
+    labelGridCellSize:    80,
+    minCameraRatio:       0.03,
+    maxCameraRatio:       12,
+    allowInvalidContainer: true,
+  });
+
+  _sigma.on('clickNode', ({ node }) => openDetail(node));
+  _sigma.on('clickStage', () => { /* don't close on canvas click */ });
+
+  _sigma.on('enterNode', ({ node, event }) => {
+    const a = _graph.getNodeAttributes(node);
+    const tt = document.getElementById('sg-tooltip');
+    const hIcon = { ok: '🟢', warn: '🟡', error: '🔴', unknown: '⚫' };
+    const meta = _nodeTypeMeta[a.ntype] || {};
+    tt.innerHTML = `
+      <strong>${escHtml(a.label)}</strong>
+      <span style="color:${meta.color||'#556070'};font-size:11px">${escHtml(meta.label || a.ntype)}</span>
+      <span style="margin-left:8px;font-size:11px;color:#6a7080">${hIcon[a.health]||'⚫'} ${escHtml(a.health||'')}</span>
+    `;
+    tt.style.display = 'block';
+    positionTooltip(event);
+  });
+  _sigma.on('leaveNode', () => {
+    document.getElementById('sg-tooltip').style.display = 'none';
+  });
+  _sigma.on('moveBody', e => {
+    if (document.getElementById('sg-tooltip').style.display === 'block') positionTooltip(e);
+  });
+
+  hideLoading();
+
+  // Re-apply any active legend type filter after graph rebuild
+  if (_activeType) _applyTypeFilter();
+}
+
+function positionTooltip(ev) {
+  const tt = document.getElementById('sg-tooltip');
+  const rect = SIGMA_CONTAINER.getBoundingClientRect();
+  const ex = (ev.x || ev.clientX || 0) - rect.left;
+  const ey = (ev.y || ev.clientY || 0) - rect.top;
+  const ttW = tt.offsetWidth || 200;
+  const overRight = ex + ttW + 16 > rect.width;
+  tt.style.left = overRight ? (ex - ttW - 8) + 'px' : (ex + 14) + 'px';
+  tt.style.top  = (ey + 14) + 'px';
+}
+
+/* ── Cluster toggle ──────────────────────────────────────── */
+
+function sgToggleClusters() {
+  _clustersOn = !_clustersOn;
+  document.getElementById('sg-cluster-btn').classList.toggle('active', _clustersOn);
+  if (!_graph) return;
+  _graph.updateEachNodeAttributes((_, attrs) => {
+    attrs.color = _clustersOn && attrs.cluster_id >= 0
+      ? attrs.cluster_color : attrs.type_color;
+    return attrs;
+  });
+  if (_sigma) _sigma.refresh();
+}
+
+/* ── Camera ──────────────────────────────────────────────── */
+
+function sgResetCamera() {
+  if (_sigma) _sigma.getCamera().animatedReset({ duration: 350 });
+}
+
+function sgZoom(factor) {
+  if (!_sigma) return;
+  const cam = _sigma.getCamera();
+  cam.animatedZoom({ factor, duration: 200 });
+}
+
+/* ── Stats strip ─────────────────────────────────────────── */
+
+function updateStats(s) {
+  document.getElementById('sg-stat-nodes').textContent    = (s.total_nodes ?? '—').toLocaleString();
+  document.getElementById('sg-stat-edges').textContent    = (s.total_edges ?? '—').toLocaleString();
+  document.getElementById('sg-stat-clusters').textContent = (s.cluster_count ?? '—').toLocaleString();
+  document.getElementById('sg-stat-ms').textContent       = s.build_ms ?? '—';
+}
+
+/* ── Right detail panel ──────────────────────────────────── */
+
+function openDetail(nodeId) {
+  document.getElementById('sg-detail-panel').classList.add('open');
+  loadNodeDetail(nodeId);
+}
+
+function sgCloseDetail() {
+  document.getElementById('sg-detail-panel').classList.remove('open');
+}
+
+async function loadNodeDetail(nodeId) {
+  const body = document.getElementById('sg-detail-body');
+  body.innerHTML = '<p style="color:#3b4060;font-size:12px;text-align:center;padding-top:20px">Loading…</p>';
+  try {
+    const r = await fetch('/api/system-graph/node/' + encodeURIComponent(nodeId));
+    if (!r.ok) { body.innerHTML = '<p style="color:#f87171;font-size:12px">Node not found.</p>'; return; }
+    const n = await r.json();
+    renderDetail(n);
+  } catch (err) {
+    body.innerHTML = `<p style="color:#f87171;font-size:12px">Error: ${escHtml(err.message)}</p>`;
+  }
+}
+
+function renderDetail(n) {
+  const meta   = _nodeTypeMeta[n.type] || {};
+  const color  = meta.color || '#556070';
+  const props  = n.properties || {};
+  const hDot   = { ok: 'sg-h-ok', warn: 'sg-h-warn', error: 'sg-h-error' }[n.health] || 'sg-h-unk';
+  const hLabel = { ok: 'OK', warn: 'Warning', error: 'Error', unknown: 'Unknown' }[n.health] || (n.health || '—');
+
+  let html = `
+    <div class="sg-node-name">${escHtml(n.label)}</div>
+    <div class="sg-type-badge" style="background:${color}22;border-color:${color}44;color:${color}">
+      <div class="sg-ldot" style="background:${color}"></div>
+      ${escHtml(meta.label || n.type)}
+    </div>
+
+    <div class="sg-meta-row">
+      <span class="sg-meta-key">Health</span>
+      <span class="sg-meta-val">
+        <span class="sg-health-dot ${hDot}"></span>${escHtml(hLabel)}
+      </span>
+    </div>
+    <div class="sg-meta-row">
+      <span class="sg-meta-key">Source</span>
+      <span class="sg-meta-val">${escHtml((n.source||'').replace('_', ' '))}</span>
+    </div>
+  `;
+
+  if (props.path) {
+    html += `<div class="sg-meta-row">
+      <span class="sg-meta-key">Path</span>
+      <span class="sg-meta-val" style="font-size:10.5px">${escHtml(props.path)}</span>
+    </div>`;
+  }
+  if (props.status) {
+    html += `<div class="sg-meta-row">
+      <span class="sg-meta-key">Status</span>
+      <span class="sg-meta-val">${escHtml(props.status)}</span>
+    </div>`;
+  }
+  if (props.canvas) {
+    html += `<div class="sg-meta-row">
+      <span class="sg-meta-key">Canvas</span>
+      <span class="sg-meta-val">${escHtml(props.canvas.toUpperCase())}</span>
+    </div>`;
+  }
+  if (props.number) {
+    html += `<div class="sg-meta-row">
+      <span class="sg-meta-key">Migration #</span>
+      <span class="sg-meta-val">${escHtml(props.number)}</span>
+    </div>`;
+  }
+  if (props.task_type) {
+    html += `<div class="sg-meta-row">
+      <span class="sg-meta-key">Task type</span>
+      <span class="sg-meta-val">${escHtml(props.task_type)}</span>
+    </div>`;
+  }
+
+  const neighbors = n.neighbors || [];
+  const inbound   = neighbors.filter(nb => nb.direction === 'inbound');
+  const outbound  = neighbors.filter(nb => nb.direction === 'outbound');
+
+  if (neighbors.length === 0) {
+    html += `<p style="color:#3b4060;font-size:11.5px;margin-top:14px">No connections in current graph.</p>`;
+  } else {
+    if (outbound.length) {
+      html += `<div class="sg-section-label">
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M2 5h6M5.5 2.5 8 5l-2.5 2.5"/>
+        </svg>
+        Outbound (${outbound.length})
+      </div>`;
+      for (const nb of outbound.slice(0, 25)) {
+        const nbMeta = _nodeTypeMeta[nb.type] || {};
+        html += `<div class="sg-conn-item" onclick="openDetail('${escAttr(nb.id)}')">
+          <div class="sg-conn-dot" style="background:${nbMeta.color||'#556070'}"></div>
+          <span class="sg-conn-label">${escHtml(nb.label)}</span>
+          <span class="sg-conn-badge">${escHtml(nb.edge_type||'')}</span>
+        </div>`;
+      }
+    }
+    if (inbound.length) {
+      html += `<div class="sg-section-label" style="margin-top:10px">
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M8 5H2M4.5 2.5 2 5l2.5 2.5"/>
+        </svg>
+        Inbound (${inbound.length})
+      </div>`;
+      for (const nb of inbound.slice(0, 25)) {
+        const nbMeta = _nodeTypeMeta[nb.type] || {};
+        html += `<div class="sg-conn-item" onclick="openDetail('${escAttr(nb.id)}')">
+          <div class="sg-conn-dot" style="background:${nbMeta.color||'#556070'}"></div>
+          <span class="sg-conn-label">${escHtml(nb.label)}</span>
+          <span class="sg-conn-badge">${escHtml(nb.edge_type||'')}</span>
+        </div>`;
+      }
+    }
+  }
+
+  document.getElementById('sg-detail-body').innerHTML = html;
+}
+
+/* ── Legend collapse ─────────────────────────────────────── */
+
+function sgToggleLegend() {
+  _legendCollapsed = !_legendCollapsed;
+  const left   = document.getElementById('sg-left');
+  const toggle = document.getElementById('sg-toggle-legend');
+  left.classList.toggle('collapsed', _legendCollapsed);
+  toggle.classList.toggle('collapsed', _legendCollapsed);
+  toggle.textContent = _legendCollapsed ? '›' : '‹';
+  toggle.style.left  = _legendCollapsed ? '0' : '190px';
+}
+
+/* ── Loading ─────────────────────────────────────────────── */
+
+function showLoading(msg) {
+  const el = document.getElementById('sg-loading');
+  document.getElementById('sg-loading-msg').textContent = msg || 'Loading…';
+  el.style.display = 'flex';
+}
+function hideLoading() {
+  document.getElementById('sg-loading').style.display = 'none';
+}
+
+/* ── Utils ───────────────────────────────────────────────── */
+
+function escHtml(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function escAttr(s) {
+  return String(s ?? '').replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+}
+</script>
+{% endblock %}

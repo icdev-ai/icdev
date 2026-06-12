@@ -1,0 +1,370 @@
+<!-- CUI // SP-CTI — Infrastructure Design Canvas Editor -->
+{% extends "base.html" %}
+{% block title %}{{ design.name }} — Infrastructure Canvas — ICDEV{% endblock %}
+{% block global_banner %}{% endblock %}
+{% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner(design) }}
+<link rel="stylesheet" href="/static/js/vendor/joint.css">
+<style>
+  body { overflow: hidden; height: 100vh; }
+  .main-content { padding: 0 !important; max-width: 100% !important; margin: 0 !important; display: flex; flex-direction: column; overflow: hidden; }
+  .dc-wrap { display: flex; flex: 1; overflow: hidden; }
+  .dc-palette { width: 240px; background: #0a1628; border-right: 1px solid #1e3a6e; overflow-y: auto; padding: 12px; flex-shrink: 0; }
+  .dc-palette h4 { font-size: 11px; color: #7a8cb0; margin: 12px 0 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .dc-palette-item { background: #16213e; border: 1px solid #1e3a6e; border-radius: 6px; padding: 5px 8px; margin-bottom: 3px; cursor: grab; font-size: 11px; display: flex; align-items: center; gap: 6px; }
+  .dc-palette-item:hover { border-color: #00bcd4; }
+  .dc-palette-item .icon { background: #0f3460; color: #00bcd4; font-size: 9px; font-weight: 700; padding: 2px 4px; border-radius: 3px; min-width: 24px; text-align: center; }
+  .dc-main { flex: 1; position: relative; background: #ffffff; }
+  .dc-toolbar { position: absolute; top: 0; left: 0; right: 0; height: 40px; background: #16213e; border-bottom: 1px solid #1e3a6e; display: flex; align-items: center; padding: 0 12px; gap: 8px; z-index: 10; }
+  /* ── Sidebar auto-hide ── */
+  .dc-sidebar { transition: width 0.22s ease; overflow: hidden; }
+  .dc-sidebar-toggle { width: 100%; background: transparent; border: none; border-bottom: 1px solid #1e3a6e; color: #5a6e8c; padding: 7px 0; cursor: pointer; font-size: 15px; text-align: center; flex-shrink: 0; display: block; }
+  .dc-sidebar-toggle:hover { color: #00bcd4; background: #0f1e36; }
+  .dc-sidebar.collapsed { width: 34px; }
+  .dc-sidebar.collapsed .dc-tabs { display: none; }
+  .dc-sidebar.collapsed .dc-tab-content { display: none !important; }
+  /* ── Zoom label ── */
+  #dc-zoom-label { font-size: 10px; color: #5a6e8c; min-width: 34px; text-align: center; user-select: none; }
+  .dc-toolbar input { background: #0a1628; border: 1px solid #1e3a6e; color: #eaeaea; padding: 4px 10px; border-radius: 4px; font-size: 13px; width: 250px; }
+  .dc-toolbar button { background: #00bcd4; border: none; color: #fff; padding: 4px 14px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-right: 2px; }
+  .dc-toolbar button.secondary { background: transparent; border: 1px solid #1e3a6e; color: #7a8cb0; }
+  .dc-toolbar button.analysis { font-size: 11px; padding: 4px 8px; }
+  .dc-canvas-area { position: absolute; top: 40px; bottom: 0; left: 0; right: 0; overflow: auto; }
+  .dc-info { position: absolute; bottom: 8px; right: 12px; font-size: 10px; color: #5a6e8c; z-index: 10; }
+  .dc-sidebar { width: 240px; background: #0a1628; border-right: 1px solid #1e3a6e; display: flex; flex-direction: column; flex-shrink: 0; }
+  .dc-tabs { display: flex; border-bottom: 1px solid #1e3a6e; flex-shrink: 0; }
+  .dc-tab { flex: 1; padding: 8px; text-align: center; font-size: 11px; font-weight: 600; color: #5a6e8c; cursor: pointer; border-bottom: 2px solid transparent; }
+  .dc-tab.active { color: #00bcd4; border-bottom-color: #00bcd4; }
+  .dc-tab:hover { color: #eaeaea; }
+  .dc-tab-content { flex: 1; overflow-y: auto; padding: 8px 12px; display: none; }
+  .dc-tab-content.active { display: block; }
+  .dc-snippet-item { background: #16213e; border: 1px solid #1e3a6e; border-radius: 6px; padding: 8px 10px; margin-bottom: 4px; cursor: pointer; font-size: 11px; transition: border-color 0.2s; }
+  .dc-snippet-item:hover { border-color: #00bcd4; background: #1a2e4a; }
+  .dc-snippet-item h4 { margin: 0; font-size: 11px; color: #eaeaea; }
+  .dc-cat-header { font-size: 11px; color: #7a8cb0; margin: 0; padding: 8px 0 6px; text-transform: uppercase; letter-spacing: 0.5px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; user-select: none; border-bottom: 1px solid #0f1e36; }
+  .dc-cat-header:hover { color: #eaeaea; }
+  .dc-cat-header .arrow { font-size: 9px; transition: transform 0.2s; }
+  .dc-cat-header.open .arrow { transform: rotate(90deg); }
+  .dc-cat-items { display: none; }
+  .dc-cat-items.open { display: block; }
+  .dc-right-panel { width: 320px; min-width: 320px; background: #0a1628; border-left: 1px solid #1e3a6e; overflow-y: auto; display: none; flex-shrink: 0; }
+  .dc-right-panel.open { display: block; }
+  .dc-right-panel-header { padding: 10px 14px; font-weight: 600; font-size: 13px; border-bottom: 1px solid #1e3a6e; display: flex; justify-content: space-between; align-items: center; color: #eaeaea; }
+  .dc-right-panel-header button { background: transparent; border: 1px solid #1e3a6e; color: #7a8cb0; width: 24px; height: 24px; border-radius: 4px; cursor: pointer; font-size: 12px; display: flex; align-items: center; justify-content: center; }
+  .dc-right-panel-header button:hover { background: #1e3a6e; color: #eaeaea; }
+  .dc-right-panel-body { padding: 12px 14px; font-size: 12px; color: #eaeaea; }
+  /* IaC Generation Panel */
+  .iac-modal { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.65); z-index:200; align-items:flex-start; justify-content:center; padding-top:60px; }
+  .iac-modal.open { display:flex; }
+  .iac-panel { background:#0a1628; border:1px solid #1e3a6e; border-radius:8px; width:720px; max-width:95vw; max-height:80vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 8px 32px rgba(0,0,0,0.5); }
+  .iac-panel-header { padding:13px 16px; font-weight:600; font-size:14px; border-bottom:1px solid #1e3a6e; display:flex; justify-content:space-between; align-items:center; color:#eaeaea; flex-shrink:0; background:#16213e; }
+  .iac-panel-header button { background:transparent; border:1px solid #1e3a6e; color:#7a8cb0; width:24px; height:24px; border-radius:4px; cursor:pointer; font-size:12px; }
+  .iac-panel-header button:hover { background:#1e3a6e; color:#eaeaea; }
+  .iac-panel-body { padding:16px; overflow-y:auto; flex:1; }
+  .iac-section { margin-bottom:20px; border:1px solid #1e3a6e; border-radius:6px; padding:14px; }
+  .iac-section-title { font-size:12px; font-weight:700; color:#00bcd4; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:10px; }
+  .iac-controls { display:flex; align-items:center; gap:8px; margin-bottom:8px; flex-wrap:wrap; }
+  .iac-btn { background:#00bcd4; border:none; color:#fff; padding:5px 14px; border-radius:4px; cursor:pointer; font-size:12px; }
+  .iac-btn:disabled { opacity:0.5; cursor:not-allowed; }
+  .iac-btn.secondary { background:transparent; border:1px solid #1e3a6e; color:#aab; font-size:11px; }
+  .iac-btn.secondary:hover:not(:disabled) { border-color:#00bcd4; color:#eaeaea; }
+  .iac-btn.dl { background:transparent; border:1px solid #27ae60; color:#27ae60; font-size:11px; }
+  .iac-btn.dl:hover:not(:disabled) { background:#1a4a30; color:#eaeaea; }
+  .iac-select { background:#16213e; border:1px solid #1e3a6e; color:#eaeaea; padding:4px 8px; border-radius:4px; font-size:12px; }
+  .iac-hint { font-size:10px; color:#5a6e8c; }
+  .iac-pre { background:#0d1b2a; border:1px solid #1e3a6e; border-radius:6px; padding:12px; font-size:11px; color:#a8d8b9; font-family:'Courier New',monospace; white-space:pre; overflow-x:auto; max-height:220px; overflow-y:auto; display:none; margin-top:8px; }
+  .iac-pre.visible { display:block; }
+  .iac-pre-actions { display:none; gap:6px; margin-top:8px; flex-wrap:wrap; align-items:center; }
+  .iac-pre-actions.visible { display:flex; }
+  .iac-status { font-size:11px; color:#7a8cb0; }
+  .iac-status.err { color:#e74c3c; }
+  .iac-status.ok { color:#27ae60; }
+</style>
+
+<div class="dc-wrap">
+  <!-- Sidebar with Palette + Snippets tabs -->
+  <div class="dc-sidebar" id="dc-sidebar">
+    <button class="dc-sidebar-toggle" id="dc-sidebar-toggle" onclick="toggleSidebar()" title="Collapse palette">&#9776;</button>
+    <div class="dc-tabs">
+      <div class="dc-tab active" onclick="switchTab(this, 'palette-tab')">Palette</div>
+      <div class="dc-tab" onclick="switchTab(this, 'snippet-tab')">Snippets</div>
+    </div>
+    <div class="dc-tab-content active" id="palette-tab">
+      {% for catname, catdata in objects.items() %}
+        {% if catdata is mapping %}
+          <div class="dc-cat-header" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">{{ catname | replace('_', ' ') | title }} <span class="arrow">&#9654;</span></div>
+          <div class="dc-cat-items">
+          {% for csp, items in catdata.items() %}
+            {% for obj in items %}
+            <div class="dc-palette-item" draggable="true" data-type="{{ obj.type }}" title="{{ obj.desc }}">
+              <span class="icon">{{ obj.icon }}</span> {{ obj.label }}
+            </div>
+            {% endfor %}
+          {% endfor %}
+          </div>
+        {% elif catdata is iterable %}
+          <div class="dc-cat-header" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open')">{{ catname | replace('_', ' ') | title }} <span class="arrow">&#9654;</span></div>
+          <div class="dc-cat-items">
+          {% for obj in catdata %}
+          <div class="dc-palette-item" draggable="true" data-type="{{ obj.type }}" title="{{ obj.desc }}">
+            <span class="icon">{{ obj.icon }}</span> {{ obj.label }}
+          </div>
+          {% endfor %}
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+    <div class="dc-tab-content" id="snippet-tab">
+      <div id="snippet-panel"><p style="color:#5a6e8c;font-size:11px;">Loading snippets...</p></div>
+    </div>
+  </div>
+
+  <!-- Canvas -->
+  <div class="dc-main">
+    <div class="dc-toolbar">
+      <input type="text" id="idc-name" value="{{ design.name }}" placeholder="Design name...">
+      <!-- File -->
+      <button onclick="canvasSave()" title="Save (Ctrl+S)">Save</button>
+      <button class="secondary" onclick="canvasUndo()" title="Undo (Ctrl+Z)">&#8617;</button>
+      <button class="secondary" onclick="canvasRedo()" title="Redo (Ctrl+Y)">&#8618;</button>
+      <button class="secondary" onclick="exportCanvasPDF()" title="Export PDF">&#x1f4c4; PDF</button>
+      <!-- Zoom -->
+      <button class="secondary" onclick="canvasZoomIn()" title="Zoom In">+</button>
+      <button class="secondary" onclick="canvasZoomOut()" title="Zoom Out">&minus;</button>
+      <button class="secondary" onclick="canvasZoomFit()" title="Fit">Fit</button>
+      <span id="dc-zoom-label">100%</span>
+      <!-- Export -->
+      <div class="dc-export-group" style="position:relative;display:inline-block;">
+        <button class="secondary" onclick="toggleExportMenu()">Export &#9662;</button>
+        <div id="export-dropdown" style="display:none;position:absolute;top:32px;left:0;background:#16213e;border:1px solid #1e3a6e;border-radius:6px;padding:4px;z-index:30;min-width:120px;">
+          <div style="padding:4px 8px;cursor:pointer;font-size:11px;color:#eaeaea;" onmouseover="this.style.background='#1e3a6e'" onmouseout="this.style.background=''" onclick="canvasExport('drawio')">draw.io</div>
+          <div style="padding:4px 8px;cursor:pointer;font-size:11px;color:#eaeaea;" onmouseover="this.style.background='#1e3a6e'" onmouseout="this.style.background=''" onclick="canvasExport('svg')">SVG</div>
+          <div style="padding:4px 8px;cursor:pointer;font-size:11px;color:#eaeaea;" onmouseover="this.style.background='#1e3a6e'" onmouseout="this.style.background=''" onclick="canvasExport('json')">JSON</div>
+          <div style="padding:4px 8px;cursor:pointer;font-size:11px;color:#eaeaea;" onmouseover="this.style.background='#1e3a6e'" onmouseout="this.style.background=''" onclick="canvasExport('visio')">Visio (.vsdx)</div>
+          <div style="padding:4px 8px;cursor:pointer;font-size:11px;color:#eaeaea;" onmouseover="this.style.background='#1e3a6e'" onmouseout="this.style.background=''" onclick="canvasExport('terraform')">Terraform</div>
+        </div>
+      </div>
+      <!-- Analysis -->
+      <button class="secondary analysis" onclick="canvasGovernance()" title="Infrastructure Governance Check" style="color:#9b59b6;">Governance</button>
+      <button class="secondary analysis" onclick="canvasAssess()" title="Compliance Assessment">Assess</button>
+      <button class="secondary analysis" onclick="canvasScorecard()" title="Scorecard">Scorecard</button>
+      <button class="secondary analysis" onclick="canvasGaps()" title="Gap Analysis">Gaps</button>
+      <button class="secondary analysis" onclick="canvasLegend()" title="Toggle Legend">Legend</button>
+      <button class="secondary analysis" onclick="canvasValidateIaC()" title="Validate IaC" style="color:#27ae60;">Validate IaC</button>
+      <button class="secondary analysis" onclick="canvasDeployIaC()" title="Deploy IaC Bundle" style="color:#27ae60;">Deploy IaC</button>
+      <button class="secondary analysis" onclick="openIaCPanel()" title="Generate IaC — Terraform &amp; Ansible" style="color:#00bcd4;border-color:#00bcd4;">Generate IaC</button>
+      <!-- Workflow -->
+      {% set wf_canvas_id = "idc" %}
+      {% set wf_context_label = design.name %}
+      {% set wf_design_id = design.id %}
+      {% include 'includes/workflow_trigger_btn.html' %}
+      <!-- Navigation -->
+      <button class="secondary" onclick="location.href='/infra/'" title="Back to Dashboard">Back</button>
+    </div>
+    <div class="dc-canvas-area">
+      <div id="canvas-container" style="width:100%;height:100%;"></div>
+    </div>
+    <div class="dc-info">IDC v1.0 | {{ design.classification or 'CUI' }} | {{ design.id }}</div>
+  </div>
+  <!-- Right Panel (Assessment Results / Analysis) -->
+  <div class="dc-right-panel" id="dc-right-panel">
+    <div class="dc-right-panel-header">
+      <span id="dc-panel-title">Results</span>
+      <button onclick="closeRightPanel()">&#10005;</button>
+    </div>
+    <div class="dc-right-panel-body" id="dc-panel-body"></div>
+  </div>
+</div>
+
+<!-- Generate IaC Modal -->
+<div class="iac-modal" id="iac-modal" onclick="if(event.target===this)closeIaCPanel()">
+  <div class="iac-panel">
+    <div class="iac-panel-header">
+      <span>&#9881; Generate IaC — Infrastructure as Code</span>
+      <button onclick="closeIaCPanel()" title="Close">&#10005;</button>
+    </div>
+    <div class="iac-panel-body">
+      <!-- Terraform Section -->
+      <div class="iac-section">
+        <div class="iac-section-title">Terraform (HCL)</div>
+        <div class="iac-controls">
+          <label class="iac-hint">CSP:</label>
+          <select class="iac-select" id="tf-csp">
+            <option value="aws">AWS GovCloud</option>
+            <option value="gcp">GCP</option>
+            <option value="oci">OCI</option>
+          </select>
+          <button class="iac-btn" id="btn-gen-tf" onclick="generateIaC('terraform')">Generate Terraform</button>
+          <span class="iac-status" id="tf-status"></span>
+        </div>
+        <pre class="iac-pre" id="tf-output"></pre>
+        <div class="iac-pre-actions" id="tf-actions">
+          <button class="iac-btn secondary" onclick="copyIaC('tf-output', this)">&#128203; Copy HCL</button>
+          <button class="iac-btn dl" onclick="downloadIaC('tf-output', 'main.tf')">&#8595; Download main.tf</button>
+        </div>
+      </div>
+      <!-- Ansible Section -->
+      <div class="iac-section">
+        <div class="iac-section-title">Ansible (YAML)</div>
+        <div class="iac-controls">
+          <label class="iac-hint">CSP:</label>
+          <select class="iac-select" id="ans-csp">
+            <option value="aws">AWS</option>
+            <option value="azure">Azure</option>
+            <option value="gcp">GCP</option>
+            <option value="oci">OCI</option>
+            <option value="on-prem">On-Prem</option>
+          </select>
+          <button class="iac-btn" id="btn-gen-ans" onclick="generateIaC('ansible')">Generate Ansible</button>
+          <span class="iac-status" id="ans-status"></span>
+        </div>
+        <pre class="iac-pre" id="ans-output"></pre>
+        <div class="iac-pre-actions" id="ans-actions">
+          <button class="iac-btn secondary" onclick="copyIaC('ans-output', this)">&#128203; Copy YAML</button>
+          <button class="iac-btn dl" onclick="downloadIaC('ans-output', 'playbook.yml')">&#8595; Download playbook.yml</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/vendor/jquery.min.js"></script>
+<script src="/static/js/vendor/lodash.min.js"></script>
+<script src="/static/js/vendor/backbone.min.js"></script>
+<script src="/static/js/vendor/joint.js"></script>
+<script>
+window.CANVAS_CONFIG = {
+  containerId: 'canvas-container',
+  designId: '{{ design.id }}',
+  apiBase: '/infra/api',
+  graphJson: {{ design.graph_json | safe }},
+  accentColor: '#00bcd4',
+};
+// Parse graphJson if it's a string
+if (typeof window.CANVAS_CONFIG.graphJson === 'string') {
+  try { window.CANVAS_CONFIG.graphJson = JSON.parse(window.CANVAS_CONFIG.graphJson); } catch(e) {}
+}
+window.CANVAS_CONFIG.graphJson = JSON.stringify(window.CANVAS_CONFIG.graphJson);
+window.NODE_DESCS = {
+  {% for catname, catdata in objects.items() %}{% if catdata is mapping %}{% for csp, items in catdata.items() %}{% for obj in items %}'{{ obj.type }}': {{ obj.desc | tojson }},
+  {% endfor %}{% endfor %}{% else %}{% for obj in catdata %}'{{ obj.type }}': {{ obj.desc | tojson }},
+  {% endfor %}{% endif %}{% endfor %}
+};
+</script>
+<script src="/static/js/canvas-tooltips.js"></script>
+<script src="/static/js/design-canvas.js"></script>
+<script>
+function switchTab(tabEl, contentId) {
+  document.querySelectorAll('.dc-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.dc-tab-content').forEach(c => c.classList.remove('active'));
+  tabEl.classList.add('active');
+  document.getElementById(contentId).classList.add('active');
+}
+function toggleSidebar() {
+  const sb = document.getElementById('dc-sidebar');
+  const btn = document.getElementById('dc-sidebar-toggle');
+  const collapsed = sb.classList.toggle('collapsed');
+  btn.innerHTML = collapsed ? '&#9654;' : '&#9776;';
+  btn.title = collapsed ? 'Expand palette' : 'Collapse palette';
+}
+document.addEventListener('keydown', function(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); canvasSave(); }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); canvasUndo(); }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'y') { e.preventDefault(); canvasRedo(); }
+  if (e.key === 'Escape') { closeIaCPanel(); }
+});
+
+// ── IaC Generation Panel ─────────────────────────────────────────────────────
+function openIaCPanel() {
+  document.getElementById('iac-modal').classList.add('open');
+}
+function closeIaCPanel() {
+  document.getElementById('iac-modal').classList.remove('open');
+}
+function generateIaC(target) {
+  const isTf = target === 'terraform';
+  const csp   = document.getElementById(isTf ? 'tf-csp' : 'ans-csp').value;
+  const statusEl  = document.getElementById(isTf ? 'tf-status'  : 'ans-status');
+  const outputEl  = document.getElementById(isTf ? 'tf-output'  : 'ans-output');
+  const actionsEl = document.getElementById(isTf ? 'tf-actions' : 'ans-actions');
+  const btnEl     = document.getElementById(isTf ? 'btn-gen-tf' : 'btn-gen-ans');
+
+  statusEl.textContent = 'Generating…';
+  statusEl.className = 'iac-status';
+  outputEl.classList.remove('visible');
+  actionsEl.classList.remove('visible');
+  btnEl.disabled = true;
+
+  fetch('/infra/emit/run', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      project: window.CANVAS_CONFIG.designId,
+      target: target,
+      csp: csp
+    })
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    btnEl.disabled = false;
+    if (data.error) {
+      statusEl.textContent = data.error;
+      statusEl.className = 'iac-status err';
+      return;
+    }
+    var files = data.files || {};
+    var content = Object.values(files).join('\n\n');
+    if (!content) {
+      statusEl.textContent = 'No output generated';
+      statusEl.className = 'iac-status err';
+      return;
+    }
+    outputEl.textContent = content;
+    outputEl.classList.add('visible');
+    actionsEl.classList.add('visible');
+    var nodes = data.node_count != null ? ' (' + data.node_count + ' nodes)' : '';
+    statusEl.textContent = 'Done' + nodes;
+    statusEl.className = 'iac-status ok';
+  })
+  .catch(function(err) {
+    btnEl.disabled = false;
+    statusEl.textContent = 'Request failed: ' + err.message;
+    statusEl.className = 'iac-status err';
+  });
+}
+function copyIaC(outputId, btn) {
+  var text = document.getElementById(outputId).textContent;
+  navigator.clipboard.writeText(text).then(function() {
+    var orig = btn.textContent;
+    btn.textContent = '✓ Copied!';
+    setTimeout(function() { btn.textContent = orig; }, 1500);
+  }).catch(function() {
+    // fallback for older browsers
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    var orig = btn.textContent;
+    btn.textContent = '✓ Copied!';
+    setTimeout(function() { btn.textContent = orig; }, 1500);
+  });
+}
+function downloadIaC(outputId, filename) {
+  var text = document.getElementById(outputId).textContent;
+  var blob = new Blob([text], {type: 'text/plain'});
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+</script>
+{% endblock %}

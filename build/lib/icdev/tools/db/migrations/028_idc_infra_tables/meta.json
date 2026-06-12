@@ -1,0 +1,8 @@
+{
+  "id": "028",
+  "name": "idc_infra_tables",
+  "description": "Create idc_infra_resources and idc_infra_snapshots tables for the IQE infra adapter. Resolves orphan_db_table gap detected by the Internal Awareness Engine (op-gap-3d69c6063f29d6d5).",
+  "created_at": "2026-04-18",
+  "phase": "Phase 68",
+  "gap_task": "task-e8fac123b6"
+}

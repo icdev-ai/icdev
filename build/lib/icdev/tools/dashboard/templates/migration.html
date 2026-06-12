@@ -1,0 +1,423 @@
+{% extends "base.html" %}
+{% block title %}Migration Tracker - ICDEV™ Dashboard{% endblock %}
+{% block content %}
+<div class="container">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
+        <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span style="color:#333;">Migration</span>
+    </nav>
+
+    <h1>Application Migration Tracker</h1>
+    <p class="text-muted">7R strategy assessment with compliance impact scoring — evaluate Rehost, Replatform, Refactor, Rearchitect, Repurchase, Retire, and Retain strategies against ATO and security baselines.</p>
+
+    <!-- Stats Grid -->
+    <div id="stats-grid" class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin:1.5rem 0;">
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-total" class="stat-value" style="font-size:2rem;font-weight:bold;">—</div>
+            <div class="stat-label" style="color:#666;">Total Assessments</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-plans" class="stat-value" style="font-size:2rem;font-weight:bold;color:#1976d2;">—</div>
+            <div class="stat-label" style="color:#666;">Active Plans</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-tasks" class="stat-value" style="font-size:2rem;font-weight:bold;color:#4caf50;">—</div>
+            <div class="stat-label" style="color:#666;">Tasks Completed</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-pct" class="stat-value" style="font-size:2rem;font-weight:bold;color:#ff9800;">—</div>
+            <div class="stat-label" style="color:#666;">Completion %</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-ato" class="stat-value" style="font-size:2rem;font-weight:bold;color:#d32f2f;">—</div>
+            <div class="stat-label" style="color:#666;">ATO Impact (High+Critical)</div>
+        </div>
+    </div>
+
+    <!-- Strategy Distribution -->
+    <div style="margin:1.5rem 0;padding:1.25rem;border:1px solid #ddd;border-radius:8px;">
+        <h2 style="margin:0 0 1rem;font-size:1.15rem;">Strategy Distribution</h2>
+        <div id="strategy-chart" style="display:flex;flex-direction:column;gap:0.6rem;"></div>
+    </div>
+
+    <!-- ATO Impact Panel -->
+    <div style="margin:1.5rem 0;padding:1.25rem;border:1px solid #ddd;border-radius:8px;">
+        <h2 style="margin:0 0 1rem;font-size:1.15rem;">ATO Impact Overview</h2>
+        <div id="ato-panel" style="display:flex;gap:1rem;flex-wrap:wrap;"></div>
+    </div>
+
+    <!-- Assessments Table -->
+    <div style="margin:1.5rem 0;">
+        <h2 style="font-size:1.15rem;">Assessments</h2>
+        <div style="overflow-x:auto;">
+            <table id="assessments-table" style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+                <thead>
+                    <tr style="background:#f5f5f5;border-bottom:2px solid #ddd;">
+                        <th style="padding:0.6rem 0.75rem;text-align:left;cursor:pointer;" onclick="sortAssessments('app_id')">App ID &#x25B4;&#x25BE;</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:left;cursor:pointer;" onclick="sortAssessments('strategy')">Strategy &#x25B4;&#x25BE;</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:left;cursor:pointer;" onclick="sortAssessments('ato_impact')">ATO Impact &#x25B4;&#x25BE;</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:right;cursor:pointer;" onclick="sortAssessments('risk_score')">Risk Score &#x25B4;&#x25BE;</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:right;cursor:pointer;" onclick="sortAssessments('cost_estimate_hours')">Cost Est. (hrs) &#x25B4;&#x25BE;</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:right;cursor:pointer;" onclick="sortAssessments('timeline_weeks')">Timeline (wks) &#x25B4;&#x25BE;</th>
+                    </tr>
+                </thead>
+                <tbody id="assessments-body"></tbody>
+            </table>
+        </div>
+        <div id="assessments-empty" style="display:none;padding:2rem;text-align:center;color:#999;">No assessments found.</div>
+    </div>
+
+    <!-- Migration Plans Table -->
+    <div style="margin:1.5rem 0;">
+        <h2 style="font-size:1.15rem;">Migration Plans</h2>
+        <div style="overflow-x:auto;">
+            <table id="plans-table" style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+                <thead>
+                    <tr style="background:#f5f5f5;border-bottom:2px solid #ddd;">
+                        <th style="padding:0.6rem 0.75rem;text-align:left;">Plan Name</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:left;">Strategy</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:left;">Approach</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:left;">Status</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:left;">Progress</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:right;">Hours Est.</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:right;">Hours Actual</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:left;">Start</th>
+                        <th style="padding:0.6rem 0.75rem;text-align:left;">End</th>
+                    </tr>
+                </thead>
+                <tbody id="plans-body"></tbody>
+            </table>
+        </div>
+        <div id="plans-empty" style="display:none;padding:2rem;text-align:center;color:#999;">No migration plans found.</div>
+    </div>
+
+    <!-- Plan Detail (inline expand) -->
+    <div id="plan-detail" style="display:none;margin:1.5rem 0;padding:1.25rem;border:2px solid #1976d2;border-radius:8px;background:#f8fbff;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+            <h3 id="plan-detail-title" style="margin:0;font-size:1.1rem;color:#1565c0;"></h3>
+            <button onclick="closePlanDetail()" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:#999;">&times;</button>
+        </div>
+        <div id="plan-detail-content" style="font-size:0.9rem;"></div>
+    </div>
+
+    <!-- Run Assessment -->
+    <div style="margin:1.5rem 0;padding:1.25rem;border:2px solid #1976d2;border-radius:12px;background:linear-gradient(135deg,#e3f2fd 0%,#fafafa 100%);">
+        <h2 style="margin:0 0 0.75rem;font-size:1.1rem;color:#1565c0;">Run Migration Assessment</h2>
+        <div style="display:flex;gap:0.75rem;align-items:center;">
+            <input id="assess-project" type="text" placeholder="Enter project_id..." style="flex:1;padding:0.65rem 1rem;border:1px solid #bbdefb;border-radius:8px;font-size:0.95rem;" onkeydown="if(event.key==='Enter')runAssessment()" />
+            <button onclick="runAssessment()" style="padding:0.65rem 1.5rem;background:#1976d2;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:0.95rem;font-weight:600;white-space:nowrap;">Assess</button>
+        </div>
+        <div id="assess-status" style="margin-top:0.5rem;font-size:0.9rem;color:#666;"></div>
+    </div>
+</div>
+
+<script>
+/* -- Data state -- */
+let assessmentsData = [];
+let plansData = [];
+let sortCol = '';
+let sortAsc = true;
+
+/* -- Color maps -- */
+const STRATEGY_COLORS = {
+    'rehost': '#42a5f5',
+    'replatform': '#66bb6a',
+    'refactor': '#ab47bc',
+    'rearchitect': '#ef5350',
+    'repurchase': '#ff7043',
+    'retire': '#78909c',
+    'retain': '#8d6e63'
+};
+
+const ATO_COLORS = {
+    'critical': '#d32f2f',
+    'high': '#f57c00',
+    'medium': '#fbc02d',
+    'low': '#4caf50',
+    'none': '#9e9e9e'
+};
+
+const STATUS_COLORS = {
+    'draft': '#9e9e9e',
+    'approved': '#1976d2',
+    'in_progress': '#ff9800',
+    'completed': '#4caf50',
+    'paused': '#fbc02d',
+    'cancelled': '#d32f2f'
+};
+
+/* -- Load stats -- */
+async function loadStats() {
+    try {
+        const resp = await fetch('/api/migration/stats');
+        if (!resp.ok) throw new Error('Stats fetch failed');
+        const d = await resp.json();
+        const s = d.data || d;
+        document.getElementById('stat-total').textContent = s.total_assessments ?? 0;
+        document.getElementById('stat-plans').textContent = s.active_plans ?? 0;
+        document.getElementById('stat-tasks').textContent = s.tasks_completed ?? 0;
+        document.getElementById('stat-pct').textContent = (s.completion_pct != null ? s.completion_pct + '%' : '0%');
+        document.getElementById('stat-ato').textContent = s.ato_high_critical ?? 0;
+
+        // Strategy distribution
+        if (s.strategy_distribution) renderStrategyChart(s.strategy_distribution);
+        // ATO impact breakdown
+        if (s.ato_distribution) renderAtoPanel(s.ato_distribution);
+    } catch (e) {
+        console.warn('Stats load error:', e);
+    }
+}
+
+/* -- Strategy Distribution Chart (CSS bars) -- */
+function renderStrategyChart(dist) {
+    const container = document.getElementById('strategy-chart');
+    const strategies = ['rehost', 'replatform', 'refactor', 'rearchitect', 'repurchase', 'retire', 'retain'];
+    const maxVal = Math.max(1, ...strategies.map(s => dist[s] || 0));
+
+    container.innerHTML = strategies.map(s => {
+        const count = dist[s] || 0;
+        const pct = (count / maxVal * 100).toFixed(1);
+        const color = STRATEGY_COLORS[s] || '#999';
+        return `<div style="display:flex;align-items:center;gap:0.75rem;">
+            <span style="min-width:100px;font-size:0.85rem;font-weight:600;text-transform:capitalize;">${s}</span>
+            <div style="flex:1;background:#f0f0f0;border-radius:4px;height:24px;overflow:hidden;">
+                <div style="width:${pct}%;background:${color};height:100%;border-radius:4px;min-width:${count > 0 ? '2px' : '0'};transition:width 0.3s;"></div>
+            </div>
+            <span style="min-width:32px;text-align:right;font-size:0.85rem;font-weight:600;">${count}</span>
+        </div>`;
+    }).join('');
+}
+
+/* -- ATO Impact Panel -- */
+function renderAtoPanel(dist) {
+    const container = document.getElementById('ato-panel');
+    const levels = ['critical', 'high', 'medium', 'low', 'none'];
+
+    container.innerHTML = levels.map(level => {
+        const count = dist[level] || 0;
+        const color = ATO_COLORS[level];
+        return `<div style="flex:1;min-width:120px;padding:0.75rem;border-radius:8px;text-align:center;border:2px solid ${color};background:${color}18;">
+            <div style="font-size:1.5rem;font-weight:bold;color:${color};">${count}</div>
+            <div style="font-size:0.8rem;font-weight:600;text-transform:uppercase;color:${color};">${level}</div>
+        </div>`;
+    }).join('');
+}
+
+/* -- Load Assessments -- */
+async function loadAssessments() {
+    try {
+        const resp = await fetch('/api/migration/assessments');
+        if (!resp.ok) throw new Error('Assessments fetch failed');
+        const d = await resp.json();
+        assessmentsData = d.data || d.assessments || d || [];
+        if (!Array.isArray(assessmentsData)) assessmentsData = [];
+        renderAssessments();
+    } catch (e) {
+        console.warn('Assessments load error:', e);
+        document.getElementById('assessments-empty').style.display = 'block';
+    }
+}
+
+function renderAssessments() {
+    const tbody = document.getElementById('assessments-body');
+    const empty = document.getElementById('assessments-empty');
+
+    if (!assessmentsData.length) {
+        tbody.innerHTML = '';
+        empty.style.display = 'block';
+        return;
+    }
+    empty.style.display = 'none';
+
+    tbody.innerHTML = assessmentsData.map(a => {
+        const strategy = (a.strategy || '').toLowerCase();
+        const ato = (a.ato_impact || 'none').toLowerCase();
+        const sColor = STRATEGY_COLORS[strategy] || '#999';
+        const aColor = ATO_COLORS[ato] || '#999';
+
+        return `<tr style="border-bottom:1px solid #eee;">
+            <td style="padding:0.5rem 0.75rem;">${esc(a.app_id || a.project_id || '—')}</td>
+            <td style="padding:0.5rem 0.75rem;">
+                <span style="display:inline-block;padding:0.15rem 0.6rem;border-radius:12px;font-size:0.8rem;font-weight:600;color:#fff;background:${sColor};text-transform:capitalize;">${esc(strategy || '—')}</span>
+            </td>
+            <td style="padding:0.5rem 0.75rem;">
+                <span style="display:inline-block;padding:0.15rem 0.6rem;border-radius:12px;font-size:0.8rem;font-weight:600;color:#fff;background:${aColor};text-transform:uppercase;">${esc(ato)}</span>
+            </td>
+            <td style="padding:0.5rem 0.75rem;text-align:right;">${a.risk_score != null ? Number(a.risk_score).toFixed(1) : '—'}</td>
+            <td style="padding:0.5rem 0.75rem;text-align:right;">${a.cost_estimate_hours != null ? Number(a.cost_estimate_hours).toLocaleString() : '—'}</td>
+            <td style="padding:0.5rem 0.75rem;text-align:right;">${a.timeline_weeks != null ? a.timeline_weeks : '—'}</td>
+        </tr>`;
+    }).join('');
+}
+
+/* -- Sorting -- */
+function sortAssessments(col) {
+    if (sortCol === col) { sortAsc = !sortAsc; } else { sortCol = col; sortAsc = true; }
+    assessmentsData.sort((a, b) => {
+        let va = a[col], vb = b[col];
+        if (va == null) return 1;
+        if (vb == null) return -1;
+        if (typeof va === 'string') va = va.toLowerCase();
+        if (typeof vb === 'string') vb = vb.toLowerCase();
+        if (va < vb) return sortAsc ? -1 : 1;
+        if (va > vb) return sortAsc ? 1 : -1;
+        return 0;
+    });
+    renderAssessments();
+}
+
+/* -- Load Plans -- */
+async function loadPlans() {
+    try {
+        const resp = await fetch('/api/migration/plans');
+        if (!resp.ok) throw new Error('Plans fetch failed');
+        const d = await resp.json();
+        plansData = d.data || d.plans || d || [];
+        if (!Array.isArray(plansData)) plansData = [];
+        renderPlans();
+    } catch (e) {
+        console.warn('Plans load error:', e);
+        document.getElementById('plans-empty').style.display = 'block';
+    }
+}
+
+function renderPlans() {
+    const tbody = document.getElementById('plans-body');
+    const empty = document.getElementById('plans-empty');
+
+    if (!plansData.length) {
+        tbody.innerHTML = '';
+        empty.style.display = 'block';
+        return;
+    }
+    empty.style.display = 'none';
+
+    tbody.innerHTML = plansData.map((p, idx) => {
+        const status = (p.status || 'draft').toLowerCase();
+        const strategy = (p.strategy || '').toLowerCase();
+        const sColor = STATUS_COLORS[status] || '#999';
+        const strColor = STRATEGY_COLORS[strategy] || '#999';
+        const total = p.total_tasks || 0;
+        const done = p.completed_tasks || 0;
+        const pct = total > 0 ? ((done / total) * 100).toFixed(0) : 0;
+
+        return `<tr style="border-bottom:1px solid #eee;cursor:pointer;" onclick="openPlanDetail(${idx})" title="Click to view details">
+            <td style="padding:0.5rem 0.75rem;font-weight:600;">${esc(p.plan_name || p.name || '—')}</td>
+            <td style="padding:0.5rem 0.75rem;">
+                <span style="display:inline-block;padding:0.15rem 0.6rem;border-radius:12px;font-size:0.8rem;font-weight:600;color:#fff;background:${strColor};text-transform:capitalize;">${esc(strategy || '—')}</span>
+            </td>
+            <td style="padding:0.5rem 0.75rem;">${esc(p.approach || '—')}</td>
+            <td style="padding:0.5rem 0.75rem;">
+                <span style="display:inline-block;padding:0.15rem 0.6rem;border-radius:12px;font-size:0.8rem;font-weight:600;color:#fff;background:${sColor};">${esc(status.replace('_', ' '))}</span>
+            </td>
+            <td style="padding:0.5rem 0.75rem;min-width:140px;">
+                <div style="display:flex;align-items:center;gap:0.5rem;">
+                    <div style="flex:1;background:#e0e0e0;border-radius:4px;height:16px;overflow:hidden;">
+                        <div style="width:${pct}%;background:${pct >= 100 ? '#4caf50' : '#1976d2'};height:100%;border-radius:4px;transition:width 0.3s;"></div>
+                    </div>
+                    <span style="font-size:0.8rem;font-weight:600;min-width:45px;text-align:right;">${done}/${total}</span>
+                </div>
+            </td>
+            <td style="padding:0.5rem 0.75rem;text-align:right;">${p.estimated_hours != null ? Number(p.estimated_hours).toLocaleString() : '—'}</td>
+            <td style="padding:0.5rem 0.75rem;text-align:right;">${p.actual_hours != null ? Number(p.actual_hours).toLocaleString() : '—'}</td>
+            <td style="padding:0.5rem 0.75rem;">${esc(p.start_date || '—')}</td>
+            <td style="padding:0.5rem 0.75rem;">${esc(p.end_date || p.target_date || '—')}</td>
+        </tr>`;
+    }).join('');
+}
+
+/* -- Plan Detail -- */
+function openPlanDetail(idx) {
+    const p = plansData[idx];
+    if (!p) return;
+    const detail = document.getElementById('plan-detail');
+    document.getElementById('plan-detail-title').textContent = p.plan_name || p.name || 'Plan Detail';
+
+    const total = p.total_tasks || 0;
+    const done = p.completed_tasks || 0;
+    const pct = total > 0 ? ((done / total) * 100).toFixed(1) : 0;
+
+    let html = `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:0.75rem;">
+        <div><strong>Strategy:</strong> ${esc(p.strategy || '—')}</div>
+        <div><strong>Approach:</strong> ${esc(p.approach || '—')}</div>
+        <div><strong>Status:</strong> ${esc(p.status || '—')}</div>
+        <div><strong>Progress:</strong> ${done}/${total} tasks (${pct}%)</div>
+        <div><strong>Est. Hours:</strong> ${p.estimated_hours != null ? p.estimated_hours : '—'}</div>
+        <div><strong>Actual Hours:</strong> ${p.actual_hours != null ? p.actual_hours : '—'}</div>
+        <div><strong>Start:</strong> ${esc(p.start_date || '—')}</div>
+        <div><strong>End:</strong> ${esc(p.end_date || p.target_date || '—')}</div>
+        <div><strong>Project:</strong> ${esc(p.project_id || '—')}</div>
+    </div>`;
+
+    if (p.description) {
+        html += `<div style="margin-top:0.75rem;"><strong>Description:</strong> ${esc(p.description)}</div>`;
+    }
+    if (p.tasks && Array.isArray(p.tasks) && p.tasks.length) {
+        html += `<div style="margin-top:0.75rem;"><strong>Tasks:</strong></div>
+        <ul style="margin:0.25rem 0 0;padding-left:1.25rem;font-size:0.85rem;">`;
+        p.tasks.forEach(t => {
+            const icon = t.status === 'completed' ? '&#x2714;' : (t.status === 'in_progress' ? '&#x25B6;' : '&#x25CB;');
+            html += `<li>${icon} ${esc(t.name || t.title || '—')} <span style="color:#999;">(${esc(t.status || 'pending')})</span></li>`;
+        });
+        html += '</ul>';
+    }
+
+    document.getElementById('plan-detail-content').innerHTML = html;
+    detail.style.display = 'block';
+    detail.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function closePlanDetail() {
+    document.getElementById('plan-detail').style.display = 'none';
+}
+
+/* -- Run Assessment -- */
+async function runAssessment() {
+    const projectId = document.getElementById('assess-project').value.trim();
+    const statusEl = document.getElementById('assess-status');
+    if (!projectId) {
+        statusEl.textContent = 'Please enter a project ID.';
+        statusEl.style.color = '#d32f2f';
+        return;
+    }
+    statusEl.textContent = 'Running assessment...';
+    statusEl.style.color = '#1976d2';
+
+    try {
+        const resp = await fetch('/api/migration/assess', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ project_id: projectId })
+        });
+        const d = await resp.json();
+        if (resp.ok && d.status !== 'error') {
+            statusEl.textContent = 'Assessment complete. Refreshing data...';
+            statusEl.style.color = '#4caf50';
+            await Promise.all([loadStats(), loadAssessments(), loadPlans()]);
+        } else {
+            statusEl.textContent = 'Error: ' + (d.error || d.message || 'Assessment failed');
+            statusEl.style.color = '#d32f2f';
+        }
+    } catch (e) {
+        statusEl.textContent = 'Error: ' + e.message;
+        statusEl.style.color = '#d32f2f';
+    }
+}
+
+/* -- Utility -- */
+function esc(s) {
+    if (s == null) return '';
+    const el = document.createElement('span');
+    el.textContent = String(s);
+    return el.innerHTML;
+}
+
+/* -- Init -- */
+async function init() {
+    await Promise.all([loadStats(), loadAssessments(), loadPlans()]);
+}
+init();
+</script>
+{% endblock %}

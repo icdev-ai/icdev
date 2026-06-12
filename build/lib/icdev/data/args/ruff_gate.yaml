@@ -1,0 +1,24 @@
+# Ruff Gate Whitelist (OPT-49)
+#
+# Grandfathered F401 (unused import), F811 (redefinition), and F841
+# (unused local) hits. Entries here are DOWNGRADED from failing the
+# coherence_checker `ruff_lint` gate to a warning so the codebase can
+# be cleaned up incrementally without blocking unrelated commits.
+#
+# Consumed by: tools/workflow/coherence_checker.py :: _load_ruff_gate_whitelist
+# Gate source: tools/workflow/coherence_checker.py :: check_ruff_lint
+#
+# Rules:
+#   - Paths are repo-relative, forward-slash.
+#   - Values are lists of ruff rule codes (uppercase).
+#   - ONLY add entries here when the fix is genuinely deferred and
+#     tracked via a follow-up task — do not use as an escape hatch.
+#   - On every entry, include a comment: `# reason (ticket/task-id)`.
+#
+# Example:
+#
+# whitelist:
+#   tools/legacy/old_module.py:
+#     - F401  # import kept for back-compat re-export (task-xxxxxxxxxx)
+
+whitelist: {}

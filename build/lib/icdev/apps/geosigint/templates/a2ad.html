@@ -1,0 +1,158 @@
+{% extends "base.html" %}
+{% set active = "a2ad" %}
+{% block title %}A2/AD Zones — GeoSIGINT{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+{% endblock %}
+
+{% block content %}
+<div class="page-header page-header--compact">
+    <h1>A2/AD Zone Mapper</h1>
+    <div class="map-controls">
+        <label><input type="checkbox" class="sys-toggle" data-sys="DF-21D" checked> DF-21D (1,500 km)</label>
+        <label><input type="checkbox" class="sys-toggle" data-sys="DF-26" checked> DF-26 (4,000 km)</label>
+        <label><input type="checkbox" class="sys-toggle" data-sys="YJ-18" checked> YJ-18 (540 km)</label>
+        <label><input type="checkbox" class="sys-toggle" data-sys="S-400" checked> S-400 (400 km)</label>
+        <select id="map-style">
+            <option value="dark">Dark</option>
+            <option value="satellite">Satellite</option>
+            <option value="terrain">Terrain</option>
+        </select>
+    </div>
+</div>
+
+<div id="a2ad-map" style="height:530px;border-radius:6px;overflow:hidden;position:relative;z-index:0;isolation:isolate"></div>
+
+<div style="display:flex;gap:1rem;margin-top:1rem">
+    <div class="card" style="flex:1;min-width:220px">
+        <h3>Selected System</h3>
+        <div id="sys-detail" style="font-size:.85rem;color:#9ca3af">
+            Click a range ring or marker to see system details.
+        </div>
+    </div>
+    <div class="card" style="flex:2">
+        <h3>Deployment Sites</h3>
+        <div id="sites-table">Loading…</div>
+    </div>
+</div>
+
+<div class="map-legend" style="margin-top:.5rem">
+    <div class="map-legend__item"><span class="legend-dot" style="background:#E63946"></span> DF-21D ASBM — 1,500 km</div>
+    <div class="map-legend__item"><span class="legend-dot" style="background:#9B2226;border:2px dashed #9B2226"></span> DF-26 IRBM — 4,000 km</div>
+    <div class="map-legend__item"><span class="legend-dot" style="background:#F4A261"></span> YJ-18 ASCM — 540 km</div>
+    <div class="map-legend__item"><span class="legend-dot" style="background:#457B9D"></span> S-400 SAM — 400 km</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function() {
+    const map = L.map('a2ad-map', { center: [28, 115], zoom: 4 });
+    const tiles = {
+        dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '&copy; OpenStreetMap, &copy; CARTO', maxZoom: 18 }),
+        satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: '&copy; Esri', maxZoom: 18 }),
+        terrain: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap', maxZoom: 18 }),
+    };
+    tiles.dark.addTo(map);
+    document.getElementById('map-style').addEventListener('change', function() {
+        Object.values(tiles).forEach(t => map.removeLayer(t));
+        tiles[this.value].addTo(map);
+    });
+
+    // One layer group per system
+    const sysLayers = {};
+    let sysData = {};
+
+    function showDetail(sys) {
+        const s = sysData[sys];
+        if (!s) return;
+        document.getElementById('sys-detail').innerHTML =
+            `<p><b style="color:${s.color}">${s.name}</b></p>` +
+            `<p><b>Category:</b> ${s.category}</p>` +
+            `<p><b>Range:</b> ${s.range_km.toLocaleString()} km</p>` +
+            `<p style="margin-top:.5rem">${s.description}</p>` +
+            `<p style="margin-top:.5rem;color:#6b7280;font-size:.8rem"><i>${s.notes}</i></p>`;
+    }
+
+    fetch('/api/geosigint/a2ad/zones').then(r => r.json()).then(d => {
+        // Index systems metadata
+        d.systems.forEach(s => { sysData[s.id] = s; });
+
+        // Group zones by system
+        const bySystem = {};
+        d.zones.forEach(z => {
+            if (!bySystem[z.system]) bySystem[z.system] = [];
+            bySystem[z.system].push(z);
+        });
+
+        Object.entries(bySystem).forEach(([sysId, zones]) => {
+            const lg = L.layerGroup().addTo(map);
+            sysLayers[sysId] = lg;
+
+            zones.forEach(z => {
+                const rangeM = z.range_km * 1000;
+                const dashOpts = z.dash_array ? { dashArray: z.dash_array } : {};
+
+                // Range ring
+                const ring = L.circle([z.lat, z.lon], {
+                    radius: rangeM,
+                    color: z.color,
+                    weight: z.weight,
+                    fillColor: z.color,
+                    fillOpacity: z.fill_opacity,
+                    ...dashOpts,
+                }).addTo(lg);
+
+                const popupHtml =
+                    `<b style="color:${z.color}">${sysData[sysId]?.name || sysId}</b><br>` +
+                    `<b>Site:</b> ${z.name}<br>` +
+                    `<b>Range:</b> ${z.range_km.toLocaleString()} km<br>` +
+                    `<small style="color:#9ca3af">${sysData[sysId]?.category || ''}</small>`;
+
+                ring.bindPopup(popupHtml);
+                ring.on('click', () => showDetail(sysId));
+
+                // Launcher/site marker
+                L.circleMarker([z.lat, z.lon], {
+                    radius: 6,
+                    color: z.color,
+                    fillColor: z.color,
+                    fillOpacity: 0.9,
+                    weight: 2,
+                }).bindPopup(popupHtml)
+                  .on('click', () => showDetail(sysId))
+                  .addTo(lg);
+            });
+        });
+
+        // Build sites table
+        const rows = d.zones.map(z => {
+            const s = sysData[z.system] || {};
+            return `<tr>
+                <td style="color:${z.color}"><b>${z.system}</b></td>
+                <td>${z.name}</td>
+                <td>${z.lat.toFixed(2)}°N, ${z.lon.toFixed(2)}°E</td>
+                <td>${z.range_km.toLocaleString()} km</td>
+            </tr>`;
+        }).join('');
+        document.getElementById('sites-table').innerHTML =
+            `<table style="width:100%;border-collapse:collapse;font-size:.82rem">
+                <thead><tr><th>System</th><th>Site</th><th>Coordinates</th><th>Range</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+    });
+
+    // Toggle layers
+    document.querySelectorAll('.sys-toggle').forEach(cb => {
+        cb.addEventListener('change', function() {
+            const sysId = this.dataset.sys;
+            const lg = sysLayers[sysId];
+            if (!lg) return;
+            this.checked ? map.addLayer(lg) : map.removeLayer(lg);
+        });
+    });
+})();
+</script>
+{% endblock %}

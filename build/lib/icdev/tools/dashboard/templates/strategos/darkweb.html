@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+{% set active = "strategos" %}
+{% block title %}Dark Web Monitor — Strategos Intelligence{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── Strategos Dark Web Monitor ── */
+:root {
+  --dw-void:     #060810;
+  --dw-bg:       #0a0d1a;
+  --dw-surface:  #10152a;
+  --dw-card:     #141a30;
+  --dw-border:   #1e2640;
+  --dw-purple:   #a855f7;
+  --dw-violet:   #7c3aed;
+  --dw-red:      #ef4444;
+  --dw-orange:   #f97316;
+  --dw-amber:    #f59e0b;
+  --dw-green:    #22c55e;
+  --dw-cyan:     #22d3ee;
+  --dw-grey:     #6b7280;
+  --dw-text:     #e2d9f3;
+  --dw-text-dim: #7c6f9e;
+}
+.dw-page {
+  background: var(--dw-void);
+  min-height: calc(100vh - 48px);
+}
+/* ── Toolbar ── */
+#dw-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 16px;
+  background: var(--dw-bg);
+  border-bottom: 1px solid var(--dw-border);
+  font-size: 12px;
+  letter-spacing: .04em;
+  flex-wrap: wrap;
+}
+.sg-badge-cui   { background: #c8960c; color: #000; font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 2px; letter-spacing: .06em; }
+.dw-title       { font-size: 13px; font-weight: 700; color: var(--dw-purple); text-transform: uppercase; letter-spacing: .12em; }
+.sg-badge-mod   { background: var(--dw-surface); border: 1px solid var(--dw-border); color: var(--dw-purple); font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 2px; }
+.dw-badge-tor-on  { background: #14532d; border: 1px solid var(--dw-green); color: var(--dw-green);  font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 2px; }
+.dw-badge-tor-off { background: #450a0a; border: 1px solid var(--dw-red);   color: var(--dw-red);    font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 2px; }
+.dw-toolbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+/* ── Controls ── */
+#dw-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 16px;
+  background: var(--dw-bg);
+  border-bottom: 1px solid var(--dw-border);
+  font-size: 11px;
+  flex-wrap: wrap;
+}
+#dw-controls label { color: var(--dw-text-dim); }
+#dw-status-filter {
+  background: var(--dw-surface); border: 1px solid var(--dw-border);
+  color: var(--dw-text); font-size: 11px; padding: 3px 10px;
+  border-radius: 3px; cursor: pointer;
+}
+#dw-run-btn {
+  background: #4c1d95; border: 1px solid var(--dw-purple); color: #e9d5ff;
+  font-size: 11px; font-weight: 700; padding: 4px 14px; border-radius: 3px;
+  cursor: pointer; letter-spacing: .04em; transition: background .15s;
+}
+#dw-run-btn:hover:not(:disabled) { background: #5b21b6; }
+#dw-run-btn:disabled { opacity: .5; cursor: not-allowed; }
+#dw-run-status { font-size: 11px; color: var(--dw-text-dim); margin-left: 6px; }
+/* ── Signal table card ── */
+.dw-card {
+  background: var(--dw-card);
+  border: 1px solid var(--dw-border);
+  border-radius: 4px;
+  margin: 10px 12px;
+  overflow: hidden;
+}
+.dw-card-header {
+  padding: 6px 12px;
+  background: var(--dw-bg);
+  border-bottom: 1px solid var(--dw-border);
+  font-size: 11px; font-weight: 700;
+  color: var(--dw-purple); text-transform: uppercase; letter-spacing: .06em;
+  display: flex; align-items: center; gap: 8px;
+}
+.dw-card-header .sub { font-weight: 400; color: var(--dw-text-dim); font-size: 10px; text-transform: none; letter-spacing: 0; }
+/* ── Table ── */
+#dw-signal-table {
+  width: 100%; border-collapse: collapse; font-size: 11px;
+}
+#dw-signal-table thead th {
+  padding: 6px 10px; text-align: left;
+  background: var(--dw-surface); color: var(--dw-text-dim);
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em;
+  border-bottom: 1px solid var(--dw-border);
+  white-space: nowrap;
+}
+#dw-signal-table tbody tr {
+  border-bottom: 1px solid var(--dw-border);
+  transition: background .1s;
+}
+#dw-signal-table tbody tr:hover { background: var(--dw-surface); }
+#dw-signal-table tbody td {
+  padding: 7px 10px; color: var(--dw-text); vertical-align: middle;
+}
+/* Score column */
+.dw-score-cell { min-width: 120px; }
+.dw-score-wrap { display: flex; align-items: center; gap: 6px; }
+.dw-score-bar-bg {
+  flex: 1; height: 6px; background: var(--dw-border); border-radius: 3px; overflow: hidden;
+}
+.dw-score-bar { height: 100%; border-radius: 3px; }
+.dw-score-val { font-size: 10px; font-weight: 700; min-width: 32px; text-align: right; font-variant-numeric: tabular-nums; }
+/* Type badges */
+.dw-type-badge {
+  display: inline-block; font-size: 9px; font-weight: 700; padding: 1px 7px;
+  border-radius: 2px; text-transform: uppercase; letter-spacing: .04em;
+  border: 1px solid; font-family: monospace; white-space: nowrap;
+}
+/* Status badges */
+.dw-status-badge {
+  display: inline-block; font-size: 9px; font-weight: 700; padding: 1px 7px;
+  border-radius: 2px; text-transform: uppercase; letter-spacing: .04em;
+  border: 1px solid; white-space: nowrap;
+}
+.dw-status-new      { color: var(--dw-purple); border-color: var(--dw-purple); background: #2e1065; }
+.dw-status-bridged  { color: var(--dw-cyan);   border-color: var(--dw-cyan);   background: #083344; }
+.dw-status-reviewed { color: var(--dw-green);  border-color: var(--dw-green);  background: #052e16; }
+/* Empty state */
+.dw-empty {
+  text-align: center; padding: 40px; color: var(--dw-text-dim); font-size: 12px;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dw-page">
+
+  <!-- ── Toolbar ── -->
+  <div id="dw-toolbar">
+    <span class="sg-badge-cui">CUI // SP-CTI</span>
+    <span class="dw-title">&#9670; Dark Web Monitor</span>
+    <span class="sg-badge-mod">DW-INTEL</span>
+    {% if tor_available %}
+      <span class="dw-badge-tor-on">&#9679; TOR AVAILABLE</span>
+    {% else %}
+      <span class="dw-badge-tor-off">&#9675; TOR OFFLINE</span>
+    {% endif %}
+    <div class="dw-toolbar-right">
+      <a href="/strategos" style="color:var(--dw-text-dim);text-decoration:none;font-size:11px">&larr; Back</a>
+      <span id="dw-sig-count" style="color:var(--dw-grey);font-size:11px">{{ signals|length }} signal{{ 's' if signals|length != 1 else '' }}</span>
+    </div>
+  </div>
+
+  <!-- ── Controls ── -->
+  <div id="dw-controls">
+    <label for="dw-status-filter">Status:</label>
+    <select id="dw-status-filter" onchange="filterTable(this.value)">
+      <option value="all">All</option>
+      <option value="new">New</option>
+      <option value="bridged">Bridged</option>
+      <option value="reviewed">Reviewed</option>
+    </select>
+    <button id="dw-run-btn" onclick="runMonitor()">&#9654; Run Monitor</button>
+    <span id="dw-run-status"></span>
+  </div>
+
+  <!-- ── Signal Feed ── -->
+  <div class="dw-card">
+    <div class="dw-card-header">
+      &#9670; Dark Web Signal Feed
+      <span class="sub">Relevance score heatmap &middot; signal type &middot; source intelligence</span>
+    </div>
+    <div id="dw-table-wrap">
+      {% if signals %}
+      <table id="dw-signal-table">
+        <thead>
+          <tr>
+            <th>Score</th>
+            <th>Type</th>
+            <th>Title</th>
+            <th>Source</th>
+            <th>Age</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="dw-tbody">
+          {% for s in signals %}
+          {%- set sc = s.score %}
+          {%- if sc >= 0.8 %}
+            {%- set bar_color = '#ef4444' %}
+          {%- elif sc >= 0.6 %}
+            {%- set bar_color = '#f97316' %}
+          {%- elif sc >= 0.35 %}
+            {%- set bar_color = '#f59e0b' %}
+          {%- else %}
+            {%- set bar_color = '#22c55e' %}
+          {%- endif %}
+          {%- set bar_pct = (sc * 100)|round(0)|int %}
+          {%- set stype = s.signal_type %}
+          {%- if stype == 'leaked_creds' %}
+            {%- set type_css = 'color:#d946ef;border-color:#86198f;background:#2e1065' %}
+          {%- elif stype == 'ransomware' %}
+            {%- set type_css = 'color:#ef4444;border-color:#7f1d1d;background:#450a0a' %}
+          {%- elif stype == 'exploit_sale' %}
+            {%- set type_css = 'color:#fb923c;border-color:#9a3412;background:#431407' %}
+          {%- elif stype == 'threat_actor' %}
+            {%- set type_css = 'color:#38bdf8;border-color:#075985;background:#0c2340' %}
+          {%- elif stype == 'api_exposure' %}
+            {%- set type_css = 'color:#86efac;border-color:#166534;background:#052e16' %}
+          {%- elif stype == 'data_dump' %}
+            {%- set type_css = 'color:#fcd34d;border-color:#92400e;background:#2d1f00' %}
+          {%- elif stype == 'marketplace' %}
+            {%- set type_css = 'color:#a5b4fc;border-color:#3730a3;background:#1e1b4b' %}
+          {%- else %}
+            {%- set type_css = 'color:#9ca3af;border-color:#374151;background:#1f2937' %}
+          {%- endif %}
+          <tr data-status="{{ s.status }}">
+            <td class="dw-score-cell">
+              <div class="dw-score-wrap">
+                <div class="dw-score-bar-bg">
+                  <div class="dw-score-bar" style="width:{{ bar_pct }}%;background:{{ bar_color }}"></div>
+                </div>
+                <span class="dw-score-val" style="color:{{ bar_color }}">{{ '%.2f'|format(sc) }}</span>
+              </div>
+            </td>
+            <td>
+              <span class="dw-type-badge" style="{{ type_css }}">{{ s.signal_type | replace('_', ' ') }}</span>
+            </td>
+            <td style="max-width:340px;word-break:break-word">{{ s.title }}</td>
+            <td style="color:var(--dw-text-dim);font-size:10px;max-width:160px;word-break:break-all;font-family:monospace">{{ s.source }}</td>
+            <td style="color:var(--dw-text-dim);white-space:nowrap">{{ s.age_label }}</td>
+            <td>
+              <span class="dw-status-badge dw-status-{{ s.status }}">{{ s.status }}</span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="dw-empty" id="dw-empty-state">
+        &#9675; No dark web signals collected yet.<br>
+        <span style="font-size:10px;margin-top:6px;display:block">
+          Click <b>Run Monitor</b> to trigger a collection pass,
+          or confirm a dark web runner is scheduled.
+        </span>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+'use strict';
+
+window.filterTable = function(status) {
+  var rows = document.querySelectorAll('#dw-tbody tr');
+  var visible = 0;
+  rows.forEach(function(row) {
+    var show = status === 'all' || row.dataset.status === status;
+    row.style.display = show ? '' : 'none';
+    if (show) visible++;
+  });
+  var empty = document.getElementById('dw-empty-state');
+  if (empty) { empty.style.display = (visible === 0) ? 'block' : 'none'; }
+  var cnt = document.getElementById('dw-sig-count');
+  if (cnt) { cnt.textContent = visible + ' signal' + (visible !== 1 ? 's' : ''); }
+};
+
+window.runMonitor = function() {
+  var btn    = document.getElementById('dw-run-btn');
+  var status = document.getElementById('dw-run-status');
+  btn.disabled = true;
+  btn.textContent = '⏳ Running…';
+  status.textContent = '';
+  status.style.color = 'var(--dw-text-dim)';
+
+  fetch('/api/strategos/darkweb/run', { method: 'POST' })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      btn.disabled = false;
+      btn.innerHTML = '&#9654; Run Monitor';
+      var msg = d.message || d.status || 'Scan started';
+      status.textContent = '✓ ' + msg;
+      status.style.color = 'var(--dw-green)';
+      setTimeout(function() { status.textContent = ''; }, 8000);
+    })
+    .catch(function(err) {
+      btn.disabled = false;
+      btn.innerHTML = '&#9654; Run Monitor';
+      status.textContent = '✗ ' + (err.message || 'Request failed');
+      status.style.color = 'var(--dw-red)';
+    });
+};
+
+})();
+</script>
+{% endblock %}

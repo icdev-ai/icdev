@@ -1,0 +1,1478 @@
+{% extends "base.html" %}
+{% block title %}Dashboard Home - ICDEV™{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>ICDEV™ Dashboard</h1>
+    <p class="subtitle">Integrated Continuous Development Environment &mdash; Operations Overview
+        <span class="help-icon" data-glossary="ICDEV™" title="Intelligent Certified Development Environment — AI-powered platform for building secure government applications">?</span>
+    </p>
+</div>
+
+<!-- Quick Start Banner -->
+<div style="background: rgba(74, 144, 217, 0.08); border: 1px solid rgba(74, 144, 217, 0.25); border-radius: 10px; padding: 16px 24px; margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+    <div>
+        <strong style="color: var(--accent-blue-light);">New here?</strong>
+        <span class="text-secondary"> Answer 3 questions and get a personalized workflow recommendation.</span>
+    </div>
+    <a href="/wizard" class="btn btn-primary" style="background: var(--accent-blue); border-color: var(--accent-blue);">Get Started &rarr;</a>
+</div>
+
+<!-- Stat Bar (compact inline stats) -->
+<div class="stat-bar">
+    <div class="stat-bar-item">
+        <div class="stat-bar-value blue">{{ total_projects }}</div>
+        <div class="stat-bar-label">Total Projects</div>
+    </div>
+    <div class="stat-bar-item">
+        <div class="stat-bar-value green">{{ active_agents }}</div>
+        <div class="stat-bar-label">Active Agents
+            <span class="text-muted" style="text-transform:none;letter-spacing:0;">({{ inactive_agents }} idle)</span>
+        </div>
+    </div>
+    <a href="/poam?severity=CAT1" class="stat-bar-item" style="text-decoration:none; color:inherit; cursor:pointer;" title="View open CAT1 canvas findings &rarr;">
+        <div class="stat-bar-value {% if firing_alerts > 0 %}red{% else %}green{% endif %}">{{ firing_alerts }}</div>
+        <div class="stat-bar-label">CAT1 Findings</div>
+    </a>
+    <a href="/poam" class="stat-bar-item" style="text-decoration:none; color:inherit; cursor:pointer;" title="View POA&amp;M findings &rarr;">
+        <div class="stat-bar-value {% if open_poam > 0 %}yellow{% else %}green{% endif %}">{{ open_poam }}</div>
+        <div class="stat-bar-label">Open <span data-glossary="POA&amp;M">POA&amp;M</span></div>
+    </a>
+</div>
+
+<!-- Task Kanban Board -->
+<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+    <h2 style="margin:0;">Task Board
+        <span id="auto-refresh-countdown" style="font-size:12px; font-weight:normal; color:var(--text-dim); margin-left:8px;"></span>
+    </h2>
+    <div style="display:flex; gap:8px; align-items:center;">
+        <label for="notify-channel-select" style="font-size:12px; color:var(--text-dim); white-space:nowrap;">Notify via</label>
+        <select id="notify-channel-select"
+                style="font-size:12px; padding:4px 8px; background:var(--bg-code,#0d1b30); color:var(--text-primary); border:1px solid var(--border); border-radius:4px;"
+                onchange="setNotifyChannel(this.value)"
+                title="Notification channel for task events (done / failed / in-progress)">
+        </select>
+        <label style="font-size:12px; color:var(--text-dim); white-space:nowrap;">Executor:</label>
+        <select id="kanban-executor-chain" onchange="setExecutorChain(this.value)" title="Global executor fallback chain (affects scheduler dispatch)"
+                style="font-size:12px; padding:4px 8px; background:var(--bg-code,#0d1b30); color:var(--text-primary); border:1px solid var(--border); border-radius:4px; cursor:pointer;">
+            <option value="claude_cli,gitlab,ollama_local">&#129302; Claude CLI &#8594; GitLab &#8594; Ollama</option>
+            <option value="gitlab,ollama_local">&#129418; GitLab &#8594; Ollama (air-gap)</option>
+            <option value="github_actions,ollama_local">&#9881;&#65039; GitHub Actions &#8594; Ollama (air-gap)</option>
+            <option value="ollama_local">&#129433; Ollama Local only</option>
+        </select>
+        <button class="btn" id="refresh-btn" onclick="refreshDashboard()" title="Refresh now" style="padding:6px 12px; font-size:13px;">&#x21bb; Refresh</button>
+        <button class="btn btn-primary" onclick="openAddTaskModal()">+ Add Task</button>
+    </div>
+</div>
+<div class="kanban-board" id="kanban-board">
+    {% set columns = [
+        ("suggested", "Suggested"),
+        ("backlog", "Backlog"),
+        ("scheduled", "Scheduled"),
+        ("in_progress", "In Progress"),
+        ("done", "Done")
+    ] %}
+    {% for status_key, status_label in columns %}
+    <div class="kanban-column" data-status="{{ status_key }}">
+        <div class="kanban-column-header">
+            <h3>{{ status_label }}</h3>
+            <span class="kanban-column-count">0</span>
+            {% if status_key == "suggested" %}
+            <button class="btn btn-sm" id="btn-promote-all" onclick="promoteAllSuggested()" title="Promote all suggested cards to backlog" style="margin-left:auto; padding:4px 12px; font-size:12px; font-weight:600; background:#22c55e; color:#fff; border:none; border-radius:4px; cursor:pointer; display:none; letter-spacing:0.3px;">&#x2714; Promote All</button>
+            {% endif %}
+        </div>
+        <div class="kanban-column-body">
+            <div class="kanban-empty">Loading...</div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{# Autonomous Recovery — shows failure_triage activity, autofix branches,
+   and unresolved failures. Auto-hides when idle (no triage in 24h, no
+   branches, no unresolved failures in the last hour). #}
+{% include "_autonomy_status.html" %}
+
+{# Projects in Flight — reusable partial (config at args/projects.yaml).
+   Auto-hides each project when done; Task Board auto-hides when all active
+   columns are empty. Init hooks wired below in the DOMContentLoaded block. #}
+{% include "_projects_in_flight.html" %}
+
+<!-- Add/Edit Task Modal -->
+<div id="task-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000; display:none; align-items:center; justify-content:center;">
+    <div style="background:var(--bg-card, #1e293b); border-radius:12px; width:90%; max-width:500px; border:1px solid var(--border);">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border);">
+            <h3 id="task-modal-title" style="margin:0;">Add Task</h3>
+            <button class="btn btn-sm" onclick="closeTaskModal()">&times;</button>
+        </div>
+        <div style="padding:20px;">
+            <input type="hidden" id="task-edit-id">
+            <div style="margin-bottom:12px;">
+                <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Title *</label>
+                <input type="text" id="task-title" style="width:100%; padding:8px 12px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);" placeholder="e.g. Build notification system">
+            </div>
+            <div style="margin-bottom:12px;">
+                <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Description</label>
+                <textarea id="task-desc" rows="3" style="width:100%; padding:8px 12px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); resize:vertical;" placeholder="Optional details..."></textarea>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+                <div>
+                    <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Type</label>
+                    <select id="task-type" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+                        <option value="build">Build</option>
+                        <option value="run">Run</option>
+                        <option value="fix">Fix</option>
+                        <option value="research">Research</option>
+                        <option value="deploy">Deploy</option>
+                        <option value="test">Test</option>
+                        <option value="chore">Chore</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Priority</label>
+                    <select id="task-priority" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+                        <option value="low">Low</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="high">High</option>
+                        <option value="critical">Critical</option>
+                    </select>
+                </div>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+                <div>
+                    <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Status</label>
+                    <select id="task-status" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+                        <option value="backlog">Backlog</option>
+                        <option value="scheduled">Scheduled</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="done">Done</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Scheduled For</label>
+                    <input type="datetime-local" id="task-scheduled-at" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+                </div>
+            </div>
+        </div>
+        <div style="padding:16px 20px; border-top:1px solid var(--border); display:flex; gap:12px; justify-content:flex-end;">
+            <button class="btn" onclick="closeTaskModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="saveTask()">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- OPT-62: mid-run message injection modal -->
+<div id="kanban-message-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:1200; align-items:center; justify-content:center;">
+    <div style="background:var(--bg-elev); border:1px solid var(--border); border-radius:8px; width:min(480px, 92vw); max-height:90vh; overflow:auto;">
+        <div style="padding:16px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center;">
+            <h3 style="margin:0; font-size:16px;">&#128172; Send message to running task</h3>
+            <button class="kanban-move-btn" onclick="closeMessageModal()" title="Close">&#10005;</button>
+        </div>
+        <div style="padding:16px 20px;">
+            <div style="font-size:12px; color:var(--text-dim); margin-bottom:8px;" id="kanban-msg-target">Task: —</div>
+            <textarea id="kanban-msg-text" placeholder="e.g. also please run ruff and bandit before finishing" rows="5" style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); font-family:inherit; resize:vertical;"></textarea>
+            <div style="font-size:11px; color:var(--text-dim); margin-top:8px;">The message is queued and delivered at the next LLM call boundary (max 10 iterations per task).</div>
+            <div id="kanban-msg-status" style="font-size:12px; margin-top:8px; min-height:1em;"></div>
+        </div>
+        <div style="padding:16px 20px; border-top:1px solid var(--border); display:flex; gap:12px; justify-content:flex-end;">
+            <button class="btn" onclick="closeMessageModal()">Cancel</button>
+            <button class="btn btn-primary" id="kanban-msg-send" onclick="submitMessage()">Send</button>
+        </div>
+    </div>
+</div>
+
+<script>
+function _isoToLocal(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    var pad = function(n) { return n < 10 ? '0' + n : '' + n; };
+    return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate())
+        + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+
+function _localToIso(localVal) {
+    if (!localVal) return null;
+    return new Date(localVal).toISOString();
+}
+
+function _formatSchedule(iso) {
+    if (!iso) return '';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
+function openAddTaskModal() {
+    document.getElementById('task-modal-title').textContent = 'Add Task';
+    document.getElementById('task-edit-id').value = '';
+    document.getElementById('task-title').value = '';
+    document.getElementById('task-desc').value = '';
+    document.getElementById('task-type').value = 'build';
+    document.getElementById('task-priority').value = 'medium';
+    document.getElementById('task-status').value = 'backlog';
+    document.getElementById('task-scheduled-at').value = '';
+    document.getElementById('task-modal').style.display = 'flex';
+}
+
+function openEditTaskModal(task) {
+    document.getElementById('task-modal-title').textContent = 'Edit Task';
+    document.getElementById('task-edit-id').value = task.id;
+    document.getElementById('task-title').value = task.title;
+    document.getElementById('task-desc').value = task.description || '';
+    document.getElementById('task-type').value = task.task_type;
+    document.getElementById('task-priority').value = task.priority;
+    document.getElementById('task-status').value = task.status;
+    document.getElementById('task-scheduled-at').value = _isoToLocal(task.scheduled_at);
+    document.getElementById('task-modal').style.display = 'flex';
+}
+
+function closeTaskModal() {
+    document.getElementById('task-modal').style.display = 'none';
+}
+
+function saveTask() {
+    var editId = document.getElementById('task-edit-id').value;
+    var payload = {
+        title: document.getElementById('task-title').value,
+        description: document.getElementById('task-desc').value,
+        task_type: document.getElementById('task-type').value,
+        priority: document.getElementById('task-priority').value,
+        status: document.getElementById('task-status').value,
+        scheduled_at: _localToIso(document.getElementById('task-scheduled-at').value)
+    };
+    if (!payload.title.trim()) { alert('Title is required'); return; }
+
+    var url = editId ? '/api/kanban/tasks/' + editId : '/api/kanban/tasks';
+    var method = editId ? 'PATCH' : 'POST';
+
+    fetch(url, { method: method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload) })
+        .then(function(r) { return r.json(); })
+        .then(function() { closeTaskModal(); refreshKanbanTasks(); })
+        .catch(function(e) { alert('Error: ' + e); });
+}
+
+function moveTask(taskId, newStatus) {
+    fetch('/api/kanban/tasks/' + taskId + '/move', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ status: newStatus })
+    })
+    .then(function(r) { return r.json(); })
+    .then(function() { refreshKanbanTasks(); })
+    .catch(function(e) { alert('Error: ' + e); });
+}
+
+function deleteTask(taskId) {
+    if (!confirm('Delete this task?')) return;
+    fetch('/api/kanban/tasks/' + taskId, { method: 'DELETE' })
+        .then(function(r) { return r.json(); })
+        .then(function() { refreshKanbanTasks(); })
+        .catch(function(e) { alert('Error: ' + e); });
+}
+
+var _allTasks = [];
+
+// Suggested lane state — sort mode + bulk selection. Persisted in
+// localStorage so a refresh or a dashboard reload does not reset the
+// operator's preferred sort. Selection is deliberately NOT persisted;
+// a fresh page load starts with zero cards selected.
+var _suggestedSort = (function() {
+    try { return localStorage.getItem('icdev.kanban.suggestedSort') || 'value'; }
+    catch (e) { return 'value'; }
+})();
+var _selectedTaskIds = new Set();
+
+function refreshKanbanTasks() {
+    var url = '/api/kanban/tasks?sort=' + encodeURIComponent(_suggestedSort);
+    fetch(url)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            _allTasks = data.tasks || [];
+            renderTaskKanban(_allTasks);
+            if (window.checkBoardEmptyAndToggle) window.checkBoardEmptyAndToggle();
+        });
+}
+
+function promoteAllSuggested() {
+    if (!confirm('Promote ALL suggested cards to backlog?')) return;
+    var btn = document.getElementById('btn-promote-all');
+    if (btn) { btn.disabled = true; btn.textContent = 'Promoting...'; }
+    fetch('/api/kanban/tasks/promote-all', { method: 'POST' })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (btn) { btn.disabled = false; btn.textContent = '\u2714 Promote All'; }
+            if (data.error) { alert('Error: ' + data.error); return; }
+            refreshKanbanTasks();
+        })
+        .catch(function() {
+            if (btn) { btn.disabled = false; btn.textContent = '\u2714 Promote All'; }
+            alert('Promote all failed');
+        });
+}
+
+// Sort dropdown handler — persists to localStorage + refetches so
+// the server-side sort applies (value and confidence are computed
+// post-fetch in Python, but the API still returns tasks pre-sorted so
+// the client order matches the API order exactly).
+function onSuggestedSortChange(val) {
+    if (!val) return;
+    _suggestedSort = val;
+    try { localStorage.setItem('icdev.kanban.suggestedSort', val); } catch (e) {}
+    refreshKanbanTasks();
+}
+
+// Bulk select preset — clears current selection and reselects rows
+// matching the named threshold. Safe on tasks missing oracle_value
+// or oracle_confidence (both default to 0).
+function applySuggestedSelectPreset(preset) {
+    _selectedTaskIds.clear();
+    if (preset === 'none' || !preset) {
+        renderTaskKanban(_allTasks);
+        return;
+    }
+    var suggestedItems = _allTasks.filter(function(t) { return t.status === 'suggested'; });
+
+    // Rule-based preset — format: "rule::<oracle_lens>". Added 2026-04-11
+    // to let operators bulk-select every card from a noisy rule (e.g.
+    // route_not_listed's 360 false positives) in one click and dismiss
+    // them without touching the real-work rules.
+    if (preset.indexOf('rule::') === 0) {
+        var targetRule = preset.slice(6);
+        suggestedItems.forEach(function(t) {
+            if ((t.oracle_lens || '') === targetRule) {
+                _selectedTaskIds.add(t.id);
+            }
+        });
+        renderTaskKanban(_allTasks);
+        return;
+    }
+
+    suggestedItems.forEach(function(t) {
+        var conf = t.oracle_confidence || 0;
+        var val = t.oracle_value || 0;
+        var prio = (t.priority || '').toLowerCase();
+        var match = false;
+        switch (preset) {
+            case 'all':       match = true; break;
+            case 'conf95':    match = conf >= 0.95; break;
+            case 'conf90':    match = conf >= 0.90; break;
+            case 'value10':   match = val >= 1.0; break;
+            case 'value08':   match = val >= 0.8; break;
+            case 'value_lo':  match = val < 0.6; break;   // noise → dismiss
+            case 'pri_crit':  match = prio === 'critical'; break;
+            case 'pri_high':  match = prio === 'high'; break;
+            case 'pri_med':   match = prio === 'medium'; break;
+            case 'pri_low':   match = prio === 'low'; break;
+        }
+        if (match) _selectedTaskIds.add(t.id);
+    });
+    renderTaskKanban(_allTasks);
+}
+
+function toggleTaskSelected(taskId, ev) {
+    if (ev) ev.stopPropagation();
+    if (_selectedTaskIds.has(taskId)) _selectedTaskIds.delete(taskId);
+    else _selectedTaskIds.add(taskId);
+    // Lightweight: update only the counter badges without full re-render.
+    var countEls = document.querySelectorAll('[data-bulk-count]');
+    for (var i = 0; i < countEls.length; i++) {
+        countEls[i].textContent = _selectedTaskIds.size;
+    }
+}
+
+function bulkMoveSuggested(newStatus, actionLabel) {
+    var ids = Array.from(_selectedTaskIds);
+    if (!ids.length) {
+        alert('No tasks selected. Use the "Select" dropdown to pick a threshold.');
+        return;
+    }
+    if (!confirm(actionLabel + ' ' + ids.length + ' suggested task(s)?')) return;
+    fetch('/api/kanban/tasks/bulk-move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_ids: ids, status: newStatus })
+    })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            _selectedTaskIds.clear();
+            refreshKanbanTasks();
+            if (data && data.failed && data.failed.length) {
+                console.warn('bulk-move partial failures:', data.failed);
+            }
+        })
+        .catch(function(e) { alert('Bulk move failed: ' + e); });
+}
+
+function bulkPromoteSuggested() { bulkMoveSuggested('backlog', 'Promote to backlog'); }
+function bulkDismissSuggested() { bulkMoveSuggested('done',    'Dismiss'); }
+
+// kv-viz-02: live counters for in_progress cards
+var _kvIntervals = {};
+function _clearKvIntervals() {
+    Object.keys(_kvIntervals).forEach(function(id) { clearInterval(_kvIntervals[id]); });
+    _kvIntervals = {};
+}
+function _setupKvCounters(boardEl) {
+    boardEl.querySelectorAll('[data-kv-started]').forEach(function(sentinel) {
+        var taskId = sentinel.getAttribute('data-kv-task-id');
+        var startedAt = sentinel.getAttribute('data-kv-started');
+        var barEl = document.getElementById('kv-bar-' + taskId);
+        var textEl = document.getElementById('kv-tif-' + taskId);
+        if (!textEl || !startedAt) return;
+        var startMs = new Date(startedAt).getTime();
+        function tick() {
+            var elapsed = (Date.now() - startMs) / 1000;
+            var mins = Math.floor(elapsed / 60);
+            var secs = Math.floor(elapsed % 60);
+            textEl.textContent = 'Running ' + mins + 'm ' + secs + 's';
+            if (barEl) {
+                var pct = Math.min(100, (elapsed / 900) * 100);
+                barEl.style.width = pct + '%';
+                barEl.style.background = pct >= 85 ? '#ef4444' : pct >= 60 ? '#f59e0b' : '#22c55e';
+            }
+        }
+        tick();
+        _kvIntervals[taskId] = setInterval(tick, 1000);
+    });
+}
+
+function renderTaskKanban(tasks) {
+    var board = document.getElementById('kanban-board');
+    if (!board) return;
+    _clearKvIntervals();
+
+    var columns = { suggested: [], backlog: [], scheduled: [], in_progress: [], done: [] };
+    tasks.forEach(function(t) {
+        var s = t.status || 'backlog';
+        if (s === 'decomposed' || s === 'needs_decomposition') s = 'done';
+        if (columns[s]) columns[s].push(t);
+        else columns.backlog.push(t);
+    });
+
+    var priorityColors = { critical: '#ef4444', high: '#f97316', medium: '#3b82f6', low: '#6b7280' };
+    var typeIcons = { build: '\u{1F528}', run: '\u25B6', fix: '\u{1F41B}', research: '\u{1F50D}', deploy: '\u{1F680}', test: '\u2705', chore: '\u{1F9F9}' };
+    var nextStatus = { backlog: 'scheduled', scheduled: 'in_progress', in_progress: 'done' };
+    var prevStatus = { scheduled: 'backlog', in_progress: 'scheduled', done: 'in_progress' };
+
+    // Confidence label derived from priority (Oracle maps confidence → priority on insert)
+    var confidenceLabel = { critical: '≥90%', high: '75–89%', medium: '55–74%', low: '<55%' };
+    var executorLabels = {
+        claude_cli:     { icon: '🤖', label: 'Claude',     color: '#7c3aed' },
+        ollama_local:   { icon: '💻', label: 'Local',      color: '#0891b2' },
+        gitlab:         { icon: '🦊', label: 'GitLab',     color: '#e24304' },
+        github_actions: { icon: '⚙️', label: 'GH Actions', color: '#2ea043' }
+    };
+    var llmModeIcons  = { claude: '🧠', ollama: '💻', none: '⚙️' };
+    var llmModeTitles = { claude: 'LLM: Claude', ollama: 'LLM: Ollama (local)', none: 'No LLM' };
+
+    board.querySelectorAll('.kanban-column').forEach(function(colEl) {
+        var status = colEl.getAttribute('data-status');
+        if (!columns[status]) return;
+        var items = columns[status];
+
+        var countEl = colEl.querySelector('.kanban-column-count');
+        if (countEl) countEl.textContent = items.length;
+
+        // Show/hide the Promote All button based on suggested card count
+        if (status === 'suggested') {
+            var promBtn = document.getElementById('btn-promote-all');
+            if (promBtn) promBtn.style.display = items.length > 0 ? 'inline-block' : 'none';
+        }
+
+        var bodyEl = colEl.querySelector('.kanban-column-body');
+        if (!bodyEl) return;
+
+        if (items.length === 0) {
+            bodyEl.innerHTML = '<div class="kanban-empty">No tasks</div>';
+            return;
+        }
+
+        var esc = window.ICDEV && ICDEV.escapeHTML ? ICDEV.escapeHTML : function(s) { return String(s || ''); };
+
+        // Suggested-lane toolbar: sort dropdown + bulk select preset +
+        // bulk promote/dismiss buttons. Rendered BEFORE the card list so
+        // it stays at the top of the column. Not rendered for any other
+        // status — the toolbar only makes sense for Oracle-backed
+        // suggestions that want triage.
+        var toolbarHtml = '';
+        if (status === 'suggested') {
+            var selectedCount = _selectedTaskIds.size;
+            // Build the dynamic "Rule: <name> (<count>)" preset options
+            // from whatever rules are currently present in the Suggested
+            // lane. Sorted by count DESC so the noisiest rules surface
+            // first — operators usually want to dismiss those in bulk.
+            var ruleCounts = {};
+            items.forEach(function(t) {
+                var r = t.oracle_lens || '(none)';
+                ruleCounts[r] = (ruleCounts[r] || 0) + 1;
+            });
+            var ruleList = Object.keys(ruleCounts).map(function(r) {
+                return { rule: r, count: ruleCounts[r] };
+            }).sort(function(a, b) { return b.count - a.count; });
+            var ruleOptionsHtml = ruleList.map(function(r) {
+                return '<option value="rule::' + esc(r.rule) + '">Rule: ' + esc(r.rule) + ' (' + r.count + ')</option>';
+            }).join('');
+            toolbarHtml =
+                '<div id="suggested-bulk-bar" style="padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; margin-bottom:8px;">'
+                + '<div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">'
+                + '<label style="font-size:11px; color:var(--text-dim); min-width:42px;">Sort:</label>'
+                + '<select onchange="onSuggestedSortChange(this.value)" style="flex:1; font-size:11px; padding:3px 6px; background:var(--bg-card); border:1px solid var(--border); border-radius:4px; color:var(--text-primary);">'
+                + '<option value="value"' + (_suggestedSort==='value'?' selected':'') + '>Value (default)</option>'
+                + '<option value="confidence"' + (_suggestedSort==='confidence'?' selected':'') + '>Confidence</option>'
+                + '<option value="priority"' + (_suggestedSort==='priority'?' selected':'') + '>Priority (critical→low)</option>'
+                + '<option value="created_at"' + (_suggestedSort==='created_at'?' selected':'') + '>Newest first</option>'
+                + '</select>'
+                + '</div>'
+                + '<div style="display:flex; gap:6px; align-items:center; margin-bottom:6px; flex-wrap:wrap;">'
+                + '<label style="font-size:11px; color:var(--text-dim); min-width:42px;">Select:</label>'
+                + '<select onchange="applySuggestedSelectPreset(this.value); this.value=\'\'" style="flex:1; font-size:11px; padding:3px 6px; background:var(--bg-card); border:1px solid var(--border); border-radius:4px; color:var(--text-primary);">'
+                + '<option value="">Choose threshold…</option>'
+                + '<option value="all">All</option>'
+                + '<optgroup label="By confidence">'
+                + '<option value="conf95">Confidence ≥ 95%</option>'
+                + '<option value="conf90">Confidence ≥ 90%</option>'
+                + '</optgroup>'
+                + '<optgroup label="By value">'
+                + '<option value="value10">Value ≥ 1.0  (real work)</option>'
+                + '<option value="value08">Value ≥ 0.8</option>'
+                + '<option value="value_lo">Value < 0.6  (noise → dismiss)</option>'
+                + '</optgroup>'
+                + '<optgroup label="By priority">'
+                + '<option value="pri_crit">Priority: CRITICAL</option>'
+                + '<option value="pri_high">Priority: HIGH</option>'
+                + '<option value="pri_med">Priority: MEDIUM</option>'
+                + '<option value="pri_low">Priority: LOW</option>'
+                + '</optgroup>'
+                + (ruleOptionsHtml ? '<optgroup label="By rule (live counts)">' + ruleOptionsHtml + '</optgroup>' : '')
+                + '<option value="none">None</option>'
+                + '</select>'
+                + '</div>'
+                + '<div style="display:flex; gap:6px;">'
+                + '<button class="btn btn-sm btn-primary" style="flex:1; font-size:11px; padding:4px 6px;" onclick="bulkPromoteSuggested()" title="Promote selected to backlog">\u2191 Promote <span data-bulk-count>' + selectedCount + '</span></button>'
+                + '<button class="btn btn-sm" style="flex:1; font-size:11px; padding:4px 6px; color:#ef4444;" onclick="bulkDismissSuggested()" title="Dismiss selected (marks oracle_prediction dismissed)">\u2715 Dismiss <span data-bulk-count>' + selectedCount + '</span></button>'
+                + '</div>'
+                + '</div>';
+        }
+
+        bodyEl.innerHTML = toolbarHtml + items.map(function(t) {
+            var icon = typeIcons[t.task_type] || '';
+            var pColor = priorityColors[t.priority] || '#6b7280';
+
+            if (status === 'suggested') {
+                // Prefer exact confidence from oracle_predictions JOIN, fall back to priority-range
+                var confLabel;
+                if (t.oracle_confidence != null) {
+                    confLabel = Math.round(t.oracle_confidence * 100) + '%';
+                } else {
+                    confLabel = confidenceLabel[t.priority] || '';
+                }
+                // Prefer proposed_action from oracle JOIN; fall back to description parse
+                var proposedAction = t.oracle_proposed_action || '';
+                if (!proposedAction && t.description) {
+                    var match = t.description.match(/\*\*Proposed action:\*\*\s*(.+?)(\n|$)/);
+                    if (match) proposedAction = match[1].trim();
+                }
+                var lensLabel = t.oracle_lens ? ' \u00B7 ' + esc(t.oracle_lens) : '';
+                // Value score + duplicate count surfaced on every card
+                // so operators can see the bulk-select rationale at a
+                // glance. Value comes from tools/awareness/value_scorer.py.
+                var valueLabel = (t.oracle_value != null && !isNaN(t.oracle_value))
+                    ? ' \u00B7 value ' + Number(t.oracle_value).toFixed(2)
+                    : '';
+                var dupLabel = (t.oracle_dup_count && t.oracle_dup_count > 1)
+                    ? ' \u00B7 \u00D7' + t.oracle_dup_count
+                    : '';
+                var checked = _selectedTaskIds.has(t.id) ? ' checked' : '';
+
+                return '<div class="kanban-card" style="border-left:3px solid #8b5cf6; cursor:pointer;" onclick="openEditTaskModal(' + JSON.stringify(t).replace(/"/g, '&quot;') + ')">'
+                    + '<div style="display:flex; gap:6px; align-items:flex-start;">'
+                    + '<input type="checkbox" class="suggested-checkbox"' + checked + ' onclick="toggleTaskSelected(\'' + t.id + '\', event)" style="margin-top:3px; cursor:pointer;">'
+                    + '<div style="flex:1; min-width:0;">'
+                    + '<div style="display:flex; align-items:center; gap:6px; margin-bottom:4px; flex-wrap:wrap;">'
+                    + '<span style="font-size:11px; background:#8b5cf620; color:#8b5cf6; border-radius:4px; padding:1px 6px; font-weight:600;">\uD83D\uDD2E Oracle</span>'
+                    + (confLabel ? '<span style="font-size:11px; color:var(--text-dim);">conf ' + confLabel + valueLabel + dupLabel + lensLabel + '</span>' : '')
+                    + '</div>'
+                    + '<div class="kanban-card-title" title="' + esc(t.title) + '">' + icon + ' ' + esc(t.title) + '</div>'
+                    + (proposedAction ? '<div style="font-size:11px; color:var(--text-dim); margin-top:4px; font-style:italic;">' + esc(proposedAction) + '</div>' : '')
+                    + '<div class="kanban-card-meta" style="margin-top:6px;">'
+                    + '<span class="badge badge-info">' + esc(t.task_type) + '</span>'
+                    + '<span class="badge" style="background:' + pColor + '20; color:' + pColor + ';">' + esc(t.priority) + '</span>'
+                    + '</div>'
+                    + '<div style="display:flex; gap:6px; margin-top:8px;">'
+                    + '<button class="btn btn-sm btn-primary" style="flex:1; font-size:11px; padding:4px 8px;" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'backlog\')" title="Promote to Backlog">\u2191 Promote</button>'
+                    + '<button class="btn btn-sm" style="flex:1; font-size:11px; padding:4px 8px; color:#6b7280;" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'done\')" title="Dismiss">\u2715 Dismiss</button>'
+                    + '</div>'
+                    + '</div>'
+                    + '</div>'
+                    + '</div>';
+            }
+
+            var arrows = '';
+            if (prevStatus[status]) arrows += '<button class="kanban-move-btn" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'' + prevStatus[status] + '\')" title="Move left">◀</button>';
+            if (nextStatus[status]) arrows += '<button class="kanban-move-btn" onclick="event.stopPropagation(); moveTask(\'' + t.id + '\',\'' + nextStatus[status] + '\')" title="Move right">▶</button>';
+
+            var schedLine = t.scheduled_at ? '<div style="font-size:11px; color:var(--text-dim); margin-top:4px;">' + '\u{1F4C5}' + ' ' + _formatSchedule(t.scheduled_at) + '</div>' : '';
+
+            // Native task dependency badge
+            var blockedBadge = '';
+            var blockedStyle = '';
+            if (t.is_blocked) {
+                var depTitle = t.depends_on_title || t.depends_on_task_id || 'unknown';
+                var depStatus = t.depends_on_status || 'unknown';
+                var tooltip = 'Blocked by ' + depTitle + ' (status: ' + depStatus + ', id: ' + (t.depends_on_task_id || '?') + ')';
+                blockedBadge = '<div style="margin-top:4px;"><span class="badge" title="' + esc(tooltip) + '" style="background:#f59e0b20; color:#f59e0b; font-size:10px;">🔒 blocked by ' + esc(depTitle.length > 28 ? depTitle.slice(0, 28) + '…' : depTitle) + '</span></div>';
+                blockedStyle = ' opacity:0.55;';
+            }
+
+            // Executor badge
+            var execInfo = executorLabels[t.executor_type] || executorLabels['claude_cli'];
+            var execBadge = '<span class="badge" style="background:' + execInfo.color + '20;color:' + execInfo.color + ';font-size:10px;" title="Executor: ' + execInfo.label + '">'
+                + execInfo.icon + ' ' + execInfo.label + '</span>';
+
+            // Execution ID line
+            var execIdLine = '';
+            if (t.execution_id) {
+                var execUrl = t.executor_url || null;
+                if (execUrl) {
+                    execIdLine = '<div style="font-size:10px; color:var(--text-dim); margin-top:3px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">'
+                        + '🔗 <a href="' + esc(execUrl) + '" target="_blank" rel="noopener" onclick="event.stopPropagation();" style="color:var(--text-dim);text-decoration:underline;">' + esc(t.execution_id) + '</a></div>';
+                } else {
+                    execIdLine = '<div style="font-size:10px; color:var(--text-dim); margin-top:3px;">🆔 ' + esc(t.execution_id) + '</div>';
+                }
+            }
+
+            // LLM mode badge inferred from executor_type
+            var llmMode = (t.executor_type === 'claude_cli') ? 'claude' : (t.executor_type === 'ollama_local' ? 'ollama' : 'none');
+            var llmBadge = '<span title="' + (llmModeTitles[llmMode] || '') + '" style="font-size:11px; cursor:default;">' + (llmModeIcons[llmMode] || '') + '</span>';
+
+            // OPT-62: mid-run message injection button (in_progress only)
+            var msgBtn = '';
+            if (status === 'in_progress') {
+                msgBtn = '<button class="kanban-move-btn" onclick="event.stopPropagation(); openMessageModal(\'' + t.id + '\',' + JSON.stringify(t.title || '').replace(/"/g, '&quot;') + ')" title="Send message to running task">💬</button>';
+            }
+
+            // kv-viz-02: attempt badge + reaper bar + TIF counter + last-killed line
+            var attemptBadge = '';
+            var reaperBar = '';
+            var tifLine = '';
+            var lastKilledLine = '';
+            if (status === 'in_progress') {
+                var ac = t.attempt_count || 0;
+                if (ac > 1) {
+                    var abColor = ac >= 4 ? '#ef4444' : '#f59e0b';
+                    attemptBadge = '<span class="badge" style="background:' + abColor + '20;color:' + abColor + ';font-size:10px;" title="Dispatched ' + ac + ' times">Attempt ' + ac + '</span>';
+                }
+                if (t.current_attempt_started_at) {
+                    reaperBar = '<div style="margin:4px 0 2px 0;background:var(--bg-code);border-radius:2px;height:3px;overflow:hidden;" title="Reaper kills at 15m with no subprocess heartbeat">'
+                        + '<div id="kv-bar-' + esc(t.id) + '" style="height:100%;width:0%;background:#22c55e;"></div></div>';
+                    tifLine = '<div id="kv-tif-' + esc(t.id) + '" style="font-size:11px;color:var(--text-dim);margin-top:2px;">Running 0m 0s</div>'
+                        + '<span data-kv-started="' + esc(t.current_attempt_started_at) + '" data-kv-task-id="' + esc(t.id) + '" style="display:none;"></span>';
+                }
+                if (t.last_reaped_reason) {
+                    var reason = String(t.last_reaped_reason);
+                    var shortReason = reason.length > 80 ? reason.substring(0, 80) + '…' : reason;
+                    lastKilledLine = '<div style="font-size:10px;color:var(--text-dim);margin-top:2px;font-style:italic;" title="' + esc(reason) + '">Last killed: ' + esc(shortReason) + '</div>';
+                }
+            }
+
+            var snapAttr = JSON.stringify(t).replace(/"/g, '&quot;');
+            return '<div class="kanban-card" data-task-id="' + esc(t.id) + '" data-status="' + esc(status) + '" data-snapshot="' + snapAttr + '" style="border-left:3px solid ' + pColor + '; cursor:pointer;' + blockedStyle + '" onclick="openEditTaskModal(' + snapAttr + ')">'
+                + '<div class="kanban-card-title" title="' + esc(t.title) + '">' + icon + ' ' + esc(t.title) + '</div>'
+                + reaperBar
+                + '<div class="kanban-card-meta">'
+                + '<span class="badge badge-info">' + esc(t.task_type) + '</span>'
+                + '<span class="badge" style="background:' + pColor + '20; color:' + pColor + ';">' + esc(t.priority) + '</span>'
+                + execBadge
+                + llmBadge
+                + attemptBadge
+                + '</div>'
+                + blockedBadge
+                + tifLine
+                + lastKilledLine
+                + schedLine
+                + execIdLine
+                + '<div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px;">'
+                + '<div style="display:flex; gap:4px;">' + arrows + msgBtn + '</div>'
+                + '<button class="kanban-move-btn" onclick="event.stopPropagation(); deleteTask(\'' + t.id + '\')" title="Delete" style="color:#ef4444;">✕</button>'
+                + '</div>'
+                + '</div>';
+        }).join('');
+    });
+    _setupKvCounters(board);
+}
+
+// OPT-62: mid-run message injection
+var _kanbanMsgTargetId = null;
+function openMessageModal(taskId, title) {
+    _kanbanMsgTargetId = taskId;
+    document.getElementById('kanban-msg-target').textContent = 'Task: ' + (title || taskId);
+    document.getElementById('kanban-msg-text').value = '';
+    document.getElementById('kanban-msg-status').textContent = '';
+    document.getElementById('kanban-msg-status').style.color = 'var(--text-dim)';
+    document.getElementById('kanban-message-modal').style.display = 'flex';
+    setTimeout(function() { document.getElementById('kanban-msg-text').focus(); }, 50);
+}
+
+function closeMessageModal() {
+    document.getElementById('kanban-message-modal').style.display = 'none';
+    _kanbanMsgTargetId = null;
+}
+
+function submitMessage() {
+    if (!_kanbanMsgTargetId) return;
+    var text = document.getElementById('kanban-msg-text').value.trim();
+    if (!text) {
+        document.getElementById('kanban-msg-status').textContent = 'Message cannot be empty.';
+        document.getElementById('kanban-msg-status').style.color = '#ef4444';
+        return;
+    }
+    var btn = document.getElementById('kanban-msg-send');
+    btn.disabled = true;
+    document.getElementById('kanban-msg-status').textContent = 'Sending…';
+    document.getElementById('kanban-msg-status').style.color = 'var(--text-dim)';
+    fetch('/api/kanban/tasks/' + _kanbanMsgTargetId + '/message', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ message: text, sender: 'dashboard' })
+    }).then(function(r) { return r.json().then(function(body) { return { ok: r.ok, status: r.status, body: body }; }); })
+    .then(function(res) {
+        btn.disabled = false;
+        if (res.ok) {
+            document.getElementById('kanban-msg-status').textContent = '👀 Queued — will be delivered at next LLM call.';
+            document.getElementById('kanban-msg-status').style.color = '#10b981';
+            setTimeout(closeMessageModal, 1200);
+        } else {
+            document.getElementById('kanban-msg-status').textContent = 'Failed: ' + (res.body && res.body.error ? res.body.error : ('HTTP ' + res.status));
+            document.getElementById('kanban-msg-status').style.color = '#ef4444';
+        }
+    }).catch(function(e) {
+        btn.disabled = false;
+        document.getElementById('kanban-msg-status').textContent = 'Error: ' + e;
+        document.getElementById('kanban-msg-status').style.color = '#ef4444';
+    });
+}
+
+// Notify-channel: load available channels + current selection
+function loadNotifyChannel() {
+    fetch('/api/kanban/notify-channel')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var sel = document.getElementById('notify-channel-select');
+            if (!sel) return;
+            sel.innerHTML = '';
+            (data.available || []).forEach(function(ch) {
+                var opt = document.createElement('option');
+                opt.value = ch.id;
+                opt.textContent = (ch.configured ? '' : '⚠️ ') + ch.label;
+                opt.title = ch.configured ? ch.label + ' (configured)' : ch.label + ' (not configured — check .env)';
+                if (ch.id === data.current) opt.selected = true;
+                sel.appendChild(opt);
+            });
+        })
+        .catch(function() {
+            // Silently degrade — dropdown stays empty
+        });
+}
+
+window.setNotifyChannel = function(channelId) {
+    if (!channelId) return;
+    fetch('/api/kanban/notify-channel', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ channel: channelId })
+    }).catch(function() {});
+};
+
+window.setExecutorChain = function(value) {
+    fetch('/api/kanban/settings/executor-chain', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({chain: value.split(',')}),
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        if (data.error) {
+            alert('Executor chain update failed: ' + data.error);
+        } else {
+            var el = document.getElementById('auto-refresh-countdown');
+            if (el) {
+                var old = el.textContent;
+                el.textContent = 'Executor updated ✓';
+                setTimeout(function() { el.textContent = old; }, 2000);
+            }
+        }
+    })
+    .catch(function(err) {
+        console.error('setExecutorChain failed:', err);
+    });
+};
+
+// ── Auto-refresh: 5-minute interval with countdown ──────────────────
+var AUTO_REFRESH_SECONDS = 60; // completion poller handles real-time; this is the safety net
+var _refreshCountdown = AUTO_REFRESH_SECONDS;
+var _refreshTimer = null;
+var _countdownTimer = null;
+
+function refreshDashboard() {
+    // Refresh kanban tasks
+    refreshKanbanTasks();
+    // Refresh in-flight projects (reusable partial in _projects_in_flight.html)
+    if (window.refreshProjectsInFlight) window.refreshProjectsInFlight();
+    // Refresh autonomous recovery panel (reusable partial in _autonomy_status.html)
+    if (window.refreshAutonomyStatus) window.refreshAutonomyStatus();
+    // Refresh charts (re-trigger the chart loader in the scripts block)
+    if (window._loadCharts) window._loadCharts();
+    // Refresh monitor tiles
+    if (window.renderSandboxTile) window.renderSandboxTile();
+    if (window.renderOracleTile) window.renderOracleTile();
+    if (window.renderMcpTile) window.renderMcpTile();
+    if (window.renderCacheTile) window.renderCacheTile();
+    // Visual feedback on button
+    var btn = document.getElementById('refresh-btn');
+    if (btn) {
+        btn.textContent = '\u2713 Refreshed';
+        btn.style.color = 'var(--status-green)';
+        setTimeout(function() { btn.innerHTML = '&#x21bb; Refresh'; btn.style.color = ''; }, 1500);
+    }
+    // Reset countdown
+    _refreshCountdown = AUTO_REFRESH_SECONDS;
+}
+
+function _updateCountdownDisplay() {
+    var el = document.getElementById('auto-refresh-countdown');
+    if (!el) return;
+    var m = Math.floor(_refreshCountdown / 60);
+    var s = _refreshCountdown % 60;
+    el.textContent = '(auto-refresh in ' + m + ':' + (s < 10 ? '0' : '') + s + ')';
+}
+
+function _startAutoRefresh() {
+    // Countdown tick every second
+    _countdownTimer = setInterval(function() {
+        _refreshCountdown--;
+        _updateCountdownDisplay();
+        if (_refreshCountdown <= 0) {
+            refreshDashboard();
+        }
+    }, 1000);
+    _updateCountdownDisplay();
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    refreshKanbanTasks();
+    loadNotifyChannel();
+    fetch('/api/kanban/settings/executor-chain')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var sel = document.getElementById('kanban-executor-chain');
+            if (!sel || !data.chain) return;
+            var chainStr = data.chain.join(',');
+            for (var i = 0; i < sel.options.length; i++) {
+                if (sel.options[i].value === chainStr) {
+                    sel.selectedIndex = i;
+                    break;
+                }
+            }
+        })
+        .catch(function() {});
+    if (window.refreshProjectsInFlight) window.refreshProjectsInFlight();
+    if (window.refreshAutonomyStatus)   window.refreshAutonomyStatus();
+    _startAutoRefresh();
+});
+</script>
+
+<style>
+.kanban-move-btn {
+    background: transparent; border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: 4px; padding: 2px 6px; font-size: 10px; cursor: pointer; line-height: 1;
+}
+.kanban-move-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+</style>
+
+<!-- Compliance Posture — full-width section -->
+<div class="card" style="padding: 20px; margin-bottom: 24px; overflow: visible;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+        <div class="card-label" style="margin:0;">
+            Compliance Posture
+            <span class="help-icon" title="Compliance score per canvas assessment">?</span>
+        </div>
+        <a href="/security/posture" style="font-size:11px; color:var(--text-dim); text-decoration:none;">View all →</a>
+    </div>
+    <div id="chart-compliance" style="overflow: visible;"></div>
+    <div id="chart-compliance-trend" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:8px;min-height:24px;"></div>
+</div>
+
+<!-- Monitor Cards Row -->
+<div class="chart-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-bottom: 24px;">
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">Activity Trend (7 days)</div>
+        <div id="chart-alerts" style="min-height: 200px;"></div>
+    </div>
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">Task Board Status</div>
+        <div id="chart-projects" style="min-height: 200px;"></div>
+    </div>
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">Agent Health</div>
+        <div id="chart-agent-health" style="min-height: 140px;"></div>
+    </div>
+    <!-- Oracle Insights: 4 stat tiles + severity mini-bar over 24h -->
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">Oracle Insights
+            <span class="help-icon" title="Anticipatory predictions from Oracle lenses (24h window)">?</span>
+        </div>
+        <div id="tile-oracle" style="min-height: 140px; font-size: 13px; color: var(--text-dim);">
+            Loading…
+        </div>
+    </div>
+    <!-- OPT-57: Sandbox liveness tile -->
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">Sandbox</div>
+        <div id="tile-sandbox" style="min-height: 140px; font-size: 13px; color: var(--text-dim);">
+            Loading…
+        </div>
+    </div>
+    <!-- MCP Monitor tile -->
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">MCP Monitor
+            <span class="help-icon" title="MCP tool registry: registered tools, categories, wrapper activity">?</span>
+        </div>
+        <div id="tile-mcp" style="min-height: 140px; font-size: 13px; color: var(--text-dim);">
+            Loading…
+        </div>
+    </div>
+    <!-- Cache Savings tile -->
+    <div class="card" style="padding: 20px;">
+        <div class="card-label">Cache Savings
+            <span class="help-icon" title="LLM response and context cache hit rate, token savings, cost avoided">?</span>
+        </div>
+        <div id="tile-cache" style="min-height: 140px; font-size: 13px; color: var(--text-dim);">
+            Loading…
+        </div>
+    </div>
+</div>
+
+{# ── Recent Task Events — rendered below monitor cards by refreshProjectsInFlight() ── #}
+<details id="pif-events-section" style="margin-bottom:24px; display:none;">
+  <summary style="cursor:pointer; list-style:none; display:flex; align-items:center; gap:0.5rem;
+                  padding:0.6rem 0.8rem; background:var(--bg-card,#1e293b); border-radius:8px;
+                  border:1px solid var(--border-color,#2a2a40);">
+    <span style="font-size:0.9rem; font-weight:600; color:var(--text-primary);">Recent Task Events</span>
+    <span id="pif-events-count" style="font-size:0.72rem; color:var(--text-muted); margin-left:0.25rem;"></span>
+    <span style="margin-left:auto; font-size:0.72rem; color:var(--text-muted);">last 24h</span>
+  </summary>
+  <div id="pif-events-list" style="margin-top:0.5rem;"></div>
+</details>
+
+<script>
+// OPT-57: Sandbox liveness tile renderer
+(function () {
+    function renderSandboxTile() {
+        fetch('/api/sandbox/liveness').then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        }).then(function (d) {
+            var el = document.getElementById('tile-sandbox');
+            if (!el) return;
+            var status = d.status || 'unknown';
+            var color = status === 'healthy' ? '#22c55e'
+                      : status === 'smoke_failed' ? '#f59e0b'
+                      : '#ef4444';
+            var label = status === 'healthy' ? 'OK'
+                      : status === 'smoke_failed' ? 'Smoke failed'
+                      : status === 'degraded' ? 'Degraded'
+                      : 'Unknown';
+            var runtime = (d.health && d.health.runtime) || 'none';
+            var probeAt = d.probe_at ? new Date(d.probe_at) : null;
+            var ageStr = '';
+            if (probeAt) {
+                var hrs = Math.max(0, (Date.now() - probeAt.getTime()) / 3600000);
+                ageStr = hrs < 1 ? '<1h ago' : Math.floor(hrs) + 'h ago';
+            } else {
+                ageStr = 'never';
+            }
+            el.innerHTML =
+                '<div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">'
+                + '<span style="width:10px; height:10px; border-radius:50%; background:' + color + '; display:inline-block;"></span>'
+                + '<span style="font-size:16px; font-weight:600; color:var(--text-primary);">' + label + '</span>'
+                + '</div>'
+                + '<div>Runtime: <span style="color:var(--text-primary);">' + runtime + '</span></div>'
+                + '<div>Last probe: <span style="color:var(--text-primary);">' + ageStr + '</span></div>'
+                + '<div>Smoke: <span style="color:var(--text-primary);">' + (d.smoke_passed ? 'ok' : 'fail') + '</span></div>'
+                + '<div style="margin-top:8px;"><a href="/sandbox" class="btn" style="font-size:11px; padding:3px 10px;">View log</a></div>';
+        }).catch(function () {
+            var el = document.getElementById('tile-sandbox');
+            if (el) el.innerHTML = '<div style="color:var(--text-dim);">Sandbox status unavailable</div>';
+        });
+    }
+    document.addEventListener('DOMContentLoaded', renderSandboxTile);
+    window.renderSandboxTile = renderSandboxTile;
+})();
+
+// Oracle Insights tile renderer
+(function () {
+    function renderOracleTile() {
+        fetch('/api/oracle/summary').then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        }).then(function (d) {
+            var el = document.getElementById('tile-oracle');
+            if (!el) return;
+            var sev = d.severity || {critical:0, high:0, medium:0, low:0};
+            var total = (sev.critical||0) + (sev.high||0) + (sev.medium||0) + (sev.low||0);
+            var stat = function (label, val) {
+                return '<div style="flex:1; min-width:60px;">'
+                    + '<div style="font-size:18px; font-weight:600; color:var(--text-primary);">' + (val == null ? '—' : val) + '</div>'
+                    + '<div style="font-size:11px; color:var(--text-dim);">' + label + '</div>'
+                    + '</div>';
+            };
+            var seg = function (color, n) {
+                if (total === 0 || !n) return '';
+                var pct = (n / total) * 100;
+                return '<span title="' + n + '" style="background:' + color + '; width:' + pct.toFixed(1) + '%; display:inline-block; height:100%;"></span>';
+            };
+            var bar = total > 0
+                ? '<div style="display:flex; width:100%; height:8px; border-radius:4px; overflow:hidden; background:var(--card-bg);">'
+                    + seg('#ef4444', sev.critical)
+                    + seg('#f59e0b', sev.high)
+                    + seg('#eab308', sev.medium)
+                    + seg('#22c55e', sev.low)
+                    + '</div>'
+                    + '<div style="display:flex; justify-content:space-between; font-size:10px; color:var(--text-dim); margin-top:4px;">'
+                    + '<span>C ' + (sev.critical||0) + '</span>'
+                    + '<span>H ' + (sev.high||0) + '</span>'
+                    + '<span>M ' + (sev.medium||0) + '</span>'
+                    + '<span>L ' + (sev.low||0) + '</span>'
+                    + '</div>'
+                : '<div style="color:var(--text-dim); font-style:italic;">No predictions in 24h</div>';
+            el.innerHTML =
+                '<div style="display:flex; gap:8px; margin-bottom:12px;">'
+                + stat('Total 24h', d.total_24h)
+                + stat('High-conf pending', d.high_conf_pending)
+                + stat('Convergence', d.unresolved_convergence)
+                + stat('Median horizon (d)', d.median_horizon_days)
+                + '</div>'
+                + bar
+                + '<div style="margin-top:10px;"><a href="/oracle" class="btn" style="font-size:11px; padding:3px 10px;">View all</a></div>';
+        }).catch(function () {
+            var el = document.getElementById('tile-oracle');
+            if (el) el.innerHTML = '<div style="color:var(--text-dim);">Oracle summary unavailable</div>';
+        });
+    }
+    document.addEventListener('DOMContentLoaded', renderOracleTile);
+    window.renderOracleTile = renderOracleTile;
+})();
+
+// MCP Monitor tile renderer
+(function () {
+    function fmtAge(secs) {
+        if (secs == null) return 'never';
+        if (secs < 60)   return secs + 's ago';
+        if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+        return Math.floor(secs / 3600) + 'h ago';
+    }
+    function renderMcpTile() {
+        fetch('/api/mcp/status').then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        }).then(function (d) {
+            var el = document.getElementById('tile-mcp');
+            if (!el) return;
+            var ageColor = d.log_age_secs == null ? '#6b7280'
+                         : d.log_age_secs < 300  ? '#22c55e'
+                         : d.log_age_secs < 1800 ? '#f59e0b' : '#ef4444';
+            var topCats = (d.top_categories || []).slice(0, 5).map(function (c) {
+                return '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-secondary);margin-top:3px;">'
+                    + '<span>' + c.name + '</span>'
+                    + '<span style="color:var(--text-primary);font-weight:600;">' + c.count + '</span>'
+                    + '</div>';
+            }).join('');
+            el.innerHTML =
+                '<div style="display:flex;gap:12px;margin-bottom:10px;">'
+                + '<div style="flex:1;"><div style="font-size:22px;font-weight:700;color:var(--text-primary);">' + (d.tool_count || 0) + '</div><div style="font-size:11px;color:var(--text-dim);">Tools registered</div></div>'
+                + '<div style="flex:1;"><div style="font-size:22px;font-weight:700;color:var(--text-primary);">' + (d.category_count || 0) + '</div><div style="font-size:11px;color:var(--text-dim);">Categories</div></div>'
+                + '<div style="flex:1;"><div style="font-size:22px;font-weight:700;color:var(--text-primary);">' + (d.wrapper_starts_today || 0) + '</div><div style="font-size:11px;color:var(--text-dim);">Starts today</div></div>'
+                + '</div>'
+                + topCats
+                + '<div style="margin-top:8px;display:flex;align-items:center;gap:6px;">'
+                + '<span style="width:8px;height:8px;border-radius:50%;background:' + ageColor + ';display:inline-block;flex-shrink:0;"></span>'
+                + '<span style="font-size:11px;color:var(--text-dim);">Last activity: ' + fmtAge(d.log_age_secs) + '</span>'
+                + (d.error_count > 0 ? '<span style="margin-left:auto;font-size:10px;color:#ef4444;font-weight:600;">⚠ ' + d.error_count + ' errors</span>' : '')
+                + '</div>'
+                + '<div style="margin-top:8px;"><a href="/mcp-wrapper" class="btn" style="font-size:11px;padding:3px 10px;">View registry</a></div>';
+        }).catch(function () {
+            var el = document.getElementById('tile-mcp');
+            if (el) el.innerHTML = '<div style="color:var(--text-dim);">MCP status unavailable</div>';
+        });
+    }
+    document.addEventListener('DOMContentLoaded', renderMcpTile);
+    window.renderMcpTile = renderMcpTile;
+})();
+
+// Cache Savings tile renderer
+(function () {
+    function renderCacheTile() {
+        fetch('/api/cache-savings/tile').then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        }).then(function (d) {
+            var el = document.getElementById('tile-cache');
+            if (!el) return;
+            var statusColor = d.enabled ? '#22c55e' : '#ef4444';
+            var statusLabel = d.enabled ? 'Enabled' : 'Disabled';
+            var hitColor = (d.hit_rate_pct >= 50) ? '#22c55e' : (d.hit_rate_pct >= 20) ? '#f59e0b' : '#ef4444';
+            el.innerHTML = '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">'
+                + '<span style="width:8px;height:8px;border-radius:50%;background:' + statusColor + ';display:inline-block;flex-shrink:0;"></span>'
+                + '<span style="font-size:11px;color:var(--text-dim);">' + statusLabel + ' &middot; backend: ' + (d.backend || 'unknown') + '</span>'
+                + '</div>'
+                + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">'
+                + '<div><div style="font-size:20px;font-weight:700;color:' + hitColor + ';">' + (d.hit_rate_pct || 0).toFixed(1) + '%</div><div style="font-size:10px;color:var(--text-dim);">Hit Rate</div></div>'
+                + '<div><div style="font-size:20px;font-weight:700;color:#f59e0b;">$' + (d.cost_usd_saved || 0).toFixed(4) + '</div><div style="font-size:10px;color:var(--text-dim);">Saved (USD)</div></div>'
+                + '<div><div style="font-size:16px;font-weight:600;color:var(--accent-blue-light);">' + (d.total_entries || 0).toLocaleString() + '</div><div style="font-size:10px;color:var(--text-dim);">Entries</div></div>'
+                + '<div><div style="font-size:16px;font-weight:600;color:#818cf8;">' + (d.tokens_saved || 0).toLocaleString() + '</div><div style="font-size:10px;color:var(--text-dim);">Read Tokens</div></div>'
+                + '</div>'
+                + '<div style="margin-top:4px;"><a href="/cache-savings" class="btn" style="font-size:11px;padding:3px 10px;">View dashboard</a></div>';
+        }).catch(function () {
+            var el = document.getElementById('tile-cache');
+            if (el) el.innerHTML = '<div style="color:var(--text-dim);">Cache stats unavailable</div>';
+        });
+    }
+    document.addEventListener('DOMContentLoaded', renderCacheTile);
+    window.renderCacheTile = renderCacheTile;
+})();
+</script>
+
+<!-- Remediation History Timeline (collapsed by default) -->
+<details class="collapsible-section" style="margin-bottom:24px;">
+    <summary style="cursor:pointer; padding:16px 20px; background:var(--card-bg,#0f1e35); border:1px solid var(--card-border,#1e3a6e); border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:15px; font-weight:600;">Remediation History</span>
+        <a href="/oracle" class="btn" style="font-size:12px; padding:5px 12px;" onclick="event.stopPropagation();">View All &rarr;</a>
+    </summary>
+    <div class="card" style="padding:20px; margin-top:-1px; border-top:none; border-radius:0 0 6px 6px;">
+        <div id="remediation-history-list">
+            <div style="padding:16px; text-align:center; color:var(--text-dim); font-size:13px;">Loading history...</div>
+        </div>
+    </div>
+</details>
+
+<script>
+function _relativeTime(isoStr) {
+    if (!isoStr) return '';
+    try {
+        var d = new Date(isoStr.replace(' ', 'T'));
+        var diff = Math.floor((Date.now() - d.getTime()) / 1000);
+        if (diff < 60) return diff + 's ago';
+        if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+        if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+        return Math.floor(diff / 86400) + 'd ago';
+    } catch (e) { return isoStr; }
+}
+
+var _CANVAS_ICONS = { idc: '&#x26C5;', sdc: '&#x1F512;', bdc: '&#x1F5FA;', ddc: '&#x1F4BE;', odc: '&#x1F50D;', ndc: '&#x1F310;', pdc: '&#x2699;' };
+
+function refreshRemediationHistory() {
+    fetch('/api/oracle/proposals/history?limit=10')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var items = data.history || [];
+            var el = document.getElementById('remediation-history-list');
+            if (!el) return;
+
+            if (items.length === 0) {
+                el.innerHTML = '<div style="padding:16px; text-align:center; color:var(--text-dim); font-size:13px;">No remediation history yet</div>';
+                return;
+            }
+
+            var esc = window.ICDEV && ICDEV.escapeHTML ? ICDEV.escapeHTML : function(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); };
+
+            var rows = items.map(function(item, i) {
+                var status = item.status || '';
+                var statusColor, statusLabel;
+                if (status === 'approved' && item.actual_new_score != null) {
+                    statusColor = '#22c55e'; statusLabel = 'executed';
+                } else if (status === 'approved') {
+                    statusColor = '#f59e0b'; statusLabel = 'approved';
+                } else if (status === 'failed') {
+                    statusColor = '#ef4444'; statusLabel = 'failed';
+                } else if (status === 'expired') {
+                    statusColor = '#6b7280'; statusLabel = 'expired';
+                } else if (status === 'rejected') {
+                    statusColor = '#6b7280'; statusLabel = 'rejected';
+                } else if (status === 'pending') {
+                    statusColor = '#f59e0b'; statusLabel = 'pending';
+                } else {
+                    statusColor = '#6b7280'; statusLabel = status;
+                }
+
+                var canvasKey = (item.canvas || '').toLowerCase();
+                var icon = _CANVAS_ICONS[canvasKey] || '&#x25A6;';
+                var canvasLabel = esc(item.canvas_label || item.canvas || '');
+                var title = esc(item.title || canvasLabel + ' remediation');
+
+                var scoreHtml = '';
+                if (item.current_score != null) {
+                    var newScore = item.actual_new_score != null ? item.actual_new_score : item.projected_score;
+                    var newColor = item.actual_new_score != null && item.actual_new_score > item.current_score ? '#22c55e' : 'var(--text-dim)';
+                    scoreHtml = '<span style="color:var(--text-dim); font-size:12px;">'
+                        + item.current_score.toFixed(1) + ' &rarr; <span style="color:' + newColor + ';">' + (newScore != null ? newScore.toFixed(1) : '?') + '</span>'
+                        + '</span>';
+                }
+
+                var ts = _relativeTime(item.executed_at || item.reviewed_at || item.created_at);
+
+                return '<div style="display:flex; align-items:center; gap:12px; padding:10px 0;'
+                    + (i < items.length - 1 ? ' border-bottom:1px solid var(--border);' : '') + '">'
+                    + '<span style="font-size:16px; width:24px; text-align:center;">' + icon + '</span>'
+                    + '<div style="flex:1; min-width:0;">'
+                    + '<div style="font-size:13px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">' + title + '</div>'
+                    + '<div style="margin-top:2px;">' + scoreHtml + '</div>'
+                    + '</div>'
+                    + '<span style="font-size:11px; background:' + statusColor + '20; color:' + statusColor + '; border-radius:4px; padding:2px 8px; font-weight:600; white-space:nowrap;">' + esc(statusLabel) + '</span>'
+                    + '<span style="font-size:11px; color:var(--text-dim); white-space:nowrap; min-width:54px; text-align:right;">' + esc(ts) + '</span>'
+                    + '</div>';
+            }).join('');
+
+            el.innerHTML = rows;
+        })
+        .catch(function() {
+            var el = document.getElementById('remediation-history-list');
+            if (el) el.innerHTML = '<div style="padding:14px; color:var(--text-dim); font-size:13px;">History unavailable</div>';
+        });
+}
+
+// Hook into auto-refresh
+(function() {
+    var _orig2 = window.refreshDashboard;
+    window.refreshDashboard = function() { if (_orig2) _orig2(); refreshRemediationHistory(); };
+})();
+
+document.addEventListener('DOMContentLoaded', function() { refreshRemediationHistory(); });
+</script>
+
+<!-- Recent Activity & Findings (collapsed by default) -->
+<details class="collapsible-section" style="margin-bottom:24px;">
+    <summary style="cursor:pointer; padding:16px 20px; background:var(--card-bg,#0f1e35); border:1px solid var(--card-border,#1e3a6e); border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:15px; font-weight:600;">Recent Activity &amp; Findings</span>
+        <a href="/monitoring" onclick="event.stopPropagation();">View All</a>
+    </summary>
+    <div class="table-container" style="margin-top:-1px; border-top:none; border-radius:0 0 6px 6px;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Event Type</th>
+                    <th>Source</th>
+                    <th>Details</th>
+                    <th>Severity</th>
+                    <th>When</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in recent_activity %}
+                <tr>
+                    <td><span class="badge badge-info">{{ item.event_type }}</span></td>
+                    <td>{{ item.source }}</td>
+                    <td>{{ item.details }}</td>
+                    <td><span class="badge badge-{{ item.severity }}">{{ item.severity }}</span></td>
+                    <td class="text-muted" data-timestamp="{{ item.created_at }}">{{ item.created_at | friendly_time }}</td>
+                </tr>
+                {% else %}
+                <tr class="empty-row"><td colspan="5">No recent activity &mdash; all clear</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</details>
+
+<!-- Recent Audit Trail (collapsed by default) -->
+<details class="collapsible-section" style="margin-bottom:24px;">
+    <summary style="cursor:pointer; padding:16px 20px; background:var(--card-bg,#0f1e35); border:1px solid var(--card-border,#1e3a6e); border-radius:6px; display:flex; justify-content:space-between; align-items:center;">
+        <span style="font-size:15px; font-weight:600;">Recent Activity</span>
+    </summary>
+    <div class="table-container" style="margin-top:-1px; border-top:none; border-radius:0 0 6px 6px;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Event Type</th>
+                    <th>Actor</th>
+                    <th>Action</th>
+                    <th>Project</th>
+                    <th>When</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for entry in recent_audit %}
+                <tr>
+                    <td><span class="badge badge-info">{{ entry.event_type }}</span></td>
+                    <td>{{ entry.actor }}</td>
+                    <td>{{ entry.action }}</td>
+                    <td>
+                        {% if entry.project_id %}
+                        <a href="/projects/{{ entry.project_id }}">{{ entry.project_id[:12] }}</a>
+                        {% else %}
+                        <span class="text-muted">&mdash;</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-muted" data-timestamp="{{ entry.created_at }}" data-timestamp-format="ago">{{ entry.created_at | friendly_time }}</td>
+                </tr>
+                {% else %}
+                <tr class="empty-row"><td colspan="5">No activity recorded yet</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</details>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Auto-show notification toasts for critical alerts on page load.
+// Deferred to DOMContentLoaded so ux.js (defer) has loaded
+// ICDEV.showNotification before we call it.
+document.addEventListener('DOMContentLoaded', function() {
+    var firingCount = {{ firing_alerts }};
+    var openPoam = {{ open_poam }};
+    if (firingCount > 0 && window.ICDEV && typeof ICDEV.showNotification === 'function') {
+        ICDEV.showNotification(
+            firingCount + ' alert' + (firingCount > 1 ? 's' : '') + ' currently firing \u2014 <a href="/monitoring" style="color:inherit;text-decoration:underline;">view monitoring</a>',
+            'error'
+        );
+    }
+    if (openPoam > 5 && window.ICDEV && typeof ICDEV.showNotification === 'function') {
+        ICDEV.showNotification(
+            openPoam + ' open POA&M items need attention \u2014 <a href="/projects" style="color:inherit;text-decoration:underline;">review projects</a>',
+            'warning'
+        );
+    }
+});
+
+// Load charts from API — exposed as window._loadCharts for auto-refresh
+window._loadCharts = function() {
+    if (!window.ICDEV || !ICDEV.barChart) { console.warn('ICDEV chart namespace not available — charts skipped'); return; }
+    fetch('/api/charts/overview')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            // Compliance posture — multi-canvas bar chart (canvas scores only, no Oracle)
+            if (d.compliance && d.compliance.canvases && d.compliance.canvases.length > 0) {
+                // Separate Oracle entry — it tracks CAT prediction counts, not a 0-100 score
+                var _oracleEntry = null;
+                d.compliance.canvases.forEach(function(c) { if (c.is_oracle) _oracleEntry = c; });
+                var _chartCanvases = d.compliance.canvases.filter(function(c) { return !c.is_oracle; });
+                // Horizontal bar chart — scales naturally with canvas count,
+                // shows "No data" for canvases with empty assessment tables.
+                (function() {
+                    var el = document.getElementById('chart-compliance');
+                    if (!el) return;
+                    var W = el.offsetWidth || 800;
+                    var COLS = 2, BAR_H = 16, GAP = 4, LABEL_W = 80, PAD_R = 38, PAD_T = 4, PAD_B = 4;
+                    var colW = Math.floor(W / COLS);
+                    var plotW = colW - LABEL_W - PAD_R;
+                    var rows = Math.ceil(_chartCanvases.length / COLS);
+                    var svgH = PAD_T + rows * (BAR_H + GAP) + PAD_B;
+                    var parts = ['<svg width="' + W + '" height="' + svgH + '" style="display:block;overflow:visible;" role="img" aria-label="Compliance posture by canvas">'];
+                    _chartCanvases.forEach(function(c, i) {
+                        var col = i % COLS;
+                        var row = Math.floor(i / COLS);
+                        var xOff = col * colW;
+                        var y = PAD_T + row * (BAR_H + GAP);
+                        var barW = c.score > 0 ? Math.max(2, (c.score / 100) * plotW) : 0;
+                        var clr = c.score >= 80 ? '#28a745' : c.score >= 60 ? '#ffc107' : c.score > 0 ? '#dc3545' : '#3a3a4a';
+                        parts.push('<text x="' + (xOff + LABEL_W - 5) + '" y="' + (y + BAR_H / 2 + 4) + '" text-anchor="end" font-size="11" fill="#aaa" font-family="inherit">' + c.name + '</text>');
+                        parts.push('<rect x="' + (xOff + LABEL_W) + '" y="' + y + '" width="' + plotW + '" height="' + BAR_H + '" fill="rgba(255,255,255,0.04)" rx="3"/>');
+                        if (barW > 0) {
+                            parts.push('<rect x="' + (xOff + LABEL_W) + '" y="' + y + '" width="' + barW + '" height="' + BAR_H + '" fill="' + clr + '" rx="3"/>');
+                            parts.push('<text x="' + (xOff + LABEL_W + barW + 5) + '" y="' + (y + BAR_H / 2 + 4) + '" font-size="11" fill="#ccc" font-family="inherit">' + c.score + '</text>');
+                        } else {
+                            parts.push('<text x="' + (xOff + LABEL_W + 7) + '" y="' + (y + BAR_H / 2 + 4) + '" font-size="10" fill="#555" font-family="inherit">No data</text>');
+                        }
+                    });
+                    parts.push('</svg>');
+                    el.innerHTML = parts.join('');
+                }());
+                // Fetch and render sparkline trend indicators + Oracle CAT breakdown
+                fetch('/api/charts/compliance-trend')
+                    .then(function(r) { return r.json(); })
+                    .then(function(td) {
+                        var trendEl = document.getElementById('chart-compliance-trend');
+                        if (!trendEl || !td.canvases) return;
+                        var html = '';
+                        td.canvases.forEach(function(c) {
+                            var arrow = '—', color = '#888', sign = '';
+                            if (c.direction === 'up') { arrow = '▲'; color = '#28a745'; sign = '+'; }
+                            else if (c.direction === 'down') { arrow = '▼'; color = '#dc3545'; }
+                            var deltaStr = c.delta !== 0 ? (sign + c.delta.toFixed(1)) : '';
+                            html += '<span style="font-size:11px;color:' + color + ';white-space:nowrap;padding:2px 5px;background:rgba(0,0,0,0.15);border-radius:3px;" title="' + c.name + ' 30d trend">' +
+                                '<span style="font-size:9px;color:#aaa;margin-right:2px;">' + c.name + '</span>' +
+                                arrow + (deltaStr ? ' ' + deltaStr : '') +
+                                '</span>';
+                        });
+                        // Oracle CAT indicator (forward-looking; high count = more risk)
+                        if (_oracleEntry) {
+                            var _oc = (_oracleEntry.cat1 > 0) ? '#dc3545' : (_oracleEntry.cat2 > 0) ? '#ffc107' : '#28a745';
+                            var _otip = 'Oracle pending compliance-risk predictions — CAT1(critical/high): ' + _oracleEntry.cat1 + ', CAT2(medium): ' + _oracleEntry.cat2 + ', CAT3(low/info): ' + _oracleEntry.cat3;
+                            html += '<span style="font-size:11px;color:' + _oc + ';white-space:nowrap;padding:2px 5px;background:rgba(0,0,0,0.15);border-radius:3px;" title="' + _otip + '">' +
+                                '<span style="font-size:9px;color:#aaa;margin-right:2px;">Oracle</span>' +
+                                'C1:' + _oracleEntry.cat1 + ' C2:' + _oracleEntry.cat2 + ' C3:' + _oracleEntry.cat3 +
+                                '</span>';
+                        }
+                        trendEl.innerHTML = html || '';
+                    })
+                    .catch(function() {});
+            } else {
+                document.getElementById('chart-compliance').innerHTML = '<p class="text-muted" style="text-align:center;padding:60px 0;">No canvas assessments yet</p>';
+            }
+            // Activity trend line chart
+            if (d.activity_trend && d.activity_trend.length > 0) {
+                ICDEV.lineChart('chart-alerts', {
+                    labels: d.activity_trend.map(function(r) { return r.day.slice(5); }),
+                    series: [{ name: 'Activity', data: d.activity_trend.map(function(r) { return r.cnt; }), color: '#4a90d9' }],
+                    height: 180, showLegend: false,
+                });
+            } else {
+                document.getElementById('chart-alerts').innerHTML = '<p class="text-muted" style="text-align:center;padding:60px 0;">No activity in last 7 days</p>';
+            }
+            // Task board status donut
+            if (d.task_statuses && d.task_statuses.length > 0) {
+                var taskColors = { backlog: '#6c6c80', scheduled: '#ffc107', in_progress: '#4a90d9', done: '#28a745', token_exhausted: '#dc3545' };
+                var total = d.task_statuses.reduce(function(s, r) { return s + r.cnt; }, 0);
+                ICDEV.donutChart('chart-projects', {
+                    segments: d.task_statuses.map(function(r) {
+                        return { label: r.status, value: r.cnt, color: taskColors[r.status] || '#6c6c80' };
+                    }),
+                    size: 160, thickness: 28,
+                    centerLabel: String(total),
+                    centerSubLabel: 'Tasks',
+                    showLegend: true,
+                });
+            } else {
+                document.getElementById('chart-projects').innerHTML = '<p class="text-muted" style="text-align:center;padding:60px 0;">No tasks yet</p>';
+            }
+            // Agent health gauge
+            if (d.agent_health) {
+                ICDEV.gaugeChart('chart-agent-health', {
+                    value: d.agent_health.ratio,
+                    thresholds: { good: 0.8, warning: 0.5 },
+                    label: d.agent_health.active + ' of ' + d.agent_health.total + ' agents active',
+                    size: 140,
+                });
+            }
+        })
+        .catch(function() {
+            // Graceful fallback if charts API fails
+            ['chart-compliance', 'chart-alerts', 'chart-projects', 'chart-agent-health'].forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el && !el.innerHTML.trim()) {
+                    el.innerHTML = '<p class="text-muted" style="text-align:center;padding:40px 0;">Chart data unavailable</p>';
+                }
+            });
+        });
+};
+// Initial chart load — wait for DOMContentLoaded so charts.js (defer) is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', window._loadCharts);
+} else {
+    window._loadCharts();
+}
+</script>
+{% endblock %}

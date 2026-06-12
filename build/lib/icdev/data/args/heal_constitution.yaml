@@ -1,0 +1,54 @@
+# Heal Constitution — MAC-style precondition rules for automated heal actions.
+# Loaded by heal.py at startup via _check_constitution().
+# All applicable rules must pass before an action executes.
+#
+# on_violation:
+#   block — skip this heal entirely for this cycle
+#   hold  — defer to next cycle (recorded as rate_limited)
+#
+# blocked_types — resolution_type values that are unconditionally prohibited.
+# These are hard blockers regardless of confidence or metrics.
+
+version: 1
+
+blocked_types:
+  - deploy
+  - build
+  - scaffold
+  - delete_file
+  - push_code
+
+rules:
+  - name: min_confidence_floor
+    description: "Never apply a healing pattern below the global confidence floor"
+    applies_to: all
+    min_confidence: 0.70
+    on_violation: block
+
+  - name: false_heal_ceiling
+    description: "Suspend all auto-healing when false-heal rate is critically high"
+    applies_to: all
+    # Checked against harness metrics when available; falls through if harness has no data
+    max_false_heal_rate: 0.30
+    on_violation: block
+
+  - name: regenerate_artifact_confidence
+    description: "Artifact regeneration requires higher confidence — external side effect"
+    applies_to_types:
+      - regenerate_artifact
+    min_confidence: 0.80
+    on_violation: block
+
+  - name: reinit_db_confidence
+    description: "DB reinit has wide blast radius — require highest confidence"
+    applies_to_types:
+      - reinit_db_table
+    min_confidence: 0.88
+    on_violation: block
+
+  - name: circuit_breaker_daily_cap
+    description: "Cap circuit breaker resets per day to avoid masking real failures"
+    applies_to_types:
+      - reset_circuit_breaker
+    max_per_day: 3
+    on_violation: hold

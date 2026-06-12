@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% set active = "signals" %}
+{% block title %}Signals — GeoSIGINT{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Signal Detections</h1>
+    <div class="page-header__actions">
+        <select id="filter-class" class="input-select">
+            <option value="">All Classifications</option>
+            <option value="unclassified">Unclassified</option>
+            <option value="of_interest">Of Interest</option>
+            <option value="anomalous">Anomalous</option>
+        </select>
+        <select id="filter-mod" class="input-select">
+            <option value="">All Modulations</option>
+            <option value="CW">CW</option>
+            <option value="AM">AM</option>
+            <option value="FM">FM</option>
+            <option value="PSK">PSK</option>
+            <option value="FSK">FSK</option>
+            <option value="BPSK">BPSK</option>
+            <option value="Pulse">Pulse</option>
+        </select>
+        <span id="signal-count" class="text-muted"></span>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card__body card__body--no-pad">
+        <table class="table table--striped" id="signals-table">
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Frequency</th>
+                    <th>Power</th>
+                    <th>SNR</th>
+                    <th>Modulation</th>
+                    <th>Bearing</th>
+                    <th>Location</th>
+                    <th>Classification</th>
+                    <th>Station</th>
+                </tr>
+            </thead>
+            <tbody id="signals-body"></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="pagination" id="pagination"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function() {
+    let page = 0;
+    const limit = 100;
+
+    function formatFreq(hz) {
+        if (hz >= 1e9) return (hz/1e9).toFixed(3) + ' GHz';
+        if (hz >= 1e6) return (hz/1e6).toFixed(3) + ' MHz';
+        return (hz/1e3).toFixed(1) + ' kHz';
+    }
+
+    function load() {
+        const cls = document.getElementById('filter-class').value;
+        const mod = document.getElementById('filter-mod').value;
+        let url = `/api/signals?limit=${limit}&offset=${page*limit}`;
+        if (cls) url += `&classification=${cls}`;
+        if (mod) url += `&modulation=${mod}`;
+
+        fetch(url).then(r=>r.json()).then(data => {
+            document.getElementById('signal-count').textContent = `${data.total.toLocaleString()} signals`;
+            const tbody = document.getElementById('signals-body');
+            tbody.innerHTML = data.signals.map(s => `
+                <tr class="signal-row signal-row--${s.classification}">
+                    <td class="text-mono">${s.timestamp.slice(0,19)}</td>
+                    <td class="text-mono">${formatFreq(s.freq_hz)}</td>
+                    <td>${s.power_dbm ? s.power_dbm.toFixed(1) + ' dBm' : '—'}</td>
+                    <td>${s.snr_db ? s.snr_db.toFixed(1) + ' dB' : '—'}</td>
+                    <td><span class="badge badge--mod">${s.modulation || '?'}</span></td>
+                    <td>${s.bearing_deg ? s.bearing_deg.toFixed(0) + '°' : '—'}</td>
+                    <td class="text-mono">${s.lat.toFixed(2)}°, ${s.lon.toFixed(2)}°</td>
+                    <td><span class="severity severity--${s.classification}">${s.classification}</span></td>
+                    <td>${s.station_id || '—'}</td>
+                </tr>
+            `).join('');
+
+            // Pagination
+            const pages = Math.ceil(data.total / limit);
+            const pg = document.getElementById('pagination');
+            pg.innerHTML = '';
+            if (page > 0) pg.innerHTML += `<button class="btn btn--sm" onclick="GeoSIGINT.prevPage()">← Prev</button> `;
+            pg.innerHTML += `<span class="text-muted">Page ${page+1} of ${pages}</span> `;
+            if (page < pages-1) pg.innerHTML += `<button class="btn btn--sm" onclick="GeoSIGINT.nextPage()">Next →</button>`;
+        });
+    }
+
+    window.GeoSIGINT = {
+        nextPage() { page++; load(); },
+        prevPage() { page = Math.max(0, page-1); load(); }
+    };
+
+    document.getElementById('filter-class').addEventListener('change', () => { page=0; load(); });
+    document.getElementById('filter-mod').addEventListener('change', () => { page=0; load(); });
+    load();
+})();
+</script>
+{% endblock %}

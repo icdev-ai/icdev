@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}MOSA Compliance - ICDEV™ Dashboard{% endblock %}
+{% block content %}
+<div class="container">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
+        <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span style="color:#333;">MOSA Compliance</span>
+    </nav>
+
+    <h1>MOSA Compliance &mdash; Modular Open Systems Approach</h1>
+    <p class="text-muted">10 U.S.C. &sect;4401 compliance assessment &mdash; coupling, cohesion, circular dependencies</p>
+
+    <!-- ================================================================= -->
+    <!-- 1. Stat Cards                                                      -->
+    <!-- ================================================================= -->
+    <div id="stats-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin:1.5rem 0;">
+        <div style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-total-modules" style="font-size:2rem;font-weight:bold;">--</div>
+            <div style="color:#666;">Total Modules</div>
+        </div>
+        <div style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-coupling" style="font-size:2rem;font-weight:bold;color:#2196f3;">--</div>
+            <div style="color:#666;">Coupling Score</div>
+        </div>
+        <div style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-cohesion" style="font-size:2rem;font-weight:bold;color:#4caf50;">--</div>
+            <div style="color:#666;">Cohesion Score</div>
+        </div>
+        <div style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-circular" style="font-size:2rem;font-weight:bold;color:#f44336;">--</div>
+            <div style="color:#666;">Circular Deps</div>
+        </div>
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- 2. Module Analysis Table                                           -->
+    <!-- ================================================================= -->
+    <h2 style="margin-top:2rem;">Module Analysis</h2>
+    <div style="overflow-x:auto;">
+        <table class="data-table" style="width:100%;border-collapse:collapse;margin:1rem 0;">
+            <thead>
+                <tr style="border-bottom:2px solid #ddd;text-align:left;">
+                    <th style="padding:0.6rem 0.8rem;">Module</th>
+                    <th style="padding:0.6rem 0.8rem;">Coupling</th>
+                    <th style="padding:0.6rem 0.8rem;">Cohesion</th>
+                    <th style="padding:0.6rem 0.8rem;">Dependencies</th>
+                    <th style="padding:0.6rem 0.8rem;">Status</th>
+                </tr>
+            </thead>
+            <tbody id="modules-tbody">
+                <tr><td colspan="5" style="padding:1rem;text-align:center;color:#999;">Loading module data...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- 3. ICD / TSP Documents (Placeholder)                               -->
+    <!-- ================================================================= -->
+    <h2 style="margin-top:2rem;">ICD / TSP Documents</h2>
+    <div class="section-card" style="padding:1.5rem;border:1px solid #ddd;border-radius:8px;margin:1rem 0;">
+        <p style="color:#999;margin:0;">Interface Control Documents and Technical Standard Profiles will appear here once generated via <code>tools/mosa/icd_generator.py</code> and <code>tools/mosa/tsp_generator.py</code>.</p>
+    </div>
+
+    <!-- ================================================================= -->
+    <!-- 4. cATO Integration (Placeholder)                                  -->
+    <!-- ================================================================= -->
+    <h2 style="margin-top:2rem;">cATO Integration</h2>
+    <div class="section-card" style="padding:1.5rem;border:1px solid #ddd;border-radius:8px;margin:1rem 0;">
+        <p style="color:#999;margin:0;">MOSA modularity scores feed into the Continuous ATO health gauge. Modules with high coupling or circular dependencies raise risk flags in the cATO pipeline. See <a href="/cato" style="color:#1976d2;">Continuous ATO Dashboard</a>.</p>
+    </div>
+</div>
+
+<script>
+(function() {
+    function statusBadge(coupling, cohesion, circularDeps) {
+        if (circularDeps > 0 || coupling > 0.7) {
+            return '<span class="badge" style="background:#f44336;color:#fff;padding:0.2rem 0.6rem;border-radius:4px;font-size:0.8rem;">Critical</span>';
+        } else if (coupling > 0.4 || cohesion < 0.5) {
+            return '<span class="badge" style="background:#ff9800;color:#fff;padding:0.2rem 0.6rem;border-radius:4px;font-size:0.8rem;">Warning</span>';
+        }
+        return '<span class="badge" style="background:#4caf50;color:#fff;padding:0.2rem 0.6rem;border-radius:4px;font-size:0.8rem;">Compliant</span>';
+    }
+
+    fetch('/api/mosa/summary')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var s = data.summary || {};
+            document.getElementById('stat-total-modules').textContent = s.total_modules != null ? s.total_modules : 0;
+            document.getElementById('stat-coupling').textContent = s.avg_coupling != null ? s.avg_coupling.toFixed(2) : '0.00';
+            document.getElementById('stat-cohesion').textContent = s.avg_cohesion != null ? s.avg_cohesion.toFixed(2) : '0.00';
+            document.getElementById('stat-circular').textContent = s.circular_deps != null ? s.circular_deps : 0;
+
+            var modules = data.modules || [];
+            var tbody = document.getElementById('modules-tbody');
+            if (modules.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="5" style="padding:1rem;text-align:center;color:#999;">No module data available. Run <code>python tools/compliance/mosa_assessor.py --project-id &lt;id&gt;</code> to generate an assessment.</td></tr>';
+                return;
+            }
+            var rows = '';
+            for (var i = 0; i < modules.length; i++) {
+                var m = modules[i];
+                var deps = Array.isArray(m.dependencies) ? m.dependencies.join(', ') : (m.dependencies || '-');
+                var circ = m.circular_deps || 0;
+                rows += '<tr style="border-bottom:1px solid #eee;">'
+                    + '<td style="padding:0.6rem 0.8rem;font-weight:600;">' + (m.name || m.module || '-') + '</td>'
+                    + '<td style="padding:0.6rem 0.8rem;">' + (m.coupling != null ? m.coupling.toFixed(2) : '-') + '</td>'
+                    + '<td style="padding:0.6rem 0.8rem;">' + (m.cohesion != null ? m.cohesion.toFixed(2) : '-') + '</td>'
+                    + '<td style="padding:0.6rem 0.8rem;">' + deps + '</td>'
+                    + '<td style="padding:0.6rem 0.8rem;">' + statusBadge(m.coupling || 0, m.cohesion || 1, circ) + '</td>'
+                    + '</tr>';
+            }
+            tbody.innerHTML = rows;
+        })
+        .catch(function(err) {
+            console.error('MOSA fetch error:', err);
+            document.getElementById('modules-tbody').innerHTML = '<tr><td colspan="5" style="padding:1rem;text-align:center;color:#f44336;">Error loading MOSA data.</td></tr>';
+        });
+})();
+</script>
+{% endblock %}

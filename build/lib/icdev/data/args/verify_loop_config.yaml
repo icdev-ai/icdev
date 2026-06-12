@@ -1,0 +1,137 @@
+# [TEMPLATE: CUI // SP-CTI]
+# Compiler-in-the-Loop Verification Config
+# Adapted from LeanStral closed-loop verification pattern (Mistral AI, 2026-03-16).
+# Generalizes D255 compiler-feedback repair loop across all 6 ICDEV™ languages.
+
+# ---------------------------------------------------------------------------
+# Per-Language Verifier Commands
+# ---------------------------------------------------------------------------
+# Each language defines a stack of verifiers run sequentially.
+# The loop: run all verifiers → collect errors → feed to LLM → re-verify.
+verifiers:
+  python:
+    - name: syntax
+      command: ["python", "-m", "py_compile", "{file}"]
+      blocking: true
+    - name: type_check
+      command: ["mypy", "--ignore-missing-imports", "--no-error-summary", "{file}"]
+      blocking: false
+      optional: true      # mypy may not be installed
+    - name: lint
+      command: ["ruff", "check", "{file}"]
+      blocking: false
+    - name: sast
+      command: ["bandit", "-r", "-ll", "-q", "{file}"]
+      blocking: false
+
+  java:
+    - name: syntax
+      command: ["javac", "-d", "{temp_dir}", "{file}"]
+      blocking: true
+    - name: lint
+      command: ["checkstyle", "-c", "/google_checks.xml", "{file}"]
+      blocking: false
+      optional: true
+
+  go:
+    - name: syntax
+      command: ["go", "vet", "{file}"]
+      blocking: true
+    - name: lint
+      command: ["golangci-lint", "run", "{file}"]
+      blocking: false
+      optional: true
+    - name: sast
+      command: ["gosec", "-quiet", "{file}"]
+      blocking: false
+      optional: true
+
+  rust:
+    - name: syntax
+      command: ["cargo", "check"]
+      blocking: true
+      working_dir: "{project_dir}"
+    - name: lint
+      command: ["cargo", "clippy", "--", "-D", "warnings"]
+      blocking: false
+      optional: true
+      working_dir: "{project_dir}"
+
+  csharp:
+    - name: syntax
+      command: ["dotnet", "build", "--no-restore"]
+      blocking: true
+      working_dir: "{project_dir}"
+    - name: lint
+      command: ["dotnet", "format", "--verify-no-changes"]
+      blocking: false
+      optional: true
+      working_dir: "{project_dir}"
+
+  typescript:
+    - name: syntax
+      command: ["npx", "tsc", "--noEmit", "{file}"]
+      blocking: true
+    - name: lint
+      command: ["npx", "eslint", "{file}"]
+      blocking: false
+      optional: true
+
+# ---------------------------------------------------------------------------
+# Loop Configuration
+# ---------------------------------------------------------------------------
+loop:
+  max_iterations: 3                   # Max verify→repair cycles (D255 pattern)
+  repair_function: "verify_loop_repair"  # LLM router function name
+  timeout_seconds: 120                # Per-iteration timeout
+  abort_on_blocking_failure: true     # Stop loop if blocking verifier fails after max iterations
+  collect_all_errors: true            # Run all verifiers before repair (not fail-fast)
+
+# ---------------------------------------------------------------------------
+# LLM Repair Settings
+# ---------------------------------------------------------------------------
+repair:
+  # System prompt template for repair requests
+  system_prompt: |
+    You are a code repair agent. You receive compiler/linter/SAST errors and
+    the source code that produced them. Return ONLY the corrected source code
+    with no explanation, no markdown fencing, no commentary.
+    Fix ALL reported errors while preserving the original logic and structure.
+    Do not add features or refactor beyond what is needed to resolve the errors.
+  # Maximum source code size (chars) to send to LLM for repair
+  max_source_chars: 50000
+  # Whether to include verifier stderr in the repair prompt
+  include_stderr: true
+  # Temperature for repair requests (low = deterministic fixes)
+  temperature: 0.2
+
+# ---------------------------------------------------------------------------
+# Air-Gap / Offline Settings
+# ---------------------------------------------------------------------------
+air_gap:
+  # When true, only use local models for repair (no cloud API calls)
+  prefer_local: ${ICDEV_AIR_GAPPED:-false}
+  # Local model override for repair (overrides routing chain)
+  local_repair_model: "qwen3-local"
+  # Skip verifiers that require network (e.g., remote lint services)
+  skip_network_verifiers: ${ICDEV_AIR_GAPPED:-false}
+
+# ---------------------------------------------------------------------------
+# Database & Audit
+# ---------------------------------------------------------------------------
+audit:
+  # Table: verify_loop_runs (append-only, NIST AU)
+  store_results: true
+  # Store full error output or just summary
+  store_full_errors: false
+  # Max error text length stored per verifier
+  max_error_length: 2000
+
+# ---------------------------------------------------------------------------
+# Gate Integration
+# ---------------------------------------------------------------------------
+gate:
+  # When used as a CodeLens gate, these thresholds apply
+  max_unresolved_blocking: 0          # 0 blocking errors allowed
+  max_unresolved_warnings: 10         # Warnings allowed
+  require_all_blocking_pass: true

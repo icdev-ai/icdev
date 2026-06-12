@@ -1,0 +1,2885 @@
+{% extends "base.html" %}
+{% block title %}AADC Canvas — {{ design.name }}{% endblock %}
+{% block global_banner %}{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/agentic-canvas.css">
+<style>
+/* ── Canvas viewport fix: no body scroll, main-content fills remaining height */
+body { overflow: hidden; height: 100vh; }
+/* position+z-index:0 makes main-content an explicit stacking context so the
+   navbar (z-index:100) composites ABOVE it even when canvas elements get GPU-promoted */
+.main-content { padding: 0 !important; max-width: 100% !important; margin: 0 !important; display: flex; flex-direction: column; overflow: hidden; position: relative; z-index: 0; }
+/* ── Sidebar collapse transitions ── */
+#palette-sidebar { transition: width 0.2s, min-width 0.2s; }
+#props-sidebar   { transition: width 0.2s, min-width 0.2s; }
+
+/* ── AADC menu dropdown ── */
+.aadc-menu-wrap { position: relative; }
+.aadc-menu-dd {
+  /* fixed + max z-index + GPU layer: beats GPU-composited overflow:hidden sidebars */
+  position: fixed; top: 0; left: 0;
+  background: #16213e; border: 1px solid #1e3a6e; border-radius: 6px;
+  min-width: 190px; z-index: 2147483647; padding: 4px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.6);
+  max-height: calc(100vh - 200px); overflow-y: auto;
+  transform: translateZ(0);
+}
+.aadc-menu-dd a,
+.aadc-menu-dd button {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 7px 12px; text-align: left;
+  background: none; border: none; color: #eaeaea;
+  font-size: 12px; cursor: pointer; border-radius: 4px;
+  text-decoration: none; box-sizing: border-box;
+}
+.aadc-menu-dd a:hover,
+.aadc-menu-dd button:hover { background: #1e3a6e; }
+.aadc-menu-sep { border: none; border-top: 1px solid #1e3a6e; margin: 4px 0; }
+
+/* ── Sidebar expand strips ── */
+.expand-strip {
+  display: none; align-items: center; justify-content: center;
+  background: #0f172a; cursor: pointer; flex-shrink: 0;
+}
+.expand-strip:hover { background: #1e293b; }
+.expand-strip span { color: #7a8cb0; font-size: 9px; writing-mode: vertical-rl; user-select: none; }
+#palette-expand-strip { width: 14px; border-right: 1px solid #1e3a6e; }
+#props-expand-strip   { width: 14px; border-left:  1px solid #1e3a6e; }
+
+/* ── Category arrow ── */
+.cat-arrow { display: inline-block; transition: transform 0.2s; }
+.cat-arrow.collapsed { transform: rotate(-90deg); }
+/* ── Node type chip in props panel ── */
+.node-type-chip {
+  display: inline-block; padding: 2px 7px; border-radius: 3px;
+  background: #1e293b; border: 1px solid #334155;
+  color: #7a8cb0; font-size: 10px; font-family: monospace;
+  margin-bottom: 10px;
+}
+
+/* ── Zoom button cluster ── */
+.zoom-cluster {
+  position: absolute; bottom: 32px; right: 8px; z-index: 20;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.zoom-btn {
+  width: 28px; height: 28px; background: #16213e; border: 1px solid #1e3a6e;
+  color: #eaeaea; border-radius: 4px; cursor: pointer; font-size: 15px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s;
+}
+.zoom-btn:hover { background: #1e3a6e; }
+.zoom-btn.sm { font-size: 10px; }
+
+/* ── Multi-select rubber-band rect ── */
+#select-rect {
+  position: absolute; pointer-events: none; z-index: 30;
+  border: 1.5px dashed #6366f1;
+  background: rgba(99,102,241,0.08);
+  box-sizing: border-box;
+}
+/* ── Multi-select ring (blue) ── */
+.canvas-node.selected {
+  box-shadow: 0 0 0 2px #6366f1, 0 0 0 5px rgba(99,102,241,0.25) !important;
+}
+
+/* ── Pan mode indicator ── */
+#pan-hint {
+  display: none; position: absolute; top: 8px; left: 50%;
+  transform: translateX(-50%); background: #16213e99;
+  border: 1px solid #1e3a6e; border-radius: 4px; padding: 3px 10px;
+  font-size: 10px; color: #7a8cb0; pointer-events: none; z-index: 20;
+}
+
+/* ── Copy/Paste toast ── */
+#canvas-toast {
+  display: none; position: absolute; bottom: 16px; left: 50%;
+  transform: translateX(-50%); background: #1e3a6e;
+  border: 1px solid #6366f1; border-radius: 6px; padding: 6px 16px;
+  font-size: 12px; color: #eaeaea; pointer-events: none; z-index: 50;
+  white-space: nowrap;
+}
+
+/* ── Undo / Redo toolbar buttons ── */
+#btn-undo, #btn-redo {
+  background:#1e293b; color:#eaeaea; border:1px solid #1e3a6e;
+  padding:4px 8px; border-radius:4px; cursor:pointer; font-size:12px;
+  transition: background 0.15s;
+}
+#btn-undo:not(:disabled):hover, #btn-redo:not(:disabled):hover { background: #1e3a6e; }
+#btn-undo:disabled, #btn-redo:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* ── Phase 4: Streaming badge on LLM nodes ── */
+.stream-badge {
+  display: inline-block; font-size: 8px; padding: 1px 4px;
+  background: #0891b2; color: #fff; border-radius: 2px;
+  vertical-align: middle; margin-left: 3px; letter-spacing: 0.5px;
+}
+
+/* ── Phase 4: Parallel group background rect ── */
+.parallel-group-rect {
+  position: absolute; border: 1.5px dashed #7e22ce;
+  background: rgba(126,34,206,0.06); border-radius: 8px;
+  pointer-events: none; z-index: 0;
+}
+.parallel-group-label {
+  position: absolute; color: #c084fc; font-size: 9px;
+  font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase;
+  pointer-events: none; z-index: 1;
+}
+
+/* ── Phase 4: Checkpoint drawer ── */
+#checkpoints-drawer {
+  display:none; position:fixed; top:60px; right:16px; z-index:200;
+  background:#0f172a; border:1px solid #1e3a6e; border-radius:8px;
+  width:340px; box-shadow:0 8px 32px rgba(0,0,0,0.7);
+}
+
+/* ── Model Linker drawer ── */
+#model-linker-drawer {
+  display:none; position:fixed; top:60px; right:16px; z-index:201;
+  background:#0f172a; border:1px solid #6366f1; border-radius:8px;
+  width:420px; max-height:70vh; overflow-y:auto;
+  box-shadow:0 8px 32px rgba(0,0,0,0.8);
+}
+.ml-row {
+  display:flex; align-items:center; gap:8px; padding:7px 14px;
+  border-bottom:1px solid #1e293b;
+}
+.ml-node-name { flex:0 0 120px; font-size:11px; color:#e2e8f0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ml-select { flex:1; background:#1e293b; border:1px solid #334155; color:#e2e8f0; border-radius:4px; font-size:11px; padding:3px 5px; }
+.ml-badge { flex:0 0 40px; text-align:center; font-size:10px; font-weight:700; padding:2px 5px; border-radius:3px; }
+.ml-badge.pass { background:#052e16; color:#4ade80; border:1px solid #166534; }
+.ml-badge.fail { background:#450a0a; color:#fca5a5; border:1px solid #7f1d1d; }
+.ml-unlink { flex:0 0 22px; background:none; border:none; color:#f87171; cursor:pointer; font-size:13px; padding:0; }
+</style>
+{% endblock extra_css %}
+{% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner(design) }}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;">CUI // SP-CTI</div>
+
+<!-- ── Toolbar ── -->
+<div id="aadc-toolbar" style="display:flex;align-items:center;gap:8px;padding:6px 12px;background:#0f172a;border-bottom:1px solid #1e3a6e;position:relative;flex-wrap:wrap;z-index:100;flex-shrink:0;">
+
+  <!-- Menu button -->
+  <div class="aadc-menu-wrap">
+    <button id="aadc-menu-btn" onclick="toggleMenu(event)"
+      style="background:#1e293b;color:#eaeaea;padding:5px 10px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:5px;">
+      ☰ <span style="font-size:11px;color:#6366f1;font-weight:700;">AADC</span>
+    </button>
+    <div id="aadc-menu" class="aadc-menu-dd" popover="manual" style="display:none;">
+      <a href="/agentic-ai/"><span>←</span> All Designs</a>
+      <hr class="aadc-menu-sep">
+      <a href="/agentic-ai/templates"><span>📋</span> Templates</a>
+      <a href="/agentic-ai/snippets"><span>🧩</span> Snippets</a>
+      {% if design.id %}
+      <a href="/agentic-ai/assessments/{{ design.id }}"><span>📊</span> Assessments</a>
+      <a href="/agentic-ai/artifacts/{{ design.id }}"><span>📄</span> Artifacts</a>
+      {% endif %}
+      <hr class="aadc-menu-sep">
+      <button onclick="doExportJSON()"><span>⬇</span> Export JSON</button>
+      <button onclick="doExportSVG()"><span>🖼</span> Export SVG</button>
+      <button onclick="doExportPDF()"><span>📄</span> Export PDF</button>
+      <button id="btn-export-drawio" onclick="doExportDrawio()"><span>⬚</span> Export draw.io</button>
+      <button id="btn-export-csv" onclick="doExportCSV()"><span>📊</span> Export CSV</button>
+      <hr class="aadc-menu-sep">
+      <button onclick="zoomFit()"><span>⊡</span> Fit to Canvas</button>
+      <button onclick="zoomReset()"><span>⊙</span> Reset Zoom</button>
+      <hr class="aadc-menu-sep">
+      <button onclick="groupSelectedNodes()"><span>⊞</span> Group Selected (Parallel)</button>
+      <hr class="aadc-menu-sep">
+      <button onclick="showCoordMatrix()"><span>⊡</span> Coord. Matrix</button>
+      <button onclick="showProvenance()"><span>🔗</span> Model Provenance</button>
+      <hr class="aadc-menu-sep">
+      {% if design.id %}
+      <a href="/agentic-ai/canvas/{{ design.id }}/ops-config" style="color:var(--fa-gold,#FFB800);font-weight:600;"><span>⚙️</span> Generate Ops Config</a>
+      {% endif %}
+      <hr class="aadc-menu-sep">
+      <button onclick="showThreatModel()"><span>🗡</span> Threat Model</button>
+      <button onclick="doOscalExport()"><span>📋</span> OSCAL Export</button>
+      {% if design.id %}<a href="/agentic-ai/risks/{{ design.id }}"><span>⚠</span> Risk Register</a>{% endif %}
+      <hr class="aadc-menu-sep">
+      <button onclick="showRegulatoryTracker()"><span>📜</span> Regulatory</button>
+      {% if design.id %}<a href="/agentic-ai/ato/{{ design.id }}"><span>🏛</span> ATO Readiness</a>{% endif %}
+      {% if design.id %}<a href="/agentic-ai/exec-summary/{{ design.id }}"><span>📊</span> Exec Brief</a>{% endif %}
+      {% if design.id %}<a href="/agentic-ai/red-team/{{ design.id }}"><span>⚔</span> Red Team</a>{% endif %}
+      <button onclick="runLint()"><span>💡</span> Lint Design</button>
+      {% if design.id %}<a href="/agentic-ai/api/designs/{{ design.id }}/accred-package"><span>📦</span> Accred Package</a>{% endif %}
+      <hr class="aadc-menu-sep">
+      {% if design.id %}<a href="/agentic-ai/patterns/{{ design.id }}"><span>🔍</span> Pattern Analysis</a>{% endif %}
+      {% if design.id %}<a href="/agentic-ai/impact/{{ design.id }}"><span>💥</span> Impact Analysis</a>{% endif %}
+      <a href="/agentic-ai/analytics"><span>📈</span> Portfolio Analytics</a>
+      <hr class="aadc-menu-sep">
+      {% if design.id %}<a href="/agentic-ai/scorecard/{{ design.id }}"><span>🎯</span> Scorecard</a>{% endif %}
+      {% if design.id %}<a href="/agentic-ai/deploy-gate/{{ design.id }}"><span>🚦</span> Deploy Gate</a>{% endif %}
+      <a href="/agentic-ai/findings"><span>📬</span> Findings Inbox</a>
+      <hr class="aadc-menu-sep">
+      {% if design.id %}<a href="/agentic-ai/lifecycle/{{ design.id }}"><span>🔄</span> Lifecycle</a>{% endif %}
+      {% if design.id %}<a href="/agentic-ai/review/{{ design.id }}"><span>👁</span> Review</a>{% endif %}
+      <a href="/agentic-ai/monitoring"><span>🔔</span> Monitoring</a>
+      <button onclick="doToggleFullscreen()"><span>⛶</span> Fullscreen</button>
+      <hr class="aadc-menu-sep">
+      {% if design.id %}
+      <button onclick="doSendToFineTuning()"><span>🎓</span> Send to Fine-Tuning</button>
+      {% endif %}
+    </div>
+  </div>
+
+  <span style="color:#334155;">|</span>
+
+  <input id="design-name" value="{{ design.name }}"
+    style="background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:4px 10px;border-radius:4px;font-size:13px;width:200px;">
+
+  <select id="design-domain"
+    style="background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:4px 8px;border-radius:4px;font-size:12px;">
+    <option value="" {% if not design.domain %}selected{% endif %}>Domain (optional)</option>
+    <option value="general"              {% if design.domain=='general'              %}selected{% endif %}>General</option>
+    <option value="defense"              {% if design.domain=='defense'              %}selected{% endif %}>Defense</option>
+    <option value="medical"              {% if design.domain=='medical'              %}selected{% endif %}>Medical ⚠</option>
+    <option value="benefits"             {% if design.domain=='benefits'             %}selected{% endif %}>Benefits ⚠</option>
+    <option value="employment"           {% if design.domain=='employment'           %}selected{% endif %}>Employment ⚠</option>
+    <option value="critical-infrastructure" {% if design.domain=='critical-infrastructure' %}selected{% endif %}>Critical Infra ⚠</option>
+    <option value="criminal-justice"     {% if design.domain=='criminal-justice'     %}selected{% endif %}>Criminal Justice ⚠</option>
+  </select>
+
+  <select id="design-class"
+    style="background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:4px 8px;border-radius:4px;font-size:12px;">
+    <option value="CUI"          {% if design.classification=='CUI'          %}selected{% endif %}>CUI</option>
+    <option value="UNCLASSIFIED" {% if design.classification=='UNCLASSIFIED' %}selected{% endif %}>UNCLASSIFIED</option>
+    <option value="SECRET"       {% if design.classification=='SECRET'       %}selected{% endif %}>SECRET</option>
+  </select>
+
+  <div style="flex:1;"></div>
+
+  <!-- Zoom controls in toolbar -->
+  <button onclick="zoomOut()" title="Zoom Out (Ctrl+−)"
+    style="background:#1e293b;color:#eaeaea;border:1px solid #1e3a6e;width:26px;height:26px;border-radius:4px;cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;">−</button>
+  <span id="zoom-display" style="color:#7a8cb0;font-size:11px;min-width:38px;text-align:center;font-variant-numeric:tabular-nums;">100%</span>
+  <button onclick="zoomIn()" title="Zoom In (Ctrl++)"
+    style="background:#1e293b;color:#eaeaea;border:1px solid #1e3a6e;width:26px;height:26px;border-radius:4px;cursor:pointer;font-size:16px;line-height:1;display:flex;align-items:center;justify-content:center;">+</button>
+  <button onclick="zoomFit()" title="Fit all nodes"
+    style="background:#1e293b;color:#7a8cb0;border:1px solid #1e3a6e;padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px;">Fit</button>
+
+  <span style="color:#334155;">|</span>
+
+  <button id="btn-undo" onclick="undo()" title="Undo (Ctrl+Z)" disabled>↩ Undo</button>
+  <button id="btn-redo" onclick="redo()" title="Redo (Ctrl+Y / Ctrl+Shift+Z)" disabled>↪ Redo</button>
+
+  <span style="color:#334155;">|</span>
+
+  <!-- Enhancement toolbar buttons injected by agentic-canvas.js -->
+  <span id="aadc-toolbar-extra" style="display:inline-flex;align-items:center;"></span>
+
+  <span style="color:#334155;">|</span>
+
+  {% if wf_status %}
+  <div style="background:{% if wf_status.status=='approved' %}#052e16{% elif wf_status.status=='pending' %}#422006{% else %}#1e293b{% endif %};
+       border:1px solid {% if wf_status.status=='approved' %}#166534{% elif wf_status.status=='pending' %}#7c2d12{% else %}#334155{% endif %};
+       padding:4px 10px;border-radius:4px;font-size:11px;
+       color:{% if wf_status.status=='approved' %}#4ade80{% elif wf_status.status=='pending' %}#fdba74{% else %}#94a3b8{% endif %};">
+    {% if wf_status.status=='approved' %}✓ HITL Approved{% elif wf_status.status=='pending' %}⏳ Awaiting HITL Review{% else %}● {{ wf_status.status|title }}{% endif %}
+  </div>
+  {% endif %}
+
+  {% if assessment %}
+  <div style="background:#1e293b;border:1px solid #334155;padding:4px 10px;border-radius:4px;font-size:11px;
+       color:{% if assessment.score >= 70 %}#4ade80{% elif assessment.score >= 50 %}#fb923c{% else %}#f87171{% endif %};">
+    Score: {{ assessment.score|round(1) }}%
+  </div>
+  {% endif %}
+
+  <button id="btn-legend" onclick="toggleLegend(event)"
+    style="background:#1e293b;color:#eaeaea;padding:5px 10px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:12px;" title="Compliance Legend">§ Legend</button>
+  <button id="btn-versions" onclick="toggleVersions(event)"
+    style="background:#1e293b;color:#eaeaea;padding:5px 10px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:12px;" title="Version History">⊞ Versions</button>
+  <button id="btn-checkpoints" onclick="toggleCheckpoints(event)"
+    style="background:#1e293b;color:#c084fc;padding:5px 10px;border:1px solid #7e22ce;border-radius:4px;cursor:pointer;font-size:12px;" title="Checkpoints & Forks">💾 Checkpoints</button>
+  <button id="btn-safety-map" onclick="toggleSafetyMap(event)"
+    style="background:#1e293b;color:#4ade80;padding:5px 10px;border:1px solid #166534;border-radius:4px;cursor:pointer;font-size:12px;" title="Safety Redundancy Map">🛡 Safety Map</button>
+  <button id="btn-simulate" onclick="toggleSimPanel(event)"
+    style="background:#1e293b;color:#fbbf24;padding:5px 10px;border:1px solid #92400e;border-radius:4px;cursor:pointer;font-size:12px;" title="Agent Behavior Simulation">▶ Simulate</button>
+  <button id="btn-model-linker" onclick="toggleModelLinker(event)"
+    style="background:#1e293b;color:#818cf8;padding:5px 10px;border:1px solid #4338ca;border-radius:4px;cursor:pointer;font-size:12px;" title="Link AIMC Models to AADC nodes">&#128279; Link Models</button>
+
+  <!-- Workflow -->
+  {% set wf_canvas_id = "aadc" %}
+  {% set wf_context_label = design.name %}
+  {% include 'includes/workflow_trigger_btn.html' %}
+  <button onclick="saveDesign()" id="save-btn"
+    style="background:#6366f1;color:#fff;padding:6px 14px;border:none;border-radius:4px;cursor:pointer;font-size:13px;font-weight:600;">Save</button>
+  <button onclick="assessDesign()"
+    style="background:#0f3460;color:#7ab3f0;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;font-size:12px;">Assess</button>
+  {% if not wf_status or wf_status.status == 'approved' %}
+  <button onclick="launchDesign()" id="launch-btn"
+    style="background:#059669;color:#fff;padding:6px 12px;border:none;border-radius:4px;cursor:pointer;font-size:12px;">🚀 Launch</button>
+  {% endif %}
+</div>
+
+<!-- ── Main three-pane layout ── -->
+<div style="display:flex;flex:1;overflow:hidden;position:relative;z-index:0;">
+
+  <!-- Left sidebar expand strip (visible when collapsed) -->
+  <div id="palette-expand-strip" class="expand-strip" style="display:none;" onclick="togglePaletteSidebar()" title="Expand palette">
+    <span>▶ Palette</span>
+  </div>
+
+  <!-- Left sidebar: palette -->
+  <div id="palette-sidebar" style="width:200px;min-width:200px;background:#0f172a;border-right:1px solid #1e3a6e;display:flex;flex-direction:column;overflow:hidden;">
+
+    <!-- Sidebar header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 8px;border-bottom:1px solid #1e3a6e;flex-shrink:0;">
+      <span style="color:#7a8cb0;font-size:10px;text-transform:uppercase;letter-spacing:1px;">Node Palette</span>
+      <button onclick="togglePaletteSidebar()" title="Collapse palette"
+        style="background:#1e293b;border:1px solid #1e3a6e;color:#7a8cb0;width:22px;height:22px;border-radius:3px;cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;">◀</button>
+    </div>
+
+    <!-- Scrollable content -->
+    <div id="palette-content" style="overflow-y:auto;flex:1;padding:8px;">
+      {% for cat_key, cat_nodes in palette.categories.items() %}
+      <div class="palette-category">
+        <div onclick="toggleCat('{{ cat_key }}')"
+          style="color:#eaeaea;font-size:11px;font-weight:600;padding:4px 8px;cursor:pointer;border-radius:3px;background:#1e293b;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center;user-select:none;">
+          <span>{{ cat_key|title|replace('_',' ') }}</span>
+          <span id="cat-arrow-{{ cat_key }}" class="cat-arrow collapsed">▾</span>
+        </div>
+        <div id="cat-{{ cat_key }}" style="display:none;margin-bottom:8px;">
+          {% for node in cat_nodes %}
+          <div class="palette-node" draggable="true"
+            data-type="{{ node.type }}" data-label="{{ node.label }}" data-color="{{ node.color }}" data-icon="{{ node.icon }}"
+            title="{{ node.label }}"
+            style="display:flex;align-items:center;gap:6px;padding:5px 8px;border-radius:3px;cursor:grab;font-size:11px;color:#eaeaea;margin-bottom:2px;"
+            onmouseenter="this.style.background='#1e3a6e'" onmouseleave="this.style.background='transparent'">
+            <span style="color:{{ node.color }};">{{ node.icon }}</span>{{ node.label }}
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+
+      <hr style="border-color:#1e3a6e;margin:8px 0;">
+      <div style="color:#7a8cb0;font-size:10px;text-transform:uppercase;letter-spacing:1px;padding:4px 8px;margin-bottom:4px;">Snippets</div>
+      <div id="snippets-sidebar" style="font-size:11px;color:#7a8cb0;padding:4px 8px;">Loading...</div>
+    </div>
+  </div>
+
+  <!-- Canvas area -->
+  <div id="canvas-container"
+    style="flex:1;position:relative;background:radial-gradient(circle at 50% 50%,#0f172a 0%,#090e1a 100%);overflow:hidden;cursor:default;"
+    ondragover="event.preventDefault()" ondrop="onDrop(event)">
+
+    <!-- dot grid (fixed, behind viewport) -->
+    <div style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;
+      background-image:radial-gradient(circle,#1e3a6e22 1px,transparent 1px);background-size:28px 28px;"></div>
+
+    <!-- Zoomable/pannable viewport -->
+    <div id="canvas-viewport" style="position:absolute;top:0;left:0;transform-origin:0 0;width:4000px;height:4000px;">
+      <svg id="edges-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible;"></svg>
+      <div id="nodes-layer" style="position:absolute;top:0;left:0;width:100%;height:100%;"></div>
+    </div>
+
+    <!-- Drop hint (above viewport) -->
+    <div id="drop-hint" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:#1e3a6e;pointer-events:none;z-index:5;">
+      <div style="font-size:48px;">🤖</div>
+      <div style="font-size:14px;margin-top:8px;">Drag nodes from the palette to begin designing</div>
+      <div style="font-size:12px;margin-top:4px;">or</div>
+      <a href="/agentic-ai/templates" style="color:#6366f1;font-size:12px;pointer-events:all;">Start from a template →</a>
+    </div>
+
+    <!-- Pan mode hint -->
+    <div id="pan-hint">Space+Drag to pan · Scroll to zoom</div>
+
+    <!-- Copy/Paste toast -->
+    <div id="canvas-toast"></div>
+
+    <!-- Zoom cluster (canvas corner) -->
+    <div class="zoom-cluster">
+      <button class="zoom-btn" onclick="zoomIn()" title="Zoom In">+</button>
+      <button class="zoom-btn sm" onclick="zoomReset()" title="Reset (Ctrl+0)">1:1</button>
+      <button class="zoom-btn" onclick="zoomOut()" title="Zoom Out">−</button>
+      <button class="zoom-btn sm" onclick="zoomFit()" title="Fit nodes">Fit</button>
+    </div>
+  </div>
+
+  <!-- Right sidebar: properties + assessment -->
+  <div id="props-sidebar" style="width:260px;min-width:260px;background:#0f172a;border-left:1px solid #1e3a6e;display:flex;flex-direction:column;overflow:hidden;">
+
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:5px 10px;border-bottom:1px solid #1e3a6e;flex-shrink:0;">
+      <span style="color:#7a8cb0;font-size:10px;text-transform:uppercase;letter-spacing:1px;">Properties</span>
+      <button onclick="togglePropsSidebar()" title="Collapse panel"
+        style="background:#1e293b;border:1px solid #1e3a6e;color:#7a8cb0;width:22px;height:22px;border-radius:3px;cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;">▶</button>
+    </div>
+
+    <!-- Scrollable content -->
+    <div id="props-content" style="overflow-y:auto;flex:1;padding:12px;">
+      <div id="node-props" style="display:none;">
+        <h4 style="color:#eaeaea;margin:0 0 8px;font-size:13px;">Node Properties</h4>
+        <div id="prop-type-chip" class="node-type-chip"></div>
+        <div style="margin-bottom:8px;">
+          <label style="color:#7a8cb0;font-size:11px;">Label</label>
+          <input id="prop-label"
+            style="width:100%;background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:4px 8px;border-radius:3px;font-size:12px;box-sizing:border-box;margin-top:3px;">
+        </div>
+        <div id="prop-desc" style="color:#94a3b8;font-size:11px;line-height:1.5;margin-bottom:8px;padding:6px 8px;background:#1e293b;border-radius:4px;min-height:32px;"></div>
+        <div id="prop-connections" style="color:#7a8cb0;font-size:10px;margin-bottom:12px;"></div>
+
+        <!-- Phase 4: Streaming toggle (visible for LLM nodes only) -->
+        <div id="prop-streaming-wrap" style="display:none;margin-bottom:12px;">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+            <input type="checkbox" id="prop-streaming"
+              onchange="toggleNodeStreaming(this.checked)"
+              style="width:14px;height:14px;accent-color:#0891b2;">
+            <span style="color:#38bdf8;font-size:11px;">Streaming mode</span>
+            <span style="color:#475569;font-size:10px;">(token-by-token)</span>
+          </label>
+        </div>
+
+        <!-- AIMC Model Linker inline panel (visible for ML/agent node types) -->
+        <div id="prop-aimc-wrap" style="display:none;margin-bottom:12px;border-top:1px solid #1e3a6e;padding-top:10px;">
+          <div style="color:#38bdf8;font-size:10px;font-weight:600;margin-bottom:6px;letter-spacing:0.05em;">LINKED AIMC MODEL</div>
+          <select id="prop-aimc-select" onchange="linkNodeModelFromPanel(this.value)"
+            style="width:100%;background:#0f172a;border:1px solid #334155;color:#eaeaea;padding:4px 7px;border-radius:4px;font-size:11px;box-sizing:border-box;margin-bottom:5px;">
+            <option value="">— none —</option>
+          </select>
+          <div id="prop-aimc-badge" style="display:none;font-size:11px;padding:3px 8px;border-radius:3px;"></div>
+        </div>
+
+        <!-- Phase 3: Model Provenance fields (visible for model nodes only) -->
+        <div id="prop-provenance-wrap" style="display:none;margin-bottom:12px;border-top:1px solid #1e3a6e;padding-top:10px;">
+          <div style="color:#a78bfa;font-size:10px;font-weight:600;margin-bottom:6px;letter-spacing:0.05em;">MODEL PROVENANCE</div>
+          <input id="prop-model-source" placeholder="Model source (e.g. OpenAI GPT-4)"
+            oninput="saveProvenanceField('model_source',this.value)"
+            style="width:100%;background:#0f172a;border:1px solid #334155;color:#eaeaea;padding:4px 7px;border-radius:4px;font-size:11px;margin-bottom:5px;">
+          <input id="prop-model-version" placeholder="Version (e.g. gpt-4-turbo-2024)"
+            oninput="saveProvenanceField('model_version',this.value)"
+            style="width:100%;background:#0f172a;border:1px solid #334155;color:#eaeaea;padding:4px 7px;border-radius:4px;font-size:11px;margin-bottom:5px;">
+          <input id="prop-training-data" placeholder="Training data (e.g. Common Crawl)"
+            oninput="saveProvenanceField('training_data',this.value)"
+            style="width:100%;background:#0f172a;border:1px solid #334155;color:#eaeaea;padding:4px 7px;border-radius:4px;font-size:11px;margin-bottom:5px;">
+          <input id="prop-model-license" placeholder="License (e.g. Apache-2.0, MIT)"
+            oninput="saveProvenanceField('model_license',this.value)"
+            style="width:100%;background:#0f172a;border:1px solid #334155;color:#eaeaea;padding:4px 7px;border-radius:4px;font-size:11px;">
+        </div>
+
+        <!-- Phase 2: Kanban task linkage -->
+        <div id="prop-kanban-wrap" style="border-top:1px solid #1e3a6e;padding-top:10px;margin-bottom:10px;">
+          <div style="color:#facc15;font-size:10px;font-weight:600;margin-bottom:6px;letter-spacing:0.05em;">LINKED TASK</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+            <input id="prop-kanban-task-id" placeholder="kanban_task_id (optional)"
+              oninput="saveKanbanTaskId(this.value)"
+              style="flex:1;background:#0f172a;border:1px solid #334155;color:#eaeaea;padding:4px 7px;border-radius:4px;font-size:11px;">
+            <span id="prop-kanban-badge" style="display:none;font-size:12px;cursor:pointer;" onclick="openLinkedTask()" title="Open in Kanban"></span>
+          </div>
+          <div id="prop-kanban-status-label" style="color:#7a8cb0;font-size:10px;"></div>
+        </div>
+
+        <button onclick="deleteSelectedNode()"
+          style="width:100%;background:#450a0a;color:#fca5a5;border:1px solid #7f1d1d;padding:5px;border-radius:4px;cursor:pointer;font-size:11px;">Delete Node</button>
+      </div>
+
+      <div id="no-selection" style="color:#7a8cb0;font-size:12px;text-align:center;padding:20px 0;">
+        Click a node to edit properties
+      </div>
+
+      {% if assessment %}
+      <hr style="border-color:#1e3a6e;margin:12px 0;">
+      <h4 style="color:#eaeaea;margin:0 0 10px;font-size:13px;">Last Assessment</h4>
+
+      {% macro score_bar(label, val) %}
+      <div style="margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:#7a8cb0;margin-bottom:3px;">
+          <span>{{ label }}</span>
+          <span style="color:{% if val >= 70 %}#4ade80{% elif val >= 50 %}#fb923c{% else %}#f87171{% endif %};">{{ val|round(1) }}%</span>
+        </div>
+        <div style="background:#1e293b;border-radius:3px;height:4px;">
+          <div style="background:{% if val >= 70 %}#10b981{% elif val >= 50 %}#f59e0b{% else %}#ef4444{% endif %};width:{{ val }}%;height:4px;border-radius:3px;"></div>
+        </div>
+      </div>
+      {% endmacro %}
+
+      {{ score_bar('NIST AI RMF', assessment.nist_rmf_score) }}
+      {{ score_bar('OWASP LLM',   assessment.owasp_score) }}
+      {{ score_bar('Overall',      assessment.score) }}
+
+      {% if assessment.findings %}
+      <div style="color:#f87171;font-size:11px;margin-top:8px;">{{ assessment.findings|length }} finding(s)</div>
+      {% for f in assessment.findings[:3] %}
+      <div style="background:#1e293b;border-left:2px solid {% if f.severity=='CRITICAL' %}#ef4444{% elif f.severity=='HIGH' %}#f97316{% else %}#f59e0b{% endif %};
+           padding:6px 8px;border-radius:0 3px 3px 0;margin-bottom:4px;font-size:11px;">
+        <div style="color:#eaeaea;">{{ f.title }}</div>
+        <div style="color:#7a8cb0;font-size:10px;">{{ f.framework }}</div>
+      </div>
+      {% endfor %}
+      {% if assessment.findings|length > 3 %}
+      <a href="/agentic-ai/assessments/{{ design.id }}" style="color:#6366f1;font-size:11px;">See all {{ assessment.findings|length }} findings →</a>
+      {% endif %}
+      {% endif %}
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Right sidebar expand strip (visible when collapsed) -->
+  <div id="props-expand-strip" class="expand-strip" style="display:none;" onclick="togglePropsSidebar()" title="Expand properties">
+    <span>◀ Props</span>
+  </div>
+
+</div>
+
+<!-- ── Compliance Legend Panel ── -->
+<div id="legend-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:200;
+  background:#0f172a;border:1px solid #1e3a6e;border-radius:8px;padding:14px 18px;min-width:260px;
+  box-shadow:0 8px 32px rgba(0,0,0,0.7);">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+    <span style="color:#eaeaea;font-size:13px;font-weight:600;">Compliance Legend</span>
+    <button onclick="toggleLegend()" style="background:none;border:none;color:#7a8cb0;cursor:pointer;font-size:14px;">✕</button>
+  </div>
+  <div id="legend-pills" style="display:flex;flex-direction:column;gap:6px;">
+    <div class="legend-pill" style="display:flex;align-items:center;gap:8px;">
+      <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#6366f1;flex-shrink:0;"></span>
+      <span style="color:#eaeaea;font-size:11px;">Model / LLM nodes</span>
+    </div>
+    <div class="legend-pill" style="display:flex;align-items:center;gap:8px;">
+      <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#0ea5e9;flex-shrink:0;"></span>
+      <span style="color:#eaeaea;font-size:11px;">Memory / Storage nodes</span>
+    </div>
+    <div class="legend-pill" style="display:flex;align-items:center;gap:8px;">
+      <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#f59e0b;flex-shrink:0;"></span>
+      <span style="color:#eaeaea;font-size:11px;">Agent nodes</span>
+    </div>
+    <div class="legend-pill" style="display:flex;align-items:center;gap:8px;">
+      <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#10b981;flex-shrink:0;"></span>
+      <span style="color:#eaeaea;font-size:11px;">Tool / MCP nodes</span>
+    </div>
+    <div class="legend-pill" style="display:flex;align-items:center;gap:8px;">
+      <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#ef4444;flex-shrink:0;"></span>
+      <span style="color:#eaeaea;font-size:11px;">Safety / Guardrail nodes</span>
+    </div>
+    <div class="legend-pill" style="display:flex;align-items:center;gap:8px;">
+      <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#8b5cf6;flex-shrink:0;"></span>
+      <span style="color:#eaeaea;font-size:11px;">Governance / HITL nodes</span>
+    </div>
+    <div class="legend-pill" style="display:flex;align-items:center;gap:8px;">
+      <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#64748b;flex-shrink:0;"></span>
+      <span style="color:#eaeaea;font-size:11px;">Infrastructure nodes</span>
+    </div>
+    <div class="legend-pill" style="display:flex;align-items:center;gap:8px;">
+      <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#06b6d4;flex-shrink:0;"></span>
+      <span style="color:#eaeaea;font-size:11px;">Data pipeline nodes</span>
+    </div>
+    <div class="legend-pill" style="display:flex;align-items:center;gap:8px;">
+      <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#a855f7;flex-shrink:0;"></span>
+      <span style="color:#eaeaea;font-size:11px;">Execution (checkpoint/fork)</span>
+    </div>
+    <div class="legend-pill" style="display:flex;align-items:center;gap:8px;">
+      <span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:#0891b2;flex-shrink:0;"></span>
+      <span style="color:#eaeaea;font-size:11px;">Observability (trace/span)</span>
+    </div>
+  </div>
+  <hr style="border-color:#1e3a6e;margin:10px 0;">
+  <div style="color:#7a8cb0;font-size:10px;">NIST AI RMF · OWASP LLM Top 10 · FedRAMP AI · Phase 4 · Phase 3</div>
+</div>
+
+<!-- ── Safety Map Score Badge ── -->
+<div id="safety-map-badge" style="display:none;position:fixed;bottom:20px;left:50%;transform:translateX(-50%);
+  background:#0f172a;border:1px solid #166534;border-radius:8px;padding:8px 18px;z-index:300;
+  box-shadow:0 4px 20px rgba(0,0,0,0.7);text-align:center;">
+  <span style="color:#4ade80;font-size:13px;font-weight:700;" id="safety-map-score-text">Safety Coverage: —%</span>
+  <span style="color:#6b7280;font-size:11px;margin-left:10px;" id="safety-map-detail"></span>
+  <button onclick="hideSafetyMap()" style="background:none;border:none;color:#6b7280;cursor:pointer;margin-left:12px;font-size:13px;">✕</button>
+</div>
+
+<!-- ── Coordination Matrix Modal ── -->
+<div id="coord-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:500;
+  display:none;align-items:center;justify-content:center;">
+  <div style="background:#0f172a;border:1px solid #1e3a6e;border-radius:10px;padding:0;min-width:360px;max-width:700px;max-height:85vh;overflow:hidden;
+    box-shadow:0 12px 48px rgba(0,0,0,0.8);display:flex;flex-direction:column;">
+    <div style="padding:14px 18px;border-bottom:1px solid #1e3a6e;display:flex;justify-content:space-between;align-items:center;">
+      <span style="color:#eaeaea;font-size:14px;font-weight:600;">⊡ Multi-Agent Coordination Matrix</span>
+      <button onclick="document.getElementById('coord-modal').style.display='none'"
+        style="background:none;border:none;color:#7a8cb0;cursor:pointer;font-size:16px;">✕</button>
+    </div>
+    <div id="coord-modal-body" style="padding:16px;overflow-y:auto;flex:1;">
+      <div style="color:#7a8cb0;text-align:center;padding:20px;">Loading…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Model Provenance Modal ── -->
+<div id="provenance-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:500;
+  align-items:center;justify-content:center;">
+  <div style="background:#0f172a;border:1px solid #1e3a6e;border-radius:10px;padding:0;min-width:360px;max-width:680px;max-height:85vh;overflow:hidden;
+    box-shadow:0 12px 48px rgba(0,0,0,0.8);display:flex;flex-direction:column;">
+    <div style="padding:14px 18px;border-bottom:1px solid #1e3a6e;display:flex;justify-content:space-between;align-items:center;">
+      <span style="color:#eaeaea;font-size:14px;font-weight:600;">🔗 Model Provenance Chain</span>
+      <button onclick="document.getElementById('provenance-modal').style.display='none'"
+        style="background:none;border:none;color:#7a8cb0;cursor:pointer;font-size:16px;">✕</button>
+    </div>
+    <div id="provenance-modal-body" style="padding:16px;overflow-y:auto;flex:1;">
+      <div style="color:#7a8cb0;text-align:center;padding:20px;">Loading…</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Threat Model Modal ── -->
+<div id="threat-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:500;
+  align-items:center;justify-content:center;">
+  <div style="background:#0f172a;border:1px solid #1e3a6e;border-radius:10px;padding:0;min-width:360px;max-width:780px;max-height:88vh;overflow:hidden;
+    box-shadow:0 12px 48px rgba(0,0,0,0.8);display:flex;flex-direction:column;">
+    <div style="padding:14px 18px;border-bottom:1px solid #1e3a6e;display:flex;justify-content:space-between;align-items:center;">
+      <span style="color:#eaeaea;font-size:14px;font-weight:600;">🗡 STRIDE + ATLAS Threat Model</span>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button onclick="generateThreatModel()" id="btn-gen-tm"
+          style="background:#4f46e5;color:#fff;border:none;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:11px;">↻ Generate</button>
+        <button onclick="document.getElementById('threat-modal').style.display='none'"
+          style="background:none;border:none;color:#7a8cb0;cursor:pointer;font-size:16px;">✕</button>
+      </div>
+    </div>
+    <div id="threat-modal-body" style="padding:16px;overflow-y:auto;flex:1;">
+      <div style="color:#7a8cb0;text-align:center;padding:20px;">Click Generate to run threat model analysis.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Regulatory Tracker Modal ── -->
+<div id="reg-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:500;
+  align-items:center;justify-content:center;">
+  <div style="background:#0f172a;border:1px solid #1e3a6e;border-radius:10px;padding:0;min-width:360px;max-width:820px;max-height:88vh;overflow:hidden;
+    box-shadow:0 12px 48px rgba(0,0,0,0.8);display:flex;flex-direction:column;">
+    <div style="padding:12px 16px;border-bottom:1px solid #1e3a6e;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+      <span style="color:#eaeaea;font-size:14px;font-weight:600;">📜 Regulatory Compliance Tracker</span>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button onclick="runRegulatoryAnalysis()" id="btn-run-reg"
+          style="background:#4f46e5;color:#fff;border:none;padding:5px 12px;border-radius:4px;cursor:pointer;font-size:11px;">↻ Analyze</button>
+        <button onclick="document.getElementById('reg-modal').style.display='none'"
+          style="background:none;border:none;color:#7a8cb0;cursor:pointer;font-size:16px;">✕</button>
+      </div>
+    </div>
+    <div id="reg-modal-body" style="padding:16px;overflow-y:auto;flex:1;">
+      <div style="color:#7a8cb0;text-align:center;padding:20px;">Click Analyze to run EU AI Act / DoD AI Ethics / OMB gap analysis.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Simulation Panel ── -->
+<div id="sim-panel" style="display:none;position:fixed;top:60px;right:16px;z-index:200;
+  background:#0f172a;border:1px solid #92400e;border-radius:8px;padding:0;width:340px;
+  box-shadow:0 8px 32px rgba(0,0,0,0.7);">
+  <div style="padding:10px 14px;border-bottom:1px solid #92400e;display:flex;justify-content:space-between;align-items:center;">
+    <span style="color:#fbbf24;font-size:13px;font-weight:600;">▶ Agent Behavior Simulation</span>
+    <button onclick="toggleSimPanel()" style="background:none;border:none;color:#6b7280;cursor:pointer;font-size:14px;">✕</button>
+  </div>
+  <div style="padding:12px 14px;">
+    <label style="color:#94a3b8;font-size:11px;display:block;margin-bottom:4px;">Start node</label>
+    <select id="sim-start-select"
+      style="width:100%;background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:5px 8px;border-radius:4px;font-size:12px;margin-bottom:10px;">
+      <option value="">— select a node —</option>
+    </select>
+    <button onclick="runSimulation()"
+      style="width:100%;background:#92400e;color:#fde68a;border:none;border-radius:4px;padding:7px;cursor:pointer;font-size:12px;font-weight:600;">▶ Run Simulation</button>
+    <button onclick="clearSimulation()"
+      style="width:100%;background:#1e293b;color:#6b7280;border:1px solid #334155;border-radius:4px;padding:5px;cursor:pointer;font-size:11px;margin-top:5px;">Clear</button>
+  </div>
+  <div id="sim-results" style="max-height:340px;overflow-y:auto;padding:0 14px 12px;"></div>
+</div>
+
+<!-- ── Versions Drawer ── -->
+<div id="versions-drawer" style="display:none;position:fixed;top:60px;right:16px;z-index:200;
+  background:#0f172a;border:1px solid #1e3a6e;border-radius:8px;padding:0;width:320px;
+  box-shadow:0 8px 32px rgba(0,0,0,0.7);">
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #1e3a6e;">
+    <span style="color:#eaeaea;font-size:13px;font-weight:600;">Version History</span>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button id="btn-save-version" onclick="saveVersion()"
+        style="background:#6366f1;color:#fff;padding:4px 10px;border:none;border-radius:4px;cursor:pointer;font-size:11px;">Save Version</button>
+      <button onclick="toggleVersions()" style="background:none;border:none;color:#7a8cb0;cursor:pointer;font-size:14px;">✕</button>
+    </div>
+  </div>
+  <div id="versions-list" style="max-height:320px;overflow-y:auto;padding:8px 0;"></div>
+  <div style="padding:8px 16px;border-top:1px solid #1e3a6e;">
+    <button id="btn-compare-versions" onclick="compareVersions()"
+      style="background:#0f3460;color:#7ab3f0;padding:5px 12px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:11px;width:100%;">
+      Compare Selected (select 2)
+    </button>
+  </div>
+</div>
+
+<!-- ── Version Diff Modal ── -->
+<div id="diff-modal" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,0.7);display:none;align-items:center;justify-content:center;">
+  <div style="background:#0f172a;border:1px solid #1e3a6e;border-radius:10px;padding:0;width:560px;max-height:80vh;overflow:hidden;display:flex;flex-direction:column;">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 18px;border-bottom:1px solid #1e3a6e;">
+      <span id="diff-modal-title" style="color:#eaeaea;font-size:13px;font-weight:600;">Version Diff</span>
+      <button onclick="closeDiffModal()" style="background:none;border:none;color:#7a8cb0;cursor:pointer;font-size:14px;">✕</button>
+    </div>
+    <div id="diff-modal-body" style="overflow-y:auto;padding:16px;flex:1;font-size:12px;color:#eaeaea;"></div>
+  </div>
+</div>
+
+<!-- ── Phase 4: Checkpoints Drawer ── -->
+<!-- ── AIMC Model Linker Drawer ── -->
+<div id="model-linker-drawer">
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #4338ca;flex-shrink:0;">
+    <span style="color:#818cf8;font-size:13px;font-weight:600;">&#128279; Link AIMC Models</span>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <span id="ml-il-badge" style="font-size:10px;color:#64748b;"></span>
+      <button onclick="toggleModelLinker()" style="background:none;border:none;color:#7a8cb0;cursor:pointer;font-size:14px;">&#10005;</button>
+    </div>
+  </div>
+  <div id="ml-body" style="padding:8px 0;">
+    <div style="padding:12px 16px;color:#475569;font-size:12px;">Loading catalog&#8230;</div>
+  </div>
+  <div style="padding:8px 14px;border-top:1px solid #1e293b;font-size:10px;color:#475569;line-height:1.5;">
+    Select a model from the catalog for each AI node. IL badges show compatibility with this design's classification.
+  </div>
+</div>
+
+<div id="checkpoints-drawer">
+  <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid #1e3a6e;">
+    <span style="color:#c084fc;font-size:13px;font-weight:600;">💾 Checkpoints & Forks</span>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button onclick="saveCheckpoint()"
+        style="background:#7e22ce;color:#fff;padding:4px 10px;border:none;border-radius:4px;cursor:pointer;font-size:11px;">Save Checkpoint</button>
+      <button onclick="toggleCheckpoints()" style="background:none;border:none;color:#7a8cb0;cursor:pointer;font-size:14px;">✕</button>
+    </div>
+  </div>
+  <div id="checkpoints-list" style="max-height:300px;overflow-y:auto;padding:8px 0;"></div>
+  <div style="padding:8px 16px;border-top:1px solid #1e3a6e;">
+    <div style="color:#7a8cb0;font-size:10px;line-height:1.5;">
+      <strong style="color:#c084fc;">Restore</strong> — roll back to this snapshot.<br>
+      <strong style="color:#c084fc;">Fork</strong> — create a new independent design from this checkpoint.
+    </div>
+  </div>
+</div>
+
+<div id="status-bar"
+  style="position:fixed;bottom:0;left:0;right:0;background:#0f172a;border-top:1px solid #1e3a6e;padding:3px 16px;font-size:11px;color:#7a8cb0;display:flex;gap:16px;">
+  <span id="node-count">Nodes: 0</span>
+  <span id="edge-count">Edges: 0</span>
+  <span id="zoom-status">Zoom: 100%</span>
+  <span id="status-msg" style="margin-left:auto;"></span>
+</div>
+
+<script>
+// ── State ──
+const DESIGN_ID = "{{ design.id or '' }}";
+let graph = {{ design.graph_json | safe }};
+let selectedNode = null;
+let connectingFrom = null;
+let nextId = () => 'n-' + Math.random().toString(36).substr(2, 10);
+
+// ── Viewport (pan/zoom) state ──
+const VP_MIN = 0.15, VP_MAX = 3.0, VP_STEP = 0.1;
+let vp = {x: 0, y: 0, scale: 1.0};
+let _panning = false, _panStart = {x:0,y:0}, _vpAtPanStart = {x:0,y:0};
+let _spaceDown = false;
+
+// ── Node drag state ──
+let _dragging = null, _dragOffset = {x:0, y:0};
+
+// ── Multi-select state ──
+let selectedNodes = new Set();
+let _rbActive = false, _rbStart = {x:0, y:0};
+let _dragInitPositions = {};
+
+// ── Undo / Redo history ──
+const HISTORY_MAX = 50;
+let _historyStack = [];
+let _redoStack    = [];
+let _preDragSnapshot = null;
+
+// ── Copy / Paste clipboard ──
+let _clipboard = [];
+
+// ── Phase 4 state ──
+let _p4Groups = [];        // parallel groups for current design
+let _p4GroupsLoaded = false;
+
+function loadParallelGroups() {
+  if (!DESIGN_ID || _p4GroupsLoaded) return;
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/parallel-groups')
+    .then(r => r.json())
+    .then(d => { _p4Groups = d.groups || []; _p4GroupsLoaded = true; renderParallelGroups(); });
+}
+
+function resolveGraphOverlaps(nodes, defaultW, defaultH, padding) {
+  defaultW = defaultW || 140; defaultH = defaultH || 50; padding = padding == null ? 20 : padding;
+  if (!nodes || nodes.length < 2) return;
+  for (var iter = 0; iter < 80; iter++) {
+    var moved = false;
+    for (var i = 0; i < nodes.length; i++) {
+      for (var j = i + 1; j < nodes.length; j++) {
+        var a = nodes[i], b = nodes[j];
+        var aw = a.w || defaultW, ah = a.h || defaultH;
+        var bw = b.w || defaultW, bh = b.h || defaultH;
+        var p2 = padding / 2;
+        var ax1=a.x-p2, ay1=a.y-p2, ax2=a.x+aw+p2, ay2=a.y+ah+p2;
+        var bx1=b.x-p2, by1=b.y-p2, bx2=b.x+bw+p2, by2=b.y+bh+p2;
+        if (ax2<=bx1||bx2<=ax1||ay2<=by1||by2<=ay1) continue;
+        var dx=(bx1+bx2)/2-(ax1+ax2)/2, dy=(by1+by2)/2-(ay1+ay2)/2;
+        if (dx===0&&dy===0){dx=1;dy=0;}
+        var ovX=(ax2-ax1)/2+(bx2-bx1)/2-Math.abs(dx);
+        var ovY=(ay2-ay1)/2+(by2-by1)/2-Math.abs(dy);
+        if (ovX<=0||ovY<=0) continue;
+        var px=0, py=0;
+        if (ovX<=ovY){px=(ovX/2+0.5)*(dx>=0?1:-1);}
+        else         {py=(ovY/2+0.5)*(dy>=0?1:-1);}
+        a.x-=px; a.y-=py; b.x+=px; b.y+=py; moved=true;
+      }
+    }
+    if (!moved) break;
+  }
+}
+
+// ── Init ──
+document.addEventListener('DOMContentLoaded', () => {
+  setupPaletteListeners();
+  setupCanvasEvents();
+  loadSnippetsSidebar();
+  if (DESIGN_ID) loadParallelGroups();
+  resolveGraphOverlaps(graph.nodes, 140, 50, 20);
+  render();
+  applyVP();
+  if (graph.nodes.length > 0) {
+    document.getElementById('drop-hint').style.display = 'none';
+    requestAnimationFrame(() => setTimeout(fitView, 100));
+  }
+});
+
+// ────────────────────────────────────────────────
+// PAN / ZOOM
+// ────────────────────────────────────────────────
+function applyVP() {
+  document.getElementById('canvas-viewport').style.transform =
+    `translate(${vp.x}px,${vp.y}px) scale(${vp.scale})`;
+  const pct = Math.round(vp.scale * 100) + '%';
+  document.getElementById('zoom-display').textContent = pct;
+  document.getElementById('zoom-status').textContent  = 'Zoom: ' + pct;
+}
+
+function zoomIn()    { vpScaleTo(vp.scale + VP_STEP); }
+function zoomOut()   { vpScaleTo(vp.scale - VP_STEP); }
+function zoomReset() { vp = {x:0, y:0, scale:1}; applyVP(); }
+function vpScaleTo(s, cx, cy) {
+  const container = document.getElementById('canvas-container');
+  if (cx == null) cx = container.clientWidth  / 2;
+  if (cy == null) cy = container.clientHeight / 2;
+  const ns = Math.max(VP_MIN, Math.min(VP_MAX, s));
+  vp.x = cx - (cx - vp.x) * (ns / vp.scale);
+  vp.y = cy - (cy - vp.y) * (ns / vp.scale);
+  vp.scale = ns;
+  applyVP();
+}
+
+function zoomFit() {
+  if (!graph.nodes.length) { zoomReset(); return; }
+  const container = document.getElementById('canvas-container');
+  const cw = container.clientWidth, ch = container.clientHeight, pad = 60;
+  const xs  = graph.nodes.map(n => n.x),             ys  = graph.nodes.map(n => n.y);
+  const x2s = graph.nodes.map(n => n.x+(n.w||140)), y2s = graph.nodes.map(n => n.y+(n.h||50));
+  const minX = Math.min(...xs), minY = Math.min(...ys);
+  const maxX = Math.max(...x2s), maxY = Math.max(...y2s);
+  const cw2 = maxX-minX, ch2 = maxY-minY;
+  if (cw2 < 1 || ch2 < 1) { zoomReset(); return; }
+  const s = Math.max(VP_MIN, Math.min(VP_MAX, Math.min((cw-pad*2)/cw2, (ch-pad*2)/ch2)));
+  vp.scale = s;
+  vp.x = (cw - cw2*s)/2 - minX*s;
+  vp.y = (ch - ch2*s)/2 - minY*s;
+  applyVP();
+}
+
+// Screen → canvas coordinate conversion
+function screenToCanvas(sx, sy) {
+  const r = document.getElementById('canvas-container').getBoundingClientRect();
+  return { x: (sx - r.left - vp.x) / vp.scale, y: (sy - r.top - vp.y) / vp.scale };
+}
+
+function setupCanvasEvents() {
+  const container = document.getElementById('canvas-container');
+
+  // Wheel → zoom toward cursor
+  container.addEventListener('wheel', e => {
+    e.preventDefault();
+    const r = container.getBoundingClientRect();
+    const cx = e.clientX - r.left, cy = e.clientY - r.top;
+    vpScaleTo(vp.scale + (e.deltaY < 0 ? VP_STEP : -VP_STEP), cx, cy);
+  }, {passive: false});
+
+  // Middle-mouse or Space+left-drag → pan; else rubber-band selection
+  container.addEventListener('mousedown', e => {
+    const isPanTrigger = e.button === 1 || (e.button === 0 && _spaceDown);
+    if (isPanTrigger) {
+      e.preventDefault();
+      _panning = true;
+      _panStart = {x: e.clientX, y: e.clientY};
+      _vpAtPanStart = {x: vp.x, y: vp.y};
+      container.style.cursor = 'grabbing';
+      return;
+    }
+    // Rubber-band: left button, not space, not starting on a node
+    if (e.button === 0 && !e.target.closest('.canvas-node')) {
+      _rbActive = true;
+      _rbStart = {x: e.clientX, y: e.clientY};
+      const rbEl = document.createElement('div');
+      rbEl.id = 'select-rect';
+      const cr = container.getBoundingClientRect();
+      rbEl.style.left = (e.clientX - cr.left) + 'px';
+      rbEl.style.top  = (e.clientY - cr.top)  + 'px';
+      rbEl.style.width  = '0';
+      rbEl.style.height = '0';
+      container.appendChild(rbEl);
+    }
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (_panning) {
+      vp.x = _vpAtPanStart.x + (e.clientX - _panStart.x);
+      vp.y = _vpAtPanStart.y + (e.clientY - _panStart.y);
+      applyVP();
+    }
+    if (_rbActive) {
+      const cr = container.getBoundingClientRect();
+      const rbEl = document.getElementById('select-rect');
+      if (rbEl) {
+        rbEl.style.left   = Math.min(e.clientX, _rbStart.x) - cr.left + 'px';
+        rbEl.style.top    = Math.min(e.clientY, _rbStart.y) - cr.top  + 'px';
+        rbEl.style.width  = Math.abs(e.clientX - _rbStart.x) + 'px';
+        rbEl.style.height = Math.abs(e.clientY - _rbStart.y) + 'px';
+      }
+    }
+  });
+
+  document.addEventListener('mouseup', e => {
+    if (_panning) {
+      _panning = false;
+      container.style.cursor = _spaceDown ? 'grab' : 'default';
+    }
+    if (_rbActive) {
+      _rbActive = false;
+      const rbEl = document.getElementById('select-rect');
+      if (rbEl) {
+        const cr = container.getBoundingClientRect();
+        const x1c = (Math.min(e.clientX, _rbStart.x) - cr.left - vp.x) / vp.scale;
+        const y1c = (Math.min(e.clientY, _rbStart.y) - cr.top  - vp.y) / vp.scale;
+        const x2c = (Math.max(e.clientX, _rbStart.x) - cr.left - vp.x) / vp.scale;
+        const y2c = (Math.max(e.clientY, _rbStart.y) - cr.top  - vp.y) / vp.scale;
+        const newSel = new Set();
+        if (x2c - x1c > 2 || y2c - y1c > 2) {
+          graph.nodes.forEach(n => {
+            if (n.x < x2c && n.x + (n.w||140) > x1c && n.y < y2c && n.y + (n.h||50) > y1c) {
+              newSel.add(n.id);
+            }
+          });
+        }
+        selectedNodes = newSel;
+        rbEl.remove();
+        if (newSel.size > 0) {
+          selectedNode = null;
+          document.getElementById('node-props').style.display = 'none';
+          document.getElementById('no-selection').style.display = 'block';
+        }
+        container.style.cursor = _spaceDown ? 'grab' : 'default';
+        render();
+      }
+    }
+  });
+
+  // Click on empty canvas → deselect
+  container.addEventListener('click', e => {
+    if (e.target === container || e.target.id === 'canvas-viewport' ||
+        e.target.id === 'nodes-layer' || e.target.id === 'edges-layer') {
+      selectedNode = null; connectingFrom = null;
+      selectedNodes = new Set();
+      document.getElementById('node-props').style.display = 'none';
+      document.getElementById('no-selection').style.display = 'block';
+      render();
+    }
+  });
+}
+
+// ────────────────────────────────────────────────
+// PALETTE LISTENERS
+// ────────────────────────────────────────────────
+function setupPaletteListeners() {
+  document.querySelectorAll('.palette-node').forEach(el => {
+    el.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('node-type',  el.dataset.type);
+      e.dataTransfer.setData('node-label', el.dataset.label);
+      e.dataTransfer.setData('node-color', el.dataset.color);
+      e.dataTransfer.setData('node-icon',  el.dataset.icon);
+    });
+  });
+}
+
+// ────────────────────────────────────────────────
+// UNDO / REDO
+// ────────────────────────────────────────────────
+function pushHistory() {
+  const snapshot = JSON.parse(JSON.stringify({nodes: graph.nodes, edges: graph.edges}));
+  _historyStack.push(snapshot);
+  if (_historyStack.length > HISTORY_MAX) _historyStack.shift();
+  _redoStack = [];
+  updateUndoRedoBtns();
+}
+
+function restoreState(snapshot) {
+  graph.nodes = JSON.parse(JSON.stringify(snapshot.nodes));
+  graph.edges = JSON.parse(JSON.stringify(snapshot.edges));
+  selectedNode = null;
+  selectedNodes = new Set();
+  connectingFrom = null;
+  document.getElementById('node-props').style.display = 'none';
+  document.getElementById('no-selection').style.display = 'block';
+  document.getElementById('drop-hint').style.display = graph.nodes.length > 0 ? 'none' : '';
+  render();
+  updateUndoRedoBtns();
+}
+
+function undo() {
+  if (_historyStack.length === 0) return;
+  const current = JSON.parse(JSON.stringify({nodes: graph.nodes, edges: graph.edges}));
+  _redoStack.push(current);
+  restoreState(_historyStack.pop());
+}
+
+function redo() {
+  if (_redoStack.length === 0) return;
+  const current = JSON.parse(JSON.stringify({nodes: graph.nodes, edges: graph.edges}));
+  _historyStack.push(current);
+  if (_historyStack.length > HISTORY_MAX) _historyStack.shift();
+  restoreState(_redoStack.pop());
+}
+
+function updateUndoRedoBtns() {
+  const u = document.getElementById('btn-undo');
+  const r = document.getElementById('btn-redo');
+  if (u) u.disabled = _historyStack.length === 0;
+  if (r) r.disabled = _redoStack.length === 0;
+}
+
+// ────────────────────────────────────────────────
+// DROP
+// ────────────────────────────────────────────────
+function onDrop(e) {
+  e.preventDefault();
+  const type = e.dataTransfer.getData('node-type');
+  if (!type) return;
+  const pos = screenToCanvas(e.clientX, e.clientY);
+  const node = {
+    id: nextId(), type, w: 140, h: 50,
+    label: e.dataTransfer.getData('node-label'),
+    color: e.dataTransfer.getData('node-color'),
+    icon:  e.dataTransfer.getData('node-icon'),
+    x: Math.max(0, pos.x - 70),
+    y: Math.max(0, pos.y - 25),
+  };
+  pushHistory();
+  graph.nodes.push(node);
+  document.getElementById('drop-hint').style.display = 'none';
+  render();
+}
+
+// ────────────────────────────────────────────────
+// RENDER
+// ────────────────────────────────────────────────
+function render() {
+  renderNodes();
+  renderEdges();
+  renderParallelGroups();
+  document.getElementById('node-count').textContent = 'Nodes: ' + graph.nodes.length;
+  document.getElementById('edge-count').textContent = 'Edges: ' + graph.edges.length;
+}
+
+function renderNodes() {
+  const layer = document.getElementById('nodes-layer');
+  layer.innerHTML = '';
+  graph.nodes.forEach(n => {
+    const el = document.createElement('div');
+    el.className = 'canvas-node';
+    el.dataset.id = n.id;
+    if (selectedNodes.has(n.id)) el.classList.add('selected');
+    const isSelected = selectedNode && selectedNode.id === n.id;
+    const isConnSrc  = connectingFrom === n.id;
+    el.style.cssText = `
+      position:absolute; left:${n.x}px; top:${n.y}px; width:${n.w||140}px; height:${n.h||50}px;
+      background:#16213e; border:2px solid ${n.color||'#6366f1'};
+      border-radius:6px; display:flex; align-items:center; justify-content:center;
+      cursor:move; user-select:none; font-size:11px; color:#eaeaea;
+      text-align:center; padding:0 8px; box-sizing:border-box; gap:4px;
+      box-shadow:${isSelected ? '0 0 0 2px #fff' : isConnSrc ? '0 0 0 3px #10b981' : '0 2px 8px rgba(0,0,0,0.4)'};
+    `;
+    const streamBadge = (n.streaming && (n.type === 'llm' || n.type === 'llm-local'))
+      ? '<span class="stream-badge">⚡ STREAM</span>' : '';
+    el.innerHTML = `<span style="color:${n.color||'#6366f1'};font-size:14px;">${n.icon||'⬡'}</span>
+      <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${n.label}${streamBadge}</span>`;
+
+    el.addEventListener('mousedown', e => startNodeDrag(e, n));
+    el.addEventListener('click', e => {
+      e.stopPropagation();
+      if (e.shiftKey) {
+        // Shift+click: toggle node in multi-selection
+        if (selectedNodes.has(n.id)) selectedNodes.delete(n.id);
+        else selectedNodes.add(n.id);
+        render();
+      } else {
+        selectNode(n);
+      }
+    });
+    layer.appendChild(el);
+  });
+}
+
+function renderEdges() {
+  const svg = document.getElementById('edges-layer');
+  const nodeMap = {};
+  graph.nodes.forEach(n => nodeMap[n.id] = n);
+  svg.innerHTML = `<defs><marker id="arr" markerWidth="8" markerHeight="8" refX="8" refY="3" orient="auto">
+    <path d="M0,0 L0,6 L8,3 z" fill="#6366f1"/></marker></defs>`;
+  graph.edges.forEach(e => {
+    const s = nodeMap[e.source], t = nodeMap[e.target];
+    if (!s || !t) return;
+    const x1=s.x+(s.w||140)/2, y1=s.y+(s.h||50)/2, x2=t.x+(t.w||140)/2, y2=t.y+(t.h||50)/2;
+    const mx=(x1+x2)/2, my=(y1+y2)/2;
+    const path = document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d', `M${x1},${y1} Q${mx},${y1} ${x2},${y2}`);
+    path.setAttribute('stroke','#6366f1'); path.setAttribute('stroke-width','1.5');
+    path.setAttribute('fill','none'); path.setAttribute('marker-end','url(#arr)'); path.setAttribute('opacity','0.7');
+    svg.appendChild(path);
+    if (e.label) {
+      const txt = document.createElementNS('http://www.w3.org/2000/svg','text');
+      txt.setAttribute('x',String(mx)); txt.setAttribute('y',String(my-5));
+      txt.setAttribute('fill','#7a8cb0'); txt.setAttribute('font-size','10'); txt.setAttribute('text-anchor','middle');
+      txt.textContent = e.label; svg.appendChild(txt);
+    }
+  });
+}
+
+// ────────────────────────────────────────────────
+// NODE DRAG
+// ────────────────────────────────────────────────
+function startNodeDrag(e, node) {
+  if (e.shiftKey || _spaceDown || e.button !== 0) return;
+  e.stopPropagation();
+  _dragging = node;
+  _preDragSnapshot = JSON.parse(JSON.stringify({nodes: graph.nodes, edges: graph.edges}));
+  const c = screenToCanvas(e.clientX, e.clientY);
+  _dragOffset = {x: c.x - node.x, y: c.y - node.y};
+  // Record initial positions for bulk-drag when this node is part of multi-selection
+  _dragInitPositions = {};
+  if (selectedNodes.has(node.id) && selectedNodes.size > 1) {
+    graph.nodes.forEach(n => { if (selectedNodes.has(n.id)) _dragInitPositions[n.id] = {x: n.x, y: n.y}; });
+  }
+  document.addEventListener('mousemove', onNodeDragMove);
+  document.addEventListener('mouseup',   stopNodeDrag);
+}
+function onNodeDragMove(e) {
+  if (!_dragging) return;
+  const c = screenToCanvas(e.clientX, e.clientY);
+  const newX = Math.max(0, c.x - _dragOffset.x);
+  const newY = Math.max(0, c.y - _dragOffset.y);
+  if (Object.keys(_dragInitPositions).length > 0 && _dragInitPositions[_dragging.id]) {
+    // Bulk move: apply same delta to all selected nodes
+    const dx = newX - _dragInitPositions[_dragging.id].x;
+    const dy = newY - _dragInitPositions[_dragging.id].y;
+    graph.nodes.forEach(n => {
+      if (_dragInitPositions[n.id]) {
+        n.x = Math.max(0, _dragInitPositions[n.id].x + dx);
+        n.y = Math.max(0, _dragInitPositions[n.id].y + dy);
+      }
+    });
+  } else {
+    _dragging.x = newX;
+    _dragging.y = newY;
+  }
+  render();
+}
+function stopNodeDrag() {
+  if (_dragging && _preDragSnapshot) {
+    const moved = graph.nodes.some(n => {
+      const old = _preDragSnapshot.nodes.find(o => o.id === n.id);
+      return old && (old.x !== n.x || old.y !== n.y);
+    });
+    if (moved) {
+      _historyStack.push(_preDragSnapshot);
+      if (_historyStack.length > HISTORY_MAX) _historyStack.shift();
+      _redoStack = [];
+      updateUndoRedoBtns();
+    }
+  }
+  _preDragSnapshot = null;
+  _dragging = null;
+  _dragInitPositions = {};
+  document.removeEventListener('mousemove', onNodeDragMove);
+  document.removeEventListener('mouseup',   stopNodeDrag);
+}
+
+// ────────────────────────────────────────────────
+// SELECTION
+// ────────────────────────────────────────────────
+function selectNode(node) {
+  selectedNode = node;
+  document.getElementById('node-props').style.display = 'block';
+  document.getElementById('no-selection').style.display = 'none';
+  document.getElementById('prop-label').value = node.label || '';
+  document.getElementById('prop-type-chip').textContent = node.type || '';
+  const descs = {{ node_descs | tojson }};
+  const desc = descs[node.type] || '';
+  const descEl = document.getElementById('prop-desc');
+  descEl.textContent = desc;
+  descEl.style.display = desc ? 'block' : 'none';
+  const conns = graph.edges.filter(e => e.source === node.id || e.target === node.id).length;
+  document.getElementById('prop-connections').textContent =
+    conns ? `${conns} connection${conns !== 1 ? 's' : ''}` : 'No connections';
+
+  // Phase 4: streaming toggle — visible only for LLM nodes
+  const streamWrap = document.getElementById('prop-streaming-wrap');
+  const streamCb   = document.getElementById('prop-streaming');
+  if (node.type === 'llm' || node.type === 'llm-local') {
+    streamWrap.style.display = 'block';
+    streamCb.checked = !!node.streaming;
+  } else {
+    streamWrap.style.display = 'none';
+  }
+
+  // Phase 3: model provenance panel — visible only for model nodes
+  _syncProvenancePanel(node);
+
+  // Phase 2: kanban task linkage
+  const meta = node.metadata || {};
+  const linkedTaskId = meta.kanban_task_id || '';
+  document.getElementById('prop-kanban-task-id').value = linkedTaskId;
+  const kBadge = document.getElementById('prop-kanban-badge');
+  const kLabel = document.getElementById('prop-kanban-status-label');
+  kBadge.style.display = 'none';
+  kLabel.textContent = '';
+  if (linkedTaskId && DESIGN_ID) {
+    refreshKanbanBadgeForNode(node.id, linkedTaskId);
+  }
+
+  // AIMC model linker panel — visible for ML/agent node types
+  _loadNodeAIMCPanel(node);
+
+  render();
+}
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('prop-label').addEventListener('input', e => {
+    if (selectedNode) { selectedNode.label = e.target.value; render(); }
+  });
+});
+
+function deleteSelectedNode() {
+  if (!selectedNode) return;
+  pushHistory();
+  graph.nodes = graph.nodes.filter(n => n.id !== selectedNode.id);
+  graph.edges = graph.edges.filter(e => e.source !== selectedNode.id && e.target !== selectedNode.id);
+  selectedNode = null;
+  document.getElementById('node-props').style.display = 'none';
+  document.getElementById('no-selection').style.display = 'block';
+  render();
+}
+
+// ────────────────────────────────────────────────
+// SAVE / ASSESS / LAUNCH
+// ────────────────────────────────────────────────
+function saveDesign() {
+  const btn = document.getElementById('save-btn');
+  btn.textContent = 'Saving…'; btn.disabled = true;
+  const payload = {
+    name: document.getElementById('design-name').value,
+    domain: document.getElementById('design-domain').value,
+    classification: document.getElementById('design-class').value,
+    graph,
+  };
+  const url = DESIGN_ID ? '/agentic-ai/api/designs/'+DESIGN_ID : '/agentic-ai/api/designs';
+  const method = DESIGN_ID ? 'PUT' : 'POST';
+  fetch(url, {method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)})
+    .then(r => r.json())
+    .then(d => {
+      btn.textContent = '✓ Saved'; btn.disabled = false;
+      const fc = d.findings_json ? JSON.parse(d.findings_json).length : 0;
+      setStatus('Saved · Score: '+(d.score||'--')+'% · '+fc+' finding(s)');
+      if (!DESIGN_ID && d.id) window.location.href = '/agentic-ai/canvas/'+d.id;
+      setTimeout(() => { btn.textContent = 'Save'; }, 2000);
+    })
+    .catch(err => { btn.textContent = 'Save'; btn.disabled = false; setStatus('Error: '+err); });
+}
+
+function assessDesign() {
+  setStatus('Running assessment…');
+  fetch('/agentic-ai/api/designs/'+DESIGN_ID+'/assess', {method:'POST'})
+    .then(r => r.json())
+    .then(d => { setStatus('Assessment done · Score: '+d.score+'%'); setTimeout(() => location.reload(), 1200); });
+}
+
+function launchDesign() {
+  if (!confirm('Launch this design to Kanban? This will create implementation tasks.\n\nRe-launching is safe — existing tasks are not duplicated.')) return;
+  var btn = document.getElementById('launch-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Launching...'; }
+  fetch('/agentic-ai/api/designs/'+DESIGN_ID+'/launch', {method:'POST'})
+    .then(r => r.json())
+    .then(function(d) {
+      if (btn) { btn.disabled = false; btn.innerHTML = '&#x1F680; Launch'; }
+      if (d.error) { alert(d.error); return; }
+      var newCount = (d.task_ids||[]).length - (d.skipped||[]).length;
+      var skipCount = (d.skipped||[]).length;
+      if (skipCount > 0 && newCount === 0) {
+        setStatus('Already launched — ' + skipCount + ' task(s) already in Kanban. No duplicates created.');
+      } else if (skipCount > 0) {
+        setStatus('Launched! ' + newCount + ' new task(s) queued; ' + skipCount + ' already existed.');
+      } else {
+        setStatus('Launched! ' + newCount + ' Kanban task(s) created for ' + (d.clusters||[]).length + ' layer(s).');
+      }
+    })
+    .catch(function(e) {
+      if (btn) { btn.disabled = false; btn.innerHTML = '&#x1F680; Launch'; }
+      alert('Launch failed: ' + e);
+    });
+}
+
+// ────────────────────────────────────────────────
+// SIDEBAR TOGGLES
+// ────────────────────────────────────────────────
+let _paletteOpen = true;
+function togglePaletteSidebar() {
+  _paletteOpen = !_paletteOpen;
+  const sidebar = document.getElementById('palette-sidebar');
+  const strip   = document.getElementById('palette-expand-strip');
+  if (_paletteOpen) {
+    sidebar.style.width = '200px'; sidebar.style.minWidth = '200px';
+    sidebar.style.borderRight = '1px solid #1e3a6e';
+    strip.style.display = 'none';
+  } else {
+    sidebar.style.width = '0'; sidebar.style.minWidth = '0';
+    sidebar.style.borderRight = 'none';
+    strip.style.display = 'flex';
+  }
+}
+
+let _propsOpen = true;
+function togglePropsSidebar() {
+  _propsOpen = !_propsOpen;
+  const sidebar = document.getElementById('props-sidebar');
+  const strip   = document.getElementById('props-expand-strip');
+  if (_propsOpen) {
+    sidebar.style.width = '260px'; sidebar.style.minWidth = '260px';
+    sidebar.style.borderLeft = '1px solid #1e3a6e';
+    strip.style.display = 'none';
+  } else {
+    sidebar.style.width = '0'; sidebar.style.minWidth = '0';
+    sidebar.style.borderLeft = 'none';
+    strip.style.display = 'flex';
+  }
+}
+
+// ────────────────────────────────────────────────
+// CATEGORY TOGGLE
+// ────────────────────────────────────────────────
+function toggleCat(cat) {
+  const body  = document.getElementById('cat-'+cat);
+  const arrow = document.getElementById('cat-arrow-'+cat);
+  const open  = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  arrow.classList.toggle('collapsed', open);
+}
+
+// ────────────────────────────────────────────────
+// MENU — uses popover top-layer API (Chrome 114+) with display fallback
+// popover renders above GPU compositing layers; no z-index can beat it
+// ────────────────────────────────────────────────
+const _menuEl = document.getElementById('aadc-menu');
+document.body.appendChild(_menuEl); // portal so fixed coords work from body origin
+const _popoverOk = typeof _menuEl.showPopover === 'function';
+
+function _menuPos() {
+  const r = document.getElementById('aadc-menu-btn').getBoundingClientRect();
+  _menuEl.style.top  = r.bottom + 'px';
+  _menuEl.style.left = r.left   + 'px';
+}
+function _isMenuOpen() {
+  return _popoverOk ? _menuEl.matches(':popover-open') : _menuEl.style.display === 'block';
+}
+function _showMenu() {
+  _menuPos();
+  if (_popoverOk) { _menuEl.style.removeProperty('display'); _menuEl.showPopover(); }
+  else { _menuEl.style.display = 'block'; }
+}
+function _hideMenu() {
+  if (_popoverOk) { try { _menuEl.hidePopover(); } catch(e){} }
+  _menuEl.style.display = 'none';
+}
+function toggleMenu(e) {
+  e && e.stopPropagation();
+  if (_isMenuOpen()) _hideMenu(); else _showMenu();
+}
+// Hovercard: 150ms grace period between wrap-leave and menu-enter
+let _menuHideTimer = null;
+(function() {
+  const wrap = document.querySelector('.aadc-menu-wrap');
+  function _keep()  { clearTimeout(_menuHideTimer); }
+  function _sched() { _menuHideTimer = setTimeout(_hideMenu, 150); }
+  wrap.addEventListener('mouseenter', () => { _keep(); _showMenu(); });
+  wrap.addEventListener('mouseleave', _sched);
+  _menuEl.addEventListener('mouseenter', _keep);
+  _menuEl.addEventListener('mouseleave', _sched);
+})();
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.aadc-menu-wrap') && !e.target.closest('#aadc-menu')) _hideMenu();
+});
+
+// ────────────────────────────────────────────────
+// EXPORT
+// ────────────────────────────────────────────────
+function doExportJSON() {
+  const blob = new Blob([JSON.stringify({
+    name: document.getElementById('design-name').value,
+    domain: document.getElementById('design-domain').value,
+    classification: document.getElementById('design-class').value,
+    graph, exported_at: new Date().toISOString()
+  }, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (document.getElementById('design-name').value||'aadc-design')+'.json';
+  a.click();
+  _hideMenu();
+}
+
+function doExportSVG() {
+  const pad = 20;
+  const maxX = graph.nodes.reduce((m,n) => Math.max(m, n.x+(n.w||140)), 400);
+  const maxY = graph.nodes.reduce((m,n) => Math.max(m, n.y+(n.h||50)),  300);
+  const W = maxX+pad*2, H = maxY+pad*2;
+  let svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
+  <rect width="${W}" height="${H}" fill="#090e1a"/>
+  <defs><marker id="arr" markerWidth="8" markerHeight="8" refX="8" refY="3" orient="auto">
+    <path d="M0,0 L0,6 L8,3 z" fill="#6366f1"/></marker></defs>`;
+  const nodeMap = {};
+  graph.nodes.forEach(n => nodeMap[n.id] = n);
+  graph.edges.forEach(e => {
+    const s=nodeMap[e.source], t=nodeMap[e.target];
+    if (!s||!t) return;
+    const x1=s.x+(s.w||140)/2, y1=s.y+(s.h||50)/2, x2=t.x+(t.w||140)/2, y2=t.y+(t.h||50)/2;
+    const mx=(x1+x2)/2;
+    svgContent += `<path d="M${x1},${y1} Q${mx},${y1} ${x2},${y2}" stroke="#6366f1" stroke-width="1.5" fill="none" marker-end="url(#arr)" opacity="0.7"/>`;
+  });
+  graph.nodes.forEach(n => {
+    svgContent += `<rect x="${n.x}" y="${n.y}" width="${n.w||140}" height="${n.h||50}" rx="6" fill="#16213e" stroke="${n.color||'#6366f1'}" stroke-width="2"/>`;
+    svgContent += `<text x="${n.x+(n.w||140)/2}" y="${n.y+(n.h||50)/2+4}" fill="#eaeaea" font-size="11" text-anchor="middle" font-family="sans-serif">${n.label}</text>`;
+  });
+  svgContent += '</svg>';
+  const blob = new Blob([svgContent], {type:'image/svg+xml'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (document.getElementById('design-name').value||'aadc-design')+'.svg';
+  a.click();
+  _hideMenu();
+}
+
+function doExportPDF() {
+  _hideMenu();
+  if (!DESIGN_ID) { alert('Save the design first before exporting PDF.'); return; }
+  setStatus('Generating PDF…');
+  fetch('/agentic-ai/canvas/' + DESIGN_ID + '/export-pdf', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({nodes: graph.nodes, edges: graph.edges})
+  })
+  .then(r => {
+    if (!r.ok) return r.json().then(d => { throw new Error(d.error || 'PDF generation failed'); });
+    return r.blob();
+  })
+  .then(blob => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = (document.getElementById('design-name').value || 'aadc-design') + '.pdf';
+    a.click();
+    setStatus('PDF exported');
+  })
+  .catch(err => setStatus('PDF error: ' + err));
+}
+
+function doExportDrawio() {
+  _hideMenu();
+  const cells = ['<mxCell id="0"/>', '<mxCell id="1" parent="0"/>'];
+  graph.nodes.forEach((n, i) => {
+    const id = 'cell' + (i + 2);
+    const label = (n.label || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    cells.push(`<mxCell id="${id}" value="${label}" style="rounded=1;fillColor=#16213e;strokeColor=${n.color||'#6366f1'};fontColor=#eaeaea;" vertex="1" parent="1"><mxGeometry x="${n.x}" y="${n.y}" width="${n.w||140}" height="${n.h||50}" as="geometry"/></mxCell>`);
+  });
+  const xml = `<mxfile><diagram><mxGraphModel><root>${cells.join('')}</root></mxGraphModel></diagram></mxfile>`;
+  const blob = new Blob([xml], {type: 'application/xml'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (document.getElementById('design-name').value || 'aadc-design') + '.drawio';
+  a.click();
+  setStatus('Exported draw.io');
+}
+
+function doExportCSV() {
+  _hideMenu();
+  const rows = [['id', 'label', 'type', 'x', 'y', 'width', 'height', 'color']];
+  graph.nodes.forEach(n => {
+    rows.push([n.id, n.label || '', n.type || '', n.x, n.y, n.w || 140, n.h || 50, n.color || '']);
+  });
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\r\n');
+  const blob = new Blob([csv], {type: 'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (document.getElementById('design-name').value || 'aadc-design') + '.csv';
+  a.click();
+  setStatus('Exported CSV');
+}
+
+function doToggleFullscreen() {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{});
+  else document.exitFullscreen();
+  _hideMenu();
+}
+
+// ────────────────────────────────────────────────
+// LEGEND
+// ────────────────────────────────────────────────
+function toggleLegend(e) {
+  e && e.stopPropagation();
+  const panel = document.getElementById('legend-panel');
+  const versionsDrawer = document.getElementById('versions-drawer');
+  versionsDrawer.style.display = 'none';
+  panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+}
+
+// ────────────────────────────────────────────────
+// VERSIONS
+// ────────────────────────────────────────────────
+let _selectedVersions = new Set();
+
+function toggleVersions(e) {
+  e && e.stopPropagation();
+  const drawer = document.getElementById('versions-drawer');
+  const legendPanel = document.getElementById('legend-panel');
+  legendPanel.style.display = 'none';
+  if (drawer.style.display === 'block') {
+    drawer.style.display = 'none';
+  } else {
+    drawer.style.display = 'block';
+    loadVersionsList();
+  }
+}
+
+function loadVersionsList() {
+  if (!DESIGN_ID) {
+    document.getElementById('versions-list').innerHTML =
+      '<div style="padding:12px 16px;color:#7a8cb0;font-size:12px;">Save the design first.</div>';
+    return;
+  }
+  fetch('/agentic-ai/canvas/' + DESIGN_ID + '/versions')
+    .then(r => r.json())
+    .then(data => {
+      const el = document.getElementById('versions-list');
+      const versions = data.versions || [];
+      if (!versions.length) {
+        el.innerHTML = '<div style="padding:12px 16px;color:#7a8cb0;font-size:12px;">No versions saved yet.</div>';
+        return;
+      }
+      el.innerHTML = versions.map(v => `
+        <div class="version-row" data-vnum="${v.version_number}"
+          style="display:flex;align-items:center;gap:8px;padding:8px 16px;border-bottom:1px solid #1e293b;cursor:pointer;"
+          onclick="toggleVersionSelect(${v.version_number}, this)">
+          <input type="checkbox" class="version-checkbox" data-vnum="${v.version_number}" style="pointer-events:none;">
+          <div style="flex:1;">
+            <div style="color:#eaeaea;font-size:12px;">v${v.version_number}${v.label ? ' — ' + v.label : ''}</div>
+            <div style="color:#7a8cb0;font-size:10px;">${v.created_at || ''}</div>
+          </div>
+        </div>`).join('');
+    })
+    .catch(() => {
+      document.getElementById('versions-list').innerHTML =
+        '<div style="padding:12px 16px;color:#f87171;font-size:12px;">Failed to load versions.</div>';
+    });
+}
+
+function toggleVersionSelect(vnum, rowEl) {
+  const cb = rowEl.querySelector('.version-checkbox');
+  if (_selectedVersions.has(vnum)) {
+    _selectedVersions.delete(vnum);
+    cb.checked = false;
+    rowEl.style.background = '';
+  } else {
+    if (_selectedVersions.size >= 2) {
+      const firstNum = [..._selectedVersions][0];
+      _selectedVersions.delete(firstNum);
+      const firstRow = document.querySelector(`.version-row[data-vnum="${firstNum}"]`);
+      if (firstRow) { firstRow.querySelector('.version-checkbox').checked = false; firstRow.style.background = ''; }
+    }
+    _selectedVersions.add(vnum);
+    cb.checked = true;
+    rowEl.style.background = '#1e3a6e44';
+  }
+}
+
+function saveVersion() {
+  if (!DESIGN_ID) { alert('Save the design first.'); return; }
+  const label = prompt('Version label (optional):') || null;
+  fetch('/agentic-ai/canvas/' + DESIGN_ID + '/versions', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({label})
+  })
+  .then(r => r.json())
+  .then(d => {
+    setStatus('Version ' + d.version_number + ' saved');
+    loadVersionsList();
+  })
+  .catch(() => setStatus('Version save failed'));
+}
+
+function compareVersions() {
+  if (_selectedVersions.size !== 2) { alert('Select exactly 2 versions to compare.'); return; }
+  const [v1, v2] = [..._selectedVersions].sort((a,b) => a-b);
+  fetch('/agentic-ai/canvas/' + DESIGN_ID + '/versions/diff?v1=' + v1 + '&v2=' + v2)
+    .then(r => r.json())
+    .then(diff => showDiffModal(v1, v2, diff))
+    .catch(() => setStatus('Diff failed'));
+}
+
+function showDiffModal(v1, v2, diff) {
+  document.getElementById('diff-modal-title').textContent = `Diff: v${v1} → v${v2}`;
+  const body = document.getElementById('diff-modal-body');
+  const added = diff.added_nodes || [];
+  const removed = diff.removed_nodes || [];
+  const changed = diff.changed_nodes || [];
+  let html = '';
+  if (added.length) {
+    html += `<div style="color:#4ade80;margin-bottom:8px;"><strong>Added (${added.length})</strong></div>`;
+    added.forEach(n => { html += `<div style="padding:4px 8px;background:#052e1644;border-radius:3px;margin-bottom:3px;color:#4ade80;">+ ${n.label || n.id}</div>`; });
+  }
+  if (removed.length) {
+    html += `<div style="color:#f87171;margin:8px 0;"><strong>Removed (${removed.length})</strong></div>`;
+    removed.forEach(n => { html += `<div style="padding:4px 8px;background:#450a0a44;border-radius:3px;margin-bottom:3px;color:#f87171;">− ${n.label || n.id}</div>`; });
+  }
+  if (changed.length) {
+    html += `<div style="color:#fb923c;margin:8px 0;"><strong>Changed (${changed.length})</strong></div>`;
+    changed.forEach(n => { html += `<div style="padding:4px 8px;background:#431a0044;border-radius:3px;margin-bottom:3px;color:#fb923c;">~ ${n.label || n.id}</div>`; });
+  }
+  if (!added.length && !removed.length && !changed.length) {
+    html = '<div style="color:#7a8cb0;">No differences found.</div>';
+  }
+  body.innerHTML = html;
+  document.getElementById('diff-modal').style.display = 'flex';
+}
+
+function closeDiffModal() {
+  document.getElementById('diff-modal').style.display = 'none';
+}
+
+// Close legend/versions drawer on outside click
+document.addEventListener('click', e => {
+  if (!e.target.closest('#legend-panel') && !e.target.closest('#btn-legend')) {
+    document.getElementById('legend-panel').style.display = 'none';
+  }
+  if (!e.target.closest('#versions-drawer') && !e.target.closest('#btn-versions') &&
+      !e.target.closest('#diff-modal')) {
+    document.getElementById('versions-drawer').style.display = 'none';
+  }
+});
+
+// ────────────────────────────────────────────────
+// SNIPPETS
+// ────────────────────────────────────────────────
+function loadSnippetsSidebar() {
+  fetch('/agentic-ai/api/snippets')
+    .then(r => r.json())
+    .then(snippets => {
+      const el = document.getElementById('snippets-sidebar');
+      if (!snippets.length) { el.textContent = 'No snippets'; return; }
+      el.innerHTML = snippets.map(s =>
+        `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #1e293b;">
+          <span style="font-size:11px;color:#eaeaea;">${s.name}</span>
+          <button onclick="insertSnippet('${s.id}')" style="background:#0f3460;color:#7ab3f0;border:none;padding:2px 6px;border-radius:2px;cursor:pointer;font-size:10px;">+</button>
+        </div>`).join('');
+    });
+}
+
+function insertSnippet(snippetId) {
+  if (!DESIGN_ID) { saveDesign(); return; }
+  fetch('/agentic-ai/api/snippets/'+snippetId+'/insert/'+DESIGN_ID, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({offset_x:100, offset_y:100})
+  }).then(r => r.json()).then(d => {
+    if (d.graph_json) { graph = JSON.parse(d.graph_json); render(); setStatus('Snippet inserted'); }
+  });
+}
+
+// ────────────────────────────────────────────────
+// STATUS
+// ────────────────────────────────────────────────
+function setStatus(msg) { document.getElementById('status-msg').textContent = msg; }
+
+// ────────────────────────────────────────────────
+// COPY / PASTE
+// ────────────────────────────────────────────────
+let _toastTimer = null;
+function showToast(msg) {
+  const el = document.getElementById('canvas-toast');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.display = 'block';
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { el.style.display = 'none'; }, 2000);
+}
+
+function copySelectedNodes() {
+  if (selectedNodes.size === 0) return;
+  _clipboard = graph.nodes
+    .filter(n => selectedNodes.has(n.id))
+    .map(n => { const c = JSON.parse(JSON.stringify(n)); delete c.id; c.copied = true; return c; });
+  showToast('Copied ' + _clipboard.length + ' node' + (_clipboard.length !== 1 ? 's' : ''));
+}
+
+function pasteNodes() {
+  if (_clipboard.length === 0) return;
+  pushHistory();
+  const newIds = [];
+  _clipboard.forEach((snap, i) => {
+    const node = JSON.parse(JSON.stringify(snap));
+    node.id = nextId();
+    node.x = (snap.x || 0) + 20;
+    node.y = (snap.y || 0) + 20;
+    delete node.copied;
+    graph.nodes.push(node);
+    newIds.push(node.id);
+  });
+  _clipboard = [];
+  selectedNodes = new Set(newIds);
+  document.getElementById('drop-hint').style.display = 'none';
+  render();
+}
+
+// ────────────────────────────────────────────────
+// KEYBOARD
+// ────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  const tag = e.target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+
+  if ((e.ctrlKey||e.metaKey) && e.key === 's')         { e.preventDefault(); saveDesign(); }
+  if ((e.ctrlKey||e.metaKey) && !e.shiftKey && e.key === 'z') { e.preventDefault(); undo(); return; }
+  if ((e.ctrlKey||e.metaKey) && (e.key === 'y' || e.key === 'Z')) { e.preventDefault(); redo(); return; }
+  if ((e.ctrlKey||e.metaKey) && e.key === 'c')         { e.preventDefault(); copySelectedNodes(); return; }
+  if ((e.ctrlKey||e.metaKey) && e.key === 'v')         { e.preventDefault(); pasteNodes(); return; }
+  if (e.key === 'Delete') {
+    if (selectedNodes.size > 0) {
+      pushHistory();
+      graph.nodes = graph.nodes.filter(n => !selectedNodes.has(n.id));
+      graph.edges = graph.edges.filter(ed => !selectedNodes.has(ed.source) && !selectedNodes.has(ed.target));
+      if (selectedNode && selectedNodes.has(selectedNode.id)) {
+        selectedNode = null;
+        document.getElementById('node-props').style.display = 'none';
+        document.getElementById('no-selection').style.display = 'block';
+      }
+      selectedNodes = new Set();
+      render();
+    } else if (selectedNode) {
+      deleteSelectedNode();
+    }
+  }
+  if (e.key === 'Escape')                              { connectingFrom = null; selectedNodes = new Set(); render(); }
+  if ((e.ctrlKey||e.metaKey) && (e.key==='='||e.key==='+')) { e.preventDefault(); zoomIn(); }
+  if ((e.ctrlKey||e.metaKey) && e.key === '-')         { e.preventDefault(); zoomOut(); }
+  if ((e.ctrlKey||e.metaKey) && e.key === '0')         { e.preventDefault(); zoomReset(); }
+
+  if (e.key === ' ') {
+    e.preventDefault();
+    _spaceDown = true;
+    document.getElementById('canvas-container').style.cursor = 'grab';
+    document.getElementById('pan-hint').style.display = 'block';
+  }
+});
+document.addEventListener('keyup', e => {
+  if (e.key === ' ') {
+    _spaceDown = false;
+    if (!_panning) {
+      document.getElementById('canvas-container').style.cursor = 'default';
+      document.getElementById('pan-hint').style.display = 'none';
+    }
+  }
+});
+
+// ────────────────────────────────────────────────
+// PHASE 4 — STREAMING TOGGLE
+// ────────────────────────────────────────────────
+function toggleNodeStreaming(enabled) {
+  if (!selectedNode) return;
+  pushHistory();
+  selectedNode.streaming = enabled;
+  render();
+}
+
+// ────────────────────────────────────────────────
+// PHASE 4 — PARALLEL GROUPS
+// ────────────────────────────────────────────────
+function renderParallelGroups() {
+  // Remove existing group rects
+  document.querySelectorAll('.parallel-group-rect,.parallel-group-label').forEach(el => el.remove());
+  if (!_p4Groups.length) return;
+
+  const nodeLayer = document.getElementById('nodes-layer');
+  const nodeMap = {};
+  graph.nodes.forEach(n => nodeMap[n.id] = n);
+
+  _p4Groups.forEach(g => {
+    const members = (g.node_ids || []).map(id => nodeMap[id]).filter(Boolean);
+    if (!members.length) return;
+
+    const pad = 12;
+    const xs  = members.map(n => n.x - pad);
+    const ys  = members.map(n => n.y - pad - 16); // room for label
+    const x2s = members.map(n => n.x + (n.w || 140) + pad);
+    const y2s = members.map(n => n.y + (n.h || 50) + pad);
+
+    const minX = Math.min(...xs), minY = Math.min(...ys);
+    const maxX = Math.max(...x2s), maxY = Math.max(...y2s);
+
+    const rect = document.createElement('div');
+    rect.className = 'parallel-group-rect';
+    rect.style.left   = minX + 'px';
+    rect.style.top    = minY + 'px';
+    rect.style.width  = (maxX - minX) + 'px';
+    rect.style.height = (maxY - minY) + 'px';
+    rect.style.borderColor = g.color || '#7e22ce';
+    nodeLayer.insertBefore(rect, nodeLayer.firstChild);
+
+    const lbl = document.createElement('div');
+    lbl.className = 'parallel-group-label';
+    lbl.style.left = (minX + 6) + 'px';
+    lbl.style.top  = (minY + 3) + 'px';
+    lbl.style.color = g.color || '#c084fc';
+    lbl.textContent = '⊞ ' + (g.label || 'Parallel Group');
+    nodeLayer.insertBefore(lbl, nodeLayer.firstChild);
+  });
+}
+
+function groupSelectedNodes() {
+  if (selectedNodes.size < 2) { alert('Select at least 2 nodes (Shift+click) to create a parallel group.'); return; }
+  if (!DESIGN_ID) { alert('Save the design first.'); return; }
+  const label = prompt('Group label:', 'Parallel Group') || 'Parallel Group';
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/parallel-groups', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({node_ids: [...selectedNodes], label})
+  }).then(r => r.json()).then(g => {
+    _p4Groups.push(g);
+    renderParallelGroups();
+    setStatus('Parallel group created: ' + label);
+  }).catch(() => setStatus('Group creation failed'));
+}
+
+// ────────────────────────────────────────────────
+// PHASE 4 — CHECKPOINTS
+// ────────────────────────────────────────────────
+let _ckptsDrawerOpen = false;
+
+function toggleCheckpoints(e) {
+  e && e.stopPropagation();
+  const drawer = document.getElementById('checkpoints-drawer');
+  document.getElementById('legend-panel').style.display = 'none';
+  document.getElementById('versions-drawer').style.display = 'none';
+  _ckptsDrawerOpen = !_ckptsDrawerOpen;
+  drawer.style.display = _ckptsDrawerOpen ? 'block' : 'none';
+  if (_ckptsDrawerOpen) loadCheckpointsList();
+}
+
+function loadCheckpointsList() {
+  if (!DESIGN_ID) {
+    document.getElementById('checkpoints-list').innerHTML =
+      '<div style="padding:12px 16px;color:#7a8cb0;font-size:12px;">Save the design first.</div>';
+    return;
+  }
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/checkpoints')
+    .then(r => r.json())
+    .then(data => {
+      const el = document.getElementById('checkpoints-list');
+      const ckpts = data.checkpoints || [];
+      if (!ckpts.length) {
+        el.innerHTML = '<div style="padding:12px 16px;color:#7a8cb0;font-size:12px;">No checkpoints saved. Click "Save Checkpoint" to create one.</div>';
+        return;
+      }
+      el.innerHTML = ckpts.map(c => `
+        <div style="display:flex;align-items:center;gap:6px;padding:8px 14px;border-bottom:1px solid #1e293b;">
+          <div style="flex:1;">
+            <div style="color:#eaeaea;font-size:12px;">💾 ${c.label || 'Checkpoint'}</div>
+            <div style="color:#7a8cb0;font-size:10px;">${(c.created_at||'').slice(0,19).replace('T',' ')}</div>
+          </div>
+          <button onclick="restoreCheckpoint('${c.id}')"
+            style="background:#052e16;color:#4ade80;border:1px solid #166534;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:10px;">Restore</button>
+          <button onclick="forkCheckpoint('${c.id}')"
+            style="background:#1e1b4b;color:#a5b4fc;border:1px solid #3730a3;padding:3px 8px;border-radius:3px;cursor:pointer;font-size:10px;">Fork</button>
+          <button onclick="deleteCheckpoint('${c.id}')"
+            style="background:none;color:#475569;border:none;padding:3px 6px;cursor:pointer;font-size:12px;" title="Delete">✕</button>
+        </div>`).join('');
+    })
+    .catch(() => {
+      document.getElementById('checkpoints-list').innerHTML =
+        '<div style="padding:12px 16px;color:#f87171;font-size:12px;">Failed to load checkpoints.</div>';
+    });
+}
+
+function saveCheckpoint() {
+  if (!DESIGN_ID) { alert('Save the design first.'); return; }
+  const label = prompt('Checkpoint label (optional):') || '';
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/checkpoints', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({label})
+  }).then(r => r.json()).then(d => {
+    setStatus('Checkpoint saved: ' + (d.id || ''));
+    loadCheckpointsList();
+  }).catch(() => setStatus('Checkpoint save failed'));
+}
+
+function restoreCheckpoint(ckptId) {
+  if (!confirm('Restore to this checkpoint? Current unsaved changes will be overwritten.')) return;
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/checkpoints/' + ckptId + '/restore', {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      setStatus('Restored to checkpoint');
+      location.reload();
+    }).catch(() => setStatus('Restore failed'));
+}
+
+function forkCheckpoint(ckptId) {
+  const name = prompt('Name for the forked design:', 'Forked Design');
+  if (!name) return;
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/checkpoints/' + ckptId + '/fork', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({name})
+  }).then(r => r.json()).then(d => {
+    if (d.error) { alert(d.error); return; }
+    if (confirm('Fork created: "' + name + '". Open it now?')) {
+      window.location.href = d.redirect;
+    }
+  }).catch(() => setStatus('Fork failed'));
+}
+
+function deleteCheckpoint(ckptId) {
+  if (!confirm('Delete this checkpoint?')) return;
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/checkpoints/' + ckptId, {method:'DELETE'})
+    .then(() => { setStatus('Checkpoint deleted'); loadCheckpointsList(); });
+}
+
+// Close checkpoints drawer on outside click
+document.addEventListener('click', e => {
+  if (!e.target.closest('#checkpoints-drawer') && !e.target.closest('#btn-checkpoints')) {
+    document.getElementById('checkpoints-drawer').style.display = 'none';
+    _ckptsDrawerOpen = false;
+  }
+  if (!e.target.closest('#sim-panel') && !e.target.closest('#btn-simulate')) {
+    document.getElementById('sim-panel').style.display = 'none';
+    _simPanelOpen = false;
+  }
+});
+
+// ── Phase 3 State ──────────────────────────────────────────────────────────
+let _safetyMapActive = false;
+let _simPanelOpen = false;
+const _MODEL_TYPES = new Set(['llm','llm-local','embedding-model','fine-tuned-adapter','classifier','reranker','multimodal']);
+const _AGENT_TYPES = new Set(['autonomous-agent','semi-auto-agent','orchestrator','sub-agent','researcher-agent','writer-agent','analyst-agent','reviewer-agent']);
+const _SAFETY_TYPES = new Set(['guardrail','pii-detector','toxicity-filter','confidence-threshold','circuit-breaker','rate-limiter','input-sanitizer','redaction-engine','trusted-monitor','pii-field-detector']);
+const _GOV_TYPES = new Set(['hitl-gate','audit-logger','approval-workflow','caio-override','compliance-reporter','alert-manager','prompt-registry']);
+
+// ── Model Provenance ────────────────────────────────────────────────────────
+function saveProvenanceField(field, value) {
+  if (!selectedNode) return;
+  selectedNode.props = selectedNode.props || {};
+  selectedNode.props[field] = value;
+  pushHistory();
+}
+
+function _syncProvenancePanel(node) {
+  const wrap = document.getElementById('prop-provenance-wrap');
+  if (_MODEL_TYPES.has(node.type)) {
+    wrap.style.display = 'block';
+    const props = node.props || {};
+    document.getElementById('prop-model-source').value = props.model_source || '';
+    document.getElementById('prop-model-version').value = props.model_version || '';
+    document.getElementById('prop-training-data').value = props.training_data || '';
+    document.getElementById('prop-model-license').value = props.model_license || '';
+  } else {
+    wrap.style.display = 'none';
+  }
+}
+
+function showProvenance() {
+  if (!DESIGN_ID) { alert('Save the design first.'); return; }
+  _hideMenu();
+  const modal = document.getElementById('provenance-modal');
+  modal.style.display = 'flex';
+  document.getElementById('provenance-modal-body').innerHTML = '<div style="color:#7a8cb0;text-align:center;padding:20px;">Loading…</div>';
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/provenance')
+    .then(r => r.json())
+    .then(data => renderProvenanceModal(data))
+    .catch(() => { document.getElementById('provenance-modal-body').innerHTML = '<div style="color:#f87171;padding:20px;">Failed to load provenance.</div>'; });
+}
+
+function renderProvenanceModal(data) {
+  const chain = data.chain || [];
+  const flags = data.flags || [];
+  let html = '';
+  if (!chain.length) {
+    html = '<div style="color:#7a8cb0;text-align:center;padding:20px;">No model nodes in this design.</div>';
+  } else {
+    html = `<div style="color:#94a3b8;font-size:11px;margin-bottom:12px;">${chain.length} model node(s) · ${flags.length} flag(s)</div>`;
+    for (const entry of chain) {
+      const hasSource = !!entry.model_source;
+      html += `<div style="background:#1e293b;border:1px solid #334155;border-radius:6px;padding:10px 12px;margin-bottom:8px;">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <span style="background:#6366f1;color:#fff;padding:2px 6px;border-radius:3px;font-size:10px;">${entry.type}</span>
+          <span style="color:#eaeaea;font-size:12px;font-weight:600;">${entry.label}</span>
+          ${!hasSource ? '<span style="color:#f59e0b;font-size:10px;">⚠ no source</span>' : ''}
+        </div>
+        <div style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px;font-size:11px;">
+          <span style="color:#64748b;">Source</span><span style="color:#cbd5e1;">${entry.model_source || '—'}</span>
+          <span style="color:#64748b;">Version</span><span style="color:#cbd5e1;">${entry.model_version || '—'}</span>
+          <span style="color:#64748b;">Training data</span><span style="color:#cbd5e1;">${entry.training_data || '—'}</span>
+          <span style="color:#64748b;">License</span><span style="color:#cbd5e1;">${entry.model_license || '—'}</span>
+        </div>
+      </div>`;
+    }
+  }
+  if (flags.length) {
+    html += '<div style="color:#94a3b8;font-size:11px;margin:12px 0 6px;">Compliance Flags</div>';
+    for (const f of flags) {
+      const color = f.severity === 'WARN' ? '#f97316' : f.severity === 'INFO' ? '#38bdf8' : '#94a3b8';
+      html += `<div style="background:#1e293b;border-left:3px solid ${color};padding:7px 10px;border-radius:0 4px 4px 0;margin-bottom:5px;font-size:11px;">
+        <span style="color:${color};font-weight:600;">${f.severity}</span>
+        <span style="color:#cbd5e1;margin-left:6px;">${f.message}</span>
+      </div>`;
+    }
+  }
+  document.getElementById('provenance-modal-body').innerHTML = html;
+}
+
+// ── Safety Redundancy Map ───────────────────────────────────────────────────
+function toggleSafetyMap(e) {
+  if (e) e.stopPropagation();
+  if (_safetyMapActive) {
+    hideSafetyMap();
+  } else {
+    activateSafetyMap();
+  }
+}
+
+function activateSafetyMap() {
+  if (!DESIGN_ID) { alert('Save the design first.'); return; }
+  _safetyMapActive = true;
+  document.getElementById('btn-safety-map').style.background = '#14532d';
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/safety-redundancy')
+    .then(r => r.json())
+    .then(data => applySafetyOverlay(data))
+    .catch(() => { _safetyMapActive = false; setStatus('Safety map failed'); });
+}
+
+function applySafetyOverlay(data) {
+  const protected_ids = new Set((data.protected_agents || []).map(a => a.id));
+  const unprotected_ids = new Set((data.unprotected_agents || []).map(a => a.id));
+  document.querySelectorAll('.aadc-node').forEach(el => {
+    const nid = el.dataset.id;
+    const ntype = el.dataset.type || '';
+    el.style.removeProperty('outline');
+    el.style.removeProperty('outline-offset');
+    if (protected_ids.has(nid)) {
+      el.style.outline = '3px solid #22c55e';
+      el.style.outlineOffset = '3px';
+    } else if (unprotected_ids.has(nid)) {
+      el.style.outline = '3px solid #ef4444';
+      el.style.outlineOffset = '3px';
+    } else if (_SAFETY_TYPES.has(ntype) || _GOV_TYPES.has(ntype)) {
+      el.style.outline = '2px solid #3b82f6';
+      el.style.outlineOffset = '3px';
+    }
+  });
+  const badge = document.getElementById('safety-map-badge');
+  badge.style.display = 'block';
+  document.getElementById('safety-map-score-text').textContent = 'Safety Coverage: ' + data.score + '%';
+  document.getElementById('safety-map-detail').textContent =
+    data.protected_agents.length + ' protected · ' + data.unprotected_agents.length + ' unprotected';
+}
+
+function hideSafetyMap() {
+  _safetyMapActive = false;
+  document.getElementById('btn-safety-map').style.background = '#1e293b';
+  document.getElementById('safety-map-badge').style.display = 'none';
+  document.querySelectorAll('.aadc-node').forEach(el => {
+    el.style.removeProperty('outline');
+    el.style.removeProperty('outline-offset');
+  });
+}
+
+// ── Coordination Matrix ─────────────────────────────────────────────────────
+function showCoordMatrix() {
+  if (!DESIGN_ID) { alert('Save the design first.'); return; }
+  _hideMenu();
+  const modal = document.getElementById('coord-modal');
+  modal.style.display = 'flex';
+  document.getElementById('coord-modal-body').innerHTML = '<div style="color:#7a8cb0;text-align:center;padding:20px;">Loading…</div>';
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/coordination-matrix')
+    .then(r => r.json())
+    .then(data => renderCoordMatrix(data))
+    .catch(() => { document.getElementById('coord-modal-body').innerHTML = '<div style="color:#f87171;padding:20px;">Failed to load matrix.</div>'; });
+}
+
+function renderCoordMatrix(data) {
+  const agents = data.agents || [];
+  if (!agents.length) {
+    document.getElementById('coord-modal-body').innerHTML = '<div style="color:#7a8cb0;text-align:center;padding:20px;">No agent nodes in this design.</div>';
+    return;
+  }
+  const topologyColors = { mesh: '#10b981', 'hub-spoke': '#f59e0b', pipeline: '#3b82f6', hierarchical: '#8b5cf6', single: '#94a3b8', none: '#475569' };
+  const tcolor = topologyColors[data.topology] || '#94a3b8';
+  const hubLabels = (data.hub_nodes || []).map(h => h.label).join(', ');
+  const isoLabels = (data.isolated_agents || []).map(a => a.label).join(', ');
+
+  let html = `<div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+    <span style="background:${tcolor}22;border:1px solid ${tcolor};color:${tcolor};padding:3px 10px;border-radius:12px;font-size:11px;">
+      Topology: ${data.topology}
+    </span>
+    ${hubLabels ? `<span style="color:#94a3b8;font-size:11px;">Hub: ${hubLabels}</span>` : ''}
+    ${isoLabels ? `<span style="color:#f87171;font-size:11px;">Isolated: ${isoLabels}</span>` : ''}
+  </div>`;
+
+  html += '<div style="overflow-x:auto;"><table style="border-collapse:collapse;font-size:11px;">';
+  // Header row
+  html += '<tr><th style="background:#1e293b;padding:6px 10px;color:#64748b;"></th>';
+  for (const a of agents) html += `<th style="background:#1e293b;padding:6px 8px;color:#94a3b8;white-space:nowrap;max-width:90px;overflow:hidden;text-overflow:ellipsis;">${a.label}</th>`;
+  html += '</tr>';
+  for (let i = 0; i < agents.length; i++) {
+    html += `<tr><td style="background:#1e293b;padding:6px 10px;color:#94a3b8;white-space:nowrap;font-weight:600;">${agents[i].label}</td>`;
+    for (let j = 0; j < agents.length; j++) {
+      const cell = data.matrix[i][j];
+      const bg = cell === 'direct' ? '#1d4ed8' : cell === 'indirect' ? '#1e3a6e' : cell === 'self' ? '#1e293b' : '#0f172a';
+      const txt = cell === 'direct' ? '●' : cell === 'indirect' ? '◌' : cell === 'self' ? '—' : '';
+      const color = cell === 'direct' ? '#93c5fd' : cell === 'indirect' ? '#475569' : '#334155';
+      html += `<td style="background:${bg};text-align:center;padding:6px 12px;color:${color};border:1px solid #1e293b;">${txt}</td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</table></div>';
+  html += '<div style="color:#475569;font-size:10px;margin-top:10px;">● direct edge &nbsp; ◌ indirect (via intermediary)</div>';
+  document.getElementById('coord-modal-body').innerHTML = html;
+}
+
+// ── Simulation ──────────────────────────────────────────────────────────────
+function toggleSimPanel(e) {
+  if (e) e.stopPropagation();
+  _simPanelOpen = !_simPanelOpen;
+  const panel = document.getElementById('sim-panel');
+  panel.style.display = _simPanelOpen ? 'block' : 'none';
+  if (_simPanelOpen) {
+    _populateSimStartSelect();
+    document.getElementById('checkpoints-drawer').style.display = 'none';
+    _ckptsDrawerOpen = false;
+  }
+}
+
+function _populateSimStartSelect() {
+  const sel = document.getElementById('sim-start-select');
+  sel.innerHTML = '<option value="">— select a node —</option>';
+  for (const n of (graph.nodes || [])) {
+    const opt = document.createElement('option');
+    opt.value = n.id;
+    opt.textContent = (n.label || n.id) + ' [' + (n.type || '?') + ']';
+    sel.appendChild(opt);
+  }
+}
+
+function runSimulation() {
+  if (!DESIGN_ID) { saveDesign(); return; }
+  const startId = document.getElementById('sim-start-select').value;
+  if (!startId) { alert('Select a start node.'); return; }
+  document.getElementById('sim-results').innerHTML = '<div style="color:#7a8cb0;font-size:11px;padding:8px 0;">Running…</div>';
+  // Clear existing highlights
+  document.querySelectorAll('.aadc-node').forEach(el => el.classList.remove('sim-active', 'sim-halted', 'sim-filtered'));
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/simulate', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({start_node_id: startId}),
+  })
+  .then(r => r.json())
+  .then(data => renderSimResults(data))
+  .catch(() => { document.getElementById('sim-results').innerHTML = '<div style="color:#f87171;font-size:11px;padding:8px 0;">Simulation failed.</div>'; });
+}
+
+function renderSimResults(data) {
+  const trace = data.trace || [];
+  const decisions = data.decisions || [];
+  const status = data.status || 'complete';
+
+  // Animate node highlights
+  trace.forEach((step, idx) => {
+    setTimeout(() => {
+      const el = document.querySelector(`.aadc-node[data-id="${step.node_id}"]`);
+      if (!el) return;
+      if (step.outcome === 'halted') el.classList.add('sim-halted');
+      else if (step.outcome === 'filtered') el.classList.add('sim-filtered');
+      else el.classList.add('sim-active');
+    }, idx * 120);
+  });
+
+  let html = `<div style="color:${status==='halted'?'#f97316':status==='complete'?'#4ade80':'#94a3b8'};font-size:11px;font-weight:600;padding:6px 0;border-bottom:1px solid #1e293b;margin-bottom:6px;">
+    ${status==='halted' ? '⏸ Halted at: '+data.halted_by_label : status==='complete' ? '✅ Completed' : '⚠ '+status}
+    &nbsp;(${data.steps_count} steps)
+  </div>`;
+
+  for (const step of trace) {
+    const oc = step.outcome;
+    const dot = oc==='halted' ? '🔴' : oc==='filtered' ? '🟡' : '🟢';
+    html += `<div style="display:flex;gap:6px;align-items:flex-start;padding:3px 0;font-size:11px;">
+      <span style="color:#475569;min-width:22px;text-align:right;">${step.step}.</span>
+      <span>${dot}</span>
+      <span style="color:#eaeaea;">${step.node_label}</span>
+      <span style="color:#475569;font-size:10px;">[${step.node_type}]</span>
+    </div>`;
+  }
+
+  if (decisions.length) {
+    html += '<div style="color:#94a3b8;font-size:10px;margin-top:8px;border-top:1px solid #1e293b;padding-top:6px;">Decisions</div>';
+    for (const d of decisions) {
+      const color = d.type==='halt' ? '#f97316' : '#38bdf8';
+      html += `<div style="font-size:10px;color:${color};padding:2px 0;">${d.type==='halt'?'⏸':'🔵'} ${d.node_label}: ${d.reason}</div>`;
+    }
+  }
+
+  document.getElementById('sim-results').innerHTML = html;
+  setStatus('Simulation complete — ' + data.steps_count + ' steps');
+}
+
+function clearSimulation() {
+  document.querySelectorAll('.aadc-node').forEach(el => {
+    el.classList.remove('sim-active', 'sim-halted', 'sim-filtered');
+  });
+  document.getElementById('sim-results').innerHTML = '';
+}
+
+// ────────────────────────────────────────────────
+// PHASE 2 — Kanban Badge Back-sync
+// ────────────────────────────────────────────────
+const _KANBAN_BADGE = {done:'✓',in_progress:'⟳',scheduled:'⊡',failed:'⚠',suggested:'💡',unknown:'?'};
+const _KANBAN_COLOR = {done:'#4ade80',in_progress:'#60a5fa',scheduled:'#94a3b8',failed:'#f87171',suggested:'#fbbf24',unknown:'#94a3b8'};
+
+function loadKanbanBadges() {
+  if (!DESIGN_ID) return;
+  fetch('/agentic-ai/canvas/' + DESIGN_ID + '/kanban-status')
+    .then(r => r.json())
+    .then(statusMap => {
+      Object.entries(statusMap).forEach(([nodeId, info]) => {
+        const el = document.querySelector('[data-id="' + nodeId + '"]');
+        if (!el) return;
+        let badge = el.querySelector('.kanban-task-badge');
+        if (!badge) {
+          badge = document.createElement('div');
+          badge.className = 'kanban-task-badge';
+          badge.style.cssText = 'position:absolute;bottom:2px;right:4px;font-size:9px;font-weight:700;padding:1px 4px;border-radius:3px;cursor:pointer;z-index:10;';
+          badge.onclick = e => { e.stopPropagation(); window.open('/kanban','_blank'); };
+          el.style.position = 'relative';
+          el.appendChild(badge);
+        }
+        const st = info.status || 'unknown';
+        badge.textContent = (_KANBAN_BADGE[st] || '?') + ' ' + (info.task_id || '').slice(-6);
+        badge.style.background = _KANBAN_COLOR[st] || '#94a3b8';
+        badge.style.color = st === 'done' ? '#052e16' : '#fff';
+        badge.title = (info.title || info.task_id || '') + ' [' + st + ']';
+      });
+    })
+    .catch(() => {});
+}
+
+function saveKanbanTaskId(val) {
+  if (!selectedNode) return;
+  if (!selectedNode.metadata) selectedNode.metadata = {};
+  selectedNode.metadata.kanban_task_id = val.trim();
+  render();
+  if (val.trim()) refreshKanbanBadgeForNode(selectedNode.id, val.trim());
+}
+
+function refreshKanbanBadgeForNode(nodeId, taskId) {
+  const badge = document.getElementById('prop-kanban-badge');
+  const label = document.getElementById('prop-kanban-status-label');
+  if (!taskId) { badge.style.display='none'; label.textContent=''; return; }
+  fetch('/agentic-ai/canvas/' + DESIGN_ID + '/kanban-status')
+    .then(r => r.json())
+    .then(map => {
+      const info = map[nodeId];
+      if (info) {
+        const st = info.status || 'unknown';
+        badge.textContent = _KANBAN_BADGE[st] || '?';
+        badge.style.color = _KANBAN_COLOR[st] || '#94a3b8';
+        badge.style.display = 'inline';
+        label.textContent = info.title || '';
+      }
+    })
+    .catch(() => {});
+}
+
+function openLinkedTask() {
+  window.open('/kanban', '_blank');
+}
+
+// ────────────────────────────────────────────────
+// PHASE 2 — Send to Fine-Tuning
+// ────────────────────────────────────────────────
+function doSendToFineTuning() {
+  _hideMenu();
+  if (!DESIGN_ID) { alert('Save the design first.'); return; }
+  setStatus('Sending to Fine-Tuning…');
+  fetch('/agentic-ai/canvas/' + DESIGN_ID + '/ft-link')
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { setStatus('Fine-Tuning error: ' + d.error); return; }
+      const msg = d.datasets_created ? 'Dataset created (ID: ' + d.dataset_id + ')' : 'Dataset updated (ID: ' + d.dataset_id + ')';
+      setStatus('Fine-Tuning: ' + msg + ' · quality=' + (d.quality_signal||0).toFixed(2));
+    })
+    .catch(err => setStatus('Fine-Tuning error: ' + err));
+}
+
+// ────────────────────────────────────────────────
+// PHASE 2 — Event emission helper for exports
+// ────────────────────────────────────────────────
+function _emitExportEvent(eventType) {
+  if (!DESIGN_ID) return;
+  fetch('/agentic-ai/canvas/' + DESIGN_ID + '/events', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({event_type: eventType, metadata: {ts: Date.now()}})
+  }).catch(() => {});
+}
+
+// Patch export functions to emit events
+const _origExportDrawio = doExportDrawio;
+doExportDrawio = function() { _emitExportEvent('export_drawio'); _origExportDrawio(); };
+const _origExportJSON = doExportJSON;
+doExportJSON = function() { _emitExportEvent('export_json'); _origExportJSON(); };
+const _origExportSVG = doExportSVG;
+doExportSVG = function() { _emitExportEvent('export_svg'); _origExportSVG(); };
+const _origExportCSV = doExportCSV;
+doExportCSV = function() { _emitExportEvent('export_csv'); _origExportCSV(); };
+
+// Load kanban badges after page ready
+if (DESIGN_ID) {
+  loadKanbanBadges();
+}
+
+// ────────────────────────────────────────────────
+// PHASE 7 — Design Linter
+// ────────────────────────────────────────────────
+let _lintActive = false;
+
+function runLint() {
+  _hideMenu();
+  if (!DESIGN_ID) { alert('Save the design first.'); return; }
+  setStatus('Running design linter…');
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/lint')
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { setStatus('Lint error: ' + d.error); return; }
+      _applyLintOverlay(d);
+      const s = d.summary;
+      setStatus(`Lint: score ${s.lint_score}% · ${s.total} issues (${s.critical} critical, ${s.high} high)`);
+    })
+    .catch(err => setStatus('Lint error: ' + err));
+}
+
+function _applyLintOverlay(data) {
+  // Clear old lint badges
+  document.querySelectorAll('.lint-badge').forEach(el => el.remove());
+  _lintActive = true;
+
+  const nodeWarnings = data.node_warnings || {};
+  const recs = data.recommendations || [];
+
+  // Global banner
+  const s = data.summary;
+  let banner = document.getElementById('lint-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'lint-banner';
+    banner.style.cssText = 'position:fixed;bottom:16px;left:50%;transform:translateX(-50%);z-index:300;' +
+      'background:#0f172a;border:1px solid #334155;border-radius:6px;padding:6px 14px;font-size:11px;' +
+      'color:#94a3b8;display:flex;gap:10px;align-items:center;cursor:pointer;';
+    banner.onclick = () => { banner.remove(); _clearLintOverlay(); };
+    document.body.appendChild(banner);
+  }
+  const scoreColor = s.lint_score >= 80 ? '#4ade80' : s.lint_score >= 60 ? '#fbbf24' : '#f87171';
+  banner.innerHTML = `<span style="color:${scoreColor};font-weight:700;">💡 Lint ${s.lint_score}%</span>` +
+    `<span>${s.total} issues</span><span style="color:#ef4444;">${s.critical} critical</span>` +
+    `<span style="color:#475569;">✕ dismiss</span>`;
+
+  // Per-node warning badges
+  Object.entries(nodeWarnings).forEach(([nodeId, warnings]) => {
+    const el = document.querySelector(`.aadc-node[data-id="${nodeId}"]`);
+    if (!el) return;
+    const badge = document.createElement('div');
+    badge.className = 'lint-badge';
+    badge.style.cssText = 'position:absolute;top:2px;left:4px;font-size:10px;font-weight:700;' +
+      'color:#fbbf24;cursor:pointer;z-index:11;';
+    badge.textContent = '⚠ ' + warnings.length;
+    badge.title = warnings.join('\n');
+    el.style.position = 'relative';
+    el.style.outline = '2px solid #f59e0b';
+    el.appendChild(badge);
+  });
+
+  // Show recommendations in status panel (reuse sim-results)
+  const panel = document.getElementById('sim-results');
+  if (panel && recs.length) {
+    const sevColor = {CRITICAL:'#f87171',HIGH:'#fb923c',MEDIUM:'#fbbf24',LOW:'#94a3b8'};
+    let html = `<div style="color:#fbbf24;font-size:11px;font-weight:600;margin-bottom:6px;">💡 ${recs.length} recommendations</div>`;
+    for (const r of recs.slice(0, 8)) {
+      html += `<div style="padding:4px 0;border-bottom:1px solid #1e293b;">
+        <span style="color:${sevColor[r.severity]||'#94a3b8'};font-size:10px;font-weight:700;">[${r.severity}]</span>
+        <span style="color:#eaeaea;font-size:11px;margin-left:4px;">${r.message}</span>
+        ${r.add_node_type ? `<div style="color:#38bdf8;font-size:10px;">→ Add: ${r.add_node_type}</div>` : ''}
+      </div>`;
+    }
+    panel.innerHTML = html;
+    if (!document.getElementById('sim-panel').style.display || document.getElementById('sim-panel').style.display === 'none') {
+      document.getElementById('sim-panel').style.display = 'block';
+    }
+  }
+}
+
+function _clearLintOverlay() {
+  _lintActive = false;
+  document.querySelectorAll('.lint-badge').forEach(el => el.remove());
+  document.querySelectorAll('.aadc-node').forEach(el => {
+    el.style.outline = '';
+  });
+}
+
+// ────────────────────────────────────────────────
+// PHASE 6 — Regulatory Tracker
+// ────────────────────────────────────────────────
+function showRegulatoryTracker() {
+  _hideMenu();
+  if (!DESIGN_ID) { alert('Save the design first.'); return; }
+  document.getElementById('reg-modal').style.display = 'flex';
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/regulatory')
+    .then(r => r.ok ? r.json() : null)
+    .then(d => { if (d && d.gaps) renderRegModal(d); })
+    .catch(() => {});
+}
+
+function runRegulatoryAnalysis() {
+  const btn = document.getElementById('btn-run-reg');
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ Analyzing…'; }
+  const body = document.getElementById('reg-modal-body');
+  body.innerHTML = '<div style="color:#7a8cb0;text-align:center;padding:24px;">Running regulatory gap analysis…</div>';
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/regulatory')
+    .then(r => r.json())
+    .then(d => {
+      if (btn) { btn.disabled = false; btn.textContent = '↻ Analyze'; }
+      if (d.error) { body.innerHTML = '<div style="color:#f87171;padding:16px;">' + d.error + '</div>'; return; }
+      renderRegModal(d);
+    })
+    .catch(err => {
+      if (btn) { btn.disabled = false; btn.textContent = '↻ Analyze'; }
+      body.innerHTML = '<div style="color:#f87171;padding:16px;">Error: ' + err + '</div>';
+    });
+}
+
+function renderRegModal(d) {
+  const body = document.getElementById('reg-modal-body');
+  const s = d.summary;
+  const byFw = d.by_framework || {};
+  const sevFg = {CRITICAL:'#f87171',HIGH:'#fb923c',MEDIUM:'#fbbf24',LOW:'#34d399'};
+  const stBg = {compliant:'#052e16',gap:'#450a0a'};
+  const stFg = {compliant:'#4ade80',gap:'#f87171'};
+
+  // Summary bar
+  let html = `<div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+    <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:6px;padding:8px 14px;text-align:center;min-width:70px;">
+      <div style="font-size:22px;font-weight:700;color:#eaeaea;">${s.total}</div>
+      <div style="color:#7a8cb0;font-size:10px;">Requirements</div>
+    </div>
+    <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:6px;padding:8px 14px;text-align:center;min-width:70px;">
+      <div style="font-size:22px;font-weight:700;color:#4ade80;">${s.compliant}</div>
+      <div style="color:#7a8cb0;font-size:10px;">Compliant</div>
+    </div>
+    <div style="background:#16213e;border:1px solid ${s.gaps>0?'#ef4444':'#1e3a6e'};border-radius:6px;padding:8px 14px;text-align:center;min-width:70px;">
+      <div style="font-size:22px;font-weight:700;color:${s.gaps>0?'#f87171':'#4ade80'};">${s.gaps}</div>
+      <div style="color:#7a8cb0;font-size:10px;">Gaps</div>
+    </div>
+    <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:6px;padding:8px 14px;text-align:center;min-width:70px;">
+      <div style="font-size:18px;font-weight:700;color:#60a5fa;">${s.score_pct}%</div>
+      <div style="color:#7a8cb0;font-size:10px;">Score</div>
+    </div>
+  </div>`;
+
+  // Framework mini-bars
+  const fws = s.frameworks || [];
+  if (fws.length) {
+    html += '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">';
+    for (const fw of fws) {
+      const fd = byFw[fw] || {};
+      const pct = fd.total ? Math.round(fd.compliant / fd.total * 100) : 0;
+      const col = pct >= 80 ? '#22c55e' : pct >= 60 ? '#f59e0b' : '#ef4444';
+      html += `<div style="background:#16213e;border:1px solid #1e3a6e;border-radius:5px;padding:6px 10px;min-width:100px;">
+        <div style="color:#94a3b8;font-size:9px;margin-bottom:3px;">${fw}</div>
+        <div style="font-size:14px;font-weight:700;color:${col};">${pct}%</div>
+        <div style="background:#1e293b;border-radius:2px;height:4px;margin-top:3px;">
+          <div style="background:${col};width:${pct}%;height:4px;border-radius:2px;"></div>
+        </div>
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  // Gaps table
+  const gaps = d.gaps || [];
+  if (gaps.length) {
+    html += '<div style="display:flex;flex-direction:column;gap:4px;">';
+    for (const g of gaps) {
+      const fg = sevFg[g.severity] || '#94a3b8';
+      const bg = stBg[g.status] || '#1e293b';
+      const fc = stFg[g.status] || '#94a3b8';
+      html += `<div style="background:#16213e;border:1px solid #1e3a6e;border-radius:5px;padding:8px 10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+          <div style="display:flex;gap:6px;align-items:center;">
+            <span style="color:#475569;font-size:9px;">[${g.framework} ${g.article}]</span>
+            <span style="color:#eaeaea;font-size:11px;font-weight:500;">${g.title}</span>
+          </div>
+          <div style="display:flex;gap:4px;align-items:center;">
+            <span style="color:${fg};font-size:9px;font-weight:700;">${g.severity}</span>
+            <span style="background:${bg};color:${fc};font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;">${g.status === 'compliant' ? '✓ OK' : '✗ GAP'}</span>
+          </div>
+        </div>
+        <div style="color:#64748b;font-size:10px;">${g.requirement}</div>
+        ${g.gap_advice ? `<div style="color:#fbbf24;font-size:10px;margin-top:3px;">⚡ ${g.gap_advice}</div>` : ''}
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  body.innerHTML = html;
+}
+
+// ────────────────────────────────────────────────
+// PHASE 5 — Threat Model
+// ────────────────────────────────────────────────
+function showThreatModel() {
+  _hideMenu();
+  if (!DESIGN_ID) { alert('Save the design first.'); return; }
+  document.getElementById('threat-modal').style.display = 'flex';
+  // Try loading existing threat model
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/threat-model')
+    .then(r => r.ok ? r.json() : null)
+    .then(d => { if (d && d.stride) renderThreatModal(d); })
+    .catch(() => {});
+}
+
+function generateThreatModel() {
+  const btn = document.getElementById('btn-gen-tm');
+  if (btn) { btn.disabled = true; btn.textContent = '⟳ Analyzing…'; }
+  const body = document.getElementById('threat-modal-body');
+  body.innerHTML = '<div style="color:#7a8cb0;text-align:center;padding:24px;">Running STRIDE + ATLAS analysis…</div>';
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/threat-model', {method:'POST'})
+    .then(r => r.json())
+    .then(d => {
+      if (btn) { btn.disabled = false; btn.textContent = '↻ Generate'; }
+      if (d.error) { body.innerHTML = '<div style="color:#f87171;padding:16px;">' + d.error + '</div>'; return; }
+      renderThreatModal(d);
+    })
+    .catch(err => {
+      if (btn) { btn.disabled = false; btn.textContent = '↻ Generate'; }
+      body.innerHTML = '<div style="color:#f87171;padding:16px;">Error: ' + err + '</div>';
+    });
+}
+
+function renderThreatModal(d) {
+  const body = document.getElementById('threat-modal-body');
+  const stride = d.stride || [];
+  const atlas  = d.atlas_threats || [];
+  const catColor = {
+    Spoofing:'#f87171',Tampering:'#fb923c',Repudiation:'#fbbf24',
+    'Information Disclosure':'#60a5fa',DoS:'#a78bfa','Elevation of Privilege':'#f472b6'
+  };
+  const sevBg = {HIGH:'#450a0a',MEDIUM:'#422006',LOW:'#0f2721',CRITICAL:'#3b0764'};
+  const sevFg = {HIGH:'#f87171',MEDIUM:'#fbbf24',LOW:'#34d399',CRITICAL:'#c084fc'};
+
+  // Summary bar
+  let html = `<div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+    <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:6px;padding:8px 14px;text-align:center;min-width:70px;">
+      <div style="font-size:22px;font-weight:700;color:#eaeaea;">${d.threat_count || 0}</div>
+      <div style="color:#7a8cb0;font-size:10px;">Threats</div>
+    </div>
+    <div style="background:#16213e;border:1px solid ${(d.high_count||0)>0?'#ef4444':'#1e3a6e'};border-radius:6px;padding:8px 14px;text-align:center;min-width:70px;">
+      <div style="font-size:22px;font-weight:700;color:${(d.high_count||0)>0?'#f87171':'#4ade80'};">${d.high_count || 0}</div>
+      <div style="color:#7a8cb0;font-size:10px;">High/Critical</div>
+    </div>
+    <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:6px;padding:8px 14px;text-align:center;min-width:70px;">
+      <div style="font-size:22px;font-weight:700;color:#60a5fa;">${atlas.length}</div>
+      <div style="color:#7a8cb0;font-size:10px;">ATLAS TTPs</div>
+    </div>
+  </div>`;
+
+  // STRIDE table
+  if (stride.length) {
+    html += '<div style="color:#94a3b8;font-size:11px;font-weight:600;margin-bottom:6px;">STRIDE Findings</div>';
+    html += '<div style="display:flex;flex-direction:column;gap:4px;">';
+    for (const t of stride) {
+      const cc = catColor[t.category] || '#94a3b8';
+      const bg = sevBg[t.severity] || '#1e293b';
+      const fg = sevFg[t.severity] || '#94a3b8';
+      html += `<div style="background:#16213e;border:1px solid #1e3a6e;border-radius:5px;padding:8px 10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <span style="color:${cc};font-size:10px;font-weight:600;">${t.category}</span>
+          <span style="background:${bg};color:${fg};font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;">${t.severity}</span>
+        </div>
+        <div style="color:#eaeaea;font-size:11px;font-weight:500;">${t.id} · ${t.title}</div>
+        <div style="color:#64748b;font-size:10px;margin-top:2px;">${t.description}</div>
+        ${t.affected_nodes && t.affected_nodes.length ? '<div style="color:#475569;font-size:10px;margin-top:3px;">Nodes: ' + t.affected_nodes.slice(0,3).map(n=>n.label||n.node_id).join(', ') + (t.affected_nodes.length>3?'…':'') + '</div>' : ''}
+        <div style="color:#38bdf8;font-size:10px;margin-top:3px;">Mitigation: ${t.mitigation}</div>
+      </div>`;
+    }
+    html += '</div>';
+  } else {
+    html += '<div style="color:#475569;font-size:12px;margin-bottom:12px;">No STRIDE threats detected (graph may lack AI-specific node types).</div>';
+  }
+
+  // ATLAS TTPs
+  if (atlas.length) {
+    html += '<div style="color:#94a3b8;font-size:11px;font-weight:600;margin:12px 0 6px;">MITRE ATLAS TTPs</div>';
+    html += '<div style="display:flex;flex-direction:column;gap:3px;">';
+    for (const a of atlas) {
+      const bg = sevBg[a.severity] || '#1e293b';
+      const fg = sevFg[a.severity] || '#94a3b8';
+      html += `<div style="background:#16213e;border:1px solid #1e3a6e;border-radius:5px;padding:7px 10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <span style="color:#a78bfa;font-size:10px;font-weight:600;">${a.tactic}</span>
+          <span style="background:${bg};color:${fg};font-size:9px;font-weight:700;padding:1px 6px;border-radius:8px;">${a.severity}</span>
+        </div>
+        <div style="color:#eaeaea;font-size:11px;">${a.id} · ${a.title}</div>
+        <div style="color:#64748b;font-size:10px;margin-top:2px;">${a.description}</div>
+        <div style="color:#38bdf8;font-size:10px;margin-top:2px;">Mitigation: ${a.mitigation}</div>
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  body.innerHTML = html;
+}
+
+// ────────────────────────────────────────────────
+// AIMC Model Linker — node-panel inline functions
+// ────────────────────────────────────────────────
+function _loadNodeAIMCPanel(node) {
+  const wrap = document.getElementById('prop-aimc-wrap');
+  const sel  = document.getElementById('prop-aimc-select');
+  const badge = document.getElementById('prop-aimc-badge');
+  if (!ML_NODE_TYPES.has(node.type)) { wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  sel.innerHTML = '<option value="">Loading…</option>';
+  badge.style.display = 'none';
+  if (!DESIGN_ID) {
+    sel.innerHTML = '<option value="">Save design first</option>';
+    return;
+  }
+  const il = _classToIL();
+  Promise.all([
+    fetch('/agentic-ai/api/aimc-catalog?il_level=' + il).then(r => r.json()),
+    fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/model-refs').then(r => r.json()),
+  ]).then(([catalog, refsData]) => {
+    const refs = refsData.refs || [];
+    const violNodeIds = new Set((refsData.il_violations || []).map(v => v.aadc_node_id));
+    const ref = refs.find(r => r.aadc_node_id === node.id);
+
+    let opts = '<option value="">— none —</option>';
+    for (const m of catalog) {
+      const selected = ref && ref.aimc_model_id === m.id ? ' selected' : '';
+      opts += '<option value="' + _esc(m.id) + '"' + selected + '>' + _esc(m.name) + ' (' + _esc(m.provider) + ')</option>';
+    }
+    sel.innerHTML = opts;
+
+    if (ref) {
+      const isFail = violNodeIds.has(node.id);
+      const linkedModel = catalog.find(m => m.id === ref.aimc_model_id);
+      const label = linkedModel
+        ? (isFail ? '⚠ ' : '✓ ') + linkedModel.name + (isFail ? ' — CAT1 Violation' : ' — IL Compatible')
+        : (isFail ? '⚠ CAT1 Violation' : '✓ IL Compatible');
+      badge.textContent = label;
+      badge.style.display = 'inline-block';
+      badge.style.background = isFail ? '#450a0a' : '#052e16';
+      badge.style.color      = isFail ? '#f87171' : '#4ade80';
+      badge.style.border     = '1px solid ' + (isFail ? '#7f1d1d' : '#166534');
+    } else {
+      badge.style.display = 'none';
+    }
+  }).catch(() => {
+    sel.innerHTML = '<option value="">Error loading catalog</option>';
+  });
+}
+
+function linkNodeModelFromPanel(modelId) {
+  if (!selectedNode || !DESIGN_ID) return;
+  const nodeId = selectedNode.id;
+  if (!modelId) {
+    // Unlink: find the ref for this node then DELETE it
+    fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/model-refs')
+      .then(r => r.json())
+      .then(data => {
+        const ref = (data.refs || []).find(r => r.aadc_node_id === nodeId);
+        if (!ref) return;
+        fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/model-refs/' + ref.id, {method: 'DELETE'})
+          .then(() => {
+            _loadNodeAIMCPanel(selectedNode);
+            const d = document.getElementById('model-linker-drawer');
+            if (d && d.style.display === 'block') loadModelLinker();
+          })
+          .catch(err => setStatus('Unlink error: ' + err));
+      });
+    return;
+  }
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/link-model', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({aadc_node_id: nodeId, aimc_model_id: modelId}),
+  }).then(r => r.json()).then(() => {
+    _loadNodeAIMCPanel(selectedNode);
+    const d = document.getElementById('model-linker-drawer');
+    if (d && d.style.display === 'block') loadModelLinker();
+  }).catch(err => setStatus('Link model error: ' + err));
+}
+
+// ────────────────────────────────────────────────
+// AIMC Model Linker
+// ────────────────────────────────────────────────
+const ML_NODE_TYPES = new Set(['llm','llm-local','embedding-model','classifier','fine-tuned-adapter','swarm-agent','fan-out-coordinator','fan-in-aggregator']);
+
+function _classToIL() {
+  const cls = (document.getElementById('design-class')?.value || '{{ design.classification }}' || 'CUI');
+  if (cls === 'SECRET') return 'IL6';
+  if (cls === 'UNCLASSIFIED') return 'IL2';
+  return 'IL4';
+}
+
+function toggleModelLinker(e) {
+  if (e) e.stopPropagation();
+  const d = document.getElementById('model-linker-drawer');
+  if (d.style.display === 'block') { d.style.display = 'none'; return; }
+  d.style.display = 'block';
+  loadModelLinker();
+}
+
+function loadModelLinker() {
+  if (!DESIGN_ID) {
+    document.getElementById('ml-body').innerHTML =
+      '<div style="padding:12px 16px;color:#f87171;font-size:12px;">Save the design first before linking models.</div>';
+    return;
+  }
+  const il = _classToIL();
+  document.getElementById('ml-il-badge').textContent = il;
+  const aiNodes = (graph.nodes || []).filter(n => ML_NODE_TYPES.has(n.type));
+  if (!aiNodes.length) {
+    document.getElementById('ml-body').innerHTML =
+      '<div style="padding:12px 16px;color:#475569;font-size:12px;">No AI agent or model nodes in this design. Add LLM, embedding, classifier, or swarm-agent nodes first.</div>';
+    return;
+  }
+  document.getElementById('ml-body').innerHTML =
+    '<div style="padding:12px 16px;color:#475569;font-size:12px;">Loading catalog&#8230;</div>';
+
+  Promise.all([
+    fetch('/agentic-ai/api/aimc-catalog?il_level=' + il).then(r => r.json()),
+    fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/model-refs').then(r => r.json()),
+  ]).then(([catalog, refsData]) => {
+    renderModelLinker(aiNodes, catalog, refsData.refs || [], refsData.il_violations || []);
+  }).catch(err => {
+    document.getElementById('ml-body').innerHTML =
+      '<div style="padding:12px 16px;color:#f87171;font-size:12px;">Error: ' + err + '</div>';
+  });
+}
+
+function renderModelLinker(aiNodes, catalog, refs, violations) {
+  const refsByNode = {};
+  for (const r of refs) refsByNode[r.aadc_node_id] = r;
+  const violNodeIds = new Set(violations.map(v => v.aadc_node_id));
+
+  let html = '';
+  html += '<div style="padding:4px 14px 2px;font-size:10px;color:#475569;display:flex;gap:8px;align-items:center;">';
+  html += '<span style="flex:0 0 120px;">Node</span><span style="flex:1;">AIMC Model</span><span style="flex:0 0 40px;">IL</span><span style="flex:0 0 22px;"></span></div>';
+
+  for (const node of aiNodes) {
+    const ref = refsByNode[node.id];
+    const linked = !!ref;
+    const fail = violNodeIds.has(node.id);
+    const badge = linked ? (fail ? '<span class="ml-badge fail">FAIL</span>' : '<span class="ml-badge pass">PASS</span>') : '<span style="flex:0 0 40px;"></span>';
+
+    let opts = '<option value="">— none —</option>';
+    for (const m of catalog) {
+      const sel = ref && ref.aimc_model_id === m.id ? ' selected' : '';
+      opts += '<option value="' + _esc(m.id) + '"' + sel + '>' + _esc(m.name) + ' (' + _esc(m.provider) + ')</option>';
+    }
+    const unlinkBtn = linked
+      ? '<button class="ml-unlink" onclick="unlinkNodeModel(\'' + ref.id + '\',\'' + node.id + '\')" title="Unlink model">&#215;</button>'
+      : '<span style="flex:0 0 22px;"></span>';
+
+    html += '<div class="ml-row">';
+    html += '<span class="ml-node-name" title="' + _esc(node.label || node.type) + '">' + _esc(node.label || node.type) + '</span>';
+    html += '<select class="ml-select" onchange="linkNodeModel(\'' + node.id + '\',this.value)">' + opts + '</select>';
+    html += badge + unlinkBtn;
+    html += '</div>';
+  }
+  document.getElementById('ml-body').innerHTML = html;
+}
+
+function linkNodeModel(nodeId, modelId) {
+  if (!DESIGN_ID || !modelId) return;
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/link-model', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({aadc_node_id: nodeId, aimc_model_id: modelId}),
+  }).then(r => r.json()).then(() => loadModelLinker())
+    .catch(err => setStatus('Link model error: ' + err));
+}
+
+function unlinkNodeModel(refId, nodeId) {
+  if (!DESIGN_ID) return;
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/model-refs/' + refId, {method: 'DELETE'})
+    .then(() => loadModelLinker())
+    .catch(err => setStatus('Unlink error: ' + err));
+}
+
+function _esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ────────────────────────────────────────────────
+// PHASE 5 — OSCAL Export
+// ────────────────────────────────────────────────
+function doOscalExport() {
+  _hideMenu();
+  if (!DESIGN_ID) { alert('Save the design first.'); return; }
+  setStatus('Generating OSCAL Component Definition…');
+  fetch('/agentic-ai/api/designs/' + DESIGN_ID + '/oscal')
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) { setStatus('OSCAL error: ' + d.error); return; }
+      const blob = new Blob([JSON.stringify(d, null, 2)], {type: 'application/json'});
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href = url;
+      a.download = 'oscal-component-' + DESIGN_ID + '.json';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      _emitExportEvent('export_oscal');
+      setStatus('OSCAL export downloaded (' + (d['component-definition']?.components?.[0]?.['control-implementations']?.[0]?.['implemented-requirements']?.length || 0) + ' controls)');
+    })
+    .catch(err => setStatus('OSCAL error: ' + err));
+}
+
+</script>
+<style>
+.sim-active   { box-shadow: 0 0 0 3px #22c55e, 0 0 12px #22c55e88 !important; }
+.sim-halted   { box-shadow: 0 0 0 3px #f97316, 0 0 12px #f9731688 !important; }
+.sim-filtered { box-shadow: 0 0 0 3px #fbbf24, 0 0 12px #fbbf2488 !important; }
+</style>
+<script src="/static/js/agentic-canvas.js" defer></script>
+{% endblock %}

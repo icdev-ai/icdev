@@ -1,0 +1,50 @@
+# CUI // SP-CTI
+# DataBridge configuration
+# Operator-managed: do NOT commit live credentials here.
+
+# ---------------------------------------------------------------------------
+# Secret resolver backend
+# ---------------------------------------------------------------------------
+# Selects the primary credential store. Resolver chain:
+#   primary backend → env fallback → SecretNotFoundError
+#
+# Values: env (default) | vault | aws | file
+secret_backend: env
+
+# ---------------------------------------------------------------------------
+# HashiCorp Vault (secret_backend: vault)
+# ---------------------------------------------------------------------------
+# VAULT_TOKEN and VAULT_ADDR are read from environment variables.
+# vault_addr here is a convenience reference — the resolver reads VAULT_ADDR.
+vault_addr: ""              # e.g. https://vault.example.gov:8200
+
+# ---------------------------------------------------------------------------
+# AWS Secrets Manager (secret_backend: aws)
+# ---------------------------------------------------------------------------
+# Credentials come from env vars (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY)
+# or the EC2/ECS instance profile — never hardcoded here.
+# GovCloud default region; override with AWS_REGION env var if needed.
+aws_region: us-gov-west-1
+
+# ---------------------------------------------------------------------------
+# File resolver (secret_backend: file)
+# Air-gap fallback: reads plaintext from {secret_files_root}/{secret_id}
+# ---------------------------------------------------------------------------
+# Override with DATABRIDGE_SECRET_FILES_ROOT env var at runtime.
+secret_files_root: /etc/strategos/secrets
+
+# ---------------------------------------------------------------------------
+# Connection defaults
+# ---------------------------------------------------------------------------
+default_timeout_seconds: 30
+max_retries: 3
+retry_backoff_seconds: 2
+
+# ---------------------------------------------------------------------------
+# IL5 Ingestion Connector
+# ---------------------------------------------------------------------------
+il5:
+  # Source publication endpoint for IL5 data feeds
+  source_publication_endpoint: ""
+  # Per-request timeout (seconds) — 30-second SLA for IL5 display pipeline
+  timeout_seconds: 30

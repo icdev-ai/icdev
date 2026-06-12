@@ -1,0 +1,191 @@
+# CUI // SP-CTI
+# Calibration set for blog article judge — 20 pre-scored examples
+# Used to validate judge accuracy and detect drift.
+
+calibration_examples:
+  # --- Score 5 (Outstanding) ---
+  - id: cal-blog-01
+    score: 5
+    text: |
+      When a federal agency deployed ICDEV™'s crosswalk engine, implementing AC-2
+      automatically populated FedRAMP, CMMC, and 800-171 status — cutting their
+      multi-framework assessment from 6 months to 3 weeks. The cATO live evidence
+      engine streams OSCAL assessment-results per control, maintaining evidence
+      freshness below 30 days. Run: `python tools/compliance/cato_live_engine.py
+      --project-id sparkpilot --stream --json`
+    reasoning: "Specific tool reference, concrete metric (6mo→3wk), CLI command, named frameworks, real-world scenario."
+
+  - id: cal-blog-02
+    score: 5
+    text: |
+      The compound error problem is not theoretical. If an AI model produces
+      correct output 90% of the time, the probability of a correct outcome
+      across a five-step workflow drops to roughly 59%. Across ten steps, it
+      falls below 35%. ICDEV™'s FORGE framework breaks this chain by separating
+      probabilistic AI orchestration from deterministic Python tool execution.
+    reasoning: "Original insight (compound error math), concrete numbers, connects theory to architecture solution."
+
+  # --- Score 4 (Good) ---
+  - id: cal-blog-03
+    score: 4
+    text: |
+      Zero trust architecture requires identity verification at every access
+      point. ICDEV™ implements this through the ZTA maturity scorer, which
+      evaluates 7 pillars based on the DoD ZTA Strategy. Teams can track their
+      maturity progression from Traditional through Advanced to Optimal.
+    reasoning: "Specific tool, named framework (DoD ZTA), 3 maturity levels, but lacks CLI example or concrete metric."
+
+  - id: cal-blog-04
+    score: 4
+    text: |
+      Supply chain security is no longer optional. ICDEV™'s dependency graph
+      builder creates an adjacency-list representation of all project
+      dependencies, enabling impact propagation analysis when a CVE is
+      discovered. The SCRM assessor evaluates vendors against NIST 800-161.
+    reasoning: "Named tools, specific standard (800-161), explains technical approach, but no real-world example."
+
+  # --- Score 3 (Acceptable) ---
+  - id: cal-blog-05
+    score: 3
+    text: |
+      Compliance automation helps organizations reduce the time and effort
+      needed to achieve authorization. By automating the generation of
+      compliance artifacts, teams can focus on building features instead of
+      filling out spreadsheets. Modern tools make this process faster.
+    reasoning: "Addresses the topic but is generic. No specific tools, no metrics, no examples. Standard blog fare."
+
+  - id: cal-blog-06
+    score: 3
+    text: |
+      DevSecOps integrates security into the development pipeline. This means
+      running security scans earlier in the process, often called 'shifting left.'
+      Organizations that adopt DevSecOps practices tend to find and fix
+      vulnerabilities faster than those using traditional approaches.
+    reasoning: "Accurate but generic. Common knowledge. No specific implementation details or tools."
+
+  - id: cal-blog-07
+    score: 3
+    text: |
+      AI governance is becoming increasingly important as more organizations
+      deploy AI systems. The key is to have proper oversight and monitoring in
+      place. This includes tracking model performance, detecting drift, and
+      ensuring compliance with emerging regulations.
+    reasoning: "Topic-relevant but surface-level. No specific tools, frameworks, or actionable guidance."
+
+  # --- Score 2 (Marginal) ---
+  - id: cal-blog-08
+    score: 2
+    text: |
+      In today's fast-paced world of technology, cybersecurity is more important
+      than ever before. Organizations must take steps to protect their data and
+      systems from threats. It is crucial to have a robust security posture.
+    reasoning: "Filler phrases ('fast-paced world'), no substance, no specifics, no tools, pure padding."
+
+  - id: cal-blog-09
+    score: 2
+    text: |
+      We believe that compliance should be easy. Our platform makes it simple
+      to manage your compliance requirements. Contact us to learn more about
+      how we can help your organization achieve its goals.
+    reasoning: "Salesy, not educational. No technical depth. 'Contact us' is marketing, not thought leadership."
+
+  - id: cal-blog-10
+    score: 2
+    text: |
+      There are many challenges in software development today. Teams need to
+      work faster while maintaining quality. The answer is to use modern tools
+      and practices that can help streamline the development process.
+    reasoning: "Completely generic. Could apply to any topic. No specific challenges, tools, or solutions named."
+
+  # --- Score 1 (Unacceptable) ---
+  - id: cal-blog-11
+    score: 1
+    text: |
+      Click here to buy our product! Limited time offer! Don't miss out on
+      the best compliance tool in the market! 50% off if you sign up today!
+    reasoning: "Pure marketing spam. Zero educational value. Not a blog article."
+
+  - id: cal-blog-12
+    score: 1
+    text: |
+      The system shall provide continuous monitoring capabilities. The system
+      shall generate reports. The system shall support multiple users. The
+      system shall comply with NIST standards.
+    reasoning: "RFP requirements, not a blog post. Wrong content type entirely."
+
+  # --- Additional calibration examples ---
+  - id: cal-blog-13
+    score: 4
+    text: |
+      Hollow tests are one of the most dangerous failure modes of AI-generated
+      code. A hollow test executes code without meaningfully verifying behavior —
+      it might call a function, capture the return value, and assert nothing.
+      ICDEV™'s Anti-Sycophancy Gate (L18) detects 6 categories of hollow patterns:
+      assertion-free, tautological, happy-path-only, mirror tests, shallow mocks,
+      and hardcoded oracles.
+    reasoning: "Original concept (hollow tests), specific tool (L18), 6 named categories, but no metric or CLI example."
+
+  - id: cal-blog-14
+    score: 5
+    text: |
+      During our FedRAMP Moderate assessment, the 3PAO flagged 47 controls where
+      implementation statements lacked specificity. ICDEV™'s DocHub engine
+      regenerated all 47 narratives in under 4 minutes using the '3pao' audience
+      profile, which emphasizes tool names, evidence locations, and assessment
+      procedures. Run: `python tools/dochub/doc_generator.py --project-id
+      sparkpilot --doc-type ssp --profile 3pao --json`
+    reasoning: "Real assessment scenario, specific numbers (47 controls, 4 minutes), named profile, CLI command."
+
+  - id: cal-blog-15
+    score: 3
+    text: |
+      Container security is an important aspect of modern application deployment.
+      Teams should scan their Docker images for vulnerabilities and ensure they
+      follow best practices like running as non-root and using minimal base images.
+      ICDEV™ provides container scanning capabilities.
+    reasoning: "Mentions ICDEV™ but vaguely. Good advice but generic. No specific tool name or command."
+
+  - id: cal-blog-16
+    score: 4
+    text: |
+      The ANVIL red teaming framework tests 6 adversarial techniques against your
+      AI components: prompt injection, model evasion, data poisoning, membership
+      inference, model extraction, and supply chain compromise. Each technique maps
+      to NIST 800-53 controls for compliance traceability.
+    reasoning: "6 specific techniques named, maps to NIST, but lacks a real-world example or metric."
+
+  - id: cal-blog-17
+    score: 2
+    text: |
+      AI is transforming every industry. The possibilities are endless. From
+      healthcare to finance to government, AI is making things better, faster,
+      and more efficient. The future is bright for AI-powered solutions.
+    reasoning: "Pure hype. No specifics. No technical content. Could be any LinkedIn post."
+
+  - id: cal-blog-18
+    score: 5
+    text: |
+      When vibe coding collapsed the quality gates at Amazon in early 2026, the
+      root cause wasn't bad AI — it was compound errors across 5 probabilistic
+      steps with no independent verification. ICDEV™'s Verification Iron Law
+      prevents this: no completion claim without fresh verification evidence.
+      The AI must run the verification command, read the output, and confirm
+      the output matches the claim. 'Should work' is explicitly rejected.
+    reasoning: "Real incident reference, root cause analysis, named principle, specific enforcement mechanism."
+
+  - id: cal-blog-19
+    score: 3
+    text: |
+      Requirements management is a critical phase in software development.
+      Poor requirements lead to project failures. ICDEV™'s RICOAS system helps
+      organizations capture and manage requirements through an AI-driven
+      conversational intake process with gap detection and readiness scoring.
+    reasoning: "Names RICOAS with features, but generic framing ('critical phase'). Needs concrete example."
+
+  - id: cal-blog-20
+    score: 1
+    text: |
+      Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod
+      tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim
+      veniam, quis nostrud exercitation ullamco laboris.
+    reasoning: "Placeholder text. No content."

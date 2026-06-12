@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% set active = "strategos" %}
+{% block title %}Network Intelligence — Strategos{% endblock %}
+
+{% block extra_css %}
+<style>
+:root {
+  --sg-void:    #060d0d;
+  --sg-bg:      #0a1410;
+  --sg-surface: #111e18;
+  --sg-card:    #172418;
+  --sg-border:  #253428;
+  --sg-amber:   #f59e0b;
+  --sg-green:   #22c55e;
+  --sg-red:     #ef4444;
+  --sg-cyan:    #22d3ee;
+  --sg-grey:    #6b7280;
+  --sg-grey-l:  #9ca3af;
+  --sg-text:    #d1fae5;
+  --sg-text-dim:#6b9e7a;
+}
+
+#sg-info-wrapper {
+  background: var(--sg-void);
+  min-height: calc(100vh - 48px);
+  padding: 1rem;
+}
+
+#sg-info-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 1rem;
+}
+
+.sg-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--sg-amber);
+  text-transform: uppercase;
+  letter-spacing: .1em;
+}
+
+.sg-badge-cui {
+  background: #c8960c;
+  color: #000;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 2px;
+  letter-spacing: .06em;
+}
+
+#network-graph-container {
+  background: var(--sg-card);
+  border: 1px solid var(--sg-border);
+  border-radius: 4px;
+  padding: 4px;
+  width: 100%;
+  overflow: hidden;
+}
+
+#network-graph {
+  display: block;
+  width: 100%;
+  min-width: 800px;
+  height: 600px;
+  background: var(--sg-void);
+  border-radius: 3px;
+}
+
+#sg-graph-status {
+  margin-top: .5rem;
+  font-size: 11px;
+  color: var(--sg-text-dim);
+  font-family: "Courier New", monospace;
+  letter-spacing: .04em;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div id="sg-info-wrapper">
+  <div id="sg-info-header">
+    <span class="sg-title">&#9670; Network Intelligence</span>
+    <span class="sg-badge-cui">CUI // SP-CTI</span>
+    <span style="margin-left:auto">
+      <a href="/strategos" style="font-size:11px;color:var(--sg-text-dim);text-decoration:none">&larr; Back to Strategos</a>
+    </span>
+  </div>
+
+  <div id="network-graph-container">
+    <svg id="network-graph"></svg>
+  </div>
+  <div id="sg-graph-status">Initializing force graph…</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/strategos/static/js/d3.min.js"></script>
+<script>
+(function () {
+  const svg = document.getElementById("network-graph");
+  const status = document.getElementById("sg-graph-status");
+
+  function setDimensions() {
+    const container = document.getElementById("network-graph-container");
+    const w = Math.max(800, container.clientWidth - 8);
+    svg.setAttribute("width", w);
+    svg.setAttribute("height", 600);
+    svg.setAttribute("viewBox", "0 0 " + w + " 600");
+  }
+
+  setDimensions();
+  window.addEventListener("resize", setDimensions);
+
+  status.textContent = "Force graph container ready — awaiting data.";
+})();
+</script>
+{% endblock %}

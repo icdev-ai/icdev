@@ -1,0 +1,170 @@
+{
+  "id": "vert-quality-assurance",
+  "name": "Quality Assurance / Quality Control (QA/QC)",
+  "slug": "quality_assurance",
+  "description": "QA/QC across software (test automation, CI quality gates, defect management) and hardware/manufacturing (statistical process control, inspection, calibration, ISO 9001 quality management). Covers test labs, manufacturing plants, regulated industries (FDA, FAA, DoD), and software engineering teams.",
+  "keywords": [
+    "quality assurance",
+    "quality control",
+    "test automation",
+    "test management",
+    "defect tracking",
+    "statistical process control",
+    "SPC",
+    "ISO 9001",
+    "AS9100",
+    "Six Sigma",
+    "root cause analysis",
+    "CAPA",
+    "calibration management",
+    "inspection",
+    "non-conformance",
+    "FMEA",
+    "control charts",
+    "acceptance testing",
+    "CI quality gates",
+    "code coverage",
+    "mutation testing",
+    "regression testing",
+    "shift-left testing",
+    "quality management system",
+    "QMS",
+    "audit trail",
+    "21 CFR Part 11",
+    "GxP validation",
+    "supplier quality",
+    "first article inspection"
+  ],
+  "regulatory_bodies": [
+    "FDA",
+    "FAA",
+    "ISO",
+    "ASQ",
+    "NIST",
+    "OSHA",
+    "EPA",
+    "DoD DCMA"
+  ],
+  "academic_categories": {
+    "arxiv": [
+      "cs.SE",
+      "stat.AP"
+    ],
+    "ieee": [
+      "software quality",
+      "software testing",
+      "quality engineering"
+    ],
+    "acm": [
+      "software testing",
+      "software verification and validation"
+    ]
+  },
+  "community_sources": {
+    "reddit": [
+      "r/QualityAssurance",
+      "r/softwaretesting",
+      "r/manufacturing",
+      "r/SixSigma",
+      "r/devops"
+    ],
+    "stackexchange": [
+      "sqa.stackexchange.com",
+      "stats.stackexchange.com"
+    ],
+    "discord": [],
+    "forums": [
+      "ministryoftesting.com",
+      "elsmar.com"
+    ]
+  },
+  "review_sites": {
+    "g2": [
+      "test-management",
+      "automation-testing",
+      "quality-management-systems-qms",
+      "bug-tracking",
+      "statistical-analysis-software"
+    ],
+    "capterra": [
+      "quality-management-software",
+      "inspection-software",
+      "calibration-management-software",
+      "test-management-tools"
+    ],
+    "trustpilot": []
+  },
+  "open_source": {
+    "github_topics": [
+      "test-automation",
+      "quality-assurance",
+      "testing-framework",
+      "test-management",
+      "code-quality",
+      "static-analysis"
+    ],
+    "awesome_lists": [
+      "awesome-test-automation",
+      "awesome-software-quality",
+      "awesome-static-analysis"
+    ],
+    "package_registries": {
+      "pypi": [
+        "pytest",
+        "hypothesis",
+        "coverage",
+        "mutmut",
+        "behave"
+      ],
+      "npm": [
+        "playwright",
+        "cypress",
+        "jest"
+      ],
+      "crates": []
+    }
+  },
+  "news_sources": {
+    "rss_feeds": [],
+    "keywords": [
+      "quality management software",
+      "ISO 9001 audit",
+      "FDA quality system",
+      "test automation trends",
+      "manufacturing defects recall"
+    ]
+  },
+  "patent_categories": {
+    "cpc_classes": [
+      "G06F11",
+      "G05B19",
+      "G01N"
+    ],
+    "keywords": [
+      "automated inspection",
+      "defect detection",
+      "quality control system",
+      "test case generation"
+    ]
+  },
+  "compliance_frameworks": [
+    "ISO_9001",
+    "AS9100",
+    "ISO_13485",
+    "FDA_21_CFR_820",
+    "FDA_21_CFR_PART_11",
+    "NIST_800_53",
+    "CMMC"
+  ],
+  "video_sources": {
+    "youtube_channels": [],
+    "youtube_search_queries": [
+      "quality assurance best practices",
+      "test automation 2026",
+      "ISO 9001 implementation",
+      "statistical process control tutorial",
+      "manufacturing quality control"
+    ],
+    "manual_urls": []
+  }
+}

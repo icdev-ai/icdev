@@ -1,0 +1,491 @@
+/* CUI // SP-CTI — Agentic AI Design Canvas */
+
+/* ── Canvas workspace ────────────────────────────────────────────────────── */
+#aadc-canvas-wrapper {
+  position: relative;
+  width: 100%;
+  height: calc(100vh - 160px);
+  min-height: 500px;
+  background-color: #0d1117;
+  background-image: radial-gradient(circle, #1e3a6e 1px, transparent 1px);
+  background-size: 24px 24px;
+  overflow: hidden;
+  border: 1px solid #1e3a6e;
+  border-radius: 6px;
+  cursor: default;
+  user-select: none;
+}
+
+#aadc-canvas-wrapper.drop-active {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 2px rgba(99,102,241,0.3);
+}
+
+#aadc-canvas-wrapper.connecting-mode {
+  cursor: crosshair;
+}
+
+/* ── SVG edge layer ──────────────────────────────────────────────────────── */
+#aadc-edges-svg {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.aadc-edge {
+  stroke: #475569;
+  stroke-width: 1.5;
+  fill: none;
+  pointer-events: all;
+  cursor: pointer;
+  transition: stroke 0.15s;
+}
+
+.aadc-edge:hover { stroke: #6366f1; stroke-width: 2; }
+.aadc-edge.selected { stroke: #a5b4fc; stroke-width: 2; }
+
+.aadc-edge-arrowhead { fill: #475569; }
+.aadc-edge:hover + .aadc-edge-arrowhead,
+.aadc-edge.selected + .aadc-edge-arrowhead { fill: #6366f1; }
+
+/* ── Nodes ───────────────────────────────────────────────────────────────── */
+#aadc-nodes-layer {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+}
+
+.aadc-node {
+  position: absolute;
+  min-width: 120px;
+  max-width: 160px;
+  border-radius: 8px;
+  border: 1.5px solid #1e3a6e;
+  background: #16213e;
+  padding: 8px 10px;
+  cursor: grab;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+  transition: border-color 0.15s, box-shadow 0.15s;
+  z-index: 10;
+}
+
+.aadc-node:active { cursor: grabbing; }
+
+.aadc-node:hover {
+  border-color: #6366f1;
+  box-shadow: 0 4px 16px rgba(99,102,241,0.2);
+  z-index: 20;
+}
+
+.aadc-node.selected {
+  border-color: #a5b4fc;
+  box-shadow: 0 0 0 2px rgba(165,180,252,0.3);
+  z-index: 30;
+}
+
+.aadc-node.connecting-source {
+  border-color: #22d3ee;
+  box-shadow: 0 0 0 2px rgba(34,211,238,0.4);
+}
+
+/* Node header */
+.aadc-node-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.aadc-node-icon {
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.aadc-node-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #eaeaea;
+  word-break: break-word;
+  line-height: 1.3;
+}
+
+.aadc-node-type {
+  font-size: 9px;
+  color: #5a6e8c;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 2px;
+}
+
+/* Autonomy level badge on agent nodes */
+.aadc-node-autonomy {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: #1e3a6e;
+  border: 1px solid #475569;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #94a3b8;
+  padding: 1px 4px;
+}
+
+.aadc-node-autonomy.level-4 { background: #431407; border-color: #7c2d12; color: #fdba74; }
+.aadc-node-autonomy.level-5 { background: #450a0a; border-color: #7f1d1d; color: #fca5a5; }
+
+/* Connection ports — shown on hover */
+.aadc-node-port {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #1e3a6e;
+  border: 2px solid #475569;
+  cursor: crosshair;
+  transition: background 0.1s, border-color 0.1s;
+}
+
+.aadc-node-port:hover {
+  background: #6366f1;
+  border-color: #a5b4fc;
+}
+
+.aadc-node-port.out {
+  right: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.aadc-node-port.in {
+  left: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* ── Node category colors (border-left accent) ──────────────────────────── */
+.aadc-node[data-cat="model"]      { border-left: 3px solid #6366f1; }
+.aadc-node[data-cat="memory"]     { border-left: 3px solid #8b5cf6; }
+.aadc-node[data-cat="agent"]      { border-left: 3px solid #f59e0b; }
+.aadc-node[data-cat="tool_mcp"]   { border-left: 3px solid #06b6d4; }
+.aadc-node[data-cat="data"]       { border-left: 3px solid #10b981; }
+.aadc-node[data-cat="safety"]     { border-left: 3px solid #ef4444; }
+.aadc-node[data-cat="governance"] { border-left: 3px solid #e94560; }
+.aadc-node[data-cat="infra"]      { border-left: 3px solid #94a3b8; }
+
+/* ── Left palette sidebar ────────────────────────────────────────────────── */
+.aadc-palette {
+  width: 200px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  background: #0d1117;
+  border-right: 1px solid #1e3a6e;
+  padding: 8px 0;
+}
+
+.aadc-palette-section { margin-bottom: 4px; }
+
+.aadc-palette-toggle {
+  width: 100%;
+  background: none;
+  border: none;
+  color: #7a8cb0;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 12px;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: color 0.15s;
+}
+
+.aadc-palette-toggle:hover { color: #eaeaea; }
+
+.aadc-palette-items { padding: 2px 8px 6px; }
+
+.aadc-palette-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-radius: 5px;
+  cursor: grab;
+  font-size: 11px;
+  color: #94a3b8;
+  transition: background 0.15s, color 0.15s;
+  margin-bottom: 1px;
+}
+
+.aadc-palette-item:active { cursor: grabbing; }
+
+.aadc-palette-item:hover {
+  background: #16213e;
+  color: #eaeaea;
+}
+
+.aadc-palette-item .item-icon { font-size: 14px; flex-shrink: 0; }
+.aadc-palette-item .item-name { font-size: 11px; line-height: 1.2; }
+
+/* ── Right properties panel ─────────────────────────────────────────────── */
+.aadc-props-panel {
+  width: 220px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  background: #0d1117;
+  border-left: 1px solid #1e3a6e;
+  padding: 12px;
+}
+
+.aadc-props-panel h4 {
+  color: #eaeaea;
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0 0 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #1e3a6e;
+}
+
+.aadc-props-panel label {
+  display: block;
+  font-size: 10px;
+  color: #7a8cb0;
+  margin-bottom: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.aadc-props-panel input[type="text"],
+.aadc-props-panel textarea,
+.aadc-props-panel select {
+  width: 100%;
+  background: #16213e;
+  border: 1px solid #1e3a6e;
+  border-radius: 4px;
+  color: #eaeaea;
+  font-size: 11px;
+  padding: 5px 7px;
+  outline: none;
+  box-sizing: border-box;
+  transition: border-color 0.15s;
+}
+
+.aadc-props-panel input[type="text"]:focus,
+.aadc-props-panel textarea:focus,
+.aadc-props-panel select:focus {
+  border-color: #6366f1;
+}
+
+.aadc-props-panel textarea {
+  resize: vertical;
+  min-height: 60px;
+  font-family: inherit;
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────── */
+.aadc-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: #0d1117;
+  border: 1px solid #1e3a6e;
+  border-radius: 6px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.aadc-toolbar input[type="text"],
+.aadc-toolbar select {
+  background: #16213e;
+  border: 1px solid #1e3a6e;
+  border-radius: 4px;
+  color: #eaeaea;
+  font-size: 12px;
+  padding: 5px 8px;
+  outline: none;
+}
+
+.aadc-toolbar input[type="text"]:focus,
+.aadc-toolbar select:focus { border-color: #6366f1; }
+
+.aadc-toolbar button {
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 12px;
+  transition: opacity 0.15s;
+}
+
+.aadc-toolbar button:hover { opacity: 0.85; }
+
+.aadc-toolbar-sep {
+  width: 1px;
+  height: 24px;
+  background: #1e3a6e;
+  flex-shrink: 0;
+}
+
+/* Workflow / compliance status badges in toolbar */
+.aadc-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.aadc-badge-approved  { background: #052e16; color: #4ade80; border: 1px solid #166534; }
+.aadc-badge-pending   { background: #422006; color: #fde68a; border: 1px solid #78350f; }
+.aadc-badge-blocked   { background: #450a0a; color: #fca5a5; border: 1px solid #7f1d1d; }
+.aadc-badge-score     { background: #1e1b4b; color: #a5b4fc; border: 1px solid #3730a3; }
+
+/* ── Status bar ──────────────────────────────────────────────────────────── */
+.aadc-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 4px 12px;
+  background: #0d1117;
+  border: 1px solid #1e3a6e;
+  border-radius: 4px;
+  font-size: 10px;
+  color: #5a6e8c;
+  margin-top: 6px;
+}
+
+.aadc-status-bar .sb-msg { margin-left: auto; color: #4ade80; }
+.aadc-status-bar .sb-msg.err { color: #ef4444; }
+.aadc-status-bar .sb-msg.warn { color: #f59e0b; }
+
+/* ── Snippets sidebar panel ──────────────────────────────────────────────── */
+.aadc-snippets-panel {
+  max-height: 320px;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+
+.aadc-snippet-item {
+  padding: 8px;
+  border: 1px solid #1e3a6e;
+  border-radius: 5px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.aadc-snippet-item:hover {
+  border-color: #6366f1;
+  background: #16213e;
+}
+
+.aadc-snippet-item strong { color: #eaeaea; font-size: 11px; display: block; margin-bottom: 2px; }
+.aadc-snippet-item span   { color: #7a8cb0; font-size: 10px; }
+
+/* ── Assessment score rings (for props panel mini-cards) ─────────────────── */
+.aadc-score-mini {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 10px;
+  background: #16213e;
+  border: 1px solid #1e3a6e;
+  border-radius: 6px;
+  min-width: 56px;
+}
+
+.aadc-score-mini .score-val { font-size: 18px; font-weight: 700; }
+.aadc-score-mini .score-lbl { font-size: 9px; color: #5a6e8c; text-align: center; }
+
+.score-green  { color: #10b981; }
+.score-yellow { color: #f59e0b; }
+.score-red    { color: #ef4444; }
+
+/* ── Finding severity chips ──────────────────────────────────────────────── */
+.aadc-finding { padding: 6px 10px; border-radius: 4px; margin-bottom: 4px; font-size: 11px; }
+.aadc-finding.CRITICAL { background: #450a0a; border-left: 3px solid #ef4444; color: #fca5a5; }
+.aadc-finding.HIGH     { background: #431407; border-left: 3px solid #f97316; color: #fdba74; }
+.aadc-finding.MEDIUM   { background: #422006; border-left: 3px solid #f59e0b; color: #fde68a; }
+
+/* ── Canvas layout container ─────────────────────────────────────────────── */
+.aadc-layout {
+  display: flex;
+  gap: 0;
+  height: calc(100vh - 180px);
+  min-height: 500px;
+}
+
+/* ── Keyboard shortcut hint strip ────────────────────────────────────────── */
+.aadc-kbd-hints {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 10px;
+  color: #5a6e8c;
+  padding: 4px 0 2px;
+}
+
+.aadc-kbd-hints kbd {
+  display: inline-block;
+  background: #16213e;
+  border: 1px solid #1e3a6e;
+  border-radius: 3px;
+  padding: 1px 4px;
+  font-family: monospace;
+  font-size: 9px;
+  color: #7a8cb0;
+}
+
+/* ── Drag ghost ──────────────────────────────────────────────────────────── */
+.aadc-drag-ghost {
+  position: fixed;
+  pointer-events: none;
+  opacity: 0.75;
+  background: #16213e;
+  border: 1.5px solid #6366f1;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  color: #eaeaea;
+  z-index: 9999;
+  white-space: nowrap;
+}
+
+/* ── Scrollbar styling ───────────────────────────────────────────────────── */
+.aadc-palette::-webkit-scrollbar,
+.aadc-props-panel::-webkit-scrollbar,
+.aadc-snippets-panel::-webkit-scrollbar { width: 4px; }
+.aadc-palette::-webkit-scrollbar-track,
+.aadc-props-panel::-webkit-scrollbar-track,
+.aadc-snippets-panel::-webkit-scrollbar-track { background: transparent; }
+.aadc-palette::-webkit-scrollbar-thumb,
+.aadc-props-panel::-webkit-scrollbar-thumb,
+.aadc-snippets-panel::-webkit-scrollbar-thumb { background: #1e3a6e; border-radius: 2px; }
+
+/* ── Print ───────────────────────────────────────────────────────────────── */
+@media print {
+  .aadc-palette, .aadc-props-panel, .aadc-toolbar, .aadc-status-bar,
+  .aadc-kbd-hints, button { display: none !important; }
+  .aadc-layout { height: auto !important; }
+  #aadc-canvas-wrapper {
+    height: auto !important;
+    min-height: 600px;
+    border: none !important;
+    background: #fff !important;
+  }
+  .aadc-node { background: #f8f9fa !important; border-color: #333 !important; }
+  .aadc-node-label { color: #111 !important; }
+  .aadc-node-type  { color: #555 !important; }
+}

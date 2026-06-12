@@ -1,0 +1,54 @@
+# CUI // SP-CTI
+# WriteGuard WG 14 — structure templates for structure_enforcer.py
+# Required sections per document template. Case-insensitive heading match.
+
+templates:
+  rca:
+    description: Root Cause Analysis
+    required:
+      - Executive Summary
+      - Timeline
+      - Impact
+      - Root Cause
+      - "5 Whys"
+      - Corrective Actions
+      - Preventive Actions
+  adr:
+    description: Architecture Decision Record
+    required:
+      - Context
+      - Decision
+      - Consequences
+      - Alternatives Considered
+  pitch:
+    description: Executive Pitch
+    required:
+      - Problem
+      - Insight
+      - Solution
+      - Ask
+  policy:
+    description: Policy Document
+    required:
+      - Purpose
+      - Scope
+      - Roles and Responsibilities
+      - Requirements
+      - Exceptions
+      - Enforcement
+  runbook:
+    description: Operational Runbook
+    required:
+      - Prerequisites
+      - Procedure
+      - Validation
+      - Rollback
+      - Escalation
+  pilot_proposal:
+    description: Pilot Proposal
+    required:
+      - Hypothesis
+      - Metrics
+      - Budget
+      - Timeline
+      - Exit Criteria

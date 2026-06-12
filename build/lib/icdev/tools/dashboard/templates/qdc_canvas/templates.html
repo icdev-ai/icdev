@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}QDC Templates — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+  <h2 style="margin:0;color:#eaeaea;">Quality Templates</h2>
+  <a href="/quality/" class="btn btn-sm" style="background:#2196f3;color:#fff;padding:6px 14px;border-radius:4px;text-decoration:none;">← Back to QDC</a>
+</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:16px;">
+  {% for t in templates %}
+  <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;">
+      <h3 style="margin:0;color:#eaeaea;font-size:15px;">{{ t.name }}</h3>
+      {% if t.compliance_target %}
+      <span style="background:#0f3460;color:#2196f3;padding:2px 8px;border-radius:3px;font-size:10px;text-transform:uppercase;">{{ t.compliance_target }}</span>
+      {% endif %}
+    </div>
+    <p style="color:#7a8cb0;font-size:12px;margin:0 0 12px;">{{ t.description }}</p>
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <span style="color:#5a6e8c;font-size:10px;">{{ t.category or 'general' }}</span>
+      <a href="/quality/canvas/new?template={{ t.id }}" style="background:#2196f3;color:#fff;padding:4px 12px;border-radius:4px;font-size:12px;text-decoration:none;">Use Template</a>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

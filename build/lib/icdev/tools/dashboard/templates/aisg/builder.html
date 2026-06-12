@@ -1,0 +1,332 @@
+{% extends "base.html" %}
+{# CUI // SP-CTI #}
+{% block title %}{{ app_name }} — Visual Agent Builder{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Visual Agent Builder</h1>
+    <p class="page-subtitle">Design multi-step AI agent pipelines on a drag-and-drop canvas, then generate FORGE goals instantly.</p>
+</div>
+
+<div class="builder-layout" id="builder-canvas-area">
+    <!-- Tool Palette (populated with node types) -->
+    <div class="builder-palette" id="builder-palette">
+        <div class="palette-header">Node Palette</div>
+        <div class="palette-section-label">AI Nodes</div>
+        {% set ai_nodes = [
+            ('llm_call', '🤖', 'LLM Call'),
+            ('rag_query', '🔍', 'RAG Query'),
+            ('fine_tune', '🎓', 'Fine-Tune Eval'),
+            ('embedding', '🧮', 'Embedding'),
+        ] %}
+        {% for nid, icon, label in ai_nodes %}
+        <div class="palette-node" draggable="true" data-tool="{{ nid }}" ondragstart="paletteDragStart(event, '{{ nid }}', '{{ label }}')">
+            <span class="palette-node-icon">{{ icon }}</span>
+            <span>{{ label }}</span>
+        </div>
+        {% endfor %}
+
+        <div class="palette-section-label" style="margin-top:12px;">Security / Compliance</div>
+        {% set sec_nodes = [
+            ('sast_scan', '🛡️', 'SAST Scan'),
+            ('compliance_check', '✅', 'Compliance Check'),
+            ('audit_log', '📋', 'Audit Log'),
+        ] %}
+        {% for nid, icon, label in sec_nodes %}
+        <div class="palette-node" draggable="true" data-tool="{{ nid }}" ondragstart="paletteDragStart(event, '{{ nid }}', '{{ label }}')">
+            <span class="palette-node-icon">{{ icon }}</span>
+            <span>{{ label }}</span>
+        </div>
+        {% endfor %}
+
+        <div class="palette-section-label" style="margin-top:12px;">Data / Output</div>
+        {% set data_nodes = [
+            ('db_write', '💾', 'DB Write'),
+            ('file_output', '📄', 'File Output'),
+            ('api_call', '🌐', 'API Call'),
+            ('notification', '🔔', 'Notification'),
+        ] %}
+        {% for nid, icon, label in data_nodes %}
+        <div class="palette-node" draggable="true" data-tool="{{ nid }}" ondragstart="paletteDragStart(event, '{{ nid }}', '{{ label }}')">
+            <span class="palette-node-icon">{{ icon }}</span>
+            <span>{{ label }}</span>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Canvas -->
+    <div class="builder-canvas" id="builder-canvas"
+         ondragover="event.preventDefault()"
+         ondrop="canvasDrop(event)">
+        <div class="canvas-placeholder" id="canvas-placeholder">
+            <div class="canvas-placeholder-icon">⬡</div>
+            <div>Drag nodes from the palette to build your pipeline</div>
+            <div style="font-size:0.8rem;color:var(--text-dim);margin-top:8px;">Or click a node type to add it at center</div>
+        </div>
+        <div id="canvas-nodes"></div>
+        <svg id="canvas-arrows" style="position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;"></svg>
+    </div>
+
+    <!-- Properties Panel -->
+    <div class="builder-props" id="builder-props">
+        <div class="props-header">Design Settings</div>
+        <div class="form-group">
+            <label for="design-name">Design Name</label>
+            <input type="text" id="design-name" value="My Agent Pipeline"
+                   style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);font-size:0.88rem;" />
+        </div>
+        <div class="form-group" style="margin-top:12px;">
+            <label for="trust-tier">Trust Tier</label>
+            <select id="trust-tier" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);font-size:0.88rem;">
+                <option value="observer">Observer — read-only</option>
+                <option value="advisor" selected>Advisor — human approval</option>
+                <option value="executor">Executor — pre-approved classes</option>
+                <option value="full">Full — full autonomy</option>
+            </select>
+        </div>
+
+        <div class="props-selected" id="props-selected" style="display:none;margin-top:16px;">
+            <div class="props-header" style="margin-top:0;">Selected Node</div>
+            <div id="props-node-name" style="font-weight:600;margin-bottom:8px;"></div>
+            <div class="form-group">
+                <label>Inputs (comma-separated)</label>
+                <input type="text" id="props-inputs" placeholder="context, query" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);font-size:0.85rem;" />
+            </div>
+            <div class="form-group" style="margin-top:8px;">
+                <label>Outputs (comma-separated)</label>
+                <input type="text" id="props-outputs" placeholder="result, metadata" style="width:100%;padding:6px 8px;border-radius:6px;border:1px solid var(--border);background:var(--bg-card);color:var(--text);font-size:0.85rem;" />
+            </div>
+        </div>
+
+        <div class="props-actions" style="margin-top:20px;display:flex;flex-direction:column;gap:8px;">
+            <button class="btn btn-primary" onclick="saveDesign()">💾 Save Design</button>
+            <button class="btn" onclick="generateGoal()" id="btn-generate-goal" style="display:none;">⚡ Generate Goal</button>
+            <button class="btn" onclick="clearCanvas()" style="color:var(--danger,#e94560);">🗑 Clear Canvas</button>
+        </div>
+
+        <div id="save-result" style="display:none;margin-top:12px;padding:10px;background:var(--bg-elevated);border-radius:6px;border:1px solid var(--success,#10b981);font-size:0.82rem;"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+.builder-layout {
+    display: grid;
+    grid-template-columns: 200px 1fr 220px;
+    gap: 16px;
+    height: calc(100vh - 200px);
+    min-height: 500px;
+}
+.builder-palette {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    overflow-y: auto;
+}
+.palette-header {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+.palette-section-label {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+}
+.palette-node {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated, rgba(255,255,255,0.04));
+    cursor: grab;
+    font-size: 0.82rem;
+    margin-bottom: 6px;
+    transition: border-color 0.15s, background 0.15s;
+    user-select: none;
+}
+.palette-node:hover { border-color: var(--accent); background: rgba(59,130,246,0.08); }
+.palette-node:active { cursor: grabbing; }
+.palette-node-icon { font-size: 1rem; }
+.builder-canvas {
+    background: var(--bg-card);
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    position: relative;
+    overflow: hidden;
+}
+.canvas-placeholder {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    pointer-events: none;
+}
+.canvas-placeholder-icon { font-size: 3rem; margin-bottom: 12px; opacity: 0.3; }
+.canvas-node {
+    position: absolute;
+    background: var(--bg-card);
+    border: 2px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 0.82rem;
+    cursor: move;
+    min-width: 120px;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: border-color 0.15s;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+.canvas-node:hover, .canvas-node.selected { border-color: var(--accent); }
+.builder-props {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    overflow-y: auto;
+}
+.props-header {
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    font-weight: 600;
+    margin-bottom: 12px;
+}
+.form-group label { font-size: 0.8rem; font-weight: 600; display: block; margin-bottom: 4px; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+var _nodes = [];
+var _selectedNode = null;
+var _savedDesignId = null;
+var _nodeCounter = 0;
+
+function paletteDragStart(e, toolName, label) {
+    e.dataTransfer.setData('tool_name', toolName);
+    e.dataTransfer.setData('label', label);
+}
+
+function canvasDrop(e) {
+    e.preventDefault();
+    var toolName = e.dataTransfer.getData('tool_name');
+    var label = e.dataTransfer.getData('label');
+    if (!toolName) return;
+    var canvas = document.getElementById('builder-canvas');
+    var rect = canvas.getBoundingClientRect();
+    var x = e.clientX - rect.left - 60;
+    var y = e.clientY - rect.top - 20;
+    addNode(toolName, label, x, y);
+}
+
+function addNode(toolName, label, x, y) {
+    document.getElementById('canvas-placeholder').style.display = 'none';
+    _nodeCounter++;
+    var id = toolName + '-' + _nodeCounter;
+    var node = {id: id, tool_name: toolName, label: label, x: x, y: y, inputs: [], outputs: [], trust_tier: 'executor'};
+    _nodes.push(node);
+    renderNode(node);
+}
+
+function renderNode(node) {
+    var div = document.createElement('div');
+    div.className = 'canvas-node';
+    div.id = 'node-' + node.id;
+    div.style.left = node.x + 'px';
+    div.style.top = node.y + 'px';
+    div.innerHTML = '<span style="font-size:1rem;">⚙</span><span>' + node.label + '</span>';
+    div.onclick = function(e) { e.stopPropagation(); selectNode(node.id); };
+    makeDraggable(div, node);
+    document.getElementById('canvas-nodes').appendChild(div);
+}
+
+function makeDraggable(el, node) {
+    var ox, oy;
+    el.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        ox = e.clientX - node.x; oy = e.clientY - node.y;
+        function onMove(ev) {
+            node.x = ev.clientX - ox; node.y = ev.clientY - oy;
+            el.style.left = node.x + 'px'; el.style.top = node.y + 'px';
+        }
+        function onUp() { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); }
+        document.addEventListener('mousemove', onMove); document.addEventListener('mouseup', onUp);
+    });
+}
+
+function selectNode(nodeId) {
+    _selectedNode = nodeId;
+    document.querySelectorAll('.canvas-node').forEach(function(n) { n.classList.remove('selected'); });
+    var el = document.getElementById('node-' + nodeId);
+    if (el) el.classList.add('selected');
+    var node = _nodes.find(function(n) { return n.id === nodeId; });
+    if (node) {
+        document.getElementById('props-selected').style.display = 'block';
+        document.getElementById('props-node-name').textContent = node.label;
+        document.getElementById('props-inputs').value = (node.inputs || []).join(', ');
+        document.getElementById('props-outputs').value = (node.outputs || []).join(', ');
+    }
+}
+
+function clearCanvas() {
+    _nodes = []; _selectedNode = null; _nodeCounter = 0; _savedDesignId = null;
+    document.getElementById('canvas-nodes').innerHTML = '';
+    document.getElementById('canvas-placeholder').style.display = 'block';
+    document.getElementById('props-selected').style.display = 'none';
+    document.getElementById('btn-generate-goal').style.display = 'none';
+    document.getElementById('save-result').style.display = 'none';
+}
+
+function saveDesign() {
+    if (_nodes.length === 0) { alert('Add at least one node to the canvas first.'); return; }
+    var name = document.getElementById('design-name').value || 'My Agent Pipeline';
+    var tier = document.getElementById('trust-tier').value;
+    var payload = {name: name, canvas_json: JSON.stringify(_nodes), trust_tier: tier, created_by: 'user'};
+    fetch('/api/ai-builder/save', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)})
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        var el = document.getElementById('save-result');
+        if (d.design_id) {
+            _savedDesignId = d.design_id;
+            el.textContent = '✓ Saved as design ' + d.design_id;
+            el.style.display = 'block';
+            document.getElementById('btn-generate-goal').style.display = 'block';
+        } else {
+            el.textContent = 'Error: ' + (d.error || 'unknown');
+            el.style.display = 'block';
+        }
+    })
+    .catch(function() { alert('Save failed — check server logs.'); });
+}
+
+function generateGoal() {
+    if (!_savedDesignId) { alert('Save your design first.'); return; }
+    fetch('/api/ai-builder/generate', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({design_id: _savedDesignId})})
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.goal_markdown) {
+            document.getElementById('save-result').textContent = '✓ Goal generated (' + d.goal_markdown.length + ' chars)';
+        } else {
+            document.getElementById('save-result').textContent = 'Error: ' + (d.error || 'unknown');
+        }
+        document.getElementById('save-result').style.display = 'block';
+    })
+    .catch(function() { alert('Generate failed.'); });
+}
+</script>
+{% endblock %}

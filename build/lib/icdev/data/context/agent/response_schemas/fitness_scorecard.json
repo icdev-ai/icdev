@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "FitnessScorecard",
+  "description": "Schema for agentic fitness assessment output. Evaluates whether a component should use agent, hybrid, or traditional architecture.",
+  "type": "object",
+  "required": ["component", "scores", "overall_score", "recommendations"],
+  "additionalProperties": false,
+  "properties": {
+    "component": {
+      "type": "string",
+      "description": "Name of the component being assessed",
+      "minLength": 2,
+      "maxLength": 60
+    },
+    "scores": {
+      "type": "object",
+      "required": ["data_complexity", "decision_complexity", "user_interaction", "integration_density", "compliance_sensitivity", "scale_variability"],
+      "additionalProperties": false,
+      "properties": {
+        "data_complexity": {"type": "integer", "minimum": 0, "maximum": 10},
+        "decision_complexity": {"type": "integer", "minimum": 0, "maximum": 10},
+        "user_interaction": {"type": "integer", "minimum": 0, "maximum": 10},
+        "integration_density": {"type": "integer", "minimum": 0, "maximum": 10},
+        "compliance_sensitivity": {"type": "integer", "minimum": 0, "maximum": 10},
+        "scale_variability": {"type": "integer", "minimum": 0, "maximum": 10}
+      }
+    },
+    "overall_score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 10,
+      "description": "Weighted average of dimension scores"
+    },
+    "recommendations": {
+      "type": "object",
+      "required": ["architecture"],
+      "additionalProperties": false,
+      "properties": {
+        "architecture": {
+          "type": "string",
+          "enum": ["agent", "hybrid", "traditional"],
+          "description": "Primary architecture recommendation"
+        },
+        "agent_components": {
+          "type": "array",
+          "items": {"type": "string"},
+          "default": [],
+          "description": "Components that should use agent architecture"
+        },
+        "nlq_interfaces": {
+          "type": "array",
+          "items": {"type": "string"},
+          "default": [],
+          "description": "Interfaces that should support NLQ"
+        },
+        "traditional_components": {
+          "type": "array",
+          "items": {"type": "string"},
+          "default": [],
+          "description": "Components that should use traditional patterns"
+        }
+      }
+    },
+    "rationale": {
+      "type": ["string", "null"],
+      "description": "Brief explanation of the assessment"
+    },
+    "classification": {
+      "type": "string",
+      "default": "CUI",
+      "description": "Classification marking"
+    }
+  }
+}

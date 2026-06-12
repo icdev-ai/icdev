@@ -1,0 +1,83 @@
+# CUI // SP-CTI
+# Data Design Canvas — Configuration
+app:
+  name: "Data Design Canvas"
+  version: "1.0.0"
+  classification: "CUI // SP-CTI"
+
+database:
+  path: "data_canvas.db"
+  wal_mode: true
+  foreign_keys: true
+
+canvas:
+  autosave_delay_ms: 3000
+  grid_size: 10
+  default_width: 110
+  default_height: 60
+  accent_color: "#ff9800"
+
+assessment:
+  auto_assess_on_save: true
+  default_rules:
+    - DDC-ENC-001  # Data at rest encryption
+    - DDC-ENC-002  # Data in transit encryption
+    - DDC-ENC-003  # Key management present
+    - DDC-ACC-001  # Access controls defined
+    - DDC-ACC-002  # Least privilege enforced
+    - DDC-AUD-001  # Audit logging on sensitive data
+    - DDC-AUD-002  # Data access audit trail
+    - DDC-RET-001  # Retention policy defined
+    - DDC-BAK-001  # Backup strategy defined
+    - DDC-CLS-001  # Classification zones applied
+    - DDC-SOV-001  # Data sovereignty enforced
+    - DDC-DLP-001  # DLP controls present
+  thresholds:
+    min_score: 70
+    cat1_max: 0
+    cat2_max: 5
+
+classification:
+  zones:
+    - cui
+    - pii
+    - phi
+    - secret
+    - audit
+  auto_detect_pii: true
+
+lineage:
+  enabled: true
+  track_data_flows: true
+
+templates:
+  count: 6
+  auto_seed: true
+
+agent:
+  auto_trigger_sdc_on_save: true
+  auto_trigger_qdc_on_save: true
+
+logging:
+  level: INFO
+  audit_enabled: true
+
+# ── Data Science Extensions ──────────────────────────────────────────────────
+explore:
+  enabled: true
+  max_rows_profile: 50000
+  top_values_limit: 10
+  supported_backends: [sqlite, postgresql, duckdb]
+
+query:
+  enabled: true
+  max_rows: 1000
+  allowed_statement_types: [SELECT, WITH, EXPLAIN]
+  history_limit: 50
+
+quality:
+  enabled: true
+  check_types: [completeness, uniqueness, range, pattern, freshness]
+  default_threshold: 90.0
+  min_score_gate: 70
+  assessment_rule_id: DDC-QUA-001

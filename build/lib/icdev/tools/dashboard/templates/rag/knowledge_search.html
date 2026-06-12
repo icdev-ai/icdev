@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% block title %}Knowledge Search - ICDEV™ Dashboard{% endblock %}
+{% block content %}
+<div class="container">
+  <!-- Breadcrumb -->
+  <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
+    <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
+    <span style="color:#999;"> &gt; </span>
+    <span style="color:#333;">Knowledge Search</span>
+  </nav>
+  <h1>Knowledge Search</h1>
+  <p style="color:#666;">Phase 64 &mdash; RAG-powered search across all ICDEV™ knowledge (D-RAG-1 through D-RAG-14)</p>
+
+  <!-- Search Controls -->
+  <div style="margin:1rem 0;display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+    <input id="rag-query" type="text" placeholder="Search knowledge base... (e.g. FedRAMP AC-2 patterns)" style="padding:0.4rem 0.8rem;border:1px solid #ccc;border-radius:4px;flex:1;min-width:300px;" />
+    <select id="rag-source-filter" style="padding:0.4rem 0.8rem;border:1px solid #ccc;border-radius:4px;">
+      <option value="">All Sources</option>
+      {% for src in source_types %}
+        <option value="{{ src }}">{{ src }}</option>
+      {% endfor %}
+    </select>
+    <input id="rag-top-k" type="number" value="5" min="1" max="50" style="padding:0.4rem 0.8rem;border:1px solid #ccc;border-radius:4px;width:60px;" title="Top K results" />
+    <button onclick="searchRAG()" style="padding:0.4rem 1rem;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;">Search</button>
+  </div>
+
+  <!-- Example Queries -->
+  <div style="margin:0 0 1rem;color:#888;font-size:0.85rem;">
+    Try: <a href="#" onclick="setQuery('FedRAMP AC-2 implementation patterns');return false;" style="color:#1976d2;">FedRAMP AC-2 patterns</a> &middot;
+    <a href="#" onclick="setQuery('supply chain vulnerability mitigation');return false;" style="color:#1976d2;">supply chain vulnerabilities</a> &middot;
+    <a href="#" onclick="setQuery('creative feature gaps competitors');return false;" style="color:#1976d2;">creative feature gaps</a> &middot;
+    <a href="#" onclick="setQuery('innovation signals DevSecOps');return false;" style="color:#1976d2;">innovation signals</a>
+  </div>
+
+  <!-- Stat Grid -->
+  <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin:1rem 0;">
+    <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ status.total_chunks if status else '--' }}</div>
+      <div class="stat-label" style="color:#999;">Total Chunks</div>
+    </div>
+    <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ status.registered_sources if status else '--' }}</div>
+      <div class="stat-label" style="color:#999;">Source Types</div>
+    </div>
+    <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ status.by_tier | length if status and status.by_tier else '--' }}</div>
+      <div class="stat-label" style="color:#999;">Active Tiers</div>
+    </div>
+    <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+      <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ status.vector_store_backend if status else '--' }}</div>
+      <div class="stat-label" style="color:#999;">Backend</div>
+    </div>
+    <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+      <div class="stat-value" style="font-size:2rem;font-weight:bold;color:{% if status and status.vector_store_available %}#388e3c{% else %}#d32f2f{% endif %};">
+        {{ 'Online' if status and status.vector_store_available else 'Offline' }}
+      </div>
+      <div class="stat-label" style="color:#999;">Status</div>
+    </div>
+  </div>
+
+  <!-- Source Distribution Chart -->
+  {% if status and status.by_source_type %}
+  <h2 style="margin-top:1.5rem;">Chunk Distribution by Source</h2>
+  <div id="rag-chart" style="margin:1rem 0;">
+    <svg width="100%" height="200" viewBox="0 0 800 200" role="img" aria-label="Chunk distribution by source type">
+      {% set ns = namespace(x=10, max_val=1) %}
+      {% for src, count in status.by_source_type.items() %}
+        {% if count > ns.max_val %}{% set ns.max_val = count %}{% endif %}
+      {% endfor %}
+      {% set bar_count = status.by_source_type | length %}
+      {% set bar_width = ((780 / bar_count) - 6) if bar_count > 0 else 40 %}
+      {% for src, count in status.by_source_type.items() %}
+        {% set bar_height = ((count / ns.max_val) * 160) if ns.max_val > 0 else 5 %}
+        <rect x="{{ ns.x }}" y="{{ 180 - bar_height }}" width="{{ bar_width }}" height="{{ bar_height }}" fill="#1976d2" rx="2"/>
+        <text x="{{ ns.x + bar_width / 2 }}" y="195" text-anchor="middle" font-size="9" fill="#666">{{ src[:12] }}</text>
+        <text x="{{ ns.x + bar_width / 2 }}" y="{{ 175 - bar_height }}" text-anchor="middle" font-size="10" fill="#333">{{ count }}</text>
+        {% set ns.x = ns.x + bar_width + 6 %}
+      {% endfor %}
+    </svg>
+  </div>
+  {% endif %}
+
+  <!-- Tier Breakdown -->
+  {% if status and status.by_tier %}
+  <h2 style="margin-top:1.5rem;">Tier Breakdown</h2>
+  <div style="display:flex;gap:1rem;flex-wrap:wrap;">
+    {% for tier, count in status.by_tier.items() %}
+    <div style="padding:0.75rem 1.5rem;border:1px solid #ddd;border-radius:8px;text-align:center;min-width:120px;">
+      <div style="font-size:1.5rem;font-weight:bold;color:{% if tier == 'hot' %}#d32f2f{% elif tier == 'warm' %}#f57c00{% else %}#757575{% endif %};">{{ count }}</div>
+      <div style="color:#999;text-transform:uppercase;font-size:0.75rem;">{{ tier }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Search Results -->
+  <div id="rag-results" style="margin-top:1.5rem;display:none;">
+    <h2>Search Results <span id="rag-results-count" style="color:#888;font-size:0.9rem;"></span></h2>
+    <div id="rag-results-list"></div>
+  </div>
+
+  <!-- Recent Searches -->
+  <h2 style="margin-top:1.5rem;">Recent Searches</h2>
+  <div class="table-container">
+    <table id="rag-history-table" style="width:100%;border-collapse:collapse;">
+      <thead>
+        <tr style="border-bottom:2px solid #ddd;">
+          <th style="text-align:left;padding:0.5rem;">Query Hash</th>
+          <th style="text-align:center;padding:0.5rem;">Results</th>
+          <th style="text-align:center;padding:0.5rem;">Top Score</th>
+          <th style="text-align:center;padding:0.5rem;">Re-ranked</th>
+          <th style="text-align:right;padding:0.5rem;">Duration (ms)</th>
+          <th style="text-align:right;padding:0.5rem;">Time</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if recent_searches %}
+          {% for s in recent_searches %}
+          <tr style="border-bottom:1px solid #eee;">
+            <td style="padding:0.5rem;font-family:monospace;font-size:0.8rem;">{{ s.query_hash[:16] }}...</td>
+            <td style="padding:0.5rem;text-align:center;">{{ s.results_count }}</td>
+            <td style="padding:0.5rem;text-align:center;">{{ '%.3f'|format(s.top_score) if s.top_score else '--' }}</td>
+            <td style="padding:0.5rem;text-align:center;">{{ '&#10003;' if s.rerank_used else '' }}</td>
+            <td style="padding:0.5rem;text-align:right;">{{ s.duration_ms if s.duration_ms else '--' }}</td>
+            <td style="padding:0.5rem;text-align:right;color:#888;">{{ s.created_at }}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="6" style="padding:1rem;text-align:center;color:#999;">No searches yet</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Last Ingestion -->
+  {% if status and status.last_ingestion %}
+  <p style="margin-top:1rem;color:#888;font-size:0.85rem;">Last ingestion: {{ status.last_ingestion }}</p>
+  {% endif %}
+</div>
+
+<script>
+function setQuery(q) {
+  document.getElementById('rag-query').value = q;
+  searchRAG();
+}
+
+function searchRAG() {
+  var query = document.getElementById('rag-query').value.trim();
+  if (!query) return;
+  var topK = parseInt(document.getElementById('rag-top-k').value) || 5;
+  var sourceFilter = document.getElementById('rag-source-filter').value;
+
+  var body = {query: query, top_k: topK};
+  if (sourceFilter) body.source_type = sourceFilter;
+
+  fetch('/api/rag/search', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(data) {
+    var panel = document.getElementById('rag-results');
+    var list = document.getElementById('rag-results-list');
+    var count = document.getElementById('rag-results-count');
+
+    if (data.error) {
+      list.innerHTML = '<div style="padding:1rem;color:#d32f2f;">Error: ' + escapeHtml(data.error) + '</div>';
+      panel.style.display = 'block';
+      return;
+    }
+
+    count.textContent = '(' + (data.results_count || 0) + ' results)';
+
+    if (!data.results || data.results.length === 0) {
+      list.innerHTML = '<div style="padding:1rem;color:#888;">No results found</div>';
+      panel.style.display = 'block';
+      return;
+    }
+
+    var html = '';
+    for (var i = 0; i < data.results.length; i++) {
+      var r = data.results[i];
+      var scoreColor = r.final_score >= 0.7 ? '#388e3c' : r.final_score >= 0.4 ? '#f57c00' : '#999';
+      html += '<div style="padding:1rem;border:1px solid #ddd;border-radius:8px;margin:0.5rem 0;">';
+      html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;">';
+      html += '<span style="font-weight:600;color:#333;">' + escapeHtml(r.source_type || 'unknown') + '</span>';
+      html += '<div>';
+      html += '<span style="color:' + scoreColor + ';font-weight:bold;margin-right:0.5rem;" title="Final score">' + (r.final_score ? r.final_score.toFixed(3) : '--') + '</span>';
+      if (r.tier) html += '<span style="background:#eee;padding:0.15rem 0.5rem;border-radius:3px;font-size:0.75rem;color:#666;">' + escapeHtml(r.tier) + '</span>';
+      html += '</div></div>';
+      html += '<div style="color:#555;font-size:0.9rem;white-space:pre-wrap;max-height:150px;overflow-y:auto;">' + escapeHtml(r.content || '').substring(0, 500) + '</div>';
+      html += '<div style="color:#888;font-size:0.8rem;margin-top:0.5rem;">';
+      if (r.source_id) html += 'ID: ' + escapeHtml(r.source_id) + ' &middot; ';
+      if (r.source_table) html += 'Table: ' + escapeHtml(r.source_table) + ' &middot; ';
+      if (r.chunk_index !== undefined) html += 'Chunk: ' + r.chunk_index;
+      html += '</div></div>';
+    }
+    list.innerHTML = html;
+    panel.style.display = 'block';
+  })
+  .catch(function(e) {
+    document.getElementById('rag-results-list').innerHTML = '<div style="padding:1rem;color:#d32f2f;">Request failed: ' + escapeHtml(String(e)) + '</div>';
+    document.getElementById('rag-results').style.display = 'block';
+  });
+}
+
+function escapeHtml(text) {
+  var div = document.createElement('div');
+  div.appendChild(document.createTextNode(text));
+  return div.innerHTML;
+}
+
+// Submit on Enter key
+document.getElementById('rag-query').addEventListener('keypress', function(e) {
+  if (e.key === 'Enter') searchRAG();
+});
+</script>
+{% endblock %}

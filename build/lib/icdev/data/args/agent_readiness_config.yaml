@@ -1,0 +1,57 @@
+# CUI // SP-CTI
+# Agent Readiness Pillar — Configurable Thresholds
+# Anomaly detection: values below min thresholds are flagged as anomalously low
+# for a project claiming task automation / CI readiness.
+
+pillars:
+  documentation:
+    readme:
+      # Minimum character count for README to be considered non-trivial.
+      # A README shorter than this is anomalously sparse for a documented project.
+      min_content_length: 80
+
+    inline_docs:
+      # Number of source files sampled when checking docstring/JSDoc coverage.
+      # Larger values increase accuracy at the cost of scan time.
+      sample_size: 20
+      # Minimum number of sampled JS/TS files that must contain JSDoc blocks.
+      # Fewer than this is an anomaly for a project claiming documentation readiness.
+      min_jsdoc_files: 2
+      # Denominator for docstring coverage ratio (1 / N).
+      # At 3, passes when ≥1/3 of sampled Python files have docstrings.
+      # Raise to 2 to require ≥50% coverage; lower to 4 for a lighter gate.
+      docstring_ratio_denominator: 3
+
+  stig_compliance:
+    nlp_extractor:
+      # Enable Claude Haiku NLP extraction as a secondary pass when regex finds nothing.
+      # Set to false to run regex-only (no API calls, faster but less accurate for prose).
+      enabled: true
+      # Model used for NLP extraction. claude-haiku-4-5-20251001 balances speed and accuracy.
+      model: claude-haiku-4-5-20251001
+      # Max output tokens for the JSON response; 256 is sufficient for structured extraction.
+      max_tokens: 256
+      # Minimum confidence score (0.0–1.0) required to accept an NLP-detected reference.
+      # Lower values increase recall but risk false positives on ambiguous prose.
+      confidence_threshold: 0.7
+      # Characters of file content sampled per NLP call to control token cost.
+      text_sample_chars: 2000
+
+  configuration:
+    ci_pipeline:
+      # Minimum GitHub Actions workflow files required to pass the ci-pipeline criterion.
+      # A single stub workflow is anomalously low for a project claiming CI readiness.
+      min_workflows: 1
+
+    iac:
+      # Minimum IaC files (Terraform .tf, Helm Chart.yaml, K8s manifests) required to pass.
+      # A single file is the floor; raise to 2+ for projects with complex multi-environment infra.
+      min_files: 1
+
+    task_runner:
+      # Minimum Makefile targets required to pass the task-runner criterion.
+      # A Makefile with fewer targets is an anomaly — likely a stub, not a real task runner.
+      min_makefile_targets: 3
+      # Minimum npm script entries required to pass the task-runner criterion.
+      # Fewer scripts indicate an underdeveloped automation setup.
+      min_npm_scripts: 3

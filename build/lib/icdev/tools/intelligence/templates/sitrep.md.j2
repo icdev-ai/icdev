@@ -1,0 +1,74 @@
+{# sitrep.md.j2 — Situation Report #}
+---
+**{{ classification | default('CUI // SP-CTI') }}**
+
+# SITUATION REPORT (SITREP)
+**Report Number:** {{ report_number | default('SIT-' ~ brief_id[:8] | upper) }}
+**Date/Time Group:** {{ dtg | default(generated_at) }}
+**Prepared By:** {{ prepared_by | default('ICDEV Strategos / SIO Engine') }}
+**Period Covered:** {{ period | default('Last 24 hours') }}
+
+---
+
+## 1. SITUATION
+
+{{ situation | default('No situation summary provided.') }}
+
+---
+
+## 2. THREAT POSTURE SCORE
+
+| Dimension | Score | Assessment |
+|-----------|-------|-----------|
+| Kinetic Activity | {{ kinetic_score | default('N/A') }} | {{ kinetic_assessment | default('—') }} |
+| Cyber Activity | {{ cyber_score | default('N/A') }} | {{ cyber_assessment | default('—') }} |
+| Information Operations | {{ io_score | default('N/A') }} | {{ io_assessment | default('—') }} |
+| Logistics Disruption | {{ logistics_score | default('N/A') }} | {{ logistics_assessment | default('—') }} |
+
+**Overall Threat Posture:** {{ threat_posture | default('MODERATE') }}
+{% if sio_confidence is defined %}
+**SIO Confidence:** {{ (sio_confidence * 100) | round(1) }}% (STANAG 2511 threshold: 40%)
+{% endif %}
+
+---
+
+## 3. KEY EVENTS — LAST 24 HOURS
+
+{% if key_events %}
+{% for event in key_events %}
+- **[{{ event.time | default('UNKNOWN') }}]** {{ event.description }} *(Source: {{ event.source | default('UNSPECIFIED') }})*
+{% endfor %}
+{% else %}
+*No significant events recorded in the collection period.*
+{% endif %}
+
+---
+
+## 4. SIO TOP-3 ASSESSMENTS
+
+{% if sio_assessments %}
+{% for i, assessment in enumerate(sio_assessments[:3]) %}
+**{{ loop.index }}. {{ assessment.topic | default('Untitled') }}**
+> {{ assessment.judgement | default('Assessment pending.') }}
+Confidence: {{ assessment.confidence | default('LOW') }}
+{% endfor %}
+{% else %}
+*SIO assessments unavailable. Run SIO Engine to generate.*
+{% endif %}
+
+---
+
+## 5. RECOMMENDATIONS
+
+{% if recommendations %}
+{% for rec in recommendations %}
+{{ loop.index }}. {{ rec }}
+{% endfor %}
+{% else %}
+*No recommendations generated for this period.*
+{% endif %}
+
+---
+
+*Report generated: {{ generated_at }}*
+*{{ classification | default('CUI // SP-CTI') }}*

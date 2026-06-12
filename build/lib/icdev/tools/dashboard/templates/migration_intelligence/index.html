@@ -1,0 +1,638 @@
+<!-- CUI // SP-CTI — Migration Intelligence Engine -->
+{% extends "base.html" %}
+{% block title %}Migration Intelligence — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .mi-hero { padding: 20px 30px 10px; }
+  .mi-hero h1 { font-size: 22px; margin: 0 0 4px; }
+  .mi-hero p { color: #7a8cb0; font-size: 13px; margin: 0 0 12px; }
+  .mi-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; padding: 0 30px 20px; }
+  .mi-card { background: #16213e; border: 1px solid #1e3a6e; border-radius: 8px; padding: 14px; }
+  .mi-card h3 { margin: 0 0 6px; font-size: 13px; color: #eaeaea; }
+  .mi-card p { color: #7a8cb0; font-size: 12px; margin: 0; }
+  .mi-stat-row { display: flex; gap: 16px; margin: 8px 0; flex-wrap: wrap; }
+  .mi-stat { text-align: center; min-width: 80px; }
+  .mi-stat .val { font-size: 24px; font-weight: 700; color: #27ae60; }
+  .mi-stat .lbl { font-size: 11px; color: #7a8cb0; }
+  .mi-section { padding: 8px 30px 4px; font-size: 14px; font-weight: 600; color: #eaeaea; border-bottom: 1px solid #1e3a6e; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+  .mi-btn { display: inline-block; padding: 6px 16px; background: #27ae60; color: #fff; border-radius: 5px; font-size: 12px; font-weight: 600; border: none; cursor: pointer; text-decoration: none; }
+  .mi-btn:hover { background: #219a52; }
+  .mi-btn.sec { background: #0f3460; border: 1px solid #27ae60; color: #27ae60; }
+  .mi-btn.sec:hover { background: #1a4a80; }
+  .mi-btn.sm { padding: 4px 10px; font-size: 11px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 600; }
+  .badge-critical { background: #4a0e0e; color: #e74c3c; }
+  .badge-high { background: #3d2800; color: #f39c12; }
+  .badge-medium { background: #1a3a1a; color: #27ae60; }
+  .badge-low { background: #1a2040; color: #7a8cb0; }
+  .score-bar { height: 4px; background: #1e3a6e; border-radius: 2px; margin-top: 6px; }
+  .score-fill { height: 4px; background: #27ae60; border-radius: 2px; }
+  .opp-type { font-size: 10px; color: #5a6e8c; margin-top: 4px; }
+  .chat-wrap { padding: 0 30px 20px; }
+  .chat-input-row { display: flex; gap: 8px; margin-top: 8px; }
+  .chat-input { flex: 1; background: #0f1e36; border: 1px solid #1e3a6e; border-radius: 6px; padding: 8px 12px; color: #eaeaea; font-size: 13px; resize: vertical; min-height: 60px; }
+  .chat-input:focus { outline: none; border-color: #27ae60; }
+  .chat-result { margin-top: 10px; font-size: 12px; color: #7a8cb0; background: #0f1e36; border: 1px solid #1e3a6e; border-radius: 6px; padding: 10px 12px; display: none; }
+  .chat-result.show { display: block; }
+  .airgap-banner { background: #1a1a00; border: 1px solid #555500; border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #cccc00; margin: 0 30px 12px; }
+  table.mi-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.mi-table th { padding: 6px 10px; text-align: left; color: #7a8cb0; border-bottom: 1px solid #1e3a6e; }
+  table.mi-table td { padding: 6px 10px; border-bottom: 1px solid #0f1e36; vertical-align: middle; }
+  table.mi-table tr:hover td { background: #1a2a45; }
+  .modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 1000; align-items: center; justify-content: center; }
+  .modal-bg.open { display: flex; }
+  .modal { background: #16213e; border: 1px solid #1e3a6e; border-radius: 10px; padding: 24px; width: 540px; max-width: 96vw; max-height: 80vh; overflow-y: auto; }
+  .modal h2 { margin: 0 0 16px; font-size: 16px; }
+  .field-group { margin-bottom: 12px; }
+  .field-group label { display: block; font-size: 11px; color: #7a8cb0; margin-bottom: 4px; }
+  .field-group input, .field-group select, .field-group textarea {
+    width: 100%; background: #0f1e36; border: 1px solid #1e3a6e; border-radius: 5px;
+    padding: 7px 10px; color: #eaeaea; font-size: 13px; box-sizing: border-box;
+  }
+  .field-group textarea { resize: vertical; min-height: 60px; }
+  .field-row { display: flex; gap: 10px; }
+  .field-row .field-group { flex: 1; }
+  .tab-row { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid #1e3a6e; padding-bottom: 0; }
+  .tab-btn { padding: 6px 16px; font-size: 12px; background: none; border: none; color: #7a8cb0; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tab-btn.active { color: #27ae60; border-bottom-color: #27ae60; }
+</style>
+
+<div class="mi-hero">
+  <h1>Migration Intelligence Engine</h1>
+  <p>Autonomous discovery of migration opportunities aligned to enterprise technical goals (5-10 year horizon).</p>
+  <button class="mi-btn sm" onclick="runPipeline()">&#9654; Run Pipeline</button>
+  <button class="mi-btn sm sec" onclick="openGoalModal()">+ Add Goal</button>
+  <button class="mi-btn sm sec" onclick="openWishlistModal()">+ Wishlist Item</button>
+  <span id="pipeline-status" style="font-size:11px;color:#7a8cb0;margin-left:12px;"></span>
+</div>
+
+{% if last_scan and last_scan.airgap_mode %}
+<div class="airgap-banner">&#9888; Air-gap mode: External EOL feeds and NL goal parsing are disabled. Local canvas scan only.</div>
+{% endif %}
+
+<!-- Stats -->
+<div style="padding: 0 30px 16px;">
+  <div class="mi-stat-row">
+    <div class="mi-stat"><div class="val" id="stat-opps">{{ opportunities|length }}</div><div class="lbl">Opportunities</div></div>
+    <div class="mi-stat"><div class="val" id="stat-goals">{{ goals|length }}</div><div class="lbl">Active Goals</div></div>
+    <div class="mi-stat"><div class="val" id="stat-rm">{{ roadmaps|length }}</div><div class="lbl">Roadmaps</div></div>
+    <div class="mi-stat"><div class="val" id="stat-wl">{{ wishlist_count }}</div><div class="lbl">Wishlist Items</div></div>
+    <div class="mi-stat"><div class="val" id="stat-budget">${{ (wishlist_total_cost/1000)|round(0)|int }}K</div><div class="lbl">Budgeted</div></div>
+    {% if last_scan %}
+    <div class="mi-stat" style="text-align:left;min-width:200px;">
+      <div style="font-size:11px;color:#7a8cb0;">Last Scan: <span style="color:#27ae60;">{{ last_scan.status or 'unknown' }}</span></div>
+      <div style="font-size:10px;color:#5a6e8c;">{{ (last_scan.started_at or '')[:19] }}</div>
+      <div style="font-size:10px;color:#5a6e8c;">Found: {{ last_scan.opportunities_found or 0 }}</div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Tab Navigation -->
+<div class="tab-row" style="padding: 0 30px; margin-bottom: 0;">
+  <button class="tab-btn active" onclick="showTab('opps')">Opportunities</button>
+  <button class="tab-btn" onclick="showTab('goals')">Goals</button>
+  <button class="tab-btn" onclick="showTab('roadmaps')">Roadmaps</button>
+  <button class="tab-btn" onclick="showTab('wishlist')">Wishlist / Budget</button>
+  <button class="tab-btn" onclick="showTab('chat')">Goal Chat</button>
+</div>
+
+<!-- OPPORTUNITIES TAB -->
+<div id="tab-opps" class="tab-content" style="padding:20px 30px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+    <span style="font-size:13px;font-weight:600;">Migration Opportunities</span>
+    <button class="mi-btn sm sec" onclick="loadOpportunities()">&#8635; Refresh</button>
+  </div>
+  <table class="mi-table">
+    <thead>
+      <tr>
+        <th>Title</th>
+        <th>Type</th>
+        <th>Priority</th>
+        <th>Score</th>
+        <th>EOL</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="opps-tbody">
+    {% for o in opportunities %}
+    <tr>
+      <td style="max-width:280px;">{{ o.title[:80] }}{% if o.title|length > 80 %}…{% endif %}</td>
+      <td class="opp-type">{{ o.opportunity_type or '—' }}</td>
+      <td><span class="badge badge-{{ o.priority or 'medium' }}">{{ o.priority or 'medium' }}</span></td>
+      <td>
+        <div style="font-size:11px;font-weight:700;color:{% if o.composite_score >= 0.7 %}#27ae60{% elif o.composite_score >= 0.4 %}#f39c12{% else %}#e74c3c{% endif %};">
+          {{ (o.composite_score * 100)|round(0)|int }}%
+        </div>
+        <div class="score-bar"><div class="score-fill" style="width:{{ (o.composite_score * 100)|round(0)|int }}%;"></div></div>
+      </td>
+      <td style="font-size:11px;color:#7a8cb0;">{{ o.eol_date or '—' }}</td>
+      <td style="font-size:11px;">{{ o.status or '—' }}</td>
+      <td><button class="mi-btn sm sec" onclick="viewOpp('{{ o.id }}')">View</button></td>
+    </tr>
+    {% else %}
+    <tr><td colspan="7" style="color:#5a6e8c;padding:20px;">No opportunities yet. Run the pipeline to discover migration opportunities.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- GOALS TAB -->
+<div id="tab-goals" class="tab-content" style="display:none;padding:20px 30px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+    <span style="font-size:13px;font-weight:600;">Enterprise Technical Goals</span>
+    <button class="mi-btn sm" onclick="openGoalModal()">+ Add Goal</button>
+  </div>
+  <div class="mi-grid" id="goals-grid">
+  {% for g in goals %}
+  <div class="mi-card">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+      <h3>{{ g.title[:60] }}{% if g.title|length > 60 %}…{% endif %}</h3>
+      <span class="badge badge-{{ g.priority or 'medium' }}">{{ g.priority }}</span>
+    </div>
+    <p>{{ g.description[:120] or 'No description' }}{% if (g.description or '')|length > 120 %}…{% endif %}</p>
+    <div style="margin-top:8px;font-size:11px;color:#5a6e8c;">
+      <span>{{ g.category }}</span> &middot;
+      <span>{{ g.horizon_years }}yr horizon</span>
+      {% if g.owner %} &middot; <span>{{ g.owner }}</span>{% endif %}
+    </div>
+  </div>
+  {% else %}
+  <div style="color:#5a6e8c;font-size:13px;">No goals defined. Add goals via the form or chat input.</div>
+  {% endfor %}
+  </div>
+</div>
+
+<!-- ROADMAPS TAB -->
+<div id="tab-roadmaps" class="tab-content" style="display:none;padding:20px 30px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+    <span style="font-size:13px;font-weight:600;">Migration Roadmaps</span>
+    <button class="mi-btn sm" onclick="buildRoadmap()">&#9654; Build New Roadmap</button>
+  </div>
+  {% if roadmaps %}
+  {% for rm in roadmaps %}
+  <div class="mi-card" style="margin-bottom:12px;">
+    <div style="display:flex;justify-content:space-between;">
+      <h3>{{ rm.name }}</h3>
+      <span class="badge badge-{{ 'medium' if rm.status == 'draft' else 'high' }}">{{ rm.status }}</span>
+    </div>
+    <p>{{ rm.description or '' }}</p>
+    <div class="mi-stat-row" style="margin-top:10px;">
+      <div class="mi-stat"><div class="val" style="font-size:18px;">{{ rm.wave_count }}</div><div class="lbl">Waves</div></div>
+      <div class="mi-stat"><div class="val" style="font-size:18px;">{{ rm.opportunities_count }}</div><div class="lbl">Opportunities</div></div>
+      <div class="mi-stat"><div class="val" style="font-size:18px;">{{ rm.estimated_duration_months or '?' }}mo</div><div class="lbl">Duration</div></div>
+      <div class="mi-stat"><div class="val" style="font-size:18px;">${{ ((rm.estimated_total_cost_usd or 0)/1000)|round(0)|int }}K</div><div class="lbl">Est. Cost</div></div>
+    </div>
+    <div style="margin-top:10px;">
+      <button class="mi-btn sm sec" onclick="viewRoadmap('{{ rm.id }}')">View Waves</button>
+    </div>
+  </div>
+  {% endfor %}
+  {% else %}
+  <p style="color:#5a6e8c;">No roadmaps yet. Score opportunities and click Build New Roadmap.</p>
+  {% endif %}
+</div>
+
+<!-- WISHLIST TAB -->
+<div id="tab-wishlist" class="tab-content" style="display:none;padding:20px 30px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+    <span style="font-size:13px;font-weight:600;">Wishlist &amp; Budget Lifecycle Tracker</span>
+    <button class="mi-btn sm" onclick="openWishlistModal()">+ Add Item</button>
+  </div>
+  <div id="wishlist-table-wrap">
+    <table class="mi-table">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th>Type</th>
+          <th>Vendor / Model</th>
+          <th>FY</th>
+          <th>Qty</th>
+          <th>Total Cost</th>
+          <th>Urgency</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="wishlist-tbody">
+        <tr><td colspan="9" style="color:#5a6e8c;padding:20px;" id="wishlist-empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- GOAL CHAT TAB -->
+<div id="tab-chat" class="tab-content" style="display:none;padding:20px 30px;">
+  <h3 style="font-size:14px;margin:0 0 8px;">State Goals via Natural Language</h3>
+  <p style="font-size:12px;color:#7a8cb0;margin:0 0 12px;">
+    Describe your enterprise technical goals in plain language. The engine will parse them into structured goals.
+    <span id="airgap-note" style="color:#cccc00;display:none;"> Air-gap mode: NL parsing unavailable — use the structured form.</span>
+  </p>
+  <textarea class="chat-input" id="chat-input" placeholder="Example: We need to refresh all core routers within 3 years as they approach EOL. Also planning to migrate from on-prem Exchange to cloud email by FY2027. Reduce data center footprint by 40% over 5 years."></textarea>
+  <div class="chat-input-row">
+    <button class="mi-btn" onclick="submitGoalChat()">Parse Goals</button>
+    <span id="chat-spinner" style="display:none;font-size:12px;color:#7a8cb0;align-self:center;">Parsing…</span>
+  </div>
+  <div id="chat-result" class="chat-result"></div>
+  <div id="chat-history" style="margin-top:20px;"></div>
+</div>
+
+<!-- ADD GOAL MODAL -->
+<div class="modal-bg" id="goal-modal">
+  <div class="modal">
+    <h2>Add Enterprise Goal</h2>
+    <div class="field-group"><label>Title *</label><input type="text" id="g-title" placeholder="e.g. Refresh core network by FY2027"></div>
+    <div class="field-group"><label>Description</label><textarea id="g-desc" placeholder="What this goal achieves and why"></textarea></div>
+    <div class="field-row">
+      <div class="field-group"><label>Category</label>
+        <select id="g-cat">
+          <option value="infrastructure">Infrastructure</option>
+          <option value="network">Network</option>
+          <option value="platform">Platform</option>
+          <option value="security">Security</option>
+          <option value="compliance">Compliance</option>
+          <option value="cloud">Cloud</option>
+          <option value="cost">Cost</option>
+          <option value="application">Application</option>
+          <option value="data">Data</option>
+          <option value="workforce">Workforce</option>
+        </select>
+      </div>
+      <div class="field-group"><label>Priority</label>
+        <select id="g-pri">
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+          <option value="critical">Critical</option>
+          <option value="low">Low</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field-group"><label>Horizon (years)</label><input type="number" id="g-horizon" value="5" min="1" max="10"></div>
+      <div class="field-group"><label>Target Year</label><input type="number" id="g-year" placeholder="e.g. 2028"></div>
+    </div>
+    <div class="field-group"><label>Owner</label><input type="text" id="g-owner" placeholder="Name or team"></div>
+    <div class="field-group"><label>Success Criteria</label><textarea id="g-success" placeholder="How will you know this goal is achieved?"></textarea></div>
+    <div style="display:flex;gap:10px;margin-top:16px;">
+      <button class="mi-btn" onclick="saveGoal()">Save Goal</button>
+      <button class="mi-btn sec" onclick="closeModal('goal-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ADD WISHLIST MODAL -->
+<div class="modal-bg" id="wishlist-modal">
+  <div class="modal">
+    <h2>Add Wishlist / Budget Item</h2>
+    <div class="field-group"><label>Title *</label><input type="text" id="wl-title" placeholder="e.g. Juniper MX304 Router Replacement"></div>
+    <div class="field-row">
+      <div class="field-group"><label>Type</label>
+        <select id="wl-type">
+          <option value="hardware">Hardware</option>
+          <option value="software_license">Software License</option>
+          <option value="cloud_service">Cloud Service</option>
+          <option value="professional_services">Professional Services</option>
+          <option value="network_equipment">Network Equipment</option>
+          <option value="security_tool">Security Tool</option>
+          <option value="training">Training</option>
+          <option value="managed_service">Managed Service</option>
+          <option value="subscription">Subscription</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="field-group"><label>Urgency</label>
+        <select id="wl-urgency">
+          <option value="planned">Planned</option>
+          <option value="urgent">Urgent</option>
+          <option value="immediate">Immediate</option>
+          <option value="future">Future</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field-group"><label>Vendor</label><input type="text" id="wl-vendor" placeholder="e.g. Juniper"></div>
+      <div class="field-group"><label>Model / Product</label><input type="text" id="wl-model" placeholder="e.g. MX304"></div>
+    </div>
+    <div class="field-row">
+      <div class="field-group"><label>Quantity</label><input type="number" id="wl-qty" value="1" min="1"></div>
+      <div class="field-group"><label>Unit Cost ($)</label><input type="number" id="wl-unit-cost" placeholder="0.00" step="0.01"></div>
+    </div>
+    <div class="field-row">
+      <div class="field-group"><label>Fiscal Year</label><input type="number" id="wl-fy" placeholder="e.g. 2026"></div>
+      <div class="field-group"><label>Quarter</label>
+        <select id="wl-quarter">
+          <option value="">—</option>
+          <option value="Q1">Q1</option>
+          <option value="Q2">Q2</option>
+          <option value="Q3">Q3</option>
+          <option value="Q4">Q4</option>
+        </select>
+      </div>
+    </div>
+    <div class="field-row">
+      <div class="field-group"><label>Budget Category</label>
+        <select id="wl-budget-cat">
+          <option value="capex">CapEx</option>
+          <option value="opex">OpEx</option>
+          <option value="security">Security</option>
+          <option value="compliance">Compliance</option>
+          <option value="r_and_d">R&D</option>
+        </select>
+      </div>
+      <div class="field-group"><label>EOL Date</label><input type="date" id="wl-eol"></div>
+    </div>
+    <div class="field-group"><label>Justification</label><textarea id="wl-justification" placeholder="Why this item is needed"></textarea></div>
+    <div style="display:flex;gap:10px;margin-top:16px;">
+      <button class="mi-btn" onclick="saveWishlistItem()">Save Item</button>
+      <button class="mi-btn sec" onclick="closeModal('wishlist-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- OPP DETAIL MODAL -->
+<div class="modal-bg" id="opp-modal">
+  <div class="modal" style="width:600px;">
+    <h2 id="opp-modal-title">Opportunity Detail</h2>
+    <div id="opp-modal-body" style="font-size:13px;color:#c0cde8;"></div>
+    <div style="margin-top:16px;display:flex;gap:10px;">
+      <button class="mi-btn sm" onclick="generateStrategies()">Generate Strategies</button>
+      <button class="mi-btn sm sec" onclick="closeModal('opp-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ROADMAP DETAIL MODAL -->
+<div class="modal-bg" id="rm-modal">
+  <div class="modal" style="width:640px;">
+    <h2>Roadmap Waves</h2>
+    <div id="rm-modal-body"></div>
+    <div style="margin-top:16px;"><button class="mi-btn sm sec" onclick="closeModal('rm-modal')">Close</button></div>
+  </div>
+</div>
+
+<script>
+let _currentOppId = null;
+
+// ── Tab switching ──────────────────────────────────────────────────────────
+function showTab(name) {
+  document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).style.display = '';
+  event.target.classList.add('active');
+  if (name === 'wishlist') loadWishlist();
+  if (name === 'chat') checkAirgap();
+}
+
+// ── Pipeline ───────────────────────────────────────────────────────────────
+async function runPipeline() {
+  const s = document.getElementById('pipeline-status');
+  s.textContent = 'Running pipeline…';
+  try {
+    const r = await fetch('/api/migration-intel/run', { method: 'POST' });
+    const d = await r.json();
+    const found = d.stages?.scan?.total_found ?? 0;
+    const scored = d.stages?.score?.scored ?? 0;
+    s.textContent = `Done — ${found} found, ${scored} scored`;
+    loadOpportunities();
+  } catch (e) {
+    s.textContent = 'Error: ' + e.message;
+  }
+}
+
+// ── Opportunities ──────────────────────────────────────────────────────────
+async function loadOpportunities() {
+  try {
+    const r = await fetch('/api/migration-intel/opportunities?limit=50');
+    const d = await r.json();
+    const tbody = document.getElementById('opps-tbody');
+    document.getElementById('stat-opps').textContent = d.count;
+    if (!d.opportunities.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="color:#5a6e8c;padding:20px;">No opportunities yet.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = d.opportunities.map(o => {
+      const pct = Math.round((o.composite_score || 0) * 100);
+      const sc = pct >= 70 ? '#27ae60' : pct >= 40 ? '#f39c12' : '#e74c3c';
+      return `<tr>
+        <td style="max-width:260px;">${(o.title||'').slice(0,80)}${(o.title||'').length>80?'…':''}</td>
+        <td style="font-size:10px;color:#5a6e8c;">${o.opportunity_type||'—'}</td>
+        <td><span class="badge badge-${o.priority||'medium'}">${o.priority||'medium'}</span></td>
+        <td><div style="font-size:11px;font-weight:700;color:${sc};">${pct}%</div>
+          <div class="score-bar"><div class="score-fill" style="width:${pct}%;"></div></div></td>
+        <td style="font-size:11px;color:#7a8cb0;">${o.eol_date||'—'}</td>
+        <td style="font-size:11px;">${o.status||'—'}</td>
+        <td><button class="mi-btn sm sec" onclick="viewOpp('${o.id}')">View</button></td>
+      </tr>`;
+    }).join('');
+  } catch(e) {}
+}
+
+async function viewOpp(id) {
+  _currentOppId = id;
+  const r = await fetch('/api/migration-intel/opportunities/' + id);
+  const d = await r.json();
+  const o = d.opportunity;
+  document.getElementById('opp-modal-title').textContent = o.title;
+  let html = `<div style="margin-bottom:8px;color:#7a8cb0;">${o.description||''}</div>
+  <div style="display:flex;gap:12px;margin-bottom:12px;">
+    <div class="mi-stat"><div class="val" style="font-size:18px;">${Math.round((o.composite_score||0)*100)}%</div><div class="lbl">Score</div></div>
+    <div class="mi-stat"><div class="val" style="font-size:18px;">${o.eol_date||'—'}</div><div class="lbl">EOL</div></div>
+  </div>`;
+
+  if (d.strategies.length) {
+    html += '<div style="font-weight:600;font-size:12px;margin-bottom:6px;">Strategies</div>';
+    html += d.strategies.map(s => `<div style="background:#0f1e36;border-radius:5px;padding:8px;margin-bottom:6px;">
+      <div style="font-weight:600;font-size:12px;">${s.title||s.strategy_type} ${s.recommended?'<span style="color:#27ae60;">(Recommended)</span>':''}</div>
+      <div style="font-size:11px;color:#7a8cb0;">${s.rationale||''}</div>
+      <div style="font-size:10px;color:#5a6e8c;margin-top:3px;">Risk: ${s.risk_level||'—'} &middot; Est. ${s.estimated_effort_days||'?'}d &middot; $${((s.estimated_cost_usd||0)/1000).toFixed(0)}K</div>
+    </div>`).join('');
+  } else {
+    html += '<p style="color:#5a6e8c;font-size:12px;">No strategies yet. Click Generate Strategies.</p>';
+  }
+
+  if (d.alignments.length) {
+    html += '<div style="font-weight:600;font-size:12px;margin:10px 0 6px;">Goal Alignments</div>';
+    html += d.alignments.slice(0,3).map(a => `<div style="font-size:11px;color:#7a8cb0;margin-bottom:3px;">
+      &#8729; ${a.goal_title} — <span style="color:#27ae60;">${Math.round((a.alignment_score||0)*100)}%</span>
+    </div>`).join('');
+  }
+
+  document.getElementById('opp-modal-body').innerHTML = html;
+  openModal('opp-modal');
+}
+
+async function generateStrategies() {
+  if (!_currentOppId) return;
+  const r = await fetch('/api/migration-intel/opportunities/' + _currentOppId + '/strategies', {method:'POST'});
+  const d = await r.json();
+  alert(d.ok ? `Generated ${d.strategies_created} strategies.` : d.error);
+  viewOpp(_currentOppId);
+}
+
+// ── Roadmap ────────────────────────────────────────────────────────────────
+async function buildRoadmap() {
+  const name = prompt('Roadmap name:', 'Migration Roadmap');
+  if (!name) return;
+  const r = await fetch('/api/migration-intel/roadmaps', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ name, horizon_years: 5 })
+  });
+  const d = await r.json();
+  if (d.ok) { alert(`Roadmap built: ${d.wave_count} waves, ${d.opportunities_count} opportunities.`); location.reload(); }
+  else alert(d.error || 'Error building roadmap');
+}
+
+async function viewRoadmap(id) {
+  const r = await fetch('/api/migration-intel/roadmaps/' + id);
+  const d = await r.json();
+  const waves = d.payload?.waves || [];
+  let html = waves.map(w => `
+    <div style="background:#0f1e36;border-radius:6px;padding:10px;margin-bottom:10px;">
+      <div style="font-weight:700;font-size:13px;margin-bottom:6px;">Wave ${w.wave} — ${w.estimated_duration_months}mo &middot; $${Math.round((w.estimated_cost_usd||0)/1000)}K</div>
+      <ul style="margin:0;padding-left:16px;font-size:12px;color:#c0cde8;">
+        ${(w.opportunities||[]).map(o => `<li><span class="badge badge-${o.priority||'medium'}">${o.priority}</span> ${o.title}</li>`).join('')}
+      </ul>
+    </div>`).join('');
+  document.getElementById('rm-modal-body').innerHTML = html || '<p style="color:#5a6e8c;">No waves found.</p>';
+  openModal('rm-modal');
+}
+
+// ── Wishlist ───────────────────────────────────────────────────────────────
+async function loadWishlist() {
+  const r = await fetch('/api/migration-intel/wishlist');
+  const d = await r.json();
+  const tbody = document.getElementById('wishlist-tbody');
+  document.getElementById('stat-wl').textContent = d.count;
+  if (!d.wishlist.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="color:#5a6e8c;padding:20px;" id="wishlist-empty">No wishlist items yet.</td></tr>';
+    return;
+  }
+  const urgColor = {immediate:'#e74c3c',urgent:'#f39c12',planned:'#27ae60',future:'#7a8cb0'};
+  tbody.innerHTML = d.wishlist.map(it => `<tr>
+    <td>${(it.title||'').slice(0,60)}</td>
+    <td style="font-size:10px;color:#5a6e8c;">${it.item_type||'—'}</td>
+    <td style="font-size:11px;">${it.vendor||''} ${it.product_model||''}</td>
+    <td style="font-size:11px;">${it.fiscal_year||'—'}${it.quarter?'/'+it.quarter:''}</td>
+    <td style="font-size:11px;">${it.quantity||1}</td>
+    <td style="font-size:11px;color:#27ae60;">$${((it.total_cost_usd||0)/1000).toFixed(0)}K</td>
+    <td style="font-size:11px;color:${urgColor[it.replacement_urgency]||'#7a8cb0'};">${it.replacement_urgency||'planned'}</td>
+    <td style="font-size:11px;">${it.status||'wishlist'}</td>
+    <td><button class="mi-btn sm sec" onclick="deleteWishlistItem('${it.id}')">&#x2715;</button></td>
+  </tr>`).join('');
+}
+
+async function deleteWishlistItem(id) {
+  if (!confirm('Mark as cancelled?')) return;
+  await fetch('/api/migration-intel/wishlist/' + id, {method:'DELETE'});
+  loadWishlist();
+}
+
+// ── Goal Modal ─────────────────────────────────────────────────────────────
+function openGoalModal() { openModal('goal-modal'); }
+async function saveGoal() {
+  const title = document.getElementById('g-title').value.trim();
+  if (!title) return alert('Title required');
+  const qty = parseFloat(document.getElementById('wl-unit-cost')?.value||0) || 0;
+  const wlQty = parseInt(document.getElementById('wl-qty')?.value||1) || 1;
+  const r = await fetch('/api/migration-intel/goals', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      title,
+      description: document.getElementById('g-desc').value,
+      category: document.getElementById('g-cat').value,
+      priority: document.getElementById('g-pri').value,
+      horizon_years: parseInt(document.getElementById('g-horizon').value||5),
+      target_year: document.getElementById('g-year').value || null,
+      owner: document.getElementById('g-owner').value,
+      success_criteria: document.getElementById('g-success').value,
+    })
+  });
+  const d = await r.json();
+  if (r.ok) { closeModal('goal-modal'); location.reload(); }
+  else alert(d.error || 'Error saving goal');
+}
+
+// ── Wishlist Modal ─────────────────────────────────────────────────────────
+function openWishlistModal() { openModal('wishlist-modal'); }
+async function saveWishlistItem() {
+  const title = document.getElementById('wl-title').value.trim();
+  if (!title) return alert('Title required');
+  const unitCost = parseFloat(document.getElementById('wl-unit-cost').value||0) || null;
+  const qty = parseInt(document.getElementById('wl-qty').value||1) || 1;
+  const r = await fetch('/api/migration-intel/wishlist', {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({
+      title,
+      item_type: document.getElementById('wl-type').value,
+      vendor: document.getElementById('wl-vendor').value,
+      product_model: document.getElementById('wl-model').value,
+      quantity: qty,
+      unit_cost_usd: unitCost,
+      total_cost_usd: unitCost ? unitCost * qty : null,
+      fiscal_year: document.getElementById('wl-fy').value || null,
+      quarter: document.getElementById('wl-quarter').value || null,
+      budget_category: document.getElementById('wl-budget-cat').value,
+      current_eol_date: document.getElementById('wl-eol').value || null,
+      replacement_urgency: document.getElementById('wl-urgency').value,
+      justification: document.getElementById('wl-justification').value,
+    })
+  });
+  const d = await r.json();
+  if (r.ok) { closeModal('wishlist-modal'); loadWishlist(); }
+  else alert(d.error || 'Error saving item');
+}
+
+// ── Goal Chat ──────────────────────────────────────────────────────────────
+function checkAirgap() {
+  fetch('/api/migration-intel/status').then(r=>r.json()).then(d => {
+    const note = document.getElementById('airgap-note');
+    if (d.airgap_mode) note.style.display = '';
+    else note.style.display = 'none';
+  }).catch(()=>{});
+}
+
+async function submitGoalChat() {
+  const input = document.getElementById('chat-input').value.trim();
+  if (!input) return;
+  const spinner = document.getElementById('chat-spinner');
+  const resultEl = document.getElementById('chat-result');
+  spinner.style.display = '';
+  resultEl.classList.remove('show');
+  try {
+    const r = await fetch('/api/migration-intel/goals/chat', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ message: input })
+    });
+    const d = await r.json();
+    if (d.airgap) {
+      resultEl.innerHTML = '<span style="color:#cccc00;">&#9888; Air-gap mode: NL parsing unavailable. Use the Add Goal form.</span>';
+    } else if (d.ok) {
+      resultEl.innerHTML = `<span style="color:#27ae60;">&#10003; Parsed ${d.goals_parsed} goal(s), created ${d.goals_created}.</span>
+        <br><small>Goal IDs: ${d.goal_ids.join(', ')}</small>`;
+      document.getElementById('chat-input').value = '';
+    } else {
+      resultEl.innerHTML = `<span style="color:#e74c3c;">Error: ${d.error}</span>`;
+    }
+    resultEl.classList.add('show');
+  } catch (e) {
+    resultEl.innerHTML = '<span style="color:#e74c3c;">Network error</span>';
+    resultEl.classList.add('show');
+  } finally {
+    spinner.style.display = 'none';
+  }
+}
+
+// ── Modal helpers ──────────────────────────────────────────────────────────
+function openModal(id) { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.modal-bg').forEach(m => {
+  m.addEventListener('click', e => { if (e.target === m) m.classList.remove('open'); });
+});
+
+// ── Init ───────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  loadWishlist();
+});
+</script>
+{% endblock %}

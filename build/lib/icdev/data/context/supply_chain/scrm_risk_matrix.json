@@ -1,0 +1,147 @@
+{
+  "classification": "CUI // SP-CTI",
+  "version": "1.0.0",
+  "description": "SCRM risk scoring matrix for supply chain vendor and component assessment",
+  "risk_dimensions": {
+    "provenance": {
+      "weight": 0.25,
+      "description": "Country of origin and supply chain transparency",
+      "scoring": {
+        "five_eyes": 10,
+        "nato_ally": 7,
+        "partner_nation": 5,
+        "neutral": 3,
+        "adversary_nation": 1
+      },
+      "factors": [
+        "Country of origin of vendor headquarters",
+        "Country of manufacture for hardware components",
+        "Transparency of sub-supplier chain",
+        "Open source vs proprietary provenance",
+        "Code signing and artifact verification"
+      ]
+    },
+    "integrity": {
+      "weight": 0.20,
+      "description": "Component integrity verification and tamper resistance",
+      "scoring": {
+        "cryptographic_verification": 10,
+        "signed_builds": 8,
+        "checksum_verification": 6,
+        "vendor_attestation_only": 4,
+        "no_verification": 1
+      },
+      "factors": [
+        "SBOM completeness and accuracy",
+        "Build provenance (SLSA level)",
+        "Code signing practices",
+        "Reproducible builds",
+        "Vulnerability disclosure program"
+      ]
+    },
+    "dependency": {
+      "weight": 0.15,
+      "description": "Dependency depth, breadth, and single-point-of-failure risk",
+      "scoring": {
+        "no_transitive_deps": 10,
+        "shallow_deps_verified": 8,
+        "moderate_deps_partially_verified": 6,
+        "deep_deps_unverified": 3,
+        "unknown_dependency_tree": 1
+      },
+      "factors": [
+        "Number of direct dependencies",
+        "Transitive dependency depth",
+        "Single vendor concentration",
+        "Single country concentration",
+        "Dependency update frequency"
+      ]
+    },
+    "substitutability": {
+      "weight": 0.15,
+      "description": "Ability to replace vendor or component if compromised or unavailable",
+      "scoring": {
+        "commodity_multiple_sources": 10,
+        "standard_interface_alternatives_exist": 8,
+        "alternatives_exist_migration_needed": 6,
+        "limited_alternatives_high_switching_cost": 3,
+        "sole_source_no_alternative": 1
+      },
+      "factors": [
+        "Number of alternative vendors",
+        "Standardized interfaces (APIs, protocols)",
+        "Migration complexity estimate",
+        "Data portability",
+        "Contractual lock-in duration"
+      ]
+    },
+    "access_control": {
+      "weight": 0.15,
+      "description": "Vendor access to systems, data, and networks",
+      "scoring": {
+        "no_access_air_gapped": 10,
+        "read_only_monitored": 8,
+        "limited_write_audited": 6,
+        "broad_access_partially_monitored": 3,
+        "privileged_access_unmonitored": 1
+      },
+      "factors": [
+        "Level of system access granted",
+        "Access monitoring and logging",
+        "Privileged access controls",
+        "Data access scope",
+        "Remote access mechanisms"
+      ]
+    },
+    "incident_history": {
+      "weight": 0.10,
+      "description": "Vendor security incident history and response capability",
+      "scoring": {
+        "no_incidents_strong_program": 10,
+        "minor_incidents_good_response": 8,
+        "moderate_incidents_adequate_response": 6,
+        "significant_incidents_slow_response": 3,
+        "major_breach_poor_response": 1
+      },
+      "factors": [
+        "Number of security incidents in past 3 years",
+        "Severity of past incidents",
+        "Mean time to disclosure",
+        "Mean time to remediation",
+        "Security program maturity (SOC 2, ISO 27001)"
+      ]
+    }
+  },
+  "risk_tiers": {
+    "low": {
+      "min_score": 8.0,
+      "color": "green",
+      "action": "Standard monitoring",
+      "review_cadence_days": 365,
+      "description": "Vendor presents minimal supply chain risk. Standard monitoring and annual review."
+    },
+    "medium": {
+      "min_score": 6.0,
+      "color": "yellow",
+      "action": "Enhanced due diligence",
+      "review_cadence_days": 180,
+      "description": "Vendor requires enhanced monitoring. Semi-annual risk review and additional controls."
+    },
+    "high": {
+      "min_score": 4.0,
+      "color": "orange",
+      "action": "Risk mitigation plan required",
+      "review_cadence_days": 90,
+      "description": "Vendor presents significant risk. Quarterly review, mitigation plan, and alternative sourcing analysis required."
+    },
+    "critical": {
+      "min_score": 0.0,
+      "color": "red",
+      "action": "Immediate remediation or vendor replacement",
+      "review_cadence_days": 30,
+      "description": "Vendor presents unacceptable risk. Immediate action required: remediation plan, vendor replacement, or AO risk acceptance."
+    }
+  },
+  "composite_score_formula": "sum(dimension_weight * dimension_score) for each dimension",
+  "section_889_override": "If section_889_status == 'non_compliant', force risk_tier to 'critical' regardless of composite score"
+}

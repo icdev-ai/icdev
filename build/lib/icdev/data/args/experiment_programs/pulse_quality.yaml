@@ -1,0 +1,57 @@
+# CUI // SP-CTI
+# Autoresearch Experiment Program — Pulse Quality Domain
+#
+# Optimizes WriteGuard quality score for Pulse AI blog articles.
+# Modifies writing analysis, quality checking, and rewrite guidance.
+
+domain: pulse_quality
+
+objective:
+  metric_name: writeguard_score
+  direction: maximize
+  measurement_command: "python tools/pulse/engine/quality_checker.py --latest --json"
+  metric_path: "overall_score"
+
+modifiable_paths:
+  - tools/pulse/
+  - tools/writing/
+  - context/writing/
+
+forbidden_paths:
+  - tools/db/storage.py
+  - .env
+
+time_budget_seconds: 180  # Shorter — quality check is fast
+keep_threshold: 0.02  # 2% improvement minimum
+
+category_order:
+  - quality_checks
+  - analysis_rules
+  - tone_guidance
+  - readability
+
+categories:
+  quality_checks:
+    description: "Improve quality checker scoring accuracy"
+    risk: low
+    example_hypotheses:
+      - "Adjust readability scoring weights for technical content"
+      - "Improve grammar check sensitivity for passive voice detection"
+  analysis_rules:
+    description: "Enhance analysis engine rules and patterns"
+    risk: low
+    example_hypotheses:
+      - "Add new pattern rules for government writing style"
+      - "Improve plagiarism detection threshold sensitivity"
+  tone_guidance:
+    description: "Refine tone profile matching for target audiences"
+    risk: low
+    example_hypotheses:
+      - "Adjust formality scoring for DoD audience profiles"
+      - "Improve technical jargon detection and scoring"
+  readability:
+    description: "Improve readability score through structural guidance"
+    risk: low
+    example_hypotheses:
+      - "Optimize sentence length thresholds for Flesch-Kincaid"
+      - "Improve paragraph structure scoring"

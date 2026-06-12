@@ -1,0 +1,110 @@
+# [TEMPLATE: CUI // SP-CTI]
+# ICDEV™ Disaster Recovery Configuration
+# Requirements: RTO 4h | RPO 15min | Multi-AZ | Cross-region S3 | Cross-account RDS snapshots
+# ADR: D-DR-01 (Disaster Recovery Strategy — AWS GovCloud Multi-AZ)
+---
+
+disaster_recovery:
+  enabled: true
+
+  # Recovery objectives
+  rto_hours: 4          # Recovery Time Objective: system operational within 4 hours
+  rpo_minutes: 15       # Recovery Point Objective: max 15 minutes of data loss
+
+  # Primary and DR regions
+  primary_region: us-gov-west-1
+  dr_region: us-east-2          # Non-GovCloud DR region (change to us-gov-east-1 if GovCloud DR required)
+
+  # Cross-account configuration — RDS snapshots stored in isolated backup account
+  backup_account_id: ${DR_BACKUP_ACCOUNT_ID:-}    # AWS account ID for snapshot destination
+  primary_account_id: ${AWS_ACCOUNT_ID:-}
+
+  # RDS disaster recovery
+  rds:
+    multi_az: true                       # Synchronous standby in second AZ
+    automated_backups_enabled: true
+    backup_retention_days: 35            # Supports 35-day point-in-time recovery
+    backup_window: "02:00-03:00"         # UTC daily backup window
+    maintenance_window: "sun:04:00-sun:05:00"
+
+    # Cross-account daily snapshots
+    cross_account_snapshots:
+      enabled: true
+      schedule: "daily"                  # Snapshot copied to backup account daily
+      snapshot_prefix: "icdev-dr-daily"
+      # Lambda ARN that orchestrates snapshot copy + verification
+      lambda_arn: ${DR_LAMBDA_ARN:-}
+
+    # Read replica in DR region for near-zero RPO reads during failover
+    read_replica:
+      enabled: true
+      region: us-east-2
+      instance_class: db.t3.medium       # Promote to primary on failover
+
+  # S3 cross-region replication
+  s3:
+    cross_region_replication:
+      enabled: true
+      destination_region: us-east-2
+      destination_bucket_suffix: "-dr"   # e.g. icdev-data → icdev-data-dr
+      storage_class: STANDARD_IA         # Cost-optimized for DR copies
+      replicate_delete_markers: false    # Protect against accidental deletes in DR
+      replication_time_control:
+        enabled: true
+        time_minutes: 15                 # S3-RTC guarantees 15-min replication → meets RPO
+
+    # Separate versioning on DR bucket
+    versioning: true
+    mfa_delete: false
+
+  # Lambda backup verification
+  lambda_verifier:
+    enabled: true
+    function_name: icdev-dr-backup-verifier
+    runtime: python3.12
+    schedule: "rate(1 day)"             # Runs daily after backup window
+    timeout_seconds: 300
+    checks:
+      - rds_snapshot_exists
+      - rds_snapshot_available
+      - rds_snapshot_encrypted
+      - s3_replication_status
+      - cross_account_copy_complete
+    sns_topic_arn: ${DR_SNS_TOPIC_ARN:-}    # Alert on verification failure
+
+  # Quarterly DR failover test
+  dr_test:
+    enabled: true
+    schedule: "quarterly"               # Jan, Apr, Jul, Oct
+    # Months to run test (1-indexed)
+    test_months: [1, 4, 7, 10]
+    test_type: tabletop_and_automated   # tabletop | automated | full_failover
+    notify_team: true
+    runbook: "docs/runbooks/dr-runbook.md"
+
+    # Automated test steps
+    automated_steps:
+      - restore_rds_snapshot_to_test_instance
+      - verify_data_integrity
+      - test_s3_replication_lag
+      - measure_restore_time
+      - verify_rto_met
+      - verify_rpo_met
+      - cleanup_test_resources
+
+  # Notifications
+  notifications:
+    sns_topic_arn: ${DR_SNS_TOPIC_ARN:-}
+    email: ${DR_ALERT_EMAIL:-}
+    on_events:
+      - failover_initiated
+      - failover_complete
+      - backup_verification_failure
+      - rto_breach_warning           # Alert at 3h if not yet recovered (1h buffer)
+      - rpo_breach_warning           # Alert if replication lag > 10 min
+
+  # CloudWatch alarms
+  cloudwatch:
+    rds_replica_lag_threshold_seconds: 900   # 15 minutes → triggers RPO warning
+    rds_cpu_failover_threshold: 90
+    s3_replication_pending_threshold: 1000   # bytes pending before alert

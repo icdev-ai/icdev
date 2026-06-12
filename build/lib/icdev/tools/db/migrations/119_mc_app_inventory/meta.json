@@ -1,0 +1,11 @@
+{
+  "id": "119",
+  "name": "mc_app_inventory",
+  "description": "Add app_count and app_names columns to mc_migration_waves in migration_canvas.db.",
+  "created_at": "2026-05-09",
+  "author": "icdev-builder",
+  "database": "migration_canvas",
+  "reversible": true,
+  "requires_downtime": false,
+  "notes": "Idempotent — skips ALTER COLUMN if column already exists. Targets migration_canvas.db (not icdev.db)."
+}

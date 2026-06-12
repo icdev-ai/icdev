@@ -1,0 +1,233 @@
+# CUI // SP-CTI
+# ICDEV™ Redaction & Anonymization Configuration
+# Controls PII/sensitive data detection and anonymization across all modules.
+# Integrates with Presidio (NLP-based) + custom ICDEV™ recognizers (regex/deny-list).
+
+# Master toggle — disable to bypass all redaction
+enabled: true
+
+# ---------------------------------------------------------------------------
+# Detection Engine
+# ---------------------------------------------------------------------------
+detection:
+  # NER backend for PERSON/ORGANIZATION detection
+  # Options:
+  #   ollama — uses local qwen3.5 (air-gap safe, no spaCy, zero cloud cost)
+  #   regex  — regex heuristics only (no LLM, fastest, lower accuracy for names)
+  #   presidio — Microsoft Presidio + spaCy (requires Python < 3.14, not air-gap safe)
+  ner_engine: ollama
+  ner_model: "gemma3:latest"    # Ollama model for NER (gemma3 works, qwen3.5 has thinking mode issues)
+
+  # Default language for text analysis
+  language: en
+
+  # Confidence thresholds
+  thresholds:
+    # Entities above this score → surrogate replacement (reversible)
+    surrogate: 0.7
+    # Entities above this score → hard redact (irreversible)
+    # Lower threshold = more aggressive (fewer false negatives for critical data)
+    hard_redact: 0.3
+
+  # Standard PII entities (Presidio built-in)
+  # Each entity maps to a treatment: surrogate | redact | mask | hash | keep
+  standard_entities:
+    PERSON:
+      enabled: true
+      treatment: surrogate
+      threshold: 0.7
+    EMAIL_ADDRESS:
+      enabled: true
+      treatment: redact
+      threshold: 0.5
+    PHONE_NUMBER:
+      enabled: true
+      treatment: mask
+      threshold: 0.5
+      mask_chars: 4       # Show last 4 digits
+    US_SSN:
+      enabled: true
+      treatment: redact
+      threshold: 0.3
+    CREDIT_CARD:
+      enabled: true
+      treatment: redact
+      threshold: 0.3
+    US_PASSPORT:
+      enabled: true
+      treatment: redact
+      threshold: 0.3
+    US_DRIVER_LICENSE:
+      enabled: true
+      treatment: redact
+      threshold: 0.3
+    US_BANK_NUMBER:
+      enabled: true
+      treatment: redact
+      threshold: 0.3
+    US_ITIN:
+      enabled: true
+      treatment: redact
+      threshold: 0.3
+    IBAN_CODE:
+      enabled: true
+      treatment: redact
+      threshold: 0.3
+    IP_ADDRESS:
+      enabled: true
+      treatment: mask
+      threshold: 0.5
+      mask_chars: 8
+    URL:
+      enabled: false       # Usually not PII — enable if needed
+      treatment: keep
+    DATE_TIME:
+      enabled: false       # Too many false positives in proposals
+      treatment: keep
+    LOCATION:
+      enabled: true
+      treatment: surrogate
+      threshold: 0.6
+    NRP:
+      enabled: false       # Nationality/religious/political — disable by default
+      treatment: keep
+
+# ---------------------------------------------------------------------------
+# Anonymization Operators
+# ---------------------------------------------------------------------------
+anonymization:
+  # Default operator when no entity-specific treatment is configured
+  default_operator: redact
+
+  # Surrogate generation (for entities with treatment: surrogate)
+  surrogate:
+    # Use Faker library for realistic replacements
+    engine: faker
+    locale: en_US
+    # Gender-match person name surrogates (requires gender-guesser)
+    gender_match: false
+    # Seed for reproducible surrogates within a session (0 = random)
+    seed: 0
+
+  # Redaction format
+  redact:
+    # Placeholder format: {entity_type} is replaced with the entity label
+    placeholder: "[{entity_type}]"
+
+  # Masking
+  mask:
+    masking_char: "*"
+    from_end: false
+
+  # Hashing (for referential integrity across records)
+  hash:
+    algorithm: sha256
+    # Provide a consistent salt for deterministic hashing
+    # Leave empty for random salt (non-reversible)
+    salt: ""
+
+# ---------------------------------------------------------------------------
+# IL-Aware Operator Selection
+# ---------------------------------------------------------------------------
+# Override treatment based on Impact Level classification
+il_overrides:
+  IL2:
+    # Public — minimal redaction
+    PERSON: mask
+    EMAIL_ADDRESS: mask
+  IL4:
+    # CUI/GovCloud — encrypt sensitive, surrogate names
+    US_SSN: redact
+    CREDIT_CARD: redact
+    PERSON: surrogate
+  IL5:
+    # CUI/Dedicated — encrypt all PII
+    PERSON: surrogate
+    EMAIL_ADDRESS: redact
+    PHONE_NUMBER: redact
+    LOCATION: surrogate
+  IL6:
+    # SECRET/SIPR — hard redact everything
+    PERSON: redact
+    EMAIL_ADDRESS: redact
+    PHONE_NUMBER: redact
+    LOCATION: redact
+    IP_ADDRESS: redact
+
+# ---------------------------------------------------------------------------
+# Scope Controls
+# ---------------------------------------------------------------------------
+scope:
+  # Enforcement mode: "all" or "enforced_only"
+  # "all" = redact for every LLM call (default, recommended)
+  # "enforced_only" = only redact for explicitly listed modules
+  mode: all
+
+  # Which modules have redaction enforced (used when mode=enforced_only,
+  # or as priority list when mode=all to ensure these are never skipped)
+  enforced_modules:
+    # GovCon / Proposal Genesis
+    - proposal_drafting      # R7 Draft — always redact before LLM
+    - requirement_extraction # R5 Extract — redact before cloud LLM
+    - bid_scoring            # R9 Decide — redact if cloud-routed
+    - color_review           # R15 Review — redact if cloud-routed
+    # Core ICDEV™
+    - code_generation        # May contain customer code with PII
+    - narrative_generation   # Compliance narratives may reference people/orgs
+    - compliance_export      # SSP/POAM content
+    - intake_persona_response  # User-facing intake with org details
+    # RAG & Knowledge
+    - memory_consolidation   # Memory may contain PII from user sessions
+    - rag_rerank             # RAG context may surface PII from ingested docs
+    # Pulse
+    - pulse_draft            # Articles may reference customers
+    - pulse_rewrite          # Same content, style rewrite
+    # Research / Intelligence
+    - research_youtube_summarize  # Transcripts may contain names
+    # Translation
+    - code_translation       # Translated code may contain PII in strings
+    - code_translation_review
+
+  # Which modules are exempt (already local-only or deterministic)
+  exempt_modules:
+    - rate_benchmarker       # Deterministic math, no LLM
+    - crm_engagement         # Deterministic scoring
+    - talent_intelligence    # Rule-based classification
+    - compliance_check       # CMMC/regulatory lookups
+    - screenshot_validation  # Vision — images, not text PII
+    - document_vision        # Vision — images
+    - ui_analysis            # Vision — screenshots
+    - diagram_extraction     # Vision — diagrams
+    - compliance_diagram     # Vision — diagrams
+    - attachment_analysis    # Vision — file attachments
+
+  # Skip redaction when routing to local models only
+  # When true: if ALL models in the function's chain are Ollama (local),
+  # redaction is skipped (data never leaves the machine).
+  # When false: always redact regardless of routing.
+  skip_for_local_only: true
+
+# ---------------------------------------------------------------------------
+# Registry (conversation-scoped surrogate mapping)
+# ---------------------------------------------------------------------------
+registry:
+  # Persist surrogate mappings to database for session resume
+  persist: true
+  # Table name for registry storage
+  table: redaction_registry
+  # TTL for registry entries (hours) — 0 = no expiry
+  ttl_hours: 72
+  # Maximum entries per session
+  max_entries: 1000
+
+# ---------------------------------------------------------------------------
+# Audit
+# ---------------------------------------------------------------------------
+audit:
+  # Log every detection/anonymization event (append-only, NIST AU)
+  enabled: true
+  table: redaction_audit
+  # Log detected entity types but NOT the actual PII values
+  log_entity_values: false
+  # Retention in days (0 = forever)
+  retention_days: 365

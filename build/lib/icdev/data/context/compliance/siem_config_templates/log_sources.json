@@ -1,0 +1,208 @@
+{
+  "metadata": {
+    "title": "CSSP Required Log Sources",
+    "framework": "DoD Instruction 8530.01",
+    "classification": "CUI // SP-CTI",
+    "last_updated": "2026-02-15",
+    "description": "Required log source definitions for CSSP SIEM integration. Each log source maps to DI 8530.01 detection requirements and NIST 800-53 audit controls."
+  },
+  "log_sources": [
+    {
+      "id": "LS-01",
+      "name": "Application Logs",
+      "category": "application",
+      "description": "Application-level events including errors, warnings, informational messages, and business logic events",
+      "cssp_requirements": ["DE-2", "DE-3"],
+      "nist_controls": ["AU-2", "AU-3", "AU-12"],
+      "required": true,
+      "priority": "critical",
+      "retention_days": 365,
+      "typical_paths": [
+        "/var/log/app/*.log",
+        "/opt/app/logs/*.log"
+      ],
+      "required_fields": ["timestamp", "level", "message", "source", "request_id"],
+      "splunk_sourcetype": "icdev:application",
+      "elk_index_pattern": "icdev-application-*"
+    },
+    {
+      "id": "LS-02",
+      "name": "Authentication Events",
+      "category": "authentication",
+      "description": "All authentication attempts including successful logins, failed attempts, account lockouts, CAC/PKI events, and session management",
+      "cssp_requirements": ["DE-3", "PR-1"],
+      "nist_controls": ["AU-2", "AU-3", "AU-14", "IA-2"],
+      "required": true,
+      "priority": "critical",
+      "retention_days": 365,
+      "typical_paths": [
+        "/var/log/auth.log",
+        "/var/log/secure",
+        "/var/log/app/auth*.log"
+      ],
+      "required_fields": ["timestamp", "user", "action", "result", "source_ip", "auth_method"],
+      "splunk_sourcetype": "icdev:authentication",
+      "elk_index_pattern": "icdev-authentication-*"
+    },
+    {
+      "id": "LS-03",
+      "name": "Security Events",
+      "category": "security",
+      "description": "Security-specific events including access violations, policy violations, intrusion detection alerts, and security control events",
+      "cssp_requirements": ["DE-3", "DE-4", "DE-5"],
+      "nist_controls": ["AU-2", "SI-4", "IR-4"],
+      "required": true,
+      "priority": "critical",
+      "retention_days": 365,
+      "typical_paths": [
+        "/var/log/app/security*.log",
+        "/var/log/app/alert*.log"
+      ],
+      "required_fields": ["timestamp", "severity", "event_type", "source", "description", "affected_resource"],
+      "splunk_sourcetype": "icdev:security",
+      "elk_index_pattern": "icdev-security-*"
+    },
+    {
+      "id": "LS-04",
+      "name": "Audit Trail",
+      "category": "audit",
+      "description": "Immutable audit trail of all system actions including data access, configuration changes, administrative actions, and compliance events",
+      "cssp_requirements": ["DE-3", "DE-6"],
+      "nist_controls": ["AU-2", "AU-3", "AU-6", "AU-9", "AU-12"],
+      "required": true,
+      "priority": "critical",
+      "retention_days": 730,
+      "typical_paths": [
+        "/var/log/audit/audit.log",
+        "/var/log/app/audit*.log"
+      ],
+      "required_fields": ["timestamp", "actor", "action", "resource", "result", "project_id", "classification"],
+      "splunk_sourcetype": "icdev:audit",
+      "elk_index_pattern": "icdev-audit-*",
+      "notes": "Append-only per NIST AU-9. Minimum 2-year retention."
+    },
+    {
+      "id": "LS-05",
+      "name": "System Logs",
+      "category": "system",
+      "description": "Operating system level events including kernel messages, service start/stop, resource utilization, and system errors",
+      "cssp_requirements": ["DE-1"],
+      "nist_controls": ["AU-2", "AU-6"],
+      "required": true,
+      "priority": "high",
+      "retention_days": 180,
+      "typical_paths": [
+        "/var/log/syslog",
+        "/var/log/messages",
+        "/var/log/kern.log"
+      ],
+      "required_fields": ["timestamp", "hostname", "facility", "severity", "message"],
+      "splunk_sourcetype": "syslog",
+      "elk_index_pattern": "icdev-system-*"
+    },
+    {
+      "id": "LS-06",
+      "name": "Container/Kubernetes Logs",
+      "category": "container",
+      "description": "Container runtime logs, K8s pod logs, orchestration events, and container lifecycle events",
+      "cssp_requirements": ["DE-2"],
+      "nist_controls": ["AU-2", "CM-8", "SI-4"],
+      "required": true,
+      "priority": "high",
+      "retention_days": 180,
+      "typical_paths": [
+        "/var/log/containers/*.log",
+        "/var/log/pods/**/*.log"
+      ],
+      "required_fields": ["timestamp", "namespace", "pod_name", "container_name", "message"],
+      "splunk_sourcetype": "kube:container:log",
+      "elk_index_pattern": "icdev-container-*"
+    },
+    {
+      "id": "LS-07",
+      "name": "Network Events",
+      "category": "network",
+      "description": "Network traffic logs, firewall events, DNS queries, load balancer logs, and network policy violations",
+      "cssp_requirements": ["DE-5", "PR-5"],
+      "nist_controls": ["AU-2", "SC-7", "AC-4", "SI-4"],
+      "required": true,
+      "priority": "high",
+      "retention_days": 180,
+      "typical_paths": [
+        "/var/log/app/network*.log",
+        "/var/log/firewall*.log"
+      ],
+      "required_fields": ["timestamp", "src_ip", "dst_ip", "src_port", "dst_port", "protocol", "action"],
+      "splunk_sourcetype": "icdev:network",
+      "elk_index_pattern": "icdev-network-*"
+    },
+    {
+      "id": "LS-08",
+      "name": "Database Events",
+      "category": "database",
+      "description": "Database access logs, query logs, schema changes, privilege modifications, and backup events",
+      "cssp_requirements": ["DE-3"],
+      "nist_controls": ["AU-2", "AU-3", "AC-3"],
+      "required": false,
+      "priority": "medium",
+      "retention_days": 365,
+      "typical_paths": [
+        "/var/log/postgresql/*.log",
+        "/var/log/app/db*.log"
+      ],
+      "required_fields": ["timestamp", "user", "database", "query_type", "result"],
+      "splunk_sourcetype": "icdev:database",
+      "elk_index_pattern": "icdev-database-*",
+      "notes": "Required if system includes database components."
+    },
+    {
+      "id": "LS-09",
+      "name": "CI/CD Pipeline Events",
+      "category": "pipeline",
+      "description": "Build, test, deploy, and pipeline execution events from GitLab CI/CD",
+      "cssp_requirements": ["DE-3", "SU-3"],
+      "nist_controls": ["AU-2", "CM-3", "SA-10"],
+      "required": false,
+      "priority": "medium",
+      "retention_days": 365,
+      "typical_paths": [
+        "/var/log/gitlab-runner/*.log"
+      ],
+      "required_fields": ["timestamp", "pipeline_id", "stage", "job", "status", "commit_sha"],
+      "splunk_sourcetype": "icdev:pipeline",
+      "elk_index_pattern": "icdev-pipeline-*"
+    },
+    {
+      "id": "LS-10",
+      "name": "Compliance Events",
+      "category": "compliance",
+      "description": "Compliance assessment results, STIG findings, POAM updates, SSP changes, and certification events",
+      "cssp_requirements": ["DE-6", "SU-6"],
+      "nist_controls": ["AU-2", "CA-7", "CA-2"],
+      "required": true,
+      "priority": "high",
+      "retention_days": 730,
+      "typical_paths": [
+        "/var/log/app/compliance*.log"
+      ],
+      "required_fields": ["timestamp", "event_type", "project_id", "assessment_type", "result", "details"],
+      "splunk_sourcetype": "icdev:compliance",
+      "elk_index_pattern": "icdev-compliance-*",
+      "notes": "Minimum 2-year retention for compliance audit purposes."
+    }
+  ],
+  "retention_policy": {
+    "minimum_retention_days": 180,
+    "audit_retention_days": 730,
+    "compliance_retention_days": 730,
+    "default_retention_days": 365,
+    "notes": "Per DoD 8500.01 and NIST 800-53 AU-11. Audit and compliance logs require minimum 2-year retention."
+  },
+  "validation_rules": {
+    "all_critical_sources_required": true,
+    "minimum_required_sources": 7,
+    "timestamp_format": "ISO 8601 (YYYY-MM-DDTHH:MM:SS)",
+    "classification_field_required": true,
+    "tls_required": true
+  }
+}

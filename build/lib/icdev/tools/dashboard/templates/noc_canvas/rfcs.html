@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}NOC — RFCs{% endblock %}
+{% block extra_css %}
+<style>
+.nocc-header{background:linear-gradient(135deg,#0f172a,#0d1f2d);padding:22px 28px;border-radius:10px;margin-bottom:24px;border-left:4px solid #3b82f6;}
+.rfc-table th{background:#0f172a;color:#94a3b8;font-size:.75rem;text-transform:uppercase;letter-spacing:.5px;padding:8px 12px;}
+.rfc-table td{padding:9px 12px;font-size:.83rem;border-bottom:1px solid #1e293b;vertical-align:middle;}
+.rfc-table tr:hover td{background:#1e293b;}
+.type-emergency{color:#ef4444;font-weight:700;}.type-standard{color:#94a3b8;}.type-normal{color:#64748b;}
+.status-pill{padding:2px 8px;border-radius:10px;font-size:.7rem;border:1px solid #334155;color:#94a3b8;}
+.status-approved{border-color:#22c55e;color:#22c55e;}.status-executing{border-color:#f97316;color:#f97316;}
+.status-submitted{border-color:#3b82f6;color:#3b82f6;}.status-completed{border-color:#64748b;color:#64748b;}
+.risk-high{color:#ef4444;}.risk-medium{color:#eab308;}.risk-low{color:#22c55e;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="nocc-header">
+  <div class="d-flex justify-content-between align-items-center">
+    <div>
+      <h2 style="margin:0;color:#7dd3fc;font-size:1.3rem;">Change Requests (RFCs)</h2>
+      <div style="color:#64748b;font-size:.85rem;margin-top:4px;">{{ classification }}</div>
+    </div>
+    <button onclick="document.getElementById('newRfcModal').style.display='flex'"
+            style="padding:8px 16px;background:#1e3a5f;border:none;border-radius:8px;color:#7dd3fc;font-weight:600;cursor:pointer;">
+      + New RFC
+    </button>
+  </div>
+</div>
+
+<div class="table-responsive">
+  <table class="rfc-table w-100">
+    <thead>
+      <tr><th>RFC #</th><th>Type</th><th>Title</th><th>Risk</th><th>Status</th><th>Scheduled</th><th>Owner</th><th>MOP</th></tr>
+    </thead>
+    <tbody>
+      {% for r in rfcs %}
+      <tr>
+        <td style="font-family:monospace;font-size:.75rem;color:#94a3b8;">{{ r.rfc_number }}</td>
+        <td class="type-{{ r.change_type }}">{{ r.change_type|upper }}</td>
+        <td style="color:#e2e8f0;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ r.title }}</td>
+        <td class="risk-{{ r.risk_level }}">{{ r.risk_level|upper }}</td>
+        <td><span class="status-pill status-{{ r.status }}">{{ r.status }}</span></td>
+        <td style="color:#64748b;font-size:.75rem;white-space:nowrap;">{{ r.scheduled_start | ts }}</td>
+        <td style="color:#94a3b8;font-size:.8rem;">{{ r.change_owner or '—' }}</td>
+        <td>
+          {% if r.mop_id %}
+            <a href="/noc/mops" style="color:#3b82f6;font-size:.75rem;">View MOP</a>
+          {% else %}
+            <button onclick="genMop('{{ r.id }}','{{ r.title }}')" style="padding:2px 8px;font-size:.72rem;border:1px solid #334155;border-radius:6px;color:#64748b;background:transparent;cursor:pointer;">Generate</button>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" style="text-align:center;color:#64748b;padding:30px;">No RFCs found</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- New RFC Modal -->
+<div id="newRfcModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:28px;width:500px;max-width:95vw;">
+    <h3 style="margin:0 0 20px;color:#e2e8f0;">Create RFC</h3>
+    <div class="mb-3">
+      <label style="color:#94a3b8;font-size:.8rem;">Title *</label>
+      <input id="rfcTitle" type="text" class="form-control" style="background:#0f172a;border-color:#334155;color:#e2e8f0;margin-top:4px;">
+    </div>
+    <div class="row g-2 mb-3">
+      <div class="col">
+        <label style="color:#94a3b8;font-size:.8rem;">Change Type</label>
+        <select id="rfcType" class="form-select" style="background:#0f172a;border-color:#334155;color:#e2e8f0;margin-top:4px;">
+          <option value="standard" selected>Standard</option>
+          <option value="normal">Normal</option>
+          <option value="emergency">Emergency</option>
+        </select>
+      </div>
+      <div class="col">
+        <label style="color:#94a3b8;font-size:.8rem;">Risk Level</label>
+        <select id="rfcRisk" class="form-select" style="background:#0f172a;border-color:#334155;color:#e2e8f0;margin-top:4px;">
+          <option value="low">Low</option>
+          <option value="medium" selected>Medium</option>
+          <option value="high">High</option>
+        </select>
+      </div>
+    </div>
+    <div class="mb-3">
+      <label style="color:#94a3b8;font-size:.8rem;">Rollback Plan</label>
+      <textarea id="rfcRollback" class="form-control" rows="2" style="background:#0f172a;border-color:#334155;color:#e2e8f0;margin-top:4px;"></textarea>
+    </div>
+    <div class="d-flex gap-2 justify-content-end">
+      <button onclick="document.getElementById('newRfcModal').style.display='none'"
+              style="padding:8px 16px;border:1px solid #334155;border-radius:8px;background:transparent;color:#94a3b8;cursor:pointer;">Cancel</button>
+      <button onclick="createRfc()"
+              style="padding:8px 16px;background:#1e3a5f;border:none;border-radius:8px;color:#7dd3fc;font-weight:600;cursor:pointer;">Create RFC</button>
+    </div>
+  </div>
+</div>
+
+{% include 'includes/iqe_query_widget.html' %}
+{% endblock %}
+{% block extra_js %}
+<script>
+const IQE_CANVAS = "nocc";
+const IQE_API = "/api/noc/iqe-query";
+async function createRfc() {
+  const title = document.getElementById('rfcTitle').value.trim();
+  if (!title) return;
+  const r = await fetch('/api/noc/rfcs', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({title, change_type: document.getElementById('rfcType').value,
+      risk_level: document.getElementById('rfcRisk').value,
+      rollback_plan: document.getElementById('rfcRollback').value})
+  });
+  if (r.ok) location.reload();
+}
+async function genMop(rfcId, title) {
+  const r = await fetch('/api/noc/mops/generate', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({rfc_id: rfcId, title})
+  });
+  if (r.ok) { alert('MOP generated — see MOPs page'); }
+}
+</script>
+{% endblock %}

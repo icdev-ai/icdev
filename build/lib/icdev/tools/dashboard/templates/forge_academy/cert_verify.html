@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Certificate Verification — FORGE Academy{% endblock %}
+
+{% block extra_css %}
+<style>
+:root {
+  --fa-gold:#FFB800; --fa-green:#00FF88; --fa-blue:#4A90E2;
+  --fa-red:#FF4444;  --fa-card:#12192b;  --fa-border:rgba(74,144,217,0.25);
+}
+.verify-wrap { max-width:640px;margin:3rem auto;padding:0 1.5rem; }
+.verify-card {
+  background:var(--fa-card);border-radius:16px;padding:2.5rem;text-align:center;
+}
+.verify-valid   { border:2px solid var(--fa-green); }
+.verify-invalid { border:2px solid var(--fa-red); }
+.verify-icon  { font-size:3.5rem;margin-bottom:.5rem; }
+.verify-status { font-size:1.4rem;font-weight:700;margin:.25rem 0; }
+.verify-sub    { color:#8899aa;font-size:.9rem;margin:.25rem 0; }
+.verify-field  { margin:.75rem 0;text-align:left; }
+.verify-label  { font-size:.75rem;color:#8899aa;text-transform:uppercase;letter-spacing:.05em;margin-bottom:.2rem; }
+.verify-value  { font-size:.95rem;color:#ccd;font-weight:600; }
+.verify-token  {
+  background:#0d1220;border:1px solid var(--fa-border);border-radius:8px;
+  padding:.4rem .8rem;font-family:monospace;font-size:.75rem;color:#8899aa;
+  word-break:break-all;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="verify-wrap">
+  {% if result %}
+  <div class="verify-card verify-valid">
+    <div class="verify-icon">{{ cert_def.icon if cert_def else '🎖️' }}</div>
+    <div class="verify-status" style="color:var(--fa-green);">✓ Valid Certificate</div>
+    <div class="verify-sub">This credential has been verified as authentic.</div>
+    <hr style="border-color:rgba(255,255,255,.08);margin:1.25rem 0;">
+    <div class="verify-field">
+      <div class="verify-label">Recipient</div>
+      <div class="verify-value">{{ result.display_name }}</div>
+    </div>
+    <div class="verify-field">
+      <div class="verify-label">Certificate</div>
+      <div class="verify-value">{{ result.cert_label }}</div>
+    </div>
+    <div class="verify-field">
+      <div class="verify-label">Role</div>
+      <div class="verify-value">{{ result.role or '—' }}</div>
+    </div>
+    <div class="verify-field">
+      <div class="verify-label">Issued</div>
+      <div class="verify-value">{{ result.issued_at[:10] if result.issued_at else '—' }}</div>
+    </div>
+    <div class="verify-field">
+      <div class="verify-label">Verification Token</div>
+      <div class="verify-token">{{ result.token }}</div>
+    </div>
+    <div style="margin-top:1.5rem;">
+      <a href="/academy" style="color:var(--fa-blue);font-size:.85rem;text-decoration:none;">
+        ← FORGE Academy
+      </a>
+    </div>
+  </div>
+
+  {% else %}
+  <div class="verify-card verify-invalid">
+    <div class="verify-icon">❌</div>
+    <div class="verify-status" style="color:var(--fa-red);">Invalid Token</div>
+    <div class="verify-sub" style="margin-top:.5rem;">
+      This certificate token was not found or has been revoked.
+    </div>
+    <div style="margin-top:1.5rem;">
+      <a href="/academy" style="color:var(--fa-blue);font-size:.85rem;text-decoration:none;">
+        ← FORGE Academy
+      </a>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

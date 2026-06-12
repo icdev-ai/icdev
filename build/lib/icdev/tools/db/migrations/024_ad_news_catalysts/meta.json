@@ -1,0 +1,11 @@
+{
+  "id": "024",
+  "name": "ad_news_catalysts",
+  "description": "Create ad_news_catalysts table required by the event_stack confluence pillar. Referenced in tools/trading/analysis/confluence_pillars/event_stack.py:_news_cluster() but absent from any migration, causing fresh deployments to 500 on first use. Resolves orphan_db_table gap op-gap-21e3fd3bb4e15147.",
+  "created_at": "2026-04-14",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "requires_downtime": false,
+  "resolves": "op-gap-21e3fd3bb4e15147"
+}
