@@ -1785,6 +1785,95 @@ def api_version_sections(version_id):
         conn.close()
 
 
+# ── API: Version Diff ─────────────────────────────────────────────────────────
+
+@dic_bp.route("/api/versions/<version_a>/diff/<version_b>", methods=["GET"])
+def api_version_diff(version_a: str, version_b: str):
+    """Compute a line-by-line diff between two versions, section by section.
+
+    Returns JSON::
+
+        {
+          "version_a": "...", "version_b": "...",
+          "sections": [
+            {
+              "heading": "...",
+              "in_a": true, "in_b": true,
+              "lines": [
+                {"tag": "equal"|"insert"|"delete", "text": "..."},
+                ...
+              ],
+              "added": 3, "removed": 2
+            }
+          ],
+          "total_added": N, "total_removed": N
+        }
+    """
+    import difflib
+
+    conn = _conn()
+    try:
+        def _get_sections(vid):
+            rows = _safe_rows(
+                conn,
+                "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY rowid",
+                (vid,),
+            )
+            return {(r.get("heading") or "").strip(): (r.get("content") or "") for r in rows}
+
+        secs_a = _get_sections(version_a)
+        secs_b = _get_sections(version_b)
+        all_headings = list(dict.fromkeys(list(secs_a.keys()) + list(secs_b.keys())))
+
+        results = []
+        total_added = total_removed = 0
+
+        for heading in all_headings:
+            text_a = secs_a.get(heading, "")
+            text_b = secs_b.get(heading, "")
+            lines_a = text_a.splitlines()
+            lines_b = text_b.splitlines()
+
+            diff_lines = []
+            added = removed = 0
+            matcher = difflib.SequenceMatcher(None, lines_a, lines_b, autojunk=False)
+            for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+                if tag == "equal":
+                    for line in lines_a[i1:i2]:
+                        diff_lines.append({"tag": "equal", "text": line})
+                elif tag in ("replace", "delete"):
+                    for line in lines_a[i1:i2]:
+                        diff_lines.append({"tag": "delete", "text": line})
+                        removed += 1
+                if tag in ("replace", "insert"):
+                    for line in lines_b[j1:j2]:
+                        diff_lines.append({"tag": "insert", "text": line})
+                        added += 1
+
+            total_added += added
+            total_removed += removed
+            results.append({
+                "heading": heading,
+                "in_a": heading in secs_a,
+                "in_b": heading in secs_b,
+                "lines": diff_lines,
+                "added": added,
+                "removed": removed,
+            })
+
+        return jsonify({
+            "version_a": version_a,
+            "version_b": version_b,
+            "sections": results,
+            "total_added": total_added,
+            "total_removed": total_removed,
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
 # ── API: Handoff ──────────────────────────────────────────────────────────────
 
 @dic_bp.route("/api/handoff/start", methods=["POST"])
