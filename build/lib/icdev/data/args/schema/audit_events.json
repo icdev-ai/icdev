@@ -1,0 +1,85 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ICDEV Audit Events Schema",
+  "description": "JSON Schema for audit trail events. Satisfies NIST 800-53 AU-2 (Audit Events) and AU-9 (Protection of Audit Information). Classification: CUI // SP-CTI",
+  "definitions": {
+    "AuditTrailEvent": {
+      "type": "object",
+      "required": ["event_type", "actor", "action", "timestamp"],
+      "properties": {
+        "id": { "type": "integer", "description": "Auto-increment primary key" },
+        "project_id": { "type": ["string", "null"], "description": "Foreign key to projects table" },
+        "event_type": {
+          "type": "string",
+          "description": "Categorised event type from VALID_EVENT_TYPES",
+          "examples": [
+            "project_created",
+            "security_scan",
+            "cross_agency_transfer_initiated",
+            "cross_agency_transfer_completed",
+            "cross_agency_transfer_failed",
+            "cross_agency_transfer_rejected"
+          ]
+        },
+        "actor": { "type": "string", "description": "Who performed the action" },
+        "action": { "type": "string", "description": "Human-readable description of the action" },
+        "details": { "type": ["string", "object", "null"], "description": "JSON-serialised event payload" },
+        "affected_files": { "type": ["string", "array", "null"], "description": "List of files affected" },
+        "classification": { "type": "string", "default": "CUI", "enum": ["CUI", "SECRET", "TOP_SECRET"] },
+        "ip_address": { "type": ["string", "null"], "description": "Source IP for remote actions" },
+        "session_id": { "type": ["string", "null"], "description": "Correlation / session ID" },
+        "timestamp": { "type": "string", "format": "date-time", "description": "UTC timestamp of the event" },
+        "event_category": {
+          "type": "string",
+          "description": "High-level event category",
+          "enum": ["cross_agency_transfer", "general"]
+        },
+        "source_agency_id": { "type": "string", "description": "Identifier of the originating agency" },
+        "dest_agency_id": { "type": "string", "description": "Identifier of the destination agency" },
+        "transfer_timestamp": { "type": "string", "format": "date-time", "description": "UTC timestamp when the transfer occurred" }
+      },
+      "if": {
+        "properties": {
+          "event_category": { "const": "cross_agency_transfer" }
+        },
+        "required": ["event_category"]
+      },
+      "then": {
+        "required": ["source_agency_id", "dest_agency_id", "transfer_timestamp"]
+      },
+      "additionalProperties": false
+    },
+    "CrossAgencyTransferEvent": {
+      "type": "object",
+      "required": ["id", "transfer_id", "event_type", "source_agency", "target_agency", "actor", "data_classification", "occurred_at"],
+      "properties": {
+        "id": { "type": "string", "format": "uuid", "description": "UUID primary key" },
+        "transfer_id": { "type": "string", "description": "Business identifier for the transfer" },
+        "event_type": {
+          "type": "string",
+          "enum": ["initiated", "completed", "failed", "rejected"],
+          "description": "Lifecycle state of the transfer"
+        },
+        "source_agency": { "type": "string", "description": "Sending agency identifier" },
+        "target_agency": { "type": "string", "description": "Receiving agency identifier" },
+        "data_type": { "type": ["string", "null"], "description": "Type of data being transferred" },
+        "data_classification": { "type": "string", "default": "CUI", "enum": ["CUI", "SECRET", "TOP_SECRET"] },
+        "actor": { "type": "string", "description": "User or system that triggered the event" },
+        "project_id": { "type": ["string", "null"], "description": "Associated project" },
+        "bytes_transferred": { "type": ["integer", "null"], "minimum": 0, "description": "Bytes successfully transferred" },
+        "checksum": { "type": ["string", "null"], "description": "SHA-256 checksum of transferred payload" },
+        "duration_ms": { "type": ["integer", "null"], "minimum": 0, "description": "Transfer duration in milliseconds" },
+        "rejection_reason": { "type": ["string", "null"], "description": "Why the transfer was rejected or failed" },
+        "error_code": { "type": ["string", "null"], "description": "Machine-readable error code" },
+        "details": { "type": ["string", "object", "null"], "description": "JSON-serialised additional context" },
+        "occurred_at": { "type": "string", "format": "date-time", "description": "UTC timestamp" }
+      },
+      "additionalProperties": false
+    }
+  },
+  "type": "object",
+  "oneOf": [
+    { "$ref": "#/definitions/AuditTrailEvent" },
+    { "$ref": "#/definitions/CrossAgencyTransferEvent" }
+  ]
+}

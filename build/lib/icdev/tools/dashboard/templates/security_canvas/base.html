@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>{% block title %}Security Design Canvas{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='js/vendor/joint.css') }}"/>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/network-canvas.css') }}"/>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/security-canvas.css') }}"/>
+<script>const SC_BASE = '/security';</script>
+{% block head %}{% endblock %}
+</head>
+<body style="display:flex;flex-direction:column;min-height:100vh;margin:0;">
+{% block global_banner %}
+{% if config.get('CLASSIFICATION_BANNER') %}
+<div style="background:#e74c3c;color:#fff;text-align:center;padding:2px;font-size:11px;font-weight:700;letter-spacing:2px;">{{ config.get('CLASSIFICATION_BANNER') }}</div>
+{% endif %}
+{% endblock %}
+<nav class="navbar">
+  <div class="nav-brand">
+    <span class="nav-icon" style="color:#e94560;">&#x1f6e1;</span>
+    <a href="/security/" class="nav-title">Security Design Canvas</a>
+    <span class="nav-badge">ICDEV&trade;</span>
+  </div>
+  <div class="nav-links">
+    <a href="/security/" class="nav-link {% if request.path == '/security/' %}active{% endif %}">Home</a>
+    <div class="nav-mega">
+      <button class="nav-link nav-mega-btn">Design &#x25BE;</button>
+      <div class="nav-mega-panel">
+        <div class="mega-group">
+          <div class="mega-label">Security Design</div>
+          <a href="/security/canvas/new" class="mega-item">+ New Design</a>
+          <a href="/security/" class="mega-item">My Designs</a>
+        </div>
+        <div class="mega-group">
+          <div class="mega-label">Templates</div>
+          <a href="/security/templates" class="mega-item">Template Gallery</a>
+        </div>
+      </div>
+    </div>
+    <div class="nav-mega">
+      <button class="nav-link nav-mega-btn">Assess &#x25BE;</button>
+      <div class="nav-mega-panel">
+        <div class="mega-group">
+          <div class="mega-label">Analysis</div>
+          <a href="/security/" class="mega-item">STRIDE Analysis</a>
+          <a href="/security/" class="mega-item">Risk Matrix</a>
+          <a href="/security/" class="mega-item">Security Gaps</a>
+        </div>
+      </div>
+    </div>
+    <div class="nav-mega">
+      <button class="nav-link nav-mega-btn">Remediate &#x25BE;</button>
+      <div class="nav-mega-panel">
+        <div class="mega-group">
+          <div class="mega-label">Plans</div>
+          <a href="/security/" class="mega-item">Remediation Plans</a>
+          <a href="/security/" class="mega-item">POA&amp;M Export</a>
+        </div>
+      </div>
+    </div>
+    <a href="/security/sops" class="nav-link {% if request.path == '/security/sops' %}active{% endif %}">SOPs</a>
+    <div class="nav-mega">
+      <button class="nav-link nav-mega-btn {% if '/security/zig' in request.path %}active{% endif %}">ZIG &#x25BE;</button>
+      <div class="nav-mega-panel">
+        <div class="mega-group">
+          <div class="mega-label">NSA Zero Trust Guide</div>
+          <a href="/security/zig/" class="mega-item">&#x1f6e1; ZIG Overview</a>
+          <a href="/security/zig/phase" class="mega-item">&#x1f4c5; Phase Tracker</a>
+          <a href="/security/zig/assessment" class="mega-item">&#x1f4ca; Assessment</a>
+          <a href="/security/zig/roadmap" class="mega-item">&#x1f5fa; Roadmap</a>
+        </div>
+        <div class="mega-group">
+          <div class="mega-label">ZIG Pillars</div>
+          <a href="/security/zig/pillar/user" class="mega-item">&#x1f464; User (ICAM)</a>
+          <a href="/security/zig/pillar/device" class="mega-item">&#x1f4bb; Device</a>
+          <a href="/security/zig/pillar/network" class="mega-item">&#x1f310; Network</a>
+          <a href="/security/zig/pillar/application" class="mega-item">&#x1f4e6; Application</a>
+          <a href="/security/zig/pillar/data" class="mega-item">&#x1f5c4; Data</a>
+          <a href="/security/zig/pillar/visibility" class="mega-item">&#x1f441; Visibility</a>
+          <a href="/security/zig/pillar/automation" class="mega-item">&#x1f916; Automation</a>
+        </div>
+      </div>
+    </div>
+    <a href="/security/canvas/new" class="nav-link btn-primary-sm">+ New</a>
+    <a href="/network/" class="nav-link" style="font-size:0.8rem;color:var(--text-dim);">NDC</a>
+    <a href="/" class="nav-link" style="font-size:0.8rem;color:var(--text-dim);">Dashboard</a>
+  </div>
+</nav>
+<main class="main-content" style="flex:1;overflow:auto;">
+{% block content %}{% endblock %}
+</main>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,87 @@
+{% extends "network/base.html" %}
+{% block title %}Executive Dashboard — Network Design Canvas{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Executive Dashboard</h1>
+    <p class="page-subtitle">Portfolio-wide migration risk, cost, and strategic timeline</p>
+  </div>
+  <div class="page-actions">
+    <a href="/network/migration-hub" class="btn btn-secondary">Migration Hub</a>
+    <a href="/network/replacements" class="btn btn-secondary">Replacement Map</a>
+  </div>
+</div>
+
+<div id="exec-content">
+  <div style="padding:24px;color:var(--text-dim);">Loading executive summary...</div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function _fmtMoney(n) {
+  return '$' + (n || 0).toLocaleString(undefined, {maximumFractionDigits:0});
+}
+function _riskBadge(level) {
+  const colors = { high: '#e74c3c', medium: '#f39c12', low: '#27ae60' };
+  return '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:' + (colors[level] || '#999') + '20;color:' + (colors[level] || '#999') + ';">' + level.toUpperCase() + '</span>';
+}
+async function load() {
+  const d = await fetch(NC_BASE + '/api/executive-summary').then(r => r.json());
+  const el = document.getElementById('exec-content');
+  const ps = d.portfolio_summary || {};
+  const coas = d.coa_comparison || {};
+  const timeline = d.timeline || [];
+  const devices = d.devices_at_risk || [];
+
+  let html = '';
+
+  // ── Stat cards ──────────────────────────────────────────────────────
+  html += '<div class="stats-bar">';
+  html += '<div class="stat-card"><div class="stat-value" style="color:#e74c3c;">' + ps.total_devices + '</div><div class="stat-label">Devices at Risk</div></div>';
+  html += '<div class="stat-card"><div class="stat-value">' + ps.sites_at_risk + '</div><div class="stat-label">Sites Affected</div></div>';
+  html += '<div class="stat-card"><div class="stat-value" style="color:#e74c3c;">' + _fmtMoney(ps.total_replacement_cost) + '</div><div class="stat-label">Total Replacement Cost</div></div>';
+  html += '<div class="stat-card"><div class="stat-value">' + _fmtMoney(ps.total_annual_maintenance) + '</div><div class="stat-label">Annual Maintenance</div></div>';
+  html += '<div class="stat-card"><div class="stat-value">' + _fmtMoney(ps.total_monthly_circuit_cost) + '</div><div class="stat-label">Monthly Circuit Cost</div></div>';
+  html += '<div class="stat-card"><div class="stat-value" style="color:#f39c12;">' + (ps.cat1_findings || 0) + '</div><div class="stat-label">Open CAT1 Findings</div></div>';
+  html += '</div>';
+
+  // ── COA Comparison ─────────────────────────────────────────────────
+  html += '<section class="panel panel-wide" style="margin-top:16px;"><div class="panel-header"><h2 class="panel-title">Course of Action Comparison</h2></div>';
+  html += '<table class="data-table"><thead><tr><th>Strategy</th><th>Risk</th><th>Downtime (hrs)</th><th>Est. Cost</th><th>Description</th></tr></thead><tbody>';
+  Object.values(coas).forEach(coa => {
+    html += '<tr><td><strong>' + coa.name + '</strong></td><td>' + _riskBadge(coa.risk_level) + '</td><td>' + (coa.estimated_downtime_hours || 0) + '</td><td>' + _fmtMoney(coa.total_cost) + '</td><td style="color:var(--text-dim);font-size:11px;">' + coa.description + '</td></tr>';
+  });
+  html += '</tbody></table></section>';
+
+  // ── Timeline ─────────────────────────────────────────────────────────
+  html += '<section class="panel panel-wide" style="margin-top:16px;"><div class="panel-header"><h2 class="panel-title">Migration Timeline (Next 4 Quarters)</h2></div>';
+  if (timeline.length) {
+    html += '<table class="data-table"><thead><tr><th>Quarter</th><th>Devices</th><th>Replacement Cost</th><th>Sites</th></tr></thead><tbody>';
+    timeline.forEach(t => {
+      html += '<tr><td><strong>' + t.quarter + '</strong></td><td>' + t.device_count + '</td><td>' + _fmtMoney(t.replacement_cost) + '</td><td>' + (t.sites || []).join(', ') + '</td></tr>';
+    });
+    html += '</tbody></table>';
+  } else {
+    html += '<div style="padding:16px;color:var(--text-dim);">No migrations scheduled within current horizon.</div>';
+  }
+  html += '</section>';
+
+  // ── Devices at Risk ──────────────────────────────────────────────────
+  html += '<section class="panel panel-wide" style="margin-top:16px;"><div class="panel-header"><h2 class="panel-title">Top Devices at Risk</h2></div>';
+  if (devices.length) {
+    html += '<table class="data-table"><thead><tr><th>Device</th><th>Vendor</th><th>Model</th><th>Site</th><th>EOL</th><th>Days Left</th><th>Replacement Cost</th><th>Criticality</th><th>Downstream</th></tr></thead><tbody>';
+    devices.forEach(dev => {
+      const daysColor = dev.days_until_eol === 0 ? '#e74c3c' : (dev.days_until_eol <= 90 ? '#f39c12' : '#27ae60');
+      html += '<tr><td><strong>' + (dev.label || dev.id) + '</strong></td><td>' + dev.vendor + '</td><td>' + dev.model + '</td><td>' + dev.site + '</td><td>' + (dev.eol_date || '—') + '</td><td style="color:' + daysColor + ';font-weight:700;">' + dev.days_until_eol + '</td><td>' + _fmtMoney(dev.replacement_cost) + '</td><td>' + (dev.criticality_score || 0).toFixed(1) + '</td><td>' + (dev.downstream_count || 0) + '</td></tr>';
+    });
+    html += '</tbody></table>';
+  } else {
+    html += '<div style="padding:16px;color:var(--text-dim);">No devices at risk within current horizon.</div>';
+  }
+  html += '</section>';
+
+  el.innerHTML = html;
+}
+load();
+</script>
+{% endblock %}

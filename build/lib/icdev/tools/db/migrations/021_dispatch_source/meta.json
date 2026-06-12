@@ -1,0 +1,10 @@
+{
+  "id": "021",
+  "name": "dispatch_source",
+  "description": "Add dispatch_source column to kanban_tasks + kanban_verifications so we can distinguish work performed by genesis_scheduler (automated kanban), claude_interactive (user driving Claude Code), or user_manual (direct shell commit). Needed for narrowing down bugs by source and spotting phantom completion patterns.",
+  "created_at": "2026-04-12",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "requires_downtime": false
+}

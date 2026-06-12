@@ -1,0 +1,318 @@
+{
+  "id": "vert-telecom-isp",
+  "name": "Telecommunications / ISP",
+  "slug": "telecom_isp",
+  "description": "Carrier-grade ISP and telco intelligence: NOC operations, peering management, BGP routing, RPKI/IRR, circuit lifecycle, SLA management, IX memberships, CALEA compliance, FCC regulatory, DWDM capacity planning, transit pricing, and MAN/WAN/CAN/LAN operations. Aligned to ICDEV NOCC and PMC canvases (tools/noc_canvas/, tools/pmc_canvas/).",
+  "keywords": [
+    "internet exchange",
+    "IX",
+    "IXP",
+    "peering",
+    "BGP peering",
+    "settlement-free peering",
+    "paid peering",
+    "transit",
+    "partial transit",
+    "IP transit",
+    "PeeringDB",
+    "RPKI",
+    "ROA",
+    "IRR",
+    "RPSL",
+    "route policy",
+    "route registry",
+    "ARIN",
+    "RIPE NCC",
+    "APNIC",
+    "LACNIC",
+    "AFRINIC",
+    "NOC operations",
+    "network operations center",
+    "alarm correlation",
+    "SLA breach",
+    "SLA management",
+    "MTTR",
+    "MTTF",
+    "incident management",
+    "RFC change management",
+    "MOP method of procedure",
+    "maintenance window",
+    "circuit lifecycle",
+    "carrier circuit",
+    "Equinix Fabric",
+    "Equinix ECX",
+    "Megaport",
+    "cross-connect",
+    "LOA letter of authorization",
+    "DWDM",
+    "dark fiber",
+    "optical transport",
+    "OTN",
+    "wavelength services",
+    "capacity planning",
+    "MAN metropolitan area network",
+    "WAN wide area network",
+    "CAN campus area network",
+    "MPLS L3VPN",
+    "EVPN RFC 7432",
+    "BGP RFC 4271",
+    "BMP RFC 7854",
+    "BGP communities RFC 1997",
+    "large communities RFC 8092",
+    "MEF 3.0",
+    "ITU-T G.826",
+    "ITU-T G.8032",
+    "ETSI EN 302",
+    "GSMA FS.27",
+    "CALEA",
+    "FCC Part 36",
+    "FCC Form 470",
+    "E-Rate",
+    "RDOF",
+    "BEAD broadband",
+    "NANP",
+    "911 enhanced",
+    "NANOG",
+    "RIPE atlas",
+    "transit pricing",
+    "DDoS scrubbing",
+    "Flowspec",
+    "RTBH",
+    "flow telemetry",
+    "NetFlow",
+    "sFlow",
+    "IPFIX",
+    "SNMP trap",
+    "Syslog alarm",
+    "alarm correlation",
+    "root cause analysis",
+    "NOC dashboard",
+    "SolarWinds",
+    "PRTG",
+    "Zabbix",
+    "Grafana NOC",
+    "AS path prepend",
+    "graceful shutdown RFC 8326",
+    "ECMP load balancing",
+    "anycast routing",
+    "RPKI BGPsec",
+    "Tier 1 carrier",
+    "Tier 2 ISP",
+    "wholesale access",
+    "last mile",
+    "middle mile",
+    "fiber to the premises",
+    "FTTP",
+    "fixed wireless access",
+    "FWA",
+    "Open RAN",
+    "SASE carrier",
+    "SD-WAN managed service",
+    "carrier ethernet",
+    "MEF CE 2.0",
+    "E-Line",
+    "E-LAN",
+    "E-Tree",
+    "SRv6",
+    "segment routing",
+    "MPLS-TE",
+    "traffic engineering",
+    "abuse desk",
+    "DMARC ISP",
+    "spam filtering carrier"
+  ],
+  "regulatory_bodies": [
+    "FCC",
+    "ETSI",
+    "GSMA",
+    "MEF",
+    "ITU-T",
+    "ARIN",
+    "RIPE NCC",
+    "APNIC",
+    "LACNIC",
+    "AFRINIC",
+    "OFCOM",
+    "BNetzA",
+    "ARCEP",
+    "ANATEL",
+    "TRAI"
+  ],
+  "standards": [
+    "RFC 4271 (BGP-4)",
+    "RFC 7854 (BMP)",
+    "RFC 7432 (EVPN)",
+    "RFC 1997 (BGP Communities)",
+    "RFC 8092 (BGP Large Communities)",
+    "RFC 8326 (Graceful BGP Session Shutdown)",
+    "RFC 8210 (RPKI RTR)",
+    "MEF 3.0 (Carrier Ethernet)",
+    "MEF 6.3 (E-Line/E-LAN/E-Tree)",
+    "ITU-T G.826",
+    "ITU-T G.8032 (Ethernet Ring Protection)",
+    "CALEA (47 U.S.C. § 1002)",
+    "FCC Part 36 (Jurisdictional Separations)",
+    "IEEE 802.1Q (VLANs)",
+    "IEEE 802.3 (Ethernet)"
+  ],
+  "academic_categories": {
+    "arxiv": [
+      "cs.NI",
+      "cs.CR",
+      "cs.PF",
+      "cs.DC"
+    ],
+    "ieee": [
+      "network operations",
+      "BGP routing",
+      "internet exchange",
+      "carrier networks",
+      "optical transport"
+    ],
+    "acm": [
+      "internet measurement",
+      "routing",
+      "network management"
+    ]
+  },
+  "community_sources": {
+    "reddit": [
+      "r/networking",
+      "r/telecom",
+      "r/isp",
+      "r/NetworkEngineering",
+      "r/ipv6",
+      "r/sre"
+    ],
+    "stackexchange": [
+      "networkengineering.stackexchange.com",
+      "serverfault.com"
+    ],
+    "discord": [],
+    "forums": [
+      "nanog.org",
+      "peeringdb.com",
+      "ripe.net/ripe-meeting",
+      "arin.net",
+      "lists.apnic.net",
+      "lists.lacnic.net"
+    ]
+  },
+  "review_sites": {
+    "g2": [
+      "network-monitoring-software",
+      "network-management-tools",
+      "ddos-protection-software"
+    ],
+    "capterra": [
+      "network-monitoring-software",
+      "network-management-software"
+    ],
+    "trustpilot": []
+  },
+  "open_source": {
+    "github_topics": [
+      "bgp",
+      "rpki",
+      "peeringdb",
+      "looking-glass",
+      "bird-bgp",
+      "frrouting",
+      "netbox",
+      "ansible-network",
+      "network-automation",
+      "noc-operations"
+    ],
+    "awesome_lists": [
+      "awesome-network-automation",
+      "awesome-bgp",
+      "awesome-sdn"
+    ],
+    "package_registries": {
+      "pypi": [
+        "netmiko",
+        "napalm",
+        "nornir",
+        "pynetbox",
+        "scrapli",
+        "pyserial",
+        "ipaddress",
+        "pybgpstream"
+      ],
+      "npm": [],
+      "crates": []
+    }
+  },
+  "news_sources": {
+    "rss_feeds": [
+      "https://blog.apnic.net/feed/",
+      "https://blog.ripe.net/rss.xml",
+      "https://packetpushers.net/feed/",
+      "https://www.lightreading.com/rss.xml",
+      "https://www.telecoms.com/feed/"
+    ],
+    "keywords": [
+      "internet peering",
+      "BGP routing",
+      "RPKI deployment",
+      "carrier ethernet",
+      "Open RAN",
+      "AI for NOC",
+      "network automation ISP",
+      "DDoS mitigation carrier",
+      "rural broadband BEAD",
+      "FCC spectrum",
+      "SRv6 deployment",
+      "400G ZR coherent"
+    ]
+  },
+  "patent_categories": {
+    "cpc_classes": [
+      "H04L41",
+      "H04L45",
+      "H04L47",
+      "H04L12",
+      "H04L43"
+    ],
+    "keywords": [
+      "BGP route optimization",
+      "internet exchange peering",
+      "RPKI route origin validation",
+      "carrier ethernet provisioning",
+      "NOC alarm correlation"
+    ]
+  },
+  "compliance_frameworks": [
+    "CALEA",
+    "FCC_Part_36",
+    "NEBS_GR-63",
+    "MEF_3.0",
+    "ISO_27001",
+    "SOC_2",
+    "NIST_800_53",
+    "GDPR",
+    "CCPA"
+  ],
+  "video_sources": {
+    "youtube_channels": [
+      "PacketPushersNet",
+      "NANOG",
+      "RIPE NCC",
+      "APNIC"
+    ],
+    "youtube_search_queries": [
+      "BGP peering tutorial",
+      "RPKI route origin validation",
+      "internet exchange point explained",
+      "carrier NOC operations",
+      "MPLS L3VPN configuration",
+      "SRv6 segment routing deployment",
+      "FRRouting BIRD BGP configuration"
+    ],
+    "manual_urls": [
+      "https://www.peeringdb.com/",
+      "https://www.nanog.org/resources/",
+      "https://www.ripe.net/manage-ips-and-asns/resource-management/rpki/"
+    ]
+  }
+}

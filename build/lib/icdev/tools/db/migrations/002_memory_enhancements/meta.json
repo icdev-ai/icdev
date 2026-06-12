@@ -1,0 +1,9 @@
+{
+  "description": "Memory enhancements: SHA-256 content-hash dedup (D179), user-scoped memory (D180), auto-capture buffer (D181), thinking type (D182)",
+  "date": "2026-02-20",
+  "author": "icdev-builder",
+  "database": "memory",
+  "reversible": true,
+  "requires_downtime": false,
+  "notes": "Targets memory.db, not icdev.db. Run with: python tools/db/migrate.py --db-path data/memory.db --up"
+}

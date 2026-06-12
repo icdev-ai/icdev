@@ -1,0 +1,54 @@
+# CUI // SP-CTI
+# FathomDesk user progression — Phase 6.1 config.
+#
+# Level thresholds + opt-out policy. Hot-reloaded via file-mtime cache
+# (tools/trading/progression/engine.py). Tune without touching code.
+#
+# Thresholds are cumulative XP required to unlock each level. The engine
+# finds the highest level whose threshold ≤ user's total XP.
+
+_schema_version: 1
+
+# Four-level progression — CashFlow 101/102 mapping:
+#   beginner      = fresh account, paper-only
+#   intermediate  = proven basics, still paper (live unlock is Phase 6.6)
+#   advanced      = consistent paper-trading + signal discipline
+#   pro           = mastery — all features unlocked
+levels:
+  beginner:
+    order: 1
+    xp_required: 0
+    display_name: "Beginner"
+    description: "Learning the ropes. Every action earns XP."
+  intermediate:
+    order: 2
+    xp_required: 100
+    display_name: "Intermediate"
+    description: "You've made trades, seen a drawdown, earned your first badges."
+  advanced:
+    order: 3
+    xp_required: 500
+    display_name: "Advanced"
+    description: "Consistent paper-trading performance + macro-aware decisions."
+  pro:
+    order: 4
+    xp_required: 2000
+    display_name: "Pro"
+    description: "Mastery level — full feature access earned."
+
+# Personas auto-opted-in to progression. All others must explicitly opt-in.
+# Memory: user mentioned quant/pro_trader/advisor opt out via prior-experience
+# attestation; student + retail are the natural fit for gamification.
+opt_in_personas:
+  - student
+  - retail
+  - passive
+
+# Personas that may opt in but are NOT auto-opted-in (progression hidden
+# by default; they can flip it on via Settings).
+opt_out_personas:
+  - quant
+  - pro_trader
+  - advisor
+  - day_trader
+  - family_office

@@ -1,0 +1,1153 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+# CUI // SP-CTI
+"""Genesis Goal Learner — Self-Improving Goals from Experience (D-GEN-GL-1).
+
+When an agent solves a novel problem not covered by any existing goal, this
+reflex auto-generates a new FORGE goal file, assigns a quality score, and
+tracks version history.  The generated goal is staged for human review via
+the GKP Promoter — it is never written to goals/ without approval.
+
+Novelty detection works by scanning genesis_audit and kanban task completion
+records for problem domains not matched by existing goal keywords.  A simple
+TF-IDF-style coverage check against goals/manifest.md determines novelty.
+
+Usage:
+    python tools/genesis/goal_learner.py --scan --json
+    python tools/genesis/goal_learner.py --scan --write --json     # also write goal files
+    python tools/genesis/goal_learner.py --list --json             # list generated goals
+    python tools/genesis/goal_learner.py --stats --json
+    python tools/genesis/goal_learner.py --review <goal_id> --json
+    python tools/genesis/goal_learner.py --approve <goal_id> --json
+    python tools/genesis/goal_learner.py --reject <goal_id> --reason "..." --json
+"""
+
+import argparse
+import hashlib
+import json
+import re
+import sys
+import uuid
+from collections import Counter
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+from tools.db.storage import get_connection  # noqa: E402
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+LEARNER_VERSION = "1.0"
+GOALS_DIR = BASE_DIR / "goals"
+SUGGESTED_GOALS_DIR = BASE_DIR / "data" / "genesis" / "suggested_goals"
+
+# Minimum novelty score (0–1) for goal generation
+DEFAULT_NOVELTY_THRESHOLD = 0.6
+MAX_GOALS_PER_RUN = 3
+
+# Quality scoring weights
+QUALITY_WEIGHTS = {
+    "novelty_score": 0.40,
+    "evidence_count": 0.25,   # Number of audit events supporting this goal
+    "domain_clarity": 0.20,   # How well-defined the domain is
+    "tool_coverage": 0.15,    # How many tools the goal references
+}
+
+# Goal status values
+STATUS_SUGGESTED = "suggested"
+STATUS_APPROVED = "approved"
+STATUS_REJECTED = "rejected"
+STATUS_SUPERSEDED = "superseded"
+
+# Stopwords for novelty comparison
+_STOPWORDS = {
+    "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
+    "of", "with", "by", "from", "as", "is", "was", "are", "were", "be",
+    "been", "being", "have", "has", "had", "do", "does", "did", "will",
+    "would", "could", "should", "may", "might", "shall", "can", "need",
+    "not", "no", "nor", "so", "yet", "both", "either", "neither",
+    "it", "its", "this", "that", "these", "those", "we", "us", "our",
+    "you", "your", "they", "them", "their", "he", "she", "him", "her",
+    "all", "each", "every", "any", "few", "more", "most", "other",
+    "into", "through", "during", "before", "after", "above", "below",
+    "between", "out", "up", "down", "off", "over", "under", "again",
+}
+
+# ---------------------------------------------------------------------------
+# Utilities
+# ---------------------------------------------------------------------------
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _generate_id(prefix: str = "gl") -> str:
+    return f"{prefix}-{uuid.uuid4().hex[:10]}"
+
+
+def _sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _tokenize(text: str) -> List[str]:
+    """Lower-case alpha tokens, removing stopwords."""
+    tokens = re.findall(r"[a-z]{3,}", text.lower())
+    return [t for t in tokens if t not in _STOPWORDS]
+
+
+def _log_audit(event_type: str, goal_id: str = None, details: Dict = None) -> None:
+    """Append-only audit log (NIST AU-2)."""
+    conn = get_connection()
+    try:
+        conn.execute(
+            """
+            INSERT INTO genesis_audit
+                (id, event_type, reflex_name, details, gkp_id, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                f"aud-{uuid.uuid4().hex[:10]}",
+                event_type,
+                "goal_learner",
+                json.dumps(details) if details else None,
+                goal_id,
+                _utcnow_iso(),
+            ),
+        )
+        conn.commit()
+    except Exception:
+        pass  # Best-effort
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Goal coverage index — build from goals/manifest.md
+# ---------------------------------------------------------------------------
+
+
+def _load_goal_coverage() -> Tuple[List[str], Dict[str, List[str]]]:
+    """Parse goals/manifest.md and return (all_keywords, goal_keyword_map).
+
+    goal_keyword_map: { goal_file -> [keyword, ...] }
+    """
+    manifest_path = GOALS_DIR / "manifest.md"
+    if not manifest_path.exists():
+        return [], {}
+
+    text = manifest_path.read_text(encoding="utf-8")
+    goal_keyword_map: Dict[str, List[str]] = {}
+    all_keywords: List[str] = []
+
+    for line in text.splitlines():
+        # Table rows: | Goal Name | goals/file.md | Description |
+        parts = [p.strip() for p in line.split("|") if p.strip()]
+        if len(parts) >= 3 and ".md" in parts[1]:
+            goal_file = parts[1].strip("`")
+            description = " ".join(parts[2:])
+            keywords = _tokenize(f"{parts[0]} {description}")
+            goal_keyword_map[goal_file] = keywords
+            all_keywords.extend(keywords)
+
+    return all_keywords, goal_keyword_map
+
+
+def _novelty_score(domain_keywords: List[str], all_goal_keywords: List[str]) -> float:
+    """Compute novelty: fraction of domain keywords not covered by any goal (0–1)."""
+    if not domain_keywords:
+        return 0.0
+    goal_vocab = set(all_goal_keywords)
+    novel = sum(1 for kw in domain_keywords if kw not in goal_vocab)
+    return novel / len(domain_keywords)
+
+
+# ---------------------------------------------------------------------------
+# Evidence collection — scan audit and kanban tables
+# ---------------------------------------------------------------------------
+
+
+def _collect_novel_events(lookback_days: int = 7) -> List[Dict[str, Any]]:
+    """Scan genesis_audit for problem-solving events in the look-back window."""
+    conn = get_connection()
+    try:
+        # Look back N days using ISO date prefix comparison (deterministic)
+        from datetime import timedelta
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+
+        rows = conn.execute(
+            """
+            SELECT id, event_type, reflex_name, details, created_at
+            FROM genesis_audit
+            WHERE created_at >= ?
+              AND success IS NOT 0
+              AND event_type NOT LIKE 'genesis.promoter.%'
+            ORDER BY created_at DESC
+            LIMIT 500
+            """,
+            (cutoff,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+    finally:
+        conn.close()
+
+
+def _collect_kanban_completions(lookback_days: int = 7) -> List[Dict[str, Any]]:
+    """Collect recently completed kanban tasks as evidence of novel problem-solving."""
+    conn = get_connection()
+    try:
+        from datetime import timedelta
+
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=lookback_days)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ"
+        )
+
+        rows = conn.execute(
+            """
+            SELECT id, title, description, task_type, completed_at
+            FROM kanban_tasks
+            WHERE status = 'done'
+              AND completed_at IS NOT NULL
+              AND completed_at >= ?
+            ORDER BY completed_at DESC
+            LIMIT 200
+            """,
+            (cutoff,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception:
+        return []
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Domain clustering — group evidence into candidate problem domains
+# ---------------------------------------------------------------------------
+
+
+def _cluster_into_domains(
+    audit_events: List[Dict],
+    kanban_completions: List[Dict],
+    all_goal_keywords: List[str],
+    novelty_threshold: float = DEFAULT_NOVELTY_THRESHOLD,
+) -> List[Dict[str, Any]]:
+    """Group audit events + kanban completions into candidate domains.
+
+    Returns list of domain dicts sorted by novelty score descending.
+    Each domain: {domain_label, keywords, novelty_score, evidence_count, events, tasks}
+    """
+    # Build a bag of (text, source) pairs
+    texts: List[Tuple[str, str]] = []
+    for ev in audit_events:
+        details = ev.get("details") or ""
+        if isinstance(details, str):
+            try:
+                d = json.loads(details)
+                text = " ".join(str(v) for v in d.values())
+            except Exception:
+                text = details
+        else:
+            text = str(details)
+        combined = f"{ev.get('event_type', '')} {ev.get('reflex_name', '')} {text}"
+        texts.append((combined, "audit", ev))
+
+    for task in kanban_completions:
+        combined = f"{task.get('title', '')} {task.get('description', '')} {task.get('task_type', '')}"
+        texts.append((combined, "kanban", task))
+
+    # Count keyword frequencies across all evidence
+    all_tokens: List[str] = []
+    evidence_tokens: List[List[str]] = []
+    for (text, _src, _item) in texts:
+        tokens = _tokenize(text)
+        evidence_tokens.append(tokens)
+        all_tokens.extend(tokens)
+
+    if not all_tokens:
+        return []
+
+    token_freq = Counter(all_tokens)
+    # Top N most frequent terms form candidate domain labels
+    top_terms = [tok for tok, _cnt in token_freq.most_common(60)]
+
+    # Greedy grouping: cluster evidence by shared top-term
+    seen_domains: Dict[str, Dict] = {}
+    for i, (text, src, item) in enumerate(texts):
+        tokens = set(evidence_tokens[i])
+        best_term = None
+        best_overlap = 0
+        for term in top_terms:
+            if term in tokens:
+                overlap = token_freq[term]
+                if overlap > best_overlap:
+                    best_overlap = overlap
+                    best_term = term
+
+        if best_term is None:
+            continue
+
+        if best_term not in seen_domains:
+            seen_domains[best_term] = {
+                "domain_label": best_term,
+                "keywords": [],
+                "evidence_count": 0,
+                "events": [],
+                "tasks": [],
+            }
+
+        dom = seen_domains[best_term]
+        dom["evidence_count"] += 1
+        dom["keywords"].extend(list(tokens - _STOPWORDS))
+        if src == "audit":
+            dom["events"].append(item.get("id", ""))
+        else:
+            dom["tasks"].append(item.get("id", ""))
+
+    # Score each domain
+    domains: List[Dict] = []
+    for term, dom in seen_domains.items():
+        kws = list(set(dom["keywords"]))
+        n_score = _novelty_score(kws, all_goal_keywords)
+        dom["novelty_score"] = round(n_score, 3)
+        dom["keywords"] = kws[:30]  # Cap for storage
+        if n_score >= novelty_threshold:
+            domains.append(dom)
+
+    domains.sort(key=lambda d: d["novelty_score"], reverse=True)
+    return domains
+
+
+# ---------------------------------------------------------------------------
+# Goal markdown generation
+# ---------------------------------------------------------------------------
+
+_GOAL_TEMPLATE = """\
+# CUI // SP-CTI
+# Goal: {title}
+
+**Version:** {version}
+**Classification:** CUI // SP-CTI
+**Source:** Auto-generated by Goal Learner Reflex (D-GEN-GL-1)
+**Status:** SUGGESTED — requires human review and approval before activation
+**Generated:** {generated_at}
+**Goal ID:** {goal_id}
+**Quality Score:** {quality_score:.2f} / 1.00
+**Novelty Score:** {novelty_score:.2f}
+
+---
+
+## Purpose
+
+{description}
+
+This goal was automatically derived from {evidence_count} novel problem-solving
+event(s) observed in the past {lookback_days} days that had no coverage in any
+existing ICDEV™ goal.
+
+---
+
+## Trigger
+
+- Novel agent behavior is detected in `genesis_audit` or `kanban_tasks`
+  with domain keywords not matched by `goals/manifest.md`
+- Goal Learner reflex fires (daily 20:00 or manual `--scan`)
+
+---
+
+## Inputs
+
+- `genesis_audit` records (lookback window: {lookback_days} days)
+- `kanban_tasks` completed records (same window)
+- `goals/manifest.md` (existing goal coverage index)
+- `args/genesis_config.yaml` → `reflexes.goal_learner` block
+
+---
+
+## Evidence
+
+Observed domain keywords: {keyword_list}
+
+Supporting audit events: {event_count}
+Supporting kanban tasks: {task_count}
+
+---
+
+## Process
+
+### Step 1 — Detect Novel Domain
+**Tool:** `tools/genesis/goal_learner.py --scan --json`
+
+Run novelty check against all existing goals.  Any domain with novelty score
+≥ {novelty_threshold} AND evidence count ≥ 2 qualifies for goal generation.
+
+### Step 2 — Generate Goal Specification
+**Tool:** `tools/genesis/goal_learner.py --scan --write --json`
+
+Produce this goal markdown and store metadata in `genesis_generated_goals`.
+
+### Step 3 — Human Review
+**Tool:** `tools/genesis/goal_learner.py --list --json` (find pending goals)
+`tools/genesis/goal_learner.py --approve <goal_id>` (approve)
+`tools/genesis/goal_learner.py --reject <goal_id> --reason "..."` (reject)
+
+On approval:
+- Goal file is copied to `goals/` and indexed in `goals/manifest.md`
+- A GKP of type `proven_pattern` is exported via the Promoter
+
+### Step 4 — Version History
+All edits to this goal increment the version number.  Previous versions
+are preserved in `data/genesis/suggested_goals/` with the version suffix.
+
+---
+
+## Outputs
+
+- `goals/{{slug}}.md` (on approval)
+- `genesis_generated_goals` DB record
+- GKP entry (`proven_pattern`) in `genesis_gkp` (on approval)
+- Audit entry in `genesis_audit`
+
+---
+
+## Quality Scoring
+
+| Dimension | Weight | Score |
+|-----------|--------|-------|
+| Novelty score | 40% | {novelty_score:.2f} |
+| Evidence count | 25% | {evidence_normalized:.2f} |
+| Domain clarity | 20% | {domain_clarity:.2f} |
+| Tool coverage | 15% | {tool_coverage:.2f} |
+| **Overall** | **100%** | **{quality_score:.2f}** |
+
+---
+
+## Guardrails
+
+- This file is SUGGESTED and must not be used until a human approves it
+- Goal Learner never writes directly to `goals/` — all writes go through
+  the human approval gate
+- Audit trail is append-only (NIST AU-2)
+- Maximum {max_goals_per_run} goals generated per reflex run
+
+---
+
+## Related Goals
+
+- `goals/genesis_goal_learner.md` — Goal Learner reflex workflow
+- `goals/genesis_promoter.md` — GKP Promoter (knowledge gateway)
+- `goals/genesis_daemon.md` — Daemon lifecycle
+
+---
+
+*Auto-generated by ICDEV™ Goal Learner v{learner_version} on {generated_at}*
+"""
+
+
+def _domain_to_title(domain_label: str, keywords: List[str]) -> str:
+    """Produce a human-readable goal title from a domain."""
+    # Capitalize domain label and add context from top keywords
+    top = [kw for kw in keywords[:3] if kw != domain_label]
+    if top:
+        return f"{domain_label.title()} {top[0].title()} Workflow"
+    return f"{domain_label.title()} Workflow"
+
+
+def _domain_to_slug(title: str) -> str:
+    """Convert title to a valid filename slug."""
+    slug = re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_")
+    return slug[:60]
+
+
+def _compute_quality_score(
+    novelty_score: float,
+    evidence_count: int,
+    keywords: List[str],
+) -> Tuple[float, float, float, float]:
+    """Return (overall, evidence_norm, domain_clarity, tool_coverage) scores."""
+    # Normalize evidence count: 1 event = 0.3, 5+ = 1.0
+    evidence_norm = min(1.0, max(0.0, (evidence_count - 1) / 4.0))
+
+    # Domain clarity: how specific are the keywords (longer, more distinct = higher)
+    if not keywords:
+        domain_clarity = 0.0
+    else:
+        avg_len = sum(len(k) for k in keywords) / len(keywords)
+        domain_clarity = min(1.0, avg_len / 10.0)
+
+    # Tool coverage placeholder (0.5 — no tool analysis in this version)
+    tool_coverage = 0.5
+
+    overall = (
+        QUALITY_WEIGHTS["novelty_score"] * novelty_score
+        + QUALITY_WEIGHTS["evidence_count"] * evidence_norm
+        + QUALITY_WEIGHTS["domain_clarity"] * domain_clarity
+        + QUALITY_WEIGHTS["tool_coverage"] * tool_coverage
+    )
+    return round(overall, 3), round(evidence_norm, 3), round(domain_clarity, 3), round(tool_coverage, 3)
+
+
+def _render_goal_markdown(
+    domain: Dict[str, Any],
+    goal_id: str,
+    lookback_days: int,
+    novelty_threshold: float,
+) -> Tuple[str, str, float]:
+    """Render goal markdown for a domain.  Returns (markdown, title, quality_score)."""
+    keywords = domain.get("keywords", [])
+    domain_label = domain.get("domain_label", "unknown")
+    evidence_count = domain.get("evidence_count", 0)
+    novelty_score = domain.get("novelty_score", 0.0)
+    event_count = len(domain.get("events", []))
+    task_count = len(domain.get("tasks", []))
+
+    title = _domain_to_title(domain_label, keywords)
+    overall, evidence_norm, domain_clarity, tool_coverage = _compute_quality_score(
+        novelty_score, evidence_count, keywords
+    )
+
+    description = (
+        f"Workflow for handling '{domain_label}' problem domains. "
+        f"This goal captures a recurring pattern that current goals do not address, "
+        f"covering areas such as: {', '.join(keywords[:5])}."
+    )
+
+    keyword_list = ", ".join(f"`{k}`" for k in keywords[:15])
+
+    md = _GOAL_TEMPLATE.format(
+        title=title,
+        version="1.0",
+        generated_at=_utcnow_iso(),
+        goal_id=goal_id,
+        quality_score=overall,
+        novelty_score=novelty_score,
+        description=description,
+        evidence_count=evidence_count,
+        lookback_days=lookback_days,
+        keyword_list=keyword_list,
+        event_count=event_count,
+        task_count=task_count,
+        novelty_threshold=novelty_threshold,
+        evidence_normalized=evidence_norm,
+        domain_clarity=domain_clarity,
+        tool_coverage=tool_coverage,
+        max_goals_per_run=MAX_GOALS_PER_RUN,
+        learner_version=LEARNER_VERSION,
+    )
+    return md, title, overall
+
+
+# ---------------------------------------------------------------------------
+# DB operations
+# ---------------------------------------------------------------------------
+
+
+def _ensure_table() -> None:
+    """Create genesis_generated_goals table if it doesn't exist."""
+    conn = get_connection()
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS genesis_generated_goals (
+                id              TEXT PRIMARY KEY,
+                version         INTEGER NOT NULL DEFAULT 1,
+                domain_label    TEXT NOT NULL,
+                title           TEXT NOT NULL,
+                slug            TEXT NOT NULL,
+                novelty_score   REAL NOT NULL DEFAULT 0.0,
+                quality_score   REAL NOT NULL DEFAULT 0.0,
+                evidence_count  INTEGER NOT NULL DEFAULT 0,
+                keywords        TEXT,
+                goal_markdown   TEXT NOT NULL,
+                sha256          TEXT NOT NULL,
+                status          TEXT NOT NULL DEFAULT 'suggested'
+                    CHECK(status IN ('suggested','approved','rejected','superseded')),
+                gkp_id          TEXT,
+                goal_file_path  TEXT,
+                rejection_reason TEXT,
+                approved_at     TEXT,
+                rejected_at     TEXT,
+                created_at      TEXT NOT NULL,
+                updated_at      TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_gg_status ON genesis_generated_goals(status)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_gg_domain ON genesis_generated_goals(domain_label)"
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_gg_created ON genesis_generated_goals(created_at)"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _store_generated_goal(
+    goal_id: str,
+    domain: Dict[str, Any],
+    title: str,
+    slug: str,
+    goal_markdown: str,
+    quality_score: float,
+) -> None:
+    """Persist generated goal to genesis_generated_goals."""
+    conn = get_connection()
+    try:
+        now = _utcnow_iso()
+        conn.execute(
+            """
+            INSERT INTO genesis_generated_goals
+                (id, version, domain_label, title, slug, novelty_score,
+                 quality_score, evidence_count, keywords, goal_markdown,
+                 sha256, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                goal_id,
+                1,
+                domain.get("domain_label", ""),
+                title,
+                slug,
+                domain.get("novelty_score", 0.0),
+                quality_score,
+                domain.get("evidence_count", 0),
+                json.dumps(domain.get("keywords", [])),
+                goal_markdown,
+                _sha256(goal_markdown),
+                STATUS_SUGGESTED,
+                now,
+                now,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _write_goal_file(goal_id: str, slug: str, markdown: str) -> Path:
+    """Write goal markdown to data/genesis/suggested_goals/."""
+    SUGGESTED_GOALS_DIR.mkdir(parents=True, exist_ok=True)
+    path = SUGGESTED_GOALS_DIR / f"{slug}_{goal_id}.md"
+    path.write_text(markdown, encoding="utf-8")
+    return path
+
+
+def _check_duplicate_domain(domain_label: str) -> Optional[str]:
+    """Return existing goal_id if this domain was already generated and is still active."""
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT id FROM genesis_generated_goals
+            WHERE domain_label = ? AND status IN ('suggested', 'approved')
+            LIMIT 1
+            """,
+            (domain_label,),
+        ).fetchone()
+        if row:
+            return row["id"] if isinstance(row, dict) else row[0]
+    finally:
+        conn.close()
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Core scan logic
+# ---------------------------------------------------------------------------
+
+
+def scan_and_generate(
+    lookback_days: int = 7,
+    novelty_threshold: float = DEFAULT_NOVELTY_THRESHOLD,
+    max_goals: int = MAX_GOALS_PER_RUN,
+    write_files: bool = False,
+) -> Dict[str, Any]:
+    """Main entry: detect novel domains, generate goals.
+
+    Returns result dict with 'goals_generated', 'goals', and 'skipped'.
+    """
+    _ensure_table()
+
+    # 1. Load existing goal coverage
+    all_goal_keywords, goal_keyword_map = _load_goal_coverage()
+
+    # 2. Collect evidence
+    audit_events = _collect_novel_events(lookback_days)
+    kanban_tasks = _collect_kanban_completions(lookback_days)
+
+    # 3. Cluster into candidate domains
+    domains = _cluster_into_domains(
+        audit_events, kanban_tasks, all_goal_keywords, novelty_threshold
+    )
+
+    generated: List[Dict[str, Any]] = []
+    skipped: List[Dict[str, Any]] = []
+
+    for domain in domains[:max_goals]:
+        domain_label = domain.get("domain_label", "")
+
+        # Dedup check
+        existing = _check_duplicate_domain(domain_label)
+        if existing:
+            skipped.append(
+                {"domain_label": domain_label, "reason": "already_generated", "existing_id": existing}
+            )
+            continue
+
+        # Generate goal
+        goal_id = _generate_id("gl")
+        markdown, title, quality_score = _render_goal_markdown(
+            domain, goal_id, lookback_days, novelty_threshold
+        )
+        slug = _domain_to_slug(title)
+
+        # Persist to DB
+        _store_generated_goal(goal_id, domain, title, slug, markdown, quality_score)
+
+        # Optionally write file
+        goal_file_path: Optional[str] = None
+        if write_files:
+            path = _write_goal_file(goal_id, slug, markdown)
+            goal_file_path = str(path.relative_to(BASE_DIR))
+            # Update DB with file path
+            conn = get_connection()
+            try:
+                conn.execute(
+                    "UPDATE genesis_generated_goals SET goal_file_path = ?, updated_at = ? WHERE id = ?",
+                    (goal_file_path, _utcnow_iso(), goal_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+        _log_audit(
+            "genesis.goal_learner.generated",
+            goal_id,
+            {
+                "domain_label": domain_label,
+                "title": title,
+                "quality_score": quality_score,
+                "novelty_score": domain.get("novelty_score", 0.0),
+                "evidence_count": domain.get("evidence_count", 0),
+                "goal_file": goal_file_path,
+            },
+        )
+
+        generated.append(
+            {
+                "goal_id": goal_id,
+                "title": title,
+                "slug": slug,
+                "domain_label": domain_label,
+                "novelty_score": domain.get("novelty_score", 0.0),
+                "quality_score": quality_score,
+                "evidence_count": domain.get("evidence_count", 0),
+                "status": STATUS_SUGGESTED,
+                "goal_file": goal_file_path,
+            }
+        )
+
+    result = {
+        "scanned_at": _utcnow_iso(),
+        "lookback_days": lookback_days,
+        "novelty_threshold": novelty_threshold,
+        "audit_events_scanned": len(audit_events),
+        "kanban_tasks_scanned": len(kanban_tasks),
+        "candidate_domains": len(domains),
+        "goals_generated": len(generated),
+        "goals_skipped": len(skipped),
+        "goals": generated,
+        "skipped": skipped,
+    }
+
+    _log_audit(
+        "genesis.goal_learner.scan_complete",
+        None,
+        {
+            "goals_generated": len(generated),
+            "goals_skipped": len(skipped),
+            "candidate_domains": len(domains),
+        },
+    )
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Query & approval operations
+# ---------------------------------------------------------------------------
+
+
+def list_generated_goals(status: str = None, limit: int = 50) -> List[Dict[str, Any]]:
+    """List generated goals, optionally filtered by status."""
+    _ensure_table()
+    conn = get_connection()
+    try:
+        if status:
+            rows = conn.execute(
+                """
+                SELECT id, version, domain_label, title, slug, novelty_score,
+                       quality_score, evidence_count, status, goal_file_path,
+                       gkp_id, created_at, updated_at
+                FROM genesis_generated_goals
+                WHERE status = ?
+                ORDER BY quality_score DESC, created_at DESC
+                LIMIT ?
+                """,
+                (status, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT id, version, domain_label, title, slug, novelty_score,
+                       quality_score, evidence_count, status, goal_file_path,
+                       gkp_id, created_at, updated_at
+                FROM genesis_generated_goals
+                ORDER BY quality_score DESC, created_at DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def get_goal_detail(goal_id: str) -> Optional[Dict[str, Any]]:
+    """Get full goal record including markdown."""
+    _ensure_table()
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT * FROM genesis_generated_goals WHERE id = ?", (goal_id,)
+        ).fetchone()
+        return dict(row) if row else None
+    finally:
+        conn.close()
+
+
+def approve_goal(goal_id: str) -> Dict[str, Any]:
+    """Approve a suggested goal — write to goals/ and register in manifest.
+
+    Also exports a GKP of type 'proven_pattern' via the Promoter.
+    Always requires human action.
+    """
+    _ensure_table()
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT * FROM genesis_generated_goals WHERE id = ?", (goal_id,)
+        ).fetchone()
+        if not row:
+            return {"error": f"Goal not found: {goal_id}"}
+
+        goal = dict(row)
+        current_status = goal.get("status")
+        if current_status != STATUS_SUGGESTED:
+            return {"error": f"Cannot approve goal with status '{current_status}'", "goal_id": goal_id}
+
+        slug = goal["slug"]
+        markdown = goal["goal_markdown"]
+        title = goal["title"]
+
+        # Write to goals/
+        goal_file = GOALS_DIR / f"{slug}.md"
+        goal_file.write_text(markdown, encoding="utf-8")
+
+        # Append to goals/manifest.md
+        manifest_path = GOALS_DIR / "manifest.md"
+        manifest_text = manifest_path.read_text(encoding="utf-8")
+        new_row = f"| {title} | goals/{slug}.md | Auto-learned goal from experience (D-GEN-GL-1) |\n"
+        if f"goals/{slug}.md" not in manifest_text:
+            manifest_text = manifest_text.rstrip() + "\n" + new_row
+            manifest_path.write_text(manifest_text, encoding="utf-8")
+
+        # Export GKP
+        gkp_id = None
+        try:
+            from tools.genesis.promoter import export_gkp
+
+            gkp_result = export_gkp(
+                reflex="goal_learner",
+                artifact_type="proven_pattern",
+                payload={
+                    "goal_id": goal_id,
+                    "title": title,
+                    "slug": slug,
+                    "goal_file": f"goals/{slug}.md",
+                    "novelty_score": goal.get("novelty_score", 0.0),
+                    "quality_score": goal.get("quality_score", 0.0),
+                    "evidence_count": goal.get("evidence_count", 0),
+                    "pattern_type": "learned_goal",
+                    "signature": f"goal_learner:{slug}",
+                    "root_cause": "Novel problem domain not covered by existing goals",
+                    "remediation": {"action": "activate_generated_goal", "goal_file": f"goals/{slug}.md"},
+                    "auto_healable": False,
+                    "occurrence_count": goal.get("evidence_count", 1),
+                },
+                confidence=goal.get("quality_score", 0.5),
+                evidence={"goal_id": goal_id, "domain_label": goal.get("domain_label")},
+            )
+            gkp_id = gkp_result.get("gkp_id")
+        except Exception as e:
+            gkp_id = None
+            _log_audit("genesis.goal_learner.gkp_export_failed", goal_id, {"error": str(e)})
+
+        # Update DB
+        now = _utcnow_iso()
+        conn.execute(
+            """
+            UPDATE genesis_generated_goals
+            SET status = ?, approved_at = ?, goal_file_path = ?,
+                gkp_id = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (STATUS_APPROVED, now, f"goals/{slug}.md", gkp_id, now, goal_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    _log_audit(
+        "genesis.goal_learner.approved",
+        goal_id,
+        {"title": title, "goal_file": f"goals/{slug}.md", "gkp_id": gkp_id},
+    )
+
+    return {
+        "status": "approved",
+        "goal_id": goal_id,
+        "title": title,
+        "goal_file": f"goals/{slug}.md",
+        "gkp_id": gkp_id,
+    }
+
+
+def reject_goal(goal_id: str, reason: str = "") -> Dict[str, Any]:
+    """Reject a suggested goal."""
+    _ensure_table()
+    conn = get_connection()
+    try:
+        row = conn.execute(
+            "SELECT status FROM genesis_generated_goals WHERE id = ?", (goal_id,)
+        ).fetchone()
+        if not row:
+            return {"error": f"Goal not found: {goal_id}"}
+
+        current_status = row["status"] if isinstance(row, dict) else row[0]
+        if current_status == STATUS_APPROVED:
+            return {"error": "Cannot reject an already-approved goal", "goal_id": goal_id}
+
+        now = _utcnow_iso()
+        conn.execute(
+            """
+            UPDATE genesis_generated_goals
+            SET status = ?, rejection_reason = ?, rejected_at = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (STATUS_REJECTED, reason, now, now, goal_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    _log_audit(
+        "genesis.goal_learner.rejected",
+        goal_id,
+        {"reason": reason},
+    )
+    return {"status": "rejected", "goal_id": goal_id, "reason": reason}
+
+
+def get_stats() -> Dict[str, Any]:
+    """Return summary statistics."""
+    _ensure_table()
+    conn = get_connection()
+    try:
+        total_row = conn.execute(
+            "SELECT COUNT(*) as cnt FROM genesis_generated_goals"
+        ).fetchone()
+        by_status = conn.execute(
+            "SELECT status, COUNT(*) as cnt FROM genesis_generated_goals GROUP BY status"
+        ).fetchall()
+        avg_quality = conn.execute(
+            "SELECT AVG(quality_score) as avg FROM genesis_generated_goals WHERE status != 'rejected'"
+        ).fetchone()
+
+        return {
+            "total_goals": (total_row["cnt"] if isinstance(total_row, dict) else total_row[0]) if total_row else 0,
+            "by_status": {
+                (r["status"] if isinstance(r, dict) else r[0]): (r["cnt"] if isinstance(r, dict) else r[1])
+                for r in by_status
+            },
+            "avg_quality_score": round(
+                (avg_quality["avg"] if isinstance(avg_quality, dict) else avg_quality[0]) or 0.0,
+                3,
+            ),
+            "timestamp": _utcnow_iso(),
+        }
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Reflex entry point (called by daemon.py)
+# ---------------------------------------------------------------------------
+
+
+def run(config: Dict[str, Any], state: Any) -> Dict[str, Any]:
+    """Genesis daemon reflex entry point.
+
+    Args:
+        config: Reflex config block from genesis_config.yaml
+        state:  ReflexState instance (unused — stateless scan)
+
+    Returns:
+        Dict with metric_name and metric_value for daemon tracking.
+    """
+    novelty_threshold = config.get("novelty_threshold", DEFAULT_NOVELTY_THRESHOLD)
+    max_goals = config.get("max_goals_per_run", MAX_GOALS_PER_RUN)
+    lookback_days = config.get("lookback_days", 7)
+    write_files = config.get("write_files", True)
+
+    result = scan_and_generate(
+        lookback_days=lookback_days,
+        novelty_threshold=novelty_threshold,
+        max_goals=max_goals,
+        write_files=write_files,
+    )
+
+    return {
+        "metric_name": "goals_generated",
+        "metric_value": result.get("goals_generated", 0),
+        "details": result,
+    }
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+def main() -> None:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+    parser = argparse.ArgumentParser(
+        description="Genesis Goal Learner — Self-Improving Goals from Experience"
+    )
+    parser.add_argument("--scan", action="store_true", help="Scan for novel domains and generate goals")
+    parser.add_argument("--write", action="store_true", help="Write goal files to suggested_goals/ (with --scan)")
+    parser.add_argument(
+        "--lookback-days", type=int, default=7, help="Look-back window in days (default: 7)"
+    )
+    parser.add_argument(
+        "--novelty-threshold",
+        type=float,
+        default=DEFAULT_NOVELTY_THRESHOLD,
+        help=f"Minimum novelty score 0–1 (default: {DEFAULT_NOVELTY_THRESHOLD})",
+    )
+    parser.add_argument(
+        "--max-goals", type=int, default=MAX_GOALS_PER_RUN, help=f"Max goals per run (default: {MAX_GOALS_PER_RUN})"
+    )
+    parser.add_argument("--list", action="store_true", help="List generated goals")
+    parser.add_argument(
+        "--status-filter",
+        type=str,
+        default=None,
+        choices=["suggested", "approved", "rejected", "superseded"],
+        help="Filter by status",
+    )
+    parser.add_argument("--review", type=str, metavar="GOAL_ID", help="Show full detail for a goal")
+    parser.add_argument("--approve", type=str, metavar="GOAL_ID", help="Approve a suggested goal")
+    parser.add_argument("--reject", type=str, metavar="GOAL_ID", help="Reject a suggested goal")
+    parser.add_argument("--reason", type=str, default="", help="Rejection reason (with --reject)")
+    parser.add_argument("--stats", action="store_true", help="Show statistics")
+    parser.add_argument("--json", action="store_true", help="JSON output")
+    args = parser.parse_args()
+
+    def _out(data: Any) -> None:
+        if args.json:
+            print(json.dumps(data, indent=2, default=str))
+        else:
+            print(data)
+
+    if args.scan:
+        result = scan_and_generate(
+            lookback_days=args.lookback_days,
+            novelty_threshold=args.novelty_threshold,
+            max_goals=args.max_goals,
+            write_files=args.write,
+        )
+        if args.json:
+            _out(result)
+        else:
+            print(f"Scanned {result['audit_events_scanned']} audit events, "
+                  f"{result['kanban_tasks_scanned']} kanban tasks")
+            print(f"Candidate domains: {result['candidate_domains']}")
+            print(f"Goals generated:   {result['goals_generated']}")
+            print(f"Goals skipped:     {result['goals_skipped']}")
+            for g in result.get("goals", []):
+                print(
+                    f"  [{g['goal_id']}] {g['title']!r} "
+                    f"novelty={g['novelty_score']:.2f} quality={g['quality_score']:.2f}"
+                )
+        return
+
+    if args.list:
+        goals = list_generated_goals(status=args.status_filter)
+        if args.json:
+            _out(goals)
+        else:
+            print(f"{'ID':<14} {'Status':<12} {'Quality':<8} {'Novelty':<8} {'Title'}")
+            print("-" * 90)
+            for g in goals:
+                print(
+                    f"{g['id']:<14} {g['status']:<12} "
+                    f"{g['quality_score']:<8.2f} {g['novelty_score']:<8.2f} {g['title']}"
+                )
+        return
+
+    if args.review:
+        goal = get_goal_detail(args.review)
+        if not goal:
+            _out({"error": f"Goal not found: {args.review}"})
+        else:
+            if args.json:
+                _out(goal)
+            else:
+                print(goal.get("goal_markdown", ""))
+        return
+
+    if args.approve:
+        result = approve_goal(args.approve)
+        _out(result)
+        return
+
+    if args.reject:
+        result = reject_goal(args.reject, reason=args.reason)
+        _out(result)
+        return
+
+    if args.stats:
+        _out(get_stats())
+        return
+
+    parser.print_help()
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,210 @@
+# CUI // SP-CTI
+# Calibration set for proposal technical volume judge — 20 pre-scored examples
+
+calibration_examples:
+  # --- Score 5 (Blue - Outstanding) ---
+  - id: cal-pt-01
+    score: 5
+    shall_ref: "The contractor shall implement continuous monitoring of all system components."
+    text: |
+      We implement continuous monitoring via ICDEV™'s cATO Live Evidence Engine
+      (D-INV-1), which streams OSCAL assessment-results per control at configurable
+      intervals (default: 24h for critical, 72h for moderate). Evidence freshness
+      thresholds: current <=30d, stale <=90d, expired >90d. Our Prometheus/Grafana
+      stack collects 8 metrics (HTTP latency p99, error rate, circuit breaker state,
+      rate limit hits, uptime, tenant count, active alerts, evidence freshness).
+      During our FedRAMP authorization for [Agency X], this approach maintained 100%
+      evidence freshness across 256 controls for 14 consecutive months.
+    reasoning: "Exceeds requirement. Named tools, specific thresholds, 8 metrics listed, past performance with duration."
+
+  - id: cal-pt-02
+    score: 5
+    shall_ref: "The contractor shall provide automated vulnerability scanning."
+    text: |
+      Our 4-layer security scanning pipeline runs automatically on every commit:
+      (1) Bandit SAST (0 medium+ threshold), (2) pip-audit dependency scanning
+      against NVD, (3) detect-secrets for credential detection, (4) Trivy container
+      scanning against CVE databases. Pipeline configuration: `python
+      tools/devsecops/pipeline_security_generator.py --project-id sparkpilot --json`.
+      In our current IL4 deployment, this pipeline catches an average of 3.2
+      findings per week, with MTTR of 4.7 hours for critical findings.
+    reasoning: "4 specific tools, CLI command, quantified metrics (3.2 findings/week, 4.7h MTTR), IL4 context."
+
+  # --- Score 4 (Purple - Good) ---
+  - id: cal-pt-03
+    score: 4
+    shall_ref: "The contractor shall implement role-based access control."
+    text: |
+      ICDEV™ implements RBAC through 6 defined roles (admin, pm, developer, isso,
+      co, cor) with per-tool authorization via the MCP Tool Authorizer. Each role
+      has a deny-first permission matrix covering all 251 MCP tools. Access
+      decisions are logged in the append-only audit trail (NIST AU-2 compliant).
+    reasoning: "6 specific roles, 251 tools, deny-first approach, NIST reference. Lacks past performance metric."
+
+  - id: cal-pt-04
+    score: 4
+    shall_ref: "The contractor shall ensure data encryption at rest and in transit."
+    text: |
+      All data at rest uses AES-256-GCM encryption via HKDF-SHA256 key derivation.
+      Data in transit uses mTLS between all agents within the K8s cluster. FIPS
+      140-2 validated cryptographic modules are used for all IL4+ deployments.
+      Key management integrates with AWS Secrets Manager, Azure Key Vault, or
+      GCP Secret Manager depending on CSP configuration.
+    reasoning: "Specific algorithms, FIPS reference, multi-cloud key management. Missing evidence/audit trail specifics."
+
+  # --- Score 3 (Green - Acceptable) ---
+  - id: cal-pt-05
+    score: 3
+    shall_ref: "The contractor shall provide incident response capabilities."
+    text: |
+      We maintain a comprehensive incident response plan that covers detection,
+      containment, eradication, and recovery phases. Our team follows established
+      procedures for handling security incidents. We conduct regular tabletop
+      exercises to ensure readiness.
+    reasoning: "Addresses requirement, names 4 IR phases, mentions exercises. But generic — no specific tools, timelines, or metrics."
+
+  - id: cal-pt-06
+    score: 3
+    shall_ref: "The contractor shall implement change management controls."
+    text: |
+      All changes to the system follow our change management process. Changes
+      are reviewed and approved before implementation. We maintain a log of
+      all changes for audit purposes. Emergency changes follow an expedited
+      approval process.
+    reasoning: "Addresses requirement but completely generic. Any contractor could write this. No tools or specifics."
+
+  # --- Score 2 (Yellow - Marginal) ---
+  - id: cal-pt-07
+    score: 2
+    shall_ref: "The contractor shall implement multi-factor authentication."
+    text: |
+      We will implement MFA for all system users. Our team has experience
+      with authentication technologies and will ensure the system meets
+      security requirements.
+    reasoning: "Vague. 'Will implement' with no detail on how. No specific MFA technology named."
+
+  - id: cal-pt-08
+    score: 2
+    shall_ref: "The contractor shall provide automated backup and recovery."
+    text: |
+      Our experienced team will ensure proper backup procedures are in place.
+      We understand the importance of data recovery and will implement
+      appropriate solutions to meet the government's needs.
+    reasoning: "Boilerplate. No backup tool, frequency, RTO/RPO, or testing approach named."
+
+  # --- Score 1 (Red - Unacceptable) ---
+  - id: cal-pt-09
+    score: 1
+    shall_ref: "The contractor shall provide system hardening per DISA STIG requirements."
+    text: |
+      Our company has been in business for 20 years and has worked with many
+      government agencies. We are committed to delivering high-quality solutions
+      that meet all requirements.
+    reasoning: "Does not address STIG at all. Company biography, not a technical response."
+
+  - id: cal-pt-10
+    score: 1
+    shall_ref: "The contractor shall implement network segmentation."
+    text: |
+      We agree with this requirement and will comply. Our team is ready to
+      support the government's mission.
+    reasoning: "Non-response. No technical content. Just agreement without any approach."
+
+  # --- Additional calibration ---
+  - id: cal-pt-11
+    score: 5
+    shall_ref: "The contractor shall generate SBOM for all delivered software."
+    text: |
+      ICDEV™ generates CycloneDX 1.5 SBOMs automatically on every build via
+      `python tools/compliance/sbom_generator.py --project-dir /path`. The SBOM
+      includes all direct and transitive dependencies with license classification
+      (GPL/AGPL/SSPL blocked per D202). For firmware deliverables, we additionally
+      generate VEX (CSAF 2.0) with per-component exploitability status. SBOMs are
+      stored in the audit trail and included in every CDRL package.
+    reasoning: "Specific format (CycloneDX 1.5), CLI command, license policy, VEX for firmware, CDRL integration."
+
+  - id: cal-pt-12
+    score: 4
+    shall_ref: "The contractor shall provide DevSecOps pipeline integration."
+    text: |
+      Our 9-step DevSecOps pipeline includes: py_compile validation, Ruff linting,
+      pytest unit tests, Behave BDD, Bandit SAST, Playwright E2E, vision validation,
+      acceptance gates, and security/compliance gates. Pipeline generates via
+      `pipeline_config_generator.py` for GitHub Actions or GitLab CI.
+    reasoning: "9 specific steps named, two CI platforms, but no metric on pipeline execution time or finding rates."
+
+  - id: cal-pt-13
+    score: 3
+    shall_ref: "The contractor shall implement logging and auditing."
+    text: |
+      We implement comprehensive logging throughout the system. All significant
+      events are captured and stored for audit purposes. Our logging approach
+      follows NIST 800-53 AU family controls.
+    reasoning: "Names NIST AU but no specific tools, retention period, log format, or SIEM integration."
+
+  - id: cal-pt-14
+    score: 2
+    shall_ref: "The contractor shall provide a disaster recovery plan."
+    text: |
+      We have disaster recovery capabilities and will work with the government
+      to develop an appropriate DR plan that meets mission requirements.
+    reasoning: "Defers to future work. No current DR approach, RTO/RPO, or testing cadence."
+
+  - id: cal-pt-15
+    score: 4
+    shall_ref: "The contractor shall implement zero trust architecture."
+    text: |
+      ICDEV™ implements ZTA across 7 pillars per the DoD ZTA Strategy: user identity,
+      device, network, application workload, data, visibility/analytics, and
+      automation/orchestration. Maturity scoring tracks each pillar from Traditional
+      through Advanced to Optimal. Service mesh (Istio or Linkerd) enforces mTLS
+      between all services.
+    reasoning: "7 pillars named, 3 maturity levels, service mesh options. Lacks specific scoring metrics."
+
+  - id: cal-pt-16
+    score: 3
+    shall_ref: "The contractor shall support multi-cloud deployment."
+    text: |
+      Our platform supports deployment across multiple cloud providers including
+      AWS GovCloud, Azure Government, and GCP. We use Terraform for infrastructure
+      as code to ensure consistent deployments across environments.
+    reasoning: "Names 3 clouds and Terraform, but no specific configurations, region validation, or compliance mapping."
+
+  - id: cal-pt-17
+    score: 5
+    shall_ref: "The contractor shall provide AI model governance."
+    text: |
+      ICDEV™'s AI governance framework covers 6 pillars: inventory (OMB M-25-21
+      schema), model cards (Google format), system cards, fairness assessment,
+      confabulation detection (deterministic, air-gap safe), and GAO-21-519SP
+      evidence collection. The framework auto-activates when AI components are
+      detected during intake. CAIO designation is tracked for rights-impacting AI
+      systems per OMB M-26-04. All AI decisions logged in append-only audit trail
+      with SHA-256 hashed prompts/responses (privacy-preserving).
+    reasoning: "6 pillars, 4 specific frameworks (OMB, GAO, Google), privacy approach, auto-detection trigger."
+
+  - id: cal-pt-18
+    score: 1
+    shall_ref: "The contractor shall provide configuration management."
+    text: |
+      Please see our corporate brochure attached for information about our
+      company's capabilities and experience.
+    reasoning: "Refers to external document instead of responding. Non-compliant response."
+
+  - id: cal-pt-19
+    score: 2
+    shall_ref: "The contractor shall implement API security."
+    text: |
+      API security is a priority for our team. We will ensure all APIs are
+      properly secured using industry best practices and standards.
+    reasoning: "Vague commitment. No specific security measures (OAuth, rate limiting, input validation) named."
+
+  - id: cal-pt-20
+    score: 4
+    shall_ref: "The contractor shall provide automated compliance evidence collection."
+    text: |
+      ICDEV™'s evidence collector auto-gathers compliance evidence across 14
+      frameworks (FedRAMP, CMMC, CJIS, HIPAA, etc.) with freshness checking.
+      Evidence staleness triggers heartbeat daemon alerts. Collection runs via
+      `python tools/compliance/evidence_collector.py --project-id sparkpilot --json`.
+    reasoning: "14 frameworks, freshness monitoring, CLI command, daemon integration. Lacks specific freshness thresholds."

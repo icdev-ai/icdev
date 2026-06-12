@@ -1,0 +1,63 @@
+<!-- CUI // SP-CTI -->
+<!-- Codebase Assistant Widget (Phase 69 — D-CA-3) -->
+<!-- Floating chat widget for codebase Q&A on every dashboard page. -->
+
+<!-- Collapsed FAB button -->
+<button id="assistant-fab" class="assistant-fab" title="Codebase Assistant" aria-label="Open codebase assistant">
+    <span class="assistant-fab__icon">?</span>
+    <span id="assistant-fab-badge" class="assistant-fab__badge" style="display:none;">0</span>
+</button>
+
+<!-- Expanded widget panel -->
+<div id="assistant-widget" class="assistant-widget" style="display:none;">
+    <!-- Header -->
+    <div class="assistant-widget__header">
+        <div class="assistant-widget__header-left">
+            <span class="assistant-widget__avatar">?</span>
+            <span class="assistant-widget__title">Codebase Assistant</span>
+        </div>
+        <div class="assistant-widget__header-right">
+            <button id="assistant-clear" class="assistant-widget__btn" title="New chat">&#x21BA;</button>
+            <button id="assistant-fullscreen" class="assistant-widget__btn" title="Open in full screen">&#x2197;</button>
+            <button id="assistant-close" class="assistant-widget__btn" title="Close">&times;</button>
+        </div>
+    </div>
+
+    <!-- Scope bar -->
+    <div class="assistant-widget__scope">
+        <span class="assistant-widget__scope-label">Scope:</span>
+        <select id="assistant-scope" class="assistant-widget__scope-select">
+            <option value="">All (Global)</option>
+        </select>
+    </div>
+
+    <!-- Messages -->
+    <div id="assistant-messages" class="assistant-widget__messages">
+        <!-- Empty state with suggestions -->
+        <div id="assistant-empty" class="assistant-widget__empty">
+            <p>Ask me anything about the ICDEV™ codebase.</p>
+            <div id="assistant-suggestions" class="assistant-widget__suggestions"></div>
+        </div>
+    </div>
+
+    <!-- Typing indicator -->
+    <div id="assistant-typing" class="assistant-widget__typing" style="display:none;">
+        <div class="typing-dots">
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+            <div class="typing-dot"></div>
+        </div>
+        <span class="typing-label">Searching codebase...</span>
+    </div>
+
+    <!-- Input -->
+    <div class="assistant-widget__input-area">
+        <input type="text" id="assistant-input" class="assistant-widget__input" placeholder="Ask about this module..." autocomplete="off">
+        <button id="assistant-send" class="assistant-widget__send" title="Send" aria-label="Send question">&#x2192;</button>
+    </div>
+
+    <!-- Status bar -->
+    <div class="assistant-widget__status">
+        <span id="assistant-status-text" class="assistant-widget__status-text">Ready</span>
+    </div>
+</div>

@@ -1,0 +1,31 @@
+{# Classification banner and badge macros (sec-cvs-08)
+   Reuses classification_manager.py color/marking helpers via inline mapping.
+#}
+
+{% macro design_classification_banner(design_or_cls, compartments=None, readonly=False) %}
+{% set cls = (design_or_cls.classification if design_or_cls is mapping else design_or_cls) | default('CUI') | upper %}
+{% set comps = compartments or (design_or_cls.compartments if design_or_cls is mapping and design_or_cls.compartments is defined else None) or (design_or_cls.compartment_tags if design_or_cls is mapping and design_or_cls.compartment_tags is defined else None) %}
+{% set clearance_order = {'PUBLIC':0,'CUI':1,'SECRET':2,'TOP SECRET':3,'TOP SECRET//SCI':4} %}
+{% set user_clearance = current_user.clearance_level | default(none) if current_user is defined and current_user else none %}
+{% set user_ord = clearance_order.get(user_clearance | upper, 999) if user_clearance else 999 %}
+{% set design_ord = clearance_order.get(cls, 1) %}
+{% set is_readonly = readonly or (user_clearance and user_ord < design_ord) %}
+<div class="design-classification-banner cls-{{ cls | replace(' ', '-') | replace('/', '-') }}" role="banner" aria-label="Design classification">
+  <span>{{ cls }}</span>
+  {% if comps %}
+    {% if comps is string %}{% set comps = comps.split(',') %}{% endif %}
+    <span class="compartment-badge">{{ comps | join(' / ') }}</span>
+  {% endif %}
+  {% if is_readonly %}<span class="readonly-badge">READ-ONLY</span>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro design_classification_badge(design_or_cls, compartments=None) %}
+{% set cls = (design_or_cls.classification if design_or_cls is mapping else design_or_cls) | default('CUI') | upper %}
+{% set comps = compartments or (design_or_cls.compartments if design_or_cls is mapping and design_or_cls.compartments is defined else None) or (design_or_cls.compartment_tags if design_or_cls is mapping and design_or_cls.compartment_tags is defined else None) %}
+<span class="badge badge-{{ cls | replace(' ', '-') | replace('/', '-') }}">{{ cls }}</span>
+{% if comps %}
+  {% if comps is string %}{% set comps = comps.split(',') %}{% endif %}
+  <span class="badge-compartment">{{ comps | join(' / ') }}</span>
+{% endif %}
+{% endmacro %}

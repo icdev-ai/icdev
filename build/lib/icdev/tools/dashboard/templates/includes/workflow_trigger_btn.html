@@ -1,0 +1,36 @@
+<!-- CUI // SP-CTI — Workflow Trigger Button Partial -->
+{# Required context variables from the including template:
+   wf_canvas_id      (str) — e.g. "sdc"
+   wf_context_label  (str) — e.g. current design name or topology name (can be empty)
+   wf_design_id      (str) — optional design/record ID passed as project_id to tools
+#}
+<button class="btn btn-sm btn-outline-primary ms-2"
+        id="wf-trigger-btn-{{ wf_canvas_id }}"
+        onclick="sendToWorkflowStudio('{{ wf_canvas_id }}', '{{ wf_context_label | e }}', '{{ wf_design_id | default('') | e }}')"
+        title="Open this context as a Workflow in Workflow Studio">
+  &#9881; Workflow
+</button>
+<script>
+if (!window.sendToWorkflowStudio) {
+  window.sendToWorkflowStudio = function(canvasId, contextLabel, designId) {
+    var btn = document.getElementById('wf-trigger-btn-' + canvasId);
+    if (btn) { btn.disabled = true; btn.textContent = '…'; }
+    var payload = {canvas_id: canvasId, context_label: contextLabel};
+    if (designId) { payload.design_id = designId; }
+    fetch('/api/studio/workflows/from-canvas', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.redirect) { window.open(d.redirect, '_blank'); }
+      if (btn) { btn.disabled = false; btn.innerHTML = '&#9881; Workflow'; }
+    })
+    .catch(function(e) {
+      console.error('[workflow-trigger]', e);
+      if (btn) { btn.disabled = false; btn.innerHTML = '&#9881; Workflow'; }
+    });
+  };
+}
+</script>

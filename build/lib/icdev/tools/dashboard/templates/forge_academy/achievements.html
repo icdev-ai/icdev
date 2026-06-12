@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Achievements — FORGE Academy{% endblock %}
+
+{% block extra_css %}
+<style>
+:root { --fa-orange:#FF6B35; --fa-cyan:#00D4FF; --fa-green:#00FF88; --fa-gold:#FFB800; --fa-card:#12192b; --fa-border:rgba(74,144,217,.25); }
+.fa-ach-header { background:linear-gradient(135deg,#0a0a14,#12192b); border-bottom:1px solid var(--fa-border); padding:1.5rem 2rem; }
+.fa-ach-header h1 { font-size:1.6rem; font-weight:900; background:linear-gradient(135deg,var(--fa-gold),var(--fa-orange)); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin:0; }
+.fa-ach-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:1rem; padding:1.5rem 2rem; }
+.fa-ach-card {
+  background:var(--fa-card); border:1px solid var(--fa-border); border-radius:10px;
+  padding:1.2rem; text-align:center; position:relative; transition:all .2s;
+}
+.fa-ach-card.earned { border-color:var(--fa-gold); box-shadow:0 0 20px rgba(255,184,0,.12); }
+.fa-ach-card.locked { opacity:.5; }
+.fa-ach-icon { font-size:2.4rem; margin-bottom:.6rem; }
+.fa-ach-title { font-size:.88rem; font-weight:700; margin-bottom:.3rem; }
+.fa-ach-desc { font-size:.72rem; color:var(--text-secondary); line-height:1.4; margin-bottom:.6rem; }
+.fa-ach-rarity { font-size:.62rem; text-transform:uppercase; letter-spacing:.1em; padding:2px 8px; border-radius:4px; display:inline-block; }
+.fa-ach-rarity.common     { background:rgba(160,160,184,.12); color:#a0a0b8; }
+.fa-ach-rarity.uncommon   { background:rgba(74,144,217,.12); color:#4a90d9; }
+.fa-ach-rarity.rare       { background:rgba(155,89,182,.12); color:#9b59b6; }
+.fa-ach-rarity.epic       { background:rgba(255,107,53,.12); color:var(--fa-orange); }
+.fa-ach-rarity.legendary  { background:rgba(255,184,0,.12); color:var(--fa-gold); }
+.fa-ach-xp { position:absolute; top:.5rem; right:.6rem; font-size:.65rem; color:var(--fa-gold); font-weight:600; }
+.fa-ach-earned-badge { position:absolute; top:.5rem; left:.6rem; font-size:.65rem; color:var(--fa-green); font-weight:700; }
+.fa-ach-progress { font-size:.65rem; color:var(--text-secondary); margin-top:.4rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div>
+  <div class="fa-ach-header">
+    <h1>🏆 Achievement Vault</h1>
+    <p style="color:var(--text-secondary);margin:.3rem 0 0;font-size:.82rem;">
+      {{ earned|length }} / {{ all_achievements|length }} earned
+      {% if fa_user %} · {{ fa_user.xp|default(0) }} XP total{% endif %}
+    </p>
+    <a href="/academy" class="btn" style="font-size:.75rem;margin-top:.6rem;">← Hub</a>
+  </div>
+
+  <div class="fa-ach-grid">
+    {% for a in all_achievements %}
+    {% set is_earned = a.slug in earned %}
+    <div class="fa-ach-card {% if is_earned %}earned{% else %}locked{% endif %}">
+      {% if is_earned %}<div class="fa-ach-earned-badge">✓</div>{% endif %}
+      <div class="fa-ach-xp">+{{ a.xp_bonus }} XP</div>
+      <div class="fa-ach-icon">{{ a.icon }}</div>
+      <div class="fa-ach-title">{{ a.title }}</div>
+      <div class="fa-ach-desc">{{ a.description }}</div>
+      <span class="fa-ach-rarity {{ a.rarity|default('common') }}">{{ a.rarity|default('common') }}</span>
+      {% if not is_earned %}
+      <div class="fa-ach-progress">Locked</div>
+      {% else %}
+      <div class="fa-ach-progress" style="color:var(--fa-green);">Earned ✓</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

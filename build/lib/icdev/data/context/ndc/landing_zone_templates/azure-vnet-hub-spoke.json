@@ -1,0 +1,35 @@
+{
+  "template_id": "ndc-tpl-azure-hub-spoke",
+  "name": "Azure VNet Hub-Spoke Topology",
+  "description": "Azure hub-spoke network topology: Azure Firewall Premium, ExpressRoute, Private Endpoints, and Azure Government option",
+  "cloud_provider": "azure",
+  "topology_type": "hub_spoke",
+  "nodes": [
+    {"node_id": "hub-vnet", "label": "Hub VNet", "node_type": "vnet", "properties": {"cidr": "10.200.0.0/16", "region": "eastus"}},
+    {"node_id": "azure-firewall", "label": "Azure Firewall Premium", "node_type": "firewall", "properties": {"sku": "Premium", "threat_intel_mode": "Deny", "idps_mode": "Alert"}},
+    {"node_id": "expressroute-gw", "label": "ExpressRoute Gateway", "node_type": "gateway", "properties": {"sku": "UltraPerformance", "bgp_asn": 65515}},
+    {"node_id": "spoke-app-vnet", "label": "App Spoke VNet", "node_type": "vnet", "properties": {"cidr": "10.201.0.0/16", "peering": "hub-vnet"}},
+    {"node_id": "spoke-data-vnet", "label": "Data Spoke VNet", "node_type": "vnet", "properties": {"cidr": "10.202.0.0/16", "peering": "hub-vnet"}},
+    {"node_id": "spoke-mgmt-vnet", "label": "Mgmt Spoke VNet", "node_type": "vnet", "properties": {"cidr": "10.203.0.0/16", "peering": "hub-vnet"}},
+    {"node_id": "private-dns-zone", "label": "Azure Private DNS Zone", "node_type": "dns", "properties": {"zones": ["privatelink.database.windows.net", "privatelink.blob.core.windows.net", "privatelink.vaultcore.azure.net"]}},
+    {"node_id": "on-prem", "label": "On-Premises Network", "node_type": "external", "properties": {"cidr": "192.168.0.0/16", "connection_type": "ExpressRoute"}}
+  ],
+  "edges": [
+    {"source": "on-prem", "target": "expressroute-gw", "edge_type": "expressroute", "label": "dedicated circuit"},
+    {"source": "expressroute-gw", "target": "hub-vnet", "edge_type": "attachment"},
+    {"source": "hub-vnet", "target": "azure-firewall", "edge_type": "route", "label": "force-tunnel 0.0.0.0/0"},
+    {"source": "hub-vnet", "target": "spoke-app-vnet", "edge_type": "vnet_peering"},
+    {"source": "hub-vnet", "target": "spoke-data-vnet", "edge_type": "vnet_peering"},
+    {"source": "hub-vnet", "target": "spoke-mgmt-vnet", "edge_type": "vnet_peering"},
+    {"source": "spoke-data-vnet", "target": "private-dns-zone", "edge_type": "dns_link"}
+  ],
+  "security_controls": [
+    "Azure Firewall Premium with IDPS in Alert/Deny mode",
+    "Private Endpoints for all PaaS services",
+    "Azure DDoS Protection Standard on hub VNet",
+    "Network Security Groups on all subnets",
+    "Microsoft Defender for Cloud — CSPM + workload protection",
+    "Azure Policy for network guardrails enforcement"
+  ],
+  "azure_government_note": "Replace eastus with usgovvirginia; use *.usgovcloudapi.net DNS zones for Private Endpoints"
+}

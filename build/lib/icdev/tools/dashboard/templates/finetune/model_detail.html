@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}{{ model.model_name }} v{{ model.version }} — Fine-Tuning — ICDEV™ Dashboard{% endblock %}
+{% block content %}
+
+<div class="container">
+    <nav aria-label="breadcrumb">
+        <span><a href="/">Home</a></span> &gt; <span><a href="/finetune">Fine-Tuning</a></span> &gt; <span><a href="/finetune/models">Models</a></span> &gt; <span>{{ model.model_name }} v{{ model.version }}</span>
+    </nav>
+
+    <h1>{{ model.model_name }} <span style="color:#999;font-size:0.7em;">v{{ model.version }}</span></h1>
+
+    <!-- Status -->
+    <div style="margin:1rem 0;">
+        {% if model.status == 'promoted' %}
+        <span style="display:inline-block;padding:0.4rem 1rem;background:#e8f5e9;color:#2e7d32;border-radius:4px;font-weight:bold;">PROMOTED</span>
+        {% elif model.status == 'evaluated' %}
+        <span style="display:inline-block;padding:0.4rem 1rem;background:#e3f2fd;color:#1565c0;border-radius:4px;font-weight:bold;">EVALUATED</span>
+        {% elif model.status == 'demoted' %}
+        <span style="display:inline-block;padding:0.4rem 1rem;background:#ffebee;color:#c62828;border-radius:4px;font-weight:bold;">DEMOTED</span>
+        {% else %}
+        <span style="display:inline-block;padding:0.4rem 1rem;background:#eceff1;color:#455a64;border-radius:4px;font-weight:bold;">{{ model.status|upper }}</span>
+        {% endif %}
+    </div>
+
+    <!-- Info Grid -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin:1rem 0;">
+        <div><strong>Base Model:</strong> {{ model.base_model }}</div>
+        <div><strong>Ollama Name:</strong> <code>{{ model.ollama_model_name|default('--') }}</code></div>
+        <div><strong>Adapter Hash:</strong> <code>{{ model.adapter_hash[:16]|default('--') }}</code></div>
+        <div><strong>File Size:</strong> {{ ((model.file_size_bytes or 0) / 1048576)|round(1) }} MB</div>
+        <div><strong>Classification:</strong> {{ model.classification }}</div>
+        <div><strong>Training Job:</strong> <a href="/finetune/jobs/{{ model.job_id }}">{{ model.job_id[:16] }}</a></div>
+    </div>
+
+    <!-- Eval Scores -->
+    <h2>Evaluation Scores</h2>
+    <div class="stat-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1rem;margin:1rem 0;">
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" style="font-size:2rem;font-weight:bold;color:{% if model.eval_bleu >= 0.30 %}#4caf50{% else %}#ff9800{% endif %};">{{ "%.3f"|format(model.eval_bleu) }}</div>
+            <div class="stat-label" style="color:#666;">BLEU (>= 0.30)</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" style="font-size:2rem;font-weight:bold;color:{% if model.eval_rouge_l >= 0.40 %}#4caf50{% else %}#ff9800{% endif %};">{{ "%.3f"|format(model.eval_rouge_l) }}</div>
+            <div class="stat-label" style="color:#666;">ROUGE-L (>= 0.40)</div>
+        </div>
+        <div class="stat-card" style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div class="stat-value" style="font-size:2rem;font-weight:bold;">{{ "%.1f"|format(model.eval_perplexity) }}</div>
+            <div class="stat-label" style="color:#666;">Perplexity</div>
+        </div>
+    </div>
+
+    <!-- Evaluations History -->
+    <h2>Evaluation History</h2>
+    <div class="table-container">
+        <table id="tbl-evals">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Test Set</th>
+                    <th>BLEU</th>
+                    <th>ROUGE-L</th>
+                    <th>Perplexity</th>
+                    <th>Pass?</th>
+                    <th>Comparison</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ev in evaluations %}
+                <tr>
+                    <td>{{ ev.eval_type }}</td>
+                    <td>{{ ev.test_set_size }} examples</td>
+                    <td>{{ "%.3f"|format(ev.bleu_score) }}</td>
+                    <td>{{ "%.3f"|format(ev.rouge_l_score) }}</td>
+                    <td>{{ "%.1f"|format(ev.perplexity) }}</td>
+                    <td>
+                        {% if ev.pass_threshold %}
+                        <span style="color:#4caf50;">PASS</span>
+                        {% else %}
+                        <span style="color:#f44336;">FAIL</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ ev.comparison_model|default('--') }}</td>
+                    <td>{{ ev.evaluated_at }}</td>
+                </tr>
+                {% endfor %}
+                {% if not evaluations %}
+                <tr><td colspan="8" style="text-align:center;color:#999;">No evaluations yet.</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Promotion History -->
+    <h2>Promotion History</h2>
+    <div class="table-container">
+        <table id="tbl-promotions">
+            <thead>
+                <tr>
+                    <th>Action</th>
+                    <th>Function</th>
+                    <th>Previous</th>
+                    <th>Reason</th>
+                    <th>Actor</th>
+                    <th>Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for p in promotions %}
+                <tr>
+                    <td>
+                        {% if 'promoted' in p.action %}
+                        <span style="color:#4caf50;font-weight:bold;">{{ p.action }}</span>
+                        {% else %}
+                        <span style="color:#f44336;font-weight:bold;">{{ p.action }}</span>
+                        {% endif %}
+                    </td>
+                    <td><code>{{ p.function_name }}</code></td>
+                    <td>{{ p.previous_model|default('--') }}</td>
+                    <td>{{ p.reason|default('--') }}</td>
+                    <td>{{ p.actor|default('--') }}</td>
+                    <td>{{ p.created_at }}</td>
+                </tr>
+                {% endfor %}
+                {% if not promotions %}
+                <tr><td colspan="6" style="text-align:center;color:#999;">No promotion events.</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% endblock %}

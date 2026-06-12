@@ -1,0 +1,11 @@
+{
+  "id": "036",
+  "name": "topology_nodes",
+  "description": "Create topology_nodes table for the NDC Network Design Canvas module (tools/network/twin.py). Resolves orphan_db_table gap: take_snapshot() counts devices per topology_id, but no migration previously defined the schema.",
+  "created_at": "2026-04-21",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "requires_downtime": false,
+  "resolves": "task-072a388a80"
+}

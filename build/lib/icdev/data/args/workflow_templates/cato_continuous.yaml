@@ -1,0 +1,50 @@
+# CUI // SP-CTI
+# cATO Continuous Monitoring Workflow — Evidence → Freshness → Assess → OSCAL → Package
+description: "cATO continuous monitoring: evidence collection, freshness check, multi-regime assessment, OSCAL export"
+category: compliance
+steps:
+  - id: evidence
+    name: "Evidence Collection"
+    tool: "tools/compliance/evidence_collector.py"
+    description: "Auto-collect evidence across 14 frameworks"
+
+  - id: freshness
+    name: "Freshness Check"
+    tool: "tools/compliance/cato_monitor.py"
+    depends_on: [evidence]
+    description: "cATO evidence freshness monitoring"
+
+  - id: assess
+    name: "Multi-Regime Assessment"
+    tool: "tools/compliance/multi_regime_assessor.py"
+    depends_on: [evidence]
+    description: "Assess all applicable frameworks"
+
+  - id: crosswalk
+    name: "Crosswalk Coverage"
+    tool: "tools/compliance/crosswalk_engine.py"
+    args:
+      coverage: true
+    depends_on: [assess]
+    description: "Cross-framework control coverage analysis"
+
+  - id: oscal
+    name: "OSCAL Export"
+    tool: "tools/compliance/oscal_generator.py"
+    args:
+      artifact: ssp
+    depends_on: [assess]
+    description: "Generate OSCAL-formatted artifacts"
+
+  - id: ksi
+    name: "FedRAMP 20x KSI"
+    tool: "tools/compliance/fedramp_ksi_generator.py"
+    depends_on: [evidence]
+    required: false
+    description: "Generate FedRAMP 20x Key Security Indicators"
+
+  - id: production
+    name: "Production Audit"
+    tool: "tools/testing/production_audit.py"
+    depends_on: [assess]
+    description: "30-check production readiness audit"

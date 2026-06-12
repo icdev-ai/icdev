@@ -1,0 +1,212 @@
+{% extends "base.html" %}
+{# CUI // SP-CTI #}
+{% block title %}{{ app_name }} — Executive View{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Executive AI Dashboard</h1>
+    <p class="page-subtitle">ROI summary, agent activity digest, and AI maturity trend for leadership.</p>
+</div>
+
+<!-- Hero ROI Card -->
+<div class="hero-roi-card" id="hero-roi-card">
+    <div class="hero-roi-primary">
+        <div class="hero-roi-hours">{{ hours_saved }}</div>
+        <div class="hero-roi-label">Hours Saved by AI Automation</div>
+    </div>
+    <div class="hero-roi-divider"></div>
+    <div class="hero-roi-secondary">
+        <div class="hero-roi-stat">
+            <div class="hero-roi-stat-value">${{ "{:,.0f}".format(cost_avoided) }}</div>
+            <div class="hero-roi-stat-label">Cost Avoided</div>
+        </div>
+        <div class="hero-roi-stat">
+            <div class="hero-roi-stat-value">{{ total_tasks_automated }}</div>
+            <div class="hero-roi-stat-label">Tasks Automated</div>
+        </div>
+        <div class="hero-roi-stat">
+            <div class="hero-roi-stat-value">{{ agents_active }}/5</div>
+            <div class="hero-roi-stat-label">Agents Active</div>
+        </div>
+        <div class="hero-roi-stat">
+            <div class="hero-roi-stat-value">{{ maturity_score }}/100</div>
+            <div class="hero-roi-stat-label">Maturity Score</div>
+        </div>
+    </div>
+</div>
+
+<!-- Maturity + Agent Activity Row -->
+<div class="exec-row" style="margin-top:24px;">
+    <!-- Maturity Trend -->
+    <div class="exec-card exec-card-wide">
+        <h3>AI Maturity Trend</h3>
+        <div class="maturity-level-badge">
+            <span class="badge badge-success" style="font-size:1rem;padding:8px 16px;">{{ maturity_level }}</span>
+        </div>
+        <div class="trend-bars" style="margin-top:16px;">
+            {% for p in maturity_trend %}
+            <div class="trend-bar-item">
+                <div class="trend-bar-fill" style="height:{{ p.score }}%;"></div>
+                <div class="trend-bar-label">{{ p.month }}</div>
+                <div class="trend-bar-value">{{ p.score }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <!-- Agent Activity -->
+    <div class="exec-card">
+        <h3>Agent Activity Digest</h3>
+        <table class="data-table" style="font-size:0.85rem;">
+            <thead><tr><th>Agent</th><th>Tasks</th><th>Status</th></tr></thead>
+            <tbody>
+                {% for a in agent_activity %}
+                <tr>
+                    <td>{{ a.agent }}</td>
+                    <td><strong>{{ a.tasks_completed }}</strong></td>
+                    <td>
+                        {% if a.status == 'active' %}
+                        <span class="badge badge-success">Active</span>
+                        {% else %}
+                        <span class="badge" style="background:var(--bg-elevated);">Idle</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Cost Breakdown -->
+<div class="exec-card" style="margin-top:24px;">
+    <h3>Cost Breakdown by Automation Type</h3>
+    <div class="cost-breakdown-grid">
+        {% for item in cost_breakdown %}
+        <div class="cost-item">
+            <div class="cost-bar-wrap">
+                <div class="cost-bar-fill" style="width:{{ item.pct }}%;"></div>
+            </div>
+            <div class="cost-meta">
+                <span>{{ item.category }}</span>
+                <span style="color:var(--text-dim);">{{ item.hours }}h &mdash; {{ item.pct }}%</span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Recent ROI Events -->
+<div class="exec-card" style="margin-top:24px;">
+    <h3>Recent Automation Events</h3>
+    <table class="data-table" style="font-size:0.85rem;">
+        <thead>
+            <tr><th>Type</th><th>Description</th><th>Time Saved</th><th>Triggered By</th></tr>
+        </thead>
+        <tbody>
+            {% for e in roi_events %}
+            <tr>
+                <td><span class="badge badge-info" style="font-size:0.75rem;">{{ e.action_type|replace('_',' ')|title }}</span></td>
+                <td>{{ e.description }}</td>
+                <td>{{ e.time_saved_minutes }}m</td>
+                <td style="color:var(--text-dim);">{{ e.triggered_by }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+.hero-roi-card {
+    display: flex;
+    align-items: center;
+    gap: 40px;
+    padding: 32px 40px;
+    background: linear-gradient(135deg, rgba(59,130,246,0.15) 0%, rgba(16,185,129,0.08) 100%);
+    border: 1px solid var(--accent);
+    border-radius: 16px;
+}
+.hero-roi-hours {
+    font-size: 4rem;
+    font-weight: 800;
+    color: var(--accent);
+    line-height: 1;
+}
+.hero-roi-label {
+    font-size: 0.95rem;
+    color: var(--text-dim);
+    margin-top: 6px;
+}
+.hero-roi-divider {
+    width: 1px;
+    height: 80px;
+    background: var(--border);
+}
+.hero-roi-secondary {
+    display: flex;
+    gap: 40px;
+    flex-wrap: wrap;
+}
+.hero-roi-stat-value {
+    font-size: 1.8rem;
+    font-weight: 700;
+}
+.hero-roi-stat-label {
+    font-size: 0.78rem;
+    color: var(--text-dim);
+    margin-top: 4px;
+}
+.exec-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+}
+.exec-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+}
+.exec-card-wide { grid-column: span 1; }
+.exec-card h3 { font-size: 1rem; margin: 0 0 16px; }
+.maturity-level-badge { text-align: center; margin: 8px 0; }
+.trend-bars {
+    display: flex;
+    align-items: flex-end;
+    gap: 8px;
+    height: 100px;
+}
+.trend-bar-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    height: 100%;
+    justify-content: flex-end;
+}
+.trend-bar-fill {
+    width: 100%;
+    background: var(--accent);
+    border-radius: 4px 4px 0 0;
+    opacity: 0.85;
+    min-height: 4px;
+}
+.trend-bar-label { font-size: 0.72rem; color: var(--text-dim); margin-top: 4px; }
+.trend-bar-value { font-size: 0.72rem; font-weight: 600; }
+.cost-breakdown-grid { display: flex; flex-direction: column; gap: 10px; }
+.cost-item { display: flex; align-items: center; gap: 12px; }
+.cost-bar-wrap { width: 200px; height: 8px; background: var(--bg-elevated, rgba(255,255,255,0.06)); border-radius: 4px; overflow: hidden; flex-shrink: 0; }
+.cost-bar-fill { height: 100%; background: var(--accent); border-radius: 4px; }
+.cost-meta { display: flex; justify-content: space-between; flex: 1; font-size: 0.88rem; }
+.data-table { width: 100%; border-collapse: collapse; }
+.data-table th { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--text-dim); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; }
+.data-table td { padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+@media (max-width: 768px) {
+    .hero-roi-card { flex-direction: column; align-items: flex-start; gap: 16px; }
+    .hero-roi-divider { display: none; }
+    .exec-row { grid-template-columns: 1fr; }
+}
+</style>
+{% endblock %}

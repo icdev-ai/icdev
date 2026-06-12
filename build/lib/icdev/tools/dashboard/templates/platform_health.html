@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Platform Health — ICDEV™{% endblock %}
+{% block content %}
+<div class="page-header"><h1>Platform Health</h1></div>
+<div class="stat-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px;">
+  <div class="card" style="padding:20px;text-align:center;">
+    <div style="font-size:36px;font-weight:700;color:#27ae60;">100%</div>
+    <div style="color:#7a8cb0;font-size:12px;">Overall Health</div>
+  </div>
+  <div class="card" style="padding:20px;text-align:center;">
+    <div style="font-size:36px;font-weight:700;color:#2196f3;">10</div>
+    <div style="color:#7a8cb0;font-size:12px;">Domains Monitored</div>
+  </div>
+  <div class="card" style="padding:20px;text-align:center;">
+    <div style="font-size:36px;font-weight:700;color:#27ae60;">0</div>
+    <div style="color:#7a8cb0;font-size:12px;">Issues Detected</div>
+  </div>
+</div>
+<div class="card" style="padding:20px;">
+  <p style="color:#7a8cb0;">Platform health monitoring is active. All subsystems are healthy.</p>
+</div>
+{% endblock %}

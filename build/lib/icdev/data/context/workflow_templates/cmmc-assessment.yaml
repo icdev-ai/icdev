@@ -1,0 +1,47 @@
+name: CMMC Level 2 Assessment
+description: Automated CMMC Level 2 readiness assessment covering 110 NIST SP 800-171 practices with gap analysis and POA&M generation.
+category: compliance
+tags: [cmmc, nist, poam, dfars, il4]
+author: builtin
+steps:
+  - id: inventory
+    name: System Asset Inventory
+    tool: tools/compliance/asset_inventory.py
+    node_type: tool
+    required: true
+    timeout: 300
+  - id: cmmc_scan
+    name: CMMC Practice Gap Scan
+    tool: tools/compliance/compliance_detector.py
+    node_type: tool
+    required: true
+    timeout: 600
+    depends_on: [inventory]
+  - id: risk_score
+    name: Risk Scoring
+    tool: tools/compliance/risk_scorer.py
+    node_type: tool
+    required: true
+    timeout: 300
+    depends_on: [cmmc_scan]
+  - id: poam_gen
+    name: POA&M Generation
+    tool: tools/comply/poam_generator.py
+    node_type: tool
+    required: true
+    timeout: 300
+    depends_on: [risk_score]
+  - id: isso_sign
+    name: ISSO Sign-off
+    tool: ""
+    node_type: human
+    role: isso
+    required: true
+    depends_on: [poam_gen]
+  - id: c3pao_submit
+    name: C3PAO Submission Approval
+    tool: ""
+    node_type: approval
+    role: authorizing_official
+    approval_policy: all
+    depends_on: [isso_sign]

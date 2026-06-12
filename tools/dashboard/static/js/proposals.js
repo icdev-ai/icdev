@@ -587,6 +587,11 @@
     advanceStatus: advanceStatus,
     saveNotes: saveNotes,
 
+    // Inline annotations (functions defined per-page in section_detail.html)
+    loadAnnotations: function() { if (typeof loadAnnotations === 'function') loadAnnotations(); },
+    resolveAnnotation: function(id) { if (typeof resolveAnnotation === 'function') resolveAnnotation(id); },
+    deleteAnnotation: function(id) { if (typeof deleteAnnotation === 'function') deleteAnnotation(id); },
+
     // Data loaders
     loadAssignmentMatrix: loadAssignmentMatrix,
     loadTimeline: loadTimeline,

@@ -1,0 +1,187 @@
+{% extends "network/base.html" %}
+{% block title %}Project Portfolio — Network Design Canvas{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Project Portfolio</h1>
+    <p class="page-subtitle">Track, compare, and manage network design engagements across customers</p>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-secondary" id="btn-view-kanban" onclick="setView('kanban')" title="Kanban View">Board</button>
+    <button class="btn btn-secondary" id="btn-view-table" onclick="setView('table')" title="Table View">Table</button>
+    <button class="btn btn-primary" onclick="document.getElementById('add-modal').style.display='flex'">+ New Project</button>
+  </div>
+</div>
+
+<!-- Portfolio Stats Bar -->
+<div class="stats-bar">
+  <div class="stat-card"><div class="stat-value">{{ portfolio.total_projects }}</div><div class="stat-label">Projects</div></div>
+  <div class="stat-card"><div class="stat-value">{{ portfolio.by_status.get('deployed', 0) }}</div><div class="stat-label">Deployed</div></div>
+  <div class="stat-card"><div class="stat-value">{{ portfolio.by_status.get('in_review', 0) }}</div><div class="stat-label">In Review</div></div>
+  <div class="stat-card"><div class="stat-value">${{ portfolio.total_cost|round(0)|int }}/mo</div><div class="stat-label">Total Circuit Cost</div></div>
+  <div class="stat-card"><div class="stat-value {% if portfolio.total_findings > 0 %}text-danger{% endif %}">{{ portfolio.total_findings }}</div><div class="stat-label">Open Findings</div></div>
+</div>
+
+<!-- ═══════════════ KANBAN VIEW ═══════════════ -->
+<div id="view-kanban" class="kanban-board">
+  {% set statuses = ['draft', 'in_review', 'approved', 'deployed', 'archived'] %}
+  {% set status_labels = {'draft': 'Draft', 'in_review': 'In Review', 'approved': 'Approved', 'deployed': 'Deployed', 'archived': 'Archived'} %}
+  {% set status_colors = {'draft': '#7a8cb0', 'in_review': '#f39c12', 'approved': '#27ae60', 'deployed': '#3498db', 'archived': '#555'} %}
+  {% for status in statuses %}
+  <div class="kanban-column">
+    <div class="kanban-col-header" style="border-top: 3px solid {{ status_colors[status] }};">
+      <span class="kanban-col-title">{{ status_labels[status] }}</span>
+      <span class="kanban-col-count">{{ projects|selectattr('status', 'equalto', status)|list|length }}</span>
+    </div>
+    <div class="kanban-col-body" data-status="{{ status }}">
+      {% for p in projects if p.status == status %}
+      <div class="kanban-card" data-id="{{ p.id }}">
+        <div class="kanban-card-header">
+          <a href="/network/projects/{{ p.id }}" class="kanban-card-title">{{ p.name }}</a>
+        </div>
+        {% if p.customer_name %}<div class="kanban-card-customer">{{ p.customer_name }}</div>{% endif %}
+        <div class="kanban-card-stats">
+          <span title="Topologies">{{ p.topo_count }} topos</span>
+          <span title="Nodes">{{ p.total_nodes }} nodes</span>
+        </div>
+        <div class="kanban-card-health">
+          {% if p.compliance_pct is not none %}
+          <span class="health-pill {% if p.compliance_pct >= 80 %}pill-green{% elif p.compliance_pct >= 50 %}pill-yellow{% else %}pill-red{% endif %}" title="Compliance">
+            {{ p.compliance_pct }}%
+          </span>
+          {% endif %}
+          {% if p.open_findings > 0 %}
+          <span class="health-pill pill-red" title="Open findings">{{ p.open_findings }} findings</span>
+          {% endif %}
+          {% if p.monthly_cost > 0 %}
+          <span class="health-pill pill-blue" title="Monthly circuit cost">${{ p.monthly_cost|round(0)|int }}/mo</span>
+          {% endif %}
+        </div>
+        {% if p.owner %}<div class="kanban-card-owner">{{ p.owner }}</div>{% endif %}
+        <div class="kanban-card-actions">
+          <a href="/network/?project={{ p.id }}" class="action-btn" title="Filter dashboard">&#x1F50D;</a>
+          <a href="/network/projects/{{ p.id }}" class="action-btn" title="Details">&#x270F;</a>
+          <button class="action-btn danger" onclick="delProject('{{ p.id }}')" title="Delete">&#x2715;</button>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- ═══════════════ TABLE VIEW ═══════════════ -->
+<section id="view-table" class="panel panel-wide" style="display:none;">
+  <div class="panel-header"><h2 class="panel-title">All Projects ({{ projects|length }})</h2></div>
+  {% if projects %}
+  <table class="data-table">
+    <thead><tr>
+      <th>Name</th><th>Customer</th><th>Status</th><th>Topologies</th>
+      <th>Nodes</th><th>Compliance</th><th>Findings</th><th>Cost/mo</th>
+      <th>Owner</th><th>Last Sim</th><th>Actions</th>
+    </tr></thead>
+    <tbody>
+    {% for p in projects %}
+      <tr>
+        <td><a href="/network/projects/{{ p.id }}" class="table-link"><strong>{{ p.name }}</strong></a>
+          {% if p.description %}<div class="table-sub">{{ p.description[:80] }}</div>{% endif %}
+        </td>
+        <td>{{ p.customer_name or '—' }}</td>
+        <td><span class="badge badge-{% if p.status == 'approved' or p.status == 'deployed' %}public{% elif p.status == 'in_review' %}warning{% else %}info{% endif %}">{{ p.status }}</span></td>
+        <td>{{ p.topo_count }}</td>
+        <td>{{ p.total_nodes }}</td>
+        <td>
+          {% if p.compliance_pct is not none %}
+          <span class="health-pill {% if p.compliance_pct >= 80 %}pill-green{% elif p.compliance_pct >= 50 %}pill-yellow{% else %}pill-red{% endif %}">{{ p.compliance_pct }}%</span>
+          {% else %}—{% endif %}
+        </td>
+        <td>{% if p.open_findings > 0 %}<span class="health-pill pill-red">{{ p.open_findings }}</span>{% else %}0{% endif %}</td>
+        <td>{% if p.monthly_cost > 0 %}${{ p.monthly_cost|round(0)|int }}{% else %}—{% endif %}</td>
+        <td>{{ p.owner or '—' }}</td>
+        <td class="ts">{{ (p.last_sim or '')[:16] }}</td>
+        <td class="actions">
+          <a href="/network/?project={{ p.id }}" class="action-btn" title="Filter dashboard">&#x1F50D;</a>
+          <a href="/network/projects/{{ p.id }}" class="action-btn" title="Open">&#x270F;</a>
+          <button class="action-btn danger" onclick="delProject('{{ p.id }}')" title="Delete">&#x2715;</button>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p style="padding:1rem;color:var(--text-dim);">No projects yet.</p>{% endif %}
+</section>
+
+<!-- ═══════════════ ACTIVITY FEED ═══════════════ -->
+{% if activity %}
+<section class="panel panel-wide" style="margin-top:20px;">
+  <div class="panel-header"><h2 class="panel-title">Recent Activity (All Projects)</h2></div>
+  <div class="activity-feed" id="portfolio-activity">
+    {% for a in activity %}
+    <div class="activity-item">
+      <div class="activity-action">
+        <span class="activity-badge ab-{{ a.action|lower }}">{{ a.action }}</span>
+        <span class="activity-entity">{{ a.entity_type }}</span>
+      </div>
+      {% if a.details %}<div class="activity-detail">{{ a.details[:80] }}</div>{% endif %}
+      <div class="activity-meta">
+        {% if a.user_id %}<span>{{ a.user_id[:20] }}</span>{% endif %}
+        <span class="activity-ts">{{ (a.ts or '')[:16] }}</span>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
+<!-- ═══════════════ CREATE MODAL ═══════════════ -->
+<div id="add-modal" class="modal" style="display:none;">
+  <div class="modal-content">
+    <h3>Create Project</h3>
+    <form onsubmit="return submitProject(event)">
+      <div class="form-grid">
+        <label>Project Name <input name="name" required placeholder="Customer WAN Refresh"></label>
+        <label>Customer <select name="customer_id"><option value="">— None —</option>{% for c in customers %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></label>
+        <label>Status <select name="status"><option>draft</option><option>in_review</option><option>approved</option><option>deployed</option></select></label>
+        <label>Owner <input name="owner" placeholder="Your name"></label>
+        <label style="grid-column:span 2">Description <input name="description" placeholder="Project scope and goals"></label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Create</button>
+        <button type="button" class="btn btn-secondary" onclick="this.closest('.modal').style.display='none'">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function setView(v) {
+  const kanban = document.getElementById('view-kanban');
+  const table = document.getElementById('view-table');
+  const btnK = document.getElementById('btn-view-kanban');
+  const btnT = document.getElementById('btn-view-table');
+  if (v === 'kanban') {
+    kanban.style.display = 'flex';
+    table.style.display = 'none';
+    btnK.classList.add('active');
+    btnT.classList.remove('active');
+  } else {
+    kanban.style.display = 'none';
+    table.style.display = 'block';
+    btnT.classList.add('active');
+    btnK.classList.remove('active');
+  }
+  localStorage.setItem('nc_proj_view', v);
+}
+// Restore saved view
+(function() {
+  const saved = localStorage.getItem('nc_proj_view');
+  if (saved === 'table') setView('table');
+  else setView('kanban');
+})();
+
+function submitProject(e){e.preventDefault();const fd=new FormData(e.target),d={};fd.forEach((v,k)=>d[k]=v);
+  fetch(NC_BASE+'/api/projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}).then(r=>{if(r.ok)location.reload();});return false;}
+function delProject(id){if(!confirm('Delete this project?'))return;fetch(NC_BASE+'/api/projects/'+id,{method:'DELETE'}).then(()=>location.reload());}
+</script>
+{% endblock %}

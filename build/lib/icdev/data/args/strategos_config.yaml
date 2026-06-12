@@ -1,0 +1,133 @@
+# CUI // SP-CTI
+# STRATEGOS Oracle — SIO Engine configuration
+# ─────────────────────────────────────────────
+# Governs the zero-LLM SIO lens runner in intelligence/oracle/sio_engine.py.
+#
+# lens_weights: per-lens confidence multiplier keyed on BaseSIOLens.name.
+#   Default 1.0 (no adjustment). > 1.0 boosts; < 1.0 discounts.
+#   Final value is clamped to [0, 1].
+#
+# min_confidence_threshold: assessments below this value are dropped.
+#   Range 0.0–1.0. STANAG 2511 D/4 boundary sits near 0.35; 0.4 catches
+#   marginally-doubtful signals while discarding noise.
+
+sio:
+  # Confidence multipliers applied per-lens (default 1.0 = no adjustment).
+  # Values > 1.0 boost a lens; values < 1.0 discount it.
+  # Final confidence is clamped to [0, 1] after multiplication.
+  lens_weights:
+    baseline_match: 1.0       # Historical case similarity (sg_war_readiness_events)
+    indicator_density: 0.9    # Raw indicator saturation across mobilisation axes
+    temporal_pattern: 0.8     # Velocity / acceleration of indicator change
+  min_confidence_threshold: 0.40
+
+osint:
+  # Maximum files processed per FILE_INBOX run (prevents inbox flood).
+  file_inbox_max: 500
+
+  # Internet-tier OSINT sources.
+  # internet_required: true  → only fetched in TIER_INTERNET mode
+  # internet_required: false → also attempted in TIER_GITLAB / TIER_FILE_INBOX (rare)
+  sources:
+    - name: "Reuters World News"
+      url: "https://feeds.reuters.com/reuters/worldNews"
+      type: rss
+      internet_required: true
+
+    - name: "BBC World News"
+      url: "https://feeds.bbci.co.uk/news/world/rss.xml"
+      type: rss
+      internet_required: true
+
+    - name: "Al Jazeera"
+      url: "https://www.aljazeera.com/xml/rss/all.xml"
+      type: rss
+      internet_required: true
+
+    - name: "Defense One"
+      url: "https://www.defenseone.com/rss/all/"
+      type: rss
+      internet_required: true
+
+    - name: "CISA Alerts"
+      url: "https://www.cisa.gov/uscert/ncas/alerts.xml"
+      type: rss
+      internet_required: true
+
+    - name: "Bellingcat"
+      url: "https://www.bellingcat.com/feed/"
+      type: rss
+      internet_required: true
+
+    - name: "Kyiv Independent"
+      url: "https://kyivindependent.com/feed/"
+      type: rss
+      internet_required: true
+
+    - name: "RFE/RL (Radio Free Europe)"
+      url: "https://www.rferl.org/api/ztqmqvbkmue"
+      type: rss
+      internet_required: true
+
+    - name: "ISW (Institute for the Study of War)"
+      url: "https://www.understandingwar.org/feeds/rss.xml"
+      type: rss
+      internet_required: true
+
+    - name: "UN OCHA ReliefWeb"
+      url: "https://reliefweb.int/updates/rss.xml"
+      type: rss
+      internet_required: true
+
+    # Jane's Defence — subscription feed. Set url to your licensed endpoint;
+    # leave empty to skip.
+    - name: "Jane's Defence"
+      url: ""
+      type: rss
+      internet_required: true
+
+    # ACLED — REST API, not RSS. Harvested via _harvest_acled() when
+    # ACLED_API_KEY and ACLED_EMAIL env vars are set.
+    - name: "ACLED"
+      url: ""
+      type: acled_api
+      internet_required: true
+
+  # GitLab artifact download settings (TIER_GITLAB).
+  gitlab:
+    # Env: GITLAB_URL, GITLAB_TOKEN, GITLAB_OSINT_PROJECT_ID, GITLAB_OSINT_REF
+    job_name: "osint_collect"
+    signals_file: "osint_signals.json"
+    kg_delta_file: "kg_delta.json"
+
+opencti:
+  enabled: false          # set true + configure .env to activate
+  url: ''                 # OPENCTI_URL env var override
+  api_key: ''             # OPENCTI_API_KEY env var override
+  sync_interval_h: 6
+  min_confidence: 70
+  indicator_limit: 200
+
+executor:
+  # Ordered list of execution backends tried in sequence.
+  # Supported values: 'claude_cli', 'gitlab', 'github_actions', 'ollama_local'
+  fallback_chain:
+    - claude_cli
+    - gitlab
+    - github_actions
+    - ollama_local
+
+  # GitLab project used when the 'gitlab' executor is active.
+  # Set via env var to avoid hardcoding sensitive project IDs.
+  gitlab_runner_project_id: "${GITLAB_RUNNER_PROJECT_ID}"
+
+  # GitHub repository used when the 'github_actions' executor is active.
+  # Format: owner/repo (e.g. icdev-ai/icdev)
+  github_runner_repo: "${GITHUB_RUNNER_REPO}"
+
+  # Maximum simultaneous inference requests to the local Ollama instance.
+  ollama_max_concurrent: 1
+
+  # Action when all executors in fallback_chain are unavailable.
+  # 'suggest' → surface a recommendation to the user without executing.
+  no_executor_action: "suggest"

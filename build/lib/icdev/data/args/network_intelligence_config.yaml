@@ -1,0 +1,116 @@
+# [CUI // SP-CTI]
+# Network Infrastructure Intelligence Configuration
+# Controls ingestion, analysis, capacity planning, config management, and query behavior.
+
+ingestion:
+  supported_formats: [".vsdx", ".vdx", ".drawio", ".xml", ".pdf", ".png", ".jpg", ".jpeg"]
+  vision_model_function: "network_diagram_extraction"
+  max_file_size_mb: 50
+
+  # OCR fallback when vision LLMs unavailable (air-gap safe)
+  ocr_fallback:
+    enabled: true
+    ensemble: true  # Merge results from all available providers; false = fallback chain
+    provider_chain: ["tesseract", "rapidocr"]
+    tesseract:
+      lang: "eng"
+      psm: 3                  # Page segmentation mode (3 = fully automatic)
+      tesseract_cmd: ""        # Auto-detect; set explicit path if needed
+    ensemble_settings:
+      iou_threshold: 0.5      # Bbox overlap ratio to consider same detection
+      confidence_boost: 0.2   # Bonus for labels confirmed by 2+ engines
+    spatial_inference:
+      proximity_threshold_px: 300
+      alignment_tolerance_px: 50
+      min_confidence: 0.4     # OCR confidence threshold to keep a detection
+    preprocessing:
+      grayscale: true
+      contrast_enhance: 1.5   # Pillow ImageEnhance factor (1.0 = no change)
+      denoise: false          # Optional median filter for noisy scans
+
+analysis:
+  blast_radius_decay: 0.8
+  blast_radius_max_hops: 10
+  criticality_tiers:
+    RED: 0.8
+    ORANGE: 0.5
+    YELLOW: 0.2
+    GREEN: 0.0
+  monte_carlo_iterations: 5000
+  pert_lambda: 4
+  cost_optimistic_factor: 0.8
+  cost_pessimistic_factor: 1.5
+
+eol:
+  default_replacement_cost_multiplier: 1.2
+  maintenance_escalation_rate: 0.05  # 5% annual increase after EOL
+
+capacity:
+  service_profiles:
+    vdi:
+      sustained_mbps: 4.0
+      peak_mbps: 8.0
+      concurrent_pct: 0.8
+    teams:
+      sustained_mbps: 2.0
+      peak_mbps: 4.0
+      concurrent_pct: 0.3
+    o365:
+      sustained_mbps: 0.5
+      peak_mbps: 1.0
+      concurrent_pct: 0.9
+    general:
+      sustained_mbps: 1.0
+      peak_mbps: 2.0
+      concurrent_pct: 1.0
+  bottleneck_threshold_pct: 80
+
+config_management:
+  ssh_timeout_seconds: 30
+  diff_ignore_patterns:
+    - "^!"
+    - "^ntp clock-period"
+    - "^end"
+  golden_template_source: "generated"  # or "manual"
+
+availability:
+  default_device_availability:
+    router: 0.9999
+    switch: 0.99995
+    firewall: 0.9998
+    load_balancer: 0.9999
+    wan_link: 0.999
+    server: 0.9995
+    vpn_gateway: 0.9998
+    access_point: 0.999
+  default_mttr_hours:
+    router: 4
+    switch: 2
+    firewall: 4
+    load_balancer: 3
+    wan_link: 8
+    server: 2
+
+latency:
+  device_forwarding_delay_ms:
+    router: 0.5
+    switch: 0.1
+    firewall: 2.0
+    load_balancer: 1.0
+    vpn_gateway: 3.0
+  link_propagation_us_per_km: 5.0  # fiber
+  thresholds:
+    interactive_ms: 50
+    voice_ms: 100
+    vdi_ms: 150
+
+vendor_risk:
+  concentration_high_threshold_pct: 70
+  concentration_medium_threshold_pct: 50
+
+query:
+  llm_model: "qwen3.5-local"
+  max_context_chars: 4000
+  narrative_enabled: true
+
+classification: "CUI // SP-CTI"

@@ -1,0 +1,485 @@
+{% extends "base.html" %}
+{% block title %}STIG Benchmark Manager - ICDEV™ Dashboard{% endblock %}
+{% block content %}
+<div class="container">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" style="margin-bottom:0.5rem;">
+        <span><a href="/" style="color:#1976d2;text-decoration:none;">Home</a></span>
+        <span style="color:#999;"> &gt; </span>
+        <span style="color:#333;">STIG Manager</span>
+    </nav>
+
+    <h1>STIG Benchmark Manager</h1>
+    <p class="text-muted">Manage STIG benchmark findings, track remediation progress, and monitor ATO readiness across all targets.</p>
+
+    <!-- CAT1 Alert Banner -->
+    <div id="cat1-alert" style="display:none;background:#d32f2f;color:#fff;padding:1rem 1.25rem;border-radius:8px;margin-bottom:1.5rem;font-weight:600;font-size:1.05rem;">
+        <span id="cat1-alert-text"></span>
+    </div>
+
+    <!-- Stats Grid -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:1rem;margin:1.5rem 0;">
+        <div style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-total" style="font-size:2rem;font-weight:bold;">--</div>
+            <div style="color:#666;">Total Findings</div>
+        </div>
+        <div style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-cat1-open" style="font-size:2rem;font-weight:bold;color:#d32f2f;">--</div>
+            <div style="color:#666;">CAT1 Open</div>
+        </div>
+        <div style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-coverage" style="font-size:2rem;font-weight:bold;color:#388e3c;">--</div>
+            <div style="color:#666;">Coverage %</div>
+        </div>
+        <div style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-benchmarks" style="font-size:2rem;font-weight:bold;color:#1976d2;">--</div>
+            <div style="color:#666;">Benchmarks Loaded</div>
+        </div>
+        <div style="padding:1rem;border:1px solid #ddd;border-radius:8px;text-align:center;">
+            <div id="stat-targets" style="font-size:2rem;font-weight:bold;color:#7b1fa2;">--</div>
+            <div style="color:#666;">Targets Assessed</div>
+        </div>
+    </div>
+
+    <!-- Benchmark Cards -->
+    <h2 style="margin-top:2rem;">STIG Benchmarks</h2>
+    <div id="benchmark-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;margin:1rem 0;">
+        <div style="color:#888;padding:1rem;">Loading benchmarks...</div>
+    </div>
+
+    <!-- Coverage Heatmap -->
+    <h2 style="margin-top:2rem;">Coverage Heatmap</h2>
+    <p class="text-muted">Coverage by target type and severity. <span style="color:#d32f2f;">Red &lt; 50%</span> | <span style="color:#f57c00;">Yellow 50-79%</span> | <span style="color:#388e3c;">Green &ge; 80%</span></p>
+    <div id="coverage-heatmap" style="overflow-x:auto;margin:1rem 0;">
+        <div style="color:#888;padding:1rem;">Loading coverage data...</div>
+    </div>
+
+    <!-- Findings Table -->
+    <h2 style="margin-top:2rem;">Findings</h2>
+
+    <!-- Filters -->
+    <div style="display:flex;flex-wrap:wrap;gap:0.75rem;margin:1rem 0;align-items:center;">
+        <select id="filter-stig" style="padding:0.4rem 0.6rem;border:1px solid #ccc;border-radius:4px;">
+            <option value="">All Benchmarks</option>
+        </select>
+        <select id="filter-severity" style="padding:0.4rem 0.6rem;border:1px solid #ccc;border-radius:4px;">
+            <option value="">All Severities</option>
+            <option value="CAT1">CAT1</option>
+            <option value="CAT2">CAT2</option>
+            <option value="CAT3">CAT3</option>
+        </select>
+        <select id="filter-status" style="padding:0.4rem 0.6rem;border:1px solid #ccc;border-radius:4px;">
+            <option value="">All Statuses</option>
+            <option value="Open">Open</option>
+            <option value="NotAFinding">Not a Finding</option>
+            <option value="Not_Applicable">Not Applicable</option>
+            <option value="Not_Reviewed">Not Reviewed</option>
+        </select>
+        <select id="filter-target" style="padding:0.4rem 0.6rem;border:1px solid #ccc;border-radius:4px;">
+            <option value="">All Targets</option>
+        </select>
+        <button onclick="loadFindings(1)" style="padding:0.4rem 1rem;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer;">Filter</button>
+    </div>
+
+    <div style="overflow-x:auto;">
+        <table id="findings-table" style="width:100%;border-collapse:collapse;font-size:0.9rem;">
+            <thead>
+                <tr style="background:#f5f5f5;text-align:left;">
+                    <th style="padding:0.6rem;border-bottom:2px solid #ddd;">ID</th>
+                    <th style="padding:0.6rem;border-bottom:2px solid #ddd;">STIG</th>
+                    <th style="padding:0.6rem;border-bottom:2px solid #ddd;">Rule ID</th>
+                    <th style="padding:0.6rem;border-bottom:2px solid #ddd;">Severity</th>
+                    <th style="padding:0.6rem;border-bottom:2px solid #ddd;">Title</th>
+                    <th style="padding:0.6rem;border-bottom:2px solid #ddd;">Status</th>
+                    <th style="padding:0.6rem;border-bottom:2px solid #ddd;">Target</th>
+                    <th style="padding:0.6rem;border-bottom:2px solid #ddd;">Assessed By</th>
+                    <th style="padding:0.6rem;border-bottom:2px solid #ddd;">Date</th>
+                </tr>
+            </thead>
+            <tbody id="findings-body">
+                <tr><td colspan="9" style="padding:1rem;color:#888;text-align:center;">Loading findings...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    <div id="pagination" style="display:flex;justify-content:center;align-items:center;gap:1rem;margin:1.5rem 0;">
+    </div>
+
+    <!-- Finding Detail Panel -->
+    <div id="detail-panel" style="display:none;margin-top:2rem;border:1px solid #ddd;border-radius:8px;padding:1.5rem;background:#fafafa;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;">
+            <h3 id="detail-title" style="margin:0;">Finding Detail</h3>
+            <button onclick="closeDetail()" style="background:none;border:none;font-size:1.4rem;cursor:pointer;color:#999;">&times;</button>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:0.5rem 2rem;margin-bottom:1rem;font-size:0.9rem;">
+            <div><strong>STIG:</strong> <span id="detail-stig"></span></div>
+            <div><strong>Rule ID:</strong> <span id="detail-rule"></span></div>
+            <div><strong>Finding ID:</strong> <span id="detail-finding-id"></span></div>
+            <div><strong>Severity:</strong> <span id="detail-severity"></span></div>
+            <div><strong>Status:</strong> <span id="detail-status"></span></div>
+            <div><strong>Target:</strong> <span id="detail-target"></span></div>
+        </div>
+
+        <div style="margin-bottom:1rem;">
+            <strong>Description</strong>
+            <div id="detail-description" style="background:#fff;border:1px solid #e0e0e0;border-radius:4px;padding:0.75rem;margin-top:0.25rem;white-space:pre-wrap;font-size:0.88rem;max-height:200px;overflow-y:auto;"></div>
+        </div>
+
+        <div style="margin-bottom:1rem;">
+            <strong>Check Content</strong>
+            <div id="detail-check" style="background:#fff3e0;border:1px solid #ffe0b2;border-radius:4px;padding:0.75rem;margin-top:0.25rem;white-space:pre-wrap;font-size:0.88rem;max-height:200px;overflow-y:auto;"></div>
+        </div>
+
+        <div style="margin-bottom:1.5rem;">
+            <strong>Fix Text</strong>
+            <div id="detail-fix" style="background:#e8f5e9;border:1px solid #c8e6c9;border-radius:4px;padding:0.75rem;margin-top:0.25rem;white-space:pre-wrap;font-size:0.88rem;max-height:200px;overflow-y:auto;"></div>
+        </div>
+
+        <!-- Assess Finding Form -->
+        <div style="border-top:1px solid #ddd;padding-top:1rem;">
+            <h4 style="margin:0 0 0.75rem;">Assess Finding</h4>
+            <input type="hidden" id="assess-id">
+            <div style="display:flex;flex-wrap:wrap;gap:0.75rem;align-items:flex-start;">
+                <div>
+                    <label for="assess-status" style="font-size:0.85rem;font-weight:600;display:block;margin-bottom:0.25rem;">Status</label>
+                    <select id="assess-status" style="padding:0.4rem 0.6rem;border:1px solid #ccc;border-radius:4px;">
+                        <option value="Open">Open</option>
+                        <option value="NotAFinding">Not a Finding</option>
+                        <option value="Not_Applicable">Not Applicable</option>
+                        <option value="Not_Reviewed">Not Reviewed</option>
+                    </select>
+                </div>
+                <div style="flex:1;min-width:200px;">
+                    <label for="assess-comments" style="font-size:0.85rem;font-weight:600;display:block;margin-bottom:0.25rem;">Comments</label>
+                    <textarea id="assess-comments" rows="2" style="width:100%;padding:0.4rem 0.6rem;border:1px solid #ccc;border-radius:4px;resize:vertical;" placeholder="Assessment notes..."></textarea>
+                </div>
+                <div>
+                    <label for="assess-by" style="font-size:0.85rem;font-weight:600;display:block;margin-bottom:0.25rem;">Assessed By</label>
+                    <input id="assess-by" type="text" style="padding:0.4rem 0.6rem;border:1px solid #ccc;border-radius:4px;" placeholder="Your name">
+                </div>
+                <div style="align-self:flex-end;">
+                    <button onclick="submitAssessment()" style="padding:0.5rem 1.25rem;background:#388e3c;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;">Submit</button>
+                </div>
+            </div>
+            <div id="assess-msg" style="margin-top:0.5rem;font-size:0.88rem;"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+let currentPage = 1;
+let totalPages = 1;
+
+const sevColors = { CAT1: '#d32f2f', CAT2: '#f57c00', CAT3: '#fbc02d' };
+const sevTextColors = { CAT1: '#fff', CAT2: '#fff', CAT3: '#333' };
+const statusColors = { Open: '#d32f2f', NotAFinding: '#388e3c', Not_Applicable: '#757575', Not_Reviewed: '#1976d2' };
+const statusLabels = { Open: 'Open', NotAFinding: 'Not a Finding', Not_Applicable: 'N/A', Not_Reviewed: 'Not Reviewed' };
+
+function badge(text, bg, fg) {
+    return '<span style="display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.8rem;font-weight:600;background:' + bg + ';color:' + (fg || '#fff') + ';">' + esc(text) + '</span>';
+}
+
+function esc(s) {
+    if (!s) return '';
+    var d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
+function covColor(pct) {
+    if (pct >= 80) return '#388e3c';
+    if (pct >= 50) return '#f57c00';
+    return '#d32f2f';
+}
+
+function covBg(pct) {
+    if (pct >= 80) return '#e8f5e9';
+    if (pct >= 50) return '#fff3e0';
+    return '#ffebee';
+}
+
+async function loadStats() {
+    try {
+        var r = await fetch('/api/stig-manager/stats');
+        var d = await r.json();
+        document.getElementById('stat-total').textContent = d.total || 0;
+        document.getElementById('stat-cat1-open').textContent = d.cat1_open || 0;
+        document.getElementById('stat-coverage').textContent = (d.coverage || 0) + '%';
+        document.getElementById('stat-benchmarks').textContent = d.benchmarks_loaded || 0;
+        document.getElementById('stat-targets').textContent = d.targets_assessed || 0;
+    } catch (e) {
+        console.error('Stats load error:', e);
+    }
+}
+
+async function loadCat1Alert() {
+    try {
+        var r = await fetch('/api/stig-manager/cat1');
+        var d = await r.json();
+        var el = document.getElementById('cat1-alert');
+        if (d.count > 0) {
+            document.getElementById('cat1-alert-text').textContent =
+                d.count + ' CAT1 finding' + (d.count > 1 ? 's' : '') + ' require immediate remediation before ATO';
+            el.style.display = 'block';
+        } else {
+            el.style.display = 'none';
+        }
+    } catch (e) {
+        console.error('CAT1 alert load error:', e);
+    }
+}
+
+async function loadBenchmarks() {
+    try {
+        var r = await fetch('/api/stig-manager/benchmarks');
+        var d = await r.json();
+        var container = document.getElementById('benchmark-cards');
+        var select = document.getElementById('filter-stig');
+
+        if (!d.benchmarks || d.benchmarks.length === 0) {
+            container.innerHTML = '<div style="color:#888;padding:1rem;">No benchmarks loaded yet.</div>';
+            return;
+        }
+
+        // Populate filter dropdown
+        d.benchmarks.forEach(function(b) {
+            var opt = document.createElement('option');
+            opt.value = b.stig_id;
+            opt.textContent = b.stig_id;
+            select.appendChild(opt);
+        });
+
+        var html = '';
+        d.benchmarks.forEach(function(b) {
+            var total = b.total || 1;
+            var c1pct = ((b.cat1 / total) * 100).toFixed(0);
+            var c2pct = ((b.cat2 / total) * 100).toFixed(0);
+            var c3pct = ((b.cat3 / total) * 100).toFixed(0);
+
+            html += '<div onclick="filterByStig(\'' + esc(b.stig_id) + '\')" style="border:1px solid #ddd;border-radius:8px;padding:1rem;cursor:pointer;transition:box-shadow 0.2s;" onmouseover="this.style.boxShadow=\'0 2px 8px rgba(0,0,0,0.12)\'" onmouseout="this.style.boxShadow=\'none\'">';
+            html += '<div style="font-weight:600;font-size:0.95rem;margin-bottom:0.5rem;">' + esc(b.stig_id) + '</div>';
+            html += '<div style="color:#666;font-size:0.85rem;margin-bottom:0.5rem;">' + b.total + ' findings</div>';
+
+            // Stacked bar
+            html += '<div style="display:flex;height:12px;border-radius:6px;overflow:hidden;margin-bottom:0.5rem;">';
+            if (b.cat1 > 0) html += '<div style="width:' + c1pct + '%;background:#d32f2f;" title="CAT1: ' + b.cat1 + '"></div>';
+            if (b.cat2 > 0) html += '<div style="width:' + c2pct + '%;background:#f57c00;" title="CAT2: ' + b.cat2 + '"></div>';
+            if (b.cat3 > 0) html += '<div style="width:' + c3pct + '%;background:#fbc02d;" title="CAT3: ' + b.cat3 + '"></div>';
+            html += '</div>';
+
+            // Coverage
+            html += '<div style="font-size:0.85rem;">Coverage: <strong style="color:' + covColor(b.coverage) + ';">' + b.coverage + '%</strong></div>';
+            html += '</div>';
+        });
+        container.innerHTML = html;
+    } catch (e) {
+        console.error('Benchmarks load error:', e);
+    }
+}
+
+function filterByStig(stigId) {
+    document.getElementById('filter-stig').value = stigId;
+    loadFindings(1);
+    document.getElementById('findings-table').scrollIntoView({ behavior: 'smooth' });
+}
+
+async function loadCoverage() {
+    try {
+        var r = await fetch('/api/stig-manager/coverage');
+        var d = await r.json();
+        var container = document.getElementById('coverage-heatmap');
+
+        if (!d.coverage || d.coverage.length === 0) {
+            container.innerHTML = '<div style="color:#888;padding:1rem;">No coverage data available.</div>';
+            return;
+        }
+
+        // Populate target filter
+        var targetSelect = document.getElementById('filter-target');
+        d.targets.forEach(function(t) {
+            var opt = document.createElement('option');
+            opt.value = t;
+            opt.textContent = t;
+            targetSelect.appendChild(opt);
+        });
+
+        var html = '<table style="width:100%;border-collapse:collapse;">';
+        html += '<thead><tr style="background:#f5f5f5;">';
+        html += '<th style="padding:0.6rem;border:1px solid #ddd;text-align:left;">Target Type</th>';
+        html += '<th style="padding:0.6rem;border:1px solid #ddd;text-align:center;">CAT1</th>';
+        html += '<th style="padding:0.6rem;border:1px solid #ddd;text-align:center;">CAT2</th>';
+        html += '<th style="padding:0.6rem;border:1px solid #ddd;text-align:center;">CAT3</th>';
+        html += '</tr></thead><tbody>';
+
+        d.coverage.forEach(function(row) {
+            html += '<tr>';
+            html += '<td style="padding:0.6rem;border:1px solid #ddd;font-weight:600;">' + esc(row.target_type) + '</td>';
+            ['CAT1', 'CAT2', 'CAT3'].forEach(function(sev) {
+                var cell = row[sev] || { coverage: 0, total: 0, not_a_finding: 0 };
+                var bg = covBg(cell.coverage);
+                var fg = covColor(cell.coverage);
+                html += '<td style="padding:0.6rem;border:1px solid #ddd;text-align:center;background:' + bg + ';">';
+                html += '<div style="font-weight:700;color:' + fg + ';">' + cell.coverage + '%</div>';
+                html += '<div style="font-size:0.75rem;color:#666;">' + cell.not_a_finding + '/' + cell.total + '</div>';
+                html += '</td>';
+            });
+            html += '</tr>';
+        });
+
+        html += '</tbody></table>';
+        container.innerHTML = html;
+    } catch (e) {
+        console.error('Coverage load error:', e);
+    }
+}
+
+async function loadFindings(page) {
+    currentPage = page || 1;
+    var params = new URLSearchParams();
+    params.set('page', currentPage);
+    params.set('per_page', 25);
+
+    var stig = document.getElementById('filter-stig').value;
+    var severity = document.getElementById('filter-severity').value;
+    var status = document.getElementById('filter-status').value;
+    var target = document.getElementById('filter-target').value;
+
+    if (stig) params.set('stig_id', stig);
+    if (severity) params.set('severity', severity);
+    if (status) params.set('status', status);
+    if (target) params.set('target_type', target);
+
+    try {
+        var r = await fetch('/api/stig-manager/findings?' + params.toString());
+        var d = await r.json();
+        var tbody = document.getElementById('findings-body');
+
+        if (!d.findings || d.findings.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" style="padding:1rem;color:#888;text-align:center;">No findings match the current filters.</td></tr>';
+            document.getElementById('pagination').innerHTML = '';
+            return;
+        }
+
+        var html = '';
+        d.findings.forEach(function(f) {
+            var sevBg = sevColors[f.severity] || '#999';
+            var sevFg = sevTextColors[f.severity] || '#fff';
+            var stBg = statusColors[f.status] || '#999';
+            var stLabel = statusLabels[f.status] || f.status;
+            var dateStr = f.assessed_at ? f.assessed_at.substring(0, 10) : '';
+
+            html += '<tr onclick="showDetail(' + f.id + ')" style="cursor:pointer;border-bottom:1px solid #eee;" onmouseover="this.style.background=\'#f5f5f5\'" onmouseout="this.style.background=\'transparent\'">';
+            html += '<td style="padding:0.5rem 0.6rem;">' + f.id + '</td>';
+            html += '<td style="padding:0.5rem 0.6rem;font-size:0.85rem;">' + esc(f.stig_id) + '</td>';
+            html += '<td style="padding:0.5rem 0.6rem;font-size:0.85rem;">' + esc(f.rule_id) + '</td>';
+            html += '<td style="padding:0.5rem 0.6rem;">' + badge(f.severity, sevBg, sevFg) + '</td>';
+            html += '<td style="padding:0.5rem 0.6rem;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + esc(f.title) + '</td>';
+            html += '<td style="padding:0.5rem 0.6rem;">' + badge(stLabel, stBg) + '</td>';
+            html += '<td style="padding:0.5rem 0.6rem;font-size:0.85rem;">' + esc(f.target_type || '') + '</td>';
+            html += '<td style="padding:0.5rem 0.6rem;font-size:0.85rem;">' + esc(f.assessed_by || '') + '</td>';
+            html += '<td style="padding:0.5rem 0.6rem;font-size:0.85rem;">' + esc(dateStr) + '</td>';
+            html += '</tr>';
+        });
+        tbody.innerHTML = html;
+
+        // Pagination
+        totalPages = Math.ceil(d.total / d.per_page);
+        var pagHtml = '';
+        if (currentPage > 1) {
+            pagHtml += '<button onclick="loadFindings(' + (currentPage - 1) + ')" style="padding:0.4rem 0.8rem;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer;">Prev</button>';
+        }
+        pagHtml += '<span style="color:#666;">Page ' + currentPage + ' of ' + totalPages + ' (' + d.total + ' total)</span>';
+        if (currentPage < totalPages) {
+            pagHtml += '<button onclick="loadFindings(' + (currentPage + 1) + ')" style="padding:0.4rem 0.8rem;border:1px solid #ccc;border-radius:4px;background:#fff;cursor:pointer;">Next</button>';
+        }
+        document.getElementById('pagination').innerHTML = pagHtml;
+    } catch (e) {
+        console.error('Findings load error:', e);
+    }
+}
+
+async function showDetail(id) {
+    try {
+        var r = await fetch('/api/stig-manager/findings/' + id);
+        var d = await r.json();
+        if (!d.finding) return;
+        var f = d.finding;
+
+        document.getElementById('detail-title').textContent = f.title || 'Finding Detail';
+        document.getElementById('detail-stig').textContent = f.stig_id || '';
+        document.getElementById('detail-rule').textContent = f.rule_id || '';
+        document.getElementById('detail-finding-id').textContent = f.finding_id || '';
+        document.getElementById('detail-severity').innerHTML = badge(f.severity, sevColors[f.severity] || '#999', sevTextColors[f.severity] || '#fff');
+        document.getElementById('detail-status').innerHTML = badge(statusLabels[f.status] || f.status, statusColors[f.status] || '#999');
+        document.getElementById('detail-target').textContent = f.target_type || '';
+        document.getElementById('detail-description').textContent = f.description || 'No description available.';
+        document.getElementById('detail-check').textContent = f.check_content || 'No check content available.';
+        document.getElementById('detail-fix').textContent = f.fix_text || 'No fix text available.';
+
+        document.getElementById('assess-id').value = f.id;
+        document.getElementById('assess-status').value = f.status || 'Open';
+        document.getElementById('assess-comments').value = f.comments || '';
+        document.getElementById('assess-by').value = f.assessed_by || '';
+        document.getElementById('assess-msg').innerHTML = '';
+
+        document.getElementById('detail-panel').style.display = 'block';
+        document.getElementById('detail-panel').scrollIntoView({ behavior: 'smooth' });
+    } catch (e) {
+        console.error('Detail load error:', e);
+    }
+}
+
+function closeDetail() {
+    document.getElementById('detail-panel').style.display = 'none';
+}
+
+async function submitAssessment() {
+    var id = document.getElementById('assess-id').value;
+    var status = document.getElementById('assess-status').value;
+    var comments = document.getElementById('assess-comments').value;
+    var assessedBy = document.getElementById('assess-by').value;
+    var msgEl = document.getElementById('assess-msg');
+
+    if (!id || !status) {
+        msgEl.innerHTML = '<span style="color:#d32f2f;">Status is required.</span>';
+        return;
+    }
+
+    try {
+        var r = await fetch('/api/stig-manager/assess', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                finding_id: parseInt(id),
+                status: status,
+                comments: comments,
+                assessed_by: assessedBy
+            })
+        });
+        var d = await r.json();
+        if (d.ok) {
+            msgEl.innerHTML = '<span style="color:#388e3c;">Assessment saved successfully.</span>';
+            // Refresh data
+            loadStats();
+            loadCat1Alert();
+            loadFindings(currentPage);
+            showDetail(parseInt(id));
+        } else {
+            msgEl.innerHTML = '<span style="color:#d32f2f;">Error: ' + esc(d.error || 'Unknown error') + '</span>';
+        }
+    } catch (e) {
+        msgEl.innerHTML = '<span style="color:#d32f2f;">Request failed: ' + esc(e.message) + '</span>';
+    }
+}
+
+// Initial load
+document.addEventListener('DOMContentLoaded', function() {
+    loadStats();
+    loadCat1Alert();
+    loadBenchmarks();
+    loadCoverage();
+    loadFindings(1);
+});
+</script>
+{% endblock %}

@@ -1,0 +1,189 @@
+<!-- CUI // SP-CTI -->
+{% extends "dsoc_canvas/base.html" %}
+{% block title %}Scrubbing Centers — DSOC{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 py-3">
+
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h5 class="mb-0" style="color:#22c55e;">
+      <i class="bi bi-router-fill me-2"></i>Scrubbing Centers
+    </h5>
+    <div class="d-flex gap-2">
+      <button class="btn btn-sm btn-outline-success"
+              onclick="document.getElementById('add-scrub-panel').classList.toggle('d-none')">
+        + Add Center
+      </button>
+      <a href="/dsoc" class="btn btn-sm btn-outline-secondary">← Overview</a>
+    </div>
+  </div>
+
+  <!-- Sub-nav -->
+  <div class="dsoc-subnav">
+    <a href="/dsoc">Overview</a>
+    <a href="/dsoc/flowspec">Flowspec Rules</a>
+    <a href="/dsoc/rtbh">RTBH</a>
+    <a href="/dsoc/scrubbing" class="active">Scrubbing Centers</a>
+    <a href="/dsoc/threats">Threat Feed</a>
+    <a href="/dsoc/mitigations">Mitigations</a>
+  </div>
+
+  <!-- Add Center Form -->
+  <div id="add-scrub-panel" class="d-none card bg-dark border-success mb-4">
+    <div class="card-header border-success">Add Scrubbing Center</div>
+    <div class="card-body">
+      <div class="row g-2">
+        <div class="col-md-2">
+          <input class="form-control form-control-sm bg-dark text-light border-secondary"
+                 id="f-scrub-name" placeholder="Name *">
+        </div>
+        <div class="col-md-2">
+          <input class="form-control form-control-sm bg-dark text-light border-secondary"
+                 id="f-scrub-location" placeholder="Location (e.g. US-East)">
+        </div>
+        <div class="col-md-2">
+          <input class="form-control form-control-sm bg-dark text-light border-secondary"
+                 id="f-scrub-provider" placeholder="Provider">
+        </div>
+        <div class="col-md-2">
+          <input class="form-control form-control-sm bg-dark text-light border-secondary"
+                 id="f-scrub-capacity" placeholder="Capacity (Gbps)" type="number" step="0.1" min="0">
+        </div>
+        <div class="col-md-2">
+          <input class="form-control form-control-sm bg-dark text-light border-secondary"
+                 id="f-scrub-anycast" placeholder="Anycast Prefix (CIDR)">
+        </div>
+        <div class="col-md-2">
+          <button class="btn btn-sm btn-success w-100" onclick="addCenter()">Add</button>
+        </div>
+      </div>
+      <div id="scrub-msg" class="mt-2 small"></div>
+    </div>
+  </div>
+
+  <!-- Centers Table -->
+  <div class="card bg-dark border-secondary mb-4">
+    <div class="card-body p-0">
+      <table class="table table-dark table-hover table-sm mb-0">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Location</th>
+            <th>Provider</th>
+            <th>Capacity (Gbps)</th>
+            <th>Current Load (Gbps)</th>
+            <th>Utilization %</th>
+            <th>Status</th>
+            <th>Anycast Prefix</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for center in centers %}
+          {% set cap = center.capacity_gbps | float %}
+          {% set load = center.current_load_gbps | float %}
+          {% set pct = ((load / cap * 100) | round(1)) if cap > 0 else 0 %}
+          <tr>
+            <td class="text-info fw-bold">{{ center.name }}</td>
+            <td class="text-muted" style="font-size:.82rem;">{{ center.location or '—' }}</td>
+            <td class="text-muted" style="font-size:.82rem;">{{ center.provider or '—' }}</td>
+            <td>{{ cap }}</td>
+            <td>{{ load }}</td>
+            <td>
+              <div class="d-flex align-items-center gap-2">
+                <div class="util-bar flex-grow-1" style="max-width:80px;">
+                  <div class="util-bar-fill {% if pct >= 85 %}util-crit{% elif pct >= 70 %}util-warn{% else %}util-ok{% endif %}"
+                       style="width:{{ [pct, 100] | min }}%;"></div>
+                </div>
+                <span class="{% if pct >= 85 %}dsoc-critical{% elif pct >= 70 %}dsoc-warn{% else %}dsoc-ok{% endif %} fw-bold">
+                  {{ pct }}%
+                </span>
+              </div>
+            </td>
+            <td>
+              {% set st = center.status | lower %}
+              {% if st == 'operational' %}
+                <span class="badge-operational">operational</span>
+              {% elif st == 'degraded' %}
+                <span class="badge-degraded">degraded</span>
+              {% elif st == 'maintenance' %}
+                <span class="badge-maintenance">maintenance</span>
+              {% else %}
+                <span class="badge-withdrawn">{{ center.status }}</span>
+              {% endif %}
+            </td>
+            <td style="font-family:monospace;font-size:.82rem;">{{ center.anycast_prefix or '—' }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="8" class="text-center text-muted py-4">
+              No scrubbing centers configured yet. Add your first center above.
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Utilization summary bar -->
+  {% if centers %}
+  <div class="card bg-dark border-secondary mb-4">
+    <div class="card-header border-secondary" style="font-size:.82rem;color:#64748b;">
+      AGGREGATE SCRUBBING CAPACITY
+    </div>
+    <div class="card-body py-3">
+      {% set total_cap  = centers | sum(attribute='capacity_gbps')    | float %}
+      {% set total_load = centers | sum(attribute='current_load_gbps') | float %}
+      {% set total_pct  = ((total_load / total_cap * 100) | round(1)) if total_cap > 0 else 0 %}
+      <div class="d-flex align-items-center gap-3">
+        <div class="util-bar flex-grow-1" style="height:12px;border-radius:6px;">
+          <div class="util-bar-fill {% if total_pct >= 85 %}util-crit{% elif total_pct >= 70 %}util-warn{% else %}util-ok{% endif %}"
+               style="height:100%;width:{{ [total_pct, 100] | min }}%;border-radius:6px;"></div>
+        </div>
+        <span class="{% if total_pct >= 85 %}dsoc-critical{% elif total_pct >= 70 %}dsoc-warn{% else %}dsoc-ok{% endif %} fw-bold"
+              style="white-space:nowrap;">
+          {{ total_load }} / {{ total_cap }} GBps &mdash; {{ total_pct }}% utilized
+        </span>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- IQE Widget -->
+  <div class="iqe-host">
+    {% include 'includes/iqe_query_widget.html' %}
+  </div>
+</div>
+
+<script>
+const IQE_CANVAS = 'dsoc';
+
+function addCenter() {
+  const data = {
+    name:            document.getElementById('f-scrub-name').value.trim(),
+    location:        document.getElementById('f-scrub-location').value.trim() || null,
+    provider:        document.getElementById('f-scrub-provider').value.trim() || null,
+    capacity_gbps:   parseFloat(document.getElementById('f-scrub-capacity').value) || 0,
+    anycast_prefix:  document.getElementById('f-scrub-anycast').value.trim() || null,
+  };
+  const msg = document.getElementById('scrub-msg');
+  if (!data.name) {
+    msg.innerHTML = '<span class="text-danger">Name is required.</span>';
+    return;
+  }
+  fetch('/api/dsoc/scrubbing', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+    .then(r => r.json())
+    .then(d => {
+      if (d.status === 'created' || d.id) {
+        msg.innerHTML = '<span class="text-success">Center added. Reload to see it.</span>';
+      } else {
+        msg.innerHTML = `<span class="text-danger">${d.error || 'Error adding center.'}</span>`;
+      }
+    })
+    .catch(e => { msg.innerHTML = `<span class="text-danger">${e}</span>`; });
+}
+</script>
+{% endblock %}

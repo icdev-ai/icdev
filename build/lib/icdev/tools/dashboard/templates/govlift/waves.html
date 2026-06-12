@@ -1,0 +1,241 @@
+{% extends "base.html" %}
+{% block title %}Wave Planner — GovLift{% endblock %}
+{% block extra_css %}
+<style>
+.gl-page-header{background:linear-gradient(135deg,#0f172a,#1a3a2a);padding:22px 28px;border-radius:10px;margin-bottom:24px;}
+.gl-page-header h1{margin:0;font-size:1.4rem;font-weight:700;color:#d1fae5;}
+.gl-page-header p{margin:4px 0 0;color:#6ee7b7;font-size:.85rem;}
+.classification-banner{background:#1e3a1a;border:1px solid #166534;color:#86efac;font-size:.75rem;font-weight:700;letter-spacing:.08em;text-align:center;padding:6px 12px;border-radius:6px;margin-bottom:18px;}
+.stat-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:18px 22px;text-align:center;}
+.stat-card .val{font-size:1.8rem;font-weight:700;color:#d1fae5;}
+.stat-card .lbl{font-size:.75rem;color:#64748b;margin-top:2px;}
+.filter-bar{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:14px 18px;margin-bottom:18px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;}
+.filter-bar label{font-size:.75rem;color:#94a3b8;display:block;margin-bottom:4px;}
+.filter-bar select{background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:5px 10px;font-size:.8rem;}
+.filter-bar select:focus{outline:none;border-color:#10b981;}
+.filter-btn{background:#10b981;border:none;color:#fff;border-radius:6px;padding:6px 16px;font-size:.8rem;font-weight:600;cursor:pointer;}
+.filter-btn:hover{background:#059669;}
+.back-link{color:#6ee7b7;text-decoration:none;font-size:.85rem;}
+.back-link:hover{color:#34d399;}
+.wave-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:20px 24px;margin-bottom:14px;transition:border-color .15s;cursor:pointer;}
+.wave-card:hover{border-color:#10b981;}
+.wave-card-header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;}
+.wave-seq{background:#0f172a;border:1px solid #334155;border-radius:6px;padding:6px 14px;font-size:1rem;font-weight:700;color:#6ee7b7;min-width:44px;text-align:center;}
+.wave-meta{font-size:.78rem;color:#64748b;margin-top:6px;}
+.gl-table{width:100%;border-collapse:collapse;}
+.gl-table thead th{background:#0f172a;color:#94a3b8;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:10px 12px;border-bottom:1px solid #334155;}
+.gl-table tbody tr{border-bottom:1px solid #1e293b;cursor:pointer;}
+.gl-table tbody tr:hover{background:#1a2540;}
+.gl-table tbody td{padding:10px 12px;font-size:.83rem;color:#e2e8f0;vertical-align:middle;}
+.gl-table-wrap{background:#1e293b;border:1px solid #334155;border-radius:10px;overflow:hidden;}
+.view-toggle{display:flex;gap:6px;margin-bottom:18px;}
+.view-btn{padding:6px 14px;border-radius:6px;font-size:.78rem;font-weight:600;border:1px solid #334155;background:#0f172a;color:#94a3b8;cursor:pointer;}
+.view-btn.active{border-color:#10b981;color:#10b981;background:#0f2a1a;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="classification-banner">{{ classification }}</div>
+<a class="back-link" href="/govlift">← GovLift</a>
+
+<div class="gl-page-header mt-2">
+  <h1>Migration Wave Planner</h1>
+  <p>Plan · Schedule · Track Migration Waves — {{ classification }}</p>
+</div>
+
+<!-- Stats -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="val">{{ data.summary.get('total', 0) }}</div>
+      <div class="lbl">Total Waves</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="val" style="color:#818cf8;">{{ data.summary.get('planned', 0) }}</div>
+      <div class="lbl">Planned</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="val" style="color:#fbbf24;">{{ data.summary.get('in_progress', 0) }}</div>
+      <div class="lbl">In Progress</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="stat-card">
+      <div class="val" style="color:#34d399;">{{ data.summary.get('completed', 0) }}</div>
+      <div class="lbl">Completed</div>
+    </div>
+  </div>
+</div>
+
+<!-- Filter Bar -->
+<div class="filter-bar">
+  <div>
+    <label for="f-wave-status">Status</label>
+    <select id="f-wave-status">
+      <option value="">All Statuses</option>
+      <option value="planned">Planned</option>
+      <option value="in_progress">In Progress</option>
+      <option value="completed">Completed</option>
+      <option value="cancelled">Cancelled</option>
+    </select>
+  </div>
+  <div>
+    <button class="filter-btn" onclick="applyWaveFilters()">Apply</button>
+  </div>
+</div>
+
+<!-- View Toggle -->
+<div class="view-toggle">
+  <button class="view-btn active" id="btn-cards" onclick="setView('cards')">Card View</button>
+  <button class="view-btn" id="btn-table" onclick="setView('table')">Table View</button>
+</div>
+
+<!-- Card View -->
+<div id="waves-cards-view">
+  {% if data.waves %}
+    {% for wave in data.waves %}
+    <div class="wave-card" onclick="window.location='/govlift/waves/{{ wave.id }}'">
+      <div class="wave-card-header">
+        <div style="display:flex;align-items:flex-start;gap:14px;">
+          <div class="wave-seq">W{{ wave.get('sequence_num', '?') }}</div>
+          <div>
+            <div style="font-weight:700;color:#e2e8f0;font-size:1rem;">{{ wave.get('name', 'Unnamed Wave') }}</div>
+            <div class="wave-meta">
+              {% if wave.get('planned_start') %}Start: {{ wave.planned_start }}{% endif %}
+              {% if wave.get('planned_end') %} &nbsp;·&nbsp; End: {{ wave.planned_end }}{% endif %}
+            </div>
+            {% if wave.get('notes') %}
+            <div style="font-size:.8rem;color:#94a3b8;margin-top:6px;">{{ wave.notes }}</div>
+            {% endif %}
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          {% set ws = wave.get('status', 'planned') %}
+          {% if ws == 'completed' %}
+            <span class="badge bg-success">{{ ws }}</span>
+          {% elif ws == 'in_progress' %}
+            <span class="badge bg-warning text-dark">{{ ws }}</span>
+          {% elif ws == 'cancelled' %}
+            <span class="badge bg-danger">{{ ws }}</span>
+          {% else %}
+            <span class="badge bg-primary">{{ ws }}</span>
+          {% endif %}
+          <div style="font-size:.78rem;color:#64748b;margin-top:6px;">{{ wave.get('workload_count', 0) }} workloads</div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div style="text-align:center;padding:40px;color:#64748b;background:#1e293b;border-radius:10px;border:1px solid #334155;">No waves configured.</div>
+  {% endif %}
+</div>
+
+<!-- Table View (hidden by default) -->
+<div id="waves-table-view" style="display:none;">
+  <div class="gl-table-wrap">
+    <table class="gl-table" id="waves-table">
+      <thead>
+        <tr>
+          <th>Seq</th>
+          <th>Wave Name</th>
+          <th>Status</th>
+          <th>Planned Start</th>
+          <th>Planned End</th>
+          <th>Workloads</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody id="waves-tbody">
+        {% if data.waves %}
+          {% for wave in data.waves %}
+          <tr onclick="window.location='/govlift/waves/{{ wave.id }}'">
+            <td style="font-weight:700;color:#6ee7b7;">W{{ wave.get('sequence_num', '?') }}</td>
+            <td style="font-weight:600;">{{ wave.get('name', '') }}</td>
+            <td>
+              {% set ws = wave.get('status', 'planned') %}
+              {% if ws == 'completed' %}
+                <span class="badge bg-success">{{ ws }}</span>
+              {% elif ws == 'in_progress' %}
+                <span class="badge bg-warning text-dark">{{ ws }}</span>
+              {% elif ws == 'cancelled' %}
+                <span class="badge bg-danger">{{ ws }}</span>
+              {% else %}
+                <span class="badge bg-primary">{{ ws }}</span>
+              {% endif %}
+            </td>
+            <td style="font-size:.8rem;color:#94a3b8;">{{ wave.get('planned_start', '—') }}</td>
+            <td style="font-size:.8rem;color:#94a3b8;">{{ wave.get('planned_end', '—') }}</td>
+            <td>{{ wave.get('workload_count', 0) }}</td>
+            <td style="font-size:.78rem;color:#64748b;">{{ wave.get('notes', '') }}</td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr><td colspan="7" style="text-align:center;padding:32px;color:#64748b;">No waves found.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+
+<script>
+function setView(view) {
+  document.getElementById('waves-cards-view').style.display = view === 'cards' ? '' : 'none';
+  document.getElementById('waves-table-view').style.display = view === 'table' ? '' : 'none';
+  document.getElementById('btn-cards').classList.toggle('active', view === 'cards');
+  document.getElementById('btn-table').classList.toggle('active', view === 'table');
+}
+
+function applyWaveFilters() {
+  const status = document.getElementById('f-wave-status').value;
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  fetch('/api/govlift/waves?' + params.toString())
+    .then(r => r.json())
+    .then(data => {
+      const waves = data.waves || data || [];
+      const statusMap = {completed:'bg-success',in_progress:'bg-warning text-dark',cancelled:'bg-danger',planned:'bg-primary'};
+      // Update cards view
+      const cardsEl = document.getElementById('waves-cards-view');
+      cardsEl.innerHTML = waves.length ? waves.map(w => {
+        const sCls = statusMap[w.status] || 'bg-primary';
+        return `<div class="wave-card" onclick="window.location='/govlift/waves/${w.id}'">
+          <div class="wave-card-header">
+            <div style="display:flex;align-items:flex-start;gap:14px;">
+              <div class="wave-seq">W${w.sequence_num||'?'}</div>
+              <div>
+                <div style="font-weight:700;color:#e2e8f0;font-size:1rem;">${w.name||'Unnamed Wave'}</div>
+                <div class="wave-meta">${w.planned_start?'Start: '+w.planned_start:''}${w.planned_end?' &nbsp;·&nbsp; End: '+w.planned_end:''}</div>
+                ${w.notes?`<div style="font-size:.8rem;color:#94a3b8;margin-top:6px;">${w.notes}</div>`:''}
+              </div>
+            </div>
+            <div style="text-align:right;flex-shrink:0;">
+              <span class="badge ${sCls}">${w.status||'planned'}</span>
+              <div style="font-size:.78rem;color:#64748b;margin-top:6px;">${w.workload_count||0} workloads</div>
+            </div>
+          </div>
+        </div>`;
+      }).join('') : '<div style="text-align:center;padding:40px;color:#64748b;background:#1e293b;border-radius:10px;border:1px solid #334155;">No waves match filter.</div>';
+      // Update table view
+      const tbody = document.getElementById('waves-tbody');
+      tbody.innerHTML = waves.length ? waves.map(w => {
+        const sCls = statusMap[w.status] || 'bg-primary';
+        return `<tr onclick="window.location='/govlift/waves/${w.id}'">
+          <td style="font-weight:700;color:#6ee7b7;">W${w.sequence_num||'?'}</td>
+          <td style="font-weight:600;">${w.name||''}</td>
+          <td><span class="badge ${sCls}">${w.status||'planned'}</span></td>
+          <td style="font-size:.8rem;color:#94a3b8;">${w.planned_start||'—'}</td>
+          <td style="font-size:.8rem;color:#94a3b8;">${w.planned_end||'—'}</td>
+          <td>${w.workload_count||0}</td>
+          <td style="font-size:.78rem;color:#64748b;">${w.notes||''}</td>
+        </tr>`;
+      }).join('') : '<tr><td colspan="7" style="text-align:center;padding:32px;color:#64748b;">No waves match filter.</td></tr>';
+    })
+    .catch(e => console.error('Filter error:', e));
+}
+</script>
+{% endblock %}

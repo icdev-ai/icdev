@@ -1,0 +1,124 @@
+{% extends "security_canvas/base.html" %}
+{% block title %}Ask the SDC — Security Design Canvas{% endblock %}
+
+{% block head %}
+<style>
+  .ask-wrap { max-width: 980px; margin: 24px auto; padding: 16px; color: #eaeaea; }
+  .ask-hdr { font-size: 20px; font-weight: 600; margin-bottom: 6px; }
+  .ask-sub { color: #7a8cb0; font-size: 12px; margin-bottom: 16px; }
+  .ask-form { display: flex; gap: 8px; margin-bottom: 16px; }
+  .ask-form input[type=text] { flex: 1; padding: 10px 12px; background: #1a0f1e; color: #eaeaea; border: 1px solid #6e1e3a; border-radius: 6px; font-size: 13px; }
+  .ask-form label { color: #7a8cb0; font-size: 12px; display: flex; align-items: center; gap: 4px; }
+  .ask-form button { padding: 10px 18px; background: #a02d5a; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; }
+  .ask-form button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .ask-status { font-size: 12px; color: #7a8cb0; min-height: 16px; margin-bottom: 12px; }
+  .ask-narr { background: #1a0f1e; border: 1px solid #6e1e3a; border-radius: 6px; padding: 12px; margin-bottom: 12px; font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
+  .ask-stats { font-size: 11px; color: #8899aa; margin-bottom: 8px; }
+  table.ask-tbl { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.ask-tbl th, table.ask-tbl td { padding: 6px 8px; border-bottom: 1px solid #3d1e2d; text-align: left; }
+  table.ask-tbl th { color: #7a8cb0; font-weight: 500; }
+  .pill { display: inline-block; padding: 2px 6px; background: #6e1e3a; border-radius: 3px; font-size: 10px; font-family: monospace; }
+  .example { color: #7a8cb0; font-size: 11px; }
+  .example code { background: #1a0f1e; padding: 1px 4px; border-radius: 3px; cursor: pointer; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="ask-wrap">
+  <div class="ask-hdr">Ask the SDC</div>
+  <div class="ask-sub">
+    Natural-language Q&amp;A over the SDC knowledge graph
+    (<span class="pill">sdc-kg-9acdfb94bea0</span> — STRIDE × NIST crosswalk,
+    <span class="pill">security profile</span>).
+    LLM narration is optional — results come back as grounded graph nodes/edges either way.
+  </div>
+
+  <div class="example">
+    Try:
+    <code onclick="document.getElementById('q').value=this.textContent;">spoofing</code>
+    <code onclick="document.getElementById('q').value=this.textContent;">tampering</code>
+    <code onclick="document.getElementById('q').value=this.textContent;">repudiation</code>
+    <code onclick="document.getElementById('q').value=this.textContent;">elevation of privilege</code>
+    <code onclick="document.getElementById('q').value=this.textContent;">threat</code>
+    <code onclick="document.getElementById('q').value=this.textContent;">control</code>
+  </div>
+
+  <form class="ask-form" id="ask-form" onsubmit="return askSubmit(event);">
+    <input type="text" id="q" name="q" autocomplete="off" placeholder="Ask a question about threats, controls, STRIDE, or NIST mappings..." />
+    <label><input type="checkbox" id="narrate" /> narrate</label>
+    <button type="submit" id="ask-btn">Ask</button>
+  </form>
+  <div class="ask-status" id="ask-status">Ready.</div>
+
+  <div id="ask-narration" class="ask-narr" style="display:none;"></div>
+  <div class="ask-stats" id="ask-stats"></div>
+  <table class="ask-tbl" id="ask-results" style="display:none;">
+    <thead><tr><th>Type</th><th>Label</th><th>Score</th><th>ID</th></tr></thead>
+    <tbody id="ask-rows"></tbody>
+  </table>
+</div>
+
+<script>
+async function askSubmit(ev) {
+  ev.preventDefault();
+  const q = document.getElementById('q').value.trim();
+  if (!q) return false;
+  const narrate = document.getElementById('narrate').checked;
+  const btn = document.getElementById('ask-btn');
+  const status = document.getElementById('ask-status');
+  btn.disabled = true;
+  status.textContent = 'Querying SDC graph...';
+  document.getElementById('ask-results').style.display = 'none';
+  document.getElementById('ask-narration').style.display = 'none';
+
+  try {
+    const r = await fetch('/security/api/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: q, narrate: narrate, top_k: 15 }),
+    });
+    const data = await r.json();
+    if (data.error) {
+      status.textContent = 'Error: ' + data.error;
+      return false;
+    }
+    const stats = `${data.nodes_returned} node(s) returned of ${data.nodes_matched} matched, ${data.edges_returned} edge(s) · profile=${data.profile}`;
+    document.getElementById('ask-stats').textContent = stats;
+
+    if (data.narration) {
+      const n = document.getElementById('ask-narration');
+      n.textContent = data.narration;
+      n.style.display = 'block';
+    } else if (narrate) {
+      status.textContent = 'Query complete — narration unavailable (LLM router offline), showing raw graph hits.';
+    }
+
+    const tbody = document.getElementById('ask-rows');
+    tbody.innerHTML = '';
+    (data.nodes || []).forEach(n => {
+      const tr = document.createElement('tr');
+      const score = typeof n.score === 'number' ? n.score.toFixed(3) : (n.score || '—');
+      tr.innerHTML =
+        '<td><span class="pill">' + (n.entity_type || '—') + '</span></td>' +
+        '<td>' + (n.label || '—') + '</td>' +
+        '<td>' + score + '</td>' +
+        '<td style="font-family:monospace;font-size:10px;color:#7a8cb0;">' + (n.id || '—') + '</td>';
+      tbody.appendChild(tr);
+    });
+    document.getElementById('ask-results').style.display = (data.nodes || []).length ? 'table' : 'none';
+    if (!(data.nodes || []).length) {
+      status.textContent = 'No nodes matched. Try a different query or check that the SDC KG is populated.';
+    } else if (!data.narration) {
+      status.textContent = `Done — ${data.nodes_returned} node(s).`;
+    } else {
+      status.textContent = 'Done.';
+    }
+  } catch (err) {
+    status.textContent = 'Request failed: ' + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+  return false;
+}
+</script>
+{% endblock %}

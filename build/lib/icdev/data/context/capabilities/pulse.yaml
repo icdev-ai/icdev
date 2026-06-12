@@ -1,0 +1,47 @@
+# CUI // SP-CTI
+# ICDEV™ Capability Domain: Pulse Blog Engine
+# Auto-generated from icdev_capability_catalog.json + CLAUDE.md
+# Last refreshed: 2026-03-13
+
+domain: pulse
+description: "AI-powered blog engine with WriteGuard quality checks, SAM.gov bridge, and WordPress publishing"
+capabilities:
+  - slug: pulse-engine
+    name: "Pulse AI Blog Engine"
+    description: "Multi-stage content pipeline: research (web + RAG) -> draft (qwen3.5) -> quality check (WriteGuard) -> rewrite (Claude Sonnet) -> publish (WordPress). Template-aware with challenge-solution and feature-spotlight formats."
+    cli_examples:
+      - "python tools/pulse/engine/scheduler.py --help"
+    related_controls: ["AU-2"]
+    article_hooks:
+      - "6-stage content pipeline: research -> draft -> quality -> rewrite -> review -> publish"
+      - "Scanner-tier drafting with qwen3.5 (zero Claude tokens) followed by Claude Sonnet rewriting for quality"
+    frameworks: []
+    keywords: ["blog engine", "content pipeline", "WriteGuard", "quality check", "WordPress", "article generation"]
+    source_catalog_id: "cap-pulse"
+
+  - slug: writeguard
+    name: "WriteGuard Quality Engine"
+    description: "5-dimension deterministic quality analysis: grammar, readability, plagiarism (RAG similarity), AI detection (perplexity/burstiness), tone profiling"
+    cli_examples: []
+    related_controls: ["SI-7"]
+    article_hooks:
+      - "5-dimension quality scoring: grammar, readability, plagiarism, AI detection, and tone -- all deterministic, no LLM needed"
+      - "Plagiarism detection via RAG similarity (0.85 threshold) catches content overlap before publishing"
+      - "AI detection uses perplexity, burstiness, and n-gram statistics -- advisory-only, never blocks"
+    frameworks: []
+    keywords: ["WriteGuard", "quality check", "grammar", "readability", "plagiarism", "AI detection", "tone"]
+    source_catalog_id: "cap-writeguard"
+
+  - slug: sam-bridge
+    name: "SAM.gov Content Bridge"
+    description: "Extracts pain points from federal solicitations, classifies by domain, generates evergreen thought-leadership articles via Pulse pipeline"
+    cli_examples:
+      - "python tools/pulse/engine/sam_bridge.py --run --json"
+      - "python tools/pulse/engine/sam_bridge.py --dry-run --json"
+    related_controls: ["AU-2"]
+    article_hooks:
+      - "Federal solicitations reveal real-world IT pain points -- the SAM bridge turns them into educational content"
+      - "Deterministic regex extraction (zero LLM) classifies pain points into 8 domain categories"
+    frameworks: []
+    keywords: ["SAM.gov", "content bridge", "pain point extraction", "federal IT", "thought leadership"]
+    source_catalog_id: "cap-pulse"

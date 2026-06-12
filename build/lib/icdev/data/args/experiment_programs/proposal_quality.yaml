@@ -1,0 +1,69 @@
+# Proposal Quality Autoresearch Domain Program
+# Runs Karpathy-loop experiments on proposal drafting parameters
+# to discover which quality attributes correlate with wins.
+#
+# Scanner-tier only (zero Claude tokens).
+
+domain: proposal_quality
+description: "Autonomous proposal quality improvement through Bayesian experimentation"
+version: "1.0.0"
+
+# Experiment categories and their hypothesis templates
+categories:
+  template_structure:
+    description: "Experiments on proposal section structure and organization"
+    hypotheses:
+      - "Proposals with executive summary under 500 words win more often"
+      - "Leading each section with a compliance cross-reference improves evaluator scores"
+      - "Placing past performance examples in the first paragraph increases quality by 5%"
+      - "Sections structured as Problem-Approach-Benefit outperform narrative format"
+
+  readability_targets:
+    description: "Experiments on readability metrics and their correlation with wins"
+    hypotheses:
+      - "Flesch-Kincaid grade 10-12 outperforms grade 14+ in competitive evaluations"
+      - "Technical volume sections under 2000 words score higher than longer sections"
+      - "Sentences averaging 15-20 words outperform those averaging 25+"
+      - "Active voice percentage above 80% correlates with higher evaluator scores"
+
+  section_ordering:
+    description: "Experiments on section and content ordering within proposals"
+    hypotheses:
+      - "Leading with discriminators before compliance claims improves persuasiveness"
+      - "Placing graphics in the first third of each section increases readability scores"
+      - "Ending sections with a summary callout improves color team review scores"
+
+  emphasis_areas:
+    description: "Experiments on what to emphasize in proposal content"
+    hypotheses:
+      - "Three discriminators per section outperforms five"
+      - "Quantified past performance metrics increase win rate by 10%"
+      - "Naming ghost competitors explicitly in win themes improves competitive position"
+      - "Including staffing matrix in management volume improves technical score"
+
+# Fitness evaluation
+fitness:
+  evaluator: "proposal_quality"
+  inputs:
+    - table: pg_proposal_quality_scores
+      metrics: [composite_score, grammar_score, readability_score, tone_score, plagiarism_score, ai_detection_score]
+    - table: pg_win_loss_records
+      metrics: [outcome]
+  formula: "quality_improvement_delta * win_rate_correlation"
+  normalize: true
+  range: [0.0, 1.0]
+
+# Experiment parameters
+defaults:
+  max_experiments_per_run: 3
+  time_budget_seconds: 300
+  keep_threshold: 0.005
+  circuit_breaker_failures: 3
+  dedup_threshold: 0.85
+
+# Genesis integration
+genesis:
+  reflex: autoresearch
+  risk_tier: orange
+  schedule: "nightly 01:00"
+  enabled: true

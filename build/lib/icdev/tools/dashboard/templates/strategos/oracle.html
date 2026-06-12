@@ -1,0 +1,314 @@
+{% extends "base.html" %}
+{% set active = "strategos" %}
+{% block title %}Oracle Intelligence Brief — Strategos{% endblock %}
+
+{% block head %}
+<meta http-equiv="refresh" content="300">
+<script src="/strategos/static/js/chart.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-header page-header--compact">
+    <h1>Oracle Intelligence Brief
+        <span style="font-size:0.65em;color:var(--text-secondary);font-weight:400;">
+            SIO Multi-Lens Assessment
+        </span>
+    </h1>
+    <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.25rem">
+        CUI // SP-CTI &nbsp;|&nbsp; Auto-refreshes every 5 minutes
+    </div>
+</div>
+
+<!-- Top row: composite gauge + I&W traffic light + sparkline -->
+<div style="display:grid;grid-template-columns:1fr 1fr 2fr;gap:1rem;margin-bottom:1rem">
+
+    <!-- Composite score gauge -->
+    <div class="card" style="text-align:center">
+        <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">
+            Composite Threat Score
+        </div>
+        <div id="compositeScore" style="font-size:3.5rem;font-weight:700;line-height:1;color:var(--accent-blue)">—</div>
+        <div style="font-size:0.85rem;color:var(--text-secondary);margin-top:.25rem">/ 10</div>
+        <div style="margin-top:.75rem">
+            <div style="background:var(--bg-secondary);border-radius:4px;height:8px;overflow:hidden">
+                <div id="compositeBar" style="height:100%;width:0%;background:var(--accent-blue);transition:width .6s ease;border-radius:4px"></div>
+            </div>
+        </div>
+        <div id="compositeTimestamp" style="font-size:0.7rem;color:var(--text-muted);margin-top:.5rem">Loading…</div>
+    </div>
+
+    <!-- I&W Traffic Light -->
+    <div class="card" style="text-align:center">
+        <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">
+            I&amp;W Status
+        </div>
+        <div id="iwLight" style="font-size:2.5rem;margin:.25rem 0">⬤</div>
+        <div id="iwLabel" style="font-size:1rem;font-weight:600;color:var(--text-secondary)">LOADING</div>
+        <div style="font-size:0.75rem;color:var(--text-muted);margin-top:.5rem">
+            Indications &amp; Warnings
+        </div>
+        <div style="font-size:0.7rem;color:var(--text-muted);margin-top:.25rem">
+            Trigger: convergence &gt;7.5 &amp; avg &gt;6.0
+        </div>
+    </div>
+
+    <!-- 14-day sparkline -->
+    <div class="card">
+        <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem">
+            14-Day Convergence Score Trend
+        </div>
+        <div style="height:100px">
+            <canvas id="sparklineChart"></canvas>
+        </div>
+    </div>
+
+</div>
+
+<!-- Middle row: radar chart + lens table -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+
+    <!-- Radar chart -->
+    <div class="card">
+        <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem">
+            5-Lens Radar
+        </div>
+        <div style="height:280px">
+            <canvas id="radarChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Lens score table with STANAG tags -->
+    <div class="card">
+        <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem">
+            Lens Scores — STANAG 2511 Reliability
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:.875rem" id="lensTable">
+            <thead>
+                <tr style="border-bottom:1px solid var(--border-color)">
+                    <th style="text-align:left;padding:.4rem .5rem;color:var(--text-muted);font-weight:500">Lens</th>
+                    <th style="text-align:right;padding:.4rem .5rem;color:var(--text-muted);font-weight:500">Score</th>
+                    <th style="text-align:center;padding:.4rem .5rem;color:var(--text-muted);font-weight:500">Reliability</th>
+                    <th style="text-align:right;padding:.4rem .5rem;color:var(--text-muted);font-weight:500">Bar</th>
+                </tr>
+            </thead>
+            <tbody id="lensTableBody">
+                <tr><td colspan="4" style="text-align:center;padding:1rem;color:var(--text-muted)">Loading…</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+<!-- Narrative panel -->
+<div class="card" style="margin-bottom:1rem">
+    <div style="font-size:0.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem">
+        Lens Narratives
+    </div>
+    <div id="narrativePanel" style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+        <div style="color:var(--text-muted);font-size:.875rem">Loading…</div>
+    </div>
+</div>
+
+<!-- Nav back -->
+<div style="margin-top:1rem">
+    <a href="/strategos" style="font-size:.875rem;color:var(--text-secondary)">&larr; Back to Strategos</a>
+</div>
+
+<script>
+(function () {
+    // ── Colour helpers ────────────────────────────────────────────────────────
+    const nato_colour = {
+        'A1': '#10b981', 'B2': '#22d3ee', 'C3': '#f59e0b',
+        'D4': '#f97316', 'E5': '#ef4444', 'F6': '#6b7280',
+    };
+
+    function natoTag(code) {
+        const col = nato_colour[code] || '#6b7280';
+        return `<span style="background:${col};color:#000;font-size:.7rem;font-weight:700;
+            padding:.15rem .45rem;border-radius:3px;letter-spacing:.04em">${code}</span>`;
+    }
+
+    function scoreColor(s) {
+        if (s >= 7) return '#ef4444';
+        if (s >= 4) return '#f59e0b';
+        return '#10b981';
+    }
+
+    function scorebar(s) {
+        const pct = Math.min(100, s * 10);
+        const col = scoreColor(s);
+        return `<div style="background:var(--bg-secondary);border-radius:4px;height:6px;width:80px;display:inline-block;vertical-align:middle">
+            <div style="height:100%;width:${pct}%;background:${col};border-radius:4px"></div></div>`;
+    }
+
+    const lensLabels = {
+        threat_posture:    'Threat Posture',
+        behavior_pattern:  'Behavior Pattern',
+        intent_assessment: 'Intent Assessment',
+        convergence:       'Convergence',
+    };
+
+    // ── Chart instances ───────────────────────────────────────────────────────
+    let radarChart = null;
+    let sparkChart = null;
+
+    function initRadar(labels, scores) {
+        const ctx = document.getElementById('radarChart').getContext('2d');
+        if (radarChart) radarChart.destroy();
+        radarChart = new Chart(ctx, {
+            type: 'radar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Lens Score',
+                    data: scores,
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59,130,246,0.15)',
+                    pointBackgroundColor: '#3b82f6',
+                    pointBorderColor: '#fff',
+                    pointHoverBackgroundColor: '#fff',
+                    pointHoverBorderColor: '#3b82f6',
+                    borderWidth: 2,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    r: {
+                        min: 0, max: 10,
+                        ticks: { stepSize: 2, color: '#9ca3af', backdropColor: 'transparent' },
+                        grid: { color: 'rgba(255,255,255,0.08)' },
+                        pointLabels: { color: '#d1d5db', font: { size: 11 } },
+                        angleLines: { color: 'rgba(255,255,255,0.08)' },
+                    },
+                },
+                plugins: { legend: { display: false } },
+            },
+        });
+    }
+
+    function initSparkline(sparkData) {
+        const ctx = document.getElementById('sparklineChart').getContext('2d');
+        if (sparkChart) sparkChart.destroy();
+        const labels = sparkData.map((_, i) => `D-${sparkData.length - 1 - i}`);
+        sparkChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: sparkData,
+                    borderColor: '#a78bfa',
+                    backgroundColor: 'rgba(167,139,250,0.1)',
+                    borderWidth: 2,
+                    pointRadius: 2,
+                    tension: 0.35,
+                    fill: true,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { display: false },
+                    y: {
+                        min: 0, max: 10,
+                        ticks: { color: '#9ca3af', font: { size: 10 } },
+                        grid: { color: 'rgba(255,255,255,0.06)' },
+                    },
+                },
+                plugins: { legend: { display: false }, tooltip: { enabled: true } },
+            },
+        });
+    }
+
+    // ── Render ────────────────────────────────────────────────────────────────
+    function render(data) {
+        // Composite score
+        const cs = data.composite_score || 0;
+        document.getElementById('compositeScore').textContent = cs.toFixed(1);
+        document.getElementById('compositeScore').style.color = scoreColor(cs);
+        document.getElementById('compositeBar').style.width = Math.min(100, cs * 10) + '%';
+        document.getElementById('compositeBar').style.background = scoreColor(cs);
+        document.getElementById('compositeTimestamp').textContent =
+            data.timestamp ? 'As of ' + data.timestamp.replace('T', ' ').slice(0, 19) + ' UTC' : '';
+
+        // I&W light
+        const iw = data.iw_triggered;
+        const light = document.getElementById('iwLight');
+        const label = document.getElementById('iwLabel');
+        if (iw) {
+            light.style.color = '#ef4444';
+            label.textContent = 'TRIGGERED';
+            label.style.color = '#ef4444';
+        } else if (cs >= 6) {
+            light.style.color = '#f59e0b';
+            label.textContent = 'ELEVATED';
+            label.style.color = '#f59e0b';
+        } else {
+            light.style.color = '#10b981';
+            label.textContent = 'NOMINAL';
+            label.style.color = '#10b981';
+        }
+
+        // Lens table + radar
+        const lenses = data.lenses || {};
+        const lensOrder = ['threat_posture', 'behavior_pattern', 'intent_assessment', 'convergence'];
+        const radarLabels = [];
+        const radarScores = [];
+        let tableHtml = '';
+
+        for (const key of lensOrder) {
+            const d = lenses[key] || {};
+            const sc = typeof d.score === 'number' ? d.score : 0;
+            const nato = d.nato_reliability || 'F6';
+            const label = lensLabels[key] || key;
+            radarLabels.push(label);
+            radarScores.push(sc);
+            tableHtml += `<tr style="border-bottom:1px solid var(--border-color)">
+                <td style="padding:.4rem .5rem">${label}</td>
+                <td style="text-align:right;padding:.4rem .5rem;font-weight:600;color:${scoreColor(sc)}">${sc.toFixed(1)}</td>
+                <td style="text-align:center;padding:.4rem .5rem">${natoTag(nato)}</td>
+                <td style="text-align:right;padding:.4rem .5rem">${scorebar(sc)}</td>
+            </tr>`;
+        }
+        document.getElementById('lensTableBody').innerHTML = tableHtml;
+        initRadar(radarLabels, radarScores);
+
+        // Narratives
+        let narrativeHtml = '';
+        for (const key of lensOrder) {
+            const d = lenses[key] || {};
+            const narr = d.narrative || 'No narrative available.';
+            const label = lensLabels[key] || key;
+            const nato = d.nato_reliability || 'F6';
+            narrativeHtml += `<div style="background:var(--bg-secondary);border-radius:6px;padding:.75rem">
+                <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem">
+                    <span style="font-size:.8rem;font-weight:600;color:var(--text-primary)">${label}</span>
+                    ${natoTag(nato)}
+                </div>
+                <p style="font-size:.8rem;color:var(--text-secondary);margin:0;line-height:1.5">${narr}</p>
+            </div>`;
+        }
+        document.getElementById('narrativePanel').innerHTML = narrativeHtml;
+
+        // Sparkline
+        const spark = data.sparkline || Array(14).fill(0);
+        initSparkline(spark);
+    }
+
+    // ── Fetch ─────────────────────────────────────────────────────────────────
+    function fetchOracle() {
+        fetch('/api/strategos/oracle')
+            .then(r => r.json())
+            .then(data => render(data))
+            .catch(err => {
+                console.error('Oracle API error:', err);
+                document.getElementById('compositeTimestamp').textContent = 'Error loading data';
+            });
+    }
+
+    fetchOracle();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,174 @@
+{% extends "studio/base_studio.html" %}
+
+{% block studio_content %}
+<div class="studio-container">
+
+  <!-- Hero Section -->
+  <div class="mkt-hero">
+    <div class="mkt-hero__title">ICDEV™ Marketplace</div>
+    <div class="mkt-hero__subtitle">
+      Discover, install, and share compliance extensions, workflows,
+      skills, and tools across your organization.
+    </div>
+    <div class="studio-search" style="max-width:560px; margin:0 auto;">
+      <span class="studio-search__icon">&#128269;</span>
+      <input type="text" class="studio-input studio-input--lg studio-search__input"
+             placeholder="Search assets, skills, workflows..."
+             id="mkt-search" oninput="Marketplace.search(this.value)">
+      <span class="studio-search__kbd">/</span>
+    </div>
+  </div>
+
+  <!-- Category Filters -->
+  <div class="mkt-categories" id="mkt-categories">
+    <button class="mkt-category mkt-category--active" data-cat="all"
+            onclick="Marketplace.filterCategory(this, 'all')">All</button>
+    <button class="mkt-category" data-cat="skills"
+            onclick="Marketplace.filterCategory(this, 'skills')">&#9889; Skills</button>
+    <button class="mkt-category" data-cat="goals"
+            onclick="Marketplace.filterCategory(this, 'goals')">&#127919; Goals</button>
+    <button class="mkt-category" data-cat="compliance"
+            onclick="Marketplace.filterCategory(this, 'compliance')">&#128737; Compliance</button>
+    <button class="mkt-category" data-cat="workflows"
+            onclick="Marketplace.filterCategory(this, 'workflows')">&#9881; Workflows</button>
+    <button class="mkt-category" data-cat="hardprompts"
+            onclick="Marketplace.filterCategory(this, 'hardprompts')">&#128172; Prompts</button>
+    <button class="mkt-category" data-cat="context"
+            onclick="Marketplace.filterCategory(this, 'context')">&#128214; Context</button>
+    <button class="mkt-category" data-cat="args"
+            onclick="Marketplace.filterCategory(this, 'args')">&#9881; Config</button>
+  </div>
+
+  <!-- Stats Bar -->
+  <div class="studio-stats">
+    <div class="studio-stat studio-animate-in">
+      <div class="studio-stat__label">Total Assets</div>
+      <div class="studio-stat__value" id="mkt-total">-</div>
+    </div>
+    <div class="studio-stat studio-animate-in">
+      <div class="studio-stat__label">Installed</div>
+      <div class="studio-stat__value" id="mkt-installed">-</div>
+    </div>
+    <div class="studio-stat studio-animate-in">
+      <div class="studio-stat__label">Available</div>
+      <div class="studio-stat__value" id="mkt-available">-</div>
+    </div>
+    <div class="studio-stat studio-animate-in">
+      <div class="studio-stat__label">Categories</div>
+      <div class="studio-stat__value" id="mkt-categories-count">-</div>
+    </div>
+  </div>
+
+  <!-- Toolbar -->
+  <div class="studio-toolbar studio-mb-6">
+    <div class="studio-flex studio-items-center studio-gap-2">
+      <select class="studio-input studio-select" id="mkt-sort" style="width:180px;"
+              onchange="Marketplace.sort(this.value)">
+        <option value="name">Sort: Name</option>
+        <option value="rating">Sort: Rating</option>
+        <option value="installs">Sort: Most Installed</option>
+        <option value="recent">Sort: Recently Added</option>
+      </select>
+      <select class="studio-input studio-select" id="mkt-framework" style="width:180px;"
+              onchange="Marketplace.filterFramework(this.value)">
+        <option value="">Framework: All</option>
+        <option value="fedramp">FedRAMP</option>
+        <option value="cmmc">CMMC</option>
+        <option value="nist">NIST 800-53</option>
+        <option value="il4">IL4</option>
+        <option value="il5">IL5</option>
+      </select>
+    </div>
+    <div class="studio-toolbar__spacer"></div>
+    <span class="studio-text-muted" style="font-size:0.8rem;" id="mkt-showing">Showing 0 assets</span>
+    <div class="studio-toolbar__separator"></div>
+    <button class="studio-btn studio-btn--ghost studio-btn--sm studio-tooltip"
+            data-tooltip="Grid view" onclick="Marketplace.setView('grid')">&#9638;</button>
+    <button class="studio-btn studio-btn--ghost studio-btn--sm studio-tooltip"
+            data-tooltip="List view" onclick="Marketplace.setView('list')">&#9776;</button>
+  </div>
+
+  <!-- Asset Grid -->
+  <div class="studio-grid studio-grid--auto" id="mkt-grid">
+    <!-- Loading skeleton -->
+    <div class="studio-card" style="height:280px;">
+      <div class="studio-skeleton" style="height:6px;"></div>
+      <div style="padding:20px;">
+        <div class="studio-skeleton" style="width:40px;height:40px;border-radius:10px;margin-bottom:16px;"></div>
+        <div class="studio-skeleton" style="height:20px;width:60%;margin-bottom:10px;"></div>
+        <div class="studio-skeleton" style="height:14px;width:90%;margin-bottom:6px;"></div>
+        <div class="studio-skeleton" style="height:14px;width:75%;margin-bottom:16px;"></div>
+        <div class="studio-flex studio-gap-2">
+          <div class="studio-skeleton" style="height:22px;width:60px;border-radius:20px;"></div>
+          <div class="studio-skeleton" style="height:22px;width:50px;border-radius:20px;"></div>
+        </div>
+      </div>
+    </div>
+    <div class="studio-card" style="height:280px;">
+      <div class="studio-skeleton" style="height:6px;"></div>
+      <div style="padding:20px;">
+        <div class="studio-skeleton" style="width:40px;height:40px;border-radius:10px;margin-bottom:16px;"></div>
+        <div class="studio-skeleton" style="height:20px;width:55%;margin-bottom:10px;"></div>
+        <div class="studio-skeleton" style="height:14px;width:80%;margin-bottom:6px;"></div>
+        <div class="studio-skeleton" style="height:14px;width:70%;margin-bottom:16px;"></div>
+        <div class="studio-flex studio-gap-2">
+          <div class="studio-skeleton" style="height:22px;width:55px;border-radius:20px;"></div>
+          <div class="studio-skeleton" style="height:22px;width:65px;border-radius:20px;"></div>
+        </div>
+      </div>
+    </div>
+    <div class="studio-card" style="height:280px;">
+      <div class="studio-skeleton" style="height:6px;"></div>
+      <div style="padding:20px;">
+        <div class="studio-skeleton" style="width:40px;height:40px;border-radius:10px;margin-bottom:16px;"></div>
+        <div class="studio-skeleton" style="height:20px;width:50%;margin-bottom:10px;"></div>
+        <div class="studio-skeleton" style="height:14px;width:85%;margin-bottom:6px;"></div>
+        <div class="studio-skeleton" style="height:14px;width:65%;margin-bottom:16px;"></div>
+        <div class="studio-flex studio-gap-2">
+          <div class="studio-skeleton" style="height:22px;width:70px;border-radius:20px;"></div>
+          <div class="studio-skeleton" style="height:22px;width:45px;border-radius:20px;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Empty state (hidden initially) -->
+  <div class="studio-empty" id="mkt-empty" style="display:none;">
+    <div class="studio-empty__icon">&#128270;</div>
+    <div class="studio-empty__title">No assets found</div>
+    <div class="studio-empty__description">
+      Try adjusting your search or filters.
+    </div>
+    <button class="studio-btn studio-btn--secondary" onclick="Marketplace.clearFilters()">
+      Clear Filters
+    </button>
+  </div>
+
+</div>
+
+<!-- Asset Detail Modal -->
+<div class="studio-modal-overlay" id="mkt-detail-modal" style="display:none;">
+  <div class="studio-modal studio-modal--lg">
+    <div class="studio-modal__header">
+      <div class="studio-modal__title" id="mkt-detail-name">Asset Details</div>
+      <button class="studio-btn studio-btn--ghost studio-btn--sm"
+              onclick="Marketplace.closeDetail()">&#10005;</button>
+    </div>
+    <div class="studio-modal__body" id="mkt-detail-body">
+      <!-- Dynamic content -->
+    </div>
+    <div class="studio-modal__footer">
+      <button class="studio-btn studio-btn--ghost" onclick="Marketplace.closeDetail()">Close</button>
+      <button class="studio-btn studio-btn--primary" id="mkt-install-btn"
+              onclick="Marketplace.install()">
+        &#8615; Install
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div class="studio-toast-container" id="studio-toasts"></div>
+
+<script src="/static/js/marketplace.js"></script>
+{% endblock %}

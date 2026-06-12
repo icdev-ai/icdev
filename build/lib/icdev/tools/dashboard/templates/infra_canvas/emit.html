@@ -1,0 +1,280 @@
+<!-- CUI // SP-CTI — IDC IaC Emit Page -->
+{% extends "base.html" %}
+{% block title %}Emit IaC — Infrastructure Design Canvas — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .emit-wrap{max-width:900px;margin:0 auto;padding:24px 20px;}
+  .emit-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}
+  .emit-header h1{margin:0;font-size:22px;font-weight:700;color:var(--text);}
+  .emit-header p{margin:4px 0 0;font-size:13px;color:var(--text-dim);}
+  .emit-cui-badge{background:#b71c1c;color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:4px;letter-spacing:.5px;}
+  .emit-form-card{background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:24px;margin-bottom:24px;}
+  .emit-form-card h2{margin:0 0 16px;font-size:15px;font-weight:700;color:var(--text);}
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .form-full{grid-column:1/-1;}
+  .form-group{display:flex;flex-direction:column;gap:4px;}
+  .form-group label{font-size:11px;font-weight:700;color:var(--text-dim);text-transform:uppercase;letter-spacing:.5px;}
+  .form-group select,.form-group textarea,.form-group input{background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 10px;font-size:13px;width:100%;box-sizing:border-box;}
+  .form-group textarea{font-family:monospace;resize:vertical;min-height:100px;}
+  .form-note{font-size:11px;color:var(--text-dim);margin-top:2px;}
+  .btn-emit{background:#00838f;color:#fff;border:none;border-radius:6px;padding:10px 24px;font-size:14px;font-weight:700;cursor:pointer;min-width:140px;}
+  .btn-emit:disabled{opacity:.5;cursor:not-allowed;}
+  .btn-secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:10px 20px;font-size:13px;cursor:pointer;}
+  .emit-actions{display:flex;gap:10px;align-items:center;margin-top:20px;}
+  .spinner{display:none;width:18px;height:18px;border:2px solid var(--border);border-top-color:#00bcd4;border-radius:50%;animation:spin .7s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .emit-results{display:none;background:var(--bg2);border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+  .emit-results.visible{display:block;}
+  .result-header{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid var(--border);}
+  .result-header h3{margin:0;font-size:14px;font-weight:700;color:var(--text);}
+  .result-meta{display:flex;gap:10px;font-size:11px;color:var(--text-dim);}
+  .result-meta span{background:var(--bg3);border-radius:4px;padding:2px 8px;}
+  .tab-bar{display:flex;gap:0;border-bottom:1px solid var(--border);background:var(--bg2);overflow-x:auto;}
+  .tab-btn{background:none;border:none;padding:10px 18px;font-size:12px;font-weight:600;color:var(--text-dim);cursor:pointer;border-bottom:2px solid transparent;white-space:nowrap;}
+  .tab-btn.active{color:#00bcd4;border-bottom-color:#00bcd4;}
+  .tab-btn:hover:not(.active){color:var(--text);background:var(--bg3);}
+  .tab-panel{display:none;position:relative;}
+  .tab-panel.active{display:block;}
+  .code-toolbar{display:flex;justify-content:flex-end;padding:6px 12px;background:var(--bg3);border-bottom:1px solid var(--border);}
+  .btn-copy{background:var(--bg2);border:1px solid var(--border);color:var(--text);border-radius:4px;padding:3px 12px;font-size:11px;cursor:pointer;}
+  .btn-copy:hover{background:#00838f;color:#fff;border-color:#00838f;}
+  .code-block{margin:0;padding:20px;font-family:monospace;font-size:12px;color:#b0c4de;background:var(--bg1);white-space:pre;overflow-x:auto;max-height:520px;overflow-y:auto;}
+  .emit-error{background:#2c0a0a;border:1px solid #7b1c1c;color:#ef9a9a;border-radius:8px;padding:16px 20px;margin-top:16px;display:none;font-size:13px;}
+  .emit-error.visible{display:block;}
+  .back-link{display:inline-flex;align-items:center;gap:6px;color:var(--text-dim);font-size:12px;text-decoration:none;margin-bottom:16px;}
+  .back-link:hover{color:var(--text);}
+</style>
+
+<div class="emit-wrap">
+  <a href="/infra/" class="back-link">&#8592; Infrastructure Canvas</a>
+  <div class="emit-header">
+    <div>
+      <h1>Emit IaC</h1>
+      <p>Generate Infrastructure-as-Code from a design or inline graph JSON.</p>
+    </div>
+    <span class="emit-cui-badge">CUI // SP-CTI</span>
+  </div>
+
+  <div class="emit-form-card">
+    <h2>Configuration</h2>
+    <form id="emit-form" novalidate>
+      <div class="form-grid">
+
+        <!-- Target (IaC tool) -->
+        <div class="form-group">
+          <label for="target">IaC Target</label>
+          <select id="target" name="target" required>
+            <option value="">— select target —</option>
+            {% for t in targets %}
+            <option value="{{ t }}">{{ t | capitalize }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- CSP -->
+        <div class="form-group">
+          <label for="csp">Cloud / CSP</label>
+          <select id="csp" name="csp" required>
+            <option value="">— select CSP —</option>
+            {% for c in csps %}
+            <option value="{{ c }}">{{ c | upper }}</option>
+            {% endfor %}
+          </select>
+          <span class="form-note" id="csp-note"></span>
+        </div>
+
+        <!-- Project / Design ID or inline JSON -->
+        <div class="form-group form-full">
+          <label for="project">Design (select or paste graph JSON)</label>
+          {% if designs %}
+          <select id="design-select" style="margin-bottom:6px;background:var(--bg3);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:8px 10px;font-size:13px;width:100%;box-sizing:border-box;">
+            <option value="">— choose a saved design —</option>
+            {% for d in designs %}
+            <option value="{{ d.id }}">{{ d.name }}</option>
+            {% endfor %}
+          </select>
+          {% endif %}
+          <textarea id="project" name="project" rows="5"
+            placeholder='{"nodes":[{"id":"n1","type":"aws-vpc","label":"main","metadata":{"cidr_block":"10.0.0.0/16"}}],"edges":[]}'
+          ></textarea>
+          <span class="form-note">Paste a graph JSON directly, or select a saved design above to auto-fill.</span>
+        </div>
+      </div>
+
+      <div class="emit-actions">
+        <button type="submit" class="btn-emit" id="emit-btn">Generate IaC</button>
+        <div class="spinner" id="spinner"></div>
+        <a href="/infra/" class="btn-secondary" style="text-decoration:none;">Cancel</a>
+      </div>
+    </form>
+  </div>
+
+  <!-- Error banner -->
+  <div class="emit-error" id="emit-error"></div>
+
+  <!-- Results pane -->
+  <div class="emit-results" id="emit-results">
+    <div class="result-header">
+      <h3 id="result-title">Generated Files</h3>
+      <div class="result-meta">
+        <span id="meta-target"></span>
+        <span id="meta-csp"></span>
+        <span id="meta-nodes"></span>
+      </div>
+    </div>
+    <div class="tab-bar" id="tab-bar"></div>
+    <div id="tab-panels"></div>
+  </div>
+</div>
+
+<script>
+(function () {
+  // Supported CSPs per target (from server-side constant)
+  const SUPPORTED_CSPS = {{ supported_csps | tojson }};
+
+  const targetSel  = document.getElementById('target');
+  const cspSel     = document.getElementById('csp');
+  const cspNote    = document.getElementById('csp-note');
+  const designSel  = document.getElementById('design-select');
+  const projectTA  = document.getElementById('project');
+  const form       = document.getElementById('emit-form');
+  const emitBtn    = document.getElementById('emit-btn');
+  const spinner    = document.getElementById('spinner');
+  const errBanner  = document.getElementById('emit-error');
+  const results    = document.getElementById('emit-results');
+
+  // Populate CSP note when target changes
+  targetSel && targetSel.addEventListener('change', function () {
+    const t = this.value;
+    const ok = SUPPORTED_CSPS[t] || [];
+    cspNote.textContent = t ? `Supported CSPs: ${ok.join(', ')}` : '';
+    // Reset unavailable CSP options
+    Array.from(cspSel.options).forEach(opt => {
+      if (!opt.value) return;
+      opt.disabled = ok.length > 0 && !ok.includes(opt.value);
+    });
+    if (cspSel.value && ok.length > 0 && !ok.includes(cspSel.value)) {
+      cspSel.value = '';
+    }
+  });
+
+  // Auto-fill graph textarea from saved design selector
+  designSel && designSel.addEventListener('change', async function () {
+    const id = this.value;
+    if (!id) return;
+    try {
+      const r = await fetch(`/infra/api/designs/${id}`);
+      if (!r.ok) return;
+      const d = await r.json();
+      projectTA.value = JSON.stringify(d.graph || {}, null, 2);
+    } catch (_) {}
+  });
+
+  function showError(msg) {
+    errBanner.textContent = msg;
+    errBanner.classList.add('visible');
+    results.classList.remove('visible');
+  }
+
+  function hideError() {
+    errBanner.classList.remove('visible');
+    errBanner.textContent = '';
+  }
+
+  function renderTabs(files) {
+    const tabBar    = document.getElementById('tab-bar');
+    const tabPanels = document.getElementById('tab-panels');
+    tabBar.innerHTML    = '';
+    tabPanels.innerHTML = '';
+
+    const names = Object.keys(files);
+    names.forEach((name, i) => {
+      // Tab button
+      const btn = document.createElement('button');
+      btn.className = 'tab-btn' + (i === 0 ? ' active' : '');
+      btn.textContent = name;
+      btn.dataset.tab = name;
+      btn.addEventListener('click', function () {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        this.classList.add('active');
+        document.getElementById('panel-' + name.replace(/[^a-z0-9]/gi, '_')).classList.add('active');
+      });
+      tabBar.appendChild(btn);
+
+      // Panel
+      const panelId = 'panel-' + name.replace(/[^a-z0-9]/gi, '_');
+      const panel = document.createElement('div');
+      panel.className = 'tab-panel' + (i === 0 ? ' active' : '');
+      panel.id = panelId;
+
+      const toolbar = document.createElement('div');
+      toolbar.className = 'code-toolbar';
+      const copyBtn = document.createElement('button');
+      copyBtn.className = 'btn-copy';
+      copyBtn.textContent = 'Copy';
+      copyBtn.addEventListener('click', function () {
+        navigator.clipboard.writeText(files[name]).then(() => {
+          this.textContent = 'Copied!';
+          setTimeout(() => { this.textContent = 'Copy'; }, 1500);
+        });
+      });
+      toolbar.appendChild(copyBtn);
+
+      const pre = document.createElement('pre');
+      pre.className = 'code-block';
+      pre.textContent = files[name];
+
+      panel.appendChild(toolbar);
+      panel.appendChild(pre);
+      tabPanels.appendChild(panel);
+    });
+  }
+
+  form.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    hideError();
+
+    const project = projectTA.value.trim();
+    const target  = targetSel.value;
+    const csp     = cspSel.value;
+
+    if (!project) { showError('Paste a graph JSON or select a saved design.'); return; }
+    if (!target)  { showError('Select an IaC target.'); return; }
+    if (!csp)     { showError('Select a cloud / CSP.'); return; }
+
+    emitBtn.disabled = true;
+    spinner.style.display = 'block';
+    results.classList.remove('visible');
+
+    try {
+      const resp = await fetch('/infra/emit/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ project, target, csp }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        showError(data.error || `HTTP ${resp.status}`);
+        return;
+      }
+
+      // Populate metadata
+      document.getElementById('meta-target').textContent = `Target: ${data.target}`;
+      document.getElementById('meta-csp').textContent    = `CSP: ${data.csp}`;
+      document.getElementById('meta-nodes').textContent  = `Nodes: ${data.emitted_count}/${data.node_count}`;
+      document.getElementById('result-title').textContent =
+        `Generated Files (${Object.keys(data.files).length})`;
+
+      renderTabs(data.files);
+      results.classList.add('visible');
+    } catch (err) {
+      showError('Network error: ' + err.message);
+    } finally {
+      emitBtn.disabled = false;
+      spinner.style.display = 'none';
+    }
+  });
+}());
+</script>
+{% endblock %}

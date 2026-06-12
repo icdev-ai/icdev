@@ -1,0 +1,181 @@
+{
+  "id": "vert-agentic-ai",
+  "name": "Agentic AI Frameworks",
+  "slug": "agentic-ai",
+  "description": "Agentic AI framework design, multi-agent orchestration, RAG pipeline composition, HITL workflow integration, LLM observability/tracing, safety guardrails, agent memory management, model provenance, and visual AI design canvases. Covers open-source frameworks (Haystack, LangChain, LangGraph, LangSmith, CrewAI, AutoGen, DSPy, LlamaIndex, Semantic Kernel) and visual builders (Flowise, Langflow) as well as workflow engines (Temporal, Prefect) applicable to agentic systems.",
+  "keywords": [
+    "agentic AI",
+    "multi-agent orchestration",
+    "LLM pipeline",
+    "RAG pipeline",
+    "HITL workflow",
+    "human in the loop",
+    "agent memory",
+    "model provenance",
+    "LangChain",
+    "LangGraph",
+    "LangSmith",
+    "Haystack",
+    "CrewAI",
+    "AutoGen",
+    "DSPy",
+    "LlamaIndex",
+    "Semantic Kernel",
+    "Flowise",
+    "Langflow",
+    "agent simulation",
+    "safety guardrails",
+    "agent tracing",
+    "LLM observability",
+    "prompt engineering",
+    "chain of thought",
+    "tool calling",
+    "function calling",
+    "vector store",
+    "document retrieval",
+    "agent coordination",
+    "multi-agent supervisor",
+    "stateful agents",
+    "checkpointing",
+    "durable execution",
+    "agent evaluation",
+    "AI design canvas",
+    "agentic design",
+    "AI governance",
+    "CAIO",
+    "responsible AI"
+  ],
+  "regulatory_bodies": [
+    "NIST AI RMF",
+    "EU AI Act",
+    "DISA",
+    "CISA",
+    "OSTP",
+    "DoD AI Principles"
+  ],
+  "academic_categories": {
+    "arxiv": [
+      "cs.AI",
+      "cs.LG",
+      "cs.CL",
+      "cs.MA",
+      "cs.SE"
+    ],
+    "ieee": [
+      "multi-agent systems",
+      "LLM orchestration",
+      "agentic AI",
+      "autonomous agents",
+      "AI safety"
+    ],
+    "acm": [
+      "artificial intelligence",
+      "natural language processing",
+      "software engineering",
+      "human-computer interaction"
+    ]
+  },
+  "community_sources": {
+    "reddit": [
+      "r/LangChain",
+      "r/MachineLearning",
+      "r/LocalLLaMA",
+      "r/artificial",
+      "r/ChatGPT",
+      "r/AIAssistants",
+      "r/learnmachinelearning",
+      "r/PromptEngineering",
+      "r/OpenAI"
+    ],
+    "stackexchange": [
+      "stackoverflow.com/questions/tagged/langchain",
+      "stackoverflow.com/questions/tagged/llm",
+      "ai.stackexchange.com"
+    ],
+    "discord": [
+      "LangChain Discord",
+      "Haystack Discord",
+      "LocalLLaMA Discord"
+    ],
+    "github_discussions": [
+      "langchain-ai/langchain",
+      "deepset-ai/haystack",
+      "langchain-ai/langgraph",
+      "microsoft/autogen",
+      "crewAIInc/crewAI",
+      "run-llama/llama_index",
+      "microsoft/semantic-kernel"
+    ]
+  },
+  "review_sites": {
+    "g2": ["ai-platforms", "machine-learning-platforms", "ai-code-assistants"],
+    "capterra": ["artificial-intelligence-software", "machine-learning-software"],
+    "trustpilot": []
+  },
+  "saas_commercial": null,
+  "open_source": {
+    "github_topics": [
+      "langchain",
+      "langgraph",
+      "haystack",
+      "llm-agent",
+      "multi-agent",
+      "agentic-ai",
+      "rag",
+      "llm-framework",
+      "agent-framework",
+      "ai-canvas"
+    ],
+    "awesome_lists": [
+      "awesome-langchain",
+      "awesome-llm-apps",
+      "awesome-ai-agents"
+    ],
+    "package_registries": {
+      "pypi": [
+        "langchain",
+        "langgraph",
+        "haystack-ai",
+        "crewai",
+        "llama-index",
+        "dspy-ai",
+        "semantic-kernel",
+        "autogen",
+        "prefect"
+      ],
+      "npm": [
+        "@langchain/core",
+        "@langchain/langgraph",
+        "flowise"
+      ],
+      "crates": []
+    }
+  },
+  "news_sources": [
+    "https://blog.langchain.dev",
+    "https://haystack.deepset.ai/blog",
+    "https://towardsdatascience.com",
+    "https://www.marktechpost.com",
+    "https://huggingface.co/blog",
+    "https://bair.berkeley.edu/blog"
+  ],
+  "patent_categories": [
+    "G06N 3/08",
+    "G06F 40/56",
+    "G06N 5/04"
+  ],
+  "compliance_frameworks": [
+    "NIST AI RMF",
+    "EU AI Act",
+    "ISO/IEC 42001",
+    "DoD AI Principles",
+    "NIST SP 800-218A"
+  ],
+  "video_sources": [
+    "youtube:LangChain",
+    "youtube:Haystack AI",
+    "youtube:AutoGen",
+    "youtube:multi agent AI",
+    "youtube:agentic AI tutorial"
+  ]
+}
