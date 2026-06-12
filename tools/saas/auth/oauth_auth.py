@@ -13,6 +13,8 @@ from tools.db.storage import get_connection
 from pathlib import Path
 from typing import Optional
 
+from tools.saas.auth import constants
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
@@ -23,12 +25,35 @@ PLATFORM_DB_PATH = Path(os.environ.get("PLATFORM_DB_PATH", str(BASE_DIR / "data"
 
 # JWKS cache: {issuer_url: {keys: [...], fetched_at: timestamp}}
 _jwks_cache = {}
-_JWKS_CACHE_TTL = 3600  # 1 hour
+
+# Latency history for anomaly detection: {jwks_uri: [latency_ms, ...]}
+_jwks_latency_history = {}
 
 
 def _get_platform_conn():
     conn = get_connection()
     return conn
+
+
+def _record_jwks_latency(jwks_uri: str, latency_ms: float) -> None:
+    """Record JWKS fetch latency in a per-endpoint ring buffer."""
+    hist = _jwks_latency_history.setdefault(jwks_uri, [])
+    hist.append(latency_ms)
+    if len(hist) > constants.JWKS_LATENCY_MAX_HISTORY:
+        hist.pop(0)
+
+
+def _is_jwks_latency_anomalous(jwks_uri: str, latency_ms: float) -> bool:
+    """Return True if *latency_ms* is an outlier for this endpoint."""
+    hist = _jwks_latency_history.get(jwks_uri, [])
+    if len(hist) < constants.JWKS_LATENCY_MIN_SAMPLES:
+        # Not enough history — fall back to absolute ceiling only.
+        return latency_ms > constants.JWKS_LATENCY_ABS_CEILING_MS
+    mean = sum(hist) / len(hist)
+    variance = sum((x - mean) ** 2 for x in hist) / len(hist)
+    stdev = variance ** 0.5
+    threshold = mean + (constants.JWKS_LATENCY_ANOMALY_STDEV_K * stdev)
+    return latency_ms > threshold or latency_ms > constants.JWKS_LATENCY_ABS_CEILING_MS
 
 
 def _decode_jwt_unverified(token: str) -> Optional[dict]:
@@ -52,20 +77,30 @@ def _decode_jwt_unverified(token: str) -> Optional[dict]:
 
 
 def _fetch_jwks(jwks_uri: str) -> Optional[dict]:
-    """Fetch JWKS from IdP. Cached for 1 hour."""
+    """Fetch JWKS from IdP. Cached for JWKS_CACHE_TTL_SECONDS."""
     now = time.time()
     if jwks_uri in _jwks_cache:
         cached = _jwks_cache[jwks_uri]
-        if now - cached["fetched_at"] < _JWKS_CACHE_TTL:
+        if now - cached["fetched_at"] < constants.JWKS_CACHE_TTL_SECONDS:
             return cached["keys"]
 
     try:
         from tools.http.client import request
 
-        resp = request("GET", jwks_uri, timeout=10)
+        start = time.time()
+        resp = request("GET", jwks_uri, timeout=constants.JWKS_FETCH_TIMEOUT_SECONDS)
+        latency_ms = (time.time() - start) * 1000
         resp.raise_for_status()
         keys = resp.json()
         _jwks_cache[jwks_uri] = {"keys": keys, "fetched_at": now}
+        _record_jwks_latency(jwks_uri, latency_ms)
+        if _is_jwks_latency_anomalous(jwks_uri, latency_ms):
+            logger.warning(
+                "Anomalous JWKS fetch latency for %s: %.1f ms (baseline %s)",
+                jwks_uri,
+                latency_ms,
+                _jwks_latency_history.get(jwks_uri, []),
+            )
         return keys
     except Exception as e:
         logger.error("JWKS fetch error from %s: %s", jwks_uri, e)
