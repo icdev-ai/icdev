@@ -4,6 +4,48 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: dsyn
+  name: "DIC Canvas Synergy"
+  description: >-
+    Wire every ICDEV canvas and child app into the Document Intelligence
+    Canvas so that state changes (config pushes, compliance findings,
+    posture shifts, capability gaps) automatically surface as AI-drafted
+    document update suggestions queued for HITL review.  Closes the
+    "keeping docs current" gap identified post-RTED: canvas adapter,
+    integration reflex, event emission per Tier-1 canvas, targeted patch
+    mode, viewer suggest-edit, scheduled review cadence, and cross-doc
+    consistency propagation.
+  task_prefix: dsyn-
+  default_open: true
+  briefs:
+    - "Canvas adapter maps canvas_events rows to affected DIC collections via YAML config (adapt epic)"
+    - "DIC integration Genesis reflex polls events, calls adapter, queues AI-drafted suggestions (reflex epic)"
+    - "Eight Tier-1 canvases emit change events to the canvas_events bus (emit epic)"
+    - "Targeted patch mode generates minimal section edits instead of full rewrites (patch epic)"
+    - "Viewer-role suggest-edit and scheduled review cadence open crowdsourcing (suggest epic)"
+    - "KG neighbor walk propagates consistency flags when a referenced doc changes (consist epic)"
+  epics:
+  - key: adapt
+    title: "Canvas Adapter + Suggestions Table"
+    priority: high
+  - key: reflex
+    title: "DIC Integration Reflex"
+    priority: high
+  - key: emit
+    title: "Tier-1 Canvas Event Emission"
+    priority: high
+  - key: patch
+    title: "Targeted Patch Mode + Notifications"
+    priority: medium
+  - key: suggest
+    title: "Suggest-Edit + Scheduled Review"
+    priority: medium
+  - key: consist
+    title: "Cross-Doc Consistency"
+    priority: low
+  - key: vv
+    title: "Validation"
+    priority: medium
 - key: rted
   name: "DIC Real-Time Collaborative Editing"
   description: >-
