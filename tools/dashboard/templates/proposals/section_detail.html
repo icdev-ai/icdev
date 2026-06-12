@@ -187,6 +187,7 @@
         // ── Constants ──────────────────────────────────────────────────
         var _SEC_ID = '{{ section.id }}';
         var _DRAFT_ID = '{{ draft.id if draft else "" }}';
+        var _CURRENT_USER = '{{ (current_user.display_name or current_user.email or current_user.username) if current_user else "reviewer" }}';
         var _annMode = false;
         var _allAnnotations = [];
         var _activeFilter = 'all';
@@ -282,7 +283,7 @@
                     category: category,
                     comment: comment,
                     draft_id: _DRAFT_ID || null,
-                    author: 'reviewer'
+                    author: _CURRENT_USER
                 })
             })
             .then(function(r) { return r.json(); })
@@ -385,7 +386,11 @@
                 + '<div style="font-size:0.75rem;color:var(--text-secondary);font-style:italic;margin-bottom:4px;">“' + escHtml(preview) + '”</div>'
                 + '<div style="font-size:0.8rem;' + (resolved ? 'text-decoration:line-through;' : '') + 'color:var(--text-primary);">' + escHtml(ann.comment) + '</div>'
                 + '<div style="font-size:0.68rem;color:var(--text-muted,#666);margin-top:4px;">'
-                +   (ann.author || 'reviewer') + ' &middot; ' + (ann.created_at || '').slice(0,10)
+                +   '<strong>' + escHtml(ann.author || 'reviewer') + '</strong>'
+                +   ' &middot; ' + (ann.created_at || '').slice(0,10)
+                +   (resolved && ann.resolved_by
+                        ? '<br>Resolved by <strong>' + escHtml(ann.resolved_by) + '</strong> &middot; ' + (ann.resolved_at || '').slice(0,10)
+                        : '')
                 + '</div>'
                 + '</div>';
         }
@@ -446,7 +451,7 @@
             fetch('/api/proposals/annotations/' + id, {
                 method: 'PUT',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({status: 'resolved'})
+                body: JSON.stringify({status: 'resolved', resolved_by: _CURRENT_USER, author: _CURRENT_USER})
             }).then(function() { loadAnnotations(); });
         }
 
