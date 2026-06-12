@@ -493,6 +493,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "cwk_sessions",
         # EQO Centralized Logging (eqo-log-01, migration 181) — log rows are immutable evidence (NIST AU)
         "centralized_logs",
+        # DIC Collaborative Editing — section edit history (rted-hist-01, NIST AU — each edit row is immutable)
+        "dic_edit_history",
     ]
 
     if tool_name == "Bash":

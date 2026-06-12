@@ -1665,16 +1665,44 @@ def api_section_update_content(section_id):
         return _forbid("editor")
     conn = _conn()
     try:
+        # Capture before-content for edit history
+        before_row = conn.execute(
+            "SELECT content FROM dic_sections WHERE section_id = ? LIMIT 1", (section_id,)
+        ).fetchone()
+        before_content = (dict(before_row).get("content") or "") if before_row else ""
+
         conn.execute(
             "UPDATE dic_sections SET content = ?, status = ?, origin = ?, created_at = ? WHERE section_id = ?",
             (content, "draft", "human_authored", _now(), section_id),
         )
         conn.commit()
+
+        # Append-only history record (no-op if content unchanged)
+        try:
+            from tools.document_intelligence.history_recorder import record_edit
+            record_edit(
+                section_id=section_id,
+                editor=_current_user(),
+                content_before=before_content,
+                content_after=content,
+            )
+        except Exception:
+            pass  # history failure must never block a save
+
         return jsonify({"status": "updated", "section_id": section_id})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
         conn.close()
+
+
+@dic_bp.route("/api/sections/<section_id>/history", methods=["GET"])
+def api_section_edit_history(section_id: str):
+    """Return edit history for a section, most-recent first."""
+    from tools.document_intelligence.history_recorder import get_section_history
+    limit = min(int(request.args.get("limit", 50)), 200)
+    entries = get_section_history(section_id, limit=limit)
+    return jsonify({"section_id": section_id, "history": entries, "count": len(entries)})
 
 
 # ── API: Template Instantiation ─────────────────────────────────────────────
