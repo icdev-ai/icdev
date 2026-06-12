@@ -145,6 +145,15 @@ print(update["content"], update["citation_count"], update["status"])
 |------|---------|
 | `tools/document_intelligence/blueprint.py` | Document Intelligence Canvas Flask Blueprint. Registers all UI routes (`/document-intelligence/`, `/collections`, `/search`, `/review`, `/generate`, `/acoic`, `/finetune`, `/snippets`, `/templates`) and JSON API endpoints (`/api/ingest`, `/api/search`, `/api/chat`, `/api/collections`, `/api/review/<id>/approve|reject`, `/api/generate`, `/api/iqe-query`). |
 
+## DIC Canvas Synergy (DSYN) — Integration Config
+
+| Artifact | Purpose |
+|----------|---------|
+| `args/dic_canvas_integrations.yaml` | Maps canvas_events `event_type` values to affected DIC collection tags, doc_types, priority, rationale, and patch_mode. Covers all 8 Tier-1 canvases (NDC, Network, ZIG, Compliance, SIPA, DevSecOps, CloudForge, AI-ify) plus DIC-internal events and crowdsource. Used by `canvas_adapter.py` to resolve which collections need AI-drafted suggestions when a canvas event fires. |
+| `tools/document_intelligence/canvas_adapter.py` | Resolves canvas_events rows → affected DIC collections. Loads the integrations YAML (cached, mtime-aware), matches event_type (exact → prefix → fallback), queries dic_collections for tag overlap (Python-side intersection), returns `[{collection_id, matched_tags, doc_type, priority, rationale}]`. |
+| `tools/document_intelligence/suggestion_store.py` | DSYN suggestion lifecycle: `create_suggestion()` → `get_pending_suggestions()` → `decide_suggestion()`. Manages `dic_suggestions` (mutable) and `dic_suggestion_decisions` (append-only, NIST AU). |
+| `tools/genesis/reflexes/dic_integration.py` | Genesis reflex (15-min cadence) that polls canvas_events, calls canvas_adapter, drafts targeted patch suggestions via the DIC generation route, and queues them in dic_suggestions for HITL review. Idempotent — re-run never creates duplicates. |
+
 ## Knowledge Handoff
 
 | Tool | Purpose |
