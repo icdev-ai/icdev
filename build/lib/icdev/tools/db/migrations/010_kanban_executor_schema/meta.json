@@ -1,0 +1,7 @@
+{
+  "id": "010",
+  "name": "kanban_executor_schema",
+  "description": "Add kanban_executions audit table for the kanban executor reflex (genesis daemon). Each task execution gets a row with started_at/completed_at, status, exit_code, output_summary. Also extends kanban_tasks with executor_type/execution_id/executor_url columns so the dashboard can show which executor ran a task.",
+  "created_at": "2026-04-04",
+  "phase": "Phase 67"
+}

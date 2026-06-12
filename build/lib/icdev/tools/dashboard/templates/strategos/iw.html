@@ -1,0 +1,646 @@
+{% extends "base.html" %}
+{% set active = "strategos" %}
+{% block title %}I&amp;W Signal Matrix — Strategos{% endblock %}
+
+{% block head %}
+<script src="{{ url_for('static', filename='vendor/chartjs/chart.umd.min.js') }}"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-header page-header--compact">
+    <h1>I&amp;W Signal Matrix <span style="font-size:0.65em;color:var(--text-secondary);font-weight:400;">Indications &amp; Warning · PMESII-PT Assessment</span></h1>
+    <a href="/strategos" style="font-size:.85rem;color:var(--text-secondary)">&larr; Back to Strategos</a>
+</div>
+
+<!-- Row 1: WRI dial + PMESII-PT radar + Dimension scores -->
+<div style="display:grid;grid-template-columns:220px 1fr 1fr;gap:1rem;margin-bottom:1rem">
+
+    <!-- WRI Gauge dial -->
+    <div class="card" style="text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center">
+        <div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.4rem">Warning Risk Index</div>
+        <div style="position:relative;width:160px;height:90px;margin:0 auto">
+            <canvas id="wriDial" width="160" height="90"></canvas>
+            <div style="position:absolute;bottom:4px;left:0;right:0;text-align:center">
+                <span id="wriScore" style="font-size:2rem;font-weight:700;color:var(--accent-blue)">—</span>
+                <span style="font-size:.8rem;color:var(--text-muted)">/100</span>
+            </div>
+        </div>
+        <div style="margin:.4rem 0 .2rem">
+            <span id="rungBadge" style="font-size:.75rem;font-weight:600;padding:.25rem .7rem;border-radius:4px;display:inline-block">—</span>
+        </div>
+        <div id="rungLabel" style="font-size:.7rem;color:var(--text-muted)">—</div>
+        <button id="deriveBtn" class="btn" style="margin-top:.7rem;font-size:.75rem;padding:.3rem .8rem">Auto-derive</button>
+    </div>
+
+    <!-- Radar chart -->
+    <div class="card">
+        <div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">PMESII-PT Radar</div>
+        <div style="height:240px">
+            <canvas id="pmesiiRadar"></canvas>
+        </div>
+    </div>
+
+    <!-- Dimension scores + manual form -->
+    <div class="card">
+        <div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.5rem">Dimension Scores</div>
+        <div id="dimScores" style="font-size:.8rem">
+            <div style="color:var(--text-muted)">Loading…</div>
+        </div>
+        <details style="margin-top:.75rem">
+            <summary style="font-size:.75rem;color:var(--text-secondary);cursor:pointer">Submit scores manually</summary>
+            <form id="wriForm" style="margin-top:.5rem">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:.35rem .75rem">
+                    {% for dim in ['political','military','economic','social','information','infrastructure','physical_environment','time'] %}
+                    <label style="font-size:.75rem;color:var(--text-secondary)">
+                        {{ dim|replace('_',' ')|title }}
+                        <input type="range" name="{{ dim }}" min="0" max="100" value="0"
+                               style="width:100%;margin-top:.2rem;accent-color:var(--accent-blue)">
+                        <span id="v_{{ dim }}" style="float:right;color:var(--text-muted)">0</span>
+                    </label>
+                    {% endfor %}
+                </div>
+                <button type="submit" class="btn btn-primary" style="margin-top:.5rem;font-size:.8rem">Run Assessment</button>
+            </form>
+        </details>
+    </div>
+
+</div>
+
+<!-- Escalation Ladder gauge row -->
+<div class="card" style="margin-bottom:1rem">
+    <div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.6rem">
+        Escalation Ladder
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:.4rem">
+        {% for rung in [
+            (1,'Routine Monitoring','#10b981','WRI 0–20'),
+            (2,'Elevated Watch','#22d3ee','WRI 20–40'),
+            (3,'Heightened Readiness','#f59e0b','WRI 40–60'),
+            (4,'Crisis Response','#f97316','WRI 60–80'),
+            (5,'Imminent Action','#ef4444','WRI 80–100'),
+        ] %}
+        <div id="rung{{ rung[0] }}" style="padding:.5rem .6rem;border-radius:5px;background:rgba(255,255,255,0.03);border:1px solid var(--border-color);text-align:center;transition:opacity .3s,border-color .3s">
+            <div style="font-size:1.3rem;font-weight:700;color:{{ rung[2] }}">{{ rung[0] }}</div>
+            <div style="font-size:.7rem;font-weight:600;color:{{ rung[2] }};margin:.15rem 0">{{ rung[1] }}</div>
+            <div style="font-size:.65rem;color:var(--text-muted)">{{ rung[3] }}</div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<!-- Row 2: Signal matrix heatmap (D3) + Survival curve (Plotly) -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+
+    <!-- Signal Matrix Heatmap -->
+    <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.5rem">
+            <span style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">Signal Matrix — 14-Day Heatmap</span>
+            <select id="matrixDays" style="font-size:.72rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-secondary);padding:.15rem .4rem;border-radius:3px">
+                <option value="7">7 d</option>
+                <option value="14" selected>14 d</option>
+                <option value="30">30 d</option>
+            </select>
+        </div>
+        <div id="signalMatrix" style="overflow-x:auto"></div>
+    </div>
+
+    <!-- Survival Curve -->
+    <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:.5rem">
+            <span style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">Time-to-Crisis Survival Curve</span>
+            <select id="survThreshold" style="font-size:.72rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-secondary);padding:.15rem .4rem;border-radius:3px">
+                <option value="40">Threshold WRI 40</option>
+                <option value="60" selected>Threshold WRI 60</option>
+                <option value="80">Threshold WRI 80</option>
+            </select>
+        </div>
+        <div style="height:240px;position:relative"><canvas id="survivalCanvas"></canvas></div>
+    </div>
+
+</div>
+
+<!-- Historical Match Cards -->
+<div class="card" style="margin-bottom:1rem">
+    <div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:.75rem">
+        Historical Pattern Matches — Top 3 Nearest Assessments
+    </div>
+    <div id="matchCards" style="display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem">
+        <div style="color:var(--text-muted);font-size:.8rem;grid-column:1/-1">Loading…</div>
+    </div>
+</div>
+
+<!-- Effects table -->
+<form method="get" style="display:flex;gap:.75rem;margin-bottom:1rem;align-items:flex-end">
+    <div>
+        <label style="display:block;font-size:.8rem;color:var(--text-secondary);margin-bottom:.25rem">Effect Type</label>
+        <select name="effect_type" style="padding:.4rem .75rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px">
+            <option value="">All types</option>
+            {% for t in effect_types %}
+            <option value="{{ t }}" {% if t == selected_type %}selected{% endif %}>{{ t|title }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Filter</button>
+    {% if selected_type %}<a href="/strategos/iw" class="btn">Clear</a>{% endif %}
+</form>
+
+<div class="card" style="padding:0;overflow:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:.875rem">
+        <thead>
+            <tr style="background:var(--bg-secondary)">
+                <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Effect</th>
+                <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Target</th>
+                <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Severity</th>
+                <th style="padding:.6rem 1rem;text-align:right;border-bottom:1px solid var(--border-color)">Confidence</th>
+                <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Description</th>
+                <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Detected</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for e in effects %}
+            {% set sev = e.severity or 'moderate' %}
+            <tr style="border-bottom:1px solid var(--border-color)">
+                <td style="padding:.55rem 1rem">
+                    <span style="padding:.1rem .5rem;border-radius:3px;font-size:.78rem;background:rgba(233,69,96,.12);color:#e94560">
+                        {{ e.effect_type|title }}
+                    </span>
+                </td>
+                <td style="padding:.55rem 1rem;font-weight:500">{{ e.target or '—' }}</td>
+                <td style="padding:.55rem 1rem">
+                    <span style="padding:.1rem .5rem;border-radius:3px;font-size:.78rem;
+                        background:{% if sev in ['critical','elevated'] %}rgba(233,69,96,.12){% elif sev=='moderate' %}rgba(245,158,11,.12){% else %}rgba(16,185,129,.12){% endif %};
+                        color:{% if sev in ['critical','elevated'] %}#e94560{% elif sev=='moderate' %}#f59e0b{% else %}#10b981{% endif %}">
+                        {{ sev|title }}
+                    </span>
+                </td>
+                <td style="padding:.55rem 1rem;text-align:right;font-weight:500">
+                    {{ ((e.confidence or 0) * 100)|round(0)|int }}%
+                </td>
+                <td style="padding:.55rem 1rem;color:var(--text-secondary);max-width:260px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
+                    {{ e.description or '—' }}
+                </td>
+                <td style="padding:.55rem 1rem;color:var(--text-muted);font-size:.8rem">{{ (e.detected_at or '')[:16] }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" style="padding:2rem;text-align:center;color:var(--text-muted)">No IW effects recorded.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<div style="margin-top:.5rem;font-size:.8rem;color:var(--text-muted)">{{ effects|length }} effect(s)</div>
+
+<script>
+(function () {
+    // ── Constants ──────────────────────────────────────────────────────────
+    const DIMS = [
+        ['political',            'Political'],
+        ['military',             'Military'],
+        ['economic',             'Economic'],
+        ['social',               'Social'],
+        ['information',          'Information'],
+        ['infrastructure',       'Infrastructure'],
+        ['physical_environment', 'Phys. Env.'],
+        ['time',                 'Time'],
+    ];
+
+    const RUNG_COLORS = ['#10b981','#22d3ee','#f59e0b','#f97316','#ef4444'];
+
+    let radarChart = null;
+    let dialChart = null;
+
+    // ── WRI Color ──────────────────────────────────────────────────────────
+    function wriColor(wri) {
+        if (wri >= 80) return '#ef4444';
+        if (wri >= 60) return '#f97316';
+        if (wri >= 40) return '#f59e0b';
+        if (wri >= 20) return '#22d3ee';
+        return '#10b981';
+    }
+
+    // ── WRI Dial (Chart.js half-doughnut) ──────────────────────────────────
+    function initDial(wri) {
+        const val = Math.min(100, Math.max(0, wri));
+        const color = wriColor(val);
+        const ctx = document.getElementById('wriDial').getContext('2d');
+        if (dialChart) dialChart.destroy();
+        dialChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                datasets: [{
+                    data: [val, 100 - val, 100],  // filled, empty, hidden half
+                    backgroundColor: [color, 'rgba(255,255,255,0.06)', 'transparent'],
+                    borderWidth: 0,
+                    circumference: 180,
+                    rotation: -90,
+                }],
+            },
+            options: {
+                responsive: false,
+                cutout: '72%',
+                plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                animation: { duration: 700, easing: 'easeInOutQuart' },
+            },
+        });
+    }
+
+    // ── PMESII-PT Radar ────────────────────────────────────────────────────
+    function initRadar(scores) {
+        const labels = DIMS.map(d => d[1]);
+        const values = DIMS.map(d => Math.round((scores[d[0]] || 0) * 100));
+        const ctx = document.getElementById('pmesiiRadar').getContext('2d');
+        if (radarChart) radarChart.destroy();
+        radarChart = new Chart(ctx, {
+            type: 'radar',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Score',
+                    data: values,
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59,130,246,0.15)',
+                    pointBackgroundColor: '#3b82f6',
+                    pointBorderColor: '#fff',
+                    pointHoverBackgroundColor: '#fff',
+                    pointHoverBorderColor: '#3b82f6',
+                    borderWidth: 2,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    r: {
+                        min: 0, max: 100,
+                        ticks: { stepSize: 25, color: '#9ca3af', backdropColor: 'transparent' },
+                        grid: { color: 'rgba(255,255,255,0.08)' },
+                        pointLabels: { color: '#d1d5db', font: { size: 10 } },
+                        angleLines: { color: 'rgba(255,255,255,0.08)' },
+                    },
+                },
+                plugins: { legend: { display: false } },
+            },
+        });
+    }
+
+    // ── Dimension score bars ───────────────────────────────────────────────
+    function renderDimScores(data) {
+        const dims = data.dimensions || {};
+        const dominant = data.dominant_indicators || [];
+        let html = '';
+        for (const [key, label] of DIMS) {
+            const val = dims[key] || 0;
+            const pct = Math.round(val * 100);
+            const isDom = dominant.includes(key);
+            const col = pct >= 70 ? '#ef4444' : pct >= 40 ? '#f59e0b' : '#10b981';
+            html += `<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.3rem">
+                <span style="width:90px;color:var(--text-secondary);font-size:.75rem">${label}</span>
+                <div style="flex:1;background:var(--bg-secondary);border-radius:3px;height:6px">
+                    <div style="height:100%;width:${pct}%;background:${col};border-radius:3px;transition:width .5s ease"></div>
+                </div>
+                <span style="width:30px;text-align:right;font-size:.75rem;color:${col};font-weight:600">${pct}</span>
+                ${isDom ? '<span style="font-size:.6rem;background:rgba(239,68,68,.15);color:#ef4444;padding:.05rem .3rem;border-radius:3px">DOM</span>' : ''}
+            </div>`;
+        }
+        document.getElementById('dimScores').innerHTML = html;
+    }
+
+    // ── WRI + Ladder render ────────────────────────────────────────────────
+    function renderWri(data) {
+        const wri = data.wri || 0;
+        const rung = data.escalation_rung || 1;
+        const label = data.rung_label || '';
+        const color = data.rung_color || '#10b981';
+
+        document.getElementById('wriScore').textContent = wri.toFixed(1);
+        document.getElementById('wriScore').style.color = color;
+        document.getElementById('rungBadge').textContent = 'Rung ' + rung;
+        document.getElementById('rungBadge').style.background = color + '22';
+        document.getElementById('rungBadge').style.color = color;
+        document.getElementById('rungLabel').textContent = label;
+
+        initDial(wri);
+
+        for (let r = 1; r <= 5; r++) {
+            const el = document.getElementById('rung' + r);
+            if (el) {
+                el.style.opacity = r === rung ? '1' : '0.35';
+                el.style.borderColor = r === rung ? color : 'var(--border-color)';
+                el.style.boxShadow = r === rung ? `0 0 8px ${color}44` : 'none';
+            }
+        }
+    }
+
+    function render(data) {
+        renderWri(data);
+        renderDimScores(data);
+        initRadar(data.dimensions || {});
+    }
+
+    function fetchWri() {
+        fetch('/api/strategos/iw/composite')
+            .then(r => r.json())
+            .then(render)
+            .catch(() => {});
+    }
+
+    // ── Signal Matrix Heatmap (plain canvas — no D3 dependency) ──────────────
+    function buildHeatmap(days, categories, matrix) {
+        const container = document.getElementById('signalMatrix');
+        container.innerHTML = '';
+
+        const marginTop = 20, marginLeft = 98, marginRight = 8, marginBottom = 44;
+        const cellH = 22;
+        const cW = container.clientWidth || 480;
+        const cellW = Math.max(18, Math.floor((cW - marginLeft - marginRight) / days.length));
+        const W = marginLeft + days.length * cellW + marginRight;
+        const H = marginTop + categories.length * cellH + marginBottom;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = W; canvas.height = H;
+        canvas.style.cssText = 'display:block;width:100%;height:auto;';
+        container.appendChild(canvas);
+        const ctx = canvas.getContext('2d');
+
+        const allVals = matrix.flat();
+        const maxVal = Math.max(1, ...allVals);
+
+        function heatColor(v) {
+            if (v === 0) return 'rgba(255,255,255,0.04)';
+            const t = v / maxVal;
+            if (t < 0.33) return `rgba(29,78,216,${(0.35 + t * 1.5).toFixed(2)})`;
+            if (t < 0.66) return `rgba(245,158,11,${(0.55 + t * 0.7).toFixed(2)})`;
+            return `rgba(239,68,68,${(0.65 + t * 0.35).toFixed(2)})`;
+        }
+
+        // Category labels (y-axis)
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'right';
+        ctx.font = '11px system-ui,sans-serif';
+        categories.forEach((cat, ci) => {
+            ctx.fillStyle = '#9ca3af';
+            ctx.fillText(cat.charAt(0).toUpperCase() + cat.slice(1), marginLeft - 6, marginTop + ci * cellH + cellH / 2);
+        });
+
+        // Cells
+        categories.forEach((cat, ci) => {
+            days.forEach((day, di) => {
+                const v = matrix[ci][di];
+                const x = marginLeft + di * cellW + 1;
+                const y = marginTop + ci * cellH + 1;
+                const w = cellW - 2, h = cellH - 2;
+                ctx.fillStyle = heatColor(v);
+                ctx.beginPath();
+                ctx.roundRect(x, y, w, h, 2);
+                ctx.fill();
+                if (v > 0 && cellW >= 22) {
+                    ctx.fillStyle = v > maxVal * 0.5 ? '#fff' : '#d1d5db';
+                    ctx.font = '9px system-ui,sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(v, x + w / 2, y + h / 2);
+                }
+            });
+        });
+
+        // Day labels (x-axis, rotated)
+        const step = Math.ceil(days.length / 10);
+        ctx.font = '9px system-ui,sans-serif';
+        ctx.fillStyle = '#6b7280';
+        days.forEach((day, di) => {
+            if (di % step !== 0) return;
+            const x = marginLeft + di * cellW + cellW / 2;
+            const y = H - marginBottom + 14;
+            ctx.save();
+            ctx.translate(x, y);
+            ctx.rotate(-35 * Math.PI / 180);
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(day.slice(5), 0, 0);
+            ctx.restore();
+        });
+
+        // Legend
+        const lgX = marginLeft, lgY = H - marginBottom + 28;
+        const lgW = Math.min(160, W - marginLeft - marginRight);
+        const grad = ctx.createLinearGradient(lgX, 0, lgX + lgW, 0);
+        grad.addColorStop(0,   'rgba(29,78,216,0.5)');
+        grad.addColorStop(0.5, 'rgba(245,158,11,0.9)');
+        grad.addColorStop(1,   'rgba(239,68,68,1)');
+        ctx.fillStyle = grad;
+        ctx.beginPath(); ctx.roundRect(lgX, lgY, lgW, 6, 3); ctx.fill();
+        ctx.fillStyle = '#6b7280'; ctx.font = '9px system-ui,sans-serif';
+        ctx.textAlign = 'left';   ctx.textBaseline = 'top'; ctx.fillText('0', lgX, lgY + 9);
+        ctx.textAlign = 'right';  ctx.fillText(maxVal, lgX + lgW, lgY + 9);
+    }
+
+    function fetchMatrix(days) {
+        fetch(`/api/strategos/iw/signal-matrix?days=${days}`)
+            .then(r => r.json())
+            .then(d => {
+                if (d.days && d.categories && d.matrix) {
+                    buildHeatmap(d.days, d.categories, d.matrix);
+                }
+            })
+            .catch(() => {
+                document.getElementById('signalMatrix').innerHTML =
+                    '<div style="color:var(--text-muted);font-size:.8rem;padding:.5rem">No signal data available.</div>';
+            });
+    }
+
+    document.getElementById('matrixDays').addEventListener('change', function () {
+        fetchMatrix(this.value);
+    });
+
+    // ── Survival Curve (Chart.js — no Plotly dependency) ──────────────────
+    let survChart = null;
+
+    function renderSurvival(data) {
+        const times  = data.times    || [];
+        const surv   = data.survival || [];
+        const isDemo = !!data.demo;
+
+        const canvas = document.getElementById('survivalCanvas');
+        if (survChart) { survChart.destroy(); survChart = null; }
+
+        // S=0.5 reference line as a dataset
+        const maxT = times.length ? times[times.length - 1] : 24;
+        const halfLine = times.map(() => 0.5);
+
+        survChart = new Chart(canvas, {
+            type: 'line',
+            data: {
+                labels: times,
+                datasets: [
+                    {
+                        label: isDemo ? 'Survival (demo)' : 'Survival probability',
+                        data: surv,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59,130,246,0.10)',
+                        borderWidth: 2,
+                        fill: true,
+                        stepped: 'before',
+                        pointRadius: times.length > 20 ? 0 : 3,
+                        pointBackgroundColor: '#3b82f6',
+                    },
+                    {
+                        label: 'S = 0.5',
+                        data: halfLine,
+                        borderColor: 'rgba(239,68,68,0.45)',
+                        borderWidth: 1,
+                        borderDash: [4, 4],
+                        pointRadius: 0,
+                        fill: false,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        title: { display: true, text: 'Hours from first observation', font: { size: 10 }, color: '#9ca3af' },
+                        grid: { color: 'rgba(255,255,255,0.06)' },
+                        ticks: { color: '#9ca3af', font: { size: 10 }, maxTicksLimit: 8 },
+                    },
+                    y: {
+                        title: { display: true, text: 'Survival probability', font: { size: 10 }, color: '#9ca3af' },
+                        min: 0, max: 1.05,
+                        grid: { color: 'rgba(255,255,255,0.06)' },
+                        ticks: {
+                            color: '#9ca3af', font: { size: 10 },
+                            callback: v => Math.round(v * 100) + '%',
+                        },
+                    },
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => ctx.datasetIndex === 0
+                                ? `S(t) = ${(ctx.parsed.y * 100).toFixed(1)}%`
+                                : 'S = 50%',
+                        },
+                    },
+                },
+            },
+        });
+    }
+
+    function fetchSurvival(threshold) {
+        fetch(`/api/strategos/iw/survival?threshold=${threshold}`)
+            .then(r => r.json())
+            .then(renderSurvival)
+            .catch(() => {
+                document.getElementById('survivalPlot').innerHTML =
+                    '<div style="color:var(--text-muted);font-size:.8rem;padding:.5rem">No survival data.</div>';
+            });
+    }
+
+    document.getElementById('survThreshold').addEventListener('change', function () {
+        fetchSurvival(this.value);
+    });
+
+    // ── Historical Match Cards ─────────────────────────────────────────────
+    const RUNG_COLS = ['#10b981','#22d3ee','#f59e0b','#f97316','#ef4444'];
+    const RUNG_LABELS = ['Routine Monitoring','Elevated Watch','Heightened Readiness','Crisis Response','Imminent Action'];
+
+    function buildMatchCard(match, idx) {
+        const wri = (match.wri || 0).toFixed(1);
+        const rung = match.escalation_rung || 1;
+        const color = match.rung_color || RUNG_COLS[rung - 1] || '#10b981';
+        const label = match.rung_label || RUNG_LABELS[rung - 1] || '—';
+        const sim = Math.round((match.similarity || 0) * 100);
+        const ts = (match.timestamp || '').slice(0, 16) || '—';
+
+        let dimBars = '';
+        const dims = match.dimensions || {};
+        const keyDims = ['military','political','economic','information'];
+        for (const k of keyDims) {
+            const pct = Math.round((dims[k] || 0) * 100);
+            const col = pct >= 70 ? '#ef4444' : pct >= 40 ? '#f59e0b' : '#10b981';
+            dimBars += `<div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.2rem">
+                <span style="width:64px;font-size:.68rem;color:var(--text-muted)">${k.charAt(0).toUpperCase()+k.slice(1)}</span>
+                <div style="flex:1;background:var(--bg-secondary);border-radius:2px;height:4px">
+                    <div style="height:100%;width:${pct}%;background:${col};border-radius:2px"></div>
+                </div>
+                <span style="font-size:.68rem;color:${col};font-weight:600">${pct}</span>
+            </div>`;
+        }
+
+        return `<div class="card" style="padding:.75rem;border-left:3px solid ${color}">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.4rem">
+                <div>
+                    <span style="font-size:1.5rem;font-weight:700;color:${color}">${wri}</span>
+                    <span style="font-size:.72rem;color:var(--text-muted)">/100</span>
+                </div>
+                <div style="text-align:right">
+                    <div style="font-size:.7rem;font-weight:600;color:${color};background:${color}18;padding:.15rem .5rem;border-radius:3px">Rung ${rung}</div>
+                    <div style="font-size:.65rem;color:var(--text-muted);margin-top:.15rem">${label}</div>
+                </div>
+            </div>
+            <div style="font-size:.72rem;color:var(--text-secondary);margin-bottom:.5rem">${ts}</div>
+            ${dimBars}
+            <div style="margin-top:.45rem;display:flex;align-items:center;gap:.4rem">
+                <div style="flex:1;background:var(--bg-secondary);border-radius:3px;height:4px">
+                    <div style="height:100%;width:${sim}%;background:#6366f1;border-radius:3px"></div>
+                </div>
+                <span style="font-size:.68rem;color:#6366f1;font-weight:600">${sim}% match</span>
+            </div>
+        </div>`;
+    }
+
+    function fetchMatches() {
+        fetch('/api/strategos/iw/historical-matches')
+            .then(r => r.json())
+            .then(data => {
+                const matches = data.matches || [];
+                const el = document.getElementById('matchCards');
+                if (!matches.length) {
+                    el.innerHTML = '<div style="color:var(--text-muted);font-size:.8rem;grid-column:1/-1">No historical assessments to compare yet.</div>';
+                    return;
+                }
+                el.innerHTML = matches.map((m, i) => buildMatchCard(m, i)).join('');
+            })
+            .catch(() => {
+                document.getElementById('matchCards').innerHTML =
+                    '<div style="color:var(--text-muted);font-size:.8rem;grid-column:1/-1">Could not load historical matches.</div>';
+            });
+    }
+
+    // ── Form handlers ──────────────────────────────────────────────────────
+    document.querySelectorAll('#wriForm input[type=range]').forEach(inp => {
+        inp.addEventListener('input', () => {
+            const span = document.getElementById('v_' + inp.name);
+            if (span) span.textContent = inp.value;
+        });
+    });
+
+    document.getElementById('wriForm').addEventListener('submit', e => {
+        e.preventDefault();
+        const scores = {};
+        new FormData(e.target).forEach((val, key) => { scores[key] = parseInt(val) / 100; });
+        fetch('/api/strategos/iw/composite', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ scores, source: 'analyst' }),
+        })
+            .then(r => r.json())
+            .then(data => { render(data); fetchMatches(); })
+            .catch(() => {});
+    });
+
+    document.getElementById('deriveBtn').addEventListener('click', () => {
+        fetch('/api/strategos/iw/derive', { method: 'POST' })
+            .then(r => r.json())
+            .then(data => { render(data); fetchMatches(); })
+            .catch(() => {});
+    });
+
+    // ── Init ───────────────────────────────────────────────────────────────
+    fetchWri();
+    fetchMatrix(14);
+    fetchSurvival(60);
+    fetchMatches();
+})();
+</script>
+{% endblock %}

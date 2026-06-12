@@ -1,0 +1,628 @@
+{% extends "base.html" %}
+{% block title %}{{ app_name }} — Genesis v2.0 Autonomous Lab{% endblock %}
+{% block content %}
+
+<h1>Genesis v2.0 — Autonomous Research Lab</h1>
+
+<div class="intro-panel">
+    <h2>Multi-App Genesis Management</h2>
+    <p>Manage all Genesis daemons from a single dashboard. Each app runs its own autonomous v2.0 research lab — learning, testing, auditing, and evolving independently. Knowledge flows from v2.0 to v1.x via GKPs.</p>
+</div>
+
+<!-- App Selector Tabs -->
+<div class="genesis-app-tabs" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:20px;">
+    {% for key, app_info in all_apps.items() %}
+    <a href="/genesis?app={{ key }}"
+       class="btn {% if key == active_app %}btn-primary{% endif %}"
+       style="position:relative;">
+        {{ app_info.get('_name', key) }}
+        {% if app_info.get('_available') %}
+            {% if app_info.get('daemon', {}).get('enabled') %}
+                <span class="app-dot app-dot-green"></span>
+            {% else %}
+                <span class="app-dot app-dot-yellow"></span>
+            {% endif %}
+        {% else %}
+            <span class="app-dot app-dot-red"></span>
+        {% endif %}
+    </a>
+    {% endfor %}
+</div>
+
+<!-- All Apps Overview -->
+<div class="section-card" style="margin-bottom:20px;">
+    <h2>Fleet Overview</h2>
+    <div style="overflow-x: auto;">
+        <table class="data-table" id="g-fleet-table">
+            <thead>
+                <tr>
+                    <th>App</th>
+                    <th>Status</th>
+                    <th>Reflexes</th>
+                    <th>Breakers</th>
+                    <th>Total Runs</th>
+                    <th>Successes</th>
+                    <th>Failures</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for key, app_info in all_apps.items() %}
+                <tr class="{% if key == active_app %}selected-row{% endif %}" onclick="window.location='/genesis?app={{ key }}';" style="cursor:pointer;">
+                    <td><strong>{{ app_info.get('_name', key) }}</strong></td>
+                    <td>
+                        {% if app_info.get('_available') and app_info.get('daemon', {}).get('enabled') %}
+                            <span class="badge badge-green">RUNNING</span>
+                        {% elif app_info.get('_available') %}
+                            <span class="badge badge-yellow">DISABLED</span>
+                        {% else %}
+                            <span class="badge badge-red">OFFLINE</span>
+                        {% endif %}
+                    </td>
+                    {% set reflexes = app_info.get('reflexes', {}) %}
+                    {% set reflex_vals = reflexes.values()|list %}
+                    <td>{{ reflex_vals|selectattr('enabled', 'defined')|selectattr('enabled')|list|length }}/{{ reflex_vals|length }}</td>
+                    <td>
+                        {% set breakers = reflex_vals|selectattr('circuit_breaker_open', 'defined')|selectattr('circuit_breaker_open')|list|length %}
+                        <span class="{% if breakers > 0 %}red{% else %}green{% endif %}">{{ breakers }}</span>
+                    </td>
+                    <td>{{ reflex_vals|sum(attribute='total_runs') if reflex_vals else 0 }}</td>
+                    <td class="green">{{ reflex_vals|sum(attribute='total_successes') if reflex_vals else 0 }}</td>
+                    <td class="{% if reflex_vals|sum(attribute='total_failures') > 0 %}red{% endif %}">{{ reflex_vals|sum(attribute='total_failures') if reflex_vals else 0 }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Active App: Daemon Status -->
+<h2 style="margin-top:24px;">{{ all_apps.get(active_app, {}).get('_name', active_app) }} — Detail</h2>
+
+<div class="stat-grid">
+    <div class="stat-card">
+        <div class="label">Daemon Status</div>
+        <div class="value {% if status.get('daemon', {}).get('enabled') %}green{% else %}orange{% endif %}" id="g-daemon-status">
+            {{ 'ENABLED' if status.get('daemon', {}).get('enabled') else 'DISABLED' }}
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Active Reflexes</div>
+        <div class="value blue" id="g-active-count">
+            {{ status.get('reflexes', {})|length }}
+        </div>
+    </div>
+    {% set reflex_vals = status.get('reflexes', {}).values()|list %}
+    {% set breakers_open = reflex_vals|selectattr('circuit_breaker_open', 'defined')|selectattr('circuit_breaker_open')|list|length %}
+    <div class="stat-card">
+        <div class="label">Circuit Breakers Open</div>
+        <div class="value {% if breakers_open > 0 %}red{% else %}green{% endif %}" id="g-breakers">
+            {{ breakers_open }}
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="label">Audit Events (24h)</div>
+        <div class="value purple" id="g-audit-events">
+            {{ status.get('audit', {}).get('events_last_24h', 0) }}
+        </div>
+    </div>
+</div>
+
+<!-- Reflex Status Table -->
+<div class="section-card">
+    <h2>Reflexes</h2>
+    <button class="btn btn-primary" id="g-refresh-btn" onclick="refreshStatus()">Refresh Status</button>
+    <div style="overflow-x: auto; margin-top: 16px;">
+        <table class="data-table" id="g-reflex-table">
+            <thead>
+                <tr>
+                    <th>Reflex</th>
+                    <th>Tier</th>
+                    <th>Schedule</th>
+                    <th>Status</th>
+                    <th>Last Run</th>
+                    <th>Successes</th>
+                    <th>Failures</th>
+                    <th>Last Metric</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for name, info in status.get('reflexes', {}).items() %}
+                <tr id="reflex-row-{{ name }}">
+                    <td><strong>{{ name }}</strong></td>
+                    <td>
+                        <span class="badge {% if info.risk_tier == 'green' %}badge-green{% elif info.risk_tier == 'yellow' %}badge-yellow{% else %}badge-orange{% endif %}">
+                            {{ info.risk_tier|upper }}
+                        </span>
+                    </td>
+                    <td>{{ info.schedule }}</td>
+                    <td>
+                        {% if info.circuit_breaker_open %}
+                            <span class="badge badge-red">TRIPPED</span>
+                        {% elif info.enabled %}
+                            <span class="badge badge-green">ACTIVE</span>
+                        {% else %}
+                            <span class="badge badge-gray">DISABLED</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ info.last_run_at[:16] if info.last_run_at else '—' }}</td>
+                    <td class="green">{{ info.total_successes }}</td>
+                    <td class="{% if info.total_failures > 0 %}red{% endif %}">{{ info.total_failures }}</td>
+                    <td>{{ info.last_metric_value if info.last_metric_value is not none else '—' }}</td>
+                    <td>
+                        <button class="btn btn-sm" onclick="runReflex('{{ name }}')" id="btn-run-{{ name }}">Run</button>
+                        <button class="btn btn-sm btn-explain" onclick="showReflexExplain('{{ name }}')" style="margin-left:4px;">? Explain</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Knowledge Bridge — GKP Review -->
+<div class="section-card">
+    <h2>Knowledge Bridge (GKP Review)</h2>
+    <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;">
+        <button class="btn btn-primary" onclick="loadGKPs()">Refresh</button>
+        <button class="btn" onclick="loadGKPs('pending_review')">Pending</button>
+        <button class="btn" onclick="loadGKPs('promoted')">Promoted</button>
+        <button class="btn" onclick="loadGKPs('rejected')">Rejected</button>
+        <button class="btn" onclick="loadGKPs()">All</button>
+        <button class="btn btn-warning" onclick="autoPromoteAll()">Auto-Promote Eligible</button>
+    </div>
+
+    <div class="stat-grid" style="margin-top: 16px;">
+        <div class="stat-card"><div class="label">Total GKPs</div><div class="value blue" id="g-gkp-total">—</div></div>
+        <div class="stat-card"><div class="label">Promoted</div><div class="value green" id="g-gkp-promoted">—</div></div>
+        <div class="stat-card"><div class="label">Pending Review</div><div class="value orange" id="g-gkp-pending">—</div></div>
+        <div class="stat-card"><div class="label">Rejected</div><div class="value red" id="g-gkp-rejected">—</div></div>
+    </div>
+
+    <div style="overflow-x: auto; margin-top: 16px;">
+        <table class="data-table" id="g-gkp-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Summary</th>
+                    <th>Type</th>
+                    <th class="sortable" data-sort="reflex" onclick="sortGKPs('reflex')">Reflex <span class="sort-arrow" id="sort-arrow-reflex"></span></th>
+                    <th class="sortable" data-sort="confidence" onclick="sortGKPs('confidence')">Confidence <span class="sort-arrow" id="sort-arrow-confidence"></span></th>
+                    <th>Status</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="g-gkp-tbody">
+                <tr><td colspan="8" style="text-align:center; color:var(--text-dim);">Click Refresh or a filter to load GKPs</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- GKP Detail Modal -->
+<div id="gkp-modal" class="gkp-modal" style="display:none;">
+    <div class="gkp-modal-content">
+        <div class="gkp-modal-header">
+            <h3 id="gkp-modal-title">GKP Detail</h3>
+            <button class="btn btn-sm" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="gkp-modal-body">
+            <div class="gkp-detail-grid">
+                <div><strong>ID:</strong> <span id="gkp-d-id"></span></div>
+                <div><strong>Type:</strong> <span id="gkp-d-type"></span></div>
+                <div><strong>Reflex:</strong> <span id="gkp-d-reflex"></span></div>
+                <div><strong>Confidence:</strong> <span id="gkp-d-confidence"></span></div>
+                <div><strong>Status:</strong> <span id="gkp-d-status"></span></div>
+                <div><strong>Created:</strong> <span id="gkp-d-created"></span></div>
+            </div>
+
+            <!-- Human-readable payload summary -->
+            <div id="gkp-d-summary-section" style="margin-top:16px; padding:16px; background:var(--bg-code); border-radius:8px; border-left:3px solid var(--accent, #3b82f6);">
+                <div id="gkp-d-title" style="font-size:16px; font-weight:600; margin-bottom:8px;"></div>
+                <div id="gkp-d-description" style="color:var(--text-dim); line-height:1.5;"></div>
+                <div id="gkp-d-meta" style="margin-top:12px; display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--text-dim);"></div>
+                <div id="gkp-d-url" style="margin-top:8px;"></div>
+            </div>
+
+            <details style="margin-top:12px;">
+                <summary style="cursor:pointer; color:var(--text-dim); font-size:12px;">Raw Payload JSON</summary>
+                <pre id="gkp-d-payload" style="background:var(--bg-code); padding:12px; border-radius:8px; overflow:auto; max-height:300px; font-size:12px; margin-top:8px;"></pre>
+            </details>
+            <div id="gkp-d-evidence-section" style="display:none;">
+                <details style="margin-top:8px;">
+                    <summary style="cursor:pointer; color:var(--text-dim); font-size:12px;">Evidence</summary>
+                    <pre id="gkp-d-evidence" style="background:var(--bg-code); padding:12px; border-radius:8px; overflow:auto; max-height:200px; font-size:12px; margin-top:8px;"></pre>
+                </details>
+            </div>
+            <div style="margin-top:12px; font-size:11px; color:var(--text-dim); word-break:break-all;">
+                <strong>SHA-256:</strong> <span id="gkp-d-sha"></span>
+            </div>
+        </div>
+        <div class="gkp-modal-footer" id="gkp-modal-actions">
+        </div>
+    </div>
+</div>
+
+<!-- Run Output -->
+<div class="section-card" id="g-output-section" style="display:none;">
+    <h2>Reflex Output</h2>
+    <pre id="g-output" style="background: var(--bg-code); padding: 16px; border-radius: 8px; overflow-x: auto; max-height: 400px; font-size: 13px;"></pre>
+</div>
+
+<style>
+.badge { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+.badge-green { background: #10b98120; color: #10b981; }
+.badge-yellow { background: #f59e0b20; color: #f59e0b; }
+.badge-orange { background: #f97316a0; color: #fff; }
+.badge-red { background: #ef444420; color: #ef4444; }
+.badge-gray { background: #6b728020; color: #6b7280; }
+.badge-blue { background: #3b82f620; color: #3b82f6; }
+.btn-sm { padding: 4px 12px; font-size: 12px; }
+.btn-warning { background: #f59e0b; color: #000; }
+.btn-warning:hover { background: #d97706; }
+.btn-success { background: #10b981; color: #fff; }
+.btn-success:hover { background: #059669; }
+.btn-danger { background: #ef4444; color: #fff; }
+.btn-danger:hover { background: #dc2626; }
+.gkp-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; display: flex; align-items: center; justify-content: center; }
+.gkp-modal-content { background: var(--bg-card, #1e293b); border-radius: 12px; width: 90%; max-width: 700px; max-height: 85vh; display: flex; flex-direction: column; border: 1px solid var(--border); }
+.gkp-modal-header { display: flex; justify-content: space-between; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+.gkp-modal-header h3 { margin: 0; }
+.gkp-modal-body { padding: 20px; overflow-y: auto; flex: 1; }
+.gkp-modal-footer { padding: 16px 20px; border-top: 1px solid var(--border); display: flex; gap: 12px; justify-content: flex-end; }
+.gkp-detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.gkp-row-pending { border-left: 3px solid #f59e0b; }
+.gkp-row-promoted { border-left: 3px solid #10b981; }
+.gkp-row-rejected { border-left: 3px solid #ef4444; opacity: 0.6; }
+.green { color: #10b981; }
+.red { color: #ef4444; }
+.data-table { width: 100%; border-collapse: collapse; }
+.data-table th, .data-table td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+.data-table th { font-weight: 600; color: var(--text-dim); font-size: 12px; text-transform: uppercase; }
+.data-table tr:hover { background: var(--bg-hover); }
+.selected-row { background: var(--bg-hover); border-left: 3px solid var(--accent, #3b82f6); }
+.app-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-left: 6px; vertical-align: middle; }
+.app-dot-green { background: #10b981; }
+.app-dot-yellow { background: #f59e0b; }
+.app-dot-red { background: #ef4444; }
+.sortable { cursor: pointer; user-select: none; }
+.sortable:hover { color: var(--accent, #3b82f6); }
+.sort-arrow { font-size: 10px; margin-left: 4px; }
+</style>
+
+<script>
+const ACTIVE_APP = '{{ active_app }}';
+const APP_PARAM = '?app=' + ACTIVE_APP;
+
+function refreshStatus() {
+    document.getElementById('g-refresh-btn').textContent = 'Loading...';
+    fetch('/api/genesis/status' + APP_PARAM)
+        .then(r => r.json())
+        .then(data => {
+            document.getElementById('g-refresh-btn').textContent = 'Refresh Status';
+            if (data.error) { alert('Error: ' + data.error); return; }
+            document.getElementById('g-daemon-status').textContent = data.daemon?.enabled ? 'ENABLED' : 'DISABLED';
+            document.getElementById('g-active-count').textContent = Object.keys(data.reflexes || {}).length;
+            const breakers = Object.values(data.reflexes || {}).filter(r => r.circuit_breaker_open).length;
+            document.getElementById('g-breakers').textContent = breakers;
+            document.getElementById('g-audit-events').textContent = data.audit?.events_last_24h || 0;
+
+            // Rebuild reflex table rows from API data
+            const reflexes = data.reflexes || {};
+            const tbody = document.querySelector('#g-reflex-table tbody');
+            if (tbody && Object.keys(reflexes).length > 0) {
+                tbody.innerHTML = '';
+                Object.entries(reflexes).forEach(([name, info]) => {
+                    const tierClass = info.risk_tier === 'green' ? 'badge-green' :
+                        info.risk_tier === 'yellow' ? 'badge-yellow' : 'badge-orange';
+                    let statusBadge;
+                    if (info.circuit_breaker_open) {
+                        statusBadge = '<span class="badge badge-red">TRIPPED</span>';
+                    } else if (info.enabled) {
+                        statusBadge = '<span class="badge badge-green">ACTIVE</span>';
+                    } else {
+                        statusBadge = '<span class="badge badge-gray">DISABLED</span>';
+                    }
+                    const lastRun = info.last_run_at ? info.last_run_at.substring(0, 16) : '\u2014';
+                    const metric = info.last_metric_value != null ? info.last_metric_value : '\u2014';
+                    const failClass = info.total_failures > 0 ? 'red' : '';
+                    const tr = document.createElement('tr');
+                    tr.id = 'reflex-row-' + name;
+                    tr.innerHTML = '<td><strong>' + name + '</strong></td>'
+                        + '<td><span class="badge ' + tierClass + '">' + (info.risk_tier || '').toUpperCase() + '</span></td>'
+                        + '<td>' + (info.schedule || '') + '</td>'
+                        + '<td>' + statusBadge + '</td>'
+                        + '<td>' + lastRun + '</td>'
+                        + '<td class="green">' + (info.total_successes || 0) + '</td>'
+                        + '<td class="' + failClass + '">' + (info.total_failures || 0) + '</td>'
+                        + '<td>' + metric + '</td>'
+                        + '<td><button class="btn btn-sm" onclick="runReflex(\'' + name + '\')" id="btn-run-' + name + '">Run</button></td>';
+                    tbody.appendChild(tr);
+                });
+            }
+        })
+        .catch(e => {
+            document.getElementById('g-refresh-btn').textContent = 'Refresh Status';
+            alert('Fetch error: ' + e);
+        });
+}
+
+// Auto-load reflex status on page load
+document.addEventListener('DOMContentLoaded', function() { refreshStatus(); });
+
+function runReflex(name) {
+    const btn = document.getElementById('btn-run-' + name);
+    btn.textContent = 'Running...';
+    btn.disabled = true;
+    document.getElementById('g-output-section').style.display = 'block';
+    document.getElementById('g-output').textContent = 'Running ' + name + ' reflex on ' + ACTIVE_APP + '...';
+
+    fetch('/api/genesis/reflex/' + name + APP_PARAM, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            btn.textContent = 'Run';
+            btn.disabled = false;
+            document.getElementById('g-output').textContent = JSON.stringify(data, null, 2);
+            refreshStatus();
+        })
+        .catch(e => {
+            btn.textContent = 'Run';
+            btn.disabled = false;
+            document.getElementById('g-output').textContent = 'Error: ' + e;
+        });
+}
+
+let gkpSortField = null;
+let gkpSortAsc = true;
+let cachedGKPs = [];
+
+function sortGKPs(field) {
+    if (gkpSortField === field) {
+        gkpSortAsc = !gkpSortAsc;
+    } else {
+        gkpSortField = field;
+        gkpSortAsc = true;
+    }
+    document.querySelectorAll('.sort-arrow').forEach(el => el.textContent = '');
+    const arrow = document.getElementById('sort-arrow-' + field);
+    if (arrow) arrow.textContent = gkpSortAsc ? '\u25B2' : '\u25BC';
+    renderGKPRows(cachedGKPs);
+}
+
+function extractGKPSummary(g) {
+    let p = g.payload;
+    if (typeof p === 'string') { try { p = JSON.parse(p); } catch(e) { return p.substring(0, 80); } }
+    if (!p || typeof p !== 'object') return '—';
+    // Try common payload keys in priority order
+    const title = p.title || p.name || p.description || p.action || p.summary || p.finding || '';
+    const desc = p.description || p.action || p.detail || '';
+    // Show title, and if description is different, append it
+    let summary = title;
+    if (desc && desc !== title) summary += ' — ' + desc;
+    return summary.length > 120 ? summary.substring(0, 117) + '...' : summary;
+}
+
+function renderGKPRows(gkps) {
+    const tbody = document.getElementById('g-gkp-tbody');
+    if (gkps.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--text-dim);">No GKPs found</td></tr>';
+        return;
+    }
+    let sorted = [...gkps];
+    if (gkpSortField === 'reflex') {
+        sorted.sort((a, b) => {
+            const cmp = (a.genesis_reflex || '').localeCompare(b.genesis_reflex || '');
+            return gkpSortAsc ? cmp : -cmp;
+        });
+    } else if (gkpSortField === 'confidence') {
+        sorted.sort((a, b) => {
+            const cmp = (a.confidence || 0) - (b.confidence || 0);
+            return gkpSortAsc ? cmp : -cmp;
+        });
+    }
+    tbody.innerHTML = '';
+    sorted.forEach(g => {
+        const tr = document.createElement('tr');
+        const statusClass = g.promotion_status.includes('promoted') ? 'gkp-row-promoted' :
+            g.promotion_status === 'pending_review' ? 'gkp-row-pending' :
+            g.promotion_status === 'rejected' ? 'gkp-row-rejected' : '';
+        tr.className = statusClass;
+        tr.style.cursor = 'pointer';
+        tr.onclick = function(e) { if (!e.target.closest('button')) viewGKP(g.id); };
+
+        const statusBadge = g.promotion_status === 'pending_review' ? 'badge-yellow' :
+            g.promotion_status.includes('promoted') ? 'badge-green' :
+            g.promotion_status === 'rejected' ? 'badge-red' : 'badge-gray';
+
+        const summary = extractGKPSummary(g);
+
+        let actions = `<button class="btn btn-sm btn-explain" onclick="showExplain('${g.id}')" style="margin-right:4px;">? Explain</button>`;
+        if (g.promotion_status === 'pending_review') {
+            actions += `<button class="btn btn-sm btn-success" onclick="promoteGKP('${g.id}')">Promote</button> `;
+            actions += `<button class="btn btn-sm btn-danger" onclick="rejectGKP('${g.id}')">Reject</button>`;
+        }
+
+        tr.innerHTML = `
+            <td style="font-family:monospace;font-size:11px;">${g.id}</td>
+            <td style="max-width:350px;font-size:13px;" title="${summary.replace(/"/g, '&quot;')}">${summary}</td>
+            <td><span class="badge badge-blue">${g.artifact_type}</span></td>
+            <td>${g.genesis_reflex}</td>
+            <td>${(g.confidence || 0).toFixed(2)}</td>
+            <td><span class="badge ${statusBadge}">${g.promotion_status.replace('_', ' ')}</span></td>
+            <td>${(g.created_at || '').substring(0, 16)}</td>
+            <td style="white-space:nowrap;">${actions}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function loadGKPs(statusFilter) {
+    let url = '/api/genesis/gkps' + APP_PARAM;
+    if (statusFilter) url += '&status=' + statusFilter;
+    const tbody = document.getElementById('g-gkp-tbody');
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;">Loading...</td></tr>';
+
+    fetch('/api/genesis/promoter/stats' + APP_PARAM)
+        .then(r => r.json())
+        .then(data => {
+            const byStatus = data.by_status || {};
+            document.getElementById('g-gkp-total').textContent = data.total_gkps || 0;
+            document.getElementById('g-gkp-promoted').textContent = (byStatus.promoted || 0) + (byStatus.auto_promoted || 0);
+            document.getElementById('g-gkp-pending').textContent = byStatus.pending_review || 0;
+            document.getElementById('g-gkp-rejected').textContent = byStatus.rejected || 0;
+        }).catch(() => {});
+
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            cachedGKPs = data.gkps || [];
+            renderGKPRows(cachedGKPs);
+        })
+        .catch(e => {
+            tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:#ef4444;">Error: ' + e + '</td></tr>';
+        });
+}
+
+function viewGKP(gkpId) {
+    fetch('/api/genesis/gkps/' + gkpId + APP_PARAM)
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) { alert(data.error); return; }
+            document.getElementById('gkp-d-id').textContent = data.id;
+            document.getElementById('gkp-d-type').textContent = data.artifact_type;
+            document.getElementById('gkp-d-reflex').textContent = data.genesis_reflex;
+            document.getElementById('gkp-d-confidence').textContent = (data.confidence || 0).toFixed(2);
+            document.getElementById('gkp-d-status').textContent = data.promotion_status;
+            document.getElementById('gkp-d-created').textContent = data.created_at || '';
+            document.getElementById('gkp-d-sha').textContent = data.sha256 || '';
+
+            let payload = data.payload;
+            try { payload = JSON.parse(payload); } catch(e) {}
+
+            // Human-readable summary
+            if (payload && typeof payload === 'object') {
+                const title = payload.title || payload.name || payload.action || 'Untitled';
+                document.getElementById('gkp-modal-title').textContent = title;
+                document.getElementById('gkp-d-title').textContent = title;
+                document.getElementById('gkp-d-description').textContent = payload.description || payload.action || payload.detail || '';
+
+                // Build meta line: source, score, published date
+                let metaParts = [];
+                if (payload.source) metaParts.push('<strong>Source:</strong> ' + payload.source);
+                if (payload.score !== undefined) metaParts.push('<strong>Score:</strong> ' + payload.score);
+                if (payload.published) metaParts.push('<strong>Published:</strong> ' + payload.published);
+                document.getElementById('gkp-d-meta').innerHTML = metaParts.join(' &middot; ');
+
+                // URL link
+                const urlEl = document.getElementById('gkp-d-url');
+                if (payload.url) {
+                    urlEl.innerHTML = '<a href="' + payload.url + '" target="_blank" rel="noopener" style="color:var(--accent, #3b82f6); font-size:13px;">View source &rarr;</a>';
+                } else {
+                    urlEl.innerHTML = '';
+                }
+                document.getElementById('gkp-d-summary-section').style.display = 'block';
+            } else {
+                document.getElementById('gkp-modal-title').textContent = 'GKP: ' + data.id;
+                document.getElementById('gkp-d-summary-section').style.display = 'none';
+            }
+
+            document.getElementById('gkp-d-payload').textContent = JSON.stringify(payload, null, 2);
+
+            const evSection = document.getElementById('gkp-d-evidence-section');
+            if (data.evidence) {
+                let evidence = data.evidence;
+                try { evidence = JSON.parse(evidence); } catch(e) {}
+                document.getElementById('gkp-d-evidence').textContent = JSON.stringify(evidence, null, 2);
+                evSection.style.display = 'block';
+            } else {
+                evSection.style.display = 'none';
+            }
+
+            const footer = document.getElementById('gkp-modal-actions');
+            footer.innerHTML = '<button class="btn" onclick="closeModal()">Close</button>';
+            if (data.promotion_status === 'pending_review') {
+                footer.innerHTML = `
+                    <button class="btn btn-success" onclick="promoteGKP('${data.id}'); closeModal();">Promote to v1.x</button>
+                    <button class="btn btn-danger" onclick="rejectGKP('${data.id}'); closeModal();">Reject</button>
+                    <button class="btn" onclick="closeModal()">Close</button>
+                `;
+            }
+
+            document.getElementById('gkp-modal').style.display = 'flex';
+        })
+        .catch(e => alert('Error loading GKP: ' + e));
+}
+
+function closeModal() {
+    document.getElementById('gkp-modal').style.display = 'none';
+}
+
+function promoteGKP(gkpId) {
+    if (!confirm('Promote ' + gkpId + ' to v1.x production knowledge?')) return;
+    fetch('/api/genesis/gkps/' + gkpId + '/promote' + APP_PARAM, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            const msg = data.status === 'promoted' ? 'Promoted successfully!' :
+                data.status === 'already_promoted' ? 'Already promoted.' :
+                'Result: ' + (data.error || data.status);
+            showToast(msg, data.error ? 'error' : 'success');
+            loadGKPs();
+        })
+        .catch(e => showToast('Error: ' + e, 'error'));
+}
+
+function rejectGKP(gkpId) {
+    const reason = prompt('Rejection reason (optional):');
+    if (reason === null) return;
+    fetch('/api/genesis/gkps/' + gkpId + '/reject' + APP_PARAM, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: reason || 'Rejected via dashboard' }),
+    })
+        .then(r => r.json())
+        .then(data => {
+            showToast('Rejected: ' + gkpId, 'success');
+            loadGKPs();
+        })
+        .catch(e => showToast('Error: ' + e, 'error'));
+}
+
+function autoPromoteAll() {
+    if (!confirm('Auto-promote all eligible GKPs based on confidence rules?')) return;
+    fetch('/api/genesis/gkps/auto-promote' + APP_PARAM, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            showToast('Auto-promoted ' + (data.auto_promoted || 0) + ' GKPs', 'success');
+            loadGKPs();
+        })
+        .catch(e => showToast('Error: ' + e, 'error'));
+}
+
+document.addEventListener('DOMContentLoaded', () => loadGKPs());
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
+function showToast(message, type) {
+    const toast = document.createElement('div');
+    toast.style.cssText = 'position:fixed;top:20px;right:20px;padding:12px 20px;border-radius:8px;z-index:2000;font-size:14px;color:#fff;background:' + (type === 'error' ? '#ef4444' : '#10b981') + ';box-shadow:0 4px 12px rgba(0,0,0,0.3);';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+}
+
+function showReflexExplain(reflexName) {
+    fetch('/api/explain/reflex/' + encodeURIComponent(reflexName))
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            var html = d.explanation ? (d.explanation.html || '<p>' + (d.explanation.summary || '') + '</p>') : '<p>No explanation available.</p>';
+            if (window.showExplainHtml) {
+                window.showExplainHtml('Reflex: ' + reflexName, html);
+            } else {
+                alert(d.explanation ? d.explanation.summary : 'No explanation available.');
+            }
+        })
+        .catch(function(err) { console.error('Explain reflex error:', err); });
+}
+</script>
+
+{% endblock %}

@@ -1,0 +1,230 @@
+<!-- CUI // SP-CTI -->
+{% extends "dsoc_canvas/base.html" %}
+{% block title %}DSOC — DDoS &amp; Security Ops{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 py-3">
+
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h4 class="mb-0" style="color:#ef4444;">
+      <i class="bi bi-shield-fill-exclamation me-2"></i>DSOC — DDoS &amp; Security Ops Canvas
+    </h4>
+    <span class="badge bg-secondary">CUI // SP-CTI</span>
+  </div>
+
+  <!-- Sub-nav -->
+  <div class="dsoc-subnav">
+    <a href="/dsoc" class="active">Overview</a>
+    <a href="/dsoc/flowspec">Flowspec Rules</a>
+    <a href="/dsoc/rtbh">RTBH</a>
+    <a href="/dsoc/scrubbing">Scrubbing Centers</a>
+    <a href="/dsoc/threats">Threat Feed</a>
+    <a href="/dsoc/mitigations">Mitigations</a>
+  </div>
+
+  <!-- Stat cards (populated by JS) -->
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-2">
+      <div class="dsoc-stat">
+        <div class="val" id="stat-active-mit">—</div>
+        <div class="lbl">Active Mitigations</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-2">
+      <div class="dsoc-stat">
+        <div class="val" id="stat-rtbh">—</div>
+        <div class="lbl">Active RTBH</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-2">
+      <div class="dsoc-stat">
+        <div class="val" id="stat-flowspec">—</div>
+        <div class="lbl">Active Flowspec</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-2">
+      <div class="dsoc-stat">
+        <div class="val" id="stat-scrub-centers">—</div>
+        <div class="lbl">Scrubbing Centers</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-2">
+      <div class="dsoc-stat">
+        <div class="val" id="stat-scrub-load" style="font-size:1.1rem;line-height:1.4;">—</div>
+        <div class="lbl">Scrubbing Load</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-2">
+      <div class="dsoc-stat">
+        <div class="val" id="stat-threats">—</div>
+        <div class="lbl">Active Threats</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <!-- Recent Threats -->
+    <div class="col-md-6">
+      <div class="card bg-dark border-secondary">
+        <div class="card-header border-secondary d-flex justify-content-between align-items-center">
+          <span>Recent Threats</span>
+          <a href="/dsoc/threats" class="btn btn-sm btn-outline-danger">All Threats</a>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-dark table-hover table-sm mb-0">
+            <thead>
+              <tr>
+                <th>Source Prefix</th>
+                <th>Type</th>
+                <th>Confidence</th>
+                <th>Feed</th>
+                <th>Last Seen</th>
+                <th>Active</th>
+              </tr>
+            </thead>
+            <tbody id="threats-tbody">
+              <tr><td colspan="6" class="text-center text-muted py-3">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Mitigations -->
+    <div class="col-md-6">
+      <div class="card bg-dark border-secondary">
+        <div class="card-header border-secondary d-flex justify-content-between align-items-center">
+          <span>Active Mitigations</span>
+          <a href="/dsoc/mitigations" class="btn btn-sm btn-outline-danger">All Mitigations</a>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-dark table-hover table-sm mb-0">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Target Prefix</th>
+                <th>Type</th>
+                <th>Attack Type</th>
+                <th>Peak (Gbps)</th>
+                <th>Started</th>
+              </tr>
+            </thead>
+            <tbody id="mitigations-tbody">
+              <tr><td colspan="6" class="text-center text-muted py-3">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- IQE Widget -->
+  <div class="iqe-host">
+    {% include 'includes/iqe_query_widget.html' %}
+  </div>
+</div>
+
+<script>
+const IQE_CANVAS = 'dsoc';
+
+/* ── Overview stats ──────────────────────────────────────────────────── */
+fetch('/api/dsoc/overview')
+  .then(r => r.json())
+  .then(d => {
+    /* Active Mitigations */
+    const mit = d.active_mitigations || 0;
+    const mitEl = document.getElementById('stat-active-mit');
+    mitEl.textContent = mit;
+    mitEl.style.color = mit > 0 ? '#ef4444' : '#22c55e';
+
+    /* Active RTBH */
+    const rtbh = d.active_rtbh || 0;
+    const rtbhEl = document.getElementById('stat-rtbh');
+    rtbhEl.textContent = rtbh;
+    rtbhEl.style.color = rtbh > 0 ? '#f59e0b' : '#f8fafc';
+
+    /* Active Flowspec */
+    const fs = d.active_flowspec || 0;
+    const fsEl = document.getElementById('stat-flowspec');
+    fsEl.textContent = fs;
+    fsEl.style.color = '#38bdf8';
+
+    /* Scrubbing Centers */
+    document.getElementById('stat-scrub-centers').textContent = d.scrubbing_centers || 0;
+
+    /* Scrubbing Load */
+    const load = d.scrubbing_load_gbps || 0;
+    const cap  = d.scrubbing_capacity_gbps || 1;
+    const pct  = cap > 0 ? Math.round((load / cap) * 100) : 0;
+    const loadEl = document.getElementById('stat-scrub-load');
+    loadEl.innerHTML = `${load} / ${cap} GBps<br><small>${pct}% utilized</small>`;
+    loadEl.style.color = pct > 85 ? '#ef4444' : pct > 70 ? '#f59e0b' : '#22c55e';
+
+    /* Active Threats */
+    const thr = d.high_confidence_threats || 0;
+    const thrEl = document.getElementById('stat-threats');
+    thrEl.textContent = thr;
+    thrEl.style.color = thr > 0 ? '#ef4444' : '#22c55e';
+  })
+  .catch(() => {
+    ['stat-active-mit','stat-rtbh','stat-flowspec','stat-scrub-centers','stat-scrub-load','stat-threats']
+      .forEach(id => { const el = document.getElementById(id); if (el) el.textContent = 'err'; });
+  });
+
+/* ── Recent Threats ──────────────────────────────────────────────────── */
+fetch('/api/dsoc/threats?limit=10')
+  .then(r => r.json())
+  .then(rows => {
+    const tbody = document.getElementById('threats-tbody');
+    if (!rows || !rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="text-center text-success py-3">No active threats</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(t => {
+      const conf = t.confidence_pct || 0;
+      const confCls = conf >= 80 ? 'text-danger fw-bold' : conf >= 50 ? 'text-warning' : 'text-muted';
+      const activeBadge = t.is_active
+        ? '<span class="badge bg-danger" style="font-size:10px;">yes</span>'
+        : '<span class="badge bg-secondary" style="font-size:10px;">no</span>';
+      const ls = t.last_seen ? t.last_seen.slice(0, 16).replace('T', ' ') : '—';
+      return `<tr>
+        <td class="text-info" style="font-family:monospace;">${t.source_prefix || '—'}</td>
+        <td><code class="text-warning" style="font-size:.78rem;">${t.threat_type || '—'}</code></td>
+        <td class="${confCls}">${conf}%</td>
+        <td class="text-muted" style="font-size:.8rem;">${t.feed_source || '—'}</td>
+        <td class="text-muted" style="font-size:.78rem;">${ls}</td>
+        <td>${activeBadge}</td>
+      </tr>`;
+    }).join('');
+  })
+  .catch(() => {
+    document.getElementById('threats-tbody').innerHTML =
+      '<tr><td colspan="6" class="text-muted text-center">Error loading threats</td></tr>';
+  });
+
+/* ── Active Mitigations ──────────────────────────────────────────────── */
+fetch('/api/dsoc/mitigations?status=active')
+  .then(r => r.json())
+  .then(rows => {
+    const tbody = document.getElementById('mitigations-tbody');
+    if (!rows || !rows.length) {
+      tbody.innerHTML = '<tr><td colspan="6" class="text-center text-success py-3">No active mitigations</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map((m, i) => {
+      const started = m.started_at ? m.started_at.slice(0, 16).replace('T', ' ') : '—';
+      return `<tr>
+        <td class="text-muted" style="font-size:.8rem;">${i + 1}</td>
+        <td class="text-info fw-bold" style="font-family:monospace;">${m.target_prefix || '—'}</td>
+        <td><span class="badge-rtbh">${m.mitigation_type || '—'}</span></td>
+        <td class="text-muted" style="font-size:.8rem;">${m.attack_type || '—'}</td>
+        <td class="${(m.peak_gbps || 0) > 100 ? 'text-danger fw-bold' : 'text-warning'}">${m.peak_gbps || 0}</td>
+        <td class="text-muted" style="font-size:.78rem;">${started}</td>
+      </tr>`;
+    }).join('');
+  })
+  .catch(() => {
+    document.getElementById('mitigations-tbody').innerHTML =
+      '<tr><td colspan="6" class="text-muted text-center">Error loading mitigations</td></tr>';
+  });
+</script>
+{% endblock %}

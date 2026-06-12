@@ -1,0 +1,65 @@
+# CUI // SP-CTI
+# LLM Judge Rubric: Compliance Narrative (SSP, POAM, Control Statements)
+
+name: "Compliance Narrative"
+content_type: compliance_narrative
+description: "Evaluates compliance document narratives (SSP, POAM, control implementation statements) for control coverage, implementation specificity, measurability, boundary accuracy, and auditor readability."
+
+dimensions:
+  control_coverage:
+    weight: 0.25
+    description: "Does the narrative address ALL parts of the control requirement?"
+    anchors:
+      1: "Misses most control parts. Only addresses one sub-requirement."
+      2: "Addresses some parts. Key control elements missing."
+      3: "Covers primary requirements. Enhancement criteria partially addressed."
+      4: "All control parts addressed. Enhancements documented."
+      5: "Complete coverage including inherited controls, common controls, and org-defined parameters."
+
+  implementation_specificity:
+    weight: 0.25
+    description: "Are specific tools, processes, frequencies, and responsible parties named?"
+    anchors:
+      1: "Completely generic. 'The organization implements this control.'"
+      2: "Some specifics but mostly boilerplate. Tool names missing."
+      3: "Names tools or processes but lacks frequency/cadence/ownership."
+      4: "Specific tools, defined frequencies, named responsible roles."
+      5: "Fully specific: tool names, config details, cron schedules, RACI matrix, evidence locations."
+
+  measurability:
+    weight: 0.20
+    description: "Can an assessor verify the implementation based on what's written?"
+    anchors:
+      1: "No verifiable claims. Assessor would have no idea what to test."
+      2: "Some verifiable elements but key evidence paths missing."
+      3: "Assessor could partially verify. Some evidence pointers."
+      4: "Clear evidence trail. Assessor knows what logs/artifacts to check."
+      5: "Complete assessment guide: evidence location, expected values, sampling methodology."
+
+  boundary_accuracy:
+    weight: 0.15
+    description: "Does the narrative correctly reflect the authorization boundary?"
+    anchors:
+      1: "Boundary misrepresented. Claims about components outside the boundary."
+      2: "Boundary unclear. Doesn't distinguish internal vs external services."
+      3: "Generally accurate boundary. Minor ambiguities."
+      4: "Accurate boundary description. Inherited vs implemented clearly stated."
+      5: "Precise boundary. Data flows mapped, interconnections documented, shared services attributed."
+
+  auditor_readability:
+    weight: 0.15
+    description: "Is the narrative structured for quick assessor review?"
+    anchors:
+      1: "Wall of text. No structure. Assessor cannot find information."
+      2: "Some structure but assessor has to hunt for key details."
+      3: "Adequate structure. Standard SSP formatting."
+      4: "Well-structured. Implementation, evidence, and responsible party clearly separated."
+      5: "Excellent. Follows 'Implementation-Evidence-Frequency-Owner' pattern. Assessor scores in seconds."
+
+few_shot_examples:
+  - score: 2
+    excerpt: "The organization manages user accounts in accordance with organizational policy."
+    reasoning: "Pure boilerplate. No tools, no process, no evidence, no specifics. Assessor learns nothing."
+  - score: 5
+    excerpt: "AC-2: ICDEV™ manages user accounts via the SaaS API gateway (D61). Account creation requires ISSO approval via the approval_manager.py workflow. Accounts are reviewed quarterly (Jan/Apr/Jul/Oct) by the tenant admin. Evidence: dashboard_auth_log table (append-only, D169). Disabled accounts purged after 90 days via automated cron task."
+    reasoning: "Named tool, approval workflow, defined frequency with months, evidence location, automated enforcement, architecture decision reference."

@@ -1,0 +1,11 @@
+{
+  "id": "114",
+  "name": "kanban_vibe_tier2",
+  "description": "Vibe-kanban Tier 2: add branch_name/commit_summary to kanban_tasks; add kanban_tags and kanban_task_tags for custom tagging.",
+  "created_at": "2026-05-07",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "requires_downtime": false,
+  "notes": "Idempotent. New tables created with IF NOT EXISTS; columns added only when absent."
+}

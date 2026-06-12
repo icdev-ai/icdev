@@ -1,0 +1,10 @@
+{
+  "id": "021",
+  "name": "ad_macro_regimes",
+  "description": "Create ad_macro_regimes table for FathomDesk macro regime classification — tracks liquidity trap detections and other macro regime signals (liquidity_trap, stagflation, goldilocks, reflation). Append-only NIST AU. One row per (regime_type, date) via idempotent daily write.",
+  "created_at": "2026-04-19",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": false,
+  "requires_downtime": false
+}

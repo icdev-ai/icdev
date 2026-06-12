@@ -1,0 +1,259 @@
+{% extends "base.html" %}
+{% block title %}Requirements — {{ session.customer_name or 'Session' }} | ICDEV™{% endblock %}
+
+{% block content %}
+<style>
+  .req-doc-root { max-width: 1100px; margin: 0 auto; padding: 32px 24px 64px; font-family: var(--font-sans, system-ui, sans-serif); }
+
+  /* ── CUI banner ── */
+  .req-cui-banner {
+    background: #1a2a1a; color: #6eff6e; font-weight: 700; letter-spacing: 0.12em;
+    font-size: 0.72rem; text-align: center; padding: 6px 0; border-radius: 4px;
+    margin-bottom: 28px; text-transform: uppercase;
+  }
+
+  /* ── Header card ── */
+  .req-header-card {
+    background: var(--card-bg, #1e2433); border: 1px solid var(--border-color, #2d3550);
+    border-radius: 10px; padding: 28px 32px 22px; margin-bottom: 32px;
+    display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: start;
+  }
+  .req-header-title { font-size: 1.7rem; font-weight: 700; color: var(--text-primary, #e2e8f0); margin: 0 0 6px; }
+  .req-header-subtitle { font-size: 0.95rem; color: var(--text-muted, #8892a4); margin: 0; }
+  .req-header-meta { display: flex; flex-direction: column; gap: 6px; text-align: right; }
+  .req-meta-pill {
+    display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.75rem;
+    font-weight: 600; white-space: nowrap;
+  }
+  .req-meta-pill--il { background: #1e3a5f; color: #60a5fa; }
+  .req-meta-pill--status { background: #1a3a28; color: #4ade80; }
+  .req-meta-pill--score { background: #3a2d14; color: #fbbf24; }
+
+  /* ── Readiness strip ── */
+  .req-readiness-strip {
+    background: var(--card-bg, #1e2433); border: 1px solid var(--border-color, #2d3550);
+    border-radius: 10px; padding: 20px 28px; margin-bottom: 32px;
+    display: flex; flex-wrap: wrap; gap: 20px; align-items: center;
+  }
+  .req-readiness-strip h3 { font-size: 0.82rem; font-weight: 600; color: var(--text-muted, #8892a4); text-transform: uppercase; letter-spacing: 0.08em; margin: 0; flex-basis: 100%; }
+  .req-rdim { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; min-width: 80px; }
+  .req-rdim-label { font-size: 0.72rem; color: var(--text-muted, #8892a4); text-transform: uppercase; letter-spacing: 0.06em; }
+  .req-rdim-bar { width: 100%; height: 6px; background: var(--border-color, #2d3550); border-radius: 3px; overflow: hidden; }
+  .req-rdim-fill { height: 100%; border-radius: 3px; background: var(--accent-blue, #3b82f6); }
+  .req-rdim-val { font-size: 0.85rem; font-weight: 700; color: var(--text-primary, #e2e8f0); }
+  .req-readiness-score-big {
+    font-size: 2.4rem; font-weight: 800; color: var(--accent-blue, #3b82f6);
+    line-height: 1; min-width: 64px; text-align: center;
+  }
+  .req-readiness-label { font-size: 0.72rem; color: var(--text-muted, #8892a4); text-transform: uppercase; letter-spacing: 0.08em; }
+
+  /* ── Section headers ── */
+  .req-section { margin-bottom: 40px; }
+  .req-section-heading {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 1.05rem; font-weight: 700; color: var(--text-primary, #e2e8f0);
+    border-bottom: 1px solid var(--border-color, #2d3550); padding-bottom: 10px; margin-bottom: 18px;
+  }
+  .req-section-heading .req-type-badge { font-size: 0.7rem; font-weight: 700; border-radius: 10px; padding: 2px 9px; }
+  .req-section-count { font-size: 0.78rem; color: var(--text-muted, #8892a4); margin-left: auto; }
+
+  /* ── Requirement card ── */
+  .req-card {
+    background: var(--card-bg, #1e2433); border: 1px solid var(--border-color, #2d3550);
+    border-radius: 8px; padding: 18px 22px; margin-bottom: 14px;
+    transition: border-color 0.15s;
+  }
+  .req-card:hover { border-color: var(--accent-blue, #3b82f6); }
+  .req-card-top { display: flex; align-items: flex-start; gap: 14px; margin-bottom: 10px; }
+  .req-card-id { font-size: 0.7rem; color: var(--text-muted, #8892a4); font-family: monospace; white-space: nowrap; margin-top: 2px; }
+  .req-card-text { flex: 1; font-size: 0.95rem; color: var(--text-primary, #e2e8f0); line-height: 1.55; }
+  .req-card-badges { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .req-badge {
+    display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 10px;
+    font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .req-badge--high    { background: #3b1c1c; color: #f87171; }
+  .req-badge--medium  { background: #3b2e1c; color: #fb923c; }
+  .req-badge--low     { background: #1c2d3b; color: #60a5fa; }
+  .req-badge--validated { background: #1a3a28; color: #4ade80; }
+  .req-badge--draft   { background: #2d2d1a; color: #fde047; }
+  .req-badge--pending { background: #2d1a2d; color: #c084fc; }
+
+  .req-ac { margin-top: 12px; padding: 10px 14px; background: rgba(59,130,246,0.06); border-left: 3px solid var(--accent-blue, #3b82f6); border-radius: 0 6px 6px 0; }
+  .req-ac-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent-blue, #3b82f6); margin-bottom: 4px; }
+  .req-ac-text { font-size: 0.85rem; color: var(--text-secondary, #a8b2c4); line-height: 1.5; }
+
+  .req-compliance { margin-top: 8px; }
+  .req-compliance-label { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-muted, #8892a4); margin-bottom: 4px; }
+  .req-compliance-text { font-size: 0.82rem; color: var(--text-secondary, #a8b2c4); }
+
+  /* ── Empty state ── */
+  .req-empty { text-align: center; padding: 64px 0; color: var(--text-muted, #8892a4); }
+  .req-empty-icon { font-size: 3rem; margin-bottom: 12px; }
+
+  /* ── Type colors ── */
+  .req-type-functional   { background: #1a3050; color: #60a5fa; }
+  .req-type-performance  { background: #1a3a28; color: #4ade80; }
+  .req-type-interface    { background: #2d1a3b; color: #c084fc; }
+  .req-type-data         { background: #3a2d14; color: #fbbf24; }
+  .req-type-compliance   { background: #3b1c1c; color: #f87171; }
+  .req-type-security     { background: #1c2d2d; color: #2dd4bf; }
+  .req-type-non-functional { background: #2d2d1a; color: #fde047; }
+  .req-type-default      { background: var(--border-color, #2d3550); color: var(--text-muted, #8892a4); }
+
+  /* ── Actions bar ── */
+  .req-actions-bar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 28px; align-items: center; }
+  .req-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 16px; border-radius: 6px; font-size: 0.82rem; font-weight: 600; cursor: pointer; border: none; text-decoration: none; transition: opacity 0.15s; }
+  .req-btn:hover { opacity: 0.85; }
+  .req-btn--primary { background: var(--accent-blue, #3b82f6); color: #fff; }
+  .req-btn--secondary { background: var(--border-color, #2d3550); color: var(--text-primary, #e2e8f0); }
+  .req-btn--success { background: #166534; color: #4ade80; }
+
+  /* ── Summary grid ── */
+  .req-summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 12px; margin-bottom: 32px; }
+  .req-summary-tile {
+    background: var(--card-bg, #1e2433); border: 1px solid var(--border-color, #2d3550);
+    border-radius: 8px; padding: 14px 16px; text-align: center;
+  }
+  .req-summary-tile-val { font-size: 1.8rem; font-weight: 800; color: var(--text-primary, #e2e8f0); line-height: 1; }
+  .req-summary-tile-label { font-size: 0.7rem; color: var(--text-muted, #8892a4); text-transform: uppercase; letter-spacing: 0.07em; margin-top: 4px; }
+
+  @media print {
+    .req-actions-bar { display: none; }
+    .req-card { page-break-inside: avoid; }
+    .req-cui-banner { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+
+<div class="req-doc-root">
+
+  <!-- CUI Banner -->
+  <div class="req-cui-banner">{{ classification_banner }}</div>
+
+  <!-- Actions bar -->
+  <div class="req-actions-bar">
+    <a class="req-btn req-btn--secondary" href="/chat/{{ session.id }}">&#x2190; Back to Chat</a>
+    <a class="req-btn req-btn--primary" href="/intake/prd/{{ session.id }}/view" target="_blank">&#x1F4C4; View PRD</a>
+    <button class="req-btn req-btn--secondary" onclick="window.print()">&#x1F5A8; Print</button>
+    <span style="margin-left:auto;font-size:0.8rem;color:var(--text-muted);">{{ requirements|length }} requirement{{ 's' if requirements|length != 1 else '' }}</span>
+  </div>
+
+  <!-- Header -->
+  <div class="req-header-card">
+    <div>
+      <h1 class="req-header-title">Requirements Document</h1>
+      <p class="req-header-subtitle">
+        {{ session.customer_name or 'Dashboard User' }}{% if session.customer_org %} &mdash; {{ session.customer_org }}{% endif %}
+        &nbsp;&middot;&nbsp; Session <code style="font-size:0.8em;opacity:0.7;">{{ session.id }}</code>
+      </p>
+    </div>
+    <div class="req-header-meta">
+      <span class="req-meta-pill req-meta-pill--il">{{ session.impact_level or 'IL4' }}</span>
+      <span class="req-meta-pill req-meta-pill--status">{{ (session.session_status or 'active')|title }}</span>
+      {% if readiness %}
+      <span class="req-meta-pill req-meta-pill--score">Readiness {{ (readiness.overall * 100)|round(0)|int }}%</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Summary tiles -->
+  <div class="req-summary-grid">
+    <div class="req-summary-tile">
+      <div class="req-summary-tile-val">{{ requirements|length }}</div>
+      <div class="req-summary-tile-label">Total Reqs</div>
+    </div>
+    <div class="req-summary-tile">
+      <div class="req-summary-tile-val">{{ requirements|selectattr('priority','equalto','high')|list|length }}</div>
+      <div class="req-summary-tile-label">High Priority</div>
+    </div>
+    <div class="req-summary-tile">
+      <div class="req-summary-tile-val">{{ requirements|selectattr('status','equalto','validated')|list|length }}</div>
+      <div class="req-summary-tile-label">Validated</div>
+    </div>
+    <div class="req-summary-tile">
+      <div class="req-summary-tile-val">{{ req_types|length }}</div>
+      <div class="req-summary-tile-label">Categories</div>
+    </div>
+    {% if frameworks %}
+    <div class="req-summary-tile" style="grid-column: span 2;">
+      <div class="req-summary-tile-label" style="margin-bottom:6px;">Compliance Frameworks</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;justify-content:center;">
+        {% for fw in frameworks %}
+        <span class="req-badge req-badge--validated">{{ fw }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Readiness strip -->
+  {% if readiness %}
+  <div class="req-readiness-strip">
+    <h3>Readiness Score</h3>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:2px;">
+      <div class="req-readiness-score-big">{{ (readiness.overall * 100)|round(0)|int }}%</div>
+      <div class="req-readiness-label">Overall</div>
+    </div>
+    {% for dim, val in readiness.dimensions.items() %}
+    <div class="req-rdim">
+      <div class="req-rdim-label">{{ dim }}</div>
+      <div class="req-rdim-bar"><div class="req-rdim-fill" style="width:{{ (val*100)|round(0)|int }}%;{% if val >= 0.8 %}background:#4ade80;{% elif val >= 0.6 %}background:#fbbf24;{% else %}background:#f87171;{% endif %}"></div></div>
+      <div class="req-rdim-val">{{ (val*100)|round(0)|int }}%</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Requirements by type -->
+  {% if requirements %}
+    {% for type_key, type_label, type_reqs in grouped_requirements %}
+    <div class="req-section">
+      <div class="req-section-heading">
+        <span class="req-type-badge req-type-{{ type_key|replace('_','-') }} req-type-default">{{ type_label }}</span>
+        <span class="req-section-count">{{ type_reqs|length }} requirement{{ 's' if type_reqs|length != 1 else '' }}</span>
+      </div>
+
+      {% for req in type_reqs %}
+      <div class="req-card">
+        <div class="req-card-top">
+          <div>
+            <div class="req-card-id">{{ req.id }}</div>
+          </div>
+          <div class="req-card-text">{{ req.refined_text or req.raw_text }}</div>
+          <div class="req-card-badges">
+            <span class="req-badge req-badge--{{ req.priority or 'medium' }}">{{ (req.priority or 'medium')|title }}</span>
+            <span class="req-badge req-badge--{{ req.status or 'draft' }}">{{ (req.status or 'draft')|title }}</span>
+          </div>
+        </div>
+
+        {% if req.acceptance_criteria %}
+        <div class="req-ac">
+          <div class="req-ac-label">Acceptance Criteria</div>
+          <div class="req-ac-text">{{ req.acceptance_criteria }}</div>
+        </div>
+        {% endif %}
+
+        {% if req.compliance_impact %}
+        <div class="req-compliance">
+          <div class="req-compliance-label">Compliance Impact</div>
+          <div class="req-compliance-text">{{ req.compliance_impact }}</div>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  {% else %}
+  <div class="req-empty">
+    <div class="req-empty-icon">&#x1F4CB;</div>
+    <div>No requirements captured yet for this session.</div>
+  </div>
+  {% endif %}
+
+  <!-- Footer -->
+  <div style="text-align:center;margin-top:48px;padding-top:20px;border-top:1px solid var(--border-color,#2d3550);font-size:0.72rem;color:var(--text-muted,#8892a4);">
+    {{ classification_banner }} &nbsp;&middot;&nbsp; Generated {{ generated_at }} &nbsp;&middot;&nbsp; ICDEV™ Requirements Management
+  </div>
+
+</div>
+{% endblock %}

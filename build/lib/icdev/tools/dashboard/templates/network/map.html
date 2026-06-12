@@ -1,0 +1,126 @@
+{% extends "network/base.html" %}
+{% block title %}Network Map — Network Design Canvas{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}"/>
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+<style>
+  .main-content { padding: 0; display: flex; flex-direction: column; }
+  #map-container { flex: 1; min-height: 500px; background: #1a1a2e; }
+  #map-toolbar {
+    display: flex; gap: 8px; padding: 8px 16px;
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+    align-items: center; font-size: 12px;
+  }
+  #map-toolbar .tb-btn {
+    background: var(--bg3); border: 1px solid var(--border);
+    color: var(--text); padding: 4px 10px; border-radius: 4px;
+    cursor: pointer; font-size: 12px;
+  }
+  #map-toolbar .tb-btn:hover { border-color: var(--red); }
+  .map-stats { margin-left: auto; color: var(--text-dim); font-size: 11px; }
+  .leaflet-popup-content { color: #222; font-size: 12px; }
+  .site-popup h4 { margin: 0 0 4px; color: #1a1a2e; }
+  .site-popup .sp-detail { color: #555; font-size: 11px; }
+</style>
+{% endblock %}
+{% block content %}
+<div id="map-toolbar">
+  <span style="font-weight:600;color:var(--text);">Network Globe View</span>
+  <button class="tb-btn" onclick="loadMapData()">Refresh</button>
+  <a href="/network/global" class="tb-btn" style="text-decoration:none;">Global Connectivity</a>
+  <a href="/network/enterprise" class="tb-btn" style="text-decoration:none;">Enterprise</a>
+  <div class="map-stats" id="map-stats">Loading...</div>
+</div>
+<div id="map-container"></div>
+{% endblock %}
+{% block scripts %}
+<script>
+const map = L.map('map-container', {
+  center: [39.8283, -98.5795],  // Center of US
+  zoom: 4,
+  preferCanvas: true,
+});
+
+// Tile layer — configurable for air-gap deployments.
+// Set NETWORK_MAP_TILE_URL env var to point to a local tile server,
+// or leave default for internet-connected environments.
+const tileUrl = '{{ config.get("NETWORK_MAP_TILE_URL", "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png") }}';
+L.tileLayer(tileUrl, {
+  attribution: 'Map tiles',
+  maxZoom: 19,
+  errorTileUrl: '',  // Suppress broken-image icons in air-gap
+}).addTo(map);
+
+const siteMarkers = L.layerGroup().addTo(map);
+const linkLines = L.layerGroup().addTo(map);
+
+async function loadMapData() {
+  // Load sites
+  const sitesResp = await fetch(NC_BASE + '/api/geo-sites');
+  const sites = await sitesResp.json();
+
+  siteMarkers.clearLayers();
+  sites.forEach(s => {
+    if (!s.latitude || !s.longitude) return;
+    const marker = L.circleMarker([s.latitude, s.longitude], {
+      radius: Math.min(6 + s.device_count * 2, 20),
+      fillColor: '#e94560',
+      color: '#fff',
+      weight: 1,
+      opacity: 1,
+      fillOpacity: 0.8,
+    });
+    marker.bindPopup(`
+      <div class="site-popup">
+        <h4>${s.site_name || 'Unknown Site'}</h4>
+        <div class="sp-detail">${s.city || ''}${s.state ? ', ' + s.state : ''} ${s.country || ''}</div>
+        <div class="sp-detail">Facility: ${s.facility || '—'}</div>
+        <div class="sp-detail"><strong>${s.device_count}</strong> device(s)</div>
+      </div>
+    `);
+    siteMarkers.addLayer(marker);
+  });
+
+  // Load links (great-circle arcs)
+  const linksResp = await fetch(NC_BASE + '/api/geo-links');
+  const links = await linksResp.json();
+
+  linkLines.clearLayers();
+  links.forEach(l => {
+    if (!l.src_lat || !l.dst_lat) return;
+    const line = L.polyline([
+      [l.src_lat, l.src_lon],
+      [l.dst_lat, l.dst_lon]
+    ], {
+      color: '#3498db',
+      weight: 2,
+      opacity: 0.7,
+      dashArray: '8 4',
+    });
+    line.bindPopup(`
+      <div class="site-popup">
+        <h4>${l.circuit_id || 'Interconnect'}</h4>
+        <div class="sp-detail">${l.src_site || '?'} &rarr; ${l.dst_site || '?'}</div>
+        <div class="sp-detail">Protocol: ${l.protocol || '—'} | BW: ${l.bandwidth || '—'}</div>
+      </div>
+    `);
+    linkLines.addLayer(line);
+  });
+
+  // Also load all individual device geo points
+  const geoResp = await fetch(NC_BASE + '/api/device-geo');
+  const geoDevices = await geoResp.json();
+
+  document.getElementById('map-stats').textContent =
+    sites.length + ' sites, ' + geoDevices.length + ' devices, ' + links.length + ' links';
+
+  // Fit bounds if we have data
+  if (sites.length > 0) {
+    const bounds = L.latLngBounds(sites.map(s => [s.latitude, s.longitude]));
+    map.fitBounds(bounds, {padding: [50, 50]});
+  }
+}
+
+loadMapData();
+</script>
+{% endblock %}

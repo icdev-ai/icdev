@@ -1,0 +1,419 @@
+<!-- CUI // SP-CTI — Data Design Canvas: Data Quality Rules -->
+{% extends "base.html" %}
+{% block title %}Data Quality — Data Canvas — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .ds-nav { display:flex; gap:8px; padding:12px 30px 0; border-bottom:1px solid #1e3a6e; }
+  .ds-nav a { padding:6px 14px; border-radius:6px 6px 0 0; font-size:12px; font-weight:600; text-decoration:none; color:#7a8cb0; background:#0f1e36; border:1px solid #1e3a6e; border-bottom:none; }
+  .ds-nav a.active { color:#66bb6a; background:#16213e; border-color:#66bb6a; }
+  .ds-nav a:hover:not(.active) { color:#eaeaea; }
+
+  .ql-hero { padding:16px 30px 10px; }
+  .ql-hero h1 { font-size:20px; margin:0 0 4px; color:#66bb6a; }
+  .ql-hero p { color:#7a8cb0; font-size:12px; margin:0; }
+
+  .ql-layout { display:grid; grid-template-columns:1fr 1fr; gap:16px; padding:16px 30px; }
+  .ql-full { grid-column: 1 / -1; }
+
+  .panel { background:#0f1e36; border:1px solid #1e3a6e; border-radius:8px; padding:16px; }
+  .panel h3 { font-size:13px; font-weight:700; color:#eaeaea; margin:0 0 12px; text-transform:uppercase; letter-spacing:.5px; }
+
+  /* Score gauge */
+  .score-section { text-align:center; padding:20px 0; }
+  .score-gauge { position:relative; display:inline-block; width:140px; height:140px; }
+  .score-gauge svg { transform:rotate(-90deg); }
+  .score-value { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); text-align:center; }
+  .score-num { font-size:36px; font-weight:700; line-height:1; }
+  .score-lbl { font-size:11px; color:#7a8cb0; }
+  .score-green { color:#66bb6a; }
+  .score-orange { color:#ff9800; }
+  .score-red { color:#ef5350; }
+  .score-section p { color:#7a8cb0; font-size:12px; margin:8px 0 0; }
+
+  /* Rule builder */
+  .form-row { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .form-group { margin-bottom:10px; }
+  .form-group label { display:block; font-size:10px; color:#7a8cb0; margin-bottom:3px; text-transform:uppercase; }
+  .form-group input, .form-group select {
+    width:100%; padding:6px 8px; background:#0a1628; border:1px solid #1e3a6e; border-radius:4px;
+    color:#eaeaea; font-size:12px; box-sizing:border-box; }
+  .form-group input:focus, .form-group select:focus { outline:none; border-color:#66bb6a; }
+  .btn-add { padding:8px 20px; background:#66bb6a; color:#0a1628; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; margin-top:2px; }
+  .btn-add:hover { background:#57a35b; }
+  .btn-run-all { padding:8px 20px; background:#ff9800; color:#fff; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; margin-left:8px; }
+  .btn-run-all:hover { background:#e68900; }
+  .btn-run-all:disabled { opacity:.5; cursor:not-allowed; }
+
+  /* Connection params for run */
+  .conn-toggle { font-size:11px; color:#4fc3f7; cursor:pointer; margin-bottom:8px; display:inline-block; }
+  .conn-fields { display:none; background:#0a1628; border:1px solid #1e3a6e; border-radius:4px; padding:10px; margin-bottom:10px; }
+  .conn-fields.open { display:block; }
+
+  /* Rules table */
+  .rules-table { width:100%; border-collapse:collapse; font-size:12px; }
+  .rules-table th { text-align:left; padding:7px 10px; font-size:10px; color:#7a8cb0; border-bottom:1px solid #1e3a6e; text-transform:uppercase; }
+  .rules-table td { padding:7px 10px; border-bottom:1px solid #0f1e36; color:#eaeaea; }
+  .rules-table tr:hover td { background:#16213e; }
+  .badge { display:inline-block; padding:1px 7px; border-radius:10px; font-size:10px; font-weight:600; }
+  .badge-completeness { background:#0f3460; color:#4fc3f7; }
+  .badge-uniqueness { background:#2a1a4a; color:#ce93d8; }
+  .badge-range { background:#1a3a1a; color:#66bb6a; }
+  .badge-pattern { background:#3a2a00; color:#ffca28; }
+  .badge-freshness { background:#1a2a3a; color:#80deea; }
+  .btn-del { background:none; border:1px solid #e74c3c55; color:#e74c3c; border-radius:3px; padding:1px 7px; font-size:10px; cursor:pointer; }
+  .btn-del:hover { background:#e74c3c; color:#fff; }
+  .toggle-switch { position:relative; display:inline-block; width:32px; height:18px; }
+  .toggle-switch input { opacity:0; width:0; height:0; }
+  .slider { position:absolute; cursor:pointer; top:0;left:0;right:0;bottom:0; background:#1e3a6e; border-radius:18px; transition:.3s; }
+  .slider:before { position:absolute; content:""; height:12px; width:12px; left:3px; bottom:3px; background:#7a8cb0; border-radius:50%; transition:.3s; }
+  input:checked + .slider { background:#66bb6a; }
+  input:checked + .slider:before { background:#fff; transform:translateX(14px); }
+
+  /* Runs history */
+  .runs-table { width:100%; border-collapse:collapse; font-size:11px; }
+  .runs-table th { text-align:left; padding:6px 10px; font-size:10px; color:#7a8cb0; border-bottom:1px solid #1e3a6e; text-transform:uppercase; }
+  .runs-table td { padding:6px 10px; border-bottom:1px solid #0f1e36; }
+  .pass { color:#66bb6a; font-weight:700; }
+  .fail { color:#ef5350; font-weight:700; }
+
+  .err-banner { background:#4a0e0e; border:1px solid #e74c3c; color:#ef5350; padding:8px 12px; border-radius:6px; font-size:12px; margin-bottom:10px; }
+  .success-banner { background:#1a3a1a; border:1px solid #66bb6a; color:#66bb6a; padding:8px 12px; border-radius:6px; font-size:12px; margin-bottom:10px; }
+
+  .spinner { display:inline-block; width:14px; height:14px; border:2px solid #1e3a6e; border-top-color:#66bb6a; border-radius:50%; animation:spin .8s linear infinite; vertical-align:middle; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+
+  .empty-state { color:#5a6e8c; font-size:12px; text-align:center; padding:30px 0; }
+</style>
+
+<!-- Secondary nav -->
+<div class="ds-nav">
+  <a href="/data/">Dashboard</a>
+  <a href="/data/explore">Explore</a>
+  <a href="/data/query">Query</a>
+  <a href="/data/quality" class="active">Quality</a>
+  <a href="/data/assessments">Assessments</a>
+</div>
+
+<div class="ql-hero">
+  <h1>Data Quality Rules</h1>
+  <p>Define completeness, uniqueness, range, pattern, and freshness expectations. Run checks — results feed the Assessment engine (DDC-QUA-001).</p>
+</div>
+
+<div class="ql-layout">
+
+  <!-- Score Gauge -->
+  <div class="panel" style="display:flex;flex-direction:column;align-items:center;justify-content:center;">
+    <h3 style="text-align:center;">Quality Score</h3>
+    {% set score = quality_score %}
+    {% if score is not none %}
+      {% set score_class = 'score-green' if score >= 70 else ('score-orange' if score >= 40 else 'score-red') %}
+      {% set stroke_color = '#66bb6a' if score >= 70 else ('#ff9800' if score >= 40 else '#ef5350') %}
+      {% set circumference = 283 %}
+      {% set dash = (score / 100 * circumference) | round(1) %}
+    <div class="score-gauge">
+      <svg width="140" height="140" viewBox="0 0 100 100">
+        <circle cx="50" cy="50" r="45" fill="none" stroke="#1e3a6e" stroke-width="10"/>
+        <circle cx="50" cy="50" r="45" fill="none" stroke="{{ stroke_color }}" stroke-width="10"
+          stroke-dasharray="{{ dash }} {{ circumference }}" stroke-linecap="round"/>
+      </svg>
+      <div class="score-value">
+        <div class="score-num {{ score_class }}">{{ score | round(0) | int }}%</div>
+        <div class="score-lbl">quality</div>
+      </div>
+    </div>
+    <p>Based on {{ runs | length }} recent rule runs</p>
+    {% else %}
+    <div class="score-gauge">
+      <svg width="140" height="140" viewBox="0 0 100 100">
+        <circle cx="50" cy="50" r="45" fill="none" stroke="#1e3a6e" stroke-width="10"/>
+      </svg>
+      <div class="score-value">
+        <div class="score-num" style="color:#5a6e8c;">—</div>
+        <div class="score-lbl">no runs yet</div>
+      </div>
+    </div>
+    <p>Run quality checks to see your score.</p>
+    {% endif %}
+    <div id="scoreGauge" style="margin-top:12px;font-size:11px;color:#7a8cb0;text-align:center;"></div>
+  </div>
+
+  <!-- Rule Builder -->
+  <div class="panel">
+    <h3>Add Rule</h3>
+    <div id="addMsg"></div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Design</label>
+        <select id="ruleDesign">
+          <option value="">— none —</option>
+          {% for d in designs %}
+          <option value="{{ d.id }}" data-cls="{{ d.classification or 'CUI // SP-CTI' }}">{{ d.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Rule Name</label>
+        <input type="text" id="ruleName" placeholder="e.g. email_completeness">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Table</label>
+        <input type="text" id="ruleTable" placeholder="users">
+      </div>
+      <div class="form-group">
+        <label>Column</label>
+        <input type="text" id="ruleColumn" placeholder="email (blank for range on table)">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Check Type</label>
+        <select id="ruleCheckType" onchange="updateThresholdLabel()">
+          <option value="completeness">Completeness — % non-null ≥ threshold</option>
+          <option value="uniqueness">Uniqueness — % distinct ≥ threshold</option>
+          <option value="range">Range — MIN/MAX within params.min_val/max_val</option>
+          <option value="pattern">Pattern — % matching regex ≥ threshold</option>
+          <option value="freshness">Freshness — latest value within N days</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label id="thresholdLbl">Threshold (%)</label>
+        <input type="number" id="ruleThreshold" value="90" min="0" max="100" step="1">
+      </div>
+    </div>
+    <div class="form-group" id="paramsGroup" style="display:none">
+      <label>Extra Params (JSON)</label>
+      <input type="text" id="ruleParams" placeholder='{"min_val": 0, "max_val": 100}'>
+    </div>
+    <button class="btn-add" onclick="addRule()">+ Add Rule</button>
+  </div>
+
+  <!-- Rules Table -->
+  <div class="panel ql-full">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <h3 style="margin:0">Rules</h3>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span class="conn-toggle" onclick="toggleConnFields()">[connection params for Run All]</span>
+        <button class="btn-run-all" id="runAllBtn" onclick="runAllRules()">&#9654; Run All</button>
+      </div>
+    </div>
+
+    <div class="conn-fields" id="runConnFields">
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;">
+        <div class="form-group"><label>DB Type</label>
+          <select id="runDbType" onchange="toggleRunDb()">
+            <option value="sqlite">SQLite</option>
+            <option value="postgresql">PostgreSQL</option>
+            <option value="duckdb">DuckDB</option>
+          </select>
+        </div>
+        <div class="form-group" id="runSqlitePath"><label>SQLite Path</label><input type="text" id="runPath" value="data/data_canvas.db"></div>
+        <div class="form-group" id="runPgHost" style="display:none"><label>Host</label><input type="text" id="runHost" value="localhost"></div>
+        <div class="form-group" id="runPgDb" style="display:none"><label>DB</label><input type="text" id="runDatabase"></div>
+        <div class="form-group" id="runPgUser" style="display:none"><label>User</label><input type="text" id="runUser"></div>
+        <div class="form-group" id="runPgPass" style="display:none"><label>Password</label><input type="password" id="runPass"></div>
+      </div>
+      <div class="form-group" style="grid-column:1/-1">
+        <label>Design (filter rules by design)</label>
+        <select id="runDesignId">
+          <option value="">— all rules —</option>
+          {% for d in designs %}
+          <option value="{{ d.id }}">{{ d.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div id="runMsg"></div>
+    {% if rules %}
+    <table class="rules-table" id="rulesTable">
+      <thead><tr>
+        <th>Name</th><th>Table.Column</th><th>Check</th><th>Threshold</th><th>Enabled</th><th></th>
+      </tr></thead>
+      <tbody id="rulesTbody">
+        {% for r in rules %}
+        <tr id="rule-row-{{ r.id }}">
+          <td>{{ r.name }}</td>
+          <td style="font-family:monospace;font-size:11px;">{{ r.table_name }}{% if r.column_name %}.{{ r.column_name }}{% endif %}</td>
+          <td><span class="badge badge-{{ r.check_type }}">{{ r.check_type }}</span></td>
+          <td>{{ r.threshold }}{% if r.check_type in ['completeness','uniqueness','pattern'] %}%{% endif %}</td>
+          <td>
+            <label class="toggle-switch">
+              <input type="checkbox" {% if r.enabled %}checked{% endif %} onchange="toggleRule('{{ r.id }}',this.checked)">
+              <span class="slider"></span>
+            </label>
+          </td>
+          <td><button class="btn-del" onclick="deleteRule('{{ r.id }}')">&#x2715;</button></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state" id="noRulesMsg">No quality rules yet. Add one above.</div>
+    {% endif %}
+  </div>
+
+  <!-- Freshness Monitor -->
+  <section id="freshness-monitor" class="panel ql-full">
+    <h3>Freshness Monitor</h3>
+    <p style="color:#7a8cb0;font-size:11px;margin:0 0 12px;">Hourly reflex results for all freshness quality rules (via FreshnessGuardianReflex). Alerts sourced from <code>dd_freshness_alerts</code>.</p>
+    {% if freshness_alerts %}
+    <table class="runs-table">
+      <thead><tr>
+        <th>Rule</th><th>Design</th><th>Max Value</th><th>Cutoff</th><th>Status</th><th>Detail</th><th>Checked</th>
+      </tr></thead>
+      <tbody>
+        {% for a in freshness_alerts %}
+        <tr>
+          <td>{{ a.rule_name or a.rule_id }}</td>
+          <td style="color:#7a8cb0;">{{ a.design_id or '—' }}</td>
+          <td style="font-family:monospace;font-size:11px;">{{ a.actual_max_value or '—' }}</td>
+          <td style="font-family:monospace;font-size:11px;">{{ a.cutoff_value or '—' }}</td>
+          <td class="{{ 'pass' if a.passed else 'fail' }}">{{ '✓ PASS' if a.passed else '✗ BREACH' }}</td>
+          <td style="color:#7a8cb0;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ a.detail }}">{{ a.detail or '—' }}</td>
+          <td style="color:#5a6e8c;white-space:nowrap;">{{ a.last_checked[:16] if a.last_checked else (a.created_at[:16] if a.created_at else '—') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No freshness alerts yet. The FreshnessGuardianReflex runs hourly and will populate this table once freshness rules are defined and checked.</div>
+    {% endif %}
+  </section>
+
+  <!-- Run History -->
+  <div class="panel ql-full">
+    <h3>Run History</h3>
+    {% if runs %}
+    <table class="runs-table">
+      <thead><tr>
+        <th>Rule</th><th>Table.Col</th><th>Type</th><th>Result</th><th>Actual</th><th>Threshold</th><th>Detail</th><th>When</th>
+      </tr></thead>
+      <tbody>
+        {% for r in runs %}
+        <tr>
+          <td>{{ r.rule_name or r.rule_id }}</td>
+          <td style="font-family:monospace;font-size:10px;">{{ r.table_name or '—' }}{% if r.column_name %}.{{ r.column_name }}{% endif %}</td>
+          <td><span class="badge badge-{{ r.check_type or 'completeness' }}">{{ r.check_type or '—' }}</span></td>
+          <td class="{{ 'pass' if r.passed else 'fail' }}">{{ '✓ PASS' if r.passed else '✗ FAIL' }}</td>
+          <td>{{ '%.1f'|format(r.actual_value or 0) }}</td>
+          <td>{{ r.threshold }}</td>
+          <td style="color:#7a8cb0;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ r.detail }}">{{ r.detail }}</td>
+          <td style="color:#5a6e8c;white-space:nowrap;">{{ r.created_at[:16] if r.created_at else '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">No runs yet. Click Run All to evaluate your rules.</div>
+    {% endif %}
+  </div>
+
+</div>
+
+<script>
+function updateThresholdLabel() {
+  const ct = document.getElementById('ruleCheckType').value;
+  const lbl = document.getElementById('thresholdLbl');
+  const pg = document.getElementById('paramsGroup');
+  if (ct === 'range') { lbl.textContent = 'Threshold (ignored for range)'; pg.style.display = ''; document.getElementById('ruleParams').placeholder = '{"min_val": 0, "max_val": 1000}'; }
+  else if (ct === 'freshness') { lbl.textContent = 'Threshold (days)'; pg.style.display = 'none'; }
+  else if (ct === 'pattern') { lbl.textContent = 'Threshold (% match)'; pg.style.display = ''; document.getElementById('ruleParams').placeholder = '{"pattern": "^\\\\d{4}-\\\\d{2}-\\\\d{2}$"}'; }
+  else { lbl.textContent = 'Threshold (%)'; pg.style.display = 'none'; }
+}
+
+async function addRule() {
+  const msg = document.getElementById('addMsg');
+  const sel = document.getElementById('ruleDesign');
+  const cls = sel.selectedOptions[0]?.dataset?.cls || 'CUI // SP-CTI';
+  let params = {};
+  const paramsRaw = document.getElementById('ruleParams').value.trim();
+  if (paramsRaw) { try { params = JSON.parse(paramsRaw); } catch { msg.innerHTML = '<div class="err-banner">Invalid params JSON.</div>'; return; } }
+
+  const payload = {
+    design_id: sel.value,
+    name: document.getElementById('ruleName').value.trim() || `${document.getElementById('ruleCheckType').value}-${document.getElementById('ruleTable').value}`,
+    table_name: document.getElementById('ruleTable').value.trim(),
+    column_name: document.getElementById('ruleColumn').value.trim(),
+    check_type: document.getElementById('ruleCheckType').value,
+    threshold: parseFloat(document.getElementById('ruleThreshold').value) || 90,
+    params,
+    classification: cls,
+  };
+
+  const resp = await fetch('/data/api/quality/rules', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const data = await resp.json();
+  if (!resp.ok) { msg.innerHTML = `<div class="err-banner">${data.error}</div>`; return; }
+  msg.innerHTML = '<div class="success-banner">Rule added. Refresh to see in table.</div>';
+  setTimeout(() => location.reload(), 800);
+}
+
+async function deleteRule(id) {
+  if (!confirm('Delete this rule?')) return;
+  await fetch(`/data/api/quality/rules/${id}`, { method: 'DELETE' });
+  document.getElementById(`rule-row-${id}`)?.remove();
+}
+
+async function toggleRule(id, enabled) {
+  // TODO: add PATCH endpoint; for now just visual
+}
+
+function toggleConnFields() {
+  document.getElementById('runConnFields').classList.toggle('open');
+}
+
+function toggleRunDb() {
+  const t = document.getElementById('runDbType').value;
+  document.getElementById('runSqlitePath').style.display = t === 'sqlite' ? '' : 'none';
+  ['runPgHost','runPgDb','runPgUser','runPgPass'].forEach(id => {
+    document.getElementById(id).style.display = t === 'postgresql' ? '' : 'none';
+  });
+}
+
+async function runAllRules() {
+  const btn = document.getElementById('runAllBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Running…';
+  const msg = document.getElementById('runMsg');
+  msg.innerHTML = '';
+
+  const t = document.getElementById('runDbType').value;
+  const designId = document.getElementById('runDesignId').value;
+  let conn_params = { db_type: t };
+  if (t === 'sqlite') conn_params.path = document.getElementById('runPath').value;
+  else if (t === 'postgresql') {
+    conn_params.host = document.getElementById('runHost').value;
+    conn_params.database = document.getElementById('runDatabase').value;
+    conn_params.user = document.getElementById('runUser').value;
+    conn_params.password = document.getElementById('runPass').value;
+  } else {
+    conn_params.path = document.getElementById('runPath').value;
+  }
+
+  const payload = { design_id: designId, ...conn_params };
+  try {
+    const resp = await fetch('/data/api/quality/run', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json();
+    if (!resp.ok) {
+      msg.innerHTML = `<div class="err-banner">${data.error || 'Run failed'}</div>`;
+    } else {
+      const sc = data.quality_score || 0;
+      const cls = sc >= 70 ? 'score-green' : sc >= 40 ? 'score-orange' : 'score-red';
+      document.getElementById('scoreGauge').innerHTML = `New score: <b class="${cls}">${sc}%</b> (${data.rules_run} rules)`;
+      msg.innerHTML = `<div class="success-banner">Run complete &mdash; ${data.rules_run} rules evaluated &mdash; score: ${sc}%. Refresh for updated history.</div>`;
+    }
+  } catch(e) {
+    msg.innerHTML = `<div class="err-banner">Network error: ${e.message}</div>`;
+  }
+  btn.disabled = false;
+  btn.innerHTML = '&#9654; Run All';
+}
+</script>
+{% endblock %}

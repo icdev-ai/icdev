@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block extra_head %}
+<style>
+/* ── NOCC shared badge + severity styles ─────────────────────────── */
+.sev-badge { display:inline-block; padding:2px 9px; border-radius:12px; font-size:11px; font-weight:700; }
+.sev-critical { background:#7f1d1d; color:#fca5a5; }
+.sev-major    { background:#7c2d12; color:#fdba74; }
+.sev-minor    { background:#713f12; color:#fde68a; }
+.sev-warning  { background:#1e3a5f; color:#7dd3fc; }
+.sev-info     { background:#1e293b; color:#94a3b8; }
+
+/* Priority badges */
+.p1-badge { background:#7f1d1d; color:#fca5a5; }
+.p2-badge { background:#7c2d12; color:#fdba74; }
+.p3-badge { background:#713f12; color:#fde68a; }
+.p4-badge { background:#1e3a5f; color:#7dd3fc; }
+
+/* Status badges */
+.badge-open       { background:#dcfce7; color:#166534; }
+.badge-resolved   { background:#f3f4f6; color:#374151; }
+.badge-closed     { background:#e5e7eb; color:#6b7280; }
+.badge-in-progress{ background:#dbeafe; color:#1d4ed8; }
+.badge-scheduled  { background:#e0f2fe; color:#075985; }
+.badge-completed  { background:#dcfce7; color:#166534; }
+.badge-cancelled  { background:#fee2e2; color:#991b1b; }
+.badge-draft      { background:#fef9c3; color:#854d0e; }
+.badge-approved   { background:#dcfce7; color:#166534; }
+.badge-rejected   { background:#fee2e2; color:#991b1b; }
+
+/* Card and layout */
+.nocc-card { background:#1e293b; border:1px solid #334155; border-radius:10px; padding:18px 22px; margin-bottom:16px; }
+.nocc-card h3 { margin:0 0 12px; font-size:.9rem; font-weight:600; color:#e2e8f0; text-transform:uppercase; letter-spacing:.05em; }
+.nocc-stat { background:#1e293b; border:1px solid #334155; border-radius:8px; padding:14px 18px; text-align:center; }
+.nocc-stat .val { font-size:2rem; font-weight:700; line-height:1.1; color:#f8fafc; }
+.nocc-stat .lbl { font-size:.72rem; color:#64748b; margin-top:4px; text-transform:uppercase; letter-spacing:.04em; }
+
+/* NOCC section header bar */
+.nocc-header { background:linear-gradient(135deg,#0f172a 0%,#1c2a3a 40%,#0c1a0c 100%);
+               padding:24px 28px 20px; border-radius:12px; margin-bottom:24px;
+               border-left:4px solid #f97316; }
+.nocc-header h1 { margin:0; font-size:1.5rem; font-weight:700; color:#fed7aa; }
+.nocc-header .sub { margin:5px 0 0; color:#fb923c; font-size:.85rem; }
+
+/* Sub-nav bar */
+.nocc-subnav { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:22px; }
+.nocc-subnav a { padding:6px 14px; border-radius:8px; font-size:.8rem; font-weight:600;
+                 text-decoration:none; background:#0f172a; border:1px solid #334155; color:#94a3b8; }
+.nocc-subnav a:hover, .nocc-subnav a.active { border-color:#f97316; color:#f97316; }
+
+/* Table helpers */
+.nocc-table { width:100%; font-size:.83rem; }
+.nocc-table th { color:#64748b; font-weight:600; text-transform:uppercase; font-size:.72rem;
+                 letter-spacing:.04em; padding:8px 12px; border-bottom:1px solid #334155; }
+.nocc-table td { padding:10px 12px; border-bottom:1px solid #1e293b; vertical-align:middle; }
+.nocc-table tr:last-child td { border-bottom:none; }
+.nocc-table tr:hover td { background:#1e293b44; }
+
+/* IQE widget host */
+.iqe-host { margin-top:32px; }
+</style>
+{% endblock %}
+{% block content %}{% endblock %}

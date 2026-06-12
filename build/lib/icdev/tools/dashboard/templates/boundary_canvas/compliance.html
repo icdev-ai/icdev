@@ -1,0 +1,127 @@
+<!-- CUI // SP-CTI — BDC Compliance View Page -->
+{% extends "base.html" %}
+{% block title %}Compliance — Boundary Canvas — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .comp-hero { padding: 20px 30px; }
+  .comp-hero h1 { font-size: 22px; margin: 0 0 4px; color: #9c27b0; }
+  .comp-hero p { color: #7a8cb0; font-size: 13px; margin: 0 0 12px; }
+  .comp-back { display: inline-block; padding: 6px 16px; background: #0f3460; color: #7a8cb0; border-radius: 6px; text-decoration: none; font-size: 12px; margin-bottom: 16px; }
+  .comp-back:hover { background: #1e3a6e; color: #eaeaea; }
+  .comp-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 0 30px 30px; }
+  .comp-card { background: #16213e; border: 1px solid #1e3a6e; border-radius: 8px; padding: 20px; }
+  .comp-card h3 { font-size: 14px; color: #eaeaea; margin: 0 0 12px; }
+  .comp-score { font-size: 48px; font-weight: 700; }
+  .comp-grade { font-size: 28px; font-weight: 600; margin-left: 12px; }
+  .comp-bar-label { display: flex; justify-content: space-between; font-size: 12px; color: #7a8cb0; margin-bottom: 2px; }
+  .comp-bar-track { background: #0a1628; border-radius: 4px; height: 18px; margin-bottom: 8px; overflow: hidden; }
+  .comp-bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s; }
+  .comp-cat-row { display: flex; gap: 16px; margin-bottom: 6px; }
+  .comp-cat-box { flex: 1; text-align: center; padding: 12px; border-radius: 6px; }
+  .comp-cat-box .num { font-size: 28px; font-weight: 700; }
+  .comp-cat-box .lbl { font-size: 11px; margin-top: 4px; }
+  .cat1-box { background: #b71c1c33; color: #ef5350; }
+  .cat2-box { background: #f57f1733; color: #ffa726; }
+  .cat3-box { background: #1b5e2033; color: #66bb6a; }
+  .comp-isa-row { display: flex; gap: 8px; font-size: 13px; color: #eaeaea; margin-bottom: 4px; }
+  .comp-isa-badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 11px; font-weight: 600; }
+  .comp-loading { color: #7a8cb0; text-align: center; padding: 30px; font-size: 14px; }
+</style>
+
+<div class="comp-hero">
+  <a href="/boundary/" class="comp-back">&larr; Back to Boundary Canvas</a>
+  <h1>Compliance View</h1>
+  <p>Design: <strong>{{ design.name }}</strong></p>
+</div>
+
+<div id="compLoading" class="comp-loading">Running compliance assessment...</div>
+
+<div class="comp-grid" id="compGrid" style="display:none;">
+  <!-- Score & Grade -->
+  <div class="comp-card">
+    <h3>Assessment Score</h3>
+    <div style="display:flex; align-items:baseline;">
+      <span class="comp-score" id="compScore" style="color:#9c27b0;">--</span>
+      <span class="comp-grade" id="compGrade" style="color:#7a8cb0;">--</span>
+    </div>
+  </div>
+
+  <!-- CAT Findings -->
+  <div class="comp-card">
+    <h3>Finding Categories</h3>
+    <div class="comp-cat-row">
+      <div class="comp-cat-box cat1-box"><div class="num" id="cat1Count">0</div><div class="lbl">CAT I</div></div>
+      <div class="comp-cat-box cat2-box"><div class="num" id="cat2Count">0</div><div class="lbl">CAT II</div></div>
+      <div class="comp-cat-box cat3-box"><div class="num" id="cat3Count">0</div><div class="lbl">CAT III</div></div>
+    </div>
+  </div>
+
+  <!-- NIST 800-53 Coverage -->
+  <div class="comp-card" style="grid-column: span 2;">
+    <h3>NIST 800-53 Control Family Coverage</h3>
+    <div id="nistBars"></div>
+  </div>
+
+  <!-- ISA Status Summary -->
+  <div class="comp-card" style="grid-column: span 2;">
+    <h3>ISA Status Summary</h3>
+    <div id="isaSummary" style="color:#7a8cb0; font-size:13px;">No ISA data available.</div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const designId = "{{ design.id }}";
+  fetch(`/boundary/api/designs/${designId}/assess`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' })
+    .then(r => r.json())
+    .then(data => {
+      document.getElementById('compLoading').style.display = 'none';
+      document.getElementById('compGrid').style.display = 'grid';
+
+      // Score & Grade
+      const score = data.score || 0;
+      const grade = data.grade || 'N/A';
+      document.getElementById('compScore').textContent = score;
+      const gradeEl = document.getElementById('compGrade');
+      gradeEl.textContent = grade;
+      if (grade.startsWith('A')) gradeEl.style.color = '#66bb6a';
+      else if (grade.startsWith('B')) gradeEl.style.color = '#42a5f5';
+      else if (grade.startsWith('C')) gradeEl.style.color = '#ffa726';
+      else gradeEl.style.color = '#ef5350';
+
+      // CAT findings
+      document.getElementById('cat1Count').textContent = data.cat1_findings || 0;
+      document.getElementById('cat2Count').textContent = data.cat2_findings || 0;
+      document.getElementById('cat3Count').textContent = data.cat3_findings || 0;
+
+      // NIST bars
+      const nistCov = data.nist_coverage || {};
+      const barsDiv = document.getElementById('nistBars');
+      const families = Object.keys(nistCov).sort();
+      if (families.length === 0) {
+        barsDiv.innerHTML = '<span style="color:#7a8cb0; font-size:13px;">No NIST coverage data. Run a full assessment to populate.</span>';
+      } else {
+        families.forEach(fam => {
+          const pct = Math.round(nistCov[fam] || 0);
+          const color = pct >= 80 ? '#66bb6a' : pct >= 50 ? '#ffa726' : '#ef5350';
+          barsDiv.innerHTML += `
+            <div class="comp-bar-label"><span>${fam}</span><span>${pct}%</span></div>
+            <div class="comp-bar-track"><div class="comp-bar-fill" style="width:${pct}%; background:${color};"></div></div>
+          `;
+        });
+      }
+
+      // ISA summary from gap_analysis or isa_summary
+      const gaps = data.gap_analysis || [];
+      const isaGaps = gaps.filter(g => (g.rule || '').toLowerCase().includes('isa') || (g.title || '').toLowerCase().includes('isa'));
+      const summaryDiv = document.getElementById('isaSummary');
+      if (isaGaps.length > 0) {
+        summaryDiv.innerHTML = isaGaps.map(g => `<div class="comp-isa-row"><span class="comp-isa-badge" style="background:#9c27b033; color:#ce93d8;">${g.severity || 'INFO'}</span> ${g.title || g.rule || g.description || ''}</div>`).join('');
+      }
+    })
+    .catch(err => {
+      document.getElementById('compLoading').textContent = 'Assessment failed: ' + err.message;
+    });
+})();
+</script>
+{% endblock %}

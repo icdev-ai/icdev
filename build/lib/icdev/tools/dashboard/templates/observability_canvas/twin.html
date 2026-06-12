@@ -1,0 +1,357 @@
+<!-- CUI // SP-CTI — ODC Observability Twin: OTel Instrumentation Coverage Digital Twin -->
+{% extends "base.html" %}
+{% from "includes/twin_verdict_banner.html" import twin_css, verdict_js %}
+{% block title %}Observability Twin — {{ design.name }} — ICDEV™{% endblock %}
+{% block extra_css %}{{ twin_css() }}{% endblock %}
+
+{% block content %}
+<div class="twin-header">
+  <a href="/observability/canvas/{{ design.id }}" class="twin-back">← Observability Canvas</a>
+  <h1>Observability Twin — {{ design.name }}</h1>
+  <p>OTel-based instrumentation coverage twin. Snapshot telemetry state, surface coverage gaps, and simulate collector topology changes.</p>
+</div>
+
+<div class="twin-layout">
+
+  <!-- LEFT: snapshot + delta -->
+  <div>
+    <div class="twin-panel" style="margin-bottom:16px;" id="snapPanel">
+      <h2>1. Telemetry Snapshot</h2>
+      {% if snapshots %}
+      <ul class="snap-list" id="snapList">
+        {% for s in snapshots %}
+        <li class="snap-item {% if loop.first %}active{% endif %}"
+            data-id="{{ s.id }}" onclick="selectSnap(this,'{{ s.id }}')">
+          <span>{{ s.label }}</span>
+          <span class="snap-meta">{{ s.service_count }} services · {{ s.coverage_score|round(0)|int }}% coverage · {{ s.created_at[:10] if s.created_at else '—' }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p style="color:#5a6e8c;font-size:12px;">No snapshots yet — take one below.</p>
+      {% endif %}
+      <button class="btn btn-primary btn-sm" onclick="takeSnapshot()">Snapshot Telemetry</button>
+      <span id="snapSpinner" class="spinner" style="vertical-align:middle;margin-left:8px;"></span>
+      <p class="hint">Captures the current OTel collector topology and instrumentation coverage as a baseline.</p>
+    </div>
+
+    <div class="twin-panel">
+      <h2>2. Collector Change (What-If)</h2>
+      <p class="hint" style="margin-bottom:8px;">Paste an OTel collector delta JSON, or use the tools below to generate one automatically.</p>
+
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <button class="btn btn-primary btn-sm" onclick="loadCurrentTopology()">Load from Canvas</button>
+        <span style="font-size:11px;color:#5a6e8c;">Loads current collector config context for AI chat</span>
+      </div>
+      <div id="topoPreview" style="display:none;background:#0a1628;border:1px solid #1e3a6e;border-radius:4px;padding:8px;margin-bottom:8px;max-height:110px;overflow-y:auto;">
+        <div style="font-size:10px;color:#5a6e8c;margin-bottom:4px;">CURRENT CONFIG (context for chat)</div>
+        <pre id="topoPreviewText" style="font-size:11px;color:#7a8cb0;margin:0;white-space:pre-wrap;"></pre>
+      </div>
+
+      <textarea id="deltaInput" class="twin-textarea" rows="10"
+        placeholder='{"add_receivers":["prometheus/new-service"],"remove_exporters":["jaeger/legacy"],"services":{"new-payment-service":{"traces":true,"metrics":true,"logs":false}}}'></textarea>
+
+      <div style="margin-top:12px;border-top:1px solid #1e3a6e;padding-top:10px;">
+        <strong style="font-size:12px;color:#7a8cb0;">DESCRIBE YOUR CHANGE</strong>
+        <p class="hint" style="margin:4px 0 6px;">Describe the instrumentation change in plain English — AI generates the OTel delta JSON.</p>
+        <div style="display:flex;gap:8px;align-items:flex-start;">
+          <textarea id="chatInput" style="flex:1;background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:8px;font-size:12px;resize:vertical;min-height:56px;"
+            placeholder="e.g. Add Prometheus receiver for the new payment service, remove the legacy Jaeger exporter..."></textarea>
+          <button class="btn btn-success btn-sm" style="white-space:nowrap;" onclick="sendChatDelta()">Generate JSON</button>
+        </div>
+        <span id="chatSpinner" class="spinner" style="margin-top:4px;"></span>
+        <div id="chatExplanation" style="display:none;margin-top:6px;padding:8px;background:#0f3460;border-radius:4px;border-left:3px solid #3498db;">
+          <span style="font-size:12px;color:#eaeaea;" id="chatExplanationText"></span>
+        </div>
+        <p id="chatError" style="color:#e74c3c;font-size:12px;margin-top:4px;display:none;"></p>
+      </div>
+
+      <div style="margin:8px 0;">
+        <label style="font-size:12px;color:#7a8cb0;margin-right:8px;">Signal type:</label>
+        {% for sig in ['traces','metrics','logs','all'] %}
+        <label style="font-size:12px;color:#eaeaea;margin-right:10px;">
+          <input type="checkbox" name="signals" value="{{ sig }}" {% if sig == 'all' %}checked{% endif %} style="margin-right:3px;">{{ sig }}
+        </label>
+        {% endfor %}
+      </div>
+
+      <div style="display:flex;align-items:center;gap:10px;margin-top:10px;">
+        <button class="btn btn-success" onclick="runSimulation()">Simulate</button>
+        <span id="simSpinner" class="spinner"></span>
+      </div>
+      <p id="simError" style="color:#e74c3c;font-size:12px;margin-top:6px;display:none;"></p>
+    </div>
+  </div>
+
+  <!-- RIGHT: results -->
+  <div>
+    <div id="simResults" class="twin-panel" style="display:none;">
+      <h2>3. Coverage Analysis</h2>
+
+      <div id="verdictBanner" class="verdict-banner"></div>
+
+      <!-- Coverage gauge + service donut -->
+      <div style="display:flex;gap:16px;margin-bottom:16px;align-items:flex-start;">
+        <div style="flex:0 0 160px;">
+          <strong style="font-size:11px;color:#7a8cb0;letter-spacing:.5px;text-transform:uppercase;">Coverage</strong>
+          <div id="coverageGauge" style="margin-top:6px;"></div>
+        </div>
+        <div style="flex:1;min-width:0;">
+          <strong style="font-size:11px;color:#7a8cb0;letter-spacing:.5px;text-transform:uppercase;">Service Coverage</strong>
+          <div id="serviceDonut" style="margin-top:6px;"></div>
+        </div>
+      </div>
+
+      <!-- Signal coverage grid -->
+      <div style="margin-bottom:16px;">
+        <strong style="font-size:12px;color:#7a8cb0;">SIGNAL COVERAGE</strong>
+        <div id="signalGrid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px;"></div>
+      </div>
+
+      <!-- Service instrumentation metrics -->
+      <div style="margin-bottom:16px;">
+        <div class="metric-row">
+          <div class="metric-stat"><div class="val val-pass" id="coveredSvc">—</div><div class="lbl">Covered</div></div>
+          <div class="metric-stat"><div class="val val-fail" id="blindSvc">—</div><div class="lbl">Blind</div></div>
+          <div class="metric-stat"><div class="val val-warn" id="partialSvc">—</div><div class="lbl">Partial</div></div>
+        </div>
+      </div>
+
+      <!-- Alert coverage -->
+      <div style="margin-bottom:16px;">
+        <strong style="font-size:12px;color:#7a8cb0;">ALERT COVERAGE DELTA</strong>
+        <div class="metric-row" style="margin-top:6px;">
+          <div class="metric-stat"><div class="val val-pass" id="alertGained">—</div><div class="lbl">Gained</div></div>
+          <div class="metric-stat"><div class="val val-fail" id="alertLost">—</div><div class="lbl">Lost</div></div>
+          <div class="metric-stat"><div class="val val-info" id="sloImpact">—</div><div class="lbl">SLO Impact</div></div>
+        </div>
+      </div>
+
+      <!-- Gaps -->
+      <div>
+        <strong style="font-size:12px;color:#7a8cb0;">INSTRUMENTATION GAPS</strong>
+        <ul class="finding-list" id="gapList" style="margin-top:8px;"></ul>
+        <p id="noGaps" style="font-size:12px;color:#2ecc71;display:none;">Full instrumentation coverage — no gaps detected.</p>
+      </div>
+
+      <p class="hint" style="margin-top:12px;" id="simId"></p>
+    </div>
+
+    <div class="twin-panel" id="noResultsHint" style="color:#5a6e8c;font-size:13px;text-align:center;padding:40px 20px;">
+      Run a simulation to see instrumentation coverage analysis here.
+    </div>
+  </div>
+
+</div>
+
+<!-- SLO impact panel -->
+<div style="padding:0 30px 30px;">
+  <div class="twin-panel">
+    <h2>SLO Impact Projection</h2>
+    <p class="hint" style="margin-bottom:10px;">Projects how the collector change affects error budget burn rate based on historical incident data and coverage delta.</p>
+    <button class="btn btn-primary btn-sm" onclick="runSloProjection()">Project SLO Impact</button>
+    <span id="sloSpinner" class="spinner" style="vertical-align:middle;margin-left:8px;"></span>
+    <div id="sloResults" style="margin-top:12px;display:none;">
+      <div class="metric-row">
+        <div class="metric-stat"><div class="val val-info" id="sloCurrentBurn">—</div><div class="lbl">Current Burn %</div></div>
+        <div class="metric-stat"><div class="val" id="sloProjectedBurn">—</div><div class="lbl">Projected Burn %</div></div>
+        <div class="metric-stat"><div class="val val-warn" id="sloMttrDelta">—</div><div class="lbl">MTTR Delta (min)</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{{ verdict_js() }}
+<script>
+const DESIGN_ID = "{{ design.id }}";
+let selectedSnapId = {% if snapshots %}"{{ snapshots[0].id }}"{% else %}null{% endif %};
+
+function selectSnap(el, snapId) {
+  document.querySelectorAll('.snap-item').forEach(i => i.classList.remove('active'));
+  el.classList.add('active');
+  selectedSnapId = snapId;
+}
+
+function getSelectedSignals() {
+  return Array.from(document.querySelectorAll('input[name="signals"]:checked')).map(i => i.value);
+}
+
+async function takeSnapshot() {
+  const spinner = document.getElementById('snapSpinner');
+  spinner.style.display = 'inline-block';
+  try {
+    const r = await fetch(`/observability/api/twin/${DESIGN_ID}/snapshot`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({label: 'snap-' + new Date().toISOString().slice(0,10)})
+    });
+    const data = await r.json();
+    if (!r.ok) { alert('Snapshot failed: ' + (data.error || r.status)); return; }
+    const ul = document.getElementById('snapList') || (() => {
+      const newUl = document.createElement('ul');
+      newUl.id = 'snapList'; newUl.className = 'snap-list';
+      document.getElementById('snapPanel').insertBefore(newUl, document.querySelector('#snapPanel button'));
+      return newUl;
+    })();
+    const li = document.createElement('li');
+    li.className = 'snap-item active';
+    li.dataset.id = data.id;
+    li.onclick = () => selectSnap(li, data.id);
+    li.innerHTML = `<span>${data.label}</span><span class="snap-meta">${data.service_count} services · ${Math.round((data.coverage_score||0)*100)}% coverage · ${new Date().toISOString().slice(0,10)}</span>`;
+    ul.prepend(li);
+    document.querySelectorAll('.snap-item').forEach(i => i.classList.remove('active'));
+    li.classList.add('active');
+    selectedSnapId = data.id;
+  } catch(e) { alert('Error: ' + e.message); }
+  finally { spinner.style.display = 'none'; }
+}
+
+async function runSimulation() {
+  const raw = document.getElementById('deltaInput').value.trim();
+  const errEl = document.getElementById('simError');
+  errEl.style.display = 'none';
+  if (!raw) { errEl.textContent = 'Paste a collector delta JSON first.'; errEl.style.display='block'; return; }
+  let delta;
+  try { delta = JSON.parse(raw); }
+  catch(e) { errEl.textContent = 'Invalid JSON: ' + e.message; errEl.style.display='block'; return; }
+
+  const spinner = document.getElementById('simSpinner');
+  spinner.style.display = 'inline-block';
+  try {
+    const body = { collector_delta: delta, signals: getSelectedSignals() };
+    if (selectedSnapId) body.baseline_snap_id = selectedSnapId;
+    const r = await fetch(`/observability/api/twin/${DESIGN_ID}/simulate`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    const data = await r.json();
+    if (!r.ok) { errEl.textContent = data.error || ('HTTP ' + r.status); errEl.style.display='block'; return; }
+    renderResults(data);
+  } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display='block'; }
+  finally { spinner.style.display = 'none'; }
+}
+
+function renderResults(d) {
+  document.getElementById('simResults').style.display = 'block';
+  document.getElementById('noResultsHint').style.display = 'none';
+  renderVerdict(document.getElementById('verdictBanner'), d.verdict);
+
+  // ── Signal coverage grid ──────────────────────────────────────────────────
+  const signals = d.signal_coverage || {};
+  const grid = document.getElementById('signalGrid');
+  grid.innerHTML = '';
+  ['traces','metrics','logs'].forEach(sig => {
+    const cov = signals[sig] ?? 0;
+    const pct = Math.round(cov * 100);
+    const div = document.createElement('div');
+    div.style.cssText = 'padding:8px;border-radius:6px;background:#0f3460;border:1px solid #1e3a6e;';
+    div.innerHTML = `<div style="font-size:18px;font-weight:700;color:${scoreColor(cov)};">${pct}%</div>
+      <div style="font-size:10px;color:#7a8cb0;">${sig}</div>
+      <div class="score-bar" style="margin-top:4px;"><div class="score-fill" style="width:${pct}%;background:${scoreColor(cov)};"></div></div>`;
+    grid.appendChild(div);
+  });
+
+  const svc   = d.service_coverage || {};
+  const covered = svc.covered ?? 0;
+  const blind   = svc.blind   ?? 0;
+  const partial = svc.partial ?? 0;
+  const total   = covered + blind + partial;
+  const covPct  = total > 0 ? covered / total : 0;
+
+  document.getElementById('coveredSvc').textContent = covered;
+  document.getElementById('blindSvc').textContent   = blind;
+  document.getElementById('partialSvc').textContent = partial;
+
+  const alertD = d.alert_delta || {};
+  document.getElementById('alertGained').textContent = alertD.gained ?? 0;
+  document.getElementById('alertLost').textContent   = alertD.lost   ?? 0;
+  document.getElementById('sloImpact').textContent   = d.slo_impact  || 'N/A';
+
+  // ── Coverage gauge ────────────────────────────────────────────────────────
+  if (window.ICDEV) {
+    ICDEV.gaugeChart('coverageGauge', {
+      value: covPct,
+      label: Math.round(covPct * 100) + '% Covered',
+      thresholds: { good: 0.7, warning: 0.4 },
+      size: 155
+    });
+  }
+
+  // ── Service coverage donut ────────────────────────────────────────────────
+  if (total > 0 && window.ICDEV) {
+    ICDEV.donutChart('serviceDonut', {
+      segments: [
+        { label: 'Covered', value: covered, color: '#2ecc71' },
+        { label: 'Partial', value: partial, color: '#f39c12' },
+        { label: 'Blind',   value: blind,   color: '#e74c3c' }
+      ].filter(s => s.value > 0),
+      centerLabel: total + '',
+      centerSubLabel: 'Services',
+      size: 140, showLegend: true
+    });
+  }
+
+  renderFindingList(document.getElementById('gapList'), d.gaps || [], document.getElementById('noGaps'));
+  document.getElementById('simId').textContent = d.simulation_id ? 'Simulation ID: ' + d.simulation_id : '';
+}
+
+async function runSloProjection() {
+  const spinner = document.getElementById('sloSpinner');
+  spinner.style.display = 'inline-block';
+  try {
+    const body = {};
+    if (selectedSnapId) body.baseline_snap_id = selectedSnapId;
+    const raw = document.getElementById('deltaInput').value.trim();
+    if (raw) { try { body.collector_delta = JSON.parse(raw); } catch(_) {} }
+    const r = await fetch(`/observability/api/twin/${DESIGN_ID}/slo-projection`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    const data = await r.json();
+    document.getElementById('sloResults').style.display = 'block';
+    document.getElementById('sloCurrentBurn').textContent = (data.current_burn_pct ?? 0) + '%';
+    const pb = document.getElementById('sloProjectedBurn');
+    pb.textContent = (data.projected_burn_pct ?? 0) + '%';
+    pb.style.color = (data.projected_burn_pct??0) > (data.current_burn_pct??0) ? '#e74c3c' : '#2ecc71';
+    document.getElementById('sloMttrDelta').textContent = (data.mttr_delta_min >= 0 ? '+' : '') + (data.mttr_delta_min ?? 0);
+  } catch(e) { alert('Error: ' + e.message); }
+  finally { spinner.style.display = 'none'; }
+}
+
+let _loadedGraphJson = null;
+
+async function loadCurrentTopology() {
+  try {
+    const r = await fetch(`/observability/api/twin/${DESIGN_ID}/current-topology`);
+    const data = await r.json();
+    if (!r.ok) { alert(data.error || 'Failed to load config'); return; }
+    _loadedGraphJson = data.graph_json;
+    const raw = JSON.stringify(data.graph_json, null, 2);
+    document.getElementById('topoPreviewText').textContent =
+      raw.slice(0, 600) + (raw.length > 600 ? '\n…' : '');
+    document.getElementById('topoPreview').style.display = 'block';
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function sendChatDelta() {
+  const msg = document.getElementById('chatInput').value.trim();
+  if (!msg) return;
+  const spinner = document.getElementById('chatSpinner');
+  const errEl  = document.getElementById('chatError');
+  errEl.style.display = 'none';
+  spinner.style.display = 'inline-block';
+  try {
+    const body = { message: msg };
+    if (_loadedGraphJson) body.graph_json = _loadedGraphJson;
+    const r = await fetch(`/observability/api/twin/${DESIGN_ID}/chat-delta`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    const data = await r.json();
+    if (data.error) { errEl.textContent = data.error; errEl.style.display='block'; return; }
+    document.getElementById('deltaInput').value = JSON.stringify(data.delta, null, 2);
+    if (data.explanation) {
+      document.getElementById('chatExplanationText').textContent = data.explanation;
+      document.getElementById('chatExplanation').style.display = 'block';
+    }
+  } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display='block'; }
+  finally { spinner.style.display = 'none'; }
+}
+</script>
+{% endblock %}

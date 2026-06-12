@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% block title %}Peer Detail — PMC{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 py-3">
+  <div class="d-flex align-items-center mb-3">
+    <a href="/pmc/peers" class="btn btn-sm btn-outline-secondary me-3">← Back</a>
+    <h4 class="mb-0" style="color:#38bdf8;">
+      Peer: <span id="peer-title">AS–</span>
+    </h4>
+    <span class="badge bg-secondary ms-auto">CUI // SP-CTI</span>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-md-6">
+      <div class="card bg-dark border-secondary">
+        <div class="card-header border-secondary">Peer Details</div>
+        <div class="card-body" id="peer-details-body">
+          <div class="text-muted">Loading…</div>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card bg-dark border-secondary">
+        <div class="card-header border-secondary d-flex justify-content-between">
+          <span>Peering Recommendation</span>
+          <button class="btn btn-sm btn-outline-info" onclick="evaluatePeer()">Re-evaluate</button>
+        </div>
+        <div class="card-body" id="evaluate-body">
+          <button class="btn btn-info w-100" onclick="evaluatePeer()">Run Decision Engine</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Prefixes / RPKI -->
+  <div class="card bg-dark border-secondary mb-3">
+    <div class="card-header border-secondary d-flex justify-content-between">
+      <span>Prefix & RPKI Status</span>
+      <button class="btn btn-sm btn-outline-warning" onclick="validateRPKI()">Validate RPKI</button>
+    </div>
+    <div class="card-body p-0">
+      <table class="table table-dark table-sm mb-0">
+        <thead><tr><th>Prefix</th><th>AF</th><th>Origin ASN</th><th>RPKI</th><th>IRR</th></tr></thead>
+        <tbody id="prefix-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- BGP Config Generator -->
+  <div class="card bg-dark border-secondary mb-3">
+    <div class="card-header border-secondary">BGP Session Config Generator</div>
+    <div class="card-body">
+      <div class="row g-2 mb-3">
+        <div class="col-md-3">
+          <select class="form-select form-select-sm bg-dark text-white border-secondary" id="cfg-os">
+            <option value="ios_xr">IOS-XR</option>
+            <option value="junos">JunOS</option>
+            <option value="eos">Arista EOS</option>
+            <option value="nokia_sros">Nokia SR OS</option>
+            <option value="frr">FRRouting</option>
+            <option value="bird2">BIRD 2</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <input type="text" class="form-control form-control-sm bg-dark text-white border-secondary" id="cfg-neighbor-ip" placeholder="Neighbor IP">
+        </div>
+        <div class="col-md-2">
+          <input type="number" class="form-control form-control-sm bg-dark text-white border-secondary" id="cfg-our-asn" placeholder="Our ASN">
+        </div>
+        <div class="col-md-2">
+          <button class="btn btn-sm btn-outline-info w-100" onclick="generateConfig()">Generate</button>
+        </div>
+      </div>
+      <pre id="cfg-output" class="bg-black text-success p-3 rounded" style="display:none;font-size:12px;max-height:400px;overflow-y:auto;"></pre>
+    </div>
+  </div>
+
+  <!-- RPSL -->
+  <div class="card bg-dark border-secondary mb-3">
+    <div class="card-header border-secondary d-flex justify-content-between">
+      <span>RPSL Objects</span>
+      <button class="btn btn-sm btn-outline-secondary" onclick="loadRPSL()">Generate RPSL</button>
+    </div>
+    <div class="card-body">
+      <pre id="rpsl-output" class="bg-black text-green-400 p-3 rounded" style="display:none;font-size:12px;"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+const PEER_ID = "{{ peer_id }}";
+
+function loadPeer() {
+  fetch(`/api/pmc/peers/${PEER_ID}`).then(r=>r.json()).then(d=>{
+    document.getElementById('peer-title').textContent = `AS${d.asn} — ${d.org_name||''}`;
+    const body = document.getElementById('peer-details-body');
+    body.innerHTML = `
+      <table class="table table-dark table-sm table-borderless mb-0">
+        <tr><td class="text-muted">ASN</td><td><strong>AS${d.asn}</strong></td></tr>
+        <tr><td class="text-muted">Organization</td><td>${d.org_name||'–'}</td></tr>
+        <tr><td class="text-muted">Type</td><td>${d.peer_type||'–'}</td></tr>
+        <tr><td class="text-muted">Policy</td><td>${d.policy||'–'}</td></tr>
+        <tr><td class="text-muted">Status</td><td>${d.status||'–'}</td></tr>
+        <tr><td class="text-muted">RIR</td><td>${d.rir||'–'}</td></tr>
+        <tr><td class="text-muted">NOC Email</td><td>${d.noc_email||'–'}</td></tr>
+        <tr><td class="text-muted">IRR AS-SET</td><td>${d.irr_as_set||'–'}</td></tr>
+        <tr><td class="text-muted">v4 Prefixes</td><td>${d.ipv4_prefix_count||0}</td></tr>
+        <tr><td class="text-muted">v6 Prefixes</td><td>${d.ipv6_prefix_count||0}</td></tr>
+        <tr><td class="text-muted">PeeringDB Synced</td><td>${d.peeringdb_synced_at||'never'}</td></tr>
+      </table>`;
+    loadPrefixes();
+  }).catch(()=>{});
+}
+
+function loadPrefixes() {
+  fetch(`/api/pmc/peers/${PEER_ID}/prefixes`).then(r=>r.json()).then(rows=>{
+    const tbody = document.getElementById('prefix-tbody');
+    tbody.innerHTML = '';
+    rows.forEach(p=>{
+      const rpkiColors = {valid:'text-success',invalid:'text-danger','not-found':'text-warning',unknown:'text-muted'};
+      const cls = rpkiColors[p.rpki_status] || 'text-muted';
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${p.prefix}</td><td>${p.address_family||'–'}</td><td>${p.origin_asn||'–'}</td>
+        <td class="${cls}">${p.rpki_status||'unknown'}</td>
+        <td>${p.irr_registered ? '✓':'✗'}</td>`;
+      tbody.appendChild(tr);
+    });
+  }).catch(()=>{});
+}
+
+function evaluatePeer() {
+  const body = document.getElementById('evaluate-body');
+  body.innerHTML = '<div class="text-info">Evaluating…</div>';
+  fetch(`/api/pmc/peers/${PEER_ID}/evaluate`, {method:'POST'})
+    .then(r=>r.json())
+    .then(d=>{
+      const recColor = {open:'text-success',selective:'text-warning',no:'text-danger'};
+      const cls = recColor[d.recommendation] || 'text-muted';
+      body.innerHTML = `
+        <div class="mb-2">
+          <span class="fs-4 fw-bold ${cls}">${(d.recommendation||'').toUpperCase()}</span>
+          <span class="text-muted ms-2">Score: ${((d.score||0)*100).toFixed(0)}%</span>
+        </div>
+        <ul class="list-unstyled mb-0" style="font-size:13px;">
+          ${(d.reasons||[]).map(r=>`<li>• ${r}</li>`).join('')}
+          ${(d.blockers||[]).map(b=>`<li class="text-danger">⚠ ${b}</li>`).join('')}
+        </ul>`;
+    }).catch(()=>{ body.innerHTML = '<div class="text-danger">Evaluation failed</div>'; });
+}
+
+function validateRPKI() {
+  fetch(`/api/pmc/peers/${PEER_ID}/validate-rpki`, {method:'POST'})
+    .then(()=>loadPrefixes()).catch(()=>{});
+}
+
+function generateConfig() {
+  const body = {
+    os_type: document.getElementById('cfg-os').value,
+    neighbor_ip: document.getElementById('cfg-neighbor-ip').value,
+    our_asn: parseInt(document.getElementById('cfg-our-asn').value),
+  };
+  fetch(`/api/pmc/peers/${PEER_ID}/generate-config`, {method:'POST',
+    headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})
+    .then(r=>r.json())
+    .then(d=>{
+      const pre = document.getElementById('cfg-output');
+      pre.textContent = d.config || d.error || '';
+      pre.style.display = 'block';
+    }).catch(()=>{});
+}
+
+function loadRPSL() {
+  fetch(`/api/pmc/peers/${PEER_ID}/rpsl`).then(r=>r.json()).then(d=>{
+    const pre = document.getElementById('rpsl-output');
+    pre.textContent = d.rpsl || '';
+    pre.style.display = 'block';
+  }).catch(()=>{});
+}
+
+loadPeer();
+</script>
+{% endblock %}

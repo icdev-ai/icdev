@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}RPKI Validation — PMC{% endblock %}
+{% block content %}
+<div class="container-fluid px-4 py-3">
+  <div class="d-flex align-items-center justify-content-between mb-3">
+    <h4 class="mb-0" style="color:#38bdf8;"><i class="bi bi-shield-check me-2"></i>RPKI Validation</h4>
+    <button class="btn btn-sm btn-outline-warning" onclick="validateAll()">Validate All Prefixes</button>
+  </div>
+
+  <!-- Summary Cards -->
+  <div class="row g-3 mb-4" id="rpki-summary-cards">
+    <div class="col-6 col-md-3">
+      <div class="card bg-dark border-success text-center p-3">
+        <div class="fs-2 fw-bold text-success" id="rpki-valid">–</div>
+        <div class="text-muted small">Valid</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card bg-dark border-danger text-center p-3">
+        <div class="fs-2 fw-bold text-danger" id="rpki-invalid">–</div>
+        <div class="text-muted small">Invalid</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card bg-dark border-warning text-center p-3">
+        <div class="fs-2 fw-bold text-warning" id="rpki-notfound">–</div>
+        <div class="text-muted small">Not Found</div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card bg-dark border-secondary text-center p-3">
+        <div class="fs-2 fw-bold" id="rpki-coverage">–</div>
+        <div class="text-muted small">ROA Coverage</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Invalid Prefixes -->
+  <div class="card bg-dark border-danger mb-3">
+    <div class="card-header border-danger text-danger fw-bold">RPKI-Invalid Prefixes (ACTION REQUIRED)</div>
+    <div class="card-body p-0">
+      <table class="table table-dark table-sm mb-0">
+        <thead><tr><th>Prefix</th><th>Origin ASN</th><th>Peer ASN</th><th>Organization</th></tr></thead>
+        <tbody id="invalid-tbody"></tbody>
+      </table>
+      <div id="no-invalids" class="text-center p-3 text-success" style="display:none;">
+        <i class="bi bi-check-circle-fill me-1"></i>No RPKI-invalid prefixes found
+      </div>
+    </div>
+  </div>
+
+  <!-- Not Found Prefixes -->
+  <div class="card bg-dark border-warning mb-3">
+    <div class="card-header border-warning text-warning">Prefixes with No ROA (not-found)</div>
+    <div class="card-body p-0">
+      <table class="table table-dark table-sm mb-0">
+        <thead><tr><th>Prefix</th><th>Origin ASN</th><th>AF</th><th>Peer ASN</th></tr></thead>
+        <tbody id="notfound-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Single Prefix Lookup -->
+  <div class="card bg-dark border-secondary mb-3">
+    <div class="card-header border-secondary">Ad-hoc Prefix Validation</div>
+    <div class="card-body">
+      <div class="row g-2">
+        <div class="col-md-5">
+          <input type="text" class="form-control bg-dark text-white border-secondary" id="adhoc-prefix" placeholder="192.0.2.0/24">
+        </div>
+        <div class="col-md-3">
+          <input type="number" class="form-control bg-dark text-white border-secondary" id="adhoc-asn" placeholder="Origin ASN">
+        </div>
+        <div class="col-md-2">
+          <button class="btn btn-outline-info w-100" onclick="adhocValidate()">Validate</button>
+        </div>
+      </div>
+      <div id="adhoc-result" class="mt-2"></div>
+    </div>
+  </div>
+
+  {% include 'includes/iqe_query_widget.html' %}
+</div>
+
+<script>
+const IQE_CANVAS = 'pmc';
+const IQE_COLLECTION = 'pmc.prefixes';
+
+function loadRPKI() {
+  fetch('/api/pmc/rpki/report').then(r=>r.json()).then(d=>{
+    document.getElementById('rpki-valid').textContent = d.valid||0;
+    document.getElementById('rpki-invalid').textContent = d.invalid||0;
+    document.getElementById('rpki-notfound').textContent = d.not_found||0;
+    document.getElementById('rpki-coverage').textContent = (d.coverage_pct||0)+'%';
+
+    const invalidTbody = document.getElementById('invalid-tbody');
+    const rows = d.invalid_rows || [];
+    if (rows.length === 0) {
+      invalidTbody.innerHTML = '';
+      document.getElementById('no-invalids').style.display = 'block';
+    } else {
+      document.getElementById('no-invalids').style.display = 'none';
+      invalidTbody.innerHTML = rows.map(r=>`
+        <tr class="table-danger">
+          <td>${r.prefix}</td><td>${r.origin_asn||'–'}</td>
+          <td>AS${r.asn||'–'}</td><td>${r.org_name||'–'}</td>
+        </tr>`).join('');
+    }
+
+    const nfTbody = document.getElementById('notfound-tbody');
+    nfTbody.innerHTML = (d.notfound_rows||[]).map(r=>`
+      <tr><td>${r.prefix}</td><td>${r.origin_asn||'–'}</td>
+      <td>${r.address_family||'–'}</td><td>AS${r.asn||'–'}</td></tr>`).join('');
+  }).catch(()=>{});
+}
+
+function validateAll() {
+  if (!confirm('This will re-validate all prefixes against Cloudflare RPKI API. Continue?')) return;
+  const btn = event.target;
+  btn.disabled = true; btn.textContent = 'Validating…';
+  fetch('/api/pmc/rpki/validate-all', {method:'POST'})
+    .then(r=>r.json())
+    .then(()=>{ btn.disabled=false; btn.textContent='Validate All Prefixes'; loadRPKI(); })
+    .catch(()=>{ btn.disabled=false; btn.textContent='Validate All Prefixes'; });
+}
+
+function adhocValidate() {
+  const prefix = document.getElementById('adhoc-prefix').value;
+  const asn = document.getElementById('adhoc-asn').value;
+  if (!prefix || !asn) return;
+  fetch(`/api/pmc/rpki/validate?prefix=${encodeURIComponent(prefix)}&asn=${asn}`)
+    .then(r=>r.json())
+    .then(d=>{
+      const colors = {valid:'text-success',invalid:'text-danger','not-found':'text-warning',unknown:'text-muted'};
+      const cls = colors[d.status] || 'text-muted';
+      document.getElementById('adhoc-result').innerHTML =
+        `<span class="${cls} fw-bold">${d.status?.toUpperCase()}</span> — ${d.validity_message||''}`;
+    }).catch(()=>{});
+}
+
+loadRPKI();
+</script>
+{% endblock %}

@@ -61,6 +61,7 @@
     <button class="tab-btn" data-tab="stab-deps">Dependencies ({{ section.dependencies | length }})</button>
     <button class="tab-btn" data-tab="stab-history">History ({{ section.history | length }})</button>
     <button class="tab-btn" data-tab="stab-writeguard" style="color:var(--accent-blue);font-weight:600;">🛡️ WriteGuard</button>
+    <button class="tab-btn" data-tab="stab-annotations" id="ann-tab-btn" style="color:var(--accent-purple,#8b5cf6);font-weight:600;">💬 Annotations (<span id="ann-tab-count">0</span>)</button>
 </div>
 
 <!-- Notes Tab -->
@@ -79,7 +80,7 @@
     <div class="card" style="padding:16px; margin-top:12px;">
         {% if draft %}
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-            <div style="display:flex; gap:8px; align-items:center;">
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                 {% set ds_colors = {'draft': 'warning', 'reviewed': 'info', 'approved': 'success', 'rejected': 'error'} %}
                 <span class="badge badge-{{ ds_colors.get(draft.status, 'info') }}">{{ draft.status | title }}</span>
                 {% if draft.confidence %}
@@ -105,6 +106,8 @@
                         title="Run grammar-only check inline" style="font-size:0.78rem;padding:3px 10px;">🔍 Check Grammar</button>
                 <button class="btn btn-secondary btn-sm" onclick="ICDEV.proposals.runInlineRewrite('{{ draft.id }}')"
                         title="Rewrite with deterministic fixes" style="font-size:0.78rem;padding:3px 10px;">✍️ Rewrite</button>
+                <button id="ann-mode-btn" class="btn btn-secondary btn-sm" onclick="toggleAnnotationMode()"
+                        title="Enable text highlighting to add comments" style="font-size:0.78rem;padding:3px 10px;">💬 Annotate</button>
                 {% if draft.status in ('draft', 'reviewed') %}
                 <button class="btn btn-sm btn-success" onclick="approveDraft('{{ draft.id }}')">Approve</button>
                 <button class="btn btn-sm btn-error" onclick="rejectDraft('{{ draft.id }}')">Reject</button>
@@ -116,9 +119,27 @@
             Reviewed by {{ draft.reviewed_by }}{% if draft.reviewed_at %} on {{ draft.reviewed_at }}{% endif %}
         </div>
         {% endif %}
-        <div id="draft-rendered"
-             style="background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:6px; padding:20px 24px; max-height:600px; overflow-y:auto; line-height:1.75; font-size:0.92rem;">
-            <noscript><pre style="white-space:pre-wrap;">{{ draft.draft_content }}</pre></noscript>
+        <!-- Split view: draft (left) + margin notes (right) -->
+        <div style="display:flex; gap:12px; align-items:flex-start;">
+          <div id="draft-rendered"
+               style="flex:1; min-width:0; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:6px; padding:20px 24px; max-height:600px; overflow-y:auto; line-height:1.75; font-size:0.92rem; cursor:text; user-select:text;">
+              <noscript><pre style="white-space:pre-wrap;">{{ draft.draft_content }}</pre></noscript>
+          </div>
+          <!-- Margin notes panel -->
+          <div id="margin-notes-panel" style="width:280px; flex-shrink:0; display:none; flex-direction:column; gap:8px; max-height:600px; overflow-y:auto;">
+              <div style="display:flex; gap:4px; flex-wrap:wrap; margin-bottom:4px;" id="ann-filter-bar">
+                  <button class="ann-filter-chip ann-filter-active" data-cat="all"
+                          onclick="filterAnnotations('all')" style="font-size:0.72rem;padding:2px 8px;border-radius:12px;border:1px solid var(--border-color);background:var(--accent-blue);color:#fff;cursor:pointer;">All</button>
+                  <button class="ann-filter-chip" data-cat="question"   onclick="filterAnnotations('question')"   style="font-size:0.72rem;padding:2px 8px;border-radius:12px;border:1px solid #3b82f6;color:#3b82f6;background:transparent;cursor:pointer;">Question</button>
+                  <button class="ann-filter-chip" data-cat="improvement" onclick="filterAnnotations('improvement')" style="font-size:0.72rem;padding:2px 8px;border-radius:12px;border:1px solid #8b5cf6;color:#8b5cf6;background:transparent;cursor:pointer;">Improve</button>
+                  <button class="ann-filter-chip" data-cat="compliance" onclick="filterAnnotations('compliance')" style="font-size:0.72rem;padding:2px 8px;border-radius:12px;border:1px solid #f59e0b;color:#f59e0b;background:transparent;cursor:pointer;">Compliance</button>
+                  <button class="ann-filter-chip" data-cat="strength"   onclick="filterAnnotations('strength')"   style="font-size:0.72rem;padding:2px 8px;border-radius:12px;border:1px solid #10b981;color:#10b981;background:transparent;cursor:pointer;">Strength</button>
+                  <button class="ann-filter-chip" data-cat="weakness"   onclick="filterAnnotations('weakness')"   style="font-size:0.72rem;padding:2px 8px;border-radius:12px;border:1px solid #ef4444;color:#ef4444;background:transparent;cursor:pointer;">Weakness</button>
+                  <button class="ann-filter-chip" data-cat="risk"       onclick="filterAnnotations('risk')"       style="font-size:0.72rem;padding:2px 8px;border-radius:12px;border:1px solid #f97316;color:#f97316;background:transparent;cursor:pointer;">Risk</button>
+                  <button class="ann-filter-chip" data-cat="editorial"  onclick="filterAnnotations('editorial')"  style="font-size:0.72rem;padding:2px 8px;border-radius:12px;border:1px solid #6b7280;color:#6b7280;background:transparent;cursor:pointer;">Editorial</button>
+              </div>
+              <div id="margin-notes-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+          </div>
         </div>
         <script id="draft-raw-content" type="text/plain">{{ draft.draft_content | e }}</script>
         <style>
@@ -156,14 +177,351 @@
             } else {
                 rendered.innerHTML = renderFallback(raw);
             }
+            // Load annotations after render
+            loadAnnotations();
         });
         </script>
+
+        <!-- ── Annotation Engine ─────────────────────────────────────── -->
+        <script>
+        // ── Constants ──────────────────────────────────────────────────
+        var _SEC_ID = '{{ section.id }}';
+        var _DRAFT_ID = '{{ draft.id if draft else "" }}';
+        var _annMode = false;
+        var _allAnnotations = [];
+        var _activeFilter = 'all';
+        var _ANN_COLORS = {
+            question:    '#3b82f6',
+            improvement: '#8b5cf6',
+            compliance:  '#f59e0b',
+            strength:    '#10b981',
+            weakness:    '#ef4444',
+            risk:        '#f97316',
+            editorial:   '#6b7280'
+        };
+
+        // ── Annotation mode toggle ──────────────────────────────────────
+        function toggleAnnotationMode() {
+            _annMode = !_annMode;
+            var btn = document.getElementById('ann-mode-btn');
+            var rendered = document.getElementById('draft-rendered');
+            if (!btn || !rendered) return;
+            if (_annMode) {
+                btn.style.background = 'var(--accent-purple,#8b5cf6)';
+                btn.style.color = '#fff';
+                btn.title = 'Click to exit annotation mode';
+                rendered.style.cursor = 'text';
+            } else {
+                btn.style.background = '';
+                btn.style.color = '';
+                btn.title = 'Enable text highlighting to add comments';
+                rendered.style.cursor = 'text';
+                closeAnnPopup();
+            }
+        }
+
+        // ── Selection → popup ───────────────────────────────────────────
+        document.addEventListener('mouseup', function(e) {
+            if (!_annMode) return;
+            var rendered = document.getElementById('draft-rendered');
+            if (!rendered) return;
+            var sel = window.getSelection();
+            if (!sel || sel.isCollapsed || !sel.toString().trim()) return;
+            // Only trigger if selection is inside #draft-rendered
+            var range = sel.getRangeAt(0);
+            if (!rendered.contains(range.commonAncestorContainer)) return;
+
+            var text = sel.toString().trim();
+            if (!text) return;
+
+            var popup = document.getElementById('ann-popup');
+            var preview = document.getElementById('ann-popup-selected-preview');
+            var comment = document.getElementById('ann-popup-comment');
+            if (!popup) return;
+
+            popup._selectedText = text;
+            if (preview) preview.textContent = '“' + text.slice(0, 80) + (text.length > 80 ? '…' : '') + '”';
+            if (comment) comment.value = '';
+
+            // Position popup near selection
+            var rect = range.getBoundingClientRect();
+            popup.style.display = 'block';
+            var top = window.scrollY + rect.bottom + 8;
+            var left = Math.min(window.scrollX + rect.left, window.innerWidth - 320);
+            popup.style.top = top + 'px';
+            popup.style.left = Math.max(8, left) + 'px';
+        });
+
+        function closeAnnPopup() {
+            var popup = document.getElementById('ann-popup');
+            if (popup) { popup.style.display = 'none'; popup._selectedText = null; }
+        }
+
+        // Close popup when clicking outside
+        document.addEventListener('mousedown', function(e) {
+            var popup = document.getElementById('ann-popup');
+            if (popup && popup.style.display !== 'none' && !popup.contains(e.target)) {
+                closeAnnPopup();
+            }
+        });
+
+        // ── Save annotation ─────────────────────────────────────────────
+        function saveAnnotationFromPopup() {
+            var popup = document.getElementById('ann-popup');
+            if (!popup) return;
+            var text = popup._selectedText;
+            var category = document.getElementById('ann-popup-category').value;
+            var comment = (document.getElementById('ann-popup-comment').value || '').trim();
+            if (!text || !comment) { alert('Please enter a comment.'); return; }
+
+            fetch('/api/proposals/sections/' + _SEC_ID + '/annotations', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    selected_text: text,
+                    category: category,
+                    comment: comment,
+                    draft_id: _DRAFT_ID || null,
+                    author: 'reviewer'
+                })
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(ann) {
+                closeAnnPopup();
+                window.getSelection().removeAllRanges();
+                loadAnnotations();
+            })
+            .catch(function(err) { console.error('Annotation save failed:', err); });
+        }
+
+        // ── Load annotations ────────────────────────────────────────────
+        function loadAnnotations() {
+            fetch('/api/proposals/sections/' + _SEC_ID + '/annotations')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                _allAnnotations = data.annotations || [];
+                renderHighlights(_allAnnotations);
+                renderMarginNotes(_allAnnotations, _activeFilter);
+                renderAnnotationsTab(_allAnnotations, _activeFilter);
+                updateCounts(_allAnnotations);
+            })
+            .catch(function() {});
+        }
+
+        // ── Render highlight marks in draft text ────────────────────────
+        function renderHighlights(annotations) {
+            var rendered = document.getElementById('draft-rendered');
+            if (!rendered) return;
+            // Strip existing highlights
+            rendered.querySelectorAll('mark.ann-mark').forEach(function(m) {
+                var parent = m.parentNode;
+                while (m.firstChild) parent.insertBefore(m.firstChild, m);
+                parent.removeChild(m);
+            });
+            // Re-apply (open annotations only, in order of length desc to avoid subset clobber)
+            var open = annotations.filter(function(a) { return a.status === 'open'; });
+            open.sort(function(a, b) { return b.selected_text.length - a.selected_text.length; });
+            open.forEach(function(ann) {
+                highlightText(rendered, ann);
+            });
+        }
+
+        function highlightText(container, ann) {
+            var color = _ANN_COLORS[ann.category] || '#6b7280';
+            var escaped = ann.selected_text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            var walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, null);
+            var node;
+            while ((node = walker.nextNode())) {
+                var idx = node.nodeValue.indexOf(ann.selected_text);
+                if (idx === -1) continue;
+                var mark = document.createElement('mark');
+                mark.className = 'ann-mark ann-cat-' + ann.category;
+                mark.dataset.annId = ann.id;
+                mark.style.cssText = 'background:' + color + '22;border-bottom:2px solid ' + color + ';cursor:pointer;border-radius:2px;';
+                mark.title = '[' + ann.category.toUpperCase() + '] ' + ann.comment;
+                var after = node.splitText(idx);
+                after.splitText(ann.selected_text.length);
+                mark.appendChild(after.cloneNode(true));
+                after.parentNode.replaceChild(mark, after);
+                break; // first occurrence only
+            }
+        }
+
+        // ── Render margin notes panel ───────────────────────────────────
+        function renderMarginNotes(annotations, filter) {
+            var panel = document.getElementById('margin-notes-panel');
+            var list  = document.getElementById('margin-notes-list');
+            if (!panel || !list) return;
+            var visible = annotations.filter(function(a) {
+                if (filter === 'all') return true;
+                return a.category === filter;
+            });
+            if (visible.length === 0) {
+                panel.style.display = 'none';
+                return;
+            }
+            panel.style.display = 'flex';
+            list.innerHTML = visible.map(function(ann) {
+                return buildNoteCard(ann, true);
+            }).join('');
+        }
+
+        function buildNoteCard(ann, compact) {
+            var color = _ANN_COLORS[ann.category] || '#6b7280';
+            var resolved = ann.status === 'resolved';
+            var preview = ann.selected_text.length > 50
+                ? ann.selected_text.slice(0, 50) + '…'
+                : ann.selected_text;
+            return '<div class="ann-card" data-ann-id="' + ann.id + '" data-cat="' + ann.category + '" data-status="' + ann.status + '"'
+                + ' style="background:var(--bg-secondary);border:1px solid ' + color + ';border-left:4px solid ' + color + ';border-radius:6px;padding:10px 12px;'
+                + (resolved ? 'opacity:0.5;' : '') + '">'
+                + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">'
+                + '  <span style="font-size:0.7rem;font-weight:700;color:' + color + ';text-transform:uppercase;letter-spacing:0.5px;">' + ann.category + '</span>'
+                + '  <div style="display:flex;gap:4px;">'
+                + (resolved ? '' : '<button onclick="resolveAnnotation(\'' + ann.id + '\')" title="Resolve" style="font-size:0.7rem;padding:1px 6px;border-radius:3px;border:1px solid #10b981;color:#10b981;background:transparent;cursor:pointer;">&#10003;</button>')
+                + '  <button onclick="deleteAnnotation(\'' + ann.id + '\')" title="Delete" style="font-size:0.7rem;padding:1px 6px;border-radius:3px;border:1px solid #ef4444;color:#ef4444;background:transparent;cursor:pointer;">&times;</button>'
+                + '  </div>'
+                + '</div>'
+                + '<div style="font-size:0.75rem;color:var(--text-secondary);font-style:italic;margin-bottom:4px;">“' + escHtml(preview) + '”</div>'
+                + '<div style="font-size:0.8rem;' + (resolved ? 'text-decoration:line-through;' : '') + 'color:var(--text-primary);">' + escHtml(ann.comment) + '</div>'
+                + '<div style="font-size:0.68rem;color:var(--text-muted,#666);margin-top:4px;">'
+                +   (ann.author || 'reviewer') + ' &middot; ' + (ann.created_at || '').slice(0,10)
+                + '</div>'
+                + '</div>';
+        }
+
+        function escHtml(s) {
+            return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+
+        // ── Render Annotations tab list ─────────────────────────────────
+        function renderAnnotationsTab(annotations, filter) {
+            var list  = document.getElementById('ann-tab-list');
+            var empty = document.getElementById('ann-tab-empty');
+            if (!list) return;
+            var visible = annotations.filter(function(a) {
+                if (filter === 'all' || filter === 'open' || filter === 'resolved') {
+                    if (filter === 'open' && a.status !== 'open') return false;
+                    if (filter === 'resolved' && a.status !== 'resolved') return false;
+                    return true;
+                }
+                return a.category === filter;
+            });
+            list.innerHTML = visible.map(function(ann) { return buildNoteCard(ann, false); }).join('');
+            if (empty) empty.style.display = visible.length === 0 ? 'block' : 'none';
+        }
+
+        // ── Filters ─────────────────────────────────────────────────────
+        function filterAnnotations(cat) {
+            _activeFilter = cat;
+            document.querySelectorAll('#ann-filter-bar .ann-filter-chip').forEach(function(b) {
+                if (b.dataset.cat === cat) {
+                    b.style.background = _ANN_COLORS[cat] || 'var(--accent-blue)';
+                    b.style.color = '#fff';
+                    b.classList.add('ann-filter-active');
+                } else {
+                    b.style.background = 'transparent';
+                    b.style.color = _ANN_COLORS[b.dataset.cat] || 'var(--text-secondary)';
+                    b.classList.remove('ann-filter-active');
+                }
+            });
+            renderMarginNotes(_allAnnotations, cat);
+        }
+
+        function filterAnnotationsTab(cat) {
+            document.querySelectorAll('#ann-tab-filter-bar .ann-tab-chip').forEach(function(b) {
+                if (b.dataset.cat === cat) {
+                    b.style.background = 'var(--accent-blue)';
+                    b.style.color = '#fff';
+                } else {
+                    b.style.background = 'transparent';
+                    b.style.color = _ANN_COLORS[b.dataset.cat] || 'var(--text-secondary)';
+                }
+            });
+            renderAnnotationsTab(_allAnnotations, cat);
+        }
+
+        // ── Resolve / Delete ────────────────────────────────────────────
+        function resolveAnnotation(id) {
+            fetch('/api/proposals/annotations/' + id, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({status: 'resolved'})
+            }).then(function() { loadAnnotations(); });
+        }
+
+        function deleteAnnotation(id) {
+            if (!confirm('Delete this annotation?')) return;
+            fetch('/api/proposals/annotations/' + id, {method: 'DELETE'})
+            .then(function() { loadAnnotations(); });
+        }
+
+        // ── Update counts ───────────────────────────────────────────────
+        function updateCounts(annotations) {
+            var open = annotations.filter(function(a) { return a.status === 'open'; }).length;
+            var el = document.getElementById('ann-tab-count');
+            if (el) el.textContent = open;
+        }
+
+        // Load on Annotations tab click
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('.tab-btn').forEach(function(btn) {
+                btn.addEventListener('click', function() {
+                    if (btn.dataset.tab === 'stab-annotations') loadAnnotations();
+                });
+            });
+        });
+        </script>
+        <!-- ── End Annotation Engine ─────────────────────────────────── -->
+
         {% else %}
         <p class="text-muted" style="text-align:center;">No draft generated yet for this section.</p>
         <div style="text-align:center; margin-top:8px;">
             <a href="/proposals/{{ section.opportunity_id }}" class="btn btn-primary">Go to Opportunity → AI Drafts</a>
         </div>
         {% endif %}
+    </div>
+</div>
+
+<!-- Annotation Popup (hidden, positioned by JS) -->
+<div id="ann-popup" style="display:none;position:fixed;z-index:9999;background:var(--bg-card,#1a1a2e);border:1px solid var(--border-color);border-radius:8px;padding:14px;width:300px;box-shadow:0 8px 24px rgba(0,0,0,0.4);">
+    <div style="font-size:0.82rem;font-weight:600;color:var(--text-secondary);margin-bottom:8px;">Add Annotation</div>
+    <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px;font-style:italic;max-height:40px;overflow:hidden;" id="ann-popup-selected-preview"></div>
+    <select id="ann-popup-category" style="width:100%;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px;padding:6px;margin-bottom:8px;font-size:0.82rem;">
+        <option value="question">❓ Question</option>
+        <option value="improvement">⬆️ Improvement</option>
+        <option value="compliance">📋 Compliance</option>
+        <option value="strength">✅ Strength</option>
+        <option value="weakness">⚠️ Weakness</option>
+        <option value="risk">🚨 Risk</option>
+        <option value="editorial">✏️ Editorial</option>
+    </select>
+    <textarea id="ann-popup-comment" rows="3" placeholder="Add your comment…"
+              style="width:100%;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px;padding:6px;font-size:0.82rem;resize:vertical;margin-bottom:8px;"></textarea>
+    <div style="display:flex;gap:6px;justify-content:flex-end;">
+        <button onclick="closeAnnPopup()" style="font-size:0.78rem;padding:4px 10px;border:1px solid var(--border-color);border-radius:4px;background:transparent;color:var(--text-secondary);cursor:pointer;">Cancel</button>
+        <button onclick="saveAnnotationFromPopup()" style="font-size:0.78rem;padding:4px 10px;border-radius:4px;background:var(--accent-purple,#8b5cf6);color:#fff;border:none;cursor:pointer;font-weight:600;">Save</button>
+    </div>
+</div>
+
+<!-- Annotations Tab -->
+<div id="stab-annotations" class="tab-content" style="display:none;">
+    <div class="card" style="padding:16px; margin-top:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <div style="font-weight:600;font-size:0.95rem;">All Annotations</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;" id="ann-tab-filter-bar">
+                <button class="ann-tab-chip ann-tab-chip-active" data-cat="all" onclick="filterAnnotationsTab('all')"
+                        style="font-size:0.72rem;padding:2px 10px;border-radius:12px;border:1px solid var(--border-color);background:var(--accent-blue);color:#fff;cursor:pointer;">All</button>
+                <button class="ann-tab-chip" data-cat="open"     onclick="filterAnnotationsTab('open')"     style="font-size:0.72rem;padding:2px 10px;border-radius:12px;border:1px solid #10b981;color:#10b981;background:transparent;cursor:pointer;">Open</button>
+                <button class="ann-tab-chip" data-cat="resolved" onclick="filterAnnotationsTab('resolved')" style="font-size:0.72rem;padding:2px 10px;border-radius:12px;border:1px solid #6b7280;color:#6b7280;background:transparent;cursor:pointer;">Resolved</button>
+                <button class="ann-tab-chip" data-cat="question"    onclick="filterAnnotationsTab('question')"    style="font-size:0.72rem;padding:2px 10px;border-radius:12px;border:1px solid #3b82f6;color:#3b82f6;background:transparent;cursor:pointer;">Question</button>
+                <button class="ann-tab-chip" data-cat="compliance"  onclick="filterAnnotationsTab('compliance')"  style="font-size:0.72rem;padding:2px 10px;border-radius:12px;border:1px solid #f59e0b;color:#f59e0b;background:transparent;cursor:pointer;">Compliance</button>
+                <button class="ann-tab-chip" data-cat="weakness"    onclick="filterAnnotationsTab('weakness')"    style="font-size:0.72rem;padding:2px 10px;border-radius:12px;border:1px solid #ef4444;color:#ef4444;background:transparent;cursor:pointer;">Weakness</button>
+                <button class="ann-tab-chip" data-cat="risk"        onclick="filterAnnotationsTab('risk')"        style="font-size:0.72rem;padding:2px 10px;border-radius:12px;border:1px solid #f97316;color:#f97316;background:transparent;cursor:pointer;">Risk</button>
+            </div>
+        </div>
+        <div id="ann-tab-list" style="display:flex;flex-direction:column;gap:10px;"></div>
+        <p id="ann-tab-empty" class="text-muted" style="text-align:center;display:none;">No annotations yet. Switch to Draft Content and click 💬 Annotate to get started.</p>
     </div>
 </div>
 

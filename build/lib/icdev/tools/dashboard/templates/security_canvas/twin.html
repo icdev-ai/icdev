@@ -1,0 +1,338 @@
+<!-- CUI // SP-CTI — SDC Attack Path Twin: BAS-Style Security Digital Twin -->
+{% extends "base.html" %}
+{% from "includes/twin_verdict_banner.html" import twin_css, verdict_js %}
+{% block title %}Attack Path Twin — {{ design.name }} — ICDEV™{% endblock %}
+{% block extra_css %}{{ twin_css() }}{% endblock %}
+
+{% block content %}
+<div class="twin-header">
+  <a href="/security/canvas/{{ design.id }}" class="twin-back">← Security Canvas</a>
+  <h1>Attack Path Twin — {{ design.name }}</h1>
+  <p>BAS-style digital twin. Snapshot the current attack surface, enumerate all paths from entry points to high-value targets, and simulate topology changes.</p>
+</div>
+
+<div class="twin-layout">
+
+  <!-- LEFT: snapshot + simulation input -->
+  <div>
+    <!-- Snapshot panel -->
+    <div class="twin-panel" style="margin-bottom:16px;" id="snapPanel">
+      <h2>1. Attack Graph Snapshot</h2>
+      {% if snapshots %}
+      <ul class="snap-list" id="snapList">
+        {% for s in snapshots %}
+        <li class="snap-item {% if loop.first %}active{% endif %}"
+            data-id="{{ s.id }}" onclick="selectSnap(this,'{{ s.id }}')">
+          <span>{{ s.label }}</span>
+          <span class="snap-meta">{{ s.node_count }} nodes · {{ s.path_count }} paths · {{ s.created_at[:10] if s.created_at else '—' }}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p style="color:#5a6e8c;font-size:12px;">No snapshots yet — take one below.</p>
+      {% endif %}
+      <button class="btn btn-primary btn-sm" onclick="takeSnapshot()">Snapshot Attack Graph</button>
+      <span id="snapSpinner" class="spinner" style="vertical-align:middle;margin-left:8px;"></span>
+      <p class="hint">Freezes the STRIDE/attack graph as a point-in-time baseline.</p>
+    </div>
+
+    <!-- Proposed delta -->
+    <div class="twin-panel">
+      <h2>2. Proposed Topology Change</h2>
+      <p class="hint" style="margin-bottom:8px;">Paste a topology delta JSON, or use the tools below to generate one automatically.</p>
+
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <button class="btn btn-primary btn-sm" onclick="loadCurrentTopology()">Load from Canvas</button>
+        <span style="font-size:11px;color:#5a6e8c;">Loads current design context for AI chat</span>
+      </div>
+      <div id="topoPreview" style="display:none;background:#0a1628;border:1px solid #1e3a6e;border-radius:4px;padding:8px;margin-bottom:8px;max-height:110px;overflow-y:auto;">
+        <div style="font-size:10px;color:#5a6e8c;margin-bottom:4px;">CURRENT DESIGN (context for chat)</div>
+        <pre id="topoPreviewText" style="font-size:11px;color:#7a8cb0;margin:0;white-space:pre-wrap;"></pre>
+      </div>
+
+      <textarea id="deltaInput" class="twin-textarea" rows="10"
+        placeholder='{"nodes":[{"id":"n1","type":"asset-server","label":"New DMZ Server","threat_level":"medium"}],"edges":[{"source":"n0","target":"n1","label":"HTTP/443"}]}'></textarea>
+
+      <div style="margin-top:12px;border-top:1px solid #1e3a6e;padding-top:10px;">
+        <strong style="font-size:12px;color:#7a8cb0;">DESCRIBE YOUR CHANGE</strong>
+        <p class="hint" style="margin:4px 0 6px;">Describe the security topology change in plain English — AI converts it to simulation JSON.</p>
+        <div style="display:flex;gap:8px;align-items:flex-start;">
+          <textarea id="chatInput" style="flex:1;background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:8px;font-size:12px;resize:vertical;min-height:56px;"
+            placeholder="e.g. Add a WAF in front of the web tier, remove the direct database connection from the app server..."></textarea>
+          <button class="btn btn-success btn-sm" style="white-space:nowrap;" onclick="sendChatDelta()">Generate JSON</button>
+        </div>
+        <span id="chatSpinner" class="spinner" style="margin-top:4px;"></span>
+        <div id="chatExplanation" style="display:none;margin-top:6px;padding:8px;background:#0f3460;border-radius:4px;border-left:3px solid #3498db;">
+          <span style="font-size:12px;color:#eaeaea;" id="chatExplanationText"></span>
+        </div>
+        <p id="chatError" style="color:#e74c3c;font-size:12px;margin-top:4px;display:none;"></p>
+      </div>
+
+      <div style="margin:8px 0;">
+        <label style="font-size:12px;color:#7a8cb0;margin-right:8px;">Entry Point:</label>
+        <input id="entryInput" type="text" placeholder="node-id or leave blank for all"
+               style="background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:4px 8px;font-size:12px;width:180px;">
+      </div>
+      <div style="margin:8px 0;">
+        <label style="font-size:12px;color:#7a8cb0;margin-right:8px;">Target Goal:</label>
+        <input id="targetInput" type="text" placeholder="high-value-asset node-id or blank"
+               style="background:#0f3460;border:1px solid #1e3a6e;color:#eaeaea;border-radius:4px;padding:4px 8px;font-size:12px;width:180px;">
+      </div>
+
+      <div style="display:flex;align-items:center;gap:10px;margin-top:10px;">
+        <button class="btn btn-success" onclick="runSimulation()">Run Simulation</button>
+        <span id="simSpinner" class="spinner"></span>
+      </div>
+      <p id="simError" style="color:#e74c3c;font-size:12px;margin-top:6px;display:none;"></p>
+    </div>
+  </div>
+
+  <!-- RIGHT: results -->
+  <div>
+    <div id="simResults" class="twin-panel" style="display:none;">
+      <h2>3. Simulation Results</h2>
+
+      <div id="verdictBanner" class="verdict-banner"></div>
+
+      <!-- Path metrics -->
+      <div style="margin-bottom:16px;">
+        <strong style="font-size:12px;color:#7a8cb0;">ATTACK PATHS</strong>
+        <div class="metric-row" style="margin-top:6px;">
+          <div class="metric-stat"><div class="val val-info" id="totalPaths">—</div><div class="lbl">Total</div></div>
+          <div class="metric-stat"><div class="val val-fail" id="criticalPaths">—</div><div class="lbl">Critical</div></div>
+          <div class="metric-stat"><div class="val val-warn" id="deltaPaths">—</div><div class="lbl">Delta (±)</div></div>
+        </div>
+      </div>
+
+      <!-- Risk score gauge + severity donut -->
+      <div style="display:flex;gap:16px;margin-bottom:16px;align-items:flex-start;">
+        <div style="flex:0 0 160px;">
+          <strong style="font-size:11px;color:#7a8cb0;letter-spacing:.5px;text-transform:uppercase;">Risk Score</strong>
+          <div id="riskGauge" style="margin-top:6px;"></div>
+        </div>
+        <div style="flex:1;min-width:0;">
+          <strong style="font-size:11px;color:#7a8cb0;letter-spacing:.5px;text-transform:uppercase;">Path Severity</strong>
+          <div id="severityDonut" style="margin-top:6px;"></div>
+        </div>
+      </div>
+
+      <!-- STRIDE coverage bar chart -->
+      <div style="margin-bottom:16px;">
+        <strong style="font-size:12px;color:#7a8cb0;">STRIDE COVERAGE</strong>
+        <div id="strideChart" style="margin-top:8px;"></div>
+      </div>
+
+      <!-- Top attack paths -->
+      <div>
+        <strong style="font-size:12px;color:#7a8cb0;">TOP ATTACK PATHS</strong>
+        <ul class="finding-list" id="pathList" style="margin-top:8px;"></ul>
+        <p id="noPaths" style="font-size:12px;color:#2ecc71;display:none;">No attack paths found — topology appears secure.</p>
+      </div>
+
+      <p class="hint" style="margin-top:12px;" id="simId"></p>
+    </div>
+
+    <div class="twin-panel" id="noResultsHint" style="color:#5a6e8c;font-size:13px;text-align:center;padding:40px 20px;">
+      Run a simulation to see attack path analysis here.
+    </div>
+  </div>
+
+</div>
+
+{{ verdict_js() }}
+<script>
+const DESIGN_ID = "{{ design.id }}";
+let selectedSnapId = {% if snapshots %}"{{ snapshots[0].id }}"{% else %}null{% endif %};
+
+function selectSnap(el, snapId) {
+  document.querySelectorAll('.snap-item').forEach(i => i.classList.remove('active'));
+  el.classList.add('active');
+  selectedSnapId = snapId;
+}
+
+async function takeSnapshot() {
+  const spinner = document.getElementById('snapSpinner');
+  spinner.style.display = 'inline-block';
+  try {
+    const r = await fetch(`/security/api/twin/${DESIGN_ID}/snapshot`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({label: 'snap-' + new Date().toISOString().slice(0,10)})
+    });
+    const data = await r.json();
+    if (!r.ok) { alert('Snapshot failed: ' + (data.error || r.status)); return; }
+    const ul = document.getElementById('snapList') || (() => {
+      const newUl = document.createElement('ul');
+      newUl.id = 'snapList'; newUl.className = 'snap-list';
+      document.getElementById('snapPanel').insertBefore(newUl, document.querySelector('#snapPanel button'));
+      return newUl;
+    })();
+    const li = document.createElement('li');
+    li.className = 'snap-item active';
+    li.dataset.id = data.id;
+    li.onclick = () => selectSnap(li, data.id);
+    li.innerHTML = `<span>${data.label}</span><span class="snap-meta">${data.node_count} nodes · ${data.path_count} paths · ${new Date().toISOString().slice(0,10)}</span>`;
+    ul.prepend(li);
+    document.querySelectorAll('.snap-item').forEach(i => i.classList.remove('active'));
+    li.classList.add('active');
+    selectedSnapId = data.id;
+  } catch(e) { alert('Error: ' + e.message); }
+  finally { spinner.style.display = 'none'; }
+}
+
+async function runSimulation() {
+  const raw = document.getElementById('deltaInput').value.trim();
+  const errEl = document.getElementById('simError');
+  errEl.style.display = 'none';
+  if (!raw) { errEl.textContent = 'Paste a topology delta JSON first.'; errEl.style.display='block'; return; }
+  let delta;
+  try { delta = JSON.parse(raw); }
+  catch(e) { errEl.textContent = 'Invalid JSON: ' + e.message; errEl.style.display='block'; return; }
+
+  const spinner = document.getElementById('simSpinner');
+  spinner.style.display = 'inline-block';
+  try {
+    const body = { delta_graph: delta };
+    if (selectedSnapId) body.baseline_snap_id = selectedSnapId;
+    const ep = document.getElementById('entryInput').value.trim();
+    const tg = document.getElementById('targetInput').value.trim();
+    if (ep) body.entry_point = ep;
+    if (tg) body.target_goal = tg;
+    const r = await fetch(`/security/api/twin/${DESIGN_ID}/simulate`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    const data = await r.json();
+    if (!r.ok) { errEl.textContent = data.error || ('HTTP ' + r.status); errEl.style.display='block'; return; }
+    renderResults(data);
+  } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display='block'; }
+  finally { spinner.style.display = 'none'; }
+}
+
+function renderResults(d) {
+  document.getElementById('simResults').style.display = 'block';
+  document.getElementById('noResultsHint').style.display = 'none';
+
+  renderVerdict(document.getElementById('verdictBanner'), d.verdict);
+
+  document.getElementById('totalPaths').textContent = d.total_paths ?? 0;
+  document.getElementById('criticalPaths').textContent = d.critical_paths ?? 0;
+  const pathDelta = (d.total_paths ?? 0) - (d.baseline_path_count ?? d.total_paths ?? 0);
+  document.getElementById('deltaPaths').textContent = (pathDelta >= 0 ? '+' : '') + pathDelta;
+
+  const risk = d.risk_score ?? 0;
+
+  // ── Risk gauge ────────────────────────────────────────────────────────────
+  if (window.ICDEV) {
+    ICDEV.gaugeChart('riskGauge', {
+      value: risk,
+      label: Math.round(risk * 100) + '% Risk',
+      thresholds: { good: 0.35, warning: 0.65 },
+      size: 155
+    });
+  }
+
+  // ── STRIDE bar chart ──────────────────────────────────────────────────────
+  const stride = d.stride_coverage || {};
+  const strideKeys   = ['spoofing','tampering','repudiation','info_disclosure','dos','elevation'];
+  const strideLabels = ['Spoofing','Tampering','Repudiat.','Info Disc.','DoS','Elevation'];
+  if (window.ICDEV) {
+    ICDEV.barChart('strideChart', {
+      labels: strideLabels,
+      series: [{
+        name: 'Covered',
+        data: strideKeys.map(k => stride[k] ?? stride[k.replace('_',' ')] ? 1 : 0),
+        color: '#3498db'
+      }],
+      height: 120, showValues: true, showLegend: false
+    });
+  }
+
+  // ── Severity donut ────────────────────────────────────────────────────────
+  const paths = d.attack_paths || [];
+  if (paths.length > 0 && window.ICDEV) {
+    const counts = { critical:0, high:0, medium:0, low:0 };
+    paths.forEach(p => {
+      const s = (p.severity || p.risk_level || 'medium').toLowerCase();
+      if (counts[s] !== undefined) counts[s]++; else counts.medium++;
+    });
+    ICDEV.donutChart('severityDonut', {
+      segments: [
+        { label:'Critical', value:counts.critical, color:'#e74c3c' },
+        { label:'High',     value:counts.high,     color:'#e67e22' },
+        { label:'Medium',   value:counts.medium,   color:'#f1c40f' },
+        { label:'Low',      value:counts.low,      color:'#3498db' }
+      ].filter(s => s.value > 0),
+      centerLabel: paths.length + '',
+      centerSubLabel: 'Paths',
+      size: 140, showLegend: true
+    });
+  }
+
+  // ── Attack path list ──────────────────────────────────────────────────────
+  const pathList = document.getElementById('pathList');
+  pathList.innerHTML = '';
+  const noPaths = document.getElementById('noPaths');
+  if (paths.length === 0) {
+    noPaths.style.display = 'block';
+  } else {
+    noPaths.style.display = 'none';
+    paths.slice(0, 5).forEach(p => {
+      const li = document.createElement('li');
+      li.className = 'finding-item ' + (p.severity || p.risk_level || 'medium');
+      const steps = (p.path || []).join(' → ');
+      li.innerHTML = `<div class="finding-title">${p.path_id || 'Path'}<span class="badge badge-${p.severity || 'medium'}">${p.severity || p.risk_level || 'medium'}</span></div>
+        <div class="finding-rec">${steps || p.description || ''}</div>`;
+      pathList.appendChild(li);
+    });
+    if (paths.length > 5) {
+      const li = document.createElement('li');
+      li.className = 'finding-item';
+      li.innerHTML = `<div class="finding-rec" style="color:#7a8cb0;">… and ${paths.length - 5} more paths</div>`;
+      pathList.appendChild(li);
+    }
+  }
+  document.getElementById('simId').textContent = d.simulation_id ? 'Simulation ID: ' + d.simulation_id : '';
+}
+
+let _loadedGraphJson = null;
+
+async function loadCurrentTopology() {
+  try {
+    const r = await fetch(`/security/api/twin/${DESIGN_ID}/current-topology`);
+    const data = await r.json();
+    if (!r.ok) { alert(data.error || 'Failed to load design'); return; }
+    _loadedGraphJson = data.graph_json;
+    const nodes = (data.graph_json.nodes || []).length;
+    const edges = (data.graph_json.edges || []).length;
+    document.getElementById('topoPreviewText').textContent =
+      `${nodes} nodes, ${edges} edges\n` +
+      JSON.stringify(data.graph_json, null, 2).slice(0, 600) +
+      (JSON.stringify(data.graph_json).length > 600 ? '\n…' : '');
+    document.getElementById('topoPreview').style.display = 'block';
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function sendChatDelta() {
+  const msg = document.getElementById('chatInput').value.trim();
+  if (!msg) return;
+  const spinner = document.getElementById('chatSpinner');
+  const errEl  = document.getElementById('chatError');
+  errEl.style.display = 'none';
+  spinner.style.display = 'inline-block';
+  try {
+    const body = { message: msg };
+    if (_loadedGraphJson) body.graph_json = _loadedGraphJson;
+    const r = await fetch(`/security/api/twin/${DESIGN_ID}/chat-delta`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    const data = await r.json();
+    if (data.error) { errEl.textContent = data.error; errEl.style.display='block'; return; }
+    document.getElementById('deltaInput').value = JSON.stringify(data.delta, null, 2);
+    if (data.explanation) {
+      document.getElementById('chatExplanationText').textContent = data.explanation;
+      document.getElementById('chatExplanation').style.display = 'block';
+    }
+  } catch(e) { errEl.textContent = 'Error: ' + e.message; errEl.style.display='block'; }
+  finally { spinner.style.display = 'none'; }
+}
+</script>
+{% endblock %}

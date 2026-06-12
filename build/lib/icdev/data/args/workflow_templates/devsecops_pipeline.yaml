@@ -1,0 +1,62 @@
+# CUI // SP-CTI
+# DevSecOps Pipeline Workflow — Profile → Scan → Policy → Attest → Mesh → ZTA
+description: "DevSecOps pipeline: maturity assessment, security scanning, policy-as-code, ZTA hardening"
+category: devsecops
+steps:
+  - id: profile
+    name: "DevSecOps Profile"
+    tool: "tools/devsecops/profile_manager.py"
+    description: "Assess DevSecOps maturity profile"
+
+  - id: sast
+    name: "SAST Scan"
+    tool: "tools/security/sast_runner.py"
+    description: "Multi-language static analysis"
+
+  - id: deps
+    name: "Dependency Audit"
+    tool: "tools/security/dependency_auditor.py"
+    description: "Dependency vulnerability audit"
+
+  - id: secrets
+    name: "Secret Detection"
+    tool: "tools/security/secret_detector.py"
+    description: "Detect hardcoded secrets"
+
+  - id: zta
+    name: "ZTA Maturity"
+    tool: "tools/devsecops/zta_maturity_scorer.py"
+    depends_on: [profile]
+    description: "7-pillar Zero Trust Architecture scoring"
+
+  - id: attest
+    name: "Sign & Attest"
+    tool: "tools/devsecops/attestation_manager.py"
+    depends_on: [profile, sast, deps, secrets]
+    description: "Image signing + SBOM attestation (SLSA L3)"
+
+  - id: pipeline
+    name: "Pipeline Security"
+    tool: "tools/devsecops/pipeline_security_generator.py"
+    depends_on: [attest]
+    description: "Generate CI/CD security stages"
+
+  - id: policy
+    name: "Policy-as-Code"
+    tool: "tools/devsecops/policy_generator.py"
+    depends_on: [attest]
+    description: "Kyverno/OPA policy generation"
+
+  - id: mesh
+    name: "Service Mesh"
+    tool: "tools/devsecops/service_mesh_generator.py"
+    depends_on: [zta, attest]
+    required: false
+    description: "Istio/Linkerd mTLS service mesh config"
+
+  - id: segmentation
+    name: "Network Segmentation"
+    tool: "tools/devsecops/network_segmentation_generator.py"
+    depends_on: [zta, attest]
+    required: false
+    description: "Namespace isolation + microsegmentation"

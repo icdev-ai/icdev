@@ -1,0 +1,252 @@
+{% extends "base.html" %}
+{% block title %}Migration Executor — GovLift{% endblock %}
+{% block extra_css %}
+<style>
+.gl-page-header{background:linear-gradient(135deg,#0f172a,#1a3a2a);padding:22px 28px;border-radius:10px;margin-bottom:24px;}
+.gl-page-header h1{margin:0;font-size:1.4rem;font-weight:700;color:#d1fae5;}
+.gl-page-header p{margin:4px 0 0;color:#6ee7b7;font-size:.85rem;}
+.classification-banner{background:#1e3a1a;border:1px solid #166534;color:#86efac;font-size:.75rem;font-weight:700;letter-spacing:.08em;text-align:center;padding:6px 12px;border-radius:6px;margin-bottom:18px;}
+.stat-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:18px 22px;text-align:center;}
+.stat-card .val{font-size:1.8rem;font-weight:700;color:#d1fae5;}
+.stat-card .lbl{font-size:.75rem;color:#64748b;margin-top:2px;}
+.filter-bar{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:14px 18px;margin-bottom:18px;display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;}
+.filter-bar label{font-size:.75rem;color:#94a3b8;display:block;margin-bottom:4px;}
+.filter-bar select{background:#0f172a;border:1px solid #334155;color:#e2e8f0;border-radius:6px;padding:5px 10px;font-size:.8rem;}
+.filter-bar select:focus{outline:none;border-color:#10b981;}
+.filter-btn{background:#10b981;border:none;color:#fff;border-radius:6px;padding:6px 16px;font-size:.8rem;font-weight:600;cursor:pointer;}
+.filter-btn:hover{background:#059669;}
+.back-link{color:#6ee7b7;text-decoration:none;font-size:.85rem;}
+.back-link:hover{color:#34d399;}
+.gl-table{width:100%;border-collapse:collapse;}
+.gl-table thead th{background:#0f172a;color:#94a3b8;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:10px 12px;border-bottom:1px solid #334155;}
+.gl-table tbody tr{border-bottom:1px solid #1e293b;cursor:pointer;}
+.gl-table tbody tr:hover{background:#1a2540;}
+.gl-table tbody td{padding:10px 12px;font-size:.83rem;color:#e2e8f0;vertical-align:middle;}
+.gl-table-wrap{background:#1e293b;border:1px solid #334155;border-radius:10px;overflow:hidden;}
+.check-pass{color:#34d399;}
+.check-fail{color:#f87171;}
+.check-na{color:#64748b;}
+.log-preview{font-family:monospace;font-size:.72rem;color:#94a3b8;background:#0f172a;border-radius:4px;padding:4px 8px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;}
+.log-modal{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:2000;align-items:center;justify-content:center;}
+.log-modal.open{display:flex;}
+.log-modal-inner{background:#1e293b;border:1px solid #334155;border-radius:12px;max-width:700px;width:90%;max-height:80vh;overflow:hidden;display:flex;flex-direction:column;}
+.log-modal-header{display:flex;justify-content:space-between;align-items:center;padding:14px 20px;border-bottom:1px solid #334155;}
+.log-modal-header h5{margin:0;font-size:.95rem;color:#e2e8f0;}
+.log-modal-body{flex:1;overflow-y:auto;padding:16px 20px;}
+.log-modal-body pre{font-size:.78rem;color:#94a3b8;margin:0;white-space:pre-wrap;}
+.log-close-btn{background:none;border:none;color:#94a3b8;font-size:1.2rem;cursor:pointer;line-height:1;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="classification-banner">{{ classification }}</div>
+<a class="back-link" href="/govlift">← GovLift</a>
+
+<div class="gl-page-header mt-2">
+  <h1>Migration Job Tracker</h1>
+  <p>Execute · Monitor · Verify Cloud Migration Jobs — {{ classification }}</p>
+</div>
+
+<!-- Stats -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="val">{{ data.summary.get('total', 0) }}</div>
+      <div class="lbl">Total Jobs</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="val" style="color:#94a3b8;">{{ data.summary.get('pending', 0) }}</div>
+      <div class="lbl">Pending</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="val" style="color:#fbbf24;">{{ data.summary.get('running', 0) }}</div>
+      <div class="lbl">Running</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="val" style="color:#34d399;">{{ data.summary.get('completed', 0) }}</div>
+      <div class="lbl">Completed</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="val" style="color:#f87171;">{{ data.summary.get('failed', 0) }}</div>
+      <div class="lbl">Failed</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-2">
+    <div class="stat-card">
+      <div class="val" style="font-size:1.3rem;">{{ data.summary.get('avg_duration_h', 0)|round(1) }}h</div>
+      <div class="lbl">Avg Duration</div>
+    </div>
+  </div>
+</div>
+
+<!-- Filter Bar -->
+<div class="filter-bar">
+  <div>
+    <label for="f-job-status">Status</label>
+    <select id="f-job-status">
+      <option value="">All Statuses</option>
+      <option value="pending">Pending</option>
+      <option value="running">Running</option>
+      <option value="completed">Completed</option>
+      <option value="failed">Failed</option>
+    </select>
+  </div>
+  <div>
+    <label for="f-precheck">Pre-Check</label>
+    <select id="f-precheck">
+      <option value="">Any</option>
+      <option value="1">Passed</option>
+      <option value="0">Failed</option>
+    </select>
+  </div>
+  <div>
+    <label for="f-postcheck">Post-Check</label>
+    <select id="f-postcheck">
+      <option value="">Any</option>
+      <option value="1">Passed</option>
+      <option value="0">Failed</option>
+    </select>
+  </div>
+  <div>
+    <button class="filter-btn" onclick="applyJobFilters()">Apply</button>
+  </div>
+</div>
+
+<!-- Jobs Table -->
+<div class="gl-table-wrap" id="jobs-table-wrap">
+  <table class="gl-table">
+    <thead>
+      <tr>
+        <th>Job ID</th>
+        <th>Workload ID</th>
+        <th>Wave ID</th>
+        <th>Status</th>
+        <th>Pre-Check</th>
+        <th>Post-Check</th>
+        <th>Started</th>
+        <th>Completed</th>
+        <th>Log</th>
+      </tr>
+    </thead>
+    <tbody id="jobs-tbody">
+      {% if data.migrations %}
+        {% for job in data.migrations %}
+        <tr onclick="window.location='/govlift/migrations/{{ job.id }}'">
+          <td style="font-size:.75rem;color:#64748b;">{{ job.get('id', '') }}</td>
+          <td style="font-size:.78rem;font-family:monospace;">{{ job.get('workload_id', '—') }}</td>
+          <td style="font-size:.78rem;color:#94a3b8;">{{ job.get('wave_id', '—') }}</td>
+          <td>
+            {% set js = job.get('status', 'pending') %}
+            {% if js == 'completed' %}
+              <span class="badge bg-success">{{ js }}</span>
+            {% elif js == 'running' %}
+              <span class="badge bg-warning text-dark">{{ js }}</span>
+            {% elif js == 'failed' %}
+              <span class="badge bg-danger">{{ js }}</span>
+            {% else %}
+              <span class="badge bg-secondary">{{ js }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if job.get('pre_check_passed') is none %}
+              <span class="check-na">—</span>
+            {% elif job.get('pre_check_passed') %}
+              <span class="check-pass">PASS</span>
+            {% else %}
+              <span class="check-fail">FAIL</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if job.get('post_check_passed') is none %}
+              <span class="check-na">—</span>
+            {% elif job.get('post_check_passed') %}
+              <span class="check-pass">PASS</span>
+            {% else %}
+              <span class="check-fail">FAIL</span>
+            {% endif %}
+          </td>
+          <td style="font-size:.75rem;color:#94a3b8;">{{ job.get('started_at', '—') }}</td>
+          <td style="font-size:.75rem;color:#94a3b8;">{{ job.get('completed_at', '—') }}</td>
+          <td>
+            {% if job.get('executor_log') %}
+            <div class="log-preview" onclick="event.stopPropagation();showLog({{ loop.index0 }}, this.dataset.log)" data-log="{{ job.executor_log|e }}">{{ job.executor_log[:60] }}...</div>
+            {% else %}
+              <span style="color:#334155;font-size:.78rem;">—</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="9" style="text-align:center;padding:32px;color:#64748b;">No migration jobs found.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<!-- Log Modal -->
+<div class="log-modal" id="log-modal" onclick="if(event.target===this)closeLog()">
+  <div class="log-modal-inner">
+    <div class="log-modal-header">
+      <h5>Executor Log</h5>
+      <button class="log-close-btn" onclick="closeLog()">✕</button>
+    </div>
+    <div class="log-modal-body">
+      <pre id="log-modal-content"></pre>
+    </div>
+  </div>
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+
+<script>
+function showLog(idx, log) {
+  document.getElementById('log-modal-content').textContent = log || '(no log)';
+  document.getElementById('log-modal').classList.add('open');
+}
+function closeLog() {
+  document.getElementById('log-modal').classList.remove('open');
+}
+
+function applyJobFilters() {
+  const status = document.getElementById('f-job-status').value;
+  const preCheck = document.getElementById('f-precheck').value;
+  const postCheck = document.getElementById('f-postcheck').value;
+  const params = new URLSearchParams();
+  if (status) params.set('status', status);
+  if (preCheck !== '') params.set('pre_check_passed', preCheck);
+  if (postCheck !== '') params.set('post_check_passed', postCheck);
+  fetch('/api/govlift/migrations?' + params.toString())
+    .then(r => r.json())
+    .then(data => {
+      const jobs = data.migrations || data || [];
+      const tbody = document.getElementById('jobs-tbody');
+      const statusMap = {completed:'bg-success',running:'bg-warning text-dark',failed:'bg-danger',pending:'bg-secondary'};
+      tbody.innerHTML = jobs.length ? jobs.map(j => {
+        const sCls = statusMap[j.status] || 'bg-secondary';
+        const preIcon = j.pre_check_passed === null || j.pre_check_passed === undefined ? '<span class="check-na">—</span>' : (j.pre_check_passed ? '<span class="check-pass">PASS</span>' : '<span class="check-fail">FAIL</span>');
+        const postIcon = j.post_check_passed === null || j.post_check_passed === undefined ? '<span class="check-na">—</span>' : (j.post_check_passed ? '<span class="check-pass">PASS</span>' : '<span class="check-fail">FAIL</span>');
+        const logCell = j.executor_log ? `<div class="log-preview" onclick="event.stopPropagation();showLog(0,'${(j.executor_log||'').replace(/'/g,'&#39;')}')" data-log="${(j.executor_log||'').replace(/"/g,'&quot;')}">${(j.executor_log||'').substring(0,60)}...</div>` : '<span style="color:#334155;font-size:.78rem;">—</span>';
+        return `<tr onclick="window.location='/govlift/migrations/${j.id}'">
+          <td style="font-size:.75rem;color:#64748b;">${j.id||''}</td>
+          <td style="font-size:.78rem;font-family:monospace;">${j.workload_id||'—'}</td>
+          <td style="font-size:.78rem;color:#94a3b8;">${j.wave_id||'—'}</td>
+          <td><span class="badge ${sCls}">${j.status||'pending'}</span></td>
+          <td>${preIcon}</td>
+          <td>${postIcon}</td>
+          <td style="font-size:.75rem;color:#94a3b8;">${j.started_at||'—'}</td>
+          <td style="font-size:.75rem;color:#94a3b8;">${j.completed_at||'—'}</td>
+          <td>${logCell}</td>
+        </tr>`;
+      }).join('') : '<tr><td colspan="9" style="text-align:center;padding:32px;color:#64748b;">No jobs match the selected filters.</td></tr>';
+    })
+    .catch(e => console.error('Filter error:', e));
+}
+</script>
+{% endblock %}

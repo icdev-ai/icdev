@@ -1,0 +1,32 @@
+# OPT-64 seed eval — scanner-tier parity check.
+# Verifies qwen3-local (scanner tier) produces output that satisfies the
+# same minimal structural constraints as claude-sonnet on a compliance
+# summarization prompt. If this eval's qwen row drops below 1/3 pass,
+# re-check args/llm_config.yaml two_tier scanner functions.
+name: scanner_tier_parity
+description: >-
+  Verify qwen3-local can serve ICDEV scanner-tier compliance_export and
+  memory_consolidation functions without regression vs. claude-sonnet.
+models:
+  - qwen3-local
+  - claude-sonnet
+default_temperature: 0.1
+default_max_tokens: 400
+default_system: |
+  You are an ICDEV compliance analyst. When asked for a summary, respond
+  in JSON with fields: status, findings (array), next_step.
+
+prompts:
+  - id: ssp-summary
+    messages:
+      - role: user
+        content: |
+          Three controls are implemented: AC-2, AU-2, CM-6. No gaps.
+          Summarize the SSP status as a JSON object with keys
+          {"status","findings","next_step"}. status must be "ok".
+    assertions:
+      - {type: contains, value: "status"}
+      - {type: contains, value: "findings"}
+      - {type: contains, value: "next_step"}
+      - {type: json_schema, schema: {type: object, required: [status, findings, next_step]}}
+      - {type: max_length, value: 800}

@@ -1,0 +1,225 @@
+<!-- CUI // SP-CTI — Data Mesh: Data Contracts -->
+{% extends "base.html" %}
+{% block title %}Data Contracts — Data Mesh — ICDEV{% endblock %}
+{% block content %}
+<style>
+/* ── Data Mesh Tab Nav ── */
+.dm-nav { display:flex; gap:4px; padding:10px 30px 0; border-bottom:1px solid #1e3a6e; flex-wrap:wrap; align-items:flex-end; }
+.dm-nav .dm-label { font-size:9px; color:#5a6e8c; padding:0 6px 8px; text-transform:uppercase; letter-spacing:.6px; }
+.dm-nav a { padding:5px 11px; border-radius:6px 6px 0 0; font-size:11px; font-weight:600; text-decoration:none; color:#7a8cb0; background:#0f1e36; border:1px solid #1e3a6e; border-bottom:none; transition:color .15s; }
+.dm-nav a.active { color:#ff9800; background:#16213e; border-color:#ff9800; }
+.dm-nav a:hover:not(.active) { color:#eaeaea; }
+
+/* ── Hero ── */
+.dm-hero { padding:16px 30px 12px; display:flex; justify-content:space-between; align-items:flex-start; }
+.dm-hero h1 { font-size:20px; margin:0 0 4px; color:#ff9800; }
+.dm-hero p  { color:#7a8cb0; font-size:12px; margin:0; max-width:560px; }
+.btn-primary { padding:8px 18px; background:#ff9800; color:#0a1628; border:none; border-radius:6px; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap; }
+.btn-primary:hover { background:#e68900; }
+
+/* ── Filter Bar ── */
+.dm-filters { display:flex; align-items:center; gap:12px; padding:10px 30px 12px; border-bottom:1px solid #1e3a6e; flex-wrap:wrap; }
+.dm-filters select { padding:5px 10px; background:#0f1e36; border:1px solid #1e3a6e; border-radius:6px; color:#eaeaea; font-size:12px; cursor:pointer; }
+.dm-count { font-size:11px; color:#5a6e8c; margin-left:auto; }
+
+/* ── Table ── */
+.ct-table-wrap { padding:16px 30px; overflow-x:auto; }
+.ct-table { width:100%; border-collapse:collapse; font-size:12px; }
+.ct-table th { text-align:left; padding:10px 12px; font-size:11px; color:#7a8cb0; border-bottom:1px solid #1e3a6e; text-transform:uppercase; letter-spacing:.4px; white-space:nowrap; }
+.ct-table td { padding:10px 12px; border-bottom:1px solid #0f1e36; vertical-align:top; }
+.ct-table tr:hover { background:#16213e; }
+.ct-title { font-weight:600; color:#eaeaea; }
+.ct-version { display:inline-block; padding:2px 7px; background:#0f1e36; border:1px solid #1e3a6e; border-radius:3px; font-size:10px; color:#7a8cb0; font-family:monospace; }
+.status-badge { display:inline-block; padding:2px 8px; border-radius:3px; font-size:10px; font-weight:700; }
+.status-active    { background:#1b5e20; color:#4caf50; }
+.status-draft     { background:#0f1e36; color:#4fc3f7; border:1px solid #1e3a6e; }
+.status-deprecated { background:#2a2a2a; color:#7a8cb0; }
+.class-badge { display:inline-block; padding:2px 8px; background:#1a1a2e; color:#ff9800; border:1px solid #ff980044; border-radius:3px; font-size:10px; font-weight:600; }
+.empty-state { color:#5a6e8c; font-size:13px; text-align:center; padding:60px 0; }
+.product-link { color:#4fc3f7; text-decoration:none; font-size:11px; }
+.product-link:hover { text-decoration:underline; }
+
+/* ── New Contract Modal ── */
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.65); z-index:300; display:flex; align-items:center; justify-content:center; display:none; }
+.modal-overlay.open { display:flex; }
+.modal-box { background:#16213e; border:1px solid #1e3a6e; border-radius:10px; padding:24px; width:480px; max-width:95vw; max-height:90vh; overflow-y:auto; }
+.modal-box h3 { margin:0 0 16px; font-size:16px; color:#ff9800; }
+.form-group { margin-bottom:14px; }
+.form-group label { display:block; font-size:11px; color:#7a8cb0; margin-bottom:5px; text-transform:uppercase; letter-spacing:.4px; }
+.form-group input, .form-group select, .form-group textarea { width:100%; padding:8px 10px; background:#0f1e36; border:1px solid #1e3a6e; border-radius:6px; color:#eaeaea; font-size:12px; box-sizing:border-box; }
+.form-group textarea { resize:vertical; min-height:80px; }
+.modal-actions { display:flex; gap:10px; justify-content:flex-end; margin-top:18px; }
+.btn-cancel { padding:8px 18px; background:transparent; border:1px solid #1e3a6e; color:#7a8cb0; border-radius:6px; font-size:12px; cursor:pointer; }
+.btn-cancel:hover { border-color:#7a8cb0; color:#eaeaea; }
+</style>
+
+<!-- CUI Banner -->
+<div style="background:#ff9800;color:#0a1628;text-align:center;padding:4px;font-size:11px;font-weight:700;letter-spacing:1px;">CUI // SP-CTI</div>
+
+<!-- Data Mesh Tab Nav -->
+<div class="dm-nav">
+  <span class="dm-label">Data Mesh</span>
+  <a href="{{ url_for('data_canvas.dc_mesh') }}">Overview</a>
+  <a href="{{ url_for('data_canvas.dc_domains') }}">Domains</a>
+  <a href="{{ url_for('data_canvas.dc_products') }}">Products</a>
+  <a href="{{ url_for('data_canvas.dc_contracts') }}" class="active">Contracts</a>
+  <a href="{{ url_for('data_canvas.dc_governance') }}">Governance</a>
+  <a href="{{ url_for('data_canvas.dc_csp') }}">CSP</a>
+</div>
+
+<!-- Hero -->
+<div class="dm-hero">
+  <div>
+    <h1>Data Contracts</h1>
+    <p>ODCS-compliant contracts defining schema, SLA, and quality rules between data producers and consumers.</p>
+  </div>
+  <button class="btn-primary" onclick="document.getElementById('newModal').classList.add('open')">+ New Contract</button>
+</div>
+
+<!-- Filters -->
+<div class="dm-filters">
+  <select id="filterProduct" onchange="applyFilter()">
+    <option value="">All Products</option>
+    {% for p in products %}
+    <option value="{{ p.id }}" {% if request.args.get('product_id') == p.id %}selected{% endif %}>{{ p.name }}</option>
+    {% endfor %}
+  </select>
+  <select id="filterStatus" onchange="applyFilter()">
+    <option value="">All Statuses</option>
+    <option value="active">Active</option>
+    <option value="draft">Draft</option>
+    <option value="deprecated">Deprecated</option>
+  </select>
+  <span class="dm-count" id="ctCount">{{ contracts|length }} contract{{ 's' if contracts|length != 1 else '' }}</span>
+</div>
+
+<!-- Table -->
+<div class="ct-table-wrap">
+  {% if contracts %}
+  <table class="ct-table" id="ctTable">
+    <thead>
+      <tr>
+        <th>Title</th>
+        <th>Version</th>
+        <th>Product</th>
+        <th>Status</th>
+        <th>Classification</th>
+        <th>Created</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% set product_map = {} %}
+      {% for p in products %}{% set _ = product_map.update({p.id: p.name}) %}{% endfor %}
+      {% for c in contracts %}
+      <tr data-status="{{ c.status }}" data-product="{{ c.product_id }}">
+        <td class="ct-title">{{ c.title }}</td>
+        <td><span class="ct-version">v{{ c.version }}</span></td>
+        <td>
+          {% if c.product_id %}
+          <a class="product-link" href="{{ url_for('data_canvas.dc_products') }}?product_id={{ c.product_id }}">
+            {{ product_map.get(c.product_id, c.product_id[:8] ~ '…') }}
+          </a>
+          {% else %}<span style="color:#5a6e8c">—</span>{% endif %}
+        </td>
+        <td><span class="status-badge status-{{ c.status }}">{{ c.status|capitalize }}</span></td>
+        <td><span class="class-badge">{{ c.classification }}</span></td>
+        <td style="color:#5a6e8c">{{ c.created_at[:10] if c.created_at else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">
+    No data contracts yet.<br>
+    <small style="color:#3a4e6e">Click <strong>+ New Contract</strong> to define the first one.</small>
+  </div>
+  {% endif %}
+</div>
+
+<!-- New Contract Modal -->
+<div class="modal-overlay" id="newModal">
+  <div class="modal-box">
+    <h3>New Data Contract</h3>
+    <form id="newContractForm">
+      <div class="form-group">
+        <label>Title</label>
+        <input type="text" name="title" placeholder="e.g. Customer PII Schema v2" required>
+      </div>
+      <div class="form-group">
+        <label>Version</label>
+        <input type="text" name="version" value="1.0.0" placeholder="1.0.0">
+      </div>
+      <div class="form-group">
+        <label>Data Product</label>
+        <select name="product_id">
+          <option value="">— None —</option>
+          {% for p in products %}
+          <option value="{{ p.id }}">{{ p.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Status</label>
+        <select name="status">
+          <option value="draft">Draft</option>
+          <option value="active">Active</option>
+          <option value="deprecated">Deprecated</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Classification</label>
+        <select name="classification">
+          <option value="CUI // SP-CTI">CUI // SP-CTI</option>
+          <option value="UNCLASSIFIED">UNCLASSIFIED</option>
+          <option value="SECRET">SECRET</option>
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-cancel" onclick="document.getElementById('newModal').classList.remove('open')">Cancel</button>
+        <button type="submit" class="btn-primary">Create</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function applyFilter() {
+  const product = document.getElementById('filterProduct').value;
+  const status  = document.getElementById('filterStatus').value;
+  let visible = 0;
+  document.querySelectorAll('#ctTable tbody tr').forEach(row => {
+    const match =
+      (!product || row.dataset.product === product) &&
+      (!status  || row.dataset.status  === status);
+    row.style.display = match ? '' : 'none';
+    if (match) visible++;
+  });
+  const total = {{ contracts|length }};
+  document.getElementById('ctCount').textContent =
+    (visible === total ? total : visible + ' / ' + total) +
+    ' contract' + (total !== 1 ? 's' : '');
+}
+
+document.getElementById('newContractForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  const body = Object.fromEntries(fd.entries());
+  const res = await fetch('/data/api/dm/contracts', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  if (res.ok) {
+    window.location.reload();
+  } else {
+    const err = await res.json().catch(() => ({}));
+    alert('Error: ' + (err.error || res.statusText));
+  }
+});
+
+// Close modal on overlay click
+document.getElementById('newModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) e.currentTarget.classList.remove('open');
+});
+</script>
+{% endblock %}

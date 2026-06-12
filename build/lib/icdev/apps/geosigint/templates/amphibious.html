@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+{% set active = "amphibious" %}
+{% block title %}Amphibious Threat Assessment — GeoSIGINT{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+.amph-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:.75rem; margin-bottom:1rem; }
+.amph-stat { background:#1f2937; border:1px solid #374151; border-radius:6px; padding:.9rem 1.1rem; }
+.amph-stat__val { font-size:1.65rem; font-weight:700; color:#e2e8f0; line-height:1.1; }
+.amph-stat__label { font-size:.75rem; color:#9ca3af; margin-top:.25rem; text-transform:uppercase; letter-spacing:.04em; }
+.section-title { font-size:.95rem; font-weight:600; color:#d1d5db; margin:1.2rem 0 .5rem; text-transform:uppercase; letter-spacing:.05em; border-bottom:1px solid #374151; padding-bottom:.3rem; }
+.zone-badge { display:inline-block; padding:.15rem .55rem; border-radius:3px; font-size:.72rem; font-weight:600; text-transform:uppercase; }
+.lift-bar { height:12px; border-radius:3px; }
+#amph-map { height:440px; border-radius:6px; overflow:hidden; margin-bottom:.75rem; position:relative; z-index:0; isolation:isolate; }
+.corridor-row { display:flex; gap:.5rem; align-items:center; padding:.45rem .6rem; background:#1f2937; border-radius:4px; margin-bottom:.3rem; font-size:.83rem; }
+.corridor-dist { min-width:60px; color:#94a3b8; }
+.corridor-time { font-weight:700; color:#e2e8f0; min-width:70px; }
+.weather-grid { display:grid; grid-template-columns:repeat(12,1fr); gap:.25rem; margin-bottom:.5rem; }
+.weather-cell { text-align:center; padding:.5rem .2rem; border-radius:4px; }
+.weather-cell__month { font-size:.68rem; font-weight:700; color:#fff; }
+.weather-cell__bft { font-size:.65rem; color:rgba(255,255,255,.75); margin-top:.15rem; }
+.weather-cell__tag { font-size:.6rem; color:rgba(255,255,255,.8); margin-top:.1rem; text-transform:uppercase; }
+.fleet-row { display:flex; align-items:center; gap:.75rem; padding:.45rem .6rem; background:#1f2937; border-radius:4px; margin-bottom:.3rem; font-size:.83rem; }
+.fleet-class { min-width:140px; font-weight:600; }
+.fleet-count { min-width:30px; text-align:right; color:#94a3b8; font-size:.78rem; }
+table.zone-table { width:100%; border-collapse:collapse; font-size:.8rem; }
+table.zone-table th { color:#9ca3af; font-weight:500; text-align:left; padding:.3rem .5rem; border-bottom:1px solid #374151; }
+table.zone-table td { padding:.35rem .5rem; border-bottom:1px solid #1f2937; vertical-align:top; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header page-header--compact">
+    <h1>Amphibious Threat Assessment</h1>
+    <span style="font-size:.8rem;color:#6b7280">PLAN Lift Capacity · Taiwan Bathymetry · Weather Windows · Detection Curves</span>
+</div>
+
+<!-- Summary stats -->
+<div class="amph-grid" id="summary-stats">
+    <div class="amph-stat"><div class="amph-stat__val" id="s-troops">—</div><div class="amph-stat__label">First-Wave Troops (assessed)</div></div>
+    <div class="amph-stat"><div class="amph-stat__val" id="s-zones">—</div><div class="amph-stat__label">Viable Landing Zones</div></div>
+    <div class="amph-stat"><div class="amph-stat__val" id="s-crossing">—</div><div class="amph-stat__label">Shortest Crossing</div></div>
+    <div class="amph-stat"><div class="amph-stat__val" id="s-months">—</div><div class="amph-stat__label">Optimal Window Months</div></div>
+</div>
+
+<div style="display:grid;grid-template-columns:1.5fr 1fr;gap:1rem">
+
+    <!-- Left column: Map + Zones table -->
+    <div>
+        <div class="section-title">Taiwan Landing Zone Assessment (GEBCO Bathymetry)</div>
+        <div id="amph-map"></div>
+        <div class="card" style="padding:.75rem">
+            <div id="zone-table-wrap">Loading…</div>
+        </div>
+    </div>
+
+    <!-- Right column: Lift + Weather + Corridors -->
+    <div>
+        <div class="section-title">PLAN Amphibious Lift Capacity</div>
+        <div class="card" style="padding:.75rem;margin-bottom:.75rem">
+            <div id="lift-bars">Loading…</div>
+            <div id="lift-total" style="font-size:.8rem;color:#9ca3af;margin-top:.6rem"></div>
+        </div>
+
+        <div class="section-title">Crossing Corridors (15 kt)</div>
+        <div id="corridor-list" style="margin-bottom:.75rem">Loading…</div>
+
+        <div class="section-title">Taiwan Strait Weather Windows</div>
+        <div class="weather-grid" id="weather-grid">Loading…</div>
+        <div style="font-size:.72rem;color:#6b7280;margin-bottom:.75rem">
+            Beaufort avg / typhoon risk. Source: CWA climatology, JTWC historical tracks.
+        </div>
+    </div>
+</div>
+
+<!-- Detection probability chart (full width) -->
+<div class="section-title">Radar Detection Probability vs. Crossing Distance</div>
+<div class="card" style="padding:.75rem">
+    <canvas id="detection-chart" height="80"></canvas>
+    <div style="font-size:.72rem;color:#6b7280;margin-top:.4rem">
+        Model: Taiwan surface-search radar (effective ~40 km vs. LST-class) + OTH-B class coverage (peak ~150 km).
+        EW offset = EMCON / electronic warfare hours before crossing (est. +15 km/h range extension).
+        Source: publicly available radar performance parameters.
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+(function () {
+    // ── Map ──────────────────────────────────────────────────────────────────
+    const map = L.map('amph-map', { center: [23.8, 120.5], zoom: 6 });
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap, &copy; CARTO', maxZoom: 18
+    }).addTo(map);
+
+    // ── Summary ──────────────────────────────────────────────────────────────
+    fetch('/api/geosigint/amphibious/summary').then(r => r.json()).then(d => {
+        document.getElementById('s-troops').textContent = d.first_wave_troops.toLocaleString();
+        document.getElementById('s-zones').textContent =
+            d.viable_landing_zones + ' / ' + d.total_zones_assessed;
+        document.getElementById('s-crossing').textContent =
+            d.shortest_crossing_time + ' (' + d.shortest_crossing_km + ' km)';
+        document.getElementById('s-months').textContent = d.optimal_months.join(', ');
+    });
+
+    // ── Landing Zones ─────────────────────────────────────────────────────────
+    fetch('/api/geosigint/amphibious/zones').then(r => r.json()).then(d => {
+        const rows = d.zones.map(z => {
+            const badge = `<span class="zone-badge" style="background:${z.color}22;color:${z.color};border:1px solid ${z.color}44">${z.viability}</span>`;
+            // Map marker
+            L.circleMarker([z.lat, z.lon], {
+                radius: z.viability === 'viable' ? 10 : z.viability === 'marginal' ? 7 : 5,
+                color: z.color,
+                fillColor: z.color,
+                fillOpacity: z.viability === 'unsuitable' ? 0.25 : 0.7,
+                weight: 2,
+            }).bindPopup(
+                `<b style="color:${z.color}">${z.name}</b><br>` +
+                `<b>Slope:</b> ${z.slope_deg}°&nbsp;&nbsp;${badge}<br>` +
+                `<b>Substrate:</b> ${z.substrate}<br>` +
+                `<b>Beach width:</b> ${z.beach_width_m} m<br>` +
+                `<small style="color:#9ca3af">${z.notes}</small>`
+            ).addTo(map);
+
+            return `<tr>
+                <td><b>${z.id}</b></td>
+                <td>${z.name}</td>
+                <td>${z.sector}</td>
+                <td>${z.slope_deg}°</td>
+                <td>${badge}</td>
+                <td style="color:#6b7280;font-size:.75rem">${z.notes.substring(0, 60)}…</td>
+            </tr>`;
+        }).join('');
+        document.getElementById('zone-table-wrap').innerHTML =
+            `<table class="zone-table">
+                <thead><tr><th>ID</th><th>Zone</th><th>Sector</th><th>Slope</th><th>Viability</th><th>Notes</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+    });
+
+    // ── Lift Capacity ─────────────────────────────────────────────────────────
+    fetch('/api/geosigint/amphibious/lift').then(r => r.json()).then(d => {
+        const maxTroops = Math.max(...d.breakdown.map(b => b.troops));
+        const bars = d.breakdown.map(b => {
+            const pct = Math.round(b.troops / maxTroops * 100);
+            return `<div class="fleet-row">
+                <div class="fleet-class" style="color:${b.color}">${b.class}</div>
+                <div class="fleet-count">${b.vessels}×</div>
+                <div style="flex:1">
+                    <div style="display:flex;justify-content:space-between;font-size:.75rem;margin-bottom:.2rem">
+                        <span style="color:#d1d5db">${b.troops.toLocaleString()} troops</span>
+                        <span style="color:#9ca3af">${b.vehicles} veh.</span>
+                    </div>
+                    <div class="lift-bar" style="background:${b.color}33;width:100%">
+                        <div class="lift-bar" style="background:${b.color};width:${pct}%"></div>
+                    </div>
+                </div>
+            </div>`;
+        }).join('');
+        document.getElementById('lift-bars').innerHTML = bars;
+        document.getElementById('lift-total').textContent =
+            `Total first wave: ${d.total_troops.toLocaleString()} troops · ${d.total_vehicles} vehicles. ${d.note}`;
+    });
+
+    // ── Crossing Corridors ────────────────────────────────────────────────────
+    fetch('/api/geosigint/amphibious/crossing').then(r => r.json()).then(d => {
+        const colors = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd'];
+        const rows = d.corridors.map((c, i) => {
+            // Draw corridor line on map
+            L.polyline(
+                [[c.origin_lat, c.origin_lon], [c.dest_lat, c.dest_lon]],
+                { color: colors[i % colors.length], weight: 1.5, opacity: 0.6, dashArray: '5 4' }
+            ).bindPopup(`<b>${c.name}</b><br>${c.dist_km} km · ${c.label} @ 15 kt`).addTo(map);
+
+            return `<div class="corridor-row">
+                <div style="width:10px;height:10px;border-radius:50%;background:${colors[i % colors.length]}"></div>
+                <div style="flex:1;color:#d1d5db">${c.name}</div>
+                <div class="corridor-dist">${c.dist_km} km</div>
+                <div class="corridor-time">${c.label}</div>
+            </div>`;
+        }).join('');
+        document.getElementById('corridor-list').innerHTML = rows;
+    });
+
+    // ── Weather Grid ──────────────────────────────────────────────────────────
+    fetch('/api/geosigint/amphibious/weather').then(r => r.json()).then(d => {
+        const cells = d.windows.map(w => {
+            const typhStr = w.typhoon_risk > 0 ? `⚠ ${w.typhoon_risk}%` : '';
+            return `<div class="weather-cell" style="background:${w.color}33;border:1px solid ${w.color}55" title="${w.notes}">
+                <div class="weather-cell__month" style="color:${w.color}">${w.month}</div>
+                <div class="weather-cell__bft">Bft ${w.beaufort_avg}</div>
+                <div class="weather-cell__tag" style="color:${w.color}">${w.window}</div>
+                ${typhStr ? `<div style="font-size:.58rem;color:#fbbf24">${typhStr}</div>` : ''}
+            </div>`;
+        }).join('');
+        document.getElementById('weather-grid').innerHTML = cells;
+    });
+
+    // ── Detection Probability Chart ───────────────────────────────────────────
+    fetch('/api/geosigint/amphibious/detection').then(r => r.json()).then(d => {
+        const labels = d.curve.map(p => p.dist_km);
+        const noEW   = d.curve.map(p => p.p_no_ew * 100);
+        const ew2    = d.curve.map(p => p.p_2h_ew * 100);
+        const ew4    = d.curve.map(p => p.p_4h_ew * 100);
+
+        const ctx = document.getElementById('detection-chart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [
+                    {
+                        label: 'No EW (0 h EMCON)',
+                        data: noEW,
+                        borderColor: '#ef4444',
+                        backgroundColor: 'rgba(239,68,68,.08)',
+                        fill: true,
+                        tension: 0.35,
+                        pointRadius: 0,
+                    },
+                    {
+                        label: '2h EW offset',
+                        data: ew2,
+                        borderColor: '#f59e0b',
+                        backgroundColor: 'transparent',
+                        borderDash: [5, 3],
+                        tension: 0.35,
+                        pointRadius: 0,
+                    },
+                    {
+                        label: '4h EW offset',
+                        data: ew4,
+                        borderColor: '#22c55e',
+                        backgroundColor: 'transparent',
+                        borderDash: [3, 3],
+                        tension: 0.35,
+                        pointRadius: 0,
+                    },
+                ],
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { labels: { color: '#9ca3af', font: { size: 11 } } },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(1)}%`,
+                        },
+                    },
+                },
+                scales: {
+                    x: {
+                        title: { display: true, text: 'Distance from coast (km)', color: '#6b7280' },
+                        ticks: { color: '#6b7280', maxTicksLimit: 15 },
+                        grid: { color: '#1f2937' },
+                    },
+                    y: {
+                        title: { display: true, text: 'P(Detection) %', color: '#6b7280' },
+                        ticks: { color: '#6b7280' },
+                        grid: { color: '#1f2937' },
+                        min: 0,
+                        max: 100,
+                    },
+                },
+            },
+        });
+    });
+})();
+</script>
+{% endblock %}

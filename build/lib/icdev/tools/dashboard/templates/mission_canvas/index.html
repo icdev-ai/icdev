@@ -1,0 +1,121 @@
+<!-- CUI // SP-CTI — Mission Canvas Landing Page -->
+{% extends "base.html" %}
+{% block title %}Mission Control — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .mc-hero { padding: 20px 30px; }
+  .mc-hero h1 { font-size: 22px; margin: 0 0 4px; }
+  .mc-hero p { color: #7a8cb0; font-size: 13px; margin: 0; }
+  .mc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; padding: 0 30px 30px; }
+  .mc-card { background: #16213e; border: 1px solid #1e3a6e; border-radius: 8px; padding: 16px; transition: border-color 0.2s; }
+  .mc-card h3 { margin: 0 0 10px; font-size: 14px; display:flex;align-items:center;gap:8px; }
+  .mc-card p { color: #7a8cb0; font-size: 12px; margin: 0 0 10px; }
+  .mc-btn { display:inline-block;padding:6px 14px;background:#0f3460;color:#7a8cb0;border-radius:6px;text-decoration:none;font-size:12px;margin:4px 4px 0 0;border:1px solid #1e3a6e; }
+  .mc-btn:hover { background:#1e3a6e;color:#eaeaea; }
+  .mc-btn-pri { background:#00bcd4;color:#0a1628;border-color:#00bcd4;font-weight:600; }
+  .mc-btn-pri:hover { background:#00acc1;color:#fff; }
+  .mc-stats { display:flex;gap:20px;margin-top:12px; }
+  .mc-stat { text-align:center; }
+  .mc-stat .val { font-size:28px;font-weight:700;color:#00bcd4; }
+  .mc-stat .lbl { font-size:11px;color:#7a8cb0; }
+  .mc-section-title { padding: 16px 30px 8px; font-size: 15px; font-weight: 600; color: #eaeaea; border-bottom: 1px solid #1e3a6e; margin-bottom: 12px; }
+  .mc-zone-icon { width:18px;height:18px;border-radius:4px;display:inline-block; }
+  .zone-sit { background:#e67e22; }
+  .zone-int { background:#3498db; }
+  .zone-exe { background:#27ae60; }
+  .zone-sec { background:#e74c3c; }
+</style>
+
+<div class="mc-hero">
+  <h1>Mission Control</h1>
+  <p>Program Command Center — unified situational awareness, intelligence, execution, and security posture across all operational domains.</p>
+  <div class="mc-stats">
+    <div class="mc-stat"><div class="val">{{ sessions|length }}</div><div class="lbl">Sessions</div></div>
+    <div class="mc-stat"><div class="val">13</div><div class="lbl">Capabilities</div></div>
+    <div class="mc-stat"><div class="val">4</div><div class="lbl">Zones</div></div>
+  </div>
+</div>
+
+<div class="mc-section-title">Operational Zones</div>
+<div class="mc-grid">
+  {# ── Situation Zone ── #}
+  <div class="mc-card">
+    <h3><span class="mc-zone-icon zone-sit"></span> Situation</h3>
+    <p>Digital twin, real-time correlation, spatial &amp; temporal analysis.</p>
+    <a href="#" class="mc-btn mc-btn-pri" onclick="runApi('twin');return false;">Twin Snapshot</a>
+    <a href="#" class="mc-btn" onclick="runApi('correlate');return false;">Correlate</a>
+    <a href="#" class="mc-btn" onclick="runApi('drift');return false;">Drift Detect</a>
+  </div>
+
+  {# ── Intelligence Zone ── #}
+  <div class="mc-card">
+    <h3><span class="mc-zone-icon zone-int"></span> Intelligence</h3>
+    <p>Traceable evidence, auto-discovery, plain-English narrative generation.</p>
+    <a href="#" class="mc-btn mc-btn-pri" onclick="runApi('evidence');return false;">Evidence Chain</a>
+    <a href="#" class="mc-btn" onclick="runApi('discover');return false;">Discover</a>
+    <a href="#" class="mc-btn" onclick="runApi('narrative');return false;">Narrative</a>
+  </div>
+
+  {# ── Execution Zone ── #}
+  <div class="mc-card">
+    <h3><span class="mc-zone-icon zone-exe"></span> Execution</h3>
+    <p>Agent orchestration, portfolio optimization, DevSecOps CI/CD.</p>
+    <a href="#" class="mc-btn mc-btn-pri" onclick="runApi('orchestrate');return false;">Orchestrate</a>
+    <a href="#" class="mc-btn" onclick="runApi('portfolio');return false;">Portfolio</a>
+    <a href="#" class="mc-btn" onclick="runApi('cicd');return false;">CI/CD Status</a>
+  </div>
+
+  {# ── Security Zone ── #}
+  <div class="mc-card">
+    <h3><span class="mc-zone-icon zone-sec"></span> Security</h3>
+    <p>FedRAMP / ZTA posture, AI trust, conflict detection &amp; resolution.</p>
+    <a href="#" class="mc-btn mc-btn-pri" onclick="runApi('security');return false;">Posture</a>
+    <a href="#" class="mc-btn" onclick="runApi('ai-trust');return false;">AI Trust</a>
+    <a href="#" class="mc-btn" onclick="runApi('conflicts');return false;">Conflicts</a>
+  </div>
+</div>
+
+{% set iqe_canvas = "mission_canvas" %}
+{% set iqe_api_route = "/mission-canvas/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Mission Control" %}
+{% set iqe_examples = [
+  {"label": "Mission status", "query": "What is the current mission status?"},
+  {"label": "Security posture", "query": "Show me security posture for mission-01"},
+  {"label": "Portfolio opt", "query": "Run portfolio optimization for staging"},
+  {"label": "Narrative", "query": "Generate a plain-English narrative of last 24h events"},
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
+<script>
+async function runApi(capability) {
+  const missionId = prompt("Enter mission ID:", "demo-mission-01");
+  if (!missionId) return;
+  let url = "";
+  let method = "GET";
+  let body = null;
+  switch (capability) {
+    case "twin": url = "/mission-canvas/api/twin?mission_id=" + encodeURIComponent(missionId); break;
+    case "correlate": method = "POST"; url = "/mission-canvas/api/correlate"; body = JSON.stringify({mission_id: missionId, events: []}); break;
+    case "evidence": url = "/mission-canvas/api/evidence?artifact_id=" + encodeURIComponent(missionId); break;
+    case "discover": url = "/mission-canvas/api/discover?mission_id=" + encodeURIComponent(missionId); break;
+    case "orchestrate": method = "POST"; url = "/mission-canvas/api/orchestrate"; body = JSON.stringify({mission_id: missionId, objective: "Demo run"}); break;
+    case "portfolio": url = "/mission-canvas/api/portfolio?mission_id=" + encodeURIComponent(missionId); break;
+    case "cicd": url = "/mission-canvas/api/cicd?mission_id=" + encodeURIComponent(missionId); break;
+    case "security": url = "/mission-canvas/api/security-posture?mission_id=" + encodeURIComponent(missionId); break;
+    case "ai-trust": url = "/mission-canvas/api/ai-trust?mission_id=" + encodeURIComponent(missionId); break;
+    case "conflicts": method = "POST"; url = "/mission-canvas/api/conflicts"; body = JSON.stringify({mission_id: missionId, sources: []}); break;
+    case "narrative": method = "POST"; url = "/mission-canvas/api/narrative"; body = JSON.stringify({mission_id: missionId, topic: "Mission status"}); break;
+    default: alert("Unknown capability: " + capability); return;
+  }
+  try {
+    const opts = {method};
+    if (body) { opts.headers = {"Content-Type":"application/json"}; opts.body = body; }
+    const resp = await fetch(url, opts);
+    const data = await resp.json();
+    alert(JSON.stringify(data, null, 2).substring(0, 800));
+  } catch (e) {
+    alert("API call failed: " + e);
+  }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,196 @@
+{% extends "base.html" %}
+{% block title %}Document — Document Intelligence — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;font-size:20px;">📄 {{ doc.title or 'Untitled Document' }}</h2>
+    <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">
+      {{ doc.filename or '—' }} · {{ doc.collection_id }} ·
+      <span style="background:#1e293b;color:#e94560;padding:1px 6px;border-radius:3px;font-size:10px;">{{ doc.classification or 'CUI' }}</span>
+    </p>
+  </div>
+  <a href="/document-intelligence/collections" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">← Collections</a>
+</div>
+
+<!-- Version Selector -->
+<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:14px;margin-bottom:18px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+    <h3 style="margin:0;color:#9bb8d8;font-size:13px;">Versions</h3>
+    <span style="color:#7a8cb0;font-size:11px;">Active: {{ active_version_id[:16] }}…</span>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    {% for v in versions %}
+    <div style="background:#050d1f;border:1px solid {% if v.version_id == active_version_id %}#4f8ef7{% else %}#1a3560{% endif %};border-radius:5px;padding:6px 12px;font-size:11px;color:#94a3b8;">
+      <strong style="color:#eaeaea;">v{{ v.version_no }}</strong>
+      <span style="margin-left:6px;">{{ v.origin }}</span>
+      <span style="margin-left:6px;">{% if v.status == 'approved' %}✓{% elif v.status == 'pending_review' %}⏳{% elif v.status == 'rejected' %}✕{% elif v.status == 'needs_revision' %}✏️{% else %}—{% endif %} {{ v.status }}</span>
+      {% if v.assigned_to %}<span style="margin-left:6px;color:#7ab3f0;">→ {{ v.assigned_to }}</span>{% endif %}
+    </div>
+    {% else %}
+    <span style="color:#5a7aa0;font-size:11px;">No versions yet.</span>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Sections -->
+<div style="margin-bottom:24px;">
+  <h3 style="margin:0 0 12px;color:#9bb8d8;font-size:14px;">Sections</h3>
+  {% for s in sections %}
+  <div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:16px;margin-bottom:14px;" id="sec-{{ s.section_id }}">
+    <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;">
+      <div>
+        <strong style="color:#eaeaea;font-size:14px;">{{ s.heading }}</strong>
+        <span style="margin-left:8px;font-size:10px;padding:2px 7px;border-radius:3px;
+          {% if s.status == 'approved' %}background:#052e16;color:#4ade80;{% elif s.status == 'pending_review' %}background:#1a2e52;color:#7ab3f0;{% elif s.status == 'rejected' %}background:#2e0505;color:#f87171;{% elif s.status == 'needs_revision' %}background:#2e1a05;color:#fbbf24;{% else %}background:#1e293b;color:#94a3b8;{% endif %}">
+          {{ s.status or 'draft' }}
+        </span>
+        <span style="margin-left:6px;font-size:10px;padding:2px 7px;border-radius:3px;background:#1e293b;color:#94a3b8;">
+          {{ s.origin or 'human' }}
+        </span>
+        {% if s.assigned_to %}<span style="margin-left:6px;color:#7ab3f0;font-size:11px;">→ {{ s.assigned_to }}</span>{% endif %}
+      </div>
+      {% if s.origin == 'ai_generated' or s.origin == 'ai_assisted' %}
+      <span style="background:#1a2e08;color:#7fd8a0;font-size:10px;padding:2px 7px;border-radius:3px;">AI-generated · pending review</span>
+      {% endif %}
+    </div>
+
+    <!-- Content -->
+    <div style="background:#050d1f;border-left:3px solid #1e3a6e;padding:10px 14px;border-radius:0 4px 4px 0;color:#a8c8e0;font-size:12px;line-height:1.7;margin-bottom:10px;max-height:200px;overflow-y:auto;" id="content-{{ s.section_id }}">
+      {% if s.content %}
+        {{ s.content[:1000] | replace('\n', '<br>') }}{% if s.content|length > 1000 %}…{% endif %}
+      {% else %}
+        <em style="color:#5a7aa0;">Empty — use AI Assist or edit manually.</em>
+      {% endif %}
+    </div>
+
+    <!-- Citations -->
+    {% if s.citations %}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+      {% for c in s.citations %}
+      <span style="background:#0a1a2e;border:1px solid #1a3a5e;border-radius:3px;padding:3px 8px;font-size:10px;color:#7ab3f0;" title="{{ c.source_uri }}">
+        📄 {{ c.doc_title or c.doc_id }} · p.{{ c.page or '?' }} · {{ c.chunk_id[:16] }}…
+      </span>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Actions -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+      {% if role_levels.get(user_role, 0) >= 1 %}
+      <button onclick="aiAssistSection('{{ s.section_id }}', '{{ s.heading }}', '{{ doc.collection_id }}')"
+        style="background:#1a2e52;color:#7ab3f0;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;">
+        ✨ AI Assist
+      </button>
+      {% endif %}
+      {% if role_levels.get(user_role, 0) >= 1 %}
+      <button onclick="editSection('{{ s.section_id }}')"
+        style="background:#0f3460;color:#7ab3f0;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;">
+        ✏️ Edit
+      </button>
+      {% endif %}
+      {% if role_levels.get(user_role, 0) >= 2 %}
+      <button onclick="sectionAction('{{ s.section_id }}', 'approve')"
+        style="background:#052e16;color:#4ade80;padding:6px 14px;border:1px solid #1a5a30;border-radius:5px;cursor:pointer;font-size:12px;">
+        ✓ Accept
+      </button>
+      <button onclick="sectionAction('{{ s.section_id }}', 'reject')"
+        style="background:#2e0505;color:#f87171;padding:6px 14px;border:1px solid #5a1a1a;border-radius:5px;cursor:pointer;font-size:12px;">
+        ✕ Reject
+      </button>
+      <button onclick="sectionAction('{{ s.section_id }}', 'revise')"
+        style="background:#2e1a05;color:#fbbf24;padding:6px 14px;border:1px solid #5a3a1a;border-radius:5px;cursor:pointer;font-size:12px;">
+        ✏️ Revise
+      </button>
+      {% endif %}
+      <select onchange="assignSection('{{ s.section_id }}', this.value)"
+        style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:5px 8px;border-radius:5px;font-size:11px;">
+        <option value="">Assign to…</option>
+        {% for m in team %}
+        <option value="{{ m.user_id }}">{{ m.user_id }} ({{ m.role }})</option>
+        {% endfor %}
+      </select>
+      <span id="status-{{ s.section_id }}" style="color:#5a7aa0;font-size:11px;display:none;"></span>
+    </div>
+  </div>
+  {% else %}
+  <p style="color:#5a7aa0;font-size:12px;">No sections yet. Generate a draft or instantiate a template.</p>
+  {% endfor %}
+</div>
+
+<script>
+function aiAssistSection(sectionId, heading, collectionId) {
+  var statusEl = document.getElementById('status-' + sectionId);
+  statusEl.style.display = 'inline';
+  statusEl.textContent = '✨ Working…';
+  fetch('/document-intelligence/api/generate/section', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({version_id: '{{ active_version_id }}', heading: heading, collection_id: collectionId})
+  }).then(function(r) { return r.json(); })
+    .then(function(data) {
+      statusEl.style.display = 'none';
+      if (data.error) { alert('AI Assist failed: ' + data.error); return; }
+      // Refresh the page to show updated section
+      window.location.reload();
+    })
+    .catch(function(e) {
+      statusEl.style.display = 'none';
+      alert('AI Assist failed: ' + e.message);
+    });
+}
+
+function editSection(sectionId) {
+  var contentDiv = document.getElementById('content-' + sectionId);
+  var currentText = contentDiv.innerText;
+  var textarea = document.createElement('textarea');
+  textarea.value = currentText;
+  textarea.style = 'width:100%;min-height:120px;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:10px;border-radius:5px;font-size:12px;box-sizing:border-box;';
+  var saveBtn = document.createElement('button');
+  saveBtn.textContent = 'Save';
+  saveBtn.style = 'margin-top:8px;background:#0f3460;color:#7ab3f0;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;';
+  saveBtn.onclick = function() {
+    fetch('/document-intelligence/api/sections/' + sectionId + '/content', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({content: textarea.value})
+    }).then(function() { window.location.reload(); });
+  };
+  contentDiv.innerHTML = '';
+  contentDiv.appendChild(textarea);
+  contentDiv.appendChild(document.createElement('br'));
+  contentDiv.appendChild(saveBtn);
+}
+
+function sectionAction(sectionId, action) {
+  var note = prompt('Review note (optional):') || '';
+  fetch('/document-intelligence/api/sections/' + sectionId + '/' + action, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({note: note})
+  }).then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) { alert('Error: ' + data.error); return; }
+      window.location.reload();
+    });
+}
+
+function assignSection(sectionId, userId) {
+  if (!userId) return;
+  fetch('/document-intelligence/api/review/' + sectionId + '/assign', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({assigned_to: userId, type: 'section'})
+  }).then(function() { window.location.reload(); });
+}
+</script>
+
+{% set iqe_canvas = "dic" %}
+{% set iqe_api_route = "/document-intelligence/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Document" %}
+{% set iqe_examples = [
+  {"label": "Versions", "query": "foreach v in dic.versions where v.doc_id == \"{{ doc.doc_id }}\" select v.version_no, v.status, v.origin"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

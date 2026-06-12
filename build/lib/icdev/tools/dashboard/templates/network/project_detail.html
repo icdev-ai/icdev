@@ -1,0 +1,785 @@
+{% extends "network/base.html" %}
+{% block title %}{{ project.name }} — Project{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">{{ project.name }}</h1>
+    <p class="page-subtitle">{{ project.description or 'No description' }} — <span class="badge badge-{% if project.status == 'approved' or project.status == 'deployed' %}public{% elif project.status == 'in_review' %}warning{% else %}info{% endif %}">{{ project.status }}</span></p>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-secondary" onclick="document.getElementById('link-modal').style.display='flex'">+ Link Topology</button>
+    <button class="btn btn-secondary" onclick="updateStatus()">Change Status</button>
+    <button class="btn btn-secondary" onclick="cloneProject()">Clone Project</button>
+    <a href="/network/projects/{{ project.id }}/presentation" class="btn btn-secondary">Presentation</a>
+    <a href="/network/?project={{ project.id }}" class="btn btn-secondary">Filter Dashboard</a>
+    <a href="/network/projects" class="btn btn-secondary">All Projects</a>
+  </div>
+</div>
+
+<!-- Stats Bar -->
+<div class="stats-bar">
+  <div class="stat-card"><div class="stat-value">{{ topologies|length }}</div><div class="stat-label">Topologies</div></div>
+  <div class="stat-card"><div class="stat-value">{{ circuits|length }}</div><div class="stat-label">Circuits</div></div>
+  <div class="stat-card">
+    <div class="stat-value {% if agg_compliance_pct is not none %}{% if agg_compliance_pct >= 80 %}text-success{% elif agg_compliance_pct >= 50 %}text-warning{% else %}text-danger{% endif %}{% endif %}">
+      {{ agg_compliance_pct if agg_compliance_pct is not none else '—' }}{% if agg_compliance_pct is not none %}%{% endif %}
+    </div>
+    <div class="stat-label">Compliance Score</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value {% if total_open_findings > 0 %}text-danger{% endif %}">{{ total_open_findings }}</div>
+    <div class="stat-label">Open Findings</div>
+  </div>
+  <div class="stat-card"><div class="stat-value">${{ total_capex|round(0)|int }}</div><div class="stat-label">Est. CapEx</div></div>
+  <div class="stat-card"><div class="stat-value">${{ total_circuit_cost|round(0)|int }}/mo</div><div class="stat-label">Circuit OpEx</div></div>
+  <div class="stat-card"><div class="stat-value">{{ project.owner or '—' }}</div><div class="stat-label">Owner</div></div>
+</div>
+
+<!-- ═══════════════ REVIEW BOARD PIPELINE ═══════════════ -->
+<section class="panel panel-wide" id="pipeline-section" style="margin-bottom:20px;">
+  <div class="panel-header">
+    <h2 class="panel-title">Review Board Pipeline</h2>
+    <div style="display:flex;gap:6px;">
+      {% if not project_phases %}<button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;" onclick="initPhases()">Initialize Phases</button>{% endif %}
+      <button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;" onclick="document.getElementById('review-modal').style.display='flex'">+ Submit Review</button>
+      <button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;" onclick="document.getElementById('roi-modal').style.display='flex'">ROI Calculator</button>
+      <button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;" onclick="runImpactAnalysis()">Impact Analysis</button>
+      <button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;" onclick="decomposeSafe()">SAFe Decompose</button>
+    </div>
+  </div>
+
+  <!-- Phase Progress Bar -->
+  {% if project_phases %}
+  <div class="phase-progress">
+    {% for ph in project_phases %}
+    <div class="phase-step phase-{{ ph.status }}">
+      <div class="phase-num">{{ ph.phase_num }}</div>
+      <div class="phase-name">{{ ph.phase_name }}</div>
+    </div>
+    {% if not loop.last %}<div class="phase-arrow">&#x25B6;</div>{% endif %}
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- Board Review Status -->
+  <div class="board-pipeline" id="board-pipeline">
+    {% for board in review_boards %}
+    <div class="board-card">
+      <div class="board-header">
+        <span class="board-short">{{ board.short_name }}</span>
+        <span class="board-name">{{ board.name }}</span>
+        {% if board.is_optional %}<span class="health-pill pill-blue" style="font-size:9px;">Optional</span>{% endif %}
+      </div>
+      {% set ns = namespace(found=false) %}
+      {% for br in board_reviews if br.board_id == board.id %}
+        {% set ns.found = true %}
+        <div class="board-review-item br-{{ br.status }}">
+          <div class="br-phase">Phase {{ br.phase }}</div>
+          <div class="br-status">
+            <span class="health-pill {% if br.status == 'approved' %}pill-green{% elif br.status == 'rejected' %}pill-red{% elif br.status == 'deferred' or br.status == 'conditional' %}pill-yellow{% else %}pill-blue{% endif %}">{{ br.status }}</span>
+          </div>
+          {% if br.decision_notes %}<div class="br-notes">{{ br.decision_notes[:60] }}</div>{% endif %}
+          {% if br.status == 'pending' %}
+          <div class="br-actions">
+            <button class="btn btn-secondary" style="font-size:10px;padding:2px 6px;" onclick="reviewDecide('{{ br.id }}','approved')">Approve</button>
+            <button class="btn btn-secondary" style="font-size:10px;padding:2px 6px;" onclick="reviewDecide('{{ br.id }}','rejected')">Reject</button>
+            <button class="btn btn-secondary" style="font-size:10px;padding:2px 6px;" onclick="reviewDecide('{{ br.id }}','deferred')">Defer</button>
+          </div>
+          {% endif %}
+        </div>
+      {% endfor %}
+      {% if not ns.found %}
+        <div class="board-empty">No reviews submitted</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- ROI Summary (if exists) -->
+  {% if safe_bridge and safe_bridge.roi %}
+  <div class="roi-summary" id="roi-summary">
+    <div class="roi-item"><span class="roi-label">CapEx:</span> ${{ (safe_bridge.roi.capex or 0)|round(0)|int }}</div>
+    <div class="roi-item"><span class="roi-label">Annual OpEx:</span> ${{ (safe_bridge.roi.opex_annual or 0)|round(0)|int }}</div>
+    <div class="roi-item"><span class="roi-label">Annual Savings:</span> ${{ (safe_bridge.roi.savings_annual or 0)|round(0)|int }}</div>
+    <div class="roi-item"><span class="roi-label">Payback:</span> {{ safe_bridge.roi.payback_months or 0 }} months</div>
+    <div class="roi-item"><span class="roi-label">5-Year NPV:</span> <span class="{% if (safe_bridge.roi.npv_5yr or 0) > 0 %}text-success{% else %}text-danger{% endif %}">${{ (safe_bridge.roi.npv_5yr or 0)|round(0)|int }}</span></div>
+    {% if safe_bridge.justification %}<div class="roi-item" style="grid-column:span 5;"><span class="roi-label">Justification:</span> {{ safe_bridge.justification[:200] }}</div>{% endif %}
+  </div>
+  {% endif %}
+
+  <!-- Impact Analysis Results (populated by JS) -->
+  <div id="impact-results" style="display:none;padding:10px 16px;border-top:1px solid var(--border);"></div>
+</section>
+
+<!-- ═══════════════ AI COA COMPARISON ═══════════════ -->
+<section class="panel panel-wide" id="coa-section" style="margin-bottom:20px;">
+  <div class="panel-header" style="display:flex;align-items:center;justify-content:space-between;">
+    <h2 class="panel-title">AI-Generated Courses of Action</h2>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <span style="font-size:11px;color:#8099b8;">HITL Review &rarr; Select &rarr; AI regenerates plan</span>
+      {% if first_topo_id %}
+      <a href="/network/migration-phases/{{ first_topo_id }}" class="btn btn-primary" style="font-size:0.75rem;padding:3px 10px;" target="_blank">&#x1F5FA; Phase Diagrams</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div style="padding:12px 16px;">
+    {% set coas = [
+      ('coa_1', '#e74c3c', 'high', 'Rip & Replace', '2–4h', '1 day', 'Swap hardware in single window. Fastest, highest risk.'),
+      ('coa_2', '#f39c12', 'medium', 'Phased Cutover', '5–15 min/phase', '2 weeks', 'Migrate per circuit over 1–2 weeks. Balanced risk.'),
+      ('coa_3', '#27ae60', 'low', 'Side-by-Side VLAN', 'Near-zero', '3 weeks', 'Old + new parallel on same VLAN. Safest. Recommended.')
+    ] %}
+
+    <div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:12px;">
+      {% for key, color, risk, name, downtime, duration, desc in coas %}
+      {% set coa_obj = coa_data.get(key, {}) %}
+      {% set is_selected = project.selected_coa == coa_obj.get('id', loop.index) %}
+      <div class="coa-card {% if is_selected %}coa-selected{% endif %}" id="coa-card-{{ loop.index }}" style="border:1px solid {{ color }};border-radius:8px;padding:14px;background:{{ color }}08;position:relative;">
+        {% if is_selected %}
+        <div style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:{{ color }};color:#fff;font-size:10px;font-weight:700;padding:2px 10px;border-radius:10px;">SELECTED</div>
+        {% endif %}
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div style="font-weight:700;font-size:14px;color:{{ color }};">{{ name }}</div>
+          <span class="health-pill {% if risk == 'high' %}pill-red{% elif risk == 'medium' %}pill-yellow{% else %}pill-green{% endif %}" style="font-size:10px;text-transform:uppercase;">{{ risk }} risk</span>
+        </div>
+        <div style="font-size:12px;color:#b0c4dc;line-height:1.5;margin-bottom:10px;">{{ desc }}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;color:#8099b8;margin-bottom:12px;">
+          <div><span style="color:#a0b8d0;font-weight:600;">Downtime:</span> {{ downtime }}</div>
+          <div><span style="color:#a0b8d0;font-weight:600;">Duration:</span> {{ duration }}</div>
+        </div>
+        <button onclick="selectCoa({{ loop.index }}, '{{ name }}')" class="btn {% if is_selected %}btn-secondary{% else %}btn-primary{% endif %}" style="width:100%;font-size:12px;" {% if is_selected %}disabled{% endif %}>
+          {% if is_selected %}✓ Selected{% else %}Select {{ name }}{% endif %}
+        </button>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- Feedback box -->
+    <div style="margin-top:14px;display:flex;gap:8px;align-items:flex-start;">
+      <input id="coa-feedback" type="text" placeholder="HITL feedback: e.g. 'Add rollback window' or 'Too risky for Friday'"
+             value="{{ project.coa_feedback or '' }}"
+             style="flex:1;background:#0d1b2e;border:1px solid #1e3a6e;border-radius:4px;padding:6px 10px;color:#e2e8f0;font-size:12px;">
+      <button onclick="submitCoaFeedback()" class="btn btn-secondary" style="font-size:11px;padding:5px 12px;">Save Feedback</button>
+    </div>
+    <div id="coa-feedback-status" style="font-size:11px;margin-top:6px;color:#8099b8;"></div>
+  </div>
+</section>
+
+<!-- ═══════════════ MIGRATION PLAN ═══════════════ -->
+<section class="panel panel-wide" id="migration-plan-section" style="margin-bottom:20px;">
+  <div class="panel-header" style="display:flex;align-items:center;justify-content:space-between;">
+    <h2 class="panel-title">Migration Plan</h2>
+    <div style="display:flex;gap:6px;">
+      <a href="/network/migration-hub" class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;">Migration Hub</a>
+      {% if first_topo_id %}
+      <a href="/network/migration-phases/{{ first_topo_id }}" class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;" target="_blank">3-Panel Diagram</a>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if migration_phases %}
+  <style>
+  .mp-plan-card { border:1px solid #1e3a6e; border-radius:8px; margin:10px 16px; overflow:hidden; background:#0d1b2e; }
+  .mp-plan-header { display:flex; align-items:center; gap:10px; padding:10px 14px; background:#111f35; cursor:pointer; user-select:none; }
+  .mp-plan-header:hover { background:#1a2d48; }
+  .mp-plan-num { width:28px; height:28px; border-radius:50%; background:#2563eb; color:#fff; font-size:0.75rem; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .mp-plan-title { font-weight:700; font-size:0.9rem; flex:1; color:#e2e8f0; }
+  .mp-plan-status { font-size:0.7rem; font-weight:700; padding:2px 8px; border-radius:10px; text-transform:uppercase; }
+  .status-pending,.status-planned { background:#2a4a8a; color:#c0d4f0; }
+  .status-in_progress { background:#1a4a8e; color:#90c0f0; }
+  .status-completed { background:#0f3a20; color:#4ade80; }
+  .status-rolled_back { background:#3d1515; color:#f87171; }
+  .mp-plan-dur { font-size:0.75rem; color:#a0b8d0; flex-shrink:0; }
+  .mp-plan-chevron { color:#a0b8d0; transition:transform .2s; }
+  .mp-plan-card.open .mp-plan-chevron { transform:rotate(180deg); }
+  .mp-plan-body { display:none; padding:14px 16px; border-top:1px solid #1e3a6e; background:#0a1628; }
+  .mp-plan-card.open .mp-plan-body { display:block; }
+  .mp-meta-strip { display:flex; flex-wrap:wrap; gap:16px; margin-bottom:14px; font-size:0.8rem; color:#b0c4dc; }
+  .mp-meta-strip .meta-item { display:flex; align-items:flex-start; gap:5px; }
+  .mp-meta-strip .meta-label { font-weight:700; color:#8099b8; white-space:nowrap; }
+  .mp-steps-list { margin:0 0 14px; padding:0; list-style:none; }
+  .mp-step-row { display:flex; gap:10px; padding:6px 0; border-bottom:1px solid #1e3a6e; align-items:flex-start; }
+  .mp-step-row:last-child { border-bottom:none; }
+  .mp-step-index { width:22px; height:22px; border-radius:50%; background:#1e3a8a; color:#93c5fd; font-size:0.7rem; font-weight:700; display:flex; align-items:center; justify-content:center; flex-shrink:0; margin-top:1px; }
+  .mp-step-text { font-size:0.83rem; color:#e2e8f0; line-height:1.45; }
+  .mp-sop-section { margin-top:12px; }
+  .mp-sop-label { font-size:0.72rem; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#8099b8; margin-bottom:8px; }
+  .mp-sop-entry { border:1px solid #1e3a6e; border-radius:6px; margin-bottom:8px; overflow:hidden; }
+  .mp-sop-entry-hdr { display:flex; align-items:center; gap:8px; padding:7px 12px; background:#111f35; cursor:pointer; }
+  .mp-sop-entry-hdr:hover { background:#1a2d48; }
+  .mp-sop-badge { font-size:0.65rem; font-weight:700; padding:2px 7px; border-radius:10px; background:#1e3a8a; color:#93c5fd; }
+  .mp-sop-name { font-size:0.82rem; font-weight:600; color:#e2e8f0; flex:1; }
+  .mp-sop-steps-body { display:none; padding:10px 12px; border-top:1px solid #1e3a6e; background:#0a1628; }
+  .mp-sop-entry.open .mp-sop-steps-body { display:block; }
+  .sop-step-row { display:flex; gap:8px; padding:5px 0; font-size:0.8rem; border-bottom:1px solid #1e3a6e; }
+  .sop-step-row:last-child { border-bottom:none; }
+  .sop-step-n { color:#60a5fa; font-weight:700; flex-shrink:0; width:18px; }
+  .sop-step-action { flex:1; color:#e2e8f0; }
+  .sop-step-verify { font-size:0.72rem; color:#4ade80; margin-top:2px; }
+  .sop-step-time { font-size:0.7rem; color:#a0b8d0; flex-shrink:0; }
+  .sop-prereq { font-size:0.78rem; color:#b0c4dc; margin-bottom:8px; }
+  .sop-prereq span { background:#2a4a8a; color:#c0d4f0; padding:2px 7px; border-radius:10px; margin:2px; display:inline-block; font-size:0.72rem; }
+  </style>
+
+  {% for ph in migration_phases %}
+  <div class="mp-plan-card" id="mpcard-{{ ph.phase_num }}">
+    <div class="mp-plan-header" onclick="toggleMpCard('mpcard-{{ ph.phase_num }}')">
+      <div class="mp-plan-num">{{ ph.phase_num }}</div>
+      <div class="mp-plan-title">{{ ph.title or 'Phase ' ~ ph.phase_num }}</div>
+      <span class="mp-plan-status status-{{ ph.status or 'pending' }}">{{ (ph.status or 'pending')|title }}</span>
+      {% if ph.duration_days %}<span class="mp-plan-dur">{{ ph.duration_days }}d</span>{% endif %}
+      <span class="mp-plan-chevron">▾</span>
+    </div>
+    <div class="mp-plan-body">
+      <div class="mp-meta-strip">
+        <div class="meta-item"><span class="meta-label">🕐 Window:</span> {{ ph.maintenance_window or 'TBD' }}</div>
+        {% if ph.rollback_criteria %}
+        <div class="meta-item"><span class="meta-label">↩ Rollback:</span> {{ ph.rollback_criteria }}</div>
+        {% endif %}
+        {% if ph.dependencies and ph.dependencies != '[]' %}
+        <div class="meta-item"><span class="meta-label">⛔ Depends on:</span> {{ ph.dependencies }}</div>
+        {% endif %}
+      </div>
+
+      <!-- Prescriptive Steps -->
+      {% if ph.steps %}
+      <ul class="mp-steps-list">
+        {% for step in ph.steps %}
+        {% if step %}
+        <li class="mp-step-row">
+          <div class="mp-step-index">{{ loop.index }}</div>
+          <div class="mp-step-text">{{ step }}</div>
+        </li>
+        {% endif %}
+        {% endfor %}
+      </ul>
+      {% endif %}
+
+      <!-- Linked SOPs -->
+      {% if ph.linked_docs %}
+      <div class="mp-sop-section">
+        <div class="mp-sop-label">📄 Reference SOPs ({{ ph.linked_docs|length }})</div>
+        {% for doc in ph.linked_docs %}
+        <div class="mp-sop-entry {% if doc.steps %}clickable{% endif %}" {% if doc.steps %}onclick="toggleSopEntry(this)"{% endif %}>
+          <div class="mp-sop-entry-hdr">
+            <span class="mp-sop-badge">{{ (doc.doc_type or doc.doc_source or 'SOP')|upper }}</span>
+            <span class="mp-sop-name">{{ doc.doc_title }}</span>
+            {% if doc.steps %}<span style="font-size:0.7rem;color:#718096;">{{ doc.steps|length }} steps ▾</span>{% endif %}
+            {% if doc.relevance_note %}<span style="font-size:0.7rem;color:#718096;font-style:italic;">{{ doc.relevance_note }}</span>{% endif %}
+          </div>
+          {% if doc.steps %}
+          <div class="mp-sop-steps-body">
+            {% if doc.prerequisites %}
+            <div class="sop-prereq">
+              <strong>Prerequisites:</strong>
+              {% for p in doc.prerequisites %}<span>{{ p }}</span>{% endfor %}
+            </div>
+            {% endif %}
+            {% for step in doc.steps %}
+            <div class="sop-step-row">
+              <span class="sop-step-n">{{ step.number }}.</span>
+              <div style="flex:1;">
+                <div class="sop-step-action">{{ step.text }}</div>
+                {% if step.verify %}<div class="sop-step-verify">✓ {{ step.verify }}</div>{% endif %}
+              </div>
+              {% if step.time_est %}<span class="sop-step-time">{{ step.time_est }}</span>{% endif %}
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+    </div>
+  </div>
+  {% endfor %}
+
+  <script>
+  function toggleMpCard(id) {
+    const card = document.getElementById(id);
+    if (card) card.classList.toggle('open');
+  }
+  function toggleSopEntry(el) {
+    el.classList.toggle('open');
+  }
+  // Auto-open Phase 1 on load
+  document.addEventListener('DOMContentLoaded', () => {
+    const first = document.querySelector('.mp-plan-card');
+    if (first) first.classList.add('open');
+  });
+  </script>
+
+  {% else %}
+  <div style="padding:20px 16px;color:#a0b8d0;font-size:0.85rem;">
+    No migration phases defined for this project.
+    <a href="/network/migration-hub" style="color:#60a5fa;">Create one in the Migration Hub →</a>
+  </div>
+  {% endif %}
+</section>
+
+<!-- ═══════════════ PORT MAPPING & CONFIG TRANSLATION ═══════════════ -->
+<section class="panel panel-wide" id="port-mapping-section" style="margin-bottom:20px;">
+  <div class="panel-header" style="display:flex;align-items:center;justify-content:space-between;">
+    <h2 class="panel-title">Port Mapping & Config Translation</h2>
+    {% if target_device_id %}
+    <div style="font-size:11px;color:#8099b8;">Device: <span style="color:#a0b8d0;font-weight:600;">{{ target_device_id }}</span> &rarr; AI-mapped to replacement</div>
+    {% endif %}
+  </div>
+
+  <div style="padding:12px 16px;">
+    {% if port_mapping.port_mappings %}
+    <div style="margin-bottom:16px;">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#8099b8;margin-bottom:8px;">AI-Generated Port Mapping</div>
+      <table class="data-table" style="font-size:12px;">
+        <thead>
+          <tr>
+            <th>Old Port</th><th>&rarr;</th><th>New Port</th><th>Service / Role</th><th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for pm in port_mapping.port_mappings %}
+          <tr>
+            <td style="font-family:monospace;color:#e2e8f0;">{{ pm.old_port }}</td>
+            <td style="color:#8099b8;">&rarr;</td>
+            <td style="font-family:monospace;color:#a5b4fc;">{{ pm.new_port }}</td>
+            <td>{{ pm.service }}</td>
+            <td>
+              {% if pm.status == 'mapped' %}
+                <span class="health-pill pill-green">Auto</span>
+              {% else %}
+                <span class="health-pill pill-yellow">Manual</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div style="display:flex;gap:12px;margin-top:8px;font-size:11px;color:#8099b8;">
+        <div><span style="color:#eaeaea;font-weight:700;">{{ port_mapping.mapped_count or 0 }}</span> auto-mapped</div>
+        <div><span style="color:#eaeaea;font-weight:700;">{{ port_mapping.unmapped_count or 0 }}</span> manual</div>
+        {% if port_mapping.conflicts %}
+        <div><span style="color:#e74c3c;font-weight:700;">{{ port_mapping.conflicts|length }}</span> conflicts</div>
+        {% endif %}
+      </div>
+    </div>
+    {% else %}
+    <p style="padding:8px 0;color:#8099b8;font-size:12px;">No port mapping data available. Select a COA above to trigger AI generation.</p>
+    {% endif %}
+
+    {% if config_translation.lines %}
+    <div style="margin-top:16px;">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#8099b8;margin-bottom:8px;">Config Translation ({{ config_translation.source_vendor }} &rarr; {{ config_translation.target_vendor }}) — Confidence {{ (config_translation.confidence * 100)|round(0)|int }}%</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:10px;">
+          <div style="font-size:10px;color:#8099b8;text-transform:uppercase;margin-bottom:6px;">Original Config</div>
+          <pre style="margin:0;font-size:11px;color:#b0c4dc;white-space:pre-wrap;word-break:break-word;max-height:300px;overflow:auto;">{% for line in config_translation.lines[:80] %}{% if not line.changed %}{{ line.old }}
+{% endif %}{% endfor %}</pre>
+        </div>
+        <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:10px;">
+          <div style="font-size:10px;color:#8099b8;text-transform:uppercase;margin-bottom:6px;">Translated Config</div>
+          <pre style="margin:0;font-size:11px;color:#b0c4dc;white-space:pre-wrap;word-break:break-word;max-height:300px;overflow:auto;">{% for line in config_translation.lines[:80] %}{% if line.changed %}
+<span style="color:#a5b4fc;background:#1e3a6e;padding:0 2px;border-radius:2px;">{{ line.new }}</span>{% else %}{{ line.new }}{% endif %}
+{% endfor %}</pre>
+        </div>
+      </div>
+      {% if config_translation.notes %}
+      <div style="margin-top:8px;font-size:11px;color:#8099b8;">
+        {% for note in config_translation.notes %}
+        <div><span style="color:#f39c12;">⚠</span> {{ note }}</div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</section>
+
+<!-- Submit Review Modal -->
+<div id="review-modal" class="modal" style="display:none;">
+  <div class="modal-content">
+    <h3>Submit for Board Review</h3>
+    <form onsubmit="return submitReview(event)">
+      <div class="form-grid">
+        <label>Board <select name="board_id">{% for b in review_boards %}<option value="{{ b.id }}">{{ b.short_name }} — {{ b.name }}</option>{% endfor %}</select></label>
+        <label>Phase <select name="phase"><option value="1">1 - Concept</option><option value="2">2 - Design</option><option value="3">3 - Approval</option><option value="4">4 - Post-Deploy</option></select></label>
+        <label>Scheduled Date <input name="scheduled_date" type="date"></label>
+        <label>Reviewers <input name="reviewers" placeholder="Names (comma-separated)"></label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Submit</button>
+        <button type="button" class="btn btn-secondary" onclick="this.closest('.modal').style.display='none'">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ROI Calculator Modal -->
+<div id="roi-modal" class="modal" style="display:none;">
+  <div class="modal-content">
+    <h3>ROI Calculator</h3>
+    <form onsubmit="return submitRoi(event)">
+      <div class="form-grid">
+        <label>Total CapEx ($) <input name="capex" type="number" value="{{ (safe_bridge.roi.capex or 0) if safe_bridge and safe_bridge.roi else 0 }}"></label>
+        <label>Annual OpEx ($) <input name="opex_annual" type="number" value="{{ (safe_bridge.roi.opex_annual or 0) if safe_bridge and safe_bridge.roi else 0 }}"></label>
+        <label>Annual Savings ($) <input name="savings_annual" type="number" value="{{ (safe_bridge.roi.savings_annual or 0) if safe_bridge and safe_bridge.roi else 0 }}"></label>
+        <label style="grid-column:span 2">Justification <input name="justification" value="{{ safe_bridge.justification or '' if safe_bridge else '' }}" placeholder="Business case"></label>
+        <label style="grid-column:span 2">Alternatives Considered <input name="alternatives" value="{{ safe_bridge.alternatives or '' if safe_bridge else '' }}" placeholder="What else was evaluated"></label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Calculate & Save</button>
+        <button type="button" class="btn btn-secondary" onclick="this.closest('.modal').style.display='none'">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="dashboard-grid">
+  <!-- Left Column: Main Content -->
+  <div>
+    <!-- ═══════════════ COMPLIANCE ROLLUP ═══════════════ -->
+    <section class="panel panel-wide">
+      <div class="panel-header"><h2 class="panel-title">Compliance Rollup</h2></div>
+      {% if topo_compliance %}
+      <table class="data-table" id="compliance-table">
+        <thead><tr>
+          <th>Topology</th><th>Score</th><th>Passed</th><th>Failed</th>
+          <th>CAT1</th><th>CAT2</th><th>CAT3</th><th>Open</th><th>Last Audit</th>
+        </tr></thead>
+        <tbody>
+        {% for tc in topo_compliance %}
+          <tr>
+            <td><a href="/network/compliance/{{ tc.id }}" class="table-link">{{ tc.name }}</a></td>
+            <td>
+              {% if tc.pct is not none %}
+              <span class="health-pill {% if tc.pct >= 80 %}pill-green{% elif tc.pct >= 50 %}pill-yellow{% else %}pill-red{% endif %}">{{ tc.pct }}%</span>
+              {% else %}—{% endif %}
+            </td>
+            <td>{{ tc.passed }}</td>
+            <td>{{ tc.failed }}</td>
+            <td>{% if tc.cat1 > 0 %}<span class="health-pill pill-red">{{ tc.cat1 }}</span>{% else %}0{% endif %}</td>
+            <td>{% if tc.cat2 > 0 %}<span class="health-pill pill-yellow">{{ tc.cat2 }}</span>{% else %}0{% endif %}</td>
+            <td>{{ tc.cat3 }}</td>
+            <td>{% if tc.open_findings > 0 %}<span class="health-pill pill-red">{{ tc.open_findings }}</span>{% else %}0{% endif %}</td>
+            <td class="ts">{{ (tc.last_audit or '')[:16] }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr style="font-weight:700;border-top:2px solid var(--border);">
+            <td>AGGREGATE</td>
+            <td>
+              {% if agg_compliance_pct is not none %}
+              <span class="health-pill {% if agg_compliance_pct >= 80 %}pill-green{% elif agg_compliance_pct >= 50 %}pill-yellow{% else %}pill-red{% endif %}">{{ agg_compliance_pct }}%</span>
+              {% else %}—{% endif %}
+            </td>
+            <td>{{ topo_compliance|sum(attribute='passed') }}</td>
+            <td>{{ topo_compliance|sum(attribute='failed') }}</td>
+            <td>{{ topo_compliance|sum(attribute='cat1') }}</td>
+            <td>{{ topo_compliance|sum(attribute='cat2') }}</td>
+            <td>{{ topo_compliance|sum(attribute='cat3') }}</td>
+            <td>{{ total_open_findings }}</td>
+            <td></td>
+          </tr>
+        </tfoot>
+      </table>
+      {% else %}<p style="padding:1rem;color:var(--text-dim);">No compliance audits run yet. Open a topology and run a compliance audit.</p>{% endif %}
+    </section>
+
+    <!-- ═══════════════ TOPOLOGIES ═══════════════ -->
+    <section class="panel panel-wide">
+      <div class="panel-header"><h2 class="panel-title">Topologies</h2></div>
+      {% if topologies %}
+      <table class="data-table">
+        <thead><tr><th>Name</th><th>Nodes</th><th>Links</th><th>Assignee</th><th>Updated</th><th>Actions</th></tr></thead>
+        <tbody>
+        {% for t in topologies %}
+          <tr>
+            <td><a href="/network/canvas/{{ t.id }}" class="table-link">{{ t.name }}</a></td>
+            <td>{{ t.node_count }}</td><td>{{ t.edge_count }}</td>
+            <td><span class="assignee-cell" onclick="setAssignee('{{ t.id }}')">{{ topo_assignees.get(t.id, '—') }}</span></td>
+            <td class="ts">{{ (t.updated_at or '')[:16] }}</td>
+            <td class="actions">
+              <a href="/network/canvas/{{ t.id }}" class="action-btn">&#x270F;</a>
+              <a href="/network/compliance/{{ t.id }}" class="action-btn" title="Compliance" style="color:#f39c12;">C</a>
+              <a href="/network/versions/{{ t.id }}" class="action-btn" title="Versions">V</a>
+              <button class="action-btn danger" onclick="unlinkTopo('{{ t.id }}')">&#x2715;</button>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}<p style="padding:1rem;color:var(--text-dim);">No topologies linked. Click "+ Link Topology" to add one.</p>{% endif %}
+    </section>
+
+    <!-- ═══════════════ BOM COST ROLLUP ═══════════════ -->
+    <section class="panel panel-wide">
+      <div class="panel-header"><h2 class="panel-title">Cost Rollup</h2></div>
+      <table class="data-table" id="cost-table">
+        <thead><tr>
+          <th>Topology</th><th>Devices</th><th>Unique Types</th><th>Est. CapEx</th>
+        </tr></thead>
+        <tbody>
+        {% for tb in topo_bom %}
+          <tr>
+            <td><a href="/network/canvas/{{ tb.id }}" class="table-link">{{ tb.name }}</a></td>
+            <td>{{ tb.devices }}</td>
+            <td>{{ tb.unique_types }}</td>
+            <td>${{ tb.capex|round(0)|int }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr style="font-weight:700;border-top:2px solid var(--border);">
+            <td colspan="3">TOTAL</td>
+            <td>${{ total_capex|round(0)|int }}</td>
+          </tr>
+          <tr style="color:var(--text-dim);">
+            <td colspan="3">Circuit OpEx (monthly)</td>
+            <td>${{ total_circuit_cost|round(0)|int }}/mo</td>
+          </tr>
+        </tfoot>
+      </table>
+    </section>
+
+    <!-- ═══════════════ CIRCUITS ═══════════════ -->
+    {% if circuits %}
+    <section class="panel panel-wide">
+      <div class="panel-header"><h2 class="panel-title">Circuits</h2></div>
+      <table class="data-table">
+        <thead><tr><th>Circuit ID</th><th>Carrier</th><th>Type</th><th>BW</th><th>Status</th><th>Cost/mo</th></tr></thead>
+        <tbody>
+        {% for c in circuits %}
+          <tr><td>{{ c.circuit_id }}</td><td>{{ c.carrier }}</td><td>{{ c.circuit_type }}</td><td>{{ c.bandwidth }}</td>
+          <td><span class="badge">{{ c.install_status }}</span></td><td>${{ (c.monthly_cost_usd or 0)|round(0)|int }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endif %}
+
+    <!-- ═══════════════ MILESTONES ═══════════════ -->
+    <section class="panel panel-wide" id="milestones-section">
+      <div class="panel-header">
+        <h2 class="panel-title">Milestones</h2>
+        <button class="btn btn-secondary" style="font-size:0.75rem;padding:3px 10px;" onclick="addMilestone()">+ Add</button>
+      </div>
+      <div id="milestones-list">
+      {% if milestones %}
+        {% for m in milestones %}
+        <div class="milestone-item" data-id="{{ m.id }}">
+          <div class="ms-status ms-{{ m.status }}"></div>
+          <div class="ms-body">
+            <div class="ms-title">{{ m.title }}</div>
+            {% if m.due_date %}<div class="ms-due">Due: {{ m.due_date }}</div>{% endif %}
+            {% if m.notes %}<div class="ms-notes">{{ m.notes }}</div>{% endif %}
+          </div>
+          <div class="ms-actions">
+            <select onchange="updateMilestone('{{ m.id }}',this.value)" style="font-size:11px;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:3px;">
+              <option {% if m.status == 'pending' %}selected{% endif %}>pending</option>
+              <option {% if m.status == 'in_progress' %}selected{% endif %}>in_progress</option>
+              <option {% if m.status == 'completed' %}selected{% endif %}>completed</option>
+              <option {% if m.status == 'missed' %}selected{% endif %}>missed</option>
+            </select>
+            <button class="action-btn danger" onclick="deleteMilestone('{{ m.id }}')">&#x2715;</button>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p style="padding:8px 12px;color:var(--text-dim);font-size:13px;">No milestones. Click "+ Add" to track deadlines.</p>
+      {% endif %}
+      </div>
+      <!-- Gantt Timeline -->
+      {% if milestones %}
+      <div class="gantt-timeline" id="gantt-timeline">
+        {% for m in milestones if m.due_date %}
+        <div class="gantt-bar gantt-{{ m.status }}" title="{{ m.title }} — {{ m.due_date }}">
+          <span class="gantt-label">{{ m.title[:20] }}</span>
+          <span class="gantt-date">{{ m.due_date }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </section>
+  </div>
+
+  <!-- Right Column -->
+  <div class="panel-stack">
+
+    <!-- ═══════════════ TAGS ═══════════════ -->
+    <section class="panel">
+      <div class="panel-header"><h2 class="panel-title">Tags</h2></div>
+      <div class="tags-container" id="tags-container">
+        {% for tag in project_tags %}
+        <span class="tag-pill">{{ tag }} <button class="tag-remove" onclick="removeTag('{{ tag }}')">&times;</button></span>
+        {% endfor %}
+        <input class="tag-input" id="tag-input" placeholder="Add tag..." onkeydown="if(event.key==='Enter'){event.preventDefault();addTag();}">
+      </div>
+    </section>
+
+    <!-- ═══════════════ GATE STATUS ═══════════════ -->
+    <section class="panel">
+      <div class="panel-header"><h2 class="panel-title">Status Gates</h2></div>
+      <div style="padding:8px 12px;">
+        <div style="margin-bottom:8px;font-size:12px;color:var(--text-dim);">Check readiness before changing status:</div>
+        <button class="btn btn-secondary" style="font-size:12px;margin:2px;" onclick="checkGate('in_review')">In Review</button>
+        <button class="btn btn-secondary" style="font-size:12px;margin:2px;" onclick="checkGate('approved')">Approved</button>
+        <button class="btn btn-secondary" style="font-size:12px;margin:2px;" onclick="checkGate('deployed')">Deployed</button>
+        <div id="gate-result" style="margin-top:8px;"></div>
+      </div>
+    </section>
+
+    <!-- ═══════════════ NOTES ═══════════════ -->
+    <section class="panel">
+      <div class="panel-header"><h2 class="panel-title">Notes</h2></div>
+      <div id="notes-container" style="padding:8px 12px;">
+        <div style="margin-bottom:8px;">
+          <textarea id="note-input" rows="2" placeholder="Add a note..." style="width:100%;background:var(--bg3);color:var(--text);border:1px solid var(--border);border-radius:4px;padding:6px;font-size:12px;resize:vertical;"></textarea>
+          <button class="btn btn-secondary" style="font-size:11px;margin-top:4px;" onclick="addNote()">Post Note</button>
+        </div>
+        {% for n in notes %}
+        <div class="note-item">
+          <div class="note-meta">{{ n.author or 'Anonymous' }} &middot; {{ (n.created_at or '')[:16] }}</div>
+          <div class="note-body">{{ n.body }}</div>
+          <button class="action-btn danger" style="font-size:10px;" onclick="deleteNote('{{ n.id }}')">&#x2715;</button>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    <section class="panel">
+      <div class="panel-header"><h2 class="panel-title">Activity Feed</h2></div>
+      {% if activity %}
+      <div class="activity-feed" id="activity-feed">
+        {% for a in activity %}
+        <div class="activity-item">
+          <div class="activity-action">
+            <span class="activity-badge ab-{{ a.action|lower }}">{{ a.action }}</span>
+            <span class="activity-entity">{{ a.entity_type }}</span>
+          </div>
+          {% if a.details %}<div class="activity-detail">{{ a.details[:80] }}</div>{% endif %}
+          <div class="activity-meta">
+            {% if a.user_id %}<span>{{ a.user_id[:20] }}</span>{% endif %}
+            <span class="activity-ts">{{ (a.ts or '')[:16] }}</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p style="padding:1rem;color:var(--text-dim);">No activity recorded yet.</p>
+      {% endif %}
+    </section>
+  </div>
+</div>
+
+<!-- Link Topology Modal -->
+<div id="link-modal" class="modal" style="display:none;">
+  <div class="modal-content">
+    <h3>Link Topology to Project</h3>
+    <form onsubmit="return linkTopo(event)">
+      <label>Topology <select name="topology_id">{% for t in all_topos %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select></label>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Link</button>
+        <button type="button" class="btn btn-secondary" onclick="this.closest('.modal').style.display='none'">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+const PID='{{ project.id }}';
+function linkTopo(e){e.preventDefault();const tid=e.target.topology_id.value;
+  fetch(NC_BASE+`/api/projects/${PID}/topologies`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({topology_id:tid})}).then(()=>location.reload());return false;}
+function unlinkTopo(tid){if(!confirm('Unlink this topology?'))return;
+  fetch(NC_BASE+`/api/projects/${PID}/topologies/${tid}`,{method:'DELETE'}).then(()=>location.reload());}
+function updateStatus(){const s=prompt('New status (draft, in_review, approved, deployed, archived):');if(!s)return;
+  fetch(NC_BASE+`/api/projects/${PID}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:s})}).then(()=>location.reload());}
+function cloneProject(){const name=prompt('New project name:','{{ project.name }} (Copy)');if(!name)return;
+  fetch(NC_BASE+`/api/projects/${PID}/clone`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:name})})
+    .then(r=>r.json()).then(d=>{if(d.id){alert('Cloned! '+d.topologies_cloned+' topologies copied.');window.location.href=NC_BASE+'/projects/'+d.id;}else{alert('Failed: '+(d.error||''));}});}
+// P3: Milestones
+function addMilestone(){const t=prompt('Milestone title:');if(!t)return;const d=prompt('Due date (YYYY-MM-DD):','');
+  fetch(NC_BASE+`/api/projects/${PID}/milestones`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:t,due_date:d||null})}).then(()=>location.reload());}
+function updateMilestone(mid,status){fetch(NC_BASE+`/api/milestones/${mid}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:status})});}
+function deleteMilestone(mid){if(!confirm('Delete milestone?'))return;fetch(NC_BASE+`/api/milestones/${mid}`,{method:'DELETE'}).then(()=>location.reload());}
+// P3: Notes
+function addNote(){const body=document.getElementById('note-input').value.trim();if(!body)return;
+  fetch(NC_BASE+`/api/projects/${PID}/notes`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:body})}).then(()=>location.reload());}
+function deleteNote(nid){if(!confirm('Delete note?'))return;fetch(NC_BASE+`/api/notes/${nid}`,{method:'DELETE'}).then(()=>location.reload());}
+// P3: Tags
+function addTag(){const inp=document.getElementById('tag-input');const tag=inp.value.trim();if(!tag)return;
+  fetch(NC_BASE+`/api/tags/project/${PID}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tag:tag})}).then(()=>location.reload());}
+function removeTag(tag){fetch(NC_BASE+`/api/tags/project/${PID}/${encodeURIComponent(tag)}`,{method:'DELETE'}).then(()=>location.reload());}
+// P3: Assignee
+function setAssignee(tid){const a=prompt('Assignee name:','');if(a===null)return;
+  fetch(NC_BASE+`/api/projects/${PID}/topologies/${tid}/assignee`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({assignee:a})}).then(()=>location.reload());}
+// P3: Gate check
+// SAFe Decompose
+function decomposeSafe(){
+  fetch(NC_BASE+`/api/projects/${PID}/decompose`,{method:'POST'}).then(r=>r.json()).then(d=>{
+    if(d.error){alert(d.error);return;}
+    alert(`SAFe Decomposition:\n- 1 Feature (${d.feature.t_shirt_size}, WSJF=${d.feature.wsjf_score})\n- ${d.stories.length} Stories\n- ${d.enablers.length} Enablers\n\nTotal: ${d.total_items} items`);
+  });
+}
+// Phase C: Impact Analysis
+function runImpactAnalysis(){
+  const el=document.getElementById('impact-results');el.style.display='block';el.innerHTML='Analyzing...';
+  fetch(NC_BASE+`/api/projects/${PID}/impact`).then(r=>r.json()).then(d=>{
+    if(d.total_affected===0&&d.shared_resources.length===0){
+      el.innerHTML='<div style="color:var(--success);font-size:12px;font-weight:600;">No downstream impact detected. This project has no interconnects or shared resources with other projects.</div>';
+      return;
+    }
+    let html='<div style="font-size:12px;font-weight:600;margin-bottom:8px;">Impact Analysis: '+d.total_affected+' affected project(s) ('+d.direct+' direct, '+d.indirect+' indirect)</div>';
+    d.affected_projects.forEach(a=>{
+      html+=`<div class="impact-item impact-${a.impact}"><span class="health-pill ${a.impact==='direct'?'pill-red':'pill-yellow'}">${a.impact}</span><a href="${NC_BASE}/projects/${a.project_id}">${a.project_name}</a><span style="color:var(--text-dim);">via ${a.via_circuit||'link'} (${a.protocol||'—'}, ${a.bandwidth||'—'})</span></div>`;
+    });
+    if(d.shared_resources.length){
+      html+='<div style="font-size:11px;color:var(--text-dim);margin-top:8px;">Shared resources:</div>';
+      d.shared_resources.forEach(s=>{html+=`<div class="impact-item"><span class="health-pill pill-yellow">${s.type}</span>${s.resource} shared with <a href="${NC_BASE}/projects/${s.project_id}">${s.project_name}</a></div>`;});
+    }
+    el.innerHTML=html;
+  });
+}
+// Phase A: Pipeline
+function initPhases(){fetch(NC_BASE+`/api/projects/${PID}/init-phases`,{method:'POST'}).then(r=>r.json()).then(d=>{if(d.ok)location.reload();else alert(d.error||'Failed');});}
+function submitReview(e){e.preventDefault();const fd=new FormData(e.target),d={};fd.forEach((v,k)=>d[k]=v);
+  d.phase=parseInt(d.phase)||1;d.reviewers=d.reviewers?d.reviewers.split(',').map(s=>s.trim()):[];
+  fetch(NC_BASE+`/api/projects/${PID}/reviews`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}).then(()=>location.reload());return false;}
+function reviewDecide(rid,decision){const notes=prompt('Decision notes:','');if(notes===null)return;
+  fetch(NC_BASE+`/api/reviews/${rid}/decide`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({decision:decision,notes:notes})}).then(()=>location.reload());}
+function submitRoi(e){e.preventDefault();const fd=new FormData(e.target),d={};fd.forEach((v,k)=>d[k]=v);
+  d.capex=parseFloat(d.capex)||0;d.opex_annual=parseFloat(d.opex_annual)||0;d.savings_annual=parseFloat(d.savings_annual)||0;
+  fetch(NC_BASE+`/api/projects/${PID}/roi`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}).then(()=>location.reload());return false;}
+function checkGate(target){fetch(NC_BASE+`/api/projects/${PID}/gate-check`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({target_status:target})})
+  .then(r=>r.json()).then(d=>{const el=document.getElementById('gate-result');
+    if(d.blocked){el.innerHTML='<div style="color:var(--danger);font-size:12px;"><strong>BLOCKED:</strong> '+d.failures.map(f=>'<div style="margin:2px 0;">- '+f+'</div>').join('')+'</div>';}
+    else{el.innerHTML='<div style="color:var(--success);font-size:12px;">READY for '+target+'</div>';}});}
+
+// ── COA Selection ─────────────────────────────────────────────────────
+function selectCoa(coaId, coaName) {
+  if(!confirm('Select "'+coaName+'" as the migration strategy?\n\nAI will regenerate the migration plan, port mappings, and config translation based on this COA.')) return;
+  const feedback = document.getElementById('coa-feedback').value;
+  fetch(NC_BASE+`/api/projects/${PID}/select-coa`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({coa_id: coaId, feedback: feedback})
+  }).then(r=>r.json()).then(d=>{
+    if(d.ok){ location.reload(); }
+    else { alert(d.error||'Failed to select COA'); }
+  });
+}
+function submitCoaFeedback() {
+  const feedback = document.getElementById('coa-feedback').value;
+  fetch(NC_BASE+`/api/projects/${PID}/select-coa`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({coa_id: {{ project.selected_coa or 0 }}, feedback: feedback})
+  }).then(r=>r.json()).then(d=>{
+    const el = document.getElementById('coa-feedback-status');
+    if(d.ok){ el.textContent = '✓ Feedback saved.'; el.style.color = '#27ae60'; }
+    else { el.textContent = '✗ ' + (d.error||'Failed'); el.style.color = '#e74c3c'; }
+  });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,11 @@
+{
+  "id": "035",
+  "name": "topology_edges",
+  "description": "Create topology_edges table for the NDC Network Design Canvas module (tools/network/twin.py). Resolves orphan_db_table gap: take_snapshot() counts edges per topology_id and blast_radius() queries by source/target, but no migration previously defined the schema.",
+  "created_at": "2026-04-21",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "requires_downtime": false,
+  "resolves": "task-74e2abec00"
+}

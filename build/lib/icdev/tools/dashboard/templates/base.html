@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="{{ theme_pref or 'dark' }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}ICDEV™ Dashboard{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/ux.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/hljs/github-dark.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/assistant-widget.css') }}">
+    {% block head %}{% endblock %}
+    {% block extra_css %}{% endblock %}
+    <script>
+    // Apply theme before render to prevent FOUC
+    (function() {
+        var serverTheme = document.documentElement.getAttribute('data-theme');
+        var stored = localStorage.getItem('icdev-theme');
+        var theme = serverTheme && serverTheme !== 'dark' ? serverTheme : (stored || 'dark');
+        document.documentElement.setAttribute('data-theme', theme);
+    })();
+    </script>
+    <style>
+    /* ExplainPanel — collapsible slide-out (aisg-a3-01) */
+    #explain-panel {
+        position: fixed;
+        top: 0;
+        right: -440px;
+        width: 420px;
+        height: 100vh;
+        background: var(--bg-secondary, #1a1a2e);
+        border-left: 1px solid var(--border-color, #2a2a4a);
+        box-shadow: -4px 0 24px rgba(0,0,0,.4);
+        z-index: 1050;
+        display: flex;
+        flex-direction: column;
+        transition: right 0.3s ease;
+        overflow: hidden;
+    }
+    #explain-panel.open { right: 0; }
+    #explain-panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        border-bottom: 1px solid var(--border-color, #2a2a4a);
+        flex-shrink: 0;
+        background: var(--bg-tertiary, #12122a);
+    }
+    #explain-panel-header h3 {
+        margin: 0;
+        font-size: 0.95rem;
+        color: var(--text-primary, #e0e0e0);
+    }
+    #explain-panel-close {
+        background: transparent;
+        border: none;
+        color: var(--text-secondary, #888);
+        font-size: 1.25rem;
+        cursor: pointer;
+        padding: 2px 8px;
+        border-radius: 4px;
+        line-height: 1;
+    }
+    #explain-panel-close:hover {
+        background: var(--border-color, #2a2a4a);
+        color: var(--text-primary, #e0e0e0);
+    }
+    #explain-panel-body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 16px;
+        color: var(--text-primary, #e0e0e0);
+        font-size: 0.875rem;
+        line-height: 1.6;
+    }
+    #explain-panel-loading {
+        display: none;
+        text-align: center;
+        padding: 32px 0;
+        color: var(--text-secondary, #888);
+        font-style: italic;
+    }
+    #explain-panel-content pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: var(--bg-tertiary, #12122a);
+        padding: 10px 12px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+    }
+    .btn-explain {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        background: transparent;
+        border: 1px solid var(--accent-blue-light, #8ab4ff);
+        color: var(--accent-blue-light, #8ab4ff);
+        border-radius: 4px;
+        padding: 2px 8px;
+        font-size: 0.75rem;
+        cursor: pointer;
+        transition: background 0.15s, color 0.15s;
+        white-space: nowrap;
+        vertical-align: middle;
+    }
+    .btn-explain:hover {
+        background: var(--accent-blue-light, #8ab4ff);
+        color: #0a0a1a;
+    }
+    /* sec-cvs-08: per-design classification banner color coding */
+    .design-classification-banner {
+        display: flex; align-items: center; gap: 8px;
+        padding: 3px 12px; font-size: 11px; font-weight: 700;
+        letter-spacing: 0.04em; border-bottom: 1px solid transparent;
+    }
+    .design-classification-banner .readonly-badge {
+        margin-left: auto; font-size: 10px; opacity: 0.8;
+        border: 1px solid currentColor; border-radius: 3px; padding: 0 4px;
+    }
+    .design-classification-banner .compartment-badge { opacity: 0.85; }
+    .cls-PUBLIC        { background:#0d3b1e; color:#4caf50; border-color:#2e7d32; }
+    .cls-UNCLASSIFIED  { background:#0d3b1e; color:#4caf50; border-color:#2e7d32; }
+    .cls-CUI           { background:#0d2b4e; color:#4fc3f7; border-color:#1565c0; }
+    .cls-SECRET        { background:#3e1a00; color:#ff9800; border-color:#e65100; }
+    .cls-TOP-SECRET    { background:#3b0a0a; color:#ef5350; border-color:#b71c1c; }
+    .cls-TOP-SECRET--SCI { background:#2a0a3b; color:#ce93d8; border-color:#6a1b9a; }
+    /* list-view classification badges */
+    .badge-PUBLIC, .badge-UNCLASSIFIED { background:#0d3b1e; color:#4caf50; }
+    .badge-CUI         { background:#0d2b4e; color:#4fc3f7; }
+    .badge-SECRET      { background:#3e1a00; color:#ff9800; }
+    .badge-TOP-SECRET  { background:#3b0a0a; color:#ef5350; }
+    .badge-TOP-SECRET--SCI { background:#2a0a3b; color:#ce93d8; }
+    .badge-compartment { font-size: 9px; opacity: 0.8; margin-left: 4px; }
+    </style>
+</head>
+<body data-auto-refresh="true">
+    <!-- Skip to main content (accessibility) -->
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+
+    <!-- CUI Banner Top (D173 — toggle via ICDEV_CUI_BANNER_ENABLED) -->
+    {% block global_banner %}
+    {% if cui_banner_enabled %}
+    <div class="cui-banner" role="banner" aria-label="Classification marking">{{ cui_banner_top }}</div>
+    {% endif %}
+    {% endblock %}
+
+    <!-- Navigation -->
+    <nav class="navbar" role="navigation" aria-label="Main navigation">
+        <a class="navbar-brand" href="/">ICDEV™</a>
+        <button id="nav-hamburger" aria-label="Toggle navigation" aria-expanded="false" onclick="ICDEV.toggleMobileNav()">&#9776;</button>
+        <ul class="navbar-nav" id="navbar-nav">
+
+            <li><a href="/" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
+
+            <!-- ── Ops ──────────────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/projects','/agents','/orchestration','/monitoring','/platform-health','/activity','/cicd','/kanban','/batch','/simulation','/il5'] %}active{% endif %}">Ops ▾</a>
+                <ul class="nav-dropdown-menu">
+                    <li class="nav-section-label">DevOps</li>
+                    <li><a href="/projects">Projects</a></li>
+                    <li><a href="/agents">Agents</a></li>
+                    <li><a href="/kanban">Task Board</a></li>
+                    <li><a href="/cicd">CI/CD</a></li>
+                    <li><a href="/orchestration">Orchestration</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Monitor</li>
+                    <li><a href="/monitoring">Monitoring</a></li>
+                    <li><a href="/platform-health">Platform Health</a></li>
+                    <li><a href="/cache-savings">Cache Savings</a></li>
+                    <li><a href="/activity">Activity</a></li>
+                    <li><a href="/il5">IL5 Ingestion</a></li>
+                    <li><a href="/batch">Batch</a></li>
+                    <li><a href="/simulate/chat">Simulate Chat</a></li>
+                    <li><a href="/simulate/chat?canvas=cam" title="AI migration path advisor — COAs, deprecated code detection, refactor dispatch">Migration Chat</a></li>
+                </ul>
+            </li>
+
+            <!-- ── Build ─────────────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/chat','/dev-profiles','/translations','/finetune','/diagrams','/ai-wizard','/ai-patterns','/connector-forge'] %}active{% endif %}">Build ▾</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/chat">Chat</a></li>
+                    <li><a href="/ai-wizard">AI Strategy Wizard</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Dev Tools</li>
+                    <li><a href="/dev-profiles">Dev Profiles</a></li>
+                    <li><a href="/finetune">Fine-Tuning</a></li>
+                    <li><a href="/diagrams">Diagrams</a></li>
+                    <li><a href="/connector-forge">Connector Forge</a></li>
+                    <li><a href="/translations">Translations</a></li>
+                    <li><a href="/ai-patterns">AI Pattern Library</a></li>
+                </ul>
+            </li>
+
+            <!-- ── Canvases ──────────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if '/network' in request.path or '/devops' in request.path or '/infra' in request.path or '/data' in request.path or '/migration-canvas' in request.path or '/migration-intel' in request.path or '/boundary' in request.path or '/observability' in request.path or '/quality' in request.path or '/agentic-ai' in request.path or '/ai-ml' in request.path or '/canvas-compliance' in request.path or '/canvas-kg' in request.path or '/mission-canvas' in request.path or '/supply_chain' in request.path or '/demo-runner' in request.path %}active{% endif %}">Canvases ▾</a>
+                <ul class="nav-dropdown-menu">
+                    {% if network_enabled %}
+                    <li class="nav-section-label">Network</li>
+                    <li><a href="/network/">Dashboard</a></li>
+                    <li><a href="/network/canvas/new">New Topology</a></li>
+                    <li><a href="/network/templates">Templates</a></li>
+                    <li><a href="/network/ipam">IPAM</a></li>
+                    <li><a href="/network/fcc">FCC Compliance</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if pipeline_enabled %}
+                    <li class="nav-section-label">DevOps</li>
+                    <li><a href="/devops/">Dashboard</a></li>
+                    <li><a href="/devops/canvas/new">New Pipeline</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if infra_canvas_enabled %}
+                    <li class="nav-section-label">Infrastructure</li>
+                    <li><a href="/infra/">Dashboard</a></li>
+                    <li><a href="/infra/canvas/new">New Design</a></li>
+                    <li><a href="/infra/templates">Templates</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if data_canvas_enabled %}
+                    <li class="nav-section-label">Data</li>
+                    <li><a href="/data/">Dashboard</a></li>
+                    <li><a href="/data/canvas/new">New Design</a></li>
+                    <li><a href="/data/templates">Templates</a></li>
+                    <li><a href="/data/mesh">Data Mesh</a></li>
+                    <li><a href="/data/mapping/" style="color:#ce93d8;">&#9889; AI Mapping</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if boundary_canvas_enabled %}
+                    <li class="nav-section-label">Boundary</li>
+                    <li><a href="/boundary/">Dashboard</a></li>
+                    <li><a href="/boundary/canvas/new">New Design</a></li>
+                    <li><a href="/boundary/isa-tracker">ISA Tracker</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if migration_canvas_enabled %}
+                    <li class="nav-section-label">Migration</li>
+                    <li><a href="/migration-canvas/">Design Canvas</a></li>
+                    <li><a href="/migration-canvas/network-migration/">Network Migration</a></li>
+                    <li><a href="/migration-canvas/server-migration/">Server Migration</a></li>
+                    <li><a href="/migration-canvas/projects">Cloud App Projects</a></li>
+                    <li><a href="/simulate/chat?canvas=cam">Migration Chat</a></li>
+                    <li><a href="/migration-intel/">Intelligence Engine</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if observability_canvas_enabled %}
+                    <li class="nav-section-label">Observability</li>
+                    <li><a href="/observability/">Dashboard</a></li>
+                    <li><a href="/observability/canvas/new">New Design</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if qdc_enabled %}
+                    <li class="nav-section-label">QA/QC</li>
+                    <li><a href="/quality/">Dashboard</a></li>
+                    <li><a href="/quality/canvas/new">New Design</a></li>
+                    <li><a href="/quality/runbooks">Runbooks</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if aadc_enabled or demo_runner_enabled %}
+                    <li class="nav-section-label">Agentic AI</li>
+                    {% if aadc_enabled %}
+                    <li><a href="/agentic-ai/" style="color:#a5b4fc;">Dashboard</a></li>
+                    <li><a href="/agentic-ai/canvas/new">New Design</a></li>
+                    <li><a href="/agentic-ai/impact-graph">Impact Graph</a></li>
+                    {% endif %}
+                    {% if demo_runner_enabled %}
+                    <li><a href="/demo-runner/" style="color:#f59e0b;">&#9654; Demo Runner</a></li>
+                    {% endif %}
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if aimc_enabled %}
+                    <li class="nav-section-label">AI/ML</li>
+                    <li><a href="/ai-ml/" style="color:#818cf8;">Dashboard</a></li>
+                    <li><a href="/ai-ml/canvas/new">New Design</a></li>
+                    <li><a href="/ai-ml/model-catalog">Model Catalog</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if ohc_enabled %}
+                    <li class="nav-section-label">Operations</li>
+                    <li><a href="/ops" style="color:#7dd3fc;">Ops Hub</a></li>
+                    <li><a href="/ops/llm">LLMOps</a></li>
+                    <li><a href="/ops/models">MLOps</a></li>
+                    <li><a href="/ops/slos">SLOs</a></li>
+                    <li><a href="/ops/incidents">Incidents</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if nocc_enabled %}
+                    <li class="nav-section-label">NOC Operations</li>
+                    <li><a href="/noc" style="color:#f97316;">NOC Overview</a></li>
+                    <li><a href="/noc/alarms">Alarms</a></li>
+                    <li><a href="/noc/incidents">Incidents</a></li>
+                    <li><a href="/noc/rfcs">RFCs</a></li>
+                    <li><a href="/noc/maintenance">Maintenance</a></li>
+                    <li><a href="/noc/sla">SLA</a></li>
+                    <li><a href="/noc/looking-glass">Looking Glass</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if pmc_enabled %}
+                    <li class="nav-section-label">Peering Management</li>
+                    <li><a href="/pmc" style="color:#38bdf8;">Peering Canvas</a></li>
+                    <li><a href="/pmc/peers">BGP Peers</a></li>
+                    <li><a href="/pmc/ix">Internet Exchanges</a></li>
+                    <li><a href="/pmc/rpki">RPKI Validation</a></li>
+                    <li><a href="/pmc/policies">Route Policies</a></li>
+                    <li><a href="/pmc/requests">Peering Requests</a></li>
+                    <li><a href="/pmc/transit">Transit Pricing</a></li>
+                    <li><a href="/network/partners">Partner Registry</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if ccc_enabled %}
+                    <li class="nav-section-label">Circuit &amp; Capacity</li>
+                    <li><a href="/ccc" style="color:#38bdf8;">CCC Overview</a></li>
+                    <li><a href="/ccc/circuits">Circuits</a></li>
+                    <li><a href="/ccc/cross-connects">Cross-Connects</a></li>
+                    <li><a href="/ccc/loa">LOA Requests</a></li>
+                    <li><a href="/ccc/orders">Orders</a></li>
+                    <li><a href="/ccc/capacity">Capacity Plans</a></li>
+                    <li><a href="/ccc/dwdm">DWDM Spans</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if dsoc_enabled %}
+                    <li class="nav-section-label">DDoS &amp; Security Ops</li>
+                    <li><a href="/dsoc" style="color:#f87171;">DSOC Overview</a></li>
+                    <li><a href="/dsoc/flowspec">Flowspec Rules</a></li>
+                    <li><a href="/dsoc/rtbh">RTBH Blackholes</a></li>
+                    <li><a href="/dsoc/scrubbing">Scrubbing Centers</a></li>
+                    <li><a href="/dsoc/threats">Threats</a></li>
+                    <li><a href="/dsoc/mitigations">Mitigations</a></li>
+                    <li><a href="/dsoc/bgp-security">BGP Security</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if aiify_enabled %}
+                    <li class="nav-section-label">AI-ify</li>
+                    <li><a href="/ai-ify/" style="color:#6ee7b7;">AI-ify</a></li>
+                    <li><a href="/ai-ify/posture">Compliance Posture</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if dic_enabled %}
+                    <li class="nav-section-label">Document Intelligence</li>
+                    <li><a href="/document-intelligence/" style="color:#7ab3f0;">DIC Overview</a></li>
+                    <li><a href="/document-intelligence/collections">Collections</a></li>
+                    <li><a href="/document-intelligence/search">Search &amp; Chat</a></li>
+                    <li><a href="/document-intelligence/analytics">Analytics</a></li>
+                    <li><a href="/document-intelligence/review">HITL Review</a></li>
+                    <li><a href="/document-intelligence/generate">AI-Assist</a></li>
+                    <li><a href="/document-intelligence/acoic">ACOIC</a></li>
+                    <li><a href="/document-intelligence/freshness">Freshness</a></li>
+                    <li><a href="/document-intelligence/explorer">Explorer</a></li>
+                    <li><a href="/document-intelligence/handoff">Handoff</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if govlift_enabled %}
+                    <li class="nav-section-label">Cloud Migration</li>
+                    <li><a href="/govlift" style="color:#34d399;">GovLift</a></li>
+                    <li><a href="/govlift/workloads">Workloads</a></li>
+                    <li><a href="/govlift/waves">Waves</a></li>
+                    <li><a href="/govlift/executor">Executor</a></li>
+                    <li><a href="/govlift/stig">STIG</a></li>
+                    <li><a href="/govlift/audit">Audit</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    {% if mission_canvas_enabled %}
+                    <li class="nav-section-label">Mission Control</li>
+                    <li><a href="/mission-canvas/" style="color:#00bcd4;">Dashboard</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    <li class="nav-section-label">Supply Chain</li>
+                    <li><a href="/supply_chain" style="color:#f0883e;">SCRM Dashboard</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Cross-Canvas</li>
+                    <li><a href="/canvas-compliance">Canvas Posture</a></li>
+                    {% if canvas_kg_enabled %}<li><a href="/canvas-kg">Canvas KG</a></li>{% endif %}
+                </ul>
+            </li>
+
+            <!-- ── Intelligence ──────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/knowledge-search','/code-quality','/writeguard','/system-graph','/components-map','/ask-icdev','/research','/autoresearch','/pulse','/clawhub','/ai-observatory','/ontology'] %}active{% endif %}">Intelligence ▾</a>
+                <ul class="nav-dropdown-menu">
+                    <li class="nav-section-label">Awareness</li>
+                    <li><a href="/system-graph" style="color:#42a5f5;">System Graph</a></li>
+                    <li><a href="/components-map">Component Map</a></li>
+                    <li><a href="/ask-icdev">Ask ICDEV</a></li>
+                    <li><a href="/ai-observatory" style="color:#a78bfa;">AI Observatory</a></li>
+                    <li><a href="/ontology" style="color:#34d399;">Ontology Explorer</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Research</li>
+                    {% if not airgap_mode %}
+                    <li><a href="/research">Research</a></li>
+                    <li><a href="/autoresearch">Autoresearch</a></li>
+                    {% endif %}
+                    <li><a href="/knowledge-search">Knowledge Search</a></li>
+                    <li><a href="/code-quality">Code Quality</a></li>
+                    <li><a href="/writeguard">WriteGuard</a></li>
+                    {% if not airgap_mode %}
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Publish</li>
+                    <li><a href="/pulse">Pulse Blog</a></li>
+                    <li><a href="/clawhub">ClawHub Skills</a></li>
+                    {% endif %}
+                </ul>
+            </li>
+
+            <!-- ── Compliance ────────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/compliance','/oscal','/prod-audit','/ai-transparency','/ai-accountability','/sbd','/cato','/compliance-debt','/ato-package','/control-inheritance','/mosa','/analytics','/poam','/security-scan','/pr-intel','/stig-manager','/sre','/iac','/migration','/migration-cost','/provenance','/traces','/xai'] or request.path.startswith('/security') or request.path.startswith('/security/zig') %}active{% endif %}">Compliance ▾</a>
+                <ul class="nav-dropdown-menu">
+                    <li class="nav-section-label">Risk &amp; ATO</li>
+                    <li><a href="/poam">POA&amp;M Findings</a></li>
+                    <li><a href="/compliance">Compliance Hub</a></li>
+                    <li><a href="/oscal">OSCAL</a></li>
+                    <li><a href="/cato">Continuous ATO</a></li>
+                    <li><a href="/ato-package">ATO Package Builder</a></li>
+                    <li><a href="/mosa">MOSA</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Zero Trust (NSA ZIG)</li>
+                    <li><a href="/security/zig/" style="color:#e94560;font-weight:600;">&#x1f6e1; ZIG Dashboard</a></li>
+                    <li><a href="/security/zig/phase" style="color:#aaa;">&#x1f4c5; Phase Tracker</a></li>
+                    <li><a href="/security/zig/assessment" style="color:#aaa;">&#x1f4ca; Assessment</a></li>
+                    <li><a href="/security/zig/roadmap" style="color:#aaa;">&#x1f5fa; FY2027 Roadmap</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Security</li>
+                    <li><a href="/security/" style="color:#e94560;">Security Canvas</a></li>
+                    <li><a href="/security/demo" style="color:#27ae60;">SDC Demo Runner</a></li>
+                    <li><a href="/security-scan">Security Scans</a></li>
+                    <li><a href="/stig-manager">STIG Manager</a></li>
+                    <li><a href="/pr-intel">PR Intelligence</a></li>
+                    <li><a href="/sre">SRE Operations</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">AI &amp; Policy</li>
+                    <li><a href="/sbd">Secure by Design</a></li>
+                    <li><a href="/ai-transparency">AI Transparency</a></li>
+                    <li><a href="/ai-accountability">AI Accountability</a></li>
+                    <li><a href="/control-inheritance">Control Inheritance</a></li>
+                    <li><a href="/compliance-debt">Compliance Debt</a></li>
+                    <li><a href="/prod-audit">Production Audit</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Observability</li>
+                    <li><a href="/traces">Traces</a></li>
+                    <li><a href="/provenance">Provenance</a></li>
+                    <li><a href="/xai">XAI</a></li>
+                </ul>
+            </li>
+
+            <!-- ── Strategos ─────────────────────────────────────────────────── -->
+            {% if strategos_enabled %}
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if '/strategos' in request.path %}active{% endif %}" style="color:#f59e0b;">Strategos ▾</a>
+                <ul class="nav-dropdown-menu">
+                    <li class="nav-section-label">Command</li>
+                    <li><a href="/strategos">Overview</a></li>
+                    <li><a href="/strategos/map" style="color:#f59e0b;">Map Dashboard</a></li>
+                    <li><a href="/strategos/commander" style="color:#e94560;font-weight:600;">Commander Dashboard</a></li>
+                    <li><a href="/strategos/war-council" style="color:#f59e0b;">War Council</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Intel</li>
+                    <li><a href="/strategos/intel-brief" style="color:#a855f7;font-weight:700;">&#9889; Predictive Intel Brief</a></li>
+                    <li><a href="/strategos/leadership-brief" style="color:#a855f7;">Leadership Brief</a></li>
+                    <li><a href="/strategos/oracle" style="color:#f59e0b;">Oracle Assessment</a></li>
+                    <li><a href="/strategos/pir" style="color:#fb923c;">PIR / CCIR / EEI</a></li>
+                    <li><a href="/strategos/intsum" style="color:#06b6d4;">INTSUM Generator</a></li>
+                    <li><a href="/strategos/indicators" style="color:#f59e0b;">I&amp;W Indicators</a></li>
+                    <li><a href="/strategos/briefs" style="color:#a78bfa;">Intel Briefs
+                        <span id="nav-briefs-pending" style="display:none;background:#e94560;color:#fff;font-size:.65rem;font-weight:700;border-radius:8px;padding:0 5px;margin-left:.3rem;vertical-align:middle"></span>
+                    </a></li>
+                    <li><a href="/strategos/kg">Knowledge Graph</a></li>
+                    <li><a href="/strategos/osint">OSINT Panel</a></li>
+                    <li><a href="/strategos/ghost">Ghost Signals</a></li>
+                    <li><a href="/strategos/darkweb" style="color:#a855f7;">Dark Web Monitor</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Ops</li>
+                    <li><a href="/strategos/orbat">ORBAT Tracker</a></li>
+                    <li><a href="/strategos/wargame">Wargame</a></li>
+                    <li><a href="/strategos/iw">IW Effects</a></li>
+                    <li><a href="/strategos/f3ead" style="color:#e94560;">F3EAD Targeting</a></li>
+                    <li><a href="/strategos/bda" style="color:#10b981;">BDA</a></li>
+                    <li><a href="/strategos/red-cell" style="color:#e94560;">Red Cell</a></li>
+                    <li><a href="/strategos/opord" style="color:#8b5cf6;">OPORD Generator</a></li>
+                    <li><a href="/strategos/mett-tc" style="color:#06b6d4;">METT-TC</a></li>
+                    <li><a href="/strategos/sync-matrix" style="color:#f97316;">Sync Matrix</a></li>
+                    <li><a href="/strategos/isr-planner" style="color:#a855f7;">ISR Planner</a></li>
+                    <li><a href="/strategos/ipb" style="color:#3b82f6;">IPB Canvas</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Domain</li>
+                    <li><a href="/strategos/maritime" style="color:#22d3ee;">Maritime Tracking</a></li>
+                    <li><a href="/strategos/airspace" style="color:#3b82f6;">Multi-Domain COP</a></li>
+                    <li><a href="/strategos/cyber" style="color:#ef4444;">Cyber Dashboard</a></li>
+                    <li><a href="/strategos/supply" style="color:#e94560;">DIB Supply Chain</a></li>
+                    <li><a href="/strategos/sources" style="color:#34d399;">Source Registry</a></li>
+                    <li><a href="/strategos/simulate">Simulate</a></li>
+                    <li><a href="/strategos/hitl">HITL Queue</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li><a href="#" onclick="if(typeof openStratChat!=='undefined')openStratChat();return false;" style="color:#f59e0b;font-weight:600;">Intelligence Chat</a></li>
+                </ul>
+            </li>
+            {% endif %}
+
+            <!-- ── Platforms ─────────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/fathomdesk','/fathomdesk/trap-events','/news','/options','/analysis','/machine-momentum','/quality-scores','/genesis','/oracle','/proposals','/govcon'] or '/geosigint' in request.path or '/gameday' in request.path or '/academy' in request.path or '/info-ops' in request.path %}active{% endif %}">Platforms ▾</a>
+                <ul class="nav-dropdown-menu">
+                    {% if not airgap_mode %}
+                    <li class="nav-section-label">Market &amp; AI</li>
+                    <li><a href="/fathomdesk" style="color:#8ab4ff;">FathomDesk</a></li>
+                    <li><a href="/fathomdesk/trap-events" style="color:#f87171;">&#9888; Trap Events</a></li>
+                    <li><a href="/genesis">Genesis</a></li>
+                    <li><a href="/oracle">Oracle</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    <li class="nav-section-label">Geospatial</li>
+                    <li><a href="/geosigint/" style="color:#06b6d4;">GeoSIGINT</a></li>
+                    <li><a href="/geosigint/a2ad">A2/AD Zone Mapper</a></li>
+                    <li><a href="/geosigint/strait-crossing">Strait Crossing</a></li>
+                    <li><a href="/geosigint/island-chain">Island Chain Defense</a></li>
+                    <li><a href="/geosigint/amphibious">Amphibious Assessment</a></li>
+                    <li><a href="/geosigint/militia">Militia Classifier</a></li>
+                    <li><a href="/geosigint/semiconductor">Semiconductor Chain</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Info Ops</li>
+                    <li><a href="/info-ops/" style="color:#a78bfa;">Info Ops Platform</a></li>
+                    <li><a href="/info-ops/dashboard">Dashboard</a></li>
+                    <li><a href="/info-ops/analysis">Analysis</a></li>
+                    <li><a href="/info-ops/osint">OSINT</a></li>
+                    {% if govcon_enabled %}
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">GovCon</li>
+                    <li><a href="/proposals">Proposals</a></li>
+                    <li><a href="/govcon">Intelligence</a></li>
+                    {% endif %}
+                    {% if gameday_enabled or academy_enabled %}
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Training</li>
+                    {% if gameday_enabled %}<li><a href="/gameday" style="color:#f59e0b;">GameDay</a></li>{% endif %}
+                    {% if academy_enabled %}<li><a href="/academy" style="color:#10b981;">FORGE Academy</a></li>{% endif %}
+                    {% endif %}
+                </ul>
+            </li>
+
+            <!-- ── Studio ────────────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if '/studio' in request.path %}active{% endif %}" style="color:var(--accent-blue-light);">Studio ▾</a>
+                <ul class="nav-dropdown-menu">
+                    <li><a href="/studio/app-builder">App Builder</a></li>
+                    <li><a href="/studio/workflows">Workflow Builder</a></li>
+                    <li><a href="/studio/forms">Form Builder</a></li>
+                    <li><a href="/studio/cases">Case Management</a></li>
+                    <li><a href="/studio/automations">Automations</a></li>
+                    <li><a href="/studio/dashboards">Dashboard Builder</a></li>
+                    {% if not airgap_mode %}
+                    <li><a href="/studio/marketplace">Marketplace</a></li>
+                    {% endif %}
+                </ul>
+            </li>
+
+            <!-- ── More ──────────────────────────────────────────────────────── -->
+            <li class="nav-dropdown">
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/usage','/quick-paths','/wizard','/notifications','/profile','/analytics'] or '/workflow' in request.path or '/admin' in request.path %}active{% endif %}">More ▾</a>
+                <ul class="nav-dropdown-menu">
+                    {% if hitl_enabled %}
+                    <li class="nav-section-label">Workflow</li>
+                    <li><a href="/workflow/">HITL Queue</a></li>
+                    <li><a href="/workflow/teams">Teams &amp; Assignments</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    {% endif %}
+                    <li class="nav-section-label">Account</li>
+                    <li><a href="/profile">Profile &amp; Settings</a></li>
+                    <li><a href="/notifications">Notifications</a></li>
+                    <li><a href="/usage">Usage</a></li>
+                    <li><a href="/analytics">Analytics</a></li>
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Help</li>
+                    <li><a href="/wizard" style="color:var(--accent-blue-light);">Get Started</a></li>
+                    <li><a href="/quick-paths">Quick Paths</a></li>
+                    {% if current_user and current_user.role == 'admin' %}
+                    <li class="nav-dropdown-divider"></li>
+                    <li><a href="/admin/users">Admin</a></li>
+                    {% endif %}
+                </ul>
+            </li>
+
+        </ul>
+        <div class="navbar-right" style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+            {% if g.get('tenant_name') and g.tenant_name != 'System' %}
+            <span class="nav-tenant-badge" title="Active tenant: {{ g.tenant_name }}"
+                  style="background:var(--accent-color,#2563eb);color:#fff;border-radius:4px;padding:2px 8px;font-size:0.72rem;font-weight:600;letter-spacing:0.02em;white-space:nowrap;">
+                {{ g.tenant_name }}
+            </span>
+            {% endif %}
+            {% if current_user %}
+            <a href="/profile" class="user-badge" title="{{ current_user.email }}">
+                <span class="user-badge-name">{{ current_user.display_name }}</span>
+                <span class="user-badge-role">{{ current_user.role }}</span>
+            </a>
+            <a href="/logout" class="btn-logout" title="Sign out">Logout</a>
+            {% endif %}
+            <button id="theme-toggle" onclick="ICDEV.toggleTheme()" title="Toggle light/dark theme"
+                    style="background:transparent;border:1px solid var(--border-color);color:var(--text-secondary);border-radius:4px;padding:3px 8px;font-size:0.75rem;cursor:pointer;">
+                <span id="theme-icon">☀</span>
+            </button>
+            <button onclick="if(ICDEV.startTour)ICDEV.startTour()" title="Restart onboarding tour"
+                    style="background:transparent;border:1px solid var(--border-color);color:var(--text-secondary);border-radius:4px;padding:3px 8px;font-size:0.75rem;cursor:pointer;">Tour</button>
+            <label for="role-select" class="text-muted" style="font-size: 0.8rem; white-space: nowrap;">View as:</label>
+            <select id="role-select" aria-label="Select dashboard view role"
+                    onchange="window.location.search = this.value ? '?role=' + this.value : ''"
+                    style="background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border-color); border-radius: 4px; padding: 4px 8px; font-size: 0.8rem;">
+                <option value="" {% if not current_role %}selected{% endif %}>All (Full View)</option>
+                {% for rid, rcfg in ROLE_VIEWS.items() %}
+                <option value="{{ rid }}" {% if current_role == rid %}selected{% endif %}>{{ rcfg.label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <div class="main-content" id="main-content" role="main">
+        {% block content %}{% endblock %}
+    </div>
+
+    <!-- CUI Banner Bottom (D173) -->
+    {% if cui_banner_enabled %}
+    <div class="cui-banner bottom" role="contentinfo" aria-label="Classification marking">{{ cui_banner_bottom }}</div>
+    {% endif %}
+
+    <!-- Notification container for toasts -->
+    <div class="notification-container" id="notification-container" aria-live="polite"></div>
+
+    <!-- ExplainPanel — collapsible slide-out (aisg-a3-01) -->
+    <div id="explain-panel" role="complementary" aria-label="Event explanation panel" aria-hidden="true">
+        <div id="explain-panel-header">
+            <h3>&#10067; Explain</h3>
+            <button id="explain-panel-close" onclick="window.closeExplain()" aria-label="Close explanation panel">&times;</button>
+        </div>
+        <div id="explain-panel-body">
+            <div id="explain-panel-loading">Loading explanation&hellip;</div>
+            <div id="explain-panel-content"></div>
+        </div>
+    </div>
+
+    <!-- Codebase Assistant Widget (Phase 69 — D-CA-3) -->
+    {% include "includes/assistant_widget.html" ignore missing %}
+    <!-- STRATEGOS floating chat panel (only on Strategos pages) -->
+    {% if '/strategos' in request.path %}
+    {% include "strategos/_chat_panel.html" ignore missing %}
+    {% endif %}
+
+    <!-- Route → Module map for widget auto-scoping (D-CA-4) -->
+    <script>window.ROUTE_MODULE_MAP = {{ route_module_map|default({})|tojson }};</script>
+    <script>
+    // Theme toggle (FDE E1)
+    window.ICDEV = window.ICDEV || {};
+    ICDEV.toggleMobileNav = function() {
+        var nav = document.getElementById('navbar-nav');
+        var btn = document.getElementById('nav-hamburger');
+        if (!nav) return;
+        var isOpen = nav.classList.contains('mobile-open');
+        nav.classList.toggle('mobile-open', !isOpen);
+        if (btn) {
+            btn.setAttribute('aria-expanded', !isOpen ? 'true' : 'false');
+            btn.textContent = !isOpen ? '✕' : '☰';
+        }
+    };
+    ICDEV.toggleTheme = function() {
+        var html = document.documentElement;
+        var cur = html.getAttribute('data-theme') || 'dark';
+        var next = cur === 'dark' ? 'light' : 'dark';
+        html.setAttribute('data-theme', next);
+        localStorage.setItem('icdev-theme', next);
+        var icon = document.getElementById('theme-icon');
+        if (icon) icon.textContent = next === 'light' ? '🌙' : '☀';
+        fetch('/profile/api/theme', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({theme: next})
+        }).catch(function(){});
+    };
+    document.addEventListener('DOMContentLoaded', function() {
+        var theme = document.documentElement.getAttribute('data-theme') || 'dark';
+        var icon = document.getElementById('theme-icon');
+        if (icon) icon.textContent = theme === 'light' ? '🌙' : '☀';
+    });
+
+    // Nav dropdown click-toggle (works alongside CSS hover)
+    document.addEventListener('DOMContentLoaded', function() {
+        var triggers = document.querySelectorAll('.nav-dropdown-trigger');
+        triggers.forEach(function(trigger) {
+            trigger.addEventListener('click', function(e) {
+                e.preventDefault();
+                var li = trigger.closest('.nav-dropdown');
+                var isOpen = li.classList.contains('open');
+                // Close all
+                document.querySelectorAll('.nav-dropdown.open').forEach(function(el) {
+                    el.classList.remove('open');
+                });
+                if (!isOpen) li.classList.add('open');
+            });
+        });
+        // Close dropdowns when clicking outside nav
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.navbar')) {
+                document.querySelectorAll('.nav-dropdown.open').forEach(function(el) {
+                    el.classList.remove('open');
+                });
+            }
+        });
+        // Close sub-item nav link: collapse dropdowns AND close mobile drawer
+        document.querySelectorAll('.nav-dropdown-menu a').forEach(function(a) {
+            a.addEventListener('click', function() {
+                document.querySelectorAll('.nav-dropdown.open').forEach(function(el) {
+                    el.classList.remove('open');
+                });
+                // Also close mobile drawer on link click
+                var nav = document.getElementById('navbar-nav');
+                var btn = document.getElementById('nav-hamburger');
+                if (nav) nav.classList.remove('mobile-open');
+                if (btn) { btn.setAttribute('aria-expanded', 'false'); btn.textContent = '☰'; }
+            });
+        });
+    });
+    </script>
+
+    <script defer src="{{ url_for('static', filename='js/api.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/ux.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='vendor/mermaid/mermaid.min.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/mermaid-icdev.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/charts.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/tables.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/tour.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/live.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/batch.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/shortcuts.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/kanban.js') }}"></script>
+    {% if govcon_enabled %}
+    <script defer src="{{ url_for('static', filename='js/proposals.js') }}"></script>
+    {% endif %}
+    <!-- Vendor: Markdown + Syntax Highlighting (Phase 69 — D-CU-2) -->
+    <script defer src="{{ url_for('static', filename='vendor/marked/marked.min.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='vendor/hljs/highlight.min.js') }}"></script>
+    <script defer src="{{ url_for('static', filename='js/chat-renderers.js') }}"></script>
+    <!-- Codebase Assistant Widget JS (Phase 69 — D-CA-3) -->
+    <script defer src="{{ url_for('static', filename='js/assistant-widget.js') }}"></script>
+    {% if '/strategos' in request.path %}
+    <!-- STRATEGOS Chat panel + JS (loaded only on Strategos pages) -->
+    <script defer src="{{ url_for('static', filename='js/strategos-chat.js') }}"></script>
+    {% endif %}
+    {% block scripts %}{% endblock %}
+    {% block extra_js %}{% endblock %}
+    <script>
+    // ExplainPanel — aisg-a3-01
+    (function() {
+        var _panel = null;
+        function getPanel() { return _panel || (_panel = document.getElementById('explain-panel')); }
+
+        window.showExplain = function(eventId) {
+            var p = getPanel();
+            if (!p) return;
+            var loading = document.getElementById('explain-panel-loading');
+            var content = document.getElementById('explain-panel-content');
+            if (loading) loading.style.display = 'block';
+            if (content) content.innerHTML = '';
+            p.classList.add('open');
+            p.setAttribute('aria-hidden', 'false');
+            fetch('/api/explain/' + encodeURIComponent(eventId))
+                .then(function(r) { return r.ok ? r.json() : Promise.reject(r.status); })
+                .then(function(data) {
+                    if (loading) loading.style.display = 'none';
+                    if (content) {
+                        content.innerHTML = typeof data.html === 'string'
+                            ? data.html
+                            : '<pre>' + (data.explanation || data.text || JSON.stringify(data, null, 2)) + '</pre>';
+                    }
+                })
+                .catch(function() {
+                    if (loading) loading.style.display = 'none';
+                    if (content) content.innerHTML = '<p style="color:#e94560">Failed to load explanation.</p>';
+                });
+        };
+
+        window.closeExplain = function() {
+            var p = getPanel();
+            if (!p) return;
+            p.classList.remove('open');
+            p.setAttribute('aria-hidden', 'true');
+        };
+
+        window.showExplainHtml = function(title, htmlContent) {
+            var p = getPanel();
+            if (!p) return;
+            var loading = document.getElementById('explain-panel-loading');
+            var content = document.getElementById('explain-panel-content');
+            var titleEl = document.getElementById('explain-panel-title');
+            if (loading) loading.style.display = 'none';
+            if (titleEl && title) titleEl.textContent = title;
+            if (content) content.innerHTML = htmlContent || '';
+            p.classList.add('open');
+            p.setAttribute('aria-hidden', 'false');
+        };
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') window.closeExplain();
+        });
+    })();
+    </script>
+    <script>
+    (function() {
+        function refreshBriefsBadge() {
+            fetch('/api/strategos/briefs?reviewed=0&limit=1')
+                .then(function(r) { return r.ok ? r.json() : null; })
+                .then(function(d) {
+                    var el = document.getElementById('nav-briefs-pending');
+                    if (!el || !d) return;
+                    if (d.total > 0) {
+                        el.textContent = d.total;
+                        el.style.display = 'inline';
+                    } else {
+                        el.style.display = 'none';
+                    }
+                }).catch(function() {});
+        }
+        refreshBriefsBadge();
+        setInterval(refreshBriefsBadge, 120000);
+    })();
+    </script>
+
+    <!-- IQE Global Mini-bar (Ctrl+Shift+Q) -->
+    <div id="iqe-minibar" style="
+        position:fixed; bottom:0; left:0; right:0; z-index:9000;
+        background:var(--bg-secondary,#1a1d27); border-top:2px solid var(--accent,#4f8ef7);
+        box-shadow:0 -4px 24px rgba(0,0,0,0.35); font-family:inherit;
+        transform:translateY(100%); transition:transform 0.22s cubic-bezier(.4,0,.2,1);
+    " aria-label="IQE Global Query Bar" role="complementary">
+      <div style="max-width:1100px; margin:0 auto; padding:0.7rem 1rem;">
+        <div style="display:flex; align-items:center; gap:0.6rem; margin-bottom:0.45rem;">
+          <span style="font-size:0.72rem; font-weight:700; letter-spacing:.05em;
+              color:var(--accent,#4f8ef7); text-transform:uppercase; white-space:nowrap;">IQE</span>
+          <span id="iqe-mb-canvas-badge" style="font-size:0.68rem; padding:1px 7px; border-radius:999px;
+              background:var(--bg-tertiary,#252836); color:var(--text-dim,#8892a4); border:1px solid var(--border,#2e3347);">
+            global
+          </span>
+          <input id="iqe-mb-input" type="text" placeholder="Ask anything… (Ctrl+Shift+Q to toggle)"
+              autocomplete="off" spellcheck="false"
+              style="flex:1; background:var(--bg-input,#13151f); border:1px solid var(--border,#2e3347);
+                  border-radius:6px; padding:0.35rem 0.7rem; color:var(--text-primary,#e2e8f0);
+                  font-size:0.85rem; outline:none; min-width:0;"
+          />
+          <button onclick="icdevMBRun()" style="
+              background:var(--accent,#4f8ef7); color:#fff; border:none; border-radius:6px;
+              padding:0.35rem 1rem; font-size:0.82rem; font-weight:600; cursor:pointer; white-space:nowrap;">
+            Run
+          </button>
+          <button onclick="icdevMBClose()" style="
+              background:transparent; color:var(--text-dim,#8892a4); border:1px solid var(--border,#2e3347);
+              border-radius:6px; padding:0.3rem 0.55rem; font-size:0.82rem; cursor:pointer;" title="Close (Esc)">
+            ✕
+          </button>
+        </div>
+        <div id="iqe-mb-iqe-preview" style="display:none; font-size:0.75rem; font-family:monospace;
+            padding:0.25rem 0.6rem; background:var(--bg-tertiary,#252836); border-radius:4px;
+            color:var(--text-secondary,#a0aec0); margin-bottom:0.3rem; overflow-x:auto;"></div>
+        <div id="iqe-mb-status" style="font-size:0.75rem; color:var(--text-dim,#8892a4); min-height:1rem;"></div>
+        <div id="iqe-mb-results" style="display:none; margin-top:0.4rem; max-height:220px; overflow-y:auto; border-radius:6px;"></div>
+      </div>
+    </div>
+
+    <script>
+    (function() {
+        if (window.location.pathname === '/chat' || window.location.pathname.startsWith('/chat/')) {
+            var _mb = document.getElementById('iqe-minibar');
+            if (_mb) _mb.style.display = 'none';
+        }
+        var bar = document.getElementById('iqe-minibar');
+        var input = document.getElementById('iqe-mb-input');
+        var badge = document.getElementById('iqe-mb-canvas-badge');
+        var status = document.getElementById('iqe-mb-status');
+        var preview = document.getElementById('iqe-mb-iqe-preview');
+        var results = document.getElementById('iqe-mb-results');
+        var _open = false;
+
+        var PATH_CANVAS = [
+            [/^\/network|^\/twin/, 'ndc'],
+            [/^\/security/, 'sdc'],
+            [/^\/devops/, 'pdc'],
+            [/^\/data/, 'ddc'],
+            [/^\/infra/, 'idc'],
+            [/^\/observability/, 'odc'],
+            [/^\/boundary/, 'bdc'],
+            [/^\/simulate\/chat.*canvas=cam/, 'cam'],
+            [/^\/migration-canvas\/projects/, 'cam'],
+            [/^\/migration-canvas/, 'mc'],
+            [/^\/agentic-ai/, 'aadc'],
+            [/^\/ai-ml/, 'aimc'],
+            [/^\/ops/, 'ohc'],
+            [/^\/govlift/, 'govlift'],
+            [/^\/kanban/, 'kanban'],
+            [/^\/compliance/, 'compliance'],
+            [/^\/agents/, 'agents'],
+            [/^\/projects/, 'projects'],
+            [/^\/ai-observatory/, 'ai_observatory'],
+            [/^\/ontology/, 'ontology'],
+            [/^\/cache-savings/, 'cache_savings'],
+            [/^\/strategos/, 'strategos'],
+            [/^\/supply.chain/, 'supply_chain'],
+            [/^\/noc/, 'nocc'],
+            [/^\/pmc/, 'pmc'],
+            [/^\/ccc/, 'ccc'],
+            [/^\/dsoc/, 'dsoc'],
+            [/^\/ai-ify/, 'aiify'],
+            [/^\/document-intelligence/, 'dic'],
+            [/^\/demo-runner/, 'demo_runner'],
+            [/^\/innovation/, 'innovation'],
+            [/^\/mission-canvas/, 'mission_canvas'],
+            [/^\/proposals/, 'govcon'],
+            [/^\/govcon/, 'govcon'],
+        ];
+
+        function detectCanvas() {
+            var p = window.location.pathname;
+            for (var i = 0; i < PATH_CANVAS.length; i++) {
+                if (PATH_CANVAS[i][0].test(p)) return PATH_CANVAS[i][1];
+            }
+            return 'ndc';
+        }
+
+        function open() {
+            _open = true;
+            bar.style.transform = 'translateY(0)';
+            var canvas = detectCanvas();
+            badge.textContent = canvas;
+            setTimeout(function() { input.focus(); }, 60);
+        }
+
+        window.icdevMBClose = function() {
+            _open = false;
+            bar.style.transform = 'translateY(100%)';
+            status.textContent = '';
+            preview.style.display = 'none';
+            results.style.display = 'none';
+            results.innerHTML = '';
+        };
+
+        window.icdevMBRun = function() {
+            var question = input.value.trim();
+            if (!question) return;
+            var canvas = detectCanvas();
+            status.textContent = 'Translating…';
+            preview.style.display = 'none';
+            results.style.display = 'none';
+            results.innerHTML = '';
+            fetch('/api/iqe/dispatch', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({question: question, canvas: canvas})
+            }).then(function(r) { return r.json(); }).then(function(d) {
+                if (d.iqe) {
+                    preview.textContent = d.iqe;
+                    preview.style.display = 'block';
+                }
+                if (!d.ok) {
+                    status.textContent = '✗ ' + (d.error || 'Error');
+                    status.style.color = '#f56565';
+                    return;
+                }
+                status.textContent = '✓ ' + d.row_count + ' row' + (d.row_count !== 1 ? 's' : '');
+                status.style.color = 'var(--success, #68d391)';
+                if (d.results && d.results.length > 0) {
+                    var cols = Object.keys(d.results[0]);
+                    var html = '<table style="width:100%;border-collapse:collapse;font-size:0.75rem;">'
+                        + '<thead><tr>' + cols.map(function(c) {
+                            return '<th style="padding:3px 8px;text-align:left;background:var(--bg-tertiary,#252836);'
+                                + 'color:var(--text-dim,#8892a4);border-bottom:1px solid var(--border,#2e3347);">'
+                                + c + '</th>';
+                        }).join('') + '</tr></thead><tbody>';
+                    var show = Math.min(d.results.length, 100);
+                    for (var i = 0; i < show; i++) {
+                        html += '<tr>' + cols.map(function(c) {
+                            var v = d.results[i][c];
+                            return '<td style="padding:3px 8px;border-bottom:1px solid var(--border,#2e3347);'
+                                + 'color:var(--text-secondary,#a0aec0);max-width:200px;overflow:hidden;text-overflow:ellipsis;">'
+                                + (v === null || v === undefined ? '—' : String(v)) + '</td>';
+                        }).join('') + '</tr>';
+                    }
+                    html += '</tbody></table>';
+                    if (d.results.length > 100) {
+                        html += '<div style="font-size:0.7rem;color:var(--text-dim,#8892a4);padding:4px 8px;">showing 100 of ' + d.results.length + '</div>';
+                    }
+                    results.innerHTML = html;
+                    results.style.display = 'block';
+                } else {
+                    results.innerHTML = '<div style="font-size:0.75rem;color:var(--text-dim,#8892a4);padding:4px 8px;">No results</div>';
+                    results.style.display = 'block';
+                }
+            }).catch(function(e) {
+                status.textContent = '✗ ' + e.message;
+                status.style.color = '#f56565';
+            });
+        };
+
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.shiftKey && e.key === 'Q') {
+                e.preventDefault();
+                if (_open) icdevMBClose(); else open();
+            }
+            if (e.key === 'Escape' && _open) icdevMBClose();
+        });
+
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') icdevMBRun();
+        });
+    })();
+    </script>
+</body>
+</html>

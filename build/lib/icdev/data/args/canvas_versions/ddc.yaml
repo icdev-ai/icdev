@@ -1,0 +1,6 @@
+# CUI // SP-CTI
+# Data Design Canvas — version manifest
+
+canvas: ddc
+version: "1.0.0"
+maturity: functional

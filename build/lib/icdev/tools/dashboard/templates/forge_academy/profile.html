@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% block title %}Profile Setup — FORGE Academy{% endblock %}
+
+{% block extra_css %}
+<style>
+:root {
+  --fa-orange:#FF6B35; --fa-cyan:#00D4FF; --fa-green:#00FF88;
+  --fa-gold:#FFB800; --fa-card:#12192b; --fa-border:rgba(74,144,217,.25);
+}
+.fa-profile-wrap {
+  max-width: 860px; margin: 0 auto; padding: 2rem;
+}
+.fa-profile-hero {
+  background: linear-gradient(135deg,#0a0a14,#12192b);
+  border: 1px solid var(--fa-border); border-radius:12px;
+  padding: 2rem; margin-bottom:1.5rem; position:relative; overflow:hidden;
+}
+.fa-profile-hero::before {
+  content:""; position:absolute; inset:0;
+  background:repeating-linear-gradient(0deg,transparent,transparent 39px,rgba(74,144,217,.04) 40px),
+             repeating-linear-gradient(90deg,transparent,transparent 39px,rgba(74,144,217,.04) 40px);
+}
+.fa-profile-hero h1 {
+  font-size:1.8rem; font-weight:900; letter-spacing:.1em;
+  background:linear-gradient(135deg,var(--fa-orange),var(--fa-gold));
+  -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; margin:0 0 .4rem;
+}
+.fa-profile-hero p { color:var(--text-secondary); margin:0; font-size:.85rem; }
+.fa-section { margin-bottom:1.5rem; }
+.fa-section h2 {
+  font-size:.75rem; text-transform:uppercase; letter-spacing:.2em;
+  color:var(--fa-orange); margin:0 0 1rem;
+  display:flex; align-items:center; gap:.6rem;
+}
+.fa-section h2::after { content:""; flex:1; height:1px; background:var(--fa-border); }
+.fa-role-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:.8rem; }
+.fa-role-card {
+  background:var(--fa-card); border:2px solid var(--fa-border); border-radius:10px;
+  padding:1rem; cursor:pointer; transition:all .2s; text-align:center;
+  position:relative;
+}
+.fa-role-card:hover { border-color:var(--fa-orange); transform:translateY(-2px); }
+.fa-role-card.selected { border-color:var(--fa-cyan); background:rgba(0,212,255,.06); }
+.fa-role-card.selected::after {
+  content:"✓"; position:absolute; top:.4rem; right:.6rem;
+  font-size:.7rem; color:var(--fa-cyan); font-weight:700;
+}
+.fa-role-icon { font-size:2rem; margin-bottom:.4rem; }
+.fa-role-name { font-weight:700; font-size:.88rem; margin-bottom:.2rem; }
+.fa-role-type {
+  font-size:.62rem; text-transform:uppercase; letter-spacing:.1em; padding:2px 7px; border-radius:4px;
+}
+.fa-role-type.technical { background:rgba(0,255,136,.12); color:var(--fa-green); }
+.fa-role-type.guided    { background:rgba(155,89,182,.12); color:#c39bd3; }
+.fa-form-group { margin-bottom:1rem; }
+.fa-form-group label { display:block; font-size:.75rem; color:var(--text-secondary); margin-bottom:.3rem; }
+.fa-form-group input, .fa-form-group select {
+  width:100%; background:var(--fa-card); border:1px solid var(--fa-border);
+  color:var(--text-primary); border-radius:6px; padding:.55rem .8rem;
+  font-size:.88rem; transition:border-color .15s;
+}
+.fa-form-group input:focus, .fa-form-group select:focus {
+  border-color:var(--fa-orange); outline:none;
+}
+.fa-submit-btn {
+  background:linear-gradient(135deg,var(--fa-orange),#e05a2b);
+  color:#fff; border:none; border-radius:8px;
+  padding:.75rem 2rem; font-size:.9rem; font-weight:700;
+  cursor:pointer; transition:opacity .15s; letter-spacing:.04em;
+  text-transform:uppercase; width:100%;
+}
+.fa-submit-btn:hover { opacity:.9; }
+.fa-success {
+  background:rgba(0,255,136,.1); border:1px solid rgba(0,255,136,.3);
+  border-radius:8px; padding:1rem 1.5rem; color:var(--fa-green);
+  text-align:center; font-size:.88rem; display:none;
+}
+.fa-current-stats {
+  background:var(--fa-card); border:1px solid var(--fa-border); border-radius:10px;
+  padding:1.2rem; display:flex; gap:1.5rem; flex-wrap:wrap; align-items:center;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="fa-profile-wrap">
+  <div class="fa-profile-hero">
+    <h1>Operator Profile</h1>
+    <p>Configure your role, training track, and AI maturity level. This shapes your entire mission path.</p>
+  </div>
+
+  {% if fa_user %}
+  <div class="fa-section">
+    <h2>Current Status</h2>
+    <div class="fa-current-stats">
+      <div>
+        <div style="font-size:1.3rem;font-weight:800;color:var(--fa-gold);">{{ fa_user.xp|default(0) }} XP</div>
+        <div style="font-size:.68rem;color:var(--text-secondary);text-transform:uppercase;">Total Earned</div>
+      </div>
+      {% if level_ctx and level_ctx.level %}
+      <div>
+        <div style="font-size:1.1rem;font-weight:700;" style="color:{{ level_ctx.level.color }}">
+          {{ level_ctx.level.icon }} {{ level_ctx.level.label }}
+        </div>
+        <div style="font-size:.68rem;color:var(--text-secondary);text-transform:uppercase;">Current Rank</div>
+      </div>
+      {% endif %}
+      <div>
+        <div style="font-size:1.1rem;font-weight:700;color:var(--fa-orange);">
+          {% if fa_user.role %}{{ roles.get(fa_user.role, {}).get('label', fa_user.role) }}{% else %}Not Set{% endif %}
+        </div>
+        <div style="font-size:.68rem;color:var(--text-secondary);text-transform:uppercase;">Role Track</div>
+      </div>
+      <div style="margin-left:auto;">
+        <a href="/academy" class="btn" style="font-size:.75rem;">← Back to Hub</a>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div id="success-banner" class="fa-success">
+    ✓ Profile configured. Redirecting to your mission hub...
+  </div>
+
+  <form id="profile-form">
+    <div class="fa-section">
+      <h2>Identity</h2>
+      <div class="fa-form-group">
+        <label>Display Name</label>
+        <input type="text" id="display_name" name="display_name"
+               value="{{ fa_user.display_name if fa_user else '' }}"
+               placeholder="Callsign / Name" maxlength="50" required>
+      </div>
+    </div>
+
+    <div class="fa-section">
+      <h2>Mission Track — Choose Your Role</h2>
+      <p style="font-size:.78rem;color:var(--text-secondary);margin:-.6rem 0 1rem;">
+        Technical roles get CodeMirror coding labs. Guided roles get form-based AI configuration missions. Both paths deploy real AI.
+      </p>
+      <input type="hidden" id="selected_role" name="role" value="{{ fa_user.role if fa_user else '' }}">
+      <div class="fa-role-grid">
+        {% for role_id, role in roles.items() %}
+        <div class="fa-role-card {% if fa_user and fa_user.role==role_id %}selected{% endif %}"
+             data-role="{{ role_id }}"
+             onclick="selectRole('{{ role_id }}', this)">
+          <div class="fa-role-icon">{{ role.icon }}</div>
+          <div class="fa-role-name">{{ role.label }}</div>
+          <span class="fa-role-type {{ role.type }}">{{ role.type }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="fa-section">
+      <h2>AI Maturity Assessment</h2>
+      <div class="fa-form-group">
+        <label>Current AI knowledge level</label>
+        <select id="ai_maturity" name="ai_maturity">
+          <option value="none">None — Starting completely fresh</option>
+          <option value="pilot">Pilot — Exploring AI tools, some exposure</option>
+          <option value="scaling">Scaling — AI in production, need deeper skills</option>
+        </select>
+      </div>
+      <div class="fa-form-group">
+        <label>Primary tech stack</label>
+        <select id="tech_stack" name="tech_stack">
+          <option value="python">Python</option>
+          <option value="typescript">TypeScript / JavaScript</option>
+          <option value="java">Java</option>
+          <option value="go">Go</option>
+          <option value="rust">Rust</option>
+          <option value="none">No coding — I'm non-technical</option>
+        </select>
+      </div>
+    </div>
+
+    <button type="submit" class="fa-submit-btn">⚡ Lock In Profile &amp; Begin Missions</button>
+  </form>
+</div>
+
+<script>
+function selectRole(roleId, el) {
+  document.querySelectorAll('.fa-role-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  document.getElementById('selected_role').value = roleId;
+}
+
+document.getElementById('profile-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const payload = {
+    display_name: document.getElementById('display_name').value,
+    role: document.getElementById('selected_role').value,
+    wizard_answers: {
+      ai_maturity: document.getElementById('ai_maturity').value,
+      tech_stack: document.getElementById('tech_stack').value,
+    }
+  };
+  try {
+    const resp = await fetch('/api/academy/user/setup', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      document.getElementById('success-banner').style.display = 'block';
+      setTimeout(() => window.location.href = '/academy', 1500);
+    }
+  } catch(err) {
+    alert('Setup failed: ' + err.message);
+  }
+});
+</script>
+{% endblock %}

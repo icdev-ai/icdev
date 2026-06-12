@@ -1,0 +1,256 @@
+{% extends "studio/base_studio.html" %}
+
+{% block studio_content %}
+<div class="studio-container">
+
+  <!-- Header -->
+  <div class="studio-header">
+    <div class="studio-header__left">
+      <div class="studio-header__icon">&#128203;</div>
+      <div>
+        <div class="studio-header__title">Case Management</div>
+        <div class="studio-header__subtitle">Track issues, findings, and requests through lifecycle stages</div>
+      </div>
+    </div>
+    <div class="studio-header__actions">
+      <button class="studio-btn studio-btn--secondary" onclick="CaseManager.showTemplates()">
+        <span>&#128218;</span> Templates
+      </button>
+      <button class="studio-btn studio-btn--primary studio-btn--lg" onclick="CaseManager.createCase()">
+        <span>&#43;</span> New Case
+      </button>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="studio-tabs">
+    <button class="studio-tab studio-tab--active" data-tab="board" onclick="CaseManager.switchTab(this)">
+      <span>&#9634;</span> Board
+    </button>
+    <button class="studio-tab" data-tab="list" onclick="CaseManager.switchTab(this)">
+      <span>&#9776;</span> List View
+    </button>
+    <button class="studio-tab" data-tab="types" onclick="CaseManager.switchTab(this)">
+      <span>&#9881;</span> Case Types
+      <span class="studio-tab__count" id="cm-types-count">0</span>
+    </button>
+  </div>
+
+  <!-- Type selector -->
+  <div class="studio-toolbar studio-mb-4">
+    <label class="studio-label" style="margin:0;">Case Type:</label>
+    <select class="studio-input studio-select" id="cm-type-select" style="width:260px;"
+            onchange="CaseManager.selectType(this.value)">
+      <option value="">Select a case type...</option>
+    </select>
+    <div class="studio-toolbar__spacer"></div>
+    <select class="studio-input studio-select" id="cm-priority-filter" style="width:140px;"
+            onchange="CaseManager.applyFilters()">
+      <option value="">All Priorities</option>
+      <option value="critical">Critical</option>
+      <option value="high">High</option>
+      <option value="medium">Medium</option>
+      <option value="low">Low</option>
+    </select>
+  </div>
+
+  <!-- Tab: Kanban Board -->
+  <div class="studio-tab-panel" id="panel-board">
+    <div class="cm-board" id="cm-board">
+      <div class="studio-empty">
+        <div class="studio-empty__icon">&#128203;</div>
+        <div class="studio-empty__title">Select a Case Type</div>
+        <div class="studio-empty__description">
+          Choose a case type above, or create one from a template.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: List View -->
+  <div class="studio-tab-panel" id="panel-list" style="display:none;">
+    <div class="studio-table-wrap">
+      <table class="studio-table">
+        <thead><tr>
+          <th>Title</th><th>State</th><th>Priority</th><th>Assigned To</th><th>Updated</th><th></th>
+        </tr></thead>
+        <tbody id="cm-list-body">
+          <tr><td colspan="6" class="studio-text-muted" style="text-align:center;padding:32px;">No cases</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Tab: Case Types -->
+  <div class="studio-tab-panel" id="panel-types" style="display:none;">
+    <div class="studio-grid studio-grid--auto" id="cm-types-grid">
+      <div class="studio-spinner studio-spinner--lg" style="margin:48px auto;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- New Case Modal -->
+<div class="studio-modal-overlay" id="cm-case-modal" style="display:none;">
+  <div class="studio-modal">
+    <div class="studio-modal__header">
+      <div class="studio-modal__title">New Case</div>
+      <button class="studio-btn studio-btn--ghost studio-btn--sm" onclick="CaseManager.closeModal('cm-case-modal')">&times;</button>
+    </div>
+    <div class="studio-modal__body">
+      <div class="studio-form-group">
+        <label class="studio-label">Title</label>
+        <input type="text" class="studio-input" id="cm-case-title" placeholder="Case title...">
+      </div>
+      <div class="studio-form-group">
+        <label class="studio-label">Description</label>
+        <textarea class="studio-input studio-textarea" id="cm-case-desc" rows="3" placeholder="Describe the case..."></textarea>
+      </div>
+      <div class="studio-grid studio-grid--2">
+        <div class="studio-form-group">
+          <label class="studio-label">Priority</label>
+          <select class="studio-input studio-select" id="cm-case-priority">
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+            <option value="high">High</option>
+            <option value="critical">Critical</option>
+          </select>
+        </div>
+        <div class="studio-form-group">
+          <label class="studio-label">Assigned To</label>
+          <input type="text" class="studio-input" id="cm-case-assigned" placeholder="Name or email">
+        </div>
+      </div>
+    </div>
+    <div class="studio-modal__footer">
+      <button class="studio-btn studio-btn--ghost" onclick="CaseManager.closeModal('cm-case-modal')">Cancel</button>
+      <button class="studio-btn studio-btn--primary" onclick="CaseManager.submitCase()">Create Case</button>
+    </div>
+  </div>
+</div>
+
+<!-- Case Detail Modal -->
+<div class="studio-modal-overlay" id="cm-detail-modal" style="display:none;">
+  <div class="studio-modal studio-modal--lg">
+    <div class="studio-modal__header">
+      <div class="studio-modal__title" id="cm-detail-title">Case Detail</div>
+      <button class="studio-btn studio-btn--ghost studio-btn--sm" onclick="CaseManager.closeModal('cm-detail-modal')">&times;</button>
+    </div>
+    <div class="studio-modal__body" id="cm-detail-body"></div>
+  </div>
+</div>
+
+<!-- Templates Modal -->
+<div class="studio-modal-overlay" id="cm-templates-modal" style="display:none;">
+  <div class="studio-modal studio-modal--lg">
+    <div class="studio-modal__header">
+      <div class="studio-modal__title">Lifecycle Templates</div>
+      <button class="studio-btn studio-btn--ghost studio-btn--sm" onclick="CaseManager.closeModal('cm-templates-modal')">&times;</button>
+    </div>
+    <div class="studio-modal__body">
+      <div class="studio-grid studio-grid--auto" id="cm-templates-grid"></div>
+    </div>
+  </div>
+</div>
+
+<div class="studio-toast-container" id="studio-toasts"></div>
+
+<style>
+  .cm-board {
+    display: flex;
+    gap: var(--studio-space-4);
+    overflow-x: auto;
+    padding-bottom: var(--studio-space-4);
+    min-height: 400px;
+  }
+  .cm-column {
+    min-width: 260px;
+    max-width: 320px;
+    flex-shrink: 0;
+    background: var(--studio-bg-surface);
+    border: 1px solid var(--studio-border);
+    border-radius: var(--studio-radius-lg);
+    display: flex;
+    flex-direction: column;
+  }
+  .cm-column__header {
+    display: flex;
+    align-items: center;
+    gap: var(--studio-space-2);
+    padding: var(--studio-space-3) var(--studio-space-4);
+    border-bottom: 1px solid var(--studio-border);
+    font-size: var(--studio-text-sm);
+    font-weight: 600;
+  }
+  .cm-column__dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .cm-column__count {
+    font-size: var(--studio-text-xs);
+    color: var(--studio-text-muted);
+    background: rgba(255,255,255,0.06);
+    padding: 0 6px;
+    border-radius: var(--studio-radius-full);
+    margin-left: auto;
+  }
+  .cm-column__body {
+    padding: var(--studio-space-3);
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--studio-space-2);
+  }
+  .cm-card {
+    background: var(--studio-bg-card);
+    border: 1px solid var(--studio-border);
+    border-radius: var(--studio-radius-md);
+    padding: var(--studio-space-3);
+    cursor: pointer;
+    transition: all var(--studio-duration-fast) var(--studio-ease);
+  }
+  .cm-card:hover {
+    border-color: var(--studio-accent);
+    transform: translateY(-1px);
+    box-shadow: var(--studio-shadow-sm);
+  }
+  .cm-card__title {
+    font-size: var(--studio-text-sm);
+    font-weight: 500;
+    color: var(--studio-text-primary);
+    margin-bottom: var(--studio-space-1);
+  }
+  .cm-card__meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: var(--studio-text-xs);
+    color: var(--studio-text-muted);
+  }
+  .cm-priority { font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+  .cm-priority--critical { color: var(--studio-error); }
+  .cm-priority--high { color: #f97316; }
+  .cm-priority--medium { color: var(--studio-warning); }
+  .cm-priority--low { color: var(--studio-text-muted); }
+
+  .cm-history-item {
+    display: flex;
+    gap: var(--studio-space-3);
+    padding: var(--studio-space-2) 0;
+    border-bottom: 1px solid var(--studio-border-subtle);
+    font-size: var(--studio-text-xs);
+  }
+  .cm-history-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--studio-accent);
+    flex-shrink: 0;
+    margin-top: 5px;
+  }
+</style>
+
+<script src="/static/js/case-manager.js"></script>
+{% endblock %}

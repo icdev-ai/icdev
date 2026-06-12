@@ -1,0 +1,2183 @@
+{
+  "metadata": {
+    "title": "FedRAMP Rev 5 Moderate Baseline Controls",
+    "source": "FedRAMP Rev 5 Moderate Baseline (2023), NIST SP 800-53 Rev 5",
+    "classification": "CUI // SP-CTI",
+    "version": "1.0",
+    "last_updated": "2026-02-15",
+    "description": "FedRAMP Moderate baseline control catalog for cloud service provider authorization"
+  },
+  "controls": [
+    {
+      "id": "FRM-AC-1",
+      "family": "AC",
+      "nist_control_id": "AC-1",
+      "title": "Access Control Policy and Procedures",
+      "description": "Develop, document, and disseminate an access control policy that addresses purpose, scope, roles, responsibilities, management commitment, coordination among organizational entities, and compliance. Review and update the current access control policy and procedures in accordance with FedRAMP-defined frequencies.",
+      "fedramp_parameters": {
+        "policy_review_frequency": "at least every 3 years",
+        "procedure_review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "Policy must explicitly address cloud-specific access control requirements including API access, multi-tenancy isolation, and CSP administrative access.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-2",
+      "family": "AC",
+      "nist_control_id": "AC-2",
+      "title": "Account Management",
+      "description": "Define and document account types, establish conditions for group and role membership, specify authorized users and access authorizations, require approvals for account creation, create/enable/modify/disable/remove accounts in accordance with policy, monitor accounts, and review accounts for compliance.",
+      "fedramp_parameters": {
+        "account_review_frequency": "at least annually",
+        "inactivity_disable_period": "90 days",
+        "notification_period": "notify account managers within 24 hours when accounts are no longer required, users are terminated or transferred, or system usage changes"
+      },
+      "fedramp_additional_requirements": "CSP must implement automated mechanisms to support account management functions. Shared/group accounts are prohibited for privileged access. Guest/anonymous accounts must be disabled.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-2(1)",
+      "family": "AC",
+      "nist_control_id": "AC-2(1)",
+      "title": "Account Management | Automated System Account Management",
+      "description": "Employ automated mechanisms to support the management of system accounts including creation, modification, enabling, disabling, and removal of accounts.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Automated account management must integrate with CSP identity provider and support SCIM or equivalent provisioning protocols.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-2(2)",
+      "family": "AC",
+      "nist_control_id": "AC-2(2)",
+      "title": "Account Management | Automated Temporary and Emergency Account Management",
+      "description": "Automatically remove or disable temporary and emergency accounts after a FedRAMP-defined time period.",
+      "fedramp_parameters": {
+        "temporary_account_duration": "no more than 72 hours",
+        "emergency_account_duration": "no more than 72 hours"
+      },
+      "fedramp_additional_requirements": "Emergency accounts must be logged and reviewed. Notification to ISSO required upon emergency account activation.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-2(3)",
+      "family": "AC",
+      "nist_control_id": "AC-2(3)",
+      "title": "Account Management | Disable Accounts",
+      "description": "Disable accounts when the accounts have been inactive for a FedRAMP-defined time period.",
+      "fedramp_parameters": {
+        "inactivity_period": "90 days for user accounts, 35 days for non-interactive service accounts"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-2(4)",
+      "family": "AC",
+      "nist_control_id": "AC-2(4)",
+      "title": "Account Management | Automated Audit Actions",
+      "description": "Automatically audit account creation, modification, enabling, disabling, and removal actions and notify appropriate personnel.",
+      "fedramp_parameters": {
+        "notification_recipients": "system administrators and ISSOs"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-3",
+      "family": "AC",
+      "nist_control_id": "AC-3",
+      "title": "Access Enforcement",
+      "description": "Enforce approved authorizations for logical access to information and system resources in accordance with applicable access control policies.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Access enforcement must address multi-tenant isolation ensuring one tenant cannot access another tenant's data or resources. API-level access enforcement is required.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-4",
+      "family": "AC",
+      "nist_control_id": "AC-4",
+      "title": "Information Flow Enforcement",
+      "description": "Enforce approved authorizations for controlling the flow of information within the system and between connected systems based on FedRAMP-defined information flow control policies.",
+      "fedramp_parameters": {
+        "flow_control_policies": "policies defined by the organization and approved by the JAB/AO"
+      },
+      "fedramp_additional_requirements": "Information flow enforcement must prevent data exfiltration between authorization boundaries and enforce tenant data isolation in multi-tenant architectures.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-5",
+      "family": "AC",
+      "nist_control_id": "AC-5",
+      "title": "Separation of Duties",
+      "description": "Identify and document duties of individuals requiring separation. Define system access authorizations to support separation of duties.",
+      "fedramp_parameters": {
+        "separation_duties": "at minimum: security administration, system administration, audit administration, and application administration"
+      },
+      "fedramp_additional_requirements": "CSP must document separation of duties between CSP operations and customer tenant administration.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-6",
+      "family": "AC",
+      "nist_control_id": "AC-6",
+      "title": "Least Privilege",
+      "description": "Employ the principle of least privilege, allowing only authorized accesses for users and processes which are necessary to accomplish assigned organizational tasks.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Least privilege must be enforced for CSP administrative access to customer tenants. Just-in-time access provisioning is recommended for privileged functions.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-6(1)",
+      "family": "AC",
+      "nist_control_id": "AC-6(1)",
+      "title": "Least Privilege | Authorize Access to Security Functions",
+      "description": "Authorize access to security functions and security-relevant information for only those personnel explicitly designated by the organization.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-6(2)",
+      "family": "AC",
+      "nist_control_id": "AC-6(2)",
+      "title": "Least Privilege | Non-Privileged Access for Nonsecurity Functions",
+      "description": "Require that users of system accounts or roles with access to security functions or security-relevant information use non-privileged accounts or roles when accessing nonsecurity functions.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-6(5)",
+      "family": "AC",
+      "nist_control_id": "AC-6(5)",
+      "title": "Least Privilege | Privileged Accounts",
+      "description": "Restrict privileged accounts on the system to specific personnel or roles designated by the organization.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "CSP must maintain a list of all privileged accounts and review quarterly.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-6(9)",
+      "family": "AC",
+      "nist_control_id": "AC-6(9)",
+      "title": "Least Privilege | Log Use of Privileged Functions",
+      "description": "Log the execution of privileged functions.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Logs of privileged function execution must be retained for at least one year and available for review within 72 hours.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-6(10)",
+      "family": "AC",
+      "nist_control_id": "AC-6(10)",
+      "title": "Least Privilege | Prohibit Non-Privileged Users from Executing Privileged Functions",
+      "description": "Prevent non-privileged users from executing privileged functions.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-7",
+      "family": "AC",
+      "nist_control_id": "AC-7",
+      "title": "Unsuccessful Logon Attempts",
+      "description": "Enforce a limit of consecutive invalid logon attempts by a user during a FedRAMP-defined time period and automatically lock the account or delay the next logon prompt for a FedRAMP-defined time period when the maximum number of unsuccessful attempts is exceeded.",
+      "fedramp_parameters": {
+        "max_unsuccessful_attempts": "not more than 3",
+        "time_period": "15 minutes",
+        "lockout_duration": "lock account for at least 30 minutes or until released by an administrator"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-8",
+      "family": "AC",
+      "nist_control_id": "AC-8",
+      "title": "System Use Notification",
+      "description": "Display a system use notification message or banner before granting access to the system that provides privacy and security notices consistent with applicable laws, policies, and standards.",
+      "fedramp_parameters": {
+        "banner_content": "US Government system notice with unauthorized use warning and monitoring consent"
+      },
+      "fedramp_additional_requirements": "Banner must be displayed for all interactive sessions including web, SSH, API console, and administrative interfaces.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-11",
+      "family": "AC",
+      "nist_control_id": "AC-11",
+      "title": "Device Lock",
+      "description": "Prevent further access to the system by initiating a device lock after a FedRAMP-defined time period of inactivity, and retain the device lock until the user re-authenticates.",
+      "fedramp_parameters": {
+        "inactivity_timeout": "15 minutes"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P3",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-11(1)",
+      "family": "AC",
+      "nist_control_id": "AC-11(1)",
+      "title": "Device Lock | Pattern-Hiding Displays",
+      "description": "Conceal information previously visible on the display with a publicly viewable image via a pattern-hiding display.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P3",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-12",
+      "family": "AC",
+      "nist_control_id": "AC-12",
+      "title": "Session Termination",
+      "description": "Automatically terminate a user session after FedRAMP-defined conditions or trigger events.",
+      "fedramp_parameters": {
+        "session_timeout": "30 minutes of inactivity for non-privileged sessions",
+        "privileged_session_timeout": "15 minutes of inactivity for privileged sessions"
+      },
+      "fedramp_additional_requirements": "Session tokens must be invalidated server-side upon termination. Re-authentication required after session timeout.",
+      "priority": "P2",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-14",
+      "family": "AC",
+      "nist_control_id": "AC-14",
+      "title": "Permitted Actions Without Identification or Authentication",
+      "description": "Identify user actions that can be performed on the system without identification or authentication consistent with organizational mission and business functions and document and justify such actions.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "CSP must document all unauthenticated access paths and ensure no CUI is accessible without authentication.",
+      "priority": "P3",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-17",
+      "family": "AC",
+      "nist_control_id": "AC-17",
+      "title": "Remote Access",
+      "description": "Establish and document usage restrictions, configuration/connection requirements, and implementation guidance for each type of remote access allowed. Authorize each type of remote access to the system prior to allowing such connections.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "All remote administrative access must use encrypted channels (FIPS-validated cryptography) and multi-factor authentication.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-17(1)",
+      "family": "AC",
+      "nist_control_id": "AC-17(1)",
+      "title": "Remote Access | Monitoring and Control",
+      "description": "Employ automated mechanisms to monitor and control remote access methods.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-17(2)",
+      "family": "AC",
+      "nist_control_id": "AC-17(2)",
+      "title": "Remote Access | Protection of Confidentiality and Integrity Using Encryption",
+      "description": "Implement cryptographic mechanisms to protect the confidentiality and integrity of remote access sessions.",
+      "fedramp_parameters": {
+        "encryption_standard": "FIPS-validated cryptography, TLS 1.2 minimum"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-18",
+      "family": "AC",
+      "nist_control_id": "AC-18",
+      "title": "Wireless Access",
+      "description": "Establish configuration requirements, connection requirements, and implementation guidance for each type of wireless access. Authorize each type of wireless access to the system prior to allowing such connections.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Wireless access to CSP infrastructure handling federal data must use enterprise-grade authentication (WPA3-Enterprise or equivalent).",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-19",
+      "family": "AC",
+      "nist_control_id": "AC-19",
+      "title": "Access Control for Mobile Devices",
+      "description": "Establish configuration requirements, connection requirements, and implementation guidance for organization-controlled mobile devices and authorize the connection of mobile devices to organizational systems.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Mobile devices used to administer CSP infrastructure must be enrolled in an MDM solution and comply with STIG requirements.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-20",
+      "family": "AC",
+      "nist_control_id": "AC-20",
+      "title": "Use of External Systems",
+      "description": "Establish terms and conditions for authorized individuals to access the system from external systems, and enforce those terms and conditions.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "External system connections must be documented in the SSP and approved by the AO. Interconnection Security Agreements (ISAs) required for system-to-system connections.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AC-22",
+      "family": "AC",
+      "nist_control_id": "AC-22",
+      "title": "Publicly Accessible Content",
+      "description": "Designate individuals authorized to post information onto a publicly accessible system. Train authorized individuals on publicly accessible content requirements. Review proposed content prior to posting. Review content on the publicly accessible system for nonpublic information and remove such information if discovered.",
+      "fedramp_parameters": {
+        "review_frequency": "at least quarterly"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P3",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AT-1",
+      "family": "AT",
+      "nist_control_id": "AT-1",
+      "title": "Awareness and Training Policy and Procedures",
+      "description": "Develop, document, and disseminate an awareness and training policy that addresses purpose, scope, roles, responsibilities, management commitment, coordination among organizational entities, and compliance.",
+      "fedramp_parameters": {
+        "policy_review_frequency": "at least every 3 years",
+        "procedure_review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AT-2",
+      "family": "AT",
+      "nist_control_id": "AT-2",
+      "title": "Literacy Training and Awareness",
+      "description": "Provide security and privacy literacy training to system users including initial training for new users and refresher training at a FedRAMP-defined frequency. Training must cover recognition and reporting of potential indicators of insider threat.",
+      "fedramp_parameters": {
+        "training_frequency": "at least annually",
+        "initial_training": "before granting access"
+      },
+      "fedramp_additional_requirements": "Training must include cloud-specific security topics including shared responsibility model, data handling in cloud, and incident reporting procedures.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AT-2(2)",
+      "family": "AT",
+      "nist_control_id": "AT-2(2)",
+      "title": "Literacy Training and Awareness | Insider Threat",
+      "description": "Provide literacy training on recognizing and reporting potential indicators of insider threat.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AT-3",
+      "family": "AT",
+      "nist_control_id": "AT-3",
+      "title": "Role-Based Training",
+      "description": "Provide role-based security and privacy training to personnel with assigned security roles and responsibilities before authorizing access and at a FedRAMP-defined frequency thereafter.",
+      "fedramp_parameters": {
+        "training_frequency": "at least annually",
+        "initial_training": "before assuming role"
+      },
+      "fedramp_additional_requirements": "Role-based training must include CSP-specific operational security procedures and incident response roles.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AT-4",
+      "family": "AT",
+      "nist_control_id": "AT-4",
+      "title": "Training Records",
+      "description": "Document and monitor individual security and privacy training activities including initial and refresher training. Retain individual training records for a FedRAMP-defined time period.",
+      "fedramp_parameters": {
+        "retention_period": "at least 3 years"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P3",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AU-1",
+      "family": "AU",
+      "nist_control_id": "AU-1",
+      "title": "Audit and Accountability Policy and Procedures",
+      "description": "Develop, document, and disseminate an audit and accountability policy and associated procedures.",
+      "fedramp_parameters": {
+        "policy_review_frequency": "at least every 3 years",
+        "procedure_review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AU-2",
+      "family": "AU",
+      "nist_control_id": "AU-2",
+      "title": "Event Logging",
+      "description": "Identify the types of events that the system is capable of logging in support of the audit function. Coordinate the event logging function with other organizational entities requiring audit-related information.",
+      "fedramp_parameters": {
+        "auditable_events": "successful and unsuccessful account logon events, account management events, object access, policy change, privilege functions, process tracking, system events, all administrator activity, authentication checks, authorization checks, data deletions, data access, data changes, and permission changes"
+      },
+      "fedramp_additional_requirements": "Audit events must include API calls, tenant provisioning/deprovisioning, and infrastructure change events in cloud environments.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AU-3",
+      "family": "AU",
+      "nist_control_id": "AU-3",
+      "title": "Content of Audit Records",
+      "description": "Ensure that audit records contain information that establishes what type of event occurred, when it occurred, where it occurred, the source of the event, the outcome of the event, and the identity of any individuals, subjects, or objects/entities associated with the event.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Audit records must include tenant identifier for multi-tenant environments to enable per-tenant audit trails.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AU-3(1)",
+      "family": "AU",
+      "nist_control_id": "AU-3(1)",
+      "title": "Content of Audit Records | Additional Audit Information",
+      "description": "Generate audit records containing additional information including session identifiers, transaction identifiers, and full-text recording of privileged commands.",
+      "fedramp_parameters": {
+        "additional_information": "session ID, transaction ID, user ID, source/destination IP, command text for privileged commands"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AU-4",
+      "family": "AU",
+      "nist_control_id": "AU-4",
+      "title": "Audit Log Storage Capacity",
+      "description": "Allocate audit log storage capacity to accommodate the anticipated volume of audit records and reduce the likelihood of capacity being exceeded.",
+      "fedramp_parameters": {
+        "minimum_online_retention": "at least 90 days online",
+        "minimum_total_retention": "at least 1 year total"
+      },
+      "fedramp_additional_requirements": "CSP must notify customers at least 30 days before any change to audit log retention capabilities.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AU-5",
+      "family": "AU",
+      "nist_control_id": "AU-5",
+      "title": "Response to Audit Logging Process Failures",
+      "description": "Alert designated personnel in the event of an audit logging process failure and take FedRAMP-defined additional actions.",
+      "fedramp_parameters": {
+        "alert_recipients": "system administrators and ISSOs within 1 hour",
+        "additional_actions": "overwrite oldest audit records when storage capacity is reached"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AU-6",
+      "family": "AU",
+      "nist_control_id": "AU-6",
+      "title": "Audit Record Review, Analysis, and Reporting",
+      "description": "Review and analyze system audit records for indications of inappropriate or unusual activity and report findings to designated personnel.",
+      "fedramp_parameters": {
+        "review_frequency": "at least weekly",
+        "report_recipients": "ISSO and system owner"
+      },
+      "fedramp_additional_requirements": "Audit review must leverage automated tools (SIEM) to correlate events across system components and tenants.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AU-6(1)",
+      "family": "AU",
+      "nist_control_id": "AU-6(1)",
+      "title": "Audit Record Review, Analysis, and Reporting | Automated Process Integration",
+      "description": "Integrate audit record review, analysis, and reporting processes using automated mechanisms to support organizational processes for investigation and response to suspicious activities.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AU-6(3)",
+      "family": "AU",
+      "nist_control_id": "AU-6(3)",
+      "title": "Audit Record Review, Analysis, and Reporting | Correlate Audit Record Repositories",
+      "description": "Analyze and correlate audit records across different repositories to gain organization-wide situational awareness.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AU-7",
+      "family": "AU",
+      "nist_control_id": "AU-7",
+      "title": "Audit Record Reduction and Report Generation",
+      "description": "Provide and implement an audit record reduction and report generation capability that supports on-demand audit record review, analysis, and reporting requirements and after-the-fact investigations of incidents.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P2",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AU-7(1)",
+      "family": "AU",
+      "nist_control_id": "AU-7(1)",
+      "title": "Audit Record Reduction and Report Generation | Automatic Processing",
+      "description": "Provide and implement the capability to process, sort, and search audit records for events of interest based on content of audit fields.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P2",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AU-8",
+      "family": "AU",
+      "nist_control_id": "AU-8",
+      "title": "Time Stamps",
+      "description": "Use internal system clocks to generate time stamps for audit records and record time stamps that can be mapped to Coordinated Universal Time (UTC).",
+      "fedramp_parameters": {
+        "granularity": "at least milliseconds",
+        "synchronization": "synchronized to authoritative time source (NTP/GPS)"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AU-9",
+      "family": "AU",
+      "nist_control_id": "AU-9",
+      "title": "Protection of Audit Information",
+      "description": "Protect audit information and audit logging tools from unauthorized access, modification, and deletion.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Audit information must be stored in a separate security domain from the systems being audited. Write-once or append-only storage recommended.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AU-9(4)",
+      "family": "AU",
+      "nist_control_id": "AU-9(4)",
+      "title": "Protection of Audit Information | Access by Subset of Privileged Users",
+      "description": "Authorize access to management of audit logging functionality to only a subset of privileged users or roles.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AU-11",
+      "family": "AU",
+      "nist_control_id": "AU-11",
+      "title": "Audit Record Retention",
+      "description": "Retain audit records for a FedRAMP-defined time period to provide support for after-the-fact investigations of incidents and to meet regulatory and organizational information retention requirements.",
+      "fedramp_parameters": {
+        "online_retention": "at least 90 days",
+        "total_retention": "at least 1 year"
+      },
+      "fedramp_additional_requirements": "CSP must support customer export of audit records for the full retention period.",
+      "priority": "P3",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-AU-12",
+      "family": "AU",
+      "nist_control_id": "AU-12",
+      "title": "Audit Record Generation",
+      "description": "Provide audit record generation capability for the event types the system is capable of auditing. Allow designated personnel to select the event types to be logged. Generate audit records for the selected event types.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Audit record generation must cover all layers of the cloud service stack (IaaS, PaaS, SaaS) relevant to the CSP's offering.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CA-1",
+      "family": "CA",
+      "nist_control_id": "CA-1",
+      "title": "Assessment, Authorization, and Monitoring Policy and Procedures",
+      "description": "Develop, document, and disseminate a security assessment and authorization policy and associated procedures.",
+      "fedramp_parameters": {
+        "policy_review_frequency": "at least every 3 years",
+        "procedure_review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CA-2",
+      "family": "CA",
+      "nist_control_id": "CA-2",
+      "title": "Control Assessments",
+      "description": "Develop a control assessment plan, assess the controls in the system at a FedRAMP-defined frequency, produce a security assessment report, and provide the results to designated personnel.",
+      "fedramp_parameters": {
+        "assessment_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "Annual assessment must be conducted by a FedRAMP-recognized Third Party Assessment Organization (3PAO). Assessment must include penetration testing.",
+      "priority": "P2",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CA-2(1)",
+      "family": "CA",
+      "nist_control_id": "CA-2(1)",
+      "title": "Control Assessments | Independent Assessors",
+      "description": "Employ independent assessors or assessment teams to conduct control assessments.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Independent assessors must be FedRAMP-recognized 3PAOs.",
+      "priority": "P2",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CA-3",
+      "family": "CA",
+      "nist_control_id": "CA-3",
+      "title": "Information Exchange",
+      "description": "Approve and manage the exchange of information between the system and other systems using interconnection security agreements, information exchange security agreements, or other means.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "All external system interconnections must be documented in the SSP. ISAs must be reviewed and updated at least annually.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CA-5",
+      "family": "CA",
+      "nist_control_id": "CA-5",
+      "title": "Plan of Action and Milestones",
+      "description": "Develop a plan of action and milestones for the system to document planned remedial actions to correct weaknesses or deficiencies. Update the plan at a FedRAMP-defined frequency.",
+      "fedramp_parameters": {
+        "update_frequency": "at least quarterly"
+      },
+      "fedramp_additional_requirements": "POA&M must be submitted to FedRAMP PMO and maintained in the FedRAMP repository. Deviations must include risk acceptance documentation.",
+      "priority": "P3",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CA-6",
+      "family": "CA",
+      "nist_control_id": "CA-6",
+      "title": "Authorization",
+      "description": "Assign a senior official as the authorizing official for the system. Ensure that the authorizing official authorizes the system for processing before commencing operations and updates the authorization at a FedRAMP-defined frequency.",
+      "fedramp_parameters": {
+        "reauthorization_frequency": "at least every 3 years or upon significant change"
+      },
+      "fedramp_additional_requirements": "Authorization must follow the FedRAMP authorization process (JAB P-ATO or Agency ATO). Continuous monitoring satisfies ongoing authorization requirements.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CA-7",
+      "family": "CA",
+      "nist_control_id": "CA-7",
+      "title": "Continuous Monitoring",
+      "description": "Develop a system-level continuous monitoring strategy and implement the continuous monitoring program including establishing metrics, frequencies, and assessment methods.",
+      "fedramp_parameters": {
+        "os_scan_frequency": "monthly",
+        "database_scan_frequency": "monthly",
+        "web_application_scan_frequency": "monthly",
+        "penetration_test_frequency": "annually"
+      },
+      "fedramp_additional_requirements": "Monthly vulnerability scanning results, annual penetration test results, annual assessment findings, and POA&M updates must be submitted to FedRAMP PMO per the Continuous Monitoring Strategy Guide.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CA-9",
+      "family": "CA",
+      "nist_control_id": "CA-9",
+      "title": "Internal System Connections",
+      "description": "Authorize internal connections of system components and document for each internal connection the interface characteristics, security and privacy requirements, and the nature of the information communicated.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P2",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CM-1",
+      "family": "CM",
+      "nist_control_id": "CM-1",
+      "title": "Configuration Management Policy and Procedures",
+      "description": "Develop, document, and disseminate a configuration management policy and associated procedures.",
+      "fedramp_parameters": {
+        "policy_review_frequency": "at least every 3 years",
+        "procedure_review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CM-2",
+      "family": "CM",
+      "nist_control_id": "CM-2",
+      "title": "Baseline Configuration",
+      "description": "Develop, document, and maintain under configuration control a current baseline configuration of the system.",
+      "fedramp_parameters": {
+        "review_frequency": "at least annually and upon significant changes"
+      },
+      "fedramp_additional_requirements": "Baseline configuration must include all cloud infrastructure components, virtual machines, containers, and network configurations.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CM-2(2)",
+      "family": "CM",
+      "nist_control_id": "CM-2(2)",
+      "title": "Baseline Configuration | Automation Support for Accuracy and Currency",
+      "description": "Maintain the currency, completeness, accuracy, and availability of the baseline configuration of the system using automated mechanisms.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Infrastructure as Code (IaC) is an acceptable automated mechanism for maintaining baseline configurations.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CM-3",
+      "family": "CM",
+      "nist_control_id": "CM-3",
+      "title": "Configuration Change Control",
+      "description": "Determine and document types of changes to the system that are configuration-controlled. Review proposed configuration-controlled changes and approve or disapprove such changes. Document configuration change decisions associated with the system.",
+      "fedramp_parameters": {
+        "change_review_frequency": "before implementation",
+        "documentation_requirements": "all changes logged with date, description, rationale, and approver"
+      },
+      "fedramp_additional_requirements": "Configuration changes that affect security posture must be reported in monthly ConMon deliverables.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CM-4",
+      "family": "CM",
+      "nist_control_id": "CM-4",
+      "title": "Impact Analyses",
+      "description": "Analyze changes to the system to determine potential security and privacy impacts prior to change implementation.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Significant changes must be reported to FedRAMP PMO and may require 3PAO assessment before implementation.",
+      "priority": "P2",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CM-5",
+      "family": "CM",
+      "nist_control_id": "CM-5",
+      "title": "Access Restrictions for Change",
+      "description": "Define, document, approve, and enforce physical and logical access restrictions associated with changes to the system.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Change access must be restricted using role-based access. All changes must be traceable to an authorized individual.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CM-6",
+      "family": "CM",
+      "nist_control_id": "CM-6",
+      "title": "Configuration Settings",
+      "description": "Establish and document configuration settings for components employed within the system that reflect the most restrictive mode consistent with operational requirements using FedRAMP-approved security configuration checklists.",
+      "fedramp_parameters": {
+        "configuration_guides": "DISA STIGs, CIS Benchmarks, or vendor-recommended hardening guides"
+      },
+      "fedramp_additional_requirements": "STIG compliance is required for all applicable components. Deviations must be documented and risk-accepted.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CM-7",
+      "family": "CM",
+      "nist_control_id": "CM-7",
+      "title": "Least Functionality",
+      "description": "Configure the system to provide only mission-essential capabilities. Prohibit or restrict the use of functions, ports, protocols, and services as defined by the organization.",
+      "fedramp_parameters": {
+        "restricted_functions": "peer-to-peer networking, instant messaging not approved by the organization"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CM-7(1)",
+      "family": "CM",
+      "nist_control_id": "CM-7(1)",
+      "title": "Least Functionality | Periodic Review",
+      "description": "Review the system at a FedRAMP-defined frequency to identify unnecessary and/or nonsecure functions, ports, protocols, software, and services and disable or remove them.",
+      "fedramp_parameters": {
+        "review_frequency": "at least monthly"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CM-7(5)",
+      "family": "CM",
+      "nist_control_id": "CM-7(5)",
+      "title": "Least Functionality | Authorized Software — Allow-by-Exception",
+      "description": "Identify software programs authorized to execute on the system. Employ a deny-all, permit-by-exception policy to allow the execution of authorized software programs. Review and update the list of authorized software programs at a FedRAMP-defined frequency.",
+      "fedramp_parameters": {
+        "review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CM-8",
+      "family": "CM",
+      "nist_control_id": "CM-8",
+      "title": "System Component Inventory",
+      "description": "Develop and document an inventory of system components that accurately reflects the system, is at the level of granularity deemed necessary for tracking and reporting, and is reviewed and updated at a FedRAMP-defined frequency.",
+      "fedramp_parameters": {
+        "update_frequency": "at least monthly or upon significant change"
+      },
+      "fedramp_additional_requirements": "Inventory must include all virtual machines, containers, serverless functions, databases, and network components.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CM-8(1)",
+      "family": "CM",
+      "nist_control_id": "CM-8(1)",
+      "title": "System Component Inventory | Updates During Installation and Removal",
+      "description": "Update the inventory of system components as part of component installations, removals, and system updates.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CM-10",
+      "family": "CM",
+      "nist_control_id": "CM-10",
+      "title": "Software Usage Restrictions",
+      "description": "Use software and associated documentation in accordance with contract agreements and copyright laws. Track the use of software and associated documentation protected by quantity licenses. Control and document the use of peer-to-peer file sharing technology.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P2",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CM-11",
+      "family": "CM",
+      "nist_control_id": "CM-11",
+      "title": "User-Installed Software",
+      "description": "Establish and enforce policies governing the installation of software by users. Monitor policy compliance at a FedRAMP-defined frequency.",
+      "fedramp_parameters": {
+        "monitoring_frequency": "continuously via automated mechanisms"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CP-1",
+      "family": "CP",
+      "nist_control_id": "CP-1",
+      "title": "Contingency Planning Policy and Procedures",
+      "description": "Develop, document, and disseminate a contingency planning policy and associated procedures.",
+      "fedramp_parameters": {
+        "policy_review_frequency": "at least every 3 years",
+        "procedure_review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CP-2",
+      "family": "CP",
+      "nist_control_id": "CP-2",
+      "title": "Contingency Plan",
+      "description": "Develop a contingency plan that identifies essential mission and business functions, provides recovery objectives, restoration priorities, metrics, roles and responsibilities, and personnel contact information.",
+      "fedramp_parameters": {
+        "review_frequency": "at least annually",
+        "plan_update": "after contingency plan test, significant change, or at least annually"
+      },
+      "fedramp_additional_requirements": "Contingency plan must address multi-region failover for cloud services and data recovery from CSP-managed backups.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CP-3",
+      "family": "CP",
+      "nist_control_id": "CP-3",
+      "title": "Contingency Training",
+      "description": "Provide contingency training to system users consistent with assigned roles and responsibilities within a FedRAMP-defined time period of assuming a contingency role or responsibility and at a FedRAMP-defined frequency thereafter.",
+      "fedramp_parameters": {
+        "initial_training": "within 10 days of assuming role",
+        "refresher_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P2",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CP-4",
+      "family": "CP",
+      "nist_control_id": "CP-4",
+      "title": "Contingency Plan Testing",
+      "description": "Test the contingency plan at a FedRAMP-defined frequency using FedRAMP-defined tests to determine effectiveness and organizational readiness.",
+      "fedramp_parameters": {
+        "test_frequency": "at least annually",
+        "test_type": "functional exercise or tabletop"
+      },
+      "fedramp_additional_requirements": "Test results must be documented and provided to FedRAMP PMO as part of annual assessment deliverables.",
+      "priority": "P2",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CP-6",
+      "family": "CP",
+      "nist_control_id": "CP-6",
+      "title": "Alternate Storage Site",
+      "description": "Establish an alternate storage site that provides equivalent security safeguards as the primary site. Ensure the alternate storage site is geographically separated from the primary storage site.",
+      "fedramp_parameters": {
+        "geographic_separation": "at least 100 miles or in a separate AWS region"
+      },
+      "fedramp_additional_requirements": "Alternate storage site must be within the FedRAMP authorization boundary or be a separately authorized system.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CP-7",
+      "family": "CP",
+      "nist_control_id": "CP-7",
+      "title": "Alternate Processing Site",
+      "description": "Establish an alternate processing site that provides equivalent security safeguards as the primary processing site and that is available for use as the operational site supporting essential mission and business functions.",
+      "fedramp_parameters": {
+        "activation_time": "within the RTO defined in the contingency plan"
+      },
+      "fedramp_additional_requirements": "Alternate processing site must be within the FedRAMP authorization boundary.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CP-9",
+      "family": "CP",
+      "nist_control_id": "CP-9",
+      "title": "System Backup",
+      "description": "Conduct backups of user-level, system-level, and system documentation information at a FedRAMP-defined frequency consistent with recovery time and recovery point objectives.",
+      "fedramp_parameters": {
+        "full_backup_frequency": "at least weekly",
+        "incremental_backup_frequency": "at least daily",
+        "backup_testing_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "Backups must be encrypted using FIPS-validated cryptography. Backup media must be stored at the alternate storage site.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-CP-10",
+      "family": "CP",
+      "nist_control_id": "CP-10",
+      "title": "System Recovery and Reconstitution",
+      "description": "Provide for the recovery and reconstitution of the system to a known state within a FedRAMP-defined time period after a disruption, compromise, or failure.",
+      "fedramp_parameters": {
+        "recovery_time": "consistent with the RTO in the contingency plan"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-IA-1",
+      "family": "IA",
+      "nist_control_id": "IA-1",
+      "title": "Identification and Authentication Policy and Procedures",
+      "description": "Develop, document, and disseminate an identification and authentication policy and associated procedures.",
+      "fedramp_parameters": {
+        "policy_review_frequency": "at least every 3 years",
+        "procedure_review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-IA-2",
+      "family": "IA",
+      "nist_control_id": "IA-2",
+      "title": "Identification and Authentication (Organizational Users)",
+      "description": "Uniquely identify and authenticate organizational users or processes acting on behalf of organizational users.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Shared or group authenticators are prohibited for individual user access. Service accounts must be uniquely identified.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-IA-2(1)",
+      "family": "IA",
+      "nist_control_id": "IA-2(1)",
+      "title": "Identification and Authentication | Multi-Factor Authentication to Privileged Accounts",
+      "description": "Implement multi-factor authentication for access to privileged accounts.",
+      "fedramp_parameters": {
+        "mfa_methods": "hardware token, software OTP, PIV/CAC, or FIDO2"
+      },
+      "fedramp_additional_requirements": "MFA is required for all CSP administrative access and any access to the management/control plane.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-IA-2(2)",
+      "family": "IA",
+      "nist_control_id": "IA-2(2)",
+      "title": "Identification and Authentication | Multi-Factor Authentication to Non-Privileged Accounts",
+      "description": "Implement multi-factor authentication for access to non-privileged accounts.",
+      "fedramp_parameters": {
+        "mfa_methods": "hardware token, software OTP, PIV/CAC, or FIDO2"
+      },
+      "fedramp_additional_requirements": "MFA is required for all user-facing interactive access to the cloud service.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-IA-2(8)",
+      "family": "IA",
+      "nist_control_id": "IA-2(8)",
+      "title": "Identification and Authentication | Access to Accounts — Replay Resistant",
+      "description": "Implement replay-resistant authentication mechanisms for access to privileged and non-privileged accounts.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-IA-2(12)",
+      "family": "IA",
+      "nist_control_id": "IA-2(12)",
+      "title": "Identification and Authentication | Acceptance of PIV Credentials",
+      "description": "Accept and electronically verify Personal Identity Verification (PIV) or Common Access Card (CAC) credentials.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "PIV/CAC support is required for agency user authentication where applicable.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-IA-4",
+      "family": "IA",
+      "nist_control_id": "IA-4",
+      "title": "Identifier Management",
+      "description": "Manage system identifiers by receiving authorization for identifier assignment, selecting and assigning individual, group, role, service, or device identifiers, preventing reuse of identifiers for a FedRAMP-defined time period, and disabling identifiers after a FedRAMP-defined time period of inactivity.",
+      "fedramp_parameters": {
+        "identifier_reuse_prevention": "at least 2 years",
+        "inactivity_disable_period": "90 days"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-IA-5",
+      "family": "IA",
+      "nist_control_id": "IA-5",
+      "title": "Authenticator Management",
+      "description": "Manage system authenticators by verifying the identity of the individual, group, role, service, or device receiving the authenticator. Establish initial authenticator content, administrative procedures for lost/compromised or damaged authenticators, and requirements for protecting authenticators.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Password-based authenticators are subject to FedRAMP-specific complexity and history requirements per IA-5(1).",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-IA-5(1)",
+      "family": "IA",
+      "nist_control_id": "IA-5(1)",
+      "title": "Authenticator Management | Password-Based Authentication",
+      "description": "For password-based authentication, enforce minimum password complexity, change, and history requirements per FedRAMP-defined parameters.",
+      "fedramp_parameters": {
+        "minimum_length": "12 characters",
+        "complexity": "at least one uppercase, one lowercase, one numeric, one special character",
+        "password_lifetime": "60 days maximum",
+        "password_history": "24 passwords remembered",
+        "temporary_password_lifetime": "first use or 24 hours maximum"
+      },
+      "fedramp_additional_requirements": "Passwords must be stored using approved hashing algorithms (bcrypt, scrypt, Argon2, or PBKDF2). Passwords must not be transmitted in clear text.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-IA-5(2)",
+      "family": "IA",
+      "nist_control_id": "IA-5(2)",
+      "title": "Authenticator Management | PKI-Based Authentication",
+      "description": "For PKI-based authentication, validate certificates by constructing and verifying a certification path to an accepted trust anchor, enforce authorized access to the corresponding private key, and map the authenticated identity to the account of the individual or group.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "PKI certificates must be issued by a DoD-approved or FedRAMP-approved Certificate Authority.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-IA-6",
+      "family": "IA",
+      "nist_control_id": "IA-6",
+      "title": "Authentication Feedback",
+      "description": "Obscure feedback of authentication information during the authentication process to protect the information from possible exploitation or use by unauthorized individuals.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P2",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-IA-7",
+      "family": "IA",
+      "nist_control_id": "IA-7",
+      "title": "Cryptographic Module Authentication",
+      "description": "Implement mechanisms for authentication to a cryptographic module that meet the requirements of applicable laws, executive orders, directives, policies, regulations, standards, and guidelines for such authentication.",
+      "fedramp_parameters": {
+        "fips_level": "FIPS 140-2 Level 1 minimum"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-IA-8",
+      "family": "IA",
+      "nist_control_id": "IA-8",
+      "title": "Identification and Authentication (Non-Organizational Users)",
+      "description": "Uniquely identify and authenticate non-organizational users or processes acting on behalf of non-organizational users.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Non-organizational users must be uniquely identified and authenticated. Anonymous access must be documented and restricted to public-facing content only.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-IR-1",
+      "family": "IR",
+      "nist_control_id": "IR-1",
+      "title": "Incident Response Policy and Procedures",
+      "description": "Develop, document, and disseminate an incident response policy and associated procedures.",
+      "fedramp_parameters": {
+        "policy_review_frequency": "at least every 3 years",
+        "procedure_review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-IR-2",
+      "family": "IR",
+      "nist_control_id": "IR-2",
+      "title": "Incident Response Training",
+      "description": "Provide incident response training to system users consistent with assigned roles and responsibilities within a FedRAMP-defined time period and at a FedRAMP-defined frequency thereafter.",
+      "fedramp_parameters": {
+        "initial_training": "within 10 days of assuming role",
+        "refresher_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P2",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-IR-4",
+      "family": "IR",
+      "nist_control_id": "IR-4",
+      "title": "Incident Handling",
+      "description": "Implement an incident handling capability for incidents that is consistent with the incident response plan and includes preparation, detection and analysis, containment, eradication, and recovery.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "CSP must report incidents to US-CERT within 1 hour of determination that an incident has occurred. Customer notification must occur within 72 hours.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-IR-4(1)",
+      "family": "IR",
+      "nist_control_id": "IR-4(1)",
+      "title": "Incident Handling | Automated Incident Handling Processes",
+      "description": "Employ automated mechanisms to support the incident handling process.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Automated incident handling must integrate with SIEM and ticketing systems for tracking and escalation.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-IR-5",
+      "family": "IR",
+      "nist_control_id": "IR-5",
+      "title": "Incident Monitoring",
+      "description": "Track and document incidents on an ongoing basis.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Incident tracking must support FedRAMP continuous monitoring reporting requirements.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-IR-6",
+      "family": "IR",
+      "nist_control_id": "IR-6",
+      "title": "Incident Reporting",
+      "description": "Require personnel to report suspected incidents to the organizational incident response capability within a FedRAMP-defined time period.",
+      "fedramp_parameters": {
+        "reporting_time": "within 1 hour of discovery for US-CERT reportable incidents"
+      },
+      "fedramp_additional_requirements": "CSP must report to US-CERT, FedRAMP PMO, and affected agencies per FedRAMP Incident Communications Procedures.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-IR-7",
+      "family": "IR",
+      "nist_control_id": "IR-7",
+      "title": "Incident Response Assistance",
+      "description": "Provide an incident response support resource integral to the organizational incident response capability that offers advice and assistance to users for the handling and reporting of incidents.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P2",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-IR-8",
+      "family": "IR",
+      "nist_control_id": "IR-8",
+      "title": "Incident Response Plan",
+      "description": "Develop an incident response plan and review the plan at a FedRAMP-defined frequency and update as needed.",
+      "fedramp_parameters": {
+        "review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "Incident response plan must include FedRAMP-specific reporting requirements, US-CERT contact information, and escalation procedures for multi-tenant incidents.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-MA-1",
+      "family": "MA",
+      "nist_control_id": "MA-1",
+      "title": "Maintenance Policy and Procedures",
+      "description": "Develop, document, and disseminate a system maintenance policy and associated procedures.",
+      "fedramp_parameters": {
+        "policy_review_frequency": "at least every 3 years",
+        "procedure_review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-MA-2",
+      "family": "MA",
+      "nist_control_id": "MA-2",
+      "title": "Controlled Maintenance",
+      "description": "Schedule, document, and review records of maintenance and repair on system components in accordance with manufacturer or vendor specifications and/or organizational requirements.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Maintenance activities must be logged in the audit trail. Non-local maintenance must be conducted over encrypted channels.",
+      "priority": "P2",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-MA-4",
+      "family": "MA",
+      "nist_control_id": "MA-4",
+      "title": "Nonlocal Maintenance",
+      "description": "Approve and monitor nonlocal maintenance and diagnostic activities. Allow the use of nonlocal maintenance and diagnostic tools only as consistent with organizational policy and documented in the security plan.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "All nonlocal maintenance sessions must use MFA, encrypted channels, and be logged. Session recording is recommended for privileged maintenance.",
+      "priority": "P2",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-MA-5",
+      "family": "MA",
+      "nist_control_id": "MA-5",
+      "title": "Maintenance Personnel",
+      "description": "Establish a process for maintenance personnel authorization and maintain a list of authorized maintenance organizations or personnel.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Maintenance personnel must meet personnel security requirements per PS controls. Foreign nationals performing maintenance must be escorted.",
+      "priority": "P2",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-MP-1",
+      "family": "MP",
+      "nist_control_id": "MP-1",
+      "title": "Media Protection Policy and Procedures",
+      "description": "Develop, document, and disseminate a media protection policy and associated procedures.",
+      "fedramp_parameters": {
+        "policy_review_frequency": "at least every 3 years",
+        "procedure_review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-MP-2",
+      "family": "MP",
+      "nist_control_id": "MP-2",
+      "title": "Media Access",
+      "description": "Restrict access to digital and non-digital media to authorized individuals using FedRAMP-defined controls.",
+      "fedramp_parameters": {
+        "access_controls": "physical access controls, encryption, and access logging"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-MP-6",
+      "family": "MP",
+      "nist_control_id": "MP-6",
+      "title": "Media Sanitization",
+      "description": "Sanitize system media prior to disposal, release out of organizational control, or release for reuse using FedRAMP-defined sanitization techniques and procedures.",
+      "fedramp_parameters": {
+        "sanitization_standard": "NIST SP 800-88 Guidelines for Media Sanitization"
+      },
+      "fedramp_additional_requirements": "Media containing CUI must be sanitized per NIST 800-88 Purge or Destroy methods. Clear is not sufficient for CUI media.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-MP-7",
+      "family": "MP",
+      "nist_control_id": "MP-7",
+      "title": "Media Use",
+      "description": "Restrict or prohibit the use of FedRAMP-defined types of system media on FedRAMP-defined systems or system components.",
+      "fedramp_parameters": {
+        "restricted_media": "removable media including USB drives, external hard drives, and optical media"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-PE-1",
+      "family": "PE",
+      "nist_control_id": "PE-1",
+      "title": "Physical and Environmental Protection Policy and Procedures",
+      "description": "Develop, document, and disseminate a physical and environmental protection policy and associated procedures.",
+      "fedramp_parameters": {
+        "policy_review_frequency": "at least every 3 years",
+        "procedure_review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-PE-2",
+      "family": "PE",
+      "nist_control_id": "PE-2",
+      "title": "Physical Access Authorizations",
+      "description": "Develop, approve, and maintain a list of individuals with authorized access to the facility. Issue authorization credentials for facility access. Review the access list at a FedRAMP-defined frequency.",
+      "fedramp_parameters": {
+        "review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "CSP data center access lists must include all personnel with unescorted access. Visitor logs must be maintained for at least 1 year.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-PE-3",
+      "family": "PE",
+      "nist_control_id": "PE-3",
+      "title": "Physical Access Control",
+      "description": "Enforce physical access authorizations at entry and exit points to the facility by verifying individual access authorizations before granting access, controlling ingress and egress using physical access control systems, and maintaining physical access audit logs.",
+      "fedramp_parameters": {
+        "audit_log_review_frequency": "at least monthly"
+      },
+      "fedramp_additional_requirements": "Data center physical access must include multi-factor authentication (badge + biometric or badge + PIN). Man-trap or equivalent anti-tailgating controls required.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-PE-6",
+      "family": "PE",
+      "nist_control_id": "PE-6",
+      "title": "Monitoring Physical Access",
+      "description": "Monitor physical access to the facility where the system resides to detect and respond to physical security incidents.",
+      "fedramp_parameters": {
+        "monitoring": "24x7 video surveillance with at least 90 days retention"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-PE-8",
+      "family": "PE",
+      "nist_control_id": "PE-8",
+      "title": "Visitor Access Records",
+      "description": "Maintain visitor access records to the facility where the system resides for a FedRAMP-defined time period and review visitor access records at a FedRAMP-defined frequency.",
+      "fedramp_parameters": {
+        "retention_period": "at least 1 year",
+        "review_frequency": "at least monthly"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P3",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-PL-1",
+      "family": "PL",
+      "nist_control_id": "PL-1",
+      "title": "Planning Policy and Procedures",
+      "description": "Develop, document, and disseminate a planning policy and associated procedures.",
+      "fedramp_parameters": {
+        "policy_review_frequency": "at least every 3 years",
+        "procedure_review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-PL-2",
+      "family": "PL",
+      "nist_control_id": "PL-2",
+      "title": "System Security and Privacy Plans",
+      "description": "Develop security and privacy plans for the system that are consistent with the organization's enterprise architecture, define the authorization boundary, describe the operational context, include the security categorization, describe the operational environment, identify security and privacy requirements, and describe the controls in place or planned.",
+      "fedramp_parameters": {
+        "review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "SSP must follow the FedRAMP SSP template and be submitted to FedRAMP PMO. All appendices required by the template must be completed.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-PL-4",
+      "family": "PL",
+      "nist_control_id": "PL-4",
+      "title": "Rules of Behavior",
+      "description": "Establish and provide to individuals requiring access to the system the rules that describe their responsibilities and expected behavior for information and system usage, security, and privacy.",
+      "fedramp_parameters": {
+        "acknowledgment_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "Rules of behavior must include acceptable use of cloud resources, data handling requirements, and incident reporting obligations.",
+      "priority": "P2",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-PM-9",
+      "family": "PM",
+      "nist_control_id": "PM-9",
+      "title": "Risk Management Strategy",
+      "description": "Develop a comprehensive strategy to manage security and privacy risk to organizational operations and assets, individuals, other organizations, and the Nation.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Risk management strategy must align with NIST Risk Management Framework and address cloud-specific risk factors.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-PM-10",
+      "family": "PM",
+      "nist_control_id": "PM-10",
+      "title": "Authorization Process",
+      "description": "Manage the security and privacy state of organizational systems through authorization processes.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Authorization process must follow FedRAMP authorization framework (JAB P-ATO or Agency ATO pathway).",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-PS-1",
+      "family": "PS",
+      "nist_control_id": "PS-1",
+      "title": "Personnel Security Policy and Procedures",
+      "description": "Develop, document, and disseminate a personnel security policy and associated procedures.",
+      "fedramp_parameters": {
+        "policy_review_frequency": "at least every 3 years",
+        "procedure_review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-PS-2",
+      "family": "PS",
+      "nist_control_id": "PS-2",
+      "title": "Position Risk Designation",
+      "description": "Assign a risk designation to all organizational positions. Establish screening criteria for individuals filling those positions. Review and update position risk designations at a FedRAMP-defined frequency.",
+      "fedramp_parameters": {
+        "review_frequency": "at least every 3 years"
+      },
+      "fedramp_additional_requirements": "CSP personnel with access to federal data or systems must have risk designations commensurate with the sensitivity of the data.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-PS-3",
+      "family": "PS",
+      "nist_control_id": "PS-3",
+      "title": "Personnel Screening",
+      "description": "Screen individuals prior to authorizing access to the system and rescreen individuals at a FedRAMP-defined frequency.",
+      "fedramp_parameters": {
+        "rescreen_frequency": "at least every 5 years for Moderate systems",
+        "screening_type": "at minimum, National Agency Check with Written Inquiries (NACI) or equivalent"
+      },
+      "fedramp_additional_requirements": "CSP must ensure background investigations are completed for all personnel with logical or physical access to CSP infrastructure supporting FedRAMP systems.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-PS-4",
+      "family": "PS",
+      "nist_control_id": "PS-4",
+      "title": "Personnel Termination",
+      "description": "Upon termination of individual employment, disable system access within a FedRAMP-defined time period, terminate or revoke authenticators and credentials, conduct exit interviews, retrieve all security-related organizational system-related property, and retain access to organizational information formerly controlled by the terminated individual.",
+      "fedramp_parameters": {
+        "access_disable_time": "same day as termination"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-PS-5",
+      "family": "PS",
+      "nist_control_id": "PS-5",
+      "title": "Personnel Transfer",
+      "description": "Review and confirm ongoing operational need for current logical and physical access authorizations to systems and facilities when individuals are reassigned or transferred to other positions.",
+      "fedramp_parameters": {
+        "review_time": "within 5 days of transfer action"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P2",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-PS-6",
+      "family": "PS",
+      "nist_control_id": "PS-6",
+      "title": "Access Agreements",
+      "description": "Develop and document access agreements for organizational systems. Review and update the access agreements at a FedRAMP-defined frequency. Verify that individuals requiring access to organizational information and systems sign appropriate access agreements prior to being granted access.",
+      "fedramp_parameters": {
+        "review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "Access agreements must include non-disclosure provisions, acceptable use, and acknowledgment of monitoring.",
+      "priority": "P3",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-PS-7",
+      "family": "PS",
+      "nist_control_id": "PS-7",
+      "title": "External Personnel Security",
+      "description": "Establish personnel security requirements including security roles and responsibilities for external providers. Require external providers to comply with personnel security policies and procedures established by the organization.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Third-party personnel with access to FedRAMP systems must undergo equivalent background screening. Contracts must include security requirements and right-to-audit clauses.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-RA-1",
+      "family": "RA",
+      "nist_control_id": "RA-1",
+      "title": "Risk Assessment Policy and Procedures",
+      "description": "Develop, document, and disseminate a risk assessment policy and associated procedures.",
+      "fedramp_parameters": {
+        "policy_review_frequency": "at least every 3 years",
+        "procedure_review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-RA-2",
+      "family": "RA",
+      "nist_control_id": "RA-2",
+      "title": "Security Categorization",
+      "description": "Categorize the system and information processed, stored, and transmitted. Document the security categorization results in the security plan.",
+      "fedramp_parameters": {
+        "categorization_standard": "FIPS 199 and NIST SP 800-60"
+      },
+      "fedramp_additional_requirements": "FIPS 199 categorization must be documented in the FedRAMP SSP using the FedRAMP FIPS 199 template.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-RA-3",
+      "family": "RA",
+      "nist_control_id": "RA-3",
+      "title": "Risk Assessment",
+      "description": "Conduct a risk assessment to identify threats to and vulnerabilities of the system. Determine the likelihood and magnitude of harm from unauthorized access, use, disclosure, disruption, modification, or destruction. Update the risk assessment at a FedRAMP-defined frequency.",
+      "fedramp_parameters": {
+        "update_frequency": "at least annually or when significant change occurs"
+      },
+      "fedramp_additional_requirements": "Risk assessment must include cloud-specific threats such as data co-mingling, insecure interfaces, and shared technology vulnerabilities.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-RA-5",
+      "family": "RA",
+      "nist_control_id": "RA-5",
+      "title": "Vulnerability Monitoring and Scanning",
+      "description": "Monitor and scan for vulnerabilities in the system at a FedRAMP-defined frequency and when new vulnerabilities potentially affecting the system are identified and reported.",
+      "fedramp_parameters": {
+        "os_scan_frequency": "at least monthly",
+        "web_app_scan_frequency": "at least monthly",
+        "database_scan_frequency": "at least monthly",
+        "remediation_high": "within 30 days",
+        "remediation_moderate": "within 90 days",
+        "remediation_low": "within 180 days"
+      },
+      "fedramp_additional_requirements": "Scanning must use a FedRAMP-approved scanner (DISA ACAS/Nessus/Qualys/equivalent). Monthly scan results must be submitted as part of continuous monitoring deliverables. Unique vulnerabilities with CVSS score >= 7 must be tracked in POA&M.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SA-1",
+      "family": "SA",
+      "nist_control_id": "SA-1",
+      "title": "System and Services Acquisition Policy and Procedures",
+      "description": "Develop, document, and disseminate a system and services acquisition policy and associated procedures.",
+      "fedramp_parameters": {
+        "policy_review_frequency": "at least every 3 years",
+        "procedure_review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SA-2",
+      "family": "SA",
+      "nist_control_id": "SA-2",
+      "title": "Allocation of Resources",
+      "description": "Determine the high-level security and privacy requirements for the system. Determine, document, and allocate resources required to protect the system as part of the organizational capital planning and investment control process.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SA-3",
+      "family": "SA",
+      "nist_control_id": "SA-3",
+      "title": "System Development Life Cycle",
+      "description": "Acquire, develop, and manage the system using an organization-defined system development life cycle that incorporates information security and privacy considerations.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "SDLC must include security activities at each phase including threat modeling, secure code review, and security testing.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SA-4",
+      "family": "SA",
+      "nist_control_id": "SA-4",
+      "title": "Acquisition Process",
+      "description": "Include security and privacy functional requirements, strength requirements, security and privacy assurance requirements, controls, and documentation requirements in system acquisition contracts.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Acquisition contracts for cloud services must require FedRAMP authorization or equivalent. SBOM delivery requirements should be included.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SA-5",
+      "family": "SA",
+      "nist_control_id": "SA-5",
+      "title": "System Documentation",
+      "description": "Obtain or develop administrator documentation and user documentation for the system. Document attempts to obtain unavailable documentation.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P2",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SA-9",
+      "family": "SA",
+      "nist_control_id": "SA-9",
+      "title": "External System Services",
+      "description": "Require that providers of external system services comply with organizational information security and privacy requirements. Define and document organizational oversight and user roles for external system services.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "External services leveraged by the CSP that process, store, or transmit federal data must be FedRAMP authorized or documented as leveraged services in the SSP.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SA-11",
+      "family": "SA",
+      "nist_control_id": "SA-11",
+      "title": "Developer Testing and Evaluation",
+      "description": "Require the developer of the system to create and implement a security and privacy assessment plan. Perform testing and evaluation at a depth and coverage sufficient to confirm the system meets security and privacy requirements.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Developer testing must include SAST, DAST, and SCA. Test results must be available for 3PAO review.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SC-1",
+      "family": "SC",
+      "nist_control_id": "SC-1",
+      "title": "System and Communications Protection Policy and Procedures",
+      "description": "Develop, document, and disseminate a system and communications protection policy and associated procedures.",
+      "fedramp_parameters": {
+        "policy_review_frequency": "at least every 3 years",
+        "procedure_review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SC-5",
+      "family": "SC",
+      "nist_control_id": "SC-5",
+      "title": "Denial-of-Service Protection",
+      "description": "Protect against or limit the effects of denial-of-service attacks by employing security safeguards or leveraging external service providers.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "CSP must implement DDoS mitigation capabilities (e.g., AWS Shield, CloudFlare, or equivalent).",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SC-7",
+      "family": "SC",
+      "nist_control_id": "SC-7",
+      "title": "Boundary Protection",
+      "description": "Monitor and control communications at the external managed interfaces to the system and at key internal managed interfaces within the system. Implement subnetworks for publicly accessible system components that are physically or logically separated from internal organizational networks.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "CSP must implement WAF for web-facing components. Network architecture must enforce DMZ or equivalent segmentation between public-facing and internal components.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SC-7(3)",
+      "family": "SC",
+      "nist_control_id": "SC-7(3)",
+      "title": "Boundary Protection | Access Points",
+      "description": "Limit the number of external network connections to the system.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SC-7(4)",
+      "family": "SC",
+      "nist_control_id": "SC-7(4)",
+      "title": "Boundary Protection | External Telecommunications Services",
+      "description": "Implement a managed interface for each external telecommunication service. Establish a traffic flow policy for each managed interface.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SC-7(5)",
+      "family": "SC",
+      "nist_control_id": "SC-7(5)",
+      "title": "Boundary Protection | Deny by Default — Allow by Exception",
+      "description": "Deny network communications traffic by default and allow network communications traffic by exception at managed interfaces.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Default-deny firewall rules must be in place for all managed interfaces including cloud security groups and NACLs.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SC-8",
+      "family": "SC",
+      "nist_control_id": "SC-8",
+      "title": "Transmission Confidentiality and Integrity",
+      "description": "Protect the confidentiality and integrity of transmitted information.",
+      "fedramp_parameters": {
+        "encryption_standard": "FIPS-validated TLS 1.2 or higher"
+      },
+      "fedramp_additional_requirements": "All data in transit must be encrypted. This includes internal service-to-service communications within the authorization boundary.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SC-8(1)",
+      "family": "SC",
+      "nist_control_id": "SC-8(1)",
+      "title": "Transmission Confidentiality and Integrity | Cryptographic Protection",
+      "description": "Implement cryptographic mechanisms to prevent unauthorized disclosure and detect changes to information during transmission.",
+      "fedramp_parameters": {
+        "cryptographic_standard": "FIPS 140-2 validated modules"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SC-12",
+      "family": "SC",
+      "nist_control_id": "SC-12",
+      "title": "Cryptographic Key Establishment and Management",
+      "description": "Establish and manage cryptographic keys when cryptography is employed within the system in accordance with applicable laws, policies, and standards.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Key management must use FIPS-validated key management technology. AWS KMS or equivalent HSM-backed key management is acceptable.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SC-13",
+      "family": "SC",
+      "nist_control_id": "SC-13",
+      "title": "Cryptographic Protection",
+      "description": "Determine the cryptographic uses and type of cryptography required for each use in accordance with applicable laws, executive orders, directives, policies, regulations, and standards.",
+      "fedramp_parameters": {
+        "standard": "FIPS 140-2 Level 1 minimum for all cryptographic modules"
+      },
+      "fedramp_additional_requirements": "All cryptographic operations must use FIPS-validated cryptographic modules. Non-FIPS cryptography is not permitted for protecting federal data.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SC-15",
+      "family": "SC",
+      "nist_control_id": "SC-15",
+      "title": "Collaborative Computing Devices and Applications",
+      "description": "Prohibit remote activation of collaborative computing devices and applications and provide an explicit indication of use to users physically present at the devices.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SC-20",
+      "family": "SC",
+      "nist_control_id": "SC-20",
+      "title": "Secure Name/Address Resolution Service (Authoritative Source)",
+      "description": "Provide additional data origin authentication and integrity verification artifacts along with the authoritative name resolution data the system returns in response to external name/address resolution queries.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "DNSSEC must be implemented for all authoritative DNS zones.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SC-21",
+      "family": "SC",
+      "nist_control_id": "SC-21",
+      "title": "Secure Name/Address Resolution Service (Recursive or Caching Resolver)",
+      "description": "Request and perform data origin authentication and data integrity verification on the name/address resolution responses the system receives from authoritative sources.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SC-22",
+      "family": "SC",
+      "nist_control_id": "SC-22",
+      "title": "Architecture and Provisioning for Name/Address Resolution Service",
+      "description": "Ensure the systems that collectively provide name/address resolution service for an organization are fault-tolerant and implement internal/external role separation.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SC-28",
+      "family": "SC",
+      "nist_control_id": "SC-28",
+      "title": "Protection of Information at Rest",
+      "description": "Protect the confidentiality and integrity of information at rest.",
+      "fedramp_parameters": {
+        "encryption_standard": "AES-256 or equivalent FIPS-validated encryption"
+      },
+      "fedramp_additional_requirements": "All data at rest containing federal information must be encrypted. This includes databases, object storage, block storage, and backups.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SC-28(1)",
+      "family": "SC",
+      "nist_control_id": "SC-28(1)",
+      "title": "Protection of Information at Rest | Cryptographic Protection",
+      "description": "Implement cryptographic mechanisms to prevent unauthorized disclosure and modification of information at rest on FedRAMP-defined system components.",
+      "fedramp_parameters": {
+        "cryptographic_standard": "FIPS 140-2 validated modules"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SC-39",
+      "family": "SC",
+      "nist_control_id": "SC-39",
+      "title": "Process Isolation",
+      "description": "Maintain a separate execution domain for each executing system process.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Process isolation must extend to tenant workload isolation in multi-tenant environments using container isolation, VM isolation, or equivalent mechanisms.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SI-1",
+      "family": "SI",
+      "nist_control_id": "SI-1",
+      "title": "System and Information Integrity Policy and Procedures",
+      "description": "Develop, document, and disseminate a system and information integrity policy and associated procedures.",
+      "fedramp_parameters": {
+        "policy_review_frequency": "at least every 3 years",
+        "procedure_review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SI-2",
+      "family": "SI",
+      "nist_control_id": "SI-2",
+      "title": "Flaw Remediation",
+      "description": "Identify, report, and correct system flaws. Install security-relevant software and firmware updates within a FedRAMP-defined time period of the release of the updates.",
+      "fedramp_parameters": {
+        "critical_patch_time": "within 30 days of release",
+        "high_patch_time": "within 30 days of release",
+        "moderate_patch_time": "within 90 days of release"
+      },
+      "fedramp_additional_requirements": "Patch compliance must be reported monthly as part of continuous monitoring deliverables.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SI-2(2)",
+      "family": "SI",
+      "nist_control_id": "SI-2(2)",
+      "title": "Flaw Remediation | Automated Flaw Remediation Status",
+      "description": "Determine if system components have applicable security-relevant software and firmware updates installed using automated mechanisms at a FedRAMP-defined frequency.",
+      "fedramp_parameters": {
+        "check_frequency": "at least monthly"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SI-3",
+      "family": "SI",
+      "nist_control_id": "SI-3",
+      "title": "Malicious Code Protection",
+      "description": "Implement signature-based and non-signature-based malicious code protection mechanisms at system entry and exit points to detect and eradicate malicious code.",
+      "fedramp_parameters": {
+        "signature_update_frequency": "at least daily or as updates become available"
+      },
+      "fedramp_additional_requirements": "Anti-malware must cover all endpoints including servers and workstations. Container image scanning for malware is required.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SI-4",
+      "family": "SI",
+      "nist_control_id": "SI-4",
+      "title": "System Monitoring",
+      "description": "Monitor the system to detect attacks and indicators of potential attacks, unauthorized local, network, and remote connections, and to identify unauthorized use of the system.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "System monitoring must include IDS/IPS capabilities at authorization boundary. Monitoring alerts must be integrated with incident response procedures.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SI-4(2)",
+      "family": "SI",
+      "nist_control_id": "SI-4(2)",
+      "title": "System Monitoring | Automated Tools and Mechanisms for Real-Time Analysis",
+      "description": "Employ automated tools and mechanisms to support near real-time analysis of events.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "SIEM or equivalent automated analysis tool is required. Real-time alerting for critical events must be implemented.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SI-4(4)",
+      "family": "SI",
+      "nist_control_id": "SI-4(4)",
+      "title": "System Monitoring | Inbound and Outbound Communications Traffic",
+      "description": "Analyze inbound and outbound communications traffic to identify unusual or unauthorized activities or conditions.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SI-4(5)",
+      "family": "SI",
+      "nist_control_id": "SI-4(5)",
+      "title": "System Monitoring | System-Generated Alerts",
+      "description": "Alert personnel or roles when system-generated indications of compromise or potential compromise occur.",
+      "fedramp_parameters": {
+        "alert_recipients": "ISSO and SOC within 15 minutes of detection"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SI-5",
+      "family": "SI",
+      "nist_control_id": "SI-5",
+      "title": "Security Alerts, Advisories, and Directives",
+      "description": "Receive system security alerts, advisories, and directives from designated external organizations on an ongoing basis. Generate internal security alerts, advisories, and directives. Disseminate to designated personnel, roles, and/or organizational elements.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "CSP must monitor US-CERT alerts and apply relevant directives. FedRAMP operational requirements directives must be implemented within specified timeframes.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SI-10",
+      "family": "SI",
+      "nist_control_id": "SI-10",
+      "title": "Information Input Validation",
+      "description": "Check the validity of information inputs to the system.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "All web application inputs must be validated. Input validation must include protection against injection attacks (SQL, LDAP, OS command, XSS).",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SI-11",
+      "family": "SI",
+      "nist_control_id": "SI-11",
+      "title": "Error Handling",
+      "description": "Generate error messages that provide information necessary for corrective actions without revealing information that could be exploited.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Error messages must not reveal internal system architecture, software versions, stack traces, or database query structures.",
+      "priority": "P2",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SI-12",
+      "family": "SI",
+      "nist_control_id": "SI-12",
+      "title": "Information Management and Retention",
+      "description": "Manage and retain information within the system and information output from the system in accordance with applicable laws, executive orders, directives, regulations, policies, standards, guidelines, and operational requirements.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Data retention policies must address federal record-keeping requirements and be documented in the SSP.",
+      "priority": "P2",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SI-16",
+      "family": "SI",
+      "nist_control_id": "SI-16",
+      "title": "Memory Protection",
+      "description": "Implement the following controls to protect the system memory from unauthorized code execution: data execution prevention, address space layout randomization, and other FedRAMP-approved memory protection mechanisms.",
+      "fedramp_parameters": {
+        "protection_mechanisms": "DEP, ASLR, stack canaries"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SR-1",
+      "family": "SR",
+      "nist_control_id": "SR-1",
+      "title": "Supply Chain Risk Management Policy and Procedures",
+      "description": "Develop, document, and disseminate a supply chain risk management policy and associated procedures.",
+      "fedramp_parameters": {
+        "policy_review_frequency": "at least every 3 years",
+        "procedure_review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SR-2",
+      "family": "SR",
+      "nist_control_id": "SR-2",
+      "title": "Supply Chain Risk Management Plan",
+      "description": "Develop a plan for managing supply chain risks associated with the development, acquisition, maintenance, and disposal of systems, system components, and system services.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Supply chain risk management plan must address software supply chain risks including open source dependencies and third-party libraries.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SR-3",
+      "family": "SR",
+      "nist_control_id": "SR-3",
+      "title": "Supply Chain Controls and Processes",
+      "description": "Establish and apply a process for identifying and addressing weaknesses or deficiencies in the supply chain elements and processes.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "CSP must maintain a software bill of materials (SBOM) for the cloud service offering.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SR-5",
+      "family": "SR",
+      "nist_control_id": "SR-5",
+      "title": "Acquisition Strategies, Tools, and Methods",
+      "description": "Employ acquisition strategies, contract tools, and procurement methods directed at reducing supply chain risk.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-SR-11",
+      "family": "SR",
+      "nist_control_id": "SR-11",
+      "title": "Component Authenticity",
+      "description": "Develop and implement anti-counterfeit policy and procedures that include the means to detect and prevent counterfeit components from entering the system.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Software integrity verification (code signing, checksum validation) must be implemented for all software components.",
+      "priority": "P2",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-PT-1",
+      "family": "PT",
+      "nist_control_id": "PT-1",
+      "title": "Policy and Procedures for Personally Identifiable Information Processing and Transparency",
+      "description": "Develop, document, and disseminate a policy for personally identifiable information processing and transparency and associated procedures.",
+      "fedramp_parameters": {
+        "policy_review_frequency": "at least every 3 years",
+        "procedure_review_frequency": "at least annually"
+      },
+      "fedramp_additional_requirements": "",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-PT-2",
+      "family": "PT",
+      "nist_control_id": "PT-2",
+      "title": "Authority to Process Personally Identifiable Information",
+      "description": "Determine and document the legal authority that permits the collection, use, maintenance, and sharing of personally identifiable information (PII).",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "CSP must document all PII processing activities and their legal basis. Privacy Impact Assessment (PIA) required where applicable.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-PT-3",
+      "family": "PT",
+      "nist_control_id": "PT-3",
+      "title": "Personally Identifiable Information Processing Purposes",
+      "description": "Identify and document the purposes for processing personally identifiable information.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Processing purposes must be limited to those explicitly authorized and documented. Purpose limitation must be technically enforced where feasible.",
+      "priority": "P1",
+      "baseline": "moderate"
+    },
+    {
+      "id": "FRM-PT-4",
+      "family": "PT",
+      "nist_control_id": "PT-4",
+      "title": "Consent",
+      "description": "Implement mechanisms to obtain consent from individuals for the processing of their personally identifiable information.",
+      "fedramp_parameters": {},
+      "fedramp_additional_requirements": "Consent mechanisms must comply with applicable federal privacy requirements and be documented in the system's Privacy Impact Assessment.",
+      "priority": "P1",
+      "baseline": "moderate"
+    }
+  ]
+}

@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}MLOps — Ops Hub{% endblock %}
+{% block extra_css %}
+<style>
+.ohc-page-header{background:linear-gradient(135deg,#0f172a,#1e3a5f);padding:22px 28px;border-radius:10px;margin-bottom:24px;}
+.ohc-page-header h1{margin:0;font-size:1.4rem;font-weight:700;color:#e0f2fe;}
+.ohc-page-header p{margin:4px 0 0;color:#7dd3fc;font-size:.85rem;}
+.stat-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:18px 22px;text-align:center;}
+.stat-card .val{font-size:1.8rem;font-weight:700;color:#e0e7ff;}
+.stat-card .lbl{font-size:.75rem;color:#64748b;margin-top:2px;}
+.section-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:20px 24px;margin-bottom:16px;}
+.section-card h4{margin:0 0 14px;font-size:.95rem;color:#e2e8f0;}
+.run-row{display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:6px;background:#0f172a;margin-bottom:6px;font-size:.82rem;}
+.model-row{display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#0f172a;border-radius:6px;margin-bottom:6px;font-size:.82rem;}
+.stage-badge{padding:2px 9px;border-radius:12px;font-size:.7rem;font-weight:600;}
+.stage-production{background:#065f46;color:#6ee7b7;}
+.stage-staging{background:#1e3a5f;color:#7dd3fc;}
+.stage-archived{background:#1e293b;color:#475569;border:1px solid #334155;}
+.stage-none{background:#292524;color:#78716c;}
+.run-status-completed{color:#22c55e;}
+.run-status-running{color:#38bdf8;}
+.run-status-failed{color:#ef4444;}
+.drift-gauge{height:8px;background:#0f172a;border-radius:4px;overflow:hidden;margin-top:4px;}
+.drift-fill{height:100%;border-radius:4px;}
+.back-link{color:#7dd3fc;text-decoration:none;font-size:.85rem;}
+</style>
+{% endblock %}
+{% block content %}
+<a class="back-link" href="/ops">← Ops Hub</a>
+<div class="ohc-page-header mt-2">
+  <h1>🧪 MLOps</h1>
+  <p>Experiments · Model Registry · Data Drift — {{ classification }}</p>
+</div>
+
+{% set exp = data.experiments %}
+{% set models = data.models %}
+{% set drift = data.drift %}
+
+<!-- Stats Row -->
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3"><div class="stat-card">
+    <div class="val">{{ exp.get('total_experiments', '—') }}</div>
+    <div class="lbl">Experiments</div>
+  </div></div>
+  <div class="col-6 col-md-3"><div class="stat-card">
+    <div class="val" style="color:#38bdf8;">{{ exp.get('running_runs', 0) }}</div>
+    <div class="lbl">Running Runs</div>
+  </div></div>
+  <div class="col-6 col-md-3"><div class="stat-card">
+    <div class="val">{{ models.get('total_models', '—') }}</div>
+    <div class="lbl">Registered Models</div>
+  </div></div>
+  <div class="col-6 col-md-3"><div class="stat-card">
+    <div class="val" style="color:{{ '#22c55e' if models.get('models_in_production',0) > 0 else '#64748b' }}">
+      {{ models.get('models_in_production', 0) }}</div>
+    <div class="lbl">In Production</div>
+  </div></div>
+</div>
+
+<div class="row g-3">
+  <!-- Recent Experiment Runs -->
+  <div class="col-md-7">
+    <div class="section-card">
+      <h4>🔬 Recent Experiment Runs</h4>
+      {% set runs = exp.get('recent_runs', []) %}
+      {% if runs %}
+        {% for run in runs[:8] %}
+        <div class="run-row">
+          <span class="run-status-{{ run.get('status','unknown') }}">
+            {{ '▶' if run.get('status') == 'running' else ('✓' if run.get('status') == 'completed' else '✗') }}
+          </span>
+          <span style="color:#e2e8f0;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            {{ run.get('run_name', run.get('run_id','?')[:8]) }}
+          </span>
+          <span style="color:#64748b;">{{ run.get('experiment_name', '—') }}</span>
+          {% if run.get('metrics') %}
+          <span style="color:#a78bfa;font-size:.75rem;">
+            {% for k, v in run.get('metrics', {}).items() | list %}{% if loop.index <= 2 %}{{ k }}={{ v|round(4) }} {% endif %}{% endfor %}
+          </span>
+          {% endif %}
+          <span style="color:#334155;font-size:.72rem;">{{ run.get('duration_ms', '') }}ms</span>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p class="text-muted small mb-0">No experiment runs recorded yet.</p>
+      {% endif %}
+      <a href="/api/ops/models" class="small text-muted mt-2 d-block">View full JSON →</a>
+    </div>
+  </div>
+
+  <!-- Model Registry -->
+  <div class="col-md-5">
+    <div class="section-card">
+      <h4>📦 Model Registry</h4>
+      {% set reg_models = models.get('registry', []) %}
+      {% if reg_models %}
+        {% for m in reg_models[:6] %}
+        <div class="model-row">
+          <div>
+            <div style="color:#e2e8f0;">{{ m.get('model_name', '?') }}</div>
+            <div style="color:#64748b;font-size:.75rem;">v{{ m.get('version', '?') }} · {{ m.get('framework', '') }}</div>
+          </div>
+          {% set stage = m.get('stage', 'none') %}
+          <span class="stage-badge stage-{{ stage }}">{{ stage }}</span>
+        </div>
+        {% endfor %}
+      {% else %}
+        <p class="text-muted small mb-0">No models registered.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Data Drift Summary -->
+{% if drift %}
+<div class="section-card mt-1">
+  <h4>📊 Data Drift</h4>
+  {% if drift.get('error') %}
+    <p class="text-muted small mb-0">{{ drift.error }}</p>
+  {% else %}
+  <div class="row g-3">
+    <div class="col-md-3">
+      <div class="stat-card">
+        <div class="val" style="font-size:1.3rem;color:{{ '#ef4444' if drift.get('drift_detected') else '#22c55e' }}">
+          {{ '⚠ Yes' if drift.get('drift_detected') else '✓ None' }}</div>
+        <div class="lbl">Drift Detected</div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="stat-card">
+        <div class="val" style="font-size:1.3rem;">{{ drift.get('total_checks', 0) }}</div>
+        <div class="lbl">Drift Checks</div>
+      </div>
+    </div>
+    {% if drift.get('feature_drift') %}
+    <div class="col-md-6">
+      <div style="font-size:.82rem;color:#94a3b8;margin-bottom:8px;">Feature Drift Scores</div>
+      {% for feat, score in drift.get('feature_drift', {}).items() | list %}{% if loop.index <= 4 %}
+      <div style="margin-bottom:6px;">
+        <div style="display:flex;justify-content:space-between;font-size:.78rem;color:#e2e8f0;">
+          <span>{{ feat }}</span><span style="color:{{ '#ef4444' if score > 0.5 else '#f59e0b' if score > 0.2 else '#22c55e' }}">{{ score|round(3) }}</span>
+        </div>
+        <div class="drift-gauge"><div class="drift-fill" style="width:{{ [score*100,100]|min }}%;background:{{ '#ef4444' if score > 0.5 else '#f59e0b' if score > 0.2 else '#22c55e' }};"></div></div>
+      </div>
+      {% endif %}{% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

@@ -1,0 +1,1667 @@
+{
+  "metadata": {
+    "title": "NIST SP 800-60 Vol 2 Rev 1 Information Type Catalog",
+    "source": "NIST SP 800-60 Volume II Revision 1, August 2008",
+    "classification": "CUI // SP-CTI",
+    "version": "1.0",
+    "last_updated": "2026-02-17",
+    "description": "Provisional security categorization of federal information types per FIPS 199. Each information type includes recommended confidentiality, integrity, and availability impact levels. Agencies must review and adjust these provisional levels based on mission-specific requirements."
+  },
+  "impact_levels": ["N/A", "Low", "Moderate", "High"],
+  "categories": [
+    {
+      "id": "D.1",
+      "name": "Services Delivery",
+      "description": "Mission-based information types that support the delivery of services to citizens, other governments, and external entities.",
+      "subcategories": [
+        {
+          "id": "D.1.1",
+          "name": "Defense and National Security",
+          "description": "Information types related to national defense, military operations, and national security activities.",
+          "information_types": [
+            {
+              "id": "D.1.1.1",
+              "name": "Strategic Defense and Intelligence Information",
+              "description": "Information supporting strategic defense planning, nuclear deterrence, and intelligence activities critical to national security.",
+              "provisional_impact": {
+                "confidentiality": "High",
+                "integrity": "High",
+                "availability": "High"
+              },
+              "special_factors": ["National Security System", "CNSSI 1253 applies"]
+            },
+            {
+              "id": "D.1.1.2",
+              "name": "Tactical Defense Information",
+              "description": "Information supporting tactical military operations including force deployment, battlefield coordination, and combat support.",
+              "provisional_impact": {
+                "confidentiality": "High",
+                "integrity": "High",
+                "availability": "High"
+              },
+              "special_factors": ["National Security System", "CNSSI 1253 applies"]
+            },
+            {
+              "id": "D.1.1.3",
+              "name": "Military Operations Support",
+              "description": "Information supporting military operations planning, command and control, and operational readiness activities.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "High",
+                "availability": "High"
+              },
+              "special_factors": ["National Security System", "CNSSI 1253 applies"]
+            },
+            {
+              "id": "D.1.1.4",
+              "name": "Logistics Management",
+              "description": "Information supporting defense logistics including supply chain, materiel management, and distribution operations.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.1.2",
+          "name": "Homeland Security",
+          "description": "Information types related to protecting the homeland from threats, border security, and critical infrastructure protection.",
+          "information_types": [
+            {
+              "id": "D.1.2.1",
+              "name": "Border and Transportation Security",
+              "description": "Information supporting border control, immigration enforcement, and transportation security screening operations.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.2.2",
+              "name": "Domestic Terrorism and Counterintelligence",
+              "description": "Information supporting the detection, prevention, and investigation of domestic terrorism and counterintelligence threats.",
+              "provisional_impact": {
+                "confidentiality": "High",
+                "integrity": "High",
+                "availability": "Moderate"
+              },
+              "special_factors": ["National Security System", "CNSSI 1253 applies"]
+            },
+            {
+              "id": "D.1.2.3",
+              "name": "Key Asset and Critical Infrastructure Protection",
+              "description": "Information supporting the identification, assessment, and protection of key assets and critical infrastructure sectors.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "High",
+                "availability": "High"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.2.4",
+              "name": "Catastrophic Defense",
+              "description": "Information supporting defense against catastrophic threats including chemical, biological, radiological, and nuclear incidents.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "High"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.1.3",
+          "name": "Intelligence Operations",
+          "description": "Information types related to the intelligence community's collection, analysis, and dissemination activities.",
+          "information_types": [
+            {
+              "id": "D.1.3.1",
+              "name": "Intelligence Collection and Analysis",
+              "description": "Information supporting the collection, processing, and analysis of intelligence from all sources to produce actionable intelligence products.",
+              "provisional_impact": {
+                "confidentiality": "High",
+                "integrity": "High",
+                "availability": "Moderate"
+              },
+              "special_factors": ["National Security System", "CNSSI 1253 applies"]
+            },
+            {
+              "id": "D.1.3.2",
+              "name": "Intelligence Planning",
+              "description": "Information supporting the planning and direction of intelligence activities including requirements definition and resource allocation.",
+              "provisional_impact": {
+                "confidentiality": "High",
+                "integrity": "High",
+                "availability": "Moderate"
+              },
+              "special_factors": ["National Security System", "CNSSI 1253 applies"]
+            },
+            {
+              "id": "D.1.3.3",
+              "name": "Intelligence Dissemination",
+              "description": "Information supporting the distribution of finished intelligence products to authorized consumers and policymakers.",
+              "provisional_impact": {
+                "confidentiality": "High",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": ["National Security System", "CNSSI 1253 applies"]
+            },
+            {
+              "id": "D.1.3.4",
+              "name": "Counterintelligence",
+              "description": "Information supporting activities to identify, assess, and neutralize foreign intelligence threats to national security.",
+              "provisional_impact": {
+                "confidentiality": "High",
+                "integrity": "High",
+                "availability": "Moderate"
+              },
+              "special_factors": ["National Security System", "CNSSI 1253 applies"]
+            }
+          ]
+        },
+        {
+          "id": "D.1.4",
+          "name": "Disaster Management",
+          "description": "Information types related to disaster preparedness, response, recovery, and mitigation activities.",
+          "information_types": [
+            {
+              "id": "D.1.4.1",
+              "name": "Disaster Monitoring and Prediction",
+              "description": "Information supporting the monitoring of natural and man-made hazards and prediction of potential disaster events.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "High"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.4.2",
+              "name": "Disaster Preparedness and Planning",
+              "description": "Information supporting disaster preparedness activities including emergency planning, training, and exercise programs.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.4.3",
+              "name": "Disaster Repair and Restoration",
+              "description": "Information supporting post-disaster repair, restoration of services, and long-term recovery operations.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.4.4",
+              "name": "Emergency Response",
+              "description": "Information supporting immediate emergency response operations including coordination of first responders and resource deployment.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "High"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.1.5",
+          "name": "International Affairs and Commerce",
+          "description": "Information types related to foreign affairs, international development, and global trade activities.",
+          "information_types": [
+            {
+              "id": "D.1.5.1",
+              "name": "Foreign Affairs",
+              "description": "Information supporting the conduct of foreign policy, diplomatic relations, and international negotiations.",
+              "provisional_impact": {
+                "confidentiality": "High",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.5.2",
+              "name": "International Development and Humanitarian Aid",
+              "description": "Information supporting international development programs, foreign assistance, and humanitarian relief operations.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.5.3",
+              "name": "Global Trade",
+              "description": "Information supporting international trade policy, export controls, trade agreements, and commerce regulation.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.1.6",
+          "name": "Natural Resources",
+          "description": "Information types related to the management and conservation of natural resources including water, land, and agriculture.",
+          "information_types": [
+            {
+              "id": "D.1.6.1",
+              "name": "Water Resource Management",
+              "description": "Information supporting the management, allocation, and protection of water resources including watersheds and aquifers.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.6.2",
+              "name": "Conservation and Land Management",
+              "description": "Information supporting the conservation, preservation, and management of public lands and natural habitats.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.6.3",
+              "name": "Recreational Resource Management",
+              "description": "Information supporting the management of recreational facilities, national parks, and public outdoor recreation areas.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Low",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.6.4",
+              "name": "Agricultural Innovation and Services",
+              "description": "Information supporting agricultural research, crop and livestock management, and farming assistance programs.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.1.7",
+          "name": "Energy",
+          "description": "Information types related to energy production, distribution, conservation, and preparedness.",
+          "information_types": [
+            {
+              "id": "D.1.7.1",
+              "name": "Energy Supply",
+              "description": "Information supporting energy production, generation, transmission, and distribution across the national energy grid.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "High"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.7.2",
+              "name": "Energy Conservation and Preparedness",
+              "description": "Information supporting energy conservation programs, efficiency standards, and energy emergency preparedness planning.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.7.3",
+              "name": "Energy Resource Management",
+              "description": "Information supporting the management of energy resources including petroleum reserves, nuclear materials, and renewable sources.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.1.8",
+          "name": "Environmental Management",
+          "description": "Information types related to environmental monitoring, remediation, and pollution control.",
+          "information_types": [
+            {
+              "id": "D.1.8.1",
+              "name": "Environmental Monitoring and Forecasting",
+              "description": "Information supporting the monitoring of environmental conditions, weather forecasting, and climate data collection.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.8.2",
+              "name": "Environmental Remediation",
+              "description": "Information supporting the cleanup and restoration of contaminated sites including Superfund and brownfield remediation.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.8.3",
+              "name": "Pollution Prevention and Control",
+              "description": "Information supporting pollution prevention programs, emissions controls, and environmental regulatory compliance.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.1.9",
+          "name": "Economic Development",
+          "description": "Information types related to economic development, business promotion, and financial sector oversight.",
+          "information_types": [
+            {
+              "id": "D.1.9.1",
+              "name": "Business and Industry Development",
+              "description": "Information supporting business development programs, small business assistance, and industry promotion activities.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.9.2",
+              "name": "Intellectual Property Protection",
+              "description": "Information supporting the protection of patents, trademarks, copyrights, and trade secrets.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.9.3",
+              "name": "Financial Sector Oversight",
+              "description": "Information supporting the regulation and oversight of financial institutions, markets, and banking operations.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "High",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.9.4",
+              "name": "Industry Sector Income Stabilization",
+              "description": "Information supporting income stabilization programs for specific industries including agriculture and manufacturing.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.1.10",
+          "name": "Community and Social Services",
+          "description": "Information types related to community development, social services, and public assistance programs.",
+          "information_types": [
+            {
+              "id": "D.1.10.1",
+              "name": "Homeownership Promotion",
+              "description": "Information supporting homeownership programs, mortgage assistance, and housing finance activities.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.10.2",
+              "name": "Community and Regional Development",
+              "description": "Information supporting community development grants, regional planning, and neighborhood revitalization programs.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.10.3",
+              "name": "Social Services",
+              "description": "Information supporting social welfare programs, child and family services, and assistance for vulnerable populations.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.10.4",
+              "name": "Postal Services",
+              "description": "Information supporting postal and mail delivery operations, addressing systems, and postal financial services.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.1.11",
+          "name": "Transportation",
+          "description": "Information types related to transportation infrastructure, safety, and operations across all modes.",
+          "information_types": [
+            {
+              "id": "D.1.11.1",
+              "name": "Ground Transportation",
+              "description": "Information supporting ground transportation systems including highways, rail, transit, and pipeline operations.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.11.2",
+              "name": "Air Transportation",
+              "description": "Information supporting air transportation operations including air traffic control, aviation safety, and airport management.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "High",
+                "availability": "High"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.11.3",
+              "name": "Water Transportation",
+              "description": "Information supporting maritime and inland waterway transportation, port operations, and vessel safety.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.11.4",
+              "name": "Space Operations",
+              "description": "Information supporting space launch operations, satellite management, and space transportation systems.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "High",
+                "availability": "High"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.1.12",
+          "name": "Education",
+          "description": "Information types related to educational programs, institutions, and cultural preservation.",
+          "information_types": [
+            {
+              "id": "D.1.12.1",
+              "name": "Elementary, Secondary, and Vocational Education",
+              "description": "Information supporting K-12 education programs, vocational training, and related federal education assistance.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.12.2",
+              "name": "Higher Education",
+              "description": "Information supporting post-secondary education programs, financial aid, and higher education institutional management.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.12.3",
+              "name": "Cultural and Historic Preservation",
+              "description": "Information supporting the preservation of cultural heritage, historic sites, museums, and national archives.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.1.13",
+          "name": "Workforce Management",
+          "description": "Information types related to workforce training, employment services, and labor protections.",
+          "information_types": [
+            {
+              "id": "D.1.13.1",
+              "name": "Training and Employment",
+              "description": "Information supporting job training programs, employment services, and workforce development initiatives.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.13.2",
+              "name": "Worker Safety",
+              "description": "Information supporting occupational safety and health programs, workplace inspections, and hazard prevention.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.13.3",
+              "name": "Labor Rights Management",
+              "description": "Information supporting labor rights enforcement, collective bargaining oversight, and wage and hour compliance.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.1.14",
+          "name": "Health",
+          "description": "Information types related to health care delivery, public health, and health care administration.",
+          "information_types": [
+            {
+              "id": "D.1.14.1",
+              "name": "Access to Care",
+              "description": "Information supporting health care access programs, insurance coverage, and health services availability for underserved populations.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.14.2",
+              "name": "Population Health Management and Consumer Safety",
+              "description": "Information supporting public health surveillance, disease prevention, food and drug safety, and consumer health protection.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "High",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.14.3",
+              "name": "Health Care Administration",
+              "description": "Information supporting health care program administration including Medicare, Medicaid, and other federal health programs.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.14.4",
+              "name": "Health Care Delivery Services",
+              "description": "Information supporting the direct delivery of health care services through federal facilities and programs.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.14.5",
+              "name": "Health Care Research and Practitioner Education",
+              "description": "Information supporting biomedical research, clinical trials, and health care professional training and education.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.1.15",
+          "name": "Income Security",
+          "description": "Information types related to retirement, disability, unemployment, and other income support programs.",
+          "information_types": [
+            {
+              "id": "D.1.15.1",
+              "name": "General Retirement and Disability",
+              "description": "Information supporting retirement and disability benefit programs including Social Security and federal pension systems.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "High",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.15.2",
+              "name": "Unemployment Compensation",
+              "description": "Information supporting unemployment insurance programs, claims processing, and benefit distribution.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.15.3",
+              "name": "Housing Assistance",
+              "description": "Information supporting housing assistance programs including public housing, rental subsidies, and homelessness prevention.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.15.4",
+              "name": "Food and Nutrition Assistance",
+              "description": "Information supporting food assistance programs including SNAP, WIC, and school meal programs.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.15.5",
+              "name": "Survivor Compensation",
+              "description": "Information supporting survivor benefit programs including death benefits, survivor pensions, and victim compensation funds.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.1.16",
+          "name": "Law Enforcement",
+          "description": "Information types related to law enforcement operations, criminal investigation, and public safety.",
+          "information_types": [
+            {
+              "id": "D.1.16.1",
+              "name": "Criminal Apprehension",
+              "description": "Information supporting the identification, location, and apprehension of criminal suspects and fugitives.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "High",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.16.2",
+              "name": "Criminal Investigation and Surveillance",
+              "description": "Information supporting criminal investigations, surveillance operations, and forensic analysis activities.",
+              "provisional_impact": {
+                "confidentiality": "High",
+                "integrity": "High",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.16.3",
+              "name": "Citizen Protection",
+              "description": "Information supporting citizen protection services including witness protection, victim services, and public safety programs.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.16.4",
+              "name": "Crime Prevention",
+              "description": "Information supporting crime prevention programs, community policing, and law enforcement outreach initiatives.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.16.5",
+              "name": "Leadership Protection",
+              "description": "Information supporting the protection of senior government officials, heads of state, and other designated protectees.",
+              "provisional_impact": {
+                "confidentiality": "High",
+                "integrity": "High",
+                "availability": "High"
+              },
+              "special_factors": ["National Security System", "CNSSI 1253 applies"]
+            }
+          ]
+        },
+        {
+          "id": "D.1.17",
+          "name": "Litigation and Judicial Activities",
+          "description": "Information types related to the judicial system, legal proceedings, and dispute resolution.",
+          "information_types": [
+            {
+              "id": "D.1.17.1",
+              "name": "Judicial Hearings",
+              "description": "Information supporting the conduct of judicial hearings, court proceedings, and administrative adjudications.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "High",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.17.2",
+              "name": "Legal Defense",
+              "description": "Information supporting legal defense activities including public defender services and government litigation defense.",
+              "provisional_impact": {
+                "confidentiality": "High",
+                "integrity": "High",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.17.3",
+              "name": "Legal Investigation",
+              "description": "Information supporting legal investigations, evidence collection, and pre-trial discovery activities.",
+              "provisional_impact": {
+                "confidentiality": "High",
+                "integrity": "High",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.17.4",
+              "name": "Legal Prosecution and Litigation",
+              "description": "Information supporting criminal prosecution, civil litigation, and enforcement actions by government attorneys.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "High",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.17.5",
+              "name": "Resolution Facilitation",
+              "description": "Information supporting alternative dispute resolution, mediation, arbitration, and settlement negotiation processes.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.1.18",
+          "name": "Federal Correctional Activities",
+          "description": "Information types related to the federal correctional system including incarceration and rehabilitation.",
+          "information_types": [
+            {
+              "id": "D.1.18.1",
+              "name": "Criminal Incarceration",
+              "description": "Information supporting federal correctional facility operations, inmate management, and detention services.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.18.2",
+              "name": "Criminal Rehabilitation",
+              "description": "Information supporting offender rehabilitation programs, reentry services, and probation and parole supervision.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.1.19",
+          "name": "General Government",
+          "description": "Information types related to central government functions including fiscal operations, legislation, and administration.",
+          "information_types": [
+            {
+              "id": "D.1.19.1",
+              "name": "Central Fiscal Operations",
+              "description": "Information supporting central fiscal operations including treasury management, debt management, and government-wide accounting.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "High",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.19.2",
+              "name": "Legislative Functions",
+              "description": "Information supporting legislative processes including bill tracking, congressional records, and legislative analysis.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.19.3",
+              "name": "Executive Functions",
+              "description": "Information supporting executive branch operations, policy development, and interagency coordination activities.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.19.4",
+              "name": "Central Property Management",
+              "description": "Information supporting the management of federal property, real estate, and government-owned facilities.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.19.5",
+              "name": "Central Personnel Management",
+              "description": "Information supporting government-wide personnel policies, civil service management, and federal workforce administration.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.19.6",
+              "name": "Taxation Management",
+              "description": "Information supporting federal tax administration, tax collection, taxpayer services, and tax enforcement activities.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "High",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.1.19.7",
+              "name": "Central Records and Statistics Management",
+              "description": "Information supporting federal records management, statistical data collection, and government-wide information sharing.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D.2",
+      "name": "Government Resource Management",
+      "description": "Support information types that enable the internal management of government resources including administrative, financial, human resource, information technology, and supply chain functions.",
+      "subcategories": [
+        {
+          "id": "D.2.1",
+          "name": "Administrative Management",
+          "description": "Information types related to internal administrative support functions of government agencies.",
+          "information_types": [
+            {
+              "id": "D.2.1.1",
+              "name": "Facilities, Fleet, and Equipment Management",
+              "description": "Information supporting the management of government facilities, vehicle fleets, and equipment inventories.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Low",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.1.2",
+              "name": "Help Desk Services",
+              "description": "Information supporting internal help desk operations, trouble ticket management, and user support services.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Low",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.1.3",
+              "name": "Security Management",
+              "description": "Information supporting physical and personnel security operations, access control, and security clearance processing.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.1.4",
+              "name": "Travel",
+              "description": "Information supporting government travel management, travel authorization, and travel expense reimbursement.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Low",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.1.5",
+              "name": "Workplace Policy Development and Management",
+              "description": "Information supporting the development and management of workplace policies, procedures, and organizational standards.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.2.2",
+          "name": "Financial Management",
+          "description": "Information types related to government financial management operations.",
+          "information_types": [
+            {
+              "id": "D.2.2.1",
+              "name": "Accounting",
+              "description": "Information supporting government accounting operations, general ledger maintenance, and financial transaction recording.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.2.2",
+              "name": "Funds Control",
+              "description": "Information supporting funds control activities including appropriation management, allotment tracking, and obligation monitoring.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "High",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.2.3",
+              "name": "Payments",
+              "description": "Information supporting government payment processing, disbursement operations, and vendor payment management.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "High",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.2.4",
+              "name": "Collections and Receivables",
+              "description": "Information supporting government collections, receivables management, and revenue accounting operations.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.2.5",
+              "name": "Asset and Liability Management",
+              "description": "Information supporting government asset tracking, liability management, and financial position reporting.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.2.6",
+              "name": "Reporting and Information",
+              "description": "Information supporting financial reporting, audit support, and financial management information dissemination.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.2.3",
+          "name": "Human Resource Management",
+          "description": "Information types related to federal human resource management functions.",
+          "information_types": [
+            {
+              "id": "D.2.3.1",
+              "name": "HR Strategy",
+              "description": "Information supporting human resource strategic planning, workforce analysis, and HR policy development.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.3.2",
+              "name": "Staff Acquisition",
+              "description": "Information supporting recruitment, hiring, and onboarding of federal employees and contractors.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.3.3",
+              "name": "Organization and Position Management",
+              "description": "Information supporting organizational structure management, position classification, and job description maintenance.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.3.4",
+              "name": "Compensation Management",
+              "description": "Information supporting federal employee compensation including pay administration, payroll processing, and allowances.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "High",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.3.5",
+              "name": "Benefits Management",
+              "description": "Information supporting employee benefits administration including health insurance, retirement, and leave programs.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.3.6",
+              "name": "Employee Performance Management",
+              "description": "Information supporting employee performance evaluation, performance plans, and performance-based actions.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.3.7",
+              "name": "Employee Relations",
+              "description": "Information supporting employee relations activities including grievances, disciplinary actions, and workplace disputes.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.3.8",
+              "name": "Labor Relations",
+              "description": "Information supporting federal labor relations including union negotiations, collective bargaining, and labor agreements.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.3.9",
+              "name": "Separation Management",
+              "description": "Information supporting employee separation processing including retirement, resignation, and reduction-in-force actions.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.3.10",
+              "name": "Human Resources Development",
+              "description": "Information supporting employee training, professional development, and career management programs.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.2.4",
+          "name": "Information and Technology Management",
+          "description": "Information types related to information technology management and IT service delivery.",
+          "information_types": [
+            {
+              "id": "D.2.4.1",
+              "name": "System Development",
+              "description": "Information supporting IT system development activities including requirements analysis, design, coding, and testing.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.4.2",
+              "name": "Lifecycle/Change Management",
+              "description": "Information supporting IT lifecycle management, change control processes, and configuration management.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.4.3",
+              "name": "System Maintenance",
+              "description": "Information supporting IT system maintenance, patching, upgrades, and operational support activities.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.4.4",
+              "name": "IT Infrastructure Maintenance",
+              "description": "Information supporting the maintenance of IT infrastructure including networks, servers, and telecommunications equipment.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.4.5",
+              "name": "IT Security",
+              "description": "Information supporting IT security operations including cybersecurity, incident response, and security monitoring.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.4.6",
+              "name": "Record Retention",
+              "description": "Information supporting records retention schedules, archival processes, and records disposition activities.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.4.7",
+              "name": "Information Management",
+              "description": "Information supporting enterprise information management, data governance, and information sharing policies.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.2.5",
+          "name": "Supply Chain Management",
+          "description": "Information types related to acquisition, procurement, and logistics management.",
+          "information_types": [
+            {
+              "id": "D.2.5.1",
+              "name": "Goods Acquisition",
+              "description": "Information supporting the procurement of goods, equipment, and supplies through federal acquisition processes.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.5.2",
+              "name": "Inventory Control",
+              "description": "Information supporting inventory management, stock control, and warehousing operations for government supplies.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.5.3",
+              "name": "Logistics Management",
+              "description": "Information supporting logistics planning, distribution operations, and transportation of government materiel.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.2.5.4",
+              "name": "Services Acquisition",
+              "description": "Information supporting the acquisition of professional, technical, and support services through federal contracting.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "D.3",
+      "name": "Internal Risk Management and Mitigation",
+      "description": "Information types that support internal risk management including regulatory compliance, public affairs, revenue collection, continuity planning, and general government oversight functions.",
+      "subcategories": [
+        {
+          "id": "D.3.1",
+          "name": "Regulatory Compliance and Enforcement",
+          "description": "Information types related to regulatory compliance, inspections, and standards development.",
+          "information_types": [
+            {
+              "id": "D.3.1.1",
+              "name": "Inspections and Auditing",
+              "description": "Information supporting regulatory inspections, compliance auditing, and enforcement actions against violations.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "High",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.3.1.2",
+              "name": "Standards Setting/Regulatory Development",
+              "description": "Information supporting the development of regulations, standards, and rulemaking activities.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.3.1.3",
+              "name": "Permits and Licensing",
+              "description": "Information supporting the issuance, management, and enforcement of permits, licenses, and certifications.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.3.2",
+          "name": "Public Affairs",
+          "description": "Information types related to public communications, customer service, and public relations.",
+          "information_types": [
+            {
+              "id": "D.3.2.1",
+              "name": "Customer Services",
+              "description": "Information supporting citizen-facing customer service operations, call centers, and service delivery channels.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Low",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.3.2.2",
+              "name": "Official Information Dissemination",
+              "description": "Information supporting the publication and dissemination of official government information to the public.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.3.2.3",
+              "name": "Product Outreach",
+              "description": "Information supporting government product and service outreach, marketing, and public awareness campaigns.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Low",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.3.2.4",
+              "name": "Public Relations",
+              "description": "Information supporting public relations activities, media communications, and government messaging.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.3.3",
+          "name": "Revenue Collection",
+          "description": "Information types related to government revenue collection and asset management.",
+          "information_types": [
+            {
+              "id": "D.3.3.1",
+              "name": "Debt Collection",
+              "description": "Information supporting the collection of debts owed to the federal government including delinquent loans and overpayments.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.3.3.2",
+              "name": "User Fee Collection",
+              "description": "Information supporting the collection and management of user fees, tolls, and service charges.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.3.3.3",
+              "name": "Federal Asset Sales",
+              "description": "Information supporting the sale and disposal of surplus federal assets, property, and equipment.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.3.4",
+          "name": "Internal Risk Management",
+          "description": "Information types related to contingency planning, continuity of operations, and service recovery.",
+          "information_types": [
+            {
+              "id": "D.3.4.1",
+              "name": "Contingency Planning",
+              "description": "Information supporting the development and maintenance of contingency plans for IT systems and business operations.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "High"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.3.4.2",
+              "name": "Continuity of Operations",
+              "description": "Information supporting continuity of operations planning, alternate site readiness, and essential function preservation.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "Moderate",
+                "availability": "High"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.3.4.3",
+              "name": "Service Recovery",
+              "description": "Information supporting the recovery of government services after disruption including disaster recovery and reconstitution.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "High"
+              },
+              "special_factors": []
+            }
+          ]
+        },
+        {
+          "id": "D.3.5",
+          "name": "General Government",
+          "description": "Information types related to government-wide planning, budgeting, and management improvement activities.",
+          "information_types": [
+            {
+              "id": "D.3.5.1",
+              "name": "Legislative Relations",
+              "description": "Information supporting agency interactions with the legislature including congressional liaison and testimony preparation.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.3.5.2",
+              "name": "Budget Formulation",
+              "description": "Information supporting the formulation of agency budgets, budget justification, and budget submission processes.",
+              "provisional_impact": {
+                "confidentiality": "Moderate",
+                "integrity": "High",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.3.5.3",
+              "name": "Capital Planning",
+              "description": "Information supporting capital investment planning, business case analysis, and portfolio management for IT and facilities.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.3.5.4",
+              "name": "Enterprise Architecture",
+              "description": "Information supporting the development and maintenance of agency enterprise architecture and technology roadmaps.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.3.5.5",
+              "name": "Strategic Planning",
+              "description": "Information supporting agency strategic planning, performance goal setting, and strategic initiative management.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.3.5.6",
+              "name": "Budget Execution",
+              "description": "Information supporting the execution of agency budgets including apportionment, allocation, and expenditure tracking.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "High",
+                "availability": "Moderate"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.3.5.7",
+              "name": "Workforce Planning",
+              "description": "Information supporting workforce planning, competency gap analysis, and succession planning activities.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.3.5.8",
+              "name": "Management Improvement",
+              "description": "Information supporting management improvement initiatives, organizational assessments, and process optimization.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            },
+            {
+              "id": "D.3.5.9",
+              "name": "Knowledge Management",
+              "description": "Information supporting organizational knowledge management, lessons learned, and institutional knowledge preservation.",
+              "provisional_impact": {
+                "confidentiality": "Low",
+                "integrity": "Moderate",
+                "availability": "Low"
+              },
+              "special_factors": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

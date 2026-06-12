@@ -1,0 +1,1108 @@
+# [TEMPLATE: CUI // SP-CTI]
+# ICDEV™ LLM Provider Configuration
+# Controls which models are used for each function across the platform.
+# Single source of truth — replaces scattered hardcoded model IDs.
+
+# -----------------------------------------------------------------------
+# Provider Definitions
+# -----------------------------------------------------------------------
+providers:
+  bedrock:
+    type: bedrock
+    region: ${AWS_DEFAULT_REGION:-us-gov-west-1}
+    # Uses boto3 credentials (IAM role, env vars, or ~/.aws/credentials)
+
+  anthropic:
+    type: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    base_url: https://api.anthropic.com
+
+  openai:
+    type: openai_compatible
+    api_key_env: OPENAI_API_KEY
+    base_url: https://api.openai.com/v1
+
+  ollama:
+    type: ollama
+    base_url: ${OLLAMA_BASE_URL:-http://localhost:11434}
+
+  gemini:
+    type: gemini
+    api_key_env: GOOGLE_API_KEY
+
+  vllm:
+    type: openai_compatible
+    base_url: ${VLLM_BASE_URL:-http://localhost:8000/v1}
+    api_key_env: VLLM_API_KEY
+
+  ibm_watsonx:
+    type: ibm_watsonx
+    api_key_env: IBM_CLOUD_API_KEY
+    project_id: ${IBM_WATSONX_PROJECT_ID:-}
+    url: ${IBM_WATSONX_URL:-https://us-south.ml.cloud.ibm.com}
+
+  # Mistral AI — OpenAI-compatible API (LeanStral, Mistral Small 4)
+  # Cloud: api.mistral.ai (requires MISTRAL_API_KEY)
+  # Air-gapped: self-host via vLLM (see mistral_vllm provider below)
+  mistral:
+    type: openai_compatible
+    api_key_env: MISTRAL_API_KEY
+    base_url: ${MISTRAL_BASE_URL:-https://api.mistral.ai/v1}
+
+  # Self-hosted Mistral/LeanStral via vLLM (air-gapped deployment)
+  # docker pull mistralllm/vllm-ms4:latest
+  # vllm serve mistralai/Leanstral-2603 --tensor-parallel-size 4 \
+  #   --attention-backend FLASH_ATTN_MLA --tool-call-parser mistral
+  mistral_vllm:
+    type: openai_compatible
+    base_url: ${MISTRAL_VLLM_BASE_URL:-http://localhost:8100/v1}
+    api_key_env: MISTRAL_VLLM_API_KEY
+
+  # Ollama cloud endpoint — authenticated, falls back to local ollama
+  ollama_cloud:
+    type: ollama
+    base_url: ${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
+    api_key_env: OLLAMA_API_KEY
+
+# -----------------------------------------------------------------------
+# Model Registry
+# -----------------------------------------------------------------------
+models:
+  # -- Anthropic direct API (user has Anthropic subscription, not Bedrock) --
+  claude-opus:
+    provider: anthropic
+    model_id: claude-opus-4-6
+    max_output_tokens: 128000
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.005, output_per_1k: 0.025 }
+
+  claude-sonnet:
+    provider: anthropic  # Anthropic direct API (not Bedrock) — ANTHROPIC_API_KEY
+    model_id: "claude-sonnet-4-5-20250929"
+    max_output_tokens: 64000
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.003, output_per_1k: 0.015 }
+
+  claude-haiku:
+    provider: anthropic
+    model_id: claude-haiku-4-5-20251001
+    max_output_tokens: 8192
+    supports_thinking: false
+    supports_tools: true
+    supports_structured_output: false
+    pricing: { input_per_1k: 0.001, output_per_1k: 0.005 }
+
+  # -- Anthropic Direct API --
+  claude-opus-api:
+    provider: anthropic
+    model_id: claude-opus-4-6-20260205
+    max_output_tokens: 128000
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.005, output_per_1k: 0.025 }
+
+  claude-sonnet-api:
+    provider: anthropic
+    model_id: claude-sonnet-4-5-20250929
+    max_output_tokens: 64000
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.003, output_per_1k: 0.015 }
+
+  # -- OpenAI --
+  gpt-4o:
+    provider: openai
+    model_id: "${OPENAI_MODEL:-gpt-4o}"
+    max_output_tokens: 16384
+    supports_thinking: false
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.0025, output_per_1k: 0.010 }
+
+  gpt-4o-mini:
+    provider: openai
+    model_id: gpt-4o-mini
+    max_output_tokens: 16384
+    supports_thinking: false
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.00015, output_per_1k: 0.0006 }
+
+  o3:
+    provider: openai
+    model_id: o3
+    max_output_tokens: 100000
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.010, output_per_1k: 0.040 }
+
+  # -- Google Gemini --
+  gemini-2.5-pro:
+    provider: gemini
+    model_id: gemini-2.5-pro-preview-05-06
+    max_output_tokens: 65536
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.00125, output_per_1k: 0.010 }
+
+  gemini-2.5-flash:
+    provider: gemini
+    model_id: "${GOOGLE_MODEL:-gemini-2.5-flash-preview-04-17}"
+    max_output_tokens: 65536
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.00015, output_per_1k: 0.0006 }
+
+  gemini-2.0-flash:
+    provider: gemini
+    model_id: gemini-2.0-flash
+    max_output_tokens: 8192
+    supports_thinking: false
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  # -- Local Models (Ollama) --
+  # Model IDs configurable via .env: OLLAMA_MODEL overrides primary local model
+  llama-local:
+    provider: ollama
+    model_id: llama3.3:70b
+    max_output_tokens: 8192
+    supports_thinking: false
+    supports_tools: true
+    supports_structured_output: false
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  codestral-local:
+    provider: ollama
+    model_id: codestral:22b
+    max_output_tokens: 8192
+    supports_thinking: false
+    supports_tools: false
+    supports_structured_output: false
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  deepseek-local:
+    provider: ollama
+    model_id: deepseek-r1:70b
+    max_output_tokens: 8192
+    supports_thinking: true
+    supports_tools: false
+    supports_structured_output: false
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  qwen3-local:
+    provider: ollama
+    model_id: "qwen3.5:latest"
+    max_output_tokens: 32768
+    supports_thinking: false
+    disable_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  # kimi-k2.6 via Ollama cloud (OLLAMA_API_KEY) — primary inference model
+  kimi-cloud:
+    provider: ollama_cloud
+    model_id: "kimi-k2.6:cloud"
+    max_output_tokens: 32768
+    supports_thinking: false
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  kimi-local:
+    provider: ollama
+    model_id: "kimi-k2.6:cloud"
+    max_output_tokens: 32768
+    supports_thinking: false
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  gemma4-local:
+    provider: ollama
+    model_id: "gemma4:e4b"
+    max_output_tokens: 8192
+    supports_thinking: false
+    supports_tools: false
+    supports_structured_output: false
+    supports_vision: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  # Ollama cloud — requires OLLAMA_API_KEY; primary for large-context tasks
+  gpt-oss-cloud:
+    provider: ollama_cloud
+    model_id: "gpt-oss:120b"
+    max_output_tokens: 32768
+    supports_thinking: false
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  # Dual-model optimized: text-only Qwen3 1.7B for simultaneous VRAM residency
+  # alongside Gemma3 (multimodal). Total VRAM: ~6.5GB / 8GB RTX 4060 Ti.
+  # Use this as tier1_model when OLLAMA_MAX_LOADED_MODELS=2.
+  qwen3-dual:
+    provider: ollama
+    model_id: "qwen3:1.7b"
+    max_output_tokens: 16384
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  # -- Vision Models (Local) --
+  gemma3-local:
+    provider: ollama
+    model_id: gemma3:latest
+    max_output_tokens: 4096
+    supports_thinking: false
+    supports_tools: false
+    supports_structured_output: false
+    supports_vision: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  llava-local:
+    provider: ollama
+    model_id: llava:13b
+    max_output_tokens: 4096
+    supports_thinking: false
+    supports_tools: false
+    supports_structured_output: false
+    supports_vision: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  # IBM watsonx.ai models (D238)
+  granite-code:
+    provider: ibm_watsonx
+    model_id: ibm/granite-34b-code-instruct
+    max_output_tokens: 8192
+    supports_thinking: false
+    supports_tools: false
+    supports_structured_output: false
+    pricing:
+      input_per_1k: 0.0
+      output_per_1k: 0.0
+  granite-chat:
+    provider: ibm_watsonx
+    model_id: ibm/granite-3.1-8b-instruct
+    max_output_tokens: 8192
+    supports_thinking: false
+    supports_tools: true
+    supports_structured_output: false
+    pricing:
+      input_per_1k: 0.0
+      output_per_1k: 0.0
+
+  # -- Mistral AI (LeanStral + Mistral Small 4) --
+  # LeanStral: 119B sparse MoE, 6.5B active/token, Apache 2.0
+  # Specialized for formal proof & code verification (Lean 4 trained)
+  # Cloud: labs-leanstral-2603 via api.mistral.ai (free during preview)
+  # Air-gap: self-host via vLLM (mistral_vllm provider)
+  leanstral:
+    provider: mistral
+    model_id: labs-leanstral-2603
+    max_output_tokens: 32768
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.0002, output_per_1k: 0.0006 }
+
+  leanstral-local:
+    provider: mistral_vllm
+    model_id: mistralai/Leanstral-2603
+    max_output_tokens: 32768
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  mistral-small-4:
+    provider: mistral
+    model_id: mistral-small-latest
+    max_output_tokens: 32768
+    supports_thinking: false
+    supports_tools: true
+    supports_structured_output: true
+    pricing: { input_per_1k: 0.0001, output_per_1k: 0.0003 }
+
+# -----------------------------------------------------------------------
+# Task Category Capability Matrix
+# -----------------------------------------------------------------------
+# Maps task categories to preferred models in priority order.
+# Used by LLMRouter.get_models_for_category() and CoT/CoD role selection.
+# Add new Ollama models to the appropriate categories when you pull them.
+task_categories:
+  coding:
+    preferred: [qwen3-local, codestral-local, claude-sonnet, gpt-4o, llama-local]
+    description: "Code generation, debugging, refactoring"
+
+  reasoning:
+    preferred: [deepseek-local, qwen3-local, claude-opus, o3, llama-local]
+    description: "Multi-step reasoning, chain-of-thought, proofs"
+
+  writing:
+    preferred: [llama-local, claude-sonnet, kimi-cloud, gemini-2.5-pro]
+    description: "Long-form prose, narrative, documentation"
+
+  vision:
+    preferred: [gemma3-local, gemma4-local, llava-local, claude-sonnet, gpt-4o]
+    description: "Image analysis, screenshots, UI understanding"
+
+  summarization:
+    preferred: [qwen3-local, claude-haiku, gpt-4o-mini, llama-local]
+    description: "Document condensation, distillation"
+
+  long_context:
+    preferred: [kimi-cloud, claude-opus, gemini-2.5-pro, gpt-oss-cloud]
+    description: "Tasks requiring 32K+ context window"
+
+  structured_output:
+    preferred: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-pro]
+    description: "JSON schema adherence, structured extraction"
+
+  agentic:
+    preferred: [qwen3-local, claude-sonnet, gpt-4o, llama-local]
+    description: "Tool use, multi-step planning, function calling"
+
+# -----------------------------------------------------------------------
+# Function -> Model Routing
+# -----------------------------------------------------------------------
+# Maps each ICDEV™ function to a model with fallback chain.
+# First available model in the chain is used.
+routing:
+  agent_architect:
+    chain: [qwen3-local, claude-opus, o3, gemini-2.5-pro, gpt-4o, llama-local]
+    effort: max
+
+  agent_orchestrator:
+    chain: [qwen3-local, claude-opus, gemini-2.5-pro, gpt-4o, llama-local]
+    effort: high
+
+  agent_builder:
+    chain: [qwen3-local, claude-opus, gemini-2.5-pro, gpt-4o, codestral-local]
+    effort: max
+
+  agent_compliance:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: high
+
+  agent_security:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: high
+
+  agent_infra:
+    chain: [qwen3-local, claude-sonnet, gpt-4o-mini, gemini-2.5-flash, llama-local]
+    effort: medium
+
+  agent_knowledge:
+    chain: [qwen3-local, claude-sonnet, gpt-4o-mini, gemini-2.5-flash, llama-local]
+    effort: medium
+
+  agent_monitor:
+    chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
+    effort: low
+
+  agent_mbse:
+    chain: [qwen3-local, claude-opus, gemini-2.5-pro, gpt-4o, llama-local]
+    effort: max
+
+  agent_modernization:
+    chain: [qwen3-local, claude-opus, gemini-2.5-pro, gpt-4o, llama-local]
+    effort: high
+
+  agent_requirements_analyst:
+    chain: [kimi-cloud, qwen3-local, claude-opus, gemini-2.5-pro, gpt-4o]
+    effort: high
+
+  agent_supply_chain:
+    chain: [qwen3-local, claude-sonnet, gpt-4o-mini, gemini-2.5-flash, llama-local]
+    effort: medium
+
+  agent_simulation:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: high
+
+  agent_gateway:
+    chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
+    effort: low
+
+  agent_devsecops:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: high
+
+  task_decomposition:
+    chain: [kimi-cloud, qwen3-local, claude-opus, o3, gemini-2.5-pro, gpt-4o]
+    effort: high
+
+  collaboration:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: medium
+
+  # INTaaS / FathomDesk intelligence functions (Phase INT-COT)
+  news_reasoning:
+    chain: [qwen3-local, claude-sonnet, gpt-4o]
+    effort: high
+
+  intaas_multiperspectivity:
+    chain: [qwen3-local, claude-sonnet, gpt-4o]
+    effort: high
+
+  nlq_sql:
+    chain: [qwen3-local, gpt-4o-mini, gemini-2.0-flash, claude-haiku, llama-local]
+    effort: low
+
+  code_generation:
+    chain: [qwen3-local, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
+    effort: high
+
+  saas_proxy:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash]
+    effort: medium
+
+  child_app:
+    chain: [qwen3-local, claude-sonnet, gemini-2.5-pro, gpt-4o]
+    effort: medium
+
+  screenshot_validation:
+    chain: [gemma3-local, llava-local, qwen3-local]
+    effort: medium
+
+  document_vision:
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, gemma3-local, llava-local]
+    effort: medium
+
+  ui_analysis:
+    chain: [gemma3-local, llava-local, qwen3-local]
+    effort: high
+
+  e2e_testing:
+    chain: [qwen3-local]
+    effort: low
+
+  playwright_execution:
+    chain: [qwen3-local]
+    effort: low
+
+  browser_automation:
+    chain: [qwen3-local]
+    effort: low
+
+  ui_verification:
+    chain: [qwen3-local]
+    effort: low
+
+  diagram_extraction:
+    chain: [claude-opus, claude-sonnet, gpt-4o, gemini-2.5-pro, gemma3-local, llava-local]
+    effort: high
+
+  compliance_diagram:
+    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, gemma3-local, llava-local]
+    effort: medium
+
+  attachment_analysis:
+    chain: [claude-sonnet, gpt-4o-mini, gemini-2.0-flash, gemma3-local, llava-local]
+    effort: low
+
+  intake_persona_response:
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, claude-opus, gpt-4o, gemini-2.5-flash]
+    effort: medium
+
+  ip_planning:
+    chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
+    effort: low
+
+  # Panel fires N calls in parallel — use fast/cheap models to keep wall-clock latency low
+  panel_persona_response:
+    chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, kimi-cloud]
+    effort: low
+
+  bdd_preview:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, codestral-local]
+    effort: low
+
+  narrative_generation:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: high
+
+  compliance_export:
+    chain: [qwen3-local, claude-sonnet, gpt-4o-mini, gemini-2.0-flash, llama-local]
+    effort: medium
+
+  # Cross-Language Translation (Phase 43)
+  code_translation:
+    chain: [qwen3-local, claude-opus, claude-sonnet, o3, gemini-2.5-pro, gpt-4o, codestral-local]
+    effort: max
+
+  code_translation_repair:
+    chain: [qwen3-local, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
+    effort: high
+
+  code_translation_review:
+    chain: [qwen3-local, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
+    effort: high
+
+  test_translation:
+    chain: [qwen3-local, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
+    effort: high
+
+  dependency_suggestion:
+    chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, codestral-local]
+    effort: low
+
+  # RAG Re-ranking (Phase 64, D-RAG-3 — scanner_function, qwen3 only)
+  rag_rerank:
+    chain: [qwen3-local, gemini-2.0-flash, gpt-4o-mini, llama-local]
+    effort: low
+
+  # Fine-tuning pair generation (D-FT-10 — scanner_function, local only)
+  ft_pair_generation:
+    chain: [qwen3-local, gemini-2.0-flash, llama-local]
+    effort: low
+
+  # Compiler-in-the-Loop Verification Repair (LeanStral-adapted, D-VL-1)
+  # LeanStral excels at code verification and repair — use when available,
+  # fall back to general-purpose models. Air-gapped: leanstral-local via vLLM.
+  verify_loop_repair:
+    chain: [qwen3-local, leanstral, leanstral-local, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
+    effort: high
+
+  # Formal Verification / Property-Based Testing (D-VL-6)
+  # For generating invariant specifications and property tests.
+  formal_verification:
+    chain: [qwen3-local, leanstral, leanstral-local, claude-opus, o3, gemini-2.5-pro]
+    effort: max
+
+  # GovEval Benchmark Evaluation (D-VL-9)
+  goveval_judge:
+    chain: [qwen3-local, claude-sonnet, leanstral, gpt-4o, gemini-2.5-pro]
+    effort: high
+
+  # GovCon Proposal Functions — LOCAL ONLY (Phase 70: Redaction & Data Protection)
+  # Proposal content contains CUI program names, past performance, pricing.
+  # Route to Ollama only — never send raw proposal content to cloud LLMs.
+  # WriteGuard rewrite (wg_rewrite) stays on Claude (rewrites style, not content).
+  proposal_drafting:
+    chain: [qwen3-local, llama-local]
+    effort: medium
+
+  requirement_extraction:
+    chain: [kimi-cloud, qwen3-local]
+    effort: medium
+
+  bid_scoring:
+    chain: [qwen3-local, llama-local]
+    effort: low
+
+  color_review:
+    chain: [qwen3-local, llama-local]
+    effort: medium
+
+  # Failure triage — Claude for diagnose (thinking/reasoning),
+  # Ollama for patch (building/code-gen). Explicit two-tier split per
+  # the "Claude thinks, Ollama builds" convention.
+  failure_triage_diagnose:
+    chain: [qwen3-local, claude-sonnet, claude-opus, gpt-4o, gemini-2.5-pro]
+    effort: high
+
+  failure_triage_patch:
+    chain: [qwen3-local, codestral-local, llama-local, claude-sonnet]
+    effort: medium
+
+  chat_response:
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, llama-local]
+    effort: low
+    disable_thinking: true
+
+  # -----------------------------------------------------------------------
+  # Chain-of-Thought role chains
+  # Each CoT role uses a different preferred model family for true multi-LLM reasoning.
+  # - cot_reasoner: thinking/reasoning-capable models first
+  # - cot_critic:   cloud review models first (different perspective from reasoner)
+  # - cot_synthesizer: best synthesis models first
+  # -----------------------------------------------------------------------
+  cot_reasoner:
+    chain: [deepseek-local, qwen3-local, claude-opus, o3, llama-local]
+    effort: high
+
+  cot_critic:
+    chain: [claude-sonnet, qwen3-local, gpt-4o, gemini-2.5-pro, llama-local]
+    effort: high
+
+  cot_synthesizer:
+    chain: [claude-sonnet, qwen3-local, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: high
+
+  # -----------------------------------------------------------------------
+  # Chain-of-Debate role chains
+  # cod_debater_pool: large diverse pool — get_diverse_models() picks N
+  #   distinct models maximizing provider variety (ollama, anthropic, openai, google)
+  # cod_judge: best available model for final synthesis / verdict
+  # -----------------------------------------------------------------------
+  cod_debater_pool:
+    chain: [qwen3-local, llama-local, deepseek-local, claude-haiku, claude-sonnet, gpt-4o, gpt-4o-mini, gemini-2.5-flash, kimi-cloud]
+    effort: medium
+
+  cod_judge:
+    chain: [claude-sonnet, qwen3-local, gpt-4o, gemini-2.5-pro]
+    effort: high
+
+  default:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: medium
+
+# -----------------------------------------------------------------------
+# Per-Agent Effort Defaults (Enhancement #4 — used by agent_executor)
+# -----------------------------------------------------------------------
+agent_effort_defaults:
+  orchestrator-agent: high
+  architect-agent: max
+  builder-agent: max
+  compliance-agent: high
+  security-agent: high
+  infra-agent: medium
+  knowledge-agent: medium
+  monitor-agent: low
+  mbse-agent: high
+  modernization-agent: high
+  requirements-analyst-agent: high
+  supply-chain-agent: medium
+  simulation-agent: high
+  gateway-agent: low
+  devsecops-agent: high
+
+# -----------------------------------------------------------------------
+# Embedding Configuration
+# -----------------------------------------------------------------------
+embeddings:
+  default_chain: [openai-embed, gemini-embed, nomic-embed-local]
+
+  models:
+    openai-embed:
+      provider: openai
+      model_id: text-embedding-3-small
+      dimensions: 1536
+      pricing: { input_per_1k: 0.00002 }
+
+    gemini-embed:
+      provider: gemini
+      model_id: text-embedding-004
+      dimensions: 768
+      pricing: { input_per_1k: 0.0 }
+
+    titan-embed:
+      provider: bedrock
+      model_id: amazon.titan-embed-text-v2:0
+      dimensions: 1024
+      pricing: { input_per_1k: 0.00002 }
+
+    nomic-embed-local:
+      provider: ollama
+      model_id: nomic-embed-text
+      dimensions: 768
+      pricing: { input_per_1k: 0.0 }
+
+    # Azure OpenAI embedding (D238)
+    azure-embed:
+      provider: azure_openai
+      model_id: text-embedding-ada-002
+      dimensions: 1536
+      pricing:
+        input_per_1k: 0.0001
+    # OCI GenAI embedding (D238)
+    oci-embed:
+      provider: oci_genai
+      model_id: cohere.embed-english-v3.0
+      dimensions: 1024
+      pricing:
+        input_per_1k: 0.0001
+    # IBM watsonx.ai embedding (D238)
+    ibm-slate-embed:
+      provider: ibm_watsonx
+      model_id: ibm/slate-125m-english-rtrvr-v2
+      dimensions: 768
+      pricing:
+        input_per_1k: 0.0
+
+# -----------------------------------------------------------------------
+# Global Settings
+# -----------------------------------------------------------------------
+settings:
+  max_retries: 5
+  base_retry_delay_seconds: 1.0
+  max_retry_delay_seconds: 30.0
+  availability_cache_ttl_seconds: 1800
+  prefer_local: false    # Two-tier handles local/cloud split — do not set true (blocks Claude tier2)
+  # Ollama auto-discovery: on startup, probes /api/tags and registers new models in-memory
+  # so they are immediately usable. Does NOT write to this file. Curate capabilities by hand.
+  ollama_discovery:
+    enabled: true
+    probe_providers: [ollama, ollama_cloud]
+    default_capabilities: [summarization, writing]
+    refresh_interval_seconds: 3600
+
+# -----------------------------------------------------------------------
+# Two-Tier Routing (qwen3 worker → Claude planner/reviewer)
+# -----------------------------------------------------------------------
+# Claude is the brain. qwen3 handles drafting, research, and scanning.
+#
+# planner_functions : Claude directly — no qwen3 pre-step (architecture,
+#                     orchestration, high-stakes planning)
+# worker_functions  : qwen3 drafts a COMPACT structured response, then
+#                     Claude verifies/corrects and returns the final answer.
+#                     qwen3 output is intentionally short (reduces Claude's
+#                     input tokens vs. Claude doing the full task alone).
+# scanner_functions : qwen3 only — log analysis, health checks, simple
+#                     pattern matching where review adds no value.
+#
+# Set enabled: false to fall back to normal chain-based routing.
+# ── PII Redaction (D-RDT-1 through D-RDT-4, Phase 72 Hermes adaptation) ────
+# Pre-LLM redaction + post-LLM de-anonymization for CUI/PII protection.
+redaction:
+  enabled: true                    # Master toggle for pre-invoke PII redaction
+  enforce_at_il4_plus: true        # Auto-enable at IL4+ even if global toggle is off
+  skip_for_local_only: true        # Skip redaction when routing is Ollama-only
+  deanonymize_response: true       # Restore originals in LLM response
+  audit_enabled: true              # Log redaction events to redaction_audit table
+  # Functions excluded from redaction — Pulse articles are public evergreen
+  # blog posts, not CUI. Redacting org names produces [ORGANIZATION] tokens
+  # that leak into published content.
+  excluded_functions:
+    - pulse_draft
+    - pulse_rewrite
+    - wg_rewrite
+    - narrative_generation
+
+two_tier:
+  enabled: true
+  tier1_model: kimi-cloud       # Worker — kimi-k2.6 cloud first; qwen3-local (no-think) fallback
+  tier2_model: claude-sonnet-api  # Planner/Reviewer — Anthropic API (not Bedrock)
+
+  # Dual-model mode: swap tier1 + overrides for simultaneous VRAM residency
+  # Toggle via: env ICDEV_DUAL_MODEL=true, or dashboard toggle, or API
+  # When enabled: tier1 → qwen3-dual (1.7B text-only), overrides swap to dual variants
+  # When disabled: tier1 → qwen3-local (9B multimodal), original overrides
+  dual_model:
+    enabled: ${ICDEV_DUAL_MODEL:-false}
+    tier1_override: qwen3-dual           # replaces tier1_model when active
+    function_overrides:                   # replaces function_model_overrides entries
+      pulse_rewrite: qwen3-dual          # 1.7B text-only instead of 9B
+      # pulse_draft stays gemma3-local (already dual-resident)
+      # wg_rewrite stays claude-sonnet-api (cloud, no VRAM impact)
+
+  planner_functions:
+    - agent_architect
+    - agent_orchestrator
+    - agent_mbse
+    - agent_modernization
+    - agent_requirements_analyst
+    - task_decomposition
+    - child_app
+    - saas_proxy
+
+  # Worker tier: qwen3 drafts → Claude reviews/corrects (two-step build pattern).
+  # Restored 2026-04-30: thinking-mode timeouts resolved (think=False in provider;
+  # GPU now active on RTX 4060 Ti with qwen3.5:9b — ~53s latency acceptable).
+  worker_functions:
+    - code_generation        # qwen3 drafts code → Claude reviews for correctness
+    - bdd_preview            # qwen3 drafts BDD specs → Claude tightens acceptance criteria
+    - narrative_generation   # qwen3 drafts narrative → Claude refines voice/structure
+
+  scanner_functions:
+    - agent_monitor
+    - attachment_analysis
+    - rag_rerank
+    - rag_evaluate
+    - ft_pair_generation
+    - pulse_draft          # Drafting uses gemma3 (no thinking mode issues)
+    - pulse_rewrite        # Rewriting uses qwen3.5 (think:false via provider)
+    - codebase_query       # Phase 69: codebase assistant widget (D-CA-5)
+    - wg_rewrite           # Claude override via function_model_overrides below
+
+  # Per-function model overrides (scanner tier)
+  # Override tier1_model for specific functions
+  function_model_overrides:
+    pulse_draft: gemma3-local        # gemma3 for article writing (no thinking mode)
+    wg_rewrite: claude-sonnet-api    # Claude for WriteGuard rewriting (scanner path, Claude override)
+    pulse_rewrite: qwen3-local      # qwen3.5 for Pulse rewriting (think:false via provider)
+
+# -----------------------------------------------------------------------
+# RAG Integration (D-RAG-2, Phase 64)
+# -----------------------------------------------------------------------
+# Controls RAG context injection into two-tier LLM pipeline.
+# Full RAG config in args/rag_config.yaml — this section enables/disables
+# the injection hook in the LLM router.
+rag:
+  enabled: true
+  injection:
+    enabled: true
+    injection_top_k: 5
+    max_injection_chars: 4000
+    function_denylist:
+      - attachment_analysis
+      - screenshot_validation
+      - document_vision
+      - ui_analysis
+      - diagram_extraction
+      - compliance_diagram
+      - e2e_testing
+      - playwright_execution
+      - browser_automation
+      - ui_verification
+
+# -----------------------------------------------------------------------
+# Token Budget Enforcement (Paperclip-inspired per-agent hard-stops)
+# -----------------------------------------------------------------------
+# Per-agent monthly USD caps. Warning fires at threshold; hard_stop blocks.
+# Set enabled: false to disable enforcement globally.
+token_budgets:
+  enabled: true
+  default_monthly_usd: 50.00
+  warning_threshold: 0.8          # warn at 80% spend
+  hard_stop: true                  # block at 100% (false = warn-only)
+
+  # Per-agent overrides (agent_id from agent_registry.py cards)
+  per_agent:
+    orchestrator-agent:
+      monthly_usd: 100.00         # orchestrator needs higher cap
+    builder-agent:
+      monthly_usd: 75.00
+    compliance-agent:
+      monthly_usd: 30.00
+    security-agent:
+      monthly_usd: 30.00
+    knowledge-agent:
+      monthly_usd: 20.00
+    monitor-agent:
+      monthly_usd: 10.00
+    mbse-agent:
+      monthly_usd: 40.00
+    modernization-agent:
+      monthly_usd: 50.00
+    requirements-analyst-agent:
+      monthly_usd: 30.00
+    supply-chain-agent:
+      monthly_usd: 20.00
+    simulation-agent:
+      monthly_usd: 40.00
+    gateway-agent:
+      monthly_usd: 5.00
+    devsecops-agent:
+      monthly_usd: 30.00
+    # Scanner-tier agents (Ollama-only, zero cloud cost) — generous caps
+    genesis-daemon:
+      monthly_usd: 5.00           # mostly Ollama, minimal cloud
+    proposal-genesis-daemon:
+      monthly_usd: 5.00
+
+# -----------------------------------------------------------------------
+# Module Budget Enforcement (generative_intelligence + predictive_analysis)
+# -----------------------------------------------------------------------
+# Limits aggregate computational resources per high-cost module.
+# Enforced in addition to per-agent token_budgets above.
+module_budgets:
+  enabled: true
+  default_monthly_usd: 200.00
+  default_monthly_tokens: 500000
+  default_monthly_operations: 1000
+  warning_threshold: 0.8
+  hard_stop: true
+
+  per_module:
+    generative_intelligence:
+      monthly_usd: 150.00         # LLM calls, embeddings, chain orchestration
+      monthly_tokens: 400000
+      monthly_operations: 0       # not used for generative
+    predictive_analysis:
+      monthly_usd: 50.00          # simulation runs, Monte Carlo, COA generation
+      monthly_tokens: 100000       # LLM use inside simulations
+      monthly_operations: 500      # simulation scenario runs
+
+# -----------------------------------------------------------------------
+# Chain Orchestration (CoT / CoD)
+# -----------------------------------------------------------------------
+chain_orchestration:
+  enabled: true
+  default_mode: single
+  cost_cap_usd: 0.50
+  token_cap: 32000
+  timeout_seconds: 120
+  cot:
+    enabled: true
+    max_rounds: 3
+    self_consistency_runs: 1
+    # Role routing keys — each role uses a distinct preferred model family for true multi-LLM CoT.
+    # Takes precedence over *_model keys below. Set to null in per_function to use *_model fallback.
+    reasoner_role: cot_reasoner       # deepseek-local → qwen3-local → cloud (thinking-focused)
+    critic_role: cot_critic           # claude-sonnet → qwen3-local → cloud (review-focused)
+    synthesizer_role: cot_synthesizer # claude-sonnet → qwen3-local → cloud (synthesis-focused)
+    # Legacy direct model names — used as fallback when *_role resolves to nothing
+    reasoner_model: qwen3-local
+    critic_model: claude-sonnet
+    synthesizer_model: claude-sonnet
+    excluded_functions:
+      - pulse_generation
+      - news_oracle
+      - market_scan
+    per_function:
+      code_generation:
+        max_rounds: 5
+        self_consistency_runs: 3
+      # INTaaS cluster-level reasoning: local-only CoT to preserve scanner-tier cost model
+      news_reasoning:
+        max_rounds: 2
+        self_consistency_runs: 1
+        # Override to local-only by nulling roles and setting direct model names
+        reasoner_role: null
+        critic_role: null
+        synthesizer_role: null
+        reasoner_model: qwen3-local
+        critic_model: qwen3-local
+        synthesizer_model: qwen3-local
+  cod:
+    enabled: true
+    num_debaters: 3
+    debate_rounds: 2
+    # Role routing keys for true multi-LLM debate.
+    judge_role: cod_judge             # claude-sonnet → qwen3-local → cloud (best judgment)
+    debater_pool_role: cod_debater_pool  # get_diverse_models() picks N distinct models
+    # Legacy direct model names — used as fallback when pool returns nothing
+    judge_model: claude-sonnet
+    debater_models:
+      - qwen3-local
+      - claude-sonnet
+      - openai-gpt4o
+    excluded_functions:
+      - pulse_generation
+    per_function:
+      architecture_review:
+        num_debaters: 5
+      # INTaaS perspective scoring: bull/bear/neutral debate with local debaters + Claude judge
+      intaas_multiperspectivity:
+        num_debaters: 3
+        debate_rounds: 2
+        judge_role: cod_judge
+        judge_model: claude-sonnet
+        # Override to local-only debaters by nulling pool role and using legacy list
+        debater_pool_role: null
+        debater_models:
+          - qwen3-local
+          - qwen3-local
+          - qwen3-local
+        positions:
+          - Bull case (strong buy / buy)
+          - Bear case (sell / strong sell)
+          - Neutral case (hold / wait)
+
+# -----------------------------------------------------------------------
+# Response Cache + Context Caching (D-CACHE-1 through D-CACHE-10)
+# Two-level: response_cache = deterministic KV store for full responses
+# (PostgreSQL-native with SQLite fallback); context_cache = provider-level
+# KV prefix reuse (cache_control: ephemeral on system prompt + last user msg).
+# -----------------------------------------------------------------------
+response_cache:
+  enabled: true
+  backend: postgresql
+  ttl_seconds: 3600
+  max_entries: 100000
+  match_strategy: exact
+  excluded_functions:
+    - pulse_generation
+    - news_oracle
+    - market_scan
+    - fathomdesk_trap
+    - attachment_analysis
+    - screenshot_validation
+    - ui_analysis
+    - browser_automation
+  per_function:
+    code_generation:
+      ttl_seconds: 7200
+      context_cache: true
+    narrative_generation:
+      ttl_seconds: 1800
+    nlq_sql:
+      ttl_seconds: 600
+    tfw_narrative:
+      ttl_seconds: 3600
+      context_cache: true
+    network_diagram_extraction:
+      ttl_seconds: 3600
+      context_cache: true
+    chat_response:
+      ttl_seconds: 1800
+    recommendation:
+      ttl_seconds: 3600
+    ttx_judge:
+      ttl_seconds: 300
+      context_cache: true
+    persona_gen:
+      ttl_seconds: 3600
+      context_cache: true
+    requirements_generation:
+      ttl_seconds: 1800
+      context_cache: true
+    panel_persona_response:
+      ttl_seconds: 1800
+      context_cache: true
+    requirement_extraction:
+      ttl_seconds: 1800
+      context_cache: true
+    intake_persona_response:
+      ttl_seconds: 1800
+      context_cache: true
+  per_canvas:
+    ndc:
+      ttl_seconds: 7200
+      context_cache: true
+    sdc:
+      ttl_seconds: 3600
+      context_cache: true
+    bdc:
+      ttl_seconds: 3600
+      context_cache: true
+    pdc:
+      ttl_seconds: 3600
+      context_cache: true
+    odc:
+      ttl_seconds: 3600
+      context_cache: true
+    idc:
+      ttl_seconds: 3600
+      context_cache: true
+    qdc:
+      ttl_seconds: 3600
+      context_cache: true
+    mdc:
+      ttl_seconds: 7200
+      context_cache: true
+    aadc:
+      ttl_seconds: 3600
+      context_cache: true
+    aimc:
+      ttl_seconds: 3600
+      context_cache: true
+    ohc:
+      ttl_seconds: 3600
+      context_cache: true
+    ddc:
+      ttl_seconds: 7200
+      context_cache: true

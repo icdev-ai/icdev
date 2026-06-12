@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+{% block title %}War Endurance Index — ICDEV™{% endblock %}
+
+{% block head %}
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>War Endurance Index</h1>
+  <p class="subtitle">Force-collapse timeline — stockpile burn-down per side</p>
+</div>
+
+<div class="card" style="margin-bottom:1rem;">
+  <div class="card-body" style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end;">
+    <div>
+      <label style="display:block;font-size:.85rem;margin-bottom:.25rem;">Scenario</label>
+      <select id="scenarioSelect" style="padding:.4rem .7rem;border-radius:4px;border:1px solid #444;background:#1e1e2e;color:#cdd6f4;">
+        <option value="demo">Demo — Ukraine / Russia (2024)</option>
+        <option value="custom">Custom Parameters</option>
+      </select>
+    </div>
+    <button id="runBtn" class="btn btn-primary" onclick="runAnalysis()">Run Analysis</button>
+    <span id="statusMsg" style="font-size:.85rem;color:#a6adc8;"></span>
+  </div>
+</div>
+
+<!-- Custom params panel (hidden by default) -->
+<div id="customPanel" class="card" style="display:none;margin-bottom:1rem;">
+  <div class="card-body">
+    <h3 style="margin-top:0;">Custom Parameters</h3>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
+      <div>
+        <h4>Side A</h4>
+        <label>Name <input id="a_name" value="Side A" class="form-control" style="margin:.25rem 0 .5rem;"></label>
+        <label>Stockpile (units) <input id="a_stockpile" type="number" value="4200" class="form-control" style="margin:.25rem 0 .5rem;"></label>
+        <label>Force size <input id="a_force" type="number" value="700000" class="form-control" style="margin:.25rem 0 .5rem;"></label>
+        <label>Opposing force size <input id="a_opp" type="number" value="480000" class="form-control" style="margin:.25rem 0 .5rem;"></label>
+        <label>Lethality coeff <input id="a_leth" type="number" step="0.0001" value="0.0004" class="form-control" style="margin:.25rem 0 .5rem;"></label>
+        <label>Production cap (units/mo) <input id="a_prod" type="number" value="180" class="form-control" style="margin:.25rem 0 .5rem;"></label>
+        <label>Import rate (units/mo) <input id="a_import" type="number" value="350" class="form-control" style="margin:.25rem 0 .5rem;"></label>
+        <label>Sanctions effectiveness (0–1) <input id="a_sanc" type="number" step="0.01" value="0.0" class="form-control" style="margin:.25rem 0 .5rem;"></label>
+        <label>Supply disruption score (0–1) <input id="a_disrupt" type="number" step="0.01" value="0.30" class="form-control" style="margin:.25rem 0 .5rem;"></label>
+      </div>
+      <div>
+        <h4>Side B</h4>
+        <label>Name <input id="b_name" value="Side B" class="form-control" style="margin:.25rem 0 .5rem;"></label>
+        <label>Stockpile (units) <input id="b_stockpile" type="number" value="12000" class="form-control" style="margin:.25rem 0 .5rem;"></label>
+        <label>Force size <input id="b_force" type="number" value="480000" class="form-control" style="margin:.25rem 0 .5rem;"></label>
+        <label>Opposing force size <input id="b_opp" type="number" value="700000" class="form-control" style="margin:.25rem 0 .5rem;"></label>
+        <label>Lethality coeff <input id="b_leth" type="number" step="0.0001" value="0.0006" class="form-control" style="margin:.25rem 0 .5rem;"></label>
+        <label>Production cap (units/mo) <input id="b_prod" type="number" value="320" class="form-control" style="margin:.25rem 0 .5rem;"></label>
+        <label>Import rate (units/mo) <input id="b_import" type="number" value="80" class="form-control" style="margin:.25rem 0 .5rem;"></label>
+        <label>Sanctions effectiveness (0–1) <input id="b_sanc" type="number" step="0.01" value="0.65" class="form-control" style="margin:.25rem 0 .5rem;"></label>
+        <label>Supply disruption score (0–1) <input id="b_disrupt" type="number" step="0.01" value="0.45" class="form-control" style="margin:.25rem 0 .5rem;"></label>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Summary cards -->
+<div id="summaryRow" style="display:none;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1rem;"></div>
+
+<!-- Charts -->
+<div id="chartsRow" style="display:none;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;">
+  <div class="card"><div class="card-body"><div id="chartBurnA" style="height:320px;"></div></div></div>
+  <div class="card"><div class="card-body"><div id="chartBurnB" style="height:320px;"></div></div></div>
+</div>
+<div id="chartForceRow" style="display:none;margin-bottom:1rem;">
+  <div class="card"><div class="card-body"><div id="chartForce" style="height:300px;"></div></div></div>
+</div>
+
+<!-- Raw JSON output -->
+<div id="rawSection" style="display:none;" class="card">
+  <div class="card-body">
+    <details>
+      <summary style="cursor:pointer;font-size:.9rem;color:#a6adc8;">Raw JSON output</summary>
+      <pre id="rawJson" style="font-size:.78rem;max-height:400px;overflow:auto;margin-top:.5rem;"></pre>
+    </details>
+  </div>
+</div>
+
+<style>
+.form-control { width:100%;padding:.35rem .6rem;border-radius:4px;border:1px solid #444;background:#1e1e2e;color:#cdd6f4;box-sizing:border-box; }
+.summary-card { background:#1e1e2e;border-radius:8px;padding:1rem 1.25rem;border:1px solid #313244; }
+.summary-card h4 { margin:0 0 .5rem;font-size:1rem;color:#a6adc8; }
+.summary-card .big { font-size:2rem;font-weight:700;color:#cba6f7; }
+.summary-card .sub { font-size:.82rem;color:#a6adc8;margin-top:.25rem; }
+.badge-danger { background:#f38ba8;color:#1e1e2e;border-radius:4px;padding:.1rem .4rem;font-size:.75rem;font-weight:700; }
+.badge-ok { background:#a6e3a1;color:#1e1e2e;border-radius:4px;padding:.1rem .4rem;font-size:.75rem;font-weight:700; }
+</style>
+
+<script>
+document.getElementById('scenarioSelect').addEventListener('change', function() {
+  document.getElementById('customPanel').style.display = this.value === 'custom' ? 'block' : 'none';
+});
+
+function getCustomParams() {
+  return {
+    side_a: {
+      name: document.getElementById('a_name').value,
+      stockpile: parseFloat(document.getElementById('a_stockpile').value),
+      force_size: parseFloat(document.getElementById('a_force').value),
+      opposing_force_size: parseFloat(document.getElementById('a_opp').value),
+      lethality_coeff: parseFloat(document.getElementById('a_leth').value),
+      production_capacity: parseFloat(document.getElementById('a_prod').value),
+      import_rate: parseFloat(document.getElementById('a_import').value),
+      sanctions_effectiveness: parseFloat(document.getElementById('a_sanc').value),
+      supply_disruption_score: parseFloat(document.getElementById('a_disrupt').value),
+    },
+    side_b: {
+      name: document.getElementById('b_name').value,
+      stockpile: parseFloat(document.getElementById('b_stockpile').value),
+      force_size: parseFloat(document.getElementById('b_force').value),
+      opposing_force_size: parseFloat(document.getElementById('b_opp').value),
+      lethality_coeff: parseFloat(document.getElementById('b_leth').value),
+      production_capacity: parseFloat(document.getElementById('b_prod').value),
+      import_rate: parseFloat(document.getElementById('b_import').value),
+      sanctions_effectiveness: parseFloat(document.getElementById('b_sanc').value),
+      supply_disruption_score: parseFloat(document.getElementById('b_disrupt').value),
+    }
+  };
+}
+
+async function runAnalysis() {
+  const btn = document.getElementById('runBtn');
+  const status = document.getElementById('statusMsg');
+  btn.disabled = true;
+  status.textContent = 'Computing…';
+
+  try {
+    const scenario = document.getElementById('scenarioSelect').value;
+    let data;
+    if (scenario === 'demo') {
+      const res = await fetch('/api/simulate/war-endurance/demo');
+      data = await res.json();
+    } else {
+      const params = getCustomParams();
+      const res = await fetch('/api/simulate/war-endurance', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(params)
+      });
+      data = await res.json();
+    }
+
+    if (data.error) { status.textContent = 'Error: ' + data.error; btn.disabled = false; return; }
+
+    renderSummary(data);
+    renderBurnDown(data);
+    renderForceTrajectory(data);
+    document.getElementById('rawJson').textContent = JSON.stringify(data, null, 2);
+    document.getElementById('rawSection').style.display = 'block';
+    status.textContent = 'Done — ' + new Date(data.computed_at).toLocaleTimeString();
+  } catch(e) {
+    status.textContent = 'Error: ' + e.message;
+  }
+  btn.disabled = false;
+}
+
+function renderSummary(data) {
+  const row = document.getElementById('summaryRow');
+  const a = data.side_a, b = data.side_b;
+  const threshold = data.historical_threshold_months;
+  row.style.display = 'grid';
+
+  const badge = (side) => side.below_threshold
+    ? `<span class="badge-danger">BELOW ${threshold}mo THRESHOLD</span>`
+    : `<span class="badge-ok">Above threshold</span>`;
+
+  row.innerHTML = `
+    <div class="summary-card">
+      <h4>${a.name}</h4>
+      <div class="big">${a.endurance_months.toFixed(1)} <span style="font-size:1rem;font-weight:400;">months</span></div>
+      <div class="sub">Net drain: ${a.net_drain.toFixed(2)} u/mo &nbsp; ${badge(a)}</div>
+      <div class="sub" style="margin-top:.5rem;">Attrition: ${a.attrition_rate.toFixed(3)} &nbsp;|&nbsp; Replenishment: ${a.replenishment_rate.toFixed(3)}</div>
+      <div class="sub">Supply disruption: ${(a.supply_disruption_score*100).toFixed(0)}%</div>
+    </div>
+    <div class="summary-card">
+      <h4>${b.name}</h4>
+      <div class="big">${b.endurance_months.toFixed(1)} <span style="font-size:1rem;font-weight:400;">months</span></div>
+      <div class="sub">Net drain: ${b.net_drain.toFixed(2)} u/mo &nbsp; ${badge(b)}</div>
+      <div class="sub" style="margin-top:.5rem;">Attrition: ${b.attrition_rate.toFixed(3)} &nbsp;|&nbsp; Replenishment: ${b.replenishment_rate.toFixed(3)}</div>
+      <div class="sub">Supply disruption: ${(b.supply_disruption_score*100).toFixed(0)}%</div>
+    </div>
+    <div class="summary-card">
+      <h4>Endurance Delta (A − B)</h4>
+      <div class="big" style="color:${data.endurance_delta >= 0 ? '#a6e3a1' : '#f38ba8'};">
+        ${data.endurance_delta >= 0 ? '+' : ''}${data.endurance_delta.toFixed(1)} <span style="font-size:1rem;font-weight:400;">months</span>
+      </div>
+      <div class="sub">Weaker side: <strong>${data.weaker_side}</strong></div>
+      <div class="sub" style="margin-top:.5rem;">
+        Escalation risk: ${data.escalation_risk
+          ? '<span class="badge-danger">HIGH — side below 3mo</span>'
+          : '<span class="badge-ok">Low</span>'}
+      </div>
+      <div class="sub">Historical threshold: ${threshold} months (73% pre-war cases)</div>
+    </div>
+  `;
+}
+
+const PLOTLY_LAYOUT = (title) => ({
+  title: { text: title, font: { color: '#cdd6f4', size: 13 } },
+  paper_bgcolor: '#1e1e2e', plot_bgcolor: '#181825',
+  font: { color: '#cdd6f4', size: 11 },
+  xaxis: { gridcolor: '#313244', zerolinecolor: '#45475a', title: 'Month' },
+  yaxis: { gridcolor: '#313244', zerolinecolor: '#45475a', title: 'Stockpile (units)' },
+  margin: { t: 40, r: 10, l: 55, b: 40 },
+  showlegend: false,
+});
+
+function renderBurnDown(data) {
+  const row = document.getElementById('chartsRow');
+  row.style.display = 'grid';
+  const threshold = data.historical_threshold_months;
+
+  for (const [side, divId] of [[data.side_a, 'chartBurnA'], [data.side_b, 'chartBurnB']]) {
+    const months = side.burn_series.map(p => p.month);
+    const stocks = side.burn_series.map(p => p.stockpile);
+
+    const traces = [
+      { x: months, y: stocks, type: 'scatter', mode: 'lines', name: 'Stockpile',
+        line: { color: '#cba6f7', width: 2 }, fill: 'tozeroy', fillcolor: 'rgba(203,166,247,0.08)' },
+    ];
+
+    // Vertical threshold line at endurance_months
+    if (side.endurance_months < 120) {
+      traces.push({
+        x: [side.endurance_months, side.endurance_months], y: [0, stocks[0]],
+        type: 'scatter', mode: 'lines', name: 'Collapse',
+        line: { color: '#f38ba8', width: 1, dash: 'dash' }
+      });
+    }
+
+    // Horizontal line at 3-month threshold
+    const threshIdx = Math.round(threshold);
+    if (stocks.length > threshIdx) {
+      traces.push({
+        x: months, y: months.map(() => stocks[threshIdx] || 0),
+        type: 'scatter', mode: 'lines', name: '3mo Threshold',
+        line: { color: '#fab387', width: 1, dash: 'dot' }
+      });
+    }
+
+    const layout = PLOTLY_LAYOUT(`${side.name} — Burn-Down`);
+    layout.yaxis.title = 'Stockpile (units)';
+    Plotly.newPlot(divId, traces, layout, { responsive: true, displayModeBar: false });
+  }
+}
+
+function renderForceTrajectory(data) {
+  const row = document.getElementById('chartForceRow');
+  row.style.display = 'block';
+  const traj = data.lanchester_trajectory;
+  const months = traj.side_a.map((_, i) => i);
+
+  const traces = [
+    { x: months, y: traj.side_a, type: 'scatter', mode: 'lines', name: data.side_a.name,
+      line: { color: '#89dceb', width: 2 } },
+    { x: months, y: traj.side_b, type: 'scatter', mode: 'lines', name: data.side_b.name,
+      line: { color: '#fab387', width: 2 } },
+  ];
+
+  const layout = PLOTLY_LAYOUT('Lanchester Force Trajectory');
+  layout.yaxis.title = 'Force Size';
+  layout.showlegend = true;
+  layout.legend = { bgcolor: '#1e1e2e', font: { color: '#cdd6f4' } };
+  Plotly.newPlot('chartForce', traces, layout, { responsive: true, displayModeBar: false });
+}
+
+// Auto-run demo on load
+window.addEventListener('DOMContentLoaded', () => runAnalysis());
+</script>
+{% endblock %}

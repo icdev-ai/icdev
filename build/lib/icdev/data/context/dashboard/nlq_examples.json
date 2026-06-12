@@ -1,0 +1,50 @@
+[
+    {
+        "question": "Show all active projects",
+        "sql": "SELECT id, name, type, status, classification, impact_level, ato_status, created_at FROM projects WHERE status = 'active' ORDER BY created_at DESC"
+    },
+    {
+        "question": "List all CAT1 STIG findings",
+        "sql": "SELECT sf.id, sf.project_id, sf.stig_id, sf.finding_id, sf.title, sf.status, sf.assessed_at FROM stig_findings sf WHERE sf.severity = 'CAT1' AND sf.status = 'Open' ORDER BY sf.assessed_at DESC"
+    },
+    {
+        "question": "Show open POAM items by severity",
+        "sql": "SELECT severity, COUNT(*) as count FROM poam_items WHERE status = 'open' GROUP BY severity ORDER BY CASE severity WHEN 'critical' THEN 1 WHEN 'high' THEN 2 WHEN 'moderate' THEN 3 WHEN 'low' THEN 4 END"
+    },
+    {
+        "question": "What is the compliance coverage for each framework?",
+        "sql": "SELECT pfs.project_id, p.name as project_name, pfs.framework_id, pfs.coverage_pct, pfs.gate_status, pfs.last_assessed FROM project_framework_status pfs JOIN projects p ON pfs.project_id = p.id ORDER BY pfs.coverage_pct ASC"
+    },
+    {
+        "question": "Show recent audit trail entries",
+        "sql": "SELECT id, project_id, event_type, actor, action, classification, created_at FROM audit_trail ORDER BY created_at DESC LIMIT 50"
+    },
+    {
+        "question": "List agents and their status",
+        "sql": "SELECT id, name, description, url, status, last_heartbeat FROM agents ORDER BY name"
+    },
+    {
+        "question": "Show critical vulnerabilities",
+        "sql": "SELECT dv.cve_id, dv.severity, dv.cvss_score, dv.title, dv.status, di.package_name, di.current_version FROM dependency_vulnerabilities dv JOIN dependency_inventory di ON dv.dependency_id = di.id WHERE dv.severity = 'critical' AND dv.status = 'open' ORDER BY dv.cvss_score DESC"
+    },
+    {
+        "question": "How many hook events were logged today?",
+        "sql": "SELECT hook_type, COUNT(*) as count FROM hook_events WHERE date(created_at) = date('now') GROUP BY hook_type ORDER BY count DESC"
+    },
+    {
+        "question": "Show recent deployments",
+        "sql": "SELECT d.id, d.project_id, p.name as project_name, d.environment, d.version, d.status, d.deployed_by, d.created_at FROM deployments d JOIN projects p ON d.project_id = p.id ORDER BY d.created_at DESC LIMIT 20"
+    },
+    {
+        "question": "What projects have RED boundary impact?",
+        "sql": "SELECT bia.id, bia.project_id, p.name as project_name, bia.impact_tier, bia.impact_category, bia.impact_description FROM boundary_impact_assessments bia JOIN projects p ON bia.project_id = p.id WHERE bia.impact_tier = 'RED' ORDER BY bia.assessed_at DESC"
+    },
+    {
+        "question": "Show intake sessions with readiness scores",
+        "sql": "SELECT is2.id, is2.customer_name, is2.session_status, is2.readiness_score, is2.total_requirements, is2.gap_count, is2.ambiguity_count FROM intake_sessions is2 ORDER BY is2.created_at DESC"
+    },
+    {
+        "question": "List supply chain vendors with high risk",
+        "sql": "SELECT id, vendor_name, vendor_type, country_of_origin, scrm_risk_tier, section_889_status FROM supply_chain_vendors WHERE scrm_risk_tier IN ('high', 'critical') ORDER BY scrm_risk_tier, vendor_name"
+    }
+]

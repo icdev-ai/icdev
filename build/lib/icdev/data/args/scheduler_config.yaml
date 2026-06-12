@@ -1,0 +1,90 @@
+# CUI // SP-CTI
+# ICDEV™ Scheduler — Companion Sync Daemon Configuration
+#
+# Controls the CompanionSyncDaemon and its single "sync" reflex.
+# This is the ARGS layer (FORGE) — change behavior without editing goals/tools.
+#
+# Override any value via environment variable:
+#   ICDEV_COMPANION_SYNC_ENABLED=true
+#   ICDEV_COMPANION_SYNC_REFLEX_SYNC_ENABLED=false
+#
+# Classification: CUI // SP-CTI
+
+classification: "CUI // SP-CTI"
+
+# ── Master Switch ─────────────────────────────────────────────────────────────
+
+enabled: true
+env_override: ICDEV_COMPANION_SYNC_ENABLED
+
+# ── Active Hours ───────────────────────────────────────────────────────────────
+# Companion sync runs anytime — no quiet-hours gate needed (fast, non-LLM op).
+active_hours:
+  enabled: false
+
+# ── Trust Kernel ──────────────────────────────────────────────────────────────
+
+trust_kernel:
+  risk_tiers:
+    green:
+      description: "Non-destructive file writes — companion configs only"
+      approval: auto
+      sandbox: false
+      audit: true
+  circuit_breaker:
+    max_consecutive_failures: 5
+    cooldown_minutes: 30
+    auto_reenable: true
+  # No kill switch — companion sync is always safe to run
+
+# ── Reflexes ──────────────────────────────────────────────────────────────────
+
+reflexes:
+  sync:
+    enabled: true
+    risk_tier: green
+    # How often to regenerate companion configs.
+    # Uses "continuous" with interval_seconds for sub-hourly scheduling.
+    schedule: "continuous"
+    interval_seconds: 1800  # 30 minutes — override to adjust cadence
+
+    # Optional: restrict sync to specific platforms.
+    # Leave empty to sync ALL detected platforms (default).
+    # platforms:
+    #   - codex
+    #   - cursor
+    #   - copilot
+    #   - gemini
+
+    # Subprocess timeout for companion.py
+    timeout_seconds: 120
+
+    success_metric:
+      name: files_written
+      operator: gte
+      threshold: 1  # At least 1 companion file must be written to count as success
+
+# ── Cron Alternative (non-systemd / Windows Task Scheduler) ──────────────────
+#
+# If running as a daemon process is not desirable, invoke --once mode on a cron
+# schedule instead. The --once flag runs all due reflexes then exits immediately.
+#
+# Linux crontab (every 30 minutes):
+#   */30 * * * * cd /opt/icdev && \
+#     python tools/scheduler/companion_sync_daemon.py --once \
+#     >> /var/log/icdev/companion_sync.log 2>&1
+#
+# Windows Task Scheduler (PowerShell, every 30 minutes):
+#   schtasks /create /tn "ICDEV-CompanionSync" \
+#     /tr "python C:\ICDev\tools\scheduler\companion_sync_daemon.py --once --json" \
+#     /sc minute /mo 30
+#
+# Air-gap one-shot (call from CI/CD pipeline stage end):
+#   python tools/scheduler/companion_sync_daemon.py --reflex sync --json
+#
+# GitLab CI stage (append after security-scan or build stage):
+#   companion-sync:
+#     stage: post-build
+#     script:
+#       - python tools/scheduler/companion_sync_daemon.py --reflex sync --json
+#     allow_failure: true  # Non-blocking — companion sync failure doesn't fail the pipeline

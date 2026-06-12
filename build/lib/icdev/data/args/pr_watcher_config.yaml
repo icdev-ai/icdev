@@ -1,0 +1,15 @@
+# OPT-70 — Autonomous PR watcher configuration.
+# Consumed by tools/ci/pr_watcher.py.
+
+# Seconds between polls in --daemon mode
+poll_interval_seconds: 30
+
+# Hard cap on resume cycles per task — prevents infinite CI-failed loops
+max_resume_cycles_per_task: 5
+
+# Auto-merge squash on CI green + review approved
+auto_merge_enabled: false
+auto_merge_require_approval: true
+
+# Truncate CI log excerpts before injecting as resume context
+ci_log_max_chars: 4000

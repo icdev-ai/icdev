@@ -1,0 +1,379 @@
+{# CUI // SP-CTI — Strategos floating intelligence chat panel partial.
+   Included by base.html on all /strategos/* routes. #}
+
+<style>
+/* ── STRATEGOS Chat Panel ─────────────────────────────────────────── */
+:root {
+  --sgc-void:   #060d0d;
+  --sgc-bg:     #0a1410;
+  --sgc-surface:#0f1f18;
+  --sgc-amber:  #f59e0b;
+  --sgc-green:  #22c55e;
+  --sgc-cyan:   #22d3ee;
+  --sgc-dim:    #4b5563;
+  --sgc-text:   #d1d5db;
+  --sgc-border: rgba(245,158,11,.18);
+  --sgc-w:      420px;
+  --sgc-h:      540px;
+}
+
+/* FAB */
+#sg-chat-fab {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9000;
+  background: var(--sgc-amber);
+  color: #0a0a0a;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 16px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  box-shadow: 0 0 16px rgba(245,158,11,.45), 0 2px 8px rgba(0,0,0,.5);
+  transition: box-shadow .2s, transform .15s;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+#sg-chat-fab:hover { box-shadow: 0 0 28px rgba(245,158,11,.7); transform: translateY(-1px); }
+#sg-chat-fab.sg-panel-open { background: #1a2e24; color: var(--sgc-amber); border: 1px solid var(--sgc-amber); }
+
+/* Panel */
+#sg-chat-panel {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  width: var(--sgc-w);
+  height: var(--sgc-h);
+  z-index: 8999;
+  display: flex;
+  flex-direction: column;
+  background: var(--sgc-void);
+  border-left: 1px solid var(--sgc-border);
+  border-top: 2px solid var(--sgc-amber);
+  box-shadow: -4px 0 24px rgba(0,0,0,.6);
+  transform: translateX(100%);
+  transition: transform .25s cubic-bezier(.4,0,.2,1);
+  font-family: 'Courier New', monospace;
+}
+#sg-chat-panel.sg-panel-open { transform: translateX(0); }
+#sg-chat-panel.sg-minimized  { height: 40px; overflow: hidden; }
+
+/* Header */
+.sgc-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--sgc-border);
+  flex-shrink: 0;
+  background: var(--sgc-bg);
+}
+.sgc-header-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  color: var(--sgc-amber);
+  text-transform: uppercase;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sgc-live-dot {
+  width: 6px; height: 6px;
+  background: var(--sgc-green);
+  border-radius: 50%;
+  animation: sgc-pulse 2s infinite;
+}
+@keyframes sgc-pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+.sgc-header-btns { display: flex; gap: 4px; }
+.sgc-hbtn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--sgc-dim);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  line-height: 1.4;
+  transition: color .15s, border-color .15s;
+}
+.sgc-hbtn:hover { color: var(--sgc-amber); border-color: var(--sgc-border); }
+
+/* Entity badge */
+#sg-entity-badge {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  background: rgba(245,158,11,.08);
+  border-bottom: 1px solid var(--sgc-border);
+  font-size: 10px;
+  color: var(--sgc-text);
+  flex-shrink: 0;
+}
+#sg-entity-badge.visible { display: flex; }
+.sgc-entity-type {
+  background: var(--sgc-amber);
+  color: #0a0a0a;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+#sg-entity-label {
+  color: var(--sgc-amber);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Messages */
+#sg-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  scroll-behavior: smooth;
+}
+#sg-chat-messages::-webkit-scrollbar { width: 4px; }
+#sg-chat-messages::-webkit-scrollbar-track { background: var(--sgc-void); }
+#sg-chat-messages::-webkit-scrollbar-thumb { background: var(--sgc-border); border-radius: 2px; }
+
+.sgc-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 95%;
+}
+.sgc-msg-user   { align-self: flex-end; }
+.sgc-msg-assistant { align-self: flex-start; }
+.sgc-msg-system { align-self: center; }
+
+.sgc-bubble {
+  padding: 7px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  line-height: 1.55;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.sgc-msg-user .sgc-bubble {
+  background: rgba(245,158,11,.15);
+  border: 1px solid rgba(245,158,11,.3);
+  color: var(--sgc-amber);
+  text-align: right;
+}
+.sgc-msg-assistant .sgc-bubble {
+  background: var(--sgc-surface);
+  border-left: 3px solid var(--sgc-green);
+  color: var(--sgc-text);
+}
+.sgc-msg-assistant .sgc-bubble p { margin: 0 0 6px; }
+.sgc-msg-assistant .sgc-bubble p:last-child { margin-bottom: 0; }
+.sgc-msg-assistant .sgc-bubble code {
+  background: rgba(34,197,94,.1);
+  padding: 1px 4px;
+  border-radius: 2px;
+  font-size: 11px;
+  color: var(--sgc-green);
+}
+.sgc-msg-system .sgc-bubble {
+  background: transparent;
+  color: var(--sgc-dim);
+  font-style: italic;
+  font-size: 10px;
+  text-align: center;
+}
+.sgc-msg-role {
+  font-size: 9px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--sgc-dim);
+  padding: 0 2px;
+}
+.sgc-msg-user .sgc-msg-role   { text-align: right; }
+
+/* Typing indicator */
+#sg-typing {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  font-size: 10px;
+  color: var(--sgc-dim);
+  letter-spacing: .06em;
+  flex-shrink: 0;
+}
+#sg-typing.visible { display: flex; }
+.sgc-dots span {
+  display: inline-block;
+  width: 4px; height: 4px;
+  background: var(--sgc-amber);
+  border-radius: 50%;
+  margin: 0 1px;
+  animation: sgc-dot-bounce .9s infinite;
+}
+.sgc-dots span:nth-child(2) { animation-delay: .15s; }
+.sgc-dots span:nth-child(3) { animation-delay: .3s; }
+@keyframes sgc-dot-bounce { 0%,80%,100%{transform:translateY(0)} 40%{transform:translateY(-4px)} }
+
+/* Input area */
+.sgc-input-area {
+  display: flex;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--sgc-border);
+  background: var(--sgc-bg);
+  flex-shrink: 0;
+}
+#sg-chat-input {
+  flex: 1;
+  background: var(--sgc-surface);
+  border: 1px solid var(--sgc-border);
+  border-radius: 4px;
+  color: var(--sgc-text);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 6px 8px;
+  resize: none;
+  outline: none;
+  transition: border-color .15s;
+  line-height: 1.4;
+}
+#sg-chat-input:focus { border-color: rgba(245,158,11,.5); }
+#sg-chat-input::placeholder { color: var(--sgc-dim); }
+#sg-chat-send {
+  background: var(--sgc-amber);
+  border: none;
+  border-radius: 4px;
+  color: #0a0a0a;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 6px 12px;
+  align-self: flex-end;
+  transition: opacity .15s;
+  flex-shrink: 0;
+}
+#sg-chat-send:hover:not(:disabled) { opacity: .85; }
+#sg-chat-send:disabled { opacity: .35; cursor: not-allowed; }
+
+/* Context menu */
+#sg-ctx-menu {
+  position: fixed;
+  z-index: 10000;
+  background: var(--sgc-void);
+  border: 1px solid var(--sgc-amber);
+  border-radius: 5px;
+  box-shadow: 0 4px 24px rgba(0,0,0,.7), 0 0 12px rgba(245,158,11,.2);
+  min-width: 200px;
+  overflow: hidden;
+  display: none;
+}
+#sg-ctx-menu.visible { display: block; }
+.sgc-ctx-item {
+  padding: 9px 16px;
+  font-size: 12px;
+  color: var(--sgc-text);
+  cursor: pointer;
+  letter-spacing: .03em;
+  transition: background .12s, color .12s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sgc-ctx-item:hover { background: rgba(245,158,11,.12); color: var(--sgc-amber); }
+.sgc-ctx-item:not(:last-child) { border-bottom: 1px solid var(--sgc-border); }
+
+/* Welcome empty state */
+.sgc-welcome {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 10px;
+  color: var(--sgc-dim);
+  font-size: 11px;
+  text-align: center;
+  padding: 24px;
+}
+.sgc-welcome-icon { font-size: 32px; opacity: .4; }
+.sgc-welcome-title { color: var(--sgc-amber); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; font-size: 12px; }
+.sgc-welcome ul { text-align: left; margin: 4px 0 0; padding-left: 16px; line-height: 1.7; }
+</style>
+
+<!-- ── FAB ─────────────────────────────────────────────────────────── -->
+<button id="sg-chat-fab" title="Open STRATEGOS Intelligence Chat">
+  <span>⚡</span> STRATEGOS
+</button>
+
+<!-- ── Floating Panel ─────────────────────────────────────────────── -->
+<div id="sg-chat-panel" role="complementary" aria-label="STRATEGOS Intelligence Chat">
+  <!-- Header -->
+  <div class="sgc-header">
+    <div class="sgc-header-title">
+      <div class="sgc-live-dot"></div>
+      STRATEGOS INTEL CHAT
+    </div>
+    <div class="sgc-header-btns">
+      <button class="sgc-hbtn" id="sg-chat-minimize" title="Minimize">─</button>
+      <button class="sgc-hbtn" id="sg-chat-close" title="Close">✕</button>
+    </div>
+  </div>
+
+  <!-- Entity badge (hidden until entity injected) -->
+  <div id="sg-entity-badge">
+    <span class="sgc-entity-type" id="sg-entity-type">ENTITY</span>
+    <span id="sg-entity-label">—</span>
+  </div>
+
+  <!-- Message stream -->
+  <div id="sg-chat-messages">
+    <div class="sgc-welcome" id="sg-welcome-msg">
+      <div class="sgc-welcome-icon">🛰</div>
+      <div class="sgc-welcome-title">STRATEGOS Online</div>
+      <div style="color:var(--sgc-text)">Ask me about:</div>
+      <ul>
+        <li>Conflict events &amp; threat assessments</li>
+        <li>ORBAT unit analysis</li>
+        <li>Maritime vessel behavior</li>
+        <li>Wargame COA recommendations</li>
+        <li>Doctrine &amp; historical precedents</li>
+      </ul>
+      <div style="margin-top:8px;font-size:10px">Right-click any object on the map,<br>KG, or ORBAT to ask about it directly.</div>
+    </div>
+  </div>
+
+  <!-- Typing indicator -->
+  <div id="sg-typing">
+    <span>STRATEGOS analyzing</span>
+    <div class="sgc-dots">
+      <span></span><span></span><span></span>
+    </div>
+  </div>
+
+  <!-- Input area -->
+  <div class="sgc-input-area">
+    <textarea id="sg-chat-input" placeholder="Ask STRATEGOS… (Enter to send)" rows="2" aria-label="Chat input"></textarea>
+    <button id="sg-chat-send" title="Send">▶</button>
+  </div>
+</div>
+
+<!-- ── Right-click context menu (shared) ──────────────────────────── -->
+<div id="sg-ctx-menu" role="menu" aria-label="Strategos context menu">
+  <div class="sgc-ctx-item" id="sg-ctx-ask" role="menuitem">🔍 Ask STRATEGOS about this</div>
+  <div class="sgc-ctx-item" id="sg-ctx-dismiss" role="menuitem">✕ Dismiss</div>
+</div>
