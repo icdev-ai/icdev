@@ -14,6 +14,13 @@
   <a href="/document-intelligence/collections" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">← Collections</a>
 </div>
 
+<!-- Presence Bar (rted-pres-03) -->
+<div id="presence-bar" style="display:flex;align-items:center;gap:8px;margin-bottom:14px;min-height:28px;">
+  <span style="color:#5a7aa0;font-size:11px;">Viewing:</span>
+  <div id="presence-avatars" style="display:flex;gap:4px;"></div>
+  <span id="presence-count" style="color:#5a7aa0;font-size:10px;"></span>
+</div>
+
 <!-- Version Selector -->
 <div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:14px;margin-bottom:18px;">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
@@ -549,7 +556,100 @@ document.addEventListener('DOMContentLoaded', function() {
       });
   })('{{ s.section_id }}');
   {% endfor %}
+
+  // Presence (rted-pres-03) — join + SSE avatar stream
+  _presenceInit('{{ doc.doc_id }}');
 });
+
+// ── Presence Avatars ──────────────────────────────────────────────────────────
+
+var _presenceSessionKey = null;
+var _presenceDocId = null;
+var _presenceColors = ['#3b82f6','#8b5cf6','#ec4899','#f97316','#10b981','#facc15','#06b6d4','#f43f5e'];
+
+function _presenceColor(uid) {
+  var h = 0;
+  for (var i = 0; i < uid.length; i++) h = (h * 31 + uid.charCodeAt(i)) & 0xFFFFFF;
+  return _presenceColors[Math.abs(h) % _presenceColors.length];
+}
+
+function _presenceInitials(uid) {
+  var parts = uid.replace(/_/g, ' ').trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return uid.substring(0, 2).toUpperCase();
+}
+
+function _renderAvatars(users) {
+  var bar = document.getElementById('presence-avatars');
+  var cnt = document.getElementById('presence-count');
+  if (!bar) return;
+  bar.innerHTML = '';
+  (users || []).forEach(function(u) {
+    var el = document.createElement('div');
+    el.title = u.user_id;
+    el.textContent = _presenceInitials(u.user_id);
+    el.style.cssText = 'width:24px;height:24px;border-radius:50%;background:' + _presenceColor(u.user_id) +
+      ';color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;cursor:default;';
+    bar.appendChild(el);
+  });
+  if (cnt) cnt.textContent = users && users.length > 1 ? ('(' + users.length + ' active)') : '';
+}
+
+function _presenceInit(docId) {
+  _presenceDocId = docId;
+
+  // Join
+  fetch('/document-intelligence/api/documents/' + docId + '/presence/join', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({}),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    _presenceSessionKey = d.session_key;
+
+    // Heartbeat every 20 s
+    setInterval(function() {
+      if (!_presenceSessionKey) return;
+      fetch('/document-intelligence/api/documents/' + docId + '/presence/heartbeat', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({session_key: _presenceSessionKey}),
+      });
+    }, 20000);
+
+    // SSE stream for live presence updates
+    var es = new EventSource('/document-intelligence/api/documents/' + docId + '/presence/stream');
+    es.onmessage = function(ev) {
+      try {
+        var d = JSON.parse(ev.data);
+        _renderAvatars(d.users || []);
+      } catch(e) {}
+    };
+    es.onerror = function() {
+      // Fallback: poll once on error
+      fetch('/document-intelligence/api/documents/' + docId + '/presence')
+        .then(function(r) { return r.json(); })
+        .then(function(d) { _renderAvatars(d.users || []); });
+    };
+
+    // Leave on page unload
+    window.addEventListener('beforeunload', function() {
+      if (_presenceSessionKey) {
+        navigator.sendBeacon(
+          '/document-intelligence/api/documents/' + docId + '/presence/leave',
+          JSON.stringify({session_key: _presenceSessionKey})
+        );
+      }
+    });
+
+    // Initial render from join response
+    fetch('/document-intelligence/api/documents/' + docId + '/presence')
+      .then(function(r) { return r.json(); })
+      .then(function(d) { _renderAvatars(d.users || []); });
+  })
+  .catch(function() {});
+}
 </script>
 
 <!-- Version Diff Modal -->

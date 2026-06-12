@@ -2156,6 +2156,78 @@ def api_scenarios():
 
 # ── API: IQE ──────────────────────────────────────────────────────────────────
 
+# ── Presence Registry (rted-pres-01/02) ─────────────────────────────────────
+
+@dic_bp.route("/api/documents/<doc_id>/presence/join", methods=["POST"])
+def api_presence_join(doc_id: str):
+    from tools.document_intelligence.presence_registry import join_document
+    data = request.get_json(silent=True) or {}
+    user_id = (data.get("user_id") or _current_user()).strip() or "anonymous"
+    _, classification = _security_context()
+    tenant_id, _ = _security_context()
+    session_key = join_document(doc_id, user_id, tenant_id=tenant_id)
+    return jsonify({"session_key": session_key, "doc_id": doc_id, "user_id": user_id})
+
+
+@dic_bp.route("/api/documents/<doc_id>/presence/heartbeat", methods=["POST"])
+def api_presence_heartbeat(doc_id: str):
+    from tools.document_intelligence.presence_registry import heartbeat
+    data = request.get_json(silent=True) or {}
+    session_key = (data.get("session_key") or "").strip()
+    if not session_key:
+        return jsonify({"error": "session_key required"}), 400
+    found = heartbeat(session_key)
+    return jsonify({"ok": found, "session_key": session_key})
+
+
+@dic_bp.route("/api/documents/<doc_id>/presence/leave", methods=["DELETE"])
+def api_presence_leave(doc_id: str):
+    from tools.document_intelligence.presence_registry import leave_document
+    data = request.get_json(silent=True) or {}
+    session_key = (data.get("session_key") or "").strip()
+    if not session_key:
+        return jsonify({"error": "session_key required"}), 400
+    left = leave_document(session_key)
+    return jsonify({"left": left, "session_key": session_key})
+
+
+@dic_bp.route("/api/documents/<doc_id>/presence", methods=["GET"])
+def api_presence_list(doc_id: str):
+    from tools.document_intelligence.presence_registry import get_present_users
+    users = get_present_users(doc_id)
+    return jsonify({"doc_id": doc_id, "users": users, "count": len(users)})
+
+
+@dic_bp.route("/api/documents/<doc_id>/presence/stream", methods=["GET"])
+def api_presence_stream(doc_id: str):
+    """SSE stream — emits the current presence list every 12 s."""
+    import time as _time
+    from tools.document_intelligence.presence_registry import (
+        get_present_users,
+        _SSE_POLL_INTERVAL,
+    )
+
+    @stream_with_context
+    def _generate():
+        try:
+            for _ in range(300):  # max ~1 hr (300 × 12 s)
+                users = get_present_users(doc_id)
+                payload = json.dumps({"doc_id": doc_id, "users": users, "count": len(users)})
+                yield f"data: {payload}\n\n"
+                _time.sleep(_SSE_POLL_INTERVAL)
+        except GeneratorExit:
+            pass
+
+    return Response(
+        _generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @dic_bp.route("/api/iqe-query", methods=["POST"])
 def iqe_query():
     try:
