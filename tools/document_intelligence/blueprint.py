@@ -1390,6 +1390,143 @@ def api_review_reject(item_id):
         conn.close()
 
 
+# ── Section Annotations (threaded comments anchored to text / sections) ──────
+
+_ANN_CATEGORIES = {"question", "improvement", "compliance", "strength", "weakness", "risk", "editorial"}
+
+
+def _ensure_dic_annotations(conn) -> None:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS dic_section_annotations (
+            ann_id TEXT PRIMARY KEY,
+            section_id TEXT NOT NULL,
+            doc_id TEXT NOT NULL,
+            selected_text TEXT NOT NULL DEFAULT '',
+            category TEXT NOT NULL,
+            comment TEXT NOT NULL,
+            author TEXT NOT NULL DEFAULT 'reviewer',
+            status TEXT NOT NULL DEFAULT 'open',
+            resolution_note TEXT,
+            resolved_by TEXT,
+            resolved_at TEXT,
+            classification TEXT DEFAULT 'CUI',
+            created_at TEXT NOT NULL,
+            updated_at TEXT
+        )
+    """)
+    conn.commit()
+
+
+@dic_bp.route("/api/sections/<section_id>/annotations", methods=["GET"])
+def api_section_annotations_list(section_id: str):
+    conn = _conn()
+    try:
+        _ensure_dic_annotations(conn)
+        status_filter = request.args.get("status")
+        category_filter = request.args.get("category")
+        sql = "SELECT * FROM dic_section_annotations WHERE section_id = ?"
+        params: list = [section_id]
+        if status_filter:
+            sql += " AND status = ?"
+            params.append(status_filter)
+        if category_filter:
+            sql += " AND category = ?"
+            params.append(category_filter)
+        sql += " ORDER BY created_at ASC"
+        rows = _safe_rows(conn, sql, params)
+        return jsonify({"annotations": [dict(r) for r in rows]})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+@dic_bp.route("/api/sections/<section_id>/annotations", methods=["POST"])
+def api_section_annotations_create(section_id: str):
+    data = request.get_json(silent=True) or {}
+    category = (data.get("category") or "").strip()
+    comment = (data.get("comment") or "").strip()
+    if category not in _ANN_CATEGORIES:
+        return jsonify({"error": f"category must be one of {sorted(_ANN_CATEGORIES)}"}), 400
+    if not comment:
+        return jsonify({"error": "comment is required"}), 400
+    conn = _conn()
+    try:
+        _ensure_dic_annotations(conn)
+        doc_row = conn.execute(
+            "SELECT doc_id FROM dic_sections WHERE section_id = ? LIMIT 1", (section_id,)
+        ).fetchone()
+        doc_id = doc_row[0] if doc_row else ""
+        ann_id = f"ann_{uuid.uuid4().hex[:16]}"
+        now = _now()
+        author = data.get("author") or _current_user()
+        conn.execute(
+            """INSERT INTO dic_section_annotations
+               (ann_id, section_id, doc_id, selected_text, category, comment,
+                author, status, classification, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (ann_id, section_id, doc_id,
+             (data.get("selected_text") or "").strip(),
+             category, comment, author, "open", "CUI", now, now),
+        )
+        conn.commit()
+        row = dict(conn.execute(
+            "SELECT * FROM dic_section_annotations WHERE ann_id = ?", (ann_id,)
+        ).fetchone())
+        return jsonify(row), 201
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+@dic_bp.route("/api/annotations/<ann_id>", methods=["PUT"])
+def api_annotation_update(ann_id: str):
+    data = request.get_json(silent=True) or {}
+    allowed = {"comment", "category", "status", "resolution_note", "resolved_by"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    if not updates:
+        return jsonify({"error": "no valid fields"}), 400
+    now = _now()
+    updates["updated_at"] = now
+    if updates.get("status") == "resolved":
+        updates["resolved_by"] = data.get("resolved_by") or data.get("author") or _current_user()
+        updates["resolved_at"] = now
+    conn = _conn()
+    try:
+        _ensure_dic_annotations(conn)
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        conn.execute(
+            f"UPDATE dic_section_annotations SET {set_clause} WHERE ann_id = ?",
+            [*updates.values(), ann_id],
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM dic_section_annotations WHERE ann_id = ?", (ann_id,)
+        ).fetchone()
+        if not row:
+            return jsonify({"error": "not found"}), 404
+        return jsonify(dict(row))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+@dic_bp.route("/api/annotations/<ann_id>", methods=["DELETE"])
+def api_annotation_delete(ann_id: str):
+    conn = _conn()
+    try:
+        _ensure_dic_annotations(conn)
+        conn.execute("DELETE FROM dic_section_annotations WHERE ann_id = ?", (ann_id,))
+        conn.commit()
+        return jsonify({"deleted": ann_id})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
 # ── API: Section Review (per-section accept/reject/revise) ─────────────────
 
 @dic_bp.route("/api/sections/<section_id>/approve", methods=["POST"])

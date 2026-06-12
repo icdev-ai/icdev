@@ -104,6 +104,10 @@
         ✏️ Revise
       </button>
       {% endif %}
+      <button onclick="toggleAnnPanel('{{ s.section_id }}')"
+        style="background:#1a1a3a;color:#a78bfa;padding:6px 14px;border:1px solid #3a2a6e;border-radius:5px;cursor:pointer;font-size:12px;">
+        💬 Comments <span id="ann-count-{{ s.section_id }}" style="background:#3a2a6e;border-radius:8px;padding:0 5px;margin-left:3px;font-size:10px;">0</span>
+      </button>
       <select onchange="assignSection('{{ s.section_id }}', this.value)"
         style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:5px 8px;border-radius:5px;font-size:11px;">
         <option value="">Assign to…</option>
@@ -112,6 +116,36 @@
         {% endfor %}
       </select>
       <span id="status-{{ s.section_id }}" style="color:#5a7aa0;font-size:11px;display:none;"></span>
+    </div>
+
+    <!-- Annotation panel (hidden by default) -->
+    <div id="ann-panel-{{ s.section_id }}" style="display:none;margin-top:12px;border-top:1px solid #1a3560;padding-top:12px;">
+      <!-- Add comment form -->
+      <div style="background:#050d1f;border:1px solid #2a1a5e;border-radius:6px;padding:12px;margin-bottom:10px;">
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+          <select id="ann-cat-{{ s.section_id }}" style="background:#0b1726;border:1px solid #1a3560;color:#b8d0e8;padding:5px 8px;border-radius:4px;font-size:11px;flex:0 0 140px;">
+            <option value="">Category…</option>
+            <option value="question">Question</option>
+            <option value="improvement">Improvement</option>
+            <option value="compliance">Compliance</option>
+            <option value="strength">Strength</option>
+            <option value="weakness">Weakness</option>
+            <option value="risk">Risk</option>
+            <option value="editorial">Editorial</option>
+          </select>
+          <input id="ann-text-sel-{{ s.section_id }}" placeholder="Selected text (optional)" style="background:#0b1726;border:1px solid #1a3560;color:#b8d0e8;padding:5px 8px;border-radius:4px;font-size:11px;flex:1;" />
+        </div>
+        <textarea id="ann-comment-{{ s.section_id }}" placeholder="Add a comment…" rows="2"
+          style="width:100%;background:#0b1726;border:1px solid #1a3560;color:#b8d0e8;padding:8px;border-radius:4px;font-size:12px;box-sizing:border-box;resize:vertical;"></textarea>
+        <div style="display:flex;justify-content:flex-end;margin-top:6px;">
+          <button onclick="saveAnnotation('{{ s.section_id }}')"
+            style="background:#2a1a6e;color:#a78bfa;padding:5px 14px;border:1px solid #3a2a8e;border-radius:4px;cursor:pointer;font-size:12px;">
+            + Add Comment
+          </button>
+        </div>
+      </div>
+      <!-- Comment list -->
+      <div id="ann-list-{{ s.section_id }}"></div>
     </div>
   </div>
   {% else %}
@@ -184,6 +218,116 @@ function assignSection(sectionId, userId) {
     body: JSON.stringify({assigned_to: userId, type: 'section'})
   }).then(function() { window.location.reload(); });
 }
+
+// ── Section Annotations ──────────────────────────────────────────────────────
+var _ANN_CURRENT_USER = '{{ (current_user.display_name or current_user.email or current_user.username) if current_user else "reviewer" }}';
+
+var _CAT_COLORS = {
+  question:    '#1d4ed8', improvement: '#0f766e', compliance: '#7c3aed',
+  strength:    '#166534', weakness:    '#991b1b',  risk:       '#b45309',
+  editorial:   '#374151'
+};
+
+function escH(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function toggleAnnPanel(sid) {
+  var panel = document.getElementById('ann-panel-' + sid);
+  if (!panel) return;
+  if (panel.style.display === 'none') {
+    panel.style.display = 'block';
+    loadAnnotations(sid);
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+function loadAnnotations(sid) {
+  fetch('/document-intelligence/api/sections/' + sid + '/annotations')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var list = data.annotations || [];
+      var countEl = document.getElementById('ann-count-' + sid);
+      if (countEl) countEl.textContent = list.length;
+      renderAnnotations(sid, list);
+    });
+}
+
+function renderAnnotations(sid, list) {
+  var el = document.getElementById('ann-list-' + sid);
+  if (!el) return;
+  if (!list.length) { el.innerHTML = '<p style="color:#5a7aa0;font-size:11px;">No comments yet.</p>'; return; }
+  el.innerHTML = list.map(function(a) {
+    var cat = a.category || 'editorial';
+    var bg  = _CAT_COLORS[cat] || '#374151';
+    var resolved = a.status === 'resolved';
+    return '<div style="background:#080f1f;border:1px solid ' + (resolved ? '#1a3a1a' : '#2a1a5e') + ';border-radius:6px;padding:10px 12px;margin-bottom:8px;opacity:' + (resolved ? '0.65' : '1') + ';">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">' +
+        '<span style="background:' + bg + ';color:#fff;font-size:9px;padding:2px 7px;border-radius:8px;text-transform:uppercase;">' + escH(cat) + '</span>' +
+        '<span style="color:#7ab3f0;font-size:10px;"><strong>' + escH(a.author || 'reviewer') + '</strong> &middot; ' + escH((a.created_at || '').slice(0,10)) + '</span>' +
+        (resolved ? '<span style="margin-left:auto;color:#4ade80;font-size:10px;">Resolved by ' + escH(a.resolved_by || '') + '</span>' : '') +
+      '</div>' +
+      (a.selected_text ? '<p style="color:#5a7aa0;font-size:10px;font-style:italic;margin:0 0 4px;">&ldquo;' + escH(a.selected_text.slice(0,120)) + '&rdquo;</p>' : '') +
+      '<p style="color:#c8d8e8;font-size:12px;margin:0 0 6px;">' + escH(a.comment) + '</p>' +
+      (!resolved
+        ? '<div style="display:flex;gap:6px;">' +
+            '<button onclick="resolveAnnotation(\'' + a.ann_id + '\',\'' + sid + '\')" style="background:#052e16;color:#4ade80;border:1px solid #1a5a30;border-radius:3px;padding:3px 10px;font-size:10px;cursor:pointer;">Resolve</button>' +
+            '<button onclick="deleteAnnotation(\'' + a.ann_id + '\',\'' + sid + '\')" style="background:#2e0505;color:#f87171;border:1px solid #5a1a1a;border-radius:3px;padding:3px 10px;font-size:10px;cursor:pointer;">Delete</button>' +
+          '</div>'
+        : '') +
+    '</div>';
+  }).join('');
+}
+
+function saveAnnotation(sid) {
+  var cat  = document.getElementById('ann-cat-' + sid).value;
+  var sel  = document.getElementById('ann-text-sel-' + sid).value.trim();
+  var comm = document.getElementById('ann-comment-' + sid).value.trim();
+  if (!cat)  { alert('Please select a category.'); return; }
+  if (!comm) { alert('Please enter a comment.'); return; }
+  fetch('/document-intelligence/api/sections/' + sid + '/annotations', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({category: cat, selected_text: sel, comment: comm, author: _ANN_CURRENT_USER})
+  }).then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) { alert('Error: ' + data.error); return; }
+      document.getElementById('ann-cat-' + sid).value = '';
+      document.getElementById('ann-text-sel-' + sid).value = '';
+      document.getElementById('ann-comment-' + sid).value = '';
+      loadAnnotations(sid);
+    });
+}
+
+function resolveAnnotation(annId, sid) {
+  fetch('/document-intelligence/api/annotations/' + annId, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({status: 'resolved', resolved_by: _ANN_CURRENT_USER})
+  }).then(function(r) { return r.json(); })
+    .then(function() { loadAnnotations(sid); });
+}
+
+function deleteAnnotation(annId, sid) {
+  if (!confirm('Delete this comment?')) return;
+  fetch('/document-intelligence/api/annotations/' + annId, {method: 'DELETE'})
+    .then(function() { loadAnnotations(sid); });
+}
+
+// Auto-load counts on page load
+document.addEventListener('DOMContentLoaded', function() {
+  {% for s in sections %}
+  (function(sid) {
+    fetch('/document-intelligence/api/sections/' + sid + '/annotations')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var el = document.getElementById('ann-count-' + sid);
+        if (el) el.textContent = (d.annotations || []).length;
+      });
+  })('{{ s.section_id }}');
+  {% endfor %}
+});
 </script>
 
 {% set iqe_canvas = "dic" %}
