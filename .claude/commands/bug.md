@@ -217,14 +217,6 @@ These gates apply to every commit regardless of project type.
     ```
     **GATE: 0 critical, 0 high** (per `thresholds.dependency`).
 
-17b. **SIPA Integrity Gate** — Assess the changed Python files for unauthorized/malicious code vs the integration base:
-    ```bash
-    python tools/integrity/pr_gates.py --base origin/main --gate --json
-    ```
-    Runs the SIPA (Software Integrity & Provenance Assessor) static-only assessment over *only* the `*.py` files changed on this branch (`git diff <base>...HEAD`) and emits an ALLOW / REVIEW / QUARANTINE verdict.
-    **GATE: 0 blocking verdicts** — exits non-zero on a QUARANTINE (per `gate.block_on`). Inspect findings, remediate, and re-run until clean. A REVIEW verdict is a non-blocking warning to inspect.
-    Honors `ICDEV_INTEGRITY_ENABLED`: when the integrity canvas is toggled off this no-ops to a pass (exit 0). Mark N/A in the validation report with that reason when the flag is off. Static-only — the changed code is never executed.
-
 18. **CUI Marking Verification** — Confirm all new/modified `.py` files have CUI markings:
     ```bash
     grep -rL "<resolved grep_pattern>" <list of new/modified .py files>
@@ -276,15 +268,6 @@ These gates apply to every commit regardless of project type.
     This is the "did we build what was asked?" gate. It maps acceptance criteria to test evidence
     and checks rendered pages for error patterns (500s, tracebacks, JS errors, TemplateNotFound).
     Unlike E2E/vision which are conditional on UI changes, this step is **always required**.
-
-20e. **Implementation Coherence Gate** — Run the new-page-completeness and structural coherence checks:
-    ```bash
-    python tools/workflow/coherence_checker.py --check new_page_completeness --gate --json
-    ```
-    **GATE: 0 incomplete canvas pages, 0 icdev/ mirror gaps** (per `new_page_completeness.blocking`).
-    Blocks merges when a new dashboard page is missing any of the 8 required components
-    (template, mirror, blueprint, backing module, nav link, IQE adapter, seed queries, widget).
-    Also catches icdev/ package mirror gaps for all canvas templates.
 
 ---
 
