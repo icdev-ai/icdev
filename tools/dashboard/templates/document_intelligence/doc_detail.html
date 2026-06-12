@@ -225,6 +225,9 @@ function editSection(sectionId) {
     .catch(function() { if (btn) { btn.disabled = false; btn.textContent = '✏️ Edit'; } });
 }
 
+// Content hash captured when edit mode is entered — used for conflict detection
+var _editBaseHash = {};
+
 function _enterEditMode(sectionId) {
   var btn = document.getElementById('edit-btn-' + sectionId);
   var badge = document.getElementById('lock-badge-' + sectionId);
@@ -241,29 +244,57 @@ function _enterEditMode(sectionId) {
     fetch('/document-intelligence/api/sections/' + sectionId + '/lock/renew', {method: 'PUT'});
   }, 270000);
 
+  // Fetch current hash as the baseline for conflict detection
+  fetch('/document-intelligence/api/sections/' + sectionId + '/hash')
+    .then(function(r) { return r.json(); })
+    .then(function(d) { if (d.hash) _editBaseHash[sectionId] = d.hash; })
+    .catch(function() {});
+
   var contentDiv = document.getElementById('content-' + sectionId);
   var currentText = contentDiv.innerText;
   var textarea = document.createElement('textarea');
   textarea.value = currentText;
+  textarea.id = 'textarea-' + sectionId;
   textarea.style = 'width:100%;min-height:120px;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:10px;border-radius:5px;font-size:12px;box-sizing:border-box;';
 
   function _releaseLock() {
     clearInterval(_lockRenewTimers[sectionId]);
     delete _lockRenewTimers[sectionId];
+    delete _editBaseHash[sectionId];
     if (badge) { badge.style.display = 'none'; }
     fetch('/document-intelligence/api/sections/' + sectionId + '/lock', {method: 'DELETE'});
+  }
+
+  function _doSave(forceOverwrite) {
+    var body = {content: textarea.value};
+    if (_editBaseHash[sectionId]) body.expected_hash = _editBaseHash[sectionId];
+    if (forceOverwrite) body.force = true;
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
+    fetch('/document-intelligence/api/sections/' + sectionId + '/content', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body),
+    }).then(function(r) {
+      if (r.status === 409) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save';
+        return r.json().then(function(d) {
+          _showConflictModal(sectionId, textarea.value, d.current_content || '', d.current_hash || '');
+        });
+      }
+      _releaseLock();
+      window.location.reload();
+    }).catch(function() {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save';
+    });
   }
 
   var saveBtn = document.createElement('button');
   saveBtn.textContent = 'Save';
   saveBtn.style = 'margin-top:8px;margin-right:6px;background:#0f3460;color:#7ab3f0;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;';
-  saveBtn.onclick = function() {
-    fetch('/document-intelligence/api/sections/' + sectionId + '/content', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({content: textarea.value})
-    }).then(function() { _releaseLock(); window.location.reload(); });
-  };
+  saveBtn.onclick = function() { _doSave(false); };
 
   var cancelBtn = document.createElement('button');
   cancelBtn.textContent = 'Cancel';
@@ -275,6 +306,48 @@ function _enterEditMode(sectionId) {
   contentDiv.appendChild(document.createElement('br'));
   contentDiv.appendChild(saveBtn);
   contentDiv.appendChild(cancelBtn);
+}
+
+// ── Conflict Resolution Modal (rted-conf-02) ─────────────────────────────────
+
+function _showConflictModal(sectionId, myContent, theirContent, theirHash) {
+  document.getElementById('conf-modal-sid').value = sectionId;
+  document.getElementById('conf-modal-theirs').textContent = theirContent;
+  document.getElementById('conf-modal-mine').value = myContent;
+  document.getElementById('conf-modal-their-hash').value = theirHash;
+  document.getElementById('conf-modal').style.display = 'block';
+}
+
+function _closeConflictModal() {
+  document.getElementById('conf-modal').style.display = 'none';
+}
+
+function _conflictKeepMine() {
+  var sid = document.getElementById('conf-modal-sid').value;
+  var myContent = document.getElementById('conf-modal-mine').value;
+  _closeConflictModal();
+  // Force-save: bypasses conflict check
+  fetch('/document-intelligence/api/sections/' + sid + '/content', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({content: myContent, force: true}),
+  }).then(function() { window.location.reload(); });
+}
+
+function _conflictAcceptTheirs() {
+  _closeConflictModal();
+  window.location.reload();
+}
+
+function _conflictSaveMerged() {
+  var sid = document.getElementById('conf-modal-sid').value;
+  var merged = document.getElementById('conf-modal-mine').value;
+  _closeConflictModal();
+  fetch('/document-intelligence/api/sections/' + sid + '/content', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({content: merged, force: true}),
+  }).then(function() { window.location.reload(); });
 }
 
 function sectionAction(sectionId, action) {
@@ -651,6 +724,45 @@ function _presenceInit(docId) {
   .catch(function() {});
 }
 </script>
+
+<!-- Conflict Resolution Modal (rted-conf-02) -->
+<div id="conf-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.82);z-index:9500;overflow-y:auto;padding:32px 16px;">
+  <input type="hidden" id="conf-modal-sid" value="">
+  <input type="hidden" id="conf-modal-their-hash" value="">
+  <div style="max-width:860px;margin:0 auto;background:#0b1726;border:2px solid #f59e0b;border-radius:10px;padding:24px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h3 style="margin:0;color:#f59e0b;font-size:15px;">⚠ Edit Conflict</h3>
+      <button onclick="_closeConflictModal()" style="background:none;border:none;color:#7a8cb0;font-size:18px;cursor:pointer;">✕</button>
+    </div>
+    <p style="color:#94a3b8;font-size:12px;margin:0 0 16px;">
+      Someone else saved this section while you were editing. Choose how to resolve:
+    </p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+      <div>
+        <div style="color:#f87171;font-size:11px;font-weight:700;margin-bottom:6px;">Their version (current in DB)</div>
+        <pre id="conf-modal-theirs" style="background:#1a0505;border:1px solid #7f1d1d;border-radius:6px;padding:10px;color:#fca5a5;font-size:11px;white-space:pre-wrap;min-height:120px;max-height:260px;overflow-y:auto;margin:0;"></pre>
+      </div>
+      <div>
+        <div style="color:#4ade80;font-size:11px;font-weight:700;margin-bottom:6px;">Your version (edit yours below)</div>
+        <textarea id="conf-modal-mine" style="width:100%;min-height:120px;max-height:260px;background:#050d1f;border:1px solid #166534;color:#b8d0e8;padding:10px;border-radius:6px;font-size:11px;box-sizing:border-box;resize:vertical;"></textarea>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button onclick="_conflictKeepMine()"
+        style="background:#0f3460;color:#7ab3f0;padding:7px 18px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;">
+        Overwrite with Mine
+      </button>
+      <button onclick="_conflictAcceptTheirs()"
+        style="background:#1e293b;color:#94a3b8;padding:7px 18px;border:1px solid #1a3560;border-radius:5px;cursor:pointer;font-size:12px;">
+        Accept Theirs (discard my changes)
+      </button>
+      <button onclick="_conflictSaveMerged()"
+        style="background:#052e16;color:#4ade80;padding:7px 18px;border:1px solid #166534;border-radius:5px;cursor:pointer;font-size:12px;">
+        Save Edited Version Above
+      </button>
+    </div>
+  </div>
+</div>
 
 <!-- Version Diff Modal -->
 <div id="diff-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9000;overflow-y:auto;padding:32px 16px;">
