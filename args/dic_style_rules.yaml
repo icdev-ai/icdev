@@ -1,0 +1,157 @@
+# CUI // SP-CTI
+# DIC Style Rules — "One Voice" gate for methodology and operational documents
+# Used by tools/document_intelligence/style_engine.py
+#
+# All rules are deterministic (regex + heuristics). No LLM required.
+# Set enabled: false to suppress a rule without removing it.
+
+meta:
+  name: "IC Methodology One Voice"
+  description: "Authoritative, direct, unambiguous language for SOPs, CONOPs, and whitepapers"
+  version: "1.0"
+  passing_score: 70          # composite score threshold (0–100)
+  max_violations_per_rule: 5 # cap shown per rule to avoid noise
+
+rules:
+
+  # ── Hedging language ───────────────────────────────────────────────────────
+  - id: hedge_words
+    name: "Hedging Language"
+    description: "Avoid uncertainty markers in authoritative methodology text"
+    enabled: true
+    severity: warning         # warning | error
+    type: forbidden_terms
+    terms:
+      - {pattern: "\\bmaybe\\b",              suggestion: "Remove or rephrase with certainty"}
+      - {pattern: "\\bperhaps\\b",            suggestion: "Remove or rephrase with certainty"}
+      - {pattern: "\\bpossibly\\b",           suggestion: "Remove or use 'may' only for policy permission"}
+      - {pattern: "\\bseems? to\\b",          suggestion: "State directly"}
+      - {pattern: "\\bappears? to\\b",        suggestion: "State directly"}
+      - {pattern: "\\bit could be\\b",        suggestion: "State the fact or remove"}
+      - {pattern: "\\bit may be\\b",          suggestion: "State the fact or remove"}
+      - {pattern: "\\bsomewhat\\b",           suggestion: "Quantify or remove"}
+      - {pattern: "\\bfairly\\b",             suggestion: "Quantify or remove"}
+      - {pattern: "\\bquite\\b",              suggestion: "Remove — adds no meaning"}
+      - {pattern: "\\brather\\b",             suggestion: "Remove or rephrase directly"}
+
+  # ── Weak / bureaucratic verbs ──────────────────────────────────────────────
+  - id: weak_verbs
+    name: "Weak or Bureaucratic Verbs"
+    description: "Prefer direct, strong verbs"
+    enabled: true
+    severity: warning
+    type: replacement_terms
+    terms:
+      - {pattern: "\\butilize[sd]?\\b",       suggestion: "use"}
+      - {pattern: "\\butilizing\\b",           suggestion: "using"}
+      - {pattern: "\\butilization\\b",         suggestion: "use"}
+      - {pattern: "\\bleverag(e|es|ed|ing)\\b", suggestion: "use / apply / employ"}
+      - {pattern: "\\bfacilitat(e|es|ed|ing)\\b", suggestion: "enable / support / help"}
+      - {pattern: "\\boptimiz(e|es|ed|ing)\\b",   suggestion: "improve / streamline (keep if technical)"}
+      - {pattern: "\\bsynergiz(e|es|ed|ing)\\b",  suggestion: "combine / integrate"}
+      - {pattern: "\\bpivot\\b",              suggestion: "shift / change / adapt"}
+
+  # ── Filler phrases ─────────────────────────────────────────────────────────
+  - id: filler_phrases
+    name: "Filler Phrases"
+    description: "Remove phrases that add length without adding meaning"
+    enabled: true
+    severity: warning
+    type: replacement_terms
+    terms:
+      - {pattern: "in order to",              suggestion: "to"}
+      - {pattern: "due to the fact that",     suggestion: "because"}
+      - {pattern: "at this point in time",    suggestion: "now"}
+      - {pattern: "in the event that",        suggestion: "if"}
+      - {pattern: "on a \\w+ basis",          suggestion: "remove (use adverb: monthly, daily)"}
+      - {pattern: "it is important to note",  suggestion: "remove — state the point directly"}
+      - {pattern: "it should be noted",       suggestion: "remove — state the point directly"}
+      - {pattern: "needless to say",          suggestion: "remove"}
+      - {pattern: "as a matter of fact",      suggestion: "remove"}
+      - {pattern: "in terms of",              suggestion: "rephrase directly"}
+
+  # ── Passive voice ──────────────────────────────────────────────────────────
+  - id: passive_voice
+    name: "Passive Voice Ratio"
+    description: "Methodology sections should use active voice; flag if passive ratio > 25%"
+    enabled: true
+    severity: warning
+    type: passive_ratio
+    threshold: 0.25           # warn above this ratio
+    # Heuristic: sentences containing 'is|are|was|were|be|been|being' + past participle
+    passive_pattern: "\\b(is|are|was|were|be|been|being)\\s+\\w+ed\\b"
+
+  # ── Sentence length ────────────────────────────────────────────────────────
+  - id: sentence_length
+    name: "Sentence Length"
+    description: "Average sentence > 35 words reduces clarity for non-SME reviewers"
+    enabled: true
+    severity: warning
+    type: sentence_length
+    max_avg_words: 35
+    max_single_sentence: 60  # flag any single sentence over this
+
+  # ── Acronym hygiene ────────────────────────────────────────────────────────
+  - id: acronym_hygiene
+    name: "Undefined Acronyms"
+    description: "Acronyms used without prior definition in the same document section"
+    enabled: true
+    severity: warning
+    type: acronym_check
+    # Pattern: 2–6 uppercase letters (not single letters, not all-digit sequences)
+    acronym_pattern: "\\b([A-Z]{2,6})\\b"
+    # Known-safe acronyms that don't need definition in IC/DoD context
+    always_defined:
+      - AI
+      - US
+      - DoD
+      - IC
+      - CIA
+      - NSA
+      - DIA
+      - FBI
+      - CUI
+      - SOP
+      - SME
+      - PM
+      - IT
+      - API
+      - URL
+      - PDF
+      - ID
+      - POC
+      - HQ
+      - USD
+      - NATO
+      - UN
+
+  # ── Prohibited terms (compliance / classification) ─────────────────────────
+  - id: prohibited_terms
+    name: "Prohibited Terms"
+    description: "Terms that must not appear in methodology documents"
+    enabled: true
+    severity: error
+    type: forbidden_terms
+    terms:
+      - {pattern: "\\bclassified\\b(?! as| document| information| under)",
+         suggestion: "Use specific classification marking (CUI, SECRET, etc.)"}
+      - {pattern: "\\btop secret\\b",
+         suggestion: "Use TS or apply proper portion marking"}
+      - {pattern: "\\bpassword\\b",
+         suggestion: "Use 'credential' or 'authentication token'"}
+      - {pattern: "\\bhardcoded\\b",
+         suggestion: "Remove — implies insecure implementation detail"}
+
+  # ── Authority markers (positive check) ────────────────────────────────────
+  - id: authority_markers
+    name: "Authority Markers"
+    description: "Methodology sections should use 'shall/will/ensures/provides' not 'try/hope/plan to'"
+    enabled: true
+    severity: info
+    type: forbidden_terms
+    terms:
+      - {pattern: "\\bwill try to\\b",        suggestion: "Use 'will' or 'shall'"}
+      - {pattern: "\\bplan to\\b",             suggestion: "Use 'will' or 'shall'"}
+      - {pattern: "\\bhope to\\b",             suggestion: "Use 'will' or 'shall'"}
+      - {pattern: "\\bintend to\\b",           suggestion: "Use 'will' or 'shall' (contracts)"}
+      - {pattern: "\\baim to\\b",              suggestion: "Use 'will' or 'shall'"}

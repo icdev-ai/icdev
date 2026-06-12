@@ -1785,6 +1785,50 @@ def api_version_sections(version_id):
         conn.close()
 
 
+# ── API: Style Gate ───────────────────────────────────────────────────────────
+
+@dic_bp.route("/api/sections/<section_id>/style-check", methods=["POST"])
+def api_section_style_check(section_id: str):
+    """Run the style gate against a single section's current content."""
+    from tools.document_intelligence.style_engine import check_style
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT heading, content FROM dic_sections WHERE section_id = ? LIMIT 1",
+            (section_id,),
+        ).fetchone()
+        if not row:
+            return jsonify({"error": "section not found"}), 404
+        content = (row["content"] or "").strip()
+        if not content:
+            return jsonify({"score": 100.0, "passed": True, "violations": [], "stats": {}}), 200
+        result = check_style(content)
+        return jsonify(result.to_dict())
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+@dic_bp.route("/api/versions/<version_id>/style-check", methods=["POST"])
+def api_version_style_check(version_id: str):
+    """Run the style gate across all sections in a version."""
+    from tools.document_intelligence.style_engine import check_sections
+    conn = _conn()
+    try:
+        rows = _safe_rows(
+            conn,
+            "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY rowid",
+            (version_id,),
+        )
+        result = check_sections([dict(r) for r in rows])
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
 # ── API: Version Diff ─────────────────────────────────────────────────────────
 
 @dic_bp.route("/api/versions/<version_a>/diff/<version_b>", methods=["GET"])
