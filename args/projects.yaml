@@ -4,6 +4,35 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: rted
+  name: "DIC Real-Time Collaborative Editing"
+  description: >-
+    Pragmatic co-editing for the Document Intelligence Canvas: pessimistic
+    section locking, per-section edit history, SSE user presence, and
+    conflict detection with merge UI. No OT/CRDT/WebSocket required.
+  task_prefix: rted-
+  default_open: true
+  briefs:
+    - "Implement section locking so two editors cannot clobber each other (lock epic)"
+    - "Record granular edit history per section using stdlib difflib (history epic)"
+    - "Show live presence avatars per section via SSE heartbeat (presence epic)"
+    - "Detect and resolve edit conflicts with a side-by-side merge modal (conflict epic)"
+  epics:
+  - key: lock
+    title: "Section Locking"
+    priority: high
+  - key: hist
+    title: "Edit History"
+    priority: high
+  - key: pres
+    title: "User Presence"
+    priority: medium
+  - key: conf
+    title: "Conflict Resolution"
+    priority: high
+  - key: vv
+    title: "Validation"
+    priority: medium
 - key: rec
   name: Rec Project
   description: Auto-registered project for tasks with prefix 'rec-'. Update name and
