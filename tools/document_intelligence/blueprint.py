@@ -1660,16 +1660,30 @@ def api_section_revise(section_id):
 def api_section_update_content(section_id):
     data = request.get_json(silent=True) or {}
     content = data.get("content", "")
+    expected_hash = (data.get("expected_hash") or "").strip()
+    force = bool(data.get("force", False))
     cid = _collection_id_from_section(section_id) or "default"
     if not _require_role(cid, "editor"):
         return _forbid("editor")
     conn = _conn()
     try:
-        # Capture before-content for edit history
+        # Capture before-content for edit history + conflict detection
         before_row = conn.execute(
             "SELECT content FROM dic_sections WHERE section_id = ? LIMIT 1", (section_id,)
         ).fetchone()
         before_content = (dict(before_row).get("content") or "") if before_row else ""
+
+        # Conflict check — skip when no expected_hash supplied or force=True
+        if expected_hash and not force:
+            from tools.document_intelligence.conflict_detector import check_conflict
+            result = check_conflict(conn, section_id, expected_hash)
+            if result["conflict"]:
+                return jsonify({
+                    "conflict": True,
+                    "current_hash": result["current_hash"],
+                    "current_content": result["current_content"],
+                    "section_id": section_id,
+                }), 409
 
         conn.execute(
             "UPDATE dic_sections SET content = ?, status = ?, origin = ?, created_at = ? WHERE section_id = ?",
@@ -1689,9 +1703,25 @@ def api_section_update_content(section_id):
         except Exception:
             pass  # history failure must never block a save
 
-        return jsonify({"status": "updated", "section_id": section_id})
+        from tools.document_intelligence.conflict_detector import compute_hash
+        new_hash = compute_hash(content)
+        return jsonify({"status": "updated", "section_id": section_id, "new_hash": new_hash})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+@dic_bp.route("/api/sections/<section_id>/hash", methods=["GET"])
+def api_section_content_hash(section_id: str):
+    """Return the CRC32 fingerprint of the section's current content."""
+    from tools.document_intelligence.conflict_detector import get_section_state
+    conn = _conn()
+    try:
+        state = get_section_state(conn, section_id)
+        if state is None:
+            return jsonify({"error": "section not found"}), 404
+        return jsonify({"section_id": section_id, "hash": state["hash"]})
     finally:
         conn.close()
 
