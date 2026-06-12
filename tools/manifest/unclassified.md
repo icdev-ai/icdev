@@ -88,3 +88,24 @@
 | Auto-added digest_service.py | tools/notification_service/digest_service.py | (auto-added by remediation; update description) | --json | stdout |
 | Auto-added governance_layer.py | tools/agentic_ai_canvas/governance_layer.py | (auto-added by remediation; update description) | --json | stdout |
 | SIPA task-9ca6864e86 RCA | docs/audits/sipa-task-9ca6864e86-rca.md | No-op close. SIPA Mode A finding #35 (`hashlib.sha256` in `tools/viz/render_png.py:38`) was already remediated in `irad/feature` at `dab0f0684` (replaced with `format(zlib.crc32(...) & 0xFFFFFFFF, "08x")`). Capability extractor returns 0 records on the post-fix file. Authored on kanban/task-9ca6864e86 (off main) so a parallel fix on this branch would conflict with the integration branch. | (RCA document) | — |
+| Auto-added init_db.py | tools/boundary_canvas/db/init_db.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added init_db.py | tools/data_canvas/db/init_db.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added migrate_canvas_to_pg.py | tools/db/migrate_canvas_to_pg.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added down.py | tools/db/migrations/181_centralized_logs/down.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added up.py | tools/db/migrations/181_centralized_logs/up.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added init_db.py | tools/document_intelligence/db/init_db.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added down.py | tools/document_intelligence/db/migrations/001_community_summaries/down.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added up.py | tools/document_intelligence/db/migrations/001_community_summaries/up.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added __init__.py | tools/foundry/__init__.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added __init__.py | tools/foundry/db/__init__.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added reflex_registry.py | tools/genesis/reflex_registry.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added fathomdesk_openbb_refresh.py | tools/genesis/reflexes/fathomdesk_openbb_refresh.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added inspect_adapt.py | tools/genesis/reflexes/inspect_adapt.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added sdc_control_expiry.py | tools/genesis/reflexes/sdc_control_expiry.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added init_db.py | tools/infra_canvas/db/init_db.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added __init__.py | tools/llm/cli_bridge/__init__.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added init_db.py | tools/migration_canvas/db/init_db.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added init_db.py | tools/observability_canvas/db/init_db.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added ops_scanner.py | tools/ohc/ops_scanner.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added runbook_checker.py | tools/ohc/runbook_checker.py | (auto-added by remediation; update description) | --json | stdout |
+| Auto-added init_db.py | tools/pipeline/db/init_db.py | (auto-added by remediation; update description) | --json | stdout |
