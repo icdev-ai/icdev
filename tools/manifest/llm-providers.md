@@ -12,4 +12,5 @@
 | CLI Provider (inline) | tools/llm/cli_provider.py | `CLIProvider` — direct subprocess LLM provider for the local `claude` CLI in print mode (`-p --output-format text`); pipes system+user prompt via stdin in a temp cwd, returns `LLMResponse` with optional `structured_output` when stdout parses as JSON. Used by `tools/llm/router.py` when a provider is configured with `type: cli`. | LLMRequest | LLMResponse |
 | CLI Bridge — Job Store | tools/llm/cli_bridge/job_store.py | CRUD + claim + wait on `cli_llm_jobs` rows (mutable, RLS-aware) | job dict | job row |
 | CLI Bridge — Subprocess Backend | tools/llm/cli_bridge/subprocess_backend.py | Daemon-thread worker that runs `claude-cli` in a subprocess and writes results back to the job row | job_id | updated row |
+| Provider Scaffold | tools/llm/provider_scaffold.py | One-command LLM provider onboarding. Generates provider module (custom type), patches router.py, registers in args/llm_config.yaml, syncs to root tools/llm/, runs live test + ruff. Supports openai_compatible, ollama, custom. | `--name`, `--type`, `--api_key_env`, `--base_url`, `--model_id`, `--chain_function` | Registered provider + model + summary |
 

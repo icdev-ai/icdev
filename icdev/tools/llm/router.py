@@ -407,9 +407,31 @@ class LLMRouter:
     # -------------------------------------------------------------------
     # Provider instantiation (lazy)
     # -------------------------------------------------------------------
-    def _get_provider(self, provider_name: str) -> Optional[LLMProvider]:
-        """Get or create a provider instance by name."""
-        if provider_name in self._providers:
+    # -------------------------------------------------------------------
+    # BYOK key resolution (D175--D178)
+    # -------------------------------------------------------------------
+    def _get_byok_key(self, user_id: str, provider_name: str) -> str:
+        """Return a BYOK API key for user+provider if available."""
+        if not user_id:
+            return ""
+        try:
+            from tools.dashboard.byok import get_llm_key_for_provider
+
+            return get_llm_key_for_provider(str(user_id), provider_name)
+        except Exception:
+            return ""
+
+    # -------------------------------------------------------------------
+    # Provider instantiation (lazy)
+    # -------------------------------------------------------------------
+    def _get_provider(self, provider_name: str, user_id: str = None) -> Optional[LLMProvider]:
+        """Get or create a provider instance by name.
+
+        When *user_id* is provided, BYOK keys take priority over system
+        env vars.  Per-user instances are NOT cached so that different
+        users do not share API keys.
+        """
+        if not user_id and provider_name in self._providers:
             return self._providers[provider_name]
 
         provider_cfg = self._config.get("providers", {}).get(provider_name, {})
@@ -430,8 +452,10 @@ class LLMRouter:
             elif ptype == "anthropic":
                 from tools.llm.anthropic_provider import AnthropicLLMProvider
 
-                api_key_env = provider_cfg.get("api_key_env", "ANTHROPIC_API_KEY")
-                api_key = os.environ.get(api_key_env, "")
+                api_key = self._get_byok_key(user_id, provider_name)
+                if not api_key:
+                    api_key_env = provider_cfg.get("api_key_env", "ANTHROPIC_API_KEY")
+                    api_key = os.environ.get(api_key_env, "")
                 base_url = provider_cfg.get("base_url", "https://api.anthropic.com")
                 instance = AnthropicLLMProvider(api_key=api_key, base_url=base_url)
 
@@ -439,30 +463,36 @@ class LLMRouter:
                 from tools.llm.ollama_provider import OllamaProvider
 
                 base_url = _expand_env(provider_cfg.get("base_url", "http://localhost:11434"))
-                api_key_env = provider_cfg.get("api_key_env", "")
-                api_key = _expand_env(provider_cfg.get("api_key", ""))
-                if not api_key and api_key_env:
-                    api_key = os.getenv(api_key_env, "")
+                api_key = self._get_byok_key(user_id, provider_name)
+                if not api_key:
+                    api_key_env = provider_cfg.get("api_key_env", "")
+                    api_key = _expand_env(provider_cfg.get("api_key", ""))
+                    if not api_key and api_key_env:
+                        api_key = os.getenv(api_key_env, "")
                 instance = OllamaProvider(base_url=base_url, api_key=api_key)
 
             elif ptype == "gemini":
                 from tools.llm.gemini_provider import GeminiProvider
 
-                api_key = provider_cfg.get("api_key", "")
+                api_key = self._get_byok_key(user_id, provider_name)
                 if not api_key:
-                    api_key_env = provider_cfg.get("api_key_env", "GOOGLE_API_KEY")
-                    if api_key_env:
-                        api_key = os.environ.get(api_key_env, "")
+                    api_key = provider_cfg.get("api_key", "")
+                    if not api_key:
+                        api_key_env = provider_cfg.get("api_key_env", "GOOGLE_API_KEY")
+                        if api_key_env:
+                            api_key = os.environ.get(api_key_env, "")
                 instance = GeminiProvider(api_key=api_key)
 
             elif ptype in ("openai", "openai_compatible"):
                 from tools.llm.openai_provider import OpenAICompatibleProvider
 
-                api_key = provider_cfg.get("api_key", "")
+                api_key = self._get_byok_key(user_id, provider_name)
                 if not api_key:
-                    api_key_env = provider_cfg.get("api_key_env", "")
-                    if api_key_env:
-                        api_key = os.environ.get(api_key_env, "")
+                    api_key = provider_cfg.get("api_key", "")
+                    if not api_key:
+                        api_key_env = provider_cfg.get("api_key_env", "")
+                        if api_key_env:
+                            api_key = os.environ.get(api_key_env, "")
                 base_url = _expand_env(provider_cfg.get("base_url", "https://api.openai.com/v1"))
                 instance = OpenAICompatibleProvider(
                     api_key=api_key,
@@ -474,10 +504,12 @@ class LLMRouter:
                 from tools.llm.azure_openai_provider import AzureOpenAIProvider
 
                 endpoint = _expand_env(provider_cfg.get("endpoint", ""))
-                api_key = _expand_env(provider_cfg.get("api_key", ""))
+                api_key = self._get_byok_key(user_id, provider_name)
                 if not api_key:
-                    api_key_env = provider_cfg.get("api_key_env", "AZURE_OPENAI_API_KEY")
-                    api_key = os.environ.get(api_key_env, "")
+                    api_key = _expand_env(provider_cfg.get("api_key", ""))
+                    if not api_key:
+                        api_key_env = provider_cfg.get("api_key_env", "AZURE_OPENAI_API_KEY")
+                        api_key = os.environ.get(api_key_env, "")
                 api_version = provider_cfg.get("api_version", "2024-06-01")
                 instance = AzureOpenAIProvider(
                     endpoint=endpoint,
@@ -508,10 +540,12 @@ class LLMRouter:
             elif ptype == "ibm_watsonx":
                 from tools.llm.ibm_watsonx_provider import IBMWatsonxProvider
 
-                api_key = _expand_env(provider_cfg.get("api_key", ""))
+                api_key = self._get_byok_key(user_id, provider_name)
                 if not api_key:
-                    api_key_env = provider_cfg.get("api_key_env", "IBM_CLOUD_API_KEY")
-                    api_key = os.environ.get(api_key_env, "")
+                    api_key = _expand_env(provider_cfg.get("api_key", ""))
+                    if not api_key:
+                        api_key_env = provider_cfg.get("api_key_env", "IBM_CLOUD_API_KEY")
+                        api_key = os.environ.get(api_key_env, "")
                 project_id = _expand_env(provider_cfg.get("project_id", ""))
                 if not project_id:
                     project_id = os.environ.get("IBM_WATSONX_PROJECT_ID", "")
@@ -535,7 +569,7 @@ class LLMRouter:
             logger.warning("Failed to create provider '%s': %s", provider_name, exc)
             return None
 
-        if instance:
+        if instance and not user_id:
             self._providers[provider_name] = instance
             logger.debug("Created provider instance: %s (%s)", provider_name, ptype)
 
@@ -900,7 +934,7 @@ class LLMRouter:
             logger.warning("Two-tier: model '%s' not found in config", model_name)
             return None
         provider_name = model_cfg.get("provider", "")
-        provider = self._get_provider(provider_name)
+        provider = self._get_provider(provider_name, user_id=getattr(request, "user_id", None))
         if provider is None:
             logger.warning("Two-tier: provider '%s' unavailable for model '%s'", provider_name, model_name)
             return None
@@ -1156,12 +1190,12 @@ class LLMRouter:
         Returns None on failure so caller can fall through to default.
         """
         # Find the Ollama provider instance
-        provider = self._get_provider("ollama")
+        provider = self._get_provider("ollama", user_id=getattr(request, "user_id", None))
         if provider is None:
             # Try to find any ollama-type provider
             for pname, pcfg in self._config.get("providers", {}).items():
                 if pcfg.get("type") == "ollama":
-                    provider = self._get_provider(pname)
+                    provider = self._get_provider(pname, user_id=getattr(request, "user_id", None))
                     if provider:
                         break
         if provider is None:
@@ -1671,7 +1705,7 @@ class LLMRouter:
             if not model_cfg:
                 continue
             provider_name = model_cfg.get("provider", "")
-            provider = self._get_provider(provider_name)
+            provider = self._get_provider(provider_name, user_id=getattr(request, "user_id", None))
             if provider is None:
                 continue
             model_id = model_cfg.get("model_id", "")
@@ -1923,7 +1957,7 @@ class LLMRouter:
             if not model_cfg:
                 continue
             provider_name = model_cfg.get("provider", "")
-            provider = self._get_provider(provider_name)
+            provider = self._get_provider(provider_name, user_id=getattr(request, "user_id", None))
             if provider is None:
                 continue
             model_id = model_cfg.get("model_id", "")
@@ -2214,7 +2248,7 @@ class LLMRouter:
             if not self._check_model_available(model_name):
                 continue
             provider_name = model_cfg.get("provider", "")
-            provider = self._get_provider(provider_name)
+            provider = self._get_provider(provider_name, user_id=getattr(request, "user_id", None))
             if provider is None:
                 continue
             model_id = model_cfg.get("model_id", "")

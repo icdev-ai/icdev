@@ -88,6 +88,41 @@
         </table>
     </div>
 </div>
+
+<!-- Provider Status & Automation -->
+<div class="profile-section">
+    <h3>Provider Status</h3>
+    <p class="text-muted" style="font-size: 0.85rem; margin-bottom: 1rem;">
+        Live detection of CLI bridge, Ollama local fallback, and registered providers.
+    </p>
+    <div id="provider-status" style="display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 1rem;">
+        <div class="status-card" style="flex: 1; min-width: 220px; background: var(--card-bg); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color);">
+            <strong>CLI Bridge</strong>
+            <div id="cli-bridge-status" style="margin-top: 4px; font-size: 0.85rem;">Loading...</div>
+        </div>
+        <div class="status-card" style="flex: 1; min-width: 220px; background: var(--card-bg); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color);">
+            <strong>Ollama Local</strong>
+            <div id="ollama-status" style="margin-top: 4px; font-size: 0.85rem;">Loading...</div>
+        </div>
+        <div class="status-card" style="flex: 1; min-width: 220px; background: var(--card-bg); padding: 12px; border-radius: 6px; border: 1px solid var(--border-color);">
+            <strong>Fallback Chains</strong>
+            <div id="fallback-status" style="margin-top: 4px; font-size: 0.85rem;">Loading...</div>
+        </div>
+    </div>
+    <div class="table-container">
+        <table class="data-table" id="provider-table">
+            <thead>
+                <tr>
+                    <th>Provider</th>
+                    <th>Type</th>
+                    <th>BYOK Key</th>
+                </tr>
+            </thead>
+            <tbody id="provider-body">
+            </tbody>
+        </table>
+    </div>
+</div>
 {% endif %}
 {% endblock %}
 
@@ -118,6 +153,66 @@
     }
     loadMyKeys();
 
+    // Provider Status & dynamic dropdown population
+    var registeredProviders = [];
+    var byokProviders = [];
+
+    function loadProviderStatus() {
+        fetch('/profile/api/provider-status')
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var cb = data.cli_bridge || {};
+            document.getElementById('cli-bridge-status').innerHTML =
+                '<span style="color:' + (cb.enabled ? '#8f8' : '#f88') + ';">' +
+                (cb.enabled ? 'Active' : 'Inactive') + '</span>' +
+                (cb.auto ? ' <span style="color:#888;">(auto)</span>' : '') +
+                '<br><span style="color:#888;">' + (cb.reason || '') + '</span>';
+
+            var ol = data.ollama_local || {};
+            document.getElementById('ollama-status').innerHTML =
+                '<span style="color:' + (ol.available ? '#8f8' : '#f88') + ';">' +
+                (ol.available ? 'Available' : 'Unavailable') + '</span>' +
+                '<br><span style="color:#888;">' + (ol.url || '') + '</span>';
+
+            var fb = data.fallback_chains || {};
+            document.getElementById('fallback-status').innerHTML =
+                '<strong>Tier 1:</strong> ' + (fb.tier1 || []).join(' → ') + '<br>' +
+                '<strong>Tier 2:</strong> ' + (fb.tier2 || []).join(' → ');
+
+            // Populate provider table
+            registeredProviders = data.registered_providers || [];
+            byokProviders = data.byok_providers || [];
+            var pbody = document.getElementById('provider-body');
+            if (pbody) {
+                pbody.innerHTML = '';
+                registeredProviders.forEach(function(p) {
+                    var hasKey = byokProviders.indexOf(p) !== -1;
+                    var tr = document.createElement('tr');
+                    tr.innerHTML =
+                        '<td><span class="source-badge">' + p + '</span></td>' +
+                        '<td>-</td>' +
+                        '<td>' + (hasKey ? '<span style="color:#8f8;">Yes</span>' : '<span style="color:#888;">No</span>') + '</td>';
+                    pbody.appendChild(tr);
+                });
+            }
+
+            // Populate BYOK dropdown dynamically
+            var sel = document.getElementById('byok-provider');
+            if (sel) {
+                var oldVal = sel.value;
+                sel.innerHTML = '';
+                registeredProviders.forEach(function(p) {
+                    var opt = document.createElement('option');
+                    opt.value = p;
+                    opt.textContent = p.charAt(0).toUpperCase() + p.slice(1);
+                    sel.appendChild(opt);
+                });
+                if (oldVal) sel.value = oldVal;
+            }
+        });
+    }
+    loadProviderStatus();
+
     // BYOK
     var byokEnabled = {{ 'true' if byok_enabled else 'false' }};
     if (byokEnabled) {
@@ -130,14 +225,16 @@
                 body.innerHTML = '';
                 (data.keys || []).forEach(function(k) {
                     var tr = document.createElement('tr');
+                    var actions = (k.status === 'active' ?
+                        '<button class="btn-sm btn-danger" onclick="revokeByokKey(\'' + k.id + '\')">Revoke</button>' +
+                        ' <button class="btn-sm" onclick="testByokKey(\'' + k.provider + '\', \'' + k.id + '\')">Test</button>'
+                        : '<span style="color:#a0a0b8;">Revoked</span>');
                     tr.innerHTML =
                         '<td><span class="source-badge">' + k.provider + '</span></td>' +
                         '<td>' + (k.key_label || '-') + '</td>' +
                         '<td>' + k.status + '</td>' +
                         '<td>' + (k.created_at || '') + '</td>' +
-                        '<td>' + (k.status === 'active' ?
-                            '<button class="btn-sm btn-danger" onclick="revokeByokKey(\'' + k.id + '\')">Revoke</button>'
-                            : '<span style="color:#a0a0b8;">Revoked</span>') + '</td>';
+                        '<td>' + actions + '</td>';
                     body.appendChild(tr);
                 });
             });
@@ -167,6 +264,7 @@
                         document.getElementById('byok-result').innerHTML =
                             '<span style="color:#8f8;">Key added for ' + provider + '</span>';
                         loadByokKeys();
+                        loadProviderStatus();
                     }
                 });
             });
@@ -175,7 +273,11 @@
         window.revokeByokKey = function(keyId) {
             if (!confirm('Revoke this LLM key?')) return;
             fetch('/profile/api/llm-keys/' + keyId + '/revoke', {method: 'POST'})
-            .then(function() { loadByokKeys(); });
+            .then(function() { loadByokKeys(); loadProviderStatus(); });
+        };
+
+        window.testByokKey = function(provider, keyId) {
+            alert('Testing ' + provider + ' key...\n\nA live test endpoint will be added in the next iteration.');
         };
     }
 })();

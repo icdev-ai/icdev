@@ -58,6 +58,10 @@ class LLMRequest:
     agent_id: str = ""
     project_id: str = ""
     classification: str = "CUI"
+    # BYOK integration (D175–D178)
+    user_id: str = ""
+    api_key_override: str = ""
+    api_key_source: str = "system"
 
 
 @dataclass

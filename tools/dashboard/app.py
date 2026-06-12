@@ -2475,6 +2475,8 @@ def create_app() -> Flask:
     def api_notifications():
         """Return current notification-worthy items (firing alerts, overdue POAMs)."""
         conn = _get_db()
+        if hasattr(conn, "set_security_context"):
+            conn.set_security_context(None)  # rls-bypass: operational tables (alerts/poam_items/agents) are not classification-scoped
         try:
             notifications = []
             firing = conn.execute("SELECT COUNT(*) as cnt FROM alerts WHERE status = 'firing'").fetchone()["cnt"]
@@ -2552,6 +2554,8 @@ def create_app() -> Flask:
         """Aggregate chart data for the home dashboard."""
 
         conn = _get_db()
+        if hasattr(conn, "set_security_context"):
+            conn.set_security_context(None)  # rls-bypass: aggregate counts over operational tables (kanban_tasks/audit_trail) are not classification-scoped
         try:
             # ----------------------------------------------------------------
             # 1. Task Board Status (donut) — replaces empty projects table
@@ -4187,6 +4191,78 @@ def create_app() -> Flask:
         if not success:
             return jsonify({"error": "Key not found"}), 404
         return jsonify({"status": "revoked"})
+
+    @app.route("/profile/api/provider-status", methods=["GET"])
+    def profile_provider_status():
+        """Return LLM provider auto-detection status for the profile page."""
+        import os
+        import shutil
+        import yaml as _yaml
+        from urllib.request import urlopen
+        from urllib.error import URLError
+
+        user = getattr(g, "current_user", None)
+
+        # CLI bridge auto-detection (mirror router logic)
+        has_claude_binary = bool(shutil.which("claude"))
+        env_bridge = os.environ.get("ICDEV_CLI_BRIDGE", "").strip().lower()
+        bridge_enabled = env_bridge in ("1", "true", "yes", "on")
+        bridge_auto = has_claude_binary and not os.environ.get("ANTHROPIC_API_KEY") and not bridge_enabled
+
+        # Ollama local probe
+        ollama_local_url = "http://localhost:11434"
+        ollama_local_ok = False
+        try:
+            with urlopen(ollama_local_url + "/api/tags", timeout=2) as r:
+                ollama_local_ok = r.status == 200
+        except Exception:
+            pass
+
+        # Load routing config for fallback chains
+        cfg_path = BASE_DIR / "args" / "llm_config.yaml"
+        cfg = {}
+        try:
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                cfg = _yaml.safe_load(f) or {}
+        except Exception:
+            pass
+
+        two_tier = cfg.get("two_tier", {})
+        fallback = {
+            "tier1": [two_tier.get("tier1_model", "qwen3-local")] + list(two_tier.get("tier1_fallback_chain", [])),
+            "tier2": [two_tier.get("tier2_model", "claude-sonnet")] + list(two_tier.get("tier2_fallback_chain", [])),
+        }
+
+        registered = list(cfg.get("providers", {}).keys())
+
+        # BYOK providers for current user
+        byok_providers = []
+        if user:
+            try:
+                from tools.dashboard.byok import list_llm_keys
+                keys = list_llm_keys(user["id"])
+                byok_providers = list({k["provider"] for k in keys if k.get("status") == "active"})
+            except Exception:
+                pass
+
+        return jsonify({
+            "cli_bridge": {
+                "detected": has_claude_binary,
+                "enabled": bridge_enabled or bridge_auto,
+                "auto": bridge_auto,
+                "reason": (
+                    "Auto-enabled (binary found, no cloud key)"
+                    if bridge_auto else ("Enabled via env" if bridge_enabled else "Disabled")
+                ),
+            },
+            "ollama_local": {
+                "available": ollama_local_ok,
+                "url": ollama_local_url,
+            },
+            "fallback_chains": fallback,
+            "registered_providers": registered,
+            "byok_providers": byok_providers,
+        })
 
     # ---- WriteGuard route (Phase 1 — Content Quality Dashboard) ----
 
@@ -10647,6 +10723,8 @@ def create_app() -> Flask:
         out: list = []
         try:
             with _gc() as conn:
+                if hasattr(conn, "set_security_context"):
+                    conn.set_security_context(None)  # rls-bypass: kanban_tasks is operational, not classification-scoped
                 for p in projects_cfg:
                     snap = _compute_project_progress(p, conn)
                     if snap["visible"]:

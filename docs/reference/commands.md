@@ -36,6 +36,12 @@ python -c "from tools.llm.router import LLMRouter; r = LLMRouter(); print(r.get_
 # Set OLLAMA_BASE_URL=http://localhost:11434/v1 for local model support
 # Set prefer_local: true in llm_config.yaml for air-gapped environments
 
+# Provider Scaffold — add a new LLM provider in one command
+python tools/llm/provider_scaffold.py --name cohere --type openai_compatible --api_key_env COHERE_API_KEY --base_url https://api.cohere.com/v1 --model_id command-r
+# Types: openai_compatible | ollama | custom
+# Optional: --chain_function chat_response  (adds model to a routing chain)
+# Interactive mode: omit all args
+
 # Reasoned Codegen (CoT/CoD + adversary critique + verify/repair)
 # Library: tools/llm/reasoned_codegen.py — generate_reasoned_code(function=, request=, verifier=, mode=)
 #   Config: args/llm_config.yaml -> reasoned_codegen (section kill-switch + per_function mode/critique)
