@@ -495,6 +495,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "centralized_logs",
         # DIC Collaborative Editing — section edit history (rted-hist-01, NIST AU — each edit row is immutable)
         "dic_edit_history",
+        # DIC Canvas Synergy — suggestion decisions (dsyn-adapt-03, NIST AU — each decision row is immutable)
+        "dic_suggestion_decisions",
     ]
 
     if tool_name == "Bash":
