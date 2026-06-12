@@ -52,6 +52,8 @@ CREATE TABLE IF NOT EXISTS proposal_section_annotations (
     author TEXT DEFAULT 'reviewer',
     status TEXT DEFAULT 'open' CHECK(status IN ('open','resolved')),
     resolution_note TEXT,
+    resolved_by TEXT,
+    resolved_at TEXT,
     classification TEXT DEFAULT 'CUI',
     created_at TEXT NOT NULL,
     updated_at TEXT
@@ -162,6 +164,17 @@ def test_list_annotations_filter_by_status(client):
     assert len(data["annotations"]) == 1
 
 
+def test_create_annotation_stores_author(client):
+    resp = client.post(
+        f"/api/proposals/sections/{_SEC_ID}/annotations",
+        json=_ann_payload(author="j.smith"),
+    )
+    assert resp.status_code == 201
+    data = resp.get_json()
+    assert data["author"] == "j.smith"
+    assert data["created_at"] is not None
+
+
 def test_update_annotation_status_to_resolved(client):
     created = client.post(
         f"/api/proposals/sections/{_SEC_ID}/annotations",
@@ -171,12 +184,14 @@ def test_update_annotation_status_to_resolved(client):
 
     resp = client.put(
         f"/api/proposals/annotations/{ann_id}",
-        json={"status": "resolved", "resolution_note": "Updated in v2 draft."},
+        json={"status": "resolved", "resolution_note": "Updated in v2 draft.", "resolved_by": "s.chuon"},
     )
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["status"] == "resolved"
     assert data["resolution_note"] == "Updated in v2 draft."
+    assert data["resolved_by"] == "s.chuon"
+    assert data["resolved_at"] is not None
 
 
 def test_delete_annotation(client):
