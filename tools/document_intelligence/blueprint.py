@@ -23,6 +23,11 @@ Routes:
   POST /document-intelligence/api/review/<id>/reject             reject fragment/version
   POST /document-intelligence/api/generate                       AI draft generation
   POST /document-intelligence/api/iqe-query                      IQE natural-language query
+
+  GET  /document-intelligence/api/suggestions                    list suggestions (dsyn-adapt-04)
+  GET  /document-intelligence/api/suggestions/<id>               suggestion detail
+  POST /document-intelligence/api/suggestions/<id>/accept        accept: apply content + history
+  POST /document-intelligence/api/suggestions/<id>/reject        reject: mark decided + note
 """
 from __future__ import annotations
 
@@ -2256,6 +2261,136 @@ def api_presence_stream(doc_id: str):
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@dic_bp.route("/api/suggestions", methods=["GET"])
+def api_suggestions_list():
+    """List suggestions, filtered by optional query params.
+
+    Query params: collection_id, canvas_source, status (default: pending)
+    """
+    from tools.document_intelligence.suggestion_store import get_pending_suggestions
+    collection_id = request.args.get("collection_id") or None
+    canvas_source = request.args.get("canvas_source") or None
+    status = request.args.get("status", "pending")
+    suggestions = get_pending_suggestions(
+        collection_id=collection_id,
+        canvas_source=canvas_source,
+        status=status,
+    )
+    return jsonify({"suggestions": suggestions, "count": len(suggestions)})
+
+
+@dic_bp.route("/api/suggestions/<suggestion_id>", methods=["GET"])
+def api_suggestion_detail(suggestion_id: str):
+    """Return full detail for a single suggestion."""
+    from tools.document_intelligence.suggestion_store import get_suggestion
+    s = get_suggestion(suggestion_id)
+    if s is None:
+        return jsonify({"error": "suggestion not found"}), 404
+    return jsonify(s)
+
+
+@dic_bp.route("/api/suggestions/<suggestion_id>/accept", methods=["POST"])
+def api_suggestion_accept(suggestion_id: str):
+    """Accept a suggestion: apply suggested_content to the section + record history."""
+    from tools.document_intelligence.suggestion_store import (
+        get_suggestion, decide_suggestion,
+    )
+    s = get_suggestion(suggestion_id)
+    if s is None:
+        return jsonify({"error": "suggestion not found"}), 404
+
+    cid = s.get("collection_id") or _collection_id_from_section(s.get("section_id", "")) or "default"
+    if not _require_role(cid, "editor"):
+        return _forbid("editor")
+
+    if s.get("status") != "pending":
+        return jsonify({"error": "suggestion already decided", "status": s["status"]}), 409
+
+    section_id = s.get("section_id", "")
+    suggested_content = s.get("suggested_content", "")
+    user = _current_user()
+
+    # Apply content to the section (reuse section update logic)
+    conn = _conn()
+    try:
+        before_row = conn.execute(
+            "SELECT content FROM dic_sections WHERE section_id = ? LIMIT 1", (section_id,)
+        ).fetchone()
+        before_content = (dict(before_row).get("content") or "") if before_row else ""
+
+        conn.execute(
+            "UPDATE dic_sections SET content = ?, status = ?, origin = ?, created_at = ? WHERE section_id = ?",
+            (suggested_content, "draft", "ai_generated", _now(), section_id),
+        )
+        conn.commit()
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+    # Record edit history (best-effort)
+    try:
+        from tools.document_intelligence.history_recorder import record_edit
+        record_edit(
+            section_id=section_id,
+            editor=user,
+            content_before=before_content,
+            content_after=suggested_content,
+        )
+    except Exception:
+        pass
+
+    # Record the accept decision (marks suggestion as accepted)
+    data = request.get_json(silent=True) or {}
+    note = data.get("note", "")
+    _, classification = _security_context()
+    tenant_id, _ = _security_context()
+    decide_suggestion(
+        suggestion_id, "accepted", user,
+        note=note, tenant_id=tenant_id, classification=classification,
+    )
+
+    from tools.document_intelligence.conflict_detector import compute_hash
+    return jsonify({
+        "status": "accepted",
+        "suggestion_id": suggestion_id,
+        "section_id": section_id,
+        "new_hash": compute_hash(suggested_content),
+    })
+
+
+@dic_bp.route("/api/suggestions/<suggestion_id>/reject", methods=["POST"])
+def api_suggestion_reject(suggestion_id: str):
+    """Reject a suggestion with an optional note. Requires editor or reviewer role."""
+    from tools.document_intelligence.suggestion_store import (
+        get_suggestion, decide_suggestion,
+    )
+    s = get_suggestion(suggestion_id)
+    if s is None:
+        return jsonify({"error": "suggestion not found"}), 404
+
+    cid = s.get("collection_id") or _collection_id_from_section(s.get("section_id", "")) or "default"
+    if not _require_role(cid, "editor"):
+        return _forbid("editor")
+
+    if s.get("status") != "pending":
+        return jsonify({"error": "suggestion already decided", "status": s["status"]}), 409
+
+    data = request.get_json(silent=True) or {}
+    note = data.get("note", "")
+    user = _current_user()
+    tenant_id, classification = _security_context()
+
+    result = decide_suggestion(
+        suggestion_id, "rejected", user,
+        note=note, tenant_id=tenant_id, classification=classification,
+    )
+    if not result:
+        return jsonify({"error": "could not record rejection"}), 500
+
+    return jsonify({"status": "rejected", "suggestion_id": suggestion_id})
 
 
 @dic_bp.route("/api/iqe-query", methods=["POST"])
