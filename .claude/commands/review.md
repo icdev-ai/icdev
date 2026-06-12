@@ -13,6 +13,12 @@ agent_name: $3 if provided, otherwise use 'review_agent'
 - Check current git branch using `git branch`
 - Run `git diff origin/main` to see all changes made in current branch
 - Find and read the spec file to understand requirements
+- **Assess blast radius** — feed the changed `tools/*.py` files to the call-graph impact analyzer:
+  ```bash
+  python tools/awareness/change_impact.py --changed-files "<file1>,<file2>" --markdown
+  ```
+  Use the **blast radius** (upstream callers) and **routes affected** to scope the review:
+  prioritize the impacted modules and verify the change does not break their callers.
 
 ### Adversarial Review Protocol (BMAD-adapted)
 
