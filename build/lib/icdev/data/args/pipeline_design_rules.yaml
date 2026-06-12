@@ -1,0 +1,336 @@
+# CUI // SP-CTI — Pipeline Design Canvas Design Rules
+# On-node-add suggestions, checklists, auto-suggest connections, warnings.
+# Mirrors args/network_design_rules.yaml pattern.
+
+on_node_add:
+  # ── CI/CD Orchestration ────────────────────────────────────────────────────
+  cicd-gitlab:
+    suggestions:
+      - "Connect to a source control node (GitLab, Gitea, or Git server)"
+      - "Add SAST and SCA scanning stages after build"
+      - "Configure shared runners or dedicated runners for build isolation"
+      - "Enable pipeline-level secret variables via Vault integration"
+    checklist:
+      runner_type:
+        required: true
+        options: [shared, group, project-specific, self-hosted]
+        hint: "Self-hosted runners recommended for air-gapped/IL5+ environments"
+      gitlab_tier:
+        required: true
+        options: [Free, Premium, Ultimate]
+        hint: "Ultimate required for integrated SAST/DAST/SCA/Fuzz"
+      pipeline_trigger:
+        required: true
+        options: [push, merge_request, schedule, api]
+    auto_suggest_connections:
+      - match_type: scm-gitlab
+        message: "Connect to GitLab source repository"
+      - match_type: scan-sast
+        message: "Add SAST scanning after build stage"
+      - match_type: registry-harbor
+        message: "Push built images to Harbor registry"
+    warnings:
+      - condition: no_scanning_connected
+        severity: high
+        message: "CI/CD engine with no security scanning is a DevSecOps gap"
+
+  cicd-tekton:
+    suggestions:
+      - "Tekton is Kubernetes-native — requires a K8s cluster to run"
+      - "Used by DoD Platform One — combine with Iron Bank base images"
+      - "Supports SLSA Level 3 with hermetic build configuration"
+    checklist:
+      cluster_type:
+        required: true
+        options: [EKS, AKS, GKE, OKE, OpenShift, RKE2, vanilla-k8s]
+      pipeline_as_code:
+        required: true
+        options: [embedded, external-repo]
+    auto_suggest_connections:
+      - match_type: registry-harbor
+        message: "Push images to Harbor registry"
+      - match_type: gitops-argocd
+        message: "Deploy via ArgoCD GitOps"
+
+  cicd-jenkins:
+    suggestions:
+      - "Consider migrating to GitLab CI or Tekton for modern K8s-native CI/CD"
+      - "Ensure Jenkins is hardened — apply CIS Jenkins Benchmark"
+      - "Use Jenkinsfile (declarative) for pipeline-as-code"
+    warnings:
+      - condition: single_instance
+        severity: medium
+        message: "Single Jenkins instance is a SPOF — consider HA or migration"
+
+  # ── Source Control ─────────────────────────────────────────────────────────
+  scm-gitlab:
+    suggestions:
+      - "Enable branch protection rules on main/release branches"
+      - "Require merge request approvals before merge"
+      - "Enable signed commits (GPG or SSH)"
+    checklist:
+      branch_protection:
+        required: true
+        options: [enabled, disabled]
+        hint: "Required for SSDF PS.1.1 and SLSA L2+"
+      merge_approvals:
+        required: true
+        hint: "Minimum 1 reviewer for compliance"
+    auto_suggest_connections:
+      - match_type: cicd-gitlab
+        message: "Connect to GitLab CI for automated pipelines"
+      - match_type: branch-policy
+        message: "Add branch policy enforcement"
+
+  # ── Security Scanning ──────────────────────────────────────────────────────
+  scan-sast:
+    suggestions:
+      - "Place after source checkout, before or during build"
+      - "Configure quality gate thresholds (e.g., zero critical findings)"
+      - "Enable incremental scanning for faster MR feedback"
+    checklist:
+      tool:
+        required: true
+        options: [SonarQube, Semgrep, CodeQL, Bandit, SpotBugs]
+      quality_gate:
+        required: true
+        options: [block_critical, block_high, advisory_only]
+      languages:
+        required: true
+        hint: "Specify target languages for accurate rule coverage"
+    auto_suggest_connections:
+      - match_type: scan-sca
+        message: "Pair with SCA for comprehensive coverage"
+    warnings:
+      - condition: no_output_connection
+        severity: medium
+        message: "SAST results should feed into a policy gate"
+
+  scan-trivy:
+    suggestions:
+      - "Trivy is all-in-one: container scan, SCA, IaC, SBOM — configure modes"
+      - "For air-gapped: use --offline-scan with local vulnerability DB mirror"
+    checklist:
+      scan_mode:
+        required: true
+        options: [image, filesystem, repo, config, sbom]
+      offline_mode:
+        required: false
+        options: [true, false]
+        hint: "Required for IL5+ air-gapped environments"
+
+  scan-gitleaks:
+    suggestions:
+      - "Best as pre-commit hook AND CI stage for defense in depth"
+      - "Customize .gitleaks.toml for project-specific allowlists"
+    auto_suggest_connections:
+      - match_type: scm-gitlab
+        message: "Integrate as pre-commit hook on source repository"
+
+  # ── Container Registry ─────────────────────────────────────────────────────
+  registry-harbor:
+    suggestions:
+      - "CNCF graduated project — supports vulnerability scanning, signing, replication"
+      - "Configure replication for multi-site/multi-cloud deployments"
+      - "Enable Notary v2 for image signing"
+    checklist:
+      scanning:
+        required: true
+        options: [trivy, clair, none]
+      signing:
+        required: false
+        options: [cosign, notation, dct]
+    auto_suggest_connections:
+      - match_type: sign-cosign
+        message: "Add Cosign for image signing"
+      - match_type: gitops-argocd
+        message: "Connect to ArgoCD for GitOps deployment"
+
+  registry-ironbank:
+    suggestions:
+      - "Iron Bank provides DoD-hardened base images — required for Platform One"
+      - "Always pull base images from Iron Bank, never from Docker Hub in production"
+    warnings:
+      - condition: no_ci_connected
+        severity: high
+        message: "Iron Bank images must be pulled during CI build stage"
+
+  # ── Supply Chain ───────────────────────────────────────────────────────────
+  sign-cosign:
+    suggestions:
+      - "Sign all container images before pushing to registry"
+      - "Use keyless signing (OIDC) for CI/CD or key-pair for air-gapped"
+      - "Verify signatures at deploy time via Kyverno or Gatekeeper"
+    auto_suggest_connections:
+      - match_type: policy-kyverno
+        message: "Add Kyverno for deploy-time signature verification"
+
+  attest-slsa-gen:
+    suggestions:
+      - "SLSA provenance should be generated by the build system, not external"
+      - "Store provenance alongside the artifact in the registry"
+    auto_suggest_connections:
+      - match_type: verify-slsa
+        message: "Add SLSA verifier before deployment"
+
+  # ── Policy & Governance ────────────────────────────────────────────────────
+  policy-kyverno:
+    suggestions:
+      - "Kyverno is K8s-native (YAML policies) — easier than OPA Rego"
+      - "Used in DoD Big Bang as core admission controller"
+      - "Enforce image signature verification and source repository rules"
+    auto_suggest_connections:
+      - match_type: k8s-cluster
+        message: "Deploy as admission controller on K8s cluster"
+
+  gate-manual:
+    suggestions:
+      - "Required for production deployments per DoD DevSecOps and FedRAMP"
+      - "Configure notification (email, Slack, Teams) for approval requests"
+    checklist:
+      approvers:
+        required: true
+        hint: "Define who can approve (role-based, named users)"
+      timeout_hours:
+        required: false
+        hint: "Auto-reject after timeout (e.g., 48 hours)"
+
+  gate-vuln-threshold:
+    suggestions:
+      - "Block on: zero critical, zero high with known exploits"
+      - "Configure CVSS score threshold and exception list"
+    checklist:
+      critical_threshold:
+        required: true
+        options: ["0", "1", "5"]
+        hint: "0 recommended for DoD/FedRAMP"
+      high_threshold:
+        required: true
+        options: ["0", "5", "10"]
+
+  # ── Deploy Targets ─────────────────────────────────────────────────────────
+  k8s-cluster:
+    suggestions:
+      - "Add runtime security monitoring (Falco) for production clusters"
+      - "Configure admission controller (OPA/Kyverno) for policy enforcement"
+      - "Enable pod security standards (restricted profile)"
+    checklist:
+      cluster_type:
+        required: true
+        options: [EKS, AKS, GKE, OKE, OpenShift, RKE2, vanilla-k8s]
+      network_policy:
+        required: true
+        options: [calico, cilium, native]
+      pod_security:
+        required: true
+        options: [restricted, baseline, privileged]
+    auto_suggest_connections:
+      - match_type: mon-falco
+        message: "Add Falco for runtime threat detection"
+      - match_type: policy-kyverno
+        message: "Add admission controller for policy enforcement"
+      - match_type: mesh-istio
+        message: "Add Istio for mTLS service mesh"
+
+  deploy-bigbang:
+    suggestions:
+      - "Big Bang is DoD Platform One's GitOps K8s deployment bundle"
+      - "Requires: Istio, Kyverno, monitoring stack, logging stack"
+      - "Pull all images from Iron Bank"
+    warnings:
+      - condition: no_ironbank_connected
+        severity: high
+        message: "Big Bang requires Iron Bank base images"
+
+  # ── Cross-Domain ───────────────────────────────────────────────────────────
+  cds-guard:
+    suggestions:
+      - "Cross-Domain Guards are required for any data transfer between classification levels"
+      - "Must be on the approved products list (APL) for the classification boundary"
+      - "Configure unidirectional or bidirectional based on mission requirements"
+    checklist:
+      guard_type:
+        required: true
+        options: [unidirectional, bidirectional, high-to-low, low-to-high]
+      classification_from:
+        required: true
+        options: [unclassified, CUI, SECRET, TOP_SECRET]
+      classification_to:
+        required: true
+        options: [unclassified, CUI, SECRET, TOP_SECRET]
+    warnings:
+      - condition: no_boundary_nodes
+        severity: critical
+        message: "CDS Guard must connect boundary nodes on both sides"
+
+  cds-emulator:
+    suggestions:
+      - "Use CDS Emulator for dev/test environments — never in production"
+      - "Emulates guard behavior without actual cross-domain hardware"
+      - "Useful for testing pipeline flow before hardware procurement"
+    warnings:
+      - condition: connected_to_production
+        severity: critical
+        message: "CDS Emulator must NEVER be used in production — use real CDS Guard"
+
+  cds-data-diode:
+    suggestions:
+      - "Hardware data diodes enforce one-way data flow (physically prevents reverse)"
+      - "Common for transferring vulnerability DBs and packages into air-gapped networks"
+    checklist:
+      direction:
+        required: true
+        options: [low_to_high, high_to_low]
+        hint: "low_to_high: commercial → classified; high_to_low: exfiltration risk, requires review"
+
+  sneakernet:
+    suggestions:
+      - "Physical media transfer for fully air-gapped environments"
+      - "Requires media scanning before import (prevent supply chain attacks)"
+      - "Establish regular cadence (weekly/monthly) for DB and package updates"
+
+  vuln-db-mirror:
+    suggestions:
+      - "Required for any air-gapped pipeline that uses vulnerability scanning"
+      - "Mirror NVD, OSV, and vendor advisory databases"
+      - "Transfer via data diode or sneakernet on regular schedule"
+
+  package-mirror:
+    suggestions:
+      - "Required for air-gapped pipelines that build from dependencies"
+      - "Mirror: PyPI (devpi), npm (Verdaccio), Maven (Nexus), Go (Athens), Cargo"
+      - "Scan all packages before importing into classified network"
+
+  # ── Monitoring ─────────────────────────────────────────────────────────────
+  mon-falco:
+    suggestions:
+      - "Falco detects runtime threats via eBPF syscall monitoring"
+      - "Big Bang core package for DoD deployments"
+      - "Configure custom rules for application-specific threat detection"
+    auto_suggest_connections:
+      - match_type: comp-evidence
+        message: "Feed Falco alerts into evidence locker for compliance"
+
+  mon-prometheus:
+    suggestions:
+      - "Prometheus is the standard for K8s metrics collection"
+      - "Big Bang core package — pair with Grafana for visualization"
+    auto_suggest_connections:
+      - match_type: mon-grafana
+        message: "Add Grafana for dashboards and alerting"
+
+  # ── Compliance ─────────────────────────────────────────────────────────────
+  comp-evidence:
+    suggestions:
+      - "Evidence locker stores signed artifacts from every pipeline stage"
+      - "IBM pattern: Git repo or Cloud Object Storage for evidence"
+      - "Required for FedRAMP continuous monitoring and cATO"
+    auto_suggest_connections:
+      - match_type: comp-oscal
+        message: "Export evidence as NIST OSCAL for ATO package"
+
+  comp-oscal:
+    suggestions:
+      - "OSCAL (Open Security Controls Assessment Language) is NIST standard"
+      - "Generates SSP, POAM, and Assessment Results for ATO"
+      - "Required for FedRAMP and recommended for CMMC"

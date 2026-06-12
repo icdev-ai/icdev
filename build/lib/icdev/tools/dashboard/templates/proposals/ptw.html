@@ -1,0 +1,577 @@
+{% extends "base.html" %}
+{% block title %}PTW Workspace — {{ opp.title }} - ICDEV™{% endblock %}
+
+{% block content %}
+<div class="breadcrumbs">
+    <a href="/">Home</a><span class="separator">/</span>
+    <a href="/proposals">Proposals</a><span class="separator">/</span>
+    <a href="/proposals/{{ opp.id }}">{{ opp.title }}</a><span class="separator">/</span>
+    <span>Black-hat / PTW</span>
+</div>
+
+<div class="page-header" style="display:flex; justify-content:space-between; align-items:flex-start;">
+    <div>
+        <h1>Black-hat / PTW Workspace</h1>
+        <p class="subtitle">{{ opp.solicitation_number }} &mdash; {{ opp.agency }}
+            {% if opp.naics_code %} &mdash; NAICS {{ opp.naics_code }}{% endif %}
+        </p>
+        <div style="margin-top:4px;">
+            <span class="badge badge-warning">CUI // SP-CTI</span>
+            <span class="badge badge-info">prop-cap-13</span>
+        </div>
+    </div>
+    <div>
+        <a href="/proposals/{{ opp.id }}" class="btn btn-secondary btn-sm">&larr; Back to Proposal</a>
+    </div>
+</div>
+
+<!-- Stat Row -->
+<div class="stat-grid" style="grid-template-columns:repeat(4,1fr); margin-top:16px;" id="ptw-stats">
+    <div class="stat-card">
+        <div class="stat-value" id="stat-bh-count">{{ assessments|length }}</div>
+        <div class="stat-label">Black-hat Models</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-ptw-low">
+            {% if ptw.ptw_range %}${{ ptw.ptw_range.low|round(0)|int }}{% else %}—{% endif %}
+        </div>
+        <div class="stat-label">PTW Low ($)</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-ptw-high">
+            {% if ptw.ptw_range %}${{ ptw.ptw_range.high|round(0)|int }}{% else %}—{% endif %}
+        </div>
+        <div class="stat-label">PTW High ($)</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value" id="stat-bid-score" style="color:{% if bid_score and bid_score.recommendation == 'BID' %}var(--status-green){% elif bid_score and bid_score.recommendation == 'NO_BID' %}var(--status-red){% else %}var(--text-secondary){% endif %};">
+            {% if bid_score %}{{ bid_score.recommendation }}{% else %}—{% endif %}
+        </div>
+        <div class="stat-label">Bid Score
+            {% if bid_score %}<small style="font-size:10px; color:var(--text-secondary);">({{ (bid_score.composite_score * 100)|round(0)|int }}%)</small>{% endif %}
+        </div>
+    </div>
+</div>
+
+{% if ptw.scg_warning %}
+<div class="card" style="padding:10px 14px; margin-top:12px; border-left:3px solid #f59e0b; background:rgba(245,158,11,0.07); font-size:12px;">
+    <strong style="color:#f59e0b;">SCG-AGG-003:</strong> {{ ptw.scg_warning }}
+</div>
+{% endif %}
+
+<!-- Main Layout: two columns -->
+<div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:20px;">
+
+    <!-- LEFT: Competitor Leaderboard -->
+    <div>
+        <div class="card" style="padding:16px;">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+                <strong>Competitor Leaderboard</strong>
+                <div style="display:flex; gap:6px;">
+                    <input type="text" id="lb-naics-filter" placeholder="NAICS" style="width:90px; font-size:12px; padding:4px 8px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:4px; color:var(--text-primary);" value="{{ opp.naics_code or '' }}">
+                    <button class="btn btn-secondary btn-sm" onclick="loadLeaderboard()">Refresh</button>
+                </div>
+            </div>
+            <div id="leaderboard-body">
+                <table style="width:100%; font-size:12px; border-collapse:collapse;">
+                    <thead>
+                        <tr style="color:var(--text-secondary); border-bottom:1px solid var(--border-color);">
+                            <th style="text-align:left; padding:4px 6px;">#</th>
+                            <th style="text-align:left; padding:4px 6px;">Vendor</th>
+                            <th style="text-align:right; padding:4px 6px;">Awards</th>
+                            <th style="text-align:right; padding:4px 6px;">Avg ($K)</th>
+                            <th style="text-align:center; padding:4px 6px;">Div</th>
+                            <th style="text-align:center; padding:4px 6px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="lb-tbody">
+                        <tr><td colspan="6" style="text-align:center; color:var(--text-secondary); padding:12px;">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Vendor Profile Lookup -->
+        <div class="card" style="padding:16px; margin-top:12px;">
+            <strong style="display:block; margin-bottom:10px;">Vendor Intelligence Profile</strong>
+            <div style="display:flex; gap:6px; margin-bottom:12px;">
+                <input type="text" id="vendor-search-input" placeholder="Vendor name (partial match)..."
+                       style="flex:1; font-size:12px; padding:6px 10px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:4px; color:var(--text-primary);">
+                <button class="btn btn-primary btn-sm" onclick="lookupVendor()">Profile</button>
+            </div>
+            <div id="vendor-profile-result" style="display:none;">
+                <div id="vendor-profile-content"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- RIGHT: PTW Analysis + Bid Scorer -->
+    <div>
+        <!-- PTW Analysis -->
+        <div class="card" style="padding:16px;">
+            <strong style="display:block; margin-bottom:12px;">Price-to-Win Analysis</strong>
+            {% if ptw.message %}
+            <div style="color:var(--text-secondary); font-size:13px; padding:8px;">{{ ptw.message }}</div>
+            {% elif ptw.ptw_range %}
+            <div class="stat-grid" style="grid-template-columns:repeat(3,1fr); gap:8px; margin-bottom:12px;">
+                <div class="stat-card" style="padding:10px;">
+                    <div class="stat-value" style="font-size:18px;">${{ ptw.ptw_range.low|round(0)|int }}</div>
+                    <div class="stat-label">PTW Low</div>
+                </div>
+                <div class="stat-card" style="padding:10px;">
+                    <div class="stat-value" style="font-size:18px;">${{ ptw.ptw_range.median|round(0)|int }}</div>
+                    <div class="stat-label">PTW Median</div>
+                </div>
+                <div class="stat-card" style="padding:10px;">
+                    <div class="stat-value" style="font-size:18px;">${{ ptw.ptw_range.high|round(0)|int }}</div>
+                    <div class="stat-label">PTW High</div>
+                </div>
+            </div>
+            <div style="font-size:12px; color:var(--text-secondary); margin-bottom:12px;">
+                Based on {{ ptw.award_amounts_analyzed }} competitor awards
+                &bull; Confidence: {{ (ptw.confidence * 100)|round(0)|int }}%
+            </div>
+            <!-- Strategy Cards -->
+            <div style="display:flex; flex-direction:column; gap:6px;">
+                {% for strat_key, strat in ptw.strategies.items() %}
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px;
+                     background:var(--bg-secondary); border-radius:6px; border:1px solid var(--border-color);">
+                    <div>
+                        <strong style="font-size:12px; text-transform:capitalize;">{{ strat_key }}</strong>
+                        <span style="font-size:11px; color:var(--text-secondary); margin-left:8px;">{{ strat.win_probability }}</span>
+                    </div>
+                    <div style="text-align:right;">
+                        <div style="font-size:14px; font-weight:bold;">${{ strat.target|round(0)|int }}</div>
+                        <div style="font-size:10px; color:var(--text-secondary);">Risk: {{ strat.risk }}</div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div style="color:var(--text-secondary); font-size:13px;">No competitor award data available. Add competitor award data to run PTW analysis.</div>
+            {% endif %}
+        </div>
+
+        <!-- Bayesian Bid Scorer -->
+        <div class="card" style="padding:16px; margin-top:12px;">
+            <strong style="display:block; margin-bottom:12px;">Bayesian Bid Scorer</strong>
+            <div id="bid-score-panel">
+                {% if bid_score %}
+                <div style="display:flex; gap:12px; margin-bottom:12px; align-items:center;">
+                    <div style="font-size:36px; font-weight:bold;
+                         color:{% if bid_score.recommendation == 'BID' %}var(--status-green){% elif bid_score.recommendation == 'NO_BID' %}var(--status-red){% else %}#f59e0b{% endif %};">
+                        {{ bid_score.recommendation }}
+                    </div>
+                    <div>
+                        <div style="font-size:18px; font-weight:bold;">{{ (bid_score.composite_score * 100)|round(1) }}%</div>
+                        <div style="font-size:12px; color:var(--text-secondary);">Composite Score ({{ bid_score.method }})</div>
+                    </div>
+                </div>
+                {% if bid_score.contributions %}
+                <table style="width:100%; font-size:11px; border-collapse:collapse; margin-bottom:8px;">
+                    <thead>
+                        <tr style="color:var(--text-secondary);">
+                            <th style="text-align:left; padding:3px 6px;">Dimension</th>
+                            <th style="text-align:right; padding:3px 6px;">Score</th>
+                            <th style="text-align:right; padding:3px 6px;">Weight</th>
+                            <th style="padding:3px 6px;">Bar</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for dim, contrib in bid_score.contributions.items() %}
+                        <tr style="border-bottom:1px solid var(--border-color);">
+                            <td style="padding:3px 6px; text-transform:replace_all">{{ dim | replace('_', ' ') | title }}</td>
+                            <td style="text-align:right; padding:3px 6px;">{{ (contrib.score * 100)|round(0)|int }}%</td>
+                            <td style="text-align:right; padding:3px 6px; color:var(--text-secondary);">{{ (contrib.weight * 100)|round(1) }}%</td>
+                            <td style="padding:3px 6px; width:80px;">
+                                <div style="background:var(--bg-secondary); border-radius:2px; height:6px; overflow:hidden;">
+                                    <div style="background:var(--primary,#3b82f6); height:100%; width:{{ (contrib.score * 100)|round(0)|int }}%;"></div>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% endif %}
+                {% else %}
+                <div style="font-size:13px; color:var(--text-secondary); margin-bottom:12px;">Enter dimension scores (0–100%) to compute bid recommendation.</div>
+                {% endif %}
+            </div>
+            <!-- Dimension sliders for re-scoring -->
+            <div id="scorer-form" style="margin-top:12px;">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px;">
+                    {% set dims = [('capability_fit','Capability Fit'),('past_performance','Past Perf.'),('competitive_position','Comp. Position'),('compliance_readiness','Compliance'),('resource_availability','Resources'),('strategic_alignment','Strategic Fit')] %}
+                    {% for dim_key, dim_label in dims %}
+                    <div>
+                        <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-secondary); margin-bottom:2px;">
+                            <span>{{ dim_label }}</span>
+                            <span id="lbl-{{ dim_key }}">{% if bid_score and bid_score.contributions and dim_key in bid_score.contributions %}{{ (bid_score.contributions[dim_key].score * 100)|round(0)|int }}%{% else %}50%{% endif %}</span>
+                        </div>
+                        <input type="range" min="0" max="100" value="{% if bid_score and bid_score.contributions and dim_key in bid_score.contributions %}{{ (bid_score.contributions[dim_key].score * 100)|round(0)|int }}{% else %}50{% endif %}"
+                               class="dim-slider" data-dim="{{ dim_key }}"
+                               oninput="document.getElementById('lbl-{{ dim_key }}').textContent=this.value+'%'"
+                               style="width:100%;">
+                    </div>
+                    {% endfor %}
+                </div>
+                <button class="btn btn-primary btn-sm" onclick="runBidScore()" style="width:100%;">Re-Score Opportunity</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Black-hat Competitor Models -->
+<div class="card" style="padding:16px; margin-top:20px;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+        <strong>Black-hat Competitor Models</strong>
+        <button class="btn btn-primary btn-sm" onclick="openBhModal()">+ Add Model</button>
+    </div>
+    <div id="bh-table-wrap">
+        <table id="bh-table" style="width:100%; font-size:12px; border-collapse:collapse;">
+            <thead>
+                <tr style="color:var(--text-secondary); border-bottom:1px solid var(--border-color);">
+                    <th style="text-align:left; padding:6px 8px;">Competitor</th>
+                    <th style="text-align:left; padding:6px 8px;">Approach Hypothesis</th>
+                    <th style="text-align:center; padding:6px 8px;">PTW Posture</th>
+                    <th style="text-align:right; padding:6px 8px;">Est. Low ($)</th>
+                    <th style="text-align:right; padding:6px 8px;">Est. High ($)</th>
+                    <th style="text-align:left; padding:6px 8px;">Win Strategy vs. Them</th>
+                    <th style="text-align:center; padding:6px 8px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="bh-tbody">
+                {% if assessments %}
+                {% for a in assessments %}
+                <tr style="border-bottom:1px solid var(--border-color);" id="bh-row-{{ a.id }}">
+                    <td style="padding:6px 8px; font-weight:500;">{{ a.competitor_name }}</td>
+                    <td style="padding:6px 8px; max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{{ a.approach_hypothesis or '' }}">
+                        {{ a.approach_hypothesis or '—' }}
+                    </td>
+                    <td style="padding:6px 8px; text-align:center;">
+                        {% set posture_colors = {'lpta':'info','aggressive':'error','competitive':'warning','premium':'success','unknown':'info'} %}
+                        <span class="badge badge-{{ posture_colors.get(a.ptw_posture, 'info') }}">{{ (a.ptw_posture or 'unknown') | upper }}</span>
+                    </td>
+                    <td style="padding:6px 8px; text-align:right;">
+                        {% if a.price_estimate_low_masked %}<span class="badge badge-warning">REDACTED</span>
+                        {% elif a.price_estimate_low %}${{ a.price_estimate_low|round(0)|int }}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td style="padding:6px 8px; text-align:right;">
+                        {% if a.price_estimate_high_masked %}<span class="badge badge-warning">REDACTED</span>
+                        {% elif a.price_estimate_high %}${{ a.price_estimate_high|round(0)|int }}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td style="padding:6px 8px; max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="{{ a.win_strategy or '' }}">
+                        {{ a.win_strategy or '—' }}
+                    </td>
+                    <td style="padding:6px 8px; text-align:center; white-space:nowrap;">
+                        <button class="btn btn-secondary btn-sm" onclick="editBhModel('{{ a.id }}')" style="margin-right:4px;">Edit</button>
+                        <button class="btn btn-secondary btn-sm" onclick="deleteBhModel('{{ a.id }}')" style="color:var(--status-red);">Del</button>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% else %}
+                <tr id="bh-empty-row">
+                    <td colspan="7" style="text-align:center; color:var(--text-secondary); padding:20px;">
+                        No black-hat models yet. Use "+ Add Model" to model a competitor's likely approach.
+                    </td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "govcon" %}
+{% set iqe_examples = [
+    {"label": "Top competitors by NAICS", "query": "show top competitors for NAICS " ~ (opp.naics_code or "541512")},
+    {"label": "PTW range summary", "query": "what is the price-to-win range for opportunity " ~ opp.id},
+    {"label": "Competitor award history", "query": "list competitor award history for agency " ~ (opp.agency or "DoD")}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
+<!-- Add / Edit Black-hat Modal -->
+<div id="bh-modal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%;
+     background:rgba(0,0,0,0.6); z-index:1000; align-items:center; justify-content:center;">
+    <div style="background:var(--bg-primary); border:1px solid var(--border-color); border-radius:8px;
+         padding:24px; width:640px; max-width:95vw; max-height:90vh; overflow-y:auto;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+            <strong id="bh-modal-title">Add Black-hat Model</strong>
+            <button onclick="closeBhModal()" style="background:none; border:none; color:var(--text-secondary); font-size:20px; cursor:pointer;">&times;</button>
+        </div>
+        <input type="hidden" id="bh-edit-id">
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+            <div>
+                <label style="font-size:12px; color:var(--text-secondary);">Competitor Name *</label>
+                <input type="text" id="bh-competitor-name" style="width:100%; box-sizing:border-box; padding:6px 10px; margin-top:4px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:4px; color:var(--text-primary);" placeholder="e.g., Booz Allen Hamilton">
+            </div>
+            <div>
+                <label style="font-size:12px; color:var(--text-secondary);">PTW Posture</label>
+                <select id="bh-ptw-posture" style="width:100%; box-sizing:border-box; padding:6px 10px; margin-top:4px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:4px; color:var(--text-primary);">
+                    <option value="competitive">Competitive (median pricing)</option>
+                    <option value="aggressive">Aggressive (undercut market)</option>
+                    <option value="lpta">LPTA (lowest price wins)</option>
+                    <option value="premium">Premium (best-value play)</option>
+                    <option value="unknown">Unknown</option>
+                </select>
+            </div>
+            <div>
+                <label style="font-size:12px; color:var(--text-secondary);">Price Estimate Low ($)</label>
+                <input type="number" id="bh-price-low" step="1000" style="width:100%; box-sizing:border-box; padding:6px 10px; margin-top:4px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:4px; color:var(--text-primary);" placeholder="0">
+            </div>
+            <div>
+                <label style="font-size:12px; color:var(--text-secondary);">Price Estimate High ($)</label>
+                <input type="number" id="bh-price-high" step="1000" style="width:100%; box-sizing:border-box; padding:6px 10px; margin-top:4px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:4px; color:var(--text-primary);" placeholder="0">
+            </div>
+        </div>
+        <div style="margin-bottom:12px;">
+            <label style="font-size:12px; color:var(--text-secondary);">Approach Hypothesis</label>
+            <textarea id="bh-approach" rows="2" style="width:100%; box-sizing:border-box; padding:6px 10px; margin-top:4px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:4px; color:var(--text-primary); resize:vertical;" placeholder="How will they likely approach this bid?"></textarea>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+            <div>
+                <label style="font-size:12px; color:var(--text-secondary);">Their Strengths</label>
+                <textarea id="bh-strengths" rows="2" style="width:100%; box-sizing:border-box; padding:6px 10px; margin-top:4px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:4px; color:var(--text-primary); resize:vertical;" placeholder="Past performance, incumbency..."></textarea>
+            </div>
+            <div>
+                <label style="font-size:12px; color:var(--text-secondary);">Their Weaknesses</label>
+                <textarea id="bh-weaknesses" rows="2" style="width:100%; box-sizing:border-box; padding:6px 10px; margin-top:4px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:4px; color:var(--text-primary); resize:vertical;" placeholder="Resource gaps, cost structure..."></textarea>
+            </div>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+            <div>
+                <label style="font-size:12px; color:var(--text-secondary);">Our Win Strategy vs. Them</label>
+                <textarea id="bh-win-strategy" rows="2" style="width:100%; box-sizing:border-box; padding:6px 10px; margin-top:4px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:4px; color:var(--text-primary); resize:vertical;" placeholder="How we beat them..."></textarea>
+            </div>
+            <div>
+                <label style="font-size:12px; color:var(--text-secondary);">Our Key Differentiators</label>
+                <textarea id="bh-differentiators" rows="2" style="width:100%; box-sizing:border-box; padding:6px 10px; margin-top:4px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:4px; color:var(--text-primary); resize:vertical;" placeholder="What makes us better..."></textarea>
+            </div>
+        </div>
+        <div style="margin-bottom:16px;">
+            <label style="font-size:12px; color:var(--text-secondary);">Risk Factors (if they win)</label>
+            <textarea id="bh-risk-factors" rows="2" style="width:100%; box-sizing:border-box; padding:6px 10px; margin-top:4px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:4px; color:var(--text-primary); resize:vertical;" placeholder="Market impact, competitive risk..."></textarea>
+        </div>
+        <div style="display:flex; gap:8px; justify-content:flex-end;">
+            <button class="btn btn-secondary" onclick="closeBhModal()">Cancel</button>
+            <button class="btn btn-primary" onclick="saveBhModel()">Save Model</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const OPP_ID = "{{ opp.id }}";
+const API_BASE = "/api/proposals";
+
+// ── Leaderboard ──────────────────────────────────────────────────────────
+
+function loadLeaderboard() {
+    var naics = document.getElementById('lb-naics-filter').value.trim();
+    var url = API_BASE + '/opportunities/' + OPP_ID + '/ptw/leaderboard';
+    if (naics) url += '?naics=' + encodeURIComponent(naics);
+    fetch(url)
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            var tbody = document.getElementById('lb-tbody');
+            var lb = data.leaderboard || [];
+            if (!lb.length) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--text-secondary); padding:12px;">No award data found</td></tr>';
+                return;
+            }
+            tbody.innerHTML = lb.map(function(v) {
+                var avgK = v.avg_value ? (v.avg_value / 1000).toFixed(0) : '—';
+                var div = Math.max(v.naics_diversity || 0, v.agency_diversity || 0);
+                return '<tr style="border-bottom:1px solid var(--border-color);">' +
+                    '<td style="padding:4px 6px; color:var(--text-secondary);">' + v.rank + '</td>' +
+                    '<td style="padding:4px 6px; font-weight:500; max-width:160px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" title="' + v.vendor + '">' + v.vendor + '</td>' +
+                    '<td style="padding:4px 6px; text-align:right;">' + (v.awards || 0) + '</td>' +
+                    '<td style="padding:4px 6px; text-align:right;">$' + avgK + 'K</td>' +
+                    '<td style="padding:4px 6px; text-align:center; color:var(--text-secondary);">' + div + '</td>' +
+                    '<td style="padding:4px 6px; text-align:center;"><button class="btn btn-secondary btn-sm" onclick="prefillBhFromLeaderboard(\'' + v.vendor.replace(/'/g, "\\'") + '\',' + v.rank + ',' + (v.awards || 0) + ',' + (v.total_value || 0) + ',' + (v.naics_diversity || 0) + ',' + (v.agency_diversity || 0) + ')" style="font-size:10px; padding:2px 6px;">+ Model</button></td>' +
+                    '</tr>';
+            }).join('');
+            if (data.scg_warning) {
+                console.warn('SCG:', data.scg_warning);
+            }
+        })
+        .catch(function() {
+            document.getElementById('lb-tbody').innerHTML = '<tr><td colspan="6" style="text-align:center; color:var(--status-red); padding:12px;">Failed to load leaderboard</td></tr>';
+        });
+}
+
+// ── Vendor Profile ───────────────────────────────────────────────────────
+
+function lookupVendor() {
+    var vendor = document.getElementById('vendor-search-input').value.trim();
+    if (!vendor) return;
+    var panel = document.getElementById('vendor-profile-result');
+    var content = document.getElementById('vendor-profile-content');
+    panel.style.display = 'block';
+    content.innerHTML = '<div style="color:var(--text-secondary); font-size:12px; padding:8px;">Loading...</div>';
+    fetch(API_BASE + '/opportunities/' + OPP_ID + '/ptw/vendor-profile', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({vendor_name: vendor})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (d.message) {
+            content.innerHTML = '<div style="color:var(--text-secondary); font-size:12px; padding:8px;">' + d.message + '</div>';
+            return;
+        }
+        var agencyRows = Object.entries(d.agencies || {}).slice(0, 5).map(function(kv) {
+            return '<tr><td style="padding:2px 6px;">' + kv[0] + '</td><td style="padding:2px 6px; text-align:right;">' + kv[1].count + '</td></tr>';
+        }).join('');
+        content.innerHTML = [
+            '<div style="margin-bottom:8px;">',
+            '<strong>' + d.vendor + '</strong>',
+            '<span style="font-size:11px; color:var(--text-secondary); margin-left:8px;">' + d.total_awards + ' awards &bull; $' + ((d.total_value || 0) / 1e6).toFixed(1) + 'M total</span>',
+            '</div>',
+            agencyRows ? ('<table style="font-size:11px; width:100%; border-collapse:collapse; margin-bottom:8px;"><thead><tr><th style="text-align:left; padding:2px 6px; color:var(--text-secondary);">Agency</th><th style="text-align:right; padding:2px 6px; color:var(--text-secondary);">Awards</th></tr></thead><tbody>' + agencyRows + '</tbody></table>') : '',
+            '<button class="btn btn-secondary btn-sm" onclick="prefillBhFromVendorProfile(\'' + d.vendor.replace(/'/g, "\\'") + '\')" style="font-size:11px;">+ Add as Black-hat Model</button>'
+        ].join('');
+    })
+    .catch(function() {
+        content.innerHTML = '<div style="color:var(--status-red); font-size:12px; padding:8px;">Profile lookup failed</div>';
+    });
+}
+
+// ── Bid Scorer ───────────────────────────────────────────────────────────
+
+function runBidScore() {
+    var dims = {};
+    document.querySelectorAll('.dim-slider').forEach(function(el) {
+        dims[el.dataset.dim] = parseInt(el.value, 10) / 100;
+    });
+    fetch(API_BASE + '/opportunities/' + OPP_ID + '/ptw/bid-score', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({dimensions: dims})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+        var s = data.score;
+        if (!s) return;
+        var recColor = s.recommendation === 'BID' ? 'var(--status-green)' : s.recommendation === 'NO_BID' ? 'var(--status-red)' : '#f59e0b';
+        var rows = '';
+        if (s.contributions) {
+            Object.entries(s.contributions).forEach(function(kv) {
+                var dim = kv[0]; var c = kv[1];
+                rows += '<tr style="border-bottom:1px solid var(--border-color);"><td style="padding:3px 6px;">' + dim.replace(/_/g,' ') + '</td><td style="text-align:right; padding:3px 6px;">' + Math.round(c.score*100) + '%</td><td style="text-align:right; padding:3px 6px; color:var(--text-secondary);">' + Math.round(c.weight*100*10)/10 + '%</td><td style="padding:3px 6px; width:80px;"><div style="background:var(--bg-secondary); border-radius:2px; height:6px; overflow:hidden;"><div style="background:var(--primary,#3b82f6); height:100%; width:' + Math.round(c.score*100) + '%;"></div></div></td></tr>';
+            });
+        }
+        document.getElementById('bid-score-panel').innerHTML = [
+            '<div style="display:flex; gap:12px; margin-bottom:12px; align-items:center;">',
+            '<div style="font-size:36px; font-weight:bold; color:' + recColor + ';">' + s.recommendation + '</div>',
+            '<div><div style="font-size:18px; font-weight:bold;">' + Math.round(s.composite_score * 1000) / 10 + '%</div>',
+            '<div style="font-size:12px; color:var(--text-secondary);">Composite Score (' + s.method + ')</div></div>',
+            '</div>',
+            rows ? ('<table style="width:100%; font-size:11px; border-collapse:collapse;"><thead><tr style="color:var(--text-secondary);"><th style="text-align:left; padding:3px 6px;">Dimension</th><th style="text-align:right; padding:3px 6px;">Score</th><th style="text-align:right; padding:3px 6px;">Weight</th><th style="padding:3px 6px;">Bar</th></tr></thead><tbody>' + rows + '</tbody></table>') : ''
+        ].join('');
+
+        // Update stat
+        document.getElementById('stat-bid-score').textContent = s.recommendation;
+        document.getElementById('stat-bid-score').style.color = recColor;
+    });
+}
+
+// ── Black-hat Models ─────────────────────────────────────────────────────
+
+function openBhModal() {
+    document.getElementById('bh-edit-id').value = '';
+    document.getElementById('bh-modal-title').textContent = 'Add Black-hat Model';
+    ['bh-competitor-name','bh-approach','bh-strengths','bh-weaknesses','bh-win-strategy','bh-differentiators','bh-risk-factors'].forEach(function(id) {
+        document.getElementById(id).value = '';
+    });
+    document.getElementById('bh-price-low').value = '';
+    document.getElementById('bh-price-high').value = '';
+    document.getElementById('bh-ptw-posture').value = 'competitive';
+    document.getElementById('bh-modal').style.display = 'flex';
+}
+
+function closeBhModal() {
+    document.getElementById('bh-modal').style.display = 'none';
+}
+
+function prefillBhFromLeaderboard(vendor, rank, awards, totalVal, naicsDiversity, agencyDiversity) {
+    openBhModal();
+    document.getElementById('bh-competitor-name').value = vendor;
+}
+
+function prefillBhFromVendorProfile(vendor) {
+    openBhModal();
+    document.getElementById('bh-competitor-name').value = vendor;
+}
+
+function saveBhModel() {
+    var id = document.getElementById('bh-edit-id').value;
+    var body = {
+        competitor_name: document.getElementById('bh-competitor-name').value.trim(),
+        ptw_posture: document.getElementById('bh-ptw-posture').value,
+        approach_hypothesis: document.getElementById('bh-approach').value.trim() || null,
+        strengths: document.getElementById('bh-strengths').value.trim() || null,
+        weaknesses: document.getElementById('bh-weaknesses').value.trim() || null,
+        win_strategy: document.getElementById('bh-win-strategy').value.trim() || null,
+        differentiators: document.getElementById('bh-differentiators').value.trim() || null,
+        risk_factors: document.getElementById('bh-risk-factors').value.trim() || null,
+    };
+    var pLow = parseFloat(document.getElementById('bh-price-low').value);
+    var pHigh = parseFloat(document.getElementById('bh-price-high').value);
+    if (!isNaN(pLow)) body.price_estimate_low = pLow;
+    if (!isNaN(pHigh)) body.price_estimate_high = pHigh;
+
+    if (!body.competitor_name) {
+        alert('Competitor name is required');
+        return;
+    }
+
+    var url, method;
+    if (id) {
+        url = API_BASE + '/blackhat/' + id;
+        method = 'PUT';
+    } else {
+        url = API_BASE + '/opportunities/' + OPP_ID + '/ptw/blackhat';
+        method = 'POST';
+    }
+
+    fetch(url, {method: method, headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+            if (data.error) { alert('Error: ' + data.error); return; }
+            closeBhModal();
+            window.location.reload();
+        });
+}
+
+function editBhModel(id) {
+    // Fetch current row data from DOM, populate modal
+    document.getElementById('bh-edit-id').value = id;
+    document.getElementById('bh-modal-title').textContent = 'Edit Black-hat Model';
+    document.getElementById('bh-modal').style.display = 'flex';
+    // Note: in a full implementation we'd pre-populate fields from a server fetch
+    // For now the row stays visible and the user edits in the modal
+}
+
+function deleteBhModel(id) {
+    if (!confirm('Delete this black-hat model?')) return;
+    fetch(API_BASE + '/blackhat/' + id, {method: 'DELETE'})
+        .then(function(r) { return r.json(); })
+        .then(function() {
+            var row = document.getElementById('bh-row-' + id);
+            if (row) row.remove();
+            var count = document.querySelectorAll('#bh-tbody tr[id^="bh-row-"]').length;
+            document.getElementById('stat-bh-count').textContent = count;
+            if (count === 0) {
+                document.getElementById('bh-tbody').innerHTML = '<tr id="bh-empty-row"><td colspan="7" style="text-align:center; color:var(--text-secondary); padding:20px;">No black-hat models yet. Use &quot;+ Add Model&quot; to model a competitor&#39;s likely approach.</td></tr>';
+            }
+        });
+}
+
+// ── Init ─────────────────────────────────────────────────────────────────
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadLeaderboard();
+});
+</script>
+{% endblock %}

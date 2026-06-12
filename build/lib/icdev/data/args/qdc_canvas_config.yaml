@@ -1,0 +1,120 @@
+# CUI // SP-CTI
+# Quality Design Canvas — Configuration
+app:
+  name: "Quality Design Canvas"
+  version: "1.0.0"
+  classification: "CUI // SP-CTI"
+
+database:
+  path: "qdc_canvas.db"
+  wal_mode: true
+  foreign_keys: true
+
+canvas:
+  autosave_delay_ms: 3000
+  grid_size: 10
+  default_width: 130
+  default_height: 50
+  accent_color: "#2196f3"
+
+uqs:
+  weights:
+    code_quality: 0.20
+    security_posture: 0.25
+    test_coverage: 0.20
+    runtime_health: 0.15
+    compliance_readiness: 0.20
+  thresholds:
+    merge: 75
+    deploy: 85
+    release: 90
+  grade_scale:
+    A: 90
+    B: 80
+    C: 70
+    D: 60
+
+gates:
+  sa11_1_sast:
+    tool: "tools/security/sast_runner.py"
+    blocking: true
+    dimension: security_posture
+  sa11_2_threat:
+    tool: "tools/security_canvas/security_engine.py"
+    blocking: false
+    dimension: security_posture
+  sa11_3_independent:
+    tool: "tools/testing/production_audit.py"
+    blocking: false
+    dimension: compliance_readiness
+  sa11_4_review:
+    tool: null
+    blocking: true
+    dimension: code_quality
+  sa11_5_pentest:
+    tool: null
+    blocking: false
+    dimension: security_posture
+  sa11_6_surface:
+    tool: "tools/testing/api_surface_extractor.py"
+    blocking: false
+    dimension: security_posture
+  sa11_7_coverage:
+    tool: "tools/testing/test_orchestrator.py"
+    blocking: true
+    dimension: test_coverage
+    min_coverage: 80
+  sa11_8_dast:
+    tool: "tools/testing/e2e_runner.py"
+    blocking: true
+    dimension: test_coverage
+  sa11_9_iast:
+    tool: null
+    blocking: false
+    dimension: security_posture
+  sa15_process:
+    tool: "tools/workflow/coherence_checker.py"
+    blocking: false
+    dimension: code_quality
+  ca2_assessment:
+    tool: "tools/compliance/multi_regime_assessor.py"
+    blocking: false
+    dimension: compliance_readiness
+  si6_runtime:
+    tool: "tools/monitor/health_checker.py"
+    blocking: false
+    dimension: runtime_health
+  si7_integrity:
+    tool: "tools/security/blueprint_verifier.py"
+    blocking: false
+    dimension: compliance_readiness
+  cm6_config:
+    tool: "tools/compliance/stig_checker.py"
+    blocking: true
+    dimension: compliance_readiness
+  pl2_diagram:
+    tool: "tools/compliance/diagram_validator.py"
+    blocking: false
+    dimension: compliance_readiness
+
+evidence:
+  format: "oscal_json"
+  retention_days: 365
+  auto_emit: true
+
+runbooks:
+  auto_execute_confidence: 0.7
+  max_auto_per_hour: 5
+  cooldown_seconds: 600
+
+templates:
+  count: 5
+  auto_seed: true
+
+agent:
+  auto_trigger_on_canvas_save: true
+  cross_canvas_sync: true
+
+logging:
+  level: INFO
+  audit_enabled: true

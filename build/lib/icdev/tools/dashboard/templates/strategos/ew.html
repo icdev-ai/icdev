@@ -1,0 +1,544 @@
+{% extends "base.html" %}
+{% set active = "strategos" %}
+{% block title %}EW Jamming Zones &amp; Supply Chain Overlay — Strategos{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+.ew-grid {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    gap: 1rem;
+    min-height: 540px;
+}
+.ew-map-panel {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.ew-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+.panel-title {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    padding: 0.75rem 1rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+.panel-title .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent-blue);
+    display: inline-block;
+}
+
+/* ── Map ─────────────────────────────────────────────────────────────────── */
+#ew-map {
+    flex: 1;
+    min-height: 500px;
+}
+
+/* ── Layer controls ──────────────────────────────────────────────────────── */
+.layer-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+.layer-btn {
+    padding: 0.2rem 0.65rem;
+    border-radius: 20px;
+    border: 1px solid var(--border-color);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.72rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+.layer-btn.active { color: #fff; border-color: transparent; }
+.layer-btn.lyr-r330.active   { background: #ef4444; }
+.layer-btn.lyr-kr4.active    { background: #f97316; }
+.layer-btn.lyr-supply.active { background: #3b82f6; }
+.layer-btn.lyr-choke.active  { background: #14b8a6; }
+
+/* ── Summary strip ───────────────────────────────────────────────────────── */
+.summary-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.75rem;
+    margin-bottom: 0.25rem;
+}
+.summary-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+    text-align: center;
+}
+.summary-val {
+    font-size: 1.6rem;
+    font-weight: 700;
+    line-height: 1;
+}
+.summary-label {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-top: 0.3rem;
+}
+
+/* ── Site table ──────────────────────────────────────────────────────────── */
+.site-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.78rem;
+}
+.site-table th {
+    padding: 0.4rem 0.6rem;
+    text-align: left;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+.site-table td {
+    padding: 0.4rem 0.6rem;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    color: var(--text-secondary);
+}
+.site-table tr:last-child td { border-bottom: none; }
+.site-table tr:hover td { background: rgba(255,255,255,0.03); }
+
+/* ── Status badges ───────────────────────────────────────────────────────── */
+.badge {
+    display: inline-block;
+    padding: 0.1rem 0.45rem;
+    border-radius: 10px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+.badge-active   { background: rgba(239,68,68,0.2);  color: #f87171; border: 1px solid #ef4444; }
+.badge-inactive { background: rgba(100,116,139,0.2); color: #94a3b8; border: 1px solid #475569; }
+
+/* ── EMCON bar ───────────────────────────────────────────────────────────── */
+.emcon-bar-wrap { width: 60px; background: rgba(255,255,255,0.08); border-radius: 3px; height: 6px; display: inline-block; vertical-align: middle; }
+.emcon-bar      { height: 6px; border-radius: 3px; background: #ef4444; }
+
+/* ── Legend ──────────────────────────────────────────────────────────────── */
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    padding: 0.2rem 0;
+}
+.legend-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.legend-circle {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    border: 2px solid;
+    flex-shrink: 0;
+    opacity: 0.6;
+}
+
+/* ── Card ────────────────────────────────────────────────────────────────── */
+.info-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 0.75rem 1rem;
+}
+.info-card h4 {
+    margin: 0 0 0.5rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header page-header--compact">
+    <h1>EW Jamming Zones
+        <span style="font-size:0.65em;color:var(--text-secondary);font-weight:400;">
+            Electronic Warfare &amp; Supply Chain Overlay
+        </span>
+    </h1>
+    <div style="display:flex;align-items:center;gap:1rem">
+        <a href="/strategos" style="font-size:0.75rem;color:var(--text-muted)">← Back to Strategos</a>
+        <a href="/api/strategos/sigint/events" style="font-size:0.75rem;color:var(--accent-blue)">SIGINT Events</a>
+        <span style="font-size:0.72rem;color:var(--text-muted)">CUI // SP-CTI</span>
+    </div>
+</div>
+
+<!-- ── Summary strip ──────────────────────────────────────────────────────── -->
+<div class="summary-strip">
+    <div class="summary-card">
+        <div class="summary-val" style="color:#ef4444" id="val-active">{{ summary.active_jammers }}</div>
+        <div class="summary-label">Active Jammers</div>
+    </div>
+    <div class="summary-card">
+        <div class="summary-val" style="color:#f97316" id="val-total">{{ summary.total_sites }}</div>
+        <div class="summary-label">Total EW Sites</div>
+    </div>
+    <div class="summary-card">
+        <div class="summary-val" style="color:#fbbf24" id="val-emcon">
+            {{ (summary.mean_emcon_score * 100)|round(0)|int }}%
+        </div>
+        <div class="summary-label">Mean EMCON Score</div>
+    </div>
+    <div class="summary-card">
+        <div class="summary-val" style="color:#3b82f6" id="val-risk">{{ summary.supply_nodes_at_risk }}</div>
+        <div class="summary-label">Supply Nodes at Risk</div>
+    </div>
+</div>
+
+<!-- ── Map + sidebar ──────────────────────────────────────────────────────── -->
+<div class="ew-grid">
+
+    <!-- Leaflet map panel -->
+    <div class="ew-map-panel">
+        <div class="layer-controls">
+            <button class="layer-btn lyr-r330 active"   onclick="toggleLayer('r330',   this)">R-330Zh (450km)</button>
+            <button class="layer-btn lyr-kr4  active"   onclick="toggleLayer('kr4',    this)">Krasukha-4 (300km)</button>
+            <button class="layer-btn lyr-supply active" onclick="toggleLayer('supply', this)">Supply Chain</button>
+            <button class="layer-btn lyr-choke  active" onclick="toggleLayer('choke',  this)">Chokepoints</button>
+        </div>
+        <div id="ew-map"></div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="ew-sidebar">
+
+        <!-- Legend -->
+        <div class="info-card">
+            <h4>Legend</h4>
+            <div class="legend-item">
+                <div class="legend-circle" style="border-color:#ef4444"></div>
+                R-330Zh Zhitel — GPS/comms jammer (450 km)
+            </div>
+            <div class="legend-item">
+                <div class="legend-circle" style="border-color:#f97316"></div>
+                Krasukha-4 — broadband EW (300 km)
+            </div>
+            <div style="height:0.4rem"></div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background:#60a5fa"></div>
+                Semiconductor fab
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background:#818cf8"></div>
+                EW equipment supplier
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background:#fbbf24"></div>
+                Rare earth / materials
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background:#2dd4bf"></div>
+                Maritime chokepoint
+            </div>
+        </div>
+
+        <!-- EMCON formula -->
+        <div class="info-card">
+            <h4>EMCON Scoring</h4>
+            <p style="font-size:0.75rem;color:var(--text-secondary);margin:0 0 0.4rem">
+                <code style="background:rgba(255,255,255,0.07);padding:0.15rem 0.35rem;border-radius:3px">
+                    EMCON = dark_AIS_rate &times; jamming_active
+                </code>
+            </p>
+            <p style="font-size:0.72rem;color:var(--text-muted);margin:0">
+                Higher score = greater electromagnetic control over the area.
+                Dark AIS rate reflects vessels not broadcasting position.
+            </p>
+        </div>
+
+        <!-- Selected feature info -->
+        <div class="info-card" id="feature-card" style="display:none">
+            <h4 id="fc-title">—</h4>
+            <div id="fc-body" style="font-size:0.78rem;color:var(--text-secondary)"></div>
+        </div>
+
+    </div>
+</div>
+
+<!-- ── EW site table ───────────────────────────────────────────────────────── -->
+<div class="info-card" style="margin-top:1rem;padding:0;overflow:auto">
+    <div class="panel-title" style="padding:0.75rem 1rem 0.5rem">
+        <span class="dot" style="background:#ef4444"></span>
+        EW Sites &amp; EMCON Scores
+    </div>
+    <table class="site-table" id="ew-table">
+        <thead>
+            <tr>
+                <th>System</th>
+                <th>Location</th>
+                <th>Range</th>
+                <th>Status</th>
+                <th>Dark AIS</th>
+                <th>EMCON Score</th>
+            </tr>
+        </thead>
+        <tbody id="ew-table-body">
+            <tr><td colspan="6" style="color:var(--text-muted);text-align:center;padding:1rem">Loading…</td></tr>
+        </tbody>
+    </table>
+</div>
+
+<!-- ── Supply chain risk table ────────────────────────────────────────────── -->
+<div class="info-card" style="margin-top:1rem;padding:0;overflow:auto">
+    <div class="panel-title" style="padding:0.75rem 1rem 0.5rem">
+        <span class="dot" style="background:#3b82f6"></span>
+        Semiconductor Supply Chain Nodes
+    </div>
+    <table class="site-table" id="supply-table">
+        <thead>
+            <tr>
+                <th>Node</th>
+                <th>Category</th>
+                <th>Location</th>
+                <th>Criticality</th>
+                <th>Jamming Exposure</th>
+            </tr>
+        </thead>
+        <tbody id="supply-table-body">
+            <tr><td colspan="5" style="color:var(--text-muted);text-align:center;padding:1rem">Loading…</td></tr>
+        </tbody>
+    </table>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<link rel="stylesheet" href="/strategos/static/css/leaflet.min.css" crossorigin=""/>
+<script src="/strategos/static/js/leaflet.min.js" crossorigin=""></script>
+<script>
+/* ── Colour helpers ──────────────────────────────────────────────────────── */
+const SUPPLY_COLOR = { fab: '#60a5fa', equipment: '#818cf8', rare_earth: '#fbbf24' };
+function supplyColor(cat) { return SUPPLY_COLOR[cat] || '#94a3b8'; }
+function emconColor(score) {
+    if (score >= 0.6) return '#ef4444';
+    if (score >= 0.3) return '#f97316';
+    return '#22c55e';
+}
+function critColor(v) {
+    if (v >= 0.85) return '#ef4444';
+    if (v >= 0.6)  return '#f97316';
+    return '#22c55e';
+}
+function pctBar(v, color) {
+    return `<div class="emcon-bar-wrap"><div class="emcon-bar" style="width:${Math.round(v*100)}%;background:${color}"></div></div>`;
+}
+
+/* ── Map state ───────────────────────────────────────────────────────────── */
+let _map = null;
+const _layers = { r330: [], kr4: [], supply: [], choke: [] };
+let _visible = { r330: true, kr4: true, supply: true, choke: true };
+
+/* ── Init map ────────────────────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
+    _map = L.map('ew-map').setView([45.0, 40.0], 3);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '&copy; OpenStreetMap &copy; CARTO',
+        subdomains: 'abcd', maxZoom: 18
+    }).addTo(_map);
+    loadData();
+});
+
+/* ── Toggle layer visibility ─────────────────────────────────────────────── */
+function toggleLayer(key, btn) {
+    _visible[key] = !_visible[key];
+    btn.classList.toggle('active', _visible[key]);
+    _layers[key].forEach(obj => {
+        if (_visible[key]) {
+            if (obj.marker) obj.marker.addTo(_map);
+            if (obj.circle) obj.circle.addTo(_map);
+        } else {
+            if (obj.marker) _map.removeLayer(obj.marker);
+            if (obj.circle) _map.removeLayer(obj.circle);
+        }
+    });
+}
+
+/* ── Show feature info card ──────────────────────────────────────────────── */
+function showFeature(title, html) {
+    document.getElementById('fc-title').textContent = title;
+    document.getElementById('fc-body').innerHTML = html;
+    document.getElementById('feature-card').style.display = 'block';
+}
+
+/* ── Fetch and render everything ─────────────────────────────────────────── */
+async function loadData() {
+    const resp = await fetch('/api/strategos/ew/data');
+    if (!resp.ok) { console.error('EW data fetch failed:', resp.statusText); return; }
+    const data = await resp.json();
+    plotEWSites(data.ew_sites);
+    plotSupplyNodes(data.supply_nodes);
+    plotChokepoints(data.chokepoints);
+    renderEWTable(data.ew_sites);
+    renderSupplyTable(data.supply_nodes);
+}
+
+/* ── Plot EW jamming sites ───────────────────────────────────────────────── */
+function plotEWSites(sites) {
+    sites.forEach(site => {
+        const key = site.system_short === 'R-330Zh' ? 'r330' : 'kr4';
+        const color = key === 'r330' ? '#ef4444' : '#f97316';
+        const opacity = site.jamming_active ? 0.18 : 0.06;
+        const dashArray = site.jamming_active ? null : '6,4';
+
+        // Range circle
+        const circle = L.circle([site.lat, site.lon], {
+            radius: site.range_km * 1000,
+            color, fillColor: color,
+            fillOpacity: opacity,
+            weight: site.jamming_active ? 1.5 : 1,
+            dashArray,
+        });
+        circle.bindTooltip(`${site.system_short} — ${site.location}<br>Range: ${site.range_km} km`, {direction: 'top'});
+        circle.on('click', () => showFeature(site.system, `
+            <div><b>Location:</b> ${site.location}</div>
+            <div><b>Range:</b> ${site.range_km} km</div>
+            <div><b>Status:</b> ${site.jamming_active ? '<span style="color:#f87171">ACTIVE</span>' : '<span style="color:#94a3b8">INACTIVE</span>'}</div>
+            <div><b>Dark AIS rate:</b> ${(site.dark_ais_rate*100).toFixed(0)}%</div>
+            <div><b>EMCON score:</b> <span style="color:${emconColor(site.emcon_score)}">${(site.emcon_score*100).toFixed(0)}%</span></div>
+        `));
+        if (_visible[key]) circle.addTo(_map);
+
+        // Site marker
+        const marker = L.circleMarker([site.lat, site.lon], {
+            radius: 5, color, fillColor: color,
+            fillOpacity: 0.9, weight: 2,
+        });
+        marker.bindTooltip(site.system_short + ' — ' + site.location, {direction: 'top'});
+        marker.on('click', () => showFeature(site.system, `
+            <div><b>Location:</b> ${site.location}</div>
+            <div><b>Range:</b> ${site.range_km} km</div>
+            <div><b>Status:</b> ${site.jamming_active ? '<span style="color:#f87171">ACTIVE</span>' : '<span style="color:#94a3b8">INACTIVE</span>'}</div>
+            <div><b>Dark AIS rate:</b> ${(site.dark_ais_rate*100).toFixed(0)}%</div>
+            <div><b>EMCON score:</b> <span style="color:${emconColor(site.emcon_score)}">${(site.emcon_score*100).toFixed(0)}%</span></div>
+        `));
+        if (_visible[key]) marker.addTo(_map);
+
+        _layers[key].push({marker, circle});
+    });
+}
+
+/* ── Plot supply chain nodes ─────────────────────────────────────────────── */
+function plotSupplyNodes(nodes) {
+    nodes.forEach(node => {
+        const color = supplyColor(node.category);
+        const radius = 5 + node.criticality * 5;
+        const marker = L.circleMarker([node.lat, node.lon], {
+            radius, color, fillColor: color,
+            fillOpacity: 0.85, weight: 2,
+        });
+        marker.bindTooltip(`${node.name} (${node.category})<br>${node.location}`, {direction: 'top'});
+        marker.on('click', () => showFeature(node.name, `
+            <div><b>Category:</b> ${node.category.replace('_', ' ')}</div>
+            <div><b>Location:</b> ${node.location}</div>
+            <div><b>Detail:</b> ${node.detail}</div>
+            <div><b>Criticality:</b> <span style="color:${critColor(node.criticality)}">${(node.criticality*100).toFixed(0)}%</span></div>
+            <div><b>Jamming exposure:</b> <span style="color:${emconColor(node.jamming_exposure)}">${(node.jamming_exposure*100).toFixed(0)}%</span></div>
+        `));
+        if (_visible.supply) marker.addTo(_map);
+        _layers.supply.push({marker, circle: null});
+    });
+}
+
+/* ── Plot chokepoints ────────────────────────────────────────────────────── */
+function plotChokepoints(cps) {
+    cps.forEach(cp => {
+        const marker = L.circleMarker([cp.lat, cp.lon], {
+            radius: 8, color: '#2dd4bf', fillColor: '#2dd4bf',
+            fillOpacity: 0.75, weight: 2,
+        });
+        marker.bindTooltip(cp.name, {permanent: true, direction: 'top',
+            className: 'leaflet-tooltip-chokepoint'});
+        marker.on('click', () => showFeature(cp.name, `
+            <div>${cp.detail}</div>
+            <div style="margin-top:0.4rem"><b>Global trade share:</b> ~${cp.transit_pct}%</div>
+        `));
+        if (_visible.choke) marker.addTo(_map);
+        _layers.choke.push({marker, circle: null});
+    });
+}
+
+/* ── Render EW site table ────────────────────────────────────────────────── */
+function renderEWTable(sites) {
+    const tbody = document.getElementById('ew-table-body');
+    tbody.innerHTML = sites.map(s => `
+        <tr>
+            <td style="color:var(--text-primary);font-weight:600">${s.system_short}</td>
+            <td>${s.location}</td>
+            <td>${s.range_km} km</td>
+            <td><span class="badge ${s.jamming_active ? 'badge-active' : 'badge-inactive'}">${s.jamming_active ? 'ACTIVE' : 'INACTIVE'}</span></td>
+            <td>${(s.dark_ais_rate*100).toFixed(0)}%</td>
+            <td>
+                ${pctBar(s.emcon_score, emconColor(s.emcon_score))}
+                <span style="margin-left:0.4rem;color:${emconColor(s.emcon_score)}">${(s.emcon_score*100).toFixed(0)}%</span>
+            </td>
+        </tr>
+    `).join('');
+}
+
+/* ── Render supply chain table ───────────────────────────────────────────── */
+function renderSupplyTable(nodes) {
+    const tbody = document.getElementById('supply-table-body');
+    tbody.innerHTML = nodes.map(n => `
+        <tr>
+            <td style="color:var(--text-primary);font-weight:600">${n.name}</td>
+            <td>
+                <span style="color:${supplyColor(n.category)}">${n.category.replace('_', ' ')}</span>
+            </td>
+            <td>${n.location}</td>
+            <td>
+                ${pctBar(n.criticality, critColor(n.criticality))}
+                <span style="margin-left:0.4rem;color:${critColor(n.criticality)}">${(n.criticality*100).toFixed(0)}%</span>
+            </td>
+            <td>
+                ${n.jamming_exposure > 0
+                    ? `${pctBar(n.jamming_exposure, emconColor(n.jamming_exposure))} <span style="margin-left:0.4rem;color:${emconColor(n.jamming_exposure)}">${(n.jamming_exposure*100).toFixed(0)}%</span>`
+                    : `<span style="color:var(--text-muted)">—</span>`
+                }
+            </td>
+        </tr>
+    `).join('');
+}
+</script>
+<style>
+.leaflet-tooltip-chokepoint {
+    background: rgba(20,184,166,0.85) !important;
+    border: 1px solid #14b8a6 !important;
+    color: #fff !important;
+    font-size: 0.68rem !important;
+    font-weight: 700 !important;
+    padding: 0.1rem 0.4rem !important;
+}
+</style>
+{% endblock %}

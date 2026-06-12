@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}{{ dataset.name }} — Fine-Tuning — ICDEV™ Dashboard{% endblock %}
+{% block content %}
+
+<div class="container">
+    <nav aria-label="breadcrumb">
+        <span><a href="/">Home</a></span> &gt; <span><a href="/finetune">Fine-Tuning</a></span> &gt; <span><a href="/finetune/datasets">Datasets</a></span> &gt; <span>{{ dataset.name }}</span>
+    </nav>
+
+    <h1>{{ dataset.name }} <span style="color:#999;font-size:0.7em;">v{{ dataset.version }}</span></h1>
+    <p class="text-muted">{{ dataset.description|default('No description.') }}</p>
+
+    <!-- Info Grid -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin:1rem 0;">
+        <div><strong>Purpose:</strong> {{ dataset.purpose }}</div>
+        <div><strong>Base Model:</strong> {{ dataset.base_model }}</div>
+        <div><strong>Examples:</strong> {{ dataset.example_count }}</div>
+        <div><strong>Status:</strong> {{ dataset.status }}</div>
+        <div><strong>Classification:</strong> {{ dataset.classification }}</div>
+        <div><strong>Content Hash:</strong> <code>{{ dataset.content_hash[:12] }}...</code></div>
+    </div>
+
+    <!-- Labeling Controls -->
+    <div style="margin:1.5rem 0;display:flex;gap:0.5rem;flex-wrap:wrap;">
+        <button onclick="batchLabel(true)" style="padding:0.5rem 1rem;background:#4caf50;color:#fff;border:none;border-radius:4px;cursor:pointer;">Approve Selected</button>
+        <button onclick="batchLabel(false)" style="padding:0.5rem 1rem;background:#f44336;color:#fff;border:none;border-radius:4px;cursor:pointer;">Reject Selected</button>
+        <label style="display:flex;align-items:center;gap:0.3rem;"><input type="checkbox" id="select-all" onchange="toggleAll()"> Select All</label>
+    </div>
+
+    <!-- Examples Table -->
+    <h2>Training Examples</h2>
+    <div class="table-container">
+        <table id="tbl-examples">
+            <thead>
+                <tr>
+                    <th style="width:30px;"><input type="checkbox" id="hdr-check" onchange="toggleAll()"></th>
+                    <th>ID</th>
+                    <th>User Input</th>
+                    <th>Expected Output</th>
+                    <th>Source</th>
+                    <th>Quality</th>
+                    <th>Compliance</th>
+                    <th>Relevance</th>
+                    <th>Approved</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for ex in examples %}
+                <tr>
+                    <td><input type="checkbox" class="ex-check" value="{{ ex.id }}"></td>
+                    <td>{{ ex.id }}</td>
+                    <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ ex.user_input }}">{{ ex.user_input[:80] }}</td>
+                    <td style="max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ ex.expected_output }}">{{ ex.expected_output[:80] }}</td>
+                    <td>{{ ex.source }}</td>
+                    <td>{{ "%.1f"|format(ex.quality_score) if ex.quality_score else '--' }}</td>
+                    <td>{{ "%.1f"|format(ex.compliance_score) if ex.compliance_score else '--' }}</td>
+                    <td>{{ "%.1f"|format(ex.relevance_score) if ex.relevance_score else '--' }}</td>
+                    <td>
+                        {% if ex.approved %}
+                        <span style="color:#4caf50;">Yes</span>
+                        {% else %}
+                        <span style="color:#999;">No</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+(function() {
+    const dsId = '{{ dataset.id }}';
+
+    window.toggleAll = function() {
+        const checked = document.getElementById('hdr-check').checked;
+        document.querySelectorAll('.ex-check').forEach(cb => cb.checked = checked);
+    };
+
+    window.batchLabel = function(approved) {
+        const ids = Array.from(document.querySelectorAll('.ex-check:checked')).map(cb => parseInt(cb.value));
+        if (!ids.length) { alert('Select examples first.'); return; }
+        fetch('/api/finetune/datasets/' + dsId + '/batch-label', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({example_ids: ids, approved: approved})
+        }).then(r => r.json()).then(d => {
+            if (d.ok) { location.reload(); }
+            else { alert('Error: ' + (d.error || 'unknown')); }
+        }).catch(e => alert('Error: ' + e));
+    };
+})();
+</script>
+
+{% endblock %}

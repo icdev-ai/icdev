@@ -1,0 +1,122 @@
+{
+  "classification": "CUI // SP-CTI",
+  "version": "1.0.0",
+  "description": "Spec quality checklist — 'unit tests for English' (adapted from GitHub spec-kit, ADR D156)",
+  "required_sections": [
+    {
+      "name": "Feature Description",
+      "severity": "critical",
+      "min_words": 20,
+      "description": "Clear description of what the feature does and why"
+    },
+    {
+      "name": "User Story",
+      "severity": "critical",
+      "pattern": "(?i)as a .+ i want .+ so that .+",
+      "description": "Standard user story format: As a <role> I want <goal> So that <benefit>"
+    },
+    {
+      "name": "Solution Statement",
+      "severity": "critical",
+      "min_words": 30,
+      "description": "How the feature will be implemented at a high level"
+    },
+    {
+      "name": "ATO Impact Assessment",
+      "severity": "critical",
+      "description": "Boundary impact tier (GREEN/YELLOW/ORANGE/RED), NIST controls, SSP impact"
+    },
+    {
+      "name": "Acceptance Criteria",
+      "severity": "critical",
+      "min_items": 3,
+      "description": "Testable success criteria — at least 3 items"
+    },
+    {
+      "name": "Implementation Plan",
+      "severity": "high",
+      "description": "Phased implementation approach"
+    },
+    {
+      "name": "Step by Step Tasks",
+      "severity": "high",
+      "min_items": 3,
+      "description": "Ordered task list for execution"
+    },
+    {
+      "name": "Testing Strategy",
+      "severity": "high",
+      "description": "Unit, BDD, edge case, and E2E testing approach"
+    },
+    {
+      "name": "Validation Commands",
+      "severity": "medium",
+      "description": "Bash commands to verify the implementation"
+    },
+    {
+      "name": "NIST 800-53 Controls",
+      "severity": "medium",
+      "description": "Applicable NIST controls with justification"
+    }
+  ],
+  "quality_rules": [
+    {
+      "id": "SQ-AMB-001",
+      "name": "No ambiguous phrases",
+      "severity": "high",
+      "uses": "ambiguity_patterns.json",
+      "description": "Spec should not contain vague terms like 'timely', 'appropriate', 'as needed'"
+    },
+    {
+      "id": "SQ-ACC-001",
+      "name": "Acceptance criteria are testable",
+      "severity": "critical",
+      "description": "Each acceptance criterion must contain a measurable or observable assertion"
+    },
+    {
+      "id": "SQ-ACC-002",
+      "name": "Min 3 acceptance criteria",
+      "severity": "high",
+      "description": "Specifications must have at least 3 acceptance criteria"
+    },
+    {
+      "id": "SQ-ATO-001",
+      "name": "ATO boundary tier specified",
+      "severity": "critical",
+      "keywords": ["GREEN", "YELLOW", "ORANGE", "RED"],
+      "description": "ATO Impact Assessment must specify a boundary impact tier"
+    },
+    {
+      "id": "SQ-ATO-002",
+      "name": "NIST controls listed",
+      "severity": "high",
+      "pattern": "[A-Z]{2}-\\d+",
+      "description": "At least one NIST 800-53 control ID should be referenced"
+    },
+    {
+      "id": "SQ-TST-001",
+      "name": "Testing strategy present",
+      "severity": "high",
+      "description": "Testing Strategy section must exist with content"
+    },
+    {
+      "id": "SQ-TST-002",
+      "name": "Validation commands present",
+      "severity": "medium",
+      "description": "Validation Commands section should include executable commands"
+    },
+    {
+      "id": "SQ-TASK-001",
+      "name": "Tasks cover all phases",
+      "severity": "high",
+      "description": "Each Implementation Plan phase should have corresponding Step by Step Tasks"
+    },
+    {
+      "id": "SQ-CON-001",
+      "name": "Constitution compliance",
+      "severity": "critical",
+      "uses": "constitutions",
+      "description": "Spec must not violate project constitution principles"
+    }
+  ]
+}

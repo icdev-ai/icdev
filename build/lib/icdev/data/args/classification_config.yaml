@@ -1,0 +1,232 @@
+# Universal Data Classification Configuration
+# Extends CUI/SECRET markings to support multi-regime data categories
+# ADR D109: Composable, additive markings — a single artifact can carry multiple categories
+
+# ----------------------------------------------------------------
+# Data categories and their marking templates
+# ----------------------------------------------------------------
+data_categories:
+  CUI:
+    full_name: "Controlled Unclassified Information"
+    governing_framework: "NIST 800-171"
+    marking_prefix: "CUI"
+    banner_template: "CUI // SP-{subcategory}"
+    portion_marking: "(CUI)"
+    distribution: "Distribution D -- Authorized DoD Personnel Only"
+    controlled_by: "Department of Defense"
+    decontrol: "10 years from creation date"
+    color: "#FFD700"  # Gold for UI display
+
+  SECRET:
+    full_name: "Classified National Security Information"
+    governing_framework: "CNSSI 1253"
+    marking_prefix: "SECRET"
+    banner_template: "SECRET // {dissemination}"
+    portion_marking: "(S)"
+    distribution: "Authorized SECRET-cleared personnel only"
+    controlled_by: "Department of Defense"
+    color: "#FF0000"  # Red
+
+  TOP_SECRET:
+    full_name: "Top Secret / Sensitive Compartmented Information"
+    governing_framework: "CNSSI 1253"
+    marking_prefix: "TOP SECRET"
+    banner_template: "TOP SECRET // {dissemination}"
+    portion_marking: "(TS)"
+    distribution: "Authorized TS/SCI-cleared personnel only"
+    controlled_by: "Department of Defense"
+    color: "#8B0000"  # Dark red
+
+  PHI:
+    full_name: "Protected Health Information"
+    governing_framework: "HIPAA"
+    marking_prefix: "PHI"
+    banner_template: "PHI // HIPAA Security Rule"
+    portion_marking: "(PHI)"
+    distribution: "Authorized healthcare personnel and covered entities only"
+    controlled_by: "HIPAA Covered Entity / Business Associate"
+    decontrol: "Per HIPAA retention policy (minimum 6 years)"
+    color: "#2196F3"  # Blue
+    handling_requirements:
+      - "Encrypt at rest and in transit (HIPAA §164.312)"
+      - "Minimum necessary standard applies (§164.502(b))"
+      - "Business Associate Agreement required for third parties"
+      - "Breach notification within 60 days (§164.404)"
+
+  PCI:
+    full_name: "Payment Card Industry Data"
+    governing_framework: "PCI DSS v4.0"
+    marking_prefix: "PCI"
+    banner_template: "PCI // DSS v4.0"
+    portion_marking: "(PCI)"
+    distribution: "Authorized personnel with need-to-know for cardholder data"
+    controlled_by: "PCI SSC / Acquiring Bank"
+    decontrol: "Per data retention policy; purge when no longer needed"
+    color: "#4CAF50"  # Green
+    handling_requirements:
+      - "Never store full track data, CVV2, or PIN (Req 3.3/3.4)"
+      - "Encrypt cardholder data at rest with strong cryptography (Req 3.5)"
+      - "Encrypt in transit over open/public networks (Req 4.1)"
+      - "Mask PAN when displayed (show max first 6 / last 4) (Req 3.4)"
+      - "Restrict access on need-to-know basis (Req 7.1)"
+
+  CJIS:
+    full_name: "Criminal Justice Information"
+    governing_framework: "FBI CJIS Security Policy v5.9.4"
+    marking_prefix: "CJIS"
+    banner_template: "CJIS // FBI CJIS Security Policy"
+    portion_marking: "(CJIS)"
+    distribution: "Authorized criminal justice personnel and contractors with CJIS clearance"
+    controlled_by: "FBI CJIS Division / State CSO"
+    decontrol: "Per agency records retention schedule"
+    color: "#9C27B0"  # Purple
+    handling_requirements:
+      - "Advanced authentication required (§5.6.2.2)"
+      - "FIPS 140-2 certified encryption at rest and in transit (§5.10.1.2)"
+      - "Personnel must pass fingerprint-based background check (§5.12)"
+      - "Media must be physically protected and sanitized per policy (§5.8)"
+
+  PII:
+    full_name: "Personally Identifiable Information"
+    governing_framework: "NIST 800-122"
+    marking_prefix: "PII"
+    banner_template: "PII // NIST SP 800-122"
+    portion_marking: "(PII)"
+    distribution: "Authorized personnel with legitimate need-to-know"
+    controlled_by: "Data Owner / Privacy Officer"
+    decontrol: "Per organizational records retention policy"
+    color: "#FF9800"  # Orange
+    handling_requirements:
+      - "Apply confidentiality impact level per FIPS 199 (§4.2)"
+      - "Encrypt at rest and in transit"
+      - "Minimize collection and retention (§4.1)"
+      - "Breach notification per applicable law"
+
+  FTI:
+    full_name: "Federal Tax Information"
+    governing_framework: "IRS Publication 1075"
+    marking_prefix: "FTI"
+    banner_template: "FTI // IRS Pub 1075"
+    portion_marking: "(FTI)"
+    distribution: "Authorized personnel with IRS-approved access"
+    controlled_by: "Internal Revenue Service"
+    decontrol: "Per IRS retention schedule"
+    color: "#795548"  # Brown
+    handling_requirements:
+      - "FIPS 140-2 validated encryption required"
+      - "IRS background investigation required for all personnel"
+      - "45-day breach notification to IRS (§10.2)"
+      - "Secure disposal per NIST 800-88 (§9.3)"
+      - "Onsite safeguards inspection by IRS required"
+
+  ITAR:
+    full_name: "International Traffic in Arms Regulations Data"
+    governing_framework: "ITAR (22 CFR 120-130)"
+    marking_prefix: "ITAR"
+    banner_template: "ITAR // 22 CFR 120-130"
+    portion_marking: "(ITAR)"
+    distribution: "US Persons only -- no foreign national access without DDTC license"
+    controlled_by: "Directorate of Defense Trade Controls (DDTC)"
+    decontrol: "Per USML category and DDTC license"
+    color: "#E91E63"  # Pink
+    handling_requirements:
+      - "Access restricted to US Persons per 22 CFR 120.62"
+      - "Foreign person access requires DDTC license or exemption"
+      - "Must comply with NIST 800-171 for unclassified ITAR"
+      - "Cloud hosting must be in CONUS with US Person access only"
+
+  ZTA:
+    full_name: "Zero Trust Architecture"
+    governing_framework: "NIST SP 800-207"
+    marking_prefix: "ZTA"
+    banner_template: "ZTA // NIST SP 800-207"
+    portion_marking: "(ZTA)"
+    distribution: "Authorized personnel involved in ZTA implementation"
+    controlled_by: "ISSM / ISSO"
+    decontrol: "Per organizational security architecture lifecycle"
+    color: "#00BCD4"  # Cyan
+    sensitivity_level: 3
+    handling_requirements:
+      - "All traffic verified — no implicit trust zones"
+      - "Micro-segmentation enforced between service boundaries"
+      - "mTLS required for all east-west traffic"
+      - "Identity verification at every access decision point"
+      - "Continuous posture assessment feeds cATO evidence"
+
+  PUBLIC:
+    full_name: "Public Release"
+    governing_framework: "N/A"
+    marking_prefix: "PUBLIC"
+    banner_template: "PUBLIC RELEASE -- No restrictions on distribution"
+    portion_marking: ""
+    distribution: "No restrictions"
+    controlled_by: "N/A"
+    color: "#607D8B"  # Grey
+
+# ----------------------------------------------------------------
+# Composite marking rules
+# ADR D109: Markings are composable — highest-sensitivity category
+# determines the overall handling, but all categories are listed
+# ----------------------------------------------------------------
+composite_rules:
+  # Sensitivity ordering (highest to lowest)
+  sensitivity_order:
+    - "TOP_SECRET"
+    - "SECRET"
+    - "CUI"
+    - "ITAR"
+    - "FTI"
+    - "CJIS"
+    - "PHI"
+    - "PCI"
+    - "PII"
+    - "ZTA"
+    - "PUBLIC"
+
+  # Separator for composite banners
+  separator: " | "
+
+  # Example composite: "CUI // SP-CTI | PHI // HIPAA | PCI // DSS v4.0"
+  # Handling: Union of all handling requirements from all categories
+
+# ----------------------------------------------------------------
+# Banner format templates
+# ----------------------------------------------------------------
+banner_format:
+  document_header: |
+    ////////////////////////////////////////////////////////////////////
+    {banner_line}
+    Distribution: {distribution}
+    Controlled by: {controlled_by}
+    ////////////////////////////////////////////////////////////////////
+
+  document_footer: |
+    ////////////////////////////////////////////////////////////////////
+    {banner_line} | {controlled_by}
+    ////////////////////////////////////////////////////////////////////
+
+  code_header:
+    hash: "# {line}"
+    c_style: "// {line}"
+    xml_style_open: "<!--"
+    xml_style_line: "  {line}"
+    xml_style_close: "-->"
+
+# ----------------------------------------------------------------
+# Language comment style mapping
+# ----------------------------------------------------------------
+language_comment_styles:
+  python: "hash"
+  ruby: "hash"
+  java: "c_style"
+  go: "c_style"
+  rust: "c_style"
+  csharp: "c_style"
+  typescript: "c_style"
+  javascript: "c_style"
+  xml: "xml_style"
+  html: "xml_style"
+  yaml: "hash"
+  terraform: "hash"
+  dockerfile: "hash"
+  sql: "-- {line}"

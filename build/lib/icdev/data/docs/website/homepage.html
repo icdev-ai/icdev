@@ -1,0 +1,322 @@
+<style>
+:root{--bg:#0f172a;--bg2:#1e293b;--bg3:#334155;--accent:#3b82f6;--green:#10b981;--text:#e2e8f0;--dim:#94a3b8;--orange:#f59e0b;--red:#ef4444}
+.icdev-home *{box-sizing:border-box;margin:0;padding:0}
+.icdev-home{font-family:'Inter',system-ui,-apple-system,sans-serif;color:var(--text);max-width:1200px;margin:0 auto;line-height:1.7}
+.icdev-home h1{font-size:2.8rem;font-weight:800;letter-spacing:-0.02em;line-height:1.15}
+.icdev-home h2{font-size:1.8rem;font-weight:700;margin-bottom:12px}
+.icdev-home h3{font-size:1.2rem;font-weight:600;margin-bottom:8px}
+.icdev-home p{color:var(--dim);font-size:1.05rem;margin-bottom:16px}
+.icdev-home a{color:var(--accent);text-decoration:none}
+.icdev-home a:hover{text-decoration:underline}
+
+/* Hero */
+.hero{text-align:center;padding:80px 24px 60px}
+.hero h1{margin-bottom:20px}
+.hero h1 span{color:var(--accent)}
+.hero .sub{font-size:1.2rem;color:var(--dim);max-width:680px;margin:0 auto 32px}
+.hero-btns{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+.btn-primary{background:var(--accent);color:#fff;padding:14px 32px;border-radius:8px;font-weight:600;font-size:1rem;display:inline-block;transition:background .2s}
+.btn-primary:hover{background:#2563eb;text-decoration:none}
+.btn-secondary{background:transparent;color:var(--accent);padding:14px 32px;border-radius:8px;font-weight:600;font-size:1rem;border:2px solid var(--accent);display:inline-block;transition:all .2s}
+.btn-secondary:hover{background:var(--accent);color:#fff;text-decoration:none}
+
+/* Stats bar */
+.stats-bar{display:grid;grid-template-columns:repeat(4,1fr);gap:0;background:var(--bg2);border-radius:12px;margin:40px 24px 0;overflow:hidden;border:1px solid var(--bg3)}
+.stat-item{padding:24px;text-align:center;border-right:1px solid var(--bg3)}
+.stat-item:last-child{border-right:none}
+.stat-num{font-size:2.2rem;font-weight:800;color:var(--accent)}
+.stat-label{font-size:.85rem;color:var(--dim);margin-top:4px}
+
+/* Sections */
+.section{padding:60px 24px}
+.section-dark{background:var(--bg2);border-radius:16px;margin:0 24px;padding:48px 40px}
+.section-title{text-align:center;margin-bottom:40px}
+.section-title h2{color:var(--text)}
+.section-title p{max-width:600px;margin:8px auto 0}
+
+/* Problem section */
+.problem-grid{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center}
+.problem-text h2{margin-bottom:16px}
+.problem-stats{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.problem-stat{background:var(--bg2);border-radius:10px;padding:20px;border-left:3px solid var(--red)}
+.problem-stat .num{font-size:1.6rem;font-weight:800;color:var(--red)}
+.problem-stat .label{font-size:.85rem;color:var(--dim);margin-top:4px}
+
+/* Cards */
+.card-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.card{background:var(--bg2);border-radius:12px;padding:28px;border:1px solid var(--bg3);transition:border-color .2s}
+.card:hover{border-color:var(--accent)}
+.card h3{color:var(--text);margin-bottom:8px}
+.card p{font-size:.95rem;margin-bottom:0}
+.card-icon{font-size:1.8rem;margin-bottom:12px}
+
+/* Pipeline */
+.pipeline{display:flex;align-items:flex-start;gap:0;overflow-x:auto;padding:20px 0}
+.pipe-step{flex:1;min-width:180px;text-align:center;position:relative;padding:0 12px}
+.pipe-num{width:40px;height:40px;border-radius:50%;background:var(--accent);color:#fff;font-weight:700;font-size:1.1rem;display:flex;align-items:center;justify-content:center;margin:0 auto 12px}
+.pipe-step h3{font-size:1rem;margin-bottom:6px}
+.pipe-step p{font-size:.85rem;color:var(--dim)}
+.pipe-arrow{color:var(--bg3);font-size:1.5rem;margin-top:12px;flex-shrink:0}
+
+/* Framework grid */
+.fw-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+.fw-item{display:flex;align-items:center;gap:8px;padding:10px 14px;background:var(--bg2);border-radius:8px;font-size:.9rem;border:1px solid var(--bg3)}
+.fw-badge{background:var(--green);color:#000;padding:2px 8px;border-radius:4px;font-size:.7rem;font-weight:600;white-space:nowrap}
+
+/* Agent table */
+.agent-table{width:100%;border-collapse:collapse;font-size:.9rem}
+.agent-table th{text-align:left;padding:10px 14px;color:var(--dim);font-size:.75rem;text-transform:uppercase;border-bottom:2px solid var(--bg3)}
+.agent-table td{padding:10px 14px;border-bottom:1px solid var(--bg3)}
+.agent-table tr:hover{background:rgba(59,130,246,.05)}
+.agent-name{font-weight:600;color:var(--accent)}
+
+/* Trust signals */
+.trust-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}
+.trust-card{background:var(--bg);border-radius:12px;padding:24px;border:1px solid var(--bg3)}
+.trust-card h3{color:var(--green);margin-bottom:8px}
+
+/* Personas */
+.persona-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}
+.persona{background:var(--bg2);border-radius:12px;padding:28px;border:1px solid var(--bg3)}
+.persona h3{color:var(--accent);margin-bottom:8px}
+.persona ul{list-style:none;padding:0}
+.persona ul li{padding:4px 0;font-size:.9rem;color:var(--dim)}
+.persona ul li::before{content:"\2713 ";color:var(--green);font-weight:700}
+
+/* CTA */
+.cta-section{text-align:center;padding:60px 24px;background:linear-gradient(135deg,var(--bg2),#1a2744);border-radius:16px;margin:40px 24px}
+.cta-section h2{margin-bottom:12px}
+.cta-section p{max-width:500px;margin:0 auto 24px}
+
+/* Responsive */
+@media(max-width:768px){
+.icdev-home h1{font-size:1.8rem}
+.stats-bar{grid-template-columns:repeat(2,1fr)}
+.stat-item:nth-child(2){border-right:none}
+.problem-grid,.card-grid,.trust-grid,.persona-grid{grid-template-columns:1fr}
+.pipeline{flex-direction:column;align-items:center}
+.pipe-arrow{transform:rotate(90deg)}
+}
+</style>
+
+<div class="icdev-home">
+
+<!-- HERO -->
+<div class="hero">
+<h1>Ship Secure Software.<br><span>Get Your ATO in Weeks.</span></h1>
+<p class="sub">ICDEV™ automates the 560 hours of manual compliance work that stands between your code and Authority to Operate. Build once, certify across 30+ frameworks.</p>
+<div class="hero-btns">
+<a href="/contact" class="btn-primary">Request a Demo</a>
+<a href="#platform" class="btn-secondary">See the Platform</a>
+</div>
+</div>
+
+<div class="stats-bar">
+<div class="stat-item"><div class="stat-num">30+</div><div class="stat-label">Compliance Frameworks</div></div>
+<div class="stat-item"><div class="stat-num">15</div><div class="stat-label">Autonomous AI Agents</div></div>
+<div class="stat-item"><div class="stat-num">6</div><div class="stat-label">Cloud Providers</div></div>
+<div class="stat-item"><div class="stat-num">90%</div><div class="stat-label">Faster ATO</div></div>
+</div>
+
+<!-- PROBLEM -->
+<div class="section">
+<div class="problem-grid">
+<div class="problem-text">
+<h2>Your ATO Timeline Is Killing Your Mission</h2>
+<p>You know the drill. Twelve to eighteen months of manual security assessments. Four hundred pages of documentation that's outdated before the ink dries. Point-in-time audits that prove nothing about your actual security posture.</p>
+<p>Meanwhile, your developers sit idle. Your competitors ship. And the threat landscape doesn't pause for paperwork.</p>
+<p style="color:var(--text);font-weight:600;">There's a better way.</p>
+</div>
+<div class="problem-stats">
+<div class="problem-stat"><div class="num">560 hrs</div><div class="label">Manual security assessment per system</div></div>
+<div class="problem-stat"><div class="num">$2.4M</div><div class="label">Average FedRAMP authorization cost</div></div>
+<div class="problem-stat"><div class="num">18 mo</div><div class="label">Code-complete to ATO</div></div>
+<div class="problem-stat"><div class="num">40%</div><div class="label">Engineering time on compliance docs</div></div>
+</div>
+</div>
+</div>
+
+<!-- WHAT ICDEV™ DOES -->
+<div class="section-dark">
+<div class="section-title">
+<h2>Intelligent Certified Development</h2>
+<p>A complete AI-powered SDLC that treats compliance as code. Not a tool. Not a plugin. An autonomous development platform.</p>
+</div>
+<div class="card-grid">
+<div class="card">
+<div class="card-icon">&#128736;</div>
+<h3>Build With Confidence</h3>
+<p>True TDD across 6 languages. 15 AI agents collaborate on architecture, code generation, security scanning, and infrastructure &mdash; all traceable back to requirements.</p>
+</div>
+<div class="card">
+<div class="card-icon">&#128737;</div>
+<h3>Certify Continuously</h3>
+<p>SSPs, POAMs, STIG checklists, SBOMs, and OSCAL artifacts generated automatically. Map one NIST control and cascade across 30+ frameworks through our dual-hub crosswalk engine.</p>
+</div>
+<div class="card">
+<div class="card-icon">&#9729;</div>
+<h3>Deploy Anywhere</h3>
+<p>AWS GovCloud, Azure Government, GCP Assured Workloads, OCI Government, IBM Cloud for Government &mdash; or air-gapped on-premises. One codebase, any environment.</p>
+</div>
+</div>
+</div>
+
+<!-- PIPELINE -->
+<div class="section" id="platform">
+<div class="section-title">
+<h2>From Requirements to ATO &mdash; Automated</h2>
+</div>
+<div class="pipeline">
+<div class="pipe-step"><div class="pipe-num">1</div><h3>Intake</h3><p>AI-driven requirements gathering. Upload SOW/CDD &mdash; extract shall-statements, detect gaps, score readiness.</p></div>
+<div class="pipe-arrow">&rarr;</div>
+<div class="pipe-step"><div class="pipe-num">2</div><h3>Build</h3><p>True TDD. 15 agents collaborate &mdash; Architect designs, Builder codes, Security scans, Compliance maps controls.</p></div>
+<div class="pipe-arrow">&rarr;</div>
+<div class="pipe-step"><div class="pipe-num">3</div><h3>Certify</h3><p>SSP, POAM, STIG, SBOM, OSCAL generated at build time. Continuous ATO monitoring. FedRAMP 20x KSI built in.</p></div>
+<div class="pipe-arrow">&rarr;</div>
+<div class="pipe-step"><div class="pipe-num">4</div><h3>Deploy</h3><p>Terraform, Ansible, K8s manifests per cloud target. STIG-hardened containers. Security gates block on CAT1 findings.</p></div>
+<div class="pipe-arrow">&rarr;</div>
+<div class="pipe-step"><div class="pipe-num">5</div><h3>Evolve</h3><p>Genesis &mdash; 13 autonomous reflexes run 24/7. Scanning CVEs, auditing code, refreshing compliance evidence.</p></div>
+</div>
+</div>
+
+<!-- COMPLIANCE -->
+<div class="section-dark">
+<div class="section-title">
+<h2>One Control. Every Framework.</h2>
+<p>Implement AC-2 once. ICDEV™'s crosswalk engine cascades compliance across US and international hubs &mdash; bidirectionally.</p>
+</div>
+<div class="fw-grid">
+<div class="fw-item"><span class="fw-badge">FULL</span> NIST 800-53 Rev 5</div>
+<div class="fw-item"><span class="fw-badge">FULL</span> FedRAMP Moderate / High</div>
+<div class="fw-item"><span class="fw-badge">NEW</span> FedRAMP 20x (KSI)</div>
+<div class="fw-item"><span class="fw-badge">FULL</span> CMMC Level 2 / 3</div>
+<div class="fw-item"><span class="fw-badge">FULL</span> NIST 800-171</div>
+<div class="fw-item"><span class="fw-badge">FULL</span> CJIS Security Policy</div>
+<div class="fw-item"><span class="fw-badge">FULL</span> HIPAA Security Rule</div>
+<div class="fw-item"><span class="fw-badge">FULL</span> HITRUST CSF v11</div>
+<div class="fw-item"><span class="fw-badge">FULL</span> SOC 2 Type II</div>
+<div class="fw-item"><span class="fw-badge">FULL</span> PCI DSS v4.0</div>
+<div class="fw-item"><span class="fw-badge">FULL</span> ISO 27001:2022</div>
+<div class="fw-item"><span class="fw-badge">FULL</span> NIST SP 800-207 (ZTA)</div>
+<div class="fw-item"><span class="fw-badge">FULL</span> MITRE ATLAS</div>
+<div class="fw-item"><span class="fw-badge">FULL</span> OWASP LLM Top 10</div>
+<div class="fw-item"><span class="fw-badge">FULL</span> NIST AI RMF</div>
+<div class="fw-item"><span class="fw-badge">FULL</span> EU AI Act</div>
+<div class="fw-item"><span class="fw-badge">FULL</span> OMB M-25-21</div>
+<div class="fw-item"><span class="fw-badge">FULL</span> DoD MOSA</div>
+</div>
+</div>
+
+<!-- SECURITY -->
+<div class="section">
+<div class="section-title">
+<h2>Security Is Not a Feature. It's the Architecture.</h2>
+</div>
+<div class="trust-grid">
+<div class="trust-card">
+<h3>&#128274; Classification-Aware</h3>
+<p>CUI // SP-CTI markings applied at generation time. IL2 through IL6 support. CNSSI 1253 overlays for SECRET environments. Every artifact knows its classification.</p>
+</div>
+<div class="trust-card">
+<h3>&#128737; Zero Trust Native</h3>
+<p>NIST 800-207 scored across 7 pillars. Service mesh generation. Mutual TLS between all agents. Default-deny everything.</p>
+</div>
+<div class="trust-card">
+<h3>&#9889; Air-Gap Ready</h3>
+<p>Runs fully disconnected. Local LLM inference via Ollama. SQLite for zero-config storage. No cloud dependency. SIPR-compatible for IL6.</p>
+</div>
+<div class="trust-card">
+<h3>&#128279; Supply Chain Secured</h3>
+<p>Full dependency graphs with SBOM generation. SCRM assessment per NIST 800-161. CVE triage with SLA tracking. Section 889 prohibited vendor detection.</p>
+</div>
+</div>
+</div>
+
+<!-- AGENTS -->
+<div class="section-dark">
+<div class="section-title">
+<h2>15 Agents. One Mission.</h2>
+<p>Specialized AI agents collaborate via A2A protocol to deliver secure, compliant software autonomously.</p>
+</div>
+<table class="agent-table">
+<thead><tr><th>Agent</th><th>Role</th></tr></thead>
+<tbody>
+<tr><td class="agent-name">Orchestrator</td><td>Task routing and workflow management</td></tr>
+<tr><td class="agent-name">Architect</td><td>System design, ANVIL workflow</td></tr>
+<tr><td class="agent-name">Builder</td><td>TDD code generation (RED &rarr; GREEN &rarr; REFACTOR)</td></tr>
+<tr><td class="agent-name">Compliance</td><td>ATO artifacts across 30+ frameworks</td></tr>
+<tr><td class="agent-name">Security</td><td>SAST, dependency audit, secrets, containers</td></tr>
+<tr><td class="agent-name">Infrastructure</td><td>Terraform, Ansible, K8s, CI/CD pipelines</td></tr>
+<tr><td class="agent-name">MBSE</td><td>SysML, digital thread, model-code sync</td></tr>
+<tr><td class="agent-name">Requirements</td><td>Conversational intake, gap detection, SAFe decomposition</td></tr>
+<tr><td class="agent-name">Supply Chain</td><td>Dependency graph, SCRM, CVE triage</td></tr>
+<tr><td class="agent-name">Simulation</td><td>Digital Program Twin, Monte Carlo, COA generation</td></tr>
+<tr><td class="agent-name">DevSecOps</td><td>Pipeline security, Zero Trust, policy-as-code</td></tr>
+<tr><td class="agent-name">Knowledge</td><td>Self-healing patterns and recommendations</td></tr>
+<tr><td class="agent-name">Monitor</td><td>Log analysis, metrics, alerts, health checks</td></tr>
+<tr><td class="agent-name">Gateway</td><td>Remote command reception, 8-gate security chain</td></tr>
+<tr><td class="agent-name">Integration</td><td>Jira, ServiceNow, GitLab, DOORS NG sync</td></tr>
+</tbody>
+</table>
+</div>
+
+<!-- WHO IT'S FOR -->
+<div class="section">
+<div class="section-title">
+<h2>Solutions by Mission</h2>
+</div>
+<div class="persona-grid">
+<div class="persona">
+<h3>Defense Contractors</h3>
+<ul>
+<li>CMMC Level 2/3 certification</li>
+<li>FedRAMP High authorization</li>
+<li>DoD MOSA compliance</li>
+<li>ATO acceleration: 18 months to weeks</li>
+<li>CUI markings on every artifact</li>
+</ul>
+</div>
+<div class="persona">
+<h3>Federal Agencies</h3>
+<ul>
+<li>FedRAMP 20x readiness</li>
+<li>Continuous ATO monitoring</li>
+<li>FIPS 199/200 categorization</li>
+<li>OSCAL-native artifacts for eMASS</li>
+<li>Xacta 360 integration</li>
+</ul>
+</div>
+<div class="persona">
+<h3>Intelligence Community</h3>
+<ul>
+<li>IL5/IL6 classification support</li>
+<li>CNSSI 1253 overlays</li>
+<li>Air-gapped deployment</li>
+<li>NSA Type 1 encryption compatible</li>
+<li>SIPR-ready architecture</li>
+</ul>
+</div>
+<div class="persona">
+<h3>Healthcare &amp; Financial</h3>
+<ul>
+<li>HIPAA Security Rule</li>
+<li>HITRUST CSF v11</li>
+<li>PCI DSS v4.0 / SOC 2 Type II</li>
+<li>ISO 27001:2022</li>
+<li>Multi-regime unified assessment</li>
+</ul>
+</div>
+</div>
+</div>
+
+<!-- CTA -->
+<div class="cta-section">
+<h2>Your ATO Doesn't Have to Take 18 Months</h2>
+<p>See how ICDEV™ automates compliance for your next project. We'll show you your framework coverage in real time.</p>
+<div class="hero-btns">
+<a href="/contact" class="btn-primary">Request a Demo</a>
+<a href="https://github.com/icdev-ai/icdev" class="btn-secondary">View on GitHub</a>
+</div>
+</div>
+
+</div>

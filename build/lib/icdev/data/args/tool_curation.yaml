@@ -1,0 +1,182 @@
+# CUI // SP-CTI
+# Tool Curation Configuration — phase-level tool restriction
+#
+# Adapted from the Agent Harness pattern: each goal phase receives only
+# the tools it needs, reducing token overhead and preventing off-script
+# tool calls.
+#
+# enforcement modes:
+#   "off"   — no enforcement, curation is informational only
+#   "warn"  — log a warning when an uncurated tool is used (default)
+#   "block" — reject tool calls not in the curated set
+
+enforcement: warn
+
+goals:
+  build_app:
+    description: "Build application using TDD (RED → GREEN → REFACTOR)"
+    default_tools:
+      - code_generator
+      - test_orchestrator
+      - audit_logger
+    phases:
+      planning:
+        description: "Decompose requirements into tasks"
+        type: llm_single
+        tools:
+          - intake_engine
+          - complexity_scorer
+          - decomposition_engine
+          - readiness_scorer
+      coding:
+        description: "Generate and implement code"
+        type: llm_agent
+        tools:
+          - code_generator
+          - code_analyzer
+          - stub_detector
+          - audit_logger
+      testing:
+        description: "Run tests and validate"
+        type: programmatic
+        tools:
+          - test_orchestrator
+          - stub_detector
+          - production_remediate
+          - audit_logger
+      review:
+        description: "Code review and compliance check"
+        type: llm_agent
+        tools:
+          - code_analyzer
+          - compliance_detector
+          - stig_checker
+          - vulnerability_checker
+          - sbom_generator
+          - audit_logger
+      deploy:
+        description: "Build IaC and deploy"
+        type: programmatic
+        tools:
+          - infra_status
+          - rollback
+          - ironbank_metadata_generator
+          - audit_logger
+
+  compliance_scan:
+    description: "Run multi-regime compliance assessment"
+    phases:
+      classify:
+        description: "Classify system and determine applicable frameworks"
+        type: llm_single
+        tools:
+          - classification_manager
+          - fips199_categorizer
+          - eu_ai_act_classifier
+      assess:
+        description: "Run assessments across all applicable frameworks"
+        type: llm_batch_agents
+        tools:
+          - multi_regime_assessor
+          - fedramp_assessor
+          - cmmc_assessor
+          - nist_ai_600_1_assessor
+          - crosswalk_engine
+      evidence:
+        description: "Collect and bundle evidence"
+        type: programmatic
+        tools:
+          - evidence_collector
+          - swft_evidence_bundler
+          - slsa_attestation_generator
+      report:
+        description: "Generate compliance reports and artifacts"
+        type: llm_single
+        tools:
+          - ssp_generator
+          - poam_generator
+          - oscal_generator
+          - narrative_generator
+          - atlas_report_generator
+
+  genesis_research:
+    description: "Genesis autonomous research cycle"
+    phases:
+      scan:
+        description: "Scan for new signals and trends"
+        type: programmatic
+        tools:
+          - web_scanner
+          - trend_detector
+          - standards_monitor
+      analyze:
+        description: "Analyze and rank signals"
+        type: llm_agent
+        tools:
+          - signal_ranker
+          - introspective_analyzer
+          - triage_engine
+      innovate:
+        description: "Generate solutions from top signals"
+        type: llm_agent
+        tools:
+          - solution_generator
+          - innovation_manager
+      validate:
+        description: "Test and verify proposed changes"
+        type: programmatic
+        tools:
+          - test_orchestrator
+          - code_analyzer
+          - stub_detector
+
+  marketplace_publish:
+    description: "Publish an asset to the ICDEV™ Marketplace"
+    phases:
+      scan:
+        description: "Scan and validate the asset"
+        type: programmatic
+        tools:
+          - asset_scanner
+          - compatibility_checker
+          - provenance_tracker
+      review:
+        description: "Security review and approval"
+        type: llm_agent
+        tools:
+          - review_queue
+          - publish_pipeline
+          - search_engine
+          - audit_logger
+      publish:
+        description: "Publish and sync to federation"
+        type: programmatic
+        tools:
+          - publish_pipeline
+          - federation_sync
+          - catalog_manager
+
+  proposal_genesis:
+    description: "Autonomous proposal intelligence pipeline"
+    phases:
+      capture:
+        description: "Discover and qualify opportunities"
+        type: programmatic
+        tools:
+          - sam_scanner
+          - requirement_extractor
+          - question_generator
+      propose:
+        description: "Draft proposal content"
+        type: llm_agent
+        tools:
+          - spec_generator
+          - creative_engine
+          - gap_scorer
+      deliver:
+        description: "Finalize and package proposal"
+        type: llm_single
+        tools:
+          - doc_generator
+          - compliance_exporter
+          - narrative_generator

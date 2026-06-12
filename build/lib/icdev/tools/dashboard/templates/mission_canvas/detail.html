@@ -1,0 +1,48 @@
+<!-- CUI // SP-CTI — Mission Canvas Detail Page -->
+{% extends "base.html" %}
+{% block title %}Mission Detail — {{ mission_id }} — ICDEV{% endblock %}
+{% block content %}
+<style>
+  .mc-detail { padding: 20px 30px; }
+  .mc-detail h1 { font-size: 20px; margin: 0 0 8px; }
+  .mc-detail p { color: #7a8cb0; font-size: 13px; margin: 0 0 16px; }
+  .mc-detail pre { background:#0a1628; border:1px solid #1e3a6e; border-radius:6px; padding:12px; font-size:11px; color:#7a8cb0; white-space:pre-wrap; max-height:300px; overflow-y:auto; }
+</style>
+
+<div class="mc-detail">
+  <h1>Mission: {{ mission_id }}</h1>
+  <p>Drill-down view for a single mission session. Select a capability to load live data below.</p>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">
+    <button onclick="load('twin')" class="mc-btn mc-btn-pri">Twin</button>
+    <button onclick="load('security')" class="mc-btn">Security</button>
+    <button onclick="load('portfolio')" class="mc-btn">Portfolio</button>
+    <button onclick="load('cicd')" class="mc-btn">CI/CD</button>
+    <button onclick="load('ai-trust')" class="mc-btn">AI Trust</button>
+    <button onclick="load('evidence')" class="mc-btn">Evidence</button>
+  </div>
+  <pre id="output">Click a capability button to load data...</pre>
+</div>
+
+<script>
+const missionId = {{ mission_id|tojson }};
+async function load(cap) {
+  document.getElementById("output").textContent = "Loading " + cap + "...";
+  let url = "";
+  switch (cap) {
+    case "twin": url = "/mission-canvas/api/twin?mission_id=" + encodeURIComponent(missionId); break;
+    case "security": url = "/mission-canvas/api/security-posture?mission_id=" + encodeURIComponent(missionId); break;
+    case "portfolio": url = "/mission-canvas/api/portfolio?mission_id=" + encodeURIComponent(missionId); break;
+    case "cicd": url = "/mission-canvas/api/cicd?mission_id=" + encodeURIComponent(missionId); break;
+    case "ai-trust": url = "/mission-canvas/api/ai-trust?mission_id=" + encodeURIComponent(missionId); break;
+    case "evidence": url = "/mission-canvas/api/evidence?artifact_id=" + encodeURIComponent(missionId); break;
+  }
+  try {
+    const resp = await fetch(url);
+    const data = await resp.json();
+    document.getElementById("output").textContent = JSON.stringify(data, null, 2);
+  } catch (e) {
+    document.getElementById("output").textContent = "Error: " + e;
+  }
+}
+</script>
+{% endblock %}

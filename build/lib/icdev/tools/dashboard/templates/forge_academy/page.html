@@ -1,0 +1,360 @@
+{% extends "base.html" %}
+{% block title %}FORGE Academy — ICDEV™{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── FORGE Academy Design System ─────────────────────────────────────── */
+:root {
+  --fa-orange:  #FF6B35;
+  --fa-cyan:    #00D4FF;
+  --fa-green:   #00FF88;
+  --fa-purple:  #9b59b6;
+  --fa-gold:    #FFB800;
+  --fa-bg:      #0a0a14;
+  --fa-card:    #12192b;
+  --fa-border:  rgba(74,144,217,0.25);
+  --fa-glow:    rgba(255,107,53,0.15);
+}
+.fa-hub { padding: 0 0 3rem; }
+.fa-hero {
+  background: linear-gradient(135deg, #0a0a14 0%, #12192b 60%, #1a1230 100%);
+  border-bottom: 1px solid var(--fa-border);
+  padding: 2.5rem 2rem 2rem;
+  position: relative;
+  overflow: hidden;
+}
+.fa-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg, transparent, transparent 39px,
+    rgba(74,144,217,0.04) 40px
+  ), repeating-linear-gradient(
+    90deg, transparent, transparent 39px,
+    rgba(74,144,217,0.04) 40px
+  );
+  pointer-events: none;
+}
+.fa-hero-title {
+  font-size: 2.4rem;
+  font-weight: 900;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  background: linear-gradient(135deg, var(--fa-orange) 0%, var(--fa-gold) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin: 0 0 .3rem;
+}
+.fa-hero-sub {
+  color: var(--fa-cyan);
+  font-size: .85rem;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  opacity: .8;
+  margin: 0 0 1.5rem;
+}
+
+/* XP Bar */
+.fa-xp-block { display:flex; align-items:center; gap:1rem; flex-wrap:wrap; }
+.fa-rank-badge {
+  background: var(--fa-card);
+  border: 1px solid var(--fa-border);
+  border-radius: 8px;
+  padding: .5rem 1rem;
+  display: flex; align-items: center; gap: .6rem;
+}
+.fa-rank-icon { font-size: 1.4rem; }
+.fa-rank-label { font-size: .7rem; color: var(--fa-cyan); text-transform: uppercase; letter-spacing:.15em; }
+.fa-rank-name { font-size: 1rem; font-weight: 700; }
+.fa-xp-bar-wrap { flex: 1; min-width: 200px; }
+.fa-xp-bar-label { font-size:.7rem; color:var(--text-secondary); margin-bottom:.3rem; display:flex; justify-content:space-between; }
+.fa-xp-bar-track {
+  height: 8px; background: rgba(255,255,255,.07); border-radius: 4px;
+  overflow: hidden; position:relative;
+}
+.fa-xp-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--fa-orange), var(--fa-gold));
+  border-radius: 4px;
+  transition: width 1s cubic-bezier(.4,0,.2,1);
+  box-shadow: 0 0 8px var(--fa-orange);
+}
+.fa-xp-total { font-size:.7rem; color:var(--fa-gold); font-weight:600; }
+
+/* Intel feed */
+.fa-intel-feed {
+  background: rgba(0,0,0,.3);
+  border: 1px solid rgba(0,212,255,.15);
+  border-radius: 6px;
+  padding: .5rem 1rem;
+  font-size: .72rem;
+  color: var(--fa-cyan);
+  letter-spacing: .05em;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.fa-intel-ticker { display:inline-block; animation: ticker 30s linear infinite; }
+@keyframes ticker { 0%{transform:translateX(100%)} 100%{transform:translateX(-100%)} }
+
+/* Grid */
+.fa-section { padding: 1.5rem 2rem 0; }
+.fa-section-title {
+  font-size:.7rem; text-transform:uppercase; letter-spacing:.2em;
+  color:var(--fa-orange); margin:0 0 1rem; display:flex; align-items:center; gap:.6rem;
+}
+.fa-section-title::after { content:""; flex:1; height:1px; background:var(--fa-border); }
+.fa-mission-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:1rem; }
+.fa-mission-card {
+  background: var(--fa-card);
+  border: 1px solid var(--fa-border);
+  border-radius: 10px;
+  padding: 1.2rem;
+  cursor: pointer;
+  transition: border-color .2s, transform .15s, box-shadow .2s;
+  position: relative;
+  overflow: hidden;
+}
+.fa-mission-card:hover {
+  border-color: var(--fa-orange);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(255,107,53,.18);
+}
+.fa-mission-card::before {
+  content:"";
+  position:absolute; top:0; left:0; right:0; height:3px;
+  background:var(--tier-color, var(--fa-orange));
+}
+.fa-mission-card.tier-1 { --tier-color: #4a90d9; }
+.fa-mission-card.tier-2 { --tier-color: #FF6B35; }
+.fa-mission-card.tier-3 { --tier-color: #FF2D55; }
+.fa-card-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:.6rem; }
+.fa-card-title { font-weight:700; font-size:.95rem; }
+.fa-card-type {
+  font-size:.6rem; text-transform:uppercase; letter-spacing:.1em;
+  padding: 2px 7px; border-radius:4px;
+  background:rgba(74,144,217,.15); color:var(--fa-cyan);
+}
+.fa-card-type.coding   { background:rgba(0,255,136,.12); color:var(--fa-green); }
+.fa-card-type.guided   { background:rgba(155,89,182,.12); color:#c39bd3; }
+.fa-card-type.hybrid   { background:rgba(255,107,53,.12); color:var(--fa-orange); }
+.fa-card-type.studio   { background:rgba(0,212,255,.12); color:var(--fa-cyan); }
+.fa-card-type.chat     { background:rgba(255,184,0,.12); color:var(--fa-gold); }
+.fa-card-tagline { font-size:.78rem; color:var(--text-secondary); margin-bottom:.8rem; line-height:1.4; }
+.fa-card-footer { display:flex; justify-content:space-between; align-items:center; }
+.fa-card-xp { font-size:.72rem; color:var(--fa-gold); font-weight:600; }
+.fa-card-diff {
+  font-size:.6rem; text-transform:uppercase; letter-spacing:.1em; padding:2px 7px; border-radius:4px;
+}
+.fa-card-diff.beginner     { background:rgba(0,255,136,.12); color:var(--fa-green); }
+.fa-card-diff.intermediate { background:rgba(255,184,0,.12); color:var(--fa-gold); }
+.fa-card-diff.advanced     { background:rgba(255,45,85,.12); color:#ff6b6b; }
+.fa-card-status { font-size:.65rem; }
+.fa-card-status.completed { color:var(--fa-green); }
+.fa-card-status.in_progress { color:var(--fa-gold); }
+.fa-card-status.locked { color:var(--text-secondary); opacity:.5; }
+
+/* Stats row */
+.fa-stats-row { display:flex; gap:1rem; flex-wrap:wrap; margin-bottom:1.5rem; }
+.fa-stat-chip {
+  background:var(--fa-card);
+  border:1px solid var(--fa-border);
+  border-radius:8px;
+  padding:.6rem 1rem;
+  text-align:center;
+  min-width:90px;
+}
+.fa-stat-chip .val { font-size:1.4rem; font-weight:800; color:var(--fa-orange); }
+.fa-stat-chip .lbl { font-size:.6rem; text-transform:uppercase; letter-spacing:.1em; color:var(--text-secondary); }
+
+/* Daily login toast */
+.fa-daily-toast {
+  background: linear-gradient(135deg, rgba(0,255,136,.1), rgba(0,212,255,.05));
+  border: 1px solid rgba(0,255,136,.3);
+  border-radius:8px;
+  padding:.7rem 1rem;
+  font-size:.78rem;
+  color:var(--fa-green);
+  margin-bottom:1.2rem;
+  display:flex; align-items:center; gap:.6rem;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="fa-hub">
+
+  <!-- Hero Header -->
+  <div class="fa-hero">
+    <h1 class="fa-hero-title">FORGE Academy</h1>
+    <p class="fa-hero-sub">// Gamified AI Training — Mission-Ready AI Engineers</p>
+
+    {% if fa_user %}
+    <div class="fa-xp-block">
+      <div class="fa-rank-badge">
+        <span class="fa-rank-icon">{{ level_ctx.level.icon if level_ctx and level_ctx.level else '⬡' }}</span>
+        <div>
+          <div class="fa-rank-label">Rank</div>
+          <div class="fa-rank-name" style="color:{{ level_ctx.level.color if level_ctx and level_ctx.level else '#6c6c80' }}">
+            {{ level_ctx.level.label if level_ctx and level_ctx.level else 'Recruit' }}
+          </div>
+        </div>
+      </div>
+      <div class="fa-xp-bar-wrap">
+        <div class="fa-xp-bar-label">
+          <span>XP Progress</span>
+          <span class="fa-xp-total">{{ fa_user.xp|default(0) }} XP</span>
+        </div>
+        <div class="fa-xp-bar-track">
+          <div class="fa-xp-bar-fill" style="width:{{ level_ctx.pct if level_ctx else 0 }}%"></div>
+        </div>
+        {% if level_ctx and level_ctx.next %}
+        <div class="fa-xp-bar-label" style="margin-top:.3rem;">
+          <span>{{ level_ctx.xp_needed }} XP to {{ level_ctx.next.label }}</span>
+          <span>{{ level_ctx.pct }}%</span>
+        </div>
+        {% else %}
+        <div class="fa-xp-bar-label" style="margin-top:.3rem; color:var(--fa-gold);">MAX RANK — SENSEI</div>
+        {% endif %}
+      </div>
+      <div style="display:flex;gap:.6rem;margin-left:auto;">
+        <a href="/academy/achievements" class="btn" style="font-size:.75rem;padding:.4rem .8rem;">🏆 {{ stats.achievement_count|default(0) }}</a>
+        <a href="/academy/profile" class="btn" style="font-size:.75rem;padding:.4rem .8rem;">⚙ Profile</a>
+      </div>
+    </div>
+
+    <div class="fa-intel-feed" style="margin-top:1rem;">
+      <span class="fa-intel-ticker">
+        ◈ INTEL FEED &nbsp;|&nbsp;
+        LLM Token Economics — Complete M01 to unlock &nbsp;|&nbsp;
+        RAG Architecture — Agents that read documents without fine-tuning &nbsp;|&nbsp;
+        MCP Protocol — The universal API layer every agent needs &nbsp;|&nbsp;
+        New Mission Available: Amazon Strands Agents &nbsp;|&nbsp;
+        Guild challenge active — 48 hours remaining &nbsp;|&nbsp;
+      </span>
+    </div>
+    {% else %}
+    <p style="color:var(--text-secondary);margin-top:1rem;">Set up your profile to begin your mission.</p>
+    <a href="/academy/profile" class="btn" style="margin-top:.5rem;background:var(--fa-orange);border-color:var(--fa-orange);">Begin Mission</a>
+    {% endif %}
+  </div>
+
+  <div class="fa-section">
+    {% if daily_login %}
+    <div class="fa-daily-toast">
+      ✓ Daily login bonus: +{{ daily_login.xp }} XP
+      {% if daily_login.streak > 1 %} &nbsp;|&nbsp; 🔥 {{ daily_login.streak }}-day streak (+{{ daily_login.bonus }} bonus){% endif %}
+    </div>
+    {% endif %}
+
+    {% if fa_user %}
+    <!-- Stats Row -->
+    <div class="fa-stats-row">
+      <div class="fa-stat-chip">
+        <div class="val">{{ stats.user.xp|default(0) }}</div>
+        <div class="lbl">Total XP</div>
+      </div>
+      <div class="fa-stat-chip">
+        <div class="val">{{ stats.achievement_count|default(0) }}</div>
+        <div class="lbl">Achievements</div>
+      </div>
+      <div class="fa-stat-chip">
+        <div class="val">{{ stats.user.streak_days|default(1) }}</div>
+        <div class="lbl">Day Streak</div>
+      </div>
+      <div class="fa-stat-chip">
+        <div class="val">{{ fa_user.tier_unlocked|default(1) }}</div>
+        <div class="lbl">Tier</div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Quick Nav -->
+    <div style="display:flex;gap:.7rem;flex-wrap:wrap;margin-bottom:1.5rem;">
+      <a href="/academy/missions" class="btn" style="font-size:.78rem;">📋 All Missions</a>
+      <a href="/academy/skill-tree" class="btn" style="font-size:.78rem;">🌐 Skill Tree</a>
+      <a href="/academy/leaderboard" class="btn" style="font-size:.78rem;">🏆 Leaderboard</a>
+      <a href="/academy/guild" class="btn" style="font-size:.78rem;">⚔ Guild</a>
+      <a href="/academy/arena" class="btn" style="font-size:.78rem;color:var(--fa-orange);border-color:var(--fa-orange);">⚡ Arena</a>
+      <a href="/academy/workflow-builder" class="btn" style="font-size:.78rem;color:var(--fa-cyan);border-color:var(--fa-cyan);">⬡ Workflow Builder</a>
+      <a href="/academy/oracle" class="btn" style="font-size:.78rem;color:#9b59b6;border-color:#9b59b6;">🔮 Oracle Intel</a>
+    </div>
+
+    <!-- Active Missions -->
+    <div class="fa-section-title">Active Missions</div>
+    <div class="fa-mission-grid">
+      {% for m in missions %}
+      <div class="fa-mission-card tier-{{ m.tier|default(1) }}"
+           onclick="window.location='/academy/mission/{{ m.slug }}'">
+        <div class="fa-card-header">
+          <div class="fa-card-title">{{ m.title }}</div>
+          <span class="fa-card-type {{ m.mission_type|default('coding') }}">
+            {{ m.mission_type|default('coding') }}
+          </span>
+        </div>
+        <p class="fa-card-tagline">{{ m.tagline|default('') }}</p>
+        <div class="fa-card-footer">
+          <span class="fa-card-xp">+{{ m.xp_reward }} XP</span>
+          <span class="fa-card-diff {{ m.difficulty|default('beginner') }}">{{ m.difficulty|default('beginner') }}</span>
+          {% if fa_user %}
+          {% set s = progress_map.get(m.id, 'locked') if progress_map is defined else 'pending' %}
+          <span class="fa-card-status {{ s }}">
+            {% if s == 'completed' %}✓ Done{% elif s == 'in_progress' %}● Active{% else %}○ Start{% endif %}
+          </span>
+          {% endif %}
+        </div>
+      </div>
+      {% else %}
+      <p style="color:var(--text-secondary);grid-column:1/-1;">
+        No missions loaded yet.
+        {% if not fa_user %}Set up your <a href="/academy/profile">profile</a> to unlock missions.{% endif %}
+      </p>
+      {% endfor %}
+    </div>
+
+    <div style="text-align:right;margin-top:1rem;">
+      <a href="/academy/missions" style="font-size:.78rem;color:var(--fa-cyan);">View all missions →</a>
+    </div>
+
+    <!-- Oracle Intel Widget -->
+    <div style="margin-top:2rem;background:#12192b;border:1px solid rgba(155,89,182,.35);border-left:3px solid #9b59b6;border-radius:10px;padding:1rem 1.3rem;" id="oracle-widget">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:.5rem;">
+        <div>
+          <div style="font-size:.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.12em;color:#9b59b6;margin-bottom:.4rem;">🔮 Oracle Intel</div>
+          <div style="display:flex;gap:1.4rem;flex-wrap:wrap;">
+            <div>
+              <span style="font-size:1.4rem;font-weight:900;color:#00D4FF;" id="ora-total">—</span>
+              <span style="font-size:.68rem;color:var(--text-secondary);margin-left:.3rem;">predictions</span>
+            </div>
+            <div>
+              <span style="font-size:1.4rem;font-weight:900;color:#ff4d4d;" id="ora-crit">—</span>
+              <span style="font-size:.68rem;color:var(--text-secondary);margin-left:.3rem;">critical</span>
+            </div>
+            <div>
+              <span style="font-size:1.4rem;font-weight:900;color:#9b59b6;" id="ora-conv">—</span>
+              <span style="font-size:.68rem;color:var(--text-secondary);margin-left:.3rem;">convergence</span>
+            </div>
+          </div>
+          <div id="ora-last" style="font-size:.68rem;color:var(--text-secondary);margin-top:.35rem;"></div>
+        </div>
+        <a href="/academy/oracle" style="background:rgba(155,89,182,.15);border:1px solid rgba(155,89,182,.4);color:#9b59b6;border-radius:6px;padding:.35rem .9rem;font-size:.73rem;text-decoration:none;text-transform:uppercase;letter-spacing:.1em;white-space:nowrap;align-self:center;">View Oracle →</a>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  fetch('/api/academy/oracle/summary').then(r=>r.json()).then(d=>{
+    document.getElementById('ora-total').textContent = d.total_pending ?? '0';
+    document.getElementById('ora-crit').textContent  = d.critical ?? '0';
+    document.getElementById('ora-conv').textContent  = d.convergence_events ?? '0';
+    document.getElementById('ora-last').textContent  = d.last_run_at
+      ? 'Last run: ' + d.last_run_at.slice(0,16) + ' UTC'
+      : 'No predictions yet — visit Oracle to run.';
+  }).catch(()=>{});
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,25 @@
+# Showcase module global defaults
+showcase:
+  # App generation
+  generate_app:
+    default_category: general
+    output_dir: showcase/apps
+
+  # OSINT engine
+  osint_engine:
+    default_source: cve
+    cache_ttl_seconds: 3600
+    max_records: 1000
+
+  # Synthetic data engine
+  synthetic_data_engine:
+    default_domain: cyber
+    default_records: 100
+    max_records: 100000
+
+  # Validator
+  validator:
+    strict: false
+    required_files:
+      - manifest.json
+      - README.md

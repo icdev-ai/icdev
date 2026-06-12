@@ -1,0 +1,15 @@
+# Creative Engine (Phase 58)
+
+> Shard of `tools/manifest.md`. See index at `tools/manifest.md`.
+
+## Creative Engine (Phase 58)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Creative Engine | tools/creative/creative_engine.py | Customer-centric feature opportunity discovery (D351-D360) | --run, --discover, --scan, --extract, --score, --rank, --generate, --json | Pipeline results |
+| Competitor Discoverer | tools/creative/competitor_discoverer.py | Auto-discover competitors from category pages (D353) | --discover, --list, --confirm, --json | Competitor records |
+| Gap Scorer | tools/creative/gap_scorer.py | 3-dimension composite scoring (D355) | --score-all, --top, --gaps, --json | Scored gaps |
+| Pain Extractor | tools/creative/pain_extractor.py | Deterministic keyword-based pain point extraction (D354) | --extract-all, --json | Pain points |
+| Spec Generator | tools/creative/spec_generator.py | Template-based feature spec generation (D356) | --generate-all, --list, --json | Feature specs |
+| Trend Tracker | tools/creative/trend_tracker.py | Velocity/acceleration trend detection | --detect, --report, --json | Trend data |
+| Source Scanner | tools/creative/source_scanner.py | Scan customer pain points from G2, Capterra, TrustRadius, Reddit, GitHub Issues, Product Hunt, and GovCon blogs; store normalized signals | --scan, --source, --all, --list-sources, --history, --days, --json | Signal records |
+

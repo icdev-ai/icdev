@@ -1,0 +1,231 @@
+{
+  "version": "1.1.0",
+  "description": "AI Augmentation pattern catalog — maps legacy code patterns to AI/ML replacements with effort, risk, and cross-language AST node metadata.",
+  "library_match_value_score_reduction": 0.3,
+  "patterns": [
+    {
+      "id": "nested_conditionals",
+      "label": "Nested Conditionals",
+      "description": "Deeply nested if/elif/else blocks encoding domain logic across multiple dimensions, often brittle and hard to extend.",
+      "ai_replacement": "ml_classifier",
+      "ai_paradigm": "supervised_learning",
+      "effort_days_min": 5,
+      "effort_days_max": 15,
+      "risk_level": "medium",
+      "needs_training_data": true,
+      "zero_shot_feasible": false,
+      "language_nodes": {
+        "python": "ast.If with nested ast.If in body or orelse; depth >= 3 detected by recursive visitor",
+        "java": "IfStatement containing nested IfStatement (depth >= 3); detected via JavaParser IfStmt visitor",
+        "csharp": "IfStatementSyntax containing nested IfStatementSyntax (depth >= 3); Roslyn SyntaxWalker on IfStatementSyntax",
+        "go": "*ast.IfStmt with Body containing nested *ast.IfStmt; ast.Inspect depth counter",
+        "rust": "IfExpr (rust-analyzer) containing nested IfExpr in then_branch; ra_ap_syntax IfExpr visitor",
+        "typescript": "IfStatement containing nested IfStatement (depth >= 3); TypeScript compiler API forEachChild on IfStatement"
+      },
+      "library_indicators": {
+        "python": ["scikit-learn", "sklearn", "xgboost", "lightgbm", "catboost", "tensorflow", "torch", "keras"],
+        "java": ["weka", "smile", "dl4j", "tribuo", "org.deeplearning4j", "com.github.haifengl.smile"],
+        "csharp": ["Microsoft.ML", "ML.NET", "Accord", "Accord.MachineLearning", "Torch.NET", "TorchSharp"],
+        "go": ["gorgonia.org/gorgonia", "github.com/sjwhitworth/golearn", "github.com/cdipaolo/goml"],
+        "rust": ["smartcore", "linfa", "burn", "tch", "candle-core", "tract-core"],
+        "typescript": ["@tensorflow/tfjs", "tensorflow", "brain.js", "synaptic", "ml5", "@xenova/transformers"]
+      }
+    },
+    {
+      "id": "regex_user_input",
+      "label": "Regex-Based User Input Parsing",
+      "description": "Hand-crafted regular expressions used to extract structured data from free-form user input — fragile against variations and typos.",
+      "ai_replacement": "nlp_extractor",
+      "ai_paradigm": "nlp_ner",
+      "effort_days_min": 3,
+      "effort_days_max": 10,
+      "risk_level": "low",
+      "needs_training_data": false,
+      "zero_shot_feasible": true,
+      "language_nodes": {
+        "python": "ast.Call with func.attr in {compile,match,search,findall,fullmatch,sub} on re module, or re.X flag usage on user-derived strings",
+        "java": "MethodInvocation targeting Pattern.compile, Matcher.matches, Matcher.find, or String.matches with user input argument",
+        "csharp": "ObjectCreationExpressionSyntax for System.Text.RegularExpressions.Regex, or InvocationExpressionSyntax for Regex.Match/IsMatch/Replace",
+        "go": "CallExpr with regexp package selector: regexp.MustCompile, regexp.Compile, regexp.MatchString",
+        "rust": "MethodCall or PathExpr for regex::Regex::new, Regex::is_match, Regex::find, Regex::captures",
+        "typescript": "RegularExpressionLiteral, NewExpression with RegExp callee, or CallExpression of str.match/str.replace with RegExp argument"
+      },
+      "library_indicators": {
+        "python": ["spacy", "transformers", "nltk", "stanza", "flair", "huggingface_hub", "presidio_analyzer", "gliner"],
+        "java": ["opennlp", "edu.stanford.nlp", "com.johnsnowlabs.nlp", "ai.djl.huggingface", "com.ibm.watson"],
+        "csharp": ["Microsoft.Recognizers.Text", "Catalyst", "OpenNLP.NET", "Stanford.NLP.NET", "Azure.AI.TextAnalytics"],
+        "go": ["github.com/jdkato/prose", "github.com/pemistahl/lingua-go", "github.com/nuance-mobility/go-nlp"],
+        "rust": ["rust-bert", "whatlang", "lingua", "tokenizers", "candle-transformers"],
+        "typescript": ["compromise", "natural", "wink-nlp", "@xenova/transformers", "@azure/ai-text-analytics"]
+      }
+    },
+    {
+      "id": "string_template_rendering",
+      "label": "String Template Rendering",
+      "description": "Static string interpolation or Jinja/Handlebars templates that produce repetitive, formulaic output with limited contextual adaptation.",
+      "ai_replacement": "llm_generation",
+      "ai_paradigm": "generative_llm",
+      "effort_days_min": 2,
+      "effort_days_max": 7,
+      "risk_level": "low",
+      "needs_training_data": false,
+      "zero_shot_feasible": true,
+      "language_nodes": {
+        "python": "ast.JoinedStr (f-string) with > 3 format fields, or ast.Call on jinja2.Template/string.Template/str.format with > 2 keyword args",
+        "java": "MethodInvocation on String.format or MessageFormat.format with > 2 args; or chained StringBuilder.append calls (>= 5 links)",
+        "csharp": "InterpolatedStringExpressionSyntax with > 3 interpolation holes, or InvocationExpressionSyntax on string.Format with > 3 args",
+        "go": "CallExpr on fmt.Sprintf with > 3 format verbs, or CallExpr on text/template.Execute or html/template.Execute",
+        "rust": "MacroCall of format! with > 3 placeholders, or method chain including handlebars::Handlebars.render or tera::Tera.render",
+        "typescript": "TemplateLiteral with > 3 TemplateSpan nodes, or CallExpression on handlebars.compile/mustache.render/ejs.render"
+      },
+      "library_indicators": {
+        "python": ["openai", "anthropic", "langchain", "langchain_core", "google-generativeai", "google.generativeai", "cohere", "mistralai"],
+        "java": ["dev.langchain4j", "com.theokanning.openai-gpt3-java", "com.azure.ai.openai", "io.github.amikos-tech.chroma4j"],
+        "csharp": ["Azure.AI.OpenAI", "Microsoft.SemanticKernel", "OpenAI", "Anthropic.SDK", "Betalgo.OpenAI"],
+        "go": ["github.com/sashabaranov/go-openai", "github.com/tmc/langchaingo", "github.com/cohere-ai/cohere-go"],
+        "rust": ["async-openai", "openai-api-rs", "llm", "ollama-rs", "mistralai"],
+        "typescript": ["openai", "@anthropic-ai/sdk", "langchain", "@langchain/core", "@google/generative-ai", "cohere-ai"]
+      }
+    },
+    {
+      "id": "scheduled_cron",
+      "label": "Scheduled Cron Job",
+      "description": "Time-based polling or batch jobs that run on a fixed schedule regardless of whether conditions warrant action.",
+      "ai_replacement": "agentic_trigger",
+      "ai_paradigm": "agentic_ai",
+      "effort_days_min": 4,
+      "effort_days_max": 12,
+      "risk_level": "medium",
+      "needs_training_data": false,
+      "zero_shot_feasible": true,
+      "language_nodes": {
+        "python": "ast.FunctionDef with decorator_list containing names from {cron,scheduled,periodic,every,interval}; or ast.Call on schedule.every/APScheduler.add_job/celery.task.apply_async",
+        "java": "Annotation with name @Scheduled, @Cron, or @EnableScheduling; or MethodInvocation on ScheduledExecutorService.scheduleAtFixedRate/scheduleWithFixedDelay",
+        "csharp": "AttributeSyntax with name CronJob/Scheduled/RecurringJob; or ClassDeclarationSyntax implementing IHostedService/BackgroundService with delay loop",
+        "go": "CallExpr on cron.New() or (*cron.Cron).AddFunc from robfig/cron; or goroutine containing time.Ticker or time.Sleep in a for-loop",
+        "rust": "MethodCall on tokio_cron_scheduler::JobScheduler or clokwerk::Scheduler; or async fn with loop containing tokio::time::sleep/interval",
+        "typescript": "CallExpression on cron.schedule/nodeSchedule.scheduleJob/setInterval with numeric or cron-string first arg; or @Cron decorator (NestJS InvocationExpression)"
+      },
+      "library_indicators": {
+        "python": ["langgraph", "autogen", "pyautogen", "crewai", "swarmzero", "pydantic-ai", "langchain.agents", "smolagents"],
+        "java": ["dev.langchain4j.agent", "com.microsoft.autogen4j", "io.github.lmos-ai.arc"],
+        "csharp": ["Microsoft.SemanticKernel.Agents", "AutoGen.Core", "AutoGen.SemanticKernel", "AgentFramework"],
+        "go": ["github.com/tmc/langchaingo/agents", "github.com/agent-protocol/sdk-go"],
+        "rust": ["rig", "baml", "kalosm", "llm-chain"],
+        "typescript": ["@langchain/langgraph", "langchain/agents", "@microsoft/autogen", "bee-agent-framework"]
+      }
+    },
+    {
+      "id": "hardcoded_threshold",
+      "label": "Hardcoded Threshold",
+      "description": "Static numeric thresholds (e.g., alert if value > 95) baked into config or code, unable to adapt to seasonal or contextual variance.",
+      "ai_replacement": "anomaly_detection",
+      "ai_paradigm": "unsupervised_learning",
+      "effort_days_min": 5,
+      "effort_days_max": 20,
+      "risk_level": "high",
+      "needs_training_data": true,
+      "zero_shot_feasible": false,
+      "language_nodes": {
+        "python": "ast.Compare where comparators[0] is ast.Constant(int|float) and the comparison drives an if/raise/alert call; numeric literal not read from config",
+        "java": "InfixExpression (==, !=, <, >, <=, >=) with NumberLiteral operand inside an IfStatement that triggers an alert/throw/log",
+        "csharp": "BinaryExpressionSyntax with LiteralExpressionSyntax (NumericLiteralToken) operand inside an IfStatementSyntax body containing alert/throw/log",
+        "go": "BinaryExpr with BasicLit token type INT or FLOAT inside an IfStmt whose body calls a log/alert/send function",
+        "rust": "BinExpr containing Literal (INT_NUMBER or FLOAT_NUMBER) in an IfExpr whose then_branch contains a log/alert/panic call",
+        "typescript": "BinaryExpression with NumericLiteral operand inside an IfStatement body that calls a log/alert/notify function"
+      },
+      "library_indicators": {
+        "python": ["pyod", "alibi-detect", "prophet", "statsmodels", "adtk", "sklearn.ensemble", "scipy.stats", "ruptures"],
+        "java": ["smile.anomaly", "weka.unsupervised", "org.apache.commons.math3.stat", "org.jfree.data.statistics"],
+        "csharp": ["Microsoft.ML.TimeSeries", "Accord.Statistics", "MathNet.Numerics.Statistics", "Catalyst.AnomalyDetection"],
+        "go": ["gonum.org/v1/gonum/stat", "github.com/montanaflynn/stats", "github.com/aclements/go-moremath"],
+        "rust": ["linfa-clustering", "smartcore", "statrs", "argmin"],
+        "typescript": ["simple-statistics", "jstat", "ml-matrix", "@tensorflow/tfjs", "stdlib-js"]
+      }
+    },
+    {
+      "id": "db_render_notify_chain",
+      "label": "DB → Render → Notify Chain",
+      "description": "Pipeline that queries a database, formats results into a report, and sends notifications — producing mechanical, context-free summaries.",
+      "ai_replacement": "llm_synthesis",
+      "ai_paradigm": "generative_llm",
+      "effort_days_min": 3,
+      "effort_days_max": 8,
+      "risk_level": "low",
+      "needs_training_data": false,
+      "zero_shot_feasible": true,
+      "language_nodes": {
+        "python": "Sequential ast.Call nodes within same function: (1) db call — session.query/cursor.execute/engine.execute, (2) template call — Template.render/str.format/jinja2, (3) notify call — smtplib.sendmail/requests.post/boto3.publish",
+        "java": "Sequential MethodInvocation in same method: (1) JDBC ResultSet or JPA query, (2) String.format or template engine render, (3) JavaMail Transport.send or HTTP client post",
+        "csharp": "Sequential InvocationExpressionSyntax in same method body: (1) EF Core/Dapper query, (2) string.Format or Razor render, (3) SmtpClient.Send or HttpClient.PostAsync",
+        "go": "Sequential CallExpr in same function body: (1) (*sql.DB).Query or ORM Find, (2) fmt.Sprintf or template.Execute, (3) smtp.SendMail or http.Post",
+        "rust": "Sequential method calls in same fn: (1) sqlx::query/diesel::RunQueryDsl, (2) format!/Tera.render, (3) lettre::SmtpTransport.send or reqwest::Client.post",
+        "typescript": "Sequential AwaitExpression in same async function: (1) ORM/knex query, (2) template literal or render call, (3) nodemailer.sendMail or axios.post/fetch"
+      },
+      "library_indicators": {
+        "python": ["openai", "anthropic", "langchain", "langchain_core", "google-generativeai", "cohere", "llmchain"],
+        "java": ["dev.langchain4j", "com.theokanning.openai-gpt3-java", "com.azure.ai.openai"],
+        "csharp": ["Microsoft.SemanticKernel", "Azure.AI.OpenAI", "OpenAI", "Anthropic.SDK"],
+        "go": ["github.com/sashabaranov/go-openai", "github.com/tmc/langchaingo"],
+        "rust": ["async-openai", "llm", "ollama-rs", "candle-core"],
+        "typescript": ["openai", "@anthropic-ai/sdk", "langchain", "@langchain/core", "@google/generative-ai"]
+      }
+    },
+    {
+      "id": "keyword_list_search",
+      "label": "Keyword List Search",
+      "description": "Exact-match keyword or substring search over documents — misses synonyms, intent, and semantic similarity.",
+      "ai_replacement": "vector_search",
+      "ai_paradigm": "embedding_retrieval",
+      "effort_days_min": 2,
+      "effort_days_max": 6,
+      "risk_level": "low",
+      "needs_training_data": false,
+      "zero_shot_feasible": true,
+      "language_nodes": {
+        "python": "ast.Compare with ast.In operator where left is user query and comparators[0] is a list/set literal or variable; or ast.Call on str.find/str.contains/str.__contains__ inside a loop over keyword list",
+        "java": "MethodInvocation on String.contains, String.indexOf, or List.contains inside a loop or stream filter over a keyword collection",
+        "csharp": "InvocationExpressionSyntax for string.Contains, string.IndexOf, or Enumerable.Contains inside a loop or LINQ query over keyword enumerable",
+        "go": "CallExpr on strings.Contains or strings.Index inside a for-range loop over a string slice of keywords",
+        "rust": "MethodCall str.contains or str.find inside an Iterator.any/filter call over a keyword slice or Vec<&str>",
+        "typescript": "CallExpression of str.includes, str.indexOf, or Array.prototype.some/find on keyword array inside a search/filter function"
+      },
+      "library_indicators": {
+        "python": ["faiss-cpu", "faiss", "chromadb", "pinecone-client", "weaviate-client", "qdrant-client", "sentence-transformers", "langchain.vectorstores", "pymilvus"],
+        "java": ["dev.langchain4j.store.embedding", "io.weaviate.client", "redis.clients.jedis", "com.redis.om.spring", "io.qdrant.client"],
+        "csharp": ["Microsoft.SemanticKernel.Memory", "Qdrant.Client", "Pinecone", "Weaviate.NET", "Redis.OM"],
+        "go": ["github.com/tmc/langchaingo/vectorstores", "github.com/qdrant/go-client", "github.com/weaviate/weaviate-go-client"],
+        "rust": ["qdrant-client", "rig", "fastembed", "candle-core", "vectordb"],
+        "typescript": ["@pinecone-database/pinecone", "@qdrant/js-client-rest", "chromadb", "weaviate-ts-client", "@langchain/community"]
+      }
+    },
+    {
+      "id": "large_rule_table",
+      "label": "Large Rule Table",
+      "description": "Hundreds of hand-authored business rules in a spreadsheet or decision table — maintenance-heavy and inconsistent at scale.",
+      "ai_replacement": "decision_agent",
+      "ai_paradigm": "agentic_ai",
+      "effort_days_min": 10,
+      "effort_days_max": 30,
+      "risk_level": "high",
+      "needs_training_data": true,
+      "zero_shot_feasible": false,
+      "language_nodes": {
+        "python": "ast.Dict literal with > 20 key-value pairs used as a dispatch/rule table; or ast.If-elif chain with >= 15 branches in a single function",
+        "java": "SwitchStatement with >= 15 SwitchCase entries; or Map/HashMap initialization (put chains or Map.of) with >= 20 entries acting as rule dispatch",
+        "csharp": "SwitchStatementSyntax with >= 15 SwitchSectionSyntax entries, or SwitchExpressionSyntax with >= 15 arms; or Dictionary initialization with >= 20 entries",
+        "go": "SwitchStmt with >= 15 CaseClause entries; or composite literal map with >= 20 key-value pairs used as rule lookup",
+        "rust": "MatchExpr with >= 15 MatchArm entries; or large static array/vec of tuples used as rule dispatch table",
+        "typescript": "SwitchStatement with >= 15 CaseClause entries; or ObjectLiteralExpression with >= 20 PropertyAssignment entries used as rule map"
+      },
+      "library_indicators": {
+        "python": ["langgraph", "autogen", "pyautogen", "crewai", "dspy", "pydantic-ai", "smolagents", "openai", "anthropic"],
+        "java": ["dev.langchain4j.agent", "com.microsoft.autogen4j", "org.drools", "io.github.lmos-ai.arc"],
+        "csharp": ["Microsoft.SemanticKernel.Agents", "AutoGen.Core", "NRules", "RulesEngine", "AgentFramework"],
+        "go": ["github.com/tmc/langchaingo/agents", "github.com/hyperjumptech/grule-rule-engine"],
+        "rust": ["rig", "baml", "kalosm", "llm-chain"],
+        "typescript": ["@langchain/langgraph", "langchain/agents", "@microsoft/autogen", "bee-agent-framework", "nools"]
+      }
+    }
+  ]
+}

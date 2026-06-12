@@ -1,0 +1,286 @@
+# DevSecOps Configuration — Profile Schema, Maturity Levels, Pipeline Stages
+# Used by: tools/devsecops/profile_manager.py, intake_engine.py, pipeline_security_generator.py
+# ADR D119: Per-project DevSecOps profile controls all downstream pipeline and infra generation
+
+# =============================================================================
+# Pipeline Security Stages — toggleable per project based on DevSecOps profile
+# =============================================================================
+devsecops_stages:
+  sast:
+    description: "Static Application Security Testing"
+    tools: [bandit, spotbugs, gosec, clippy, eslint-security, security-code-scan]
+    default: true
+    optional: false
+    ci_stage: security-scan
+    gate_impact: block_on_critical
+
+  dast:
+    description: "Dynamic Application Security Testing"
+    tools: [zap, burp]
+    default: false
+    optional: true
+    ci_stage: security-scan
+    gate_impact: warn_on_high
+
+  sca:
+    description: "Software Composition Analysis / Dependency Scanning"
+    tools: [pip-audit, npm-audit, cargo-audit, govulncheck, owasp-dc, dotnet-list]
+    default: true
+    optional: false
+    ci_stage: security-scan
+    gate_impact: block_on_critical
+
+  secret_detection:
+    description: "Secret and Credential Detection"
+    tools: [detect-secrets, gitleaks]
+    default: true
+    optional: false
+    ci_stage: security-scan
+    gate_impact: block_on_any
+
+  container_scan:
+    description: "Container Image Vulnerability Scanning"
+    tools: [trivy, grype]
+    default: true
+    optional: false
+    ci_stage: security-scan
+    gate_impact: block_on_critical
+
+  image_signing:
+    description: "Container Image Signing and Verification (SLSA Level 3)"
+    tools: [cosign, notation]
+    default: false
+    optional: true
+    ci_stage: devsecops-check
+    gate_impact: block_when_active
+
+  sbom_attestation:
+    description: "SBOM Attestation and Supply Chain Provenance"
+    tools: [cosign-attach, in-toto]
+    default: false
+    optional: true
+    ci_stage: devsecops-check
+    gate_impact: block_when_active
+
+  rasp:
+    description: "Runtime Application Self-Protection"
+    tools: [falco, sysdig]
+    default: false
+    optional: true
+    ci_stage: deploy-staging
+    gate_impact: warn_on_bypass
+
+  policy_as_code:
+    description: "Policy-as-Code Admission Control"
+    tools: [kyverno, opa-gatekeeper]
+    default: false
+    optional: true
+    ci_stage: devsecops-check
+    gate_impact: block_on_critical
+
+  license_compliance:
+    description: "Open Source License Compliance Scanning"
+    tools: [fossa, black-duck, scancode]
+    default: false
+    optional: true
+    ci_stage: compliance-check
+    gate_impact: warn_on_copyleft
+
+# =============================================================================
+# Maturity Levels — DevSecOps Maturity Model (5 levels)
+# =============================================================================
+maturity_levels:
+  level_1_initial:
+    description: "Ad hoc security, no automation in CI/CD pipeline"
+    min_stages: 0
+    required_stages: []
+    characteristics:
+      - "Manual security reviews only"
+      - "No automated scanning in pipeline"
+      - "Security is a separate phase, not integrated"
+
+  level_2_managed:
+    description: "Basic shift-left with SAST and dependency scanning"
+    min_stages: 2
+    required_stages: [sast, sca]
+    characteristics:
+      - "SAST integrated into CI/CD"
+      - "Dependency vulnerabilities tracked"
+      - "Security findings reviewed before merge"
+
+  level_3_defined:
+    description: "Full shift-left with container security and secret detection"
+    min_stages: 4
+    required_stages: [sast, sca, secret_detection, container_scan]
+    characteristics:
+      - "Container images scanned before deployment"
+      - "Secrets prevented from entering codebase"
+      - "Security gates block deployments on critical findings"
+      - "Minimum for ATO-bound projects"
+
+  level_4_measured:
+    description: "Policy enforcement, attestation, and supply chain integrity"
+    min_stages: 6
+    required_stages: [sast, sca, secret_detection, container_scan, policy_as_code, sbom_attestation]
+    characteristics:
+      - "Admission control enforces security policies"
+      - "SBOM attestation on all artifacts"
+      - "Supply chain provenance verified"
+      - "Compliance metrics tracked and reported"
+
+  level_5_optimized:
+    description: "Full DevSecOps with runtime protection and continuous improvement"
+    min_stages: 8
+    required_stages: [sast, sca, secret_detection, container_scan, policy_as_code, sbom_attestation, image_signing, rasp]
+    characteristics:
+      - "Runtime security monitoring and auto-response"
+      - "Image integrity verified via signatures"
+      - "Self-healing security patterns"
+      - "Continuous security posture improvement"
+
+# =============================================================================
+# Intake Detection — Keywords for DevSecOps maturity auto-detection
+# =============================================================================
+intake_detection:
+  keywords_by_stage:
+    sast:
+      - static analysis
+      - code scanning
+      - bandit
+      - sonarqube
+      - fortify
+      - checkmarx
+      - veracode
+      - semgrep
+      - codeql
+      - spotbugs
+      - gosec
+      - eslint-security
+    dast:
+      - dynamic testing
+      - penetration test
+      - OWASP ZAP
+      - burp suite
+      - DAST
+      - web app scanning
+      - runtime testing
+    sca:
+      - dependency scan
+      - software composition
+      - pip-audit
+      - snyk
+      - npm audit
+      - cargo audit
+      - govulncheck
+      - OWASP dependency
+      - software composition analysis
+    secret_detection:
+      - secret scanning
+      - credential detection
+      - gitleaks
+      - trufflehog
+      - detect-secrets
+      - secret detection
+      - credential scan
+    container_scan:
+      - container scanning
+      - image scanning
+      - trivy
+      - grype
+      - twistlock
+      - prisma cloud
+      - anchore
+      - clair
+    image_signing:
+      - image signing
+      - cosign
+      - sigstore
+      - notary
+      - docker content trust
+      - SLSA
+      - image verification
+    sbom_attestation:
+      - SBOM
+      - software bill of materials
+      - attestation
+      - SLSA
+      - in-toto
+      - supply chain attestation
+      - provenance
+    rasp:
+      - runtime protection
+      - falco
+      - sysdig
+      - RASP
+      - runtime security
+      - runtime monitoring
+      - eBPF security
+    policy_as_code:
+      - policy as code
+      - OPA
+      - gatekeeper
+      - kyverno
+      - sentinel
+      - conftest
+      - admission control
+      - policy engine
+    license_compliance:
+      - license compliance
+      - FOSSA
+      - black duck
+      - scancode
+      - license scanning
+      - open source license
+      - copyleft
+
+  # Keywords indicating NO existing DevSecOps
+  absence_signals:
+    - no security scanning
+    - manual security review
+    - no automated security
+    - security is handled separately
+    - we don't have automated
+    - greenfield
+    - starting from scratch
+
+  # Keywords indicating ZTA requirements (triggers ZTA profiling)
+  zta_keywords:
+    - zero trust
+    - micro-segmentation
+    - microsegmentation
+    - mTLS
+    - mutual TLS
+    - identity-aware proxy
+    - service mesh
+    - istio
+    - linkerd
+    - never trust always verify
+    - least privilege access
+    - continuous verification
+    - device posture
+    - NIST 800-207
+    - zero trust architecture
+
+# =============================================================================
+# Profile Defaults by Impact Level
+# =============================================================================
+il_defaults:
+  IL2:
+    minimum_maturity: level_1_initial
+    recommended_maturity: level_2_managed
+    zta_required: false
+  IL4:
+    minimum_maturity: level_3_defined
+    recommended_maturity: level_4_measured
+    zta_required: false
+    zta_recommended: true
+  IL5:
+    minimum_maturity: level_3_defined
+    recommended_maturity: level_4_measured
+    zta_required: true
+    minimum_zta_maturity: advanced
+  IL6:
+    minimum_maturity: level_4_measured
+    recommended_maturity: level_5_optimized
+    zta_required: true
+    minimum_zta_maturity: advanced

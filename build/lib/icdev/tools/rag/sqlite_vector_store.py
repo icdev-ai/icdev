@@ -1,0 +1,380 @@
+# [TEMPLATE: CUI // SP-CTI]
+"""SQLite BLOB vector store — default backend (D-RAG-1).
+
+Stores embeddings as packed float32 BLOBs in SQLite. Computes cosine
+similarity in Python with numpy fast path + pure-python fallback.
+Reuses struct.pack/unpack pattern from tools/memory/embed_memory.py.
+
+Always available — no optional dependencies. Air-gap safe.
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+import struct
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from tools.db.storage import get_connection
+from tools.rag.vector_store_provider import (
+    SearchResult,
+    VectorChunk,
+    VectorStoreProvider,
+)
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+DEFAULT_DB_PATH = BASE_DIR / "data" / "rag" / "rag_vectors.db"
+
+
+def _cosine_similarity(a: List[float], b: List[float]) -> float:
+    """Cosine similarity with numpy fast path + pure-python fallback."""
+    try:
+        import numpy as np
+
+        va = np.array(a, dtype=np.float32)
+        vb = np.array(b, dtype=np.float32)
+        dot = float(np.dot(va, vb))
+        norm = float(np.linalg.norm(va) * np.linalg.norm(vb))
+        return dot / norm if norm > 0 else 0.0
+    except ImportError:
+        dot = sum(x * y for x, y in zip(a, b))
+        norm_a = sum(x * x for x in a) ** 0.5
+        norm_b = sum(x * x for x in b) ** 0.5
+        return dot / (norm_a * norm_b) if norm_a > 0 and norm_b > 0 else 0.0
+
+
+def _embedding_to_blob(embedding: List[float]) -> bytes:
+    """Pack float list to binary BLOB."""
+    return struct.pack(f"{len(embedding)}f", *embedding)
+
+
+def _blob_to_embedding(blob: bytes) -> List[float]:
+    """Unpack binary BLOB to float list."""
+    n = len(blob) // 4
+    return list(struct.unpack(f"{n}f", blob))
+
+
+class SQLiteVectorStore(VectorStoreProvider):
+    """SQLite BLOB vector store implementation.
+
+    Schema uses the rag_chunks table in a dedicated SQLite DB.
+    Thread-safe via per-call connection (SQLite handles locking).
+    """
+
+    def __init__(self, db_path: str | Path | None = None, tenant_id: str = ""):
+        self._db_path = Path(db_path) if db_path else DEFAULT_DB_PATH
+        self._tenant_id = tenant_id
+        if tenant_id:
+            tenant_dir = BASE_DIR / "data" / "tenants"
+            tenant_dir.mkdir(parents=True, exist_ok=True)
+            self._db_path = tenant_dir / f"{tenant_id}_rag.db"
+        self._db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._init_schema()
+
+    def _get_conn(self) -> sqlite3.Connection:
+        conn = get_connection(db_path=str(self._db_path))
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        return conn
+
+    def _init_schema(self):
+        """Create rag_chunks table if not exists."""
+        conn = self._get_conn()
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS rag_chunks (
+                id TEXT PRIMARY KEY,
+                content TEXT NOT NULL,
+                content_hash TEXT NOT NULL,
+                embedding BLOB,
+                source_type TEXT NOT NULL,
+                source_id TEXT NOT NULL DEFAULT '',
+                source_table TEXT NOT NULL DEFAULT '',
+                chunk_index INTEGER NOT NULL DEFAULT 0,
+                total_chunks INTEGER NOT NULL DEFAULT 1,
+                metadata TEXT DEFAULT '{}',
+                tier TEXT NOT NULL DEFAULT 'hot'
+                    CHECK(tier IN ('hot', 'warm', 'cold')),
+                tenant_id TEXT DEFAULT '',
+                project_id TEXT DEFAULT '',
+                classification TEXT NOT NULL DEFAULT 'CUI',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        # Indexes for common queries
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_rag_chunks_content_hash
+            ON rag_chunks(content_hash)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_rag_chunks_source
+            ON rag_chunks(source_type, source_id)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_rag_chunks_tier
+            ON rag_chunks(tier)
+        """)
+        conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_rag_chunks_tenant
+            ON rag_chunks(tenant_id)
+        """)
+        conn.commit()
+        conn.close()
+
+    @property
+    def provider_name(self) -> str:
+        return "sqlite"
+
+    def upsert(self, chunks: List[VectorChunk]) -> int:
+        """Insert chunks, skipping duplicates by content_hash (D-RAG-5)."""
+        if not chunks:
+            return 0
+        conn = self._get_conn()
+        inserted = 0
+        for chunk in chunks:
+            if not chunk.content_hash:
+                chunk.compute_content_hash()
+            # Check for existing content_hash (dedup)
+            row = conn.execute(
+                "SELECT id FROM rag_chunks WHERE content_hash = ?",
+                (chunk.content_hash,),
+            ).fetchone()
+            if row:
+                continue  # Skip duplicate
+            if chunk.embedding is None:
+                continue  # No embedding, skip
+            blob = _embedding_to_blob(chunk.embedding)
+            meta_json = json.dumps(chunk.metadata) if chunk.metadata else "{}"
+            conn.execute(
+                """INSERT INTO rag_chunks
+                   (id, content, content_hash, embedding, source_type, source_id,
+                    source_table, chunk_index, total_chunks, metadata, tier,
+                    tenant_id, project_id, classification)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    chunk.chunk_id,
+                    chunk.content,
+                    chunk.content_hash,
+                    blob,
+                    chunk.source_type,
+                    chunk.source_id,
+                    chunk.source_table,
+                    chunk.chunk_index,
+                    chunk.total_chunks,
+                    meta_json,
+                    chunk.tier,
+                    chunk.tenant_id or self._tenant_id,
+                    chunk.project_id,
+                    chunk.classification,
+                ),
+            )
+            inserted += 1
+        conn.commit()
+        conn.close()
+        return inserted
+
+    def search(
+        self,
+        query_embedding: List[float],
+        top_k: int = 50,
+        filters: Optional[Dict[str, Any]] = None,
+    ) -> List[SearchResult]:
+        """Brute-force cosine similarity search on all chunks."""
+        conn = self._get_conn()
+        sql = """SELECT id, content, source_type, source_id, source_table,
+                        chunk_index, embedding, metadata, tier, classification
+                 FROM rag_chunks WHERE embedding IS NOT NULL"""
+        params: list = []
+        if filters:
+            if "source_type" in filters:
+                sql += " AND source_type = ?"
+                params.append(filters["source_type"])
+            if "tier" in filters:
+                sql += " AND tier = ?"
+                params.append(filters["tier"])
+            if "project_id" in filters:
+                sql += " AND (project_id = ? OR project_id = '')"
+                params.append(filters["project_id"])
+            if "tenant_id" in filters:
+                sql += " AND (tenant_id = ? OR tenant_id = '')"
+                params.append(filters["tenant_id"])
+        elif self._tenant_id:
+            sql += " AND (tenant_id = ? OR tenant_id = '')"
+            params.append(self._tenant_id)
+
+        rows = conn.execute(sql, params).fetchall()
+        conn.close()
+
+        results: list[SearchResult] = []
+        for row in rows:
+            (
+                cid,
+                content,
+                src_type,
+                src_id,
+                src_table,
+                cidx,
+                emb_blob,
+                meta_str,
+                tier,
+                cls,
+            ) = row
+            stored_emb = _blob_to_embedding(emb_blob)
+            score = _cosine_similarity(query_embedding, stored_emb)
+            meta = {}
+            if meta_str:
+                try:
+                    meta = json.loads(meta_str)
+                except (json.JSONDecodeError, ValueError):
+                    pass
+            results.append(
+                SearchResult(
+                    chunk_id=cid,
+                    content=content,
+                    source_type=src_type,
+                    source_id=src_id,
+                    source_table=src_table,
+                    chunk_index=cidx,
+                    score=score,
+                    final_score=score,
+                    metadata=meta,
+                    tier=tier,
+                    classification=cls,
+                )
+            )
+
+        results.sort(key=lambda r: r.score, reverse=True)
+        return results[:top_k]
+
+    def delete(self, chunk_ids: List[str]) -> int:
+        if not chunk_ids:
+            return 0
+        conn = self._get_conn()
+        placeholders = ",".join("?" for _ in chunk_ids)
+        cur = conn.execute(
+            f"DELETE FROM rag_chunks WHERE id IN ({placeholders})",
+            chunk_ids,  # nosec B608 -- table/column names are internal constants, not user input
+        )
+        deleted = cur.rowcount
+        conn.commit()
+        conn.close()
+        return deleted
+
+    def count(self, filters: Optional[Dict[str, Any]] = None) -> int:
+        conn = self._get_conn()
+        sql = "SELECT COUNT(*) FROM rag_chunks"
+        params: list = []
+        conditions = []
+        if filters:
+            if "source_type" in filters:
+                conditions.append("source_type = ?")
+                params.append(filters["source_type"])
+            if "tier" in filters:
+                conditions.append("tier = ?")
+                params.append(filters["tier"])
+            if "tenant_id" in filters:
+                conditions.append("(tenant_id = ? OR tenant_id = '')")
+                params.append(filters["tenant_id"])
+        elif self._tenant_id:
+            conditions.append("(tenant_id = ? OR tenant_id = '')")
+            params.append(self._tenant_id)
+        if conditions:
+            sql += " WHERE " + " AND ".join(conditions)
+        result = conn.execute(sql, params).fetchone()[0]
+        conn.close()
+        return result
+
+    def check_availability(self) -> bool:
+        try:
+            conn = self._get_conn()
+            conn.execute("SELECT 1 FROM rag_chunks LIMIT 1")
+            conn.close()
+            return True
+        except Exception:
+            return False
+
+    def get_by_content_hash(self, content_hash: str) -> Optional[VectorChunk]:
+        conn = self._get_conn()
+        row = conn.execute(
+            """SELECT id, content, content_hash, source_type, source_id,
+                      source_table, chunk_index, total_chunks, metadata,
+                      tier, tenant_id, project_id, classification
+               FROM rag_chunks WHERE content_hash = ?""",
+            (content_hash,),
+        ).fetchone()
+        conn.close()
+        if not row:
+            return None
+        meta = {}
+        if row[8]:
+            try:
+                meta = json.loads(row[8])
+            except (json.JSONDecodeError, ValueError):
+                pass
+        return VectorChunk(
+            chunk_id=row[0],
+            content=row[1],
+            content_hash=row[2],
+            source_type=row[3],
+            source_id=row[4],
+            source_table=row[5],
+            chunk_index=row[6],
+            total_chunks=row[7],
+            metadata=meta,
+            tier=row[9],
+            tenant_id=row[10],
+            project_id=row[11],
+            classification=row[12],
+        )
+
+    def migrate_tier(self, chunk_ids: List[str], target_tier: str) -> int:
+        """Migrate chunks to target tier (D-RAG-6).
+
+        For warm tier: compress embedding to float16.
+        For cold tier: remove embedding (metadata only).
+        """
+        if not chunk_ids or target_tier not in ("hot", "warm", "cold"):
+            return 0
+        conn = self._get_conn()
+        migrated = 0
+        for cid in chunk_ids:
+            if target_tier == "warm":
+                # Compress float32 → float16
+                row = conn.execute("SELECT embedding FROM rag_chunks WHERE id = ?", (cid,)).fetchone()
+                if row and row[0]:
+                    emb = _blob_to_embedding(row[0])
+                    try:
+                        import numpy as np
+
+                        f16 = np.array(emb, dtype=np.float16)
+                        compressed = f16.tobytes()
+                    except ImportError:
+                        compressed = row[0]  # Keep float32 without numpy
+                    conn.execute(
+                        """UPDATE rag_chunks
+                           SET tier = ?, embedding = ?, updated_at = CURRENT_TIMESTAMP
+                           WHERE id = ?""",
+                        (target_tier, compressed, cid),
+                    )
+                    migrated += 1
+            elif target_tier == "cold":
+                # Remove embedding, keep metadata
+                conn.execute(
+                    """UPDATE rag_chunks
+                       SET tier = ?, embedding = NULL, updated_at = CURRENT_TIMESTAMP
+                       WHERE id = ?""",
+                    (target_tier, cid),
+                )
+                migrated += 1
+            else:
+                conn.execute(
+                    """UPDATE rag_chunks
+                       SET tier = ?, updated_at = CURRENT_TIMESTAMP
+                       WHERE id = ?""",
+                    (target_tier, cid),
+                )
+                migrated += 1
+        conn.commit()
+        conn.close()
+        return migrated

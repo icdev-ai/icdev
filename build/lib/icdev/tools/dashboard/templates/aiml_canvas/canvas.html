@@ -1,0 +1,1241 @@
+{% extends "base.html" %}
+{% block title %}{% if design %}{{ design.name }}{% else %}New AI/ML Design{% endif %} — AIMC{% endblock %}
+{% block global_banner %}{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="/static/css/agentic-canvas.css">
+<style>
+/* ── Canvas viewport fix: no body scroll, main-content fills remaining height */
+body { overflow: hidden; height: 100vh; }
+.main-content { padding: 0 !important; max-width: 100% !important; margin: 0 !important; display: flex; flex-direction: column; overflow: hidden; }
+/* ── AIMC Canvas ─────────────────────────────────────────────────────────── */
+/* Toolbar */
+#aimc-toolbar {
+  display:flex; align-items:center; gap:6px; padding:5px 10px;
+  background:#0f172a; border-bottom:1px solid #1e3a6e; flex-wrap:nowrap; flex-shrink:0; overflow:hidden;
+}
+.tb-sep { color:#334155; font-size:16px; padding:0 2px; flex-shrink:0; }
+
+/* Menu dropdown */
+.aimc-menu-wrap { position:relative; flex-shrink:0; }
+.aimc-menu-dd {
+  position:absolute; top:36px; left:0; background:#16213e; border:1px solid #1e3a6e;
+  border-radius:6px; min-width:210px; z-index:9999; padding:4px;
+  box-shadow:0 6px 24px rgba(0,0,0,.6);
+}
+.aimc-menu-dd a, .aimc-menu-dd button {
+  display:flex; align-items:center; gap:8px; width:100%; padding:7px 12px;
+  background:none; border:none; color:#eaeaea; font-size:12px; cursor:pointer;
+  border-radius:4px; text-decoration:none; box-sizing:border-box; text-align:left;
+}
+.aimc-menu-dd a:hover, .aimc-menu-dd button:hover { background:#1e3a6e; }
+.aimc-menu-dd button.danger { color:#f87171; }
+.aimc-menu-sep { border:none; border-top:1px solid #1e3a6e; margin:4px 0; }
+
+/* Main three-pane layout */
+#aimc-wrap {
+  display:flex; flex:1; overflow:hidden; background:#0f172a;
+}
+
+/* Expand strips */
+.expand-strip {
+  display:none; align-items:center; justify-content:center;
+  background:#0f172a; cursor:pointer; flex-shrink:0;
+}
+.expand-strip:hover { background:#1e293b; }
+.expand-strip span { color:#7a8cb0; font-size:9px; writing-mode:vertical-rl; user-select:none; padding:8px 0; }
+#palette-expand-strip { width:14px; border-right:1px solid #1e3a6e; }
+#props-expand-strip   { width:14px; border-left:1px solid #1e3a6e; }
+
+/* Palette sidebar */
+#palette-sidebar {
+  width:220px; min-width:220px; background:#0f172a; border-right:1px solid #1e3a6e;
+  display:flex; flex-direction:column; overflow:hidden; transition:width .2s, min-width .2s; flex-shrink:0;
+}
+
+/* Sidebar header */
+.sidebar-hdr {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:5px 8px; border-bottom:1px solid #1e3a6e; flex-shrink:0;
+}
+.sidebar-hdr-label { color:#7a8cb0; font-size:10px; text-transform:uppercase; letter-spacing:1px; }
+.sidebar-collapse-btn {
+  background:#1e293b; border:1px solid #1e3a6e; color:#7a8cb0;
+  width:22px; height:22px; border-radius:3px; cursor:pointer; font-size:11px;
+  display:flex; align-items:center; justify-content:center; flex-shrink:0;
+}
+.sidebar-collapse-btn:hover { background:#1e3a6e; color:#eaeaea; }
+
+/* Palette search */
+#palette-search-wrap { padding:5px 6px; border-bottom:1px solid #1e3a6e; flex-shrink:0; }
+#palette-search {
+  width:100%; box-sizing:border-box; background:#1e293b; border:1px solid #334155;
+  border-radius:4px; color:#e2e8f0; font-size:12px; padding:4px 7px; outline:none;
+}
+#palette-search::placeholder { color:#475569; }
+#palette-search:focus { border-color:#6366f1; }
+
+/* Palette content */
+#palette-content { overflow-y:auto; flex:1; padding:5px; }
+
+/* Category */
+.palette-cat-hdr {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:5px 8px; border-radius:3px; background:#1e293b;
+  margin-bottom:3px; cursor:pointer; user-select:none;
+  color:#e2e8f0; font-size:11px; font-weight:600;
+}
+.palette-cat-hdr:hover { background:#1e3a6e; }
+.cat-arrow { display:inline-block; transition:transform .2s; font-size:10px; }
+.cat-arrow.collapsed { transform:rotate(-90deg); }
+.palette-cat-body { margin-bottom:6px; }
+
+/* Palette node */
+.palette-node {
+  display:flex; align-items:center; gap:6px; padding:5px 8px; border-radius:4px;
+  cursor:grab; font-size:11px; color:#eaeaea; margin-bottom:2px; transition:background .1s;
+}
+.palette-node:hover { background:#1e3a6e; }
+.palette-node.hidden { display:none !important; }
+
+/* Canvas container */
+#canvas-container {
+  flex:1; position:relative;
+  background:radial-gradient(circle at 50% 50%,#0f172a 0%,#090e1a 100%);
+  overflow:hidden; cursor:default;
+}
+#canvas-viewport {
+  position:absolute; top:0; left:0; transform-origin:0 0; width:6000px; height:4000px;
+}
+#edges-layer { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; overflow:visible; }
+#nodes-layer { position:absolute; top:0; left:0; width:100%; height:100%; }
+#boundaries-layer { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; }
+
+/* Dot grid */
+.canvas-dot-grid {
+  position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none;
+  background-image:radial-gradient(circle,#1e3a6e22 1px,transparent 1px);
+  background-size:28px 28px;
+}
+
+/* Grid overlay */
+#canvas-container.grid-on::after {
+  content:''; position:absolute; top:0; left:0; width:100%; height:100%;
+  background-image:linear-gradient(rgba(255,255,255,.03) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.03) 1px,transparent 1px);
+  background-size:40px 40px; pointer-events:none; z-index:1;
+}
+
+/* Drop hint */
+#drop-hint {
+  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  text-align:center; color:#1e3a6e; pointer-events:none; z-index:5;
+}
+
+/* Zoom cluster */
+.zoom-cluster {
+  position:absolute; bottom:20px; right:8px; z-index:20;
+  display:flex; flex-direction:column; gap:2px;
+}
+.zoom-btn {
+  width:28px; height:28px; background:#16213e; border:1px solid #1e3a6e;
+  color:#eaeaea; border-radius:4px; cursor:pointer; font-size:15px;
+  display:flex; align-items:center; justify-content:center; transition:background .15s;
+}
+.zoom-btn:hover { background:#1e3a6e; }
+.zoom-btn.sm { font-size:10px; }
+
+/* Canvas nodes */
+.canvas-node {
+  position:absolute; border-radius:9px; border:2px solid rgba(255,255,255,.12);
+  cursor:move; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  user-select:none; transition:box-shadow .12s; min-width:120px; padding:8px 12px;
+}
+.canvas-node:hover { box-shadow:0 0 0 2px rgba(99,102,241,.5); }
+.canvas-node.selected { box-shadow:0 0 0 2px #6366f1,0 0 0 5px rgba(99,102,241,.25) !important; }
+.canvas-node .node-icon { font-size:.65rem; font-weight:700; color:rgba(255,255,255,.8); margin-bottom:2px; letter-spacing:.5px; }
+.canvas-node .node-label { font-size:.75rem; font-weight:600; color:#f1f5f9; text-align:center; word-break:break-word; }
+
+/* Boundaries */
+.canvas-boundary { position:absolute; border-radius:10px; border:2px dashed rgba(255,255,255,.2); pointer-events:none; }
+.canvas-boundary .bnd-label { position:absolute; top:-10px; left:12px; font-size:.65rem; color:rgba(255,255,255,.6); background:#0f172a; padding:0 6px; }
+
+/* Props sidebar */
+#props-sidebar {
+  width:280px; min-width:280px; background:#0f172a; border-left:1px solid #1e3a6e;
+  display:flex; flex-direction:column; overflow:hidden; flex-shrink:0;
+  transition:width .2s, min-width .2s;
+}
+#props-content { overflow-y:auto; flex:1; }
+
+/* Props sections */
+.props-section { border-bottom:1px solid #1e3a6e; }
+.props-section-hdr { padding:6px 12px; font-size:10px; text-transform:uppercase; letter-spacing:.7px; color:#64748b; background:#090e1a; }
+.prop-row { display:flex; flex-direction:column; gap:3px; padding:7px 12px; }
+.prop-row label { font-size:.7rem; color:#64748b; }
+.prop-row input, .prop-row select, .prop-row textarea {
+  background:#1e293b; border:1px solid #334155; border-radius:4px; color:#e2e8f0;
+  font-size:.78rem; padding:4px 7px; width:100%; box-sizing:border-box; outline:none;
+}
+.prop-row input:focus, .prop-row select:focus, .prop-row textarea:focus { border-color:#6366f1; }
+.prop-row textarea { resize:vertical; min-height:52px; }
+
+/* Score */
+#score-badge { padding:10px 12px; display:flex; align-items:center; gap:10px; }
+.score-ring { width:44px; height:44px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:.82rem; flex-shrink:0; }
+.score-high   { background:#14532d; color:#4ade80; }
+.score-medium { background:#713f12; color:#fbbf24; }
+.score-low    { background:#7f1d1d; color:#f87171; }
+
+/* Findings */
+.finding-row { display:flex; gap:7px; align-items:flex-start; padding:5px 12px; font-size:.72rem; border-bottom:1px solid #090e1a; }
+.ficon  { font-size:.8rem; flex-shrink:0; margin-top:1px; }
+.ftitle { color:#cbd5e1; flex:1; }
+.fsev   { font-size:.62rem; font-weight:600; padding:1px 5px; border-radius:3px; flex-shrink:0; }
+.fsev-CAT1 { background:#7f1d1d; color:#fca5a5; }
+.fsev-CAT2 { background:#713f12; color:#fed7aa; }
+.fsev-PASS { background:#14532d; color:#86efac; }
+
+/* Toolbar buttons */
+.tb-btn {
+  padding:4px 10px; border-radius:4px; font-size:.75rem; font-weight:600;
+  cursor:pointer; border:1px solid #1e3a6e; background:#1e293b; color:#94a3b8;
+  transition:all .15s; white-space:nowrap; flex-shrink:0;
+}
+.tb-btn:hover  { background:#1e3a6e; color:#eaeaea; border-color:#6366f1; }
+.tb-btn.primary { background:#6366f1; border-color:#6366f1; color:#fff; }
+.tb-btn.primary:hover { background:#4f46e5; }
+.tb-btn.warn  { background:#92400e; border-color:#f97316; color:#fdba74; }
+.tb-btn.warn:hover { background:#7c2d12; }
+.tb-btn.active { background:#1e3a6e; color:#6366f1; border-color:#6366f1; }
+
+/* Undo/redo */
+.tb-icon-btn {
+  background:#1e293b; color:#eaeaea; border:1px solid #1e3a6e;
+  padding:4px 8px; border-radius:4px; cursor:pointer; font-size:12px; transition:background .15s;
+}
+.tb-icon-btn:not(:disabled):hover { background:#1e3a6e; }
+.tb-icon-btn:disabled { opacity:.35; cursor:not-allowed; }
+
+/* Slide-in panels */
+.slide-panel {
+  position:fixed; top:130px; right:0; bottom:0; z-index:500;
+  background:#0f172a; border-left:1px solid #1e3a6e;
+  box-shadow:-4px 0 24px rgba(0,0,0,.5);
+  display:flex; flex-direction:column; transform:translateX(100%); transition:transform .25s;
+}
+.slide-panel.open { transform:translateX(0); }
+#templates-panel { width:300px; }
+#snippets-panel  { width:320px; }
+.slide-panel-search {
+  padding:6px 8px; border-bottom:1px solid #1e3a6e; flex-shrink:0;
+}
+.slide-panel-search input, .slide-panel-search select {
+  width:100%; box-sizing:border-box; background:#1e293b; border:1px solid #334155;
+  border-radius:4px; color:#e2e8f0; font-size:12px; padding:4px 8px; outline:none;
+}
+.slide-panel-search input:focus, .slide-panel-search select:focus { border-color:#6366f1; }
+.slide-panel-content { overflow-y:auto; flex:1; padding:8px; }
+
+/* Template / snippet cards */
+.tpl-card, .snp-card {
+  background:#1e293b; border:1px solid #334155; border-radius:6px;
+  padding:10px; margin-bottom:8px; transition:border-color .15s;
+}
+.tpl-card:hover, .snp-card:hover { border-color:#6366f1; }
+.card-name { color:#e2e8f0; font-size:.82rem; font-weight:600; margin-bottom:3px; }
+.card-desc { color:#64748b; font-size:.72rem; margin-bottom:6px; }
+.card-meta { font-size:.68rem; color:#475569; margin-bottom:8px; }
+
+/* Toast */
+#aimc-toast {
+  position:fixed; bottom:20px; right:24px; background:#1e293b; border:1px solid #6366f1;
+  border-radius:8px; padding:8px 16px; color:#e2e8f0; font-size:.82rem;
+  z-index:9999; transform:translateY(60px); opacity:0; transition:all .3s;
+  box-shadow:0 4px 16px rgba(0,0,0,.4); pointer-events:none;
+}
+#aimc-toast.show { transform:translateY(0); opacity:1; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner(design) }}
+{% set design_id = design.id if design else '' %}
+
+<!-- ── Toolbar ─────────────────────────────────────────────────────────────── -->
+<div id="aimc-toolbar">
+
+  <!-- Menu -->
+  <div class="aimc-menu-wrap">
+    <button id="aimc-menu-btn" onclick="toggleMenu(event)"
+      style="background:#1e293b;color:#eaeaea;padding:5px 10px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:13px;display:flex;align-items:center;gap:5px;white-space:nowrap;">
+      ☰ <span style="font-size:11px;color:#6366f1;font-weight:700;">AIMC</span>
+    </button>
+    <div id="aimc-menu" class="aimc-menu-dd" style="display:none;">
+      <a href="/ai-ml/"><span>←</span> All Designs</a>
+      <hr class="aimc-menu-sep">
+      <button onclick="openTemplates()"><span>📋</span> Templates</button>
+      <button onclick="openSnippets()"><span>🧩</span> Snippets</button>
+      {% if design %}
+      <a href="/ai-ml/assessments/{{ design.id }}"><span>📊</span> Assessments</a>
+      {% endif %}
+      <hr class="aimc-menu-sep">
+      <button onclick="genModelCard()"><span>📄</span> Generate Model Card</button>
+      <button onclick="genDeployManifest()"><span>🚀</span> Generate Deploy Manifest</button>
+      <hr class="aimc-menu-sep">
+      <a href="/ai-ml/model-catalog"><span>🗂</span> Model Catalog</a>
+      <hr class="aimc-menu-sep">
+      <button onclick="doExportJSON()"><span>⬇</span> Export JSON</button>
+      <hr class="aimc-menu-sep">
+      <button onclick="fitView()"><span>⊡</span> Fit to Canvas</button>
+      <button onclick="zoomReset()"><span>⊙</span> Reset Zoom (1:1)</button>
+      <hr class="aimc-menu-sep">
+      <button onclick="clearCanvas()" class="danger"><span>🗑</span> Clear Canvas</button>
+    </div>
+  </div>
+
+  <span class="tb-sep">|</span>
+
+  <!-- Name & IL -->
+  <input id="design-name-input" value="{{ design.name if design else 'New AI/ML Design' }}"
+    style="background:#1e293b;border:1px solid #334155;color:#eaeaea;padding:4px 10px;border-radius:4px;font-size:13px;width:170px;outline:none;flex-shrink:0;"
+    onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#334155'">
+  <select id="il-select" class="tb-btn" style="min-width:80px;" title="Impact Level">
+    {% for key, il in il_levels.items() %}
+    <option value="{{ key }}" {% if design and design.il_level == key %}selected{% endif %}>{{ il.label }}</option>
+    {% endfor %}
+  </select>
+
+  <span class="tb-sep">|</span>
+
+  <!-- Undo / Redo -->
+  <button id="btn-undo" class="tb-icon-btn" onclick="undo()" title="Undo (Ctrl+Z)" disabled>↩</button>
+  <button id="btn-redo" class="tb-icon-btn" onclick="redo()" title="Redo (Ctrl+Y)" disabled>↪</button>
+
+  <span class="tb-sep">|</span>
+
+  <!-- Zoom -->
+  <button class="tb-icon-btn" onclick="zoomOut()" title="Zoom Out" style="width:26px;height:26px;font-size:16px;">−</button>
+  <span id="zoom-display" style="color:#7a8cb0;font-size:11px;min-width:36px;text-align:center;flex-shrink:0;">100%</span>
+  <button class="tb-icon-btn" onclick="zoomIn()" title="Zoom In" style="width:26px;height:26px;font-size:16px;">+</button>
+  <button class="tb-btn" onclick="fitView()" title="Fit all nodes">Fit</button>
+
+  <span class="tb-sep">|</span>
+
+  <!-- Canvas -->
+  <button class="tb-btn" id="btn-grid" onclick="toggleGrid()" title="Toggle grid">⋮⋮ Grid</button>
+
+  <span class="tb-sep">|</span>
+
+  <!-- AIMC actions -->
+  <button class="tb-btn" onclick="runAssess()" title="Run compliance check">⚡ Assess</button>
+  <button class="tb-btn warn" onclick="runGovAssess()" title="DoD RAI + IL + OMB governance">🛡 Gov Assess</button>
+  <button class="tb-btn" id="btn-templates" onclick="openTemplates()" title="Browse templates">📋 Templates</button>
+  <button class="tb-btn" id="btn-snippets" onclick="openSnippets()" title="Insert snippet">🧩 Snippets</button>
+
+  <div style="flex:1;min-width:8px;"></div>
+
+  <!-- Right-side actions -->
+  {% if design %}
+  <button class="tb-btn" onclick="genModelCard()" title="Generate Model Card">📄 Model Card</button>
+  <button class="tb-btn" onclick="genDeployManifest()" title="Generate Deploy Manifest">🚀 Manifest</button>
+  {% endif %}
+  <!-- Workflow -->
+  {% set wf_canvas_id = "aimc" %}
+  {% set wf_context_label = design.name if design else '' %}
+  {% include 'includes/workflow_trigger_btn.html' %}
+  <button class="tb-btn primary" onclick="saveDesign()" title="Save (Ctrl+S)">💾 Save</button>
+</div>
+
+<!-- ── Main layout ──────────────────────────────────────────────────────────── -->
+<div id="aimc-wrap">
+
+  <!-- Palette expand strip (visible when collapsed) -->
+  <div id="palette-expand-strip" class="expand-strip" onclick="togglePalette()" title="Expand palette">
+    <span>▶ Palette</span>
+  </div>
+
+  <!-- ── Left palette sidebar ─────────────────────────────────────────────── -->
+  <div id="palette-sidebar">
+    <div class="sidebar-hdr">
+      <span class="sidebar-hdr-label">Node Palette</span>
+      <button class="sidebar-collapse-btn" onclick="togglePalette()" title="Collapse palette">◀</button>
+    </div>
+    <div id="palette-search-wrap">
+      <input id="palette-search" type="text" placeholder="Filter nodes…" oninput="filterPalette(this.value)">
+    </div>
+    <div id="palette-content">
+      {% for group_name, nodes in palette.items() %}
+      {% set cat_id = loop.index %}
+      <div class="palette-category">
+        <div class="palette-cat-hdr" onclick="toggleCat({{ cat_id }})">
+          <span>{{ group_name | replace('_',' ') | title }}</span>
+          <span id="cat-arrow-{{ cat_id }}" class="cat-arrow collapsed">▾</span>
+        </div>
+        <div id="cat-{{ cat_id }}" class="palette-cat-body" style="display:none;">
+          {% for node in nodes %}
+          <div class="palette-node" draggable="true"
+               data-type="{{ node.type }}" data-label="{{ node.label }}"
+               data-icon="{{ node.icon }}" data-color="{{ node.color }}"
+               title="{{ node.desc }}">
+            <span style="color:{{ node.color }};font-size:13px;flex-shrink:0;">{{ node.icon }}</span>
+            <span style="flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ node.label }}</span>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- ── Canvas area ───────────────────────────────────────────────────────── -->
+  <div id="canvas-container">
+    <div class="canvas-dot-grid"></div>
+    <div id="canvas-viewport">
+      <svg id="edges-layer"></svg>
+      <div id="nodes-layer"></div>
+      <div id="boundaries-layer"></div>
+    </div>
+    <div id="drop-hint">
+      <div style="font-size:48px;">🤖</div>
+      <div style="font-size:14px;margin-top:8px;">Drag nodes from the palette to design your AI/ML system</div>
+      <div style="font-size:12px;margin-top:6px;color:#334155;">or <a href="javascript:void(0)" onclick="openTemplates()" style="color:#6366f1;">start from a template →</a></div>
+    </div>
+    <div class="zoom-cluster">
+      <button class="zoom-btn" onclick="zoomIn()" title="Zoom In">+</button>
+      <button class="zoom-btn sm" onclick="zoomReset()" title="Reset zoom">1:1</button>
+      <button class="zoom-btn" onclick="zoomOut()" title="Zoom Out">−</button>
+      <button class="zoom-btn sm" onclick="fitView()" title="Fit">Fit</button>
+    </div>
+  </div>
+
+  <!-- Props expand strip (visible when collapsed) -->
+  <div id="props-expand-strip" class="expand-strip" onclick="toggleProps()" title="Expand properties">
+    <span>Props ▶</span>
+  </div>
+
+  <!-- ── Right props sidebar ───────────────────────────────────────────────── -->
+  <div id="props-sidebar">
+    <div class="sidebar-hdr">
+      <span class="sidebar-hdr-label">Properties</span>
+      <button class="sidebar-collapse-btn" onclick="toggleProps()" title="Collapse panel">▶</button>
+    </div>
+    <div id="props-content">
+
+      <!-- Node properties -->
+      <div id="node-props" class="props-section" style="display:none;">
+        <div class="props-section-hdr">Node Properties</div>
+        <div class="prop-row">
+          <label>Label</label>
+          <input type="text" id="prop-label" oninput="updateNodeLabel(this.value)">
+        </div>
+        <div class="prop-row">
+          <label>Model ID <span style="color:#475569;font-size:.62rem;">(model nodes)</span></label>
+          <select id="prop-model-id" onchange="updateNodeProp('model_id', this.value)">
+            <option value="">— none —</option>
+            {% for m in models %}
+            <option value="{{ m.id }}">{{ m.name }} ({{ m.provider }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="prop-row" id="prop-quantization-row" style="display:none;">
+          <label>Quantization</label>
+          <select id="prop-quantization" onchange="updateNodeProp('quantization', this.value)">
+            <option value="Q4_K_M">Q4_K_M — 4-bit (good quality)</option>
+            <option value="Q5_K_M">Q5_K_M — 5-bit (better)</option>
+            <option value="Q8_0">Q8_0 — 8-bit (best local)</option>
+            <option value="fp16">fp16 — full precision</option>
+          </select>
+        </div>
+        <div class="prop-row">
+          <label>Notes</label>
+          <textarea id="prop-notes" rows="3" oninput="updateNodeProp('notes', this.value)"></textarea>
+        </div>
+        <div style="padding:6px 12px 10px;">
+          <button class="tb-btn" onclick="getDeployPlan()" style="width:100%;margin-bottom:5px;">📋 Deployment Plan</button>
+          <button class="tb-btn" onclick="deleteSelectedNode()" style="width:100%;background:#7f1d1d;border-color:#ef4444;color:#fca5a5;">🗑 Delete Node</button>
+        </div>
+        <div id="deploy-plan-result" style="padding:0 12px 10px;display:none;"></div>
+      </div>
+
+      <!-- Compliance -->
+      <div id="compliance-panel" class="props-section">
+        <div class="props-section-hdr">Compliance</div>
+        <div id="score-badge" style="display:none;">
+          <div id="score-ring" class="score-ring score-low">—</div>
+          <div>
+            <div id="score-label" style="font-size:.82rem;color:#e2e8f0;font-weight:600;">Not assessed</div>
+            <div id="score-sub" style="font-size:.7rem;color:#64748b;"></div>
+          </div>
+        </div>
+        <div id="aadc-refs-badge" style="display:none;padding:5px 12px 2px;">
+          <div style="font-size:.7rem;color:#818cf8;font-weight:600;margin-bottom:3px;">&#128279; Used in AADC Designs</div>
+          <div id="aadc-refs-list" style="font-size:.68rem;color:#64748b;line-height:1.6;"></div>
+        </div>
+        <div id="findings-list"></div>
+        <div style="padding:8px 12px 12px;">
+          <button class="tb-btn" onclick="runAssess()" style="width:100%;margin-bottom:5px;">⚡ Run Assessment</button>
+          <button class="tb-btn warn" onclick="runGovAssess()" style="width:100%;">🛡 Gov Assess (DoD RAI)</button>
+        </div>
+      </div>
+
+      <!-- Adaptation advisor -->
+      <div id="adapt-panel" class="props-section">
+        <div class="props-section-hdr">Adaptation Advisor</div>
+        <div style="padding:8px 12px 12px;">
+          <div class="prop-row" style="padding:0 0 5px;">
+            <label>Has document corpus?</label>
+            <select id="adv-corpus"><option value="false">No</option><option value="true">Yes</option></select>
+          </div>
+          <div class="prop-row" style="padding:0 0 5px;">
+            <label>Training examples (#)</label>
+            <input type="number" id="adv-examples" value="0" min="0">
+          </div>
+          <div class="prop-row" style="padding:0 0 5px;">
+            <label>VRAM available (GB)</label>
+            <input type="number" id="adv-vram" value="8" min="0">
+          </div>
+          <div class="prop-row" style="padding:0 0 8px;">
+            <label>Accuracy target (%)</label>
+            <input type="number" id="adv-accuracy" value="80" min="0" max="100">
+          </div>
+          <button class="tb-btn" onclick="getAdaptRec()" style="width:100%;">💡 Recommend Strategy</button>
+          <div id="adapt-result" style="margin-top:8px;"></div>
+        </div>
+      </div>
+
+    </div><!-- /props-content -->
+  </div><!-- /props-sidebar -->
+</div><!-- /aimc-wrap -->
+
+<!-- ── Templates panel ────────────────────────────────────────────────────── -->
+<div id="templates-panel" class="slide-panel">
+  <div class="sidebar-hdr">
+    <span class="sidebar-hdr-label">📋 Templates</span>
+    <button class="sidebar-collapse-btn" onclick="closeTemplates()">✕</button>
+  </div>
+  <div class="slide-panel-search">
+    <input type="text" id="tpl-search" placeholder="Filter templates…" oninput="filterTemplates(this.value)">
+  </div>
+  <div id="templates-content" class="slide-panel-content">
+    <p style="color:#475569;font-size:.8rem;">Loading…</p>
+  </div>
+</div>
+
+<!-- ── Snippets panel ─────────────────────────────────────────────────────── -->
+<div id="snippets-panel" class="slide-panel">
+  <div class="sidebar-hdr">
+    <span class="sidebar-hdr-label">🧩 Snippets</span>
+    <button class="sidebar-collapse-btn" onclick="closeSnippets()">✕</button>
+  </div>
+  <div class="slide-panel-search">
+    <select id="snp-category" onchange="loadSnippets(this.value)">
+      <option value="">All categories</option>
+    </select>
+  </div>
+  <div id="snippets-content" class="slide-panel-content">
+    <p style="color:#475569;font-size:.8rem;">Loading…</p>
+  </div>
+</div>
+
+<div id="aimc-toast"></div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────
+var DESIGN_ID = '{{ design_id | safe }}';
+var IS_NEW    = {{ 'true' if new_design else 'false' }};
+var graph     = { nodes:[], edges:[], boundaries:[] };
+var selectedNodeId  = null;
+var canvasScale = 1, panX = 0, panY = 0;
+var isPanning = false, panSX = 0, panSY = 0;
+var isDragging = false, dragId = null, dragOX = 0, dragOY = 0;
+var isDrawingEdge = false, edgeSrc = null;
+var gridOn = false;
+var histStack = [], histIdx = -1;
+var _allTemplates = [], _allSnippets = [];
+
+{% if design %}
+try { var _d = {{ design_json | safe }}; graph = _d.graph || graph; } catch(e) {}
+{% endif %}
+
+function resolveGraphOverlaps(nodes, defaultW, defaultH, padding) {
+  defaultW = defaultW || 130; defaultH = defaultH || 55; padding = padding == null ? 20 : padding;
+  if (!nodes || nodes.length < 2) return;
+  for (var iter = 0; iter < 80; iter++) {
+    var moved = false;
+    for (var i = 0; i < nodes.length; i++) {
+      for (var j = i + 1; j < nodes.length; j++) {
+        var a = nodes[i], b = nodes[j];
+        var aw = a.w || defaultW, ah = a.h || defaultH;
+        var bw = b.w || defaultW, bh = b.h || defaultH;
+        var p2 = padding / 2;
+        var ax1=a.x-p2, ay1=a.y-p2, ax2=a.x+aw+p2, ay2=a.y+ah+p2;
+        var bx1=b.x-p2, by1=b.y-p2, bx2=b.x+bw+p2, by2=b.y+bh+p2;
+        if (ax2<=bx1||bx2<=ax1||ay2<=by1||by2<=ay1) continue;
+        var dx=(bx1+bx2)/2-(ax1+ax2)/2, dy=(by1+by2)/2-(ay1+ay2)/2;
+        if (dx===0&&dy===0){dx=1;dy=0;}
+        var ovX=(ax2-ax1)/2+(bx2-bx1)/2-Math.abs(dx);
+        var ovY=(ay2-ay1)/2+(by2-by1)/2-Math.abs(dy);
+        if (ovX<=0||ovY<=0) continue;
+        var px=0, py=0;
+        if (ovX<=ovY){px=(ovX/2+0.5)*(dx>=0?1:-1);}
+        else         {py=(ovY/2+0.5)*(dy>=0?1:-1);}
+        a.x-=px; a.y-=py; b.x+=px; b.y+=py; moved=true;
+      }
+    }
+    if (!moved) break;
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+window.addEventListener('DOMContentLoaded', function() {
+  resolveGraphOverlaps(graph.nodes, 130, 55, 20);
+  renderGraph();
+  updateDropHint();
+  pushHistory();
+  if (graph.nodes && graph.nodes.length > 0) {
+    requestAnimationFrame(() => setTimeout(fitView, 100));
+  }
+
+  document.querySelectorAll('.palette-node').forEach(function(el) {
+    el.addEventListener('dragstart', function(e) {
+      e.dataTransfer.setData('application/aimc-node', JSON.stringify({
+        type:el.dataset.type, label:el.dataset.label, icon:el.dataset.icon, color:el.dataset.color
+      }));
+    });
+  });
+
+  if (DESIGN_ID) {
+    setInterval(autoSave, 60000);
+    loadTemplatesData();
+    loadSnippetsData();
+  }
+
+  document.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey||e.metaKey) && e.key==='s') { e.preventDefault(); saveDesign(); }
+    if ((e.ctrlKey||e.metaKey) && e.key==='z') { e.preventDefault(); undo(); }
+    if ((e.ctrlKey||e.metaKey) && (e.key==='y'||(e.shiftKey&&e.key==='Z'))) { e.preventDefault(); redo(); }
+    if (e.key==='Escape') { deselectAll(); closeTemplates(); closeSnippets(); closeMenu(); }
+    if (e.key==='Delete' && selectedNodeId) deleteSelectedNode();
+  });
+});
+
+// ── Sidebar toggles ───────────────────────────────────────────────────────
+function togglePalette() {
+  var sb = document.getElementById('palette-sidebar');
+  var strip = document.getElementById('palette-expand-strip');
+  var collapsed = sb.style.width==='0px';
+  if (collapsed) {
+    sb.style.width='220px'; sb.style.minWidth='220px'; strip.style.display='none';
+  } else {
+    sb.style.width='0px'; sb.style.minWidth='0px'; strip.style.display='flex';
+  }
+}
+
+function toggleProps() {
+  var sb = document.getElementById('props-sidebar');
+  var strip = document.getElementById('props-expand-strip');
+  var collapsed = sb.style.width==='0px';
+  if (collapsed) {
+    sb.style.width='280px'; sb.style.minWidth='280px'; strip.style.display='none';
+  } else {
+    sb.style.width='0px'; sb.style.minWidth='0px'; strip.style.display='flex';
+  }
+}
+
+// ── Category collapse ─────────────────────────────────────────────────────
+function toggleCat(catId) {
+  var body  = document.getElementById('cat-' + catId);
+  var arrow = document.getElementById('cat-arrow-' + catId);
+  if (!body) return;
+  var open = body.style.display !== 'none';
+  body.style.display  = open ? 'none' : 'block';
+  if (arrow) arrow.classList.toggle('collapsed', open);
+}
+
+// ── Palette filter ────────────────────────────────────────────────────────
+function filterPalette(q) {
+  q = q.toLowerCase().trim();
+  document.querySelectorAll('.palette-category').forEach(function(cat) {
+    var anyVisible = false;
+    cat.querySelectorAll('.palette-node').forEach(function(node) {
+      var match = !q || (node.dataset.label||'').toLowerCase().includes(q) || (node.dataset.type||'').toLowerCase().includes(q);
+      node.classList.toggle('hidden', !match);
+      if (match) anyVisible = true;
+    });
+    cat.style.display = anyVisible ? '' : 'none';
+    if (q && anyVisible) {
+      var m = (cat.querySelector('.palette-cat-hdr')||{}).onclick;
+      var body = cat.querySelector('.palette-cat-body');
+      var arrow = cat.querySelector('.cat-arrow');
+      if (body) body.style.display = 'block';
+      if (arrow) arrow.classList.remove('collapsed');
+    }
+  });
+}
+
+// ── Canvas drop ───────────────────────────────────────────────────────────
+var cntr = document.getElementById('canvas-container');
+var vp   = document.getElementById('canvas-viewport');
+
+cntr.addEventListener('dragover', function(e) { e.preventDefault(); });
+cntr.addEventListener('drop', function(e) {
+  e.preventDefault();
+  var raw = e.dataTransfer.getData('application/aimc-node');
+  if (!raw) return;
+  var tpl = JSON.parse(raw);
+  var rect = vp.getBoundingClientRect();
+  addNode(tpl.type, tpl.label, tpl.icon, tpl.color,
+    (e.clientX - rect.left) / canvasScale - 60,
+    (e.clientY - rect.top)  / canvasScale - 25);
+});
+
+// ── Pan & zoom ────────────────────────────────────────────────────────────
+cntr.addEventListener('wheel', function(e) {
+  e.preventDefault();
+  canvasScale = Math.min(3, Math.max(0.15, canvasScale * (e.deltaY>0?0.9:1.1)));
+  applyXform();
+}, { passive:false });
+
+cntr.addEventListener('mousedown', function(e) {
+  if (e.button===1 || (e.button===0 && e.altKey)) {
+    isPanning=true; panSX=e.clientX-panX; panSY=e.clientY-panY;
+    cntr.style.cursor='grabbing'; e.preventDefault();
+  }
+});
+document.addEventListener('mousemove', function(e) {
+  if (isPanning) { panX=e.clientX-panSX; panY=e.clientY-panSY; applyXform(); }
+  if (isDragging && dragId) {
+    var rect = vp.getBoundingClientRect();
+    var x = (e.clientX-rect.left)/canvasScale - dragOX;
+    var y = (e.clientY-rect.top) /canvasScale - dragOY;
+    var node = graph.nodes.find(function(n){return n.id===dragId;});
+    if (node) { node.x=Math.max(0,x); node.y=Math.max(0,y); updateNodePos(dragId); renderEdges(); }
+  }
+});
+document.addEventListener('mouseup', function() {
+  if (isPanning || isDragging) pushHistory();
+  isPanning=false; isDragging=false; dragId=null; cntr.style.cursor='default';
+});
+
+function applyXform() {
+  vp.style.transform = 'translate('+panX+'px,'+panY+'px) scale('+canvasScale+')';
+  document.getElementById('zoom-display').textContent = Math.round(canvasScale*100)+'%';
+}
+function zoomIn()    { canvasScale=Math.min(3,canvasScale*1.2); applyXform(); }
+function zoomOut()   { canvasScale=Math.max(0.15,canvasScale/1.2); applyXform(); }
+function zoomReset() { canvasScale=1; panX=0; panY=0; applyXform(); }
+function fitView() {
+  if (!graph.nodes.length) return;
+  var xs=graph.nodes.map(function(n){return n.x;}), ys=graph.nodes.map(function(n){return n.y;});
+  var mnX=Math.min.apply(null,xs), mnY=Math.min.apply(null,ys);
+  var mxX=Math.max.apply(null,graph.nodes.map(function(n){return n.x+130;}));
+  var mxY=Math.max.apply(null,graph.nodes.map(function(n){return n.y+56;}));
+  var cw=cntr.clientWidth, ch=cntr.clientHeight;
+  canvasScale=Math.min(3,Math.max(0.15,Math.min((cw-80)/(mxX-mnX),(ch-80)/(mxY-mnY))));
+  panX=(cw-(mxX-mnX)*canvasScale)/2 - mnX*canvasScale;
+  panY=(ch-(mxY-mnY)*canvasScale)/2 - mnY*canvasScale;
+  applyXform();
+}
+
+// ── Nodes ─────────────────────────────────────────────────────────────────
+function addNode(type, label, icon, color, x, y) {
+  var id='n-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
+  var node={id:id, type:type, label:label, icon:icon, color:color, x:x||200, y:y||200, properties_json:{}};
+  graph.nodes.push(node);
+  renderNode(node); renderEdges(); selectNode(id);
+  updateDropHint(); pushHistory(); toast('Added '+label);
+}
+
+function renderNode(node) {
+  var el = document.getElementById('node-'+node.id);
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'node-'+node.id;
+    el.className = 'canvas-node';
+    el.addEventListener('mousedown', function(e){ onNodeMD(e,node.id); });
+    el.addEventListener('click', function(e){ e.stopPropagation(); selectNode(node.id); });
+    el.addEventListener('contextmenu', function(e){ e.preventDefault(); startEdge(node.id); });
+    document.getElementById('nodes-layer').appendChild(el);
+  }
+  var col = node.color||'#334155';
+  el.style.cssText = 'left:'+node.x+'px;top:'+node.y+'px;background:'+col+'22;border-color:'+col+';';
+  el.innerHTML = '<div class="node-icon">'+esc(node.icon||node.type.split('-')[0].toUpperCase())+'</div>'+
+                 '<div class="node-label">'+esc(node.label)+'</div>';
+}
+
+function updateNodePos(id) {
+  var node = graph.nodes.find(function(n){return n.id===id;});
+  if (!node) return;
+  var el = document.getElementById('node-'+id);
+  if (el) { el.style.left=node.x+'px'; el.style.top=node.y+'px'; }
+}
+
+function onNodeMD(e, nodeId) {
+  if (e.button!==0) return;
+  e.stopPropagation(); isDragging=true; dragId=nodeId;
+  var node=graph.nodes.find(function(n){return n.id===nodeId;});
+  var rect=vp.getBoundingClientRect();
+  if (node) { dragOX=(e.clientX-rect.left)/canvasScale-node.x; dragOY=(e.clientY-rect.top)/canvasScale-node.y; }
+}
+
+function selectNode(id) {
+  deselectAll(); selectedNodeId=id;
+  var el=document.getElementById('node-'+id);
+  if (el) el.classList.add('selected');
+  var node=graph.nodes.find(function(n){return n.id===id;});
+  if (!node) return;
+  // Auto-show right panel
+  var sb=document.getElementById('props-sidebar');
+  if (sb.style.width==='0px') toggleProps();
+  document.getElementById('node-props').style.display='block';
+  document.getElementById('prop-label').value=node.label||'';
+  var p=node.properties_json||{};
+  document.getElementById('prop-model-id').value=p.model_id||'';
+  document.getElementById('prop-quantization').value=p.quantization||'Q4_K_M';
+  document.getElementById('prop-notes').value=p.notes||'';
+  document.getElementById('prop-quantization-row').style.display = node.type&&node.type.startsWith('model-') ? 'block' : 'none';
+  // Load AADC refs when a model node with a model_id is selected
+  if (node.type&&node.type.startsWith('model-')&&p.model_id) {
+    loadAadcRefs(p.model_id);
+  } else {
+    document.getElementById('aadc-refs-badge').style.display='none';
+  }
+}
+
+function loadAadcRefs(modelId) {
+  var badge=document.getElementById('aadc-refs-badge');
+  var list=document.getElementById('aadc-refs-list');
+  badge.style.display='none';
+  if (!modelId) return;
+  fetch('/ai-ml/api/models/'+encodeURIComponent(modelId)+'/aadc-refs')
+    .then(function(r){return r.json();})
+    .then(function(data){
+      var refs=data.aadc_refs||[];
+      if (!refs.length) return;
+      badge.style.display='block';
+      var html='';
+      refs.forEach(function(r){
+        html+='<div style="display:flex;justify-content:space-between;align-items:center;">';
+        html+='<span>'+esc(r.design_name||r.aadc_design_id)+'</span>';
+        html+='<a href="/agentic-ai/canvas/'+esc(r.aadc_design_id)+'" style="color:#6366f1;font-size:.65rem;" target="_blank">&#8599;</a>';
+        html+='</div>';
+      });
+      list.innerHTML=html||'<span>No designs linked</span>';
+    })
+    .catch(function(){});
+}
+
+function deselectAll() {
+  selectedNodeId=null;
+  document.querySelectorAll('.canvas-node.selected').forEach(function(el){el.classList.remove('selected');});
+  document.getElementById('node-props').style.display='none';
+  document.getElementById('deploy-plan-result').style.display='none';
+}
+
+function updateNodeLabel(val) {
+  if (!selectedNodeId) return;
+  var node=graph.nodes.find(function(n){return n.id===selectedNodeId;});
+  if (node) { node.label=val; renderNode(node); }
+}
+
+function updateNodeProp(key, val) {
+  if (!selectedNodeId) return;
+  var node=graph.nodes.find(function(n){return n.id===selectedNodeId;});
+  if (node) { if (typeof node.properties_json!=='object') node.properties_json={}; node.properties_json[key]=val; }
+}
+
+function deleteSelectedNode() {
+  if (!selectedNodeId) return;
+  graph.nodes=graph.nodes.filter(function(n){return n.id!==selectedNodeId;});
+  graph.edges=graph.edges.filter(function(e){return e.source!==selectedNodeId&&e.target!==selectedNodeId;});
+  var el=document.getElementById('node-'+selectedNodeId);
+  if (el) el.remove();
+  deselectAll(); renderEdges(); updateDropHint(); pushHistory();
+}
+
+cntr.addEventListener('click', function(e) {
+  if (e.target===cntr||e.target.id==='canvas-viewport'||e.target.id==='nodes-layer'||e.target.id==='boundaries-layer') deselectAll();
+});
+
+// ── Edges ─────────────────────────────────────────────────────────────────
+function startEdge(sourceId) {
+  if (isDrawingEdge && edgeSrc && edgeSrc!==sourceId) {
+    graph.edges.push({id:'e-'+Date.now(), source:edgeSrc, target:sourceId, type:'data-flow', label:''});
+    isDrawingEdge=false; edgeSrc=null; renderEdges(); pushHistory(); toast('Edge connected');
+  } else {
+    isDrawingEdge=true; edgeSrc=sourceId; toast('Right-click target node to connect edge');
+  }
+}
+
+function renderEdges() {
+  var svg=document.getElementById('edges-layer');
+  svg.innerHTML='';
+  var defs=document.createElementNS('http://www.w3.org/2000/svg','defs');
+  var marker=document.createElementNS('http://www.w3.org/2000/svg','marker');
+  marker.setAttribute('id','aimc-arrow'); marker.setAttribute('markerWidth','8'); marker.setAttribute('markerHeight','8');
+  marker.setAttribute('refX','6'); marker.setAttribute('refY','3'); marker.setAttribute('orient','auto');
+  var poly=document.createElementNS('http://www.w3.org/2000/svg','polygon');
+  poly.setAttribute('points','0 0,8 3,0 6'); poly.setAttribute('fill','#6366f1');
+  marker.appendChild(poly); defs.appendChild(marker); svg.appendChild(defs);
+  var cols={'data-flow':'#6366f1','inference-call':'#8b5cf6','retrieval':'#06b6d4',
+    'training-feed':'#f97316','evaluation':'#fbbf24','governance':'#10b981',
+    'safety-check':'#ef4444','deployment':'#22c55e','audit-trail':'#64748b'};
+  graph.edges.forEach(function(edge) {
+    var s=graph.nodes.find(function(n){return n.id===edge.source;});
+    var t=graph.nodes.find(function(n){return n.id===edge.target;});
+    if (!s||!t) return;
+    var x1=s.x+65,y1=s.y+28,x2=t.x+65,y2=t.y+28,cx=(x1+x2)/2;
+    var col=cols[edge.type]||'#6366f1';
+    var path=document.createElementNS('http://www.w3.org/2000/svg','path');
+    path.setAttribute('d','M '+x1+' '+y1+' C '+cx+' '+y1+' '+cx+' '+y2+' '+x2+' '+y2);
+    path.setAttribute('stroke',col); path.setAttribute('stroke-width','1.5');
+    path.setAttribute('fill','none'); path.setAttribute('marker-end','url(#aimc-arrow)'); path.setAttribute('opacity','0.7');
+    svg.appendChild(path);
+    if (edge.label) {
+      var txt=document.createElementNS('http://www.w3.org/2000/svg','text');
+      txt.setAttribute('x',(x1+x2)/2); txt.setAttribute('y',(y1+y2)/2-8);
+      txt.setAttribute('text-anchor','middle'); txt.setAttribute('font-size','9');
+      txt.setAttribute('fill',col); txt.textContent=edge.label; svg.appendChild(txt);
+    }
+  });
+}
+
+// ── Graph ─────────────────────────────────────────────────────────────────
+function renderGraph() {
+  document.getElementById('nodes-layer').innerHTML='';
+  document.getElementById('boundaries-layer').innerHTML='';
+  (graph.nodes||[]).forEach(function(n){renderNode(n);});
+  (graph.boundaries||[]).forEach(function(b){renderBoundary(b);});
+  renderEdges();
+}
+
+function renderBoundary(b) {
+  var cols={'bnd-il-zone':'#f97316','bnd-air-gap':'#ef4444','bnd-classification':'#dc2626','bnd-trust':'#7c3aed'};
+  var col=cols[b.type]||'#64748b';
+  var el=document.createElement('div');
+  el.className='canvas-boundary';
+  el.style.cssText='left:'+b.x+'px;top:'+b.y+'px;width:'+(b.width||300)+'px;height:'+(b.height||200)+'px;border-color:'+col+'66;background:'+col+'08;';
+  el.innerHTML='<div class="bnd-label" style="color:'+col+';">'+esc(b.label||b.type)+'</div>';
+  document.getElementById('boundaries-layer').appendChild(el);
+}
+
+function updateDropHint() {
+  var h=document.getElementById('drop-hint');
+  if (h) h.style.display=graph.nodes.length?'none':'block';
+}
+
+// ── History ───────────────────────────────────────────────────────────────
+function pushHistory() {
+  histStack=histStack.slice(0,histIdx+1);
+  histStack.push(JSON.stringify(graph));
+  histIdx=histStack.length-1;
+  syncHistBtns();
+}
+function undo() {
+  if (histIdx<=0) return;
+  histIdx--; graph=JSON.parse(histStack[histIdx]);
+  renderGraph(); deselectAll(); updateDropHint(); syncHistBtns();
+}
+function redo() {
+  if (histIdx>=histStack.length-1) return;
+  histIdx++; graph=JSON.parse(histStack[histIdx]);
+  renderGraph(); deselectAll(); updateDropHint(); syncHistBtns();
+}
+function syncHistBtns() {
+  document.getElementById('btn-undo').disabled=histIdx<=0;
+  document.getElementById('btn-redo').disabled=histIdx>=histStack.length-1;
+}
+
+// ── Assessment ────────────────────────────────────────────────────────────
+function runAssess() {
+  if (!DESIGN_ID) { saveDesign(function(id){DESIGN_ID=id; setTimeout(runAssess,300);}); return; }
+  toast('Running assessment…');
+  saveGraphSilent(function() {
+    fetch('/ai-ml/api/designs/'+DESIGN_ID+'/assess',{method:'POST'})
+      .then(function(r){return r.json();}).then(renderFindings)
+      .catch(function(){toast('Assessment failed');});
+  });
+}
+
+function runGovAssess() {
+  if (!DESIGN_ID) return;
+  toast('Running governance assessment…');
+  saveGraphSilent(function() {
+    fetch('/ai-ml/api/designs/'+DESIGN_ID+'/assess-gov',{method:'POST'})
+      .then(function(r){return r.json();}). then(function(d){
+        var s=d.overall_score;
+        var ring=document.getElementById('score-ring');
+        ring.className='score-ring '+(s>=80?'score-high':s>=60?'score-medium':'score-low');
+        ring.textContent=s+'%';
+        document.getElementById('score-badge').style.display='flex';
+        document.getElementById('score-label').textContent='Governance: '+(d.overall_passed?'PASS':'FAIL');
+        document.getElementById('score-sub').textContent='DoD RAI: '+d.dod_rai.score+'% | IL: '+d.il_suitability.score+'%';
+        toast('Gov Assessment: '+s+'%');
+      }).catch(function(){toast('Governance assessment failed');});
+  });
+}
+
+function renderFindings(d) {
+  var s=d.score;
+  var ring=document.getElementById('score-ring');
+  ring.className='score-ring '+(s>=80?'score-high':s>=60?'score-medium':'score-low');
+  ring.textContent=s+'%';
+  document.getElementById('score-badge').style.display='flex';
+  document.getElementById('score-label').textContent='Canvas: '+(d.passed?'PASS':'FAIL');
+  document.getElementById('score-sub').textContent=d.summary.passed+'/'+d.summary.total+' checks | CAT1: '+d.summary.cat1_failures;
+  var list=document.getElementById('findings-list');
+  list.innerHTML='';
+  (d.findings||[]).forEach(function(f){
+    var icon=f.passed?'✓':f.severity==='CAT1'?'✕':'⚠';
+    var sev=f.passed?'PASS':f.severity;
+    list.innerHTML+='<div class="finding-row">'+
+      '<span class="ficon" style="color:'+(f.passed?'#22c55e':f.severity==='CAT1'?'#ef4444':'#fbbf24')+';">'+icon+'</span>'+
+      '<span class="ftitle" title="'+esc(f.detail||'')+'">'+esc(f.title)+'</span>'+
+      '<span class="fsev fsev-'+sev+'">'+sev+'</span></div>';
+  });
+  toast('Assessment: '+s+'%');
+}
+
+// ── Adaptation advisor ────────────────────────────────────────────────────
+function getAdaptRec() {
+  var hasCorp=document.getElementById('adv-corpus').value==='true';
+  var ex=parseInt(document.getElementById('adv-examples').value)||0;
+  var vram=parseFloat(document.getElementById('adv-vram').value)||0;
+  var acc=parseFloat(document.getElementById('adv-accuracy').value)||80;
+  var il=document.getElementById('il-select').value;
+  fetch('/ai-ml/api/adapt/recommend',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({has_corpus:hasCorp,has_training_data:ex>0,training_examples:ex,has_gpu:vram>0,vram_gb:vram,accuracy_target_pct:acc,il_level:il})
+  }).then(function(r){return r.json();}).then(function(d){
+    var colors={prompt_only:'#3b82f6',rag:'#06b6d4',finetune:'#f97316',hybrid:'#a855f7'};
+    var col=colors[d.recommended]||'#6366f1';
+    document.getElementById('adapt-result').innerHTML=
+      '<div style="background:'+col+'22;border:1px solid '+col+';border-radius:8px;padding:10px;font-size:.75rem;">'+
+      '<div style="font-weight:700;color:'+col+';margin-bottom:4px;">💡 '+esc(d.recommended_label)+'</div>'+
+      d.rationale.map(function(r){return '<div style="color:#94a3b8;margin-top:3px;">• '+esc(r)+'</div>';}).join('')+
+      (d.caveats.length?'<div style="margin-top:8px;font-size:.7rem;color:#fbbf24;">'+d.caveats.map(function(c){return '⚠ '+esc(c);}).join('<br>')+'</div>':'')+
+      '</div>';
+  });
+}
+
+// ── Deployment plan ───────────────────────────────────────────────────────
+function getDeployPlan() {
+  if (!selectedNodeId) return;
+  var node=graph.nodes.find(function(n){return n.id===selectedNodeId;});
+  if (!node) return;
+  var p=node.properties_json||{};
+  fetch('/ai-ml/api/deploy/plan',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({model_id:p.model_id||'qwen3-local',il_level:document.getElementById('il-select').value,vram_gb:parseFloat(document.getElementById('adv-vram').value)||8})
+  }).then(function(r){return r.json();}).then(function(d){
+    var el=document.getElementById('deploy-plan-result');
+    el.style.display='block';
+    var warn=d.warnings&&d.warnings.length?'<div style="color:#fbbf24;font-size:.7rem;margin-top:4px;">'+d.warnings.map(function(w){return '⚠ '+esc(w);}).join('<br>')+'</div>':'';
+    el.innerHTML='<div style="font-size:.72rem;background:#1e293b;border-radius:5px;padding:8px;margin-top:4px;">'+
+      '<b style="color:#22c55e;">'+(d.inference_server?d.inference_server.name:'N/A')+'</b><br>'+
+      '<span style="color:#64748b;">Quant: </span>'+(d.quantization?d.quantization.label:'—')+'<br>'+
+      '<span style="color:#64748b;">VRAM: </span>'+(d.gpu_requirements?d.gpu_requirements.vram_gb_required+'GB':'—')+
+      warn+'</div>';
+  });
+}
+
+// ── Artifacts ─────────────────────────────────────────────────────────────
+function genModelCard() {
+  if (!DESIGN_ID) { toast('Save design first'); return; }
+  saveGraphSilent(function() {
+    fetch('/ai-ml/api/designs/'+DESIGN_ID+'/artifact/model-card',{method:'POST'})
+      .then(function(r){return r.json();}).then(function(d){
+        toast('Model Card generated');
+        dlJSON(d.content,'model-card.json');
+      });
+  });
+}
+
+function genDeployManifest() {
+  if (!DESIGN_ID) { toast('Save design first'); return; }
+  saveGraphSilent(function() {
+    fetch('/ai-ml/api/designs/'+DESIGN_ID+'/artifact/deploy-manifest',{method:'POST'})
+      .then(function(r){return r.json();}).then(function(d){
+        toast('Deploy manifest generated');
+        dlJSON(d.content,'docker-compose.json');
+      });
+  });
+}
+
+function dlJSON(obj, name) {
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(obj,null,2)],{type:'application/json'}));
+  a.download=name; a.click();
+}
+
+function doExportJSON() { dlJSON({graph:graph},'aimc-design.json'); }
+
+// ── Save ──────────────────────────────────────────────────────────────────
+function saveDesign(cb) {
+  var il=document.getElementById('il-select').value;
+  var nm=document.getElementById('design-name-input').value||'Untitled';
+  var payload={graph:graph,il_level:il,name:nm};
+  if (!DESIGN_ID) {
+    fetch('/ai-ml/api/designs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+      .then(function(r){return r.json();}).then(function(d){
+        DESIGN_ID=d.id; IS_NEW=false;
+        window.history.replaceState({},'','/ai-ml/canvas/'+DESIGN_ID);
+        toast('Design saved'); if (typeof cb==='function') cb(d.id);
+      });
+  } else {
+    fetch('/ai-ml/api/designs/'+DESIGN_ID,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)})
+      .then(function(r){return r.json();}).then(function(d){
+        toast('Saved ✓'); if (typeof cb==='function') cb(d.id);
+      });
+  }
+}
+
+function saveGraphSilent(cb) {
+  if (!DESIGN_ID) { if(typeof cb==='function') cb(); return; }
+  fetch('/ai-ml/api/designs/'+DESIGN_ID,{method:'PUT',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({graph:graph,il_level:document.getElementById('il-select').value})
+  }).then(function(){ if(typeof cb==='function') cb(); });
+}
+
+function autoSave() { saveGraphSilent(); }
+
+// ── Templates panel ───────────────────────────────────────────────────────
+function loadTemplatesData() {
+  fetch('/ai-ml/api/templates').then(function(r){return r.json();}).then(function(t){
+    _allTemplates=t; renderTemplates(t);
+  });
+}
+
+function renderTemplates(tpls) {
+  var c=document.getElementById('templates-content');
+  if (!tpls||!tpls.length) { c.innerHTML='<p style="color:#475569;font-size:.8rem;">No templates available</p>'; return; }
+  c.innerHTML=tpls.map(function(t){
+    return '<div class="tpl-card">'+
+      '<div class="card-name">'+esc(t.name)+'</div>'+
+      '<div class="card-desc">'+esc(t.description||'')+'</div>'+
+      '<div class="card-meta">'+esc(t.il_level||'')+(t.category?' · '+esc(t.category):'')+'</div>'+
+      '<button class="tb-btn" style="width:100%;" onclick="applyTemplate(\''+t.id+'\')">Apply Template</button>'+
+      '</div>';
+  }).join('');
+}
+
+function filterTemplates(q) {
+  var l=q.toLowerCase();
+  renderTemplates(_allTemplates.filter(function(t){
+    return (t.name||'').toLowerCase().includes(l)||(t.description||'').toLowerCase().includes(l);
+  }));
+}
+
+function applyTemplate(tid) {
+  if (!DESIGN_ID) { saveDesign(function(){ applyTemplate(tid); }); return; }
+  if (!confirm('Apply template? This replaces the current canvas.')) return;
+  fetch('/ai-ml/api/templates/'+tid+'/apply/'+DESIGN_ID,{method:'POST'})
+    .then(function(r){return r.json();}).then(function(d){
+      graph=d.graph||graph; renderGraph(); updateDropHint();
+      closeTemplates(); toast('Template applied'); pushHistory();
+    });
+}
+
+function openTemplates() {
+  closeSnippets();
+  document.getElementById('templates-panel').classList.add('open');
+  document.getElementById('btn-templates').classList.add('active');
+  if (!_allTemplates.length) loadTemplatesData();
+}
+function closeTemplates() {
+  document.getElementById('templates-panel').classList.remove('open');
+  document.getElementById('btn-templates').classList.remove('active');
+}
+
+// ── Snippets panel ────────────────────────────────────────────────────────
+function loadSnippetsData() {
+  fetch('/ai-ml/api/snippets').then(function(r){return r.json();}).then(function(s){
+    _allSnippets=s; renderSnippets(s);
+    var cats=[...new Set(s.map(function(x){return x.category||'General';}))];
+    var sel=document.getElementById('snp-category');
+    cats.forEach(function(c){
+      var o=document.createElement('option'); o.value=c; o.textContent=c; sel.appendChild(o);
+    });
+  });
+}
+
+function renderSnippets(snps) {
+  var c=document.getElementById('snippets-content');
+  if (!snps||!snps.length) { c.innerHTML='<p style="color:#475569;font-size:.8rem;">No snippets available</p>'; return; }
+  c.innerHTML=snps.map(function(s){
+    return '<div class="snp-card">'+
+      '<div class="card-name">'+esc(s.name)+'</div>'+
+      '<div class="card-desc">'+esc(s.description||'')+'</div>'+
+      '<button class="tb-btn" style="width:100%;margin-top:4px;" onclick="insertSnippet(\''+s.id+'\')">+ Insert</button>'+
+      '</div>';
+  }).join('');
+}
+
+function loadSnippets(cat) {
+  var url='/ai-ml/api/snippets'+(cat?'?category='+encodeURIComponent(cat):'');
+  fetch(url).then(function(r){return r.json();}).then(renderSnippets);
+}
+
+function openSnippets() {
+  closeTemplates();
+  document.getElementById('snippets-panel').classList.add('open');
+  document.getElementById('btn-snippets').classList.add('active');
+  if (!_allSnippets.length) loadSnippetsData();
+}
+function closeSnippets() {
+  document.getElementById('snippets-panel').classList.remove('open');
+  document.getElementById('btn-snippets').classList.remove('active');
+}
+
+function insertSnippet(sid) {
+  if (!DESIGN_ID) { saveDesign(function(){ insertSnippet(sid); }); return; }
+  fetch('/ai-ml/api/snippets/'+sid+'/insert/'+DESIGN_ID,{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({offset_x:100+Math.random()*120,offset_y:100+Math.random()*80})
+  }).then(function(r){return r.json();}).then(function(d){
+    graph=d.graph||graph; renderGraph(); updateDropHint();
+    closeSnippets(); toast('Snippet inserted'); pushHistory();
+  });
+}
+
+// ── Menu ──────────────────────────────────────────────────────────────────
+function toggleMenu(e) {
+  e.stopPropagation();
+  var m=document.getElementById('aimc-menu');
+  m.style.display=m.style.display==='none'?'block':'none';
+}
+function closeMenu() { document.getElementById('aimc-menu').style.display='none'; }
+document.addEventListener('click', function(e){
+  if (!e.target.closest('.aimc-menu-wrap')) closeMenu();
+  if (!e.target.closest('#templates-panel')&&!e.target.closest('#btn-templates')&&!e.target.closest('#snippets-panel')&&!e.target.closest('#btn-snippets')) {
+    // Keep panels open until explicit close
+  }
+});
+
+// ── Grid ──────────────────────────────────────────────────────────────────
+function toggleGrid() {
+  gridOn=!gridOn;
+  cntr.classList.toggle('grid-on',gridOn);
+  document.getElementById('btn-grid').classList.toggle('active',gridOn);
+}
+
+// ── Clear ─────────────────────────────────────────────────────────────────
+function clearCanvas() {
+  if (!confirm('Clear all nodes and edges?')) return;
+  graph={nodes:[],edges:[],boundaries:[]};
+  document.getElementById('nodes-layer').innerHTML='';
+  document.getElementById('boundaries-layer').innerHTML='';
+  renderEdges(); deselectAll(); updateDropHint(); pushHistory(); toast('Canvas cleared');
+  closeMenu();
+}
+
+// ── Utils ─────────────────────────────────────────────────────────────────
+function toast(msg,dur) {
+  var el=document.getElementById('aimc-toast');
+  el.textContent=msg; el.classList.add('show');
+  setTimeout(function(){el.classList.remove('show');},dur||2500);
+}
+function esc(s) {
+  return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+{% endblock %}

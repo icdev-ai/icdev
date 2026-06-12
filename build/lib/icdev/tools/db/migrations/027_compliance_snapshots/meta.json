@@ -1,0 +1,10 @@
+{
+  "id": "027",
+  "name": "compliance_snapshots",
+  "description": "CREATE TABLE compliance_snapshots — foundational BDC cATO Twin primitive. Append-only point-in-time record of a control's implementation status for a project under a compliance framework. Includes 3 composite indexes for the primary IQE query patterns.",
+  "created_at": "2026-04-18",
+  "author": "icdev-bdc-cato",
+  "database": "icdev",
+  "reversible": true,
+  "requires_downtime": false
+}

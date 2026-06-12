@@ -1,0 +1,122 @@
+{% extends "network/base.html" %}
+{% block title %}Cross-Connects — Network Design Canvas{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Cross-Connects & Meet-Me Rooms</h1>
+    <p class="page-subtitle">Physical cross-connects between carriers, CSPs, and customer equipment at colocation facilities</p>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-primary" onclick="document.getElementById('add-modal').style.display='flex'">+ Cross-Connect</button>
+  </div>
+</div>
+
+<div class="stats-row" style="display:flex;gap:1rem;margin-bottom:1.5rem;">
+  <div class="stat-card"><div class="stat-value">{{ stats.total }}</div><div class="stat-label">Total</div></div>
+  <div class="stat-card"><div class="stat-value">{{ stats.active }}</div><div class="stat-label">Active</div></div>
+  <div class="stat-card"><div class="stat-value">{{ stats.planned }}</div><div class="stat-label">Planned</div></div>
+  <div class="stat-card"><div class="stat-value">{{ stats.facilities }}</div><div class="stat-label">Facilities</div></div>
+  <div class="stat-card"><div class="stat-value">${{ stats.monthly_cost|round(0)|int }}/mo</div><div class="stat-label">Monthly Cost</div></div>
+</div>
+
+<section class="panel panel-wide">
+  <div class="panel-header"><h2 class="panel-title">Cross-Connect Registry ({{ cross_connects|length }})</h2></div>
+  {% if cross_connects %}
+  <table class="data-table">
+    <thead><tr>
+      <th>XConn ID</th><th>Facility</th><th>Meet-Me Room</th>
+      <th>A-Side</th><th>Z-Side</th><th>Media</th><th>BW</th>
+      <th>Provider A</th><th>Provider Z</th><th>LOA</th><th>Status</th><th>$/mo</th><th>Actions</th>
+    </tr></thead>
+    <tbody>
+    {% for x in cross_connects %}
+      <tr>
+        <td><strong>{{ x.xconn_id }}</strong></td>
+        <td>{{ x.facility or '—' }}</td>
+        <td><span class="badge badge-info">{{ x.meet_me_room or '—' }}</span></td>
+        <td>{{ x.src_device }}{% if x.src_port %}:{{ x.src_port }}{% endif %}</td>
+        <td>{{ x.dst_device }}{% if x.dst_port %}:{{ x.dst_port }}{% endif %}</td>
+        <td><span class="badge">{{ x.media_type or 'SMF' }}</span></td>
+        <td>{{ x.bandwidth or '—' }}</td>
+        <td>{{ x.provider_a or '—' }}</td>
+        <td>{{ x.provider_z or '—' }}</td>
+        <td><span class="badge badge-{{ 'public' if x.loa_status == 'approved' else 'warning' }}">{{ x.loa_status }}</span></td>
+        <td><span class="badge badge-{{ 'public' if x.status == 'active' else 'warning' }}">{{ x.status }}</span></td>
+        <td>{{ x.monthly_cost_usd|round(0)|int if x.monthly_cost_usd else '—' }}</td>
+        <td class="actions">
+          <button class="action-btn" onclick="editXConn('{{ x.id }}')" title="Edit">&#9998;</button>
+          <button class="action-btn danger" onclick="delXConn('{{ x.id }}')" title="Delete">&#10005;</button>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p style="padding:1rem;color:var(--text-muted);">No cross-connects documented. Click "+ Cross-Connect" to add.</p>{% endif %}
+</section>
+
+<div id="add-modal" class="modal" style="display:none;">
+  <div class="modal-content">
+    <h3>Add Cross-Connect</h3>
+    <form onsubmit="return submitXConn(event)">
+      <div class="form-grid">
+        <label>XConn ID <input name="xconn_id" required placeholder="XX-EQX-DC5-001"></label>
+        <label>Facility <input name="facility" placeholder="Equinix DC5"></label>
+        <label>Meet-Me Room <input name="meet_me_room" placeholder="MMR-2A"></label>
+        <label>A-Side Device <input name="src_device" placeholder="Customer Patch Panel"></label>
+        <label>A-Side Port <input name="src_port" placeholder="PP-A:01"></label>
+        <label>Z-Side Device <input name="dst_device" placeholder="AWS DX Port"></label>
+        <label>Z-Side Port <input name="dst_port" placeholder="DX-LAG-001"></label>
+        <label>Media Type
+          <select name="media_type">
+            <option value="SMF">SMF (Single-Mode Fiber)</option>
+            <option value="MMF">MMF (Multi-Mode Fiber)</option>
+            <option value="Cat6A">Cat6A Copper</option>
+            <option value="DAC">DAC (Direct Attach)</option>
+            <option value="AOC">AOC (Active Optical)</option>
+          </select>
+        </label>
+        <label>Bandwidth <input name="bandwidth" placeholder="10GbE"></label>
+        <label>Provider A-Side <input name="provider_a" placeholder="Customer / Carrier"></label>
+        <label>Provider Z-Side <input name="provider_z" placeholder="AWS / Azure / CSP"></label>
+        <label>LOA Status
+          <select name="loa_status">
+            <option value="pending">Pending</option>
+            <option value="submitted">LOA Submitted</option>
+            <option value="approved">LOA Approved</option>
+            <option value="rejected">Rejected</option>
+          </select>
+        </label>
+        <label>Monthly Cost ($) <input name="monthly_cost_usd" type="number" step="0.01" placeholder="300"></label>
+        <label>Install Date <input name="install_date" type="date"></label>
+        <label>Status
+          <select name="status">
+            <option value="planned">Planned</option>
+            <option value="ordered">Ordered</option>
+            <option value="active">Active</option>
+            <option value="decommissioned">Decommissioned</option>
+          </select>
+        </label>
+        <label>Notes <input name="notes"></label>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Save</button>
+        <button type="button" class="btn btn-secondary" onclick="this.closest('.modal').style.display='none'">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function submitXConn(e){e.preventDefault();const fd=new FormData(e.target),d={};fd.forEach((v,k)=>d[k]=v);
+  d.monthly_cost_usd=parseFloat(d.monthly_cost_usd)||0;
+  fetch(NC_BASE+'/api/cross-connects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)}).then(r=>{if(r.ok)location.reload();});return false;}
+function editXConn(id){
+  const s=prompt('New status (planned/ordered/active/decommissioned):');if(s===null)return;
+  const loa=prompt('LOA status (pending/submitted/approved/rejected):');if(loa===null)return;
+  fetch(NC_BASE+'/api/cross-connects/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({status:s,loa_status:loa})}).then(()=>location.reload());
+}
+function delXConn(id){if(!confirm('Delete this cross-connect?'))return;fetch(NC_BASE+'/api/cross-connects/'+id,{method:'DELETE'}).then(()=>location.reload());}
+</script>
+{% endblock %}

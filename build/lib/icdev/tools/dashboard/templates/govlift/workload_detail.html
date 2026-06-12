@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}{{ data.workload.get('name', 'Workload') }} — GovLift{% endblock %}
+{% block extra_css %}
+<style>
+.gl-page-header{background:linear-gradient(135deg,#0f172a,#1a3a2a);padding:22px 28px;border-radius:10px;margin-bottom:24px;}
+.gl-page-header h1{margin:0;font-size:1.4rem;font-weight:700;color:#d1fae5;}
+.gl-page-header p{margin:4px 0 0;color:#6ee7b7;font-size:.85rem;}
+.classification-banner{background:#1e3a1a;border:1px solid #166534;color:#86efac;font-size:.75rem;font-weight:700;letter-spacing:.08em;text-align:center;padding:6px 12px;border-radius:6px;margin-bottom:18px;}
+.back-link{color:#6ee7b7;text-decoration:none;font-size:.85rem;}
+.back-link:hover{color:#34d399;}
+.detail-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:20px 24px;margin-bottom:16px;}
+.detail-card h5{font-size:.9rem;color:#94a3b8;margin-bottom:14px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;}
+.detail-row{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #1e293b;font-size:.85rem;}
+.detail-row:last-child{border-bottom:none;}
+.detail-row .label{color:#94a3b8;}
+.detail-row .value{color:#e2e8f0;font-weight:600;}
+.badge{font-size:.75rem;}
+.section-title{font-size:1rem;font-weight:700;color:#d1fae5;margin:24px 0 12px;}
+.gl-table{width:100%;border-collapse:collapse;}
+.gl-table thead th{background:#0f172a;color:#94a3b8;font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:10px 12px;border-bottom:1px solid #334155;}
+.gl-table tbody tr{border-bottom:1px solid #1e293b;cursor:pointer;}
+.gl-table tbody tr:hover{background:#1a2540;}
+.gl-table tbody td{padding:10px 12px;font-size:.83rem;color:#e2e8f0;vertical-align:middle;}
+.gl-table-wrap{background:#1e293b;border:1px solid #334155;border-radius:10px;overflow:hidden;}
+.empty-state{text-align:center;padding:32px;color:#64748b;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="classification-banner">{{ classification }}</div>
+<a class="back-link" href="/govlift/workloads">&#8592; Workloads</a>
+
+<div class="gl-page-header mt-2">
+  <h1>{{ data.workload.get('name', 'Unnamed Workload') }}</h1>
+  <p>Workload ID: <span style="font-family:monospace;font-size:.85rem;">{{ data.workload.get('id', '') }}</span></p>
+</div>
+
+<div class="row g-3">
+  <div class="col-12 col-md-6">
+    <div class="detail-card">
+      <h5>Details</h5>
+      <div class="detail-row"><span class="label">Type</span><span class="value">{{ data.workload.get('workload_type', '—') }}</span></div>
+      <div class="detail-row"><span class="label">OS</span><span class="value">{{ data.workload.get('os_name', '') }} {{ data.workload.get('os_version', '') }}</span></div>
+      <div class="detail-row"><span class="label">Environment</span><span class="value">{{ data.workload.get('environment', '—') }}</span></div>
+      <div class="detail-row"><span class="label">IP Address</span><span class="value" style="font-family:monospace;">{{ data.workload.get('ip_address', '—') }}</span></div>
+      <div class="detail-row"><span class="label">CPU Cores</span><span class="value">{{ data.workload.get('cpu_cores', '—') }}</span></div>
+      <div class="detail-row"><span class="label">Memory (GB)</span><span class="value">{{ data.workload.get('memory_gb', '—') }}</span></div>
+      <div class="detail-row"><span class="label">Storage (TB)</span><span class="value">{{ data.workload.get('storage_tb', '—') }}</span></div>
+      <div class="detail-row"><span class="label">Classification</span><span class="value">{{ data.workload.get('classification', '—') }}</span></div>
+    </div>
+  </div>
+  <div class="col-12 col-md-6">
+    <div class="detail-card">
+      <h5>Migration Status</h5>
+      <div class="detail-row"><span class="label">Status</span>
+        <span class="value">
+          {% set ms = data.workload.get('migration_status', 'discovered') %}
+          {% if ms == 'migrated' %}<span class="badge bg-success">{{ ms }}</span>
+          {% elif ms == 'in_migration' %}<span class="badge bg-warning text-dark">{{ ms }}</span>
+          {% elif ms == 'failed' %}<span class="badge bg-danger">{{ ms }}</span>
+          {% elif ms == 'assessed' %}<span class="badge bg-info">{{ ms }}</span>
+          {% elif ms == 'wave_assigned' %}<span class="badge bg-primary">{{ ms }}</span>
+          {% else %}<span class="badge bg-secondary">{{ ms }}</span>
+          {% endif %}
+        </span>
+      </div>
+      <div class="detail-row"><span class="label">Risk Level</span>
+        <span class="value">
+          {% set risk = data.workload.get('risk_level', 'low') %}
+          {% if risk == 'critical' %}<span class="badge bg-danger">{{ risk }}</span>
+          {% elif risk == 'high' %}<span class="badge bg-warning text-dark">{{ risk }}</span>
+          {% elif risk == 'medium' %}<span class="badge bg-info">{{ risk }}</span>
+          {% else %}<span class="badge bg-success">{{ risk }}</span>
+          {% endif %}
+        </span>
+      </div>
+      <div class="detail-row"><span class="label">Wave</span>
+        <span class="value">
+          {% if data.wave %}<a href="/govlift/waves/{{ data.wave.id }}" style="color:#6ee7b7;">{{ data.wave.get('name', data.workload.get('wave_id', '—')) }}</a>
+          {% else %}{{ data.workload.get('wave_id', '—') }}{% endif %}
+        </span>
+      </div>
+      <div class="detail-row"><span class="label">Last Scanned</span><span class="value">{{ data.workload.get('last_scanned', '—') }}</span></div>
+      {% if data.workload.get('notes') %}
+      <div class="detail-row"><span class="label">Notes</span><span class="value">{{ data.workload.get('notes', '') }}</span></div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Associated Migrations -->
+{% if data.migrations %}
+<div class="section-title">Associated Migrations</div>
+<div class="gl-table-wrap">
+  <table class="gl-table">
+    <thead><tr><th>Job ID</th><th>Status</th><th>Started</th><th>Completed</th></tr></thead>
+    <tbody>
+      {% for mig in data.migrations %}
+      <tr onclick="window.location='/govlift/migrations/{{ mig.id }}'">
+        <td style="font-size:.75rem;color:#64748b;">{{ mig.id }}</td>
+        <td>
+          {% set js = mig.get('status', 'pending') %}
+          {% if js == 'completed' %}<span class="badge bg-success">{{ js }}</span>
+          {% elif js == 'running' %}<span class="badge bg-warning text-dark">{{ js }}</span>
+          {% elif js == 'failed' %}<span class="badge bg-danger">{{ js }}</span>
+          {% else %}<span class="badge bg-secondary">{{ js }}</span>
+          {% endif %}
+        </td>
+        <td style="font-size:.78rem;color:#94a3b8;">{{ mig.get('started_at', '—') }}</td>
+        <td style="font-size:.78rem;color:#94a3b8;">{{ mig.get('completed_at', '—') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<!-- Associated STIG Checks -->
+{% if data.stig_checks %}
+<div class="section-title">STIG Checks</div>
+<div class="gl-table-wrap">
+  <table class="gl-table">
+    <thead><tr><th>Check ID</th><th>Benchmark</th><th>Severity</th><th>Status</th><th>Finding</th></tr></thead>
+    <tbody>
+      {% for chk in data.stig_checks %}
+      <tr onclick="window.location='/govlift/stig/{{ chk.id }}'">
+        <td style="font-family:monospace;font-size:.75rem;">{{ chk.check_id }}</td>
+        <td style="font-size:.78rem;">{{ chk.stig_benchmark }}</td>
+        <td>
+          {% set sev = chk.get('severity', '') %}
+          {% if sev in ['CAT1','CAT I','I'] %}<span style="color:#f87171;font-weight:700;">CAT I</span>
+          {% elif sev in ['CAT2','CAT II','II'] %}<span style="color:#fbbf24;font-weight:600;">CAT II</span>
+          {% else %}<span style="color:#94a3b8;">CAT III</span>
+          {% endif %}
+        </td>
+        <td>
+          {% set ss = chk.get('status', 'not_reviewed') %}
+          {% if ss == 'not_a_finding' %}<span class="badge bg-info">Not a Finding</span>
+          {% elif ss == 'not_applicable' %}<span class="badge bg-secondary">N/A</span>
+          {% elif ss == 'not_reviewed' %}<span class="badge bg-secondary">Not Reviewed</span>
+          {% else %}<span class="badge bg-danger">Open</span>
+          {% endif %}
+        </td>
+        <td style="font-size:.78rem;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ chk.get('finding', '—') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

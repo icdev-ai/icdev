@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% set active = "strategos" %}
+{% block title %}Ghost Signals — Strategos{% endblock %}
+
+{% block content %}
+<div class="page-header page-header--compact">
+    <h1>Ghost Signals <span style="font-size:0.65em;color:var(--text-secondary);font-weight:400;">Dark vessels &amp; anomalies</span></h1>
+    <a href="/strategos" style="font-size:.85rem;color:var(--text-secondary)">&larr; Back to Strategos</a>
+</div>
+
+<form method="get" style="display:flex;gap:.75rem;margin-bottom:1rem;align-items:flex-end">
+    <div>
+        <label style="display:block;font-size:.8rem;color:var(--text-secondary);margin-bottom:.25rem">Signal Type</label>
+        <select name="signal_type" style="padding:.4rem .75rem;background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px">
+            <option value="">All types</option>
+            {% for t in signal_types %}
+            <option value="{{ t }}" {% if t == selected_type %}selected{% endif %}>{{ t|replace('_',' ')|title }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Filter</button>
+    {% if selected_type %}<a href="/strategos/ghost" class="btn">Clear</a>{% endif %}
+</form>
+
+<div class="card" style="padding:0;overflow:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:.875rem">
+        <thead>
+            <tr style="background:var(--bg-secondary)">
+                <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Type</th>
+                <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">MMSI</th>
+                <th style="padding:.6rem 1rem;text-align:right;border-bottom:1px solid var(--border-color)">Lat</th>
+                <th style="padding:.6rem 1rem;text-align:right;border-bottom:1px solid var(--border-color)">Lon</th>
+                <th style="padding:.6rem 1rem;text-align:right;border-bottom:1px solid var(--border-color)">Confidence</th>
+                <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Source</th>
+                <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Detected</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for s in signals %}
+            <tr style="border-bottom:1px solid var(--border-color)">
+                <td style="padding:.55rem 1rem">
+                    <span style="padding:.1rem .5rem;border-radius:3px;font-size:.78rem;background:rgba(245,158,11,.12);color:#f59e0b">
+                        {{ s.signal_type|replace('_',' ')|title }}
+                    </span>
+                </td>
+                <td style="padding:.55rem 1rem;font-family:monospace">{{ s.mmsi or '—' }}</td>
+                <td style="padding:.55rem 1rem;text-align:right">{% if s.lat is not none %}{{ s.lat|round(4) }}{% else %}—{% endif %}</td>
+                <td style="padding:.55rem 1rem;text-align:right">{% if s.lon is not none %}{{ s.lon|round(4) }}{% else %}—{% endif %}</td>
+                <td style="padding:.55rem 1rem;text-align:right;font-weight:500;color:{% if (s.confidence or 0) >= 0.75 %}#10b981{% elif (s.confidence or 0) >= 0.4 %}#f59e0b{% else %}#e94560{% endif %}">
+                    {{ ((s.confidence or 0) * 100)|round(0)|int }}%
+                </td>
+                <td style="padding:.55rem 1rem;color:var(--text-secondary)">{{ s.source or '—' }}</td>
+                <td style="padding:.55rem 1rem;color:var(--text-muted);font-size:.8rem">{{ (s.detected_at or '')[:16] }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" style="padding:2rem;text-align:center;color:var(--text-muted)">No ghost signals detected.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<div style="margin-top:.5rem;font-size:.8rem;color:var(--text-muted)">{{ signals|length }} signal(s)</div>
+
+<!-- OpenCTI Threat Indicators -->
+<div class="card" style="margin-top:1.5rem;padding:0">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:.75rem 1rem;cursor:pointer;user-select:none"
+         onclick="toggleOpenCTI(this)">
+        <span style="font-weight:600">OpenCTI Threat Indicators
+            <span id="octi-badge" style="margin-left:.5rem;padding:.1rem .45rem;border-radius:3px;font-size:.78rem;background:rgba(99,102,241,.15);color:#818cf8">…</span>
+        </span>
+        <span id="octi-chevron" style="font-size:.85rem;color:var(--text-secondary)">&#9660;</span>
+    </div>
+    <div id="octi-panel" style="display:none;overflow:auto">
+        <table id="octi-table" style="width:100%;border-collapse:collapse;font-size:.875rem">
+            <thead>
+                <tr style="background:var(--bg-secondary)">
+                    <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Name</th>
+                    <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Type</th>
+                    <th style="padding:.6rem 1rem;text-align:right;border-bottom:1px solid var(--border-color)">Confidence</th>
+                    <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">TLP</th>
+                    <th style="padding:.6rem 1rem;text-align:left;border-bottom:1px solid var(--border-color)">Valid Until</th>
+                </tr>
+            </thead>
+            <tbody id="octi-tbody">
+                <tr><td colspan="5" style="padding:2rem;text-align:center;color:var(--text-muted)">Loading…</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+<script>
+(function(){
+    var loaded = false;
+    function tlpColor(tlp){
+        if(!tlp) return 'var(--text-muted)';
+        var t = tlp.toUpperCase();
+        if(t.includes('RED'))   return '#e94560';
+        if(t.includes('AMBER')) return '#f59e0b';
+        if(t.includes('GREEN')) return '#10b981';
+        return 'var(--text-secondary)';
+    }
+    window.toggleOpenCTI = function(hdr){
+        var panel = document.getElementById('octi-panel');
+        var chevron = document.getElementById('octi-chevron');
+        if(panel.style.display === 'none'){
+            panel.style.display = '';
+            chevron.innerHTML = '&#9650;';
+            if(!loaded){ loadOCTI(); }
+        } else {
+            panel.style.display = 'none';
+            chevron.innerHTML = '&#9660;';
+        }
+    };
+    function loadOCTI(){
+        loaded = true;
+        fetch('/api/strategos/opencti/indicators')
+            .then(function(r){ return r.json(); })
+            .then(function(d){
+                var badge = document.getElementById('octi-badge');
+                var tbody = document.getElementById('octi-tbody');
+                badge.textContent = d.total || 0;
+                if(!d.configured || !d.indicators || d.indicators.length === 0){
+                    tbody.innerHTML = '<tr><td colspan="5" style="padding:2rem;text-align:center;color:var(--text-muted)">OpenCTI not connected — configure OPENCTI_URL and OPENCTI_API_KEY to enable.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = d.indicators.map(function(i){
+                    var conf = i.confidence || 0;
+                    var confCol = conf >= 75 ? '#10b981' : conf >= 40 ? '#f59e0b' : '#e94560';
+                    return '<tr style="border-bottom:1px solid var(--border-color)">' +
+                        '<td style="padding:.55rem 1rem">' + (i.name||'—') + '</td>' +
+                        '<td style="padding:.55rem 1rem;color:var(--text-secondary)">' + (i.indicator_type||'—') + '</td>' +
+                        '<td style="padding:.55rem 1rem;text-align:right;font-weight:500;color:'+confCol+'">' + conf + '</td>' +
+                        '<td style="padding:.55rem 1rem;color:' + tlpColor(i.tlp) + '">' + (i.tlp||'—') + '</td>' +
+                        '<td style="padding:.55rem 1rem;font-size:.8rem;color:var(--text-muted)">' + ((i.valid_until||'').slice(0,10)||'—') + '</td>' +
+                        '</tr>';
+                }).join('');
+            })
+            .catch(function(e){
+                document.getElementById('octi-tbody').innerHTML = '<tr><td colspan="5" style="padding:2rem;text-align:center;color:#e94560">Error loading OpenCTI data.</td></tr>';
+            });
+    }
+    // Pre-load badge count without opening panel
+    fetch('/api/strategos/opencti/indicators')
+        .then(function(r){ return r.json(); })
+        .then(function(d){ document.getElementById('octi-badge').textContent = d.total || 0; })
+        .catch(function(){});
+}());
+</script>
+{% endblock %}

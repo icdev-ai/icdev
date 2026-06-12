@@ -1,0 +1,405 @@
+{% extends "base.html" %}
+{% block title %}{{ section.section_number }}: {{ section.title }} - Proposals - ICDEV™{% endblock %}
+
+{% block content %}
+<div class="breadcrumbs">
+    <a href="/">Home</a><span class="separator">/</span>
+    <a href="/proposals">Proposals</a><span class="separator">/</span>
+    <a href="/proposals/{{ section.opportunity_id }}">{{ opp_title }}</a><span class="separator">/</span>
+    <span>{{ section.section_number }}: {{ section.title }}</span>
+</div>
+
+<div class="page-header" style="display:flex; justify-content:space-between; align-items:flex-start;">
+    <div>
+        <h1>{{ section.section_number }}: {{ section.title }}</h1>
+        <p class="subtitle">Volume {{ section.volume_number }}: {{ section.volume_title }}</p>
+        <div style="margin-top:4px;">
+            {% set sec_colors = {'not_started': 'info', 'outlining': 'info', 'drafting': 'warning', 'internal_review': 'warning', 'pink_team_ready': 'warning', 'pink_team_review': 'warning', 'rework_pink': 'error', 'red_team_ready': 'warning', 'red_team_review': 'warning', 'rework_red': 'error', 'gold_team_ready': 'warning', 'gold_team_review': 'warning', 'white_glove': 'info', 'final': 'success', 'submitted': 'success'} %}
+            <span class="badge badge-{{ sec_colors.get(section.status, 'info') }}">{{ section.status | replace('_', ' ') | title }}</span>
+            {% set pri_colors = {'critical_path': 'error', 'high': 'warning', 'standard': 'info', 'supporting': 'info'} %}
+            <span class="badge badge-{{ pri_colors.get(section.priority, 'info') }}">{{ section.priority | replace('_', ' ') | title }}</span>
+        </div>
+    </div>
+    <div>
+        {% if section.valid_transitions %}
+        <div style="display:flex; gap:8px; align-items:center;">
+            <label style="font-size:12px; color:var(--text-secondary);">Advance to:</label>
+            <select id="advance-status-select" style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);padding:6px 10px;border-radius:4px;">
+                {% for t in section.valid_transitions %}
+                <option value="{{ t }}">{{ t | replace('_', ' ') | title }}</option>
+                {% endfor %}
+            </select>
+            <button class="btn btn-primary" onclick="ICDEV™.proposals.advanceStatus('{{ section.id }}', document.getElementById('advance-status-select').value)">
+                Advance
+            </button>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Status Pipeline -->
+<div id="status-pipeline" style="margin:16px 0;"></div>
+
+<!-- Info Grid -->
+<div class="card" style="padding:16px; margin-top:16px;">
+    <div class="info-grid">
+        <div class="info-item"><div class="label">Writer</div><div class="value">{{ section.writer or '—' }}</div></div>
+        <div class="info-item"><div class="label">Reviewer</div><div class="value">{{ section.reviewer or '—' }}</div></div>
+        <div class="info-item"><div class="label">Word Count</div><div class="value">{{ section.current_word_count or 0 }}{% if section.word_limit %} / {{ section.word_limit }}{% endif %}</div></div>
+        <div class="info-item"><div class="label">Page Count</div><div class="value">{{ section.current_page_count or 0 }}{% if section.page_limit %} / {{ section.page_limit }}{% endif %}</div></div>
+        <div class="info-item"><div class="label">Due Date</div><div class="value {% if section.overdue %}text-danger{% endif %}">{{ section.due_date or '—' }}</div></div>
+        <div class="info-item"><div class="label">Priority</div><div class="value">{{ section.priority | replace('_', ' ') | title }}</div></div>
+    </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs" style="margin-top:20px;">
+    <button class="tab-btn active" data-tab="stab-notes">Notes</button>
+    <button class="tab-btn" data-tab="stab-draft">Draft Content</button>
+    <button class="tab-btn" data-tab="stab-compliance">Compliance ({{ section.compliance_items | length }})</button>
+    <button class="tab-btn" data-tab="stab-findings">Findings ({{ section.findings | length }})</button>
+    <button class="tab-btn" data-tab="stab-deps">Dependencies ({{ section.dependencies | length }})</button>
+    <button class="tab-btn" data-tab="stab-history">History ({{ section.history | length }})</button>
+    <button class="tab-btn" data-tab="stab-writeguard" style="color:var(--accent-blue);font-weight:600;">🛡️ WriteGuard</button>
+</div>
+
+<!-- Notes Tab -->
+<div id="stab-notes" class="tab-content active">
+    <div class="card" style="padding:16px; margin-top:12px;">
+        <textarea id="section-notes" rows="8" data-writeguard data-writeguard-label="Section Notes"
+                  style="width:100%; background:var(--bg-secondary); border:1px solid var(--border-color,#2a2a4a); color:var(--text-primary); padding:12px; border-radius:4px; resize:vertical; font-family:inherit;">{{ section.notes or '' }}</textarea>
+        <div style="margin-top:8px; display:flex; justify-content:flex-end;">
+            <button class="btn btn-primary" onclick="ICDEV™.proposals.saveNotes('{{ section.id }}')">Save Notes</button>
+        </div>
+    </div>
+</div>
+
+<!-- Draft Content Tab -->
+<div id="stab-draft" class="tab-content" style="display:none;">
+    <div class="card" style="padding:16px; margin-top:12px;">
+        {% if draft %}
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+            <div style="display:flex; gap:8px; align-items:center;">
+                {% set ds_colors = {'draft': 'warning', 'reviewed': 'info', 'approved': 'success', 'rejected': 'error'} %}
+                <span class="badge badge-{{ ds_colors.get(draft.status, 'info') }}">{{ draft.status | title }}</span>
+                {% if draft.confidence %}
+                <span class="badge badge-{{ 'success' if draft.confidence >= 0.7 else 'warning' if draft.confidence >= 0.4 else 'error' }}">Confidence: {{ (draft.confidence * 100) | round(0) | int }}%</span>
+                {% endif %}
+                {% if draft.generation_model %}
+                <span class="text-muted" style="font-size:12px;">Model: {{ draft.generation_model }}</span>
+                {% endif %}
+                {% if draft.writeguard %}
+                    {% set wg = draft.writeguard %}
+                {% elif draft.metadata_parsed and draft.metadata_parsed.writeguard %}
+                    {% set wg = draft.metadata_parsed.writeguard %}
+                {% else %}
+                    {% set wg = None %}
+                {% endif %}
+                {% if wg %}
+                {% set wg_score = wg.overall_score | default(0) %}
+                <span class="badge badge-{{ 'success' if wg_score >= 80 else 'warning' if wg_score >= 60 else 'error' }}">WriteGuard: {{ wg_score }}</span>
+                {% endif %}
+            </div>
+            <div style="display:flex; gap:8px;align-items:center;">
+                <button class="btn btn-secondary btn-sm" onclick="ICDEV.proposals.runInlineGrammar('{{ draft.id }}')"
+                        title="Run grammar-only check inline" style="font-size:0.78rem;padding:3px 10px;">🔍 Check Grammar</button>
+                <button class="btn btn-secondary btn-sm" onclick="ICDEV.proposals.runInlineRewrite('{{ draft.id }}')"
+                        title="Rewrite with deterministic fixes" style="font-size:0.78rem;padding:3px 10px;">✍️ Rewrite</button>
+                {% if draft.status in ('draft', 'reviewed') %}
+                <button class="btn btn-sm btn-success" onclick="approveDraft('{{ draft.id }}')">Approve</button>
+                <button class="btn btn-sm btn-error" onclick="rejectDraft('{{ draft.id }}')">Reject</button>
+                {% endif %}
+            </div>
+        </div>
+        {% if draft.reviewed_by %}
+        <div style="font-size:12px; color:var(--text-secondary); margin-bottom:12px;">
+            Reviewed by {{ draft.reviewed_by }}{% if draft.reviewed_at %} on {{ draft.reviewed_at }}{% endif %}
+        </div>
+        {% endif %}
+        <div id="draft-rendered"
+             style="background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:6px; padding:20px 24px; max-height:600px; overflow-y:auto; line-height:1.75; font-size:0.92rem;">
+            <noscript><pre style="white-space:pre-wrap;">{{ draft.draft_content }}</pre></noscript>
+        </div>
+        <script id="draft-raw-content" type="text/plain">{{ draft.draft_content | e }}</script>
+        <style>
+        #draft-rendered h1,#draft-rendered h2,#draft-rendered h3{color:var(--text-primary);margin:1rem 0 0.5rem;font-weight:700;}
+        #draft-rendered h1{font-size:1.2rem;}#draft-rendered h2{font-size:1.05rem;}#draft-rendered h3{font-size:0.97rem;}
+        #draft-rendered p{margin:0 0 0.75rem;}#draft-rendered ul,#draft-rendered ol{padding-left:1.4rem;margin:0 0 0.75rem;}
+        #draft-rendered li{margin-bottom:0.25rem;}#draft-rendered strong{color:var(--text-primary);font-weight:700;}
+        #draft-rendered code{background:var(--bg-card);border:1px solid var(--border-color);border-radius:3px;padding:1px 4px;font-size:0.85em;}
+        #draft-rendered blockquote{border-left:3px solid var(--accent-blue);padding:4px 12px;margin:8px 0;color:var(--text-secondary);}
+        #draft-rendered table{border-collapse:collapse;width:100%;margin-bottom:0.75rem;}
+        #draft-rendered th,#draft-rendered td{border:1px solid var(--border-color);padding:6px 10px;text-align:left;}
+        #draft-rendered th{background:var(--bg-card);font-weight:600;}
+        </style>
+        <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            var rawEl = document.getElementById('draft-raw-content');
+            var rendered = document.getElementById('draft-rendered');
+            if (!rawEl || !rendered) return;
+            var raw = rawEl.textContent;
+            function renderFallback(text) {
+                return '<p>' + text
+                    .replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+                    .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+                    .replace(/\*(.+?)\*/g,'<em>$1</em>')
+                    .replace(/^### (.+)$/gm,'<h3>$1</h3>')
+                    .replace(/^## (.+)$/gm,'<h2>$1</h2>')
+                    .replace(/^# (.+)$/gm,'<h1>$1</h1>')
+                    .replace(/^- (.+)$/gm,'<li>$1</li>')
+                    .replace(/\n\n/g,'</p><p>')
+                    .replace(/\n/g,'<br>') + '</p>';
+            }
+            if (typeof marked !== 'undefined') {
+                marked.setOptions({breaks: true, gfm: true});
+                rendered.innerHTML = marked.parse(raw);
+            } else {
+                rendered.innerHTML = renderFallback(raw);
+            }
+        });
+        </script>
+        {% else %}
+        <p class="text-muted" style="text-align:center;">No draft generated yet for this section.</p>
+        <div style="text-align:center; margin-top:8px;">
+            <a href="/proposals/{{ section.opportunity_id }}" class="btn btn-primary">Go to Opportunity → AI Drafts</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- WriteGuard Tab -->
+<div id="stab-writeguard" class="tab-content" style="display:none;">
+    <div class="card" style="padding:16px; margin-top:12px;">
+        <div id="writeguard-embedded-container"></div>
+    </div>
+</div>
+
+<!-- Compliance Tab -->
+<div id="stab-compliance" class="tab-content" style="display:none;">
+    <div class="table-container" style="margin-top:12px;">
+        <table>
+            <thead><tr><th>Ref</th><th>Requirement</th><th>Type</th><th>Status</th></tr></thead>
+            <tbody>
+                {% for cm in section.compliance_items %}
+                <tr>
+                    <td>{{ cm.section_ref }}</td>
+                    <td>{{ cm.requirement_text[:120] }}{% if cm.requirement_text | length > 120 %}...{% endif %}</td>
+                    <td><span class="badge badge-info">{{ cm.requirement_type }}</span></td>
+                    <td>
+                        {% set cm_colors = {'compliant': 'success', 'partial': 'warning', 'non_compliant': 'error', 'not_applicable': 'info', 'not_addressed': 'error'} %}
+                        <span class="badge badge-{{ cm_colors.get(cm.compliance_status, 'info') }}">{{ cm.compliance_status | replace('_', ' ') | title }}</span>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="text-muted" style="text-align:center;">No compliance items linked to this section</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Findings Tab -->
+<div id="stab-findings" class="tab-content" style="display:none;">
+    <div class="table-container" style="margin-top:12px;">
+        <table>
+            <thead><tr><th>Review</th><th>Type</th><th>Severity</th><th>Description</th><th>Status</th></tr></thead>
+            <tbody>
+                {% for f in section.findings %}
+                <tr>
+                    <td><span class="badge badge-info">{{ f.review_type | replace('_', ' ') | title }}</span></td>
+                    <td>{{ f.finding_type | replace('_', ' ') | title }}</td>
+                    <td>
+                        {% set sev_colors = {'critical': 'error', 'major': 'warning', 'minor': 'info', 'observation': 'info'} %}
+                        <span class="badge badge-{{ sev_colors.get(f.severity, 'info') }}">{{ f.severity | title }}</span>
+                    </td>
+                    <td>{{ f.description[:120] }}{% if f.description | length > 120 %}...{% endif %}</td>
+                    <td>
+                        {% set fs_colors = {'open': 'error', 'in_progress': 'warning', 'resolved': 'success', 'deferred': 'info', 'wont_fix': 'info'} %}
+                        <span class="badge badge-{{ fs_colors.get(f.status, 'info') }}">{{ f.status | replace('_', ' ') | title }}</span>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="text-muted" style="text-align:center;">No findings for this section</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Dependencies Tab -->
+<div id="stab-deps" class="tab-content" style="display:none;">
+    <div class="table-container" style="margin-top:12px;">
+        <table>
+            <thead><tr><th>Depends On</th><th>Current Status</th><th>Required Status</th><th>Type</th><th>Met?</th></tr></thead>
+            <tbody>
+                {% for d in section.dependencies %}
+                <tr>
+                    <td>{{ d.depends_on_title }}</td>
+                    <td><span class="badge badge-info">{{ d.depends_on_status | replace('_', ' ') | title }}</span></td>
+                    <td>{{ d.required_status | replace('_', ' ') | title }}</td>
+                    <td>{{ d.dependency_type | title }}</td>
+                    <td>
+                        {% if d.met %}<span class="badge badge-success">Yes</span>{% else %}<span class="badge badge-error">No</span>{% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="text-muted" style="text-align:center;">No dependencies</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- History Tab -->
+<div id="stab-history" class="tab-content" style="display:none;">
+    <div class="table-container" style="margin-top:12px;">
+        <table>
+            <thead><tr><th>Timestamp</th><th>From</th><th>To</th><th>Changed By</th><th>Reason</th></tr></thead>
+            <tbody>
+                {% for h in section.history %}
+                <tr>
+                    <td class="text-muted">{{ h.created_at }}</td>
+                    <td>{{ (h.old_status or '—') | replace('_', ' ') | title }}</td>
+                    <td><span class="badge badge-info">{{ h.new_status | replace('_', ' ') | title }}</span></td>
+                    <td>{{ h.changed_by or '—' }}</td>
+                    <td>{{ h.reason or '—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<style>
+.text-danger { color: var(--status-red, #dc3545) !important; font-weight: bold; }
+</style>
+
+<script defer src="{{ url_for('static', filename='js/writeguard-inline.js') }}"></script>
+<script defer src="{{ url_for('static', filename='js/writeguard-embedded.js') }}"></script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    // Tab switching
+    document.querySelectorAll(".tab-btn").forEach(function(btn) {
+        btn.addEventListener("click", function() {
+            document.querySelectorAll(".tab-btn").forEach(function(b) { b.classList.remove("active"); });
+            document.querySelectorAll(".tab-content").forEach(function(c) { c.style.display = "none"; c.classList.remove("active"); });
+            btn.classList.add("active");
+            var tab = document.getElementById(btn.getAttribute("data-tab"));
+            if (tab) { tab.style.display = "block"; tab.classList.add("active"); }
+
+            // Lazy-load WriteGuard tab on first click
+            if (btn.getAttribute("data-tab") === 'stab-writeguard' && window.ICDEV && ICDEV.writeguard) {
+                var draftEl = document.getElementById('draft-raw-content');
+                if (draftEl && !document.getElementById('writeguard-embedded-container').dataset.loaded) {
+                    document.getElementById('writeguard-embedded-container').dataset.loaded = 'true';
+                    ICDEV.writeguard.renderTab('writeguard-embedded-container', draftEl.textContent, {
+                        draftId: '{{ draft.id if draft else '' }}',
+                        sectionId: '{{ section.id }}',
+                        oppId: '{{ section.opportunity_id }}',
+                        mode: 'proposal_technical'
+                    });
+                }
+            }
+        });
+    });
+
+    // Status pipeline
+    if (window.ICDEV && ICDEV.proposals) {
+        ICDEV.proposals.renderStatusPipeline("status-pipeline", "{{ section.status }}");
+    }
+});
+
+function approveDraft(draftId) {
+    fetch("/api/govcon/drafts/" + draftId + "/approve", {
+        method: "PUT", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({reviewed_by: "dashboard_user"})
+    }).then(function(r) { return r.json(); }).then(function() {
+        location.reload();
+    });
+}
+
+function rejectDraft(draftId) {
+    var notes = prompt("Rejection reason:");
+    if (notes === null) return;
+    fetch("/api/govcon/drafts/" + draftId + "/reject", {
+        method: "PUT", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({reviewed_by: "dashboard_user", review_notes: notes})
+    }).then(function(r) { return r.json(); }).then(function() {
+        location.reload();
+    });
+}
+
+// ── Inline WriteGuard mini-actions (no page leave) ───────────────────
+(function() {
+    if (!window.ICDEV) window.ICDEV = {};
+    if (!ICDEV.proposals) ICDEV.proposals = {};
+
+    function getDraftText() {
+        var el = document.getElementById('draft-raw-content');
+        return el ? el.textContent : '';
+    }
+
+    function showInlineModal(title, html) {
+        var existing = document.getElementById('wg-inline-modal');
+        if (existing) existing.remove();
+        var modal = document.createElement('div');
+        modal.id = 'wg-inline-modal';
+        modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:1000;display:flex;align-items:center;justify-content:center;';
+        modal.innerHTML = `
+            <div style="background:var(--bg-secondary,#1e1e2e);border:1px solid var(--border-color,#333);border-radius:10px;padding:1.25rem;max-width:640px;width:90%;max-height:80vh;overflow-y:auto;">
+                <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.75rem;">
+                    <span style="font-size:0.95rem;font-weight:700;color:var(--text-primary);">${title}</span>
+                    <button onclick="this.closest('#wg-inline-modal').remove()" style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:1.2rem;">&times;</button>
+                </div>
+                <div id="wg-inline-body">${html}</div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        modal.addEventListener('click', function(e) { if (e.target === modal) modal.remove(); });
+    }
+
+    ICDEV.proposals.runInlineGrammar = function(draftId) {
+        var text = getDraftText();
+        if (!text) { alert('No draft content to check.'); return; }
+        showInlineModal('Grammar Check', '<div style="text-align:center;padding:1rem;">Analyzing…</div>');
+        ICDEV.writeguard.grammarCheck(text, function(data) {
+            if (data.error) {
+                document.getElementById('wg-inline-body').innerHTML = '<div style="color:#e53e3e;">' + data.error + '</div>';
+                return;
+            }
+            var findings = data.findings || [];
+            var html = '<div style="text-align:center;margin-bottom:0.75rem;">' +
+                '<span style="font-size:1.4rem;font-weight:700;color:' + (data.score >= 75 ? '#00c864' : data.score >= 50 ? '#ffa500' : '#e53e3e') + ';">' + (data.score || 0).toFixed(1) + '</span>' +
+                '<div style="font-size:0.75rem;color:var(--text-muted);">Grammar Score</div></div>';
+            if (findings.length === 0) {
+                html += '<div style="color:#00c864;text-align:center;">No grammar issues found ✓</div>';
+            } else {
+                html += '<div style="font-size:0.8rem;font-weight:600;margin-bottom:0.4rem;">Findings (' + findings.length + ')</div>';
+                html += '<div style="display:flex;flex-direction:column;gap:0.4rem;max-height:300px;overflow-y:auto;">';
+                findings.forEach(function(f) {
+                    var sev = (f.severity || 'medium').toLowerCase();
+                    var color = sev === 'critical' ? '#e53e3e' : sev === 'high' ? '#ff6432' : sev === 'medium' ? '#ffa500' : '#4a9eff';
+                    html += '<div style="background:var(--bg-primary);border-radius:6px;padding:0.5rem 0.65rem;font-size:0.8rem;">' +
+                        '<span style="color:' + color + ';font-weight:700;font-size:0.7rem;text-transform:uppercase;">' + sev + '</span> ' +
+                        (f.message || f.description || '') + '</div>';
+                });
+                html += '</div>';
+            }
+            document.getElementById('wg-inline-body').innerHTML = html;
+        });
+    };
+
+    ICDEV.proposals.runInlineRewrite = function(draftId) {
+        var text = getDraftText();
+        if (!text) { alert('No draft content to rewrite.'); return; }
+        // Switch to WriteGuard tab and trigger rewrite
+        var wgBtn = document.querySelector('.tab-btn[data-tab="stab-writeguard"]');
+        if (wgBtn) wgBtn.click();
+        setTimeout(function() {
+            var rwBtn = document.getElementById('wg-emb-rewrite-btn');
+            if (rwBtn) rwBtn.click();
+        }, 600);
+    };
+})();
+</script>
+{% endblock %}

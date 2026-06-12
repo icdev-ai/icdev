@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}AI-Assist — Document Intelligence — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;font-size:20px;">✨ AI-Assist</h2>
+    <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">Generate grounded document drafts · CoD-verified · AI-labeled · routed to HITL review</p>
+  </div>
+  <a href="/document-intelligence/" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">← Back to DIC</a>
+</div>
+
+<!-- Notice -->
+<div style="background:#0d2b18;border:1px solid #1e5a38;border-radius:6px;padding:10px 14px;margin-bottom:18px;font-size:12px;color:#7fd8a0;">
+  🔒 <strong>HITL-gated by design.</strong> AI drafts are CoD-verified against your documents, labeled <em>AI-generated</em>, and submitted for human review before publishing. No AI content is ever auto-published.
+</div>
+
+<!-- Generation Form -->
+<div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;padding:20px;margin-bottom:24px;">
+  <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end;flex-wrap:wrap;">
+    <div>
+      <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;text-transform:uppercase;">Document Query *</label>
+      <input type="text" id="gen-query" placeholder="e.g. Draft a runbook for network failover"
+        style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:9px 12px;border-radius:5px;font-size:13px;">
+    </div>
+    <div>
+      <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;text-transform:uppercase;">Collection ID</label>
+      <input type="text" id="gen-collection" placeholder="default"
+        style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:9px 12px;border-radius:5px;font-size:13px;">
+    </div>
+    <button onclick="startGeneration()"
+      style="background:#0f3460;color:#7ab3f0;padding:9px 20px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:13px;font-weight:600;white-space:nowrap;">
+      Generate Draft
+    </button>
+  </div>
+  <div style="margin-top:12px;">
+    <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;text-transform:uppercase;">Template</label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      {% for t in templates %}
+      <label style="cursor:pointer;display:flex;align-items:center;gap:5px;font-size:12px;color:#94a3b8;">
+        <input type="radio" name="gen-template" value="{{ t.id }}" {% if loop.first %}checked{% endif %}>
+        {{ t.name }}{% if t.flagship %} ⭐{% endif %}
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<!-- Generation Progress -->
+<div id="gen-progress" style="display:none;">
+  <div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:16px;margin-bottom:14px;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+      <div id="gen-spinner" style="width:18px;height:18px;border:2px solid #1a3560;border-top-color:#4f8ef7;border-radius:50%;animation:spin .8s linear infinite;"></div>
+      <span id="gen-status" style="color:#7ab3f0;font-size:13px;">Retrieving evidence…</span>
+    </div>
+    <div style="background:#050d1f;border-radius:4px;height:5px;overflow:hidden;">
+      <div id="gen-bar" style="background:#4f8ef7;height:100%;width:0%;transition:width .5s;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Draft Result -->
+<div id="draft-result" style="display:none;">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+    <h3 id="draft-title" style="margin:0;color:#eaeaea;font-size:16px;"></h3>
+    <div style="display:flex;gap:8px;">
+      <span style="background:#052e16;color:#4ade80;font-size:11px;padding:3px 10px;border-radius:3px;">AI-generated · pending review</span>
+      <button onclick="submitForReview()"
+        style="background:#0f3460;color:#7ab3f0;padding:7px 16px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;">
+        Submit for Review →
+      </button>
+    </div>
+  </div>
+  <div id="draft-sections"></div>
+</div>
+
+<style>@keyframes spin{to{transform:rotate(360deg)}}</style>
+<script>
+var _currentVersionId = null;
+
+function startGeneration() {
+  var query = document.getElementById('gen-query').value.trim();
+  if (!query) { alert('Query is required.'); return; }
+  var collection = document.getElementById('gen-collection').value.trim() || 'default';
+  var templateRadio = document.querySelector('input[name="gen-template"]:checked');
+  var templateId = templateRadio ? templateRadio.value : null;
+
+  document.getElementById('gen-progress').style.display = 'block';
+  document.getElementById('draft-result').style.display = 'none';
+  document.getElementById('gen-bar').style.width = '10%';
+  document.getElementById('gen-status').textContent = 'Retrieving evidence from documents…';
+
+  var steps = [
+    [30, 'Building document outline…'],
+    [55, 'Drafting sections…'],
+    [75, 'Verifying claims (CoD)…'],
+    [90, 'Preparing HITL submission…'],
+  ];
+  var si = 0;
+  var interval = setInterval(function() {
+    if (si < steps.length) {
+      document.getElementById('gen-bar').style.width = steps[si][0] + '%';
+      document.getElementById('gen-status').textContent = steps[si][1];
+      si++;
+    }
+  }, 1800);
+
+  fetch('/document-intelligence/api/generate', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({query: query, collection_id: collection, template_id: templateId})
+  }).then(function(r) { return r.json(); })
+    .then(function(data) {
+      clearInterval(interval);
+      document.getElementById('gen-bar').style.width = '100%';
+      document.getElementById('gen-spinner').style.animationPlayState = 'paused';
+      document.getElementById('gen-status').textContent = 'Done.';
+
+      if (data.error && !data.sections) {
+        document.getElementById('gen-status').textContent = 'Error: ' + data.error;
+        return;
+      }
+      _currentVersionId = data.version_id;
+      renderDraft(data);
+    })
+    .catch(function(e) {
+      clearInterval(interval);
+      document.getElementById('gen-status').textContent = 'Generation failed: ' + e.message;
+    });
+}
+
+function renderDraft(data) {
+  document.getElementById('draft-title').textContent = data.title || 'Draft Document';
+  var sections = data.sections || [];
+  var html = sections.map(function(s) {
+    var badge = s.abstained
+      ? '<span style="background:#3a1a00;color:#fbbf24;font-size:10px;padding:1px 6px;border-radius:3px;margin-left:8px;">⚠ Abstained</span>'
+      : s.verified
+        ? '<span style="background:#052e16;color:#4ade80;font-size:10px;padding:1px 6px;border-radius:3px;margin-left:8px;">✓ Verified</span>'
+        : '<span style="background:#1e293b;color:#94a3b8;font-size:10px;padding:1px 6px;border-radius:3px;margin-left:8px;">Unverified</span>';
+    return '<div style="background:#0b1726;border:1px solid #1a3560;border-radius:6px;padding:14px;margin-bottom:12px;">' +
+      '<div style="margin-bottom:8px;"><strong style="color:#9bb8d8;font-size:13px;">' + (s.heading || '') + '</strong>' + badge + '</div>' +
+      '<div style="color:#a8c8e0;font-size:12px;line-height:1.7;">' + (s.abstained ? '<em style="color:#fbbf24;">Insufficient evidence — this section was omitted.</em>' : escHtml(s.content || '')) + '</div>' +
+      (s.citation_count ? '<div style="margin-top:6px;color:#5a7aa0;font-size:11px;">' + s.citation_count + ' citation(s)</div>' : '') +
+      '</div>';
+  }).join('');
+  document.getElementById('draft-sections').innerHTML = html || '<p style="color:#5a7aa0;">No sections generated.</p>';
+  document.getElementById('draft-result').style.display = 'block';
+}
+
+function submitForReview() {
+  if (!_currentVersionId) { alert('No draft to submit.'); return; }
+  window.location.href = '/document-intelligence/review';
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+</script>
+
+{% set iqe_canvas = "dic" %}
+{% set iqe_api_route = "/document-intelligence/api/iqe-query" %}
+{% set iqe_title = "IQE Query — AI-Assist" %}
+{% set iqe_examples = [
+  {"label": "Pending versions", "query": "foreach v in dic.versions where v.status == \"pending_review\" select v.version_id, v.doc_id, v.origin"},
+  {"label": "AI-generated docs", "query": "foreach v in dic.versions where v.origin == \"ai_generated\" select v.doc_id, v.status, v.created_at"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

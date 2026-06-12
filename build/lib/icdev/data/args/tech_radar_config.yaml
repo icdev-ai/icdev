@@ -1,0 +1,95 @@
+# CUI // SP-CTI
+# ICDEV™ — Technology Radar Configuration
+#
+# Drives the Tech Radar engine: ingest sources, scoring weights, ring change thresholds,
+# and scan cadence. Ring definitions and seed entries live in context/tech_radar/rings.yaml.
+#
+# Sources:
+#   - thoughtworks_radar: Public JSON feed from Thoughtworks Technology Radar
+#   - cncf_landscape:     CNCF Landscape JSON (github.com/cncf/landscape)
+#   - github_trending:    GitHub REST API trending repos filtered by language
+#
+# Classification: CUI // SP-CTI
+
+classification: "CUI // SP-CTI"
+
+# ── Scan Cadence ──────────────────────────────────────────────────────────────
+
+scan_interval_hours: 168          # Weekly scan (7 × 24h)
+cooldown_minutes: 120             # Minimum gap between consecutive scans
+
+# ── Data Sources ──────────────────────────────────────────────────────────────
+
+sources:
+  thoughtworks_radar:
+    enabled: true
+    url: "https://www.thoughtworks.com/content/dam/thoughtworks/documents/radar/2024/04/tr_technology_radar_vol_30_en.json"
+    format: json
+    cache_ttl_hours: 168
+    description: "Thoughtworks Technology Radar — quadrant-based adopt/trial/assess/hold signals"
+
+  cncf_landscape:
+    enabled: true
+    url: "https://raw.githubusercontent.com/cncf/landscape/master/landscape.yml"
+    format: yaml
+    cache_ttl_hours: 168
+    description: "CNCF Landscape — cloud-native project maturity and sandbox/incubating/graduated status"
+
+  github_trending:
+    enabled: true
+    base_url: "https://api.github.com"
+    endpoint: "/search/repositories"
+    languages:
+      - python
+      - go
+      - rust
+      - typescript
+    sort: stars
+    order: desc
+    per_page: 50
+    cache_ttl_hours: 48
+    description: "GitHub REST API — trending repos by language for ecosystem velocity signals"
+
+# ── Scoring Weights ───────────────────────────────────────────────────────────
+# Weights must sum to 1.00.
+# Each dimension produces a 0.0–1.0 score; weighted sum yields composite score.
+
+scoring:
+  weights:
+    ecosystem_maturity: 0.30    # Project age, release cadence, community size, CVE history
+    icdev_fit:          0.25    # Integration with FORGE/ANVIL, language support, API surface
+    airgap_compat:      0.25    # Offline install (PyPI/binary), no external runtime deps
+    il_compliance:      0.20    # FIPS 140-2/3, FedRAMP, STIG availability, DoD use evidence
+
+  # Minimum score required to auto-promote a ring change recommendation
+  ring_change_signal_threshold: 0.70
+
+  # Score delta required vs. current ring midpoint to trigger re-evaluation
+  ring_reeval_delta: 0.10
+
+# ── Ring Change Policy ────────────────────────────────────────────────────────
+
+ring_change_policy:
+  # Require N consecutive scans above/below threshold before proposing ring change
+  consecutive_scans_required: 2
+  # Kanban card priority when a ring change is suggested
+  kanban_priority: medium
+  # Tag applied to suggested kanban cards
+  kanban_tag: tech-radar
+
+# ── Output & Integration ─────────────────────────────────────────────────────
+
+output:
+  # Write scan results to DB table: tech_radar_snapshots
+  db_enabled: true
+  # Also emit JSON to .tmp/tech_radar_latest.json for quick inspection
+  json_snapshot: true
+  json_path: ".tmp/tech_radar_latest.json"
+
+# ── Genesis Reflex Integration ────────────────────────────────────────────────
+
+genesis_reflex:
+  enabled: true
+  # Auto-promote high-confidence ring changes to kanban suggested cards
+  auto_kanban: true
+  cooldown_hours: 168           # Matches scan_interval_hours; one card batch per cycle

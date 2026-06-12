@@ -1,0 +1,79 @@
+{% extends "security_canvas/base.html" %}
+{% block title %}Compare Designs — Security Design Canvas{% endblock %}
+{% block content %}
+<div class="page-header">
+  <h1>Compare Security Designs</h1>
+  <p class="text-muted">Side-by-side comparison of security posture between two designs</p>
+</div>
+<div style="padding:0 16px 24px;">
+  <div style="display:flex;gap:16px;align-items:flex-end;margin-bottom:20px;">
+    <div style="flex:1;">
+      <label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:4px;">Design A</label>
+      <select id="design-a" class="form-control" style="width:100%;"></select>
+    </div>
+    <div style="font-size:24px;color:var(--text-dim);padding-bottom:6px;">vs</div>
+    <div style="flex:1;">
+      <label style="font-size:12px;color:var(--text-dim);display:block;margin-bottom:4px;">Design B</label>
+      <select id="design-b" class="form-control" style="width:100%;"></select>
+    </div>
+    <button class="btn btn-primary" onclick="runComparison()" style="white-space:nowrap;">Compare</button>
+  </div>
+  <div id="compare-results" class="hidden"></div>
+</div>
+<script>
+// SC_BASE defined in base.html
+// Load design list
+fetch(SC_BASE + '/api/designs').then(r => r.json()).then(designs => {
+  const selA = document.getElementById('design-a');
+  const selB = document.getElementById('design-b');
+  designs.forEach(d => {
+    selA.innerHTML += '<option value="' + d.id + '">' + (d.name || d.id) + '</option>';
+    selB.innerHTML += '<option value="' + d.id + '">' + (d.name || d.id) + '</option>';
+  });
+  if (designs.length > 1) selB.selectedIndex = 1;
+});
+function runComparison() {
+  const a = document.getElementById('design-a').value;
+  const b = document.getElementById('design-b').value;
+  if (!a || !b) { alert('Select two designs.'); return; }
+  if (a === b) { alert('Select two different designs.'); return; }
+  fetch(SC_BASE + '/api/designs/compare', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({design_a: a, design_b: b})})
+    .then(r => r.json()).then(d => {
+      if (d.error) { alert(d.error); return; }
+      const el = document.getElementById('compare-results');
+      el.classList.remove('hidden');
+      const gc = (g) => g <= 'B' ? '#27ae60' : g === 'C' ? '#f39c12' : '#e74c3c';
+      const delta = d.risk_delta || 0;
+      const dc = delta > 0 ? '#27ae60' : delta < 0 ? '#e74c3c' : '#5dade2';
+      let html = '<div class="stats-bar" style="margin-bottom:16px;">';
+      html += '<div class="stat-card"><div class="stat-value" style="color:' + gc(d.grade_a||'F') + ';">' + (d.grade_a||'?') + '</div><div class="stat-label">' + (d.name_a||'A') + '</div></div>';
+      html += '<div class="stat-card"><div class="stat-value" style="color:' + gc(d.grade_b||'F') + ';">' + (d.grade_b||'?') + '</div><div class="stat-label">' + (d.name_b||'B') + '</div></div>';
+      html += '<div class="stat-card"><div class="stat-value">' + (d.risk_score_a||0).toFixed(1) + '</div><div class="stat-label">Score A</div></div>';
+      html += '<div class="stat-card"><div class="stat-value">' + (d.risk_score_b||0).toFixed(1) + '</div><div class="stat-label">Score B</div></div>';
+      html += '<div class="stat-card"><div class="stat-value" style="color:' + dc + ';">' + (delta > 0 ? '+' : '') + delta.toFixed(1) + '</div><div class="stat-label">Delta</div></div>';
+      html += '</div>';
+      html += '<p style="font-size:13px;color:var(--text);margin-bottom:16px;">' + (d.summary||'') + '</p>';
+      // Node diff table
+      html += '<h3 style="color:#5dade2;margin-bottom:8px;">Node Differences</h3>';
+      html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:16px;">';
+      html += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:10px;"><strong style="color:#e74c3c;">Only in ' + (d.name_a||'A') + '</strong><ul style="font-size:11px;padding-left:1rem;margin:4px 0;">';
+      (d.nodes_only_in_a||[]).forEach(n => html += '<li>' + (n.label||n.type) + '</li>');
+      html += '</ul></div>';
+      html += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:10px;"><strong style="color:#27ae60;">In Both</strong><div style="font-size:24px;text-align:center;color:var(--text);margin-top:8px;">' + (d.nodes_in_both||[]).length + '</div></div>';
+      html += '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:6px;padding:10px;"><strong style="color:#5dade2;">Only in ' + (d.name_b||'B') + '</strong><ul style="font-size:11px;padding-left:1rem;margin:4px 0;">';
+      (d.nodes_only_in_b||[]).forEach(n => html += '<li>' + (n.label||n.type) + '</li>');
+      html += '</ul></div>';
+      html += '</div>';
+      // Findings diff
+      if ((d.findings_only_in_a||[]).length || (d.findings_only_in_b||[]).length) {
+        html += '<h3 style="color:#e94560;margin-bottom:8px;">Finding Differences</h3>';
+        html += '<table class="data-table"><thead><tr><th>Finding</th><th>' + (d.name_a||'A') + '</th><th>' + (d.name_b||'B') + '</th></tr></thead><tbody>';
+        (d.findings_only_in_a||[]).forEach(f => html += '<tr><td>' + f + '</td><td style="color:#e74c3c;">Present</td><td style="color:#27ae60;">Resolved</td></tr>');
+        (d.findings_only_in_b||[]).forEach(f => html += '<tr><td>' + f + '</td><td style="color:#27ae60;">Absent</td><td style="color:#e74c3c;">New</td></tr>');
+        html += '</tbody></table>';
+      }
+      el.innerHTML = html;
+    });
+}
+</script>
+{% endblock %}

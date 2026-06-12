@@ -1,0 +1,171 @@
+# CUI // SP-CTI
+# GovLift DoD IL4 Cloud Migration Tool — Configuration
+# Classification: CUI // SP-CTI | Impact Level: IL4
+#
+# Override any value via environment variable:
+#   GOVLIFT_SERVICENOW_ENDPOINT=https://...
+#   GOVLIFT_SPLUNK_ENDPOINT=https://...
+#   GOVLIFT_INTEGRATION_TIMEOUT_SECONDS=30
+
+classification: "CUI // SP-CTI"
+impact_level: "IL4"
+
+# ── Application ──────────────────────────────────────────────────────────────
+
+app:
+  name: "GovLift — DoD IL4 Cloud Migration Tool"
+  version: "1.0.0"
+  route_prefix: "/govlift"
+
+# ── External Interface Configuration (NIST CA-3) ─────────────────────────────
+# System Interconnection Agreements (ISA) govern all external interfaces.
+# Each system must have an approved ISA before production use.
+# Reference controls: CA-3, SA-9, SC-8, SC-28, AU-2, AU-12
+
+interfaces:
+  # ── ServiceNow ITSM (CA-3 ISA: ISA-GVL-SN-001) ───────────────────────────
+  servicenow:
+    system_name: servicenow
+    description: "ServiceNow ITSM — change request tickets via REST API"
+    env_override_endpoint: GOVLIFT_SERVICENOW_ENDPOINT
+    default_endpoint: "https://disa.service-now.com/api"
+    auth_method: api_key              # api_key | mtls | oauth2 | none
+    tls_enabled: true
+    tls_verify: true
+    cert_path_env: GOVLIFT_SERVICENOW_CERT_PATH
+    timeout_seconds: 30
+    retry_max: 3
+    retry_backoff_seconds: 2
+    nist_ca3_isa_id: "ISA-GVL-SN-001"
+    nist_controls: [CA-3, SA-9, SC-8]
+    rate_limit_per_minute: 60
+
+  # ── Splunk SIEM (CA-3 ISA: ISA-GVL-SP-001) ───────────────────────────────
+  splunk:
+    system_name: splunk
+    description: "Splunk — security event forwarding via HEC/REST"
+    env_override_endpoint: GOVLIFT_SPLUNK_ENDPOINT
+    default_endpoint: "https://splunk.disa.mil:8089"
+    auth_method: api_key
+    tls_enabled: true
+    tls_verify: true
+    cert_path_env: GOVLIFT_SPLUNK_CERT_PATH
+    timeout_seconds: 15
+    retry_max: 5
+    retry_backoff_seconds: 1
+    nist_ca3_isa_id: "ISA-GVL-SP-001"
+    nist_controls: [CA-3, AU-2, AU-12, SI-4]
+    rate_limit_per_minute: 300        # high-volume event forwarding
+
+  # ── AWS Control Tower (CA-3 ISA: ISA-GVL-ACT-001) ────────────────────────
+  aws_control_tower:
+    system_name: aws_control_tower
+    description: "AWS Control Tower — account vending machine integration"
+    env_override_endpoint: GOVLIFT_ACT_ENDPOINT
+    default_endpoint: "https://controltower.us-gov-east-1.amazonaws.com"
+    auth_method: oauth2               # AWS SigV4 via SDK
+    tls_enabled: true
+    tls_verify: true
+    cert_path_env: GOVLIFT_ACT_CERT_PATH
+    timeout_seconds: 60
+    retry_max: 3
+    retry_backoff_seconds: 5
+    nist_ca3_isa_id: "ISA-GVL-ACT-001"
+    nist_controls: [CA-3, SA-9, SC-8, CM-2]
+    rate_limit_per_minute: 10         # Control Tower API quotas are low
+
+  # ── Tenable.io Vulnerability Scanner (CA-3 ISA: ISA-GVL-TEN-001) ─────────
+  tenable:
+    system_name: tenable
+    description: "Tenable.io — vulnerability scan integration via REST API v3"
+    env_override_endpoint: GOVLIFT_TENABLE_ENDPOINT
+    default_endpoint: "https://cloud.tenable.com/api/v3"
+    auth_method: api_key
+    tls_enabled: true
+    tls_verify: true
+    cert_path_env: GOVLIFT_TENABLE_CERT_PATH
+    timeout_seconds: 30
+    retry_max: 3
+    retry_backoff_seconds: 2
+    nist_ca3_isa_id: "ISA-GVL-TEN-001"
+    nist_controls: [CA-3, RA-5, SI-2]
+    rate_limit_per_minute: 120
+
+  # ── eMASS (CA-3 ISA: ISA-GVL-EM-001) ─────────────────────────────────────
+  emass:
+    system_name: emass
+    description: "eMASS — RMF package sync and ATO tracking"
+    env_override_endpoint: GOVLIFT_EMASS_ENDPOINT
+    default_endpoint: "https://emass.army.mil/api"
+    auth_method: mtls                 # eMASS requires mutual TLS
+    tls_enabled: true
+    tls_verify: true
+    cert_path_env: GOVLIFT_EMASS_CERT_PATH
+    timeout_seconds: 45
+    retry_max: 2
+    retry_backoff_seconds: 10
+    nist_ca3_isa_id: "ISA-GVL-EM-001"
+    nist_controls: [CA-3, CA-7, PL-2, RA-3]
+    rate_limit_per_minute: 30
+
+# ── Health Check Configuration ────────────────────────────────────────────────
+
+health:
+  check_interval_seconds: 300       # probe each integration every 5 min
+  degraded_threshold_ms: 3000       # response > 3s → degraded
+  failure_threshold_consecutive: 3  # 3 consecutive failures → disconnected
+  auto_reconnect: true
+  notify_on_status_change: true
+
+# ── Security Hardening ────────────────────────────────────────────────────────
+# NIST SC-8: Transmission Confidentiality and Integrity
+
+security:
+  enforce_tls_minimum: "TLS1.2"
+  require_cert_validation: true
+  secret_rotation_days: 90          # API key rotation schedule
+  audit_all_api_calls: true         # NIST AU-2: all integration calls logged
+  redact_auth_headers_in_logs: true
+
+# ── CI/CD Pipeline Hooks ─────────────────────────────────────────────────────
+# Interface smoke tests run in pipeline stage: validate-interfaces
+
+cicd:
+  smoke_test_enabled: true
+  smoke_test_timeout_seconds: 60
+  fail_pipeline_on_disconnected: false   # warn only; integrations may be env-specific
+  fail_pipeline_on_cert_invalid: true    # hard block on TLS failures
+  stages:
+    - name: validate-interfaces
+      description: "Verify all external system interfaces are reachable"
+      command: "python tools/govlift/integrations.py --health-check --json"
+      gate: warn                         # warn | block
+
+# ── Compliance Scaffolding ────────────────────────────────────────────────────
+# NIST 800-53 controls specifically for external interfaces
+
+compliance:
+  framework: "NIST 800-53 Rev 5"
+  impact_level: "IL4"
+  controls:
+    CA-3:
+      description: "Information Exchange — System Interconnection Agreements"
+      requirement: "Authorized connections to external systems via approved ISAs"
+      status: "implemented"
+      evidence: "govlift_integrations table + ISA IDs in this config"
+    SA-9:
+      description: "External System Services — authorized external providers"
+      status: "implemented"
+      evidence: "INTEGRATION_SYSTEMS constant enforces allowlist"
+    SC-8:
+      description: "Transmission Confidentiality — TLS required for all interfaces"
+      status: "implemented"
+      evidence: "tls_enabled: true on all integrations"
+    AU-2:
+      description: "Event Logging — all API calls and sync events logged"
+      status: "implemented"
+      evidence: "govlift_audit_log + sync_count tracking"
+    AU-12:
+      description: "Audit Record Generation — integration events captured"
+      status: "implemented"
+      evidence: "log_action() called on every integration sync event"

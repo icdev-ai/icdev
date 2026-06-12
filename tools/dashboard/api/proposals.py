@@ -2556,3 +2556,165 @@ def delete_blackhat_assessment(bh_id):
         conn.close()
 
 
+# ---------------------------------------------------------------------------
+# Inline Annotations
+# ---------------------------------------------------------------------------
+
+_ANNOTATION_CATEGORIES = {
+    "question", "improvement", "compliance",
+    "strength", "weakness", "risk", "editorial",
+}
+
+
+def _ensure_annotations_table(conn):
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS proposal_section_annotations (
+            id TEXT PRIMARY KEY,
+            section_id TEXT NOT NULL,
+            draft_id TEXT,
+            selected_text TEXT NOT NULL,
+            category TEXT NOT NULL CHECK(category IN (
+                'question','improvement','compliance',
+                'strength','weakness','risk','editorial'
+            )),
+            comment TEXT NOT NULL,
+            author TEXT DEFAULT 'reviewer',
+            status TEXT DEFAULT 'open' CHECK(status IN ('open','resolved')),
+            resolution_note TEXT,
+            classification TEXT DEFAULT 'CUI',
+            created_at TEXT NOT NULL,
+            updated_at TEXT
+        )
+    """)
+    conn.commit()
+
+
+def _annotation_row(row):
+    d = dict(row)
+    return d
+
+
+@proposals_api.route("/sections/<sec_id>/annotations", methods=["GET"])
+def list_annotations(sec_id):
+    """GET /api/proposals/sections/<sec_id>/annotations — list annotations, optional ?status=open|resolved."""
+    status_filter = request.args.get("status")
+    conn = _get_db()
+    try:
+        _ensure_annotations_table(conn)
+        if status_filter in ("open", "resolved"):
+            rows = conn.execute(
+                "SELECT * FROM proposal_section_annotations WHERE section_id = ? AND status = ? ORDER BY created_at ASC",
+                (sec_id, status_filter),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM proposal_section_annotations WHERE section_id = ? ORDER BY created_at ASC",
+                (sec_id,),
+            ).fetchall()
+        return jsonify({"annotations": [_annotation_row(r) for r in rows]})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/sections/<sec_id>/annotations", methods=["POST"])
+def create_annotation(sec_id):
+    """POST /api/proposals/sections/<sec_id>/annotations — create an inline annotation."""
+    body = request.get_json(silent=True) or {}
+    selected_text = (body.get("selected_text") or "").strip()
+    category = (body.get("category") or "").strip().lower()
+    comment = (body.get("comment") or "").strip()
+
+    if not selected_text:
+        return jsonify({"error": "selected_text is required"}), 400
+    if category not in _ANNOTATION_CATEGORIES:
+        return jsonify({"error": f"category must be one of: {', '.join(sorted(_ANNOTATION_CATEGORIES))}"}), 400
+    if not comment:
+        return jsonify({"error": "comment is required"}), 400
+
+    ann_id = str(uuid.uuid4())
+    ts = now_iso()
+    conn = _get_db()
+    try:
+        _ensure_annotations_table(conn)
+        conn.execute(
+            """INSERT INTO proposal_section_annotations
+               (id, section_id, draft_id, selected_text, category, comment, author, status, classification, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (
+                ann_id,
+                sec_id,
+                body.get("draft_id"),
+                selected_text,
+                category,
+                comment,
+                body.get("author", "reviewer"),
+                "open",
+                "CUI",
+                ts,
+            ),
+        )
+        try:
+            conn.execute(
+                "INSERT INTO audit_trail (id,created_at,event_type,actor,action,details,session_id) VALUES (?,?,?,?,?,?,?)",
+                (str(uuid.uuid4()), ts, "proposals.annotation.create", body.get("author", "reviewer"),
+                 "create_annotation", f"section={sec_id} category={category}", "proposals"),
+            )
+        except Exception:
+            pass
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM proposal_section_annotations WHERE id = ?", (ann_id,)
+        ).fetchone()
+        return jsonify(_annotation_row(row)), 201
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/annotations/<ann_id>", methods=["PUT"])
+def update_annotation(ann_id):
+    """PUT /api/proposals/annotations/<ann_id> — update comment, category, status, or resolution_note."""
+    body = request.get_json(silent=True) or {}
+    allowed = {"comment", "category", "status", "resolution_note", "author"}
+    updates = {k: v for k, v in body.items() if k in allowed and v is not None}
+
+    if "category" in updates and updates["category"] not in _ANNOTATION_CATEGORIES:
+        return jsonify({"error": f"category must be one of: {', '.join(sorted(_ANNOTATION_CATEGORIES))}"}), 400
+    if "status" in updates and updates["status"] not in ("open", "resolved"):
+        return jsonify({"error": "status must be open or resolved"}), 400
+
+    if not updates:
+        return jsonify({"error": "No updatable fields provided"}), 400
+
+    updates["updated_at"] = now_iso()
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    conn = _get_db()
+    try:
+        _ensure_annotations_table(conn)
+        conn.execute(
+            f"UPDATE proposal_section_annotations SET {set_clause} WHERE id = ?",  # noqa: S608
+            list(updates.values()) + [ann_id],
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM proposal_section_annotations WHERE id = ?", (ann_id,)
+        ).fetchone()
+        if not row:
+            return jsonify({"error": "Annotation not found"}), 404
+        return jsonify(_annotation_row(row))
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/annotations/<ann_id>", methods=["DELETE"])
+def delete_annotation(ann_id):
+    """DELETE /api/proposals/annotations/<ann_id> — remove an annotation."""
+    conn = _get_db()
+    try:
+        _ensure_annotations_table(conn)
+        conn.execute("DELETE FROM proposal_section_annotations WHERE id = ?", (ann_id,))
+        conn.commit()
+        return jsonify({"deleted": ann_id})
+    finally:
+        conn.close()
+
+

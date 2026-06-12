@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Ops Hub — LLMOps · MLOps · AIOps{% endblock %}
+{% block extra_css %}
+<style>
+.ohc-header{background:linear-gradient(135deg,#0f172a 0%,#1e3a5f 40%,#0c2340 100%);padding:28px 32px 24px;border-radius:12px;margin-bottom:28px;}
+.ohc-header h1{margin:0;font-size:1.6rem;font-weight:700;color:#e0f2fe;letter-spacing:.3px;}
+.ohc-header p{margin:6px 0 0;color:#7dd3fc;font-size:.9rem;}
+.score-ring{display:flex;align-items:center;gap:24px;margin-top:16px;}
+.score-circle{width:80px;height:80px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.4rem;font-weight:700;border:4px solid;}
+.score-healthy{border-color:#22c55e;color:#22c55e;}
+.score-degraded{border-color:#f59e0b;color:#f59e0b;}
+.score-critical{border-color:#ef4444;color:#ef4444;}
+.domain-card{background:#1e293b;border:1px solid #334155;border-radius:10px;padding:20px 24px;transition:border-color .15s;}
+.domain-card:hover{border-color:#38bdf8;box-shadow:0 4px 16px rgba(56,189,248,.15);}
+.domain-card h3{margin:0 0 8px;font-size:1rem;color:#e2e8f0;}
+.domain-icon{font-size:1.5rem;margin-bottom:8px;}
+.status-dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px;}
+.dot-healthy{background:#22c55e;}
+.dot-degraded{background:#f59e0b;}
+.dot-critical{background:#ef4444;}
+.dot-unknown{background:#64748b;}
+.alert-row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:8px;margin-bottom:6px;background:#1e293b;}
+.alert-error{border-left:3px solid #ef4444;}
+.alert-warning{border-left:3px solid #f59e0b;}
+.alert-info{border-left:3px solid #38bdf8;}
+.adapter-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:14px;}
+.adapter-chip{background:#1e293b;border:1px solid #334155;border-radius:8px;padding:10px 12px;font-size:.78rem;}
+.adapter-chip.up{border-color:#22c55e;}
+.adapter-chip.down{border-color:#475569;}
+.nav-links{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;}
+.nav-btn{padding:7px 16px;border-radius:8px;font-size:.82rem;font-weight:600;text-decoration:none;background:#0f172a;border:1px solid #334155;color:#94a3b8;}
+.nav-btn:hover{border-color:#38bdf8;color:#38bdf8;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="ohc-header">
+  <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+    <div>
+      <h1>⚙️ Ops Hub</h1>
+      <p>Unified LLMOps · MLOps · AIOps — {{ classification }}</p>
+    </div>
+    <div class="score-ring">
+      {% set score = overview.health_score|default(0) %}
+      {% set s_class = 'score-healthy' if score >= 80 else ('score-degraded' if score >= 50 else 'score-critical') %}
+      <div class="score-circle {{ s_class }}">{{ score }}</div>
+      <div>
+        <div style="font-size:.85rem;color:#94a3b8;">Health Score</div>
+        <div style="font-size:1rem;font-weight:700;color:#e2e8f0;">{{ overview.overall_status|default('unknown')|upper }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="nav-links">
+    <a class="nav-btn" href="/ops/llm">🤖 LLMOps</a>
+    <a class="nav-btn" href="/ops/models">🧪 MLOps</a>
+    <a class="nav-btn" href="/ops/slos">📊 SLOs</a>
+    <a class="nav-btn" href="/ops/incidents">🚨 Incidents</a>
+    <a class="nav-btn" href="/ops/runbooks">📋 Runbooks</a>
+    <a class="nav-btn" href="/ops/topology">🕸️ Topology</a>
+    <a class="nav-btn" href="/ops/self-healing">🔧 Self-Healing</a>
+  </div>
+  <!-- Workflow -->
+  {% set wf_canvas_id = "ohc" %}
+  {% set wf_context_label = '' %}
+  {% include 'includes/workflow_trigger_btn.html' %}
+</div>
+
+<!-- Domain Cards -->
+<div class="row g-3 mb-4">
+  {% for domain_key, domain_data in overview.domains.items() %}
+  {% set d_status = domain_data.get('status','unknown') if domain_data else 'unknown' %}
+  {% set d_dot = 'dot-healthy' if d_status == 'healthy' else ('dot-degraded' if d_status == 'degraded' else ('dot-critical' if d_status == 'critical' else 'dot-unknown')) %}
+  <div class="col-md-4">
+    <div class="domain-card h-100">
+      {% if domain_key == 'llmops' %}
+      <div class="domain-icon">🤖</div>
+      <h3>LLMOps</h3>
+      <p class="text-muted small mb-2">Gateway · Cost · Drift · Prompts · Evals</p>
+      {% elif domain_key == 'mlops' %}
+      <div class="domain-icon">🧪</div>
+      <h3>MLOps</h3>
+      <p class="text-muted small mb-2">Experiments · Model Registry · Data Drift</p>
+      {% else %}
+      <div class="domain-icon">🚨</div>
+      <h3>AIOps</h3>
+      <p class="text-muted small mb-2">SLOs · Incidents · Runbooks · Topology</p>
+      {% endif %}
+      <div><span class="status-dot {{ d_dot }}"></span><strong>{{ d_status|upper }}</strong></div>
+      {% if domain_key == 'llmops' %}
+      <div class="mt-2 small text-muted">
+        Drift: {{ '⚠️ Yes' if domain_data.get('has_drift') else '✓ None' }} &nbsp;|&nbsp;
+        Cost alert: {{ '⚠️ Yes' if domain_data.get('has_cost_anomaly') else '✓ None' }}
+      </div>
+      {% elif domain_key == 'mlops' %}
+      <div class="mt-2 small text-muted">
+        Experiments: {{ domain_data.get('active_experiments',0) }} &nbsp;|&nbsp;
+        Running: {{ domain_data.get('running_runs',0) }} &nbsp;|&nbsp;
+        In prod: {{ domain_data.get('models_in_production',0) }}
+      </div>
+      {% else %}
+      <div class="mt-2 small text-muted">
+        Open incidents: {{ domain_data.get('open_incidents',0) }} &nbsp;|&nbsp;
+        SPOFs: {{ domain_data.get('spof_count',0) }} &nbsp;|&nbsp;
+        Degraded SLOs: {{ domain_data.get('degraded_slos',0) }}
+      </div>
+      {% endif %}
+      <div class="mt-3">
+        <a class="btn-sm btn-primary" href="/ops/{{ 'llm' if domain_key == 'llmops' else ('models' if domain_key == 'mlops' else 'slos') }}" style="display:inline-block;padding:5px 14px;border-radius:6px;font-size:.78rem;font-weight:600;text-decoration:none;">Open →</a>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Top Alerts -->
+{% if overview.top_alerts %}
+<div class="mb-4">
+  <h5 style="color:#94a3b8;margin-bottom:10px;">Active Alerts</h5>
+  {% for alert in overview.top_alerts %}
+  <div class="alert-row alert-{{ alert.severity }}">
+    <span>{{ '🔴' if alert.severity == 'error' else '🟡' }}</span>
+    <strong style="color:#e2e8f0;font-size:.85rem;">[{{ alert.domain|upper }}]</strong>
+    <span style="color:#94a3b8;font-size:.85rem;">{{ alert.message }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<!-- Adapter Health Grid -->
+<div class="mb-4">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h5 style="color:#94a3b8;margin:0;">Adapters</h5>
+    <span class="small text-muted">{{ overview.available_adapters|length }} / {{ overview.adapters|length }} available</span>
+  </div>
+  <div class="adapter-grid">
+    {% for adapter in overview.adapters %}
+    <div class="adapter-chip {{ 'up' if adapter.available else 'down' }}">
+      <div style="font-weight:600;color:#e2e8f0;">{{ '✓' if adapter.available else '✗' }} {{ adapter.adapter_name }}</div>
+      <div style="color:#64748b;margin-top:2px;">{{ adapter.domain }}</div>
+      {% if adapter.available %}
+      <div style="color:#22c55e;font-size:.7rem;">{{ adapter.latency_ms }}ms</div>
+      {% elif adapter.error %}
+      <div style="color:#ef4444;font-size:.7rem;" title="{{ adapter.error }}">unavailable</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

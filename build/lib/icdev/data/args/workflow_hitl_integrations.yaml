@@ -1,0 +1,56 @@
+# CUI // SP-CTI
+# HITL Workflow external system integrations config.
+# All secrets must be in .env — reference them as ${VAR_NAME}.
+# All adapters default enabled: false to prevent accidental sends in dev.
+
+integrations:
+  email:
+    enabled: true
+    smtp_host: ${WF_SMTP_HOST}
+    smtp_port: 587
+    smtp_use_tls: true
+    from_address: ${WF_SMTP_FROM}
+    from_name: "ICDEV HITL Workflow"
+    templates_dir: "context/workflow_email_templates/"
+
+  jira:
+    enabled: false
+    base_url: ${WF_JIRA_URL}
+    auth_type: api_token          # api_token | oauth2
+    api_token: ${WF_JIRA_TOKEN}
+    default_project: "ICDEV"
+    default_issue_type: "Task"
+    webhook_secret: ${WF_JIRA_WEBHOOK_SECRET}
+
+  servicenow:
+    enabled: false
+    instance_url: ${WF_SNOW_URL}
+    username: ${WF_SNOW_USER}
+    password: ${WF_SNOW_PASS}
+    default_table: incident
+
+  github:
+    enabled: false
+    token: ${WF_GITHUB_TOKEN}
+    repo: "org/repo"
+    default_label: "hitl-review"
+
+  confluence:
+    enabled: false
+    base_url: ${WF_CONFLUENCE_URL}
+    auth_type: api_token
+    api_token: ${WF_CONFLUENCE_TOKEN}
+    default_space: "ICDEV"
+    default_parent_page: "HITL Reviews"
+
+  sharepoint:
+    enabled: false
+    tenant_id: ${WF_SP_TENANT_ID}
+    client_id: ${WF_SP_CLIENT_ID}
+    client_secret: ${WF_SP_CLIENT_SECRET}
+    site_url: ${WF_SP_SITE_URL}
+
+polling:
+  interval_minutes: 15
+  max_wait_hours: 72              # escalate if external step not resolved within this window
+  webhook_token_ttl_hours: 168    # 7 days — webhook tokens expire after this

@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{# CUI // SP-CTI #}
+{% block title %}{{ app_name }} — PM View{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Project Manager View</h1>
+    <p class="page-subtitle">{{ sprint_name }} — {{ sprint_start }} to {{ sprint_end }}</p>
+</div>
+
+<!-- Sprint Metrics -->
+<div class="pm-metrics-row">
+    <div class="pm-metric-card">
+        <div class="pm-metric-value" style="color:var(--success,#10b981);">{{ done }}</div>
+        <div class="pm-metric-label">Done</div>
+    </div>
+    <div class="pm-metric-card">
+        <div class="pm-metric-value" style="color:var(--accent);">{{ in_progress }}</div>
+        <div class="pm-metric-label">In Progress</div>
+    </div>
+    <div class="pm-metric-card">
+        <div class="pm-metric-value" style="color:var(--text-dim);">{{ todo }}</div>
+        <div class="pm-metric-label">To Do</div>
+    </div>
+    <div class="pm-metric-card">
+        <div class="pm-metric-value">{{ test_coverage }}%</div>
+        <div class="pm-metric-label">Test Coverage</div>
+    </div>
+    <div class="pm-metric-card">
+        <div class="pm-metric-value">{{ build_pass_rate }}%</div>
+        <div class="pm-metric-label">Build Pass Rate</div>
+    </div>
+</div>
+
+<!-- Sprint Tasks (main section) -->
+<div class="pm-section" id="sprint-tasks-section">
+    <div class="pm-section-header">
+        <h2>Sprint Tasks</h2>
+        <span class="badge badge-info">{{ total }} total</span>
+        <a href="/ai-wizard" class="btn btn-sm btn-primary" style="margin-left:auto;">+ Generate Sprint</a>
+    </div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Task ID</th>
+                <th>Title</th>
+                <th>Type</th>
+                <th>Priority</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for t in sprint_tasks %}
+            <tr>
+                <td><code style="font-size:0.8rem;">{{ t.id }}</code></td>
+                <td>{{ t.title }}</td>
+                <td>
+                    <span class="badge" style="background:var(--bg-elevated);font-size:0.75rem;">{{ t.task_type or t.get('type','—') }}</span>
+                </td>
+                <td>
+                    {% set pri = t.priority %}
+                    {% if pri == 'high' %}<span class="badge badge-danger" style="font-size:0.75rem;">High</span>
+                    {% elif pri == 'medium' %}<span class="badge badge-warning" style="font-size:0.75rem;">Medium</span>
+                    {% else %}<span class="badge" style="font-size:0.75rem;">Low</span>{% endif %}
+                </td>
+                <td>
+                    {% set st = t.status %}
+                    {% if st in ('done','completed') %}<span class="badge badge-success" style="font-size:0.75rem;">Done</span>
+                    {% elif st == 'in_progress' %}<span class="badge badge-info" style="font-size:0.75rem;">In Progress</span>
+                    {% else %}<span class="badge" style="font-size:0.75rem;background:var(--bg-elevated);">To Do</span>{% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<!-- Velocity Chart + Learning Milestones Row -->
+<div class="pm-row" style="margin-top:24px;">
+    <!-- Velocity -->
+    <div class="pm-section">
+        <h3>Sprint Velocity</h3>
+        <div class="velocity-chart">
+            {% for s in velocity_data %}
+            <div class="velocity-item">
+                <div class="velocity-bars">
+                    <div class="velocity-bar planned" style="height:{{ s.planned * 8 }}px;" title="Planned: {{ s.planned }}"></div>
+                    <div class="velocity-bar completed" style="height:{{ s.completed * 8 }}px;" title="Completed: {{ s.completed }}"></div>
+                </div>
+                <div class="velocity-label">{{ s.sprint }}</div>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="velocity-legend">
+            <span class="legend-dot planned"></span>Planned
+            <span class="legend-dot completed" style="margin-left:16px;"></span>Completed
+        </div>
+    </div>
+
+    <!-- Learning Milestones -->
+    <div class="pm-section">
+        <h3>Learning Milestones</h3>
+        {% for m in learning_milestones %}
+        <div class="milestone-card">
+            <div class="milestone-header">
+                <strong>{{ m.user }}</strong>
+                <span class="badge badge-info" style="font-size:0.72rem;">{{ m.track }}</span>
+            </div>
+            <div class="milestone-desc">{{ m.milestone }}</div>
+            <div class="milestone-date" style="font-size:0.78rem;color:var(--text-dim);">{{ m.date }}</div>
+        </div>
+        {% endfor %}
+        <a href="/ai-learning" class="btn btn-sm" style="margin-top:12px;">View Learning Paths →</a>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+.pm-metrics-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 16px; margin-bottom: 24px; }
+.pm-metric-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 20px 16px; text-align: center; }
+.pm-metric-value { font-size: 2rem; font-weight: 700; }
+.pm-metric-label { font-size: 0.78rem; color: var(--text-dim); margin-top: 4px; }
+.pm-section { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; padding: 24px; }
+.pm-section-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.pm-section-header h2 { margin: 0; font-size: 1.05rem; }
+.pm-row { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.pm-row .pm-section h3 { margin: 0 0 16px; font-size: 1rem; }
+.data-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+.data-table th { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); color: var(--text-dim); font-weight: 600; font-size: 0.78rem; text-transform: uppercase; }
+.data-table td { padding: 10px 12px; border-bottom: 1px solid rgba(255,255,255,0.04); vertical-align: middle; }
+.velocity-chart { display: flex; align-items: flex-end; gap: 12px; height: 120px; padding-bottom: 8px; }
+.velocity-item { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: 1; }
+.velocity-bars { display: flex; align-items: flex-end; gap: 3px; }
+.velocity-bar { width: 16px; border-radius: 3px 3px 0 0; }
+.velocity-bar.planned { background: var(--bg-elevated, rgba(255,255,255,0.15)); }
+.velocity-bar.completed { background: var(--accent); }
+.velocity-label { font-size: 0.72rem; color: var(--text-dim); }
+.velocity-legend { font-size: 0.78rem; color: var(--text-dim); margin-top: 12px; display: flex; align-items: center; }
+.legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; }
+.legend-dot.planned { background: var(--bg-elevated, rgba(255,255,255,0.2)); border: 1px solid var(--border); }
+.legend-dot.completed { background: var(--accent); }
+.milestone-card { background: var(--bg-elevated, rgba(255,255,255,0.04)); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; }
+.milestone-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.milestone-desc { font-size: 0.88rem; margin-bottom: 2px; }
+</style>
+{% endblock %}

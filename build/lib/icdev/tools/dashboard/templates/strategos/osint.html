@@ -1,0 +1,509 @@
+{% extends "base.html" %}
+{% set active = "strategos" %}
+{% block title %}OSINT Ingestion Panel — Strategos{% endblock %}
+
+{% block extra_css %}
+<style>
+/* ── Stat cards row ──────────────────────────────────────────────────────── */
+.osint-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: .75rem;
+  margin-bottom: 1rem;
+}
+@media (max-width: 720px) { .osint-stats { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 420px) { .osint-stats { grid-template-columns: 1fr; } }
+
+.stat-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: .75rem 1rem;
+}
+.stat-card .sv {
+  font-size: 1.9rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--text-primary);
+}
+.stat-card .sl {
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--text-muted);
+  margin-top: .2rem;
+}
+.stat-card .sd {
+  font-size: .7rem;
+  color: var(--text-muted);
+  margin-top: .15rem;
+}
+
+/* ── Ingestion controls row ──────────────────────────────────────────────── */
+.osint-controls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: .75rem;
+  margin-bottom: 1rem;
+}
+@media (max-width: 640px) { .osint-controls { grid-template-columns: 1fr; } }
+
+.ctrl-card {
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  padding: .85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .6rem;
+}
+.ctrl-card-title {
+  font-size: .88rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+}
+.ctrl-card-desc {
+  font-size: .8rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.ctrl-status {
+  font-size: .75rem;
+  color: var(--text-muted);
+  min-height: 1.1rem;
+}
+.ctrl-status.ok    { color: #10b981; }
+.ctrl-status.err   { color: #ef4444; }
+.ctrl-status.busy  { color: #f59e0b; }
+
+.btn-run {
+  padding: .4rem .85rem;
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: .82rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  transition: background .15s, opacity .15s;
+  align-self: flex-start;
+}
+.btn-run:hover    { background: #2563eb; }
+.btn-run:disabled { opacity: .55; cursor: not-allowed; }
+
+/* ── Spinner ─────────────────────────────────────────────────────────────── */
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,.3);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin .6s linear infinite;
+  display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Signals table ───────────────────────────────────────────────────────── */
+.osint-table-wrap {
+  overflow-x: auto;
+}
+.osint-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: .82rem;
+}
+.osint-table th {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  padding: .4rem .65rem;
+  text-align: left;
+  color: var(--text-muted);
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  white-space: nowrap;
+}
+.osint-table td {
+  padding: .38rem .65rem;
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  vertical-align: middle;
+}
+.osint-table tr:hover td {
+  background: rgba(59,130,246,.04);
+}
+
+.badge-read {
+  display: inline-block;
+  padding: .1rem .45rem;
+  border-radius: 3px;
+  font-size: .68rem;
+  font-weight: 700;
+  background: rgba(107,114,128,.15);
+  color: #9ca3af;
+}
+.badge-read.unread {
+  background: rgba(59,130,246,.12);
+  color: #60a5fa;
+}
+.badge-kg {
+  display: inline-block;
+  padding: .1rem .45rem;
+  border-radius: 3px;
+  font-size: .68rem;
+  font-weight: 700;
+  background: rgba(155,89,182,.12);
+  color: #a78bfa;
+}
+.badge-kg-none {
+  color: var(--text-muted);
+  font-size: .72rem;
+}
+
+.score-chip {
+  display: inline-block;
+  min-width: 36px;
+  text-align: center;
+  padding: .1rem .4rem;
+  border-radius: 3px;
+  font-size: .78rem;
+  font-weight: 700;
+}
+.score-hi  { background: rgba(239,68,68,.12);  color: #ef4444; }
+.score-mid { background: rgba(245,158,11,.12); color: #f59e0b; }
+.score-lo  { background: rgba(107,114,128,.12);color: #9ca3af; }
+
+/* ── Auto-refresh indicator ──────────────────────────────────────────────── */
+.refresh-indicator {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: .72rem;
+  color: var(--text-muted);
+}
+.refresh-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  animation: pulse-dot 2s infinite;
+}
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .35; }
+}
+
+/* ── Section label ───────────────────────────────────────────────────────── */
+.section-hdr {
+  font-size: .7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .09em;
+  color: var(--text-muted);
+  margin-bottom: .5rem;
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+.section-hdr::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
+}
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- Page header -->
+<div class="page-header page-header--compact">
+  <h1>OSINT Ingestion Panel
+    <span style="font-size:.65em;color:var(--text-secondary);font-weight:400">
+      Open-Source Signal Acquisition &amp; Prioritization
+    </span>
+  </h1>
+  <a href="/strategos" style="font-size:.85rem;color:var(--text-secondary)">&larr; Back to Strategos</a>
+</div>
+
+<!-- ── 1. Stats row ───────────────────────────────────────────────────────── -->
+<div class="osint-stats">
+  <div class="stat-card">
+    <div class="sv" id="stat-raw">—</div>
+    <div class="sl">Raw Signals</div>
+    <div class="sd">All ingested events</div>
+  </div>
+  <div class="stat-card">
+    <div class="sv" id="stat-prioritized" style="color:#3b82f6">—</div>
+    <div class="sl">Prioritized Signals</div>
+    <div class="sd">Score &ge; threshold</div>
+  </div>
+  <div class="stat-card">
+    <div class="sv" id="stat-cyber" style="color:#a78bfa">—</div>
+    <div class="sl">Cyber Events</div>
+    <div class="sd">Domain-tagged signals</div>
+  </div>
+  <div class="stat-card">
+    <div class="sv" id="stat-lastrun" style="font-size:1rem;padding-top:.35rem">—</div>
+    <div class="sl">Last Run</div>
+    <div class="sd" id="stat-lastrun-src">—</div>
+  </div>
+</div>
+
+<!-- ── 2. Ingestion controls ──────────────────────────────────────────────── -->
+<div class="section-hdr">Ingestion Controls</div>
+<div class="osint-controls">
+
+  <!-- GDELT card -->
+  <div class="ctrl-card">
+    <div class="ctrl-card-title">
+      <span style="color:#3b82f6">&#9650;</span>
+      GDELT 2.0 Importer
+    </div>
+    <div class="ctrl-card-desc">
+      Pulls global conflict events from GDELT 2.0 last-update feed, filters to
+      Ukraine/Taiwan AOI. Scores and stores raw signals for downstream prioritization.
+    </div>
+    <button class="btn-run" id="btn-gdelt" onclick="runGdelt()">
+      <span id="gdelt-btn-icon">&#9654;</span>
+      Run GDELT Import
+    </button>
+    <div class="ctrl-status" id="gdelt-status">Ready</div>
+  </div>
+
+  <!-- Pre-stager card -->
+  <div class="ctrl-card">
+    <div class="ctrl-card-title">
+      <span style="color:#10b981">&#9632;</span>
+      OSINT Pre-stager
+    </div>
+    <div class="ctrl-card-desc">
+      Batches RSS/open-source signals from configured feeds. Applies STANAG reliability
+      grades, deduplicates, and stages for prioritization scoring.
+    </div>
+    <button class="btn-run" id="btn-prestage" onclick="runPrestage()">
+      <span id="prestage-btn-icon">&#9654;</span>
+      Run Pre-stage
+    </button>
+    <div class="ctrl-status" id="prestage-status">Ready</div>
+  </div>
+
+</div>
+
+<!-- ── 3. Recent Signals table ────────────────────────────────────────────── -->
+<div class="card" style="padding:.85rem">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem;flex-wrap:wrap;gap:.5rem">
+    <div class="section-hdr" style="margin-bottom:0;flex:1">
+      Recent Prioritized Signals
+      <span style="font-size:.72rem;font-weight:400;color:var(--text-muted);text-transform:none;letter-spacing:0">
+        — last 20
+      </span>
+    </div>
+    <div class="refresh-indicator">
+      <span class="refresh-dot"></span>
+      <span>Auto-refresh 30s</span>
+      <span id="refresh-countdown" style="font-variant-numeric:tabular-nums">30</span>
+    </div>
+  </div>
+
+  <div class="osint-table-wrap">
+    <table class="osint-table">
+      <thead>
+        <tr>
+          <th>Source</th>
+          <th>Title</th>
+          <th>Score</th>
+          <th>Date</th>
+          <th>Read</th>
+          <th>KG</th>
+        </tr>
+      </thead>
+      <tbody id="signals-tbody">
+        <tr>
+          <td colspan="6" style="text-align:center;color:var(--text-muted);padding:2rem">
+            Loading signals&hellip;
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const API = '/api/strategos';
+
+// ── Stats ─────────────────────────────────────────────────────────────────
+function loadStats() {
+  fetch(API + '/osint/stats')
+    .then(r => r.ok ? r.json() : Promise.reject(r.statusText))
+    .then(d => {
+      setEl('stat-raw',         d.raw_signals         ?? '—');
+      setEl('stat-prioritized', d.prioritized_signals ?? '—');
+      setEl('stat-cyber',       d.cyber_events        ?? '—');
+
+      if (d.last_run) {
+        setEl('stat-lastrun', d.last_run.replace('T', ' ').slice(0, 16) + 'Z');
+      }
+      if (d.last_run_source) {
+        setEl('stat-lastrun-src', d.last_run_source);
+      }
+    })
+    .catch(() => {}); // fail silently — stale UI is acceptable
+}
+
+// ── Signals table ─────────────────────────────────────────────────────────
+function loadSignals() {
+  fetch(API + '/signals?limit=20')
+    .then(r => r.ok ? r.json() : Promise.reject(r.statusText))
+    .then(data => {
+      const rows = data.signals || data.results || data || [];
+      const tbody = document.getElementById('signals-tbody');
+      if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:1.5rem">No prioritized signals found.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = rows.map(s => {
+        const score = typeof s.total === 'number' ? s.total : (typeof s.score === 'number' ? s.score : null);
+        const scoreHtml = score !== null
+          ? `<span class="score-chip ${score >= 7 ? 'score-hi' : score >= 4 ? 'score-mid' : 'score-lo'}">${score.toFixed(1)}</span>`
+          : '<span style="color:var(--text-muted)">—</span>';
+
+        const readBadge = s.is_read
+          ? '<span class="badge-read">Read</span>'
+          : '<span class="badge-read unread">Unread</span>';
+
+        const kgBadge = s.promoted_to_kg
+          ? '<span class="badge-kg">&#11088; KG</span>'
+          : '<span class="badge-kg-none">—</span>';
+
+        const dateStr = (s.signal_date || s.created_at || '').slice(0, 10);
+        const title   = escHtml(s.title || '(no title)');
+        const source  = escHtml(s.source || '—');
+
+        return `<tr>
+          <td style="white-space:nowrap;max-width:130px;overflow:hidden;text-overflow:ellipsis" title="${source}">${source}</td>
+          <td style="max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${title}">${title}</td>
+          <td style="text-align:center">${scoreHtml}</td>
+          <td style="white-space:nowrap;color:var(--text-muted)">${dateStr}</td>
+          <td style="text-align:center">${readBadge}</td>
+          <td style="text-align:center">${kgBadge}</td>
+        </tr>`;
+      }).join('');
+    })
+    .catch(() => {
+      document.getElementById('signals-tbody').innerHTML =
+        '<tr><td colspan="6" style="text-align:center;color:#ef4444;padding:1rem">Failed to load signals.</td></tr>';
+    });
+}
+
+// ── GDELT run ─────────────────────────────────────────────────────────────
+function runGdelt() {
+  const btn  = document.getElementById('btn-gdelt');
+  const icon = document.getElementById('gdelt-btn-icon');
+  const stat = document.getElementById('gdelt-status');
+
+  btn.disabled    = true;
+  icon.className  = 'spinner';
+  icon.textContent = '';
+  stat.className   = 'ctrl-status busy';
+  stat.textContent = 'Running GDELT import…';
+
+  fetch(API + '/osint/run-gdelt', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) {
+        stat.className   = 'ctrl-status err';
+        stat.textContent = 'Error: ' + d.error;
+      } else {
+        stat.className   = 'ctrl-status ok';
+        stat.textContent = d.message || ('Done — ' + (d.ingested ?? 0) + ' events ingested');
+        loadStats();
+        loadSignals();
+      }
+    })
+    .catch(err => {
+      stat.className   = 'ctrl-status err';
+      stat.textContent = 'Request failed: ' + err.message;
+    })
+    .finally(() => {
+      btn.disabled     = false;
+      icon.className   = '';
+      icon.textContent = '&#9654;';
+    });
+}
+
+// ── Pre-stage run ─────────────────────────────────────────────────────────
+function runPrestage() {
+  const btn  = document.getElementById('btn-prestage');
+  const icon = document.getElementById('prestage-btn-icon');
+  const stat = document.getElementById('prestage-status');
+
+  btn.disabled    = true;
+  icon.className  = 'spinner';
+  icon.textContent = '';
+  stat.className   = 'ctrl-status busy';
+  stat.textContent = 'Running pre-stage…';
+
+  fetch(API + '/osint/run-prestage', { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      if (d.error) {
+        stat.className   = 'ctrl-status err';
+        stat.textContent = 'Error: ' + d.error;
+      } else {
+        stat.className   = 'ctrl-status ok';
+        stat.textContent = d.message || ('Done — ' + (d.staged ?? 0) + ' signals staged');
+        loadStats();
+        loadSignals();
+      }
+    })
+    .catch(err => {
+      stat.className   = 'ctrl-status err';
+      stat.textContent = 'Request failed: ' + err.message;
+    })
+    .finally(() => {
+      btn.disabled     = false;
+      icon.className   = '';
+      icon.textContent = '&#9654;';
+    });
+}
+
+// ── Auto-refresh every 30s ────────────────────────────────────────────────
+let countdown = 30;
+setInterval(() => {
+  countdown--;
+  const el = document.getElementById('refresh-countdown');
+  if (el) el.textContent = countdown;
+  if (countdown <= 0) {
+    countdown = 30;
+    loadStats();
+    loadSignals();
+  }
+}, 1000);
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function setEl(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ── Initial load ──────────────────────────────────────────────────────────
+loadStats();
+loadSignals();
+</script>
+{% endblock %}

@@ -1,0 +1,261 @@
+<!-- CUI // SP-CTI — Strategos DIB Supply Chain -->
+{% extends "base.html" %}
+{% block title %}DIB Supply Chain — Strategos{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet/leaflet.css') }}"/>
+<script src="{{ url_for('static', filename='vendor/leaflet/leaflet.js') }}"></script>
+{% endblock %}
+
+{% block content %}
+<style>
+
+  #dib-map { height: 480px; border-radius: 6px; overflow: hidden; margin: 0 0 14px; }
+
+  .sg-layout { display: flex; gap: 14px; padding: 0 0 20px; }
+  .sg-cp { flex: 1.8; }
+  .sg-legend { flex: 0 0 200px; }
+
+  .sg-section-hdr { font-size: 13px; font-weight: 600; color: #eaeaea; padding: 6px 0; border-bottom: 1px solid #1e3a6e; margin-bottom: 10px; display: flex; justify-content: space-between; }
+
+  table.dib-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  table.dib-table th { padding: 5px 8px; text-align: left; color: #7a8cb0; border-bottom: 1px solid #1e3a6e; white-space: nowrap; }
+  table.dib-table td { padding: 5px 8px; border-bottom: 1px solid #0a1428; vertical-align: middle; }
+  table.dib-table tr:hover td { background: #131e35; }
+
+  .rank-badge { display: inline-block; min-width: 22px; text-align: center; background: #1e3a6e; border-radius: 3px; padding: 1px 5px; font-weight: 700; }
+  .br-bar { height: 5px; background: #0f1e36; border-radius: 3px; width: 80px; display: inline-block; vertical-align: middle; margin-left: 6px; }
+  .br-fill { height: 5px; border-radius: 3px; }
+
+  .side-ukr  { color: #3b82f6; }
+  .side-rus  { color: #ef4444; }
+  .side-nato { color: #22c55e; }
+  .side-iran { color: #f97316; }
+
+  .badge { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 10px; font-weight: 600; }
+  .badge-critical { background: #4a0e0e; color: #e74c3c; }
+  .badge-high     { background: #3d2800; color: #f39c12; }
+  .badge-medium   { background: #1a3a1a; color: #27ae60; }
+  .badge-low      { background: #1a2040; color: #7a8cb0; }
+
+  .node-type-tag { font-size: 10px; color: #5a6e8c; padding: 1px 5px; border: 1px solid #1e3a6e; border-radius: 3px; }
+
+  .legend-card { background: #111827; border: 1px solid #1e3a6e; border-radius: 7px; padding: 12px; font-size: 11px; }
+  .legend-card h4 { margin: 0 0 8px; font-size: 12px; color: #eaeaea; }
+  .legend-item { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; color: #aab; }
+  .ld { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  .lline { width: 22px; height: 2px; flex-shrink: 0; }
+  /* Keep nav dropdowns above Leaflet map panes */
+  .nav-dropdown-menu { z-index: 1100 !important; }
+  .navbar, .sub-nav  { z-index: 1050 !important; }
+</style>
+
+<div class="page-header page-header--compact">
+  <div>
+    <h1>DIB Supply Chain <span style="font-size:0.65em;color:var(--text-secondary);font-weight:400;">Defense Industrial Base</span></h1>
+    <div style="font-size:0.75rem;color:var(--text-muted);margin-top:0.2rem">CUI // SP-CTI &nbsp;|&nbsp; Factory → Depot → Logistics → Unit · Critical-path targeting priority</div>
+  </div>
+  <a href="/strategos" style="font-size:.85rem;color:var(--text-secondary)">&larr; Back to Strategos</a>
+</div>
+
+<div class="sg-controls" style="padding: 0 0 0.75rem; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+  <label style="font-size:12px;color:#aab;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="show-ukraine" checked> Ukraine / NATO</label>
+  <label style="font-size:12px;color:#aab;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="show-russia"  checked> Russia</label>
+  <label style="font-size:12px;color:#aab;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="show-iran"    checked> Iran</label>
+  <label style="font-size:12px;color:#aab;display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="show-edges"   checked> Supply edges</label>
+  <select id="map-style" style="background:var(--bg-secondary);border:1px solid var(--border-color);color:var(--text-primary);border-radius:4px;padding:4px 8px;font-size:12px;">
+    <option value="dark">Dark</option>
+    <option value="satellite">Satellite</option>
+    <option value="terrain">Terrain</option>
+  </select>
+  <button onclick="syncGraph()" class="btn btn-sm" style="font-size:12px;padding:4px 12px;">Sync Graph</button>
+  <span id="sync-status" style="font-size:11px;color:var(--text-muted)"></span>
+</div>
+
+<div id="dib-map"></div>
+
+<div class="sg-layout">
+  <div class="sg-cp">
+    <div class="sg-section-hdr">
+      <span>Critical-Path Targeting Priority</span>
+      <span style="font-size:11px;color:#7a8cb0">Ranked by blast_radius ↓</span>
+    </div>
+    <table class="dib-table">
+      <thead>
+        <tr>
+          <th>Rank</th><th>Node</th><th>Side</th><th>Type</th><th>Country</th>
+          <th>Blast Radius</th><th>Criticality</th><th>Systems</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for node in critical_path %}
+        {% set side_cls = 'side-ukr' if node.side == 'ukraine' else ('side-rus' if node.side == 'russia' else ('side-nato' if node.side == 'nato_partner' else 'side-iran')) %}
+        {% set br_pct = (node.blast_radius * 100)|round(0)|int %}
+        {% set br_color = '#e74c3c' if node.blast_radius >= 0.85 else ('#f39c12' if node.blast_radius >= 0.70 else '#27ae60') %}
+        <tr>
+          <td><span class="rank-badge">#{{ node.rank }}</span></td>
+          <td style="max-width:220px">
+            <span style="font-weight:600;font-size:11px">{{ node.node_name }}</span>
+            {% if node.notes %}<div style="color:#7a8cb0;font-size:10px;margin-top:2px">{{ node.notes[:80] }}{% if node.notes|length > 80 %}…{% endif %}</div>{% endif %}
+          </td>
+          <td class="{{ side_cls }}" style="font-weight:600;font-size:11px">{{ node.side.replace('_', ' ').title() }}</td>
+          <td><span class="node-type-tag">{{ node.node_type.replace('_',' ') }}</span></td>
+          <td style="color:#aab">{{ node.country or '—' }}</td>
+          <td>
+            {{ '%.2f'|format(node.blast_radius) }}
+            <span class="br-bar"><span class="br-fill" style="width:{{ br_pct }}%;background:{{ br_color }}"></span></span>
+          </td>
+          <td><span class="badge badge-{{ node.criticality }}">{{ node.criticality }}</span></td>
+          <td style="color:#7a8cb0;max-width:180px;font-size:10px">
+            {% if node.systems_produced %}
+              {{ node.systems_produced[:3]|join(', ') }}{% if node.systems_produced|length > 3 %}…{% endif %}
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="sg-legend">
+    <div class="legend-card">
+      <h4>Map Legend</h4>
+      <div class="legend-item"><div class="ld" style="background:#3b82f6"></div> Ukraine (factory/depot)</div>
+      <div class="legend-item"><div class="ld" style="background:#22c55e"></div> NATO partner</div>
+      <div class="legend-item"><div class="ld" style="background:#ef4444"></div> Russia (factory/depot)</div>
+      <div class="legend-item"><div class="ld" style="background:#f97316"></div> Iran (Shahed)</div>
+      <div class="legend-item"><div class="ld" style="background:#fff;opacity:0.4"></div> Logistics node</div>
+      <div class="legend-item"><div class="ld" style="background:#a78bfa"></div> Unit</div>
+      <hr style="border-color:#1e3a6e;margin:8px 0">
+      <div class="legend-item"><div class="lline" style="background:#60a5fa"></div> PRODUCES edge</div>
+      <div class="legend-item"><div class="lline" style="background:#f87171;border-top:2px dashed #f87171;height:0"></div> DEPENDS_ON_SUPPLY</div>
+      <hr style="border-color:#1e3a6e;margin:8px 0">
+      <div style="color:#7a8cb0;font-size:10px">Marker size ∝ blast_radius</div>
+    </div>
+
+    <div class="legend-card" style="margin-top:10px">
+      <h4>Node Counts</h4>
+      <div style="color:#aab;font-size:11px">
+        {% set sides = {'ukraine': 0, 'russia': 0, 'nato_partner': 0, 'iran': 0} %}
+        {% for n in nodes %}
+          {% if n.side == 'ukraine' %}{% set _ = sides.update({'ukraine': sides.ukraine + 1}) %}{% endif %}
+          {% if n.side == 'russia' %}{% set _ = sides.update({'russia': sides.russia + 1}) %}{% endif %}
+          {% if n.side == 'nato_partner' %}{% set _ = sides.update({'nato_partner': sides.nato_partner + 1}) %}{% endif %}
+          {% if n.side == 'iran' %}{% set _ = sides.update({'iran': sides.iran + 1}) %}{% endif %}
+        {% endfor %}
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span class="side-ukr">Ukraine</span><span>{{ nodes|selectattr('side','eq','ukraine')|list|length }}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span class="side-nato">NATO</span><span>{{ nodes|selectattr('side','eq','nato_partner')|list|length }}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span class="side-rus">Russia</span><span>{{ nodes|selectattr('side','eq','russia')|list|length }}</span></div>
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px"><span class="side-iran">Iran</span><span>{{ nodes|selectattr('side','eq','iran')|list|length }}</span></div>
+        <div style="display:flex;justify-content:space-between;border-top:1px solid #1e3a6e;padding-top:4px;margin-top:4px"><span>Edges</span><span>{{ edges|length }}</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  const NODES = {{ nodes_json | safe }};
+  const EDGES = {{ edges_json | safe }};
+
+  const nodeIndex = {};
+  NODES.forEach(n => { nodeIndex[n.id] = n; });
+
+  const map = L.map('dib-map', { center: [50, 35], zoom: 4 });
+  const tiles = {
+    dark:      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',        { attribution: '&copy; OpenStreetMap, &copy; CARTO', maxZoom: 18 }),
+    satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: '&copy; Esri', maxZoom: 18 }),
+    terrain:   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',                   { attribution: '&copy; OpenStreetMap', maxZoom: 18 }),
+  };
+  tiles.dark.addTo(map);
+  document.getElementById('map-style').addEventListener('change', function() {
+    Object.values(tiles).forEach(t => map.removeLayer(t));
+    tiles[this.value].addTo(map);
+  });
+
+  const SIDE_COLOR = { ukraine: '#3b82f6', russia: '#ef4444', nato_partner: '#22c55e', iran: '#f97316' };
+  const TYPE_OPACITY = { factory: 0.9, repair_depot: 0.75, logistics_node: 0.5, unit: 0.7, export_supplier: 0.85 };
+
+  const layers = {
+    ukraine: L.layerGroup().addTo(map),
+    russia:  L.layerGroup().addTo(map),
+    iran:    L.layerGroup().addTo(map),
+    edges:   L.layerGroup().addTo(map),
+  };
+  // NATO partner nodes go in the ukraine layer (friendly)
+  const natolayer = layers.ukraine;
+
+  NODES.forEach(n => {
+    if (n.lat == null || n.lon == null) return;
+    const color = SIDE_COLOR[n.side] || '#aaa';
+    const opacity = TYPE_OPACITY[n.node_type] || 0.7;
+    const radius = 4 + Math.round(n.blast_radius * 10);
+    const layer = n.side === 'russia' ? layers.russia :
+                  n.side === 'iran'   ? layers.iran   : layers.ukraine;
+
+    const systems = (n.systems_produced || []).join(', ') || '—';
+    const popup = `
+      <div style="min-width:200px">
+        <b style="color:${color}">${n.node_name}</b><br>
+        <span style="color:#999;font-size:11px">${n.node_type.replace(/_/g,' ')} · ${n.country||''}</span><br>
+        <span style="color:#ccc;font-size:11px">Side: ${n.side.replace(/_/g,' ')}</span><br>
+        <span style="color:#ccc;font-size:11px">Blast radius: <b>${n.blast_radius.toFixed(2)}</b></span><br>
+        <span style="color:#ccc;font-size:11px">Criticality: <b>${n.criticality}</b></span><br>
+        <span style="color:#ccc;font-size:11px">Systems: ${systems}</span>
+        ${n.notes ? `<br><span style="color:#888;font-size:10px">${n.notes.substring(0,100)}${n.notes.length>100?'…':''}</span>` : ''}
+      </div>`;
+
+    L.circleMarker([n.lat, n.lon], {
+      radius, color, fillColor: color, fillOpacity: opacity, weight: 1.5,
+    }).bindPopup(popup).addTo(layer);
+  });
+
+  EDGES.forEach(e => {
+    const src = nodeIndex[e.source_node_id];
+    const tgt = nodeIndex[e.target_node_id];
+    if (!src || !tgt || src.lat == null || tgt.lat == null) return;
+
+    const isProduces = e.edge_type === 'PRODUCES';
+    const color = isProduces ? '#60a5fa' : '#f87171';
+    const dash  = isProduces ? null : '6 4';
+    const weight = 1.5;
+    const popup = `<b>${e.edge_type}</b><br>System: ${e.system||'—'}<br>Throughput: ${(e.throughput_pct*100).toFixed(0)}%`;
+
+    const opts = { color, weight, opacity: 0.65, dashArray: dash };
+    L.polyline([[src.lat, src.lon], [tgt.lat, tgt.lon]], opts)
+      .bindPopup(popup).addTo(layers.edges);
+
+    // Arrow-like midpoint marker for direction
+    const midLat = (src.lat + tgt.lat) / 2;
+    const midLon = (src.lon + tgt.lon) / 2;
+    L.circleMarker([midLat, midLon], { radius: 2, color, fillColor: color, fillOpacity: 0.6, weight: 0 })
+      .addTo(layers.edges);
+  });
+
+  // Layer toggles
+  document.getElementById('show-ukraine').addEventListener('change', function() {
+    this.checked ? map.addLayer(layers.ukraine) : map.removeLayer(layers.ukraine);
+  });
+  document.getElementById('show-russia').addEventListener('change', function() {
+    this.checked ? map.addLayer(layers.russia) : map.removeLayer(layers.russia);
+  });
+  document.getElementById('show-iran').addEventListener('change', function() {
+    this.checked ? map.addLayer(layers.iran) : map.removeLayer(layers.iran);
+  });
+  document.getElementById('show-edges').addEventListener('change', function() {
+    this.checked ? map.addLayer(layers.edges) : map.removeLayer(layers.edges);
+  });
+
+  window.syncGraph = function() {
+    const el = document.getElementById('sync-status');
+    el.textContent = 'Syncing…';
+    fetch('/api/strategos/supply/sync', { method: 'POST' })
+      .then(r => r.json())
+      .then(d => { el.textContent = `OK — ${d.graph.nodes_written} nodes, ${d.kg.kg_edges} KG edges`; })
+      .catch(e => { el.textContent = `Error: ${e}`; });
+  };
+})();
+</script>
+{% endblock %}

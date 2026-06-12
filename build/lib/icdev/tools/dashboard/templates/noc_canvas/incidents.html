@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}NOC — Incidents{% endblock %}
+{% block extra_css %}
+<style>
+.nocc-header{background:linear-gradient(135deg,#0f172a,#1c1a2e);padding:22px 28px;border-radius:10px;margin-bottom:24px;border-left:4px solid #f97316;}
+.pri-badge{display:inline-block;padding:3px 10px;border-radius:20px;font-size:.72rem;font-weight:700;}
+.pri-p1{background:#7f1d1d;color:#fca5a5;}.pri-p2{background:#7c2d12;color:#fdba74;}
+.pri-p3{background:#713f12;color:#fde68a;}.pri-p4{background:#1e3a5f;color:#7dd3fc;}
+.status-pill{padding:2px 8px;border-radius:10px;font-size:.7rem;border:1px solid #334155;color:#94a3b8;}
+.status-open{border-color:#ef4444;color:#ef4444;}
+.status-investigating{border-color:#f97316;color:#f97316;}
+.status-resolved{border-color:#22c55e;color:#22c55e;}
+.sla-breach{color:#ef4444;font-weight:700;}
+.inc-table th{background:#0f172a;color:#94a3b8;font-size:.75rem;text-transform:uppercase;letter-spacing:.5px;padding:8px 12px;}
+.inc-table td{padding:9px 12px;font-size:.83rem;border-bottom:1px solid #1e293b;vertical-align:middle;}
+.inc-table tr:hover td{background:#1e293b;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="nocc-header">
+  <div class="d-flex justify-content-between align-items-center">
+    <div>
+      <h2 style="margin:0;color:#fdba74;font-size:1.3rem;">Incident Management</h2>
+      <div style="color:#64748b;font-size:.85rem;margin-top:4px;">{{ classification }}</div>
+    </div>
+    <button onclick="document.getElementById('newIncModal').style.display='flex'"
+            style="padding:8px 16px;background:#7c2d12;border:none;border-radius:8px;color:#fdba74;font-weight:600;cursor:pointer;">
+      + New Incident
+    </button>
+  </div>
+</div>
+
+<div class="table-responsive">
+  <table class="inc-table w-100">
+    <thead>
+      <tr>
+        <th>Number</th><th>Priority</th><th>Title</th>
+        <th>Circuit / Carrier</th><th>Assigned</th><th>Status</th>
+        <th>SLA</th><th>Created</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for i in incidents %}
+      <tr>
+        <td style="color:#94a3b8;font-size:.75rem;font-family:monospace;">{{ i.incident_number }}</td>
+        <td><span class="pri-badge pri-{{ i.severity }}">{{ i.severity|upper }}</span></td>
+        <td style="color:#e2e8f0;font-weight:500;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ i.title }}</td>
+        <td style="color:#64748b;font-size:.78rem;">{{ i.affected_circuit or '—' }}{% if i.affected_carrier %} / {{ i.affected_carrier }}{% endif %}</td>
+        <td style="color:#94a3b8;font-size:.8rem;">{{ i.assigned_to or '—' }}</td>
+        <td><span class="status-pill status-{{ i.status }}">{{ i.status }}</span></td>
+        <td>{% if i.sla_breach %}<span class="sla-breach">BREACH</span>{% else %}<span style="color:#22c55e;font-size:.75rem;">OK</span>{% endif %}</td>
+        <td style="color:#64748b;font-size:.75rem;white-space:nowrap;">{{ i.created_at | ts }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" style="text-align:center;color:#64748b;padding:30px;">No incidents found</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<!-- New Incident Modal -->
+<div id="newIncModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#1e293b;border:1px solid #334155;border-radius:12px;padding:28px;width:480px;max-width:95vw;">
+    <h3 style="margin:0 0 20px;color:#e2e8f0;">Create Incident</h3>
+    <div class="mb-3">
+      <label style="color:#94a3b8;font-size:.8rem;">Title *</label>
+      <input id="incTitle" type="text" class="form-control" style="background:#0f172a;border-color:#334155;color:#e2e8f0;margin-top:4px;" placeholder="Brief description of impact">
+    </div>
+    <div class="row g-2 mb-3">
+      <div class="col">
+        <label style="color:#94a3b8;font-size:.8rem;">Priority</label>
+        <select id="incSev" class="form-select" style="background:#0f172a;border-color:#334155;color:#e2e8f0;margin-top:4px;">
+          <option value="p1">P1 — Critical</option>
+          <option value="p2">P2 — Major</option>
+          <option value="p3" selected>P3 — Minor</option>
+          <option value="p4">P4 — Info</option>
+        </select>
+      </div>
+      <div class="col">
+        <label style="color:#94a3b8;font-size:.8rem;">Carrier</label>
+        <input id="incCarrier" type="text" class="form-control" style="background:#0f172a;border-color:#334155;color:#e2e8f0;margin-top:4px;" placeholder="e.g. Lumen, Zayo">
+      </div>
+    </div>
+    <div class="mb-3">
+      <label style="color:#94a3b8;font-size:.8rem;">Affected Circuit</label>
+      <input id="incCircuit" type="text" class="form-control" style="background:#0f172a;border-color:#334155;color:#e2e8f0;margin-top:4px;" placeholder="Circuit ID">
+    </div>
+    <div class="d-flex gap-2 justify-content-end">
+      <button onclick="document.getElementById('newIncModal').style.display='none'"
+              style="padding:8px 16px;border:1px solid #334155;border-radius:8px;background:transparent;color:#94a3b8;cursor:pointer;">Cancel</button>
+      <button onclick="createIncident()"
+              style="padding:8px 16px;background:#7c2d12;border:none;border-radius:8px;color:#fdba74;font-weight:600;cursor:pointer;">Create</button>
+    </div>
+  </div>
+</div>
+
+{% include 'includes/iqe_query_widget.html' %}
+{% endblock %}
+{% block extra_js %}
+<script>
+const IQE_CANVAS = "nocc";
+const IQE_API = "/api/noc/iqe-query";
+async function createIncident() {
+  const title = document.getElementById('incTitle').value.trim();
+  if (!title) return;
+  const r = await fetch('/api/noc/incidents', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      title, severity: document.getElementById('incSev').value,
+      affected_carrier: document.getElementById('incCarrier').value,
+      affected_circuit: document.getElementById('incCircuit').value,
+    })
+  });
+  if (r.ok) location.reload();
+}
+</script>
+{% endblock %}

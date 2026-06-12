@@ -1,0 +1,66 @@
+# CUI // SP-CTI
+# LLM Judge Rubric: Proposal Technical Volume
+# Evaluates proposal sections against RFP shall-statements using FAR 15.305 criteria.
+
+name: "Proposal Technical Volume"
+content_type: proposal_technical
+description: "Evaluates GovCon proposal technical sections for responsiveness, differentiation, clarity, evidence, and compliance alignment."
+
+dimensions:
+  responsiveness:
+    weight: 0.25
+    description: "Does the section directly and completely address the RFP shall-statement?"
+    anchors:
+      1: "Does not address the requirement at all. Wrong topic or missing entirely."
+      2: "Partially addresses the requirement. Key aspects of the shall-statement ignored."
+      3: "Addresses the requirement but with gaps. Some shall-statement elements unmet."
+      4: "Fully addresses the requirement. All shall-statement elements covered with detail."
+      5: "Exceeds the requirement. Addresses all elements plus anticipates unstated needs."
+
+  differentiation:
+    weight: 0.20
+    description: "Does the section demonstrate why this solution is uniquely qualified vs competitors?"
+    anchors:
+      1: "Pure boilerplate. Could be any vendor's response. No discriminators."
+      2: "Generic competitive claims. 'We have experience' without specifics."
+      3: "Some differentiators mentioned but not well-supported."
+      4: "Clear discriminators with evidence. Specific tool names, metrics, past performance."
+      5: "Compelling, unique value woven throughout. Evaluator would remember this section."
+
+  clarity:
+    weight: 0.20
+    description: "Is the section well-organized, easy for evaluators to score, with clear structure?"
+    anchors:
+      1: "Disorganized. Hard to follow. No clear structure. Evaluator would struggle."
+      2: "Some structure but inconsistent. Key points buried in prose."
+      3: "Adequate organization. Standard proposal formatting. Readable."
+      4: "Well-organized with clear headings, numbered items, logical flow."
+      5: "Excellent structure. Evaluator can map to scoring criteria instantly. Scannable."
+
+  evidence_sufficiency:
+    weight: 0.20
+    description: "Does the section back claims with concrete evidence (past performance, metrics, tools)?"
+    anchors:
+      1: "All claims unsupported. 'We will provide' without any evidence."
+      2: "Mostly unsupported. Occasional vague reference to experience."
+      3: "Some evidence. A few specific examples but could use more."
+      4: "Well-evidenced. Named tools, specific metrics, referenced past performance."
+      5: "Richly evidenced. Every claim backed. Data tables, case studies, quantified results."
+
+  compliance_alignment:
+    weight: 0.15
+    description: "Does the section connect to relevant compliance frameworks (NIST, FedRAMP, CMMC)?"
+    anchors:
+      1: "No compliance context. Requirement clearly has compliance implications but ignored."
+      2: "Mentions compliance in passing but no specific framework references."
+      3: "Names relevant frameworks. Shows awareness but lacks implementation detail."
+      4: "Maps to specific controls. Shows how implementation satisfies compliance."
+      5: "Deep compliance integration. Control traceability, evidence approach, continuous monitoring."
+
+few_shot_examples:
+  - score: 2
+    excerpt: "Our team has extensive experience in cybersecurity and will ensure all systems are secure."
+    reasoning: "Generic claim, no specifics, no named tools/frameworks, no evidence, any vendor could write this."
+  - score: 5
+    excerpt: "We implement AC-2 via ICDEV™'s automated provisioning pipeline, which enforces RBAC with Kyverno policies (D-SEC-117). During our FedRAMP Moderate authorization for [Agency X], this approach reduced account management audit findings from 12 to 0 in 90 days."
+    reasoning: "Specific control (AC-2), named tool (Kyverno), references architecture decision, past performance with metric, compliance traceability."

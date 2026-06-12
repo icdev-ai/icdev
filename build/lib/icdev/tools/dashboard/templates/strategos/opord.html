@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+{% block title %}OPORD Generator — Strategos{% endblock %}
+{% block content %}
+<div class="classification-banner">CUI // SP-CTI</div>
+<div style="padding:1rem 1.5rem;max-width:1400px;margin:0 auto">
+
+  <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.5rem">
+    <div>
+      <h2 style="margin:0;color:#8b5cf6">Operations Order Generator</h2>
+      <div style="color:#9ca3af;font-size:.8rem">FM 5-0 / JP 5-0 — Five-Paragraph OPORD (LLM-Synthesized)</div>
+    </div>
+    <button onclick="showNewModal()" style="margin-left:auto;background:#8b5cf6;color:#fff;border:none;padding:.5rem 1.2rem;border-radius:6px;cursor:pointer;font-weight:600">+ New OPORD</button>
+  </div>
+
+  <!-- New OPORD Modal -->
+  <div id="newModal" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:1000;align-items:center;justify-content:center">
+    <div style="background:#1e293b;border:1px solid #334155;border-radius:10px;padding:2rem;width:500px">
+      <h3 style="margin:0 0 1.2rem;color:#e2e8f0">New Operations Order</h3>
+      <label style="color:#9ca3af;font-size:.8rem">Operation Title</label>
+      <input id="opordTitle" placeholder="e.g. OPERATION IRON ANVIL" style="width:100%;margin:.3rem 0 .8rem;padding:.5rem;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;box-sizing:border-box">
+      <label style="color:#9ca3af;font-size:.8rem">Theater / AO</label>
+      <input id="opordTheater" placeholder="e.g. Western Pacific" style="width:100%;margin:.3rem 0 .8rem;padding:.5rem;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;box-sizing:border-box">
+      <label style="color:#9ca3af;font-size:.8rem">Scenario / Context</label>
+      <textarea id="opordScenario" rows="3" placeholder="Brief operational context for LLM synthesis…" style="width:100%;margin:.3rem 0 .8rem;padding:.5rem;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;box-sizing:border-box;resize:vertical"></textarea>
+      <label style="color:#9ca3af;font-size:.8rem">Task Organization (optional)</label>
+      <input id="opordTaskOrg" placeholder="e.g. TF 77, 1 MEF, JFLCC" style="width:100%;margin:.3rem 0 1.2rem;padding:.5rem;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#e2e8f0;box-sizing:border-box">
+      <div style="display:flex;gap:.8rem;justify-content:flex-end">
+        <button onclick="closeModal()" style="background:#334155;color:#e2e8f0;border:none;padding:.5rem 1.2rem;border-radius:6px;cursor:pointer">Cancel</button>
+        <button onclick="createOpord()" style="background:#8b5cf6;color:#fff;border:none;padding:.5rem 1.2rem;border-radius:6px;cursor:pointer;font-weight:600">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:300px 1fr;gap:1.5rem">
+
+    <!-- OPORD list -->
+    <div>
+      <div style="font-size:.8rem;color:#6b7280;font-weight:600;letter-spacing:.05em;margin-bottom:.6rem">ORDERS</div>
+      <div id="opordList">
+        {% for o in opords %}
+        <div class="opord-card" onclick="loadOpord('{{ o.id }}')" data-id="{{ o.id }}"
+             style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:.8rem 1rem;margin-bottom:.5rem;cursor:pointer">
+          <div style="font-weight:600;color:#e2e8f0;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ o.title }}</div>
+          <div style="font-size:.75rem;color:#9ca3af;margin-top:.2rem">{{ o.theater }}</div>
+          <div style="display:flex;gap:.5rem;margin-top:.5rem;align-items:center">
+            <span style="font-size:.7rem;padding:.15rem .5rem;border-radius:4px;background:{% if o.status=='approved' %}#064e3b;color:#34d399{% elif o.status=='draft' %}#1e1a2e;color:#8b5cf6{% else %}#1e293b;color:#6b7280{% endif %}">{{ o.status }}</span>
+            <span style="font-size:.7rem;color:#475569;margin-left:auto">{{ o.created_at[:10] if o.created_at else '' }}</span>
+          </div>
+        </div>
+        {% else %}
+        <div style="color:#475569;font-size:.85rem;text-align:center;padding:2rem 0">No OPORDs yet</div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- OPORD detail -->
+    <div id="opordDetail" style="background:#1e293b;border:1px solid #334155;border-radius:10px;padding:1.5rem;min-height:500px">
+      <div id="detailPlaceholder" style="color:#475569;text-align:center;padding:5rem 0">
+        Select an OPORD or create a new one.
+      </div>
+      <div id="detailContent" style="display:none">
+
+        <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1.2rem">
+          <div>
+            <div id="detailTitle" style="font-size:1.2rem;font-weight:700;color:#e2e8f0"></div>
+            <div id="detailMeta" style="font-size:.8rem;color:#6b7280;margin-top:.2rem"></div>
+          </div>
+          <div style="margin-left:auto;display:flex;gap:.6rem">
+            <button id="synthesizeAllBtn" onclick="synthesizeAll()" style="background:#8b5cf6;color:#fff;border:none;padding:.4rem 1rem;border-radius:6px;cursor:pointer;font-size:.85rem">&#9889; Synthesize All</button>
+            <button id="approveBtn" onclick="approveOpord()" style="background:#064e3b;color:#34d399;border:none;padding:.4rem 1rem;border-radius:6px;cursor:pointer;font-size:.85rem">&#10003; Approve</button>
+            <button onclick="deleteOpord()" style="background:#7f1d1d;color:#fca5a5;border:none;padding:.4rem 1rem;border-radius:6px;cursor:pointer;font-size:.85rem">Delete</button>
+          </div>
+        </div>
+
+        <div id="parasContainer" style="display:flex;flex-direction:column;gap:1rem"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const PARA_HEADINGS = [
+  "1. SITUATION",
+  "2. MISSION",
+  "3. EXECUTION",
+  "4. SUSTAINMENT",
+  "5. COMMAND AND SIGNAL",
+];
+const PARA_COLORS = ["#3b82f6","#10b981","#e94560","#f59e0b","#06b6d4"];
+const PARA_FIELDS = ["situation","mission","execution","sustainment","command_signal"];
+
+let currentOpordId = null;
+let currentScenario = "";
+
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function mth(s) { return (window.ICDEV && window.ICDEV.mdToHtml) ? window.ICDEV.mdToHtml(s) : esc(s).replace(/\n/g,'<br>'); }
+
+function showNewModal() { document.getElementById('newModal').style.display='flex'; }
+function closeModal() { document.getElementById('newModal').style.display='none'; }
+
+async function createOpord() {
+  const title = document.getElementById('opordTitle').value.trim();
+  if (!title) { alert('Title required'); return; }
+  const r = await fetch('/api/strategos/opord', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      title,
+      theater: document.getElementById('opordTheater').value.trim() || 'unspecified',
+      scenario: document.getElementById('opordScenario').value.trim(),
+      task_org: document.getElementById('opordTaskOrg').value.trim(),
+    })
+  });
+  const d = await r.json();
+  closeModal();
+  ['opordTitle','opordTheater','opordScenario','opordTaskOrg'].forEach(id => document.getElementById(id).value='');
+  await refreshList();
+  loadOpord(d.opord_id);
+}
+
+async function refreshList() {
+  const r = await fetch('/api/strategos/opord');
+  const d = await r.json();
+  const list = document.getElementById('opordList');
+  if (!d.opords || !d.opords.length) {
+    list.innerHTML = '<div style="color:#475569;font-size:.85rem;text-align:center;padding:2rem 0">No OPORDs yet</div>';
+    return;
+  }
+  const statusStyle = s => s==='approved'
+    ? 'background:#064e3b;color:#34d399'
+    : s==='draft' ? 'background:#1e1a2e;color:#8b5cf6'
+    : 'background:#1e293b;color:#6b7280';
+  list.innerHTML = d.opords.map(o => `
+    <div class="opord-card" onclick="loadOpord('${o.id}')" data-id="${o.id}"
+         style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:.8rem 1rem;margin-bottom:.5rem;cursor:pointer">
+      <div style="font-weight:600;color:#e2e8f0;font-size:.9rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(o.title)}</div>
+      <div style="font-size:.75rem;color:#9ca3af;margin-top:.2rem">${esc(o.theater)}</div>
+      <div style="display:flex;gap:.5rem;margin-top:.5rem;align-items:center">
+        <span style="font-size:.7rem;padding:.15rem .5rem;border-radius:4px;${statusStyle(o.status)}">${o.status}</span>
+        <span style="font-size:.7rem;color:#475569;margin-left:auto">${(o.created_at||'').slice(0,10)}</span>
+      </div>
+    </div>`).join('');
+}
+
+async function loadOpord(id) {
+  currentOpordId = id;
+  document.querySelectorAll('.opord-card').forEach(c => {
+    c.style.borderColor = c.dataset.id === id ? '#8b5cf6' : '#334155';
+  });
+  const r = await fetch(`/api/strategos/opord/${id}`);
+  const o = await r.json();
+  currentScenario = o.scenario || "";
+  document.getElementById('detailPlaceholder').style.display = 'none';
+  document.getElementById('detailContent').style.display = '';
+  document.getElementById('detailTitle').textContent = o.title;
+  document.getElementById('detailMeta').textContent =
+    `${o.theater} · ${o.status.toUpperCase()} · ${o.created_by}`;
+  renderParas(o);
+}
+
+function renderParas(o) {
+  const c = document.getElementById('parasContainer');
+  c.innerHTML = PARA_FIELDS.map((field, i) => {
+    const color = PARA_COLORS[i];
+    const content = o[field];
+    return `
+    <div style="border:1px solid ${content?color+'44':'#334155'};border-radius:8px;overflow:hidden">
+      <div style="display:flex;align-items:center;gap:.8rem;padding:.8rem 1rem;background:${content?color+'14':'#0f172a'};cursor:pointer"
+           onclick="togglePara(${i})">
+        <div style="font-weight:700;color:${color};font-size:.85rem">${PARA_HEADINGS[i]}</div>
+        <span style="margin-left:auto;font-size:.75rem;padding:.15rem .5rem;border-radius:4px;background:${content?color+'33':'#1e293b'};color:${content?color:'#6b7280'}">
+          ${content?'COMPLETE':'PENDING'}
+        </span>
+        <button onclick="event.stopPropagation();synthPara(${i+1})"
+                style="background:${color};color:#fff;border:none;padding:.3rem .8rem;border-radius:5px;cursor:pointer;font-size:.75rem">
+          ${content?'Re-synthesize':'Synthesize'}
+        </button>
+      </div>
+      <div id="paraBody${i}" style="display:${content?'block':'none'};padding:1rem;border-top:1px solid #1e293b">
+        ${content
+          ? `<div style="color:#cbd5e1;line-height:1.75;font-size:.875rem">${mth(content)}</div>`
+          : `<div style="color:#475569;font-size:.85rem">Click Synthesize to generate this paragraph.</div>`}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function togglePara(i) {
+  const b = document.getElementById('paraBody'+i);
+  if (!b) return;
+  b.style.display = b.style.display==='none' ? 'block' : 'none';
+}
+
+async function synthPara(paraNum) {
+  if (!currentOpordId) return;
+  const btn = event.target;
+  const origText = btn.textContent;
+  btn.textContent = 'Generating…'; btn.disabled = true;
+  try {
+    const r = await fetch(`/api/strategos/opord/${currentOpordId}/synthesize/${paraNum}`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({scenario: currentScenario})
+    });
+    const d = await r.json();
+    if (d.error) alert(d.error);
+    else await loadOpord(currentOpordId);
+  } finally {
+    btn.textContent = origText; btn.disabled = false;
+  }
+}
+
+async function synthesizeAll() {
+  if (!currentOpordId) return;
+  const btn = document.getElementById('synthesizeAllBtn');
+  btn.textContent = 'Synthesizing all paragraphs…'; btn.disabled = true;
+  try {
+    const r = await fetch(`/api/strategos/opord/${currentOpordId}/synthesize-all`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({scenario: currentScenario})
+    });
+    const d = await r.json();
+    if (d.error) alert(d.error);
+    else await loadOpord(currentOpordId);
+  } finally {
+    btn.textContent = '⚡ Synthesize All'; btn.disabled = false;
+  }
+}
+
+async function approveOpord() {
+  if (!currentOpordId) return;
+  if (!confirm('Approve this OPORD?')) return;
+  await fetch(`/api/strategos/opord/${currentOpordId}/approve`, {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({approved_by:'commander'})
+  });
+  await loadOpord(currentOpordId);
+  await refreshList();
+}
+
+async function deleteOpord() {
+  if (!currentOpordId) return;
+  if (!confirm('Delete this OPORD?')) return;
+  await fetch(`/api/strategos/opord/${currentOpordId}`, {method:'DELETE'});
+  currentOpordId = null;
+  document.getElementById('detailContent').style.display='none';
+  document.getElementById('detailPlaceholder').style.display='';
+  await refreshList();
+}
+</script>
+{% endblock %}

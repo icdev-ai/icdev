@@ -1,0 +1,140 @@
+# CUI // SP-CTI
+# STRATEGOS — Ukraine Theater Configuration (STUB)
+# ─────────────────────────────────────────────────────────────────────────────
+# Theater definition for the Russo-Ukrainian conflict area.
+# Consumed by: tools/strategos/theater.py, importers, agents.
+#
+# STATUS: Stub — bounds/actors/escalation_ladder defined; orbat and
+#         escalation_ladder will be populated in sg-import-01 / sg-iw-* tasks.
+
+theater:
+  id: ukraine
+  name: Russo-Ukrainian Conflict Theater
+  pmtiles_file: ukraine.pmtiles
+
+  # ── Geographic bounds ─────────────────────────────────────────────────────
+  # Covers Ukraine + western Russia + Black Sea + Crimea.
+  bounds:
+    min_lon: 22.0
+    min_lat: 44.0
+    max_lon: 42.0
+    max_lat: 53.0
+
+  # ── Active domains ────────────────────────────────────────────────────────
+  active_domains:
+    - land
+    - sea
+    - air
+    - cyber
+    - ew
+    - info
+    - supply
+    - space
+
+  # ── Actors ────────────────────────────────────────────────────────────────
+  actors:
+    - id: RUS
+      name: Russian Federation
+      role: adversary
+      color: "#E63946"
+      force_designator: VSRF   # Voruzhonnyye Sily Rossiyskoy Federatsii
+
+    - id: UKR
+      name: Ukraine
+      role: friendly
+      color: "#457B9D"
+      force_designator: ZSU    # Zbroyni Syly Ukrayiny
+
+    - id: NATO
+      name: NATO (Support)
+      role: friendly
+      color: "#2A9D8F"
+      force_designator: NATO
+
+    - id: BLR
+      name: Belarus
+      role: adversary
+      color: "#C1121F"
+      force_designator: BSRVF
+
+  # ── Order of Battle (STUB) ─────────────────────────────────────────────────
+  # Placeholder — populated by sg-import-01 (ACLED + Oryx importers)
+  orbat:
+    - actor: RUS
+      units:
+        - id: rus-bsf
+          name: Black Sea Fleet (BSF)
+          type: surface
+          count: 12
+          lat: 44.6
+          lon: 33.5
+          status: degraded
+          class: surface_combatant
+        - id: rus-vdv
+          name: VDV Airborne Corps (reduced)
+          type: ground
+          count: 4
+          lat: 48.5
+          lon: 37.0
+          status: degraded
+
+    - actor: UKR
+      units:
+        - id: ukr-naval
+          name: Ukrainian Navy (Danube Flotilla)
+          type: surface
+          count: 6
+          lat: 45.4
+          lon: 29.7
+          status: active
+        - id: ukr-drone
+          name: UAS Strike Wing
+          type: aircraft
+          count: 200
+          lat: 49.0
+          lon: 32.0
+          status: active
+
+  # ── Escalation Ladder ─────────────────────────────────────────────────────
+  # Ukraine-specific escalation framing
+  escalation_ladder:
+    - level: 1
+      label: Ceasefire
+      description: Active ceasefire monitored by OSCE
+      color: "#27ae60"
+    - level: 2
+      label: Low Intensity
+      description: Artillery exchanges, drone strikes, limited advances
+      color: "#2ecc71"
+    - level: 3
+      label: Active Combat
+      description: Multi-axis offensive operations, sustained air campaign
+      color: "#f39c12"
+    - level: 4
+      label: Escalated Strikes
+      description: Deep strikes on Russian territory, critical infrastructure
+      color: "#e67e22"
+    - level: 5
+      label: Major Offensive
+      description: Large-scale combined-arms offensive operation
+      color: "#e74c3c"
+    - level: 6
+      label: NATO Involvement
+      description: Direct NATO member military engagement
+      color: "#c0392b"
+    - level: 7
+      label: Nuclear Signaling
+      description: Russian nuclear rhetoric escalates; dispersal of tactical assets
+      color: "#8e44ad"
+    - level: 8
+      label: Tactical Nuclear
+      description: Tactical nuclear detonation (low-yield / demonstrative)
+      color: "#6c3483"
+    - level: 9
+      label: Strategic Nuclear
+      description: Strategic nuclear exchange threatened or initiated
+      color: "#4a235a"
+    - level: 10
+      label: Existential
+      description: Full strategic nuclear exchange
+      color: "#1a1a2e"
