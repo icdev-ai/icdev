@@ -2739,3 +2739,25 @@ ICDEV_FOUNDRY_ENABLED=true       # .env — master toggle for canvas + reflex
 pytest tests/foundry/ -v                                          # engine, novelty, spec, task-graph, blueprint
 pytest tests/test_foundry_cycle_reflex.py tests/test_foundry_mcp.py tests/test_foundry_harvester.py -v
 ```
+
+## ANVIL Co-Worker Engine (ACE) Commands
+
+```bash
+# Launch a co-worker instance with a problem statement
+python -m icdev.tools.ace.controller --launch 'problem text' [--json]
+
+# Check the status of a running co-worker instance
+python -m icdev.tools.ace.controller --status <instance_id> [--json]
+
+# Abort a running co-worker instance
+python -m icdev.tools.ace.controller --abort <instance_id>
+
+# List available co-worker roles
+python -m icdev.tools.ace.controller --list-roles
+
+# Seed ACE-related kanban tasks (use --dry-run to preview)
+python tools/kanban/seed_ace_kanban.py [--dry-run]
+
+# Feature flag — enable /coworker/ canvas
+ICDEV_ACE_ENABLED=true        # .env — master toggle for ACE canvas + co-worker reflex
+```
