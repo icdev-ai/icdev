@@ -100,6 +100,7 @@ REFLEX_NAMES = [
     "foundry_cycle",
     "ace_team_monitor",
     "pma_credential_monitor",
+    "pma_int_gap_monitor",
 ]
 
 # Backward-compat aliases for module-level access used by other code
