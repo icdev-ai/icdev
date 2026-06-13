@@ -1992,3 +1992,104 @@ def get_budget_portfolio_status():
             fiscal_year=fy, warning_threshold=warn, critical_threshold=crit,
         ),
     })
+
+
+# =====================================================================
+# Personnel Registry
+# =====================================================================
+
+
+@cpmp_api.route("/contracts/<contract_id>/personnel", methods=["POST"])
+def upsert_personnel(contract_id):
+    """POST /api/cpmp/contracts/<id>/personnel — Create or update a personnel record."""
+    try:
+        from tools.govcon.personnel_manager import upsert_person
+
+        data = request.get_json(silent=True) or {}
+        result = upsert_person(contract_id, data)
+        if result.get("status") == "error":
+            return jsonify(result), 400
+        return jsonify(result), 201
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/personnel", methods=["GET"])
+def list_personnel(contract_id):
+    """GET /api/cpmp/contracts/<id>/personnel — List personnel with optional filters."""
+    try:
+        from tools.govcon.personnel_manager import list_personnel as _list
+
+        clearance_level = request.args.get("clearance_level")
+        lcat = request.args.get("lcat")
+        result = _list(contract_id, clearance_level=clearance_level, lcat=lcat)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/personnel/<person_id>", methods=["PUT"])
+def update_personnel(person_id):
+    """PUT /api/cpmp/personnel/<pid> — Update personnel status or backup assignment."""
+    try:
+        from tools.govcon.personnel_manager import update_person
+
+        data = request.get_json(silent=True) or {}
+        result = update_person(person_id, data)
+        if result.get("status") == "error":
+            return jsonify(result), 404
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/personnel/expiring", methods=["GET"])
+def list_expiring_personnel(contract_id):
+    """GET /api/cpmp/contracts/<id>/personnel/expiring — Personnel with credentials expiring within ?days=90."""
+    try:
+        from tools.govcon.personnel_manager import get_expiring_personnel
+
+        days = request.args.get("days", default=90, type=int)
+        result = get_expiring_personnel(contract_id, days=days)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/personnel/key-persons", methods=["GET"])
+def list_key_persons(contract_id):
+    """GET /api/cpmp/contracts/<id>/personnel/key-persons — Key personnel list."""
+    try:
+        from tools.govcon.personnel_manager import get_key_persons
+
+        result = get_key_persons(contract_id)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/personnel/alerts", methods=["GET"])
+def list_personnel_alerts(contract_id):
+    """GET /api/cpmp/contracts/<id>/personnel/alerts — Open credential alerts for the contract."""
+    try:
+        from tools.govcon.personnel_manager import get_personnel_alerts
+
+        result = get_personnel_alerts(contract_id)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/personnel/alerts/<alert_id>", methods=["PUT"])
+def update_personnel_alert(alert_id):
+    """PUT /api/cpmp/personnel/alerts/<aid> — Acknowledge or resolve a credential alert."""
+    try:
+        from tools.govcon.personnel_manager import update_alert
+
+        data = request.get_json(silent=True) or {}
+        result = update_alert(alert_id, data)
+        if result.get("status") == "error":
+            return jsonify(result), 404
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
