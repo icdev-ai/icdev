@@ -464,6 +464,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "nc_agreement_amendments",
         # ISP/Telco — Cross-Connect Order Workflow (NIST AU, append-only order state log)
         "ccc_xc_order_events",
+        # ACE — ANVIL Co-Worker Engine audit trail (NIST AU, append-only)
+        "ace_audit_log",
     ]
 
     if tool_name == "Bash":
