@@ -767,6 +767,17 @@ CREATE TABLE IF NOT EXISTS dic_doc_freshness (
 );
 CREATE INDEX IF NOT EXISTS idx_dic_doc_freshness_tenant ON dic_doc_freshness(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_dic_doc_freshness_collection ON dic_doc_freshness(collection_id);
+CREATE TABLE IF NOT EXISTS dic_presence_sessions (
+    session_id          TEXT    PRIMARY KEY,
+    doc_id              TEXT    NOT NULL,
+    user_id             TEXT    NOT NULL,
+    active_section_id   TEXT,
+    last_seen           TEXT    NOT NULL,
+    tenant_id           TEXT    DEFAULT 'default',
+    classification      TEXT    DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_dic_presence_sessions_doc ON dic_presence_sessions(doc_id);
+CREATE INDEX IF NOT EXISTS idx_dic_presence_sessions_last_seen ON dic_presence_sessions(last_seen);
 CREATE TABLE IF NOT EXISTS dd_mapping_sessions (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL DEFAULT 'Untitled Mapping',
