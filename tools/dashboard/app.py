@@ -3502,7 +3502,7 @@ def create_app() -> Flask:
             "supply_chain":   ("tools.iqe.adapters.supply_chain",    ["supply_chain.vendors", "supply_chain.scrm_risks", "supply_chain.cve_triage", "supply_chain.isa_agreements"]),
             "aiify":            ("tools.iqe.adapters.aiify", ["aiify.opportunities", "aiify.scans", "aiify.roadmaps", "aiify.posture"]),
             "aisg":             ("tools.iqe.adapters.aisg",  ["aisg.roadmaps", "aisg.skills", "aisg.roi", "aisg.patterns"]),
-            "dic":              ("tools.iqe.adapters.dic",   ["dic.drift_events", "dic.regen_queue", "dic.ssp_fragments"]),
+            "dic":              ("tools.iqe.adapters.dic",   ["dic.drift_events", "dic.regen_queue", "dic.ssp_fragments", "dic.generated_outputs"]),
             "integrity":        ("tools.iqe.adapters.integrity", ["integrity.assessments", "integrity.capabilities", "integrity.findings", "integrity.verdicts"]),
             "demo_runner":    ("tools.iqe.adapters.demo_runner",     ["demo_runner.runs", "demo_runner.scenarios", "demo_runner.results"]),
             "sdc_demo":       ("tools.iqe.adapters.sdc_demo",        ["sdc_demo.runs", "sdc_demo.scenarios", "sdc_demo.threat_summary", "sdc_demo.workflow_steps"]),

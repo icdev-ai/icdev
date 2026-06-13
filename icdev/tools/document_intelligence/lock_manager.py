@@ -14,6 +14,7 @@ Usage::
 """
 from __future__ import annotations
 
+import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
 

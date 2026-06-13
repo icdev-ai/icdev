@@ -2761,3 +2761,45 @@ python tools/kanban/seed_ace_kanban.py [--dry-run]
 # Feature flag — enable /coworker/ canvas
 ICDEV_ACE_ENABLED=true        # .env — master toggle for ACE canvas + co-worker reflex
 ```
+
+## Document Intelligence Canvas (DIC) — Notebook
+
+```bash
+# Notebook page (NotebookLM-style view)
+# URL: http://localhost:5050/document-intelligence/notebook
+# URL: http://localhost:5050/document-intelligence/notebook/<collection_id>
+
+# URL ingest (online mode; air-gap returns empty with warning)
+# POST /document-intelligence/api/ingest/url
+# Body: {"url": "https://...", "collection_id": "my-collection"}
+
+# YouTube transcript ingest (online mode only)
+# POST /document-intelligence/api/ingest/youtube
+# Body: {"url": "https://youtube.com/watch?v=...", "collection_id": "my-collection"}
+
+# AI output generators (dual-mode: LLM online, deterministic air-gap fallback)
+# POST /document-intelligence/api/generate/study-guide
+# POST /document-intelligence/api/generate/faq
+# POST /document-intelligence/api/generate/timeline
+# POST /document-intelligence/api/generate/audio
+# Body: {"collection_id": "my-collection"}
+
+# List outputs for a collection
+# GET /document-intelligence/api/outputs?collection_id=my-collection
+
+# Get a single output
+# GET /document-intelligence/api/outputs/<output_id>
+
+# Mode info (air-gap vs online, available capabilities)
+# GET /document-intelligence/api/mode
+
+# Python — generate outputs directly
+python -c "from tools.document_intelligence.output_generators import generate_study_guide; import json; print(json.dumps(generate_study_guide('my-collection', 'default'), indent=2))"
+python -c "from tools.document_intelligence.output_generators import generate_faq; import json; print(json.dumps(generate_faq('my-collection', 'default', n=10), indent=2))"
+python -c "from tools.document_intelligence.output_generators import generate_timeline; import json; print(json.dumps(generate_timeline('my-collection', 'default'), indent=2))"
+python -c "from tools.document_intelligence.output_generators import generate_audio_overview; import json; print(json.dumps(generate_audio_overview('my-collection', 'default'), indent=2))"
+
+# Python — ingest URL or YouTube
+python -c "from tools.document_intelligence.extractors import extract_url; e = extract_url('https://example.com/page'); print(e.text[:200])"
+python -c "from tools.document_intelligence.extractors import extract_youtube; e = extract_youtube('https://youtube.com/watch?v=dQw4w9WgXcQ'); print(e.text[:200])"
+```

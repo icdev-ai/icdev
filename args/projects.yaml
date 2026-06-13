@@ -4,76 +4,98 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: pma
+  name: Pma Project
+  description: Auto-registered project for tasks with prefix 'pma-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: pma-
+  default_open: true
+  briefs: []
+  epics:
+  - key: cont
+    title: CONT
+    priority: medium
+  - key: coord
+    title: COORD
+    priority: medium
+  - key: igap
+    title: IGAP
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
 - key: dsyn
-  name: "DIC Canvas Synergy"
-  description: >-
-    Wire every ICDEV canvas and child app into the Document Intelligence
-    Canvas so that state changes (config pushes, compliance findings,
-    posture shifts, capability gaps) automatically surface as AI-drafted
-    document update suggestions queued for HITL review.  Closes the
-    "keeping docs current" gap identified post-RTED: canvas adapter,
-    integration reflex, event emission per Tier-1 canvas, targeted patch
-    mode, viewer suggest-edit, scheduled review cadence, and cross-doc
-    consistency propagation.
+  name: DIC Canvas Synergy
+  description: 'Wire every ICDEV canvas and child app into the Document Intelligence
+    Canvas so that state changes (config pushes, compliance findings, posture shifts,
+    capability gaps) automatically surface as AI-drafted document update suggestions
+    queued for HITL review.  Closes the "keeping docs current" gap identified post-RTED:
+    canvas adapter, integration reflex, event emission per Tier-1 canvas, targeted
+    patch mode, viewer suggest-edit, scheduled review cadence, and cross-doc consistency
+    propagation.'
   task_prefix: dsyn-
   default_open: true
   briefs:
-    - "Canvas adapter maps canvas_events rows to affected DIC collections via YAML config (adapt epic)"
-    - "DIC integration Genesis reflex polls events, calls adapter, queues AI-drafted suggestions (reflex epic)"
-    - "Eight Tier-1 canvases emit change events to the canvas_events bus (emit epic)"
-    - "Targeted patch mode generates minimal section edits instead of full rewrites (patch epic)"
-    - "Viewer-role suggest-edit and scheduled review cadence open crowdsourcing (suggest epic)"
-    - "KG neighbor walk propagates consistency flags when a referenced doc changes (consist epic)"
+  - Canvas adapter maps canvas_events rows to affected DIC collections via YAML config
+    (adapt epic)
+  - DIC integration Genesis reflex polls events, calls adapter, queues AI-drafted
+    suggestions (reflex epic)
+  - Eight Tier-1 canvases emit change events to the canvas_events bus (emit epic)
+  - Targeted patch mode generates minimal section edits instead of full rewrites (patch
+    epic)
+  - Viewer-role suggest-edit and scheduled review cadence open crowdsourcing (suggest
+    epic)
+  - KG neighbor walk propagates consistency flags when a referenced doc changes (consist
+    epic)
   epics:
   - key: adapt
-    title: "Canvas Adapter + Suggestions Table"
+    title: Canvas Adapter + Suggestions Table
     priority: high
   - key: reflex
-    title: "DIC Integration Reflex"
+    title: DIC Integration Reflex
     priority: high
   - key: emit
-    title: "Tier-1 Canvas Event Emission"
+    title: Tier-1 Canvas Event Emission
     priority: high
   - key: patch
-    title: "Targeted Patch Mode + Notifications"
+    title: Targeted Patch Mode + Notifications
     priority: medium
   - key: suggest
-    title: "Suggest-Edit + Scheduled Review"
+    title: Suggest-Edit + Scheduled Review
     priority: medium
   - key: consist
-    title: "Cross-Doc Consistency"
+    title: Cross-Doc Consistency
     priority: low
   - key: vv
-    title: "Validation"
+    title: Validation
     priority: medium
 - key: rted
-  name: "DIC Real-Time Collaborative Editing"
-  description: >-
-    Pragmatic co-editing for the Document Intelligence Canvas: pessimistic
-    section locking, per-section edit history, SSE user presence, and
-    conflict detection with merge UI. No OT/CRDT/WebSocket required.
+  name: DIC Real-Time Collaborative Editing
+  description: 'Pragmatic co-editing for the Document Intelligence Canvas: pessimistic
+    section locking, per-section edit history, SSE user presence, and conflict detection
+    with merge UI. No OT/CRDT/WebSocket required.'
   task_prefix: rted-
   default_open: true
   briefs:
-    - "Implement section locking so two editors cannot clobber each other (lock epic)"
-    - "Record granular edit history per section using stdlib difflib (history epic)"
-    - "Show live presence avatars per section via SSE heartbeat (presence epic)"
-    - "Detect and resolve edit conflicts with a side-by-side merge modal (conflict epic)"
+  - Implement section locking so two editors cannot clobber each other (lock epic)
+  - Record granular edit history per section using stdlib difflib (history epic)
+  - Show live presence avatars per section via SSE heartbeat (presence epic)
+  - Detect and resolve edit conflicts with a side-by-side merge modal (conflict epic)
   epics:
   - key: lock
-    title: "Section Locking"
+    title: Section Locking
     priority: high
   - key: hist
-    title: "Edit History"
+    title: Edit History
     priority: high
   - key: pres
-    title: "User Presence"
+    title: User Presence
     priority: medium
   - key: conf
-    title: "Conflict Resolution"
+    title: Conflict Resolution
     priority: high
   - key: vv
-    title: "Validation"
+    title: Validation
     priority: medium
 - key: rec
   name: Rec Project
