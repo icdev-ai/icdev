@@ -20,6 +20,7 @@ import json as _mac_json
 import os
 import sys
 import uuid
+from datetime import datetime, timezone
 from tools.db.storage import get_connection
 from pathlib import Path
 
@@ -2091,5 +2092,301 @@ def update_personnel_alert(alert_id):
         if result.get("status") == "error":
             return jsonify(result), 404
         return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# =====================================================================
+# INT Coverage Map and Collection Requirements (pma-igap-04)
+# =====================================================================
+
+_COVERAGE_STATUSES = ("gap", "partial", "covered")
+_REQ_STATUSES = ("open", "tasked", "satisfied")
+_REQ_PRIORITIES = ("critical", "high", "medium", "low")
+
+_REQ_TEMPLATES = [
+    "Collect {discipline} intelligence covering {area}",
+    "Establish persistent collection posture for {discipline} in {area}",
+    "Identify key {discipline} collection assets available for {area}",
+    "Assess collection gaps and develop supplemental {discipline} requirements for {area}",
+    "Coordinate multi-source {discipline} collection to address coverage shortfall in {area}",
+]
+
+
+def _generate_req_texts(discipline, coverage_area, count):
+    """Return deterministic template-based requirement texts (LLM fallback)."""
+    area = coverage_area or "designated area"
+    disc = discipline or "INT"
+    return [
+        _REQ_TEMPLATES[i % len(_REQ_TEMPLATES)].format(discipline=disc, area=area)
+        for i in range(count)
+    ]
+
+
+def _row_to_dict(row):
+    return dict(row) if not isinstance(row, dict) else row
+
+
+@cpmp_api.route("/contracts/<contract_id>/coverage", methods=["POST"])
+def upsert_int_coverage(contract_id):
+    """POST /api/cpmp/contracts/<id>/coverage — Upsert INT coverage record."""
+    try:
+        data = request.get_json(silent=True) or {}
+        status = data.get("status", "gap")
+        if status not in _COVERAGE_STATUSES:
+            return jsonify({"status": "error", "message": f"status must be one of {_COVERAGE_STATUSES}"}), 400
+
+        now = datetime.now(timezone.utc).isoformat()
+        conn = _get_db()
+        try:
+            cid = _uuid()
+            conn.execute(
+                """INSERT INTO cpmp_int_coverage
+                   (id, contract_id, discipline, coverage_area, status, confidence,
+                    source_type, notes, last_assessed, persistent_since, metadata,
+                    created_at, updated_at, classification)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(id) DO NOTHING""",
+                (
+                    cid, contract_id,
+                    data.get("discipline", ""),
+                    data.get("coverage_area", ""),
+                    status,
+                    float(data.get("confidence", 0.0)),
+                    data.get("source_type", ""),
+                    data.get("notes"),
+                    data.get("last_assessed"),
+                    data.get("persistent_since"),
+                    _mac_json.dumps(data.get("metadata", {})),
+                    now, now, "CUI",
+                ),
+            )
+            conn.commit()
+            _audit(conn, "upsert_coverage", f"contract={contract_id} cov={cid}")
+            record = _row_to_dict(
+                conn.execute(
+                    "SELECT * FROM cpmp_int_coverage WHERE id = ?", (cid,)
+                ).fetchone()
+            )
+            return jsonify({"status": "ok", "coverage": record}), 201
+        finally:
+            conn.close()
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/coverage", methods=["GET"])
+def list_int_coverage(contract_id):
+    """GET /api/cpmp/contracts/<id>/coverage — List coverage records with optional status filter."""
+    try:
+        status_filter = request.args.get("status")
+        conn = _get_db()
+        try:
+            if status_filter and status_filter in _COVERAGE_STATUSES:
+                rows = conn.execute(
+                    "SELECT * FROM cpmp_int_coverage WHERE contract_id = ? AND status = ? ORDER BY discipline, coverage_area",
+                    (contract_id, status_filter),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM cpmp_int_coverage WHERE contract_id = ? ORDER BY discipline, coverage_area",
+                    (contract_id,),
+                ).fetchall()
+            return jsonify({"status": "ok", "coverage": [_row_to_dict(r) for r in rows], "count": len(rows)})
+        finally:
+            conn.close()
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/coverage/gaps", methods=["GET"])
+def list_coverage_gaps(contract_id):
+    """GET /api/cpmp/contracts/<id>/coverage/gaps — Gap and partial records only."""
+    try:
+        conn = _get_db()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM cpmp_int_coverage WHERE contract_id = ? AND status IN ('gap', 'partial') ORDER BY discipline, coverage_area",
+                (contract_id,),
+            ).fetchall()
+            return jsonify({"status": "ok", "gaps": [_row_to_dict(r) for r in rows], "count": len(rows)})
+        finally:
+            conn.close()
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/coverage/persistent", methods=["GET"])
+def list_persistent_gaps(contract_id):
+    """GET /api/cpmp/contracts/<id>/coverage/persistent — Persistent gaps (?days=14)."""
+    try:
+        days = request.args.get("days", default=14, type=int)
+        conn = _get_db()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM cpmp_int_coverage "
+                "WHERE contract_id = ? AND status IN ('gap', 'partial') "
+                "AND persistent_since IS NOT NULL "
+                "AND persistent_since <= datetime('now', ? || ' days') "
+                "ORDER BY persistent_since",
+                (contract_id, f"-{days}"),
+            ).fetchall()
+            return jsonify({"status": "ok", "persistent_gaps": [_row_to_dict(r) for r in rows], "days": days, "count": len(rows)})
+        finally:
+            conn.close()
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/coverage/<coverage_id>/generate-reqs", methods=["POST"])
+def generate_collection_requirements(contract_id, coverage_id):
+    """POST /api/cpmp/contracts/<id>/coverage/<cid>/generate-reqs — AI-generate collection requirements."""
+    try:
+        data = request.get_json(silent=True) or {}
+        count = max(1, min(int(data.get("count", 3)), 10))
+        priority = data.get("priority", "medium")
+        if priority not in _REQ_PRIORITIES:
+            priority = "medium"
+
+        conn = _get_db()
+        try:
+            cov_row = conn.execute(
+                "SELECT id, discipline, coverage_area, status FROM cpmp_int_coverage "
+                "WHERE id = ? AND contract_id = ?",
+                (coverage_id, contract_id),
+            ).fetchone()
+            if not cov_row:
+                return jsonify({"status": "error", "message": "Coverage record not found"}), 404
+
+            cov = _row_to_dict(cov_row)
+            discipline = cov.get("discipline") or "INT"
+            coverage_area = cov.get("coverage_area") or ""
+
+            req_texts = _generate_req_texts(discipline, coverage_area, count)
+            now = datetime.now(timezone.utc).isoformat()
+            created = []
+            for text in req_texts:
+                rid = _uuid()
+                conn.execute(
+                    "INSERT INTO cpmp_collection_requirements "
+                    "(id, coverage_id, contract_id, requirement_text, discipline, priority, "
+                    "status, ai_generated, created_at, updated_at, classification) "
+                    "VALUES (?, ?, ?, ?, ?, ?, 'open', 1, ?, ?, 'CUI')",
+                    (rid, coverage_id, contract_id, text, discipline, priority, now, now),
+                )
+                created.append({
+                    "id": rid,
+                    "coverage_id": coverage_id,
+                    "contract_id": contract_id,
+                    "requirement_text": text,
+                    "discipline": discipline,
+                    "priority": priority,
+                    "status": "open",
+                    "ai_generated": True,
+                    "created_at": now,
+                })
+            conn.commit()
+            _audit(conn, "generate_reqs", f"coverage={coverage_id} count={len(created)}")
+            return jsonify({"status": "ok", "requirements": created, "count": len(created)}), 201
+        finally:
+            conn.close()
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/coverage/<coverage_id>/requirements", methods=["GET"])
+def list_coverage_requirements(coverage_id):
+    """GET /api/cpmp/coverage/<cid>/requirements — List requirements for a coverage record."""
+    try:
+        conn = _get_db()
+        try:
+            rows = conn.execute(
+                "SELECT * FROM cpmp_collection_requirements WHERE coverage_id = ? ORDER BY priority, created_at",
+                (coverage_id,),
+            ).fetchall()
+            return jsonify({"status": "ok", "requirements": [_row_to_dict(r) for r in rows], "count": len(rows)})
+        finally:
+            conn.close()
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/requirements/<requirement_id>", methods=["PUT"])
+def update_collection_requirement(requirement_id):
+    """PUT /api/cpmp/requirements/<rid> — Update status: open→tasked→satisfied."""
+    try:
+        data = request.get_json(silent=True) or {}
+        new_status = data.get("status")
+        if new_status and new_status not in _REQ_STATUSES:
+            return jsonify({"status": "error", "message": f"status must be one of {_REQ_STATUSES}"}), 400
+
+        conn = _get_db()
+        try:
+            row = conn.execute(
+                "SELECT * FROM cpmp_collection_requirements WHERE id = ?",
+                (requirement_id,),
+            ).fetchone()
+            if not row:
+                return jsonify({"status": "error", "message": "Requirement not found"}), 404
+
+            now = datetime.now(timezone.utc).isoformat()
+            updates = {"updated_at": now}
+            if new_status:
+                updates["status"] = new_status
+            if "tasked_to" in data:
+                updates["tasked_to"] = data["tasked_to"]
+            if "notes" in data:
+                updates["notes"] = data["notes"]
+            if new_status == "tasked" and not dict(row).get("tasked_at"):
+                updates["tasked_at"] = now
+            if new_status == "satisfied" and not dict(row).get("satisfied_at"):
+                updates["satisfied_at"] = now
+
+            set_clause = ", ".join(f"{k} = ?" for k in updates)
+            values = list(updates.values()) + [requirement_id]
+            conn.execute(
+                f"UPDATE cpmp_collection_requirements SET {set_clause} WHERE id = ?",
+                values,
+            )
+            conn.commit()
+            _audit(conn, "update_requirement", f"req={requirement_id} status={new_status}")
+            updated = _row_to_dict(
+                conn.execute(
+                    "SELECT * FROM cpmp_collection_requirements WHERE id = ?",
+                    (requirement_id,),
+                ).fetchone()
+            )
+            return jsonify({"status": "ok", "requirement": updated})
+        finally:
+            conn.close()
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/requirements", methods=["GET"])
+def list_contract_requirements(contract_id):
+    """GET /api/cpmp/contracts/<id>/requirements — All requirements, filterable by discipline/status."""
+    try:
+        discipline = request.args.get("discipline")
+        status_filter = request.args.get("status")
+        conn = _get_db()
+        try:
+            where = ["contract_id = ?"]
+            params = [contract_id]
+            if discipline:
+                where.append("discipline = ?")
+                params.append(discipline)
+            if status_filter and status_filter in _REQ_STATUSES:
+                where.append("status = ?")
+                params.append(status_filter)
+            sql = (
+                "SELECT * FROM cpmp_collection_requirements WHERE "
+                + " AND ".join(where)
+                + " ORDER BY discipline, status, created_at"
+            )
+            rows = conn.execute(sql, params).fetchall()
+            return jsonify({"status": "ok", "requirements": [_row_to_dict(r) for r in rows], "count": len(rows)})
+        finally:
+            conn.close()
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500

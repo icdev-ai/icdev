@@ -452,6 +452,46 @@ CREATE TABLE IF NOT EXISTS cpmp_risks (
 )
 """
 
+_CPMP_INT_COVERAGE_DDL = """
+CREATE TABLE IF NOT EXISTS cpmp_int_coverage (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL,
+    discipline TEXT NOT NULL DEFAULT '',
+    coverage_area TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'gap' CHECK (status IN ('gap', 'partial', 'covered')),
+    confidence REAL DEFAULT 0.0,
+    source_type TEXT DEFAULT '',
+    notes TEXT,
+    last_assessed TEXT,
+    persistent_since TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+)
+"""
+
+_CPMP_COLLECTION_REQUIREMENTS_DDL = """
+CREATE TABLE IF NOT EXISTS cpmp_collection_requirements (
+    id TEXT PRIMARY KEY,
+    coverage_id TEXT NOT NULL,
+    contract_id TEXT NOT NULL,
+    requirement_text TEXT NOT NULL DEFAULT '',
+    discipline TEXT NOT NULL DEFAULT '',
+    priority TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('critical', 'high', 'medium', 'low')),
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'tasked', 'satisfied')),
+    ai_generated INTEGER DEFAULT 0,
+    tasked_to TEXT,
+    tasked_at TEXT,
+    satisfied_at TEXT,
+    notes TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+)
+"""
+
 _CPMP_OPTION_PERIODS_DDL = """
 CREATE TABLE IF NOT EXISTS cpmp_option_periods (
     id TEXT PRIMARY KEY,
@@ -511,6 +551,14 @@ _CPMP_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_cpmp_opt_contract   ON cpmp_option_periods(contract_id)",
     "CREATE INDEX IF NOT EXISTS idx_cpmp_opt_status     ON cpmp_option_periods(status)",
     "CREATE INDEX IF NOT EXISTS idx_cpmp_opt_deadline   ON cpmp_option_periods(exercise_deadline)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_cov_contract   ON cpmp_int_coverage(contract_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_cov_status     ON cpmp_int_coverage(status)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_cov_discipline ON cpmp_int_coverage(discipline)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_cov_persistent ON cpmp_int_coverage(persistent_since)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_creq_coverage  ON cpmp_collection_requirements(coverage_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_creq_contract  ON cpmp_collection_requirements(contract_id)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_creq_status    ON cpmp_collection_requirements(status)",
+    "CREATE INDEX IF NOT EXISTS idx_cpmp_creq_discipline ON cpmp_collection_requirements(discipline)",
 ]
 
 _ALL_DDLS = [
@@ -532,6 +580,8 @@ _ALL_DDLS = [
     _CPMP_MILESTONE_DEPS_DDL,
     _CPMP_RISKS_DDL,
     _CPMP_OPTION_PERIODS_DDL,
+    _CPMP_INT_COVERAGE_DDL,
+    _CPMP_COLLECTION_REQUIREMENTS_DDL,
 ]
 
 
