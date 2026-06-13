@@ -99,6 +99,7 @@ REFLEX_NAMES = [
     "integrity_monitor",
     "foundry_cycle",
     "ace_team_monitor",
+    "pma_credential_monitor",
 ]
 
 # Backward-compat aliases for module-level access used by other code
