@@ -188,6 +188,24 @@ jobs:
     needs: [test]
     timeout-minutes: 30
 
+    # Service containers are started before steps and managed by GitHub Actions
+    # infrastructure — avoids manual docker pull which is prone to Docker Hub
+    # rate-limiting and transient registry timeouts on shared runners.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: icdev
+          POSTGRES_PASSWORD: icdev_ci
+          POSTGRES_DB: icdev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U icdev -d icdev"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
     env:
       ICDEV_STORAGE_BACKEND: postgresql
       ICDEV_PG_HOST: localhost
@@ -217,27 +235,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
-      - name: Pull PostgreSQL image (retry on registry timeout)
-        run: |
-          for attempt in 1 2 3 4 5; do
-            docker pull pgvector/pgvector:pg16 && exit 0
-            echo "::warning::docker pull pgvector/pgvector:pg16 failed (attempt $attempt/5); retrying in $((attempt * 10))s"
-            sleep $((attempt * 10))
-          done
-          echo "::error::docker pull pgvector/pgvector:pg16 failed after 5 attempts"
-          exit 1
-      - name: Start PostgreSQL container
-        run: |
-          docker run -d \
-            --name icdev-postgres \
-            -e POSTGRES_USER=icdev \
-            -e POSTGRES_PASSWORD=icdev_ci \
-            -e POSTGRES_DB=icdev \
-            -p 5432:5432 \
-            pgvector/pgvector:pg16
-          for i in $(seq 1 30); do
-            docker exec icdev-postgres pg_isready -U icdev -d icdev && break || sleep 1
-          done
       - name: Install Python dependencies
         run: pip install -r requirements.txt
       - name: Install Node dependencies
