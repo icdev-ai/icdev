@@ -513,6 +513,41 @@ competitive_intel:
     - name: fivetran
       website: https://www.fivetran.com
       category: data_integration
+    # open-notebook / knowledge management family
+    - name: open_notebook
+      repo: lfnovo/open-notebook
+      website: https://github.com/lfnovo/open-notebook
+      category: knowledge_management
+    - name: notebooklm
+      website: https://notebooklm.google.com
+      category: knowledge_management
+    - name: anythingllm
+      repo: Mintplex-Labs/anything-llm
+      category: knowledge_management
+    - name: ponder
+      website: https://ponder.ing
+      category: knowledge_management
+    # kuse.ai / workflow automation family
+    - name: kuse_ai
+      website: https://www.kuse.ai
+      category: ai_workflow_automation
+    - name: n8n
+      repo: n8n-io/n8n
+      category: ai_workflow_automation
+    - name: gumloop
+      website: https://www.gumloop.com
+      category: ai_workflow_automation
+    # coworker / desktop AI agent family
+    - name: coworker_ai
+      repo: accomplish-ai/coworker
+      website: https://github.com/accomplish-ai/coworker
+      category: desktop_ai_agent
+    - name: manus_ai
+      website: https://manus.im
+      category: desktop_ai_agent
+    - name: moveworks
+      website: https://www.moveworks.com
+      category: desktop_ai_agent
 
 # =========================================================================
 # Standards Body Monitoring

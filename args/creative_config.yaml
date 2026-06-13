@@ -925,6 +925,41 @@ data_mapping:
 # =========================================================================
 # Audit & Governance
 # =========================================================================
+knowledge_management:
+  name: "AI knowledge management and research notebooks"
+  g2_category_url: "https://www.g2.com/categories/knowledge-management"
+  capterra_category_url: "https://www.capterra.com/knowledge-management-software/"
+  trustradius_category_url: "https://www.trustradius.com/knowledge-management"
+  producthunt_topic: "productivity"
+  keywords:
+    - notebook LM
+    - AI research notebook
+    - knowledge management AI
+    - self-hosted AI notes
+    - local LLM knowledge base
+    - RAG notebook
+    - open notebook
+    - private AI research
+
+ai_workflow_automation:
+  name: "AI-driven workflow and task automation platforms"
+  g2_category_url: "https://www.g2.com/categories/ai-agents"
+  capterra_category_url: "https://www.capterra.com/automation-software/"
+  trustradius_category_url: "https://www.trustradius.com/workflow-automation"
+  producthunt_topic: "automation"
+  keywords:
+    - AI workflow automation
+    - natural language task automation
+    - no-code AI agent
+    - agentic workflow
+    - AI coworker
+    - local desktop AI agent
+    - air-gap AI automation
+    - reusable AI skills
+
+# =========================================================================
+# Audit & Governance
+# =========================================================================
 audit:
   log_scans: true
   log_signals: true
