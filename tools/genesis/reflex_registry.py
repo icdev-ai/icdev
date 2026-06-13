@@ -116,6 +116,9 @@ REGISTRY: List[ReflexEntry] = [
                 "Network: warn on peering agreements expiring within 90 days"),
     ReflexEntry("xc_order_poller",           DOMAIN, 1.0,
                 "CCC: Poll in-flight cross-connect orders; alarm on delayed deliveries"),
+    # ACE — ANVIL Co-Worker Engine reflexes
+    ReflexEntry("ace_team_monitor",          SUPPORT, 6.0,
+                "ACE: detect and escalate stale co-worker instances"),
 ]
 
 # Quick lookup: name → entry
@@ -130,3 +133,8 @@ def get(name: str) -> ReflexEntry:
 def by_tier(tier: str) -> List[ReflexEntry]:
     """Return all registered reflexes for a given tier."""
     return [e for e in REGISTRY if e.tier == tier]
+
+
+def list_reflexes() -> List[ReflexEntry]:
+    """Return all registered reflexes."""
+    return list(REGISTRY)
