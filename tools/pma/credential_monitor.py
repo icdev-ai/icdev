@@ -98,7 +98,7 @@ def get_expiring_credentials(days: int = 90, conn=None) -> List[Dict[str, Any]]:
     owns_conn = conn is None
     if owns_conn:
         conn = get_connection()
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: pma tables have no tenant_id/classification columns
 
     _ensure_tables(conn)
 
@@ -156,7 +156,7 @@ def get_key_person_dependencies(conn=None) -> List[Dict[str, Any]]:
     owns_conn = conn is None
     if owns_conn:
         conn = get_connection()
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: pma tables have no tenant_id/classification columns
 
     _ensure_tables(conn)
 

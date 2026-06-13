@@ -2390,3 +2390,84 @@ def list_contract_requirements(contract_id):
             conn.close()
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+
+# =====================================================================
+# Meeting Coordination (pma-coord-02)
+# =====================================================================
+
+
+@cpmp_api.route("/contracts/<contract_id>/meetings", methods=["POST"])
+def create_meeting(contract_id):
+    """POST /api/cpmp/contracts/<id>/meetings — Create a meeting log."""
+    try:
+        from tools.pma.meeting_coordinator import create_meeting as _create
+
+        data = request.get_json(silent=True) or {}
+        result = _create(contract_id, data)
+        return jsonify(result), 201
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/meetings", methods=["GET"])
+def list_meetings(contract_id):
+    """GET /api/cpmp/contracts/<id>/meetings — List meeting logs."""
+    try:
+        from tools.pma.meeting_coordinator import list_meetings as _list
+
+        return jsonify({"status": "ok", "meetings": _list(contract_id)})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/meetings/<meeting_id>/extract-actions", methods=["POST"])
+def extract_meeting_actions(meeting_id):
+    """POST /api/cpmp/meetings/<id>/extract-actions — AI-extract action items from notes."""
+    try:
+        from tools.pma.meeting_coordinator import extract_action_items
+
+        data = request.get_json(silent=True) or {}
+        notes = data.get("notes", "")
+        items = extract_action_items(meeting_id, notes)
+        return jsonify({"status": "ok", "action_items": items, "count": len(items)}), 201
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/contracts/<contract_id>/meetings/overdue", methods=["GET"])
+def list_overdue_action_items(contract_id):
+    """GET /api/cpmp/contracts/<id>/meetings/overdue — Open items past due date."""
+    try:
+        from tools.pma.meeting_coordinator import get_overdue_action_items
+
+        items = get_overdue_action_items(contract_id)
+        return jsonify({"status": "ok", "overdue_items": items, "count": len(items)})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/meetings/<meeting_id>/action-items", methods=["GET"])
+def list_meeting_action_items(meeting_id):
+    """GET /api/cpmp/meetings/<id>/action-items — List action items for a meeting."""
+    try:
+        from tools.pma.meeting_coordinator import list_action_items
+
+        return jsonify({"status": "ok", "action_items": list_action_items(meeting_id)})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@cpmp_api.route("/action-items/<item_id>", methods=["PUT"])
+def update_action_item(item_id):
+    """PUT /api/cpmp/action-items/<id> — HITL approval gate + status update."""
+    try:
+        from tools.pma.meeting_coordinator import update_action_item as _update
+
+        data = request.get_json(silent=True) or {}
+        result = _update(item_id, data)
+        if result.get("status") == "error":
+            return jsonify(result), 404
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500

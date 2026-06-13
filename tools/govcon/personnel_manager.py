@@ -88,7 +88,7 @@ def upsert_person(contract_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
     from tools.db.storage import get_connection
 
     conn = get_connection()
-    conn.set_security_context(None)
+    conn.set_security_context(None)  # rls-bypass: pma tables have no tenant_id/classification columns
     _ensure_schema(conn)
     try:
         person_id = data.get("id")
@@ -164,7 +164,7 @@ def list_personnel(
     from tools.db.storage import get_connection
 
     conn = get_connection()
-    conn.set_security_context(None)
+    conn.set_security_context(None)  # rls-bypass: pma tables have no tenant_id/classification columns
     _ensure_schema(conn)
     try:
         sql = "SELECT * FROM pma_personnel WHERE contract_id = ?"
@@ -187,7 +187,7 @@ def update_person(person_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
     from tools.db.storage import get_connection
 
     conn = get_connection()
-    conn.set_security_context(None)
+    conn.set_security_context(None)  # rls-bypass: pma tables have no tenant_id/classification columns
     _ensure_schema(conn)
     try:
         existing = conn.execute(
@@ -233,7 +233,7 @@ def get_expiring_personnel(contract_id: str, days: int = 90) -> List[Dict[str, A
     from tools.db.storage import get_connection
 
     conn = get_connection()
-    conn.set_security_context(None)
+    conn.set_security_context(None)  # rls-bypass: pma tables have no tenant_id/classification columns
     _ensure_schema(conn)
     try:
         today = date.today()
@@ -278,7 +278,7 @@ def get_key_persons(contract_id: str) -> List[Dict[str, Any]]:
     from tools.db.storage import get_connection
 
     conn = get_connection()
-    conn.set_security_context(None)
+    conn.set_security_context(None)  # rls-bypass: pma tables have no tenant_id/classification columns
     _ensure_schema(conn)
     try:
         rows = conn.execute(
@@ -295,7 +295,7 @@ def get_personnel_alerts(contract_id: str) -> List[Dict[str, Any]]:
     from tools.db.storage import get_connection
 
     conn = get_connection()
-    conn.set_security_context(None)
+    conn.set_security_context(None)  # rls-bypass: pma tables have no tenant_id/classification columns
     _ensure_schema(conn)
     try:
         rows = conn.execute(
@@ -321,7 +321,7 @@ def update_alert(alert_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
     from tools.db.storage import get_connection
 
     conn = get_connection()
-    conn.set_security_context(None)
+    conn.set_security_context(None)  # rls-bypass: pma tables have no tenant_id/classification columns
     _ensure_schema(conn)
     try:
         existing = conn.execute(
