@@ -17,7 +17,6 @@ Acceptance criteria:
 """
 from __future__ import annotations
 
-import json
 import os
 import sqlite3
 import sys
@@ -524,7 +523,7 @@ class TestAcceptanceCriteria:
         assert rv.status_code == 200
         for rec in rv.get_json()["gaps"]:
             assert rec["status"] in ("gap", "partial"), (
-                f"Acceptance violation: 'covered' record appeared in /gaps response"
+                "Acceptance violation: 'covered' record appeared in /gaps response"
             )
 
     def test_put_requirement_status_tasked_sets_updated_at(self, client):

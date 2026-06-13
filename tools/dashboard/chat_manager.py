@@ -103,7 +103,7 @@ def _check_coworker_trigger(context_id: str, content: str, context: dict) -> Non
         ).fetchone()
         config: dict = {}
         if row:
-            raw = row[0] if isinstance(row, (list, tuple)) else row.get("context_config")
+            raw = row[0]
             if raw:
                 try:
                     config = json.loads(raw)
