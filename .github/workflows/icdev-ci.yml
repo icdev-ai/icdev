@@ -227,6 +227,12 @@ jobs:
       # table collisions (simulation_results/topologies schema mismatch).
       ICDEV_NDC_ENABLED: "false"
       ICDEV_NETWORK_ENABLED: "false"
+      # Force canvas-specific DBs to SQLite — their tables (security_designs,
+      # migration_designs, aiml_designs) are not in the consolidated PG schema
+      # yet; using SQLite lets init_db() create them fresh so routes return 200.
+      SC_STORAGE_BACKEND: sqlite
+      MC_STORAGE_BACKEND: sqlite
+      AIMC_STORAGE_BACKEND: sqlite
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
