@@ -833,6 +833,39 @@ reflexes:
       threshold: 0
       operator: gte          # 0 emitted = nothing novel passed the gates (healthy); >0 = net-new capability seeded
 
+  # ── DIC Integration (Canvas Synergy — dsyn-reflex-02) ────────────────────────
+
+  dic_integration:
+    timeout_seconds: 90      # 60s reflex budget + 30s buffer for DB + LLM draft
+    enabled: true
+    risk_tier: green
+    schedule: "every 15m"
+    interval_seconds: 900    # 15 minutes — near-real-time doc update suggestions
+    cooldown_minutes: 5
+    description: "DIC Canvas Synergy: poll canvas_events targeted at DIC and queue AI-drafted document update suggestions for HITL review. Covers NDC, Network, ZIG, Compliance, SIPA, DevSecOps, CloudForge, and AI-ify canvases."
+    dry_run: false           # when true, reports events found without creating suggestions
+    max_events_per_run: 50   # safety cap on backlog processing per cycle
+    success_metric:
+      name: dic_suggestions_created
+      threshold: 0
+      operator: gte          # 0 = no events or all already processed (healthy); >0 = suggestions queued
+
+  # ── DIC Review Cadence (nightly overdue check — dsyn-suggest-02) ───────────
+
+  dic_review_cadence:
+    timeout_seconds: 120
+    enabled: true
+    risk_tier: green
+    schedule: "daily 02:30"
+    interval_seconds: 86400    # nightly — 1440-min cadence
+    cooldown_minutes: 720      # minimum 12h between runs
+    description: "DIC Review Cadence: check each collection with review_interval_days set; emit dic.review_overdue canvas_events and notify editors/reviewers when last HITL approval exceeds the configured interval."
+    dry_run: false
+    success_metric:
+      name: dic_overdue_events_emitted
+      threshold: 0
+      operator: gte
+
   # ── Oracle Triage (auto-triage suggested kanban cards after each awareness cycle)
 
   oracle_triage:

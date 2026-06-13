@@ -1590,6 +1590,19 @@ def _ivv_persist_finding(conn, project_id, finding):
         )
     except Exception as e:
         print(f"Warning: Could not insert finding {finding['finding_id']}: {e}", file=sys.stderr)
+    # DIC Canvas Synergy — emit finding_created for CAT1/critical findings (dsyn-emit-04)
+    if finding.get("severity") in ("critical", "high", "CAT1", "CAT2"):
+        try:
+            from tools.compliance.event_emitter import emit_finding_created
+            emit_finding_created(
+                control_id=finding.get("finding_id", ""),
+                finding_severity=finding.get("severity", ""),
+                project_id=project_id,
+                framework=finding.get("process_area", ""),
+                finding_id=finding.get("finding_id", ""),
+            )
+        except Exception:
+            pass  # event emission never blocks finding persist
 
 
 def _ivv_build_summary(results):

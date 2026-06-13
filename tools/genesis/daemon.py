@@ -98,6 +98,8 @@ REFLEX_NAMES = [
     "aidp_monitor",
     "integrity_monitor",
     "foundry_cycle",
+    "dic_integration",     # dsyn-reflex-02: DIC Canvas Synergy — 15-min cadence
+    "dic_review_cadence",  # dsyn-suggest-02: nightly collection review overdue check
 ]
 
 # Backward-compat aliases for module-level access used by other code

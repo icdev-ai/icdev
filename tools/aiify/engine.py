@@ -617,6 +617,23 @@ def detect_score_anomalies(rows: list, thresholds: dict | None = None) -> list:
                     "detail": {"component": comp_name, "value": comp_val, "ceiling": ceiling},
                 })
 
+    # DIC Canvas Synergy — emit gap_identified for high-value anomalous opportunities (dsyn-emit-08)
+    if anomalies:
+        try:
+            from tools.aiify.event_emitter import emit_gap_identified
+            for anomaly in anomalies[:5]:  # cap at 5 to avoid event flood
+                opp_id = anomaly.get("opportunity_id", "")
+                detail = anomaly.get("detail") or {}
+                value = float(detail.get("value_score", detail.get("value", 0.0)))
+                emit_gap_identified(
+                    canvas_name="aiify",
+                    opportunity_id=str(opp_id),
+                    gap_type=anomaly.get("anomaly_type", "anomaly"),
+                    value_score=value,
+                )
+        except Exception:
+            pass  # event emission never blocks anomaly detection
+
     return anomalies
 
 
@@ -940,7 +957,7 @@ def run_scan(
         finally:
             conn.close()
 
-        return {
+        scan_result = {
             "scan_id": scan_id,
             "opportunities_count": len(opp_rows),
             "scores_count": len(score_rows),
@@ -955,6 +972,23 @@ def run_scan(
             "overall_readiness_score": readiness_result["overall_readiness_score"],
             "icdev_checks": readiness_result["icdev_checks"],
         }
+
+        # DIC Canvas Synergy — emit canvas_scored event (dsyn-emit-08)
+        try:
+            from tools.aiify.event_emitter import emit_canvas_scored
+            # Use overall_ai_readiness as score proxy (A/B/C/D grade)
+            readiness = overall.get("overall_ai_readiness", "C")
+            emit_canvas_scored(
+                canvas_name=input_ref if isinstance(input_ref, str) else "aiify",
+                previous_grade="",  # no previous grade in this scan context
+                current_grade=readiness,
+                current_score=readiness_result.get("overall_readiness_score", 0.0) * 100,
+                scan_id=str(scan_id),
+            )
+        except Exception:
+            pass  # event emission never blocks scan result
+
+        return scan_result
     finally:
         if cloned_path:
             shutil.rmtree(cloned_path, ignore_errors=True)

@@ -302,6 +302,8 @@ def regenerate_section(
     tenant_id: str = "default",
     classification: str = "CUI",
     created_by: str = "ai_assist",
+    patch_mode: bool = False,
+    change_context: str = "",
 ) -> dict:
     """Regenerate a single section with targeted evidence retrieval.
 
@@ -368,21 +370,46 @@ def regenerate_section(
         }
 
     # 3. Draft with targeted evidence + adjacent context for coherence.
-    prompt = (
-        "You are rewriting ONE section of a technical document.\n\n"
-        f"Document title: {doc_title}\n"
-        f"Section heading: {heading}\n\n"
-    )
-    if adjacent_context:
-        prompt += "Adjacent sections for context (do not repeat their content; ensure smooth transitions):\n"
-        prompt += "\n---\n".join(adjacent_context) + "\n\n"
-    prompt += (
-        "Source evidence (cite exactly — do not invent facts):\n"
-        f"{evidence}\n\n"
-        "Write the section in clear, professional prose. "
-        "For every factual claim write a bracketed citation: [source: chunk <id>]. "
-        "If the evidence does not support a claim, omit it rather than inventing it."
-    )
+    if patch_mode:
+        # Targeted patch: minimal diff only, with [KEEP] markers for unchanged text
+        prompt = (
+            "You are making a TARGETED PATCH to ONE section of a technical document.\n\n"
+            f"Document title: {doc_title}\n"
+            f"Section heading: {heading}\n\n"
+        )
+        if change_context:
+            prompt += f"Change context (system event that triggered this update):\n{change_context}\n\n"
+        if adjacent_context:
+            prompt += "Adjacent sections for context:\n"
+            prompt += "\n---\n".join(adjacent_context) + "\n\n"
+        prompt += (
+            "Source evidence (cite exactly — do not invent facts):\n"
+            f"{evidence}\n\n"
+            "TASK: Given the current section content and the change context above, produce ONLY the "
+            "minimal edit that incorporates the change. Return ONLY the affected paragraph(s). "
+            "Use [KEEP] on a line by itself to indicate unchanged text that should be preserved. "
+            "For every new factual claim write a bracketed citation: [source: chunk <id>]. "
+            "If the evidence does not support the change, write [REVIEW REQUIRED] and explain what "
+            "information is needed. Do NOT rewrite the entire section."
+        )
+    else:
+        prompt = (
+            "You are rewriting ONE section of a technical document.\n\n"
+            f"Document title: {doc_title}\n"
+            f"Section heading: {heading}\n\n"
+        )
+        if change_context:
+            prompt += f"Change context:\n{change_context}\n\n"
+        if adjacent_context:
+            prompt += "Adjacent sections for context (do not repeat their content; ensure smooth transitions):\n"
+            prompt += "\n---\n".join(adjacent_context) + "\n\n"
+        prompt += (
+            "Source evidence (cite exactly — do not invent facts):\n"
+            f"{evidence}\n\n"
+            "Write the section in clear, professional prose. "
+            "For every factual claim write a bracketed citation: [source: chunk <id>]. "
+            "If the evidence does not support a claim, omit it rather than inventing it."
+        )
     raw_text = _llm_generate(prompt)
     if not raw_text:
         return {

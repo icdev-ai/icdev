@@ -99,7 +99,54 @@ def create_suggestion(
             ),
         )
         conn.commit()
+        # dsyn-patch-02: best-effort notification to editors/reviewers of this collection
+        _notify_collection_members(conn, suggestion_id, collection_id, canvas_source, rationale, now)
     return suggestion_id
+
+
+def _notify_collection_members(conn, suggestion_id: str, collection_id: str,
+                                canvas_source: str, rationale: str, now: str) -> None:
+    """Insert notification_log rows for editors/reviewers of this collection.
+
+    Best-effort: any exception is swallowed — notification failure never blocks creation.
+    """
+    try:
+        import hashlib, json as _json
+        members = conn.execute(
+            """
+            SELECT user_id FROM dic_collection_members
+            WHERE collection_id = %s AND role IN ('editor', 'reviewer')
+            """,
+            (collection_id,),
+        ).fetchall()
+        for member in members:
+            uid = _col(member, "user_id", 0) or ""
+            if not uid:
+                continue
+            log_id = f"nlog-{hashlib.sha256(f'{now}{suggestion_id}{uid}'.encode()).hexdigest()[:12]}"
+            payload = _json.dumps({
+                "suggestion_id": suggestion_id,
+                "canvas_source": canvas_source,
+                "rationale": rationale[:200],
+                "collection_id": collection_id,
+            })
+            conn.execute(
+                """
+                INSERT INTO notification_log
+                    (id, event_type, adapter, severity, title, delivered, error, created_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    log_id, "dic_suggestion_created", "dic_suggestion_store",
+                    "info",
+                    f"DIC suggestion from {canvas_source}: {rationale[:80]}",
+                    False, None, now,
+                ),
+            )
+        conn.commit()
+    except Exception as exc:
+        from tools.logging.icdev_logger import get_logger as _gl
+        _gl(__name__).debug("suggestion_store: notification emit error: %s", exc)
 
 
 def get_pending_suggestions(

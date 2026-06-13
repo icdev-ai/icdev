@@ -46,6 +46,21 @@
   </div>
 </div>
 
+<!-- dsyn-patch-03: AI Suggestions panel -->
+<div id="ai-suggestions-panel" style="margin-bottom:18px;display:none;">
+  <div style="background:#1a1a0a;border:1px solid #5a3a1a;border-radius:8px;padding:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <h3 style="margin:0;color:#f59e0b;font-size:14px;">⚡ AI Suggestions</h3>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span id="sug-filter-label" style="color:#7a8cb0;font-size:11px;">pending</span>
+        <button onclick="closeSuggestionsPanel()" style="background:none;border:none;color:#5a7aa0;cursor:pointer;font-size:16px;padding:0;">✕</button>
+      </div>
+    </div>
+    <div id="sug-list" style="font-size:12px;color:#b8d0e8;max-height:400px;overflow-y:auto;"></div>
+    <div id="sug-empty" style="display:none;color:#5a7aa0;font-size:12px;font-style:italic;">No pending suggestions.</div>
+  </div>
+</div>
+
 <!-- Sections -->
 <div style="margin-bottom:24px;">
   <h3 style="margin:0 0 12px;color:#9bb8d8;font-size:14px;">Sections</h3>
@@ -121,6 +136,16 @@
         style="background:#1a1a3a;color:#a78bfa;padding:6px 14px;border:1px solid #3a2a6e;border-radius:5px;cursor:pointer;font-size:12px;">
         💬 Comments <span id="ann-count-{{ s.section_id }}" style="background:#3a2a6e;border-radius:8px;padding:0 5px;margin-left:3px;font-size:10px;">0</span>
       </button>
+      <!-- dsyn-suggest-01: viewer suggest-edit -->
+      <button onclick="openSuggestModal('{{ s.section_id }}', '{{ s.heading | replace("'","") }}', {{ s.content | tojson }})"
+        style="background:#1a1a1a;color:#94a3b8;padding:6px 14px;border:1px solid #2a3a4a;border-radius:5px;cursor:pointer;font-size:12px;">
+        💡 Suggest Edit
+      </button>
+      <!-- dsyn-patch-03: per-section suggestions badge -->
+      <button id="sug-btn-{{ s.section_id }}" onclick="openSectionSuggestions('{{ s.section_id }}')"
+        style="display:none;background:#2a1a0a;color:#f59e0b;padding:6px 14px;border:1px solid #5a3a1a;border-radius:5px;cursor:pointer;font-size:12px;">
+        ⚡ <span id="sug-count-{{ s.section_id }}">0</span> suggestions
+      </button>
       <button onclick="runStyleCheck('{{ s.section_id }}')"
         style="background:#1a2a1a;color:#7fd8a0;padding:6px 14px;border:1px solid #2a4a2a;border-radius:5px;cursor:pointer;font-size:12px;">
         ✓ Style <span id="style-badge-{{ s.section_id }}" style="border-radius:8px;padding:0 5px;margin-left:3px;font-size:10px;"></span>
@@ -184,6 +209,95 @@
 </div>
 
 <script>
+// dsyn-patch-03: AI Suggestions panel logic
+var _sugSectionId = null;
+function loadSuggestionsForDoc() {
+  var collectionId = '{{ doc.collection_id }}';
+  fetch('/document-intelligence/api/suggestions?collection_id=' + encodeURIComponent(collectionId))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var bySection = {};
+      (data.suggestions || []).forEach(function(s) {
+        var sid = s.section_id || '';
+        if (!bySection[sid]) bySection[sid] = 0;
+        bySection[sid]++;
+      });
+      Object.keys(bySection).forEach(function(sid) {
+        var btn = document.getElementById('sug-btn-' + sid);
+        var cnt = document.getElementById('sug-count-' + sid);
+        if (btn && cnt) {
+          cnt.textContent = bySection[sid];
+          btn.style.display = 'inline-flex';
+        }
+      });
+      if (Object.keys(bySection).length > 0) {
+        document.getElementById('ai-suggestions-panel').style.display = 'block';
+        renderSuggestions(data.suggestions || []);
+      }
+    }).catch(function() {});
+}
+function openSectionSuggestions(sectionId) {
+  _sugSectionId = sectionId;
+  var panel = document.getElementById('ai-suggestions-panel');
+  panel.style.display = 'block';
+  panel.scrollIntoView({behavior:'smooth',block:'start'});
+  loadSuggestionsForDoc();
+}
+function closeSuggestionsPanel() {
+  document.getElementById('ai-suggestions-panel').style.display = 'none';
+}
+function renderSuggestions(suggestions) {
+  var list = document.getElementById('sug-list');
+  var empty = document.getElementById('sug-empty');
+  var filtered = _sugSectionId
+    ? suggestions.filter(function(s) { return s.section_id === _sugSectionId; })
+    : suggestions;
+  if (filtered.length === 0) {
+    list.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  list.innerHTML = filtered.map(function(s) {
+    var srcColor = {'ndc':'#4f8ef7','network':'#7ab3f0','zig':'#a78bfa','compliance':'#34d399',
+                    'sipa':'#f87171','devsecops':'#fb923c','cloudforge':'#38bdf8','aiify':'#fbbf24'}[s.canvas_source] || '#94a3b8';
+    var diff = '';
+    if (s.current_content && s.suggested_content) {
+      diff = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">'
+        + '<div style="background:#1e0505;border-left:3px solid #f87171;padding:6px;border-radius:0 4px 4px 0;font-size:10px;color:#f87171;max-height:80px;overflow:hidden;">'
+        + '- ' + escHtml(s.current_content.slice(0,200)) + '</div>'
+        + '<div style="background:#052e16;border-left:3px solid #4ade80;padding:6px;border-radius:0 4px 4px 0;font-size:10px;color:#4ade80;max-height:80px;overflow:hidden;">'
+        + '+ ' + escHtml(s.suggested_content.slice(0,200)) + '</div></div>';
+    }
+    return '<div style="background:#0a0a1a;border:1px solid #2a1a0a;border-radius:6px;padding:12px;margin-bottom:10px;">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+      + '<span style="background:' + srcColor + '22;color:' + srcColor + ';border:1px solid ' + srcColor + '44;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;">' + escHtml(s.canvas_source || 'canvas') + '</span>'
+      + '<span style="color:#5a7aa0;font-size:10px;">' + escHtml(s.created_at ? s.created_at.slice(0,10) : '') + '</span>'
+      + '</div>'
+      + '<p style="color:#b8d0e8;font-size:11px;margin:4px 0;">' + escHtml(s.rationale || '') + '</p>'
+      + diff
+      + '<div style="display:flex;gap:8px;margin-top:10px;">'
+      + '<button onclick="decideSuggestion(\'' + s.suggestion_id + '\',\'accepted\')" style="background:#052e16;color:#4ade80;padding:4px 12px;border:1px solid #1a5a30;border-radius:4px;cursor:pointer;font-size:11px;">✓ Accept</button>'
+      + '<button onclick="decideSuggestion(\'' + s.suggestion_id + '\',\'rejected\')" style="background:#2e0505;color:#f87171;padding:4px 12px;border:1px solid #5a1a1a;border-radius:4px;cursor:pointer;font-size:11px;">✕ Reject</button>'
+      + '</div></div>';
+  }).join('');
+}
+function decideSuggestion(suggestionId, decision) {
+  var url = '/document-intelligence/api/suggestions/' + suggestionId + '/' + (decision === 'accepted' ? 'accept' : 'reject');
+  fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({decided_by:'user'})})
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error) { alert('Error: ' + d.error); return; }
+      loadSuggestionsForDoc();
+      if (decision === 'accepted') window.location.reload();
+    }).catch(function(e) { alert('Decision failed: ' + e.message); });
+}
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+// Load suggestion counts on page load
+document.addEventListener('DOMContentLoaded', function() { loadSuggestionsForDoc(); });
+
 function aiAssistSection(sectionId, heading, collectionId) {
   var statusEl = document.getElementById('status-' + sectionId);
   statusEl.style.display = 'inline';
@@ -764,6 +878,34 @@ function _presenceInit(docId) {
   </div>
 </div>
 
+<!-- dsyn-suggest-01: Suggest Edit Modal -->
+<div id="suggest-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9100;overflow-y:auto;padding:32px 16px;">
+  <div style="max-width:700px;margin:0 auto;background:#0b1726;border:1px solid #1a3560;border-radius:10px;padding:24px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h3 style="margin:0;color:#eaeaea;">💡 Suggest Edit — <span id="sug-modal-heading" style="color:#7ab3f0;"></span></h3>
+      <button onclick="closeSuggestModal()" style="background:none;border:none;color:#7a8cb0;font-size:20px;cursor:pointer;">✕</button>
+    </div>
+    <input type="hidden" id="sug-modal-section-id" value="">
+    <label style="color:#7a8cb0;font-size:11px;display:block;margin-bottom:6px;">Proposed content</label>
+    <textarea id="sug-modal-content" rows="10"
+      style="width:100%;background:#050d1f;border:1px solid #1a3560;color:#a8c8e0;padding:10px;border-radius:5px;font-size:12px;font-family:monospace;resize:vertical;box-sizing:border-box;"></textarea>
+    <label style="color:#7a8cb0;font-size:11px;display:block;margin:10px 0 6px;">Rationale <span style="color:#5a7aa0;">(explain why this change improves the document)</span></label>
+    <input id="sug-modal-rationale" type="text" placeholder="e.g. More accurate based on recent test results"
+      style="width:100%;background:#050d1f;border:1px solid #1a3560;color:#a8c8e0;padding:8px;border-radius:5px;font-size:12px;box-sizing:border-box;">
+    <div style="display:flex;gap:10px;margin-top:16px;">
+      <button onclick="submitSuggestEdit()"
+        style="background:#1a4a2e;color:#4ade80;padding:8px 20px;border:1px solid #166534;border-radius:5px;cursor:pointer;font-size:13px;font-weight:600;">
+        Submit Suggestion
+      </button>
+      <button onclick="closeSuggestModal()"
+        style="background:#1e293b;color:#94a3b8;padding:8px 20px;border:1px solid #1a3560;border-radius:5px;cursor:pointer;font-size:12px;">
+        Cancel
+      </button>
+    </div>
+    <div id="sug-modal-status" style="margin-top:10px;font-size:12px;color:#7a8cb0;"></div>
+  </div>
+</div>
+
 <!-- Version Diff Modal -->
 <div id="diff-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9000;overflow-y:auto;padding:32px 16px;">
   <div style="max-width:900px;margin:0 auto;background:#0b1726;border:1px solid #1a3560;border-radius:10px;padding:24px;">
@@ -797,6 +939,42 @@ function _presenceInit(docId) {
 </div>
 
 <script>
+// dsyn-suggest-01: Suggest Edit modal
+function openSuggestModal(sectionId, heading, currentContent) {
+  document.getElementById('sug-modal-section-id').value = sectionId;
+  document.getElementById('sug-modal-heading').textContent = heading;
+  document.getElementById('sug-modal-content').value = currentContent || '';
+  document.getElementById('sug-modal-rationale').value = '';
+  document.getElementById('sug-modal-status').textContent = '';
+  document.getElementById('suggest-modal').style.display = 'block';
+}
+function closeSuggestModal() {
+  document.getElementById('suggest-modal').style.display = 'none';
+}
+function submitSuggestEdit() {
+  var sectionId = document.getElementById('sug-modal-section-id').value;
+  var proposed = document.getElementById('sug-modal-content').value.trim();
+  var rationale = document.getElementById('sug-modal-rationale').value.trim();
+  var statusEl = document.getElementById('sug-modal-status');
+  if (!proposed) { statusEl.textContent = 'Proposed content cannot be empty.'; return; }
+  statusEl.textContent = 'Submitting…';
+  fetch('/document-intelligence/api/sections/' + encodeURIComponent(sectionId) + '/suggest', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({proposed_content: proposed, rationale: rationale})
+  }).then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error) { statusEl.style.color = '#f87171'; statusEl.textContent = 'Error: ' + d.error; return; }
+      statusEl.style.color = '#4ade80';
+      statusEl.textContent = 'Suggestion submitted! ID: ' + d.suggestion_id;
+      setTimeout(closeSuggestModal, 1800);
+      loadSuggestionsForDoc();
+    }).catch(function(e) {
+      statusEl.style.color = '#f87171';
+      statusEl.textContent = 'Error: ' + e.message;
+    });
+}
+
 function openDiffModal() {
   document.getElementById('diff-modal').style.display = 'block';
 }

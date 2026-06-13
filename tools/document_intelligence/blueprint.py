@@ -1858,11 +1858,21 @@ def api_generate():
 
 @dic_bp.route("/api/generate/section", methods=["POST"])
 def api_generate_section():
-    """Regenerate a single section with targeted evidence retrieval."""
+    """Regenerate a single section with targeted evidence retrieval.
+
+    Body fields:
+      version_id    : required
+      heading       : required
+      collection_id : optional (default 'default')
+      patch_mode    : optional bool; when true, prompt produces minimal diff with [KEEP] markers
+      change_context: optional str; canvas event payload summary prepended to evidence
+    """
     data = request.get_json(silent=True) or {}
     version_id = (data.get("version_id") or "").strip()
     heading = (data.get("heading") or "").strip()
     collection_id = data.get("collection_id", "default")
+    patch_mode = bool(data.get("patch_mode", False))
+    change_context = (data.get("change_context") or "").strip()
     if not _require_role(collection_id, "editor"):
         return _forbid("editor")
     if not version_id or not heading:
@@ -1873,6 +1883,7 @@ def api_generate_section():
         result = regenerate_section(
             version_id, heading, collection_id,
             tenant_id=tenant_id, classification=classification,
+            patch_mode=patch_mode, change_context=change_context,
         )
         return jsonify(result)
     except Exception as exc:
@@ -2391,6 +2402,74 @@ def api_suggestion_reject(suggestion_id: str):
         return jsonify({"error": "could not record rejection"}), 500
 
     return jsonify({"status": "rejected", "suggestion_id": suggestion_id})
+
+
+@dic_bp.route("/api/sections/<section_id>/suggest", methods=["POST"])
+def api_section_suggest(section_id: str):
+    """dsyn-suggest-01: Any viewer-or-above user can submit a crowdsourced edit suggestion.
+
+    Body: { proposed_content: str, rationale: str }
+    Creates a dic_suggestions row with canvas_source='crowdsource'.
+    """
+    from tools.document_intelligence.suggestion_store import create_suggestion
+
+    cid = _collection_id_from_section(section_id) or "default"
+    if not _require_role(cid, "viewer"):
+        return _forbid("viewer")
+
+    data = request.get_json(silent=True) or {}
+    proposed_content = (data.get("proposed_content") or "").strip()
+    rationale = (data.get("rationale") or "").strip()
+
+    if not proposed_content:
+        return jsonify({"error": "proposed_content is required"}), 400
+
+    user = _current_user()
+    tenant_id, classification = _security_context()
+
+    # Load current section content for context.
+    current_content = ""
+    try:
+        conn = _conn()
+        cur = conn.execute(
+            "SELECT section_data FROM dic_document_versions "
+            "WHERE version_id IN ("
+            "  SELECT active_version_id FROM dic_documents WHERE doc_id IN ("
+            "    SELECT doc_id FROM dic_document_versions "
+            "    WHERE section_data::text LIKE %s LIMIT 1"
+            "  ) LIMIT 1"
+            ") LIMIT 1",
+            (f'%{section_id}%',),
+        )
+        row = cur.fetchone()
+        if row:
+            import json as _json
+            sections = _json.loads(row[0] if isinstance(row, (list, tuple)) else row["section_data"])
+            for s in sections:
+                if s.get("section_id") == section_id or s.get("heading") == section_id:
+                    current_content = s.get("content", "")
+                    break
+        conn.close()
+    except Exception:
+        pass
+
+    suggestion_id = create_suggestion(
+        section_id=section_id,
+        collection_id=cid,
+        canvas_source="crowdsource",
+        suggested_content=proposed_content,
+        current_content=current_content,
+        rationale=rationale or f"User suggestion from {user}",
+        tenant_id=tenant_id,
+        classification=classification,
+    )
+
+    return jsonify({
+        "suggestion_id": suggestion_id,
+        "section_id": section_id,
+        "canvas_source": "crowdsource",
+        "status": "pending",
+    }), 201
 
 
 @dic_bp.route("/api/iqe-query", methods=["POST"])
