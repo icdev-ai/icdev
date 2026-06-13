@@ -1,0 +1,610 @@
+# CUI // SP-CTI
+"""DIC Output Generators — study guide, FAQ, timeline, audio overview.
+
+Dual-mode design:
+  Air-gap: deterministic extraction (keyword-based, no LLM) + local TTS (pyttsx3/espeak).
+  Online:  LLMRouter synthesis (Anthropic/OpenAI/Ollama fallback chain) + cloud TTS optional.
+
+All generators degrade gracefully — the air-gap path always produces usable output,
+the online path produces richer, more coherent output.
+"""
+from __future__ import annotations
+
+import json
+import re
+import uuid
+from datetime import datetime, timezone
+from typing import Any
+
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
+
+# ── DB persistence ────────────────────────────────────────────────────────────
+
+def _conn():
+    from tools.db.storage import get_connection
+    return get_connection()
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _save_output(output_type: str, collection_id: str, tenant_id: str,
+                 content: dict, provider: str) -> str:
+    output_id = f"dicout-{uuid.uuid4().hex[:12]}"
+    try:
+        conn = _conn()
+        conn.execute(
+            """INSERT INTO dic_generated_outputs
+               (id, output_type, collection_id, tenant_id, content_json, provider,
+                status, created_at, classification)
+               VALUES (?,?,?,?,?,?,'done',?,?)""",
+            (output_id, output_type, collection_id, tenant_id,
+             json.dumps(content), provider, _now(), "CUI"),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        logger.warning("dic.output_generators: save error: %s", exc)
+    return output_id
+
+
+# ── RAG chunk retrieval ────────────────────────────────────────────────────────
+
+def _get_chunks(collection_id: str, tenant_id: str, limit: int = 200) -> list[dict]:
+    """Retrieve raw text chunks for a collection via dic_chunk_links → rag_chunks."""
+    try:
+        conn = _conn()
+        rows = conn.execute(
+            """SELECT rc.content   AS chunk_text,
+                      dcl.doc_id  AS source_doc,
+                      dcl.page    AS page_number,
+                      dcl.chunk_index
+               FROM dic_chunk_links dcl
+               JOIN rag_chunks rc ON rc.id = dcl.rag_chunk_id
+               JOIN dic_documents dd ON dd.doc_id = dcl.doc_id
+               WHERE dd.collection_id = ? AND dd.tenant_id = ?
+               ORDER BY dcl.doc_id, dcl.chunk_index
+               LIMIT ?""",
+            (collection_id, tenant_id, limit),
+        ).fetchall()
+        conn.close()
+        return [dict(r) if hasattr(r, "keys") else {
+            "chunk_text": r[0], "source_doc": r[1],
+            "page_number": r[2], "chunk_index": r[3],
+        } for r in rows]
+    except Exception as exc:
+        logger.warning("dic.output_generators: chunk retrieval error: %s", exc)
+        return []
+
+
+def _corpus_text(chunks: list[dict], max_chars: int = 12_000) -> str:
+    parts = []
+    total = 0
+    for c in chunks:
+        t = (c.get("chunk_text") or "").strip()
+        if not t:
+            continue
+        total += len(t)
+        parts.append(t)
+        if total >= max_chars:
+            break
+    return "\n\n".join(parts)
+
+
+# ── LLM helper ────────────────────────────────────────────────────────────────
+
+def _has_cloud_keys() -> bool:
+    """Return True if any cloud LLM API key is present in the environment."""
+    import os
+    return bool(
+        os.environ.get("ANTHROPIC_API_KEY")
+        or os.environ.get("OPENAI_API_KEY")
+        or os.environ.get("AZURE_OPENAI_API_KEY")
+    )
+
+
+def _try_cli_bridge(prompt: str) -> tuple[str | None, str]:
+    """Direct synchronous Claude CLI invocation — used when cloud keys absent.
+
+    Bypasses the job-store/async path so output generators get a synchronous
+    result.  Prompt is passed via stdin (avoids CLI arg length limits and
+    CLAUDE.md discovery overhead on large document prompts).  Falls back
+    gracefully (returns None) if the CLI binary is not on PATH or exits
+    non-zero (e.g. token-exhaustion, auth error).
+    """
+    import os, shutil, subprocess  # noqa: E401
+    binary = os.environ.get("ICDEV_CLI_BRIDGE_BINARY") or "claude"
+    if not shutil.which(binary):
+        return None, "no-cli"
+    timeout = int(os.environ.get("ICDEV_CLI_BRIDGE_MAX_SECONDS", "180"))
+    try:
+        # Pipe prompt via stdin: avoids huge CLI arg + triggers non-interactive
+        # mode. --output-format text strips markdown wrappers.
+        # --no-tools avoids tool-call overhead for pure text generation.
+        res = subprocess.run(
+            [binary, "--print", "--output-format", "text"],
+            input=prompt,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            encoding="utf-8",
+            errors="replace",
+        )
+        out = (res.stdout or "").strip()
+        if res.returncode == 0 and out:
+            return out, "claude-cli"
+        if res.returncode != 0:
+            logger.debug(
+                "dic._try_cli_bridge: CLI exited %d — %s",
+                res.returncode,
+                (res.stderr or "")[:200],
+            )
+    except subprocess.TimeoutExpired:
+        logger.debug("dic._try_cli_bridge: timed out after %ds", timeout)
+    except Exception as exc:
+        logger.debug("dic._try_cli_bridge: %s", exc)
+    return None, "no-cli"
+
+
+def _try_llm(prompt: str, function: str = "document_qna") -> tuple[str | None, str]:
+    """Invoke LLMRouter for synthesis, with auto-detected CLI-bridge fallback.
+
+    Priority:
+      1. Cloud API  — when ANTHROPIC_API_KEY / OPENAI_API_KEY are set.
+      2. Claude CLI — when no cloud keys but ``claude`` binary is on PATH
+                      (auto-detected; also activates on token exhaustion).
+      3. Ollama     — last resort via router's Ollama entry.
+    """
+    # ── 1. Cloud path (API key present) ──────────────────────────────────────
+    if _has_cloud_keys():
+        try:
+            from tools.llm.provider import LLMRequest
+            from tools.llm.router import LLMRouter
+            router = LLMRouter()
+            _, model, _ = router.get_provider_for_function(function)
+            req = LLMRequest(
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=2048,
+                temperature=0.3,
+            )
+            result = router.invoke(function, req)
+            if isinstance(result, dict):
+                text = (result.get("text") or result.get("content") or "").strip()
+            elif hasattr(result, "content"):
+                text = (result.content or "").strip()
+            elif hasattr(result, "text"):
+                text = (result.text or "").strip()
+            else:
+                text = str(result).strip()
+            if text:
+                return text, model or "cloud"
+            # Empty response → fall through to CLI
+        except Exception as exc:
+            logger.debug("dic._try_llm: cloud invoke failed (%s) — trying CLI", exc)
+
+    # ── 2. CLI bridge (auto-detected when no cloud keys / token exhaustion) ───
+    text, src = _try_cli_bridge(prompt)
+    if text:
+        return text, src
+
+    # ── 3. Ollama / last resort via router ────────────────────────────────────
+    try:
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+        router = LLMRouter()
+        _, model, _ = router.get_provider_for_function(function)
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2048,
+            temperature=0.3,
+        )
+        result = router.invoke(function, req)
+        if isinstance(result, dict):
+            text = (result.get("text") or result.get("content") or "").strip()
+        elif hasattr(result, "content"):
+            text = (result.content or "").strip()
+        elif hasattr(result, "text"):
+            text = (result.text or "").strip()
+        else:
+            text = str(result).strip()
+        return text or None, model or "llm"
+    except Exception as exc:
+        logger.debug("dic.output_generators: LLM unavailable: %s", exc)
+        return None, "air-gap-deterministic"
+
+
+def _is_air_gap() -> bool:
+    try:
+        from tools.airgap import is_airgap
+        return is_airgap()
+    except Exception:
+        import os
+        return os.environ.get("ICDEV_AIRGAP", "").lower() in ("true", "1", "yes")
+
+
+# ── Study Guide ───────────────────────────────────────────────────────────────
+
+def generate_study_guide(collection_id: str, tenant_id: str = "default") -> dict:
+    """Generate a structured study guide from a collection.
+
+    Air-gap: keyword extraction → section headers → key terms.
+    Online:  LLM-synthesized sections with definitions and review questions.
+    """
+    chunks = _get_chunks(collection_id, tenant_id, limit=150)
+    if not chunks:
+        return {"error": "No documents found in collection.", "collection_id": collection_id}
+
+    corpus = _corpus_text(chunks, max_chars=10_000)
+    air_gap = _is_air_gap()
+
+    if not air_gap:
+        prompt = (
+            f"You are a study guide author. Based on the following document collection, "
+            f"produce a structured study guide with:\n"
+            f"1. Overview (2-3 sentences)\n"
+            f"2. Key Topics (5-8 bullet points with 1-2 sentence descriptions)\n"
+            f"3. Key Terms (10-15 terms with definitions)\n"
+            f"4. Review Questions (5-7 questions)\n"
+            f"5. Summary\n\n"
+            f"Collection ID: {collection_id}\n\n"
+            f"Content:\n{corpus}"
+        )
+        llm_text, provider = _try_llm(prompt, "document_qna")
+    else:
+        llm_text, provider = None, "air-gap-deterministic"
+
+    if llm_text:
+        content = {
+            "format": "llm-synthesized",
+            "provider": provider,
+            "text": llm_text,
+            "collection_id": collection_id,
+            "chunks_used": len(chunks),
+        }
+    else:
+        # Deterministic fallback: extract key sentences + frequent terms
+        content = _deterministic_study_guide(chunks, collection_id)
+        content["provider"] = provider
+
+    output_id = _save_output("study_guide", collection_id, tenant_id, content, provider)
+    content["output_id"] = output_id
+    return content
+
+
+def _deterministic_study_guide(chunks: list[dict], collection_id: str) -> dict:
+    # Sentence extraction: pick first sentence of each chunk as a "key point"
+    key_points = []
+    seen = set()
+    for c in chunks[:60]:
+        text = (c.get("chunk_text") or "").strip()
+        sentences = re.split(r"(?<=[.!?])\s+", text)
+        for s in sentences[:2]:
+            s = s.strip()
+            if len(s) > 40 and s not in seen:
+                key_points.append(s)
+                seen.add(s)
+            if len(key_points) >= 12:
+                break
+        if len(key_points) >= 12:
+            break
+
+    # Term frequency (rough)
+    word_freq: dict[str, int] = {}
+    stopwords = {"the", "a", "an", "is", "in", "of", "and", "to", "for", "with", "that", "this", "are", "be", "as", "at", "by", "or", "it", "its", "on", "not", "was", "were", "has", "have", "from", "but"}
+    all_text = " ".join(c.get("chunk_text", "") for c in chunks)
+    for word in re.findall(r"\b[A-Za-z][a-z]{2,}\b", all_text):
+        w = word.lower()
+        if w not in stopwords:
+            word_freq[w] = word_freq.get(w, 0) + 1
+    top_terms = sorted(word_freq, key=lambda w: -word_freq[w])[:15]
+
+    sources = list({c.get("source_doc", "unknown") for c in chunks})[:10]
+
+    return {
+        "format": "deterministic",
+        "collection_id": collection_id,
+        "chunks_used": len(chunks),
+        "overview": f"Study guide for collection '{collection_id}' covering {len(sources)} source document(s).",
+        "key_points": key_points,
+        "key_terms": top_terms,
+        "sources": sources,
+        "note": "Install an LLM provider (Ollama or configure ANTHROPIC_API_KEY) for AI-synthesized content.",
+    }
+
+
+# ── FAQ Generator ─────────────────────────────────────────────────────────────
+
+def generate_faq(collection_id: str, tenant_id: str = "default", n: int = 10) -> dict:
+    """Generate an FAQ from a collection.
+
+    Air-gap: mines question-like sentences from the corpus.
+    Online:  LLM generates contextual Q&A pairs.
+    """
+    chunks = _get_chunks(collection_id, tenant_id, limit=120)
+    if not chunks:
+        return {"error": "No documents found in collection.", "collection_id": collection_id}
+
+    corpus = _corpus_text(chunks, max_chars=8_000)
+    air_gap = _is_air_gap()
+
+    if not air_gap:
+        prompt = (
+            f"Generate a FAQ (Frequently Asked Questions) document with exactly {n} Q&A pairs "
+            f"based on the following content. Format as JSON array: "
+            f'[{{"q": "question", "a": "answer"}}, ...]\n\n'
+            f"Content:\n{corpus}"
+        )
+        llm_text, provider = _try_llm(prompt, "document_qna")
+    else:
+        llm_text, provider = None, "air-gap-deterministic"
+
+    pairs = []
+    if llm_text:
+        # Try to parse JSON from LLM response (handles double-quoted JSON and single-quoted Python dicts)
+        try:
+            import ast as _ast
+            m = re.search(r"\[.*\]", llm_text, re.S)
+            if m:
+                raw = m.group(0)
+                try:
+                    pairs = json.loads(raw)
+                except Exception:
+                    pairs = _ast.literal_eval(raw)
+        except Exception:
+            pairs = [{"q": "Summary", "a": llm_text}]
+        content = {
+            "format": "llm-synthesized",
+            "provider": provider,
+            "pairs": pairs[:n],
+            "collection_id": collection_id,
+        }
+    else:
+        content = _deterministic_faq(chunks, collection_id, n)
+        content["provider"] = provider
+
+    output_id = _save_output("faq", collection_id, tenant_id, content, provider)
+    content["output_id"] = output_id
+    return content
+
+
+def _deterministic_faq(chunks: list[dict], collection_id: str, n: int) -> dict:
+    # Mine sentences that look like questions or definitions
+    pairs = []
+    for c in chunks:
+        text = (c.get("chunk_text") or "").strip()
+        sentences = re.split(r"(?<=[.!?])\s+", text)
+        for i, s in enumerate(sentences):
+            # Look for definition-like or explanatory sentences
+            if re.search(r"\b(is|are|means|refers to|defined as|used to)\b", s, re.I) and len(s) > 50:
+                # Turn it into a question
+                topic_match = re.match(r"^([A-Z][^,\.]{3,40})\b", s)
+                if topic_match:
+                    topic = topic_match.group(1).strip()
+                    pairs.append({"q": f"What is {topic}?", "a": s.strip()})
+            if len(pairs) >= n:
+                break
+        if len(pairs) >= n:
+            break
+
+    return {
+        "format": "deterministic",
+        "collection_id": collection_id,
+        "pairs": pairs[:n],
+        "note": "Install an LLM provider for AI-generated Q&A pairs.",
+    }
+
+
+# ── Timeline Extractor ────────────────────────────────────────────────────────
+
+def generate_timeline(collection_id: str, tenant_id: str = "default") -> dict:
+    """Extract a chronological timeline of events from a collection.
+
+    Air-gap: regex-based date + sentence extraction.
+    Online:  LLM-ordered event list with context.
+    """
+    chunks = _get_chunks(collection_id, tenant_id, limit=100)
+    if not chunks:
+        return {"error": "No documents found in collection.", "collection_id": collection_id}
+
+    corpus = _corpus_text(chunks, max_chars=8_000)
+    air_gap = _is_air_gap()
+
+    if not air_gap:
+        prompt = (
+            f"Extract a chronological timeline of key events, decisions, or milestones from the "
+            f"following content. Format as JSON array: "
+            f'[{{"date": "YYYY-MM or YYYY or description", "event": "brief event description", "context": "one sentence of context"}}, ...]\n\n'
+            f"Content:\n{corpus}"
+        )
+        llm_text, provider = _try_llm(prompt, "document_qna")
+    else:
+        llm_text, provider = None, "air-gap-deterministic"
+
+    events = []
+    if llm_text:
+        try:
+            import ast as _ast
+            m = re.search(r"\[.*\]", llm_text, re.S)
+            if m:
+                raw = m.group(0)
+                try:
+                    events = json.loads(raw)
+                except Exception:
+                    events = _ast.literal_eval(raw)
+        except Exception:
+            events = [{"date": "N/A", "event": llm_text, "context": ""}]
+        content = {
+            "format": "llm-synthesized",
+            "provider": provider,
+            "events": events,
+            "collection_id": collection_id,
+        }
+    else:
+        content = _deterministic_timeline(chunks, collection_id)
+        content["provider"] = provider
+
+    output_id = _save_output("timeline", collection_id, tenant_id, content, provider)
+    content["output_id"] = output_id
+    return content
+
+
+def _deterministic_timeline(chunks: list[dict], collection_id: str) -> dict:
+    # Regex patterns for dates + surrounding context
+    date_patterns = [
+        r"\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b",
+        r"\b\d{1,2}/\d{1,2}/\d{4}\b",
+        r"\b\d{4}-\d{2}-\d{2}\b",
+        r"\bFY\s*\d{2,4}\b",
+        r"\bQ[1-4]\s*\d{4}\b",
+        r"\b(20\d{2}|19\d{2})\b",
+    ]
+    events = []
+    seen_dates = set()
+    for c in chunks:
+        text = (c.get("chunk_text") or "").strip()
+        sentences = re.split(r"(?<=[.!?])\s+", text)
+        for s in sentences:
+            for pat in date_patterns:
+                m = re.search(pat, s, re.I)
+                if m:
+                    date_str = m.group(0).strip()
+                    key = (date_str, s[:40])
+                    if key not in seen_dates and len(s) > 20:
+                        seen_dates.add(key)
+                        events.append({
+                            "date": date_str,
+                            "event": s.strip()[:200],
+                            "source": c.get("source_doc", "unknown"),
+                        })
+                    break
+        if len(events) >= 30:
+            break
+
+    # Sort by year if possible
+    def _year(e: dict) -> int:
+        m = re.search(r"\b(20\d{2}|19\d{2})\b", e.get("date", ""))
+        return int(m.group(1)) if m else 9999
+
+    events.sort(key=_year)
+    return {
+        "format": "deterministic",
+        "collection_id": collection_id,
+        "events": events,
+        "note": "Install an LLM provider for AI-ordered timeline with context.",
+    }
+
+
+# ── Audio Overview ────────────────────────────────────────────────────────────
+
+def generate_audio_overview(collection_id: str, tenant_id: str = "default") -> dict:
+    """Generate an audio podcast-style overview of a collection.
+
+    Step 1: Generate script (air-gap: deterministic summary, online: LLM podcast script).
+    Step 2: TTS synthesis (air-gap: pyttsx3/espeak, online: same local TTS for now;
+            cloud TTS providers can be plugged in via ICDEV_TTS_PROVIDER env var).
+    Returns a dict with script text + audio_path (if TTS succeeded).
+    """
+    chunks = _get_chunks(collection_id, tenant_id, limit=80)
+    if not chunks:
+        return {"error": "No documents found in collection.", "collection_id": collection_id}
+
+    corpus = _corpus_text(chunks, max_chars=6_000)
+    air_gap = _is_air_gap()
+
+    # Step 1: Generate script
+    if not air_gap:
+        prompt = (
+            f"Write a podcast-style audio overview (500-700 words, conversational tone) "
+            f"of the following document collection. Include: brief intro, 3-4 key insights, "
+            f"practical implications, and a closing summary. Sound natural when read aloud.\n\n"
+            f"Collection: {collection_id}\n\nContent:\n{corpus}"
+        )
+        script, provider = _try_llm(prompt, "document_qna")
+    else:
+        script, provider = None, "air-gap-deterministic"
+
+    if not script:
+        # Deterministic script: concatenate key sentences
+        script = _deterministic_script(chunks, collection_id)
+        provider = "air-gap-deterministic"
+
+    # Step 2: TTS synthesis
+    audio_path, tts_provider, tts_error = _synthesize_tts(script, collection_id)
+
+    content: dict[str, Any] = {
+        "format": "llm-synthesized" if provider != "air-gap-deterministic" else "deterministic",
+        "provider": provider,
+        "tts_provider": tts_provider,
+        "script": script,
+        "collection_id": collection_id,
+        "chunks_used": len(chunks),
+    }
+    if audio_path:
+        content["audio_path"] = audio_path
+    if tts_error:
+        content["tts_warning"] = tts_error
+
+    output_id = _save_output("audio_overview", collection_id, tenant_id, content, provider)
+    content["output_id"] = output_id
+    return content
+
+
+def _deterministic_script(chunks: list[dict], collection_id: str) -> str:
+    sources = list({c.get("source_doc", "unknown") for c in chunks})[:5]
+    key_sentences = []
+    seen = set()
+    for c in chunks[:30]:
+        text = (c.get("chunk_text") or "").strip()
+        sentences = re.split(r"(?<=[.!?])\s+", text)
+        for s in sentences[:3]:
+            s = s.strip()
+            if len(s) > 60 and s not in seen:
+                key_sentences.append(s)
+                seen.add(s)
+            if len(key_sentences) >= 8:
+                break
+        if len(key_sentences) >= 8:
+            break
+
+    intro = (
+        f"Welcome to this document intelligence overview for collection '{collection_id}'. "
+        f"This collection contains content from {len(sources)} source document{'s' if len(sources) != 1 else ''}."
+    )
+    body = " ".join(key_sentences)
+    closing = "This concludes the overview. Refer to the full documents for complete details."
+    return f"{intro} {body} {closing}"
+
+
+def _synthesize_tts(script: str, collection_id: str) -> tuple[str | None, str, str | None]:
+    """Attempt TTS synthesis. Returns (audio_path_or_None, provider, error_or_None)."""
+    import os
+    from pathlib import Path
+
+    tts_provider_env = os.environ.get("ICDEV_TTS_PROVIDER", "auto").lower()
+    audio_dir = Path("data") / "dic_audio"
+    audio_dir.mkdir(parents=True, exist_ok=True)
+    out_path = str(audio_dir / f"{collection_id}-{uuid.uuid4().hex[:8]}.mp3")
+
+    # Try pyttsx3 (local, cross-platform, air-gap safe)
+    if tts_provider_env in ("auto", "pyttsx3", "local"):
+        try:
+            import pyttsx3  # type: ignore[import]
+            engine = pyttsx3.init()
+            engine.setProperty("rate", 165)
+            # pyttsx3 saves as .aiff on macOS, .wav on Windows — rename to .mp3 as a label
+            wav_path = out_path.replace(".mp3", ".wav")
+            engine.save_to_file(script[:5000], wav_path)
+            engine.runAndWait()
+            if Path(wav_path).exists() and Path(wav_path).stat().st_size > 100:
+                return wav_path, "pyttsx3", None
+        except Exception as exc:
+            logger.debug("dic.tts: pyttsx3 failed: %s", exc)
+
+    # Fallback: script-only (no audio file)
+    return None, "script-only", (
+        "TTS synthesis unavailable. Install pyttsx3 (pip install pyttsx3) for local audio generation. "
+        "The script text is available for copy and use with any TTS tool."
+    )

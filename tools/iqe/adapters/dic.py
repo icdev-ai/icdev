@@ -222,6 +222,22 @@ def handoff_items_adapter(conn: Any) -> list[dict]:
         c.close()
 
 
+def generated_outputs_adapter(conn: Any) -> list[dict]:
+    c = _conn(conn)
+    try:
+        cur = c.execute(
+            "SELECT id, output_type, collection_id, provider, status, audio_path, "
+            "created_at, tenant_id, classification FROM dic_generated_outputs "
+            "ORDER BY created_at DESC LIMIT 500"
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    except Exception:
+        return []
+    finally:
+        c.close()
+
+
 register_collection("dic.documents", documents_adapter)
 register_collection("dic.collections", collections_adapter)
 register_collection("dic.drift_events", drift_events_adapter)
@@ -233,3 +249,4 @@ register_collection("dic.doc_freshness", doc_freshness_adapter)
 register_collection("dic.freshness_scans", freshness_scans_adapter)
 register_collection("dic.handoff_sessions", handoff_sessions_adapter)
 register_collection("dic.handoff_items", handoff_items_adapter)
+register_collection("dic.generated_outputs", generated_outputs_adapter)

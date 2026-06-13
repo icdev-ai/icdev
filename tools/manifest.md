@@ -996,3 +996,34 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Harness Bridge | tools\foundry\harness_bridge.py | Auto-registered: foundry/harness_bridge.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Event Emitter | tools\aiify\event_emitter.py | Auto-registered: aiify/event_emitter.py | --json | JSON |
+| Event Emitter | tools\cloudforge\event_emitter.py | Auto-registered: cloudforge/event_emitter.py | --json | JSON |
+| Event Emitter | tools\compliance\event_emitter.py | Auto-registered: compliance/event_emitter.py | --json | JSON |
+| Event Emitter | tools\devsecops\event_emitter.py | Auto-registered: devsecops/event_emitter.py | --json | JSON |
+| Conflict Detector | tools\document_intelligence\conflict_detector.py | Auto-registered: document_intelligence/conflict_detector.py | --json | JSON |
+| Consistency Checker | tools\document_intelligence\consistency_checker.py | Auto-registered: document_intelligence/consistency_checker.py | --json | JSON |
+| History Recorder | tools\document_intelligence\history_recorder.py | Auto-registered: document_intelligence/history_recorder.py | --json | JSON |
+| Lock Manager | tools\document_intelligence\lock_manager.py | Auto-registered: document_intelligence/lock_manager.py | --json | JSON |
+| Output Generators | tools\document_intelligence\output_generators.py | Auto-registered: document_intelligence/output_generators.py | --json | JSON |
+| Presence Registry | tools\document_intelligence\presence_registry.py | Auto-registered: document_intelligence/presence_registry.py | --json | JSON |
+| Style Engine | tools\document_intelligence\style_engine.py | Auto-registered: document_intelligence/style_engine.py | --json | JSON |
+| Event Emitter | tools\integrity\event_emitter.py | Auto-registered: integrity/event_emitter.py | --json | JSON |
+| Seed Dsyn Kanban | tools\kanban\seed_dsyn_kanban.py | Auto-registered: kanban/seed_dsyn_kanban.py | --json | JSON |
+| Seed Pma Gaps Kanban | tools\kanban\seed_pma_gaps_kanban.py | Auto-registered: kanban/seed_pma_gaps_kanban.py | --json | JSON |
+| Seed Rted Kanban | tools\kanban\seed_rted_kanban.py | Auto-registered: kanban/seed_rted_kanban.py | --json | JSON |
+| Cli Bridge Manager | tools\llm\cli_bridge_manager.py | Auto-registered: llm/cli_bridge_manager.py | --json | JSON |
+| Provider Health | tools\llm\provider_health.py | Auto-registered: llm/provider_health.py | --json | JSON |
+| Event Emitter | tools\ndc\event_emitter.py | Auto-registered: ndc/event_emitter.py | --json | JSON |
+| Event Emitter | tools\network\event_emitter.py | Auto-registered: network/event_emitter.py | --json | JSON |
+| Event Emitter | tools\security\zig\event_emitter.py | Auto-registered: zig/event_emitter.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Dic Review Cadence | tools\genesis\reflexes\dic_review_cadence.py | Auto-registered: reflexes/dic_review_cadence.py | --json | JSON |

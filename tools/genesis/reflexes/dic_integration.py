@@ -21,7 +21,6 @@ Must complete within 60s; LLM call is skipped when unavailable (air-gap safe).
 from __future__ import annotations
 
 import json
-import uuid
 from datetime import datetime, timezone
 from typing import Any
 

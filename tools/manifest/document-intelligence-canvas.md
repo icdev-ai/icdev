@@ -143,7 +143,7 @@ print(update["content"], update["citation_count"], update["status"])
 
 | Tool | Purpose |
 |------|---------|
-| `tools/document_intelligence/blueprint.py` | Document Intelligence Canvas Flask Blueprint. Registers all UI routes (`/document-intelligence/`, `/collections`, `/search`, `/review`, `/generate`, `/acoic`, `/finetune`, `/snippets`, `/templates`) and JSON API endpoints (`/api/ingest`, `/api/search`, `/api/chat`, `/api/collections`, `/api/review/<id>/approve|reject`, `/api/generate`, `/api/iqe-query`). |
+| `tools/document_intelligence/blueprint.py` | Document Intelligence Canvas Flask Blueprint. Registers all UI routes (`/document-intelligence/`, `/collections`, `/search`, `/review`, `/generate`, `/acoic`, `/finetune`, `/snippets`, `/templates`, `/notebook`, `/notebook/<id>`) and JSON API endpoints (`/api/ingest`, `/api/ingest/url`, `/api/ingest/youtube`, `/api/search`, `/api/chat`, `/api/collections`, `/api/review/<id>/approve|reject`, `/api/generate`, `/api/generate/study-guide`, `/api/generate/faq`, `/api/generate/timeline`, `/api/generate/audio`, `/api/outputs`, `/api/outputs/<id>`, `/api/mode`, `/api/iqe-query`). |
 
 ## DIC Canvas Synergy (DSYN) — Integration Config
 
@@ -159,3 +159,35 @@ print(update["content"], update["citation_count"], update["status"])
 | Tool | Purpose |
 |------|---------|
 | `tools/document_intelligence/handoff.py` | DIC Knowledge Handoff Workflow. Multi-step guided session: initiate (departing owner + successor + destination collection) → auto-build agenda from explorer findings → interview prompts → captured answers → CoD-verified structured document generation per agenda area → write to destination collection with HITL-gated status. All outputs are AI-labeled `PENDING`; never auto-published. |
+
+## Notebook — NotebookLM-Style View (dic-notebook-01)
+
+Air-gap-first, dual-mode implementation porting open-notebook/NotebookLM essentials natively into DIC.
+
+| Tool | Purpose |
+|------|---------|
+| `tools/document_intelligence/extractors.py::extract_url` | Fetch and extract text from any web URL. Online: full HTTP fetch + HTML strip. Air-gap: returns empty Extraction with warning. Called from `POST /api/ingest/url`. |
+| `tools/document_intelligence/extractors.py::extract_youtube` | Extract transcript text from a YouTube video URL via `youtube-transcript-api`. Air-gap: returns empty with prompt to paste manually. Called from `POST /api/ingest/youtube`. |
+| `tools/document_intelligence/output_generators.py` | Four AI output generators (study guide, FAQ, timeline, audio overview). Dual-mode: LLM route via `LLMRouter` when online; deterministic fallback (key sentences, regex date/definition extraction, pyttsx3 TTS) in air-gap. Persists to `dic_generated_outputs`. |
+| `tools/dashboard/templates/document_intelligence/notebook.html` | NotebookLM-style three-panel UI: sources (left) + grounded chat (center) + AI outputs/generators (right). Mode badge shows Air-gap vs Online. IQE widget wired to `dic.generated_outputs`. |
+
+### Tables
+
+| Table | Description |
+|-------|-------------|
+| `dic_generated_outputs` | Stores all generated outputs (study guide, FAQ, timeline, audio). Columns: `id`, `output_type`, `collection_id`, `content_json`, `provider`, `status`, `audio_path`, `created_at`, `tenant_id`, `classification`. |
+
+### Key API routes (added to `tools/document_intelligence/blueprint.py`)
+
+| Route | Purpose |
+|-------|---------|
+| `GET /notebook`, `GET /notebook/<id>` | Renders the Notebook page for a collection |
+| `GET /api/mode` | Returns mode info: `{mode, llm_available, provider, capabilities}` |
+| `POST /api/ingest/url` | Ingest web URL into a collection |
+| `POST /api/ingest/youtube` | Ingest YouTube transcript into a collection |
+| `POST /api/generate/study-guide` | Generate study guide from collection chunks |
+| `POST /api/generate/faq` | Generate FAQ (n Q&A pairs) from collection chunks |
+| `POST /api/generate/timeline` | Generate timeline of events from collection chunks |
+| `POST /api/generate/audio` | Generate audio overview (script + pyttsx3 TTS) from collection |
+| `GET /api/outputs` | List all generated outputs for a collection |
+| `GET /api/outputs/<id>` | Get a single output's parsed content |
