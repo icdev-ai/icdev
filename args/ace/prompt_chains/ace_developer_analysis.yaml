@@ -154,6 +154,34 @@ prompt_chains:
           Original requirement: $ORIGINAL
         timeout_s: 120
 
+# Schema context for gap detection rules that reference database metadata.
+# This prevents the model from hallucinating unknown schemas when evaluating
+# the orphan_db_table gap rule (and similar structural-gap rules).
+schema_context:
+  all_tables:
+    source: system_views
+    description: >
+      'all_tables' is not a user-defined table. It is derived from database
+      system catalog views (e.g., PostgreSQL 'information_schema.tables' or
+      Oracle 'ALL_TABLES'). When the orphan_db_table gap rule references
+      'all_tables', it means the set of tables enumerated by the storage
+      backend's metadata API — not a literal table named 'all_tables' in the
+      application schema. The gap detector resolves this at runtime via
+      tools/db/storage.py::list_tables(), which queries the appropriate
+      system view for the active backend (PostgreSQL or SQLite).
+    backends:
+      postgresql: "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public'"
+      sqlite: "SELECT name FROM sqlite_master WHERE type='table'"
+      oracle: "SELECT table_name FROM ALL_TABLES WHERE owner = :owner"
+  orphan_db_table_rule:
+    description: >
+      A table is flagged as 'orphan' when it appears in 'all_tables' (the
+      system catalog) but has no corresponding entry in the application's
+      table registry (tools/db/schema/ or MINIMAL_ICDEV_SCHEMA in
+      tests/conftest.py). Oracle's ALL_TABLES view is suppressed as a
+      false-positive source because it is a system view, not an application
+      table.
+
 # Default settings
 defaults:
   timeout_s: 120
