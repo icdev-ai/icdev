@@ -728,7 +728,8 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
         "sqlite_temp_master",
         "sqlite_sequence",
         "sys",
-        "dual",  # Oracle
+        "dual",        # Oracle pseudo-table
+        "all_tables",  # Oracle data-dictionary view (SELECT FROM all_tables WHERE owner=...)
         # DuckDB table-valued functions: appear in FROM clauses but are never
         # CREATE TABLE'd — the from_re negative lookahead (?!\s*\() should
         # already exclude them, but f-string AST splitting can produce a
