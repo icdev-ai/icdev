@@ -47,3 +47,7 @@ tool_permissions:
   - Bash
   - Grep
 genesis_reflex: test
+output_requirements:
+  - If an orphan DB table gap (e.g., rule 'orphan_db_table' or any 'all_tables' finding) is detected, the response MUST include a complete CREATE TABLE SQL DDL statement for the missing table before any other remediation steps.
+  - DDL statements must use standard SQL syntax compatible with both PostgreSQL and SQLite (i.e., no database-specific extensions unless inside an explicit dialect branch).
+  - Gap items referencing database schema (table names, column definitions) must be accompanied by the full DDL needed to resolve the gap, not just a description.
