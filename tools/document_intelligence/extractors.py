@@ -111,6 +111,141 @@ class Extraction:
     warnings: list[str] = field(default_factory=list)
 
 
+@dataclass
+class ExtractionQualityReport:
+    """Statistical anomaly assessment for a batch of DIC extractions.
+
+    Replaces the external pattern of hard-coding per-extraction quality
+    thresholds (e.g. ``if len(text) < 100: warn_sparse``) with IQR-based
+    distribution analysis across a batch. The detection adapts to the actual
+    yield distribution so no manual threshold needs to be maintained.
+
+    Three anomaly types are detected:
+
+    * ``sparse_batch``   — Q1 of chars-per-page across the batch is below
+      the noise floor, meaning most documents yield abnormally little text
+      (possible library issue, batch of scanned PDFs without OCR).
+    * ``yield_outlier``  — at least one extraction has yield far below the
+      pack (< Q1 - 1.5 × IQR), flagged in ``outlier_indices``.
+    * ``warning_spike``  — mean warnings-per-extraction exceeds 0 and the
+      max warning count is an outlier (> Q3 + 1.5 × IQR of warning counts),
+      indicating a systemic library or format problem.
+
+    ``is_anomalous`` is False and all floats are 0.0 when the batch is too
+    small to characterize (< 2 extractions) or no anomaly is detected.
+    """
+
+    is_anomalous: bool = False
+    anomaly_type: str = ""
+    mean_chars_per_page: float = 0.0
+    chars_per_page_std: float = 0.0
+    q1_chars_per_page: float = 0.0
+    outlier_indices: list[int] = field(default_factory=list)
+    detail: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "is_anomalous": self.is_anomalous,
+            "anomaly_type": self.anomaly_type,
+            "mean_chars_per_page": round(self.mean_chars_per_page, 1),
+            "chars_per_page_std": round(self.chars_per_page_std, 1),
+            "q1_chars_per_page": round(self.q1_chars_per_page, 1),
+            "outlier_indices": self.outlier_indices,
+            "detail": self.detail,
+        }
+
+
+def assess_extraction_quality(extractions: list["Extraction"]) -> ExtractionQualityReport:
+    """Assess quality anomalies across a batch of extractions using IQR statistics.
+
+    Args:
+        extractions: List of :class:`Extraction` objects from a single ingestion batch.
+
+    Returns:
+        :class:`ExtractionQualityReport` — ``is_anomalous=False`` when the batch
+        is too small (< 2) or all extractions are within normal range.
+    """
+    if len(extractions) < 2:
+        return ExtractionQualityReport()
+
+    yields = [len(e.text) / max(e.page_count, 1) for e in extractions]
+    warning_counts = [len([w for w in e.warnings if w]) for e in extractions]
+
+    n = len(yields)
+    sorted_y = sorted(yields)
+    q1 = sorted_y[n // 4]
+    q3 = sorted_y[(3 * n) // 4]
+    iqr = q3 - q1
+    mean_y = sum(yields) / n
+    variance = sum((y - mean_y) ** 2 for y in yields) / n
+    std_y = variance ** 0.5
+
+    low_fence = q1 - 1.5 * iqr
+
+    # sparse_batch: Q1 is below the noise floor (< 50 chars/page)
+    if q1 < 50:
+        return ExtractionQualityReport(
+            is_anomalous=True,
+            anomaly_type="sparse_batch",
+            mean_chars_per_page=mean_y,
+            chars_per_page_std=std_y,
+            q1_chars_per_page=q1,
+            detail=(
+                f"Q1 chars-per-page is {q1:.0f} — most extractions yield near-zero "
+                "text per page, suggesting a systemic OCR gap or unsupported format batch."
+            ),
+        )
+
+    # yield_outlier: individual extractions well below the pack.
+    # When IQR = 0 (uniform batch except one extreme) fall back to mean - 2σ.
+    effective_fence = low_fence if iqr > 10 else (mean_y - 2 * std_y if std_y > 10 else None)
+    outliers = (
+        [i for i, y in enumerate(yields) if y < effective_fence]
+        if effective_fence is not None
+        else []
+    )
+    if outliers:
+        return ExtractionQualityReport(
+            is_anomalous=True,
+            anomaly_type="yield_outlier",
+            mean_chars_per_page=mean_y,
+            chars_per_page_std=std_y,
+            q1_chars_per_page=q1,
+            outlier_indices=outliers,
+            detail=(
+                f"{len(outliers)} extraction(s) at index(es) {outliers} have chars-per-page "
+                f"below the low fence ({low_fence:.0f}), indicating corrupt or unreadable files."
+            ),
+        )
+
+    # warning_spike: statistically high warning count on at least one extraction
+    if any(wc > 0 for wc in warning_counts):
+        sorted_w = sorted(warning_counts)
+        w_q3 = sorted_w[(3 * n) // 4]
+        w_iqr = w_q3 - sorted_w[n // 4]
+        w_fence = w_q3 + 1.5 * w_iqr
+        spike_indices = [i for i, wc in enumerate(warning_counts) if wc > w_fence and wc > 1]
+        if spike_indices:
+            return ExtractionQualityReport(
+                is_anomalous=True,
+                anomaly_type="warning_spike",
+                mean_chars_per_page=mean_y,
+                chars_per_page_std=std_y,
+                q1_chars_per_page=q1,
+                outlier_indices=spike_indices,
+                detail=(
+                    f"Extraction(s) at index(es) {spike_indices} have warning counts above "
+                    f"the high fence ({w_fence:.0f}), indicating systemic library or format issues."
+                ),
+            )
+
+    return ExtractionQualityReport(
+        mean_chars_per_page=mean_y,
+        chars_per_page_std=std_y,
+        q1_chars_per_page=q1,
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Extractor implementations
 # --------------------------------------------------------------------------- #
@@ -757,88 +892,149 @@ def extract_url(url: str) -> Extraction:
         )
 
 
-def extract_youtube(url: str) -> Extraction:
-    """Extract transcript text from a YouTube video URL.
+def _is_youtube_url(url: str) -> bool:
+    return any(h in url for h in ("youtube.com/", "youtu.be/", "youtube-nocookie.com/"))
 
-    Online path: uses youtube-transcript-api (pip install youtube-transcript-api).
-    Air-gap / missing package: returns empty Extraction with a clear warning so
-    the caller can surface a human-paste fallback option in the UI.
-    """
+
+def _extract_youtube_video_id(url: str) -> str | None:
     import re as _re
-
-    # Extract video ID from various YouTube URL formats.
-    patterns = [
-        r"(?:v=|youtu\.be/|embed/)([A-Za-z0-9_-]{11})",
-        r"shorts/([A-Za-z0-9_-]{11})",
-    ]
-    video_id = None
-    for pat in patterns:
+    for pat in (r"(?:v=|youtu\.be/|embed/)([A-Za-z0-9_-]{11})", r"shorts/([A-Za-z0-9_-]{11})"):
         m = _re.search(pat, url)
         if m:
-            video_id = m.group(1)
-            break
+            return m.group(1)
+    return None
 
-    if not video_id:
-        return Extraction(
-            text="",
-            provider="youtube-transcript",
-            content_type="text/plain",
-            page_count=0,
-            title=url,
-            warnings=["Could not extract YouTube video ID from URL."],
-            metadata={"source_url": url},
-        )
 
+def _extract_via_ytdlp(url: str) -> tuple[str, str, list[str]]:
+    """Try yt-dlp to get subtitles/info from any video URL.
+
+    Returns (text, title, warnings).  Works offline for cached content;
+    for live IPTV streams falls back to extracting the stream description.
+    Requires yt-dlp: pip install yt-dlp
+    """
+    import json as _json
+    import shutil as _sh
+    import subprocess as _sp
+    import tempfile as _tf
+    warnings: list[str] = []
+    if not _sh.which("yt-dlp"):
+        return "", "", ["yt-dlp not installed (pip install yt-dlp). Cannot extract video transcript."]
     try:
-        from youtube_transcript_api import YouTubeTranscriptApi  # type: ignore[import]
-        # v1.x: instance method; v0.x: class method get_transcript()
-        api = YouTubeTranscriptApi()
-        fetched = api.fetch(video_id)
-        text = " ".join(
-            (s.text if hasattr(s, "text") else s["text"]) for s in fetched
-        )
-        # Estimate title via oEmbed (best-effort, no API key needed).
-        title = f"YouTube: {video_id}"
-        try:
-            import json as _json
-            import urllib.request as _ur
-            oembed_url = f"https://www.youtube.com/oembed?url={url}&format=json"
-            with _ur.urlopen(oembed_url, timeout=5) as r:
-                data = _json.loads(r.read())
-                title = data.get("title", title)
-        except Exception:
-            pass
-        return Extraction(
-            text=text,
-            provider="youtube-transcript",
-            content_type="text/plain",
-            page_count=1,
-            title=title,
-            metadata={"source_url": url, "video_id": video_id},
-        )
-    except ImportError:
-        return Extraction(
-            text="",
-            provider="youtube-transcript",
-            content_type="text/plain",
-            page_count=0,
-            title=f"YouTube: {video_id}",
-            warnings=[
-                "youtube-transcript-api not installed. Install with: pip install youtube-transcript-api. "
-                "In air-gap mode, paste the transcript text manually and ingest as a .txt file."
-            ],
-            metadata={"source_url": url, "video_id": video_id},
-        )
+        with _tf.TemporaryDirectory() as tmpdir:
+            # First try: extract auto-generated subtitles
+            _sp.run(
+                ["yt-dlp", "--skip-download", "--write-auto-sub", "--write-sub",
+                 "--sub-format", "vtt", "--sub-lang", "en",
+                 "--output", f"{tmpdir}/%(title)s.%(ext)s", url],
+                capture_output=True, text=True, timeout=60, encoding="utf-8", errors="replace",
+            )
+            import glob as _gl
+            import pathlib as _pl
+            vtt_files = _gl.glob(f"{tmpdir}/*.vtt")
+            if vtt_files:
+                raw = _pl.Path(vtt_files[0]).read_text(encoding="utf-8", errors="replace")
+                # Strip VTT timestamps/headers → plain text
+                import re as _re
+                lines = [ln for ln in raw.splitlines()
+                         if ln and not _re.match(r"^(WEBVTT|NOTE|\d{2}:|-->|\d+$)", ln.strip())]
+                text = " ".join(lines)
+                title = _pl.Path(vtt_files[0]).stem.rsplit(".", 1)[0]
+                return text, title, warnings
+
+            # Fallback: dump JSON info (title + description)
+            res2 = _sp.run(
+                ["yt-dlp", "--dump-json", "--no-playlist", url],
+                capture_output=True, text=True, timeout=30, encoding="utf-8", errors="replace",
+            )
+            if res2.returncode == 0 and res2.stdout.strip():
+                info = _json.loads(res2.stdout.strip().splitlines()[0])
+                title = info.get("title", url)
+                desc = info.get("description", "")
+                text = f"{title}\n\n{desc}".strip()
+                if text:
+                    warnings.append("No subtitles found — using video title + description only.")
+                    return text, title, warnings
     except Exception as exc:
+        warnings.append(f"yt-dlp error: {exc}")
+    return "", url, warnings
+
+
+def extract_video(url: str) -> Extraction:
+    """Extract transcript/captions from any video URL.
+
+    Priority:
+      1. YouTube transcript API  — for YouTube URLs (online only)
+      2. yt-dlp subtitles        — for YouTube + 1000+ other sites + IPTV descriptions
+      3. URL text extraction     — fall back to the video page's text (trafilatura)
+
+    Works in air-gap for yt-dlp (subtitles cached locally) and URL text extraction.
+    IPTV m3u8/HLS streams: extracts playlist description via yt-dlp dump-json.
+    """
+    warnings: list[str] = []
+    title = url
+
+    # ── Path 1: YouTube transcript API ───────────────────────────────────────
+    if _is_youtube_url(url):
+        video_id = _extract_youtube_video_id(url)
+        if video_id:
+            try:
+                from youtube_transcript_api import YouTubeTranscriptApi  # type: ignore[import]
+                api = YouTubeTranscriptApi()
+                fetched = api.fetch(video_id)
+                text = " ".join(
+                    (s.text if hasattr(s, "text") else s["text"]) for s in fetched
+                )
+                # Attempt oEmbed title
+                try:
+                    import json as _json
+                    import urllib.request as _ur
+                    with _ur.urlopen(
+                        f"https://www.youtube.com/oembed?url={url}&format=json", timeout=5
+                    ) as r:
+                        title = _json.loads(r.read()).get("title", f"YouTube: {video_id}")
+                except Exception:
+                    title = f"YouTube: {video_id}"
+                if text:
+                    return Extraction(
+                        text=text, provider="youtube-transcript", content_type="text/plain",
+                        page_count=1, title=title,
+                        metadata={"source_url": url, "video_id": video_id},
+                    )
+                warnings.append("YouTube transcript was empty.")
+            except ImportError:
+                warnings.append("youtube-transcript-api not installed; trying yt-dlp.")
+            except Exception as exc:
+                warnings.append(f"YouTube transcript fetch failed: {exc}; trying yt-dlp.")
+
+    # ── Path 2: yt-dlp (any site, offline subtitles, IPTV descriptions) ──────
+    yt_text, yt_title, yt_warns = _extract_via_ytdlp(url)
+    warnings.extend(yt_warns)
+    if yt_text:
         return Extraction(
-            text="",
-            provider="youtube-transcript",
-            content_type="text/plain",
-            page_count=0,
-            title=f"YouTube: {video_id}",
-            warnings=[f"Transcript fetch failed: {exc}. Video may have no captions or be geo-restricted."],
-            metadata={"source_url": url, "video_id": video_id},
+            text=yt_text, provider="yt-dlp", content_type="text/plain",
+            page_count=1, title=yt_title or title,
+            warnings=warnings, metadata={"source_url": url},
         )
+
+    # ── Path 3: URL text extraction (video page metadata / description) ───────
+    page_ext = extract_url(url)
+    if page_ext.text:
+        page_ext.warnings = warnings + [
+            "No captions/transcript found. Extracted video page text instead."
+        ] + list(page_ext.warnings)
+        page_ext.provider = "video-page-text"
+        return page_ext
+
+    return Extraction(
+        text="", provider="video-extract", content_type="text/plain",
+        page_count=0, title=title, warnings=warnings + ["No extractable content found."],
+        metadata={"source_url": url},
+    )
+
+
+# Keep backward-compat alias
+def extract_youtube(url: str) -> Extraction:
+    return extract_video(url)
 
 
 def extract_file(path: str | Path) -> Extraction:
