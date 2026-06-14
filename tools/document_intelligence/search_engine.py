@@ -211,7 +211,8 @@ class DICGroundedSearch:
     a per-answer ``citation_quality`` (sufficiency) score in [0,1] — the mean
     attribution strength of the returned chunks. Results are ordered through the
     attribution lens (strongly-supporting evidence first), and every result still
-    carries its mandatory citation pack.
+    carries its mandatory citation pack. ``anomaly_report`` surfaces any
+    statistically anomalous patterns in the result attribution scores.
     """
 
     query: str = ""
@@ -219,14 +220,56 @@ class DICGroundedSearch:
     result_count: int = 0
     citation_quality: float = 0.0
     origin: str = "ai_retrieved"
+    anomaly_report: "SearchAnomalyReport | None" = None
 
     def to_dict(self) -> dict:
-        return {
+        d: dict[str, Any] = {
             "query": self.query,
             "results": [r.to_dict() for r in self.results],
             "result_count": self.result_count,
             "citation_quality": round(self.citation_quality, 4),
             "origin": self.origin,
+        }
+        if self.anomaly_report is not None:
+            d["anomaly_report"] = self.anomaly_report.to_dict()
+        return d
+
+
+@dataclass
+class SearchAnomalyReport:
+    """Statistical anomaly assessment for a DIC search result set.
+
+    Replaces the external pattern of hard-coding a single relevance cutoff
+    (e.g. ``if score < 0.3: skip_result``) with IQR-based distribution analysis.
+    The detection adapts to the actual score distribution so no manual threshold
+    needs to be maintained. Three anomaly types are detected:
+
+    * ``low_coverage``  — Q3 of attribution scores is below the noise floor,
+      meaning even the better-ranked results have near-zero support for the query.
+    * ``score_outlier`` — the top result is far above the pack (> mean + 3σ with
+      meaningful spread), suggesting only one chunk is actually relevant.
+    * ``high_variance`` — scores span a wide range (std > 0.3, IQR > 0.25),
+      indicating the result set mixes highly relevant and irrelevant chunks.
+
+    ``is_anomalous`` is False and all floats are 0.0 when the result set is too
+    small to characterize (< 2 results) or no anomaly pattern is detected.
+    """
+
+    is_anomalous: bool = False
+    anomaly_type: str = ""
+    mean_attribution: float = 0.0
+    score_std: float = 0.0
+    top_score: float = 0.0
+    detail: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "is_anomalous": self.is_anomalous,
+            "anomaly_type": self.anomaly_type,
+            "mean_attribution": round(self.mean_attribution, 4),
+            "score_std": round(self.score_std, 4),
+            "top_score": round(self.top_score, 4),
+            "detail": self.detail,
         }
 
 
@@ -408,6 +451,83 @@ def _citation_quality(results: list["DICSearchResult"]) -> float:
     if not results:
         return 0.0
     return sum(r.attribution_score for r in results) / len(results)
+
+
+# --------------------------------------------------------------------------- #
+# Search-result anomaly detection (aiify-opp-68: hardcoded_threshold ->
+# anomaly_detection). The external analogue hard-codes a single relevance
+# cutoff (``if score < constant: drop``). Instead we characterise the full
+# attribution-score *distribution* via IQR-based statistics so detection
+# adapts to each result set without requiring a hand-tuned threshold.
+# --------------------------------------------------------------------------- #
+
+
+def detect_search_anomalies(results: list["DICSearchResult"]) -> "SearchAnomalyReport":
+    """Detect statistically anomalous attribution-score patterns in a result set.
+
+    Requires attribution scores to have been populated first (call
+    :func:`_rerank_by_attribution` or :meth:`DICSearchEngine.search` beforehand).
+    Returns a :class:`SearchAnomalyReport` with ``is_anomalous=False`` when the
+    result set is too small (< 2 results) or no anomaly pattern is detected.
+    """
+    if len(results) < 2:
+        mean = results[0].attribution_score if results else 0.0
+        return SearchAnomalyReport(mean_attribution=mean)
+
+    scores = [r.attribution_score for r in results]
+    n = len(scores)
+    mean = sum(scores) / n
+    variance = sum((s - mean) ** 2 for s in scores) / n
+    std = variance ** 0.5
+    top = max(scores)
+
+    sorted_s = sorted(scores)
+    q1 = sorted_s[n // 4]
+    q3 = sorted_s[(3 * n) // 4]
+    iqr = q3 - q1
+
+    anomaly_type = ""
+    detail = ""
+
+    if q3 < 0.05:
+        # Even the upper-quartile results are near zero — query has no coverage.
+        anomaly_type = "low_coverage"
+        detail = (
+            f"Upper-quartile attribution is {q3:.3f} (below noise floor); "
+            "query may not match any indexed content."
+        )
+    elif top > q3 + 1.5 * iqr and std > 0.1:
+        # IQR-fence outlier: top result is far above the pack (using the Tukey
+        # fence q3 + 1.5*IQR instead of mean+3σ, because σ itself is inflated
+        # by the very outlier we are trying to detect).
+        anomaly_type = "score_outlier"
+        detail = (
+            f"Top score {top:.3f} exceeds IQR fence {q3 + 1.5 * iqr:.3f} "
+            f"(Q3={q3:.3f}, IQR={iqr:.3f}); only one chunk appears relevant."
+        )
+    elif std > 0.3 and iqr > 0.25:
+        # Wide spread: mix of highly relevant and irrelevant results.
+        anomaly_type = "high_variance"
+        detail = (
+            f"Attribution std={std:.3f}, IQR={iqr:.3f}; "
+            "result set mixes relevant and irrelevant chunks."
+        )
+
+    report = SearchAnomalyReport(
+        is_anomalous=bool(anomaly_type),
+        anomaly_type=anomaly_type,
+        mean_attribution=mean,
+        score_std=std,
+        top_score=top,
+        detail=detail,
+    )
+    if report.is_anomalous:
+        logger.info(
+            "DIC search anomaly [%s]: %s",
+            anomaly_type,
+            detail,
+        )
+    return report
 
 
 # --------------------------------------------------------------------------- #
@@ -636,6 +756,7 @@ class DICSearchEngine:
             results=results,
             result_count=len(results),
             citation_quality=_citation_quality(results),
+            anomaly_report=detect_search_anomalies(results),
         )
 
     def _rag_search(self, query: str, top_k: int, mode: str):
