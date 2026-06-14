@@ -114,7 +114,7 @@ def simulate_dm_change(
                 "JOIN dm_products p ON c.product_id=p.id WHERE p.domain_id=?", (src,)
             ).fetchone()[0]
             policies = conn.execute(
-                "SELECT COUNT(*) FROM dm_policies WHERE domain_id=?", (src,)
+                "SELECT COUNT(*) FROM dm_opa_policies WHERE domain_id=?", (src,)
             ).fetchone()[0]
             if prods:
                 impacts.append({"severity": "medium", "id": src,
