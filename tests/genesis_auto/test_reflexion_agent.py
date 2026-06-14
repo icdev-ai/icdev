@@ -11,14 +11,10 @@ Acceptance criteria:
 
 from __future__ import annotations
 
-import importlib
-import json
 import os
 import sqlite3
 import sys
-import types
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -91,7 +87,6 @@ def _make_in_memory_conn():
 
 def _seed_traces(conn, task_type: str, n_success: int = 3, n_failure: int = 2):
     """Insert synthetic completed traces into agent_execution_traces."""
-    import uuid
     rows = []
     for i in range(n_success):
         rows.append((
