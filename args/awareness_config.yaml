@@ -221,7 +221,7 @@ data_canvas:
     - dm_products
     - dm_contracts
     - dm_ports
-    - dm_policies
+    - dm_opa_policies
     - dm_ownership
     - dm_lineage
     - dm_metrics
