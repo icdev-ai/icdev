@@ -209,6 +209,11 @@ jobs:
       # table collisions (simulation_results/topologies schema mismatch).
       ICDEV_NDC_ENABLED: "false"
       ICDEV_NETWORK_ENABLED: "false"
+      # Canvas-specific DBs (migration_canvas, aiml_canvas, security_canvas) inherit
+      # ICDEV_STORAGE_BACKEND=postgresql but their tables are not in the consolidated
+      # PG schema and lack RLS columns (classification/tenant_id), causing 500s.
+      # Force SQLite for per-canvas DBs until PGP migration covers them.
+      ICDEV_CANVAS_STORAGE_BACKEND: sqlite
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

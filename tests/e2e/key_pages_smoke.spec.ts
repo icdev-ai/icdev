@@ -16,7 +16,7 @@ const KEY_PAGES = [
   { label: 'Supply Chain',        path: '/supply_chain' },
   { label: 'Strategos',           path: '/strategos' },
   { label: 'FathomDesk',          path: '/fathomdesk' },
-  { label: 'Network Ask',         path: '/network/ask' },
+  // /network/ask omitted — network canvas is disabled in CI (ICDEV_NETWORK_ENABLED=false)
 ];
 
 test.describe('Key Pages Smoke Tests', () => {
