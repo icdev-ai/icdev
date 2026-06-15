@@ -2614,3 +2614,316 @@ def ingest_batch(
         per_file=per_file,
         anomalous_paths=anomalous_paths,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Document import validation with size-anomaly detection
+# (aiify-opp-47: hardcoded_threshold -> anomaly_detection). The external scan
+# flagged paperless-ngx src/documents/management/commands/document_importer.py
+# — a Django management command that imports documents from a .zip export
+# archive using hardcoded file-size limits, minimum content-length constants,
+# and fixed title-length caps. The repo is ephemeral; per the established
+# aiify-opp pattern the augmentation lands in the analogous ICDEV subsystem
+# (DIC).
+#
+# Design:
+#   - _IMPORT_MAX_FILE_BYTES (env DIC_IMPORT_MAX_FILE_BYTES, default 100 MB)
+#     replaces hardcoded max-size rejection; files above this are skipped and
+#     recorded in the result as "rejected" without LLM involvement.
+#   - _IMPORT_MIN_CONTENT_CHARS (env DIC_IMPORT_MIN_CONTENT_CHARS, default 10)
+#     replaces minimum-content-length guards; files below this floor after
+#     text extraction are flagged as near-empty rather than silently rejected.
+#   - IQR-based file-size anomaly detection flags documents whose byte-size is
+#     a statistical outlier relative to the rest of the import batch, so an
+#     unusually large file in an otherwise small-file batch is caught even when
+#     it's under the absolute cap.
+#   - Best-effort LLM quality check (via LLMRouter) for borderline files that
+#     pass size gates but triggered another quality signal; degrades gracefully
+#     when the router is unavailable.
+# --------------------------------------------------------------------------- #
+
+_IMPORT_MAX_FILE_BYTES: int = int(
+    os.environ.get("DIC_IMPORT_MAX_FILE_BYTES", str(100 * 1024 * 1024))
+)
+_IMPORT_MIN_CONTENT_CHARS: int = int(
+    os.environ.get("DIC_IMPORT_MIN_CONTENT_CHARS", "10")
+)
+_IMPORT_SIZE_IQR_FENCE: float = float(
+    os.environ.get("DIC_IMPORT_SIZE_IQR_FENCE", "1.5")
+)
+
+_IMPORT_QUALITY_SYSTEM_PROMPT = (
+    "You are a document import quality inspector. "
+    "Given metadata about a document being imported into a DIC collection, "
+    "decide whether it is safe to import. "
+    'Respond with a strict JSON object: {"safe": true|false, '
+    '"verdict": "ok"|"suspicious"|"reject", "reason": "<one sentence>"}. '
+    "Consider: unusually large file size relative to siblings, very short "
+    "content after extraction, suspicious MIME types, or anomalous naming."
+)
+
+
+@dataclass
+class ImportValidationResult:
+    """Outcome for a single document validated during archive import."""
+
+    path: str
+    accepted: bool
+    anomalous: bool
+    file_bytes: int
+    rejection_reason: str
+    quality_verdict: str
+    quality_reason: str
+
+    def to_dict(self) -> dict:
+        return {
+            "path": self.path,
+            "accepted": self.accepted,
+            "anomalous": self.anomalous,
+            "file_bytes": self.file_bytes,
+            "rejection_reason": self.rejection_reason,
+            "quality_verdict": self.quality_verdict,
+            "quality_reason": self.quality_reason,
+        }
+
+
+@dataclass
+class ArchiveImportResult:
+    """Aggregate result from validate_import_documents()."""
+
+    total: int
+    accepted: int
+    rejected: int
+    anomalous_count: int
+    per_file: list[ImportValidationResult]
+
+    def to_dict(self) -> dict:
+        return {
+            "total": self.total,
+            "accepted": self.accepted,
+            "rejected": self.rejected,
+            "anomalous_count": self.anomalous_count,
+            "per_file": [r.to_dict() for r in self.per_file],
+        }
+
+
+def _detect_file_size_anomalies(
+    sizes: list[int],
+    fence: float = 1.5,
+) -> tuple[float, float]:
+    """Return IQR (lo, hi) fences for a list of file sizes in bytes.
+
+    Files above ``hi`` are size outliers relative to the batch.
+    Returns (-inf, inf) when fewer than 4 samples — not enough for IQR.
+    """
+    if len(sizes) < 4:
+        return float("-inf"), float("inf")
+    s = sorted(float(x) for x in sizes)
+    n = len(s)
+    q1 = s[n // 4]
+    q3 = s[(3 * n) // 4]
+    iqr = q3 - q1
+    return q1 - fence * iqr, q3 + fence * iqr
+
+
+def _llm_import_quality_check(
+    path: str,
+    file_bytes: int,
+    content_chars: int,
+    mime_type: str,
+    signal: str,
+    peer_sizes: list[int],
+) -> tuple[str, str]:
+    """Ask LLM whether a borderline import document is safe.
+
+    Returns (verdict, reason). Degrades to ("suspicious", "llm_unavailable")
+    on any error.
+    """
+    try:
+        import json as _json
+
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        median_bytes = sorted(peer_sizes)[len(peer_sizes) // 2] if peer_sizes else 0
+        prompt = (
+            f"File: {Path(path).name}\n"
+            f"MIME type: {mime_type}\n"
+            f"File size: {file_bytes:,} bytes "
+            f"(batch median: {median_bytes:,} bytes)\n"
+            f"Content chars after extraction: {content_chars}\n"
+            f"Quality signal: {signal}\n\n"
+            "Should this document be imported?"
+        )
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            system_prompt=_IMPORT_QUALITY_SYSTEM_PROMPT,
+            max_tokens=128,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("anomaly_detection", req)
+        if not resp or not resp.content:
+            raise ValueError("empty response")
+        raw = resp.content.strip()
+        if raw.startswith("```"):
+            raw = raw.strip("`").strip()
+        parsed = _json.loads(raw)
+        verdict = str(parsed.get("verdict", "suspicious"))
+        reason = str(parsed.get("reason", ""))
+        if verdict not in {"ok", "suspicious", "reject"}:
+            verdict = "suspicious"
+        return verdict, reason
+    except Exception:
+        return "suspicious", "llm_unavailable"
+
+
+def validate_import_documents(
+    paths: "list[str | Path]",
+    *,
+    collection_id: str = "",
+    mime_resolver: "callable | None" = None,
+) -> ArchiveImportResult:
+    """Validate a list of document paths for import into a DIC collection.
+
+    Replaces the hardcoded size/content guards from the paperless
+    document_importer management command with configurable, IQR-aware checks:
+
+    1. Files above DIC_IMPORT_MAX_FILE_BYTES are unconditionally rejected.
+    2. IQR outlier detection on the file-size distribution flags documents
+       that are anomalously large *relative to this batch*, independent of the
+       absolute cap.
+    3. Files that pass size gates but have near-empty content (below
+       DIC_IMPORT_MIN_CONTENT_CHARS) are flagged for HITL review via a
+       best-effort LLM quality check.
+
+    Args:
+        paths: files to validate (not yet ingested; sizes are read from disk).
+        collection_id: target DIC collection (informational; not validated here).
+        mime_resolver: optional callable(path) -> str for MIME type; defaults
+            to mimetypes.guess_type.
+
+    Returns:
+        ArchiveImportResult with per-file validation outcomes.
+    """
+    import mimetypes
+
+    if mime_resolver is None:
+        def mime_resolver(p: str) -> str:
+            return mimetypes.guess_type(p)[0] or "application/octet-stream"
+
+    results: list[ImportValidationResult] = []
+    accepted_bytes: list[int] = []
+
+    for p in paths:
+        path_str = str(p)
+        try:
+            file_bytes = Path(path_str).stat().st_size
+        except OSError:
+            file_bytes = 0
+
+        # Gate 1: absolute size cap (replaces hardcoded constant).
+        if file_bytes > _IMPORT_MAX_FILE_BYTES:
+            results.append(ImportValidationResult(
+                path=path_str,
+                accepted=False,
+                anomalous=False,
+                file_bytes=file_bytes,
+                rejection_reason=(
+                    f"exceeds_max_size:{file_bytes}>{_IMPORT_MAX_FILE_BYTES}"
+                ),
+                quality_verdict="reject",
+                quality_reason="file_too_large",
+            ))
+            continue
+
+        accepted_bytes.append(file_bytes)
+        results.append(ImportValidationResult(
+            path=path_str,
+            accepted=True,
+            anomalous=False,
+            file_bytes=file_bytes,
+            rejection_reason="",
+            quality_verdict="ok",
+            quality_reason="",
+        ))
+
+    # Gate 2: IQR-based size outlier detection on accepted files.
+    _, hi = _detect_file_size_anomalies(accepted_bytes, _IMPORT_SIZE_IQR_FENCE)
+    for res in results:
+        if not res.accepted:
+            continue
+        if res.file_bytes > hi:
+            res.anomalous = True
+            mime = mime_resolver(res.path)
+            # Attempt lightweight content-length check (non-binary only).
+            try:
+                content_chars = len(Path(res.path).read_text(
+                    encoding="utf-8", errors="replace"
+                ).strip())
+            except Exception:
+                content_chars = 0
+            signal = (
+                f"size_iqr_outlier:{res.file_bytes}>{hi:.0f}"
+                + (
+                    f";near_empty_content:chars={content_chars}"
+                    if content_chars < _IMPORT_MIN_CONTENT_CHARS
+                    else ""
+                )
+            )
+            verdict, reason = _llm_import_quality_check(
+                res.path, res.file_bytes, content_chars, mime, signal, accepted_bytes
+            )
+            res.quality_verdict = verdict
+            res.quality_reason = reason
+            if verdict == "reject":
+                res.accepted = False
+                res.rejection_reason = f"llm_rejected:{reason}"
+
+        # Gate 3: near-empty content on non-anomalous files (best-effort).
+        elif res.file_bytes > 0:
+            try:
+                text = Path(res.path).read_text(
+                    encoding="utf-8", errors="replace"
+                ).strip()
+                if len(text) < _IMPORT_MIN_CONTENT_CHARS:
+                    res.anomalous = True
+                    mime = mime_resolver(res.path)
+                    verdict, reason = _llm_import_quality_check(
+                        res.path,
+                        res.file_bytes,
+                        len(text),
+                        mime,
+                        f"near_empty_content:chars={len(text)}<{_IMPORT_MIN_CONTENT_CHARS}",
+                        accepted_bytes,
+                    )
+                    res.quality_verdict = verdict
+                    res.quality_reason = reason
+                    if verdict == "reject":
+                        res.accepted = False
+                        res.rejection_reason = f"llm_rejected:{reason}"
+            except Exception:
+                pass
+
+    accepted_count = sum(1 for r in results if r.accepted)
+    rejected_count = sum(1 for r in results if not r.accepted)
+    anomalous_count = sum(1 for r in results if r.anomalous)
+
+    if collection_id:
+        logger.info(
+            "import validation: collection=%s total=%d accepted=%d rejected=%d anomalous=%d",
+            collection_id,
+            len(results),
+            accepted_count,
+            rejected_count,
+            anomalous_count,
+        )
+
+    return ArchiveImportResult(
+        total=len(results),
+        accepted=accepted_count,
+        rejected=rejected_count,
+        anomalous_count=anomalous_count,
+        per_file=results,
+    )
