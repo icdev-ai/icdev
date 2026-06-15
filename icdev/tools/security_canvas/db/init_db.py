@@ -336,6 +336,48 @@ CREATE TABLE IF NOT EXISTS zig_targets (
     updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_zig_target_status ON zig_targets(status);
+
+CREATE TABLE IF NOT EXISTS fedramp_ato_packages (
+    id                  TEXT PRIMARY KEY,
+    system_name         TEXT NOT NULL,
+    ato_status          TEXT NOT NULL DEFAULT 'in_progress'
+                        CHECK (ato_status IN ('in_progress', 'authorized', 'conditional', 'denied', 'expired')),
+    authorization_date  TEXT,
+    expiry_date         TEXT,
+    package_type        TEXT DEFAULT 'moderate'
+                        CHECK (package_type IN ('low', 'moderate', 'high')),
+    authorizing_official TEXT,
+    notes               TEXT DEFAULT '',
+    classification      TEXT DEFAULT 'CUI // SP-CTI',
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS fedramp_controls (
+    id                     TEXT PRIMARY KEY,
+    package_id             TEXT NOT NULL REFERENCES fedramp_ato_packages(id) ON DELETE CASCADE,
+    control_id             TEXT NOT NULL,
+    control_name           TEXT DEFAULT '',
+    implementation_status  TEXT NOT NULL DEFAULT 'not_implemented'
+                           CHECK (implementation_status IN (
+                               'implemented', 'partially_implemented',
+                               'planned', 'not_implemented', 'not_applicable'
+                           )),
+    implementation_origin  TEXT DEFAULT 'service_provider'
+                           CHECK (implementation_origin IN (
+                               'service_provider', 'customer', 'hybrid', 'inherited'
+                           )),
+    responsible_role       TEXT DEFAULT '',
+    implementation_detail  TEXT DEFAULT '',
+    assessment_date        TEXT,
+    assessed_by            TEXT DEFAULT '',
+    classification         TEXT DEFAULT 'CUI // SP-CTI',
+    created_at             TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at             TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_fedramp_controls_package ON fedramp_controls(package_id);
+CREATE INDEX IF NOT EXISTS idx_fedramp_controls_status  ON fedramp_controls(implementation_status);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
