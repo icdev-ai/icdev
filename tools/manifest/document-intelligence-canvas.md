@@ -139,6 +139,7 @@ print(update["content"], update["citation_count"], update["status"])
 |------|---------|
 | `tools/document_intelligence/analytics_engine.py` | DIC Analytics Engine — document-level analytics, pattern detection, anomaly detection, and scenario impact analysis over the KG and RAG layers. All queries use `get_connection()` so RLS applies. No LLM calls — pure graph and SQL analytics. |
 | `tools/document_intelligence/explorer.py` | DIC KG "Buried Bodies" Explorer. Surfaces: orphaned documents (no collection/chunks/versions), single-owner tribal knowledge, undocumented KG dependencies, contradictions between overlapping docs, and superseded versions. All queries are RLS-filtered by `tenant_id`. No LLM calls — pure graph analytics. |
+| `tools/document_intelligence/consistency_checker.py` | Cross-document concept overlap detector for propagating review flags when source content changes. `extract_changed_concepts(before, after)` returns new noun phrases (no-NLTK tokenizer, stop-word filtered, capped at 50 terms). `find_related_docs(doc_id, changed_concepts, tenant_id, limit)` walks `kg_nodes`/`kg_graphs` Python-side (avoids SQL JSON dialect issues) to find docs sharing concept nodes with the changed document. Returns `[{doc_id, doc_title, collection_id, last_updated, matching_concepts}]`. All KG reads use `get_connection()` so RLS applies. |
 
 ## Flask Blueprint
 
