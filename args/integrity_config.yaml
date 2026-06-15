@@ -88,3 +88,34 @@ gate:
     - QUARANTINE
   warn_on:
     - REVIEW
+
+# ---------------------------------------------------------------------------
+# Known-safe ICDEV feature-flag environment variables — explicitly authorized.
+# Reading these via os.getenv() is documented system behavior (CLAUDE.md),
+# not a semantic backdoor. They are ICDEV runtime-configuration flags only;
+# none contain secrets or credentials. Adding a var here suppresses the
+# env_secret finding for that specific key name across all ICDEV tool scans.
+# ---------------------------------------------------------------------------
+known_safe_env_vars:
+  - ICDEV_HARNESS_COLEARN        # co-learning gate (tools/workflow/reflexion_agent.py)
+  - ICDEV_HITL_KANBAN_GATE       # HITL kanban integration (tools/workflow/coherence_checker.py)
+  - ICDEV_INTEGRITY_ENABLED      # SIPA on/off toggle (tools/integrity/constants.py)
+  - ICDEV_STORAGE_BACKEND        # db backend selector (tools/db/storage.py)
+  - ICDEV_LLM_PROVIDER           # LLM provider override (tools/llm/router.py)
+  - ICDEV_AUTO_COMMIT            # auto-commit feature flag (tools/airgap/hook_compat.py)
+  - ICDEV_KANBAN_PR_FLOW         # kanban PR flow flag (tools/kanban/executor.py)
+
+# ---------------------------------------------------------------------------
+# Known-safe ICDEV modules that legitimately use the filesystem capability for
+# first-party configuration reads or internal state persistence — explicitly
+# authorized. Reading args/*.yaml (ICDEV configuration) and writing to data/
+# (runtime state) are documented FORGE system behaviors (CLAUDE.md), not
+# semantic backdoors. Adding a module path here suppresses the
+# unauthorized_capability 'filesystem' finding in Mode A (provenance_aware)
+# self-scans only; it has no effect on external-artifact assessments.
+# ---------------------------------------------------------------------------
+known_safe_filesystem_modules:
+  - tools/llm/provider_health.py  # reads args/llm_config.yaml + persists data/llm_provider_health.json (circuit-breaker state)
+  - tools/document_intelligence/style_engine.py  # reads args/dic_style_rules.yaml (read-only, path computed from __file__, authorized by REQ-DIC-STYLE-FS-01)
+  - tools/evolution/eval_builder.py  # reads context/evolution/golden/*.jsonl; authorized by REQ-NOVA-SELA-FS-01 (full-repo scan root)
+  - evolution/eval_builder.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
