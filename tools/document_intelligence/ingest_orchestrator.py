@@ -1216,6 +1216,73 @@ def _ai_classify_into_taxonomy(
 
 
 # --------------------------------------------------------------------------- #
+# Classifier anomaly detection (aiify-rm-a3344-phase-18:
+# hardcoded_threshold -> anomaly_detection). The external scan flagged
+# paperless-ngx src/documents/classifier.py — the AUTO matching algorithm
+# that gates document filing on fixed per-algorithm confidence thresholds.
+# A static cutoff is brittle: a trivial taxonomy always looks high-confidence,
+# a borderline decision sits just above the floor without any signal, and a
+# cap-hit on multi-label may reflect over-generation rather than a real match.
+#
+# The ICDEV analog lands here, applied to _ai_classify_into_taxonomy results.
+# Three advisory signals (never blocking, HITL-only):
+#   max_labels_hit      – result contains exactly _CLASSIFY_MAX_SELECTED labels
+#                         (cap hit; model may be filling the list rather than
+#                         genuinely matching all selected labels).
+#   borderline_confidence – overall confidence falls within a narrow band
+#                         [floor, floor + _CLASSIFY_BORDER_BAND) just above the
+#                         minimum; borderline decisions are more likely to flip
+#                         under paraphrase.
+#   trivial_taxonomy    – the caller's normalized taxonomy contained only one
+#                         usable label; no real choice was made and the signal is
+#                         not informative.
+# --------------------------------------------------------------------------- #
+
+# Width of the "borderline" band above _CLASSIFY_MIN_CONFIDENCE.  A confidence
+# of exactly floor + epsilon is treated as a borderline signal; wider means more
+# results flagged.
+_CLASSIFY_BORDER_BAND: float = float(
+    os.environ.get("DIC_CLASSIFY_BORDER_BAND", "0.05")
+)
+
+
+def _detect_classify_anomaly(result: dict, taxonomy) -> str | None:
+    """Return the first anomaly signal found in a classify result, or None.
+
+    Checks (in order): max_labels_hit, borderline_confidence, trivial_taxonomy.
+    Returns the first matching signal string, or None when the result looks
+    clean.  Callers MUST treat any returned signal as advisory — it does not
+    mean the classification is wrong, only that it warrants extra HITL scrutiny.
+
+    Args:
+        result: the dict returned by ``_ai_classify_into_taxonomy`` — must
+            contain ``"labels"`` (list) and ``"confidence"`` (float).
+        taxonomy: the caller's raw taxonomy iterable, passed through
+            ``_normalize_taxonomy`` to determine how many usable labels existed.
+    """
+    if not result:
+        return None
+    labels = result.get("labels") or []
+    confidence = result.get("confidence")
+    if not isinstance(confidence, (int, float)):
+        return None
+
+    # Cap hit: returned exactly the maximum allowed labels.
+    if len(labels) >= _CLASSIFY_MAX_SELECTED:
+        return "max_labels_hit"
+
+    # Borderline: confidence just above the floor — more likely to flip.
+    if confidence < _CLASSIFY_MIN_CONFIDENCE + _CLASSIFY_BORDER_BAND:
+        return "borderline_confidence"
+
+    # Trivial: only one label was on offer, so there was no real choice.
+    if len(_normalize_taxonomy(taxonomy)) <= 1:
+        return "trivial_taxonomy"
+
+    return None
+
+
+# --------------------------------------------------------------------------- #
 # LLM correspondence extraction (aiify-opp-6100: regex_user_input ->
 # nlp_extractor). The external scan flagged paperless-ngx
 # src/paperless_mail/.../mail.py — the MailDocumentParser, which parses an email
@@ -2320,6 +2387,9 @@ def ingest_file(
         )
         if cls_result:
             ai_metadata = {**ai_metadata, "classification": cls_result}
+            cls_anomaly = _detect_classify_anomaly(cls_result, classify_taxonomy)
+            if cls_anomaly:
+                ai_metadata = {**ai_metadata, "classification_anomaly": cls_anomaly}
 
     # LLM correspondence extraction (best-effort): the email envelope fields
     # (sender, recipients, subject, sent date) pulled from the document text — the
@@ -3195,3 +3265,123 @@ def detect_collection_anomalies(
         outlier_doc_ids=outlier_doc_ids,
         signals=signals,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Post-update metadata re-enrichment (aiify-opp-89: metadata_extraction ->
+# llm_generation). The external scan flagged paperless-ngx
+# src/documents/signals/handlers.py — the Django-signals layer that fires after
+# a Document model save/update and triggers classifier re-runs (metadata
+# re-assignment: document_type, correspondent, tags). The repo is ephemeral; per
+# the established aiify-opp pattern the augmentation lands in the analogous ICDEV
+# subsystem (DIC).
+#
+# This is the DIC analog of those post-save signal handlers: it re-runs the full
+# LLM metadata-extraction pipeline on a *previously ingested* document (by
+# doc_id) rather than at initial ingest time. Use-cases:
+#   - text corrected via HITL or re-OCR
+#   - document promoted to a new collection (context shift)
+#   - schema or taxonomy updated (re-classify against new labels)
+#   - user explicitly requests a freshness pass
+#
+# Design mirrors ingest_file() enrichment — same grounding, same HITL-proposal-
+# only semantics (never silently written), same air-gap safety.
+# --------------------------------------------------------------------------- #
+
+def re_enrich_metadata(
+    doc_id: str,
+    *,
+    extract_identifiers: bool = True,
+    extract_correspondence: bool = True,
+    conn=None,
+) -> "dict | None":
+    """Re-run LLM metadata extraction on an already-ingested DIC document.
+
+    Args:
+        doc_id: The ``dic_documents.doc_id`` of the target document.
+        extract_identifiers: Also run identifier extraction (opp-5988).
+        extract_correspondence: Also run correspondence extraction (opp-6100).
+        conn: Optional existing DB connection; managed internally if None.
+
+    Returns:
+        ``{"doc_id": str, "filename": str, "proposals": dict}`` on success, or
+        ``None`` when the document is not found. ``proposals`` may be empty when
+        no LLM is available or confidence is below threshold — callers MUST treat
+        empty proposals as "no enrichment" and leave existing metadata unchanged.
+    """
+    own_conn = conn is None
+    try:
+        if own_conn:
+            conn = get_connection()
+
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT filename, collection_id, tenant_id, classification FROM dic_documents WHERE doc_id = %s LIMIT 1",
+            (doc_id,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            logger.warning("re_enrich_metadata: doc_id %r not found", doc_id)
+            return None
+
+        filename = (row["filename"] if hasattr(row, "keys") else row[0]) or doc_id
+
+        # Reconstruct text from rag_chunks ordered by chunk_index.
+        cur.execute(
+            """
+            SELECT rc.content
+            FROM dic_chunk_links dcl
+            JOIN rag_chunks rc ON rc.id = dcl.rag_chunk_id
+            WHERE dcl.doc_id = %s
+            ORDER BY dcl.chunk_index ASC
+            """,
+            (doc_id,),
+        )
+        chunk_rows = cur.fetchall()
+        if not chunk_rows:
+            logger.info("re_enrich_metadata: no chunks for doc_id %r", doc_id)
+            return {"doc_id": doc_id, "filename": filename, "proposals": {}}
+
+        text = "\n".join(
+            (r["content"] if hasattr(r, "keys") else r[0]) or ""
+            for r in chunk_rows
+        ).strip()
+
+        if not text:
+            return {"doc_id": doc_id, "filename": filename, "proposals": {}}
+
+        # Run LLM extractors — same pipeline as ingest_file() enrichment.
+        proposals: dict = {}
+
+        md = _ai_metadata_extraction(text, filename)
+        if md:
+            proposals.update(md)
+
+        if extract_identifiers:
+            ids = _ai_extract_identifiers(text)
+            if ids:
+                proposals["identifiers"] = ids
+                id_anomaly = _detect_identifier_anomaly(ids)
+                if id_anomaly:
+                    proposals["identifier_anomaly"] = id_anomaly
+
+        if extract_correspondence:
+            corr = _ai_extract_correspondence(text)
+            if corr:
+                proposals["correspondence"] = corr
+
+        logger.info(
+            "re_enrich_metadata: doc_id=%r filename=%r proposals=%s",
+            doc_id, filename, list(proposals.keys()),
+        )
+        return {"doc_id": doc_id, "filename": filename, "proposals": proposals}
+
+    except Exception as exc:
+        logger.warning("re_enrich_metadata: failed for doc_id %r: %s", doc_id, exc)
+        return None
+    finally:
+        if own_conn and conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
