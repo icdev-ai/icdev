@@ -347,6 +347,55 @@ class DICFilterQuery:
         }
 
 
+@dataclass
+class DICFilterCoverageAnomaly:
+    """Anomaly report for a DIC filter predicate's coverage over a candidate set.
+
+    Models the upgrade of hardcoded filter thresholds (aiify-opp-31:
+    hardcoded_threshold -> anomaly_detection, analog of paperless
+    ``src/documents/filters.py``).  Instead of fixed cutoffs that must be
+    maintained by hand (e.g. ``min_pages > 5``, ``confidence >= 0.7``), this
+    report characterises the distribution of the relevant document property via
+    IQR-based statistics and flags when the requested threshold sits outside the
+    natural range of the candidate set.
+
+    Two anomaly types are detected:
+
+    * ``over_restrictive`` — threshold is above Q3+1.5×IQR; the filter would
+      exclude the vast majority of candidates (< 10 % coverage).
+    * ``over_permissive`` — threshold is below Q1−1.5×IQR; the filter would
+      admit nearly all candidates (> 90 % coverage), adding no discriminative value.
+
+    ``is_anomalous`` is False when the candidate set is too small for reliable IQR
+    (< 4 values) or no anomaly pattern is detected.  ``suggested_threshold`` is set
+    only when an anomaly is flagged; it is the natural-distribution anchor (Q1 or
+    Q3) the caller should consider using instead.
+    """
+
+    is_anomalous: bool = False
+    anomaly_type: str = ""
+    coverage_pct: float = 0.0
+    q1: float = 0.0
+    q3: float = 0.0
+    iqr: float = 0.0
+    suggested_threshold: float | None = None
+    detail: str = ""
+
+    def to_dict(self) -> dict:
+        d: dict = {
+            "is_anomalous": self.is_anomalous,
+            "anomaly_type": self.anomaly_type,
+            "coverage_pct": round(self.coverage_pct, 4),
+            "q1": round(self.q1, 4),
+            "q3": round(self.q3, 4),
+            "iqr": round(self.iqr, 4),
+            "detail": self.detail,
+        }
+        if self.suggested_threshold is not None:
+            d["suggested_threshold"] = round(self.suggested_threshold, 4)
+        return d
+
+
 def _extract_terms(query: str) -> list[str]:
     return [t.lower() for t in re.findall(r"\b\w{3,}\b", query)]
 
@@ -563,6 +612,114 @@ def detect_search_anomalies(results: list["DICSearchResult"]) -> "SearchAnomalyR
     if report.is_anomalous:
         logger.info(
             "DIC search anomaly [%s]: %s",
+            anomaly_type,
+            detail,
+        )
+    return report
+
+
+# --------------------------------------------------------------------------- #
+# Filter-predicate coverage anomaly detection (aiify-opp-31:
+# hardcoded_threshold -> anomaly_detection, analog of paperless
+# src/documents/filters.py).  The external pattern hard-codes filter thresholds
+# (e.g. ``min_confidence=0.7``, ``min_pages=5``) that must be tuned by hand for
+# each deployment.  This layer characterises the *distribution* of the candidate
+# document property values via IQR-based statistics and reports when the
+# requested threshold sits outside the natural range — making the predicate
+# either over-restrictive or over-permissive for the actual corpus.
+# --------------------------------------------------------------------------- #
+
+
+def detect_filter_coverage_anomaly(
+    candidate_values: list[float],
+    threshold: float,
+    direction: str = "min",
+) -> "DICFilterCoverageAnomaly":
+    """Detect anomalous filter threshold coverage over a document property distribution.
+
+    Args:
+        candidate_values: Observed values of the filtered property across the
+            candidate document set (e.g. page counts, confidence scores).
+        threshold: The filter cutoff value to evaluate.
+        direction: ``"min"`` means the filter keeps values *≥ threshold*
+            (e.g. ``min_pages``); ``"max"`` keeps values *≤ threshold*
+            (e.g. ``max_pages``).
+
+    Returns:
+        A :class:`DICFilterCoverageAnomaly` with ``is_anomalous=False`` when the
+        candidate set is too small (< 4 values) or no anomaly is detected.
+    """
+    n = len(candidate_values)
+    if n < 4:
+        return DICFilterCoverageAnomaly()
+
+    sorted_v = sorted(candidate_values)
+    q1 = sorted_v[n // 4]
+    q3 = sorted_v[(3 * n) // 4]
+    iqr = q3 - q1
+    upper_fence = q3 + 1.5 * iqr
+    lower_fence = q1 - 1.5 * iqr
+
+    if direction == "min":
+        matching = sum(1 for v in candidate_values if v >= threshold)
+    else:
+        matching = sum(1 for v in candidate_values if v <= threshold)
+    coverage_pct = matching / n
+
+    anomaly_type = ""
+    detail = ""
+    suggested: float | None = None
+
+    if direction == "min":
+        if threshold > upper_fence and coverage_pct < 0.10:
+            anomaly_type = "over_restrictive"
+            suggested = q3
+            detail = (
+                f"Filter threshold {threshold:.3f} exceeds upper IQR fence "
+                f"{upper_fence:.3f} (Q3={q3:.3f}); only {coverage_pct:.1%} of "
+                f"candidates qualify. Consider relaxing to Q3={q3:.3f}."
+            )
+        elif iqr > 0 and threshold < lower_fence and coverage_pct > 0.90:
+            anomaly_type = "over_permissive"
+            suggested = q1
+            detail = (
+                f"Filter threshold {threshold:.3f} is below lower IQR fence "
+                f"{lower_fence:.3f} (Q1={q1:.3f}); {coverage_pct:.1%} of candidates "
+                f"qualify, adding no discriminative value. Consider tightening to "
+                f"Q1={q1:.3f}."
+            )
+    else:  # direction == "max"
+        # For max-direction filters, the IQR fence can be negative for
+        # positive-only value sets, so we use quartile anchors directly.
+        if threshold < q1 and coverage_pct < 0.10:
+            anomaly_type = "over_restrictive"
+            suggested = q1
+            detail = (
+                f"Max filter threshold {threshold:.3f} is below Q1={q1:.3f}; "
+                f"only {coverage_pct:.1%} of candidates qualify."
+            )
+        elif iqr > 0 and threshold > q3 and coverage_pct > 0.90:
+            anomaly_type = "over_permissive"
+            suggested = q3
+            detail = (
+                f"Max filter threshold {threshold:.3f} exceeds Q3={q3:.3f}; "
+                f"{coverage_pct:.1%} of candidates qualify, adding no "
+                f"discriminative value."
+            )
+
+    report = DICFilterCoverageAnomaly(
+        is_anomalous=bool(anomaly_type),
+        anomaly_type=anomaly_type,
+        coverage_pct=coverage_pct,
+        q1=q1,
+        q3=q3,
+        iqr=iqr,
+        suggested_threshold=suggested,
+        detail=detail,
+    )
+    if report.is_anomalous:
+        logger.info(
+            "DIC filter coverage anomaly [%s]: %s",
             anomaly_type,
             detail,
         )
