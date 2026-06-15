@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # CUI // SP-CTI
 from __future__ import annotations
 
@@ -596,7 +596,7 @@ def translate_to_icdev(skill_path, output_path=None):
     icdev_body_parts.append("")
 
     # Add provenance section
-    # Try to get author from frontmatter, then from _meta.json (ClawHub download)
+    # Try to get author from frontmatter, then from _meta.json (SkillHub download)
     author = frontmatter.get("author", "")
     if not author:
         meta_path = skill_path / "_meta.json"
@@ -619,7 +619,7 @@ def translate_to_icdev(skill_path, output_path=None):
     icdev_body_parts.append("")
     icdev_body_parts.append("- **Enhanced by:** ICDEV™ (Innovation + Creative + Research engines)")
     icdev_body_parts.append(f"- **Original Author:** {author}")
-    icdev_body_parts.append("- **Source:** OpenClaw Community (ClawHub)")
+    icdev_body_parts.append("- **Source:** OpenClaw Community (SkillHub)")
     icdev_body_parts.append(f"- **Author:** {author}")
     icdev_body_parts.append(f"- **Original Version:** {version}")
     icdev_body_parts.append(f"- **Compatibility Score:** {report.score}/100")

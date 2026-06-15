@@ -256,6 +256,12 @@ CONDITIONAL_DIRS = {
     ],
     # SRE Automation Module (AIOps/LLMOps Phase)
     "sre": ["tools/sre"],
+    # Document Intelligence Canvas — NotebookLM-style BM25+KG research layer
+    "document_intelligence": [
+        "tools/document_intelligence",
+        "tools/document_intelligence/db",
+        "context/document_intelligence",
+    ],
 }
 
 
@@ -1007,6 +1013,22 @@ def _generate_dashboard_stub(child_root: Path, blueprint: dict) -> bool:
             '        return _render("Compliance",\n'
             '            "<h2>Compliance</h2>"\n'
             '            "<p>Compliance status placeholder.</p>")\n'
+        )
+
+    # Document Intelligence page — only if document_intelligence capability enabled
+    if capabilities.get("document_intelligence", False):
+        nav_links.append('"<a href=\\"/notebook\\">Notebook</a>"')
+        page_functions.append(
+            '    @app.route("/notebook")\n'
+            "    def notebook_page():\n"
+            "        try:\n"
+            "            from tools.document_intelligence.blueprint import dic_bp\n"
+            "            app.register_blueprint(dic_bp)\n"
+            "        except Exception:\n"
+            "            pass  # Blueprint already registered\n"
+            '        return _render("Notebook",\n'
+            '            "<h2>Document Intelligence Notebook</h2>"\n'
+            '            "<p><a href=\\"/document-intelligence/notebook\\">Open Notebook →</a></p>")\n'
         )
 
     # D-EPSEC-7: Security page — always present (security is always-on)
@@ -2810,6 +2832,7 @@ CAP_DESCRIPTIONS: Dict[str, str] = {
     "observability": "Observability & XAI — Distributed tracing, provenance, AgentSHAP attribution",
     "ai_transparency": "AI Transparency — Model/system cards, AI inventory, fairness, confabulation detection",
     "ai_accountability": "AI Accountability — Oversight plans, CAIO designation, incident response",
+    "document_intelligence": "Document Intelligence — NotebookLM-style BM25+KG research, study guides, FAQ, timeline, chat with sources",
 }
 
 

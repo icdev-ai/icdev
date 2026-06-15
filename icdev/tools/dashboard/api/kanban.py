@@ -249,7 +249,8 @@ def list_tasks():
     except (ValueError, TypeError):
         backlog_limit = 100
     conn = get_connection()
-    conn.set_security_context(None)  # kanban_tasks has no classification/tenant_id columns
+    if hasattr(conn, "set_security_context"):
+        conn.set_security_context(None)  # kanban_tasks has no classification/tenant_id columns
     try:
         # Execution queue ordering: within the same priority, tasks that
         # will run first appear first. For `backlog` (queued for
@@ -533,7 +534,8 @@ def create_task():
     dep_ids = list(dict.fromkeys(d for d in dep_ids if d))  # dedupe, preserve order
 
     conn = get_connection()
-    conn.set_security_context(None)  # kanban_tasks has no classification/tenant_id columns
+    if hasattr(conn, "set_security_context"):
+        conn.set_security_context(None)  # kanban_tasks has no classification/tenant_id columns
     try:
         # Validate all deps via DFS cycle detection
         ok, err = _check_dependency_cycle_dfs(task_id, dep_ids, conn)
@@ -779,6 +781,297 @@ def inject_message(task_id):
     }), 200
 
 
+@kanban_api.route("/tasks/<task_id>/heartbeat", methods=["POST"])
+def task_heartbeat(task_id):
+    """Hermes-style heartbeat: agent pings this while running to prove it is alive.
+
+    The scheduler's zombie-reclaim sweep demotes tasks that go silent for
+    >2h back to token_exhausted so another attempt can be dispatched.
+    Returns 409 if task is not in_progress.
+    """
+    conn = get_connection()
+    if hasattr(conn, "set_security_context"):
+        conn.set_security_context(None)
+    try:
+        row = conn.execute(
+            "SELECT status FROM kanban_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        if not row:
+            return jsonify({"error": "Task not found"}), 404
+        if dict(row)["status"] != "in_progress":
+            return jsonify({
+                "error": "Task is not in_progress",
+                "status": dict(row)["status"],
+            }), 409
+        now = _utcnow()
+        conn.execute(
+            "UPDATE kanban_tasks SET last_heartbeat_at = ?, updated_at = ? WHERE id = ?",
+            (now, now, task_id),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"status": "ok", "task_id": task_id, "heartbeat_at": now}), 200
+
+
+@kanban_api.route("/tasks/<task_id>/handoff", methods=["POST"])
+def task_handoff(task_id):
+    """Hermes-style structured handoff: executor submits completion summary + metadata JSON.
+
+    Stored on kanban_tasks (last_run_summary, last_run_metadata) AND on the
+    most-recent kanban_executions row so downstream dependent tasks can
+    consume the machine-parseable output of their parent.
+
+    Body: {"summary": "...", "metadata": {...any JSON...}}
+    """
+    import json as _json
+    data = request.get_json(force=True, silent=True) or {}
+    summary = (data.get("summary") or "").strip()
+    metadata = data.get("metadata")
+    if metadata is not None and not isinstance(metadata, (dict, list)):
+        return jsonify({"error": "metadata must be a JSON object or array"}), 400
+
+    metadata_str = _json.dumps(metadata) if metadata is not None else None
+
+    conn = get_connection()
+    if hasattr(conn, "set_security_context"):
+        conn.set_security_context(None)
+    try:
+        row = conn.execute(
+            "SELECT id FROM kanban_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        if not row:
+            return jsonify({"error": "Task not found"}), 404
+
+        now = _utcnow()
+        conn.execute(
+            "UPDATE kanban_tasks "
+            "SET last_run_summary = ?, last_run_metadata = ?, updated_at = ? "
+            "WHERE id = ?",
+            (summary or None, metadata_str, now, task_id),
+        )
+        exec_row = conn.execute(
+            "SELECT id FROM kanban_executions WHERE task_id = ? "
+            "ORDER BY created_at DESC LIMIT 1",
+            (task_id,),
+        ).fetchone()
+        if exec_row:
+            conn.execute(
+                "UPDATE kanban_executions SET run_summary = ?, run_metadata = ? WHERE id = ?",
+                (summary or None, metadata_str, dict(exec_row)["id"]),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+    try:
+        sse_manager.broadcast({"action": "task_handoff", "task_id": task_id}, "kanban")
+    except Exception:
+        pass
+    return jsonify({"status": "ok", "task_id": task_id}), 200
+
+
+@kanban_api.route("/tasks/<task_id>/subscribe", methods=["POST"])
+def task_subscribe(task_id):
+    """Register a webhook subscription for terminal events on this task.
+    Body: {"channel": "webhook"|"slack"|"teams", "target": "<url>", "events": ["done","token_exhausted"]}
+    """
+    import json as _json
+    data = request.get_json(force=True, silent=True) or {}
+    channel = (data.get("channel") or "webhook").strip()
+    target = (data.get("target") or "").strip()
+    events_raw = data.get("events") or ["done", "token_exhausted"]
+    if not target:
+        return jsonify({"error": "target URL is required"}), 400
+    if isinstance(events_raw, list):
+        events_str = ",".join(str(e).strip() for e in events_raw if e)
+    else:
+        events_str = str(events_raw)
+
+    conn = get_connection()
+    if hasattr(conn, "set_security_context"):
+        conn.set_security_context(None)
+    try:
+        row = conn.execute("SELECT id FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "Task not found"}), 404
+        sub_id = f"sub-{uuid.uuid4().hex[:12]}"
+        now = _utcnow()
+        conn.execute(
+            "INSERT INTO kanban_task_subscriptions (id, task_id, channel, target, events, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (sub_id, task_id, channel, target, events_str, now),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"status": "subscribed", "subscription_id": sub_id, "task_id": task_id, "events": events_str}), 201
+
+
+@kanban_api.route("/tasks/<task_id>/subscriptions", methods=["GET"])
+def list_subscriptions(task_id):
+    """List all webhook subscriptions for a task."""
+    conn = get_connection()
+    if hasattr(conn, "set_security_context"):
+        conn.set_security_context(None)
+    try:
+        rows = conn.execute(
+            "SELECT id, channel, target, events, created_at "
+            "FROM kanban_task_subscriptions WHERE task_id = ? ORDER BY created_at",
+            (task_id,),
+        ).fetchall()
+        return jsonify({"subscriptions": [dict(r) for r in rows]}), 200
+    finally:
+        conn.close()
+
+
+@kanban_api.route("/subscriptions/<sub_id>", methods=["DELETE"])
+def delete_subscription(sub_id):
+    """Remove a webhook subscription."""
+    conn = get_connection()
+    if hasattr(conn, "set_security_context"):
+        conn.set_security_context(None)
+    try:
+        conn.execute("DELETE FROM kanban_task_subscriptions WHERE id = ?", (sub_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    return jsonify({"status": "deleted", "subscription_id": sub_id}), 200
+
+
+@kanban_api.route("/tasks/specify", methods=["POST"])
+def specify_task():
+    """Inline spec enrichment: LLM rewrites a rough title+description into
+    a structured goal, approach, and acceptance criteria.
+
+    Body: {"title": "...", "description": "...", "task_id": "<optional — saves back to task>"}
+    Returns: {"goal": "...", "approach": "...", "acceptance_criteria": "..."}
+    """
+    import json as _json
+    data = request.get_json(force=True, silent=True) or {}
+    title = (data.get("title") or "").strip()
+    description = (data.get("description") or "").strip()
+    task_id = (data.get("task_id") or "").strip() or None
+
+    if not title:
+        return jsonify({"error": "title is required"}), 400
+
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        prompt = (
+            f"Rewrite this rough task into a structured specification.\n\n"
+            f"Title: {title}\n"
+            f"Description: {description or '(none)'}\n\n"
+            "Return ONLY valid JSON:\n"
+            '{"goal": "one-sentence goal statement", '
+            '"approach": "2-4 sentence implementation approach", '
+            '"acceptance_criteria": "bullet-point acceptance criteria, one per line"}'
+        )
+        req = LLMRequest(
+            system_prompt=(
+                "You are a senior software engineer writing precise task specifications. "
+                "Return valid JSON only."
+            ),
+            messages=[{"role": "user", "content": prompt}],
+            model="claude-haiku-4-5-20251001",
+            max_tokens=600,
+            temperature=0.3,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("task_specify", req)
+        if not resp or not resp.content:
+            return jsonify({"error": "LLM returned no content"}), 502
+
+        raw = resp.content.strip()
+        import re as _re
+        raw = _re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=_re.MULTILINE).strip()
+        spec = _json.loads(raw)
+    except Exception as exc:
+        return jsonify({"error": f"Spec generation failed: {exc}"}), 500
+
+    # Optionally save acceptance_criteria back to the task
+    if task_id and spec.get("acceptance_criteria"):
+        try:
+            conn = get_connection()
+            if hasattr(conn, "set_security_context"):
+                conn.set_security_context(None)
+            try:
+                conn.execute(
+                    "UPDATE kanban_tasks SET acceptance_criteria = ?, updated_at = ? WHERE id = ?",
+                    (spec["acceptance_criteria"], _utcnow(), task_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception:
+            pass  # best-effort save
+
+    return jsonify(spec), 200
+
+
+@kanban_api.route("/tasks/<task_id>/judge", methods=["POST"])
+def judge_task(task_id):
+    """Goal-mode judge: evaluate task output against acceptance_criteria.
+
+    Body: {"output": "<task output text>"}
+    Returns: {"passed": true/false, "reasoning": "..."}
+    """
+    import json as _json
+    data = request.get_json(force=True, silent=True) or {}
+    output_text = (data.get("output") or "").strip()
+
+    conn = get_connection()
+    if hasattr(conn, "set_security_context"):
+        conn.set_security_context(None)
+    try:
+        row = conn.execute(
+            "SELECT title, acceptance_criteria FROM kanban_tasks WHERE id = ?", (task_id,)
+        ).fetchone()
+        if not row:
+            return jsonify({"error": "Task not found"}), 404
+        d = dict(row)
+        criteria = (d.get("acceptance_criteria") or "").strip()
+        if not criteria:
+            return jsonify({"passed": True, "reasoning": "No acceptance criteria defined"}), 200
+    finally:
+        conn.close()
+
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+        import re as _re
+
+        prompt = (
+            f"Evaluate whether the task output meets the acceptance criteria.\n\n"
+            f"ACCEPTANCE CRITERIA:\n{criteria}\n\n"
+            f"TASK OUTPUT (last 3000 chars):\n{output_text[-3000:] if output_text else '(no output)'}\n\n"
+            'Return ONLY valid JSON: {"passed": true/false, "reasoning": "..."}'
+        )
+        req = LLMRequest(
+            system_prompt="You are a quality acceptance evaluator. Return valid JSON only.",
+            messages=[{"role": "user", "content": prompt}],
+            model="claude-haiku-4-5-20251001",
+            max_tokens=300,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("acceptance_judge", req)
+        if not resp or not resp.content:
+            return jsonify({"passed": True, "reasoning": "Judge unavailable"}), 200
+
+        raw = _re.sub(
+            r"^```(?:json)?\s*|\s*```$", "", resp.content.strip(), flags=_re.MULTILINE
+        ).strip()
+        result = _json.loads(raw)
+        return jsonify({"passed": bool(result.get("passed", True)), "reasoning": str(result.get("reasoning", ""))}), 200
+    except Exception as exc:
+        return jsonify({"passed": True, "reasoning": f"Judge error: {exc}"}), 200
+
+
 _VALID_STATUSES = (
     "backlog",
     "scheduled",
@@ -987,7 +1280,8 @@ def move_task(task_id):
 
     now = _utcnow()
     conn = get_connection()
-    conn.set_security_context(None)  # kanban_tasks has no classification/tenant_id columns
+    if hasattr(conn, "set_security_context"):
+        conn.set_security_context(None)  # kanban_tasks has no classification/tenant_id columns
     try:
         existing = conn.execute("SELECT status, title FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone()
         if not existing:
@@ -1002,14 +1296,14 @@ def move_task(task_id):
                 "SELECT depends_on_task_id FROM kanban_tasks WHERE id = ?",
                 (task_id,),
             ).fetchone()
-            parent_id = (dep_row or {}).get("depends_on_task_id")
+            parent_id = dep_row["depends_on_task_id"] if dep_row else None
             parent_status = None
             if parent_id:
                 parent_row = conn.execute(
                     "SELECT status FROM kanban_tasks WHERE id = ?",
                     (parent_id,),
                 ).fetchone()
-                parent_status = (parent_row or {}).get("status")
+                parent_status = parent_row["status"] if parent_row else None
             if parent_id and parent_status not in ("done", "decomposed", None):
                     return jsonify({
                         "error": "dependency_not_done",

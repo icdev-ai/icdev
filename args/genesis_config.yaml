@@ -1085,6 +1085,19 @@ reflexes:
       threshold: 0
       operator: gte  # 0 = nothing to do (healthy), > 0 = drafts or tasks created
 
+  wiki_lint:
+    enabled: true
+    risk_tier: green
+    schedule: "daily 04:00"
+    description: "Karpathy LLM Wiki health checks: orphan files, broken [[slug]] links, stale current-state claims, MEMORY.md overflow"
+    success_metric:
+      name: total_findings
+      threshold: 0
+      operator: gte
+    staleness_days: 90            # Files older than this (in days) with current-state language are flagged
+    overflow_warn_lines: 160      # MEMORY.md line count that triggers overflow warning (Claude Code truncates at 200)
+    # auto_memory_path:           # Override path for Claude Code auto-memory dir (derived by convention if omitted)
+
 # ── Promoter Configuration ───────────────────────────────────────────────────
 
 promoter:

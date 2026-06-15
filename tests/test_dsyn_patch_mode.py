@@ -6,7 +6,6 @@ from __future__ import annotations
 import contextlib
 import importlib
 import inspect
-import json
 import sqlite3
 from unittest.mock import MagicMock
 

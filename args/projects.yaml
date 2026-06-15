@@ -4,6 +4,68 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: nmce
+  name: Nmce Project
+  description: Auto-registered project for tasks with prefix 'nmce-'. Update name
+    and description to reflect the project purpose.
+  task_prefix: nmce-
+  default_open: true
+  briefs: []
+  epics:
+  - key: api
+    title: API
+    priority: medium
+  - key: db
+    title: DB
+    priority: medium
+  - key: fn
+    title: FN
+    priority: medium
+  - key: tpl
+    title: TPL
+    priority: medium
+  - key: vv
+    title: VV
+    priority: medium
+  - key: wiz
+    title: WIZ
+    priority: medium
+- key: nova
+  name: NOVA — Autonomous Self-Learning Digital Coworker
+  description: 'Synthesizes Hermes GEPA skill evolution, OpenClaw SOUL identity, and
+    SIA closed-loop tracing into ICDEV''s autonomous coworker platform. Five pillars:
+    ECHO (execution tracing + Reflexion), SOUL (per-role identity + cross-session
+    memory), TRUST (Bayesian autonomy calibration), SELA (GEPA skill evolution without
+    GPU), CHORUS (deferred). Gated by ICDEV_HARNESS_COLEARN=true. DB init: tools/nova/db/init_db.py.
+    15 kanban tasks seeded.'
+  task_prefix: nova-
+  default_open: true
+  briefs:
+  - 'echo: trace_logger + reflexion_agent + harness ICDEV_HARNESS_COLEARN wiring (nova-echo-01..03)'
+  - 'soul: SOUL.md/TOOLS.md for 12 roles + soul_manager.py + dispatch injection (nova-soul-01..03)'
+  - 'trust: Bayesian trust_calibrator + dispatch gating + /ace/trust dashboard (nova-trust-01..03)'
+  - 'sela: eval_builder + fitness scorer + artifact_evolver + golden eval data (nova-sela-01..04)'
+  - 'mcp: register trust_calibrator + artifact_evolver in MCP tool_registry (nova-mcp-01)'
+  - 'vv: E2E ECHO->SOUL->TRUST loop verification (nova-vv-01)'
+  epics:
+  - key: echo
+    title: ECHO — Execution Tracing & Reflexion
+    priority: high
+  - key: soul
+    title: SOUL — Coworker Identity & Memory
+    priority: high
+  - key: trust
+    title: TRUST — Bayesian Autonomy Calibration
+    priority: high
+  - key: sela
+    title: SELA — Skill Self-Evolution (GEPA)
+    priority: medium
+  - key: mcp
+    title: MCP Registration
+    priority: medium
+  - key: vv
+    title: V&V — End-to-End Verification
+    priority: high
 - key: pma
   name: Pma Project
   description: Auto-registered project for tasks with prefix 'pma-'. Update name and
@@ -5664,4 +5726,109 @@ projects:
     priority: high
   - key: vv
     title: V&V — icdev mirror + Playwright verification
+    priority: high
+- key: adapt
+  name: "External Repo Adaptation"
+  description: "Adapt 8 scouted GitHub repos into ICDEV engines: Taste Skill (design
+    hardprompts), MarkItDown (DIC multi-format), last30days (social trend scanner),
+    Tolaria (air-gap vault), Hermes (FTS5 memory), Headroom (LLM compression),
+    Agent Reach (platform connectors), iii (A2A discovery registry). 39 tasks."
+  task_prefix: adapt-
+  default_open: true
+  briefs:
+  - 'taste: design_quality hardprompts for Creative + Slides canvases (adapt-taste-01..04)'
+  - 'md: MarkItDown DIC converter for DOCX/PPTX/XLSX/audio (adapt-md-01..05)'
+  - 'l30: social_trends research scanner Reddit+HN+GitHub (adapt-l30-01..05)'
+  - 'tol: vault_exporter for air-gap context/hardprompts/memory (adapt-tol-01..04)'
+  - 'hermes: FTS5 memory_fts migration + session_indexer + hybrid_search wiring (adapt-hermes-01..05)'
+  - 'hd: LLM router context compression middleware (adapt-hd-01..05)'
+  - 'conn: unified platform_connectors registry GitHub+Reddit+HN (adapt-conn-01..08)'
+  - 'iii: A2A discovery registry over 15 agents (adapt-iii-01..03)'
+  epics:
+  - key: taste
+    title: "Taste Skill — Design-Quality Hardprompts"
+    priority: high
+  - key: md
+    title: "MarkItDown — DIC Multi-Format Ingestion"
+    priority: high
+  - key: l30
+    title: "last30days — Social Trend Research Scanner"
+    priority: high
+  - key: tol
+    title: "Tolaria — Air-Gap Knowledge Vault"
+    priority: medium
+  - key: hermes
+    title: "Hermes — FTS5 Session History Search"
+    priority: medium
+  - key: hd
+    title: "Headroom — LLM Router Context Compression"
+    priority: high
+  - key: conn
+    title: "Agent Reach — Unified Platform Connectors"
+    priority: high
+  - key: iii
+    title: "iii — A2A Discovery Registry"
+    priority: medium
+- key: ski
+  name: "Skill Integration Initiative — SkillSpector + pm-skills + agent-skills"
+  description: >
+    Three-repo integration: (1) NVIDIA SkillSpector security scanner wired into SIPA,
+    SkillHub, CodeLens, and Coherence to gate malicious AI skill imports; (2) phuryn/pm-skills
+    (68+ PM skills, 9 plugins) imported and wired into /govcon, /proposals, /cpmp, and the
+    ACE Product Manager digital coworker role; (3) addyosmani/agent-skills (24 engineering
+    discipline skills + 4 personas) imported and wired into ANVIL slash commands, CodeLens
+    discipline dimension, and the ACE Software Craftsperson digital coworker role.
+    14 tasks across 6 epics: security gate, skill imports, coworker profiles, ANVIL hardening,
+    GovCon PM pipeline, and NOVA persistence.
+  task_prefix: ski-
+  default_open: true
+  briefs:
+  - 'sipsec: SkillSpector SIPA adapter (source_scanner=skillspector) + SkillHub risk badge
+    + Coherence check #15 skill_security — ski-sipsec-01, ski-hub-01, ski-coh-01'
+  - 'sklib: Import addyosmani/agent-skills (24 skills) + phuryn/pm-skills (68+ skills, 9
+    plugins) via SkillHub paste/detect + SIPA quarantine — ski-sklib-01, ski-sklib-02'
+  - 'cwk: ACE Product Manager role YAML (phuryn skills, 20 steps, govcon A2A topics) +
+    ACE Software Craftsperson role YAML (addyosmani 24 skills, 4 sub-personas, anti-rationalization)
+    — ski-pm-01, ski-craft-01'
+  - 'anvil: 7 addyosmani slash commands as .claude/commands/ wrappers + CodeLens --discipline
+    flag (5-axis review + doubt-driven dimension) + Coherence check #16 spec_discipline
+    — ski-anvil-01, ski-anvil-02, ski-coh-02'
+  - 'govcon: tools/govcon/pm_skills_bridge.py (SWOT/ICP/battlecards from pm-skills against
+    govcon DB) + args/ace/prompt_chains/pm_govcon_prd.yaml (OST→PRD→proposal chain) —
+    ski-govcon-01, ski-govcon-02'
+  - 'cpmp: CPMP pm-skills wiring (sprint→CDRL, retro→CPARS, OKR→EVM, WWAS→milestone) +
+    NOVA SOUL layer for PM + Craftsperson coworkers — ski-cpmp-01, ski-nova-01'
+  epics:
+  - key: sipsec
+    title: "Security Gate — SkillSpector SIPA Adapter + SkillHub Risk Badge"
+    priority: critical
+  - key: hub
+    title: "SkillHub — Risk Badge + Install Gate + Scan-on-Import"
+    priority: critical
+  - key: coh
+    title: "Coherence — skill_security (#15) + spec_discipline (#16)"
+    priority: high
+  - key: sklib
+    title: "Skill Library Import — addyosmani (24) + phuryn (68+)"
+    priority: high
+  - key: pm
+    title: "ACE Product Manager — Digital Coworker Role (phuryn)"
+    priority: high
+  - key: craft
+    title: "ACE Software Craftsperson — Digital Coworker Role (addyosmani)"
+    priority: high
+  - key: anvil
+    title: "ANVIL Hardening — 7 Slash Commands + CodeLens Discipline"
+    priority: medium
+  - key: govcon
+    title: "GovCon PM Bridge — pm_skills_bridge.py + PRD Prompt Chain"
+    priority: high
+  - key: cpmp
+    title: "CPMP pm-skills Wiring — Sprint/Retro/OKR/WWAS"
+    priority: medium
+  - key: nova
+    title: "NOVA Persistence — SOUL Layer for PM + Craftsperson"
+    priority: medium
+  - key: vv
+    title: "V&V — Coherence + Companion Sync + E2E Smoke"
     priority: high

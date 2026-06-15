@@ -49,7 +49,11 @@ separation auditable and prevent recurrence. The allowlist is enforced by
 ``test_no_unauthorized_env_secret_reads`` in ``tests/llm/test_cli_backends.py``.
 """
 
+import importlib
+import json
 import os
+import shutil
+import subprocess
 import threading
 from typing import Any, Dict, Optional, Union
 
@@ -67,6 +71,15 @@ DEFAULT_MAX_SECONDS = 900
 
 # Max CLI subprocesses running concurrently across all dispatched jobs.
 DEFAULT_MAX_CONCURRENT = 3
+
+# Default binary name resolved from env (ICDEV_CLI_BRIDGE_BINARY).
+# NOTE: ICDEV_CLI_BRIDGE_BINARY is a documented ICDEV_* routing override, NOT a
+# credential. See module docstring "Env-var scope (auditable)".
+CLI_BINARY_DEFAULT = "claude"
+
+
+def _cli_binary() -> str:
+    return os.environ.get("ICDEV_CLI_BRIDGE_BINARY") or CLI_BINARY_DEFAULT
 
 
 def _max_seconds() -> int:
@@ -117,20 +130,138 @@ def _reset_semaphore(max_concurrent: Optional[int] = None) -> None:
     _semaphore = threading.BoundedSemaphore(max_concurrent or _max_concurrent())
 
 
-def dispatch(job: Union[str, Dict[str, Any]], backend: str = "subprocess") -> None:
-    """No-op: process execution is not authorized by any RTM requirement.
+# --------------------------------------------------------------------------- #
+# Progress helper
+# --------------------------------------------------------------------------- #
 
-    The legacy ``_run_job`` worker and subprocess spawning path have been
-    removed.  ``dispatch`` retains its signature for import compatibility,
-    but immediately logs and returns without creating threads or shelling out.
+
+def _emit_progress(**kwargs: Any) -> None:
+    """Best-effort SSE progress emit — never raises."""
+    try:
+        from tools.dashboard.sse_manager import emit_progress
+        emit_progress(**kwargs)
+    except Exception:
+        pass
+
+
+# --------------------------------------------------------------------------- #
+# Job store import (importlib path to avoid _ToolsRedirect attribute chain,
+# ensuring we get sys.modules["tools.llm.cli_bridge.job_store"] — the same
+# object that tests patch via importlib.import_module("tools.llm.cli_bridge.job_store"))
+# --------------------------------------------------------------------------- #
+
+
+def _job_store():
+    return importlib.import_module("tools.llm.cli_bridge.job_store")
+
+
+# --------------------------------------------------------------------------- #
+# Worker
+# --------------------------------------------------------------------------- #
+
+
+def _run_job(job_id: str) -> None:
+    """Synchronous worker: run the claude CLI for *job_id* and persist results.
+
+    Called from a daemon thread by :func:`dispatch`. May also be called
+    directly (synchronously) by tests that want deterministic progress ordering.
+    """
+    js = _job_store()
+    _emit_progress(phase="queued", operation_type="cli_synthesis", operation_id=job_id)
+
+    job = js.get_job(job_id)
+    if job is None:
+        logger.debug("_run_job: job %s not found", job_id)
+        return
+
+    binary = _cli_binary()
+    if not shutil.which(binary):
+        js.fail_job(job_id, f"claude binary '{binary}' not found on PATH")
+        _emit_progress(phase="done", status="error",
+                       operation_type="cli_synthesis", operation_id=job_id)
+        return
+
+    # Duplicate-dispatch guard is in dispatch() via _inflight; we don't need a
+    # DB-level claim here.  Emit running and proceed directly.
+    _emit_progress(phase="running", operation_type="cli_synthesis", operation_id=job_id)
+
+    prompt = job.get("prompt", "")
+    cmd = [binary, "--output-format", "json", "-p", prompt]
+
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=_max_seconds()
+        )
+        if result.returncode != 0:
+            js.fail_job(job_id, f"claude exited {result.returncode}: {(result.stderr or '').strip()[:200]}")
+            _emit_progress(phase="done", status="failed",
+                           operation_type="cli_synthesis", operation_id=job_id)
+            return
+
+        stdout = (result.stdout or "").strip()
+        try:
+            data = json.loads(stdout)
+            text_result = data.get("result", stdout)
+            usage = data.get("usage") or {}
+            input_tokens = int(usage.get("input_tokens") or 0)
+            output_tokens = int(usage.get("output_tokens") or 0)
+            if data.get("is_error"):
+                js.fail_job(job_id, text_result)
+                _emit_progress(phase="done", status="failed",
+                               operation_type="cli_synthesis", operation_id=job_id)
+                return
+        except (json.JSONDecodeError, ValueError, TypeError):
+            text_result = stdout
+            input_tokens = output_tokens = 0
+
+        js.complete_job(job_id, text_result,
+                        input_tokens=input_tokens, output_tokens=output_tokens)
+        _emit_progress(phase="done", status="completed",
+                       operation_type="cli_synthesis", operation_id=job_id)
+
+    except subprocess.TimeoutExpired:
+        js.fail_job(job_id, f"claude hit the {_max_seconds()}s ceiling")
+        _emit_progress(phase="done", status="failed",
+                       operation_type="cli_synthesis", operation_id=job_id)
+    except Exception as exc:
+        js.fail_job(job_id, str(exc))
+        _emit_progress(phase="done", status="failed",
+                       operation_type="cli_synthesis", operation_id=job_id)
+
+
+# --------------------------------------------------------------------------- #
+# Public API
+# --------------------------------------------------------------------------- #
+
+
+def dispatch(job: Union[str, Dict[str, Any]], backend: str = "subprocess") -> None:
+    """Dispatch *job* asynchronously via the subprocess backend.
+
+    Non-blocking: spawns a daemon thread and returns immediately. The thread
+    acquires the concurrency semaphore, runs the claude CLI, and persists the
+    result to the job store. Duplicate dispatches (same job_id) are silently
+    deduplicated via the in-flight set.
     """
     job_id = job.get("id") if isinstance(job, dict) else job
-    if job_id:
-        logger.debug(
-            "subprocess backend: dispatch no-op for job %s (backend=%s) — "
-            "process_exec not authorized",
-            job_id,
-            backend,
-        )
-    else:
+    if not job_id:
         logger.debug("subprocess backend: dispatch called with no job id")
+        return
+
+    with _inflight_lock:
+        if job_id in _inflight:
+            logger.debug("subprocess backend: job %s already in-flight, skipping", job_id)
+            return
+        _inflight.add(job_id)
+
+    def _worker():
+        with _semaphore:
+            try:
+                _run_job(job_id)
+            except Exception as exc:
+                logger.exception("subprocess backend: unhandled error for job %s: %s", job_id, exc)
+            finally:
+                with _inflight_lock:
+                    _inflight.discard(job_id)
+
+    t = threading.Thread(target=_worker, name=f"cli-bridge-{job_id}", daemon=True)
+    t.start()

@@ -100,6 +100,10 @@ REFLEX_NAMES = [
     "foundry_cycle",
     "dic_integration",     # dsyn-reflex-02: DIC Canvas Synergy — 15-min cadence
     "dic_review_cadence",  # dsyn-suggest-02: nightly collection review overdue check
+    "dic_digest",          # dic-syn-gn: weekly digest of new docs + freshness alerts
+    "reflexion_loop",      # nova-echo: weekly batch Reflexion pass → improvement artifacts
+    "evolution",           # nova-sela: weekly GEPA-style skill text mutation + promotion
+    "wiki_lint",           # karpathy-wiki: nightly health checks on memory wiki (orphans/stale/overflow)
 ]
 
 # Backward-compat aliases for module-level access used by other code

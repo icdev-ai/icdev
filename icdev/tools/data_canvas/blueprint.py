@@ -1669,7 +1669,7 @@ def create_data_canvas_blueprint():
         """SOP list page — all DDC standard operating procedures."""
         conn = get_connection()
         rows = conn.execute(
-            "SELECT id, title, category, status, version, owner, classification, created_at, updated_at "
+            "SELECT id, title, category, status, version, owner, classification, description, created_at, updated_at "
             "FROM ddc_sops ORDER BY category, title"
         ).fetchall()
         conn.close()
@@ -2014,9 +2014,16 @@ def create_data_canvas_blueprint():
                 "column_name, transform_desc, classification, created_at "
                 "FROM dd_lineage ORDER BY created_at"
             ).fetchall()
+        # Fetch node labels before closing — enriches lineage graph with human-readable names
+        node_label_rows = conn.execute(
+            "SELECT node_id, label FROM data_nodes"
+        ).fetchall()
         conn.close()
+        node_labels = {r["node_id"]: r["label"] for r in node_label_rows}
         lineage_records = [row_to_dict(r) for r in lin_rows]
         dag = build_column_lineage_dag(lineage_records)
+        for node in dag["nodes"]:
+            node["entity_label"] = node_labels.get(node["entity_id"], node["entity_id"])
         gaps = generate_contract_assertions(
             lineage_records, {"nodes": [], "edges": [], "boundaries": []}
         )
@@ -3236,5 +3243,10 @@ def create_data_canvas_blueprint():
         data = request.get_json(force=True, silent=True) or {}
         result = _test_contract(contract_id, conn_params=data.get("conn_params"))
         return jsonify(result)
+
+    @bp.route("/pipeline-ops")
+    def dc_pipeline_ops():
+        return render_template("data_canvas/pipeline_ops.html",
+                               page_title="Pipeline Command Center")
 
     return bp

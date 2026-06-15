@@ -333,7 +333,7 @@ class ProviderHealthTracker:
     def reorder_chain(
         self,
         chain: List[str],
-        router: "LLMRouter",  # type: ignore[name-defined]  # forward ref
+        router: "LLMRouter",  # type: ignore[name-defined]  # noqa: F821  # forward ref
     ) -> List[str]:
         """Return chain with models from degraded providers moved to end.
 
@@ -375,7 +375,7 @@ class ProviderHealthTracker:
     def apply_load_sharing(
         self,
         chain: List[str],
-        router: "LLMRouter",  # type: ignore[name-defined]
+        router: "LLMRouter",  # type: ignore[name-defined]  # noqa: F821
     ) -> List[str]:
         """Optionally shuffle healthy models round-robin per provider."""
         if not self.enabled:

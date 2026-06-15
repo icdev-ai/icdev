@@ -298,6 +298,67 @@ def test_coworker_thread_trust_denied(ace_db, monkeypatch):
     bus.broadcast.assert_not_called()
 
 
+def test_coworker_soul_preamble_injected_to_context(ace_db, monkeypatch):
+    """CoWorkerThread injects soul preamble containing '## Identity & Values' into context."""
+    fake_preamble = (
+        "---\n"
+        "**[NOVA SOUL — ai_developer]** Identity context injected by soul_manager.\n\n"
+        "## Identity & Values\nBe helpful, precise, and cautious.\n"
+        "---\n"
+    )
+
+    import icdev.tools.ace.soul_manager as _sm
+    monkeypatch.setattr(_sm, "build_identity_preamble", lambda role_id: fake_preamble)
+
+    record: list[str] = []
+    monkeypatch.setattr("icdev.tools.ace.coworker_thread.StepExecutor", _make_executor(record))
+    monkeypatch.setattr("icdev.tools.ace.coworker_thread.RoleLoader", _fake_loader_cls(["s1"]))
+
+    from icdev.tools.ace.coworker_thread import CoWorkerThread
+
+    bus = MagicMock()
+    bus.poll_inbox.return_value = []
+
+    thread = CoWorkerThread(
+        spec=_spec("cw-soul-inject"),
+        instance_id="ace-soul-inject",
+        message_bus=bus,
+        trust_kernel=MagicMock(),
+    )
+    thread._run_inner()
+
+    assert "soul_preamble" in thread._context, "soul_preamble must be set in dispatch context"
+    assert "## Identity & Values" in thread._context["soul_preamble"]
+    assert record == ["s1"]
+
+
+def test_coworker_soul_preamble_empty_no_crash(ace_db, monkeypatch):
+    """CoWorkerThread handles empty preamble (role with no SOUL.md) without crashing."""
+    import icdev.tools.ace.soul_manager as _sm
+    monkeypatch.setattr(_sm, "build_identity_preamble", lambda role_id: "")
+
+    record: list[str] = []
+    monkeypatch.setattr("icdev.tools.ace.coworker_thread.StepExecutor", _make_executor(record))
+    monkeypatch.setattr("icdev.tools.ace.coworker_thread.RoleLoader", _fake_loader_cls(["s1"]))
+
+    from icdev.tools.ace.coworker_thread import CoWorkerThread
+
+    bus = MagicMock()
+    bus.poll_inbox.return_value = []
+
+    thread = CoWorkerThread(
+        spec=_spec("cw-soul-empty"),
+        instance_id="ace-soul-empty",
+        message_bus=bus,
+        trust_kernel=MagicMock(),
+    )
+    thread._run_inner()
+
+    # Empty preamble → soul_preamble not set in context; no crash
+    assert thread._context.get("soul_preamble", "") == ""
+    assert record == ["s1"]
+
+
 # ---------------------------------------------------------------------------
 # ACEController
 # ---------------------------------------------------------------------------

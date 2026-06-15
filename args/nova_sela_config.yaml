@@ -1,0 +1,34 @@
+# NOVA SELA — Skill & Goal Self-Evolution Config
+# CUI // SP-CTI
+# Separate from args/evolution_config.yaml (Phase 36 Evolution Daemon)
+
+# ── Mutation ────────────────────────────────────────────────────────────────
+mutation_count: 4           # Number of candidate mutations per skill per run
+skill_limit: 10             # Max skills to evolve per reflex run
+
+# ── Constraint gates (all-or-nothing — any failure rejects the candidate) ──
+max_skill_bytes: 15360      # 15 KB ceiling per skill file
+max_growth_ratio: 0.20      # Candidate may not grow more than +20% vs. baseline
+min_improvement_delta: 0.05 # Composite score must improve ≥5% to promote
+
+# ── Eval dataset ────────────────────────────────────────────────────────────
+min_examples: 6             # Minimum eval examples required before evolution runs
+max_synthetic: 10           # Max synthetic examples generated (cold-start fallback)
+train_ratio: 0.60
+val_ratio: 0.20
+
+# ── Fitness scoring ─────────────────────────────────────────────────────────
+# Composite = 0.5*correctness + 0.3*procedure + 0.2*conciseness
+weight_correctness: 0.50
+weight_procedure: 0.30
+weight_conciseness: 0.20
+
+# ── Promotion ───────────────────────────────────────────────────────────────
+# NEVER auto-merge evolved skill files.
+# Promotions create oracle_predictions rows → kanban suggested cards.
+auto_merge: false
+
+# ── Schedule ────────────────────────────────────────────────────────────────
+schedule: "weekly"
+day_of_week: "saturday"
+hour_utc: 3

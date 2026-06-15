@@ -43,6 +43,11 @@ def scan_models(project_id: str) -> dict:
     """Load ML model inventory from DB; fall back to defaults if absent."""
     inv = dict(_DEFAULT_INVENTORY)
     try:
+        from tools.aimc.db.init_db import init_db as _init_aimc_db
+        _init_aimc_db()
+    except Exception:
+        pass
+    try:
         from tools.db.storage import get_connection
         with get_connection() as conn:
             cur = conn.cursor()

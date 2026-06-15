@@ -1128,6 +1128,23 @@ coherence:
     max_fixture_mismatches: 0
     coherence_required: true
 
+foundry_self_vet:
+  description: "ACF Autonomous Capability Foundry — self-vet gate before autonomous build (acf-engine-03)"
+  blocking:
+    - acf_emitted_task_missing_integrity_gate
+    - sipa_gate_failed_on_acf_patch
+    - security_gate_failed_on_acf_patch
+    - coherence_gate_failed_on_acf_patch
+    - circuit_breaker_open
+  warning:
+    - self_vet_score_below_threshold
+    - vv_fail_rate_elevated
+  thresholds:
+    require_integrity_gate: true
+    require_security_gate: true
+    vv_fail_rate_threshold: 0.5
+    circuit_window: 10
+
 # Engineering Review Board Gate (Phase 67, D-RB-1 through D-RB-7)
 review_board:
   description: "Continuous multi-persona engineering analysis — SRE, QA, Security, Perf, UX, Docs, Product"

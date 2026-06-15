@@ -210,8 +210,48 @@ def zig_gaps_adapter(conn: Any) -> list[dict]:
         return []
 
 
+def zig_targets_adapter(conn: Any) -> list[dict]:
+    """All external ZIG assessment targets with their latest aggregate maturity score."""
+    try:
+        from tools.security_canvas.db.init_db import get_connection as _sc_conn
+        _conn = _sc_conn()
+        try:
+            targets = _conn.execute(
+                "SELECT id, name, description, app_type, owner_team, created_at "
+                "FROM zig_targets ORDER BY name"
+            ).fetchall()
+            result = []
+            for t in targets:
+                d = dict(t)
+                scores = _conn.execute(
+                    "SELECT pillar_slug, score, maturity_level FROM zig_maturity_scores "
+                    "WHERE target_id=? ORDER BY created_at DESC LIMIT 7",
+                    (d["id"],),
+                ).fetchall()
+                if scores:
+                    avg = sum(float(s["score"]) for s in scores) / len(scores)
+                    levels = [s["maturity_level"] for s in scores]
+                    d["aggregate_score"] = round(avg, 3)
+                    d["maturity_level"] = max(
+                        set(levels),
+                        key=lambda lv: ["preparation", "basic", "intermediate", "advanced", "optimal"].index(lv)
+                        if lv in ["preparation", "basic", "intermediate", "advanced", "optimal"]
+                        else 0,
+                    )
+                else:
+                    d["aggregate_score"] = 0.0
+                    d["maturity_level"] = "preparation"
+                result.append(d)
+            return result
+        finally:
+            _conn.close()
+    except Exception:
+        return []
+
+
 register_collection("zig.pillars", zig_pillars_adapter)
 register_collection("zig.capabilities", zig_capabilities_adapter)
 register_collection("zig.activities", zig_activities_adapter)
 register_collection("zig.maturity", zig_maturity_adapter)
 register_collection("zig.gaps", zig_gaps_adapter)
+register_collection("zig.targets", zig_targets_adapter)

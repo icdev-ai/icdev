@@ -21,3 +21,12 @@ foreach a in zig.activities where a.phase = "discovery" select a.title, a.comple
 
 # Query 7: FY2027 readiness — all incomplete activities
 foreach a in zig.activities where a.completion_status != "complete" select a.phase, a.pillar_slug, a.title, a.completion_status order by a.phase
+
+# Query 8: All external assessment targets with maturity level
+foreach t in zig.targets select t.name, t.app_type, t.owner_team, t.aggregate_score, t.maturity_level
+
+# Query 9: External targets needing attention (score below 40%)
+foreach t in zig.targets where t.aggregate_score < 0.4 select t.name, t.owner_team, t.aggregate_score, t.maturity_level
+
+# Query 10: External targets by maturity level
+foreach t in zig.targets where t.maturity_level = "preparation" select t.name, t.app_type, t.owner_team, t.created_at

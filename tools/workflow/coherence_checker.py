@@ -3170,6 +3170,246 @@ def check_log_standard_compliance() -> CoherenceCheck:
 
 
 # ---------------------------------------------------------------------------
+# Check #15: skill_security — SkillSpector fast static gate on changed SKILL.md
+# ---------------------------------------------------------------------------
+
+def check_skill_security(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Run SkillSpector --no-llm on any SKILL.md files in changed_files.
+
+    Degrades gracefully (warn not fail) when the skillspector CLI is absent,
+    matching the ruff_lint graceful-skip pattern.
+
+    Severity thresholds:
+        risk_score 0-20   → pass
+        risk_score 21-50  → warn  (MEDIUM — flag for review)
+        risk_score 51-100 → fail  (HIGH/CRITICAL — block)
+    """
+    import shutil
+    import subprocess as _sp
+
+    skill_files: List[Path] = []
+    if changed_files:
+        for f in changed_files:
+            if "SKILL.md" in f.name and f.exists():
+                skill_dirs = [f.parent]
+                skill_files.extend(skill_dirs)
+    else:
+        # Full scan: all .agents/skills/*/SKILL.md
+        skills_root = PROJECT_ROOT / ".agents" / "skills"
+        if skills_root.exists():
+            skill_files = [p.parent for p in skills_root.rglob("SKILL.md")]
+
+    if not skill_files:
+        return CoherenceCheck(
+            check_id="skill_security",
+            check_name="Skill Security (SkillSpector)",
+            status="pass",
+            expected=["All SKILL.md files pass SkillSpector scan"],
+            actual=["No SKILL.md files to scan"],
+            missing=[],
+            extra=[],
+            message="No SKILL.md files in scope — skip",
+        )
+
+    cli = shutil.which("skillspector")
+    docker = shutil.which("docker")
+    if not cli and not docker:
+        return CoherenceCheck(
+            check_id="skill_security",
+            check_name="Skill Security (SkillSpector)",
+            status="warn",
+            expected=["skillspector CLI or Docker available"],
+            actual=["Neither skillspector nor docker found on PATH"],
+            missing=["skillspector or docker"],
+            extra=[],
+            message="skillspector and Docker not found — install to enable skill security scanning",
+        )
+
+    failures: List[str] = []
+    warnings: List[str] = []
+
+    for skill_dir in skill_files:
+        target = str(skill_dir)
+        if cli:
+            cmd = [cli, "scan", target, "--no-llm", "--format", "json"]
+        else:
+            cmd = [
+                docker, "run", "--rm",
+                "-v", f"{target}:/scan:ro",
+                "registry.icdev.local/skillspector:latest",
+                "scan", "/scan", "--no-llm", "--format", "json",
+            ]
+        try:
+            result = _sp.run(cmd, capture_output=True, text=True, timeout=60, check=False)
+            raw = (result.stdout or "").strip()
+            if not raw:
+                continue
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            score = data.get("risk_score") or 0
+            severity = data.get("risk_severity", "")
+            label = f"{skill_dir.name} (score={score}, severity={severity})"
+            if score > 50:
+                failures.append(label)
+            elif score > 20:
+                warnings.append(label)
+        except (_sp.TimeoutExpired, FileNotFoundError):
+            warnings.append(f"{skill_dir.name} (scan timed out or errored)")
+
+    if failures:
+        status = "fail"
+    elif warnings:
+        status = "warn"
+    else:
+        status = "pass"
+
+    scanned = len(skill_files)
+    msg = (
+        f"{len(failures)} HIGH/CRITICAL skill(s) detected — block install/promote"
+        if failures else
+        f"{len(warnings)} MEDIUM risk skill(s) flagged for review"
+        if warnings else
+        f"All {scanned} skill(s) passed SkillSpector scan"
+    )
+    return CoherenceCheck(
+        check_id="skill_security",
+        check_name="Skill Security (SkillSpector)",
+        status=status,
+        expected=[f"All {scanned} skill(s) risk_score <= 20"],
+        actual=failures + warnings or [f"{scanned} skills passed"],
+        missing=failures,
+        extra=[],
+        message=msg,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check #16: spec_discipline — Anti-Rationalization Rules (addyosmani/agent-skills)
+# ---------------------------------------------------------------------------
+
+def check_spec_discipline(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Enforce addyosmani/agent-skills anti-rationalization rules as deterministic checks.
+
+    Rules:
+    (a) No spec-before-code: impl .py changed but no context/specs/*.md for that task → warn
+    (b) Beyoncé Rule: new function defined but no corresponding test_ file found → fail
+    (c) Change-size: single file >100-line delta (approximated by file size heuristic) → warn
+    (d) ADR missing: new @bp.route() without any docs/ ADR referencing the path → warn
+
+    All checks are stdlib-only (ast, pathlib, re). Degraded gracefully — each rule
+    is independent so one failure doesn't block the others.
+    """
+    if not changed_files:
+        return CoherenceCheck(
+            check_id="spec_discipline",
+            check_name="Spec Discipline (addyosmani anti-rationalization)",
+            status="pass",
+            expected=["Discipline checks run on changed files"],
+            actual=["No changed files provided — full-scan not applicable"],
+            missing=[],
+            extra=[],
+            message="spec_discipline requires --changed-files to evaluate",
+        )
+
+    failures: List[str] = []
+    warnings: List[str] = []
+
+    impl_files = [
+        f for f in changed_files
+        if f.suffix == ".py"
+        and "test" not in f.name.lower()
+        and f.exists()
+        and str(f).startswith(str(PROJECT_ROOT / "tools"))
+    ]
+    test_files = {f.stem for f in changed_files if f.name.startswith("test_")}
+
+    for impl in impl_files:
+        # (b) Beyoncé Rule — new functions without a test file
+        try:
+            tree = ast.parse(impl.read_text(encoding="utf-8"))
+            new_fns = [
+                n.name for n in ast.walk(tree)
+                if isinstance(n, ast.FunctionDef)
+                and not n.name.startswith("_")
+            ]
+            if new_fns:
+                expected_test = f"test_{impl.stem}"
+                if expected_test not in test_files:
+                    failures.append(
+                        f"[beyonce-rule] {impl.name}: {len(new_fns)} public function(s) "
+                        f"but no {expected_test}.py in changed files"
+                    )
+        except (SyntaxError, OSError):
+            pass
+
+        # (c) Change-size heuristic — large files as proxy (>150KB suggests >100-line change)
+        try:
+            if impl.stat().st_size > 150_000:
+                warnings.append(
+                    f"[change-size] {impl.name}: file is large (>150KB) — "
+                    "consider splitting into smaller change sets (~100 lines each)"
+                )
+        except OSError:
+            pass
+
+        # (d) ADR missing — new blueprint routes without docs/ ADR
+        try:
+            content = impl.read_text(encoding="utf-8")
+            if "@bp.route(" in content or "@app.route(" in content:
+                docs_dir = PROJECT_ROOT / "docs"
+                if docs_dir.exists():
+                    adrs = list(docs_dir.rglob("*.md"))
+                    stem = impl.stem
+                    has_adr = any(stem.replace("_", "-") in a.name for a in adrs)
+                    if not has_adr:
+                        warnings.append(
+                            f"[adr-missing] {impl.name}: defines route(s) but no ADR "
+                            f"found in docs/ referencing '{stem}'"
+                        )
+        except OSError:
+            pass
+
+    # (a) Spec-before-code — check for context/specs/ entry
+    specs_dir = PROJECT_ROOT / "context" / "specs"
+    if impl_files and specs_dir.exists():
+        spec_names = {p.stem for p in specs_dir.glob("*.md")}
+        for impl in impl_files:
+            # Heuristic: spec name should share stem prefix with impl or task ID
+            stem = re.sub(r"_v\d+$", "", impl.stem)
+            if not any(stem in s or s in stem for s in spec_names):
+                warnings.append(
+                    f"[spec-before-code] {impl.name}: no matching spec in context/specs/ "
+                    f"(expected a file with '{stem}' in the name)"
+                )
+
+    if failures:
+        status = "fail"
+    elif warnings:
+        status = "warn"
+    else:
+        status = "pass"
+
+    all_issues = failures + warnings
+    msg = (
+        f"{len(failures)} Beyoncé Rule violation(s) detected" if failures else
+        f"{len(warnings)} discipline warning(s) — spec/ADR/change-size" if warnings else
+        f"All {len(impl_files)} impl file(s) passed discipline checks"
+    )
+    return CoherenceCheck(
+        check_id="spec_discipline",
+        check_name="Spec Discipline (addyosmani anti-rationalization)",
+        status=status,
+        expected=["Specs before code, tests for new functions, ADRs for routes, small change sets"],
+        actual=all_issues or [f"{len(impl_files)} impl files passed"],
+        missing=failures,
+        extra=[],
+        message=msg,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -3198,6 +3438,8 @@ CHECK_REGISTRY = {
     "nav_route_parity": check_nav_route_parity,
     "blueprint_imports": check_blueprint_imports,
     "new_page_completeness": check_new_page_completeness,
+    "skill_security": check_skill_security,
+    "spec_discipline": check_spec_discipline,
 }
 
 

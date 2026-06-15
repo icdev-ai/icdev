@@ -8,7 +8,8 @@ RBAC+ABAC+RLS access control.
 
 | Tool | Purpose |
 |------|---------|
-| `tools/document_intelligence/extractors.py` | Built-in air-gap-safe file extractors. Returns `Extraction(text, provider, content_type, page_count, title, metadata, warnings)`. Supports PDF (pypdf), DOCX (python-docx), XLSX (openpyxl), PPTX (python-pptx), PNG (pytesseract/easyocr), HTML (strip-html), TXT (plain read). All formats degrade gracefully — missing library yields `text=""` + warning rather than raising. Called by `ingest_orchestrator.py` before chunking. |
+| `tools/document_intelligence/extractors.py` | Built-in air-gap-safe file extractors. Returns `Extraction(text, provider, content_type, page_count, title, metadata, warnings)`. Supports PDF (pypdf), DOCX (python-docx), XLSX (openpyxl), PPTX (python-pptx), PNG (pytesseract/easyocr), HTML (strip-html), TXT (plain read). All formats degrade gracefully — missing library yields `text=""` + warning rather than raising. Called by `ingest_orchestrator.py` before chunking. MarkItDown is tried first for DOCX/PPTX/XLSX/images/audio when installed (see converter below). |
+| `tools/document_intelligence/converters/markitdown_adapter.py` | Optional enhanced extractor wrapping Microsoft MarkItDown (pip install markitdown). Converts DOCX/PPTX/XLSX/PDF/HTML/images/audio to structured Markdown with header/table preservation. Gracefully degrades to `Extraction(text="", provider="markitdown-unavailable")` when library is absent. `should_use_markitdown(ext)` guards the dispatch in `extract_file()`. `SUPPORTED_EXTENSIONS` frozenset lists all handled formats; `_PREFER_BUILTIN` excludes .txt/.md/.py (adapt-md-02/03). |
 | `tools/document_intelligence/ingest_orchestrator.py` | Route a file → provider (by extension) → extract → REUSE `icdev.tools.rag.chunker.chunk_content` + `IngestionManager.ingest_source` to chunk/embed/upsert into the vector store → bridge each chunk into the KG via `rag_to_kg_ingester.ingest_chunk_to_kg` → write `dic_documents` + initial `dic_versions(origin='human_authored', status='approved')` + `dic_chunk_links` (rag chunk → doc + page/section). Stamps `tenant_id`/`classification` from the caller's security context on every row. |
 | `python -m tools.document_intelligence` | Headless CLI: `--ingest <path> --collection <id> [--tenant ID] [--classification C] [--created-by U] [--no-embed] [--no-kg] [--json]`. |
 
@@ -71,7 +72,7 @@ CLI: `python -m tools.document_intelligence.acoic {drift|map|fragment|approve|re
 
 | Tool | Purpose |
 |------|---------|
-| `tools/document_intelligence/search_engine.py` | DIC Grounded Search Engine. Default mode: BM25 + KG traversal (NO LLM, air-gap safe). Optional hybrid mode adds vector similarity + RRF fusion + cross-encoder rerank. Every result carries a mandatory citation pack; results with no traceable source are suppressed. `DICSearchEngine.search(query, collection_id, top_k, mode)` returns `list[DICSearchResult]` each with a `Citation` (doc_id, title, version_id, page, section, chunk_id). Falls back to pure SQL BM25 (`rag_chunks`) when the vector store is unavailable. |
+| `tools/document_intelligence/search_engine.py` | DIC Grounded Search Engine. Default mode: BM25 + KG traversal (NO LLM, air-gap safe). Optional hybrid mode adds vector similarity + RRF fusion + cross-encoder rerank. Every result carries a mandatory citation pack; results with no traceable source are suppressed. `DICSearchEngine.search(query, collection_id, top_k, mode)` returns `list[DICSearchResult]` each with a `Citation` (doc_id, title, version_id, page, section, chunk_id). Falls back to pure SQL BM25 (`rag_chunks`) when the vector store is unavailable. **Karpathy wiki integration:** `DICSearchEngine.answer()` checks the memory wiki for a cached grounded Q&A before running RAG (`_check_wiki_cache`) and files high-confidence answers back to the wiki after synthesis (`_file_qa_to_wiki`); `_wiki_keyword_search()` enables fuzzy cache lookup. |
 
 ### Key API
 
@@ -191,3 +192,17 @@ Air-gap-first, dual-mode implementation porting open-notebook/NotebookLM essenti
 | `POST /api/generate/audio` | Generate audio overview (script + pyttsx3 TTS) from collection |
 | `GET /api/outputs` | List all generated outputs for a collection |
 | `GET /api/outputs/<id>` | Get a single output's parsed content |
+| `POST /api/generate/tasks` | Extract action items from study_guide/faq output → seed kanban tasks via task_factory. Returns {task_ids, count}. |
+| `POST /api/generate/slides` | Convert study_guide or timeline output → slide deck (pptx_builder). Returns {deck_id, url}. |
+| `POST /api/generate/roadmap` | Push timeline events to PMO milestones via milestone_manager. Body: {output_id, contract_id}. |
+| `POST /api/generate/enhance` | Layer LLM narrative on a BM25+KG output. Returns enhanced content_json. |
+| `POST /api/collections/<id>/attach-coworker` | Register DIC collection as ACE co-worker context; returns {coworker_url}. |
+
+## Ecosystem Integration Tools
+
+| Tool | Purpose |
+|------|---------|
+| `tools/document_intelligence/canvas_push.py::push_artifact` | Any canvas calls this to ingest its artifacts (PDF/HTML/text) into DIC collections. |
+| `tools/genesis/reflexes/dic_digest.py::run` | Weekly reflex: new-doc summary + freshness alerts → notification_log. Registered in daemon.py REFLEX_NAMES. |
+| `tools/research/source_scanners/dic_scanner.py::scan_dic_collection` | Research engine scanner: queries rag_chunks from a DIC collection, maps to research_signals format. Key: "dic_collection". |
+| `tools/canvas/kg_builder.py::upsert_from_dic` | Post-generation KG bridge: writes DIC entities/relationships to canvas_kg_nodes/edges with canvas='dic'. |

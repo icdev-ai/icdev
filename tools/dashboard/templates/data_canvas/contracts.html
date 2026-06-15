@@ -182,6 +182,18 @@
   </div>
 </div>
 
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "data_mesh_contracts" %}
+{% set iqe_api_route = "/data/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Data Contracts" %}
+{% set iqe_examples = [
+  {"label": "All contracts", "query": "foreach c in data_mesh.contracts select c.title, c.status, c.version, c.product_id"},
+  {"label": "Active contracts", "query": "foreach c in data_mesh.contracts where c.status == \"active\" select c.title, c.product_id, c.version, c.schema_type"},
+  {"label": "Draft contracts", "query": "foreach c in data_mesh.contracts where c.status == \"draft\" select c.title, c.version, c.created_at"},
+  {"label": "By schema type", "query": "foreach c in data_mesh.contracts select c.title, c.schema_type, c.status, c.classification"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
 <script>
 function applyFilter() {
   const product = document.getElementById('filterProduct').value;

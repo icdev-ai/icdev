@@ -16,7 +16,7 @@
   .filter-btn.active { color: #fff; border-color: transparent; }
   .lin-body { display: flex; flex: 1; overflow: hidden; }
   .lin-canvas { flex: 1; background: #0d1b2a; position: relative; }
-  #lineage-paper { width: 100%; height: 100%; }
+  #lineage-paper { width: 100%; height: 100%; min-height: 500px; cursor: grab; }
   .lin-sidebar { width: 280px; background: #0a1628; border-left: 1px solid #1e3a6e; overflow-y: auto; flex-shrink: 0; }
   .lin-sidebar-section { padding: 12px 16px; border-bottom: 1px solid #0f1e36; }
   .lin-sidebar-section h3 { font-size: 11px; color: #7a8cb0; text-transform: uppercase; letter-spacing: 0.5px; margin: 0 0 8px; }
@@ -34,6 +34,10 @@
   .gap-link:hover { text-decoration: underline; }
   .empty-msg { color: #5a6e8c; font-size: 12px; padding: 12px 16px; }
   .accent { color: #ff9800; }
+  #lineage-paper.panning { cursor: grabbing; }
+  .zoom-controls { position: absolute; bottom: 12px; right: 12px; display: flex; flex-direction: column; gap: 4px; z-index: 10; }
+  .zoom-btn { width: 28px; height: 28px; background: #0a1628; border: 1px solid #1e3a6e; color: #eaeaea; font-size: 16px; line-height: 1; cursor: pointer; border-radius: 4px; display: flex; align-items: center; justify-content: center; }
+  .zoom-btn:hover { border-color: #ff9800; color: #ff9800; }
 </style>
 
 <div class="lin-wrap">
@@ -58,6 +62,11 @@
   <div class="lin-body">
     <div class="lin-canvas">
       <div id="lineage-paper"></div>
+      <div class="zoom-controls">
+        <button class="zoom-btn" id="zoom-in" title="Zoom in">+</button>
+        <button class="zoom-btn" id="zoom-fit" title="Fit to screen" style="font-size:11px;">⊡</button>
+        <button class="zoom-btn" id="zoom-out" title="Zoom out">−</button>
+      </div>
     </div>
 
     <div class="lin-sidebar">
@@ -112,6 +121,11 @@
   </div>
 </div>
 
+<!-- joint.js deps: lodash → backbone → dagre → joint (load order is critical) -->
+<script src="/static/js/vendor/jquery.min.js"></script>
+<script src="/static/js/vendor/lodash.min.js"></script>
+<script src="/static/js/vendor/backbone.min.js"></script>
+<script src="/static/js/vendor/dagre.min.js"></script>
 <script src="/static/js/vendor/joint.js"></script>
 <script>
 (function () {
@@ -131,77 +145,183 @@
   document.getElementById("stat-edges").textContent = dagData.edge_count || 0;
 
   if (!dagData.node_count) {
-    var paper = document.getElementById("lineage-paper");
-    paper.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:#5a6e8c;font-size:13px;">No lineage edges found{% if classification_filter %} for classification "{{ classification_filter }}"{% endif %}. Add lineage edges in the canvas editor.</div>';
+    var paperEl = document.getElementById("lineage-paper");
+    paperEl.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:300px;color:#5a6e8c;font-size:13px;">No lineage edges found{% if classification_filter %} for classification "{{ classification_filter }}"{% endif %}. Add lineage edges in the canvas editor.</div>';
     return;
   }
 
-  var graph = new joint.dia.Graph();
-  var paperEl = document.getElementById("lineage-paper");
-  var paper = new joint.dia.Paper({
-    el: paperEl,
-    model: graph,
-    width: paperEl.offsetWidth || 800,
-    height: paperEl.offsetHeight || 600,
-    gridSize: 10,
-    background: { color: "#0d1b2a" },
-    interactive: true
-  });
+  // Defer to next animation frame so flex layout is fully computed before reading offsetWidth/Height
+  requestAnimationFrame(function () {
+    var paperEl = document.getElementById("lineage-paper");
+    var w = paperEl.offsetWidth || 900;
+    var h = paperEl.offsetHeight || 600;
 
-  // Build node elements
-  var nodeMap = {};
-  var colCount = Math.max(1, Math.ceil(Math.sqrt(dagData.nodes.length)));
-  dagData.nodes.forEach(function (node, i) {
-    var col = i % colCount;
-    var row = Math.floor(i / colCount);
-    var x = 60 + col * 200;
-    var y = 60 + row * 100;
-    var fillColor = classColors[node.classification] || "#455a64";
-    var rect = new joint.shapes.standard.Rectangle({
-      position: { x: x, y: y },
-      size: { width: 160, height: 50 },
-      attrs: {
-        body: { fill: fillColor + "33", stroke: fillColor, strokeWidth: 2, rx: 6 },
-        label: {
-          text: (node.column_name || node.entity_id || node.key).substring(0, 22),
-          fill: "#eaeaea",
-          fontSize: 10,
-          fontFamily: "monospace"
-        }
+    var graph = new joint.dia.Graph();
+    var paper = new joint.dia.Paper({
+      el: paperEl,
+      model: graph,
+      width: w,
+      height: h,
+      gridSize: 10,
+      background: { color: "#0d1b2a" },
+      // Allow element dragging but not link dragging; blank area used for pan
+      interactive: function (cellView) {
+        return cellView.model.isLink() ? false : { elementMove: true };
       }
     });
-    graph.addCell(rect);
-    nodeMap[node.key] = rect;
-  });
 
-  // Build links
-  dagData.edges.forEach(function (edge) {
-    var src = nodeMap[edge.source];
-    var tgt = nodeMap[edge.target];
-    if (!src || !tgt) return;
-    var edgeColor = classColors[edge.classification] || "#7a8cb0";
-    var link = new joint.shapes.standard.Link({
-      source: { id: src.id },
-      target: { id: tgt.id },
-      attrs: {
-        line: { stroke: edgeColor, strokeWidth: 1.5, targetMarker: { type: "path", stroke: edgeColor, fill: edgeColor } }
-      },
-      labels: edge.lineage_type ? [{
-        position: 0.5,
-        attrs: { text: { text: edge.lineage_type.replace("flow-column-lineage", "col-lin").replace("col-", ""), fill: "#7a8cb0", fontSize: 9 } }
-      }] : []
+    // Build node elements
+    var nodeMap = {};
+    var elementEntityMap = {}; // elementId → {entityId, colName} for async label enrichment
+    var colCount = Math.max(1, Math.ceil(Math.sqrt(dagData.nodes.length)));
+    dagData.nodes.forEach(function (node, i) {
+      var col = i % colCount;
+      var row = Math.floor(i / colCount);
+      var fillColor = classColors[node.classification] || "#455a64";
+      var entityName = (node.entity_label || node.entity_id || '').substring(0, 20);
+      var colName = node.column_name && node.column_name !== '*' ? node.column_name.substring(0, 18) : '';
+      var labelText = entityName + (colName ? '\n.' + colName : '');
+      var nodeHeight = colName ? 60 : 46;
+      var rect = new joint.shapes.standard.Rectangle({
+        position: { x: 60 + col * 200, y: 60 + row * 100 },
+        size: { width: 170, height: nodeHeight },
+        attrs: {
+          body: { fill: fillColor + "33", stroke: fillColor, strokeWidth: 2, rx: 6 },
+          label: {
+            text: labelText,
+            fill: "#eaeaea",
+            fontSize: 10,
+            fontFamily: "monospace",
+            lineHeight: 14
+          }
+        }
+      });
+      graph.addCell(rect);
+      nodeMap[node.key] = rect;
+      elementEntityMap[rect.id] = { entityId: node.entity_id, colName: node.column_name || '' };
     });
-    graph.addCell(link);
-  });
 
-  // Auto-layout if available
-  if (joint.layout && joint.layout.DirectedGraph) {
-    joint.layout.DirectedGraph.layout(graph, { marginX: 40, marginY: 40, rankSep: 80, nodeSep: 30 });
-  }
+    // Build links
+    dagData.edges.forEach(function (edge) {
+      var src = nodeMap[edge.source];
+      var tgt = nodeMap[edge.target];
+      if (!src || !tgt) return;
+      var edgeColor = classColors[edge.classification] || "#7a8cb0";
+      var link = new joint.shapes.standard.Link({
+        source: { id: src.id },
+        target: { id: tgt.id },
+        attrs: {
+          line: { stroke: edgeColor, strokeWidth: 1.5, targetMarker: { type: "path", stroke: edgeColor, fill: edgeColor } }
+        },
+        labels: edge.lineage_type ? [{
+          position: 0.5,
+          attrs: { text: { text: edge.lineage_type.replace("flow-column-lineage", "col-lin").replace("col-", ""), fill: "#7a8cb0", fontSize: 9 } }
+        }] : []
+      });
+      graph.addCell(link);
+    });
 
-  // Resize paper on window resize
-  window.addEventListener("resize", function () {
-    paper.setDimensions(paperEl.offsetWidth, paperEl.offsetHeight);
+    // Auto-layout — dagre.graphlib is bundled inside dagre.min.js, not a separate global
+    if (joint.layout && joint.layout.DirectedGraph) {
+      try {
+        joint.layout.DirectedGraph.layout(graph, {
+          marginX: 40, marginY: 40, rankSep: 100, nodeSep: 50,
+          dagre: dagre,
+          graphlib: dagre.graphlib
+        });
+      } catch (e) {
+        console.warn('DirectedGraph layout failed, using grid layout:', e.message);
+      }
+    }
+
+    // Scale content to fit within the fixed viewport (keeps sidebar visible, prevents cut-off)
+    paper.scaleContentToFit({ padding: 40 });
+
+    // ── Async label enrichment via design API ─────────────────────────────────
+    // Fetch graph_json for each design to get human-readable node labels.
+    // Done async so the graph renders immediately; labels update once fetched.
+    (function enrichNodeLabels() {
+      var designIds = [{% for d in designs %}"{{ d.id }}"{% if not loop.last %},{% endif %}{% endfor %}];
+      var labelMap = {};
+      var remaining = designIds.length;
+      if (!remaining) return;
+      function applyLabels() {
+        graph.getElements().forEach(function (el) {
+          var info = elementEntityMap[el.id];
+          if (!info || !labelMap[info.entityId]) return;
+          var eLabel = labelMap[info.entityId].substring(0, 20);
+          var cName = info.colName && info.colName !== '*' ? '.' + info.colName.substring(0, 18) : '';
+          el.attr('label/text', eLabel + (cName ? '\n' + cName : ''));
+        });
+      }
+      designIds.forEach(function (did) {
+        fetch('/data/api/designs/' + did, { credentials: 'same-origin' })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (data) {
+            if (data && data.graph_json) {
+              try {
+                var gj = typeof data.graph_json === 'string' ? JSON.parse(data.graph_json) : data.graph_json;
+                (gj.nodes || []).forEach(function (n) {
+                  if (n.id && n.label) labelMap[n.id] = n.label;
+                });
+              } catch (e) {}
+            }
+          })
+          .catch(function () {})
+          .then(function () { // finally-equivalent
+            remaining--;
+            if (remaining === 0) applyLabels();
+          });
+      });
+    }());
+
+    // ── Pan ──────────────────────────────────────────────────────────────────
+    var panStart = null, panOrigin = null;
+    paper.on('blank:pointerdown', function (evt) {
+      panStart = { x: evt.clientX, y: evt.clientY };
+      panOrigin = paper.translate();
+      paperEl.classList.add('panning');
+    });
+    paper.on('blank:pointermove', function (evt) {
+      if (!panStart) return;
+      paper.translate(panOrigin.tx + (evt.clientX - panStart.x),
+                      panOrigin.ty + (evt.clientY - panStart.y));
+    });
+    paper.on('blank:pointerup', function () {
+      panStart = null;
+      paperEl.classList.remove('panning');
+    });
+
+    // ── Zoom (mousewheel toward cursor) ──────────────────────────────────────
+    function applyZoom(factor, cx, cy) {
+      var s = paper.scale().sx;
+      var newS = Math.max(0.15, Math.min(5, s * factor));
+      if (newS === s) return;
+      var t = paper.translate();
+      var rect = paperEl.getBoundingClientRect();
+      var mx = (cx !== undefined ? cx : rect.left + rect.width / 2) - rect.left;
+      var my = (cy !== undefined ? cy : rect.top + rect.height / 2) - rect.top;
+      paper.translate(mx - (mx - t.tx) * (newS / s), my - (my - t.ty) * (newS / s));
+      paper.scale(newS);
+    }
+
+    paperEl.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      applyZoom(e.deltaY < 0 ? 1.12 : 0.89, e.clientX, e.clientY);
+    }, { passive: false });
+
+    // ── Zoom buttons ─────────────────────────────────────────────────────────
+    document.getElementById('zoom-in').addEventListener('click', function () { applyZoom(1.25); });
+    document.getElementById('zoom-out').addEventListener('click', function () { applyZoom(0.8); });
+    document.getElementById('zoom-fit').addEventListener('click', function () {
+      paper.translate(0, 0);
+      paper.scaleContentToFit({ padding: 40 });
+    });
+
+    // ── Resize on window resize ───────────────────────────────────────────────
+    window.addEventListener('resize', function () {
+      paper.setDimensions(paperEl.offsetWidth, paperEl.offsetHeight);
+    });
   });
 }());
 </script>

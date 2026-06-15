@@ -33,8 +33,10 @@ are still written and the failure is reported in the result, never raised.
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import sys
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -311,6 +313,7 @@ class IngestOutcome:
     ocr_cleaned: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
+    anomaly_report: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -329,6 +332,7 @@ class IngestOutcome:
             "ocr_cleaned": self.ocr_cleaned,
             "metadata": self.metadata,
             "errors": self.errors,
+            "anomaly_report": self.anomaly_report,
         }
 
 
@@ -409,7 +413,7 @@ def _embed_and_store(chunks: list, tenant_id: str, errors: list[str], progress_c
 # Cap the text handed to the model so a large document stays within a cheap,
 # fast summarization budget. The lede of a document carries the title/abstract
 # signal, so the leading slice is sufficient and deterministic.
-_SUMMARY_INPUT_CHARS = 6000
+_SUMMARY_INPUT_CHARS: int = int(os.environ.get("DIC_SUMMARY_INPUT_CHARS", "6000"))
 
 _DOC_SUMMARY_SYSTEM_PROMPT = (
     "You summarize a single ingested document for a document-management index. "
@@ -507,13 +511,13 @@ _OCR_PROVIDERS = {"pypdf+ocr", "ocr"}
 # Cleanup is a single bounded LLM call that must round-trip the whole text. To
 # keep it cheap and avoid truncating real content, skip cleanup above this size
 # (large OCR docs are left as-is rather than partially corrected).
-_OCR_CLEANUP_MAX_CHARS = 8000
+_OCR_CLEANUP_MAX_CHARS: int = int(os.environ.get("DIC_OCR_CLEANUP_MAX_CHARS", "8000"))
 
 # The corrected text must stay within this fraction of the original length in
 # both directions; outside the band we assume the model dropped or invented
 # content and discard the result, keeping the raw OCR text.
-_OCR_CLEANUP_MIN_RATIO = 0.5
-_OCR_CLEANUP_MAX_RATIO = 2.0
+_OCR_CLEANUP_MIN_RATIO: float = float(os.environ.get("DIC_OCR_CLEANUP_MIN_RATIO", "0.5"))
+_OCR_CLEANUP_MAX_RATIO: float = float(os.environ.get("DIC_OCR_CLEANUP_MAX_RATIO", "2.0"))
 
 _OCR_CLEANUP_SYSTEM_PROMPT = (
     "You are correcting raw OCR output from a scanned document page. Fix only "
@@ -622,10 +626,36 @@ _METADATA_INPUT_CHARS = 6000
 
 # Below this confidence the whole suggestion is dropped and the fields stay
 # unset for the deterministic / human path (HITL).
-_METADATA_MIN_CONFIDENCE = 0.70
+_METADATA_MIN_CONFIDENCE: float = float(os.environ.get("DIC_METADATA_MIN_CONFIDENCE", "0.70"))
 
-_METADATA_MAX_TAGS = 8
-_METADATA_TAG_MAX_LEN = 40
+_METADATA_MAX_TAGS: int = int(os.environ.get("DIC_METADATA_MAX_TAGS", "8"))
+_METADATA_TAG_MAX_LEN: int = int(os.environ.get("DIC_METADATA_TAG_MAX_LEN", "40"))
+
+# Date plausibility thresholds (aiify-opp-65: date_parsing hardcoded_threshold ->
+# anomaly_detection). Dates outside [_DATE_MIN_YEAR, current+_DATE_MAX_YEAR_OFFSET]
+# are flagged as implausible so callers can surface them as HITL review candidates.
+_DATE_MIN_YEAR: int = int(os.environ.get("DIC_DATE_MIN_YEAR", "1900"))
+_DATE_MAX_YEAR_OFFSET: int = int(os.environ.get("DIC_DATE_MAX_YEAR_OFFSET", "5"))
+
+
+def _detect_date_anomaly(date_str: str) -> str | None:
+    """Return an anomaly signal if a parsed ISO date is implausible, else None.
+
+    Checks the extracted date year against the configurable range
+    [_DATE_MIN_YEAR, current_year + _DATE_MAX_YEAR_OFFSET].
+    """
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError:
+        return "date_invalid_format"
+    current_year = datetime.now(timezone.utc).year
+    if dt.year < _DATE_MIN_YEAR:
+        return f"date_too_old:year={dt.year}<{_DATE_MIN_YEAR}"
+    max_year = current_year + _DATE_MAX_YEAR_OFFSET
+    if dt.year > max_year:
+        return f"date_too_future:year={dt.year}>{max_year}"
+    return None
+
 
 _METADATA_SYSTEM_PROMPT = (
     "You extract structured metadata for a single ingested document, for a "
@@ -739,10 +769,13 @@ def _ai_metadata_extraction(text: str, filename: str) -> dict | None:
             except ValueError:
                 date_str = None
 
+        date_anomaly: str | None = _detect_date_anomaly(date_str) if date_str else None
+
         return {
             "document_type": doc_type,
             "tags": tags,
             "date": date_str,
+            "date_anomaly": date_anomaly,
             "confidence": round(confidence, 4),
         }
     except Exception:
@@ -791,10 +824,10 @@ _IDENTIFIER_KINDS = (
 _IDENTIFIER_INPUT_CHARS = 6000
 
 # Below this overall confidence the whole suggestion is dropped (HITL fallback).
-_IDENTIFIER_MIN_CONFIDENCE = 0.70
+_IDENTIFIER_MIN_CONFIDENCE: float = float(os.environ.get("DIC_IDENTIFIER_MIN_CONFIDENCE", "0.70"))
 
-_IDENTIFIER_MAX_ITEMS = 8
-_IDENTIFIER_VALUE_MAX_LEN = 64
+_IDENTIFIER_MAX_ITEMS: int = int(os.environ.get("DIC_IDENTIFIER_MAX_ITEMS", "8"))
+_IDENTIFIER_VALUE_MAX_LEN: int = int(os.environ.get("DIC_IDENTIFIER_VALUE_MAX_LEN", "64"))
 
 # A barcode-style identifier is a compact alphanumeric token (letters, digits
 # and the common separators - / . #), never a sentence. Reject anything else so
@@ -977,13 +1010,13 @@ def _ai_extract_identifiers(text: str) -> list[dict] | None:
 _CLASSIFY_INPUT_CHARS = 6000
 
 # Below this confidence the whole suggestion is dropped for the manual path.
-_CLASSIFY_MIN_CONFIDENCE = 0.70
+_CLASSIFY_MIN_CONFIDENCE: float = float(os.environ.get("DIC_CLASSIFY_MIN_CONFIDENCE", "0.70"))
 
 # Bound how large a taxonomy we will offer the model, and how many labels a
 # multi-label classification may return.
-_CLASSIFY_MAX_LABELS = 60
-_CLASSIFY_LABEL_MAX_LEN = 80
-_CLASSIFY_MAX_SELECTED = 5
+_CLASSIFY_MAX_LABELS: int = int(os.environ.get("DIC_CLASSIFY_MAX_LABELS", "60"))
+_CLASSIFY_LABEL_MAX_LEN: int = int(os.environ.get("DIC_CLASSIFY_LABEL_MAX_LEN", "80"))
+_CLASSIFY_MAX_SELECTED: int = int(os.environ.get("DIC_CLASSIFY_MAX_SELECTED", "5"))
 
 # Sentinel the model is told to use when no candidate label fits.
 _CLASSIFY_UNMATCHED = "unmatched"
@@ -1182,12 +1215,12 @@ def _ai_classify_into_taxonomy(
 _CORRESPONDENCE_INPUT_CHARS = 6000
 
 # Below this confidence the whole suggestion is dropped for the HITL / manual path.
-_CORRESPONDENCE_MIN_CONFIDENCE = 0.70
+_CORRESPONDENCE_MIN_CONFIDENCE: float = float(os.environ.get("DIC_CORRESPONDENCE_MIN_CONFIDENCE", "0.70"))
 
 # Bound recipient fan-out and the length of any single party / subject value.
-_CORRESPONDENCE_MAX_RECIPIENTS = 25
-_CORRESPONDENCE_NAME_MAX_LEN = 120
-_CORRESPONDENCE_SUBJECT_MAX_LEN = 300
+_CORRESPONDENCE_MAX_RECIPIENTS: int = int(os.environ.get("DIC_CORRESPONDENCE_MAX_RECIPIENTS", "25"))
+_CORRESPONDENCE_NAME_MAX_LEN: int = int(os.environ.get("DIC_CORRESPONDENCE_NAME_MAX_LEN", "120"))
+_CORRESPONDENCE_SUBJECT_MAX_LEN: int = int(os.environ.get("DIC_CORRESPONDENCE_SUBJECT_MAX_LEN", "300"))
 
 # Compact RFC-5322-ish e-mail shape. Not a validator — a guard that the value is
 # an address rather than free prose before the membership check runs.
@@ -1363,16 +1396,649 @@ def _ai_extract_correspondence(text: str) -> dict | None:
         if not (from_name or from_email or recipients or subject):
             return None
 
+        sent_date_anomaly: str | None = _detect_date_anomaly(sent_date) if sent_date else None
+
         return {
             "from_name": from_name,
             "from_email": from_email,
             "to": recipients,
             "subject": subject,
             "sent_date": sent_date,
+            "sent_date_anomaly": sent_date_anomaly,
             "confidence": round(confidence, 4),
         }
     except Exception:
         return None
+
+
+# --------------------------------------------------------------------------- #
+# Metadata anomaly detection (aiify-opp-77: hardcoded_threshold ->
+# anomaly_detection). The serialisers.py analog in DIC: inspect extraction
+# quality signals and flag documents that look suspicious or malformed so the
+# ingest caller can surface them as HITL review candidates rather than silently
+# storing low-quality content.
+#
+# Design mirrors the rest of the ingest enrichment pipeline:
+#   - deterministic pre-checks first (empty text, binary content, ratio outliers)
+#   - optional LLM scoring when a pre-check fires (best-effort, degrades to None)
+#   - result is a HITL proposal in IngestOutcome.metadata["anomaly_report"];
+#     never blocking, never raises
+# --------------------------------------------------------------------------- #
+
+# Minimum printable-character ratio below which content is flagged as binary-like.
+_ANOMALY_MIN_PRINTABLE_RATIO: float = float(
+    os.environ.get("DIC_ANOMALY_MIN_PRINTABLE_RATIO", "0.85")
+)
+
+# Minimum text length (stripped chars) before we flag "near-empty extraction".
+_ANOMALY_MIN_TEXT_LEN: int = int(os.environ.get("DIC_ANOMALY_MIN_TEXT_LEN", "50"))
+
+# Maximum chars-per-page ratio; above this a single page appears implausibly large.
+_ANOMALY_MAX_CHARS_PER_PAGE: int = int(
+    os.environ.get("DIC_ANOMALY_MAX_CHARS_PER_PAGE", "20000")
+)
+
+# Minimum chars-per-page ratio; below this most pages appear blank (OCR failure?).
+_ANOMALY_MIN_CHARS_PER_PAGE: int = int(
+    os.environ.get("DIC_ANOMALY_MIN_CHARS_PER_PAGE", "10")
+)
+
+_ANOMALY_SYSTEM_PROMPT = (
+    "You are a document quality inspector. Given signals about a document's "
+    "extraction quality, rate the overall anomaly score from 0.0 (normal) to "
+    "1.0 (highly suspicious / corrupt). Respond with a strict JSON object and "
+    "nothing else: "
+    '{"score": <0.0-1.0>, "verdict": "normal"|"suspicious"|"anomalous", '
+    '"reason": "<one short sentence>"}. '
+    "Use 0.0-0.3 for normal documents, 0.3-0.7 for suspicious, 0.7-1.0 for "
+    "likely corrupt or malformed."
+)
+
+
+def _ai_metadata_anomaly_detection(extraction: "Extraction", filename: str) -> dict | None:
+    """Inspect extraction quality and flag anomalous documents via LLM scoring.
+
+    Deterministic pre-checks run first; the LLM is only consulted when at least
+    one pre-check fires, keeping this cheap for the common normal case.
+
+    Returns a dict with ``score``, ``verdict``, ``reason``, and ``signals``, or
+    ``None`` when all pre-checks pass (normal document) or on any failure. Callers
+    MUST treat ``None`` as "no anomaly detected" and proceed with ingestion unchanged.
+    """
+    text = (extraction.text or "").strip()
+    signals: list[str] = []
+
+    # Pre-check 1: near-empty extraction.
+    if len(text) < _ANOMALY_MIN_TEXT_LEN:
+        signals.append(f"near_empty_text:len={len(text)}")
+
+    # Pre-check 2: binary-like content (high proportion of non-printable chars).
+    if text:
+        printable = sum(1 for c in text if c.isprintable() or c in "\n\r\t")
+        ratio = printable / len(text)
+        if ratio < _ANOMALY_MIN_PRINTABLE_RATIO:
+            signals.append(f"binary_content:printable_ratio={ratio:.2f}")
+
+    # Pre-check 3: chars-per-page ratio outlier.
+    if extraction.page_count > 0 and text:
+        cpp = len(text) / extraction.page_count
+        if cpp > _ANOMALY_MAX_CHARS_PER_PAGE:
+            signals.append(f"chars_per_page_high:{cpp:.0f}>{_ANOMALY_MAX_CHARS_PER_PAGE}")
+        elif cpp < _ANOMALY_MIN_CHARS_PER_PAGE:
+            signals.append(f"chars_per_page_low:{cpp:.1f}<{_ANOMALY_MIN_CHARS_PER_PAGE}")
+
+    # Pre-check 4: extraction warnings already surfaced by the provider.
+    if extraction.warnings:
+        signals.append(f"provider_warnings:{len(extraction.warnings)}")
+
+    # No signals → normal document; skip the LLM call entirely.
+    if not signals:
+        return None
+
+    # At least one signal — ask the LLM for a holistic quality score.
+    signal_text = "; ".join(signals)
+    try:
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+        import json as _json
+
+        prompt = (
+            f"File: {filename}\n"
+            f"Provider: {extraction.provider}\n"
+            f"Content-type: {extraction.content_type}\n"
+            f"Pages: {extraction.page_count}\n"
+            f"Text length (chars): {len(text)}\n"
+            f"Quality signals: {signal_text}\n\n"
+            "Rate the anomaly score for this document."
+        )
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            system_prompt=_ANOMALY_SYSTEM_PROMPT,
+            max_tokens=128,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("anomaly_detection", req)
+        if not resp or not resp.content:
+            raise ValueError("empty response")
+        raw = resp.content.strip()
+        if raw.startswith("```"):
+            raw = raw.strip("`").strip()
+        parsed = _json.loads(raw)
+        score = float(parsed.get("score", 0.5))
+        verdict = str(parsed.get("verdict", "suspicious"))
+        reason = str(parsed.get("reason", ""))
+        if verdict not in {"normal", "suspicious", "anomalous"}:
+            verdict = "suspicious"
+    except Exception:
+        score = 0.5
+        verdict = "suspicious"
+        reason = "llm_unavailable"
+
+    return {
+        "score": round(score, 4),
+        "verdict": verdict,
+        "reason": reason,
+        "signals": signals,
+    }
+
+
+# --------------------------------------------------------------------------- #
+# LLM workflow mutation proposals (aiify-opp-111: metadata_extraction ->
+# llm_generation). The external scan flagged paperless-ngx
+# src/documents/workflows/mutations.py — the workflow action executor that
+# assigns document metadata (custom fields, storage path, correspondent,
+# document type, tags) via static per-workflow mutation rules. The repo is
+# ephemeral, so per the established aiify-opp pattern the augmentation lands
+# in the analogous ICDEV subsystem (DIC).
+#
+# This is deliberately distinct from the existing enrichment helpers:
+#   - aiify-opp-6086 (_ai_metadata_extraction): one-shot open-vocabulary
+#     extraction (document_type from a fixed module-level enum, topic tags,
+#     date). Fires at ingest time; the field set is hardcoded.
+#   - aiify-opp-6043 (_ai_classify_into_taxonomy): filing into a
+#     caller-supplied taxonomy of *existing* labels (``matching_algorithm =
+#     AUTO`` analog). Single or multi-label; never invents a label.
+#
+# This helper models the workflow *mutation* layer — the caller passes a
+# structured definition of the custom metadata fields their workflow wants to
+# populate (field name, type, optional select options, optional description).
+# The model proposes typed values for each field from the document text and
+# additionally suggests a storage-path classification. It is the LLM analog of
+# a hand-curated per-document-type mutation rule-set.
+#
+# Grounding + safety (mirrors the 6086/5988/6043/6100 designs):
+#   - ``select`` fields: proposed value must be one of the caller-supplied
+#     options (membership guard, case-folded); anything else is dropped.
+#   - ``boolean`` fields: parsed from the model's string/bool token; only
+#     True/False accepted.
+#   - ``date`` fields: must be a real ISO (YYYY-MM-DD) calendar date or
+#     dropped.
+#   - ``integer``/``monetary`` fields: must parse to int/float; clamped to
+#     sensible bounds.
+#   - ``url`` fields: shape-validated (must contain ://); alphanumeric core
+#     must appear in the source text (anti-hallucination).
+#   - ``string`` fields: length-capped; alphanumeric core must appear in the
+#     source text (anti-hallucination).
+#   - ``storage_path``: path-style string, length-capped; no membership guard
+#     (the value is proposed, not drawn from an existing set).
+#   - a per-field confidence and an overall confidence gate: below
+#     _MUTATION_MIN_CONFIDENCE the whole suggestion is discarded (HITL).
+#   - the result is surfaced as a *proposal* under IngestOutcome.metadata
+#     ["workflow_mutations"] — never silently written to dic_documents — so a
+#     human or downstream workflow engine confirms before applying.
+#   - any failure / unavailability degrades to None (air-gap safe); the caller
+#     proceeds with ingestion unchanged.
+# --------------------------------------------------------------------------- #
+
+# Typed field kinds the mutation engine recognises. Constrains inputs so the
+# caller's type annotation is validated before the LLM call, and prevents an
+# out-of-set type from leaking into the prompt.
+_MUTATION_FIELD_TYPES = frozenset(
+    {"string", "integer", "monetary", "date", "boolean", "url", "select"}
+)
+
+# Only the leading slice carries the field-value signal; keep the call cheap.
+_MUTATION_INPUT_CHARS = 6000
+
+# Below this overall confidence the whole proposal is discarded (HITL path).
+_MUTATION_MIN_CONFIDENCE: float = float(
+    os.environ.get("DIC_MUTATION_MIN_CONFIDENCE", "0.70")
+)
+
+# Per-field confidence threshold (items below this are silently dropped).
+_MUTATION_FIELD_MIN_CONFIDENCE: float = float(
+    os.environ.get("DIC_MUTATION_FIELD_MIN_CONFIDENCE", "0.65")
+)
+
+# Bound on string/url values and storage-path length.
+_MUTATION_STRING_MAX_LEN: int = int(os.environ.get("DIC_MUTATION_STRING_MAX_LEN", "256"))
+_MUTATION_STORAGE_PATH_MAX_LEN: int = int(
+    os.environ.get("DIC_MUTATION_STORAGE_PATH_MAX_LEN", "512")
+)
+
+# Cap how many custom fields the model is asked about in a single call.
+_MUTATION_MAX_FIELDS: int = int(os.environ.get("DIC_MUTATION_MAX_FIELDS", "20"))
+
+# Upper/lower bounds on integer and monetary values (reasonable document-domain
+# range; the model cannot propose a value outside these bounds).
+_MUTATION_INT_MIN: int = -1_000_000
+_MUTATION_INT_MAX: int = 1_000_000_000
+_MUTATION_MONETARY_MIN: float = 0.0
+_MUTATION_MONETARY_MAX: float = 1_000_000_000.0
+
+_MUTATION_URL_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+\-.]*://\S{1,200}$")
+
+# --------------------------------------------------------------------------- #
+# Near-duplicate detection (aiify-opp-45: hardcoded_threshold ->
+# anomaly_detection). The external scan flagged paperless-ngx
+# src/documents/management/commands/document_fuzzy_match.py — a Django
+# management command that performs fuzzy title/content matching between
+# documents to surface near-duplicates. It uses a hardcoded similarity
+# threshold (e.g. 0.75) to decide whether two documents are "similar enough"
+# to flag. The repo is ephemeral, so per the established aiify-opp pattern
+# the augmentation lands in the analogous ICDEV subsystem (DIC).
+#
+# This is deliberately distinct from the content-hash idempotency dedup already
+# in the ingestion pipeline (exact SHA-256 equality) and from the intra-doc
+# duplicate-block detection (aiify-opp-5984). It operates BETWEEN documents in
+# the same collection and uses Jaccard similarity on title tokens as the
+# proximity signal.
+#
+# Instead of a hardcoded threshold, IQR-based outlier detection is applied to
+# the distribution of similarity scores across the collection window: a pair is
+# flagged only when its score is anomalously high relative to the pack
+# (> Q3 + _NEAR_DUP_IQR_FENCE × IQR). This adapts automatically to each
+# collection's vocabulary and density — no manual threshold needs to be
+# maintained.
+#
+# Grounding + safety (mirrors the 5984/6043 design & ICDEV AI-security posture):
+#   - Only title tokens are compared (stored in dic_documents.title); raw chunk
+#     text is never re-fetched, keeping the check fast and DB-light.
+#   - The result is surfaced as a *proposal* under IngestOutcome.metadata
+#     ["near_duplicates"] — never silently merged or archived — so a human
+#     confirms the filing before any action is taken.
+#   - A minimum-tokens guard (_NEAR_DUP_MIN_TOKENS) skips untitled / very short
+#     documents where Jaccard scores are noise-dominated.
+#   - The comparison window is capped (_NEAR_DUP_WINDOW) so the check is O(1)
+#     in collection size.
+#   - Any failure degrades to an empty list (air-gap safe); ingestion proceeds
+#     unchanged.
+# --------------------------------------------------------------------------- #
+
+# Max number of existing documents to compare against (ordered by recency).
+_NEAR_DUP_WINDOW: int = int(os.environ.get("DIC_NEAR_DUP_WINDOW", "200"))
+
+# Minimum title-token count below which comparison is skipped (noise guard).
+_NEAR_DUP_MIN_TOKENS: int = int(os.environ.get("DIC_NEAR_DUP_MIN_TOKENS", "4"))
+
+# IQR fence multiplier: scores above Q3 + fence × IQR are flagged.
+_NEAR_DUP_IQR_FENCE: float = float(os.environ.get("DIC_NEAR_DUP_IQR_FENCE", "1.5"))
+
+
+def _detect_near_duplicate_titles(
+    doc_id: str,
+    title: str,
+    collection_id: str,
+    conn,
+) -> list[dict]:
+    """Detect near-duplicate documents by title similarity using IQR anomaly detection.
+
+    The fuzzy-match analog of paperless document_fuzzy_match.py. Instead of a
+    hardcoded similarity threshold, IQR-based outlier detection adapts to each
+    collection's own score distribution: a candidate is flagged only when its
+    Jaccard similarity is anomalously high relative to the pack.
+
+    Args:
+        doc_id: the newly-ingested document's id (excluded from comparison).
+        title: the document's title string (token source).
+        collection_id: limits comparison to documents in the same collection.
+        conn: open DB connection (must be positioned after the new doc is written).
+
+    Returns:
+        List of ``{"doc_id": str, "filename": str, "title": str,
+        "similarity": float}`` for candidates whose score clears the IQR fence,
+        sorted descending by similarity. Empty when the collection is too small,
+        the title is too short, or any error occurs. Never raises.
+    """
+    try:
+        tokens_a = set((title or "").lower().split())
+        if len(tokens_a) < _NEAR_DUP_MIN_TOKENS:
+            return []
+
+        rows = conn.execute(
+            "SELECT doc_id, filename, title FROM dic_documents "
+            "WHERE collection_id = ? AND doc_id != ? AND title IS NOT NULL "
+            "ORDER BY created_at DESC LIMIT ?",
+            (collection_id, doc_id, _NEAR_DUP_WINDOW),
+        ).fetchall()
+
+        if len(rows) < 2:
+            return []
+
+        # Compute Jaccard similarity for each candidate against the new title.
+        scored: list[tuple[str, str, str, float]] = []
+        for row in rows:
+            cand_id = row[0] if hasattr(row, "__getitem__") else row["doc_id"]
+            cand_fname = row[1] if hasattr(row, "__getitem__") else row.get("filename", "") or ""
+            cand_title = row[2] if hasattr(row, "__getitem__") else row.get("title", "") or ""
+            tokens_b = set(cand_title.lower().split())
+            if len(tokens_b) < _NEAR_DUP_MIN_TOKENS:
+                continue
+            union = tokens_a | tokens_b
+            score = len(tokens_a & tokens_b) / len(union) if union else 0.0
+            scored.append((cand_id, cand_fname, cand_title, score))
+
+        if len(scored) < 2:
+            return []
+
+        # IQR-based outlier fence — no hardcoded similarity threshold.
+        scores_only = sorted(s for _, _, _, s in scored)
+        n = len(scores_only)
+        q1 = scores_only[n // 4]
+        q3 = scores_only[(3 * n) // 4]
+        iqr = q3 - q1
+        fence = q3 + _NEAR_DUP_IQR_FENCE * iqr
+
+        candidates = [
+            {
+                "doc_id": cid,
+                "filename": fname,
+                "title": ctitle,
+                "similarity": round(score, 4),
+            }
+            for cid, fname, ctitle, score in scored
+            if score > fence
+        ]
+        return sorted(candidates, key=lambda c: c["similarity"], reverse=True)
+    except Exception:
+        return []
+
+
+def _mutation_field_spec_line(field: dict) -> str:
+    """Format a single field definition as a compact prompt-safe line."""
+    name = str(field.get("name") or "").strip()
+    ftype = str(field.get("type") or "string").strip().lower()
+    desc = str(field.get("description") or "").strip()
+    opts = field.get("options") or []
+    parts = [f'"{name}" ({ftype})']
+    if opts:
+        choices = ", ".join(f'"{o}"' for o in opts[:20])
+        parts.append(f"choices: [{choices}]")
+    if desc:
+        parts.append(f"— {desc[:120]}")
+    return " ".join(parts)
+
+
+def _ai_propose_workflow_mutations(
+    text: str,
+    custom_fields: list[dict],
+    *,
+    filename: str = "",
+) -> dict | None:
+    """Propose typed custom-field values and a storage path from ``text`` via LLM.
+
+    The LLM-generation analog of paperless ``workflows/mutations.py``
+    (aiify-opp-111): rather than hand-curated per-workflow mutation rules,
+    the model reads the document text and proposes which values to assign to
+    the caller's custom metadata fields.
+
+    Args:
+        text: full extracted document text; only the leading
+            ``_MUTATION_INPUT_CHARS`` characters are sent (cheap, bounded).
+        custom_fields: list of field definitions, each a dict with keys:
+            ``name`` (str, required), ``type`` (one of the ``_MUTATION_FIELD_TYPES``;
+            default ``"string"``), ``options`` (list[str] for ``select`` type),
+            ``description`` (str, optional hint for the model).
+            Fields with blank names or unsupported types are skipped.
+            At most ``_MUTATION_MAX_FIELDS`` fields are passed to the model.
+        filename: weak context; the model is told to ground on the text.
+
+    Returns:
+        ``{"mutations": [{"field": str, "value": Any, "confidence": float}],
+        "storage_path": str | None, "confidence": float}`` where every
+        ``value`` has been type-validated and (for string/url) grounding-
+        checked against the source text. Returns ``None`` when the text is
+        empty, no usable field definitions are provided, the model output is
+        unusable, or overall confidence is below ``_MUTATION_MIN_CONFIDENCE``.
+        Callers MUST treat ``None`` as "no mutations proposed" and proceed
+        unchanged — this is a HITL proposal, never silently persisted.
+    """
+    snippet = (text or "").strip()
+    if not snippet:
+        return None
+
+    # Normalize and bound the field list.
+    valid_fields: list[dict] = []
+    for fdef in custom_fields or []:
+        if not isinstance(fdef, dict):
+            continue
+        name = str(fdef.get("name") or "").strip()
+        if not name:
+            continue
+        ftype = str(fdef.get("type") or "string").strip().lower()
+        if ftype not in _MUTATION_FIELD_TYPES:
+            continue
+        opts: list[str] = []
+        if ftype == "select":
+            opts = [str(o).strip() for o in (fdef.get("options") or []) if str(o).strip()]
+            if not opts:
+                continue  # select with no options is unusable
+        valid_fields.append(
+            {
+                "name": name,
+                "type": ftype,
+                "options": opts,
+                "description": str(fdef.get("description") or "").strip()[:120],
+            }
+        )
+        if len(valid_fields) >= _MUTATION_MAX_FIELDS:
+            break
+
+    if not valid_fields:
+        return None
+
+    snippet = snippet[:_MUTATION_INPUT_CHARS]
+    haystack = "".join(ch for ch in snippet if ch.isalnum()).lower()
+
+    fields_block = "\n".join(
+        f"  {i + 1}. {_mutation_field_spec_line(f)}"
+        for i, f in enumerate(valid_fields)
+    )
+    system_prompt = (
+        "You propose metadata field values for a single ingested document in a "
+        "document-management workflow. You are given a list of custom fields "
+        "(name, type, optional choices, optional description) and the document "
+        "text. For each field, propose a typed value grounded in the text. Use "
+        "ONLY information present in the text — never invent a value not supported "
+        "by it. Respond with a strict JSON object and nothing else, of the form:\n"
+        '{"mutations": [{"field": "<name>", "value": <typed value>, '
+        '"confidence": <0..1>}], '
+        '"storage_path": "<suggested/storage/path or null>", '
+        '"confidence": <0..1 overall>}.\n'
+        "Rules per type: string → a short quoted string; integer → a bare integer; "
+        "monetary → a bare number (no currency symbol); date → YYYY-MM-DD or null; "
+        "boolean → true or false; url → a full URL including scheme; "
+        'select → one of the listed choices exactly. '
+        "Omit a field from the mutations list rather than guessing. "
+        "Return low confidence when evidence is weak."
+    )
+
+    try:
+        import json as _json
+
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        req = LLMRequest(
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Filename: {filename}\n"
+                        f"Custom fields to populate:\n{fields_block}\n\n"
+                        "Document text (leading excerpt):\n"
+                        f"{snippet}\n\n"
+                        "Produce the mutations JSON."
+                    ),
+                }
+            ],
+            system_prompt=system_prompt,
+            max_tokens=512,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("summarization", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        parsed = _json.loads(raw[start : end + 1])
+
+        # Overall confidence gate.
+        try:
+            overall = float(parsed.get("confidence"))
+        except (TypeError, ValueError):
+            return None
+        if overall < _MUTATION_MIN_CONFIDENCE:
+            return None
+
+        # Build a name→field-def lookup for validation.
+        field_map = {f["name"]: f for f in valid_fields}
+
+        mutations: list[dict] = []
+        seen_names: set[str] = set()
+        for item in parsed.get("mutations") or []:
+            if not isinstance(item, dict):
+                continue
+            fname = str(item.get("field") or "").strip()
+            if not fname or fname not in field_map or fname in seen_names:
+                continue
+            try:
+                item_conf = float(item.get("confidence"))
+            except (TypeError, ValueError):
+                item_conf = overall
+            if item_conf < _MUTATION_FIELD_MIN_CONFIDENCE:
+                continue
+
+            fdef = field_map[fname]
+            ftype = fdef["type"]
+            raw_val = item.get("value")
+            validated = _validate_mutation_value(
+                raw_val, ftype, fdef["options"], haystack
+            )
+            if validated is None:
+                continue
+            seen_names.add(fname)
+            mutations.append(
+                {"field": fname, "value": validated, "confidence": round(item_conf, 4)}
+            )
+
+        # Storage path: length-cap; no grounding guard (it is a proposed path,
+        # not a value drawn from the document text).
+        storage_path: str | None = None
+        sp_raw = parsed.get("storage_path")
+        if isinstance(sp_raw, str) and sp_raw.strip():
+            sp = sp_raw.strip()
+            if len(sp) <= _MUTATION_STORAGE_PATH_MAX_LEN:
+                storage_path = sp
+
+        if not mutations and storage_path is None:
+            return None
+
+        return {
+            "mutations": mutations,
+            "storage_path": storage_path,
+            "confidence": round(overall, 4),
+        }
+    except Exception:
+        return None
+
+
+def _validate_mutation_value(raw_val, ftype: str, opts: list[str], haystack: str):
+    """Type-validate and grounding-check a single proposed mutation value.
+
+    Returns the validated, typed value or ``None`` when validation fails.
+    ``haystack`` is the alphanumeric-only, lower-cased source text for
+    grounding checks (string/url types only).
+    """
+    if raw_val is None:
+        return None
+
+    if ftype == "boolean":
+        if isinstance(raw_val, bool):
+            return raw_val
+        s = str(raw_val).strip().lower()
+        if s in {"true", "1", "yes"}:
+            return True
+        if s in {"false", "0", "no"}:
+            return False
+        return None
+
+    if ftype == "integer":
+        try:
+            v = int(raw_val)
+        except (TypeError, ValueError):
+            try:
+                v = int(float(raw_val))
+            except (TypeError, ValueError):
+                return None
+        if not (_MUTATION_INT_MIN <= v <= _MUTATION_INT_MAX):
+            return None
+        return v
+
+    if ftype == "monetary":
+        try:
+            v = float(str(raw_val).replace(",", "").replace("$", "").strip())
+        except (TypeError, ValueError):
+            return None
+        if not (_MUTATION_MONETARY_MIN <= v <= _MUTATION_MONETARY_MAX):
+            return None
+        return round(v, 2)
+
+    if ftype == "date":
+        s = str(raw_val).strip()
+        if not s:
+            return None
+        try:
+            datetime.strptime(s, "%Y-%m-%d")
+            return s
+        except ValueError:
+            return None
+
+    if ftype == "select":
+        s = str(raw_val).strip()
+        canon = {o.casefold(): o for o in opts}
+        matched = canon.get(s.casefold())
+        return matched  # None when not in options
+
+    if ftype == "url":
+        s = str(raw_val).strip()
+        if not s or len(s) > _MUTATION_STRING_MAX_LEN:
+            return None
+        if not _MUTATION_URL_RE.match(s):
+            return None
+        core = "".join(ch for ch in s if ch.isalnum()).lower()
+        if not core or core[:20] not in haystack:
+            return None
+        return s
+
+    # default: string
+    s = str(raw_val).strip()
+    if not s or len(s) > _MUTATION_STRING_MAX_LEN:
+        return None
+    core = "".join(ch for ch in s if ch.isalnum()).lower()
+    if not core or core[:20] not in haystack:
+        return None
+    return s
 
 
 # --------------------------------------------------------------------------- #
@@ -1395,6 +2061,9 @@ def ingest_file(
     classify_taxonomy: list[str] | None = None,
     classify_multi_label: bool = False,
     extract_correspondence: bool = True,
+    detect_anomalies: bool = True,
+    detect_near_duplicates: bool = True,
+    workflow_custom_fields: list[dict] | None = None,
     conn=None,
     progress_cb=None,
 ) -> IngestOutcome:
@@ -1449,6 +2118,33 @@ def ingest_file(
             confidence gated. Surfaced as a HITL proposal under
             ``IngestOutcome.metadata["correspondence"]``; never silently
             persisted. Failures degrade silently to no correspondence fields.
+        detect_anomalies: when True (default), inspect the extraction for quality
+            anomalies — near-empty text, binary-like content, implausible
+            chars-per-page ratios — and optionally score them with the LLM
+            (aiify-opp-77). Surfaced as a HITL proposal in
+            ``IngestOutcome.anomaly_report``; never blocking. Failures degrade
+            silently to no anomaly report.
+        detect_near_duplicates: when True (default), compute Jaccard title
+            similarity between this document and recently-ingested documents in
+            the same collection, then use IQR-based anomaly detection to flag
+            pairs whose similarity is anomalously high relative to the
+            collection's own score distribution — no hardcoded threshold
+            (aiify-opp-45). Surfaced as a HITL proposal under
+            ``IngestOutcome.metadata["near_duplicates"]``; never blocking and
+            never auto-merged. Failures degrade silently to an empty list.
+        workflow_custom_fields: optional list of custom field definitions, each
+            a dict with ``name`` (str), ``type`` (``string``/``integer``/
+            ``monetary``/``date``/``boolean``/``url``/``select``), optional
+            ``options`` (list[str] for ``select`` type), optional
+            ``description`` (hint for the model). When supplied, best-effort
+            LLM proposal of typed values for each field extracted from the
+            document text — the ``workflows/mutations.py`` analog (aiify-
+            opp-111). Values are type-validated and (for string/url) grounding-
+            checked against the source text (anti-hallucination). An optional
+            ``storage_path`` suggestion is also returned. Surfaced as a HITL
+            proposal under ``IngestOutcome.metadata["workflow_mutations"]``;
+            never silently persisted. Default ``None`` leaves the feature off.
+            Failures degrade silently to no mutation proposals.
         conn: optional DB connection (else an RLS-aware one is opened).
         progress_cb: optional callable(stage: str, detail: str, pct: int) for progress events.
     """
@@ -1479,6 +2175,13 @@ def ingest_file(
     # OCR cleanup below is non-deterministic, so hashing pre-cleanup keeps the
     # same scanned file idempotent across ingests.
     content_hash = _sha256(text)
+
+    # Metadata anomaly detection (aiify-opp-77): inspect extraction quality and
+    # flag suspicious documents as a HITL proposal before any enrichment runs.
+    anomaly_report: dict | None = None
+    if detect_anomalies:
+        _emit("anomaly_check", "Checking extraction quality…", 6)
+        anomaly_report = _ai_metadata_anomaly_detection(extraction, p.name)
 
     # LLM OCR cleanup (best-effort): correct noisy OCR output before chunking.
     # Only fires for OCR-derived providers; the raw text is kept on any failure.
@@ -1542,6 +2245,19 @@ def ingest_file(
         corr = _ai_extract_correspondence(text)
         if corr:
             ai_metadata = {**ai_metadata, "correspondence": corr}
+
+    # LLM workflow mutation proposals (best-effort): propose typed values for
+    # caller-defined custom metadata fields extracted from the document text —
+    # the workflows/mutations.py analog (aiify-opp-111). Values are
+    # type-validated and grounding-checked; surfaced as a HITL proposal under
+    # metadata["workflow_mutations"], never silently written.
+    if workflow_custom_fields and text.strip():
+        _emit("workflow_mutations", "Proposing workflow metadata mutations…", 9)
+        wm = _ai_propose_workflow_mutations(
+            text, workflow_custom_fields, filename=p.name
+        )
+        if wm:
+            ai_metadata = {**ai_metadata, "workflow_mutations": wm}
 
     # ── Duplicate detection + bookkeeping ─────────────────────────────────────
     # Open a single DB connection (or reuse caller's) for dedup + writes.
@@ -1681,6 +2397,17 @@ def ingest_file(
             )
         conn.commit()
 
+        # Near-duplicate detection (best-effort): flag documents in the same
+        # collection whose title is anomalously similar to this one using
+        # IQR-based outlier detection — the fuzzy-match management-command
+        # analog (aiify-opp-45). Runs after commit so the new doc is queryable.
+        if detect_near_duplicates and extraction.title:
+            near_dups = _detect_near_duplicate_titles(
+                doc_id, extraction.title, collection_id, conn
+            )
+            if near_dups:
+                ai_metadata = {**ai_metadata, "near_duplicates": near_dups}
+
         # 5) KG bridge (best-effort). ingest_chunk reads rag_chunks by id, so this
         #    only finds content when embedding upserted the chunk above.
         _emit("kg_bridge", "Extracting entities and relationships…", 78)
@@ -1721,6 +2448,7 @@ def ingest_file(
             ocr_cleaned=ocr_cleaned,
             metadata=ai_metadata,
             errors=errors,
+            anomaly_report=anomaly_report,
         )
     finally:
         if own_conn:
@@ -1728,3 +2456,161 @@ def ingest_file(
                 conn.close()
             except Exception:
                 pass
+
+
+# --------------------------------------------------------------------------- #
+# Batch ingestion with processing-time anomaly detection
+# (aiify-opp-35: hardcoded_threshold -> anomaly_detection). The external scan
+# flagged paperless-ngx src/documents/management/commands/base.py — the base
+# class for Django management commands that process document batches using a
+# hardcoded PROGRESS_STEP constant. The repo is ephemeral; per the established
+# aiify-opp pattern the augmentation lands in the analogous ICDEV subsystem (DIC).
+#
+# Design:
+#   - _BATCH_PROGRESS_STEP (env DIC_BATCH_PROGRESS_STEP, default 5%) replaces
+#     the hardcoded constant; controls how often progress_cb fires.
+#   - _BATCH_IQR_FENCE (env DIC_BATCH_IQR_FENCE, default 1.5) drives IQR-based
+#     outlier detection on per-document elapsed times. A file whose processing
+#     time exceeds Q3 + fence × IQR of the batch so far is flagged "anomalous"
+#     and reported for HITL review — no fixed time limit needed.
+#   - Failures do not abort the batch; they are recorded in per_file[].
+#   - Detection is best-effort: fewer than 4 samples → no flagging (not enough
+#     data for IQR to be meaningful).
+# --------------------------------------------------------------------------- #
+
+_BATCH_PROGRESS_STEP: int = int(os.environ.get("DIC_BATCH_PROGRESS_STEP", "5"))
+_BATCH_IQR_FENCE: float = float(os.environ.get("DIC_BATCH_IQR_FENCE", "1.5"))
+
+
+@dataclass
+class BatchIngestResult:
+    total: int
+    succeeded: int
+    failed: int
+    per_file: list[dict]
+    anomalous_paths: list[str]
+
+    def to_dict(self) -> dict:
+        return {
+            "total": self.total,
+            "succeeded": self.succeeded,
+            "failed": self.failed,
+            "per_file": self.per_file,
+            "anomalous_paths": self.anomalous_paths,
+        }
+
+
+def _detect_processing_time_anomalies(
+    elapsed_times: list[float],
+    fence: float = 1.5,
+) -> tuple[float, float]:
+    """Return (lo, hi) IQR fences for elapsed processing times.
+
+    Times above hi are anomalously slow. Returns (-inf, inf) when the sample
+    has fewer than 4 values (not enough data for IQR).
+    """
+    if len(elapsed_times) < 4:
+        return float("-inf"), float("inf")
+    s = sorted(elapsed_times)
+    n = len(s)
+    q1 = s[n // 4]
+    q3 = s[(3 * n) // 4]
+    iqr = q3 - q1
+    return q1 - fence * iqr, q3 + fence * iqr
+
+
+def ingest_batch(
+    paths: "list[str | Path]",
+    collection_id: str,
+    *,
+    tenant_id: "str | None" = None,
+    classification: "str | None" = None,
+    created_by: "str | None" = None,
+    embed: bool = True,
+    bridge_kg: bool = True,
+    summarize: bool = True,
+    extract_metadata: bool = True,
+    extract_identifiers: bool = True,
+    extract_correspondence: bool = True,
+    progress_cb=None,
+) -> BatchIngestResult:
+    """Ingest multiple files with IQR-based processing-time anomaly detection.
+
+    Replaces the hardcoded PROGRESS_STEP pattern from paperless management
+    command base class: progress is reported every DIC_BATCH_PROGRESS_STEP
+    percent of the batch, and IQR outlier detection flags documents whose
+    processing time is anomalously high relative to the batch so far.
+
+    Args:
+        paths: ordered list of file paths to ingest.
+        collection_id: target collection.
+        progress_cb: optional callable(done, total, anomalous_so_far) fired
+            every _BATCH_PROGRESS_STEP% of the batch.
+
+    Returns:
+        BatchIngestResult with per-file outcomes and anomalous_paths list.
+    """
+    total = len(paths)
+    per_file: list[dict] = []
+    elapsed_times: list[float] = []
+    anomalous_paths: list[str] = []
+    succeeded = 0
+    failed = 0
+    step = max(1, int(total * _BATCH_PROGRESS_STEP / 100)) if total else 1
+
+    for i, path in enumerate(paths, 1):
+        path_str = str(path)
+        t0 = time.monotonic()
+        try:
+            outcome = ingest_file(
+                path_str,
+                collection_id,
+                tenant_id=tenant_id,
+                classification=classification,
+                created_by=created_by,
+                embed=embed,
+                bridge_kg=bridge_kg,
+                summarize=summarize,
+                extract_metadata=extract_metadata,
+                extract_identifiers=extract_identifiers,
+                extract_correspondence=extract_correspondence,
+            )
+            elapsed = time.monotonic() - t0
+            elapsed_times.append(elapsed)
+            _, hi = _detect_processing_time_anomalies(elapsed_times, _BATCH_IQR_FENCE)
+            anomalous = elapsed > hi
+            if anomalous:
+                anomalous_paths.append(path_str)
+            per_file.append({
+                "path": path_str,
+                "ok": True,
+                "doc_id": outcome.doc_id,
+                "elapsed_s": round(elapsed, 4),
+                "anomalous": anomalous,
+                "error": "",
+            })
+            succeeded += 1
+        except Exception as exc:
+            elapsed = time.monotonic() - t0
+            elapsed_times.append(elapsed)
+            per_file.append({
+                "path": path_str,
+                "ok": False,
+                "doc_id": "",
+                "elapsed_s": round(elapsed, 4),
+                "anomalous": False,
+                "error": str(exc),
+            })
+            failed += 1
+            logger.warning("batch ingest failed for %s: %s", path_str, exc)
+
+        if progress_cb and i % step == 0:
+            progress_cb(i, total, list(anomalous_paths))
+
+    return BatchIngestResult(
+        total=total,
+        succeeded=succeeded,
+        failed=failed,
+        per_file=per_file,
+        anomalous_paths=anomalous_paths,
+    )

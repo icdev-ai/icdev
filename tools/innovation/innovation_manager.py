@@ -157,12 +157,13 @@ def _get_solution_budget(config):
 # =========================================================================
 # PIPELINE STAGES
 # =========================================================================
-def stage_discover(sources=None, db_path=None):
+def stage_discover(sources=None, db_path=None, dic_collection_id=None):
     """Stage 1: Discover signals from web + introspective + competitive sources.
 
     Args:
         sources: List of sources to scan, or None for all.
         db_path: Optional DB path override.
+        dic_collection_id: Optional DIC collection to pull pre-synthesized signals from.
 
     Returns:
         Dict with discovery results.
@@ -180,6 +181,21 @@ def stage_discover(sources=None, db_path=None):
             results["sub_results"]["web_scanner"] = {"error": str(e)}
     else:
         results["sub_results"]["web_scanner"] = {"error": "web_scanner not available"}
+
+    # DIC collection signals — optional pre-synthesized source
+    if dic_collection_id:
+        try:
+            from tools.research.source_scanners.dic_scanner import scan_dic_collection
+            dic_signals = scan_dic_collection(
+                config={},
+                session_config={"dic_collection_id": dic_collection_id, "limit": 30},
+            )
+            results["sub_results"]["dic_collection"] = {
+                "collection_id": dic_collection_id,
+                "signals": len(dic_signals),
+            }
+        except Exception as e:
+            results["sub_results"]["dic_collection"] = {"error": str(e)}
 
     results["completed_at"] = now_iso()
     _audit("innovation.discover", "Discovery complete", results.get("sub_results"))

@@ -1733,3 +1733,67 @@ SECURITY_ONTOLOGY_MAP: dict[str, str] = {
     "threat-gpu-escape":        f"{_S}Threat.GPUEscape",
     "threat-profile-tampering": f"{_S}Threat.ProfileTampering",
 }
+
+# ── ZIG External Evidence Mapping ─────────────────────────────────────────────
+# Maps ingest source finding types → ZIG activity IDs for automated completion.
+
+ZIG_EVIDENCE_MAP = {
+    "sbom": {
+        "cve_critical":       "zig-act-d08",   # Generate initial SBOM for critical apps
+        "cve_high":           "zig-act-d08",
+        "outdated_dep":       "zig-act-p1-21",  # Integrate SAST/SCA into CI/CD
+        "no_sbom":            "zig-act-d08",
+        "risky_license":      "zig-act-p1-22",  # Enforce code signing
+    },
+    "sast": {
+        "B105": "zig-act-p1-29",  # hardcoded password → encryption at rest
+        "B106": "zig-act-p1-29",  # hardcoded password in funcarg
+        "B502": "zig-act-p1-18",  # TLS version → encrypt all traffic in transit
+        "B503": "zig-act-p1-18",  # TLS with bad ciphers
+        "B608": "zig-act-p1-21",  # SQL injection → SAST/SCA in CI/CD
+        "B601": "zig-act-p1-21",  # paramiko shell injection
+        "B602": "zig-act-p1-21",  # subprocess shell=True
+        "B701": "zig-act-p2-21",  # jinja2 autoescape off → DAST/runtime testing
+    },
+    "survey": {
+        "mfa":          "zig-act-p1-02",  # Extend MFA to all standard user accounts
+        "mfa_admin":    "zig-act-p1-01",  # Deploy MFA for privileged accounts
+        "rbac":         "zig-act-p1-07",  # Define and implement RBAC policies
+        "pam":          "zig-act-p1-03",  # Deploy PAM solution
+        "least_priv":   "zig-act-p1-04",  # Enforce least privilege
+        "lifecycle":    "zig-act-p1-06",  # Automated account lifecycle management
+    },
+    "nmap": {
+        "http_without_https": "zig-act-p1-18",  # Encrypt all traffic in transit
+        "admin_ports_open":   "zig-act-p1-16",  # Macro-segmentation between business units
+        "no_tls_on_api":      "zig-act-p2-15",  # Service mesh with mTLS enforcement
+        "ssh_exposed":        "zig-act-p1-20",  # Restrict third-party access
+        "rdp_exposed":        "zig-act-p1-20",
+    },
+    "openapi": {
+        "no_security_scheme": "zig-act-p2-19",  # Context-based access control for apps
+        "http_only":          "zig-act-p1-18",  # Encrypt all traffic in transit
+        "no_oauth":           "zig-act-p2-03",  # ABAC with dynamic attribute evaluation
+        "bearer_no_tls":      "zig-act-p1-18",
+    },
+}
+
+ZIG_EXTERNAL_APP_TYPES = [
+    {"slug": "web-app",        "label": "Web Application",       "icon": "globe"},
+    {"slug": "microservice",   "label": "Microservice",          "icon": "cpu"},
+    {"slug": "cloud-native",   "label": "Cloud-Native App",      "icon": "cloud"},
+    {"slug": "container",      "label": "Container Workload",    "icon": "box"},
+    {"slug": "api",            "label": "API / Service Mesh",    "icon": "zap"},
+    {"slug": "legacy",         "label": "Legacy System",         "icon": "server"},
+    {"slug": "data-pipeline",  "label": "Data Pipeline",         "icon": "database"},
+    {"slug": "ml-model",       "label": "ML / AI Model",         "icon": "brain"},
+    {"slug": "general",        "label": "General",               "icon": "shield"},
+]
+
+ZIG_INGEST_SOURCE_TYPES = [
+    {"slug": "sbom",    "label": "SBOM (CycloneDX JSON)",  "icon": "package", "ext": ".json"},
+    {"slug": "sast",    "label": "SAST (Bandit JSON)",     "icon": "code",    "ext": ".json"},
+    {"slug": "survey",  "label": "Security Survey (JSON)", "icon": "clipboard", "ext": ".json"},
+    {"slug": "nmap",    "label": "Nmap Scan (XML)",        "icon": "scan",    "ext": ".xml"},
+    {"slug": "openapi", "label": "OpenAPI Spec (YAML/JSON)", "icon": "api",   "ext": ".yaml"},
+]

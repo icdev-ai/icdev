@@ -222,6 +222,18 @@
   </table>
 </div>
 
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "data_mesh_csp" %}
+{% set iqe_api_route = "/data/api/iqe-query" %}
+{% set iqe_title = "IQE Query — CSP Bridges" %}
+{% set iqe_examples = [
+  {"label": "All domains", "query": "foreach d in data_mesh.domains select d.name, d.owner_team, d.status, d.classification"},
+  {"label": "Published products", "query": "foreach p in data_mesh.products where p.status == \"published\" select p.name, p.domain_id, p.sla_tier, p.output_port_type"},
+  {"label": "Active domains + products", "query": "foreach d in data_mesh.domains where d.status == \"active\" select d.name, d.maturity_level, d.classification"},
+  {"label": "Gold SLA products", "query": "foreach p in data_mesh.products where p.sla_tier in [\"gold\", \"platinum\"] select p.name, p.domain_id, p.sla_tier"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
 {% endblock %}
 {% block scripts %}
 <script>

@@ -12,4 +12,5 @@
 | Spec Generator | tools/creative/spec_generator.py | Template-based feature spec generation (D356) | --generate-all, --list, --json | Feature specs |
 | Trend Tracker | tools/creative/trend_tracker.py | Velocity/acceleration trend detection | --detect, --report, --json | Trend data |
 | Source Scanner | tools/creative/source_scanner.py | Scan customer pain points from G2, Capterra, TrustRadius, Reddit, GitHub Issues, Product Hunt, and GovCon blogs; store normalized signals | --scan, --source, --all, --list-sources, --history, --days, --json | Signal records |
+| Competitor Repo Seeder | tools/creative/seed_competitor_repos.py | Seed external repo pain points as creative_pain_points (status=new) for gap_scorer to score; maps scouted repos to ICDEV feature gaps | --seed-all, --status, --json | Seeded pain point ids |
 

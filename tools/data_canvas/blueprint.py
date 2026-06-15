@@ -1675,7 +1675,7 @@ def create_data_canvas_blueprint():
         """SOP list page — all DDC standard operating procedures."""
         conn = get_connection()
         rows = conn.execute(
-            "SELECT id, title, category, status, version, owner, classification, created_at, updated_at "
+            "SELECT id, title, category, status, version, owner, classification, description, created_at, updated_at "
             "FROM ddc_sops ORDER BY category, title"
         ).fetchall()
         conn.close()
@@ -2020,9 +2020,16 @@ def create_data_canvas_blueprint():
                 "column_name, transform_desc, classification, created_at "
                 "FROM dd_lineage ORDER BY created_at"
             ).fetchall()
+        # Fetch node labels before closing — enriches lineage graph with human-readable names
+        node_label_rows = conn.execute(
+            "SELECT node_id, label FROM data_nodes"
+        ).fetchall()
         conn.close()
+        node_labels = {r["node_id"]: r["label"] for r in node_label_rows}
         lineage_records = [row_to_dict(r) for r in lin_rows]
         dag = build_column_lineage_dag(lineage_records)
+        for node in dag["nodes"]:
+            node["entity_label"] = node_labels.get(node["entity_id"], node["entity_id"])
         gaps = generate_contract_assertions(
             lineage_records, {"nodes": [], "edges": [], "boundaries": []}
         )
@@ -2529,10 +2536,21 @@ def create_data_canvas_blueprint():
         conn.close()
         return jsonify([row_to_dict(r) for r in rows]), 200
 
+    # Canvas name → IQE collections mapping for data canvas sub-pages
+    _DDC_CANVAS_COLLECTIONS: dict = {
+        "ddc":                    ["data.lineage.edges", "data.classifications", "data.ai_decisions"],
+        "data_mesh_domains":      ["data_mesh.domains"],
+        "data_mesh_products":     ["data_mesh.products"],
+        "data_mesh_contracts":    ["data_mesh.contracts"],
+        "data_mesh_governance":   ["data_mesh.governance_policies"],
+        "data_mesh_csp":          ["data_mesh.domains", "data_mesh.products"],
+        "data_mesh_hub":          ["data_mesh.domains", "data_mesh.products", "data_mesh.contracts"],
+    }
+
     @bp.route("/api/iqe-query", methods=["POST"])
     @dc_login_required
     def ddc_api_iqe_query():
-        """IQE structured query — translate NL to IQE and execute against DDC data lineage."""
+        """Canvas-aware IQE query — routes to DDC lineage or Data Mesh collections by canvas."""
         from tools.iqe.nl_to_iqe import nl_to_iqe
         from tools.iqe.parser import IQESyntaxError, parse
         from tools.iqe.executor import execute_query
@@ -2543,7 +2561,13 @@ def create_data_canvas_blueprint():
         if not question:
             return jsonify({"error": "question is required"}), 400
 
-        collections = ["data.lineage.edges", "data.classifications"]
+        canvas = (data.get("canvas") or "ddc").strip().lower()
+        collections = _DDC_CANVAS_COLLECTIONS.get(canvas, _DDC_CANVAS_COLLECTIONS["ddc"])
+
+        # Lazy-load data_mesh adapter when any dm canvas is requested
+        if canvas.startswith("data_mesh"):
+            import tools.iqe.adapters.data_mesh  # noqa: F401
+
         translation = nl_to_iqe(question, collections)
         iqe_str = translation.get("iqe", "")
         explanation = translation.get("explanation", "")
@@ -2829,7 +2853,7 @@ def create_data_canvas_blueprint():
             recent_contracts = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT c.id, c.name AS title, c.status, c.created_at, "
+                    "SELECT c.id, c.title, c.status, c.created_at, "
                     "p.name AS product_name, p.domain_id "
                     "FROM dm_contracts c "
                     "LEFT JOIN dm_data_products p ON p.id = c.product_id "
@@ -3625,5 +3649,10 @@ def create_data_canvas_blueprint():
             "field_count": len(pairs),
             "model_used": model_used,
         })
+
+    @bp.route("/pipeline-ops")
+    def dc_pipeline_ops():
+        return render_template("data_canvas/pipeline_ops.html",
+                               page_title="Pipeline Command Center")
 
     return bp

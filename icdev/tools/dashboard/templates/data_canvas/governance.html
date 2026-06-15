@@ -44,17 +44,6 @@
   .btn-save { padding: 7px 16px; background: #1565c0; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
 </style>
 
-<!-- Data Mesh Tab Nav -->
-<div class="dm-nav">
-  <span class="dm-label">Data Mesh</span>
-  <a href="/data/mesh">Overview</a>
-  <a href="/data/domains">Domains</a>
-  <a href="/data/products">Products</a>
-  <a href="/data/contracts">Contracts</a>
-  <a href="/data/governance" class="active">Governance</a>
-  <a href="/data/csp">CSP</a>
-</div>
-
 <div class="gov-hero">
   <h1 class="accent">Data Mesh Governance</h1>
   <p>Federated governance policies, domain compliance scores, and OPA-style access control.</p>
@@ -158,6 +147,18 @@
     </div>
   </div>
 </div>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "data_mesh_governance" %}
+{% set iqe_api_route = "/data/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Governance Policies" %}
+{% set iqe_examples = [
+  {"label": "All policies", "query": "foreach p in data_mesh.governance_policies select p.name, p.policy_type, p.applies_to, p.status"},
+  {"label": "OPA policies", "query": "foreach p in data_mesh.governance_policies where p.policy_type == \"opa\" select p.name, p.applies_to, p.status"},
+  {"label": "Active policies", "query": "foreach p in data_mesh.governance_policies where p.status == \"active\" select p.name, p.policy_type, p.applies_to"},
+  {"label": "Global policies", "query": "foreach p in data_mesh.governance_policies where p.applies_to == \"all\" select p.name, p.policy_type, p.status"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
 
 <script>
 function openModal() {

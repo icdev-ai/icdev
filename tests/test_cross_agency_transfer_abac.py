@@ -53,7 +53,7 @@ def _cleared_analyst_subject():
         "user_id": "analyst-001",
         "role": "cleared_analyst",
         "agency": "partner_agency",
-        "clearance_level": 2,       # SECRET
+        "clearance_level": 3,       # SECRET (scale: PUBLIC=0,CUI=1,ECI=2,SECRET=3)
         "compartments": ["COI_INTEL"],
         "entitlements": ["cross_domain_pull"],
     }

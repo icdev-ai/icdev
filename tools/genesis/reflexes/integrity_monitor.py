@@ -296,7 +296,7 @@ def run(config: Optional[Dict[str, Any]] = None, conn: Any = None) -> Dict[str, 
     target = str(ctx.get("target") or (BASE_DIR / "tools"))
     raw_mode = str(ctx.get("mode") or "aware").strip().lower()
     mode = _MODE_ALIASES.get(raw_mode, "provenance_aware")
-    project_id = ctx.get("project_id")
+    project_id = ctx.get("project_id") or "icdev-tools-rtm"
     session_id = ctx.get("session_id")
 
     result: Dict[str, Any] = {

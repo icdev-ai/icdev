@@ -215,13 +215,17 @@ def _mirror_to_audit_trail(conn, kwargs: dict, event_id: str, occurred_at: str) 
                 "event_log_id": event_id,
             }
         )
+        import uuid as _uuid
+        audit_id = str(_uuid.uuid4())
         conn.execute(
             """
             INSERT INTO audit_trail
-                (event_type, actor, action, project_id, details, classification, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (id, event_type, actor, action, project_id, details,
+                 classification, recorded_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
+                audit_id,
                 event_type,
                 kwargs.get("actor", "system"),
                 action,

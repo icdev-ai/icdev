@@ -172,6 +172,7 @@
 - [IC IE Data Fabric — Multi-Agency Data Sharing](manifest/ic-ie-data-fabric.md)
 - [AI-ify Canvas (AI-ify)](manifest/ai-ify-canvas.md)
 - [Document Intelligence Canvas (DIC)](manifest/document-intelligence-canvas.md)
+- [NOVA — Autonomous Self-Learning Digital Coworker](manifest/autonomous-coworker.md) — ECHO (execution tracing + Reflexion loop), SOUL (coworker identity + cross-session memory), TRUST (Bayesian trust calibration), SELA (GEPA-style skill evolution)
 
 
 ## Auto-Registered (Coherence Fix)
@@ -1027,3 +1028,22 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Dic Review Cadence | tools\genesis\reflexes\dic_review_cadence.py | Auto-registered: reflexes/dic_review_cadence.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Canvas Push | tools\document_intelligence\canvas_push.py | Auto-registered: document_intelligence/canvas_push.py | --json | JSON |
+| Dic Digest | tools\genesis\reflexes\dic_digest.py | Auto-registered: reflexes/dic_digest.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Event Dispatcher | tools\ace\event_dispatcher.py | Auto-registered: ace/event_dispatcher.py | --json | JSON |
+| Role Loader | tools\ace\role_loader.py | Auto-registered: ace/role_loader.py | --json | JSON |
+| Skill Adapter | tools\ace\skill_adapter.py | Auto-registered: ace/skill_adapter.py | --json | JSON |
+| Hacker News | tools\platform_connectors\hacker_news.py | Auto-registered: platform_connectors/hacker_news.py | --json | JSON |
+| Zig External Adapter | tools\security_canvas\zig_external_adapter.py | Auto-registered: security_canvas/zig_external_adapter.py | --json | JSON |
+| Zig Portfolio | tools\security_canvas\zig_portfolio.py | Auto-registered: security_canvas/zig_portfolio.py | --json | JSON |
+| Seed Official Skills | tools\skillhub\seed_official_skills.py | Auto-registered: skillhub/seed_official_skills.py | --json | JSON |

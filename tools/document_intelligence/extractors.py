@@ -246,6 +246,109 @@ def assess_extraction_quality(extractions: list["Extraction"]) -> ExtractionQual
     )
 
 
+@dataclass
+class OcrConfidenceReport:
+    """Per-image OCR quality assessment via IQR-based confidence distribution analysis.
+
+    Replaces the external pattern of hard-coding a minimum per-word confidence
+    threshold (e.g. ``if word_conf < 50: skip_word``) with distribution-aware
+    detection. Anomaly boundaries adapt to each image's actual confidence spread
+    so no fixed cutoff is maintained.
+
+    Two anomaly types:
+    * ``low_confidence_batch``  — Q1 of per-word confidence is below the OCR
+      noise floor (< 0.20), meaning most words were read with very low certainty.
+    * ``confidence_outliers``   — individual words fall well below the pack
+      (< Q1 − 1.5 × IQR), returned in ``outlier_word_indices``.
+
+    ``is_low_confidence`` is False when fewer than 3 valid words are scored or
+    no anomaly is detected.
+    """
+
+    is_low_confidence: bool = False
+    anomaly_type: str = ""
+    mean_confidence: float = 0.0
+    q1_confidence: float = 0.0
+    word_count: int = 0
+    outlier_word_indices: list[int] = field(default_factory=list)
+    detail: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "is_low_confidence": self.is_low_confidence,
+            "anomaly_type": self.anomaly_type,
+            "mean_confidence": round(self.mean_confidence, 3),
+            "q1_confidence": round(self.q1_confidence, 3),
+            "word_count": self.word_count,
+            "outlier_word_indices": self.outlier_word_indices,
+            "detail": self.detail,
+        }
+
+
+def assess_ocr_confidence(word_confidences: list[float]) -> OcrConfidenceReport:
+    """Assess OCR quality via IQR statistics on per-word confidence scores (0.0–1.0).
+
+    Args:
+        word_confidences: Per-word confidence values already filtered to valid
+            words (tesseract assigns -1 to failed detections — exclude before
+            calling this function).
+
+    Returns:
+        :class:`OcrConfidenceReport` — ``is_low_confidence=False`` when the
+        word count is too small (< 3) or all words are within normal range.
+    """
+    n = len(word_confidences)
+    if n < 3:
+        return OcrConfidenceReport(word_count=n)
+
+    sorted_c = sorted(word_confidences)
+    q1 = sorted_c[n // 4]
+    q3 = sorted_c[(3 * n) // 4]
+    iqr = q3 - q1
+    mean_c = sum(word_confidences) / n
+
+    # low_confidence_batch: Q1 below OCR noise floor (< 0.20 on a 0–1 scale)
+    if q1 < 0.20:
+        return OcrConfidenceReport(
+            is_low_confidence=True,
+            anomaly_type="low_confidence_batch",
+            mean_confidence=mean_c,
+            q1_confidence=q1,
+            word_count=n,
+            detail=(
+                f"Q1 word confidence is {q1:.2f} — most words recognized with very low "
+                "certainty, suggesting a difficult image (skew, noise, or unsupported font). "
+                "Consider image preprocessing or a vision-LLM fallback."
+            ),
+        )
+
+    # confidence_outliers: words far below the pack relative to IQR spread
+    low_fence = q1 - 1.5 * iqr if iqr > 0.05 else mean_c - 2 * max(iqr, 0.01)
+    outliers = [i for i, c in enumerate(word_confidences) if c < low_fence]
+    if outliers:
+        shown = outliers[:5]
+        suffix = "..." if len(outliers) > 5 else ""
+        return OcrConfidenceReport(
+            is_low_confidence=True,
+            anomaly_type="confidence_outliers",
+            mean_confidence=mean_c,
+            q1_confidence=q1,
+            word_count=n,
+            outlier_word_indices=outliers,
+            detail=(
+                f"{len(outliers)} word(s) at index(es) {shown}{suffix} have confidence "
+                f"below the low fence ({low_fence:.2f}), indicating locally unreadable "
+                "regions. Results may contain garbled text."
+            ),
+        )
+
+    return OcrConfidenceReport(
+        mean_confidence=mean_c,
+        q1_confidence=q1,
+        word_count=n,
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Extractor implementations
 # --------------------------------------------------------------------------- #
@@ -788,9 +891,38 @@ def _try_easyocr(img) -> str:
 
 
 def _try_pytesseract(img) -> str:
+    """Run pytesseract OCR with IQR-based per-word confidence assessment.
+
+    Uses ``image_to_data`` to score each recognized word and applies
+    :func:`assess_ocr_confidence` instead of a fixed confidence cutoff.
+    Low-confidence results are logged but all text is returned so callers
+    receive the full engine output regardless of quality.
+    """
     import pytesseract
 
-    return pytesseract.image_to_string(img)
+    try:
+        data = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
+    except Exception:
+        return pytesseract.image_to_string(img)
+
+    words, confs = [], []
+    for i in range(len(data["text"])):
+        text = str(data["text"][i]).strip()
+        conf = float(data["conf"][i])
+        if not text or conf < 0:
+            continue
+        words.append(text)
+        confs.append(conf / 100.0)  # normalize 0–100 → 0–1
+
+    report = assess_ocr_confidence(confs)
+    if report.is_low_confidence:
+        logger.warning(
+            "dic.extractors: pytesseract low-confidence OCR (%s) — %s",
+            report.anomaly_type,
+            report.detail,
+        )
+
+    return " ".join(words)
 
 
 # --------------------------------------------------------------------------- #
@@ -1040,10 +1172,26 @@ def extract_youtube(url: str) -> Extraction:
 def extract_file(path: str | Path) -> Extraction:
     """Route a file path to the correct extractor.
 
-    Falls back to a raw utf-8 decode with a warning if the extension is unknown.
+    Prefers MarkItDown for DOCX/PPTX/XLSX when installed (structured Markdown output).
+    Falls back to built-in extractors, then to a raw utf-8 decode for unknown extensions.
     """
     p = Path(path)
     ext = p.suffix.lower()
+
+    # adapt-md-03: Try MarkItDown first for formats it handles better
+    try:
+        from tools.document_intelligence.converters.markitdown_adapter import (
+            should_use_markitdown,
+            convert as _markitdown_convert,
+        )
+        if should_use_markitdown(ext):
+            result = _markitdown_convert(p)
+            if result.text:  # only use if it produced content
+                result.metadata.setdefault("layout_mode", "markitdown")
+                return result
+    except Exception:
+        pass  # fall through to built-in extractors
+
     extractor = get_extractor(ext)
     if extractor is not None:
         result = extractor(p)

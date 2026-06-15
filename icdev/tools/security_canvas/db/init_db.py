@@ -299,6 +299,7 @@ CREATE INDEX IF NOT EXISTS idx_zig_act_phase ON zig_activities(phase);
 CREATE TABLE IF NOT EXISTS zig_activity_completions (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     activity_id     TEXT NOT NULL REFERENCES zig_activities(id),
+    target_id       TEXT NOT NULL DEFAULT 'icdev-self',
     status          TEXT NOT NULL DEFAULT 'not_started'
         CHECK(status IN ('not_started','in_progress','complete')),
     evidence_note   TEXT,
@@ -306,11 +307,12 @@ CREATE TABLE IF NOT EXISTS zig_activity_completions (
     completed_at    TEXT,
     updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_zig_comp_act ON zig_activity_completions(activity_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_zig_comp_act ON zig_activity_completions(activity_id, target_id);
 
 CREATE TABLE IF NOT EXISTS zig_maturity_scores (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     pillar_slug     TEXT NOT NULL,
+    target_id       TEXT NOT NULL DEFAULT 'icdev-self',
     score           REAL NOT NULL DEFAULT 0.0,
     maturity_level  TEXT,
     capability_count INTEGER DEFAULT 0,
@@ -320,6 +322,20 @@ CREATE TABLE IF NOT EXISTS zig_maturity_scores (
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_zig_score_pillar ON zig_maturity_scores(pillar_slug);
+CREATE INDEX IF NOT EXISTS idx_zig_score_target ON zig_maturity_scores(target_id, pillar_slug);
+
+CREATE TABLE IF NOT EXISTS zig_targets (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT,
+    system_type     TEXT NOT NULL DEFAULT 'general',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    status          TEXT NOT NULL DEFAULT 'active'
+                    CHECK(status IN ('active','inactive','archived')),
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_zig_target_status ON zig_targets(status);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
@@ -1653,6 +1669,40 @@ def init_db():
             conn.commit()
         except Exception:
             pass  # column already exists
+
+        # Runtime migration: add target_id to zig_activity_completions for existing installs
+        try:
+            conn.execute(
+                "ALTER TABLE zig_activity_completions ADD COLUMN target_id TEXT NOT NULL DEFAULT 'icdev-self'"
+            )
+            conn.commit()
+        except Exception:
+            pass  # column already exists
+
+        # Runtime migration: add target_id to zig_maturity_scores for existing installs
+        try:
+            conn.execute(
+                "ALTER TABLE zig_maturity_scores ADD COLUMN target_id TEXT NOT NULL DEFAULT 'icdev-self'"
+            )
+            conn.commit()
+        except Exception:
+            pass  # column already exists
+
+        # Runtime migration: create zig_targets table for existing installs
+        try:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS zig_targets (
+                    id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT,
+                    system_type TEXT NOT NULL DEFAULT 'general',
+                    classification TEXT NOT NULL DEFAULT 'CUI',
+                    status TEXT NOT NULL DEFAULT 'active',
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.commit()
+        except Exception:
+            pass  # table already exists
 
         # Seed templates (upsert — inserts new templates even if some already exist)
         cur = conn.cursor()

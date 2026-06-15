@@ -16,8 +16,10 @@ from tools.aiify.agent_readiness.pillars._base import (
     _glob_files,
     _read,
     _search,
-    load_pillar_config,
 )
+
+# Path to the args YAML — module-level so tests can monkeypatch it.
+_ARGS_PATH = pathlib.Path(__file__).parents[4] / "args" / "agent_readiness_config.yaml"
 
 # ---------------------------------------------------------------------------
 # Anomaly-detection threshold loader
@@ -72,7 +74,13 @@ def _load_thresholds() -> dict[str, Any]:
       2. args/agent_readiness_config.yaml pillars.configuration section
       3. _DEFAULTS fallback (graceful degradation when config is absent/malformed)
     """
-    cfg = load_pillar_config("configuration")
+    try:
+        import yaml
+        raw = _ARGS_PATH.read_text(encoding="utf-8")
+        full = yaml.safe_load(raw) or {}
+    except Exception:  # noqa: BLE001
+        full = {}
+    cfg = full.get("pillars", {}).get("configuration", {})
     tr = cfg.get("task_runner", {})
     ci = cfg.get("ci_pipeline", {})
     iac = cfg.get("iac", {})

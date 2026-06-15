@@ -497,6 +497,14 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "dic_edit_history",
         # DIC Canvas Synergy — suggestion decisions (dsyn-adapt-03, NIST AU — each decision row is immutable)
         "dic_suggestion_decisions",
+        # NOVA ECHO — execution traces (append-only audit of agent actions, NIST AU)
+        "agent_execution_traces",
+        # NOVA ECHO — improvement artifacts (append-only generational record, NIST AU)
+        "agent_improvement_artifacts",
+        # NOVA TRUST — trust ledger (append-only Bayesian event log, NIST AU)
+        "ace_trust_ledger",
+        # DIC View Log — document access events for anomaly detection (aiify-opp-105, NIST AU)
+        "dic_doc_views",
     ]
 
     if tool_name == "Bash":

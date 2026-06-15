@@ -293,3 +293,98 @@ def rebuild_canvas_kg(canvas_key: str, design_id: str) -> dict:
         "edges_upserted": len(edges_raw),
         "duration_ms": round(duration_ms, 2),
     }
+
+
+def upsert_from_dic(
+    doc_id: str,
+    entities: list[dict],
+    relationships: list[dict],
+    canvas: str = "dic",
+) -> dict:
+    """Write DIC-extracted entities and relationships into canvas_kg_nodes/edges.
+
+    Entities: [{id, label, type, metadata (opt)}]
+    Relationships: [{source, target, type}]
+    canvas: defaults to 'dic' — appears in the Ontology canvas as its own source.
+    """
+    if not doc_id or (not entities and not relationships):
+        return {"status": "skipped", "canvas": canvas, "design_id": doc_id}
+
+    t0 = time.time()
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    try:
+        from tools.db.storage import get_connection
+
+        icdev_conn = get_connection()
+        raw_conn = getattr(icdev_conn, "conn", icdev_conn)
+        _ensure_kg_tables(raw_conn)
+
+        raw_conn.execute(
+            "DELETE FROM canvas_kg_nodes WHERE canvas = ? AND design_id = ?",
+            (canvas, doc_id),
+        )
+        raw_conn.execute(
+            "DELETE FROM canvas_kg_edges WHERE canvas = ? AND design_id = ?",
+            (canvas, doc_id),
+        )
+
+        node_row_ids: dict[str, str] = {}
+        for ent in entities:
+            ent_id = str(ent.get("id") or str(uuid.uuid4()))
+            row_id = str(uuid.uuid4())
+            node_row_ids[ent_id] = row_id
+            raw_conn.execute(
+                "INSERT INTO canvas_kg_nodes "
+                "(id, canvas, design_id, node_id, node_type, label, ontology_id, metadata_json, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    row_id,
+                    canvas,
+                    doc_id,
+                    ent_id,
+                    ent.get("type", "concept"),
+                    ent.get("label", ent_id),
+                    None,
+                    json.dumps(ent.get("metadata") or {}, default=str),
+                    now_iso,
+                ),
+            )
+
+        for rel in relationships:
+            raw_conn.execute(
+                "INSERT INTO canvas_kg_edges "
+                "(id, canvas, design_id, source_id, target_id, edge_type, confidence, metadata_json, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    str(uuid.uuid4()),
+                    canvas,
+                    doc_id,
+                    str(rel.get("source", "")),
+                    str(rel.get("target", "")),
+                    rel.get("type", "related_to"),
+                    float(rel.get("confidence", 1.0)),
+                    json.dumps(rel.get("metadata") or {}, default=str),
+                    now_iso,
+                ),
+            )
+
+        raw_conn.commit()
+        icdev_conn.close()
+    except Exception as exc:
+        logger.warning("kg_builder.upsert_from_dic: %s", exc)
+        return {"status": "error", "canvas": canvas, "design_id": doc_id, "error": str(exc)}
+
+    duration_ms = (time.time() - t0) * 1000
+    logger.info(
+        "kg_builder.upsert_from_dic: %s/%s — %d nodes, %d edges in %.1f ms",
+        canvas, doc_id, len(entities), len(relationships), duration_ms,
+    )
+    return {
+        "status": "ok",
+        "canvas": canvas,
+        "design_id": doc_id,
+        "nodes_upserted": len(entities),
+        "edges_upserted": len(relationships),
+        "duration_ms": round(duration_ms, 2),
+    }

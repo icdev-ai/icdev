@@ -26,6 +26,20 @@ os.environ["DSOC_STORAGE_BACKEND"] = "sqlite"
 # test module under tests/observability/ is collected.
 _OC_ALREADY_OVERRIDDEN = os.environ.get("ICDEV_STORAGE_BACKEND") == "postgresql"
 
+# Prevent airgap detector from doing TCP probes (Ollama/LM Studio) during tests.
+# tools.dashboard.app calls create_app() at module level which triggers
+# detect_environment() → probe_local_llm_servers() → socket.create_connection().
+# This blocks for ~1 second per endpoint and has caused 8+ second timeouts.
+# Patching at the module level via monkeypatch is not available here (session
+# scope), so use unittest.mock directly on the _probe_tcp function.
+from unittest.mock import patch as _mock_patch
+
+_airgap_patch = _mock_patch(
+    "tools.airgap.detector._probe_tcp",
+    return_value=False,
+)
+_airgap_patch.start()
+
 
 MINIMAL_ICDEV_SCHEMA = """
 CREATE TABLE IF NOT EXISTS studio_workflows (
@@ -93,7 +107,9 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
     files_changed         INTEGER DEFAULT 0,
     lines_added           INTEGER DEFAULT 0,
     lines_removed         INTEGER DEFAULT 0,
-    completed_via_bypass  INTEGER DEFAULT 0
+    completed_via_bypass  INTEGER DEFAULT 0,
+    source_doc_id         TEXT,
+    source_collection_id  TEXT
 );
 CREATE TABLE IF NOT EXISTS kanban_task_deps (
     task_id         TEXT NOT NULL,
@@ -767,6 +783,16 @@ CREATE TABLE IF NOT EXISTS dic_doc_freshness (
 );
 CREATE INDEX IF NOT EXISTS idx_dic_doc_freshness_tenant ON dic_doc_freshness(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_dic_doc_freshness_collection ON dic_doc_freshness(collection_id);
+CREATE TABLE IF NOT EXISTS dic_doc_views (
+    view_id         TEXT    PRIMARY KEY,
+    doc_id          TEXT    NOT NULL,
+    user_id         TEXT    NOT NULL DEFAULT 'anonymous',
+    collection_id   TEXT    NOT NULL DEFAULT 'default',
+    viewed_at       TEXT    DEFAULT (datetime('now')),
+    tenant_id       TEXT    DEFAULT 'default',
+    classification  TEXT    DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_dic_doc_views_doc ON dic_doc_views(doc_id);
 CREATE TABLE IF NOT EXISTS dd_mapping_sessions (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL DEFAULT 'Untitled Mapping',
@@ -814,6 +840,13 @@ CREATE TABLE IF NOT EXISTS dd_mapping_transforms (
     classification  TEXT NOT NULL DEFAULT 'CUI',
     tenant_id       TEXT NOT NULL DEFAULT 'default',
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dd_pii_scans (
+    scan_id         TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL DEFAULT '',
+    overall_risk    TEXT NOT NULL DEFAULT 'none',
+    findings_json   TEXT NOT NULL DEFAULT '[]',
+    scanned_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS zig_pillars (
@@ -1268,6 +1301,77 @@ CREATE TABLE IF NOT EXISTS foundry_outcomes (
     tenant_id      TEXT    NOT NULL DEFAULT 'default',
     classification TEXT    NOT NULL DEFAULT 'CUI',
     created_at     TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS coworker_dic_contexts (
+    id              TEXT PRIMARY KEY,
+    instance_id     TEXT,
+    collection_id   TEXT NOT NULL,
+    attached_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- NOVA ECHO — Execution Tracing & Reflexion Loop
+CREATE TABLE IF NOT EXISTS agent_execution_traces (
+    trace_id          TEXT PRIMARY KEY,
+    task_id           TEXT NOT NULL,
+    task_type         TEXT NOT NULL DEFAULT '',
+    skill_used        TEXT NOT NULL DEFAULT '',
+    outcome           TEXT NOT NULL DEFAULT 'unknown',
+    events_json       TEXT NOT NULL DEFAULT '[]',
+    lesson_pattern    TEXT NOT NULL DEFAULT '',
+    improvement_notes TEXT NOT NULL DEFAULT '',
+    started_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at      TEXT NOT NULL DEFAULT '',
+    created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS agent_improvement_artifacts (
+    artifact_id      TEXT PRIMARY KEY,
+    task_type        TEXT NOT NULL,
+    skill_used       TEXT NOT NULL DEFAULT '',
+    generation_n     INTEGER NOT NULL DEFAULT 1,
+    improvement_text TEXT NOT NULL,
+    composite_score  REAL NOT NULL DEFAULT 0.0,
+    baseline_score   REAL NOT NULL DEFAULT 0.0,
+    evidence_traces  TEXT NOT NULL DEFAULT '[]',
+    applied_count    INTEGER NOT NULL DEFAULT 0,
+    status           TEXT NOT NULL DEFAULT 'pending',
+    created_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    applied_at       TEXT
+);
+
+-- NOVA SOUL — Coworker Identity & Cross-Session Memory
+CREATE TABLE IF NOT EXISTS ace_coworker_memory (
+    id               TEXT PRIMARY KEY,
+    role_id          TEXT NOT NULL,
+    fact_type        TEXT NOT NULL DEFAULT 'observation',
+    content          TEXT NOT NULL,
+    confidence       REAL NOT NULL DEFAULT 0.8,
+    source_task_id   TEXT NOT NULL DEFAULT '',
+    created_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- NOVA TRUST — Trust Calibration Ledger (append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS ace_trust_ledger (
+    id              TEXT PRIMARY KEY,
+    role_id         TEXT NOT NULL,
+    delta           REAL NOT NULL,
+    reason          TEXT NOT NULL,
+    new_score       REAL NOT NULL,
+    source_task_id  TEXT NOT NULL DEFAULT '',
+    recorded_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS product_intel_runs (
+    id                  TEXT PRIMARY KEY,
+    started_at          TEXT,
+    completed_at        TEXT,
+    engines_run         TEXT,
+    engines_failed      TEXT,
+    total_signals       INTEGER,
+    total_gaps          INTEGER,
+    total_dossiers      INTEGER,
+    federation_routes   INTEGER,
+    result_json         TEXT,
+    status              TEXT,
+    classification      TEXT DEFAULT 'CUI'
 );
 """
 

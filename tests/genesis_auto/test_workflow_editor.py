@@ -108,7 +108,7 @@ def test_workflow_editor_get_workflow_signature():
         pytest.skip("Module not importable")
 
 def test_workflow_editor_get_workflow_invocation():
-    """Verify get_workflow can be called with test inputs."""
+    """Verify get_workflow can be called with test inputs (returns dict or None when not found)."""
     try:
         from tools.studio.workflow_editor import get_workflow
     except ImportError:
@@ -120,7 +120,8 @@ def test_workflow_editor_get_workflow_invocation():
     with patch("tools.db.storage.get_connection", return_value=mock_conn):
         try:
             result = get_workflow("test_workflow_id")
-            assert isinstance(result, dict)
+            # Returns dict when found, None when not found — both are valid
+            assert result is None or isinstance(result, dict)
         except (TypeError, ValueError, KeyError, AttributeError):
             pass  # Expected with mock data
         except Exception as e:
@@ -272,7 +273,7 @@ def test_workflow_editor_workflow_to_composer_format_signature():
         pytest.skip("Module not importable")
 
 def test_workflow_editor_workflow_to_composer_format_invocation():
-    """Verify workflow_to_composer_format can be called with test inputs."""
+    """Verify workflow_to_composer_format can be called with test inputs (returns dict or None)."""
     try:
         from tools.studio.workflow_editor import workflow_to_composer_format
     except ImportError:
@@ -284,7 +285,8 @@ def test_workflow_editor_workflow_to_composer_format_invocation():
     with patch("tools.db.storage.get_connection", return_value=mock_conn):
         try:
             result = workflow_to_composer_format("test_workflow_id")
-            assert isinstance(result, dict)
+            # Returns dict when found, None when workflow not found — both valid
+            assert result is None or isinstance(result, dict)
         except (TypeError, ValueError, KeyError, AttributeError):
             pass  # Expected with mock data
         except Exception as e:
@@ -302,7 +304,7 @@ def test_workflow_editor_list_builtin_templates_exists():
         pytest.skip("Module not importable")
 
 def test_workflow_editor_list_builtin_templates_invocation():
-    """Verify list_builtin_templates can be called with test inputs."""
+    """Verify list_builtin_templates can be called with test inputs (returns list[dict])."""
     try:
         from tools.studio.workflow_editor import list_builtin_templates
     except ImportError:
@@ -314,7 +316,8 @@ def test_workflow_editor_list_builtin_templates_invocation():
     with patch("tools.db.storage.get_connection", return_value=mock_conn):
         try:
             result = list_builtin_templates()
-            assert isinstance(result, dict)
+            # Returns list[dict], not dict
+            assert isinstance(result, list)
         except (TypeError, ValueError, KeyError, AttributeError):
             pass  # Expected with mock data
         except Exception as e:
@@ -343,7 +346,7 @@ def test_workflow_editor_get_builtin_template_signature():
         pytest.skip("Module not importable")
 
 def test_workflow_editor_get_builtin_template_invocation():
-    """Verify get_builtin_template can be called with test inputs."""
+    """Verify get_builtin_template can be called with test inputs (returns dict or None)."""
     try:
         from tools.studio.workflow_editor import get_builtin_template
     except ImportError:
@@ -355,7 +358,8 @@ def test_workflow_editor_get_builtin_template_invocation():
     with patch("tools.db.storage.get_connection", return_value=mock_conn):
         try:
             result = get_builtin_template("test_template_id")
-            assert isinstance(result, dict)
+            # Returns dict when found, None when not found — both valid
+            assert result is None or isinstance(result, dict)
         except (TypeError, ValueError, KeyError, AttributeError):
             pass  # Expected with mock data
         except Exception as e:
@@ -373,7 +377,8 @@ def test_workflow_editor_main_exists():
         pytest.skip("Module not importable")
 
 def test_workflow_editor_main_invocation():
-    """Verify main can be called with test inputs."""
+    """Verify main can be called with controlled CLI args (sys.argv mocked)."""
+    import sys
     try:
         from tools.studio.workflow_editor import main
     except ImportError:
@@ -382,13 +387,21 @@ def test_workflow_editor_main_invocation():
     mock_conn = MagicMock()
     mock_conn.execute.return_value.fetchone.return_value = None
     mock_conn.execute.return_value.fetchall.return_value = []
-    with patch("tools.db.storage.get_connection", return_value=mock_conn):
-        try:
-            main()
-        except (TypeError, ValueError, KeyError, AttributeError):
-            pass  # Expected with mock data
-        except Exception as e:
-            if "no such table" in str(e).lower():
-                pass  # DB not initialized
-            else:
-                raise
+    orig_argv = sys.argv
+    # Use 'list' subcommand which requires no extra args
+    sys.argv = ["workflow_editor", "list"]
+    try:
+        with patch("tools.db.storage.get_connection", return_value=mock_conn):
+            try:
+                main()
+            except SystemExit:
+                pass  # argparse may sys.exit on --json/help output — acceptable
+            except (TypeError, ValueError, KeyError, AttributeError):
+                pass  # Expected with mock data
+            except Exception as e:
+                if "no such table" in str(e).lower():
+                    pass  # DB not initialized
+                else:
+                    raise
+    finally:
+        sys.argv = orig_argv

@@ -1,32 +1,33 @@
 role_id: requirements_engineer
 display_name: Requirements Engineer
-description: Requirements engineer that elicits stakeholder needs, analyzes domains, drafts specifications, traces requirements to tests, and baselines releases.
-version: "1.0"
+description: Requirements engineer that elicits stakeholder needs, analyzes domains,
+  drafts specifications, traces requirements to tests, and baselines releases.
+version: '1.0'
 trust_tier: yellow
 default_count: 1
 max_instances: 2
 steps:
-  - elicit_stakeholder_needs
-  - analyze_domain
-  - draft_requirements
-  - trace_to_tests
-  - review_with_team
-  - baseline_specification
+- elicit_stakeholder_needs
+- analyze_domain
+- draft_requirements
+- trace_to_tests
+- review_with_team
+- baseline_specification
 communication:
   protocol: a2a
   listen_topics:
-    - task.assigned
-    - stakeholder.feedback
-    - spec.changed
+  - text.produced
+  - document.analyzed
+  - task.completed
   emit_topics:
-    - requirements.drafted
-    - trace.matrix.updated
-    - spec.baselined
-    - review.requested
+  - requirements.drafted
+  - trace.matrix.updated
+  - spec.baselined
+  - review.requested
 llm_function: agent_requirements_analyst
 tool_permissions:
-  - Read
-  - Write
-  - Edit
-  - Grep
+- Read
+- Write
+- Edit
+- Grep
 genesis_reflex: kanban

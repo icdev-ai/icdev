@@ -1,0 +1,444 @@
+<!-- CUI // SP-CTI — ACE Profile Creator -->
+{% extends "base.html" %}
+{% block title %}Create Profile — Co-Worker Engine — ICDEV™{% endblock %}
+
+{% block content %}
+<style>
+  .profile-creator { max-width: 900px; margin: 0 auto; padding: 24px 20px; }
+
+  .creator-header { margin-bottom: 28px; }
+  .creator-header h1 { font-size: 1.5rem; font-weight: 700; color: var(--text-primary, #e2e8f0); margin: 0 0 6px; }
+  .creator-header p  { color: var(--text-muted, #8899aa); font-size: 0.9rem; margin: 0; }
+
+  /* ── Input panel ────────────────────────────────────────────────── */
+  .input-panel {
+    background: var(--bg-card, #16213e);
+    border: 1px solid var(--border-color, #2a3550);
+    border-radius: 10px;
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+  .input-panel label { display: block; font-size: 0.8rem; color: var(--text-muted, #8899aa);
+                        text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+  .input-panel input, .input-panel textarea {
+    width: 100%; box-sizing: border-box;
+    background: var(--bg-input, #0d1526); color: var(--text-primary, #e2e8f0);
+    border: 1px solid var(--border-color, #2a3550); border-radius: 6px;
+    padding: 10px 14px; font-size: 0.95rem; font-family: inherit;
+    transition: border-color .15s;
+  }
+  .input-panel input:focus, .input-panel textarea:focus {
+    outline: none; border-color: #3a8ef6;
+  }
+  .input-panel textarea { resize: vertical; min-height: 80px; }
+  .input-row { margin-bottom: 18px; }
+
+  .hint { font-size: 0.78rem; color: var(--text-muted, #8899aa); margin-top: 5px; }
+
+  /* ── Buttons ────────────────────────────────────────────────────── */
+  .btn-row { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 20px; }
+  .btn {
+    padding: 9px 20px; border: none; border-radius: 6px; font-size: 0.88rem;
+    font-weight: 600; cursor: pointer; transition: opacity .15s, transform .1s;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn-ai   { background: linear-gradient(135deg, #6c3fc5, #3a8ef6); color: #fff; }
+  .btn-save { background: #27ae60; color: #fff; }
+  .btn-clear{ background: transparent; color: var(--text-muted, #8899aa); border: 1px solid var(--border-color, #2a3550); }
+
+  /* ── Status banner ──────────────────────────────────────────────── */
+  .status-bar {
+    padding: 10px 16px; border-radius: 6px; font-size: 0.85rem; margin-bottom: 18px;
+    display: none; align-items: center; gap: 8px;
+  }
+  .status-bar.info    { display: flex; background: rgba(58,142,246,.12); color: #3a8ef6; border: 1px solid rgba(58,142,246,.3); }
+  .status-bar.success { display: flex; background: rgba(39,174,96,.12);  color: #27ae60; border: 1px solid rgba(39,174,96,.3); }
+  .status-bar.error   { display: flex; background: rgba(231,76,60,.12);  color: #e74c3c; border: 1px solid rgba(231,76,60,.3); }
+
+  /* ── Preview panel ──────────────────────────────────────────────── */
+  #preview-panel { display: none; }
+  .preview-card {
+    background: var(--bg-card, #16213e);
+    border: 1px solid #3a8ef6;
+    border-radius: 10px; padding: 24px; margin-bottom: 24px;
+  }
+  .preview-card h2 { font-size: 1.15rem; color: #3a8ef6; margin: 0 0 16px; }
+  .preview-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+  }
+  @media (max-width: 600px) { .preview-grid { grid-template-columns: 1fr; } }
+
+  .preview-field label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: .05em; color: var(--text-muted, #8899aa); display: block; margin-bottom: 4px; }
+  .preview-field .val  { font-size: 0.9rem; color: var(--text-primary, #e2e8f0); }
+  .preview-field .val.editable {
+    background: var(--bg-input, #0d1526); border: 1px solid var(--border-color, #2a3550);
+    border-radius: 5px; padding: 6px 10px;
+    min-height: 32px; cursor: text;
+  }
+  .preview-field.wide { grid-column: 1 / -1; }
+
+  .tag-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .tag { background: rgba(58,142,246,.15); color: #3a8ef6; border-radius: 12px; padding: 2px 10px; font-size: 0.78rem; }
+
+  .soul-section { margin-top: 16px; }
+  .soul-section h3 { font-size: 0.85rem; color: #3a8ef6; margin: 0 0 8px; text-transform: uppercase; letter-spacing: .06em; }
+  .soul-section pre {
+    background: var(--bg-input, #0d1526); border: 1px solid var(--border-color, #2a3550);
+    border-radius: 5px; padding: 12px; font-size: 0.82rem; color: var(--text-primary, #e2e8f0);
+    white-space: pre-wrap; word-break: break-word; margin: 0;
+    font-family: inherit;
+  }
+
+  .steps-list { display: flex; flex-wrap: wrap; gap: 8px; }
+  .step-badge {
+    background: rgba(39,174,96,.12); color: #27ae60;
+    border: 1px solid rgba(39,174,96,.3); border-radius: 5px;
+    padding: 3px 10px; font-size: 0.8rem; font-family: monospace;
+  }
+
+  /* ── Name suggestions ───────────────────────────────────────────── */
+  .suggest-trigger {
+    font-size: 0.78rem; color: #3a8ef6; cursor: pointer; text-decoration: underline;
+    margin-top: 6px; display: inline-block;
+  }
+  .suggest-trigger:hover { color: #6c3fc5; }
+  .suggest-panel {
+    display: none; background: var(--bg-input, #0d1526);
+    border: 1px solid #3a8ef6; border-radius: 8px;
+    padding: 16px; margin-top: 10px;
+  }
+  .suggest-panel h4 { font-size: 0.82rem; color: #3a8ef6; margin: 0 0 10px;
+                       text-transform: uppercase; letter-spacing: .05em; }
+  .suggest-card {
+    background: var(--bg-card, #16213e); border: 1px solid var(--border-color, #2a3550);
+    border-radius: 6px; padding: 10px 14px; margin-bottom: 8px; cursor: pointer;
+    transition: border-color .15s;
+  }
+  .suggest-card:hover { border-color: #3a8ef6; }
+  .suggest-card .sc-title { font-weight: 600; color: var(--text-primary, #e2e8f0); font-size: 0.9rem; }
+  .suggest-card .sc-basis { font-size: 0.75rem; color: #6c3fc5; margin: 2px 0; font-family: monospace; }
+  .suggest-card .sc-rationale { font-size: 0.78rem; color: var(--text-muted, #8899aa); }
+
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid rgba(255,255,255,.3); border-top-color: #fff; border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Success state ──────────────────────────────────────────────── */
+  .success-panel { display:none; text-align: center; padding: 40px 20px; }
+  .success-panel .check { font-size: 3rem; margin-bottom: 12px; }
+  .success-panel h2 { color: #27ae60; margin: 0 0 8px; }
+  .success-panel p  { color: var(--text-muted, #8899aa); margin: 0 0 20px; }
+  .success-panel .links a { color: #3a8ef6; text-decoration: none; margin: 0 10px; font-size: 0.9rem; }
+</style>
+
+<div class="profile-creator">
+  <div class="creator-header">
+    <h1>Create Coworker Profile</h1>
+    <p>Type a name and optional description — AI Assist will expand it into a full personality, steps, and capability scope.</p>
+  </div>
+
+  <!-- Status bar -->
+  <div id="status-bar" class="status-bar"></div>
+
+  <!-- Input panel -->
+  <div class="input-panel" id="input-panel">
+    <div class="input-row">
+      <label for="pdesc">Describe What This Person Does <span style="color:var(--text-muted,#8899aa)">(start here — name is optional)</span></label>
+      <textarea id="pdesc" rows="3" placeholder="e.g. reviews documents and applies classification markings, designs secure network topologies, analyzes signals intelligence for threat patterns…"></textarea>
+      <div class="hint">Be as informal as you like. AI will infer the professional role and suggest an official name.</div>
+      <span class="suggest-trigger" onclick="suggestNames()">✦ Not sure what to call this role? Get official name suggestions →</span>
+      <div class="suggest-panel" id="suggest-panel">
+        <h4>Suggested Official Titles</h4>
+        <div id="suggest-list"></div>
+      </div>
+    </div>
+    <div class="input-row">
+      <label for="pname">Profile Name <span style="color:var(--text-muted,#8899aa)">(or pick from suggestions above)</span></label>
+      <input id="pname" type="text" placeholder="e.g. Derivative Classifier, Network Architect, Budget Officer…" />
+      <div class="hint">Any job title works — official or informal. AI will expand it into a full profile.</div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ai" id="btn-assist" onclick="runAssist()">
+        <span id="assist-icon">✦</span> AI Assist — Generate Profile
+      </button>
+      <button class="btn btn-clear" onclick="clearForm()">Clear</button>
+    </div>
+  </div>
+
+  <!-- Preview panel (shown after AI Assist) -->
+  <div id="preview-panel">
+    <div class="preview-card">
+      <h2>✦ AI-Generated Profile — Review &amp; Edit</h2>
+      <div class="preview-grid">
+        <div class="preview-field">
+          <label>Role ID</label>
+          <div class="val" id="pv-role-id" style="font-family:monospace;color:#8899aa"></div>
+        </div>
+        <div class="preview-field">
+          <label>Display Name</label>
+          <div class="val editable" id="pv-display-name" contenteditable="true"></div>
+        </div>
+        <div class="preview-field wide">
+          <label>Description</label>
+          <div class="val editable" id="pv-description" contenteditable="true"></div>
+        </div>
+        <div class="preview-field">
+          <label>Domain</label>
+          <div class="val editable" id="pv-domain" contenteditable="true"></div>
+        </div>
+        <div class="preview-field">
+          <label>Canvas Affinity</label>
+          <div class="val editable" id="pv-canvas" contenteditable="true"></div>
+        </div>
+        <div class="preview-field">
+          <label>Trust Tier</label>
+          <div class="val" id="pv-trust"></div>
+        </div>
+        <div class="preview-field">
+          <label>LLM Function</label>
+          <div class="val" id="pv-llm-fn" style="font-family:monospace;color:#8899aa"></div>
+        </div>
+        <div class="preview-field wide">
+          <label>Steps</label>
+          <div class="steps-list" id="pv-steps"></div>
+        </div>
+        <div class="preview-field wide">
+          <label>Tags</label>
+          <div class="tag-list" id="pv-tags"></div>
+        </div>
+      </div>
+
+      <!-- Soul preview -->
+      <div class="soul-section" style="margin-top:20px">
+        <h3>Identity &amp; Values (SOUL.md)</h3>
+        <pre id="pv-soul"></pre>
+      </div>
+      <div class="soul-section">
+        <h3>Capability Scope (TOOLS.md)</h3>
+        <pre id="pv-tools"></pre>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn btn-save" id="btn-save" onclick="saveProfile()">
+        <span id="save-icon">＋</span> Create Profile
+      </button>
+      <button class="btn btn-ai" onclick="runAssist()" style="background:rgba(58,142,246,.2);color:#3a8ef6;border:1px solid #3a8ef6;">
+        ↻ Re-generate
+      </button>
+      <button class="btn btn-clear" onclick="clearForm()">Start Over</button>
+    </div>
+  </div>
+
+  <!-- Success panel -->
+  <div class="success-panel" id="success-panel">
+    <div class="check">✓</div>
+    <h2 id="success-title">Profile Created</h2>
+    <p id="success-body"></p>
+    <div class="links">
+      <a href="/coworker/roles">View All Profiles</a>
+      <a href="/coworker/profiles/new">Create Another</a>
+      <a href="/coworker">Launch a Session</a>
+    </div>
+  </div>
+</div>
+
+<script>
+let _currentSpec = null;
+
+async function suggestNames() {
+  const desc = document.getElementById('pdesc').value.trim();
+  if (!desc) { showStatus('error', 'Describe what the person does first — then we can suggest official titles.'); return; }
+
+  const panel = document.getElementById('suggest-panel');
+  const list  = document.getElementById('suggest-list');
+  list.innerHTML = '<em style="color:var(--text-muted,#8899aa);font-size:.82rem">Asking AI for official role names…</em>';
+  panel.style.display = 'block';
+
+  try {
+    const res = await fetch('/api/ace/profiles/suggest-name', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({description: desc})
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      list.innerHTML = `<span style="color:#e74c3c">${data.error || 'Suggestion failed'}</span>`;
+      return;
+    }
+    list.innerHTML = '';
+    (data.suggestions || []).forEach(s => {
+      const card = document.createElement('div');
+      card.className = 'suggest-card';
+      card.innerHTML = `
+        <div class="sc-title">${escHtml(s.title)}</div>
+        <div class="sc-basis">${escHtml(s.basis || '')}</div>
+        <div class="sc-rationale">${escHtml(s.rationale || '')}</div>`;
+      card.onclick = () => {
+        document.getElementById('pname').value = s.title;
+        panel.style.display = 'none';
+        showStatus('info', `Selected "${s.title}" — click AI Assist to generate the full profile.`);
+      };
+      list.appendChild(card);
+    });
+    if (!data.suggestions || !data.suggestions.length) {
+      list.innerHTML = '<em style="color:var(--text-muted,#8899aa)">No suggestions — try adding more detail to your description.</em>';
+    }
+  } catch(e) {
+    list.innerHTML = `<span style="color:#e74c3c">Request failed: ${e.message}</span>`;
+  }
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+async function runAssist() {
+  const name = document.getElementById('pname').value.trim();
+  if (!name) { showStatus('error', 'Enter a profile name first.'); return; }
+
+  const desc = document.getElementById('pdesc').value.trim();
+  setBusy('btn-assist', 'assist-icon', true, 'spinner');
+  showStatus('info', 'AI is generating your profile…');
+
+  try {
+    const res = await fetch('/api/ace/profiles/preview', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({name, description: desc})
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) { showStatus('error', data.error || 'Preview failed.'); return; }
+
+    _currentSpec = data.spec;
+    renderPreview(data.spec);
+    document.getElementById('preview-panel').style.display = 'block';
+    document.getElementById('success-panel').style.display = 'none';
+    showStatus('success', 'Profile spec generated — review and edit below, then click Create Profile.');
+    document.getElementById('preview-panel').scrollIntoView({behavior:'smooth'});
+  } catch(e) {
+    showStatus('error', 'Request failed: ' + e.message);
+  } finally {
+    setBusy('btn-assist', 'assist-icon', false, '✦');
+  }
+}
+
+async function saveProfile() {
+  if (!_currentSpec) { showStatus('error', 'Run AI Assist first.'); return; }
+
+  // Capture any inline edits the user made
+  _currentSpec.display_name = document.getElementById('pv-display-name').innerText.trim();
+  _currentSpec.enriched_description = document.getElementById('pv-description').innerText.trim();
+  _currentSpec.domain = document.getElementById('pv-domain').innerText.trim();
+  _currentSpec.canvas = document.getElementById('pv-canvas').innerText.trim();
+
+  const name = _currentSpec.display_name || document.getElementById('pname').value.trim();
+
+  setBusy('btn-save', 'save-icon', true, 'spinner');
+  showStatus('info', 'Saving profile…');
+
+  try {
+    const res = await fetch('/api/ace/profiles/generate', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({name, description: '', spec: _currentSpec})
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) { showStatus('error', data.error || 'Save failed.'); return; }
+
+    document.getElementById('input-panel').style.display = 'none';
+    document.getElementById('preview-panel').style.display = 'none';
+    document.getElementById('status-bar').style.display = 'none';
+    const sp = document.getElementById('success-panel');
+    sp.style.display = 'block';
+    document.getElementById('success-title').textContent = `Profile "${_currentSpec.display_name}" Created`;
+    document.getElementById('success-body').textContent =
+      `Role ID: ${data.role_id}  ·  ${(data.files_written||[]).length} files written  ·  Available in the role catalog immediately.`;
+  } catch(e) {
+    showStatus('error', 'Request failed: ' + e.message);
+  } finally {
+    setBusy('btn-save', 'save-icon', false, '＋');
+  }
+}
+
+function renderPreview(spec) {
+  document.getElementById('pv-role-id').textContent      = spec.role_id || '';
+  document.getElementById('pv-display-name').textContent = spec.display_name || '';
+  document.getElementById('pv-description').textContent  = spec.enriched_description || '';
+  document.getElementById('pv-domain').textContent       = spec.domain || '';
+  document.getElementById('pv-canvas').textContent       = spec.canvas || '(none)';
+  document.getElementById('pv-trust').innerHTML = trustBadge(spec.trust_tier || 'yellow');
+  document.getElementById('pv-llm-fn').textContent = spec.llm_function || '';
+
+  const stepsEl = document.getElementById('pv-steps');
+  stepsEl.innerHTML = '';
+  (spec.steps || []).forEach(s => {
+    const b = document.createElement('span');
+    b.className = 'step-badge'; b.textContent = s;
+    stepsEl.appendChild(b);
+  });
+
+  const tagsEl = document.getElementById('pv-tags');
+  tagsEl.innerHTML = '';
+  (spec.personality_tags || []).forEach(t => {
+    const b = document.createElement('span');
+    b.className = 'tag'; b.textContent = t;
+    tagsEl.appendChild(b);
+  });
+
+  // Compose soul preview text
+  const soulParts = [
+    spec.soul_values || '',
+    spec.soul_working_style || '',
+    spec.soul_heuristics || '',
+    spec.soul_communication || ''
+  ].filter(Boolean).join('\n\n');
+  document.getElementById('pv-soul').textContent = soulParts.trim();
+
+  function fmtList(v, label) {
+    if (!v || (Array.isArray(v) && !v.length)) return '';
+    const items = Array.isArray(v) ? v : [v];
+    const lines = items.map(x => '- ' + (typeof x === 'object' ? (x.name || x.tool || JSON.stringify(x)) : x));
+    return label + '\n' + lines.join('\n');
+  }
+  const toolsParts = [
+    fmtList(spec.tools_permitted, '## Permitted'),
+    fmtList(spec.tools_restricted, '## Restricted'),
+    fmtList(spec.tools_forbidden, '## Forbidden'),
+    fmtList(spec.primary_modules, '## Primary Modules')
+  ].filter(Boolean).join('\n\n');
+  document.getElementById('pv-tools').textContent = toolsParts.trim() || '(no tool restrictions specified)';
+}
+
+function trustBadge(tier) {
+  const colors = { green:'#27ae60', yellow:'#f1c40f', red:'#e74c3c' };
+  const c = colors[tier] || '#8899aa';
+  return `<span style="color:${c};font-weight:700;text-transform:uppercase">${tier}</span>`;
+}
+
+function showStatus(type, msg) {
+  const el = document.getElementById('status-bar');
+  el.className = 'status-bar ' + type;
+  el.innerHTML = msg;
+}
+
+function setBusy(btnId, iconId, busy, resetIcon) {
+  const btn = document.getElementById(btnId);
+  const ico = document.getElementById(iconId);
+  btn.disabled = busy;
+  ico.className = busy ? 'spinner' : '';
+  if (!busy) ico.textContent = resetIcon;
+}
+
+function clearForm() {
+  document.getElementById('pname').value = '';
+  document.getElementById('pdesc').value = '';
+  document.getElementById('preview-panel').style.display = 'none';
+  document.getElementById('success-panel').style.display = 'none';
+  document.getElementById('input-panel').style.display = '';
+  document.getElementById('status-bar').className = 'status-bar';
+  _currentSpec = null;
+}
+</script>
+{% endblock %}

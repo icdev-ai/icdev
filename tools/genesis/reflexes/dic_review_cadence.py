@@ -194,7 +194,6 @@ import os as _os
 
 def _open_hitl_task_exists(collection_id: str, collection_name: str) -> bool:
     """Return True if an open kanban task for this collection's review already exists."""
-    title = f"Review overdue: {collection_name}"
     try:
         from tools.kanban.task_factory import get_connection as _kconn
         with _kconn() as conn:

@@ -68,7 +68,33 @@ def conn():
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             project_id TEXT, framework_id TEXT, status TEXT, created_at TEXT
         );
+        CREATE TABLE intake_sessions (
+            id TEXT PRIMARY KEY,
+            project_id TEXT,
+            context_summary TEXT,
+            created_at TEXT
+        );
+        CREATE TABLE intake_requirements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT,
+            raw_text TEXT,
+            created_at TEXT
+        );
     """)
+    # Seed AI-relevant sessions for all test projects so _project_mentions_ai returns True.
+    for sess_id, proj_id in [
+        ("sess-empty", "proj-empty"),
+        ("sess-1", "proj-1"),
+        ("sess-full", "proj-full"),
+    ]:
+        c.execute(
+            "INSERT INTO intake_sessions (id, project_id, context_summary, created_at) VALUES (?,?,?,?)",
+            (sess_id, proj_id, '{"goal": "machine learning model evaluation"}', "2024-01-01"),
+        )
+        c.execute(
+            "INSERT INTO intake_requirements (session_id, raw_text, created_at) VALUES (?,?,?)",
+            (sess_id, "AI-powered recommendation engine", "2024-01-01"),
+        )
     c.commit()
     yield c
     c.close()

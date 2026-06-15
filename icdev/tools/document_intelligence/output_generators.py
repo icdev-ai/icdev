@@ -10,6 +10,7 @@ the online path produces richer, more coherent output.
 """
 from __future__ import annotations
 
+import html as _html
 import json
 import re
 import uuid
@@ -53,23 +54,89 @@ def _save_output(output_type: str, collection_id: str, tenant_id: str,
 
 # ── RAG chunk retrieval ────────────────────────────────────────────────────────
 
-def _get_chunks(collection_id: str, tenant_id: str, limit: int = 200) -> list[dict]:
-    """Retrieve raw text chunks for a collection via dic_chunk_links → rag_chunks."""
+def _get_ranked_chunks(collection_id: str, tenant_id: str, query: str,
+                       limit: int = 30, doc_id: str | None = None) -> list[dict]:
+    """BM25-ranked chunk retrieval via DICSearchEngine (10s timeout, falls back to sequential).
+
+    Uses the existing RAG+KG search engine to surface the most relevant chunks
+    for a given query, then maps results to the standard chunk dict format used
+    by all generators.  Falls back to sequential retrieval on any error or timeout.
+    """
+    import concurrent.futures as _cf
+
+    def _do_search():
+        from tools.document_intelligence.search_engine import DICSearchEngine
+        engine = DICSearchEngine(tenant_id=tenant_id)
+        return engine.search(
+            query=query,
+            collection_id=collection_id,
+            top_k=limit * 2 if doc_id else limit,
+            mode="grounded",
+        )
+
+    try:
+        _ex2 = _cf.ThreadPoolExecutor(max_workers=1)
+        _fut2 = _ex2.submit(_do_search)
+        _ex2.shutdown(wait=False)
+        results = _fut2.result(timeout=10)  # 10s ceiling — falls back if vector store hangs
+        if results:
+            chunks = []
+            for r in results:
+                if doc_id and getattr(r, "doc_id", None) != doc_id:
+                    continue
+                chunks.append({
+                    "chunk_text": getattr(r, "content", "") or "",
+                    "source_doc": getattr(r, "doc_id", ""),
+                    "page_number": getattr(r, "page", None),
+                    "chunk_index": 0,
+                    "score": getattr(r, "score", 0.0),
+                })
+                if len(chunks) >= limit:
+                    break
+            if chunks:
+                return chunks
+    except Exception as exc:  # includes concurrent.futures.TimeoutError
+        logger.debug("dic.output_generators: ranked retrieval error/timeout: %s", exc)
+    return _get_chunks(collection_id, tenant_id, limit=limit, doc_id=doc_id)
+
+
+def _get_chunks(collection_id: str, tenant_id: str, limit: int = 200,
+                doc_id: str | None = None) -> list[dict]:
+    """Retrieve raw text chunks for a collection via dic_chunk_links → rag_chunks.
+
+    If ``doc_id`` is provided, only chunks from that specific document are returned
+    so that generated outputs (FAQ, study guide, etc.) are scoped to it.
+    """
     try:
         conn = _conn()
-        rows = conn.execute(
-            """SELECT rc.content   AS chunk_text,
-                      dcl.doc_id  AS source_doc,
-                      dcl.page    AS page_number,
-                      dcl.chunk_index
-               FROM dic_chunk_links dcl
-               JOIN rag_chunks rc ON rc.id = dcl.rag_chunk_id
-               JOIN dic_documents dd ON dd.doc_id = dcl.doc_id
-               WHERE dd.collection_id = ? AND dd.tenant_id = ?
-               ORDER BY dcl.doc_id, dcl.chunk_index
-               LIMIT ?""",
-            (collection_id, tenant_id, limit),
-        ).fetchall()
+        if doc_id:
+            rows = conn.execute(
+                """SELECT rc.content   AS chunk_text,
+                          dcl.doc_id  AS source_doc,
+                          dcl.page    AS page_number,
+                          dcl.chunk_index
+                   FROM dic_chunk_links dcl
+                   JOIN rag_chunks rc ON rc.id = dcl.rag_chunk_id
+                   JOIN dic_documents dd ON dd.doc_id = dcl.doc_id
+                   WHERE dd.collection_id = ? AND dd.tenant_id = ? AND dcl.doc_id = ?
+                   ORDER BY dcl.chunk_index
+                   LIMIT ?""",
+                (collection_id, tenant_id, doc_id, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT rc.content   AS chunk_text,
+                          dcl.doc_id  AS source_doc,
+                          dcl.page    AS page_number,
+                          dcl.chunk_index
+                   FROM dic_chunk_links dcl
+                   JOIN rag_chunks rc ON rc.id = dcl.rag_chunk_id
+                   JOIN dic_documents dd ON dd.doc_id = dcl.doc_id
+                   WHERE dd.collection_id = ? AND dd.tenant_id = ?
+                   ORDER BY dcl.doc_id, dcl.chunk_index
+                   LIMIT ?""",
+                (collection_id, tenant_id, limit),
+            ).fetchall()
         conn.close()
         return [dict(r) if hasattr(r, "keys") else {
             "chunk_text": r[0], "source_doc": r[1],
@@ -84,7 +151,7 @@ def _corpus_text(chunks: list[dict], max_chars: int = 12_000) -> str:
     parts = []
     total = 0
     for c in chunks:
-        t = (c.get("chunk_text") or "").strip()
+        t = _html.unescape((c.get("chunk_text") or "").strip())
         if not t:
             continue
         total += len(t)
@@ -119,7 +186,7 @@ def _try_cli_bridge(prompt: str) -> tuple[str | None, str]:
     binary = os.environ.get("ICDEV_CLI_BRIDGE_BINARY") or "claude"
     if not shutil.which(binary):
         return None, "no-cli"
-    timeout = int(os.environ.get("ICDEV_CLI_BRIDGE_MAX_SECONDS", "180"))
+    timeout = int(os.environ.get("ICDEV_CLI_BRIDGE_MAX_SECONDS", "60"))
     try:
         # Pipe prompt via stdin: avoids huge CLI arg + triggers non-interactive
         # mode. --output-format text strips markdown wrappers.
@@ -149,15 +216,29 @@ def _try_cli_bridge(prompt: str) -> tuple[str | None, str]:
     return None, "no-cli"
 
 
-def _try_llm(prompt: str, function: str = "document_qna") -> tuple[str | None, str]:
+def _try_llm(prompt: str, function: str = "document_qna",
+             max_seconds: int = 90) -> tuple[str | None, str]:
     """Invoke LLMRouter for synthesis, with auto-detected CLI-bridge fallback.
 
+    Hard ceiling: max_seconds (default 90) — falls back to deterministic after.
     Priority:
       1. Cloud API  — when ANTHROPIC_API_KEY / OPENAI_API_KEY are set.
-      2. Claude CLI — when no cloud keys but ``claude`` binary is on PATH
-                      (auto-detected; also activates on token exhaustion).
+      2. Claude CLI — when no cloud keys but ``claude`` binary is on PATH.
       3. Ollama     — last resort via router's Ollama entry.
     """
+    import concurrent.futures as _cf
+    _ex = _cf.ThreadPoolExecutor(max_workers=1)
+    _fut = _ex.submit(_try_llm_inner, prompt, function)
+    _ex.shutdown(wait=False)  # don't block here; thread runs to completion in bg
+    try:
+        return _fut.result(timeout=max_seconds)
+    except (_cf.TimeoutError, Exception) as _exc:
+        logger.debug("dic._try_llm: timed out or failed after %ds: %s", max_seconds, _exc)
+        return None, "air-gap-deterministic"
+
+
+def _try_llm_inner(prompt: str, function: str) -> tuple[str | None, str]:
+    """Actual LLM call — runs inside a thread with outer timeout."""
     # ── 1. Cloud path (API key present) ──────────────────────────────────────
     if _has_cloud_keys():
         try:
@@ -225,147 +306,186 @@ def _is_air_gap() -> bool:
         return os.environ.get("ICDEV_AIRGAP", "").lower() in ("true", "1", "yes")
 
 
+def _llm_available() -> bool:
+    """True when any LLM provider is reachable (cloud keys, CLI binary, or Ollama)."""
+    import os, shutil
+    if os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("OPENAI_API_KEY"):
+        return True
+    if shutil.which(os.environ.get("ICDEV_CLI_BRIDGE_BINARY") or "claude"):
+        return True
+    try:
+        import urllib.request
+        urllib.request.urlopen("http://localhost:11434/api/tags", timeout=1)
+        return True
+    except Exception:
+        return False
+
+
+def _kg_entities_for_collection(collection_id: str, tenant_id: str,
+                                 doc_id: str | None = None, limit: int = 20) -> list[str]:
+    """Return top entity labels from KG nodes linked to this collection (by centrality)."""
+    try:
+        conn = _conn()
+        if doc_id:
+            rows = conn.execute(
+                """SELECT DISTINCT n.label FROM kg_nodes n
+                   JOIN kg_graphs g ON g.id = n.graph_id
+                   WHERE g.source_doc_id = ?
+                   ORDER BY n.centrality DESC NULLS LAST LIMIT ?""",
+                (doc_id, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT DISTINCT n.label FROM kg_nodes n
+                   JOIN kg_graphs g ON g.id = n.graph_id
+                   JOIN dic_documents d ON d.doc_id = g.source_doc_id
+                   WHERE d.collection_id = ? AND d.tenant_id = ?
+                   ORDER BY n.centrality DESC NULLS LAST LIMIT ?""",
+                (collection_id, tenant_id, limit),
+            ).fetchall()
+        conn.close()
+        return [r[0] for r in rows if r[0]]
+    except Exception as exc:
+        logger.debug("dic.output_generators: KG entities error: %s", exc)
+        return []
+
+
 # ── Study Guide ───────────────────────────────────────────────────────────────
 
-def generate_study_guide(collection_id: str, tenant_id: str = "default") -> dict:
-    """Generate a structured study guide from a collection.
+def generate_study_guide(collection_id: str, tenant_id: str = "default",
+                         doc_id: str | None = None) -> dict:
+    """Generate a structured study guide instantly via BM25+KG (no LLM).
 
-    Air-gap: keyword extraction → section headers → key terms.
-    Online:  LLM-synthesized sections with definitions and review questions.
+    Returns immediately (<2s). The caller can invoke enhance_with_llm() on the
+    returned output_id to layer narrative coherence on top.
     """
-    chunks = _get_chunks(collection_id, tenant_id, limit=150)
+    chunks = _get_ranked_chunks(
+        collection_id, tenant_id,
+        query="key concepts definitions overview topics",
+        limit=40, doc_id=doc_id,
+    )
+    if not chunks:
+        chunks = _get_chunks(collection_id, tenant_id, limit=150, doc_id=doc_id)
     if not chunks:
         return {"error": "No documents found in collection.", "collection_id": collection_id}
 
-    corpus = _corpus_text(chunks, max_chars=10_000)
-    air_gap = _is_air_gap()
-
-    if not air_gap:
-        prompt = (
-            f"You are a study guide author. Based on the following document collection, "
-            f"produce a structured study guide with:\n"
-            f"1. Overview (2-3 sentences)\n"
-            f"2. Key Topics (5-8 bullet points with 1-2 sentence descriptions)\n"
-            f"3. Key Terms (10-15 terms with definitions)\n"
-            f"4. Review Questions (5-7 questions)\n"
-            f"5. Summary\n\n"
-            f"Collection ID: {collection_id}\n\n"
-            f"Content:\n{corpus}"
-        )
-        llm_text, provider = _try_llm(prompt, "document_qna")
-    else:
-        llm_text, provider = None, "air-gap-deterministic"
-
-    if llm_text:
-        content = {
-            "format": "llm-synthesized",
-            "provider": provider,
-            "text": llm_text,
-            "collection_id": collection_id,
-            "chunks_used": len(chunks),
-        }
-    else:
-        # Deterministic fallback: extract key sentences + frequent terms
-        content = _deterministic_study_guide(chunks, collection_id)
-        content["provider"] = provider
-
-    output_id = _save_output("study_guide", collection_id, tenant_id, content, provider)
+    content = _deterministic_study_guide(chunks, collection_id, tenant_id, doc_id)
+    content["provider"] = "bm25-kg"
+    output_id = _save_output("study_guide", collection_id, tenant_id, content, "bm25-kg")
     content["output_id"] = output_id
     return content
 
 
-def _deterministic_study_guide(chunks: list[dict], collection_id: str) -> dict:
-    # Sentence extraction: pick first sentence of each chunk as a "key point"
-    key_points = []
-    seen = set()
+def _deterministic_study_guide(chunks: list[dict], collection_id: str,
+                               tenant_id: str = "default",
+                               doc_id: str | None = None) -> dict:
+    # Patterns indicating boilerplate / navigation text to skip
+    _NAV_PATTERNS = re.compile(
+        r"(jump to content|skip navigation|skip to content|skip to main|"
+        r"main menu|navigation menu|move to sidebar|"
+        r"personal tools|search\s+search|log in|create account|"
+        r"donate|recent changes|upload file|special pages|"
+        r"toggle\s+\w+\s+subsection|retrieved from|"
+        r"wikipedia|wikimedia|this page was last|help:)", re.I
+    )
+
+    # Key points: meaningful sentences, skip bracket-heavy infobox and nav lines
+    key_points: list[str] = []
+    seen_sigs: set[str] = set()
     for c in chunks[:60]:
-        text = (c.get("chunk_text") or "").strip()
-        sentences = re.split(r"(?<=[.!?])\s+", text)
-        for s in sentences[:2]:
+        text = _html.unescape((c.get("chunk_text") or "").strip())
+        text = re.sub(r"\s+", " ", text)
+        # Skip chunks that are predominantly navigation / boilerplate
+        if _NAV_PATTERNS.search(text[:200]):
+            continue
+        for s in re.split(r"(?<=[.!?])\s+", text)[:3]:
             s = s.strip()
-            if len(s) > 40 and s not in seen:
+            # Skip short, citation-heavy, infobox, or nav lines
+            if len(s) < 60 or len(re.findall(r"[#\[\]|]", s)) > 4:
+                continue
+            if _NAV_PATTERNS.search(s):
+                continue
+            sig = re.sub(r"\W", "", s[:30].lower())
+            if sig not in seen_sigs:
                 key_points.append(s)
-                seen.add(s)
-            if len(key_points) >= 12:
-                break
+                seen_sigs.add(sig)
         if len(key_points) >= 12:
             break
 
-    # Term frequency (rough)
-    word_freq: dict[str, int] = {}
-    stopwords = {"the", "a", "an", "is", "in", "of", "and", "to", "for", "with", "that", "this", "are", "be", "as", "at", "by", "or", "it", "its", "on", "not", "was", "were", "has", "have", "from", "but"}
-    all_text = " ".join(c.get("chunk_text", "") for c in chunks)
-    for word in re.findall(r"\b[A-Za-z][a-z]{2,}\b", all_text):
-        w = word.lower()
-        if w not in stopwords:
-            word_freq[w] = word_freq.get(w, 0) + 1
-    top_terms = sorted(word_freq, key=lambda w: -word_freq[w])[:15]
+    # Key terms: prefer KG entities (high-quality), fall back to proper noun extraction
+    kg_terms = _kg_entities_for_collection(collection_id, tenant_id, doc_id, limit=20)
+    if kg_terms:
+        top_terms = kg_terms[:15]
+    else:
+        # Extract proper nouns (CapitalizedWord or Multi Word Proper Noun)
+        all_text = " ".join(_html.unescape(c.get("chunk_text", "")) for c in chunks)
+        # Require 4+ lowercase chars after capital to exclude "And", "The", "Was", etc.
+        noise_caps = {
+            "The", "This", "That", "These", "Those", "Section", "Article",
+            "Chapter", "Amendment", "Paragraph", "Such", "Any", "All",
+            "Each", "No", "Not", "Its", "Their", "His", "Her", "Our",
+            "Your", "United", "States", "And", "But", "For", "Nor", "Yet",
+            "With", "From", "When", "Where", "Which", "What", "How", "Who",
+            "Was", "Were", "Has", "Have", "Had", "Are", "Been", "Being",
+            "Shall", "Will", "May", "Can", "Must", "Should", "Would", "Could",
+            "President", "Congress", "Senate", "House", "Court", "Government",
+            "Constitution", "Rights", "Powers", "State", "Federal", "National",
+        }
+        freq: dict[str, int] = {}
+        for m in re.finditer(r"\b([A-Z][a-z]{3,}(?:\s+[A-Z][a-z]{3,}){0,2})\b", all_text):
+            term = m.group(1)
+            if term not in noise_caps:
+                freq[term] = freq.get(term, 0) + 1
+        # Supplement with domain nouns (length ≥ 7, alpha, not stopwords)
+        _SW = {
+            "the", "a", "an", "is", "in", "of", "and", "to", "for", "with", "that",
+            "this", "are", "be", "as", "at", "by", "or", "it", "its", "on", "not",
+            "was", "were", "has", "have", "from", "but", "which", "who", "what",
+            "when", "where", "how", "any", "all", "each", "shall", "will", "may",
+            "can", "must", "should", "would", "could", "been", "they", "their",
+            "them", "into", "than", "more", "also", "such", "said", "states",
+            "united", "state", "other", "person", "persons", "you", "your",
+            "things", "president", "congress", "section", "article", "rights",
+            "powers", "court", "house", "senate", "federal", "national", "under",
+            "people", "number", "without", "between", "against", "before", "after",
+            "during", "within", "unless", "provided", "required", "including",
+        }
+        for w in re.findall(r"\b[a-z]{7,}\b", all_text.lower()):
+            if w not in _SW:
+                freq[w] = freq.get(w, 0) + 1
+        top_terms = sorted(freq, key=lambda t: -freq[t])[:15]
 
     sources = list({c.get("source_doc", "unknown") for c in chunks})[:10]
-
     return {
-        "format": "deterministic",
+        "format": "bm25-kg",
         "collection_id": collection_id,
         "chunks_used": len(chunks),
         "overview": f"Study guide for collection '{collection_id}' covering {len(sources)} source document(s).",
         "key_points": key_points,
         "key_terms": top_terms,
         "sources": sources,
-        "note": "Install an LLM provider (Ollama or configure ANTHROPIC_API_KEY) for AI-synthesized content.",
+        "llm_available": _llm_available(),
     }
 
 
 # ── FAQ Generator ─────────────────────────────────────────────────────────────
 
-def generate_faq(collection_id: str, tenant_id: str = "default", n: int = 10) -> dict:
-    """Generate an FAQ from a collection.
-
-    Air-gap: mines question-like sentences from the corpus.
-    Online:  LLM generates contextual Q&A pairs.
-    """
-    chunks = _get_chunks(collection_id, tenant_id, limit=120)
+def generate_faq(collection_id: str, tenant_id: str = "default", n: int = 10,
+                 doc_id: str | None = None) -> dict:
+    """Generate a FAQ instantly via BM25+KG (no LLM). Use enhance_with_llm() for richer Q&A."""
+    chunks = _get_ranked_chunks(
+        collection_id, tenant_id,
+        query="questions answers what how why when who",
+        limit=30, doc_id=doc_id,
+    )
+    if not chunks:
+        chunks = _get_chunks(collection_id, tenant_id, limit=120, doc_id=doc_id)
     if not chunks:
         return {"error": "No documents found in collection.", "collection_id": collection_id}
 
-    corpus = _corpus_text(chunks, max_chars=8_000)
-    air_gap = _is_air_gap()
-
-    if not air_gap:
-        prompt = (
-            f"Generate a FAQ (Frequently Asked Questions) document with exactly {n} Q&A pairs "
-            f"based on the following content. Format as JSON array: "
-            f'[{{"q": "question", "a": "answer"}}, ...]\n\n'
-            f"Content:\n{corpus}"
-        )
-        llm_text, provider = _try_llm(prompt, "document_qna")
-    else:
-        llm_text, provider = None, "air-gap-deterministic"
-
-    pairs = []
-    if llm_text:
-        # Try to parse JSON from LLM response (handles double-quoted JSON and single-quoted Python dicts)
-        try:
-            import ast as _ast
-            m = re.search(r"\[.*\]", llm_text, re.S)
-            if m:
-                raw = m.group(0)
-                try:
-                    pairs = json.loads(raw)
-                except Exception:
-                    pairs = _ast.literal_eval(raw)
-        except Exception:
-            pairs = [{"q": "Summary", "a": llm_text}]
-        content = {
-            "format": "llm-synthesized",
-            "provider": provider,
-            "pairs": pairs[:n],
-            "collection_id": collection_id,
-        }
-    else:
-        content = _deterministic_faq(chunks, collection_id, n)
-        content["provider"] = provider
-
-    output_id = _save_output("faq", collection_id, tenant_id, content, provider)
+    content = _deterministic_faq(chunks, collection_id, n)
+    content["provider"] = "bm25-kg"
+    output_id = _save_output("faq", collection_id, tenant_id, content, "bm25-kg")
     content["output_id"] = output_id
     return content
 
@@ -390,63 +510,31 @@ def _deterministic_faq(chunks: list[dict], collection_id: str, n: int) -> dict:
             break
 
     return {
-        "format": "deterministic",
+        "format": "bm25-kg",
         "collection_id": collection_id,
         "pairs": pairs[:n],
-        "note": "Install an LLM provider for AI-generated Q&A pairs.",
+        "llm_available": _llm_available(),
     }
 
 
 # ── Timeline Extractor ────────────────────────────────────────────────────────
 
-def generate_timeline(collection_id: str, tenant_id: str = "default") -> dict:
-    """Extract a chronological timeline of events from a collection.
-
-    Air-gap: regex-based date + sentence extraction.
-    Online:  LLM-ordered event list with context.
-    """
-    chunks = _get_chunks(collection_id, tenant_id, limit=100)
+def generate_timeline(collection_id: str, tenant_id: str = "default",
+                      doc_id: str | None = None) -> dict:
+    """Extract a chronological timeline instantly via BM25+KG (no LLM)."""
+    chunks = _get_ranked_chunks(
+        collection_id, tenant_id,
+        query="dates events timeline history milestones when year",
+        limit=40, doc_id=doc_id,
+    )
+    if not chunks:
+        chunks = _get_chunks(collection_id, tenant_id, limit=100, doc_id=doc_id)
     if not chunks:
         return {"error": "No documents found in collection.", "collection_id": collection_id}
 
-    corpus = _corpus_text(chunks, max_chars=8_000)
-    air_gap = _is_air_gap()
-
-    if not air_gap:
-        prompt = (
-            f"Extract a chronological timeline of key events, decisions, or milestones from the "
-            f"following content. Format as JSON array: "
-            f'[{{"date": "YYYY-MM or YYYY or description", "event": "brief event description", "context": "one sentence of context"}}, ...]\n\n'
-            f"Content:\n{corpus}"
-        )
-        llm_text, provider = _try_llm(prompt, "document_qna")
-    else:
-        llm_text, provider = None, "air-gap-deterministic"
-
-    events = []
-    if llm_text:
-        try:
-            import ast as _ast
-            m = re.search(r"\[.*\]", llm_text, re.S)
-            if m:
-                raw = m.group(0)
-                try:
-                    events = json.loads(raw)
-                except Exception:
-                    events = _ast.literal_eval(raw)
-        except Exception:
-            events = [{"date": "N/A", "event": llm_text, "context": ""}]
-        content = {
-            "format": "llm-synthesized",
-            "provider": provider,
-            "events": events,
-            "collection_id": collection_id,
-        }
-    else:
-        content = _deterministic_timeline(chunks, collection_id)
-        content["provider"] = provider
-
-    output_id = _save_output("timeline", collection_id, tenant_id, content, provider)
+    content = _deterministic_timeline(chunks, collection_id)
+    content["provider"] = "bm25-kg"
+    output_id = _save_output("timeline", collection_id, tenant_id, content, "bm25-kg")
     content["output_id"] = output_id
     return content
 
@@ -493,54 +581,41 @@ def _deterministic_timeline(chunks: list[dict], collection_id: str) -> dict:
         "format": "deterministic",
         "collection_id": collection_id,
         "events": events,
-        "note": "Install an LLM provider for AI-ordered timeline with context.",
+        "llm_available": _llm_available(),
     }
 
 
 # ── Audio Overview ────────────────────────────────────────────────────────────
 
-def generate_audio_overview(collection_id: str, tenant_id: str = "default") -> dict:
-    """Generate an audio podcast-style overview of a collection.
+def generate_audio_overview(collection_id: str, tenant_id: str = "default",
+                            doc_id: str | None = None) -> dict:
+    """Generate an audio podcast-style overview of a collection (or a single document).
 
     Step 1: Generate script (air-gap: deterministic summary, online: LLM podcast script).
     Step 2: TTS synthesis (air-gap: pyttsx3/espeak, online: same local TTS for now;
             cloud TTS providers can be plugged in via ICDEV_TTS_PROVIDER env var).
     Returns a dict with script text + audio_path (if TTS succeeded).
     """
-    chunks = _get_chunks(collection_id, tenant_id, limit=80)
+    chunks = _get_chunks(collection_id, tenant_id, limit=80, doc_id=doc_id)
     if not chunks:
         return {"error": "No documents found in collection.", "collection_id": collection_id}
 
-    corpus = _corpus_text(chunks, max_chars=6_000)
-    air_gap = _is_air_gap()
+    # Generate script via deterministic BM25 path (instant).
+    # Use enhance_with_llm() on the returned output_id for a narrative podcast script.
+    script = _deterministic_script(chunks, collection_id)
+    provider = "bm25-kg"
 
-    # Step 1: Generate script
-    if not air_gap:
-        prompt = (
-            f"Write a podcast-style audio overview (500-700 words, conversational tone) "
-            f"of the following document collection. Include: brief intro, 3-4 key insights, "
-            f"practical implications, and a closing summary. Sound natural when read aloud.\n\n"
-            f"Collection: {collection_id}\n\nContent:\n{corpus}"
-        )
-        script, provider = _try_llm(prompt, "document_qna")
-    else:
-        script, provider = None, "air-gap-deterministic"
-
-    if not script:
-        # Deterministic script: concatenate key sentences
-        script = _deterministic_script(chunks, collection_id)
-        provider = "air-gap-deterministic"
-
-    # Step 2: TTS synthesis
+    # TTS synthesis on the deterministic script
     audio_path, tts_provider, tts_error = _synthesize_tts(script, collection_id)
 
     content: dict[str, Any] = {
-        "format": "llm-synthesized" if provider != "air-gap-deterministic" else "deterministic",
+        "format": "bm25-kg",
         "provider": provider,
         "tts_provider": tts_provider,
         "script": script,
         "collection_id": collection_id,
         "chunks_used": len(chunks),
+        "llm_available": _llm_available(),
     }
     if audio_path:
         content["audio_path"] = audio_path
@@ -608,3 +683,115 @@ def _synthesize_tts(script: str, collection_id: str) -> tuple[str | None, str, s
         "TTS synthesis unavailable. Install pyttsx3 (pip install pyttsx3) for local audio generation. "
         "The script text is available for copy and use with any TTS tool."
     )
+
+
+# ── LLM Enhancement (on-demand) ───────────────────────────────────────────────
+
+def _update_output(output_id: str, content: dict, provider: str) -> None:
+    """Overwrite content_json and provider for an existing dic_generated_outputs row."""
+    try:
+        conn = _conn()
+        conn.execute(
+            "UPDATE dic_generated_outputs SET content_json=?, provider=? WHERE id=?",
+            (json.dumps(content), provider, output_id),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        logger.warning("dic.output_generators: update error: %s", exc)
+
+
+_LLM_PROMPTS: dict[str, str] = {
+    "study_guide": (
+        "You are a study guide author. Based on the following content, produce a structured "
+        "study guide with:\n1. Overview (2-3 sentences)\n2. Key Topics (5-8 bullet points "
+        "with 1-2 sentence descriptions)\n3. Key Terms (10-15 terms with brief definitions)\n"
+        "4. Review Questions (5-7 questions)\n5. Summary\n\nContent:\n{corpus}"
+    ),
+    "faq": (
+        "Generate a FAQ with exactly {n} Q&A pairs based on the following content. "
+        "Format as JSON array: [{\"q\": \"question\", \"a\": \"answer\"}, ...]\n\nContent:\n{corpus}"
+    ),
+    "timeline": (
+        "Extract a chronological timeline of key events from the following content. "
+        "Format as JSON array: [{\"date\": \"YYYY or description\", \"event\": \"brief description\", "
+        "\"context\": \"one sentence of context\"}]\n\nContent:\n{corpus}"
+    ),
+    "audio_overview": (
+        "Write a podcast-style audio overview (500-700 words, conversational tone). "
+        "Include: brief intro, 3-4 key insights, practical implications, closing summary. "
+        "Sound natural when read aloud.\n\nContent:\n{corpus}"
+    ),
+}
+
+
+def enhance_with_llm(output_id: str, collection_id: str, tenant_id: str,
+                     output_type: str, doc_id: str | None = None,
+                     n: int = 10) -> dict:
+    """Layer LLM narrative coherence on top of a BM25+KG output (on-demand, 90s ceiling).
+
+    Loads the existing output, fetches BM25 chunks, calls _try_llm() with a bounded
+    90s timeout, updates the stored output, and returns the enhanced content.
+    """
+    # Retrieve existing output for reference
+    existing: dict = {}
+    try:
+        conn = _conn()
+        row = conn.execute(
+            "SELECT content_json FROM dic_generated_outputs WHERE id=?", (output_id,)
+        ).fetchone()
+        if row:
+            existing = json.loads(row[0] or "{}")
+        conn.close()
+    except Exception:
+        pass
+
+    # Fetch ranked chunks for the LLM prompt
+    chunks = _get_ranked_chunks(
+        collection_id, tenant_id,
+        query={"study_guide": "key concepts overview topics", "faq": "questions answers what how",
+               "timeline": "dates events milestones", "audio_overview": "summary overview key points"
+               }.get(output_type, "key information"),
+        limit=40, doc_id=doc_id,
+    )
+    if not chunks:
+        chunks = _get_chunks(collection_id, tenant_id, limit=120, doc_id=doc_id)
+    if not chunks:
+        return {**existing, "error": "No content available for LLM enhancement."}
+
+    corpus = _corpus_text(chunks, max_chars=8_000)
+    prompt_tmpl = _LLM_PROMPTS.get(output_type, _LLM_PROMPTS["study_guide"])
+    prompt = prompt_tmpl.format(corpus=corpus, n=n)
+
+    llm_text, provider = _try_llm(prompt, "document_qna")
+    if not llm_text:
+        return {**existing, "enhance_error": "LLM timed out or unavailable. Try again later."}
+
+    # Build enhanced content depending on output type
+    if output_type in ("study_guide", "audio_overview"):
+        enhanced = {
+            **existing,
+            "format": "llm-synthesized",
+            "provider": provider,
+            "text": llm_text,
+            "enhanced": True,
+        }
+        if output_type == "audio_overview":
+            enhanced["script"] = llm_text
+    elif output_type in ("faq", "timeline"):
+        key = "pairs" if output_type == "faq" else "events"
+        try:
+            import ast as _ast
+            m = re.search(r"\[.*\]", llm_text, re.S)
+            parsed = json.loads(m.group(0)) if m else _ast.literal_eval(llm_text)
+        except Exception:
+            parsed = [{"q": "Summary", "a": llm_text}] if output_type == "faq" else []
+        enhanced = {**existing, "format": "llm-synthesized", "provider": provider,
+                    key: parsed[:n], "enhanced": True}
+    else:
+        enhanced = {**existing, "format": "llm-synthesized", "provider": provider,
+                    "text": llm_text, "enhanced": True}
+
+    _update_output(output_id, enhanced, provider)
+    enhanced["output_id"] = output_id
+    return enhanced

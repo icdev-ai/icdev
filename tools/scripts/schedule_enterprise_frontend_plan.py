@@ -234,7 +234,7 @@ SUBTASKS: list[tuple[str, str, str, str, str]] = [
      "test_agents_monitoring.py. Use page-object base from G3. Use get_driver() from Phase D."),
     ("G5-port-remaining-specs", "G5: Port remaining 11 E2E specs",
      "build", "medium",
-     "Port the other 11 specs (chat, clawhub, compliance_artifacts, filesync, finetune, genesis, "
+     "Port the other 11 specs (chat, skillhub, compliance_artifacts, filesync, finetune, genesis, "
      "knowledge_search, proposal_genesis, research, saas_portal, security_scan_results). "
      "Keep the same naming convention and page-object reuse. Skip ones already present."),
     ("G6-e2e-runner-mode", "G6: Add --driver selenium mode to tools/testing/e2e_runner.py",

@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # CUI // SP-CTI
 """Tests for OpenClaw-to-ICDEV™ compatibility checker and translator."""
 
@@ -481,11 +481,11 @@ class TestFunctionalValidation:
 # Real-World Skill Test (pskoett/self-improving-agent)
 # ---------------------------------------------------------------------------
 class TestSelfImprovingAgent:
-    """Test with realistic ClawHub skill: pskoett/self-improving-agent."""
+    """Test with realistic SkillHub skill: pskoett/self-improving-agent."""
 
     @pytest.fixture
     def self_improving_skill(self, tmp_path):
-        """Simulate the self-improving-agent skill from ClawHub."""
+        """Simulate the self-improving-agent skill from SkillHub."""
         d = tmp_path / "self-improving-agent"
         d.mkdir()
         (d / "skill.md").write_text(
@@ -540,7 +540,7 @@ class TestSelfImprovingAgent:
             ## Installation
 
             ```bash
-            clawhub install self-improving-agent
+            skillhub install self-improving-agent
             ```
 
             Or manually:
@@ -635,7 +635,7 @@ class TestSelfImprovingAgent:
         assert result["score"] == 100
 
     def test_node_commands_translated(self, self_improving_skill, tmp_path):
-        """clawhub install → pip install, git clone preserved."""
+        """skillhub install → pip install, git clone preserved."""
         out = tmp_path / "translated"
         translate_to_icdev(self_improving_skill, out)
         content = (out / "SKILL.md").read_text(encoding="utf-8")

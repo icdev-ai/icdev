@@ -5,7 +5,6 @@ from __future__ import annotations
 import contextlib
 import importlib
 import sqlite3
-from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 
@@ -87,7 +86,7 @@ class TestOpenHitlTaskExists:
         with _patch_attr("tools.genesis.reflexes.dic_review_cadence", "get_connection",
                          MagicMock(return_value=shim)):
             from tools.genesis.reflexes.dic_review_cadence import _open_hitl_task_exists
-            with patch("tools.genesis.reflexes.dic_review_cadence._os") as mock_os:
+            with patch("tools.genesis.reflexes.dic_review_cadence._os"):
                 result = _open_hitl_task_exists.__wrapped__("col-001", "Test Collection") \
                     if hasattr(_open_hitl_task_exists, "__wrapped__") \
                     else _open_hitl_task_exists("col-001", "Test Collection")
@@ -181,7 +180,8 @@ class TestCreateHitlTask:
 
     def test_task_description_contains_collection_info(self):
         created = []
-        import sys, types
+        import sys
+        import types
         fake_mod = types.ModuleType("tools.kanban.task_factory")
         fake_mod.create_tasks = lambda tasks: created.extend(tasks)
         orig = sys.modules.get("tools.kanban.task_factory")
@@ -205,7 +205,8 @@ class TestCreateHitlTask:
         assert "2026-01-01" in desc
 
     def test_create_hitl_task_returns_false_on_error(self):
-        import sys, types
+        import sys
+        import types
         fake_mod = types.ModuleType("tools.kanban.task_factory")
         fake_mod.create_tasks = MagicMock(side_effect=RuntimeError("DB down"))
         orig = sys.modules.get("tools.kanban.task_factory")

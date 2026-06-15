@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS audit_trail (
     classification TEXT DEFAULT 'CUI',
     session_id    TEXT,
     source_ip     TEXT,
+    recorded_at   TEXT,
     timestamp     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 """
@@ -137,6 +138,13 @@ def _valid_request():
         "data_type": "threat_intel",
         "actor": "agent-007",
         "data_classification": "CUI",
+        # ABAC requires subject with entitlement + clearance >= CUI (1)
+        "subject": {
+            "user_id": "agent-007",
+            "clearance_level": 1,
+            "entitlements": ["cross_domain_pull"],
+            "compartments": [],
+        },
     }
 
 

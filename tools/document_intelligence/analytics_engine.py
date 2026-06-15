@@ -187,6 +187,186 @@ def _heuristic_severity(summary: dict) -> str:
     return "low"
 
 
+# ── Collection Listing Anomaly Detection (aiify-opp-100) ─────────────────────
+# Lifted from hardcoded result-size thresholds in the document listing view.
+
+_LISTING_SEV_HIGH_EMPTY = 3       # ≥N empty collections → high
+_LISTING_SEV_HIGH_OVERSIZED = 3   # ≥N oversized collections → high
+_LISTING_SEV_MEDIUM_STAGNANT = 5  # ≥N stagnant collections → medium
+_LISTING_MAX_DOCS_ABSOLUTE = 10_000  # absolute doc count ceiling per collection
+_LISTING_STAGNANT_DAYS = 90       # days without ingestion → stagnant
+_LISTING_SAMPLE = 5               # max samples sent to LLM per category
+
+_LISTING_SEVERITY_SYSTEM_PROMPT = (
+    "You are a document collection quality analyst. You are given counts of "
+    "empty, oversized, and stagnant collections and a few concrete examples. "
+    "Grade the overall severity. Respond ONLY with a JSON object: "
+    '{"severity": "low|medium|high", "rationale": "<=160 chars", '
+    '"top_concern": "<the single most concerning category>"}.'
+)
+
+
+def _listing_heuristic_severity(summary: dict) -> str:
+    """Deterministic severity for collection listing anomalies.
+
+    Pure function of empty_count, oversized_count, stagnant_count.
+    Always available as the safety-net baseline.
+    """
+    if (summary.get("empty_count", 0) >= _LISTING_SEV_HIGH_EMPTY
+            or summary.get("oversized_count", 0) >= _LISTING_SEV_HIGH_OVERSIZED):
+        return "high"
+    if summary.get("stagnant_count", 0) >= _LISTING_SEV_MEDIUM_STAGNANT:
+        return "medium"
+    return "low"
+
+
+def _ai_listing_severity(summary: dict, samples: dict) -> dict | None:
+    """Grade collection listing anomaly severity with the LLM.
+
+    Returns ``{"severity": ..., "rationale": ..., "top_concern": ...}`` or None
+    on no anomalies, model unavailability, or any malformed output.
+    """
+    if not any(summary.get(k, 0) for k in ("empty_count", "oversized_count", "stagnant_count")):
+        return None
+    try:
+        import json as _json
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        baseline = _listing_heuristic_severity(summary)
+        lines = [
+            f"Collection listing anomaly summary: {_json.dumps(summary, sort_keys=True)}",
+            f"Deterministic baseline severity: {baseline}",
+            "Examples:",
+        ]
+        for key, items in samples.items():
+            if items:
+                lines.append(f"- {key}: {_json.dumps(items[:_LISTING_SAMPLE], default=str)}")
+
+        req = LLMRequest(
+            messages=[{"role": "user", "content": "\n".join(lines) + "\n\nGrade the severity."}],
+            system_prompt=_LISTING_SEVERITY_SYSTEM_PROMPT,
+            max_tokens=200,
+            temperature=0.1,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("dic_listing_anomaly_severity", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        parsed = _json.loads(raw[start: end + 1])
+        severity = str(parsed.get("severity") or "").strip().lower()
+        if severity not in {"low", "medium", "high"}:
+            return None
+        return {
+            "severity": severity,
+            "rationale": str(parsed.get("rationale") or "").strip()[:200],
+            "top_concern": str(parsed.get("top_concern") or "").strip()[:80],
+        }
+    except Exception:
+        return None
+
+
+def detect_collection_listing_anomalies() -> dict:
+    """Detect empty, oversized, and stagnant collections in the DIC document store.
+
+    Returns a structured anomaly report keyed by category with severity grading.
+    """
+    from datetime import timedelta
+    conn = _conn()
+    try:
+        rows = _safe(
+            conn,
+            "SELECT collection_id, COUNT(*) AS doc_count, MAX(ingested_at) AS last_ingested "
+            "FROM dic_documents GROUP BY collection_id",
+        )
+        if not rows:
+            return {
+                "no_data": True,
+                "collection_count": 0,
+                "summary": {"empty_count": 0, "oversized_count": 0, "stagnant_count": 0},
+                "empty": [], "oversized": [], "stagnant": [],
+                "severity": "low", "severity_source": "heuristic",
+                "heuristic_severity": "low",
+                "mean_docs_per_collection": 0.0,
+                "stdev_docs_per_collection": 0.0,
+            }
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=_LISTING_STAGNANT_DAYS)
+        empty, oversized, stagnant = [], [], []
+        counts = []
+        for row in rows:
+            doc_count = int(row.get("doc_count", 0))
+            counts.append(doc_count)
+            cid = row.get("collection_id")
+            if doc_count == 0:
+                empty.append({"collection_id": cid, "doc_count": doc_count})
+            elif doc_count > _LISTING_MAX_DOCS_ABSOLUTE:
+                oversized.append({
+                    "collection_id": cid,
+                    "doc_count": doc_count,
+                    "threshold": _LISTING_MAX_DOCS_ABSOLUTE,
+                })
+            last = row.get("last_ingested")
+            if last and doc_count > 0:
+                try:
+                    last_dt = datetime.fromisoformat(last)
+                    if last_dt.tzinfo is None:
+                        last_dt = last_dt.replace(tzinfo=timezone.utc)
+                    if last_dt < cutoff:
+                        stagnant.append({"collection_id": cid, "last_ingested": last})
+                except (ValueError, TypeError):
+                    pass
+
+        n = len(counts)
+        mean = sum(counts) / n if n else 0.0
+        variance = sum((x - mean) ** 2 for x in counts) / n if n else 0.0
+        stdev = variance ** 0.5
+
+        summary = {
+            "empty_count": len(empty),
+            "oversized_count": len(oversized),
+            "stagnant_count": len(stagnant),
+        }
+        heuristic_sev = _listing_heuristic_severity(summary)
+        samples = {"empty": empty, "oversized": oversized, "stagnant": stagnant}
+        # Only ask the LLM when the heuristic already flagged medium/high — avoids
+        # real network calls on low-severity collections (which the heuristic handles).
+        ai_grade = _ai_listing_severity(summary, samples) if heuristic_sev != "low" else None
+        if ai_grade:
+            severity = ai_grade["severity"]
+            severity_source = "llm"
+        else:
+            severity = heuristic_sev
+            severity_source = "heuristic"
+
+        return {
+            "collection_count": n,
+            "summary": summary,
+            "empty": empty,
+            "oversized": oversized,
+            "stagnant": stagnant,
+            "severity": severity,
+            "severity_source": severity_source,
+            "heuristic_severity": heuristic_sev,
+            "mean_docs_per_collection": round(mean, 2),
+            "stdev_docs_per_collection": round(stdev, 6),
+        }
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def _ai_anomaly_severity(summary: dict, samples: dict) -> dict | None:
     """Grade overall anomaly severity with the LLM, grounded on the real counts.
 
@@ -647,6 +827,159 @@ def _scenario_change_concept(conn, old_label: str, new_label: str) -> dict:
     }
 
 
+# ── Ingest Pipeline Anomaly Detection ────────────────────────────────────────
+
+def _iqr_outliers(values: list[float]) -> tuple[float, float]:
+    """Return (lower_fence, upper_fence) using the 1.5-IQR rule.
+
+    Returns (-inf, +inf) when fewer than 4 values are present (not enough data
+    for a meaningful distribution).
+    """
+    if len(values) < 4:
+        return (float("-inf"), float("inf"))
+    s = sorted(values)
+    n = len(s)
+    q1 = s[n // 4]
+    q3 = s[(3 * n) // 4]
+    iqr = q3 - q1
+    return (q1 - 1.5 * iqr, q3 + 1.5 * iqr)
+
+
+def detect_ingest_anomalies(collection_id: str | None = None) -> dict:
+    """Detect anomalous documents in the ingestion pipeline using IQR-based
+    outlier detection on byte_size, page_count, and chunk count.
+
+    No hardcoded thresholds — outlier boundaries adapt to the actual corpus
+    distribution (aiify-opp-19: hardcoded_threshold → anomaly_detection).
+
+    Args:
+        collection_id: scope to one collection; ``None`` checks all.
+
+    Returns::
+
+        {
+          "oversized": [{doc_id, title, filename, byte_size, collection_id}],
+          "undersized": [...],
+          "page_outliers_high": [...],
+          "page_outliers_low": [...],
+          "chunk_poor": [{doc_id, title, filename, chunk_count, collection_id}],
+          "chunk_rich": [...],
+          "summary": {oversized_count, undersized_count, ...},
+          "thresholds": {byte_size_low, byte_size_high, page_low, page_high,
+                         chunk_low, chunk_high},
+          "empty": bool,
+          "message": str | None,
+        }
+    """
+    conn = _conn()
+    try:
+        params: tuple = (collection_id,) if collection_id else ()
+        cid_filter = "WHERE collection_id = ?" if collection_id else ""
+        rows = _safe(
+            conn,
+            f"SELECT doc_id, title, filename, byte_size, page_count, collection_id "
+            f"FROM dic_documents {cid_filter} ORDER BY doc_id",
+            params,
+        )
+        if not rows:
+            return {
+                "oversized": [], "undersized": [],
+                "page_outliers_high": [], "page_outliers_low": [],
+                "chunk_poor": [], "chunk_rich": [],
+                "summary": {
+                    "oversized_count": 0, "undersized_count": 0,
+                    "page_outliers_high_count": 0, "page_outliers_low_count": 0,
+                    "chunk_poor_count": 0, "chunk_rich_count": 0,
+                },
+                "thresholds": {},
+                "empty": True,
+                "message": "No documents ingested yet.",
+            }
+
+        # Chunk counts per document.
+        doc_ids = [r["doc_id"] for r in rows]
+        ph = ",".join(["?" for _ in doc_ids])
+        chunk_rows = _safe(
+            conn,
+            f"SELECT d.doc_id, COUNT(cl.id) AS chunk_count "
+            f"FROM dic_documents d "
+            f"LEFT JOIN dic_chunk_links cl ON cl.doc_id = d.doc_id "
+            f"WHERE d.doc_id IN ({ph}) "
+            f"GROUP BY d.doc_id",
+            tuple(doc_ids),
+        )
+        chunk_map = {r["doc_id"]: r["chunk_count"] for r in chunk_rows}
+    finally:
+        conn.close()
+
+    sizes = [float(r["byte_size"] or 0) for r in rows]
+    pages = [float(r["page_count"] or 1) for r in rows]
+    chunks = [float(chunk_map.get(r["doc_id"], 0)) for r in rows]
+
+    size_lo, size_hi = _iqr_outliers(sizes)
+    page_lo, page_hi = _iqr_outliers(pages)
+    chunk_lo, chunk_hi = _iqr_outliers(chunks)
+
+    oversized, undersized = [], []
+    page_hi_list, page_lo_list = [], []
+    chunk_poor, chunk_rich = [], []
+
+    for r in rows:
+        sz = float(r["byte_size"] or 0)
+        pg = float(r["page_count"] or 1)
+        ch = float(chunk_map.get(r["doc_id"], 0))
+        base = {
+            "doc_id": r["doc_id"],
+            "title": r.get("title") or r.get("filename") or r["doc_id"],
+            "filename": r.get("filename") or "",
+            "collection_id": r.get("collection_id") or "",
+        }
+        if sz > size_hi:
+            oversized.append({**base, "byte_size": int(sz)})
+        elif sz < size_lo and sz > 0:
+            undersized.append({**base, "byte_size": int(sz)})
+        if pg > page_hi:
+            page_hi_list.append({**base, "page_count": int(pg)})
+        elif pg < page_lo and pg > 0:
+            page_lo_list.append({**base, "page_count": int(pg)})
+        if ch < chunk_lo or ch == 0:
+            chunk_poor.append({**base, "chunk_count": int(ch)})
+        elif ch > chunk_hi:
+            chunk_rich.append({**base, "chunk_count": int(ch)})
+
+    summary = {
+        "oversized_count": len(oversized),
+        "undersized_count": len(undersized),
+        "page_outliers_high_count": len(page_hi_list),
+        "page_outliers_low_count": len(page_lo_list),
+        "chunk_poor_count": len(chunk_poor),
+        "chunk_rich_count": len(chunk_rich),
+    }
+
+    def _fmt(v: float) -> float | str:
+        return round(v, 1) if abs(v) < 1e15 else ("−∞" if v < 0 else "+∞")
+
+    return {
+        "oversized": oversized[:50],
+        "undersized": undersized[:50],
+        "page_outliers_high": page_hi_list[:50],
+        "page_outliers_low": page_lo_list[:50],
+        "chunk_poor": chunk_poor[:50],
+        "chunk_rich": chunk_rich[:50],
+        "summary": summary,
+        "thresholds": {
+            "byte_size_low": _fmt(size_lo),
+            "byte_size_high": _fmt(size_hi),
+            "page_low": _fmt(page_lo),
+            "page_high": _fmt(page_hi),
+            "chunk_low": _fmt(chunk_lo),
+            "chunk_high": _fmt(chunk_hi),
+        },
+        "empty": False,
+        "message": None,
+    }
+
+
 # ── Full Analytics Bundle ─────────────────────────────────────────────────────
 
 def run_full_analytics() -> dict:
@@ -654,11 +987,645 @@ def run_full_analytics() -> dict:
     freq = entity_frequency(limit=30)
     cooc = co_occurrence(limit=40)
     anom = detect_anomalies()
+    ingest_anom = detect_ingest_anomalies()
     patt = detect_patterns()
+    view_anom = detect_view_anomalies()
     return {
         "entity_frequency": freq,
         "co_occurrence": cooc,
         "anomalies": anom,
+        "ingest_anomalies": ingest_anom,
         "patterns": patt,
+        "view_anomalies": view_anom,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+# ── Document View Logging & Anomaly Detection ─────────────────────────────────
+
+import hashlib as _hashlib
+import time as _time
+
+
+def log_doc_view(doc_id: str, user_id: str = "anonymous",
+                 collection_id: str = "default", tenant_id: str = "default") -> None:
+    """Record a single document view event in dic_doc_views.
+
+    Append-only — aiify-opp-105: replaces hardcoded access thresholds in
+    document views with a persistent log that enables adaptive anomaly detection.
+    """
+    raw = f"{doc_id}:{user_id}:{_time.monotonic_ns()}"
+    view_id = _hashlib.sha256(raw.encode()).hexdigest()[:32]
+    conn = None
+    try:
+        conn = _conn()
+        conn.execute(
+            "INSERT INTO dic_doc_views (view_id, doc_id, user_id, collection_id, tenant_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (view_id, doc_id, user_id, collection_id, tenant_id),
+        )
+        conn.commit()
+    except Exception as exc:
+        logger.warning("dic.analytics: log_doc_view failed: %s", exc)
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+def detect_view_anomalies(collection_id: str | None = None,
+                          window_days: int = 30) -> dict:
+    """Detect anomalous document view patterns using IQR-based outlier detection.
+
+    No hardcoded thresholds — view-count boundaries adapt to the actual corpus
+    distribution (aiify-opp-105: hardcoded_threshold → anomaly_detection).
+
+    Args:
+        collection_id: scope to one collection; ``None`` checks all.
+        window_days: look-back window for counting views (default 30 days).
+
+    Returns::
+
+        {
+          "hot_docs": [{doc_id, view_count, collection_id}],   # view-count outliers high
+          "cold_docs": [{doc_id, view_count, collection_id}],  # view-count outliers low (> 0)
+          "unviewed_docs": [{doc_id, collection_id}],          # zero views in window
+          "summary": {hot_count, cold_count, unviewed_count, total_docs, window_days},
+          "thresholds": {view_low, view_high},
+          "empty": bool,
+          "message": str | None,
+        }
+    """
+    conn = _conn()
+    try:
+        # All docs in scope
+        cid_filter = "WHERE collection_id = ?" if collection_id else ""
+        params: tuple = (collection_id,) if collection_id else ()
+        doc_rows = _safe(
+            conn,
+            f"SELECT doc_id, collection_id FROM dic_documents {cid_filter}",
+            params,
+        )
+        if not doc_rows:
+            return {
+                "hot_docs": [], "cold_docs": [], "unviewed_docs": [],
+                "summary": {"hot_count": 0, "cold_count": 0, "unviewed_count": 0,
+                            "total_docs": 0, "window_days": window_days},
+                "thresholds": {},
+                "empty": True,
+                "message": "No documents ingested yet.",
+            }
+
+        doc_map = {r["doc_id"]: r.get("collection_id", "default") for r in doc_rows}
+
+        # View counts per doc within the window — use Python-computed cutoff so
+        # the ISO string comparison works identically on SQLite and PostgreSQL.
+        from datetime import timedelta
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=window_days)).isoformat()
+        cid_view_filter = "AND collection_id = ?" if collection_id else ""
+        view_params: tuple = (cutoff, collection_id) if collection_id else (cutoff,)
+        view_rows = _safe(
+            conn,
+            f"SELECT doc_id, COUNT(*) AS view_count FROM dic_doc_views "
+            f"WHERE viewed_at >= ? {cid_view_filter} GROUP BY doc_id",
+            view_params,
+        )
+        view_counts = {r["doc_id"]: r["view_count"] for r in view_rows}
+
+        # Separate docs with views from those with none
+        viewed = {did: cnt for did, cnt in view_counts.items() if cnt > 0}
+        unviewed = [
+            {"doc_id": did, "collection_id": doc_map[did]}
+            for did in doc_map
+            if did not in view_counts
+        ]
+
+        counts = list(float(v) for v in viewed.values())
+        lo, hi = _iqr_outliers(counts)
+
+        hot_docs, cold_docs = [], []
+        for did, cnt in viewed.items():
+            entry = {"doc_id": did, "view_count": cnt,
+                     "collection_id": doc_map.get(did, "default")}
+            if cnt > hi:
+                hot_docs.append(entry)
+            elif cnt < lo and lo > 0:
+                cold_docs.append(entry)
+
+        def _fmt(v: float) -> float | str:
+            return round(v, 1) if abs(v) < 1e15 else ("−∞" if v < 0 else "+∞")
+
+        return {
+            "hot_docs": sorted(hot_docs, key=lambda x: x["view_count"], reverse=True)[:50],
+            "cold_docs": sorted(cold_docs, key=lambda x: x["view_count"])[:50],
+            "unviewed_docs": unviewed[:50],
+            "summary": {
+                "hot_count": len(hot_docs),
+                "cold_count": len(cold_docs),
+                "unviewed_count": len(unviewed),
+                "total_docs": len(doc_map),
+                "window_days": window_days,
+            },
+            "thresholds": {
+                "view_low": _fmt(lo),
+                "view_high": _fmt(hi),
+            },
+            "empty": False,
+            "message": None,
+        }
+    finally:
+        conn.close()
+
+
+# ── Ingest Job Task Anomaly Detection (aiify-opp-91) ─────────────────────────
+# Analogous to paperless-ngx tasks.py hardcoded_threshold → anomaly_detection.
+# Detects failure-rate anomalies, stale queued jobs, and latency outliers across
+# dic_ingest_jobs using IQR-based detection — no hardcoded pass/fail thresholds.
+
+_JOB_TASK_SYSTEM_PROMPT = (
+    "You are a document ingestion pipeline quality analyst. You are given metrics "
+    "about ingestion job processing: failure rates per collection, stale job counts, "
+    "and processing latency outliers. Assess the overall health of the pipeline. "
+    "Respond ONLY with a JSON object: "
+    '{"severity": "low|medium|high", "rationale": "<=160 chars", '
+    '"top_concern": "<the single most concerning anomaly category>"}. '
+    "Never invent anomalies beyond those provided."
+)
+
+
+def _ai_job_task_severity(summary: dict, samples: dict) -> dict | None:
+    """Grade ingest job task anomaly severity with the LLM.
+
+    Returns ``{"severity": ..., "rationale": ..., "top_concern": ...}`` or None
+    when there are no anomalies, the model is unavailable, or output is malformed.
+    """
+    if not any(summary.get(k, 0) for k in ("failed_count", "stale_queued_count",
+                                             "stale_processing_count", "latency_outlier_count")):
+        return None
+    try:
+        import json as _json
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        heuristic = _job_task_heuristic_severity(summary)
+        lines = [
+            f"Ingest job task anomaly summary: {_json.dumps(summary, sort_keys=True)}",
+            f"Deterministic baseline severity: {heuristic}",
+            "Sample failed jobs: " + _json.dumps(samples.get("failed", [])[:5]),
+            "Sample stale queued: " + _json.dumps(samples.get("stale_queued", [])[:5]),
+            "Sample latency outliers: " + _json.dumps(samples.get("latency_outliers", [])[:5]),
+        ]
+        prompt = "\n".join(lines)
+        router = LLMRouter()
+        req = LLMRequest(
+            function_name="anomaly_detection",
+            prompt=prompt,
+            system=_JOB_TASK_SYSTEM_PROMPT,
+            max_tokens=256,
+        )
+        result = router.invoke("anomaly_detection", req)
+        raw = (result.content or "").strip()
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1:
+            return None
+        parsed = _json.loads(raw[start:end + 1])
+        if parsed.get("severity") not in ("low", "medium", "high"):
+            return None
+        return parsed
+    except Exception as exc:
+        logger.debug("dic.analytics: job task LLM grade failed: %s", exc)
+        return None
+
+
+def _job_task_heuristic_severity(summary: dict) -> str:
+    """Deterministic severity for ingest job task anomalies — always-available baseline.
+
+    Treats failed jobs and stuck processing jobs as high-severity;
+    stale queued and latency outliers as medium.
+    """
+    if summary.get("failed_count", 0) > 0 or summary.get("stale_processing_count", 0) > 0:
+        return "high"
+    if summary.get("stale_queued_count", 0) > 0 or summary.get("latency_outlier_count", 0) > 0:
+        return "medium"
+    return "low"
+
+
+def detect_ingest_job_anomalies(collection_id: str | None = None,
+                                stale_minutes: int = 60) -> dict:
+    """Detect anomalous patterns in document ingestion task processing.
+
+    No hardcoded pass/fail thresholds — IQR-based latency outlier detection
+    adapts to the actual job duration distribution (aiify-opp-91:
+    hardcoded_threshold → anomaly_detection).
+
+    Args:
+        collection_id: Scope to one collection; ``None`` checks all.
+        stale_minutes: Jobs unchanged for longer than this are flagged stale.
+            Defaults to 60 — callers can tune without touching source code.
+
+    Returns::
+
+        {
+          "failed": [{job_id, filename, collection_id, stage_detail, age_minutes}],
+          "stale_queued": [{job_id, filename, collection_id, age_minutes}],
+          "stale_processing": [{job_id, filename, collection_id, age_minutes}],
+          "latency_outliers": [{job_id, filename, collection_id, duration_seconds}],
+          "summary": {failed_count, stale_queued_count, stale_processing_count,
+                      latency_outlier_count, total_jobs, thresholds},
+          "severity": "low|medium|high",
+          "severity_source": "llm|heuristic",
+          "heuristic_severity": "low|medium|high",
+          "empty": bool,
+          "message": str | None,
+        }
+    """
+    from datetime import timedelta
+
+    conn = _conn()
+    try:
+        cid_filter = "WHERE collection_id = ?" if collection_id else ""
+        params: tuple = (collection_id,) if collection_id else ()
+        rows = _safe(
+            conn,
+            f"SELECT job_id, filename, collection_id, status, stage_detail, "
+            f"created_at, updated_at FROM dic_ingest_jobs {cid_filter} ORDER BY created_at DESC",
+            params,
+        )
+    finally:
+        conn.close()
+
+    if not rows:
+        return {
+            "failed": [], "stale_queued": [], "stale_processing": [],
+            "latency_outliers": [],
+            "summary": {
+                "failed_count": 0, "stale_queued_count": 0,
+                "stale_processing_count": 0, "latency_outlier_count": 0,
+                "total_jobs": 0,
+                "thresholds": {},
+            },
+            "severity": "low",
+            "severity_source": "heuristic",
+            "heuristic_severity": "low",
+            "empty": True,
+            "message": "No ingestion jobs found.",
+        }
+
+    now = datetime.now(timezone.utc)
+    stale_cutoff = now - timedelta(minutes=stale_minutes)
+
+    failed, stale_queued, stale_processing = [], [], []
+    completed_durations: list[float] = []
+    completed_jobs: list[dict] = []
+
+    def _parse_ts(v) -> datetime | None:
+        if v is None:
+            return None
+        if isinstance(v, datetime):
+            dt = v
+        else:
+            try:
+                dt = datetime.fromisoformat(str(v))
+            except (ValueError, TypeError):
+                return None
+        return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
+    for r in rows:
+        status = (r.get("status") or "").lower()
+        cid = r.get("collection_id", "default")
+        fname = r.get("filename", "")
+        jid = r.get("job_id", "")
+        stage = r.get("stage_detail", "")
+
+        created = _parse_ts(r.get("created_at"))
+        updated = _parse_ts(r.get("updated_at"))
+
+        age_minutes: float = 0.0
+        if updated:
+            age_minutes = (now - updated).total_seconds() / 60.0
+
+        if status in ("error", "failed"):
+            failed.append({
+                "job_id": jid, "filename": fname,
+                "collection_id": cid, "stage_detail": stage,
+                "age_minutes": round(age_minutes, 1),
+            })
+        elif status == "queued" and updated and updated < stale_cutoff:
+            stale_queued.append({
+                "job_id": jid, "filename": fname,
+                "collection_id": cid,
+                "age_minutes": round(age_minutes, 1),
+            })
+        elif status == "processing" and updated and updated < stale_cutoff:
+            stale_processing.append({
+                "job_id": jid, "filename": fname,
+                "collection_id": cid, "stage_detail": stage,
+                "age_minutes": round(age_minutes, 1),
+            })
+        elif status == "done" and created and updated:
+            duration_secs = (updated - created).total_seconds()
+            if duration_secs >= 0:
+                completed_durations.append(duration_secs)
+                completed_jobs.append({
+                    "job_id": jid, "filename": fname,
+                    "collection_id": cid,
+                    "duration_seconds": round(duration_secs, 1),
+                })
+
+    # IQR-based latency outlier detection — no hardcoded duration threshold.
+    latency_outliers: list[dict] = []
+    dur_lo, dur_hi = _iqr_outliers(completed_durations)
+    if dur_hi < float("inf"):
+        for job in completed_jobs:
+            if job["duration_seconds"] > dur_hi:
+                latency_outliers.append(job)
+
+    summary = {
+        "failed_count": len(failed),
+        "stale_queued_count": len(stale_queued),
+        "stale_processing_count": len(stale_processing),
+        "latency_outlier_count": len(latency_outliers),
+        "total_jobs": len(rows),
+        "thresholds": {
+            "stale_minutes": stale_minutes,
+            "latency_high_seconds": round(dur_hi, 1) if dur_hi < float("inf") else None,
+        },
+    }
+    heuristic_sev = _job_task_heuristic_severity(summary)
+    samples = {
+        "failed": failed[:5],
+        "stale_queued": stale_queued[:5],
+        "stale_processing": stale_processing[:5],
+        "latency_outliers": latency_outliers[:5],
+    }
+    ai_grade = _ai_job_task_severity(summary, samples) if heuristic_sev != "low" else None
+
+    if ai_grade:
+        severity = ai_grade["severity"]
+        severity_source = "llm"
+    else:
+        severity = heuristic_sev
+        severity_source = "heuristic"
+
+    return {
+        "failed": failed[:50],
+        "stale_queued": stale_queued[:50],
+        "stale_processing": stale_processing[:50],
+        "latency_outliers": sorted(
+            latency_outliers, key=lambda x: x["duration_seconds"], reverse=True
+        )[:50],
+        "summary": summary,
+        "severity": severity,
+        "severity_source": severity_source,
+        "heuristic_severity": heuristic_sev,
+        "empty": False,
+        "message": None,
+    }
+
+
+# Analogous to paperless-ngx document_exporter.py hardcoded_threshold →
+# anomaly_detection (aiify-rm-a3344-phase-41).  Detects oversized outputs,
+# error-status records, stale in-progress exports, and provider overconcentration
+# across dic_generated_outputs — no hardcoded thresholds (IQR-based sizing).
+
+_OUTPUT_EXPORT_SYSTEM_PROMPT = (
+    "You are a document output pipeline quality analyst. You are given metrics "
+    "about generated outputs: oversized content counts, failed export counts, "
+    "stale in-progress counts, and provider overconcentration. "
+    "Assess the overall health of the export pipeline. "
+    "Respond ONLY with a JSON object: "
+    '{"severity": "low|medium|high", "rationale": "<=160 chars", '
+    '"top_concern": "<the single most concerning anomaly category>"}. '
+    "Never invent anomalies beyond those provided."
+)
+
+
+def _ai_output_export_severity(summary: dict, samples: dict) -> dict | None:
+    """Grade output export anomaly severity with the LLM."""
+    if not any(summary.get(k, 0) for k in (
+        "oversized_count", "error_count", "stale_count", "overconcentrated_providers"
+    )):
+        return None
+    try:
+        import json as _json
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        heuristic = _output_export_heuristic_severity(summary)
+        lines = [
+            f"Output export anomaly summary: {_json.dumps(summary, sort_keys=True)}",
+            f"Deterministic baseline severity: {heuristic}",
+            "Sample oversized outputs: " + _json.dumps(samples.get("oversized", [])[:5]),
+            "Sample error outputs: " + _json.dumps(samples.get("errors", [])[:5]),
+            "Sample stale outputs: " + _json.dumps(samples.get("stale", [])[:5]),
+        ]
+        req = LLMRequest(
+            function_name="anomaly_detection",
+            prompt="\n".join(lines),
+            system=_OUTPUT_EXPORT_SYSTEM_PROMPT,
+            max_tokens=256,
+        )
+        result = LLMRouter().invoke("anomaly_detection", req)
+        raw = (result.content or "").strip()
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1:
+            return None
+        parsed = _json.loads(raw[start:end + 1])
+        if parsed.get("severity") not in ("low", "medium", "high"):
+            return None
+        return parsed
+    except Exception as exc:
+        logger.debug("dic.analytics: output export LLM grade failed: %s", exc)
+        return None
+
+
+def _output_export_heuristic_severity(summary: dict) -> str:
+    """Deterministic severity for output export anomalies — always-available baseline."""
+    if summary.get("error_count", 0) > 0:
+        return "high"
+    if summary.get("stale_count", 0) > 0 or summary.get("oversized_count", 0) > 0:
+        return "medium"
+    if summary.get("overconcentrated_providers", 0) > 0:
+        return "medium"
+    return "low"
+
+
+def detect_output_export_anomalies(
+    collection_id: str | None = None,
+    stale_minutes: int = 30,
+) -> dict:
+    """Detect anomalous patterns in document output/export generation.
+
+    Analogous to paperless-ngx document_exporter.py hardcoded_threshold →
+    anomaly_detection (aiify-rm-a3344-phase-41).  No hardcoded size thresholds —
+    IQR-based detection adapts to the actual corpus distribution.
+
+    Detects:
+      - Oversized content_json payloads (IQR upper fence on byte length)
+      - Error-status output records
+      - Stale in-progress outputs (stuck longer than stale_minutes)
+      - Provider overconcentration (single provider > 80% of outputs)
+
+    Args:
+        collection_id: Scope to one collection; ``None`` checks all.
+        stale_minutes: Outputs with non-done status unchanged this long are flagged.
+
+    Returns::
+
+        {
+          "oversized": [{id, output_type, collection_id, size_bytes}],
+          "errors": [{id, output_type, collection_id, status, age_minutes}],
+          "stale": [{id, output_type, collection_id, status, age_minutes}],
+          "provider_concentration": {provider: count},
+          "summary": {oversized_count, error_count, stale_count,
+                      overconcentrated_providers, total_outputs, thresholds},
+          "severity": "low|medium|high",
+          "severity_source": "llm|heuristic",
+          "heuristic_severity": "low|medium|high",
+          "empty": bool,
+          "message": str | None,
+        }
+    """
+    from datetime import timedelta
+
+    conn = _conn()
+    try:
+        cid_filter = "WHERE collection_id = ?" if collection_id else ""
+        params: tuple = (collection_id,) if collection_id else ()
+        rows = _safe(
+            conn,
+            f"SELECT id, output_type, collection_id, provider, status, "
+            f"content_json, created_at, updated_at "
+            f"FROM dic_generated_outputs {cid_filter} ORDER BY created_at DESC",
+            params,
+        )
+    finally:
+        conn.close()
+
+    if not rows:
+        return {
+            "oversized": [], "errors": [], "stale": [],
+            "provider_concentration": {},
+            "summary": {
+                "oversized_count": 0, "error_count": 0, "stale_count": 0,
+                "overconcentrated_providers": 0, "total_outputs": 0,
+                "thresholds": {},
+            },
+            "severity": "low",
+            "severity_source": "heuristic",
+            "heuristic_severity": "low",
+            "empty": True,
+            "message": "No generated outputs found.",
+        }
+
+    now = datetime.now(timezone.utc)
+    stale_cutoff = now - timedelta(minutes=stale_minutes)
+
+    errors: list[dict] = []
+    stale: list[dict] = []
+    content_sizes: list[float] = []
+    size_entries: list[dict] = []
+    provider_counts: dict[str, int] = {}
+
+    def _parse_ts(v) -> datetime | None:
+        if v is None:
+            return None
+        if isinstance(v, datetime):
+            dt = v
+        else:
+            try:
+                dt = datetime.fromisoformat(str(v))
+            except (ValueError, TypeError):
+                return None
+        return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
+    for r in rows:
+        oid = r.get("id", "")
+        otype = r.get("output_type", "")
+        cid = r.get("collection_id", "default")
+        provider = r.get("provider") or "unknown"
+        status = (r.get("status") or "done").lower()
+        raw_content = r.get("content_json") or "{}"
+        updated = _parse_ts(r.get("updated_at") or r.get("created_at"))
+
+        provider_counts[provider] = provider_counts.get(provider, 0) + 1
+
+        age_minutes: float = 0.0
+        if updated:
+            age_minutes = (now - updated).total_seconds() / 60.0
+
+        if status in ("error", "failed"):
+            errors.append({
+                "id": oid, "output_type": otype,
+                "collection_id": cid, "status": status,
+                "age_minutes": round(age_minutes, 1),
+            })
+        elif status not in ("done",) and updated and updated < stale_cutoff:
+            stale.append({
+                "id": oid, "output_type": otype,
+                "collection_id": cid, "status": status,
+                "age_minutes": round(age_minutes, 1),
+            })
+
+        size_bytes = len(
+            raw_content.encode("utf-8") if isinstance(raw_content, str) else raw_content
+        )
+        content_sizes.append(float(size_bytes))
+        size_entries.append({
+            "id": oid, "output_type": otype,
+            "collection_id": cid, "size_bytes": size_bytes,
+        })
+
+    # IQR-based size outlier detection — no hardcoded byte threshold.
+    oversized: list[dict] = []
+    _, size_hi = _iqr_outliers(content_sizes)
+    if size_hi < float("inf"):
+        for entry in size_entries:
+            if entry["size_bytes"] > size_hi:
+                oversized.append(entry)
+
+    # Provider overconcentration: single provider > 80% of all outputs (min 5 samples).
+    total = len(rows)
+    overconcentrated = sum(
+        1 for cnt in provider_counts.values()
+        if total >= 5 and cnt / total > 0.80
+    )
+
+    summary = {
+        "oversized_count": len(oversized),
+        "error_count": len(errors),
+        "stale_count": len(stale),
+        "overconcentrated_providers": overconcentrated,
+        "total_outputs": total,
+        "thresholds": {
+            "stale_minutes": stale_minutes,
+            "size_high_bytes": round(size_hi) if size_hi < float("inf") else None,
+            "provider_concentration_pct": 80,
+        },
+    }
+    heuristic_sev = _output_export_heuristic_severity(summary)
+    samples = {
+        "oversized": oversized[:5],
+        "errors": errors[:5],
+        "stale": stale[:5],
+    }
+    ai_grade = _ai_output_export_severity(summary, samples) if heuristic_sev != "low" else None
+
+    if ai_grade:
+        severity = ai_grade["severity"]
+        severity_source = "llm"
+    else:
+        severity = heuristic_sev
+        severity_source = "heuristic"
+
+    return {
+        "oversized": oversized[:50],
+        "errors": errors[:50],
+        "stale": stale[:50],
+        "provider_concentration": provider_counts,
+        "summary": summary,
+        "severity": severity,
+        "severity_source": severity_source,
+        "heuristic_severity": heuristic_sev,
+        "empty": False,
+        "message": None,
     }

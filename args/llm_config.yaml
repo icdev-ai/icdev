@@ -4,6 +4,24 @@
 # Single source of truth — replaces scattered hardcoded model IDs.
 
 # -----------------------------------------------------------------------
+# Context Compression (adapt-hd-01)
+# Headroom-inspired reversible token-budget-aware compression middleware.
+# Applied in router.py::invoke() before the fallback chain.
+# -----------------------------------------------------------------------
+compression:
+  enabled: false                        # Set true to activate; default off
+  threshold_tokens: 6000                # Only compress when estimated tokens exceed this
+  strategy: truncate_middle             # "truncate_middle" — keep first 40% + last 40%
+  max_compression_ratio: 0.6            # Never compress below 60% of original length
+  log_savings: true                     # Emit compression_saved_tokens to audit trail
+  exempt_functions:                     # These functions bypass compression (always send full context)
+    - compliance_generation
+    - ssp_generation
+    - evidence_collection
+    - security_audit
+    - fine_tuning_generation
+
+# -----------------------------------------------------------------------
 # Provider Definitions
 # -----------------------------------------------------------------------
 providers:
@@ -64,10 +82,29 @@ providers:
     base_url: ${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
     api_key_env: OLLAMA_API_KEY
 
+  # Claude Code CLI provider — routes through the authenticated local `claude` CLI
+  # binary. Auto-enabled when no cloud API keys are present (air-gap / no ANTHROPIC_API_KEY).
+  # Requires `claude` on PATH (installed via Claude Code).
+  cli:
+    type: cli
+    cli_binary: ${CLAUDE_CLI_BINARY:-claude}
+
 # -----------------------------------------------------------------------
 # Model Registry
 # -----------------------------------------------------------------------
 models:
+  # -- Claude Code CLI bridge — uses locally authenticated `claude` CLI binary --
+  # This is the primary provider when ANTHROPIC_API_KEY is not set.
+  # The cli_bridge auto-prepends this to every routing chain when enabled.
+  claude-cli:
+    provider: cli
+    model_id: claude-cli
+    max_output_tokens: 32768
+    supports_thinking: true
+    supports_tools: false
+    supports_structured_output: false
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
   # -- Anthropic direct API (user has Anthropic subscription, not Bedrock) --
   claude-opus:
     provider: anthropic
@@ -538,6 +575,14 @@ routing:
   agent_requirements_analyst:
     chain: [kimi-cloud, qwen3-local, claude-opus, gemini-2.5-pro, gpt-4o]
     effort: high
+
+  agent_product_manager:
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, gemini-2.5-pro, gpt-4o, llama-local]
+    effort: high
+
+  agent_software_craftsperson:
+    chain: [kimi-cloud, qwen3-local, claude-opus, gemini-2.5-pro, gpt-4o, llama-local]
+    effort: max
 
   agent_supply_chain:
     chain: [qwen3-local, claude-sonnet, gpt-4o-mini, gemini-2.5-flash, llama-local]

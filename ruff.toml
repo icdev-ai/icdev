@@ -7,7 +7,7 @@
 line-length = 120
 
 # Exclude non-Python assets so ruff never parses them even when passed explicitly.
-exclude = ["*.js", "*.ts", "*.jsx", "*.tsx", "*.css", "*.html", "*.sql"]
+exclude = ["*.js", "*.ts", "*.jsx", "*.tsx", "*.css", "*.html", "*.sql", "*.yaml", "*.yml"]
 force-exclude = true
 
 [lint]

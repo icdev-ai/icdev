@@ -263,7 +263,7 @@ class TestDsynSynergyLoop:
             "(id, event_type, adapter, severity, title, created_at) "
             "VALUES (?,?,?,?,?,?)",
             (log_id, "dic_suggestion_created", "dic_suggestion_store",
-             "info", f"DIC suggestion from ndc: NDC drift", now),
+             "info", "DIC suggestion from ndc: NDC drift", now),
         )
         self.shim.commit()
         rows = self.shim.execute(
@@ -388,7 +388,8 @@ class TestDsynArtifactInventory:
         assert "crowdsource" in src
 
     def test_dic_canvas_integrations_has_all_sources(self):
-        import yaml, pathlib
+        import yaml
+        import pathlib
         with pathlib.Path("args/dic_canvas_integrations.yaml").open() as f:
             config = yaml.safe_load(f)
         integrations = config.get("integrations", {})

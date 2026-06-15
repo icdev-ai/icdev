@@ -57,9 +57,17 @@ def _reset():
 
 
 def _patch_router(monkeypatch, content=None):
+    import sys as _sys
     if content is not None:
         _Router._content = content
     monkeypatch.setattr(router_mod, "LLMRouter", _Router)
+    # Patch ALL known router module aliases so lazy `from tools.llm.router import LLMRouter`
+    # is intercepted regardless of which sys.modules entry analytics_engine resolves to.
+    import icdev.tools.llm.router as _icdev_router_mod
+    monkeypatch.setattr(_icdev_router_mod, "LLMRouter", _Router)
+    for _key, _mod in list(_sys.modules.items()):
+        if "llm.router" in _key and hasattr(_mod, "LLMRouter"):
+            monkeypatch.setattr(_mod, "LLMRouter", _Router)
 
 
 # ── Heuristic baseline (deterministic) ───────────────────────────────────────
@@ -162,6 +170,8 @@ def test_ai_blank_severity_returns_none(monkeypatch):
 
 
 def test_ai_llm_failure_returns_none(monkeypatch):
+    import sys as _sys
+
     class _Boom:
         def __init__(self, *a, **k):
             pass
@@ -170,6 +180,11 @@ def test_ai_llm_failure_returns_none(monkeypatch):
             raise RuntimeError("provider down")
 
     monkeypatch.setattr(router_mod, "LLMRouter", _Boom)
+    import icdev.tools.llm.router as _icdev_router_mod
+    monkeypatch.setattr(_icdev_router_mod, "LLMRouter", _Boom)
+    for _key, _mod in list(_sys.modules.items()):
+        if "llm.router" in _key and hasattr(_mod, "LLMRouter"):
+            monkeypatch.setattr(_mod, "LLMRouter", _Boom)
     assert analytics._ai_listing_severity(_SUMMARY, _SAMPLES) is None
 
 

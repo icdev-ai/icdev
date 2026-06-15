@@ -161,7 +161,7 @@ def _draft_suggestion(
         logger.debug("dic_integration: LLM draft unavailable (%s), using stub", exc)
 
     # Stub suggestion — human can edit before accepting
-    lines = [f"[REVIEW REQUIRED] The following system change may affect this section:"]
+    lines = ["[REVIEW REQUIRED] The following system change may affect this section:"]
     lines.append("")
     lines.append(f"Change context: {change_context}")
     lines.append("")
@@ -181,12 +181,6 @@ def _emit_notification(suggestion_id: str, collection_id: str, canvas_source: st
         import hashlib
         now = _now()
         log_id = f"nlog-{hashlib.sha256(f'{now}{suggestion_id}'.encode()).hexdigest()[:12]}"
-        payload = json.dumps({
-            "suggestion_id": suggestion_id,
-            "collection_id": collection_id,
-            "canvas_source": canvas_source,
-            "rationale": rationale,
-        })
         conn.execute(
             """
             INSERT INTO notification_log

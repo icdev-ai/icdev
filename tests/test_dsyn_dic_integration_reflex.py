@@ -13,7 +13,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -372,8 +372,8 @@ def test_event_marked_processed_after_run(db):
 # ── Error isolation ───────────────────────────────────────────────────────────
 
 def test_one_bad_event_does_not_block_others(db):
-    eid_good = _insert_event(db, event_type="ndc.topology.drift_detected")
-    eid_bad = _insert_event(db, event_type="ndc.config.push")
+    _insert_event(db, event_type="ndc.topology.drift_detected")
+    _insert_event(db, event_type="ndc.config.push")
 
     ps = _patch_all(db)
     for p in ps:
@@ -402,7 +402,7 @@ def test_one_bad_event_does_not_block_others(db):
 # ── Non-DIC events not picked up ─────────────────────────────────────────────
 
 def test_events_not_targeting_dic_are_ignored(db):
-    eid = _insert_event(db, target_canvas="ndc")  # wrong target
+    _insert_event(db, target_canvas="ndc")  # wrong target
     ps = _patch_all(db)
     for p in ps:
         p.start()
