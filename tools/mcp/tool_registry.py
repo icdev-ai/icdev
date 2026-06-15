@@ -7140,6 +7140,54 @@ RESOURCE_REGISTRY = {
             "required": ["prefix", "origin_asn"],
         },
     },
+    # ============================================================
+    # PLATFORM CONNECTORS (3 tools)
+    # ============================================================
+    "platform_connector_fetch": {
+        "category": "intelligence",
+        "module": "tools.platform_connectors.connector_cli",
+        "handler": "cmd_fetch",
+        "description": "Fetch items from a single internet platform (github, hackernews, stackoverflow, reddit, youtube) using the unified adapter registry with multi-backend routing and fallbacks.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "platform": {
+                    "type": "string",
+                    "description": "Platform name",
+                    "enum": ["github", "hackernews", "stackoverflow", "reddit", "youtube"],
+                },
+                "query": {"type": "string", "description": "Search query or topic"},
+                "max_results": {"type": "integer", "description": "Max items to return", "default": 20},
+                "since_days": {"type": "integer", "description": "Look back N days", "default": 7},
+            },
+            "required": ["platform", "query"],
+        },
+    },
+    "platform_connector_fetch_all": {
+        "category": "intelligence",
+        "module": "tools.platform_connectors.connector_cli",
+        "handler": "cmd_fetch_all",
+        "description": "Fetch from all registered internet platforms simultaneously and aggregate results. Useful for broad signal discovery across GitHub, HN, SO, Reddit, and YouTube.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query or topic"},
+                "max_results": {"type": "integer", "description": "Max items per platform", "default": 10},
+                "since_days": {"type": "integer", "description": "Look back N days", "default": 7},
+            },
+            "required": ["query"],
+        },
+    },
+    "platform_connector_doctor": {
+        "category": "intelligence",
+        "module": "tools.platform_connectors.connector_cli",
+        "handler": "cmd_doctor",
+        "description": "Run health probes on all registered platform adapter backends. Returns status, latency, and auth state for each adapter (ok/degraded/unreachable/auth_error).",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+        },
+    },
 }
 
 
