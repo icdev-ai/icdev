@@ -7,6 +7,10 @@ Dual-mode design:
 
 All generators degrade gracefully — the air-gap path always produces usable output,
 the online path produces richer, more coherent output.
+
+Capabilities exercised:
+  - filesystem: persists generated outputs to dic_generated_outputs via DB + audio to data/dic_audio/.
+  - network_egress: LLMRouter may call cloud LLM APIs (Anthropic/OpenAI) when API keys are set.
 """
 from __future__ import annotations
 
@@ -173,58 +177,14 @@ def _has_cloud_keys() -> bool:
     )
 
 
-def _try_cli_bridge(prompt: str) -> tuple[str | None, str]:
-    """Direct synchronous Claude CLI invocation — used when cloud keys absent.
-
-    Bypasses the job-store/async path so output generators get a synchronous
-    result.  Prompt is passed via stdin (avoids CLI arg length limits and
-    CLAUDE.md discovery overhead on large document prompts).  Falls back
-    gracefully (returns None) if the CLI binary is not on PATH or exits
-    non-zero (e.g. token-exhaustion, auth error).
-    """
-    import os, shutil, subprocess  # noqa: E401
-    binary = os.environ.get("ICDEV_CLI_BRIDGE_BINARY") or "claude"
-    if not shutil.which(binary):
-        return None, "no-cli"
-    timeout = int(os.environ.get("ICDEV_CLI_BRIDGE_MAX_SECONDS", "60"))
-    try:
-        # Pipe prompt via stdin: avoids huge CLI arg + triggers non-interactive
-        # mode. --output-format text strips markdown wrappers.
-        # --no-tools avoids tool-call overhead for pure text generation.
-        res = subprocess.run(
-            [binary, "--print", "--output-format", "text"],
-            input=prompt,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            encoding="utf-8",
-            errors="replace",
-        )
-        out = (res.stdout or "").strip()
-        if res.returncode == 0 and out:
-            return out, "claude-cli"
-        if res.returncode != 0:
-            logger.debug(
-                "dic._try_cli_bridge: CLI exited %d — %s",
-                res.returncode,
-                (res.stderr or "")[:200],
-            )
-    except subprocess.TimeoutExpired:
-        logger.debug("dic._try_cli_bridge: timed out after %ds", timeout)
-    except Exception as exc:
-        logger.debug("dic._try_cli_bridge: %s", exc)
-    return None, "no-cli"
-
-
 def _try_llm(prompt: str, function: str = "document_qna",
              max_seconds: int = 90) -> tuple[str | None, str]:
-    """Invoke LLMRouter for synthesis, with auto-detected CLI-bridge fallback.
+    """Invoke LLMRouter for synthesis, falling back to deterministic on timeout.
 
     Hard ceiling: max_seconds (default 90) — falls back to deterministic after.
     Priority:
-      1. Cloud API  — when ANTHROPIC_API_KEY / OPENAI_API_KEY are set.
-      2. Claude CLI — when no cloud keys but ``claude`` binary is on PATH.
-      3. Ollama     — last resort via router's Ollama entry.
+      1. Cloud API — when ANTHROPIC_API_KEY / OPENAI_API_KEY are set.
+      2. Ollama    — last resort via router's Ollama entry.
     """
     import concurrent.futures as _cf
     _ex = _cf.ThreadPoolExecutor(max_workers=1)
@@ -238,7 +198,7 @@ def _try_llm(prompt: str, function: str = "document_qna",
 
 
 def _try_llm_inner(prompt: str, function: str) -> tuple[str | None, str]:
-    """Actual LLM call — runs inside a thread with outer timeout."""
+    """Actual LLM call (cloud → Ollama) — runs inside a thread with outer timeout."""
     # ── 1. Cloud path (API key present) ──────────────────────────────────────
     if _has_cloud_keys():
         try:
@@ -262,16 +222,10 @@ def _try_llm_inner(prompt: str, function: str) -> tuple[str | None, str]:
                 text = str(result).strip()
             if text:
                 return text, model or "cloud"
-            # Empty response → fall through to CLI
         except Exception as exc:
-            logger.debug("dic._try_llm: cloud invoke failed (%s) — trying CLI", exc)
+            logger.debug("dic._try_llm: cloud invoke failed (%s) — trying Ollama", exc)
 
-    # ── 2. CLI bridge (auto-detected when no cloud keys / token exhaustion) ───
-    text, src = _try_cli_bridge(prompt)
-    if text:
-        return text, src
-
-    # ── 3. Ollama / last resort via router ────────────────────────────────────
+    # ── 2. Ollama / last resort via router ────────────────────────────────────
     try:
         from tools.llm.provider import LLMRequest
         from tools.llm.router import LLMRouter

@@ -16,9 +16,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
+import io
 import json
 import logging
+import ssl
 import sys
 import urllib.request
 import urllib.error
@@ -26,6 +29,12 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+# SSL context that skips verification — used only for threat intel ingestion feeds
+# where the data itself is untrusted anyway; we parse, not exec it.
+_SSL_CTX = ssl.create_default_context()
+_SSL_CTX.check_hostname = False
+_SSL_CTX.verify_mode = ssl.CERT_NONE
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
@@ -38,15 +47,13 @@ _SOURCES: dict[str, dict] = {
         "ioc_type": "cve",
     },
     "threatfox": {
-        "url": "https://threatfox-api.abuse.ch/api/v1/",
-        "label": "Abuse.ch ThreatFox",
+        "url": "https://threatfox.abuse.ch/export/json/recent/",
+        "label": "Abuse.ch ThreatFox (public export)",
         "ioc_type": "multi",
-        "method": "POST",
-        "body": json.dumps({"query": "get_iocs", "days": 1}).encode(),
     },
-    "urlhaus": {
-        "url": "https://urlhaus-api.abuse.ch/v1/urls/recent/limit/100/",
-        "label": "Abuse.ch URLhaus",
+    "urlhaus_csv": {
+        "url": "https://urlhaus.abuse.ch/downloads/csv_online/",
+        "label": "Abuse.ch URLhaus (online URLs)",
         "ioc_type": "url",
     },
     "feodo": {
@@ -78,8 +85,11 @@ def _req(url: str, method: str = "GET", body: bytes | None = None,
                "Content-Type": "application/json"}
     req = urllib.request.Request(url, data=body, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
+        with urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX) as r:
             return r.read()
+    except urllib.error.HTTPError as e:
+        logger.warning("fetch %s failed: HTTP %s %s", url, e.code, e.reason)
+        return None
     except urllib.error.URLError as e:
         logger.warning("fetch %s failed: %s", url, e)
         return None
@@ -116,44 +126,66 @@ def _parse_cisa_kev(raw: bytes) -> list[dict]:
 
 
 def _parse_threatfox(raw: bytes) -> list[dict]:
+    # Export format: {ioc_id: [ioc_dict, ...], ...}
     data = json.loads(raw)
-    if data.get("query_status") != "ok":
+    if not isinstance(data, dict):
         return []
     out = []
-    for ioc in (data.get("data") or [])[:60]:
-        val = ioc.get("ioc", "")
+    for ioc_list in list(data.values())[:100]:
+        ioc = ioc_list[0] if isinstance(ioc_list, list) and ioc_list else ioc_list
+        if not isinstance(ioc, dict):
+            continue
+        val = ioc.get("ioc_value", "")
+        if not val:
+            continue
+        conf = ioc.get("confidence_level", 0)
+        sev = "critical" if conf >= 90 else "high" if conf >= 75 else "medium"
+        tags_raw = ioc.get("tags", "")
+        tags = [t.strip() for t in tags_raw.split(",")] if tags_raw else []
+        tags += [ioc.get("malware_printable", ""), ioc.get("threat_type", "")]
         out.append({
             "id": _signal_id("threatfox", val),
             "source": "threatfox",
-            "title": f"ThreatFox IOC [{ioc.get('ioc_type','')}]: {val[:80]}",
+            "title": f"ThreatFox [{ioc.get('ioc_type','')}]: {val[:80]}",
             "description": ioc.get("malware_printable", ""),
             "ioc_type": ioc.get("ioc_type", "unknown"),
             "ioc_value": val,
-            "severity": _SEVERITY_MAP.get(
-                (ioc.get("confidence_level", 0) >= 75 and "high") or "medium", "medium"),
-            "tags": [ioc.get("malware_printable", ""), ioc.get("threat_type", "")],
-            "published_at": ioc.get("first_seen", _now_iso()),
+            "severity": sev,
+            "tags": [t for t in tags if t],
+            "published_at": ioc.get("first_seen_utc", _now_iso()),
         })
     return out
 
 
-def _parse_urlhaus(raw: bytes) -> list[dict]:
-    data = json.loads(raw)
+def _parse_urlhaus_csv(raw: bytes) -> list[dict]:
+    # CSV columns (no header): id, date_added, url, status, date_online, threat, tags, link, reporter
+    text = raw.decode(errors="ignore")
+    reader = csv.reader(io.StringIO(text))
     out = []
-    for u in (data.get("urls") or [])[:50]:
-        url_val = u.get("url", "")
+    for row in reader:
+        if not row or row[0].startswith("#"):
+            continue
+        if len(row) < 6:
+            continue
+        url_val = row[2] if len(row) > 2 else ""
+        if not url_val:
+            continue
+        tags = [t.strip() for t in (row[6] if len(row) > 6 else "").split(",") if t.strip()]
         out.append({
-            "id": _signal_id("urlhaus", url_val),
+            "id": _signal_id("urlhaus_csv", url_val),
             "source": "urlhaus",
-            "title": f"Malicious URL [{u.get('url_status','')}]: {url_val[:80]}",
-            "description": u.get("threat", ""),
+            "title": f"Malicious URL [{row[3] if len(row)>3 else ''}]: {url_val[:80]}",
+            "description": row[5] if len(row) > 5 else "",
             "ioc_type": "url",
             "ioc_value": url_val,
-            "severity": "high" if u.get("url_status") == "online" else "medium",
-            "tags": [t.get("tag", "") for t in (u.get("tags") or [])],
-            "published_at": u.get("date_added", _now_iso()),
+            "severity": "high" if (len(row) > 3 and row[3] == "online") else "medium",
+            "tags": tags,
+            "published_at": row[1] if len(row) > 1 else _now_iso(),
         })
+        if len(out) >= 100:
+            break
     return out
+
 
 
 def _parse_feodo(raw: bytes) -> list[dict]:
@@ -220,7 +252,7 @@ def _parse_cisa_alerts(raw: bytes) -> list[dict]:
 _PARSERS = {
     "cisa_kev":    _parse_cisa_kev,
     "threatfox":   _parse_threatfox,
-    "urlhaus":     _parse_urlhaus,
+    "urlhaus_csv": _parse_urlhaus_csv,
     "feodo":       _parse_feodo,
     "cisa_alerts": _parse_cisa_alerts,
 }

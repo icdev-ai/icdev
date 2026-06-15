@@ -720,9 +720,7 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
         "entitlements",                                  # tools/rag/entitlement_rag.py template
         # CTE alias: gap_detector doesn't parse WITH ... AS (...) and flags the alias name.
         "domain_coverage",                               # tools/govcon/gap_analyzer.py CTE
-        # Planned DIC feature not yet fully implemented; blueprint.py query is wrapped
-        # in try/except and fails gracefully when the table is absent.
-        "dic_document_versions",                         # tools/document_intelligence/blueprint.py
+
     }
 
     # Table names that are legitimately referenced but are DBMS-provided

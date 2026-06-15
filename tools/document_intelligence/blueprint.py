@@ -2254,7 +2254,7 @@ def api_analytics():
             detect_ingest_anomalies, detect_patterns, run_full_analytics,
             detect_view_anomalies, detect_ingest_job_anomalies,
             detect_output_export_anomalies, detect_document_model_anomalies,
-            detect_bulk_edit_anomalies,
+            detect_bulk_edit_anomalies, detect_ingest_throughput_anomaly,
         )
         if mode == "frequency":
             return jsonify(entity_frequency(limit=int(data.get("limit", 50))))
@@ -2288,6 +2288,11 @@ def api_analytics():
         elif mode == "bulk_edit_anomalies":
             return jsonify(detect_bulk_edit_anomalies(
                 collection_id=data.get("collection_id") or None,
+            ))
+        elif mode == "throughput_anomaly":
+            return jsonify(detect_ingest_throughput_anomaly(
+                collection_id=data.get("collection_id") or None,
+                lookback_days=int(data.get("lookback_days", 30)),
             ))
         elif mode == "patterns":
             return jsonify(detect_patterns())
@@ -2545,23 +2550,12 @@ def api_section_suggest(section_id: str):
     try:
         conn = _conn()
         cur = conn.execute(
-            "SELECT section_data FROM dic_document_versions "
-            "WHERE version_id IN ("
-            "  SELECT active_version_id FROM dic_documents WHERE doc_id IN ("
-            "    SELECT doc_id FROM dic_document_versions "
-            "    WHERE section_data::text LIKE %s LIMIT 1"
-            "  ) LIMIT 1"
-            ") LIMIT 1",
-            (f'%{section_id}%',),
+            "SELECT content FROM dic_sections WHERE section_id = ? LIMIT 1",
+            (section_id,),
         )
         row = cur.fetchone()
         if row:
-            import json as _json
-            sections = _json.loads(row[0] if isinstance(row, (list, tuple)) else row["section_data"])
-            for s in sections:
-                if s.get("section_id") == section_id or s.get("heading") == section_id:
-                    current_content = s.get("content", "")
-                    break
+            current_content = row[0] if isinstance(row, (list, tuple)) else row["content"]
         conn.close()
     except Exception:
         pass

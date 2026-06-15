@@ -45,7 +45,7 @@ Categories:
     integrity (2)
     nova (5)
 
-Total: 274 tools, 6 resources
+Total: 275 tools, 6 resources
 """
 
 TOOL_REGISTRY = {
@@ -3205,7 +3205,7 @@ TOOL_REGISTRY = {
         },
     },
     # ============================================================
-    # RESEARCH (10 tools)
+    # RESEARCH (11 tools)
     # ============================================================
     "research_create_session": {
         "category": "research",
@@ -3343,6 +3343,39 @@ TOOL_REGISTRY = {
             "type": "object",
             "properties": {"dossier_id": {"type": "string", "description": "Approved dossier ID"}},
             "required": ["dossier_id"],
+        },
+    },
+    "last30days__parallel_multi_source_social": {
+        "category": "research",
+        "module": "tools.research.source_scanners.social_trend_scanner",
+        "handler": "scan_social_trends",
+        "description": (
+            "Research engine source adapter: parallel multi-source social trend scanner. "
+            "Aggregates trending signals from Reddit, Hacker News, and GitHub Topics over the last 30 days. "
+            "Performs entity disambiguation (handle→subreddit→repo), cross-source content-hash deduplication, "
+            "and graceful degradation on rate-limits. Returns normalized signal dicts suitable for "
+            "downstream research pipeline stages (COMMUNITY, SYNTHESIZE). "
+            "Scanner key: 'social_trends'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "keywords": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Search keywords (up to 5 used per source). Falls back to research_config.yaml defaults.",
+                },
+                "subreddits": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Extra subreddits to include (e.g. ['r/MachineLearning']). Optional.",
+                },
+                "max_per_source": {
+                    "type": "integer",
+                    "description": "Maximum signals per platform (Reddit, HN, GitHub). Default: 30.",
+                    "default": 30,
+                },
+            },
         },
     },
     # ============================================================

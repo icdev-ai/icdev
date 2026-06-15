@@ -2496,23 +2496,12 @@ def api_section_suggest(section_id: str):
     try:
         conn = _conn()
         cur = conn.execute(
-            "SELECT section_data FROM dic_document_versions "
-            "WHERE version_id IN ("
-            "  SELECT active_version_id FROM dic_documents WHERE doc_id IN ("
-            "    SELECT doc_id FROM dic_document_versions "
-            "    WHERE section_data::text LIKE %s LIMIT 1"
-            "  ) LIMIT 1"
-            ") LIMIT 1",
-            (f'%{section_id}%',),
+            "SELECT content FROM dic_sections WHERE section_id = ? LIMIT 1",
+            (section_id,),
         )
         row = cur.fetchone()
         if row:
-            import json as _json
-            sections = _json.loads(row[0] if isinstance(row, (list, tuple)) else row["section_data"])
-            for s in sections:
-                if s.get("section_id") == section_id or s.get("heading") == section_id:
-                    current_content = s.get("content", "")
-                    break
+            current_content = row[0] if isinstance(row, (list, tuple)) else row["content"]
         conn.close()
     except Exception:
         pass
