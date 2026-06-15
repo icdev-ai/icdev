@@ -22,4 +22,5 @@
 | Core Schemas | tools/schemas/core.py | Core domain dataclass schemas (ProjectStatus, AgentHealth, AuditEvent) shared across MCP servers, dashboard, and CLI tools (D275) | (library) | Core dataclass models |
 | Compliance Schemas | tools/schemas/compliance.py | Dataclass schema models for multi-framework compliance results and unified security scan findings across SAST, dependencies, secrets, and containers (D275) | (library) | Compliance + scan schema models |
 | Context Indexer | tools/mcp/context_indexer.py | CLAUDE.md section indexer by ## headers for semantic layer MCP delivery (D277) | (library) | Section index |
+| Context Compressor | tools/llm/context_compressor.py | Reversible context compression middleware (Innovation Sig-84ab — Headroom). SmartCrusher + CodeCompressor strategies; headroom lib when available, deterministic built-in fallback; CacheAligner prefix normalization for KV cache hits; logs to llm_context_compression_log | --stats, --bench, --compress FILE, --budget N, --json | CompressedContext dict with compressed_messages, original_tokens, compressed_tokens, compression_ratio |
 

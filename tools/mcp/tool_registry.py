@@ -6489,6 +6489,46 @@ TOOL_REGISTRY = {
             "required": ["instance_id"],
         },
     },
+    # ============================================================
+    # CONTEXT COMPRESSION (Innovation Sig-84ab — Headroom)
+    # ============================================================
+    "compress_context": {
+        "category": "llmops",
+        "module": "tools.llm.context_compressor",
+        "handler": "handle_compress_context",
+        "description": (
+            "Reversible context compression middleware for AI agent workflows. "
+            "Reduces token usage 60-95% via SmartCrusher (text) or CodeCompressor (code). "
+            "Uses headroom library when installed; falls back to deterministic built-in compressor. "
+            "All compression is reversible — original messages preserved via decompression_map."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "messages": {
+                    "type": "array",
+                    "description": "List of role/content message dicts (OpenAI message format)",
+                    "items": {"type": "object"},
+                },
+                "budget_tokens": {
+                    "type": "integer",
+                    "description": "Target token budget after compression (default: 8000)",
+                    "default": 8000,
+                },
+                "content_type": {
+                    "type": "string",
+                    "description": "Compression strategy: auto (detect per-message), text, or code",
+                    "enum": ["auto", "text", "code"],
+                    "default": "auto",
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional session ID for compression log correlation",
+                },
+            },
+            "required": ["messages"],
+        },
+    },
 }
 
 
