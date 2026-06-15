@@ -119,3 +119,5 @@ known_safe_filesystem_modules:
   - tools/document_intelligence/style_engine.py  # reads args/dic_style_rules.yaml (read-only, path computed from __file__, authorized by REQ-DIC-STYLE-FS-01)
   - tools/evolution/eval_builder.py  # reads context/evolution/golden/*.jsonl; authorized by REQ-NOVA-SELA-FS-01 (full-repo scan root)
   - evolution/eval_builder.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/evolution/artifact_evolver.py  # reads args/nova_sela_config.yaml + .agents/skills/ + hardprompts/; authorized by REQ-NOVA-SELA-FS-02 (full-repo scan root)
+  - evolution/artifact_evolver.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
