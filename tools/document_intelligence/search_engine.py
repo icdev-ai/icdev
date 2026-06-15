@@ -499,6 +499,98 @@ _ACCESS_SYSTEM_PROMPT = (
     "message text."
 )
 
+# --------------------------------------------------------------------------- #
+# LLM-powered query intent classifier (aiify-opp-28: fulltext_search_engine ->
+# llm_generation, analog of paperless src/documents/filters.py). The external
+# pattern uses a static DocumentSearchFilter that combines fulltext + metadata
+# search but requires the caller to configure every field manually. This layer
+# asks the LLM to assess the *intent* of a search query and recommend the
+# optimal DIC retrieval strategy (mode, expansion, filtering, synthesis) as a
+# structured decision object. The model outputs a schema-constrained JSON object
+# of boolean flags and an intent type — it never answers the question, never
+# invents document content, and degrades gracefully (all flags False, llm_used
+# False) when unavailable, so callers can always treat the result as a safe hint
+# rather than a hard dependency.
+# --------------------------------------------------------------------------- #
+
+_INTENT_VALID_TYPES = frozenset({
+    "factual_qa", "document_search", "filtered_search", "broad_exploration",
+})
+_INTENT_VALID_MODES = frozenset({"grounded", "hybrid"})
+_INTENT_DEFAULT_TYPE = "document_search"
+_INTENT_MAX_TOKENS = 160
+
+_INTENT_SYSTEM_PROMPT = (
+    "You classify search queries for a classified document repository. Given a "
+    "user query, output ONLY a valid JSON object with these keys:\n"
+    '  "intent_type": one of "factual_qa" | "document_search" | '
+    '"filtered_search" | "broad_exploration"\n'
+    "    factual_qa: user wants a direct answer (e.g. 'What is the TTX for X?')\n"
+    "    document_search: user wants to find specific documents\n"
+    "    filtered_search: query implies metadata constraints (dates, types, "
+    "classification levels, page counts)\n"
+    "    broad_exploration: user wants to explore a topic broadly\n"
+    '  "recommended_mode": "grounded" (default) or "hybrid" (for exploration)\n'
+    '  "should_expand": true if synonym expansion would improve recall\n'
+    '  "should_filter": true if metadata filters are implied by the query\n'
+    '  "should_synthesize": true if a direct LLM answer beats a document list\n'
+    '  "confidence": float 0.0-1.0\n'
+    "Output ONLY the JSON object. No explanation. No commentary."
+)
+
+
+@dataclass
+class DICQueryIntent:
+    """LLM-classified intent of a DIC fulltext search query.
+
+    Models the upgrade of a static filter+search configuration (paperless
+    ``src/documents/filters.py``: ``DocumentSearchFilter`` that combines
+    fulltext text search with metadata FilterSet fields the caller must
+    configure manually) to a dynamic LLM-assessed query intent
+    (aiify-opp-28: fulltext_search_engine -> llm_generation).
+
+    Instead of requiring the caller to select mode, expansion, filtering, and
+    synthesis parameters by hand, the LLM reads the raw query and recommends
+    the optimal DIC retrieval strategy:
+
+    * ``intent_type`` classifies the query's high-level intent.
+    * ``recommended_mode`` is either ``"grounded"`` (BM25+KG) or ``"hybrid"``.
+    * ``should_expand`` signals that query expansion would improve recall.
+    * ``should_filter`` signals that metadata filtering should be applied.
+    * ``should_synthesize`` signals that grounded answer synthesis would serve
+      the user better than a raw document list.
+
+    All flags are False and ``llm_used`` is False when the model is unavailable
+    — callers must treat the intent as a hint, never a hard dependency.
+    ``refusal_reason`` is ``"empty_query"`` for blank input or
+    ``"llm_unavailable"`` on failure.
+    """
+
+    query: str = ""
+    intent_type: str = ""
+    recommended_mode: str = "grounded"
+    should_expand: bool = False
+    should_filter: bool = False
+    should_synthesize: bool = False
+    confidence: float = 0.0
+    llm_used: bool = False
+    refusal_reason: str = ""
+    origin: str = "ai_generated"
+
+    def to_dict(self) -> dict:
+        return {
+            "query": self.query,
+            "intent_type": self.intent_type,
+            "recommended_mode": self.recommended_mode,
+            "should_expand": self.should_expand,
+            "should_filter": self.should_filter,
+            "should_synthesize": self.should_synthesize,
+            "confidence": round(self.confidence, 4),
+            "llm_used": self.llm_used,
+            "refusal_reason": self.refusal_reason,
+            "origin": self.origin,
+        }
+
 
 class DICSearchEngine:
     """Grounded search over DIC collections.
@@ -1036,4 +1128,99 @@ class DICSearchEngine:
             withheld_by_level=withheld_by_level,
             message=message,
             llm_used=llm_used,
+        )
+
+    def classify_query_intent(self, query: str) -> "DICQueryIntent":
+        """Classify a search query's intent to recommend the optimal DIC retrieval strategy.
+
+        DIC analog of paperless's combined ``DocumentSearchFilter`` — instead of
+        requiring the caller to manually configure fulltext search mode, query
+        expansion, metadata filters, and answer synthesis as separate steps, the
+        LLM assesses the query's *intent* and recommends which DIC capabilities
+        to apply as a structured decision object (aiify-opp-28).
+
+        The model outputs a schema-constrained JSON object of boolean flags and
+        an intent type. It never answers the query, never invents document
+        content, and always degrades to a safe all-False default when unavailable
+        (air-gap safe).
+
+        Args:
+            query: Natural language search query to classify.
+
+        Returns:
+            A :class:`DICQueryIntent`. On failure, ``llm_used`` is False and all
+            flags are False — callers can always proceed safely with plain search.
+        """
+        import json as _json
+
+        q = (query or "").strip()
+        if not q:
+            return DICQueryIntent(query="", refusal_reason="empty_query")
+
+        try:
+            from tools.llm.provider import LLMRequest
+            from tools.llm.router import LLMRouter
+
+            req = LLMRequest(
+                messages=[{"role": "user", "content": f"Query: {q}"}],
+                system_prompt=_INTENT_SYSTEM_PROMPT,
+                max_tokens=_INTENT_MAX_TOKENS,
+                temperature=0.0,
+                classification="CUI",
+            )
+            resp = LLMRouter().invoke("summarization", req)
+        except Exception:
+            return DICQueryIntent(query=q, refusal_reason="llm_unavailable")
+
+        if not resp or not resp.content or not resp.content.strip():
+            return DICQueryIntent(query=q, refusal_reason="llm_unavailable")
+
+        raw = resp.content.strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```[a-z]*\n?", "", raw).rstrip("`").strip()
+
+        try:
+            parsed = _json.loads(raw)
+        except Exception:
+            m = re.search(r"\{[^{}]*\}", raw, re.DOTALL)
+            if m:
+                try:
+                    parsed = _json.loads(m.group())
+                except Exception:
+                    parsed = {}
+            else:
+                parsed = {}
+
+        if not isinstance(parsed, dict) or not parsed:
+            return DICQueryIntent(query=q, llm_used=True, refusal_reason="llm_unavailable")
+
+        intent_raw = (parsed.get("intent_type") or "").strip().lower()
+        intent_type = intent_raw if intent_raw in _INTENT_VALID_TYPES else _INTENT_DEFAULT_TYPE
+
+        mode_raw = (parsed.get("recommended_mode") or "grounded").strip().lower()
+        recommended_mode = mode_raw if mode_raw in _INTENT_VALID_MODES else "grounded"
+
+        def _bool(key: str) -> bool:
+            val = parsed.get(key, False)
+            if isinstance(val, bool):
+                return val
+            if isinstance(val, str):
+                return val.lower() in ("true", "1", "yes")
+            return bool(val)
+
+        confidence_raw = parsed.get("confidence", 0.0)
+        try:
+            confidence = max(0.0, min(1.0, float(confidence_raw)))
+        except (TypeError, ValueError):
+            confidence = 0.0
+
+        return DICQueryIntent(
+            query=q,
+            intent_type=intent_type,
+            recommended_mode=recommended_mode,
+            should_expand=_bool("should_expand"),
+            should_filter=_bool("should_filter"),
+            should_synthesize=_bool("should_synthesize"),
+            confidence=confidence,
+            llm_used=True,
         )
