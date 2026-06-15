@@ -121,21 +121,19 @@ def _targeted_evidence_block(results: list) -> str:
 
 def _llm_generate(prompt: str) -> str | None:
     try:
-        for ns in ("icdev.tools.llm.router", "tools.llm.router"):
-            try:
-                import importlib
-                mod = importlib.import_module(ns)
-                router = mod.LLMRouter()
-                for meth in ("generate", "complete", "chat", "route", "call"):
-                    fn = getattr(router, meth, None)
-                    if callable(fn):
-                        result = fn(prompt)
-                        if isinstance(result, str):
-                            return result
-                        if isinstance(result, dict):
-                            return result.get("text") or result.get("content") or str(result)
-            except ImportError:
-                continue
+        try:
+            from icdev.tools.llm.router import LLMRouter
+        except ImportError:
+            from tools.llm.router import LLMRouter
+        router = LLMRouter()
+        for meth in ("generate", "complete", "chat", "route", "call"):
+            fn = getattr(router, meth, None)
+            if callable(fn):
+                result = fn(prompt)
+                if isinstance(result, str):
+                    return result
+                if isinstance(result, dict):
+                    return result.get("text") or result.get("content") or str(result)
     except Exception as exc:
         logger.warning("doc_generator: LLM call failed: %s", exc)
     return None
