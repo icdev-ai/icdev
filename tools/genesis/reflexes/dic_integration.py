@@ -178,9 +178,9 @@ def _draft_suggestion(
 def _emit_notification(suggestion_id: str, collection_id: str, canvas_source: str,
                         rationale: str, conn) -> None:
     try:
-        import hashlib
+        import zlib
         now = _now()
-        log_id = f"nlog-{hashlib.sha256(f'{now}{suggestion_id}'.encode()).hexdigest()[:12]}"
+        log_id = f"nlog-{format(zlib.crc32(f'{now}{suggestion_id}'.encode()) & 0xFFFFFFFF, '08x')}"
         conn.execute(
             """
             INSERT INTO notification_log
