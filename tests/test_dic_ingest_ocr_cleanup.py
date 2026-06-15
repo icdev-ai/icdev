@@ -48,10 +48,19 @@ def _reset_router():
 
 
 def _patch_router(monkeypatch, content=None):
+    import sys as _sys
     if content is not None:
         _Router._content = content
     # Patch the attribute on the real module object the helper imports from.
     monkeypatch.setattr(router_mod, "LLMRouter", _Router)
+    # Patch ALL known router aliases — the _ToolsRedirect shim causes
+    # `from tools.llm.router import LLMRouter` to resolve to different
+    # module objects depending on full-suite import ordering.
+    import icdev.tools.llm.router as _icdev_router_mod
+    monkeypatch.setattr(_icdev_router_mod, "LLMRouter", _Router)
+    for _key, _mod in list(_sys.modules.items()):
+        if "llm.router" in _key and hasattr(_mod, "LLMRouter"):
+            monkeypatch.setattr(_mod, "LLMRouter", _Router)
 
 
 def test_returns_corrected_text(monkeypatch):
@@ -117,6 +126,12 @@ def test_llm_failure_returns_none(monkeypatch):
             raise RuntimeError("provider down")
 
     monkeypatch.setattr(router_mod, "LLMRouter", _Boom)
+    import sys as _sys
+    import icdev.tools.llm.router as _icdev_router_mod
+    monkeypatch.setattr(_icdev_router_mod, "LLMRouter", _Boom)
+    for _key, _mod in list(_sys.modules.items()):
+        if "llm.router" in _key and hasattr(_mod, "LLMRouter"):
+            monkeypatch.setattr(_mod, "LLMRouter", _Boom)
     assert ingest._ai_ocr_cleanup("some ocr text") is None
 
 

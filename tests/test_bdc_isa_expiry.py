@@ -142,6 +142,7 @@ def test_check_isa_expiry_publishes_event_and_sends_notification(bdc_db, main_db
     with (
         patch("tools.boundary_canvas.db.init_db.get_connection", side_effect=lambda: _NoClose(bdc_db)),
         patch("tools.db.storage.get_connection", side_effect=lambda **kw: _NoClose(main_db)),
+        patch("tools.canvas.event_bus.get_connection", side_effect=lambda **kw: _NoClose(main_db)),
         patch("tools.notifications.adapters.telegram.send", side_effect=fake_tg_send),
     ):
         # Reload module to pick up patched get_connection

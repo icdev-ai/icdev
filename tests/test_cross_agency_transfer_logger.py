@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS audit_trail (
     classification TEXT DEFAULT 'CUI',
     session_id TEXT,
     source_ip TEXT,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    recorded_at TEXT NOT NULL DEFAULT ''
 );
 """
 
@@ -535,7 +535,7 @@ class TestTransferLifecycle:
 
         conn = make_conn()
         audit_rows = conn.execute(
-            "SELECT * FROM audit_trail WHERE details LIKE ? ORDER BY timestamp ASC",
+            "SELECT * FROM audit_trail WHERE details LIKE ? ORDER BY recorded_at ASC",
             (f"%{tid}%",),
         ).fetchall()
         conn.close()

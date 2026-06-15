@@ -51,6 +51,10 @@ logger = get_logger(__name__)
 # ── In-memory SSE job queues ──────────────────────────────────────────────────
 # Maps job_id → queue.Queue[dict | None]  (None = sentinel / stream closed)
 _JOB_QUEUES: dict[str, _queue.Queue] = {}
+# Maps job_id → {status, doc_id, chunks, errors} — in-memory result cache so the
+# result endpoint works even when the dic_ingest_jobs DB INSERT fails (e.g. wrong
+# SQL parameter style on PostgreSQL).
+_JOB_RESULTS: dict[str, dict] = {}
 _JOB_LOCK = threading.Lock()
 
 # Override to a positive int in tests to make presence SSE streams finite.
@@ -628,7 +632,15 @@ def api_ingest():
                 "errors": outcome.errors,
                 "pct": 100,
             })
-            # Update DB to done.
+            # Cache result in-memory (survives DB INSERT failures on PG).
+            with _JOB_LOCK:
+                _JOB_RESULTS[job_id] = {
+                    "status": "done",
+                    "doc_id": outcome.doc_id,
+                    "chunks": outcome.chunks,
+                    "errors": outcome.errors,
+                }
+            # Best-effort DB update (may fail if INSERT never succeeded).
             try:
                 c = _conn()
                 c.execute(
@@ -644,6 +656,8 @@ def api_ingest():
         except Exception as exc:
             logger.warning("dic: ingest thread error: %s", exc)
             q.put({"stage": "error", "message": str(exc), "pct": 0})
+            with _JOB_LOCK:
+                _JOB_RESULTS[job_id] = {"status": "error", "doc_id": None, "message": str(exc)}
             try:
                 c = _conn()
                 c.execute(
@@ -717,14 +731,25 @@ def api_ingest_stream(job_id: str):
 
 @dic_bp.route("/api/ingest/<job_id>/result", methods=["GET"])
 def api_ingest_result(job_id: str):
-    """Return final ingest job outcome."""
+    """Return final ingest job outcome.
+
+    Checks the in-memory result cache first (always populated, even when the
+    DB INSERT failed due to SQL parameter-style mismatch on PostgreSQL), then
+    falls back to the DB for results from previous server instances.
+    """
+    # Fast path: in-memory result populated by the ingest thread.
+    with _JOB_LOCK:
+        mem = _JOB_RESULTS.get(job_id)
+    if mem is not None:
+        return jsonify(mem)
+    # DB fallback (previous server instances).
     conn = _conn()
     try:
         rows = _safe_rows(conn, "SELECT * FROM dic_ingest_jobs WHERE job_id=?", (job_id,))
     finally:
         conn.close()
     if not rows:
-        return jsonify({"error": "job not found"}), 404
+        return jsonify({"status": "pending", "doc_id": None}), 202
     return jsonify(rows[0])
 
 
@@ -780,6 +805,34 @@ def api_kg_explore():
                 (f"%{label}%", f"%{label}%", limit),
             )
             return jsonify({"relationships": rows, "count": len(rows)})
+
+        elif mode == "graph":
+            # Returns top nodes and connecting edges for a doc or collection
+            doc_id = (data.get("doc_id") or "").strip() or None
+            node_sql = (
+                "SELECT n.id, n.label, n.entity_type, n.centrality "
+                "FROM kg_nodes n LEFT JOIN kg_graphs g ON g.id = n.graph_id "
+            )
+            node_params: list = []
+            if doc_id:
+                node_sql += " WHERE g.source_doc_id = ?"
+                node_params.append(doc_id)
+            node_sql += " ORDER BY n.centrality DESC LIMIT ?"
+            node_params.append(limit)
+            nodes = _safe_rows(conn, node_sql, tuple(node_params))
+            node_ids = [n["id"] for n in nodes]
+            if not node_ids:
+                return jsonify({"nodes": [], "edges": [], "count": 0})
+            ph = ",".join("?" * len(node_ids))
+            edges = _safe_rows(
+                conn,
+                f"SELECT e.source_id, e.target_id, e.relationship, e.weight "
+                f"FROM kg_edges e "
+                f"WHERE e.source_id IN ({ph}) AND e.target_id IN ({ph}) "
+                f"ORDER BY e.weight DESC LIMIT ?",
+                tuple(node_ids + node_ids + [min(limit, 80)]),
+            )
+            return jsonify({"nodes": nodes, "edges": edges, "count": len(nodes)})
 
         elif mode == "neighbors":
             if not label:
@@ -2594,7 +2647,7 @@ def _llm_mode_info() -> dict:
         "cloud_keys_present": has_cloud_keys,
         "capabilities": {
             "url_ingest": True,
-            "youtube_ingest": not air_gap,
+            "video_ingest": True,  # yt-dlp works offline; YouTube transcript API is online-only
             "study_guide": True,
             "faq": True,
             "timeline": True,
@@ -2757,10 +2810,40 @@ def _run_generator(generator_fn, collection_id: str, tenant_id: str, **kwargs) -
         result = generator_fn(collection_id, tenant_id, **kwargs)
         if "error" in result:
             return jsonify(result), 400
+        _maybe_bridge_to_kg(result, collection_id)
         return jsonify(result)
     except Exception as exc:
         logger.warning("dic: generator error: %s", exc)
         return jsonify({"error": str(exc)}), 500
+
+
+def _maybe_bridge_to_kg(result: dict, collection_id: str) -> None:
+    """Fire-and-forget: write key_terms/timeline events to canvas_kg_nodes."""
+    key_terms = result.get("key_terms") or []
+    events = result.get("events") or []
+    output_id = result.get("output_id") or collection_id
+    if not key_terms and not events:
+        return
+    try:
+        from icdev.tools.canvas.kg_builder import upsert_from_dic
+        entities: list[dict] = []
+        if key_terms:
+            for term in key_terms:
+                entities.append({"id": str(term).lower().replace(" ", "_"), "label": str(term), "type": "concept"})
+        if events:
+            for ev in events:
+                label = f"{ev.get('date','?')}: {ev.get('event','')}"[:100]
+                entities.append({"id": label.lower().replace(" ", "_")[:60], "label": label, "type": "event"})
+        relationships: list[dict] = []
+        for i in range(len(entities) - 1):
+            relationships.append({
+                "source": entities[i]["id"],
+                "target": entities[i + 1]["id"],
+                "type": "co_occurs",
+            })
+        upsert_from_dic(output_id, entities, relationships)
+    except Exception as exc:
+        logger.debug("dic: kg bridge skipped: %s", exc)
 
 
 @dic_bp.route("/api/generate/study-guide", methods=["POST"])
@@ -2768,9 +2851,10 @@ def api_generate_study_guide():
     """POST /document-intelligence/api/generate/study-guide"""
     body = request.get_json(silent=True) or {}
     collection_id = (body.get("collection_id") or "default").strip()
+    doc_id = (body.get("doc_id") or "").strip() or None
     tenant_id, _ = _security_context()
     from tools.document_intelligence.output_generators import generate_study_guide
-    return _run_generator(generate_study_guide, collection_id, tenant_id)
+    return _run_generator(generate_study_guide, collection_id, tenant_id, doc_id=doc_id)
 
 
 @dic_bp.route("/api/generate/faq", methods=["POST"])
@@ -2778,10 +2862,11 @@ def api_generate_faq():
     """POST /document-intelligence/api/generate/faq"""
     body = request.get_json(silent=True) or {}
     collection_id = (body.get("collection_id") or "default").strip()
+    doc_id = (body.get("doc_id") or "").strip() or None
     n = int(body.get("n", 10))
     tenant_id, _ = _security_context()
     from tools.document_intelligence.output_generators import generate_faq
-    return _run_generator(generate_faq, collection_id, tenant_id, n=n)
+    return _run_generator(generate_faq, collection_id, tenant_id, n=n, doc_id=doc_id)
 
 
 @dic_bp.route("/api/generate/timeline", methods=["POST"])
@@ -2789,9 +2874,10 @@ def api_generate_timeline():
     """POST /document-intelligence/api/generate/timeline"""
     body = request.get_json(silent=True) or {}
     collection_id = (body.get("collection_id") or "default").strip()
+    doc_id = (body.get("doc_id") or "").strip() or None
     tenant_id, _ = _security_context()
     from tools.document_intelligence.output_generators import generate_timeline
-    return _run_generator(generate_timeline, collection_id, tenant_id)
+    return _run_generator(generate_timeline, collection_id, tenant_id, doc_id=doc_id)
 
 
 @dic_bp.route("/api/generate/audio", methods=["POST"])
@@ -2799,9 +2885,128 @@ def api_generate_audio():
     """POST /document-intelligence/api/generate/audio"""
     body = request.get_json(silent=True) or {}
     collection_id = (body.get("collection_id") or "default").strip()
+    doc_id = (body.get("doc_id") or "").strip() or None
     tenant_id, _ = _security_context()
     from tools.document_intelligence.output_generators import generate_audio_overview
-    return _run_generator(generate_audio_overview, collection_id, tenant_id)
+    return _run_generator(generate_audio_overview, collection_id, tenant_id, doc_id=doc_id)
+
+
+@dic_bp.route("/api/kg-from-chunks", methods=["POST"])
+def api_kg_from_chunks():
+    """Extract entities from ingested chunk text — always scoped to the DIC collection."""
+    import re as _re
+    import html as _html
+    import collections as _col
+    body = request.get_json(silent=True) or {}
+    collection_id = (body.get("collection_id") or "default").strip()
+    doc_id = (body.get("doc_id") or "").strip() or None
+    limit = min(int(body.get("limit", 30)), 60)
+    tenant_id, _ = _security_context()
+
+    from tools.document_intelligence.output_generators import _get_chunks, _kg_entities_for_collection
+
+    # Try KG entities first (populated by LLM extraction during enhancement)
+    kg_ents = _kg_entities_for_collection(collection_id, tenant_id, doc_id, limit=limit)
+    if kg_ents:
+        # Convert to node format with IDs
+        nodes = [{"id": i, "label": e, "entity_type": "CONCEPT", "centrality": 1 - i / len(kg_ents)}
+                 for i, e in enumerate(kg_ents)]
+        return jsonify({"nodes": nodes, "edges": [], "count": len(nodes), "source": "kg"})
+
+    # Fall back: extract entities from chunk text using proper noun regex
+    chunks = _get_chunks(collection_id, tenant_id, limit=150, doc_id=doc_id)
+    if not chunks:
+        return jsonify({"nodes": [], "edges": [], "count": 0, "source": "none",
+                        "hint": "No documents ingested yet."})
+
+    all_text = " ".join(_html.unescape(c.get("chunk_text", "")) for c in chunks)
+    noise = {
+        "The", "This", "That", "Section", "Article", "Amendment", "Such", "Any", "All",
+        "Each", "Not", "Its", "Their", "His", "Her", "United", "States", "And", "But",
+        "President", "Congress", "Senate", "House", "Court", "Constitution", "With",
+        "From", "When", "Where", "Which", "What", "How", "Who", "Was", "Were", "Has",
+        "Skip", "Navigation", "Markets", "Currencies", "Prediction",
+    }
+    freq: dict = _col.Counter()
+    for m in _re.finditer(r"\b([A-Z][a-z]{3,}(?:\s+[A-Z][a-z]{3,}){0,2})\b", all_text):
+        term = m.group(1)
+        if term not in noise:
+            freq[term] += 1
+
+    if not freq:
+        return jsonify({"nodes": [], "edges": [], "count": 0, "source": "none",
+                        "hint": "No named entities found in chunks."})
+
+    _DATE = _re.compile(r"January|February|March|April|May|June|July|August|"
+                        r"September|October|November|December|\b\d{4}\b", _re.I)
+    _ORG_ENDS = {"Act", "Association", "Committee", "Congress", "Corporation",
+                 "Department", "Foundation", "Institute", "League", "Party", "Agency"}
+    _PERSON = _re.compile(r"^[A-Z][a-z]+ [A-Z][a-z]+$")
+
+    max_f = max(freq.values())
+    top_terms = [t for t, _ in freq.most_common(limit)]
+    nodes = []
+    label_to_id: dict = {}
+    for i, term in enumerate(top_terms):
+        count = freq[term]
+        if _DATE.search(term):
+            etype = "DATE"
+        elif any(term.endswith(s) for s in _ORG_ENDS):
+            etype = "ORG"
+        elif _PERSON.match(term):
+            etype = "PERSON"
+        else:
+            etype = "CONCEPT"
+        nodes.append({
+            "id": i, "label": term, "entity_type": etype,
+            "centrality": round(count / max_f, 3), "count": count,
+        })
+        label_to_id[term.lower()] = i
+
+    # Co-occurrence edges: entities that appear together in the same chunk
+    edge_freq: dict = _col.Counter()
+    for c in chunks:
+        text = _html.unescape(c.get("chunk_text", "")).lower()
+        present = [nid for lbl, nid in label_to_id.items() if lbl in text]
+        for a in range(len(present)):
+            for b in range(a + 1, len(present)):
+                pair = (min(present[a], present[b]), max(present[a], present[b]))
+                edge_freq[pair] += 1
+
+    edges = [
+        {"source_id": a, "target_id": b, "relationship": "co-occurs", "weight": w}
+        for (a, b), w in edge_freq.most_common(60)
+        if w >= 2  # only show pairs that co-occur in ≥2 chunks
+    ]
+
+    return jsonify({"nodes": nodes, "edges": edges, "count": len(nodes), "source": "chunks"})
+
+
+@dic_bp.route("/api/generate/enhance", methods=["POST"])
+def api_generate_enhance():
+    """POST /document-intelligence/api/generate/enhance — layer LLM on a BM25+KG output.
+
+    Body: {output_id, output_type, collection_id, doc_id (opt), n (opt)}
+    Runs _try_llm with a 90s ceiling and updates the stored output in place.
+    """
+    body = request.get_json(silent=True) or {}
+    output_id = (body.get("output_id") or "").strip()
+    output_type = (body.get("output_type") or "study_guide").strip().replace("-", "_")
+    collection_id = (body.get("collection_id") or "default").strip()
+    doc_id = (body.get("doc_id") or "").strip() or None
+    n = int(body.get("n", 10))
+    tenant_id, _ = _security_context()
+    if not output_id:
+        return jsonify({"error": "output_id required"}), 400
+    from tools.document_intelligence.output_generators import enhance_with_llm
+    try:
+        result = enhance_with_llm(output_id, collection_id, tenant_id,
+                                  output_type, doc_id=doc_id, n=n)
+        if "error" in result or "enhance_error" in result:
+            return jsonify(result), 400
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
 
 
 @dic_bp.route("/api/outputs", methods=["GET"])
@@ -2847,3 +3052,356 @@ def api_output_detail(output_id: str):
     except Exception:
         d["content"] = {}
     return jsonify(d)
+
+
+@dic_bp.route("/api/generate/tasks", methods=["POST"])
+def api_generate_tasks():
+    """POST /document-intelligence/api/generate/tasks — seed kanban tasks from a generated output.
+
+    Body: {output_id, collection_id, doc_id (opt)}
+    Extracts action items from study_guide (key_points) or faq (pairs) outputs and
+    seeds them as backlog kanban tasks linked back to the source document.
+    """
+    import uuid as _uuid
+    body = request.get_json(silent=True) or {}
+    output_id = (body.get("output_id") or "").strip()
+    collection_id = (body.get("collection_id") or "default").strip()
+    doc_id = (body.get("doc_id") or "").strip() or None
+    tenant_id, _ = _security_context()
+    if not output_id:
+        return jsonify({"error": "output_id required"}), 400
+
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT output_type, content_json FROM dic_generated_outputs "
+            "WHERE id = ? AND tenant_id = ?",
+            (output_id, tenant_id),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return jsonify({"error": "output not found"}), 404
+
+    output_type = row[0] if isinstance(row, (tuple, list)) else row["output_type"]
+    raw_json = row[1] if isinstance(row, (tuple, list)) else row["content_json"]
+    try:
+        content = json.loads(raw_json or "{}")
+    except Exception:
+        content = {}
+
+    prefix = f"dic-nb-{collection_id[:6]}"
+    tag = _uuid.uuid4().hex[:6]
+    task_specs: list[dict] = []
+
+    if output_type == "study_guide":
+        for i, point in enumerate(content.get("key_points", [])[:20]):
+            task_specs.append({
+                "id": f"{prefix}-sg-{tag}-{i:02d}",
+                "title": point[:200],
+                "description": (
+                    f"Action item extracted from DIC Study Guide (collection: {collection_id}). "
+                    f"Source output: {output_id}."
+                    + (f" Source document: {doc_id}." if doc_id else "")
+                ),
+                "task_type": "build",
+                "priority": "medium",
+                "status": "backlog",
+                "source_doc_id": doc_id,
+                "source_collection_id": collection_id,
+            })
+    elif output_type == "faq":
+        for i, pair in enumerate(content.get("pairs", [])[:20]):
+            task_specs.append({
+                "id": f"{prefix}-fq-{tag}-{i:02d}",
+                "title": str(pair.get("q", ""))[:200],
+                "description": (
+                    str(pair.get("a", ""))[:1000]
+                    + f"\n\nSource: DIC FAQ output {output_id}, collection {collection_id}."
+                    + (f" Document: {doc_id}." if doc_id else "")
+                ),
+                "task_type": "build",
+                "priority": "medium",
+                "status": "backlog",
+                "source_doc_id": doc_id,
+                "source_collection_id": collection_id,
+            })
+    else:
+        return jsonify({"error": f"task extraction not supported for output type '{output_type}'"}), 400
+
+    if not task_specs:
+        return jsonify({"task_ids": [], "count": 0, "message": "No action items found in output"})
+
+    try:
+        from icdev.tools.kanban.task_factory import create_tasks
+        created = create_tasks(task_specs)
+        return jsonify({"task_ids": created, "count": len(created),
+                        "skipped": len(task_specs) - len(created)})
+    except Exception as exc:
+        logger.warning("dic: generate/tasks failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@dic_bp.route("/api/generate/slides", methods=["POST"])
+def api_generate_slides():
+    """POST /document-intelligence/api/generate/slides — build a slide deck from a generated output.
+
+    Body: {output_id, collection_id, title (opt), theme (opt)}
+    Converts a study_guide or timeline output to slide dicts, persists to slides_decks,
+    builds the .pptx, and returns {deck_id, url}.
+    """
+    body = request.get_json(silent=True) or {}
+    output_id = (body.get("output_id") or "").strip()
+    collection_id = (body.get("collection_id") or "default").strip()
+    custom_title = (body.get("title") or "").strip() or None
+    theme = (body.get("theme") or "midnight_executive").strip()
+    tenant_id, _ = _security_context()
+    if not output_id:
+        return jsonify({"error": "output_id required"}), 400
+
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT output_type, content_json FROM dic_generated_outputs "
+            "WHERE id = ? AND tenant_id = ?",
+            (output_id, tenant_id),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return jsonify({"error": "output not found"}), 404
+
+    output_type = row[0] if isinstance(row, (tuple, list)) else row["output_type"]
+    raw_json = row[1] if isinstance(row, (tuple, list)) else row["content_json"]
+    try:
+        content = json.loads(raw_json or "{}")
+    except Exception:
+        content = {}
+
+    slide_dicts: list[dict] = []
+    deck_title = custom_title or f"DIC: {collection_id}"
+
+    if output_type == "study_guide":
+        deck_title = custom_title or f"Study Guide — {collection_id}"
+        overview = content.get("overview", "")
+        key_points = content.get("key_points", [])
+        key_terms = content.get("key_terms", [])
+        sources = content.get("sources", [])
+
+        slide_dicts.append({
+            "slide_type": "title",
+            "title": deck_title,
+            "bullets": sources[:3],
+            "speaker_notes": overview,
+        })
+        for i in range(0, len(key_points), 4):
+            chunk = key_points[i:i + 4]
+            slide_dicts.append({
+                "slide_type": "content",
+                "title": f"Key Points ({i // 4 + 1})",
+                "bullets": chunk,
+            })
+        if key_terms:
+            slide_dicts.append({
+                "slide_type": "content",
+                "title": "Key Terms",
+                "bullets": [f"• {t}" for t in key_terms[:10]],
+            })
+        slide_dicts.append({
+            "slide_type": "outro",
+            "title": "Sources",
+            "bullets": sources[:6],
+        })
+
+    elif output_type == "timeline":
+        deck_title = custom_title or f"Timeline — {collection_id}"
+        events = content.get("events", [])
+
+        slide_dicts.append({"slide_type": "title", "title": deck_title, "bullets": []})
+        for i in range(0, len(events), 5):
+            chunk = events[i:i + 5]
+            slide_dicts.append({
+                "slide_type": "content",
+                "title": f"Timeline ({i // 5 + 1})",
+                "bullets": [
+                    f"{e.get('date', '?')}: {e.get('event', '')}"[:120]
+                    for e in chunk
+                ],
+            })
+        slide_dicts.append({"slide_type": "outro", "title": "End of Timeline", "bullets": []})
+    else:
+        return jsonify({"error": f"slides not supported for output type '{output_type}'"}), 400
+
+    if not slide_dicts:
+        return jsonify({"error": "No content to build slides from"}), 400
+
+    try:
+        from icdev.tools.slides.db.init_db import get_connection as _slides_conn, init_db as _slides_init
+        from icdev.tools.slides import pptx_builder
+        from datetime import datetime as _dt, timezone as _tz
+
+        _slides_init()
+        sconn = _slides_conn()
+        try:
+            cur = sconn.execute(
+                "INSERT INTO slides_decks (title, deck_type, theme, status, source_types) "
+                "VALUES (?, ?, ?, 'running', ?) RETURNING deck_id",
+                (deck_title, "executive_overview", theme, json.dumps(["dic"])),
+            )
+            row2 = cur.fetchone()
+            sconn.commit()
+            deck_id = int(row2[0]) if row2 else None
+        except Exception:
+            sconn.rollback()
+            raise
+
+        try:
+            pptx_path = pptx_builder.build(slide_dicts, theme=theme, title=deck_title)
+            now_iso = _dt.now(_tz.utc).isoformat()
+            sconn.execute(
+                "UPDATE slides_decks SET status='completed', slide_count=?, pptx_path=?, "
+                "completed_at=? WHERE deck_id=?",
+                (len(slide_dicts), pptx_path, now_iso, deck_id),
+            )
+            for i, sd in enumerate(slide_dicts):
+                sconn.execute(
+                    "INSERT INTO slides_slides "
+                    "(deck_id, position, slide_type, title, bullets, speaker_notes) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        deck_id, i + 1,
+                        sd.get("slide_type", "content"),
+                        sd.get("title", "")[:255],
+                        json.dumps(sd.get("bullets", [])),
+                        sd.get("speaker_notes", ""),
+                    ),
+                )
+            sconn.commit()
+        except Exception as exc:
+            try:
+                sconn.execute(
+                    "UPDATE slides_decks SET status='failed', error_message=? WHERE deck_id=?",
+                    (str(exc), deck_id),
+                )
+                sconn.commit()
+            except Exception:
+                pass
+            raise
+        finally:
+            sconn.close()
+
+        return jsonify({
+            "deck_id": deck_id,
+            "url": f"/slides/{deck_id}",
+            "slide_count": len(slide_dicts),
+            "title": deck_title,
+        })
+    except Exception as exc:
+        logger.warning("dic: generate/slides failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@dic_bp.route("/api/generate/roadmap", methods=["POST"])
+def api_generate_roadmap():
+    """POST /document-intelligence/api/generate/roadmap — push timeline events to PMO milestones."""
+    body = request.get_json(silent=True) or {}
+    output_id = (body.get("output_id") or "").strip()
+    contract_id = (body.get("contract_id") or "").strip()
+    collection_id = (body.get("collection_id") or "default").strip()
+    tenant_id, _ = _security_context()
+    if not output_id:
+        return jsonify({"error": "output_id required"}), 400
+    if not contract_id:
+        return jsonify({"error": "contract_id required"}), 400
+
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT output_type, content_json FROM dic_generated_outputs "
+            "WHERE id = ? AND tenant_id = ?",
+            (output_id, tenant_id),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return jsonify({"error": "output not found"}), 404
+
+    output_type = row[0] if isinstance(row, (tuple, list)) else row["output_type"]
+    raw_json = row[1] if isinstance(row, (tuple, list)) else row["content_json"]
+    if output_type != "timeline":
+        return jsonify({"error": f"roadmap generation requires a timeline output, got '{output_type}'"}), 400
+
+    try:
+        content = json.loads(raw_json or "{}")
+    except Exception:
+        content = {}
+
+    events = content.get("events", [])
+    if not events:
+        return jsonify({"milestone_count": 0, "contract_id": contract_id, "milestone_ids": []})
+
+    try:
+        from icdev.tools.govcon.milestone_manager import create_milestone
+    except ImportError:
+        from tools.govcon.milestone_manager import create_milestone
+
+    milestone_ids: list[str] = []
+    errors: list[str] = []
+    for ev in events[:50]:
+        date_str = str(ev.get("date") or "").strip() or None
+        title = str(ev.get("event") or "").strip()[:255]
+        if not title:
+            continue
+        result = create_milestone({
+            "contract_id": contract_id,
+            "title": title,
+            "description": f"Auto-generated from DIC timeline (collection: {collection_id}, output: {output_id}).",
+            "baseline_date": date_str,
+            "status": "pending",
+            "notes": f"Source: DIC collection {collection_id}",
+        })
+        if result.get("status") == "ok":
+            milestone_ids.append(result["milestone_id"])
+        else:
+            errors.append(result.get("message", "unknown error"))
+
+    return jsonify({
+        "milestone_count": len(milestone_ids),
+        "contract_id": contract_id,
+        "milestone_ids": milestone_ids,
+        "errors": errors[:5],
+    })
+
+
+@dic_bp.route("/api/collections/<collection_id>/attach-coworker", methods=["POST"])
+def api_attach_coworker(collection_id):
+    """POST /document-intelligence/api/collections/<id>/attach-coworker"""
+    try:
+        from icdev.tools.db.storage import get_canvas_connection
+    except ImportError:
+        from tools.db.storage import get_canvas_connection
+    import uuid as _uuid
+    conn = get_canvas_connection("ICDEV_ACE_DB_URL")
+    try:
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS coworker_dic_contexts (
+                id           TEXT PRIMARY KEY,
+                instance_id  TEXT,
+                collection_id TEXT NOT NULL,
+                attached_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )"""
+        )
+        conn.execute(
+            "INSERT INTO coworker_dic_contexts (id, instance_id, collection_id) VALUES (?, NULL, ?)",
+            (_uuid.uuid4().hex, collection_id),
+        )
+        conn.commit()
+    except Exception as exc:
+        logger.warning("dic: attach-coworker DB write failed: %s", exc)
+    finally:
+        conn.close()
+    return jsonify({
+        "collection_id": collection_id,
+        "coworker_url": f"/coworker?dic_collection={collection_id}",
+        "message": "Collection attached. Open Co-Worker and launch with DIC context pre-loaded.",
+    })

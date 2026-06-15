@@ -150,6 +150,13 @@
   .ai-send-btn:hover { background: var(--accent-hover, #1565c0); }
   .ai-send-btn:disabled { opacity: 0.5; cursor: not-allowed; }
   .ai-narrate-toggle { font-size: 0.75rem; color: var(--text-dim, #666); }
+  .ai-save-wiki-btn {
+    display: inline-block; margin-top: 8px; padding: 3px 9px;
+    font-size: 0.72rem; background: transparent;
+    border: 1px solid var(--border, #ccc); border-radius: 4px;
+    color: var(--text-dim, #666); cursor: pointer;
+  }
+  .ai-save-wiki-btn:hover { background: var(--bg2, #f4f4f4); color: var(--accent, #1976d2); }
   .ai-citations {
     border: 1px solid var(--border, #ddd);
     border-top: none;
@@ -314,10 +321,36 @@ async function aiLoadSession(sessionId) {
 function aiRenderBubble(m) {
   const roleClass = m.role === 'user' ? 'ai-bubble-user' : 'ai-bubble-assistant';
   const label = m.role === 'user' ? 'You' : 'ICDEV';
+  const saveBtn = m.role === 'assistant'
+    ? '<button class="ai-save-wiki-btn" title="Save this Q&A to memory wiki" ' +
+      'onclick="aiSaveToWiki(' + m.turn + ')">&#128221; Save to wiki</button>'
+    : '';
   return '<div class="ai-bubble ' + roleClass + '">' +
     '<span class="ai-role-label">' + label + '</span>' +
     aiEsc(m.content).replace(/\n/g, '<br>') +
+    saveBtn +
     '</div>';
+}
+
+async function aiSaveToWiki(turn) {
+  if (!aiCurrentSession) return;
+  const memType = prompt('Memory type? (project / feedback / user / reference)', 'project');
+  if (!memType) return;
+  try {
+    const r = await fetch(
+      '/api/ask-icdev/sessions/' + encodeURIComponent(aiCurrentSession) + '/save-to-wiki',
+      {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({turn: turn, memory_type: memType})
+      }
+    );
+    const d = await r.json();
+    if (!r.ok) { alert('Save failed: ' + (d.error || r.status)); return; }
+    alert('Saved to wiki: ' + d.slug + ' (' + d.cross_refs_updated + ' cross-refs updated)');
+  } catch (e) {
+    alert('Save error: ' + e);
+  }
 }
 
 function aiRenderCitations(citations) {

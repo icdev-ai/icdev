@@ -101,7 +101,6 @@ def db(tmp_path):
 def patch_conn(db):
     """Redirect all get_connection calls in canvas_adapter to our SQLite shim."""
     import tools.document_intelligence.canvas_adapter as mod
-    real_gc = mod.get_connection
 
     @contextmanager
     def _patched():

@@ -28,11 +28,11 @@ class TestCanRead:
         assert not can_read("SECRET", ctx)
 
     def test_secret_from_secret(self):
-        ctx = SecurityContext(clearance_level=2)
+        ctx = SecurityContext(clearance_level=3)  # SECRET (scale: PUBLIC=0,CUI=1,ECI=2,SECRET=3)
         assert can_read("SECRET", ctx)
 
     def test_top_secret_from_secret_denied(self):
-        ctx = SecurityContext(clearance_level=2)
+        ctx = SecurityContext(clearance_level=3)  # SECRET
         assert not can_read("TOP SECRET", ctx)
 
     def test_none_ctx_allowed(self):
@@ -45,7 +45,7 @@ class TestCanWrite:
         assert can_write("CUI", ctx)
 
     def test_write_down_denied(self):
-        ctx = SecurityContext(clearance_level=2)
+        ctx = SecurityContext(clearance_level=3)  # SECRET — cannot write down to CUI
         assert not can_write("CUI", ctx)
 
     def test_write_up_denied(self):
@@ -75,7 +75,7 @@ class TestCanAccessCompartment:
 
 class TestCheckMac:
     def test_read_pass(self):
-        ctx = SecurityContext(clearance_level=2)
+        ctx = SecurityContext(clearance_level=3)  # SECRET
         assert check_mac("SECRET", None, ctx, "read")
 
     def test_read_fail(self):
@@ -83,7 +83,7 @@ class TestCheckMac:
         assert not check_mac("SECRET", None, ctx, "read")
 
     def test_write_pass(self):
-        ctx = SecurityContext(clearance_level=2)
+        ctx = SecurityContext(clearance_level=3)  # SECRET
         assert check_mac("SECRET", None, ctx, "write")
 
     def test_write_fail(self):
@@ -91,7 +91,7 @@ class TestCheckMac:
         assert not check_mac("SECRET", None, ctx, "write")
 
     def test_compartment_fail(self):
-        ctx = SecurityContext(clearance_level=2, compartments=frozenset({"A"}))
+        ctx = SecurityContext(clearance_level=3, compartments=frozenset({"A"}))  # SECRET
         assert not check_mac("SECRET", {"B"}, ctx, "read")
 
 

@@ -58,7 +58,10 @@
         Autonomous Collaborative Engine — assembles trust-tiered AI co-worker teams to solve a problem.
       </p>
     </div>
-    <a href="/coworker/roles" class="btn btn-secondary" style="font-size:12px;">Role Catalog →</a>
+    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+      <a href="/coworker/roles" class="btn btn-secondary" style="font-size:12px;">Role Catalog →</a>
+      <a href="/coworker/trust" class="btn btn-secondary" style="font-size:12px;">Trust Leaderboard →</a>
+    </div>
   </div>
 
   <!-- ── Stats ──────────────────────────────────────────────────── -->
@@ -72,6 +75,11 @@
   <!-- ── Launch ─────────────────────────────────────────────────── -->
   <div class="launch-box">
     <div style="font-size:13px; font-weight:600; margin-bottom:8px;">Launch a Co-Worker Team</div>
+    <!-- DIC context banner — shown when a collection is attached via DIC Notebook -->
+    <div id="dic-context-banner" style="display:none;background:#1a1a30;border:1px solid #2a2a50;border-radius:4px;padding:6px 10px;margin-bottom:8px;font-size:11px;color:#a78bfa;">
+      🤝 DIC context: <span id="dic-context-label"></span>
+      <button onclick="clearDICContext()" style="background:none;border:none;color:#5a5a80;cursor:pointer;font-size:11px;margin-left:8px;">&#x2715;</button>
+    </div>
     <textarea id="ace-problem" placeholder="Describe the problem to solve, e.g. 'Build a data ingestion pipeline with validation tests.'"></textarea>
     <div style="display:flex; justify-content:flex-end; margin-top:10px;">
       <button class="btn" id="ace-launch-btn" style="font-size:12px; background:var(--accent-color,#2563eb); color:#fff;">Launch Team</button>
@@ -151,15 +159,40 @@
   var btn = document.getElementById("ace-launch-btn");
   var ta  = document.getElementById("ace-problem");
   var st  = document.getElementById("ace-launch-status");
+
+  // DIC context — read from localStorage (set by DIC Notebook "Attach to Co-Worker")
+  var dicCol = localStorage.getItem("dic_attached_collection");
+  if (dicCol) {
+    var banner = document.getElementById("dic-context-banner");
+    var label  = document.getElementById("dic-context-label");
+    if (banner) banner.style.display = "";
+    if (label)  label.textContent = dicCol;
+  }
+
+  // Check URL param too (?dic_collection=...)
+  var urlParams = new URLSearchParams(window.location.search);
+  var dicFromUrl = urlParams.get("dic_collection");
+  if (dicFromUrl && !dicCol) {
+    localStorage.setItem("dic_attached_collection", dicFromUrl);
+    var banner = document.getElementById("dic-context-banner");
+    var label  = document.getElementById("dic-context-label");
+    if (banner) banner.style.display = "";
+    if (label)  label.textContent = dicFromUrl;
+    dicCol = dicFromUrl;
+  }
+
   if (!btn) return;
   btn.addEventListener("click", function () {
     var problem = (ta.value || "").trim();
     if (!problem) { st.textContent = "Enter a problem description first."; return; }
     btn.disabled = true; st.textContent = "Launching…";
+    var payload = { problem_text: problem, trigger_source: "dashboard" };
+    var attached = localStorage.getItem("dic_attached_collection");
+    if (attached) { payload.dic_collection_ids = [attached]; }
     fetch("/api/ace/launch", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ problem_text: problem, trigger_source: "dashboard" }),
+      body: JSON.stringify(payload),
     })
       .then(function (r) { return r.json(); })
       .then(function (data) {
@@ -174,5 +207,11 @@
       .catch(function (err) { st.textContent = "Request failed: " + err; btn.disabled = false; });
   });
 })();
+
+function clearDICContext() {
+  localStorage.removeItem("dic_attached_collection");
+  var banner = document.getElementById("dic-context-banner");
+  if (banner) banner.style.display = "none";
+}
 </script>
 {% endblock %}

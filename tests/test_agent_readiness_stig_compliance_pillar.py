@@ -35,6 +35,14 @@ def _default_thresholds(**overrides):
         "nlp_extractor_max_tokens": 256,
         "nlp_extractor_confidence_threshold": 0.7,
         "nlp_extractor_text_sample_chars": 2000,
+        "code_scan_py_sample": 30,
+        "code_scan_yaml_sample": 20,
+        "enhanced_path_sample": 10,
+        "doc_sample": 5,
+        "checklist_nlp_sample": 3,
+        "compliance_nlp_sample": 3,
+        "cat_remediation_py_sample": 20,
+        "cat_remediation_doc_sample": 5,
     }
     base.update(overrides)
     return base

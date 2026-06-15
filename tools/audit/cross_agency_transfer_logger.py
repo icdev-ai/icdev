@@ -215,23 +215,24 @@ def _mirror_to_audit_trail(conn, kwargs: dict, event_id: str, occurred_at: str) 
                 "event_log_id": event_id,
             }
         )
-        # Omit the timestamp column so the DB default fills it — keeps this
-        # INSERT schema-agnostic across audit_trail variants (canonical uses
-        # `created_at`, some fixtures use `timestamp`), exactly as the canonical
-        # writer tools/audit/audit_logger.log_event does.
+        import uuid as _uuid
+        audit_id = str(_uuid.uuid4())
         conn.execute(
             """
             INSERT INTO audit_trail
-                (event_type, actor, action, project_id, details, classification)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (id, event_type, actor, action, project_id, details,
+                 classification, recorded_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
+                audit_id,
                 event_type,
                 kwargs.get("actor", "system"),
                 action,
                 kwargs.get("project_id"),
                 details,
                 kwargs.get("data_classification", "CUI"),
+                occurred_at,
             ),
         )
         conn.commit()

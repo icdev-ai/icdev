@@ -111,10 +111,10 @@ def _notify_collection_members(conn, suggestion_id: str, collection_id: str,
     Best-effort: any exception is swallowed — notification failure never blocks creation.
     """
     try:
-        import hashlib, json as _json
+        import hashlib
         members = conn.execute(
             """
-            SELECT user_id FROM dic_collection_members
+            SELECT user_id FROM dic_team_access
             WHERE collection_id = %s AND role IN ('editor', 'reviewer')
             """,
             (collection_id,),
@@ -124,12 +124,6 @@ def _notify_collection_members(conn, suggestion_id: str, collection_id: str,
             if not uid:
                 continue
             log_id = f"nlog-{hashlib.sha256(f'{now}{suggestion_id}{uid}'.encode()).hexdigest()[:12]}"
-            payload = _json.dumps({
-                "suggestion_id": suggestion_id,
-                "canvas_source": canvas_source,
-                "rationale": rationale[:200],
-                "collection_id": collection_id,
-            })
             conn.execute(
                 """
                 INSERT INTO notification_log

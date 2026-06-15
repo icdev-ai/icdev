@@ -22,10 +22,12 @@
 </style>
 {% endblock %}
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner(classification) }}
 <a class="back-link" href="/ops">← Ops Hub</a>
 <div class="ohc-page-header mt-2">
   <h1>📊 SLOs</h1>
-  <p>Service Level Objectives · Burn Rates · Error Budgets — {{ classification }}</p>
+  <p>Service Level Objectives · Burn Rates · Error Budgets</p>
 </div>
 
 {% set slos = data.slos %}

@@ -308,6 +308,45 @@ class DICKeywordSearchResult:
         }
 
 
+@dataclass
+class DICFilterQuery:
+    """LLM-parsed structured filters for DIC document search.
+
+    Models the filter-query module of a fulltext search engine (aiify-opp-29:
+    fulltext_search_engine -> llm_generation, analog of paperless
+    ``src/documents/filters.py``). Converts natural language filter intent
+    (e.g., "recent PDF reports at CUI level from last 30 days") into structured
+    parameters that narrow document retrieval without requiring users to know the
+    exact field names. The LLM emits ONLY the JSON keys listed in
+    :data:`_FILTER_SYSTEM_PROMPT` — it never answers the user's query, never
+    invents proper nouns or classification levels not in the schema, and always
+    degrades gracefully (empty ``filters``) when unavailable.
+
+    ``confidence`` is a self-reported [0.0, 1.0] estimate from the model of how
+    reliably it could extract filters from the natural language. It is 0.0 when
+    ``llm_used`` is False (no model ran). ``refusal_reason`` is set when no
+    filters were extracted: ``"empty_query"`` for blank input, ``"no_filters"``
+    when the model found nothing applicable, or ``"llm_unavailable"`` on failure.
+    """
+
+    natural_query: str = ""
+    filters: dict = field(default_factory=dict)
+    confidence: float = 0.0
+    llm_used: bool = False
+    refusal_reason: str = ""
+    origin: str = "ai_generated"
+
+    def to_dict(self) -> dict:
+        return {
+            "natural_query": self.natural_query,
+            "filters": self.filters,
+            "confidence": round(self.confidence, 4),
+            "llm_used": self.llm_used,
+            "refusal_reason": self.refusal_reason,
+            "origin": self.origin,
+        }
+
+
 def _extract_terms(query: str) -> list[str]:
     return [t.lower() for t in re.findall(r"\b\w{3,}\b", query)]
 
@@ -619,6 +658,212 @@ _ACCESS_SYSTEM_PROMPT = (
     "message text."
 )
 
+# --------------------------------------------------------------------------- #
+# LLM-powered filter query parser (aiify-opp-29: fulltext_search_engine ->
+# llm_generation, analog of paperless src/documents/filters.py). The external
+# pattern hand-codes a Django FilterSet of metadata fields (date, type,
+# classification, etc.) that the user must configure manually. This layer asks
+# the LLM to extract those same filter intents from natural language so users
+# can type "recent CUI PDFs from last month" and get back structured params.
+# The model emits ONLY the JSON keys listed below — never document content,
+# never proper nouns, never invented field values — so the extracted filter is
+# always safe to apply without sanitizing free-text LLM output through SQL.
+# --------------------------------------------------------------------------- #
+
+# Allowed classification values: only exact schema values are permitted so
+# the filter predicate never silently drops results (unknown label → no match).
+_FILTER_VALID_CLASSIFICATIONS = frozenset({"UNCLASSIFIED", "CUI", "SECRET", "TOP SECRET"})
+
+# Allowed content_type prefixes — normalized to lowercase before comparison.
+_FILTER_VALID_CONTENT_TYPES = frozenset({
+    "pdf", "docx", "doc", "txt", "md", "xlsx", "xls", "csv", "pptx", "ppt",
+    "json", "xml", "html", "htm", "odt", "ods", "odp",
+})
+
+_FILTER_SYSTEM_PROMPT = (
+    "You are a document search filter extractor. Given a natural language description "
+    "of what documents to find, output ONLY a valid JSON object with these optional "
+    "keys — include a key only when the user's description clearly implies it:\n"
+    "  classification: one of UNCLASSIFIED, CUI, SECRET, TOP SECRET\n"
+    "  content_type: file extension (pdf, docx, txt, etc.)\n"
+    "  date_range_days: integer number of days back from today (e.g. 30)\n"
+    "  date_after: ISO date string YYYY-MM-DD\n"
+    "  date_before: ISO date string YYYY-MM-DD\n"
+    "  title_contains: keyword or short phrase that should appear in the document title\n"
+    "  collection_id: exact collection identifier if explicitly named\n"
+    "  min_pages: minimum page count (integer)\n"
+    "  max_pages: maximum page count (integer)\n"
+    "  confidence: your confidence (0.0-1.0) that you extracted the filters correctly\n"
+    "Do NOT invent values. Do NOT answer the user's question. Do NOT add keys not "
+    "listed above. If you cannot extract any filter, output exactly: {}"
+)
+
+_FILTER_NONE_SENTINEL = "{}"
+
+# --------------------------------------------------------------------------- #
+# Karpathy LLM Wiki integration (items 1 & 4)
+# Item 4: after a high-confidence answer, file Q&A to the memory wiki so
+#         future queries can be answered without full RAG.
+# Item 1: before running the 5-stage RAG pipeline, check the memory wiki for
+#         a cached Q&A for the exact query (wiki bypass for small collections).
+# --------------------------------------------------------------------------- #
+
+_QA_WIKI_CONFIDENCE_THRESHOLD = 0.85  # min citation_quality to file to wiki
+_QA_WIKI_SLUG_PREFIX = "dic-qa-"
+_QA_WIKI_SEARCH_SCORE_FLOOR = 0.70   # min hybrid-search score to trust a wiki hit
+
+
+def _qa_slug(query: str, collection_id: str | None = None) -> str:
+    """Stable slug for a query+collection pair (truncated sha256)."""
+    import hashlib
+    key = f"{(collection_id or 'all')}|{query.strip().lower()[:200]}"
+    return _QA_WIKI_SLUG_PREFIX + hashlib.sha256(key.encode()).hexdigest()[:14]
+
+
+def _file_qa_to_wiki(query: str, answer: str, collection_id: str | None) -> None:
+    """Best-effort: write a Q&A pair to the Claude Code auto-memory wiki.
+
+    Called after answer() produces a high-confidence grounded result.  Errors
+    are silently swallowed so they never break the caller.
+    """
+    try:
+        import os
+        from pathlib import Path
+        from tools.memory.memory_write import update_crossrefs
+
+        auto_dir = (
+            Path(os.environ.get("USERPROFILE", Path.home()))
+            / ".claude/projects/C--AI-ICDev/memory"
+        )
+        if not auto_dir.is_dir():
+            return
+
+        slug = _qa_slug(query, collection_id)
+        topic_file = auto_dir / f"{slug}.md"
+        if topic_file.exists():
+            return  # already filed
+
+        col_tag = f" (collection: {collection_id})" if collection_id else ""
+        body = (
+            f"---\n"
+            f"name: {slug}\n"
+            f"description: DIC Q&A cache{col_tag} — {query[:80]}\n"
+            f"metadata:\n"
+            f"  type: project\n"
+            f"---\n\n"
+            f"**Q:** {query}\n\n"
+            f"**A (DIC grounded):** {answer}\n\n"
+            f"*Synthesized from DIC search{col_tag}. Filed automatically.*\n"
+        )
+        topic_file.write_text(body, encoding="utf-8")
+
+        # Append index entry
+        mem_index = auto_dir / "MEMORY.md"
+        if mem_index.exists():
+            existing = mem_index.read_text(encoding="utf-8")
+            entry = f"- [DIC Q&A: {query[:60]}]({slug}.md) — cached grounded answer{col_tag}\n"
+            if slug not in existing:
+                with open(mem_index, "a", encoding="utf-8") as fh:
+                    fh.write(entry)
+
+        # Cross-link related wiki topics
+        update_crossrefs(slug, f"{query} {answer}", memory_dir=auto_dir)
+
+    except Exception:
+        pass  # never crash the caller
+
+
+def _wiki_keyword_search(
+    query: str, wiki_dir: Any, prefix_filter: str = "", top_k: int = 5
+) -> list[tuple[float, str, str]]:
+    """BM25-style keyword overlap search over wiki .md files.
+
+    Returns list of (score, stem, content) tuples sorted descending.
+    Never raises — returns [] on any error.
+    """
+    try:
+        stop = frozenset({"the", "a", "an", "in", "of", "to", "is", "it", "for", "on", "and", "or", "with", "that", "this", "be", "as", "by"})
+        terms = [t for t in re.findall(r"[a-z]{3,}", query.lower()) if t not in stop]
+        if not terms:
+            return []
+
+        scored: list[tuple[float, str, str]] = []
+        for fpath in wiki_dir.glob("*.md"):
+            if fpath.name == "MEMORY.md":
+                continue
+            if prefix_filter and not fpath.stem.startswith(prefix_filter):
+                continue
+            try:
+                content = fpath.read_text(encoding="utf-8")
+                cl = content.lower()
+                hits = sum(cl.count(t) for t in terms)
+                if hits > 0:
+                    score = hits / (len(content) / 500 + 1)
+                    scored.append((score, fpath.stem, content))
+            except Exception:
+                continue
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return scored[:top_k]
+    except Exception:
+        return []
+
+
+def _check_wiki_cache(query: str, collection_id: str | None) -> "DICAnswer | None":
+    """Check memory wiki for a cached Q&A answer matching this query.
+
+    Returns a DICAnswer with origin='wiki_cache' if a high-confidence cached
+    answer exists, otherwise None (caller should run full RAG pipeline).
+    Called at the start of answer() as the wiki bypass (Item 1 of the
+    Karpathy-wiki integration plan).
+    """
+    try:
+        import os
+        from pathlib import Path
+
+        auto_dir = (
+            Path(os.environ.get("USERPROFILE", Path.home()))
+            / ".claude/projects/C--AI-ICDev/memory"
+        )
+        if not auto_dir.is_dir():
+            return None
+
+        # Exact-match lookup by slug first (O(1), fastest path)
+        slug = _qa_slug(query, collection_id)
+        cached_file = auto_dir / f"{slug}.md"
+        if cached_file.exists():
+            text = cached_file.read_text(encoding="utf-8")
+            m = re.search(r"\*\*A \(DIC grounded\):\*\* (.+?)(?:\n\n|\Z)", text, re.DOTALL)
+            if m:
+                return DICAnswer(
+                    answer=m.group(1).strip(),
+                    grounded=True,
+                    result_count=0,
+                    citation_quality=_QA_WIKI_CONFIDENCE_THRESHOLD,
+                    origin="wiki_cache",
+                )
+
+        # Fuzzy fallback: keyword search over cached Q&A files only
+        for score, _stem, content in _wiki_keyword_search(
+            query, auto_dir, prefix_filter=_QA_WIKI_SLUG_PREFIX, top_k=3
+        ):
+            if score < _QA_WIKI_SEARCH_SCORE_FLOOR:
+                continue
+            m = re.search(r"\*\*A \(DIC grounded\):\*\* (.+?)(?:\n\n|\Z)", content, re.DOTALL)
+            if m:
+                return DICAnswer(
+                    answer=m.group(1).strip(),
+                    grounded=True,
+                    result_count=0,
+                    citation_quality=min(score, 1.0),
+                    origin="wiki_cache",
+                )
+
+    except Exception:
+        pass
+
+    return None
+
 
 class DICSearchEngine:
     """Grounded search over DIC collections.
@@ -902,6 +1147,11 @@ class DICSearchEngine:
             ("llm_unavailable"), or the model declined for lack of grounding
             ("insufficient_evidence"). The answer is NEVER fabricated.
         """
+        # Karpathy wiki bypass (Item 1): check cached Q&A before full RAG pipeline
+        cached = _check_wiki_cache(query, collection_id)
+        if cached is not None:
+            return cached
+
         results = self.search(query, collection_id=collection_id, top_k=top_k, mode=mode)
         if not results:
             return DICAnswer(grounded=False, refusal_reason="no_evidence", result_count=0)
@@ -968,13 +1218,18 @@ class DICSearchEngine:
                 citation_quality=cq,
             )
 
-        return DICAnswer(
+        result = DICAnswer(
             answer=text,
             grounded=True,
             citations=[r.citation for r in used],
             result_count=len(results),
             citation_quality=cq,
         )
+        # Karpathy wiki filing (Item 4): persist high-confidence answers so
+        # future identical queries can bypass the full RAG pipeline.
+        if cq >= _QA_WIKI_CONFIDENCE_THRESHOLD:
+            _file_qa_to_wiki(query, text, collection_id)
+        return result
 
     def expand_query(self, query: str, max_terms: int = _EXPANSION_MAX_TERMS) -> DICQueryExpansion:
         """Suggest extra search keywords to broaden fulltext match recall.
@@ -1158,3 +1413,273 @@ class DICSearchEngine:
             message=message,
             llm_used=llm_used,
         )
+
+    def filter_query(self, natural_query: str) -> "DICFilterQuery":
+        """Parse natural language into structured document search filters.
+
+        This is the DIC analog of a fulltext-search engine's filter module: instead
+        of requiring the caller to know exact field names and operators (the pattern
+        in ``src/documents/filters.py``), it uses the LLM to extract filter intent
+        from plain English. The model emits ONLY a JSON object of safe, schema-
+        aligned parameters — never free-text that would pass through to SQL.
+
+        The returned :class:`DICFilterQuery` always has a usable ``filters`` dict
+        (possibly empty) and ``refusal_reason`` is set when nothing was extracted.
+        ``llm_used`` is False and the dict is empty when the query is blank or the
+        LLM is unavailable, so callers can always call :meth:`filtered_search` with
+        the result safely (empty filters → no restriction, full search).
+
+        Args:
+            natural_query: Free-text description of desired document attributes,
+                e.g. "recent CUI PDFs under 10 pages from the contracts collection".
+
+        Returns:
+            A :class:`DICFilterQuery` with ``filters`` populated when extraction
+            succeeded, or empty with a ``refusal_reason`` on failure.
+        """
+        import json as _json
+
+        q = (natural_query or "").strip()
+        if not q:
+            return DICFilterQuery(
+                natural_query="",
+                refusal_reason="empty_query",
+            )
+
+        try:
+            from tools.llm.provider import LLMRequest
+            from tools.llm.router import LLMRouter
+
+            req = LLMRequest(
+                messages=[{"role": "user", "content": f"Documents to find: {q}"}],
+                system_prompt=_FILTER_SYSTEM_PROMPT,
+                max_tokens=256,
+                temperature=0.0,
+                classification="CUI",
+            )
+            resp = LLMRouter().invoke("summarization", req)
+        except Exception:
+            return DICFilterQuery(
+                natural_query=q,
+                refusal_reason="llm_unavailable",
+            )
+
+        if not resp or not resp.content or not resp.content.strip():
+            return DICFilterQuery(
+                natural_query=q,
+                refusal_reason="llm_unavailable",
+            )
+
+        raw = resp.content.strip()
+        # Strip markdown code fences if present.
+        if raw.startswith("```"):
+            raw = re.sub(r"^```[a-z]*\n?", "", raw).rstrip("`").strip()
+
+        try:
+            parsed = _json.loads(raw)
+        except Exception:
+            # Attempt to extract the first {...} block from a verbose response.
+            m = re.search(r"\{[^{}]*\}", raw, re.DOTALL)
+            if m:
+                try:
+                    parsed = _json.loads(m.group())
+                except Exception:
+                    parsed = {}
+            else:
+                parsed = {}
+
+        if not isinstance(parsed, dict) or not parsed:
+            return DICFilterQuery(
+                natural_query=q,
+                llm_used=True,
+                refusal_reason="no_filters",
+            )
+
+        # Sanitize: keep only known keys and validate values against the schema.
+        safe: dict = {}
+
+        cls_raw = (parsed.get("classification") or "").strip().upper()
+        if cls_raw in _FILTER_VALID_CLASSIFICATIONS:
+            safe["classification"] = cls_raw
+
+        ct_raw = (parsed.get("content_type") or "").strip().lower().lstrip(".")
+        if ct_raw in _FILTER_VALID_CONTENT_TYPES:
+            safe["content_type"] = ct_raw
+
+        for key in ("date_after", "date_before"):
+            val = (parsed.get(key) or "").strip()
+            if re.match(r"^\d{4}-\d{2}-\d{2}$", val):
+                safe[key] = val
+
+        dr = parsed.get("date_range_days")
+        if isinstance(dr, int) and 1 <= dr <= 3650:
+            safe["date_range_days"] = dr
+        elif isinstance(dr, float) and 1 <= dr <= 3650:
+            safe["date_range_days"] = int(dr)
+
+        tc = (parsed.get("title_contains") or "").strip()
+        if tc and len(tc) <= 120:
+            safe["title_contains"] = tc
+
+        cid = (parsed.get("collection_id") or "").strip()
+        if cid and len(cid) <= 64:
+            safe["collection_id"] = cid
+
+        for key in ("min_pages", "max_pages"):
+            pv = parsed.get(key)
+            if isinstance(pv, (int, float)) and pv >= 0:
+                safe[key] = int(pv)
+
+        confidence_raw = parsed.get("confidence", 0.0)
+        try:
+            confidence = max(0.0, min(1.0, float(confidence_raw)))
+        except (TypeError, ValueError):
+            confidence = 0.8 if safe else 0.0
+
+        if not safe:
+            return DICFilterQuery(
+                natural_query=q,
+                llm_used=True,
+                confidence=confidence,
+                refusal_reason="no_filters",
+            )
+
+        return DICFilterQuery(
+            natural_query=q,
+            filters=safe,
+            confidence=confidence,
+            llm_used=True,
+        )
+
+    def filtered_search(
+        self,
+        query: str,
+        filters: "dict | DICFilterQuery | None" = None,
+        top_k: int = 10,
+        mode: str = "grounded",
+        clearance: str | None = None,
+    ) -> list[DICSearchResult]:
+        """Search restricted to documents matching structured metadata filters.
+
+        Combines :meth:`search` with pre-filter document selection. The caller
+        supplies either a :class:`DICFilterQuery` (from :meth:`filter_query`) or a
+        raw ``dict`` of filter params. The method resolves matching ``doc_id``s from
+        ``dic_documents``, runs the normal search, and post-filters results to only
+        those whose ``doc_id`` appears in the matching set.
+
+        When ``filters`` is None or empty, behavior is identical to :meth:`search`
+        — no documents are excluded, so the method is always safe to call.
+
+        Supported filter keys (matching :data:`_FILTER_SYSTEM_PROMPT`):
+        - ``classification``: exact classification level
+        - ``content_type``: file extension (pdf, docx, etc.)
+        - ``date_after`` / ``date_before``: ISO date bounds on ``created_at``
+        - ``date_range_days``: rolling window in days from today
+        - ``title_contains``: substring match on title (case-insensitive)
+        - ``collection_id``: restrict to exact collection
+        - ``min_pages`` / ``max_pages``: page count bounds
+
+        Args:
+            query: Natural language search query.
+            filters: Structured filter params — dict or DICFilterQuery. None = no filter.
+            top_k: Maximum results.
+            mode: "grounded" (BM25+KG) or "hybrid" (adds vector+rerank).
+            clearance: Caller's maximum classification (see :meth:`search`).
+
+        Returns:
+            Cited search results whose source document matches the filters.
+            Empty list when no candidates match or the base search returns nothing.
+        """
+        import datetime as _dt
+        from tools.db.storage import get_connection
+
+        fdict: dict = {}
+        if isinstance(filters, DICFilterQuery):
+            fdict = filters.filters or {}
+        elif isinstance(filters, dict):
+            fdict = filters
+
+        # Resolve matching doc_ids from dic_documents when any filter is active.
+        allowed_doc_ids: set[str] | None = None
+        if fdict:
+            clauses: list[str] = []
+            params: list = []
+
+            # collection_id filter (also accepted directly in search() but we
+            # handle it here for consistency with the filter API).
+            if "collection_id" in fdict:
+                clauses.append("collection_id = ?")
+                params.append(fdict["collection_id"])
+
+            if "classification" in fdict:
+                clauses.append("classification = ?")
+                params.append(fdict["classification"])
+
+            if "content_type" in fdict:
+                # Match both bare extension and MIME-type prefixes stored in the DB.
+                ct = fdict["content_type"]
+                clauses.append("(LOWER(content_type) = ? OR LOWER(filename) LIKE ?)")
+                params.extend([ct, f"%.{ct}"])
+
+            if "title_contains" in fdict:
+                clauses.append("LOWER(title) LIKE ?")
+                params.append(f"%{fdict['title_contains'].lower()}%")
+
+            if "date_after" in fdict:
+                clauses.append("created_at >= ?")
+                params.append(fdict["date_after"])
+
+            if "date_before" in fdict:
+                clauses.append("created_at <= ?")
+                params.append(fdict["date_before"])
+
+            if "date_range_days" in fdict:
+                cutoff = (
+                    _dt.datetime.now(_dt.timezone.utc)
+                    - _dt.timedelta(days=int(fdict["date_range_days"]))
+                ).strftime("%Y-%m-%d")
+                clauses.append("created_at >= ?")
+                params.append(cutoff)
+
+            if "min_pages" in fdict:
+                clauses.append("page_count >= ?")
+                params.append(int(fdict["min_pages"]))
+
+            if "max_pages" in fdict:
+                clauses.append("page_count <= ?")
+                params.append(int(fdict["max_pages"]))
+
+            if clauses:
+                where = " AND ".join(clauses)
+                conn = get_connection()
+                try:
+                    cur = conn.execute(
+                        f"SELECT doc_id FROM dic_documents WHERE {where}",
+                        params,
+                    )
+                    allowed_doc_ids = {r[0] for r in cur.fetchall() if r[0]}
+                except Exception as exc:
+                    logger.warning("DICSearchEngine.filtered_search: filter query failed (%s); ignoring filters", exc)
+                    allowed_doc_ids = None
+                finally:
+                    conn.close()
+
+                if allowed_doc_ids is not None and not allowed_doc_ids:
+                    # Filters active but no documents matched — return empty immediately.
+                    return []
+
+        # Run the base search with a wider fetch window so the post-filter has
+        # enough candidates to fill top_k even after restricting by doc_id.
+        fetch_k = top_k * 4 if allowed_doc_ids else top_k
+        results = self.search(
+            query,
+            collection_id=fdict.get("collection_id"),
+            top_k=fetch_k,
+            mode=mode,
+            clearance=clearance,
+        )
+
+        if allowed_doc_ids is not None:
+            results = [r for r in results if r.doc_id in allowed_doc_ids]
+
+        return results[:top_k]

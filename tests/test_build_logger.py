@@ -12,8 +12,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 @pytest.fixture(autouse=True)
 def patch_build_log(monkeypatch, tmp_path):
     """Redirect build.ndjson to tmp_path for isolation."""
-    import tools.logging.build_logger as mod
-    import tools.logging.icdev_logger as logger_mod
+    import importlib
+    # Use canonical icdev namespace to avoid shim lookup failures in full-suite runs.
+    mod = importlib.import_module("icdev.tools.logging.build_logger")
+    logger_mod = importlib.import_module("icdev.tools.logging.icdev_logger")
+    # Ensure tools.* aliases exist so from-imports in test methods resolve correctly.
+    sys.modules.setdefault("tools.logging.build_logger", mod)
+    sys.modules.setdefault("tools.logging.icdev_logger", logger_mod)
     logger_mod.invalidate_cache()
     logger_mod._CONFIG_CACHE = {
         "global_level": "DEBUG",

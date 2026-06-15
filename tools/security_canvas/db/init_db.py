@@ -299,6 +299,7 @@ CREATE INDEX IF NOT EXISTS idx_zig_act_phase ON zig_activities(phase);
 CREATE TABLE IF NOT EXISTS zig_activity_completions (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     activity_id     TEXT NOT NULL REFERENCES zig_activities(id),
+    target_id       TEXT NOT NULL DEFAULT 'icdev-self',
     status          TEXT NOT NULL DEFAULT 'not_started'
         CHECK(status IN ('not_started','in_progress','complete')),
     evidence_note   TEXT,
@@ -306,7 +307,7 @@ CREATE TABLE IF NOT EXISTS zig_activity_completions (
     completed_at    TEXT,
     updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
-CREATE UNIQUE INDEX IF NOT EXISTS idx_zig_comp_act ON zig_activity_completions(activity_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_zig_comp_act ON zig_activity_completions(activity_id, target_id);
 
 CREATE TABLE IF NOT EXISTS zig_maturity_scores (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1650,6 +1651,15 @@ def init_db():
         # Runtime migration: add is_stale to sc_threats for existing installs
         try:
             conn.execute("ALTER TABLE sc_threats ADD COLUMN is_stale INTEGER DEFAULT 0")
+            conn.commit()
+        except Exception:
+            pass  # column already exists
+
+        # Runtime migration: add target_id to zig_activity_completions for existing installs
+        try:
+            conn.execute(
+                "ALTER TABLE zig_activity_completions ADD COLUMN target_id TEXT NOT NULL DEFAULT 'icdev-self'"
+            )
             conn.commit()
         except Exception:
             pass  # column already exists

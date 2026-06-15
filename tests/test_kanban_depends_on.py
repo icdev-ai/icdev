@@ -135,7 +135,17 @@ def kanban_flask_client(tmp_path, monkeypatch):
             execution_id       TEXT,
             executor_url       TEXT,
             source_prediction_id TEXT,
-            depends_on_task_id TEXT
+            depends_on_task_id TEXT,
+            start_date         TEXT,
+            target_date        TEXT,
+            completed_via_bypass INTEGER DEFAULT 0,
+            dispatch_source    TEXT DEFAULT 'unknown',
+            failure_count      INTEGER DEFAULT 0,
+            last_failure_reason TEXT,
+            last_failure_at    TEXT,
+            hitl_stage         TEXT,
+            source_doc_id      TEXT,
+            source_collection_id TEXT
         );
         CREATE TABLE oracle_predictions (
             id              TEXT PRIMARY KEY,
@@ -143,6 +153,19 @@ def kanban_flask_client(tmp_path, monkeypatch):
             prediction_text TEXT,
             lens_name       TEXT,
             prediction_type TEXT
+        );
+        CREATE TABLE kanban_task_deps (
+            task_id       TEXT NOT NULL,
+            depends_on_id TEXT NOT NULL,
+            created_at    TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (task_id, depends_on_id)
+        );
+        CREATE TABLE kanban_verifications (
+            id           TEXT PRIMARY KEY,
+            task_id      TEXT NOT NULL,
+            verified_at  TEXT NOT NULL,
+            result       TEXT NOT NULL,
+            phantom_ratio REAL DEFAULT 0
         );
         """
     )
@@ -294,6 +317,12 @@ class TestListenerDependencyGating:
                 last_failure_reason  TEXT,
                 last_failure_at      TEXT,
                 dispatch_source      TEXT DEFAULT 'unknown'
+            );
+            CREATE TABLE kanban_task_deps (
+                task_id       TEXT NOT NULL,
+                depends_on_id TEXT NOT NULL,
+                created_at    TEXT NOT NULL DEFAULT '',
+                PRIMARY KEY (task_id, depends_on_id)
             );
             """
         )

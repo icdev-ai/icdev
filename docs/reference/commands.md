@@ -799,6 +799,42 @@ python tools/harness/scaffold_harness.py --output-dir /path --impact-level IL4 -
 
 ---
 
+## NOVA — Autonomous Self-Learning Digital Coworker Commands
+```bash
+# DB init — creates NOVA tables in PostgreSQL (called automatically at dashboard startup)
+python -c "from tools.nova.db.init_db import init_nova_tables; print(init_nova_tables())"
+
+# ECHO — Execution Tracing
+python -c "
+from tools.workflow.trace_logger import start_trace, close_trace
+tid = start_trace('task-001', 'build', 'icdev-build')
+close_trace(tid, 'success', 'success_first_try')
+print('trace_id:', tid)
+"
+python -c "from tools.workflow.trace_logger import get_recent_traces; import json; print(json.dumps(get_recent_traces(limit=10), indent=2))"
+
+# ECHO — Reflexion (requires ICDEV_HARNESS_COLEARN=true)
+python -c "from tools.workflow.reflexion_agent import run_batch_reflexion; import json; print(json.dumps(run_batch_reflexion(['build'], dry_run=True), indent=2))"
+python -c "from tools.workflow.reflexion_agent import get_latest_improvement; print(get_latest_improvement('build'))"
+
+# SOUL — Coworker Identity
+python -c "from icdev.tools.ace.soul_manager import build_identity_preamble; print(build_identity_preamble('ai_developer'))"
+python -c "from icdev.tools.ace.soul_manager import record_learning; print(record_learning('ai_developer', 'Always use get_canvas_connection() for canvas tables.'))"
+
+# TRUST — Trust Calibration
+python -c "from tools.ace.trust_calibrator import get_trust_score, get_dispatch_config; import json; print(json.dumps(get_dispatch_config('ai_developer'), indent=2))"
+python -c "from tools.ace.trust_calibrator import record_trust_event; import json; print(json.dumps(record_trust_event('ai_developer', 'success', 'task-001'), indent=2))"
+python -c "from tools.ace.trust_calibrator import get_trust_summary; import json; print(json.dumps(get_trust_summary(), indent=2))"
+python -c "from tools.ace.trust_calibrator import run_weekly_recalibration; import json; print(json.dumps(run_weekly_recalibration(), indent=2))"
+
+# SELA — Skill Evolution (dry-run — never auto-merges)
+python -c "from tools.evolution.artifact_evolver import evolve_artifact; import json; print(json.dumps(evolve_artifact('icdev-status', 'skill', dry_run=True), indent=2))"
+python -c "from tools.evolution.artifact_evolver import evolve_all_skills; import json; print(json.dumps(evolve_all_skills(dry_run=True, limit=3), indent=2))"
+python -c "from tools.evolution.eval_builder import build_dataset; ds = build_dataset('icdev-build', '', min_examples=3); print(f'train={len(ds.train)} val={len(ds.val)}')"
+```
+
+---
+
 ## Innovation Feature Commands
 ```bash
 # VSM Dashboard (F3) — DORA metrics, pipeline flow, bottleneck detection
@@ -2802,4 +2838,16 @@ python -c "from tools.document_intelligence.output_generators import generate_au
 # Python — ingest URL or YouTube
 python -c "from tools.document_intelligence.extractors import extract_url; e = extract_url('https://example.com/page'); print(e.text[:200])"
 python -c "from tools.document_intelligence.extractors import extract_youtube; e = extract_youtube('https://youtube.com/watch?v=dQw4w9WgXcQ'); print(e.text[:200])"
+
+# Push any canvas artifact into DIC
+python -c "from tools.document_intelligence.canvas_push import push_artifact; print(push_artifact('compliance', 'NIST Report', 'report text here', 'compliance-docs', 'CUI', 'default'))"
+
+# DIC → Research engine: scan a collection as signals
+python -c "from tools.research.source_scanners.dic_scanner import scan_dic_collection; signals = scan_dic_collection({}, {'dic_collection_id': 'my-col'}); print(len(signals), 'signals')"
+
+# DIC → Innovation engine: discover with DIC context
+python -c "from tools.innovation.innovation_manager import stage_discover; print(stage_discover(dic_collection_id='my-col'))"
+
+# Weekly DIC digest reflex (manual trigger)
+python -c "from tools.genesis.reflexes.dic_digest import run; print(run({}, None))"
 ```

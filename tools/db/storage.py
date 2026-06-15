@@ -556,9 +556,16 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
     if is_fts5_query(sql):
         # 22a. col MATCH 'term' / col MATCH "term" → table.col <@> BM25Query('term')
         #      Resolves col to parent table via FTS5_TABLES registry; falls back to col name.
+        #      Skips table-level MATCH (where identifier is a table key in FTS5_TABLES) — those
+        #      go to rule 22b which uses plainto_tsquery.
+        _fts5_table_names = {t.lower() for t in FTS5_TABLES}
+
         def _fts5_bm25_match(m):
             col = m.group(1)
             term = m.group(2)
+            # Table-level MATCH: leave unchanged so rule 22b can translate it
+            if col.lower() in _fts5_table_names:
+                return m.group(0)
             table = col
             for tbl, cols in FTS5_TABLES.items():
                 if col in cols:

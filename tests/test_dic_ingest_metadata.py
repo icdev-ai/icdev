@@ -53,10 +53,19 @@ def _reset_router():
 
 
 def _patch_router(monkeypatch, content=None):
+    import sys as _sys
     if content is not None:
         _Router._content = content
     # Patch the attribute on the real module object the helper imports from.
     monkeypatch.setattr(router_mod, "LLMRouter", _Router)
+    # Patch ALL known router aliases — the _ToolsRedirect shim causes
+    # `from tools.llm.router import LLMRouter` to resolve to different
+    # module objects depending on full-suite import ordering.
+    import icdev.tools.llm.router as _icdev_router_mod
+    monkeypatch.setattr(_icdev_router_mod, "LLMRouter", _Router)
+    for _key, _mod in list(_sys.modules.items()):
+        if "llm.router" in _key and hasattr(_mod, "LLMRouter"):
+            monkeypatch.setattr(_mod, "LLMRouter", _Router)
 
 
 def _json(**kw):
@@ -78,6 +87,7 @@ def test_returns_normalized_metadata(monkeypatch):
         "document_type": "policy",
         "tags": ["security", "mfa"],
         "date": "2026-01-15",
+        "date_anomaly": None,
         "confidence": 0.92,
     }
 
@@ -221,6 +231,12 @@ def test_llm_failure_returns_none(monkeypatch):
             raise RuntimeError("provider down")
 
     monkeypatch.setattr(router_mod, "LLMRouter", _Boom)
+    import sys as _sys
+    import icdev.tools.llm.router as _icdev_router_mod
+    monkeypatch.setattr(_icdev_router_mod, "LLMRouter", _Boom)
+    for _key, _mod in list(_sys.modules.items()):
+        if "llm.router" in _key and hasattr(_mod, "LLMRouter"):
+            monkeypatch.setattr(_mod, "LLMRouter", _Boom)
     assert ingest._ai_metadata_extraction("some text", "f.md") is None
 
 
@@ -243,3 +259,59 @@ def test_ingest_outcome_metadata_defaults_empty():
     )
     assert oc.metadata == {}
     assert oc.to_dict()["metadata"] == {}
+
+
+# --------------------------------------------------------------------------- #
+# Date anomaly detection tests (aiify-opp-65: date_parsing hardcoded_threshold
+# -> anomaly_detection). _detect_date_anomaly signals implausible dates.
+# --------------------------------------------------------------------------- #
+
+def test_detect_date_anomaly_normal_returns_none():
+    assert ingest._detect_date_anomaly("2023-06-14") is None
+
+
+def test_detect_date_anomaly_pre_1900_flagged():
+    signal = ingest._detect_date_anomaly("1850-03-01")
+    assert signal is not None
+    assert "date_too_old" in signal
+    assert "1850" in signal
+
+
+def test_detect_date_anomaly_far_future_flagged():
+    from datetime import datetime, timezone
+    max_ok = datetime.now(timezone.utc).year + ingest._DATE_MAX_YEAR_OFFSET
+    signal = ingest._detect_date_anomaly(f"{max_ok + 1}-01-01")
+    assert signal is not None
+    assert "date_too_future" in signal
+
+
+def test_detect_date_anomaly_exactly_at_min_year_ok():
+    assert ingest._detect_date_anomaly(f"{ingest._DATE_MIN_YEAR}-01-01") is None
+
+
+def test_detect_date_anomaly_invalid_format():
+    signal = ingest._detect_date_anomaly("not-a-date")
+    assert signal == "date_invalid_format"
+
+
+def test_metadata_extraction_implausible_date_sets_anomaly(monkeypatch):
+    _patch_router(
+        monkeypatch,
+        content=_json(document_type="report", tags=[], date="1850-01-01", confidence=0.9),
+    )
+    out = ingest._ai_metadata_extraction("old document text", "old.md")
+    assert out is not None
+    assert out["date"] == "1850-01-01"
+    assert out["date_anomaly"] is not None
+    assert "date_too_old" in out["date_anomaly"]
+
+
+def test_metadata_extraction_no_date_has_none_anomaly(monkeypatch):
+    _patch_router(
+        monkeypatch,
+        content=_json(document_type="memo", tags=[], date=None, confidence=0.85),
+    )
+    out = ingest._ai_metadata_extraction("memo text", "memo.md")
+    assert out is not None
+    assert out["date"] is None
+    assert out["date_anomaly"] is None

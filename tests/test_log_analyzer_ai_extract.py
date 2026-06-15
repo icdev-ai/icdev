@@ -97,6 +97,7 @@ class _FakeResp:
 
 def _patch_router(monkeypatch, *, response=None, raises=None):
     """Install a fake LLMRouter on the tools.llm.router module object."""
+    import sys as _sys
     router_mod = importlib.import_module("tools.llm.router")
 
     class _FakeRouter:
@@ -106,6 +107,14 @@ def _patch_router(monkeypatch, *, response=None, raises=None):
             return response
 
     monkeypatch.setattr(router_mod, "LLMRouter", _FakeRouter)
+    # Patch ALL known router aliases — the _ToolsRedirect shim causes
+    # `from tools.llm.router import LLMRouter` to resolve to different
+    # module objects depending on full-suite import ordering.
+    import icdev.tools.llm.router as _icdev_router_mod
+    monkeypatch.setattr(_icdev_router_mod, "LLMRouter", _FakeRouter)
+    for _key, _mod in list(_sys.modules.items()):
+        if "llm.router" in _key and hasattr(_mod, "LLMRouter"):
+            monkeypatch.setattr(_mod, "LLMRouter", _FakeRouter)
 
 
 def test_extract_empty_messages_returns_none():

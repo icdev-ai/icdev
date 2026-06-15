@@ -1,32 +1,33 @@
 role_id: devops_engineer
 display_name: DevOps Engineer
-description: DevOps engineer that provisions infrastructure, configures CI/CD pipelines, builds artifacts, deploys services, monitors health, and remediates incidents.
-version: "1.0"
+description: DevOps engineer that provisions infrastructure, configures CI/CD pipelines,
+  builds artifacts, deploys services, monitors health, and remediates incidents.
+version: '1.0'
 trust_tier: yellow
 default_count: 1
 max_instances: 2
 steps:
-  - provision_infrastructure
-  - configure_pipeline
-  - build_artifacts
-  - run_deploy
-  - monitor_health
-  - remediate_incident
+- provision_infrastructure
+- configure_pipeline
+- build_artifacts
+- run_deploy
+- monitor_health
+- remediate_incident
 communication:
   protocol: a2a
   listen_topics:
-    - task.assigned
-    - deploy.request
-    - pipeline.triggered
+  - code.committed
+  - test.failed
+  - vulnerability.found
   emit_topics:
-    - deploy.complete
-    - infra.provisioned
-    - health.alert
-    - rollback.initiated
+  - deploy.complete
+  - infra.provisioned
+  - health.alert
+  - rollback.initiated
 llm_function: agent_infra
 tool_permissions:
-  - Read
-  - Bash
-  - Grep
-  - Glob
+- Read
+- Bash
+- Grep
+- Glob
 genesis_reflex: heal

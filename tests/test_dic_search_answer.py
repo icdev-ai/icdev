@@ -50,9 +50,18 @@ def _reset_router():
 
 
 def _patch_router(monkeypatch, content=None):
+    import sys as _sys
     if content is not None:
         _Router._content = content
     monkeypatch.setattr(router_mod, "LLMRouter", _Router)
+    # Patch ALL known router aliases — the _ToolsRedirect shim causes
+    # `from tools.llm.router import LLMRouter` to resolve to different
+    # module objects depending on full-suite import ordering.
+    import icdev.tools.llm.router as _icdev_router_mod
+    monkeypatch.setattr(_icdev_router_mod, "LLMRouter", _Router)
+    for _key, _mod in list(_sys.modules.items()):
+        if "llm.router" in _key and hasattr(_mod, "LLMRouter"):
+            monkeypatch.setattr(_mod, "LLMRouter", _Router)
 
 
 def _result(i, content="Some grounded source text."):
@@ -197,6 +206,12 @@ def test_llm_exception_degrades_gracefully(monkeypatch):
             raise RuntimeError("provider down")
 
     monkeypatch.setattr(router_mod, "LLMRouter", _Boom)
+    import sys as _sys
+    import icdev.tools.llm.router as _icdev_router_mod
+    monkeypatch.setattr(_icdev_router_mod, "LLMRouter", _Boom)
+    for _key, _mod in list(_sys.modules.items()):
+        if "llm.router" in _key and hasattr(_mod, "LLMRouter"):
+            monkeypatch.setattr(_mod, "LLMRouter", _Boom)
     ans = se.DICSearchEngine().answer("q")
     assert ans.grounded is False
     assert ans.refusal_reason == "llm_unavailable"
@@ -223,6 +238,12 @@ def test_none_llm_response_degrades(monkeypatch):
             return None
 
     monkeypatch.setattr(router_mod, "LLMRouter", _NoneRouter)
+    import sys as _sys
+    import icdev.tools.llm.router as _icdev_router_mod
+    monkeypatch.setattr(_icdev_router_mod, "LLMRouter", _NoneRouter)
+    for _key, _mod in list(_sys.modules.items()):
+        if "llm.router" in _key and hasattr(_mod, "LLMRouter"):
+            monkeypatch.setattr(_mod, "LLMRouter", _NoneRouter)
     ans = se.DICSearchEngine().answer("q")
     assert ans.grounded is False
     assert ans.refusal_reason == "llm_unavailable"

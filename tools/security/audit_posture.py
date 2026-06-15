@@ -65,7 +65,7 @@ def _check_classification_enforcer() -> Dict[str, Any]:
         from tools.security.security_context import SecurityContext
 
         ctx_cui = SecurityContext(clearance_level=1)
-        ctx_secret = SecurityContext(clearance_level=2)
+        ctx_secret = SecurityContext(clearance_level=3)  # SECRET (classification_manager scale: PUBLIC=0,CUI=1,ECI=2,SECRET=3)
         ok = (
             can_read("CUI", ctx_cui)
             and not can_read("SECRET", ctx_cui)
@@ -82,9 +82,9 @@ def _check_row_security() -> Dict[str, Any]:
     try:
         from tools.security.row_security import inject_row_predicate
 
-        sql, params = inject_row_predicate("SELECT * FROM t WHERE x = ?", "tenant_a")
-        ok = "tenant_id = ?" in sql and "tenant_a" in params
-        return {"status": "pass" if ok else "fail", "detail": f"predicate injection OK ({len(params)} params)"}
+        sql, extra_params, _ = inject_row_predicate("SELECT * FROM t WHERE x = ?", "tenant_a")
+        ok = "tenant_id = ?" in sql and "tenant_a" in extra_params
+        return {"status": "pass" if ok else "fail", "detail": f"predicate injection OK ({len(extra_params)} params)"}
     except Exception as exc:
         return {"status": "fail", "detail": str(exc)}
 

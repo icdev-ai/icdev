@@ -355,7 +355,7 @@ async function loadProducts() {
 
 /* ── Render a product card ── */
 function renderCard(p) {
-  const score  = (p._score !== undefined && p._score !== null) ? p._score : 0;
+  const score  = (p.discoverability_score !== undefined && p.discoverability_score !== null) ? Math.round(p.discoverability_score) : 0;
   const slaCls = SLA_CSS[p.sla_tier] || 'sla-standard';
   const port   = PORT_LABELS[p.output_port_type] || escHtml(p.output_port_type) || '&#9633; port';
   const stCls  = 'status-' + (p.status || 'draft');

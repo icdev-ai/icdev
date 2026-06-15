@@ -51,13 +51,23 @@ def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+_SKIP_DIRS = frozenset({".tmp", "vendor", "__pycache__", ".git", "node_modules", ".venv", "venv"})
+
+
 def _find_untested_modules(max_results: int = _DEFAULT_MAX_TESTS_PER_RUN) -> List[Dict[str, Any]]:
     """Find Python modules in tools/ that lack corresponding test files."""
     tools_dir = BASE_DIR / "tools"
     tests_dir = BASE_DIR / "tests"
 
+    # Collect up to max_results * 20 candidates, then sort for stability.
+    # This early exit prevents scanning hundreds of large files under timeout.
+    _candidate_cap = max_results * 20
+
     untested = []
     for py_file in tools_dir.rglob("*.py"):
+        # Skip non-source directories that can hang or generate noise.
+        if any(part in _SKIP_DIRS for part in py_file.parts):
+            continue
         if py_file.name.startswith("_"):
             continue
         if py_file.name in ("__init__.py", "setup.py", "conftest.py"):
@@ -96,6 +106,8 @@ def _find_untested_modules(max_results: int = _DEFAULT_MAX_TESTS_PER_RUN) -> Lis
                     "line_count": line_count,
                 }
             )
+            if len(untested) >= _candidate_cap:
+                break
 
     # Sort by directory depth (shallower = more important), then by size
     untested.sort(key=lambda x: (x["module"].count("/"), -x["line_count"]))

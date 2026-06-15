@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import importlib
 
-import pytest
 
 extractors = importlib.import_module("tools.document_intelligence.extractors")
 Extraction = extractors.Extraction

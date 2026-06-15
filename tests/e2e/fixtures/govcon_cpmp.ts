@@ -196,6 +196,61 @@ export async function seedDraft(request: APIRequestContext, oppId: string): Prom
   return 'seed-draft-1';
 }
 
+// Ensure a volume exists for the opportunity. Returns volumeId.
+export async function seedVolume(request: APIRequestContext, oppId: string): Promise<string> {
+  const listResp = await request.get(`${BASE}/api/proposals/opportunities/${oppId}/volumes`);
+  if (listResp.ok()) {
+    const body = await listResp.json().catch(() => ({}));
+    const items = body.volumes ?? body.data ?? body ?? [];
+    if (Array.isArray(items) && items.length > 0) {
+      return String(items[0].id ?? items[0].volume_id);
+    }
+  }
+
+  const createResp = await request.post(`${BASE}/api/proposals/opportunities/${oppId}/volumes`, {
+    data: { title: 'Volume I — Technical', volume_number: 1, sort_order: 0 },
+  });
+  if (createResp.ok()) {
+    const body = await createResp.json().catch(() => ({}));
+    return String(body.id ?? body.volume_id ?? 'seed-vol-1');
+  }
+
+  return 'seed-vol-1';
+}
+
+// Ensure a proposal section exists for the opportunity. Returns sectionId.
+export async function seedSection(
+  request: APIRequestContext,
+  oppId: string,
+  volumeId: string,
+): Promise<string> {
+  const listResp = await request.get(`${BASE}/api/proposals/opportunities/${oppId}/sections`);
+  if (listResp.ok()) {
+    const body = await listResp.json().catch(() => ({}));
+    const items = body.sections ?? body.data ?? body ?? [];
+    if (Array.isArray(items) && items.length > 0) {
+      return String(items[0].id ?? items[0].section_id);
+    }
+  }
+
+  const createResp = await request.post(`${BASE}/api/proposals/opportunities/${oppId}/sections`, {
+    data: {
+      volume_id: volumeId,
+      section_number: '1.1',
+      title: 'GCPL Seed Section — Technical Approach',
+      description: 'E2E seed section for route coverage.',
+      priority: 'standard',
+      sort_order: 0,
+    },
+  });
+  if (createResp.ok()) {
+    const body = await createResp.json().catch(() => ({}));
+    return String(body.id ?? body.section_id ?? 'seed-sec-1');
+  }
+
+  return 'seed-sec-1';
+}
+
 // Full seed — builds the complete fixture chain and returns all IDs.
 export async function buildFullFixture(request: APIRequestContext): Promise<GovConCpmpFixture> {
   const oppId        = await seedOpportunity(request);

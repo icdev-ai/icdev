@@ -28,6 +28,22 @@ except ImportError:
 
 
 @pytest.fixture
+def auth_headers():
+    """Valid Bearer token header for API gateway auth tests."""
+    return {"Authorization": "Bearer icdev_test_key_valid"}
+
+
+@pytest.fixture
+def platform_db(tmp_path):
+    """Temporary path for the platform SQLite DB used in API gateway tests."""
+    db_path = tmp_path / "platform.db"
+    import sqlite3
+    conn = sqlite3.connect(str(db_path))
+    conn.close()
+    return db_path
+
+
+@pytest.fixture
 def app(platform_db, icdev_db):
     """Create a test app with TESTING=True and a temporary platform DB."""
     os.environ["PLATFORM_DB_PATH"] = str(platform_db)

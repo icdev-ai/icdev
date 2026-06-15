@@ -1,0 +1,633 @@
+<!-- CUI // SP-CTI — ICDEV Pipeline Command Center -->
+{% extends "base.html" %}
+{% block title %}Pipeline Command Center — ICDEV{% endblock %}
+{% block content %}
+<style>
+/* ── Layout ─────────────────────────────────────────────────────── */
+.poc-wrap { display:flex; flex-direction:column; height:calc(100vh - 110px); padding:0; overflow:hidden; }
+.poc-header { display:flex; align-items:center; gap:14px; padding:12px 24px; border-bottom:1px solid #1e3a6e; background:#0a1628; flex-shrink:0; }
+.poc-title { font-size:18px; font-weight:700; color:#eaeaea; margin:0; }
+.poc-subtitle { font-size:11px; color:#5a6e8c; margin:0; }
+.poc-health { display:flex; align-items:center; gap:8px; margin-left:auto; }
+.health-ring { position:relative; width:52px; height:52px; flex-shrink:0; }
+.poc-status-bar { display:flex; gap:18px; align-items:center; font-size:11px; color:#7a8cb0; }
+.poc-metric { text-align:center; }
+.poc-metric-val { font-size:16px; font-weight:700; color:#4fc3f7; display:block; line-height:1.2; }
+.poc-metric-lbl { font-size:9px; color:#5a6e8c; text-transform:uppercase; letter-spacing:.5px; }
+.btn-briefing { padding:9px 20px; background:linear-gradient(135deg,#7c4dff,#ff9800); color:#fff; border:none; border-radius:7px; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap; box-shadow:0 2px 12px rgba(124,77,255,.4); transition:opacity .2s; }
+.btn-briefing:hover { opacity:.88; }
+
+/* ── Main body ───────────────────────────────────────────────────── */
+.poc-body { display:flex; flex:1; overflow:hidden; }
+.poc-left  { flex:1; overflow:hidden; display:flex; flex-direction:column; border-right:1px solid #1e3a6e; }
+.poc-right { width:340px; flex-shrink:0; display:flex; flex-direction:column; overflow:hidden; }
+
+/* ── Pipeline Diagram ────────────────────────────────────────────── */
+.pipeline-canvas { flex:1; overflow:auto; padding:20px 24px; }
+.pipeline-stage { margin-bottom:18px; border-radius:8px; overflow:hidden; border:1px solid; }
+.stage-header { padding:7px 14px; font-size:11px; font-weight:700; letter-spacing:.7px; text-transform:uppercase; display:flex; align-items:center; gap:8px; }
+.stage-nodes { display:flex; align-items:center; gap:0; padding:14px 14px 14px; flex-wrap:nowrap; overflow-x:auto; }
+
+/* Stage color themes */
+.stage-aiml   { border-color:#1a6e9e33; background:#0c1e30; }
+.stage-aiml   .stage-header { background:#0f3460; color:#4fc3f7; border-bottom:1px solid #1a6e9e33; }
+.stage-agentic{ border-color:#7c4dff33; background:#120d28; }
+.stage-agentic .stage-header { background:#1a0d40; color:#ce93d8; border-bottom:1px solid #7c4dff33; }
+.stage-ragkg  { border-color:#1e6e3e33; background:#0c1f14; }
+.stage-ragkg  .stage-header { background:#0f3020; color:#a5d6a7; border-bottom:1px solid #1e6e3e33; }
+
+/* Stage worker badge in header */
+.stage-worker { display:flex; align-items:center; gap:6px; margin-left:auto; background:rgba(255,255,255,.07); border-radius:20px; padding:3px 10px 3px 5px; }
+.worker-dot { width:7px; height:7px; border-radius:50%; animation:pulse 2s infinite; }
+.stage-aiml .worker-dot    { background:#4fc3f7; box-shadow:0 0 6px #4fc3f7; }
+.stage-agentic .worker-dot { background:#ce93d8; box-shadow:0 0 6px #ce93d8; }
+.stage-ragkg .worker-dot   { background:#a5d6a7; box-shadow:0 0 6px #a5d6a7; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* Nodes */
+.p-node { background:#16213e; border:1px solid #1e3a6e; border-radius:7px; padding:10px 13px; min-width:148px; flex-shrink:0; position:relative; transition:border-color .2s,box-shadow .2s; cursor:pointer; }
+.p-node:hover { border-color:#ff9800; box-shadow:0 0 0 1px #ff980033; }
+.stage-aiml   .p-node { border-color:#1a6e9e55; }
+.stage-aiml   .p-node:hover { border-color:#4fc3f7; box-shadow:0 0 0 1px #4fc3f766; }
+.stage-agentic .p-node { border-color:#7c4dff55; }
+.stage-agentic .p-node:hover { border-color:#ce93d8; box-shadow:0 0 0 1px #ce93d866; }
+.stage-ragkg  .p-node { border-color:#2e7d5255; }
+.stage-ragkg  .p-node:hover { border-color:#a5d6a7; box-shadow:0 0 0 1px #a5d6a766; }
+
+.node-icon { font-size:16px; margin-bottom:4px; }
+.node-name { font-size:11px; font-weight:700; color:#eaeaea; margin-bottom:6px; line-height:1.3; }
+.node-metrics { display:flex; flex-direction:column; gap:3px; }
+.node-metric { display:flex; justify-content:space-between; gap:8px; font-size:10px; }
+.node-metric-k { color:#5a6e8c; }
+.node-metric-v { color:#eaeaea; font-weight:600; font-family:monospace; }
+.node-metric-v.green { color:#66bb6a; }
+.node-metric-v.amber { color:#ff9800; }
+.node-metric-v.blue  { color:#4fc3f7; }
+
+/* Arrows between nodes */
+.p-arrow { display:flex; align-items:center; padding:0 4px; flex-shrink:0; }
+.p-arrow-inner { display:flex; flex-direction:column; align-items:center; gap:2px; }
+.p-arrow-line { width:32px; height:2px; background:linear-gradient(90deg,#1e3a6e,#4a5a8e); position:relative; }
+.p-arrow-line::after { content:''; position:absolute; right:-5px; top:-4px; border:5px solid transparent; border-left:8px solid #4a5a8e; }
+.p-arrow-label { font-size:9px; color:#5a6e8c; white-space:nowrap; }
+.stage-aiml    .p-arrow-line { background:linear-gradient(90deg,#0f3460,#4fc3f7); }
+.stage-aiml    .p-arrow-line::after { border-left-color:#4fc3f7; }
+.stage-agentic .p-arrow-line { background:linear-gradient(90deg,#1a0d40,#ce93d8); }
+.stage-agentic .p-arrow-line::after { border-left-color:#ce93d8; }
+.stage-ragkg   .p-arrow-line { background:linear-gradient(90deg,#0f3020,#a5d6a7); }
+.stage-ragkg   .p-arrow-line::after { border-left-color:#a5d6a7; }
+
+/* Cross-stage connectors */
+.cross-arrow { display:flex; justify-content:center; align-items:center; gap:30px; padding:4px 14px; }
+.cross-line { display:flex; flex-direction:column; align-items:center; gap:2px; }
+.cross-vert { width:2px; height:20px; background:linear-gradient(180deg,#4fc3f7,#ce93d8); position:relative; }
+.cross-vert::after { content:''; position:absolute; bottom:-5px; left:-4px; border:5px solid transparent; border-top:8px solid #ce93d8; }
+.cross-vert.to-rag { background:linear-gradient(180deg,#ce93d8,#a5d6a7); }
+.cross-vert.to-rag::after { border-top-color:#a5d6a7; }
+.cross-lbl { font-size:9px; color:#5a6e8c; }
+
+/* ── Co-Worker Panel ─────────────────────────────────────────────── */
+.cw-panel { flex:1; overflow-y:auto; padding:14px; display:flex; flex-direction:column; gap:10px; }
+.cw-panel-title { font-size:10px; color:#5a6e8c; text-transform:uppercase; letter-spacing:.7px; margin:0 0 2px; }
+
+.cw-card { background:#16213e; border:1px solid #1e3a6e; border-radius:8px; overflow:hidden; cursor:pointer; transition:border-color .2s; }
+.cw-card:hover { border-color:#ff9800; }
+.cw-card-header { display:flex; align-items:center; gap:10px; padding:10px 12px; }
+.cw-avatar { width:36px; height:36px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:15px; flex-shrink:0; border:2px solid; }
+.cw-avatar.aria { background:#0f346033; border-color:#4fc3f7; }
+.cw-avatar.max  { background:#1a0d4033; border-color:#ce93d8; }
+.cw-avatar.sage { background:#0f302033; border-color:#a5d6a7; }
+.cw-info { flex:1; min-width:0; }
+.cw-name { font-size:12px; font-weight:700; color:#eaeaea; }
+.cw-role { font-size:10px; color:#7a8cb0; }
+.cw-status-badge { font-size:9px; padding:2px 7px; border-radius:10px; font-weight:600; white-space:nowrap; }
+.cw-status-badge.active   { background:#1b5e2033; color:#66bb6a; border:1px solid #66bb6a55; }
+.cw-status-badge.watching { background:#0f3460; color:#4fc3f7; border:1px solid #4fc3f755; }
+.cw-status-badge.flagged  { background:#4a0e0e; color:#ef5350; border:1px solid #ef535055; }
+.cw-insight { padding:0 12px 10px; font-size:11px; color:#7a8cb0; line-height:1.5; border-top:1px solid #1e3a6e; padding-top:8px; }
+.cw-insight-icon { color:#ff9800; margin-right:4px; }
+.cw-stage-tag { display:inline-block; padding:1px 6px; border-radius:3px; font-size:9px; font-weight:700; margin-right:6px; }
+.cw-stage-tag.aiml    { background:#0f346033; color:#4fc3f7; }
+.cw-stage-tag.agentic { background:#1a0d4033; color:#ce93d8; }
+.cw-stage-tag.ragkg   { background:#0f302033; color:#a5d6a7; }
+
+/* ── Activity Feed ───────────────────────────────────────────────── */
+.feed-section { border-top:1px solid #1e3a6e; flex-shrink:0; }
+.feed-header { padding:8px 14px; font-size:10px; color:#5a6e8c; text-transform:uppercase; letter-spacing:.7px; display:flex; align-items:center; gap:6px; }
+.feed-dot { width:6px; height:6px; border-radius:50%; background:#66bb6a; animation:pulse 1.5s infinite; }
+.feed-list { height:140px; overflow-y:auto; padding:0 14px 10px; }
+.feed-item { display:flex; gap:8px; padding:5px 0; border-bottom:1px solid #0f1e36; font-size:11px; }
+.feed-item:last-child { border-bottom:none; }
+.feed-time { color:#3a4e6e; font-family:monospace; flex-shrink:0; font-size:10px; padding-top:1px; }
+.feed-who  { font-weight:700; flex-shrink:0; }
+.feed-who.aria { color:#4fc3f7; }
+.feed-who.max  { color:#ce93d8; }
+.feed-who.sage { color:#a5d6a7; }
+.feed-msg  { color:#7a8cb0; }
+
+/* ── Briefing Modal ──────────────────────────────────────────────── */
+.briefing-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,.75); z-index:500; align-items:center; justify-content:center; }
+.briefing-overlay.open { display:flex; }
+.briefing-modal { background:#0d1b2a; border:1px solid #1e3a6e; border-radius:12px; width:720px; max-width:96vw; max-height:88vh; overflow-y:auto; padding:28px; position:relative; box-shadow:0 8px 40px rgba(0,0,0,.7); }
+.briefing-modal h2 { font-size:17px; color:#ff9800; margin:0 0 4px; }
+.briefing-modal .bm-meta { font-size:11px; color:#5a6e8c; margin:0 0 20px; }
+.briefing-close { position:absolute; top:16px; right:18px; background:none; border:none; color:#5a6e8c; font-size:22px; cursor:pointer; }
+.briefing-close:hover { color:#eaeaea; }
+.bm-section { margin-bottom:18px; }
+.bm-section-title { font-size:10px; text-transform:uppercase; letter-spacing:.7px; color:#5a6e8c; margin-bottom:8px; display:flex; align-items:center; gap:6px; }
+.bm-section-title::after { content:''; flex:1; height:1px; background:#1e3a6e; }
+.bm-co-block { display:flex; gap:12px; margin-bottom:10px; }
+.bm-co-avatar { width:38px; height:38px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0; border:2px solid; }
+.bm-co-avatar.aria { background:#0f346033; border-color:#4fc3f7; }
+.bm-co-avatar.max  { background:#1a0d4033; border-color:#ce93d8; }
+.bm-co-avatar.sage { background:#0f302033; border-color:#a5d6a7; }
+.bm-co-body { flex:1; }
+.bm-co-name { font-size:12px; font-weight:700; margin-bottom:5px; }
+.bm-co-name.aria { color:#4fc3f7; }
+.bm-co-name.max  { color:#ce93d8; }
+.bm-co-name.sage { color:#a5d6a7; }
+.bm-co-text { font-size:12px; color:#b0bec5; line-height:1.65; }
+.bm-metric-row { display:flex; gap:8px; margin-top:6px; flex-wrap:wrap; }
+.bm-chip { padding:3px 9px; border-radius:4px; font-size:10px; font-weight:600; }
+.bm-chip.green  { background:#1b5e2033; color:#66bb6a; border:1px solid #66bb6a33; }
+.bm-chip.blue   { background:#0f346033; color:#4fc3f7; border:1px solid #4fc3f733; }
+.bm-chip.amber  { background:#3d300033; color:#ff9800; border:1px solid #ff980033; }
+.bm-chip.purple { background:#1a0d4033; color:#ce93d8; border:1px solid #ce93d833; }
+.bm-action { background:#0f3460; border:1px solid #ff980066; border-radius:6px; padding:10px 14px; font-size:11px; color:#ff9800; margin-top:12px; }
+.bm-action strong { display:block; margin-bottom:3px; }
+.typewriter { overflow:hidden; border-right:2px solid #ff9800; animation:blink .7s step-end infinite; }
+@keyframes blink { 50% { border-color:transparent; } }
+</style>
+
+<div class="poc-wrap">
+  <!-- Header -->
+  <div class="poc-header">
+    <div>
+      <p class="poc-title">Pipeline Command Center</p>
+      <p class="poc-subtitle">AI/ML &rarr; Agentic AI &rarr; RAG+KG &mdash; operated by AI Co-Workers</p>
+    </div>
+    <div class="poc-status-bar">
+      <div class="poc-metric">
+        <span class="poc-metric-val" id="met-throughput">3,200</span>
+        <span class="poc-metric-lbl">Inferences/hr</span>
+      </div>
+      <div class="poc-metric">
+        <span class="poc-metric-val" id="met-accuracy" style="color:#66bb6a">94.2%</span>
+        <span class="poc-metric-lbl">Model Accuracy</span>
+      </div>
+      <div class="poc-metric">
+        <span class="poc-metric-val" id="met-agents">17</span>
+        <span class="poc-metric-lbl">Active Agents</span>
+      </div>
+      <div class="poc-metric">
+        <span class="poc-metric-val" id="met-halluc" style="color:#66bb6a">1.8%</span>
+        <span class="poc-metric-lbl">Hallucination</span>
+      </div>
+      <div class="poc-metric">
+        <span class="poc-metric-val" id="met-decisions">1,937</span>
+        <span class="poc-metric-lbl">Decisions Logged</span>
+      </div>
+    </div>
+    <div class="poc-health">
+      <svg width="52" height="52" viewBox="0 0 52 52" style="transform:rotate(-90deg)">
+        <circle cx="26" cy="26" r="21" fill="none" stroke="#1e3a6e" stroke-width="5"/>
+        <circle cx="26" cy="26" r="21" fill="none" stroke="#66bb6a" stroke-width="5"
+          stroke-dasharray="118 132" stroke-linecap="round"/>
+      </svg>
+      <div style="position:absolute;pointer-events:none;margin-left:0;" id="health-label">
+        <div style="font-size:14px;font-weight:700;color:#66bb6a;line-height:1;text-align:center;">96</div>
+        <div style="font-size:9px;color:#5a6e8c;text-align:center;">health</div>
+      </div>
+    </div>
+    <button class="btn-briefing" onclick="openBriefing()">&#9889; Get AI Briefing</button>
+  </div>
+
+  <!-- Body -->
+  <div class="poc-body">
+
+    <!-- Left: Pipeline Diagram -->
+    <div class="poc-left">
+      <div class="pipeline-canvas">
+
+        <!-- Stage 1: AI/ML -->
+        <div class="pipeline-stage stage-aiml">
+          <div class="stage-header">
+            &#9670; Stage 1 &mdash; AI / ML
+            <div class="stage-worker">
+              <div class="worker-dot"></div>
+              <span style="font-size:10px;color:#4fc3f7;font-weight:600;">ARIA</span>
+              <span style="font-size:9px;color:#3a6e8c;">watching</span>
+            </div>
+          </div>
+          <div class="stage-nodes">
+            <div class="p-node" onclick="nodeClick('Feature Store','18,400 labeled rows across 9 feature domains. Updated every 15 min from innovation signals, DIC documents, and KG embeddings. Zero nulls on model input columns.')">
+              <div class="node-icon">&#128471;</div>
+              <div class="node-name">Feature Store</div>
+              <div class="node-metrics">
+                <div class="node-metric"><span class="node-metric-k">rows</span><span class="node-metric-v blue">18,400</span></div>
+                <div class="node-metric"><span class="node-metric-k">null %</span><span class="node-metric-v green">0.0%</span></div>
+                <div class="node-metric"><span class="node-metric-k">refresh</span><span class="node-metric-v">15 min</span></div>
+              </div>
+            </div>
+            <div class="p-arrow"><div class="p-arrow-inner"><div class="p-arrow-line"></div><div class="p-arrow-label">features</div></div></div>
+            <div class="p-node" onclick="nodeClick('ML Training Pipeline','XGBoost + BERT dual-model training running nightly at 02:00 UTC. Last run: 2h 14m. Loss delta vs prior run: -0.003 (improving). BERT fine-tuned on 65 RAG chunks classified as high-signal.')">
+              <div class="node-icon">&#9881;</div>
+              <div class="node-name">ML Training Pipeline</div>
+              <div class="node-metrics">
+                <div class="node-metric"><span class="node-metric-k">framework</span><span class="node-metric-v">XGB+BERT</span></div>
+                <div class="node-metric"><span class="node-metric-k">last run</span><span class="node-metric-v green">2h 14m</span></div>
+                <div class="node-metric"><span class="node-metric-k">cadence</span><span class="node-metric-v">nightly</span></div>
+              </div>
+            </div>
+            <div class="p-arrow"><div class="p-arrow-inner"><div class="p-arrow-line"></div><div class="p-arrow-label">trained model</div></div></div>
+            <div class="p-node" onclick="nodeClick('ML Model Registry','4 production models: threat-classifier-v3, signal-ranker-v2, entity-linker-v4, intent-router-v1. All models versioned with SHA256 artifacts. Rollback available to previous 2 versions each.')">
+              <div class="node-icon">&#128230;</div>
+              <div class="node-name">ML Model Registry</div>
+              <div class="node-metrics">
+                <div class="node-metric"><span class="node-metric-k">models</span><span class="node-metric-v blue">4</span></div>
+                <div class="node-metric"><span class="node-metric-k">latest acc</span><span class="node-metric-v green">94.2%</span></div>
+                <div class="node-metric"><span class="node-metric-k">rollback</span><span class="node-metric-v">v-1, v-2</span></div>
+              </div>
+            </div>
+            <div class="p-arrow"><div class="p-arrow-inner"><div class="p-arrow-line"></div><div class="p-arrow-label">load model</div></div></div>
+            <div class="p-node" onclick="nodeClick('Inference API','REST + gRPC inference endpoint. p99 latency 42ms. 3,200 requests/hr sustained. Auto-scales to 3 replicas under load. Last 1,000 requests: 0 errors, 0 timeouts.')">
+              <div class="node-icon">&#9889;</div>
+              <div class="node-name">Inference API</div>
+              <div class="node-metrics">
+                <div class="node-metric"><span class="node-metric-k">p99 latency</span><span class="node-metric-v green">42 ms</span></div>
+                <div class="node-metric"><span class="node-metric-k">rpm</span><span class="node-metric-v blue">3,200</span></div>
+                <div class="node-metric"><span class="node-metric-k">error rate</span><span class="node-metric-v green">0.0%</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Cross-stage arrow: AI/ML → Agentic -->
+        <div class="cross-arrow" style="padding:0 14px 4px;justify-content:flex-start;gap:0;">
+          <div style="display:flex;align-items:flex-start;gap:4px;margin-left:calc(148px * 3 + 40px * 3 + 14px + 50px);">
+            <div class="cross-line">
+              <div class="cross-vert"></div>
+              <div class="cross-lbl" style="font-size:9px;color:#5a6e8c;">classifier scores</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stage 2: Agentic AI -->
+        <div class="pipeline-stage stage-agentic">
+          <div class="stage-header">
+            &#10070; Stage 2 &mdash; Agentic AI
+            <div class="stage-worker">
+              <div class="worker-dot"></div>
+              <span style="font-size:10px;color:#ce93d8;font-weight:600;">MAX</span>
+              <span style="font-size:9px;color:#6a4e8c;">on-call</span>
+            </div>
+          </div>
+          <div class="stage-nodes">
+            <div class="p-node" onclick="nodeClick('A2A Message Bus','Mutual-TLS secured JSON-RPC 2.0 message bus. Current throughput: 480 msg/s. Zero message loss in last 72h. Connected: 17 agents across 3 tiers (Core/Domain/Support). Max observed: 1,240 msg/s burst.')">
+              <div class="node-icon">&#8644;</div>
+              <div class="node-name">A2A Message Bus</div>
+              <div class="node-metrics">
+                <div class="node-metric"><span class="node-metric-k">throughput</span><span class="node-metric-v blue">480 msg/s</span></div>
+                <div class="node-metric"><span class="node-metric-k">loss rate</span><span class="node-metric-v green">0.000%</span></div>
+                <div class="node-metric"><span class="node-metric-k">transport</span><span class="node-metric-v">mTLS</span></div>
+              </div>
+            </div>
+            <div class="p-arrow"><div class="p-arrow-inner"><div class="p-arrow-line"></div><div class="p-arrow-label">task dispatch</div></div></div>
+            <div class="p-node" onclick="nodeClick('Agent Orchestrator','Root orchestrator routing tasks to 17 specialized agents: Architect, Builder, Security, Compliance, Infrastructure, MBSE, Modernization, Requirements, Supply Chain, Simulation, DevSecOps, ZTA, Gateway, Knowledge, Monitor, and 2 domain specialists. A2A JSON-RPC 2.0 with mutual TLS.')">
+              <div class="node-icon">&#127963;</div>
+              <div class="node-name">Agent Orchestrator</div>
+              <div class="node-metrics">
+                <div class="node-metric"><span class="node-metric-k">agents</span><span class="node-metric-v blue">17</span></div>
+                <div class="node-metric"><span class="node-metric-k">active tasks</span><span class="node-metric-v amber">591</span></div>
+                <div class="node-metric"><span class="node-metric-k">protocol</span><span class="node-metric-v">A2A/mTLS</span></div>
+              </div>
+            </div>
+            <div class="p-arrow"><div class="p-arrow-inner"><div class="p-arrow-line"></div><div class="p-arrow-label">plan task</div></div></div>
+            <div class="p-node" onclick="nodeClick('Task Planner','Kanban-backed autonomous task decomposer. Converts agent objectives into atomic subtasks with acceptance criteria, test hooks, and dependency chains. 591 tasks in flight. Avg completion: 4.2 min/task. HITL gate at confidence < 0.70.')">
+              <div class="node-icon">&#128203;</div>
+              <div class="node-name">Task Planner</div>
+              <div class="node-metrics">
+                <div class="node-metric"><span class="node-metric-k">queue depth</span><span class="node-metric-v amber">591</span></div>
+                <div class="node-metric"><span class="node-metric-k">avg time</span><span class="node-metric-v">4.2 min</span></div>
+                <div class="node-metric"><span class="node-metric-k">HITL gate</span><span class="node-metric-v">0.70</span></div>
+              </div>
+            </div>
+            <div class="p-arrow"><div class="p-arrow-inner"><div class="p-arrow-line"></div><div class="p-arrow-label">log decision</div></div></div>
+            <div class="p-node" onclick="nodeClick('Decision Log','Append-only immutable audit trail of all autonomous agent decisions. 1,937 records. Complies with NIST AU-9 (Protection of Audit Information). Zero deletes permitted by pre-commit hook enforcement. FedRAMP AC-6 compatible.')">
+              <div class="node-icon">&#128196;</div>
+              <div class="node-name">Decision Log</div>
+              <div class="node-metrics">
+                <div class="node-metric"><span class="node-metric-k">records</span><span class="node-metric-v blue">1,937</span></div>
+                <div class="node-metric"><span class="node-metric-k">immutable</span><span class="node-metric-v green">&#10003; NIST AU-9</span></div>
+                <div class="node-metric"><span class="node-metric-k">deletes</span><span class="node-metric-v green">0 (blocked)</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Cross-stage arrow: Agentic → RAG+KG -->
+        <div style="padding:0 14px 4px;display:flex;gap:80px;margin-left:calc(148px * 1 + 40px * 1 + 14px + 28px);">
+          <div class="cross-line">
+            <div class="cross-vert to-rag"></div>
+            <div class="cross-lbl">retrieve context</div>
+          </div>
+          <div class="cross-line" style="margin-left:80px;">
+            <div class="cross-vert to-rag"></div>
+            <div class="cross-lbl">expand KG</div>
+          </div>
+        </div>
+
+        <!-- Stage 3: RAG + KG -->
+        <div class="pipeline-stage stage-ragkg">
+          <div class="stage-header">
+            &#9670; Stage 3 &mdash; RAG + Knowledge Graph
+            <div class="stage-worker">
+              <div class="worker-dot"></div>
+              <span style="font-size:10px;color:#a5d6a7;font-weight:600;">SAGE</span>
+              <span style="font-size:9px;color:#3a6e4e;">monitoring</span>
+            </div>
+          </div>
+          <div class="stage-nodes">
+            <div class="p-node" onclick="nodeClick('RAG Chunk Store','1,536 semantic chunks from 11 classified documents (PDFs, TXT, DOCX). Each chunk: 256 tokens max, tagged with CUI/SECRET markings, source provenance, and DIC pipeline lineage. Freshness SLA: 4h from document ingest.')">
+              <div class="node-icon">&#128190;</div>
+              <div class="node-name">RAG Chunk Store</div>
+              <div class="node-metrics">
+                <div class="node-metric"><span class="node-metric-k">chunks</span><span class="node-metric-v blue">1,536</span></div>
+                <div class="node-metric"><span class="node-metric-k">freshness</span><span class="node-metric-v green">1.2 hrs</span></div>
+                <div class="node-metric"><span class="node-metric-k">SLA</span><span class="node-metric-v">4 hr max</span></div>
+              </div>
+            </div>
+            <div class="p-arrow"><div class="p-arrow-inner"><div class="p-arrow-line"></div><div class="p-arrow-label">chunk vectors</div></div></div>
+            <div class="p-node" onclick="nodeClick('Vector Index (pgvector)','512-dimensional HNSW index in pgvector. Approximate nearest-neighbor search at 8ms p99. Supports filtered search by classification (CUI/SECRET/TS-SCI). RRF fusion combines dense + sparse scores for hybrid retrieval.')">
+              <div class="node-icon">&#128202;</div>
+              <div class="node-name">Vector Index</div>
+              <div class="node-metrics">
+                <div class="node-metric"><span class="node-metric-k">engine</span><span class="node-metric-v">pgvector HNSW</span></div>
+                <div class="node-metric"><span class="node-metric-k">dims</span><span class="node-metric-v blue">512</span></div>
+                <div class="node-metric"><span class="node-metric-k">p99 search</span><span class="node-metric-v green">8 ms</span></div>
+              </div>
+            </div>
+            <div class="p-arrow"><div class="p-arrow-inner"><div class="p-arrow-line"></div><div class="p-arrow-label">top-k chunks</div></div></div>
+            <div class="p-node" onclick="nodeClick('KG Entity Store','2,191 typed entities across 9 entity types (Vulnerability, Technology, Organization, Actor, IOC, Regulation, Capability, Asset, Event). 6,803 edges. SPARQL-style traversal. Neighborhood expansion for multi-hop reasoning.')">
+              <div class="node-icon">&#128279;</div>
+              <div class="node-name">KG Entity Store</div>
+              <div class="node-metrics">
+                <div class="node-metric"><span class="node-metric-k">entities</span><span class="node-metric-v blue">2,191</span></div>
+                <div class="node-metric"><span class="node-metric-k">edges</span><span class="node-metric-v blue">6,803</span></div>
+                <div class="node-metric"><span class="node-metric-k">types</span><span class="node-metric-v">9</span></div>
+              </div>
+            </div>
+            <div class="p-arrow"><div class="p-arrow-inner"><div class="p-arrow-line"></div><div class="p-arrow-label">subgraph context</div></div></div>
+            <div class="p-node" onclick="nodeClick('Grounded Response Engine','RRF fusion: dense vector + sparse BM25 + KG subgraph re-ranking. Every response includes source citations. Constitution-enforced abstention when confidence < 0.60. Hallucination rate 1.8% on held-out eval set (target: <2%).')">
+              <div class="node-icon">&#127775;</div>
+              <div class="node-name">Grounded Response Engine</div>
+              <div class="node-metrics">
+                <div class="node-metric"><span class="node-metric-k">strategy</span><span class="node-metric-v">RRF fusion</span></div>
+                <div class="node-metric"><span class="node-metric-k">hallucination</span><span class="node-metric-v green">1.8%</span></div>
+                <div class="node-metric"><span class="node-metric-k">citations</span><span class="node-metric-v green">always</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div><!-- /pipeline-canvas -->
+    </div><!-- /poc-left -->
+
+    <!-- Right: Co-Worker Panel + Feed -->
+    <div class="poc-right">
+      <div class="cw-panel">
+        <p class="cw-panel-title">&#9675; AI Co-Workers On Duty</p>
+
+        <!-- ARIA -->
+        <div class="cw-card" onclick="openCwModal('aria')">
+          <div class="cw-card-header">
+            <div class="cw-avatar aria">&#129302;</div>
+            <div class="cw-info">
+              <div class="cw-name">ARIA</div>
+              <div class="cw-role">Data Analyst &bull; AI/ML Layer</div>
+            </div>
+            <span class="cw-status-badge watching">WATCHING</span>
+          </div>
+          <div class="cw-insight">
+            <span class="cw-stage-tag aiml">AI/ML</span>
+            <span class="cw-insight-icon">&#9432;</span>
+            Accuracy holding at <strong style="color:#66bb6a">94.2%</strong>. Feature null rate nominal. Next retraining in <span id="aria-countdown">6h 42m</span>.
+          </div>
+        </div>
+
+        <!-- MAX -->
+        <div class="cw-card" onclick="openCwModal('max')">
+          <div class="cw-card-header">
+            <div class="cw-avatar max">&#129303;</div>
+            <div class="cw-info">
+              <div class="cw-name">MAX</div>
+              <div class="cw-role">DevOps Engineer &bull; Agentic Layer</div>
+            </div>
+            <span class="cw-status-badge active">ON-CALL</span>
+          </div>
+          <div class="cw-insight">
+            <span class="cw-stage-tag agentic">AGENTIC</span>
+            <span class="cw-insight-icon">&#9888;</span>
+            Task queue at <strong style="color:#ff9800">591</strong> — elevated but within SLA. A2A bus stable at 480 msg/s.
+          </div>
+        </div>
+
+        <!-- SAGE -->
+        <div class="cw-card" onclick="openCwModal('sage')">
+          <div class="cw-card-header">
+            <div class="cw-avatar sage">&#129302;</div>
+            <div class="cw-info">
+              <div class="cw-name">SAGE</div>
+              <div class="cw-role">AI Developer &bull; RAG+KG Layer</div>
+            </div>
+            <span class="cw-status-badge active">ACTIVE</span>
+          </div>
+          <div class="cw-insight">
+            <span class="cw-stage-tag ragkg">RAG+KG</span>
+            <span class="cw-insight-icon">&#9989;</span>
+            Hallucination rate <strong style="color:#66bb6a">1.8%</strong> &mdash; below 2% target. KG expanded <strong>+23 nodes</strong> this hour.
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Activity Feed -->
+      <div class="feed-section">
+        <div class="feed-header"><div class="feed-dot"></div> Live Activity</div>
+        <div class="feed-list" id="feedList">
+          <div class="feed-item"><span class="feed-time" id="ft0">00:00</span><span class="feed-who aria">ARIA</span><span class="feed-msg">Model accuracy stable at 94.2% &mdash; no drift detected</span></div>
+          <div class="feed-item"><span class="feed-time" id="ft1">00:00</span><span class="feed-who max">MAX</span><span class="feed-msg">Agent Orchestrator processed 48 tasks, avg 3.8 min each</span></div>
+          <div class="feed-item"><span class="feed-time" id="ft2">00:00</span><span class="feed-who sage">SAGE</span><span class="feed-msg">KG ingested 23 new entities from DIC document batch</span></div>
+          <div class="feed-item"><span class="feed-time" id="ft3">00:00</span><span class="feed-who max">MAX</span><span class="feed-msg">A2A message bus heartbeat OK &mdash; 17/17 agents responsive</span></div>
+          <div class="feed-item"><span class="feed-time" id="ft4">00:00</span><span class="feed-who aria">ARIA</span><span class="feed-msg">Feature Store refreshed &mdash; 18,400 rows, 0 nulls on input cols</span></div>
+          <div class="feed-item"><span class="feed-time" id="ft5">00:00</span><span class="feed-who sage">SAGE</span><span class="feed-msg">Vector index HNSW rebuild complete &mdash; p99 latency 8ms</span></div>
+        </div>
+      </div>
+    </div><!-- /poc-right -->
+
+  </div><!-- /poc-body -->
+</div>
+
+<!-- Node Detail Tooltip Modal -->
+<div class="briefing-overlay" id="nodeModal" onclick="if(event.target===this)closeNodeModal()">
+  <div class="briefing-modal" style="width:500px;max-width:95vw;">
+    <button class="briefing-close" onclick="closeNodeModal()">&times;</button>
+    <h2 id="nodeModalTitle" style="color:#4fc3f7;font-size:15px;margin-bottom:8px;"></h2>
+    <p id="nodeModalBody" style="font-size:12px;color:#b0bec5;line-height:1.7;margin:0;"></p>
+  </div>
+</div>
+
+<!-- Full AI Briefing Modal -->
+<div class="briefing-overlay" id="briefingModal" onclick="if(event.target===this)closeBriefing()">
+  <div class="briefing-modal">
+    <button class="briefing-close" onclick="closeBriefing()">&times;</button>
+    <h2>&#9889; AI Co-Worker Pipeline Briefing</h2>
+    <p class="bm-meta" id="briefingTime">Prepared by ARIA, MAX &amp; SAGE &mdash; CUI // SP-CTI</p>
+
+    <div class="bm-section">
+      <div class="bm-section-title">AI/ML Layer &mdash; ARIA</div>
+      <div class="bm-co-block">
+        <div class="bm-co-avatar aria">&#129302;</div>
+        <div class="bm-co-body">
+          <div class="bm-co-name aria">ARIA &mdash; Data Analyst</div>
+          <div class="bm-co-text">The AI/ML pipeline is operating within all nominal parameters. Overnight retraining completed in 2 hours 14 minutes — 8% faster than baseline, attributed to reduced feature variance in the innovation signals domain. The threat-classifier-v3 model is the performance leader at <strong>94.2% accuracy</strong> on the held-out eval set. I am monitoring one early-warning signal: BERT signal-ranker accuracy dipped 0.4% on threat intel features compared to last week. This is within noise but I recommend scheduling a targeted fine-tune pass against the 65 newly ingested RAG chunks by end of week.</div>
+          <div class="bm-metric-row">
+            <span class="bm-chip green">Accuracy 94.2%</span>
+            <span class="bm-chip blue">Inference p99 42ms</span>
+            <span class="bm-chip blue">3,200 rpm</span>
+            <span class="bm-chip amber">BERT signal drift &#9650;0.4%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bm-section">
+      <div class="bm-section-title">Agentic AI Layer &mdash; MAX</div>
+      <div class="bm-co-block">
+        <div class="bm-co-avatar max">&#129303;</div>
+        <div class="bm-co-body">
+          <div class="bm-co-name max">MAX &mdash; DevOps Engineer</div>
+          <div class="bm-co-text">The A2A message bus and 17-agent fleet are healthy. Task queue depth is elevated at <strong>591 tasks</strong> but remains within the 750-task SLA ceiling — no escalation required. The Security and Compliance agents are processing a batch of 48 NIST-800-53 gap tasks from the overnight kanban cycle; this accounts for 82% of the queue elevation. Zero message loss events in 72 hours. mTLS certificate rotation is current. One watch item: the Knowledge agent's response time spiked to 380ms at 03:40 UTC — isolated, no recurrence. Decision audit log continues to grow cleanly; 1,937 immutable records, zero delete attempts blocked.</div>
+          <div class="bm-metric-row">
+            <span class="bm-chip blue">17/17 agents active</span>
+            <span class="bm-chip amber">591 tasks queued</span>
+            <span class="bm-chip green">0 message loss</span>
+            <span class="bm-chip green">1,937 decisions logged</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bm-section">
+      <div class="bm-section-title">RAG + Knowledge Graph Layer &mdash; SAGE</div>
+      <div class="bm-co-block">
+        <div class="bm-co-avatar sage">&#129302;</div>
+        <div class="bm-co-body">
+          <div class="bm-co-name sage">SAGE &mdash; AI Developer</div>
+          <div class="bm-co-text">The RAG+KG layer is performing at its best metrics since launch. Hallucination rate is down to <strong>1.8%</strong> on the held-out eval set — we crossed the 2% target three days ago after the RRF fusion weight tuning. The pgvector HNSW index rebuild completed overnight; p99 retrieval latency is now 8ms, down from 14ms. Knowledge Graph expanded by 23 new entities this hour from the DIC pipeline batch — we are now at <strong>2,191 entities and 6,803 edges</strong>. The Grounded Response Engine abstained on 7 queries today due to confidence below 0.60 threshold — correct behavior. All 7 were escalated to the human review queue per the HITL protocol.</div>
+          <div class="bm-metric-row">
+            <span class="bm-chip green">Hallucination 1.8%</span>
+            <span class="bm-chip green">p99 latency 8ms</span>
+            <span class="bm-chip blue">2,191 KG entities</span>
+            <span class="bm-chip purple">7 HITL escalations</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bm-action">
+      <strong>&#9888; Recommended Actions (3)</strong>
+      1. ARIA: Schedule targeted BERT fine-tune on threat intel features by 2026-06-20 &bull;
+      2. MAX: Monitor Knowledge agent response time — page if recurrence &gt;300ms &bull;
+      3. SAGE: Review 7 HITL escalations in /chat — 3 flagged as constitution boundary cases
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+/* ── Feed timestamps ─────────────────────────────── */
+(function stampFeed() {
+  var now = new Date();
+  var times = [0, 2, 5, 8, 12, 18];
+  times.forEach(function(minsAgo, i) {
+    var t = new Date(now - minsAgo * 60000);
+    var h = String(t.getHours()).padStart(2,'0');
+    var m = String(t.getMinutes()).padStart(2,'0');
+    var el = document.getElementById('ft' + i);
+    if (el) el.textContent = h + ':' + m;
+  });
+})();
+
+/* ── Countdown timer ─────────────────────────────── */
+(function startCountdown() {
+  var totalMin = 6 * 60 + 42;
+  function tick() {
+    totalMin = Math.max(0, totalMin - 1);
+    var h = Math.floor(totalMin / 60), m = totalMin % 60;
+    var el = document.getElementById('aria-countdown');
+    if (el) el.textContent = h + 'h ' + String(m).padStart(2,'0') + 'm';
+  }
+  setInterval(tick, 60000);
+})();
+
+/* ── Briefing time stamp ─────────────────────────── */
+(function stampBriefing() {
+  var el = document.getElementById('briefingTime');
+  if (!el) return;
+  var n = new Date();
+  el.textContent = 'Prepared by ARIA, MAX & SAGE — ' +
+    n.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) + ' ' +
+    String(n.getHours()).padStart(2,'0') + ':' + String(n.getMinutes()).padStart(2,'0') +
+    ' UTC — CUI // SP-CTI';
+})();
+
+/* ── Live feed ticker ────────────────────────────── */
+(function liveFeed() {
+  var items = [
+    {who:'aria',cls:'aria', msg:'Inference API responding at 41ms p99 — within SLA'},
+    {who:'max', cls:'max',  msg:'Security agent completed NIST AC-2 gap task #3 of 48'},
+    {who:'sage',cls:'sage', msg:'RAG chunk freshness check passed — 0 stale chunks'},
+    {who:'aria',cls:'aria', msg:'Feature Store row count stable at 18,400'},
+    {who:'max', cls:'max',  msg:'A2A bus throughput 477 msg/s — nominal'},
+    {who:'sage',cls:'sage', msg:'KG query by Compliance agent: 14 entities returned in 6ms'},
+    {who:'aria',cls:'aria', msg:'XGBoost threat-classifier batch eval: 94.3% on latest hold-out'},
+    {who:'max', cls:'max',  msg:'Task Planner dispatched 12 new subtasks to Builder agent'},
+    {who:'sage',cls:'sage', msg:'Grounded response abstained on 1 low-confidence query — HITL queued'},
+  ];
+  var idx = 0;
+  var list = document.getElementById('feedList');
+  function addItem() {
+    var item = items[idx % items.length]; idx++;
+    var now = new Date();
+    var h = String(now.getHours()).padStart(2,'0');
+    var m = String(now.getMinutes()).padStart(2,'0');
+    var div = document.createElement('div');
+    div.className = 'feed-item';
+    div.innerHTML = '<span class="feed-time">' + h + ':' + m + '</span>' +
+                    '<span class="feed-who ' + item.cls + '">' + item.who.toUpperCase() + '</span>' +
+                    '<span class="feed-msg">' + item.msg + '</span>';
+    div.style.opacity = '0'; div.style.transition = 'opacity .5s';
+    list.insertBefore(div, list.firstChild);
+    setTimeout(function(){ div.style.opacity = '1'; }, 20);
+    while (list.children.length > 12) list.removeChild(list.lastChild);
+  }
+  setInterval(addItem, 7000);
+})();
+
+/* ── Node click detail ───────────────────────────── */
+function nodeClick(title, body) {
+  document.getElementById('nodeModalTitle').textContent = title;
+  document.getElementById('nodeModalBody').textContent = body;
+  document.getElementById('nodeModal').classList.add('open');
+}
+function closeNodeModal() { document.getElementById('nodeModal').classList.remove('open'); }
+
+/* ── Co-worker card modal (reuses briefing with section) ─────────── */
+function openCwModal(who) { openBriefing(); }
+
+/* ── Full AI Briefing ────────────────────────────── */
+function openBriefing()  { document.getElementById('briefingModal').classList.add('open'); }
+function closeBriefing() { document.getElementById('briefingModal').classList.remove('open'); }
+</script>
+{% endblock %}

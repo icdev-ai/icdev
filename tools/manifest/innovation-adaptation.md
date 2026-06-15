@@ -22,4 +22,5 @@
 | Core Schemas | tools/schemas/core.py | Core domain dataclass schemas (ProjectStatus, AgentHealth, AuditEvent) shared across MCP servers, dashboard, and CLI tools (D275) | (library) | Core dataclass models |
 | Compliance Schemas | tools/schemas/compliance.py | Dataclass schema models for multi-framework compliance results and unified security scan findings across SAST, dependencies, secrets, and containers (D275) | (library) | Compliance + scan schema models |
 | Context Indexer | tools/mcp/context_indexer.py | CLAUDE.md section indexer by ## headers for semantic layer MCP delivery (D277) | (library) | Section index |
+| Platform Connectors | tools/platform_connectors/ | Agent Reach-inspired unified adapter registry: PlatformAdapter protocol, AdapterRegistry, get_adapter(name), list_adapters(). Built-in adapters: GitHubAdapter (repos+issues search), RedditAdapter (/search.json), HackerNewsAdapter (Algolia). Shared _safe_get() HTTP helper with rate-limit/403/error handling. All adapters return normalized {title, url, author, score, description, metadata} dicts (adapt-conn-01–04). | get_adapter(name).fetch(query, limit=30) | list[dict] |
 

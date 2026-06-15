@@ -115,9 +115,15 @@ class TestCodebaseIndexerResilience:
                 raise ValueError("intentional")
             return real_index_python_file(fp, base_dir)
 
+        # icdev_logger sets propagate=False so caplog's root handler never sees
+        # messages. Attach caplog's handler directly to ci.LOG for this test.
         caplog.set_level(logging.ERROR, logger=ci.LOG.name)
-        with patch.object(ci, "index_python_file", side_effect=flaky):
-            result = ci.scan_codebase(tmp_path, scope=scope)
+        ci.LOG.addHandler(caplog.handler)
+        try:
+            with patch.object(ci, "index_python_file", side_effect=flaky):
+                result = ci.scan_codebase(tmp_path, scope=scope)
+        finally:
+            ci.LOG.removeHandler(caplog.handler)
 
         assert result["errors"] == 1
         assert any("boom.py" in r.message for r in caplog.records), [

@@ -63,9 +63,15 @@ class _FastHandler(BaseHTTPRequestHandler):
         pass
 
 
+class _HighCapacitySIEM(ThreadingHTTPServer):
+    # Default request_queue_size=5 causes connection refusals under 128-thread
+    # load on Windows; raise it to match MAX_WORKERS.
+    request_queue_size = 256
+
+
 def _start_mock_siem() -> tuple[ThreadingHTTPServer, str]:
     """Start a multi-threaded mock SIEM that handles concurrent POSTs."""
-    server = ThreadingHTTPServer(("127.0.0.1", 0), _FastHandler)
+    server = _HighCapacitySIEM(("127.0.0.1", 0), _FastHandler)
     port = server.server_address[1]
     threading.Thread(target=server.serve_forever, daemon=True).start()
     return server, f"http://127.0.0.1:{port}/siem"

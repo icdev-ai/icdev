@@ -178,6 +178,18 @@ class CoWorkerThread(threading.Thread):
             self._audit("role_not_found", str(exc))
             return
 
+        # NOVA SOUL: inject identity preamble into dispatch context so
+        # $soul_preamble is available to all step argument substitutions.
+        try:
+            from icdev.tools.ace.soul_manager import build_identity_preamble
+            preamble = build_identity_preamble(self.spec.role_id)
+            if preamble:
+                self._context["soul_preamble"] = preamble
+                self._audit("soul_preamble_injected", f"role={self.spec.role_id} len={len(preamble)}")
+                logger.debug("[SOUL] preamble injected for %s (%d chars)", self.spec.role_id, len(preamble))
+        except Exception as exc:
+            logger.warning("[SOUL] preamble injection failed for %s: %s", self.spec.role_id, exc)
+
         # 2. Transition to working state
         self._set_state("working")
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import contextlib
 import importlib
-import inspect
 import sqlite3
 from datetime import datetime, timezone, timedelta
 from unittest.mock import MagicMock
@@ -111,14 +110,16 @@ class TestReflexStructure:
         assert "dic_review_cadence" in daemon.REFLEX_NAMES
 
     def test_genesis_config_has_entry(self):
-        import yaml, pathlib
+        import yaml
+        import pathlib
         with pathlib.Path("args/genesis_config.yaml").open() as f:
             cfg = yaml.safe_load(f)
         reflexes = cfg.get("reflexes", {})
         assert "dic_review_cadence" in reflexes
 
     def test_genesis_config_nightly_interval(self):
-        import yaml, pathlib
+        import yaml
+        import pathlib
         with pathlib.Path("args/genesis_config.yaml").open() as f:
             cfg = yaml.safe_load(f)
         entry = cfg["reflexes"]["dic_review_cadence"]
@@ -238,7 +239,7 @@ class TestEventEmission:
         with _patch_attr("tools.genesis.reflexes.dic_review_cadence", "get_connection",
                          MagicMock(return_value=shim)):
             from tools.genesis.reflexes.dic_review_cadence import run
-            result = run({}, None)
+            run({}, None)
         # Should not create a second event for col-b today
         events = shim.execute(
             "SELECT * FROM canvas_events WHERE event_type='dic.review_overdue'"

@@ -1,0 +1,173 @@
+<!-- CUI // SP-CTI — ACE NOVA TRUST — Role Trust Leaderboard -->
+{% extends "base.html" %}
+{% block title %}Trust Leaderboard — Co-Worker Engine — ICDEV™{% endblock %}
+
+{% block content %}
+<style>
+  .trust-page { padding: 20px 28px; }
+
+  .band-probationary { background: rgba(231,76,60,.12); border-left: 3px solid #e74c3c; }
+  .band-supervised   { background: rgba(230,126,34,.12); border-left: 3px solid #e67e22; }
+  .band-trusted      { background: rgba(241,196,15,.12); border-left: 3px solid #f1c40f; }
+  .band-autonomous   { background: rgba(39,174,96,.12);  border-left: 3px solid #27ae60; }
+
+  .badge-band {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+  }
+  .badge-probationary { background: rgba(231,76,60,.2);  color: #e74c3c; border: 1px solid #e74c3c; }
+  .badge-supervised   { background: rgba(230,126,34,.2); color: #e67e22; border: 1px solid #e67e22; }
+  .badge-trusted      { background: rgba(241,196,15,.2); color: #f1c40f; border: 1px solid #f1c40f; }
+  .badge-autonomous   { background: rgba(39,174,96,.2);  color: #27ae60; border: 1px solid #27ae60; }
+
+  .trust-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .trust-table th {
+    text-align: left; padding: 8px 12px;
+    border-bottom: 2px solid var(--border-color, #2a2a4a);
+    color: var(--text-secondary, #7a8cb0); font-size: 11px;
+    text-transform: uppercase; letter-spacing: .04em; font-weight: 600;
+  }
+  .trust-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-color, #2a2a4a); }
+  .trust-table tbody tr:last-child td { border-bottom: none; }
+  .trust-table tbody tr:hover { background: rgba(255,255,255,.02); }
+
+  .score-bar-wrap { display: flex; align-items: center; gap: 8px; }
+  .score-bar {
+    flex: 1; height: 6px; background: var(--bg-secondary, #1a1a2e);
+    border-radius: 3px; overflow: hidden; min-width: 80px;
+  }
+  .score-bar-fill { height: 100%; border-radius: 3px; }
+  .score-val { font-size: 12px; font-family: monospace; min-width: 34px; text-align: right; }
+
+  .band-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; margin-bottom: 20px; }
+  .band-legend-item { display: flex; align-items: center; gap: 5px; }
+  .band-legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+</style>
+
+<div class="trust-page">
+
+  <!-- ── Breadcrumbs ──────────────────────────────────────────────── -->
+  <div class="breadcrumbs">
+    <a href="/">Home</a>
+    <span class="separator">/</span>
+    <a href="/coworker">Co-Worker Engine</a>
+    <span class="separator">/</span>
+    <span>Trust Leaderboard</span>
+  </div>
+
+  <!-- ── Header ───────────────────────────────────────────────────── -->
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:20px;">
+    <div>
+      <h1 style="font-size:18px; font-weight:600; margin:0 0 4px;">Trust Leaderboard</h1>
+      <p style="font-size:13px; color:var(--text-secondary,#7a8cb0); margin:0;">
+        NOVA TRUST — current trust scores and autonomy bands for all co-worker roles.
+      </p>
+    </div>
+    <a href="/coworker" class="btn btn-secondary" style="font-size:12px;">← Co-Worker Engine</a>
+  </div>
+
+  <!-- ── Stats ────────────────────────────────────────────────────── -->
+  <div class="stat-grid" style="grid-template-columns:repeat(4,1fr); margin-bottom:24px;">
+    <div class="stat-card">
+      <div class="stat-value">{{ rows | length }}</div>
+      <div class="stat-label">Roles Tracked</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color:#27ae60;">
+        {{ rows | selectattr('band','equalto','autonomous') | list | length }}
+      </div>
+      <div class="stat-label">Autonomous</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color:#f1c40f;">
+        {{ rows | selectattr('band','equalto','trusted') | list | length }}
+      </div>
+      <div class="stat-label">Trusted</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value" style="color:#e74c3c;">
+        {{ (rows | selectattr('band','equalto','probationary') | list | length) +
+           (rows | selectattr('band','equalto','supervised') | list | length) }}
+      </div>
+      <div class="stat-label">Supervised / Probationary</div>
+    </div>
+  </div>
+
+  <!-- ── Band legend ──────────────────────────────────────────────── -->
+  <div class="band-legend">
+    <div class="band-legend-item">
+      <div class="band-legend-dot" style="background:#e74c3c;"></div>
+      <span style="color:var(--text-secondary,#7a8cb0);">Probationary (&lt; 0.3) — all decisions require HITL</span>
+    </div>
+    <div class="band-legend-item">
+      <div class="band-legend-dot" style="background:#e67e22;"></div>
+      <span style="color:var(--text-secondary,#7a8cb0);">Supervised (0.3–0.6) — HITL on risky actions</span>
+    </div>
+    <div class="band-legend-item">
+      <div class="band-legend-dot" style="background:#f1c40f;"></div>
+      <span style="color:var(--text-secondary,#7a8cb0);">Trusted (0.6–0.8) — HITL on irreversible only</span>
+    </div>
+    <div class="band-legend-item">
+      <div class="band-legend-dot" style="background:#27ae60;"></div>
+      <span style="color:var(--text-secondary,#7a8cb0);">Autonomous (≥ 0.8) — routine tasks auto-approved</span>
+    </div>
+  </div>
+
+  <!-- ── Table ────────────────────────────────────────────────────── -->
+  {% if rows %}
+  <div style="background:var(--bg-card,#16213e); border:1px solid var(--border-color,#2a2a4a); border-radius:8px; overflow:hidden;">
+    <table class="trust-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Role ID</th>
+          <th>Band</th>
+          <th style="min-width:160px;">Trust Score</th>
+          <th>Last Event</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr class="band-{{ row.band }}">
+          <td style="color:var(--text-secondary,#7a8cb0); font-size:11px;">{{ loop.index }}</td>
+          <td style="font-family:monospace; font-size:12px; font-weight:600;">{{ row.role_id }}</td>
+          <td>
+            <span class="badge-band badge-{{ row.band }}">{{ row.band }}</span>
+          </td>
+          <td>
+            <div class="score-bar-wrap">
+              <div class="score-bar">
+                <div class="score-bar-fill" style="
+                  width: {{ (row.trust_score * 100) | round(0) | int }}%;
+                  background: {% if row.band == 'autonomous' %}#27ae60
+                              {% elif row.band == 'trusted' %}#f1c40f
+                              {% elif row.band == 'supervised' %}#e67e22
+                              {% else %}#e74c3c{% endif %};
+                "></div>
+              </div>
+              <span class="score-val">{{ '%.2f' | format(row.trust_score) }}</span>
+            </div>
+          </td>
+          <td style="font-size:11px; color:var(--text-secondary,#7a8cb0);">
+            {% if row.last_event_at %}
+              {{ row.last_event_at | replace('T',' ') | truncate(19, True, '') }}
+            {% else %}
+              —
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="background:var(--bg-card,#16213e); border:1px solid var(--border-color,#2a2a4a); border-radius:8px; padding:40px; text-align:center; color:var(--text-secondary,#555); font-size:13px;">
+    No trust events recorded yet. Launch a co-worker team to start building the trust ledger.
+    <div style="margin-top:12px;">
+      <a href="/coworker" class="btn" style="font-size:12px; background:var(--accent-color,#2563eb); color:#fff;">Launch a Team →</a>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

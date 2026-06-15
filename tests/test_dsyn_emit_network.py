@@ -1,7 +1,9 @@
 # CUI // SP-CTI
 """Tests for dsyn-emit-02: Network Canvas canvas_events emission."""
 from __future__ import annotations
-import json, sqlite3, sys, uuid
+import json
+import sqlite3
+import sys
 from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch

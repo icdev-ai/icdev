@@ -57,8 +57,6 @@ except ImportError:
     _HAS_YAML = False
 
 try:
-    import requests
-
     from tools.http.client import request as _http_request
 
     _HAS_REQUESTS = True
@@ -143,26 +141,24 @@ def _load_config():
 # =========================================================================
 # SOURCE ADAPTERS
 # =========================================================================
-def _safe_get(url, headers=None, params=None, timeout=DEFAULT_TIMEOUT):
-    """HTTP GET with error handling and rate limit awareness."""
-    if not _HAS_REQUESTS:
-        return None, "requests library not installed"
-    try:
-        resp = _http_request("GET", url, headers=headers, params=params, timeout=timeout)
-        if resp.status_code == 429:
-            return None, "rate_limited"
-        if resp.status_code == 403:
-            return None, "forbidden"
-        resp.raise_for_status()
-        return resp.json(), None
-    except requests.exceptions.Timeout:
-        return None, "timeout"
-    except requests.exceptions.ConnectionError:
-        return None, "connection_error"
-    except requests.exceptions.RequestException as e:
-        return None, str(e)
-    except json.JSONDecodeError:
-        return None, "invalid_json"
+# adapt-conn-05: delegate to shared HTTP helper to avoid duplicating logic
+try:
+    from tools.platform_connectors.registry import safe_get as _safe_get
+except ImportError:
+    def _safe_get(url, headers=None, params=None, timeout=DEFAULT_TIMEOUT):
+        """Fallback HTTP GET when platform_connectors not available."""
+        if not _HAS_REQUESTS:
+            return None, "requests library not installed"
+        try:
+            resp = _http_request("GET", url, headers=headers, params=params, timeout=timeout)
+            if resp.status_code == 429:
+                return None, "rate_limited"
+            if resp.status_code == 403:
+                return None, "forbidden"
+            resp.raise_for_status()
+            return resp.json(), None
+        except Exception as e:
+            return None, str(e)
 
 
 def scan_github(config):

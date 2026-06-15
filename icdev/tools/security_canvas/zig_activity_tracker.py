@@ -25,9 +25,11 @@ def get_activity_completion(activity_id: str) -> dict:
         conn.close()
 
 
-def set_activity_status(activity_id: str, status: str, evidence_note: str = None,
+def set_activity_status(activity_id: str, status: str,
+                        target_id: str = "icdev-self",
+                        evidence_note: str = None,
                         completed_by: str = None) -> dict:
-    """Mark an activity as not_started / in_progress / complete.
+    """Mark an activity as not_started / in_progress / complete for a target.
 
     Returns the updated completion record.
     """
@@ -41,39 +43,42 @@ def set_activity_status(activity_id: str, status: str, evidence_note: str = None
     conn = get_connection()
     try:
         existing = conn.execute(
-            "SELECT id FROM zig_activity_completions WHERE activity_id=?",
-            (activity_id,),
+            "SELECT id FROM zig_activity_completions WHERE activity_id=? AND target_id=?",
+            (activity_id, target_id),
         ).fetchone()
 
         if existing:
             conn.execute(
                 "UPDATE zig_activity_completions SET status=?, evidence_note=?, "
-                "completed_by=?, completed_at=?, updated_at=? WHERE activity_id=?",
-                (status, evidence_note, completed_by, completed_at, now, activity_id),
+                "completed_by=?, completed_at=?, updated_at=? "
+                "WHERE activity_id=? AND target_id=?",
+                (status, evidence_note, completed_by, completed_at, now, activity_id, target_id),
             )
         else:
             conn.execute(
                 "INSERT INTO zig_activity_completions "
-                "(activity_id, status, evidence_note, completed_by, completed_at, updated_at) "
-                "VALUES (?,?,?,?,?,?)",
-                (activity_id, status, evidence_note, completed_by, completed_at, now),
+                "(activity_id, target_id, status, evidence_note, completed_by, completed_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (activity_id, target_id, status, evidence_note, completed_by, completed_at, now),
             )
         conn.commit()
-        return {"activity_id": activity_id, "status": status, "updated_at": now}
+        return {"activity_id": activity_id, "target_id": target_id,
+                "status": status, "updated_at": now}
     finally:
         conn.close()
 
 
-def bulk_activity_status(activity_ids: list, status: str) -> int:
-    """Set multiple activities to the same status. Returns count updated."""
+def bulk_activity_status(activity_ids: list, status: str,
+                         target_id: str = "icdev-self") -> int:
+    """Set multiple activities to the same status for a target. Returns count updated."""
     count = 0
     for aid in activity_ids:
-        set_activity_status(aid, status)
+        set_activity_status(aid, status, target_id=target_id)
         count += 1
     return count
 
 
-def get_phase_completions(phase: str) -> dict:
+def get_phase_completions(phase: str, target_id: str = "icdev-self") -> dict:
     """Get completion summary for a ZIG phase (discovery | phase1 | phase2)."""
     conn = get_connection()
     try:
@@ -88,8 +93,9 @@ def get_phase_completions(phase: str) -> dict:
 
         placeholders = ",".join("?" * len(act_ids))
         completions = conn.execute(
-            f"SELECT status FROM zig_activity_completions WHERE activity_id IN ({placeholders})",
-            act_ids,
+            f"SELECT status FROM zig_activity_completions "
+            f"WHERE activity_id IN ({placeholders}) AND target_id=?",
+            act_ids + [target_id],
         ).fetchall()
 
         status_map = {c["status"]: 0 for c in completions}

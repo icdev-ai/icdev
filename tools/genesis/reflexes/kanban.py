@@ -394,12 +394,16 @@ def _get_task_timeout(task_id: str) -> int:
     try:
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT description, task_type FROM kanban_tasks WHERE id = ?",
+                "SELECT description, task_type, max_runtime_seconds FROM kanban_tasks WHERE id = ?",
                 (task_id,),
             ).fetchone()
         d = dict(row) if row else {}
         desc = (d.get("description") or "").lower()
         task_type = (d.get("task_type") or "").lower()
+        # Per-task explicit cap wins over all heuristics
+        max_rt = d.get("max_runtime_seconds")
+        if max_rt:
+            return int(min(7200, max(60, max_rt)))
         # Explicit structured override always wins — no anomaly adaptation
         m = re.search(r"timeout_hint:\s*(\d+)", desc, re.IGNORECASE)
         if m:
@@ -2407,6 +2411,13 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
         conn.close()
 
     _record_status_transition(task_id, prior_status, new_status, actor=actor, reason=reason)
+    # Fire webhook subscriptions on terminal transitions
+    _SUBSCRIPTION_EVENTS = {"done", "token_exhausted", "decomposed"}
+    if new_status in _SUBSCRIPTION_EVENTS:
+        try:
+            _fire_task_subscriptions(task_id, new_status)
+        except Exception as _sub_exc:
+            logger.debug("subscription fire failed for %s: %s", task_id, _sub_exc)
     if prior_status == "done" and new_status != "done" and rolled_back:
         for dep_id in rolled_back:
             _record_status_transition(
@@ -3032,22 +3043,63 @@ def _get_retry_coaching(task_id: str) -> str:
     return preamble
 
 
+def _get_parent_handoff(task_id: str) -> Optional[str]:
+    """Return the parent task's last_run_summary and last_run_metadata as a
+    formatted context block, or None if no parent or no handoff data exists.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT kt.depends_on_task_id, "
+            "       p.last_run_summary, p.last_run_metadata, p.title "
+            "FROM kanban_tasks kt "
+            "LEFT JOIN kanban_tasks p ON p.id = kt.depends_on_task_id "
+            "WHERE kt.id = ?",
+            (task_id,),
+        ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        if not d.get("depends_on_task_id"):
+            return None
+        summary = (d.get("last_run_summary") or "").strip()
+        metadata_raw = (d.get("last_run_metadata") or "").strip()
+        if not summary and not metadata_raw:
+            return None
+        lines = [f"## Parent task output: {d.get('title', d['depends_on_task_id'])}"]
+        if summary:
+            lines.append(f"Summary: {summary}")
+        if metadata_raw:
+            lines.append(f"Metadata (JSON): {metadata_raw}")
+        return "\n".join(lines) + "\n\n"
+    except Exception:
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+
 def _build_instruction(task_id: str, title: str, prompt_text: str, prompt_path: str) -> str:
     """Compose the full instruction text used by both executors.
 
-    Injects retry coaching if the task has prior failures (guard-22), so the
-    agent knows what went wrong last time and how to avoid repeating it.
+    Injects retry coaching if the task has prior failures (guard-22), and
+    parent handoff context when the task has a dependency whose executor
+    submitted a structured summary/metadata via POST /api/kanban/tasks/<id>/handoff.
     """
     coaching = _get_retry_coaching(task_id)
+    parent_context = _get_parent_handoff(task_id) or ""
     return (
-        f"{coaching}{prompt_text}\n\n"
+        f"{coaching}{parent_context}{prompt_text}\n\n"
         f"When complete:\n"
-        f"1. Move to done: POST http://localhost:5050/api/kanban/"
+        f"1. (Optional) Submit handoff: POST http://localhost:5050/api/kanban/"
+        f'tasks/{task_id}/handoff with {{"summary": "...", "metadata": {{...}}}}\n'
+        f"2. Move to done: POST http://localhost:5050/api/kanban/"
         f'tasks/{task_id}/move with {{"status": "done"}}\n'
-        f'2. Notify: python -c "from tools.notifications.adapters.'
+        f'3. Notify: python -c "from tools.notifications.adapters.'
         f"telegram import send; send('Task Completed', "
         f"'{title} — done', severity='success')\"\n"
-        f"3. Delete prompt file: {prompt_path}\n"
+        f"4. Delete prompt file: {prompt_path}\n"
     )
 
 
@@ -3140,8 +3192,15 @@ def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
     task_id = task["id"]
 
     def _runner():
-        from tools.llm.router import LLMRouter
-        from tools.llm.provider import LLMRequest
+        # Use `import … as` form so the attribute-access chain goes through
+        # _ToolsRedirect.__getattr__ → icdev.tools.llm.router, the same
+        # module object that tests monkeypatch via `import tools.llm.router`.
+        # `from tools.llm.router import LLMRouter` hits sys.modules["tools.llm.router"]
+        # which is the PHYSICAL tools/llm/router.py — a different object.
+        import tools.llm.router as _llm_router_mod
+        LLMRouter = _llm_router_mod.LLMRouter
+        import tools.llm.provider as _llm_provider_mod
+        LLMRequest = _llm_provider_mod.LLMRequest
         from tools.airgap import hook_compat
 
         # OPT-62: cap the mid-run message-injection loop so a stuck queue
@@ -3802,6 +3861,49 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     task_id = task["id"]
     title = task.get("title", "Untitled")
 
+    # ── Respawn guard 1: recent success ───────────────────────────────────────
+    # Don't re-dispatch a task that completed successfully within the last 30 min.
+    # Catches stale DB reads where the executor loops and picks up an already-done task.
+    if _had_recent_success(task_id, within_minutes=30):
+        logger.info("Respawn guard: %s completed recently — skipping dispatch", task_id)
+        return
+
+    # ── Respawn guard 2: open PR exists ──────────────────────────────────────
+    # Don't re-dispatch if an open PR for kanban/<task_id> already exists.
+    # The executor's merge logic handles the PR — re-dispatch would create
+    # a second competing implementation on a new commit.
+    if _has_open_pr(task_id):
+        logger.info("Respawn guard: open PR found for %s — skipping dispatch", task_id)
+        return
+
+    # ── Per-task circuit breaker ──────────────────────────────────────────────
+    # Auto-block if failure_count has reached max_retries for this task.
+    # Overrides the global decomposition threshold for tasks that explicitly
+    # set a different cap.
+    _task_max_retries = int(task.get("max_retries") or 5)
+    _task_failures = int(task.get("failure_count") or 0)
+    if _task_failures >= _task_max_retries:
+        logger.warning(
+            "Circuit breaker: %s hit max_retries=%d (failure_count=%d) — blocking",
+            task_id, _task_max_retries, _task_failures,
+        )
+        try:
+            conn = get_connection()
+            conn.execute(
+                "UPDATE kanban_tasks SET status = 'token_exhausted', "
+                "last_failure_reason = ?, updated_at = ? WHERE id = ?",
+                (
+                    f"Circuit breaker: failure_count {_task_failures} >= max_retries {_task_max_retries}",
+                    _utcnow_iso(),
+                    task_id,
+                ),
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+        return
+
     # Fast-path: auto-complete false-positive gaps without dispatching.
     already_resolved, resolution_reason = _pre_dispatch_check(task)
     if already_resolved:
@@ -4238,7 +4340,8 @@ def _run_verify_checks(task_id, claude_output):
     # Tasks completed via bypass produce no git commits by design — skip the
     # no-commits check entirely.
     try:
-        with get_connection() as _c0c:
+        _c0c = get_connection()
+        try:
             # Primary signal: metadata flag on the task row — cheapest check.
             _bypass_meta = _c0c.execute(
                 "SELECT completed_via_bypass FROM kanban_tasks WHERE id = ?",
@@ -4256,6 +4359,8 @@ def _run_verify_checks(task_id, claude_output):
                 "ORDER BY verified_at DESC LIMIT 1",
                 (task_id,),
             ).fetchone()
+        finally:
+            _c0c.close()
         if _brow is not None:
             _bypass_reason_txt = (_brow["reason"] or "pre-existing correct state")[:80]
             return True, (
@@ -4945,7 +5050,10 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
             }
             if table_name and table_name.lower() in _PROSE_WORDS:
                 table_name = None
-        if not table_name:
+        # Only invoke LLM when the task text contains DB-related keywords;
+        # avoids unnecessary LLM calls for completely unrelated tasks.
+        _DB_HINTS = {"table", "schema", "migration", "create", "db_table", "init_db"}
+        if not table_name and any(h in desc_lower for h in _DB_HINTS):
             table_name = _nlp_extract_gap_subject(title, description, "db_table")
     if table_name:
         # For orphan_db_table fixes, the agent commits a new migration
@@ -5561,6 +5669,290 @@ def _revive_quarantined_suggested(conn: Any) -> None:
                     )
                 except Exception:
                     pass
+
+
+def _check_acceptance_criteria(task_id: str, output_text: str) -> tuple:
+    """Judge whether task output satisfies its acceptance_criteria.
+
+    Returns (passed: bool, reasoning: str). Passes when no criteria are set
+    or when the LLM judge votes pass. Non-fatal — any failure returns pass
+    so the verification gate degrades gracefully.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT acceptance_criteria FROM kanban_tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+        if not row:
+            return True, "task not found"
+        criteria = (dict(row).get("acceptance_criteria") or "").strip()
+        if not criteria:
+            return True, "no criteria"
+    except Exception:
+        return True, "db error"
+    finally:
+        if conn:
+            conn.close()
+
+    try:
+        import json as _json
+        import re as _re2
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        prompt = (
+            f"Does this task output meet the acceptance criteria?\n\n"
+            f"ACCEPTANCE CRITERIA:\n{criteria}\n\n"
+            f"TASK OUTPUT (last 3000 chars):\n{output_text[-3000:] if output_text else '(no output)'}\n\n"
+            'Return ONLY valid JSON: {"passed": true/false, "reasoning": "one sentence"}'
+        )
+        req = LLMRequest(
+            system_prompt="You are a quality acceptance evaluator. Return valid JSON only.",
+            messages=[{"role": "user", "content": prompt}],
+            model="claude-haiku-4-5-20251001",
+            max_tokens=200,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("acceptance_judge", req)
+        if not resp or not resp.content:
+            return True, "judge unavailable"
+        raw = _re2.sub(
+            r"^```(?:json)?\s*|\s*```$", "", resp.content.strip(), flags=_re2.MULTILINE
+        ).strip()
+        data = _json.loads(raw)
+        return bool(data.get("passed", True)), str(data.get("reasoning", ""))
+    except Exception as exc:
+        return True, f"judge error: {exc}"
+
+
+def _fire_task_subscriptions(task_id: str, event: str) -> None:
+    """Fire webhook notifications for all subscriptions matching this event.
+
+    Non-fatal: any individual webhook failure is logged but does not block
+    the caller. Uses a 5-second connect timeout per target.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT id, channel, target, events FROM kanban_task_subscriptions "
+            "WHERE task_id = ?",
+            (task_id,),
+        ).fetchall()
+    except Exception:
+        return
+    finally:
+        if conn:
+            conn.close()
+
+    import urllib.request as _urllib_req
+    import json as _json
+
+    for row in rows:
+        d = dict(row)
+        subscribed_events = [e.strip() for e in (d.get("events") or "").split(",")]
+        if event not in subscribed_events:
+            continue
+        target = d.get("target", "")
+        if not target:
+            continue
+        payload = _json.dumps({
+            "task_id": task_id,
+            "event": event,
+            "subscription_id": d.get("id"),
+            "channel": d.get("channel"),
+        }).encode("utf-8")
+        try:
+            req = _urllib_req.Request(
+                target,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with _urllib_req.urlopen(req, timeout=5):
+                pass
+            logger.info("Subscription fired: %s → %s (%s)", task_id, target, event)
+        except Exception as exc:
+            logger.warning("Subscription webhook failed: %s → %s: %s", task_id, target, exc)
+
+
+def _decompose_triage_task(task: dict) -> bool:
+    """Decompose a triage task into typed child tasks using LLM.
+
+    Creates 3-7 child tasks in backlog. Moves parent to 'decomposed' on success.
+    Returns True on success, False on failure (leaves task in triage for retry).
+    """
+    task_id = task["id"]
+    title = task.get("title", "")
+    description = (task.get("description") or "").strip()
+    custom_prompt = (task.get("triage_prompt") or "").strip()
+
+    base_context = custom_prompt or (
+        f"Title: {title}\nDescription: {description or '(none)'}"
+    )
+
+    try:
+        import json as _json
+        import re as _re2
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+        from tools.kanban.task_factory import create_tasks
+
+        prompt = (
+            f"Decompose this task into 3-7 concrete, independently-executable subtasks.\n\n"
+            f"{base_context}\n\n"
+            "Return ONLY a JSON array of subtasks:\n"
+            '[{"title": "...", "description": "...", "task_type": "build|fix|test|research|deploy|chore", "priority": "critical|high|medium|low"}, ...]'
+        )
+        req = LLMRequest(
+            system_prompt="You are a software task decomposer. Return valid JSON array only.",
+            messages=[{"role": "user", "content": prompt}],
+            model="claude-haiku-4-5-20251001",
+            max_tokens=2000,
+            temperature=0.3,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("triage_decomposition", req)
+        if not resp or not resp.content:
+            logger.warning("Triage decompose: LLM returned no content for %s", task_id)
+            return False
+
+        raw = _re2.sub(
+            r"^```(?:json)?\s*|\s*```$", "", resp.content.strip(), flags=_re2.MULTILINE
+        ).strip()
+        subtasks = _json.loads(raw)
+        if not isinstance(subtasks, list) or not subtasks:
+            logger.warning("Triage decompose: empty subtask list for %s", task_id)
+            return False
+
+        child_specs = []
+        for i, sub in enumerate(subtasks[:7]):
+            child_id = f"{task_id}-d{i + 1:02d}"
+            child_specs.append({
+                "id": child_id,
+                "title": str(sub.get("title", "Subtask"))[:255],
+                "description": str(sub.get("description", "")),
+                "task_type": sub.get("task_type", "build"),
+                "priority": sub.get("priority", "medium"),
+                "status": "backlog",
+                "depends_on_task_id": None,
+                "dispatch_source": f"triage:{task_id}",
+            })
+        create_tasks(child_specs)
+        logger.info("Triage decompose: created %d child tasks for %s", len(child_specs), task_id)
+
+        _move_task(task_id, "decomposed", reason=f"triage: decomposed into {len(child_specs)} subtasks")
+        return True
+    except Exception as exc:
+        logger.warning("Triage decompose failed for %s: %s", task_id, exc)
+        return False
+
+
+def _reclaim_zombie_tasks() -> None:
+    """Hermes-style zombie reclaim: demote in_progress tasks whose heartbeat
+    has gone silent for longer than KANBAN_ZOMBIE_SILENCE_HOURS (default 2h).
+
+    Only applies to tasks that have sent at least one heartbeat — tasks that
+    pre-date heartbeat support have last_heartbeat_at = NULL and are handled
+    by the existing stale-in_progress reaper (0d).
+    """
+    silence_hours = _int_env("KANBAN_ZOMBIE_SILENCE_HOURS", 2)
+    conn = None
+    try:
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT id, title, failure_count "
+            "FROM kanban_tasks "
+            "WHERE status = 'in_progress' "
+            "  AND last_heartbeat_at IS NOT NULL "
+            "  AND last_heartbeat_at < datetime('now', ? || ' hours')",
+            (f"-{silence_hours}",),
+        ).fetchall()
+        if not rows:
+            return
+        for row in rows:
+            d = dict(row)
+            task_id = d["id"]
+            if task_id in _running:
+                continue  # still tracked locally — reaper handles it
+            logger.warning(
+                "Zombie reclaim: %s went silent >%dh — demoting to token_exhausted",
+                task_id, silence_hours,
+            )
+            try:
+                _move_task(task_id, "token_exhausted")
+                conn.execute(
+                    "UPDATE kanban_tasks "
+                    "SET failure_count = failure_count + 1, "
+                    "    last_failure_reason = ?, "
+                    "    last_failure_at = ?, "
+                    "    updated_at = ? "
+                    "WHERE id = ?",
+                    (
+                        f"Zombie reclaim: no heartbeat for >{silence_hours}h",
+                        _utcnow_iso(),
+                        _utcnow_iso(),
+                        task_id,
+                    ),
+                )
+                conn.commit()
+            except Exception as exc:
+                logger.warning("Zombie reclaim move failed for %s: %s", task_id, exc)
+    except Exception as exc:
+        logger.warning("_reclaim_zombie_tasks error: %s", exc)
+    finally:
+        if conn:
+            conn.close()
+
+
+def _has_open_pr(task_id: str) -> bool:
+    """Respawn guard: return True if an open PR already exists for kanban/<task_id>.
+
+    Uses the gh CLI; returns False on any error so dispatch proceeds normally
+    when gh is unavailable (air-gap environments).
+    """
+    branch_name = f"kanban/{task_id}"
+    try:
+        import subprocess as _sp
+        import json as _json
+        result = _sp.run(
+            ["gh", "pr", "list", "--head", branch_name, "--state", "open", "--json", "number"],
+            capture_output=True, text=True, timeout=10, cwd=str(BASE_DIR),
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            prs = _json.loads(result.stdout)
+            return len(prs) > 0
+    except Exception:
+        pass
+    return False
+
+
+def _had_recent_success(task_id: str, within_minutes: int = 30) -> bool:
+    """Respawn guard: return True if this task completed successfully very recently.
+
+    Catches auth-failure loops where a task completes but the executor
+    immediately re-dispatches it due to a stale DB read.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT id FROM kanban_status_transitions "
+            "WHERE task_id = ? AND to_status = 'done' "
+            "  AND recorded_at > datetime('now', ? || ' minutes')",
+            (task_id, f"-{within_minutes}"),
+        ).fetchone()
+        return row is not None
+    except Exception:
+        return False
+    finally:
+        if conn:
+            conn.close()
 
 
 def _reap_stale_in_progress() -> None:
@@ -6920,6 +7312,35 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             _promote_stale_suggested()
     except Exception as _pss_exc:
         logger.warning("suggested-decay sweep failed: %s", _pss_exc)
+
+    # 0g. Zombie reclaim — demote in_progress tasks that sent heartbeats but
+    # have gone silent for >KANBAN_ZOMBIE_SILENCE_HOURS hours (default 2).
+    # Only fires for tasks that have registered at least one heartbeat — tasks
+    # dispatched before heartbeat support was added are left to the existing
+    # stale-in_progress reaper (0d).
+    try:
+        _reclaim_zombie_tasks()
+    except Exception as _zr_exc:
+        logger.warning("zombie reclaim sweep failed: %s", _zr_exc)
+
+    # 0h. Triage sweep — decompose any tasks in 'triage' status via LLM.
+    # Runs every cycle (triage tasks are rare and decomposition is quick).
+    try:
+        conn = get_connection()
+        try:
+            triage_rows = conn.execute(
+                "SELECT id, title, description, triage_prompt FROM kanban_tasks "
+                "WHERE status = 'triage' LIMIT 3"
+            ).fetchall()
+        finally:
+            conn.close()
+        for trow in triage_rows:
+            try:
+                _decompose_triage_task(dict(trow))
+            except Exception as _td_exc:
+                logger.warning("triage decompose failed for %s: %s", dict(trow).get("id"), _td_exc)
+    except Exception as _ts_exc:
+        logger.warning("triage sweep failed: %s", _ts_exc)
 
     # 1. Check for completed claude subprocesses
     completed = _check_completed()

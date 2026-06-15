@@ -32,7 +32,7 @@ def cleared_analyst():
         "user_id": "analyst-001",
         "role": "cleared_analyst",
         "agency": "partner_agency",
-        "clearance_level": 2,  # SECRET
+        "clearance_level": 3,  # SECRET (classification_manager scale: PUBLIC=0,CUI=1,ECI=2,SECRET=3)
         "classification": "SECRET",
         "compartments": ["COI_INTEL"],
         "entitlements": ["cross_domain_pull"],
@@ -263,7 +263,7 @@ class TestCrossDomainABACEnforcer:
     ):
         """A user with entitlement but insufficient clearance must still be denied."""
         user = dict(uncleared_user)
-        user["entitlements"] = ["cross_domain_pull"]  # grant entitlement but clearance is CUI=1, resource needs SECRET=2
+        user["entitlements"] = ["cross_domain_pull"]  # grant entitlement but clearance is CUI=1, resource needs SECRET=3
         enforcer = CrossDomainABACEnforcer()
         result = enforcer.enforce(
             subject=user,

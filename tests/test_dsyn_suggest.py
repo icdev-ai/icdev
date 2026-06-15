@@ -5,7 +5,6 @@ from __future__ import annotations
 import contextlib
 import importlib
 import inspect
-import json
 import sqlite3
 from unittest.mock import MagicMock
 
@@ -139,7 +138,6 @@ class TestSuggestEndpoint:
              _patch_attr("tools.document_intelligence.suggestion_store", "get_connection",
                          MagicMock(return_value=shim)):
             # Also patch create_suggestion directly
-            import tools.document_intelligence.blueprint as bpmod
             orig_cs = None
             try:
                 import tools.document_intelligence.suggestion_store as ss
@@ -233,7 +231,8 @@ class TestSuggestEndpoint:
 
 class TestCrowdsourceConfig:
     def test_crowdsource_in_integrations_yaml(self):
-        import yaml, pathlib
+        import yaml
+        import pathlib
         config_path = pathlib.Path("args/dic_canvas_integrations.yaml")
         with config_path.open() as f:
             config = yaml.safe_load(f)
@@ -241,7 +240,8 @@ class TestCrowdsourceConfig:
             "crowdsource must be registered in dic_canvas_integrations.yaml"
 
     def test_crowdsource_has_required_fields(self):
-        import yaml, pathlib
+        import yaml
+        import pathlib
         with pathlib.Path("args/dic_canvas_integrations.yaml").open() as f:
             config = yaml.safe_load(f)
         entry = config["integrations"]["crowdsource"]

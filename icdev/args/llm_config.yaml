@@ -4,6 +4,24 @@
 # Single source of truth — replaces scattered hardcoded model IDs.
 
 # -----------------------------------------------------------------------
+# Context Compression (adapt-hd-01)
+# Headroom-inspired reversible token-budget-aware compression middleware.
+# Applied in router.py::invoke() before the fallback chain.
+# -----------------------------------------------------------------------
+compression:
+  enabled: false                        # Set true to activate; default off
+  threshold_tokens: 6000                # Only compress when estimated tokens exceed this
+  strategy: truncate_middle             # "truncate_middle" — keep first 40% + last 40%
+  max_compression_ratio: 0.6            # Never compress below 60% of original length
+  log_savings: true                     # Emit compression_saved_tokens to audit trail
+  exempt_functions:                     # These functions bypass compression (always send full context)
+    - compliance_generation
+    - ssp_generation
+    - evidence_collection
+    - security_audit
+    - fine_tuning_generation
+
+# -----------------------------------------------------------------------
 # Provider Definitions
 # -----------------------------------------------------------------------
 providers:
@@ -11,16 +29,6 @@ providers:
     type: bedrock
     region: ${AWS_DEFAULT_REGION:-us-gov-west-1}
     # Uses boto3 credentials (IAM role, env vars, or ~/.aws/credentials)
-  featherless:
-    type: openai_compatible
-    api_key_env: FEATHERLESS_API_KEY
-    base_url: https://api.featherless.ai/v1
-
-  # OpenRouter — unified gateway to 200+ models (Claude, GPT, Llama, etc.)
-  openrouter:
-    type: openai_compatible
-    api_key_env: OPENROUTER_API_KEY
-    base_url: https://openrouter.ai/api/v1
 
   anthropic:
     type: anthropic
@@ -74,66 +82,28 @@ providers:
     base_url: ${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
     api_key_env: OLLAMA_API_KEY
 
-  # Local Claude Code CLI bridge — fronts routing when ICDEV_CLI_BRIDGE=true
-  # (air-gap / no cloud key). Shells out to the `claude` binary in print mode.
-  cli_bridge:
+  # Claude Code CLI provider — routes through the authenticated local `claude` CLI
+  # binary. Auto-enabled when no cloud API keys are present (air-gap / no ANTHROPIC_API_KEY).
+  # Requires `claude` on PATH (installed via Claude Code).
+  cli:
     type: cli
-    cli_binary: ${CLAUDE_CLI_PATH:-claude}
-    soft_wait_seconds: 60
-    backend: ${ICDEV_CLI_BRIDGE_BACKEND:-auto}
+    cli_binary: ${CLAUDE_CLI_BINARY:-claude}
 
 # -----------------------------------------------------------------------
 # Model Registry
 # -----------------------------------------------------------------------
 models:
-  # -- Local Claude CLI bridge (air-gap / no-cloud-key fallback) --
+  # -- Claude Code CLI bridge — uses locally authenticated `claude` CLI binary --
+  # This is the primary provider when ANTHROPIC_API_KEY is not set.
+  # The cli_bridge auto-prepends this to every routing chain when enabled.
   claude-cli:
-    provider: cli_bridge
-    model_id: ${ICDEV_CLI_BRIDGE_MODEL:-claude-opus-4-8}
-    max_output_tokens: 64000
-    supports_thinking: false
-    supports_tools: false
-    supports_structured_output: true
-    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
-  qwen3-235b-featherless:
-    provider: featherless
-    model_id: "Qwen/Qwen3-235B-A22B"
-    max_output_tokens: 4096
-    supports_thinking: false
-    supports_tools: false
-    supports_structured_output: false
-    pricing: {input_per_1k: 0.0, output_per_1k: 0.0}
-
-  # Alias: qwen (points to Featherless-hosted Qwen3-235B-A22B)
-  qwen:
-    provider: featherless
-    model_id: "Qwen/Qwen3-235B-A22B"
-    max_output_tokens: 4096
-    supports_thinking: false
-    supports_tools: false
-    supports_structured_output: false
-    pricing: {input_per_1k: 0.0, output_per_1k: 0.0}
-
-  # Kimi K2.6 on Featherless.ai
-  kimi-k2.6-featherless:
-    provider: featherless
-    model_id: "moonshotai/Kimi-K2.6"
+    provider: cli
+    model_id: claude-cli
     max_output_tokens: 32768
-    supports_thinking: false
-    supports_tools: true
-    supports_structured_output: true
-    pricing: {input_per_1k: 0.0, output_per_1k: 0.0}
-
-  # OpenRouter — Claude Sonnet 4 via OpenRouter gateway
-  openrouter-claude:
-    provider: openrouter
-    model_id: "anthropic/claude-sonnet-4"
-    max_output_tokens: 64000
     supports_thinking: true
-    supports_tools: true
-    supports_structured_output: true
-    pricing: {input_per_1k: 0.003, output_per_1k: 0.015}
-
+    supports_tools: false
+    supports_structured_output: false
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
   # -- Anthropic direct API (user has Anthropic subscription, not Bedrock) --
   claude-opus:
@@ -295,16 +265,6 @@ models:
 
   kimi-local:
     provider: ollama
-    model_id: "kimi-k2.6:cloud"
-    max_output_tokens: 32768
-    supports_thinking: false
-    supports_tools: true
-    supports_structured_output: true
-    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
-
-  # Alias: kimi-k2.6 (points to Ollama cloud kimi-k2.6:cloud)
-  kimi-k2.6:
-    provider: ollama_cloud
     model_id: "kimi-k2.6:cloud"
     max_output_tokens: 32768
     supports_thinking: false
@@ -515,22 +475,19 @@ task_categories:
     description: "Multi-step reasoning, chain-of-thought, proofs"
 
   writing:
-    preferred: [llama-local, claude-sonnet, qwen, gemini-2.5-pro]
+    preferred: [llama-local, claude-sonnet, kimi-cloud, gemini-2.5-pro]
     description: "Long-form prose, narrative, documentation"
 
   vision:
-    # Local vision models first (air-gap), then Ollama.com cloud multimodal
-    # (minimax-m3: 1M context + native vision), then cloud API vision models.
-    # The router auto-selects from here when a request carries images.
-    preferred: [gemma3-local, gemma4-local, llava-local, minimax-m3, claude-sonnet, gpt-4o]
-    description: "Image analysis, screenshots, UI understanding (incl. Ollama.com multimodal)"
+    preferred: [gemma3-local, gemma4-local, llava-local, claude-sonnet, gpt-4o]
+    description: "Image analysis, screenshots, UI understanding"
 
   summarization:
     preferred: [qwen3-local, claude-haiku, gpt-4o-mini, llama-local]
     description: "Document condensation, distillation"
 
   long_context:
-    preferred: [qwen, kimi-k2.6-featherless, claude-opus, gemini-2.5-pro, gpt-oss-cloud]
+    preferred: [kimi-cloud, claude-opus, gemini-2.5-pro, gpt-oss-cloud]
     description: "Tasks requiring 32K+ context window"
 
   structured_output:
@@ -599,66 +556,6 @@ routing:
     chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
     effort: low
 
-  # DIC document-freshness anomaly severity grading (aiify-opp-6042:
-  # hardcoded_threshold -> anomaly_detection). Grades collection-relative
-  # staleness outliers; deterministic statistical heuristic is authoritative,
-  # this layer is best-effort severity enrichment.
-  dic_freshness_anomaly_severity:
-    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
-    effort: low
-
-  # DIC document date-parsing anomaly severity grading (aiify-opp-6048:
-  # hardcoded_threshold -> anomaly_detection). Grades dates parsed from a single
-  # document that are future-dated, implausibly old, or cluster outliers; the
-  # deterministic offline detector is authoritative, this layer is best-effort
-  # severity enrichment.
-  dic_date_anomaly_assessment:
-    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
-    effort: low
-
-  # DIC duplicate-content anomaly severity grading (aiify-opp-5984:
-  # hardcoded_threshold -> anomaly_detection). Grades how concerning the
-  # content blocks (paragraphs/pages) that recur within a single document are —
-  # a scanner double-feed or duplicated insert; the deterministic offline
-  # block-repetition detector is authoritative, this layer is best-effort
-  # severity enrichment.
-  dic_duplicate_block_assessment:
-    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
-    effort: low
-
-  # DIC search-relevance anomaly severity grading (aiify-opp-6052:
-  # hardcoded_threshold -> anomaly_detection). Grades a query's result set for a
-  # relevance cliff / low-confidence retrieval (results whose score is a low
-  # statistical outlier, or a top score below the weak band); the deterministic
-  # score-distribution detector is authoritative, this layer is best-effort
-  # severity enrichment.
-  dic_search_anomaly_severity:
-    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
-    effort: low
-
-  # DIC document-extraction quality anomaly severity grading (aiify-opp-6059:
-  # hardcoded_threshold -> anomaly_detection). Grades a batch of extracted
-  # document records for silent extraction/OCR failure — records whose text
-  # yield per page is a low statistical outlier or below the sparse band (a
-  # valid-looking record that yielded near-empty text); the deterministic
-  # yield-distribution detector is authoritative, this layer is best-effort
-  # severity enrichment.
-  dic_extraction_anomaly_severity:
-    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
-    effort: low
-
-  # DIC OCR confidence anomaly severity grading (aiify-opp-6105:
-  # hardcoded_threshold -> anomaly_detection, modeled on a document-management
-  # backend's tesseract OCR parser). Grades an OCR'd page for low-confidence
-  # noise — words whose engine confidence is a low statistical outlier or below
-  # the garbled band (a confidence cliff the absolute cutoff alone never surfaces
-  # relative to the rest of the page); the deterministic offline
-  # confidence-distribution detector is authoritative, this layer is best-effort
-  # severity enrichment.
-  dic_ocr_confidence_anomaly_severity:
-    chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
-    effort: low
-
   oracle_triage_nlp_extract:
     chain: [claude-haiku, qwen3-local, gpt-4o-mini, llama-local]
     effort: low
@@ -676,8 +573,16 @@ routing:
     effort: high
 
   agent_requirements_analyst:
-    chain: [qwen, qwen3-local, claude-opus, gemini-2.5-pro, gpt-4o]
+    chain: [kimi-cloud, qwen3-local, claude-opus, gemini-2.5-pro, gpt-4o]
     effort: high
+
+  agent_product_manager:
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, gemini-2.5-pro, gpt-4o, llama-local]
+    effort: high
+
+  agent_software_craftsperson:
+    chain: [kimi-cloud, qwen3-local, claude-opus, gemini-2.5-pro, gpt-4o, llama-local]
+    effort: max
 
   agent_supply_chain:
     chain: [qwen3-local, claude-sonnet, gpt-4o-mini, gemini-2.5-flash, llama-local]
@@ -696,7 +601,7 @@ routing:
     effort: high
 
   task_decomposition:
-    chain: [qwen, qwen3-local, claude-opus, o3, gemini-2.5-pro, gpt-4o]
+    chain: [kimi-cloud, qwen3-local, claude-opus, o3, gemini-2.5-pro, gpt-4o]
     effort: high
 
   collaboration:
@@ -769,7 +674,7 @@ routing:
     effort: low
 
   intake_persona_response:
-    chain: [qwen, qwen3-local, claude-sonnet, claude-opus, gpt-4o, gemini-2.5-flash]
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, claude-opus, gpt-4o, gemini-2.5-flash]
     effort: medium
 
   ip_planning:
@@ -778,7 +683,7 @@ routing:
 
   # Panel fires N calls in parallel — use fast/cheap models to keep wall-clock latency low
   panel_persona_response:
-    chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, qwen]
+    chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, kimi-cloud]
     effort: low
 
   bdd_preview:
@@ -869,7 +774,7 @@ routing:
     effort: medium
 
   pmo_recommendations:
-    chain: [qwen, qwen3-local, claude-sonnet]
+    chain: [kimi-cloud, qwen3-local, claude-sonnet]
     effort: medium
 
   # Route to Ollama only — never send raw proposal content to cloud LLMs.
@@ -889,7 +794,7 @@ routing:
     effort: low
 
   requirement_extraction:
-    chain: [qwen, qwen3-local]
+    chain: [kimi-cloud, qwen3-local]
     effort: medium
 
   bid_scoring:
@@ -912,7 +817,7 @@ routing:
     effort: medium
 
   chat_response:
-    chain: [qwen, qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, llama-local]
     effort: low
     disable_thinking: true
 
@@ -955,20 +860,20 @@ routing:
   # If cloud is unavailable (no key / air-gap), the deliberator's deterministic score-gate
   # fallback (defer_to_score_on_fallback) handles it — no local debaters by design.
   acf_deliberation_debaters:
-    chain: [glm5-cloud, qwen3next-cloud, deepseek-cloud, kimi-k2.6-featherless, mistral-large-cloud, nemotron-cloud, gemini3-cloud, cogito-cloud]
+    chain: [glm5-cloud, qwen3next-cloud, deepseek-cloud, kimi-cloud, minimax-m3, mistral-large-cloud, nemotron-cloud, gemini3-cloud, gpt-oss-cloud, cogito-cloud]
     effort: medium
 
   acf_deliberation_judge:
-    chain: [glm5-cloud, kimi-k2.6-featherless, deepseek-cloud]
+    chain: [glm5-cloud, kimi-cloud, deepseek-cloud, minimax-m3]
     effort: high
 
   # Plain router.invoke() fallback for the deliberation function (non-chain path) — cloud-only
   capability_deliberation:
-    chain: [glm5-cloud, kimi-k2.6-featherless, deepseek-cloud]
+    chain: [glm5-cloud, kimi-cloud, deepseek-cloud, minimax-m3]
     effort: medium
 
   default:
-    chain: [qwen, qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
 
   # ── Slides Deck Generator (tools/slides/) ───────────────────────────────
@@ -1116,7 +1021,7 @@ redaction:
 
 two_tier:
   enabled: true
-  tier1_model: qwen             # Worker — Featherless Qwen first; qwen3-local fallback
+  tier1_model: kimi-cloud       # Worker — kimi-k2.6 cloud first; qwen3-local (no-think) fallback
   tier2_model: claude-sonnet-api  # Planner/Reviewer — Anthropic API (not Bedrock)
 
   # Dual-model mode: swap tier1 + overrides for simultaneous VRAM residency
@@ -1166,48 +1071,6 @@ two_tier:
     pulse_draft: gemma3-local        # gemma3 for article writing (no thinking mode)
     wg_rewrite: claude-sonnet-api    # Claude for WriteGuard rewriting (scanner path, Claude override)
     pulse_rewrite: qwen3-local      # qwen3.5 for Pulse rewriting (think:false via provider)
-
-# -----------------------------------------------------------------------
-# Provider Health Monitor (Adaptive Circuit Breaker)
-# -----------------------------------------------------------------------
-# Automatically degrades unhealthy providers (rate-limit, token exhaustion,
-# network failure) and auto-recovers them via periodic probes.
-# -----------------------------------------------------------------------
-provider_health:
-  enabled: true
-  # Auto-degrade triggers
-  degrade_after_consecutive_failures: 3
-  degrade_after_failure_rate: 0.5          # 50% failure rate in window
-  degrade_window_seconds: 300              # 5-minute rolling window
-  # Auto-recovery
-  probe_interval_seconds: 300              # 5 minutes default
-  recovery_after_consecutive_successes: 3
-  # Load sharing across healthy providers
-  load_sharing:
-    enabled: true
-    mode: round_robin                        # round_robin | weighted | latency
-    # Provider weights: 1.0 = equal share. Add any new provider here when you
-    # register it in the 'providers:' section above. The health tracker
-    # auto-discovers new providers for failure tracking; weights are optional.
-    provider_weights:
-      featherless: 1.0
-      ollama_cloud: 1.0
-      anthropic: 1.0
-      ollama: 1.0
-      openai: 1.0
-      gemini: 1.0
-      openrouter: 1.0
-      mistral: 1.0
-      vllm: 1.0
-      ibm_watsonx: 1.0
-  # Kanban executor → LLM provider mapping.
-  # When a provider is degraded, the scheduler skips the matching executor.
-  # Edit this when you add/remove providers or executors.
-  executor_provider_map:
-    claude_cli: [anthropic, openrouter]     # Claude CLI can use Anthropic direct OR OpenRouter
-    ollama_local: [ollama, ollama_cloud]     # Local Ollama dispatch depends on both
-    gitlab: []                              # GitLab CI has no upstream LLM dependency
-    github_actions: []                       # GitHub Actions has no upstream LLM dependency
 
 # -----------------------------------------------------------------------
 # RAG Integration (D-RAG-2, Phase 64)

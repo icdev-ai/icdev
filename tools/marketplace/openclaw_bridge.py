@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # CUI // SP-CTI
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from __future__ import annotations
 # CUI Category: CTI
 # Distribution: D
 # POC: ICDEV™ System Administrator
-"""OpenClaw Skill Bridge — Import/export skills between ClawHub and ICDEV™ Marketplace.
+"""OpenClaw Skill Bridge — Import/export skills between SkillHub and ICDEV™ Marketplace.
 
 Enforces zero-trust security: quarantine-first, full 10-gate scanning,
 mandatory human review for executable content, provenance tracking,
@@ -143,7 +143,7 @@ except ImportError:
     _HAS_COMPAT = False
 
 try:
-    from tools.databridge.connectors.clawhub_connector import ClawHubConnector
+    from tools.databridge.connectors.skillhub_connector import SkillHubConnector
 
     _HAS_CLAWHUB = True
 except ImportError:
@@ -662,14 +662,14 @@ def _load_config():
 # ---------------------------------------------------------------------------
 # Import functions
 # ---------------------------------------------------------------------------
-def import_skill(source_path, tenant_id, imported_by, clawhub_url=None):
+def import_skill(source_path, tenant_id, imported_by, skillhub_url=None):
     """Import an OpenClaw skill into quarantine with full security scanning.
 
     Args:
         source_path: Local path to OpenClaw skill directory.
         tenant_id: Tenant identifier.
         imported_by: User who initiated the import.
-        clawhub_url: Optional ClawHub URL (for provenance tracking).
+        skillhub_url: Optional SkillHub URL (for provenance tracking).
 
     Returns:
         dict: Import result with quarantine path, scan results, trust score.
@@ -1044,7 +1044,7 @@ def import_skill(source_path, tenant_id, imported_by, clawhub_url=None):
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 import_id,
-                clawhub_url,
+                skillhub_url,
                 str(source),
                 slug,
                 author,
@@ -1075,7 +1075,7 @@ def import_skill(source_path, tenant_id, imported_by, clawhub_url=None):
     _safe_audit(
         event_type="openclaw_skill_imported",
         actor=imported_by,
-        action=f"imported OpenClaw skill '{slug}' from {clawhub_url or source_path}",
+        action=f"imported OpenClaw skill '{slug}' from {skillhub_url or source_path}",
         details={
             "import_id": import_id,
             "slug": slug,
@@ -1084,7 +1084,7 @@ def import_skill(source_path, tenant_id, imported_by, clawhub_url=None):
             "scan_status": scan_status,
             "has_scripts": has_scripts,
             "review_required": review_required,
-            "source_url": clawhub_url,
+            "source_url": skillhub_url,
         },
     )
 
@@ -1237,7 +1237,7 @@ CUI // SP-CTI
 
 ## Provenance
 
-- **Source:** OpenClaw Community (ClawHub)
+- **Source:** OpenClaw Community (SkillHub)
 - **Author:** {rec.get("openclaw_author", "unknown")}
 - **Original URL:** {rec.get("source_url", "N/A")}
 - **Import Date:** {_utcnow()}
@@ -1407,23 +1407,23 @@ def reject_import(import_id, rejected_by, reason):
 # Discovery & fetch functions (DataBridge connector)
 # ---------------------------------------------------------------------------
 def discover_skills(query, limit=10):
-    """Search ClawHub for skills matching a query (vector search).
+    """Search SkillHub for skills matching a query (vector search).
 
     Args:
         query: Natural language search query.
         limit: Max results.
 
     Returns:
-        dict: Search results from ClawHub API.
+        dict: Search results from SkillHub API.
     """
     if not _is_enabled():
         return {"error": f"OpenClaw bridge disabled. Set {FEATURE_FLAG}=true to enable."}
     if not _HAS_CLAWHUB:
-        return {"error": "ClawHub connector not available (install tools.databridge)"}
+        return {"error": "SkillHub connector not available (install tools.databridge)"}
 
-    conn = ClawHubConnector()
+    conn = SkillHubConnector()
     config = _load_config()
-    api_base = config.get("clawhub_api_base", "")
+    api_base = config.get("skillhub_api_base", "")
     conn.connect({"api_base": api_base} if api_base else {})
     try:
         results = conn.search_skills(query, limit=limit)
@@ -1435,12 +1435,12 @@ def discover_skills(query, limit=10):
 
 
 def fetch_and_import(slug, tenant_id, imported_by):
-    """Download a skill from ClawHub by slug and import it.
+    """Download a skill from SkillHub by slug and import it.
 
     Combines download + import_skill into a single operation.
 
     Args:
-        slug: ClawHub skill slug (e.g., 'self-improving-agent').
+        slug: SkillHub skill slug (e.g., 'self-improving-agent').
         tenant_id: Tenant identifier.
         imported_by: User initiating the fetch.
 
@@ -1450,18 +1450,18 @@ def fetch_and_import(slug, tenant_id, imported_by):
     if not _is_enabled():
         return {"error": f"OpenClaw bridge disabled. Set {FEATURE_FLAG}=true to enable."}
     if not _HAS_CLAWHUB:
-        return {"error": "ClawHub connector not available (install tools.databridge)"}
+        return {"error": "SkillHub connector not available (install tools.databridge)"}
 
-    conn = ClawHubConnector()
+    conn = SkillHubConnector()
     config = _load_config()
-    api_base = config.get("clawhub_api_base", "")
+    api_base = config.get("skillhub_api_base", "")
     conn.connect({"api_base": api_base} if api_base else {})
 
     try:
         # Get skill detail first for provenance
         detail = conn.get_skill(slug)
-        clawhub_url = (
-            f"https://clawhub.ai/{detail.get('owner', {}).get('handle', 'unknown')}/{slug}" if detail else None
+        skillhub_url = (
+            f"https://skillhub.ai/{detail.get('owner', {}).get('handle', 'unknown')}/{slug}" if detail else None
         )
 
         # Download to temp directory
@@ -1487,7 +1487,7 @@ def fetch_and_import(slug, tenant_id, imported_by):
             source_path=dl_result["output_path"],
             tenant_id=tenant_id,
             imported_by=imported_by,
-            clawhub_url=clawhub_url,
+            skillhub_url=skillhub_url,
         )
 
     except Exception as exc:
@@ -1883,7 +1883,7 @@ def health_check():
         "pi_detector_available": _HAS_PI_DETECTOR,
         "code_scanner_available": _HAS_CODE_SCANNER,
         "review_queue_available": _HAS_REVIEW,
-        "clawhub_connector_available": _HAS_CLAWHUB,
+        "skillhub_connector_available": _HAS_CLAWHUB,
         "config_loaded": False,
     }
 
@@ -1962,7 +1962,7 @@ def gate_check():
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(
-        description="OpenClaw Skill Bridge — zero-trust import/export for ClawHub skills",
+        description="OpenClaw Skill Bridge — zero-trust import/export for SkillHub skills",
     )
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument(
@@ -1974,14 +1974,14 @@ def main():
     group.add_argument("--export", action="store_true", help="Export an ICDEV™ skill to OpenClaw format")
     group.add_argument("--list-quarantine", action="store_true", help="List quarantined imports")
     group.add_argument("--list-exports", action="store_true", help="List export records")
-    group.add_argument("--discover", metavar="QUERY", help="Search ClawHub for skills (vector search)")
-    group.add_argument("--fetch", metavar="SLUG", help="Download + import a skill from ClawHub by slug")
+    group.add_argument("--discover", metavar="QUERY", help="Search SkillHub for skills (vector search)")
+    group.add_argument("--fetch", metavar="SLUG", help="Download + import a skill from SkillHub by slug")
     group.add_argument("--health", action="store_true", help="Health check")
     group.add_argument("--gate", action="store_true", help="Gate check for CI/CD")
 
     # Import args
     parser.add_argument("--source-path", help="Path to OpenClaw skill directory")
-    parser.add_argument("--clawhub-url", help="ClawHub URL (for provenance)")
+    parser.add_argument("--skillhub-url", help="SkillHub URL (for provenance)")
     parser.add_argument("--tenant-id", help="Tenant identifier")
     parser.add_argument("--imported-by", help="User who initiated import")
 
@@ -2016,7 +2016,7 @@ def main():
                     source_path=args.source_path,
                     tenant_id=args.tenant_id,
                     imported_by=args.imported_by,
-                    clawhub_url=args.clawhub_url,
+                    skillhub_url=args.skillhub_url,
                 )
         elif args.promote:
             if not args.import_id or not args.promoted_by:

@@ -304,6 +304,82 @@ class MCPA2ABridge:
         self.app.run(host=self.host, port=self.port, debug=debug, ssl_context=ssl_ctx)
 
 
+# ── Bridge MCP tools (for MCP-protocol clients) ─────────────────────────────
+
+from tools.mcp.base_server import MCPServer as _MCPServer
+
+
+def _bridge_agent_card_handler(args: dict) -> dict:
+    """Return the A2A agent card listing all MCP tools exposed by the bridge."""
+    try:
+        from tools.mcp.tool_registry import TOOL_REGISTRY
+        tools = [{"name": k, "description": v.get("description", "")} for k, v in TOOL_REGISTRY.items()]
+        return {"status": "ok", "tool_count": len(tools), "tools": tools}
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def _bridge_health_handler(args: dict) -> dict:
+    """Return bridge health status and registry size."""
+    try:
+        from tools.mcp.tool_registry import TOOL_REGISTRY
+        return {"status": "healthy", "tools_registered": len(TOOL_REGISTRY), "agent_id": "mcp-gateway"}
+    except Exception as exc:
+        return {"status": "degraded", "error": str(exc)}
+
+
+def _bridge_tool_invoke_handler(args: dict) -> dict:
+    """Invoke an MCP tool by name through the bridge."""
+    tool_name = args.get("tool")
+    tool_args = args.get("args", {})
+    if not tool_name:
+        return {"error": "tool required"}
+    try:
+        from tools.mcp.unified_server import create_server
+        mcp = create_server()
+        tool_info = mcp._tools.get(tool_name)
+        if not tool_info:
+            return {"error": f"Unknown tool: {tool_name}"}
+        result = tool_info["handler"](tool_args)
+        return result if isinstance(result, dict) else {"result": result}
+    except Exception as exc:
+        return {"error": str(exc), "tool": tool_name}
+
+
+server = _MCPServer(name="icdev-a2a-bridge", version="1.0.0")
+
+server.register_tool(
+    name="a2a_agent_card",
+    description="Return the A2A agent card listing all MCP tools exposed by the bridge.",
+    input_schema={"type": "object", "properties": {}},
+    handler=_bridge_agent_card_handler,
+)
+
+server.register_tool(
+    name="a2a_bridge_health",
+    description="Check health status of the MCP-A2A bridge and return registered tool count.",
+    input_schema={"type": "object", "properties": {}},
+    handler=_bridge_health_handler,
+)
+
+server.register_tool(
+    name="a2a_tool_invoke",
+    description="Invoke an MCP tool by name through the A2A bridge.",
+    input_schema={
+        "type": "object",
+        "properties": {
+            "tool": {"type": "string", "description": "Tool name to invoke"},
+            "args": {"type": "object", "description": "Arguments to pass to the tool"},
+        },
+        "required": ["tool"],
+    },
+    handler=_bridge_tool_invoke_handler,
+)
+
+
+# ── Utilities ────────────────────────────────────────────────────────────────
+
+
 def _utcnow_iso() -> str:
     from datetime import datetime, timezone
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")

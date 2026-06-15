@@ -37,6 +37,11 @@ networkx>=3.2            # Graph analysis for topology NL query engine
 # pytesseract>=0.3       # OCR via Tesseract binary (requires system Tesseract)
 # rapidocr-onnxruntime>=1.3  # Pure Python OCR via ONNX (no system deps)
 
+# === DIC Enhanced Extraction (optional, air-gap safe) ===
+# markitdown>=0.4.0         # optional: DIC enhanced extraction — converts DOCX/PPTX/XLSX/audio/images
+#                           # to structured Markdown. Install: pip install markitdown
+#                           # Graceful degradation: falls back to built-in extractors when absent.
+
 # === DIC Layout Detection (optional, NOT air-gap safe by default) ===
 # Layout-aware extraction (column/table/figure region segmentation) for the
 # Document Intelligence Canvas. Both pull heavy backends (PaddlePaddle / torch)

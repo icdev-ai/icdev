@@ -39,13 +39,16 @@ class AsyncDBWriter:
         self._db_path = db_path
         self._queue: queue.Queue = queue.Queue(maxsize=_QUEUE_MAXSIZE)
         self._stop = threading.Event()
+        # Schema (including WAL mode) must be set before the drain thread starts;
+        # otherwise both threads race to run PRAGMA journal_mode=WAL and the
+        # background thread gets "database is locked" on Windows.
+        self._ensure_schema()
         self._worker = threading.Thread(
             target=self._drain_loop,
             name="async-db-writer",
             daemon=True,
         )
         self._worker.start()
-        self._ensure_schema()
 
     # ------------------------------------------------------------------
     def enqueue(self, record: dict) -> None:

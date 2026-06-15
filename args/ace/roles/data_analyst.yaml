@@ -1,31 +1,32 @@
 role_id: data_analyst
 display_name: Data Analyst
-description: Data analyst that sources, cleans, and analyzes structured and unstructured data to produce insights, visualizations, and decision-support reports.
-version: "1.0"
+description: Data analyst that sources, cleans, and analyzes structured and unstructured
+  data to produce insights, visualizations, and decision-support reports.
+version: '1.0'
 trust_tier: yellow
 default_count: 1
 max_instances: 2
 steps:
-  - collect_data_sources
-  - clean_transform_data
-  - run_analysis
-  - visualize_results
-  - validate_insights
-  - publish_dashboard
+- collect_data_sources
+- clean_transform_data
+- run_analysis
+- visualize_results
+- validate_insights
+- publish_dashboard
 communication:
   protocol: a2a
   listen_topics:
-    - task.assigned
-    - data.ingested
-    - query.request
+  - report.generated
+  - network.analyzed
+  - text.produced
   emit_topics:
-    - analysis.complete
-    - insight.found
-    - dashboard.updated
-    - anomaly.detected
+  - analysis.complete
+  - insight.found
+  - dashboard.updated
+  - anomaly.detected
 llm_function: agent_knowledge
 tool_permissions:
-  - Read
-  - Bash
-  - Grep
+- Read
+- Bash
+- Grep
 genesis_reflex: report

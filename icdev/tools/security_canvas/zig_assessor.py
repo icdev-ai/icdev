@@ -66,7 +66,7 @@ def _identify_gaps(pillar_scores: list) -> list:
         conn.close()
 
 
-def _persist_scores(pillar_scores: list):
+def _persist_scores(pillar_scores: list, target_id: str = "icdev-self"):
     """Persist pillar scores to zig_maturity_scores (one row per pillar per run)."""
     conn = get_connection()
     now = datetime.now(timezone.utc).isoformat()
@@ -74,10 +74,10 @@ def _persist_scores(pillar_scores: list):
         for ps in pillar_scores:
             conn.execute(
                 "INSERT INTO zig_maturity_scores "
-                "(pillar_slug, score, maturity_level, capability_count, activity_count, "
+                "(pillar_slug, target_id, score, maturity_level, capability_count, activity_count, "
                 "complete_activities, assessment_run_at, created_at) "
-                "VALUES (?,?,?,?,?,?,?,?)",
-                (ps["slug"], ps["score"], ps["maturity_level"],
+                "VALUES (?,?,?,?,?,?,?,?,?)",
+                (ps["slug"], target_id, ps["score"], ps["maturity_level"],
                  ps.get("capability_count", 0), ps.get("activity_count", 0),
                  ps.get("complete_activities", 0), now, now),
             )
@@ -86,8 +86,11 @@ def _persist_scores(pillar_scores: list):
         conn.close()
 
 
-def run_zig_assessment() -> dict:
-    """Run full ZIG assessment across all 7 pillars.
+def run_zig_assessment(target_id: str = "icdev-self") -> dict:
+    """Run full ZIG assessment across all 7 pillars for a target.
+
+    Args:
+        target_id: Assessment target (default: 'icdev-self' for the platform itself).
 
     Returns:
         {
@@ -97,23 +100,25 @@ def run_zig_assessment() -> dict:
             phases: [...],
             fy2027: {...},
             assessed_at: ISO timestamp,
+            target_id: str,
         }
     """
-    pillar_scores = score_all_pillars()
+    pillar_scores = score_all_pillars(target_id=target_id)
 
-    # Attempt ZTA bridge enrichment for pillars with no activity data yet
-    for ps in pillar_scores:
-        if ps["score"] == 0.0:
-            zta_score = _try_zta_bridge(ps["slug"])
-            if zta_score is not None:
-                ps["score"] = round(zta_score * 0.5, 4)  # ZTA score as 50% signal
+    # Attempt ZTA bridge enrichment only for icdev-self (has legacy ZTA data)
+    if target_id == "icdev-self":
+        for ps in pillar_scores:
+            if ps["score"] == 0.0:
+                zta_score = _try_zta_bridge(ps["slug"])
+                if zta_score is not None:
+                    ps["score"] = round(zta_score * 0.5, 4)  # ZTA score as 50% signal
 
     aggregate = aggregate_zig_score(pillar_scores)
     gaps = _identify_gaps(pillar_scores)
-    phases = get_all_phases_status()
+    phases = get_all_phases_status(target_id=target_id)
     fy2027 = compute_fy2027_readiness(phases)
 
-    _persist_scores(pillar_scores)
+    _persist_scores(pillar_scores, target_id=target_id)
 
     return {
         "pillar_scores": pillar_scores,
@@ -123,6 +128,7 @@ def run_zig_assessment() -> dict:
         "fy2027": fy2027,
         "assessed_at": datetime.now(timezone.utc).isoformat(),
         "top_gaps": gaps[:10],
+        "target_id": target_id,
     }
 
 

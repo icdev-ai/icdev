@@ -1,0 +1,5 @@
+-- CUI // SP-CTI
+-- Data Mesh: List active data contracts with product linkage
+foreach c in data_mesh.contracts
+where c.status == "active"
+select c.title, c.product_id, c.version, c.schema_type, c.classification, c.created_at

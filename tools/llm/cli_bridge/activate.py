@@ -158,8 +158,12 @@ def should_enable() -> bool:
 def cli_bridge_enabled() -> bool:
     """Resolve the effective enable state.
 
-    Precedence: context override (set via :func:`cli_bridge_override`) >
-    ``should_enable()`` auto-detection.
+    Precedence (highest to lowest):
+    1. Context override (set via :func:`cli_bridge_override`)
+    2. ``should_enable()`` auto-detection (air-gapped or no cloud key)
+
+    Note: The ``ICDEV_CLI_BRIDGE`` env var is intentionally NOT consulted here.
+    Use ``cli_bridge_override()`` for per-request overrides.
     """
     override = _cli_bridge_override.get()
     if override is not None:

@@ -62,8 +62,6 @@ except ImportError:
     _HAS_YAML = False
 
 try:
-    import requests
-
     from tools.http.client import request as _http_request
 
     _HAS_REQUESTS = True
@@ -151,39 +149,27 @@ def _load_config():
 # =========================================================================
 # HTTP HELPER
 # =========================================================================
-def _safe_get(url, headers=None, params=None, timeout=DEFAULT_TIMEOUT):
-    """HTTP GET with error handling and rate limit awareness.
-
-    Args:
-        url: Target URL.
-        headers: Optional request headers.
-        params: Optional query parameters.
-        timeout: Request timeout in seconds.
-
-    Returns:
-        Tuple of (data, error).  On success error is None.
-        On failure data is None and error is a string code.
-    """
-    if not _HAS_REQUESTS:
-        return None, "requests library not installed"
-    try:
-        resp = _http_request("GET", url, headers=headers, params=params, timeout=timeout)
-        if resp.status_code == 429:
-            return None, "rate_limited"
-        if resp.status_code == 403:
-            return None, "forbidden"
-        resp.raise_for_status()
-        # Try JSON first; fall back to raw text wrapped in a dict
+# adapt-conn-06: delegate to shared HTTP helper to avoid duplicating logic
+try:
+    from tools.platform_connectors.registry import safe_get as _safe_get
+except ImportError:
+    def _safe_get(url, headers=None, params=None, timeout=DEFAULT_TIMEOUT):
+        """Fallback HTTP GET when platform_connectors not available."""
+        if not _HAS_REQUESTS:
+            return None, "requests library not installed"
         try:
-            return resp.json(), None
-        except (json.JSONDecodeError, ValueError):
-            return {"_raw": resp.text}, None
-    except requests.exceptions.Timeout:
-        return None, "timeout"
-    except requests.exceptions.ConnectionError:
-        return None, "connection_error"
-    except requests.exceptions.RequestException as e:
-        return None, str(e)
+            resp = _http_request("GET", url, headers=headers, params=params, timeout=timeout)
+            if resp.status_code == 429:
+                return None, "rate_limited"
+            if resp.status_code == 403:
+                return None, "forbidden"
+            resp.raise_for_status()
+            try:
+                return resp.json(), None
+            except (json.JSONDecodeError, ValueError):
+                return {"_raw": resp.text}, None
+        except Exception as e:
+            return None, str(e)
 
 
 def _error_signal(source, context, error):

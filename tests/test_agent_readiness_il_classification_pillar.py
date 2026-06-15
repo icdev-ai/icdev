@@ -24,7 +24,13 @@ def _write(tmp_path: pathlib.Path, rel: str, content: str) -> pathlib.Path:
 
 
 def _patch_thresholds(monkeypatch, **overrides):
-    defaults = {"sample_size": 30, "min_header_ratio": 0.5, "warn_header_ratio": 0.3}
+    defaults = {
+        "sample_size": 30,
+        "min_header_ratio": 0.5,
+        "warn_header_ratio": 0.3,
+        "min_adaptive_sample": 10,
+        "adaptive_denominator": 5,
+    }
     defaults.update(overrides)
     import tools.aiify.agent_readiness.pillars.il_classification as mod
     monkeypatch.setattr(mod, "_load_thresholds", lambda: defaults)

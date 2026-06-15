@@ -1577,6 +1577,24 @@ def _lazy_scan_videos(config, session_config=None):
         return [_error_signal("video", "youtube_scanner not available")]
 
 
+def _scan_dic_collection(config, session_config=None):
+    """Adapter shim: load DIC scanner lazily to avoid circular imports."""
+    try:
+        from tools.research.source_scanners.dic_scanner import scan_dic_collection
+        return scan_dic_collection(config, session_config)
+    except Exception as exc:
+        return [{"source_type": "scan_error", "error": str(exc)}]
+
+
+def _scan_social_trends(config, session_config=None):
+    """Adapter shim: load social trend scanner lazily (adapt-l30-02)."""
+    try:
+        from tools.research.source_scanners.social_trend_scanner import scan_social_trends
+        return scan_social_trends(config, session_config)
+    except Exception as exc:
+        return [{"source_type": "scan_error", "error": str(exc)}]
+
+
 SOURCE_SCANNERS = {
     "community_forum": scan_community_forums,
     "review_site": scan_review_sites,
@@ -1587,6 +1605,8 @@ SOURCE_SCANNERS = {
     "news_blog": scan_news_blogs,
     "patent": scan_patents,
     "video": _lazy_scan_videos,
+    "dic_collection": _scan_dic_collection,
+    "social_trends": _scan_social_trends,
 }
 
 

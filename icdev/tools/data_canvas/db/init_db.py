@@ -32,10 +32,9 @@ def get_connection():
     """
     if _DDC_BACKEND == "postgresql":
         try:
-            from tools.db.storage import get_connection as _icdev_conn
+            from tools.db.storage import get_canvas_connection as _icdev_canvas_conn
 
-            conn = _icdev_conn(db_path=os.environ.get("DDC_PG_DATABASE", "data_canvas"))
-            return conn
+            return _icdev_canvas_conn()
         except ImportError:
             pass  # Fall through to SQLite
     # SQLite (default)

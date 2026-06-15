@@ -82,8 +82,8 @@ class TestGraphRagInternalAwarenessProfile:
     def test_profile_registered(self):
         assert "internal_awareness" in graph_rag.SCORING_PROFILES
         profile = graph_rag.SCORING_PROFILES["internal_awareness"]
-        # Three weights: edge_weight, centrality, recency
-        assert set(profile.keys()) == {"edge_weight", "centrality", "recency"}
+        # Four weights: edge_weight, centrality, recency, ontology_weight
+        assert set(profile.keys()) == {"edge_weight", "centrality", "recency", "ontology_weight"}
         total = sum(profile.values())
         assert abs(total - 1.0) < 0.01, f"weights should sum to 1.0, got {total}"
 

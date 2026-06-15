@@ -107,14 +107,14 @@ def simulate_dm_change(
         if change_type == "domain_merge":
             src = payload.get("source_domain_id", "")
             prods = conn.execute(
-                "SELECT COUNT(*) FROM dm_products WHERE domain_id=?", (src,)
+                "SELECT COUNT(*) FROM dm_data_products WHERE domain_id=?", (src,)
             ).fetchone()[0]
             contracts = conn.execute(
                 "SELECT COUNT(*) FROM dm_contracts c "
-                "JOIN dm_products p ON c.product_id=p.id WHERE p.domain_id=?", (src,)
+                "JOIN dm_data_products p ON c.product_id=p.id WHERE p.domain_id=?", (src,)
             ).fetchone()[0]
             policies = conn.execute(
-                "SELECT COUNT(*) FROM dm_policies WHERE domain_id=?", (src,)
+                "SELECT COUNT(*) FROM dm_opa_policies WHERE domain_id=?", (src,)
             ).fetchone()[0]
             if prods:
                 impacts.append({"severity": "medium", "id": src,
@@ -137,9 +137,9 @@ def simulate_dm_change(
             breaking = [d for d in schema_diff if d.get("change") in
                         ("remove_field", "rename_field", "change_type", "tighten_constraint")]
             consumers = conn.execute(
-                "SELECT COUNT(*) FROM dm_ports p "
+                "SELECT COUNT(*) FROM dm_input_ports p "
                 "JOIN dm_contracts c ON p.product_id=c.product_id "
-                "WHERE c.id=? AND p.port_type='input'", (contract_id,)
+                "WHERE c.id=?", (contract_id,)
             ).fetchone()[0]
             if breaking:
                 impacts.append({"severity": "high", "id": contract_id,
@@ -180,9 +180,10 @@ def simulate_dm_change(
                 "SELECT COUNT(*) FROM dm_contracts WHERE product_id=? AND status='active'",
                 (product_id,)
             ).fetchone()[0]
-            ports = conn.execute(
-                "SELECT COUNT(*) FROM dm_ports WHERE product_id=?", (product_id,)
-            ).fetchone()[0]
+            ports = (
+                conn.execute("SELECT COUNT(*) FROM dm_input_ports WHERE product_id=?", (product_id,)).fetchone()[0]
+                + conn.execute("SELECT COUNT(*) FROM dm_output_ports WHERE product_id=?", (product_id,)).fetchone()[0]
+            )
             if active_contracts:
                 impacts.append({"severity": "high", "id": product_id,
                                 "title": f"Deprecating product with {active_contracts} active contract(s)",
