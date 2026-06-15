@@ -27,6 +27,7 @@ Usage:
 import argparse
 import hashlib
 import json
+import math
 import os
 import sys
 import time
@@ -153,6 +154,108 @@ def _error_signal(source_type: str, error_msg: str) -> dict:
         "metadata": json.dumps({"error": str(error_msg), "source_type": source_type}),
         "discovered_at": _now(),
     }
+
+
+def _dedup_key(title: str, url: str) -> str:
+    """Stable deduplication key: SHA-256 of normalized title + url."""
+    norm_title = " ".join((title or "").lower().split())
+    norm_url = (url or "").lower().rstrip("/")
+    return hashlib.sha256(f"{norm_title}|{norm_url}".encode("utf-8")).hexdigest()[:16]
+
+
+def _compute_dual_score(
+    signal: dict,
+    keywords: list,
+    max_upvotes: float,
+    max_citations: float,
+) -> dict:
+    """Compute relevance + fun dual score for a single signal.
+
+    Relevance: fraction of keywords appearing in title+body (0..1).
+    Fun: log-normalized engagement (upvotes 70%, citations 30%) (0..1).
+    Total: equal-weight average of relevance and fun (0..1).
+    """
+    title = signal.get("title", "") or ""
+    body = signal.get("body", "") or ""
+    combined_lower = (title + " " + body).lower()
+
+    if keywords:
+        hits = sum(1 for kw in keywords if kw.lower() in combined_lower)
+        relevance = hits / len(keywords)
+    else:
+        relevance = 0.5
+
+    upvotes = max(0, signal.get("upvotes", 0) or 0)
+    citations = max(0, signal.get("citations", 0) or 0)
+
+    norm_up = math.log1p(upvotes) / math.log1p(max_upvotes) if max_upvotes > 0 else 0.0
+    norm_cit = math.log1p(citations) / math.log1p(max_citations) if max_citations > 0 else 0.0
+    fun = norm_up * 0.7 + norm_cit * 0.3
+
+    total = relevance * 0.5 + fun * 0.5
+
+    return {
+        "relevance": round(relevance, 4),
+        "fun": round(fun, 4),
+        "total": round(total, 4),
+    }
+
+
+def merge_and_score_clusters(
+    sources_map: dict,
+    keywords: list | None = None,
+) -> list:
+    """Merge per-source signal clusters, deduplicate, and apply dual scoring.
+
+    Deduplication key: first-occurrence-wins on SHA-256 of normalized title+url.
+    Sorting: descending by total score.
+
+    Args:
+        sources_map: Dict keyed by source name; values are either a list of
+            signal dicts or a sub-dict with a ``signals`` key (the format
+            returned by ``scan_social_trends``).
+        keywords: Optional keywords used for relevance scoring.
+
+    Returns:
+        Deduplicated list of signal dicts each enriched with a ``scores`` key
+        ``{relevance, fun, total}``, sorted by ``total`` descending.
+    """
+    all_signals: list = []
+    for source_data in sources_map.values():
+        if isinstance(source_data, dict):
+            sigs = source_data.get("signals", [])
+        elif isinstance(source_data, list):
+            sigs = source_data
+        else:
+            continue
+        all_signals.extend(sigs)
+
+    seen_keys: set = set()
+    deduped: list = []
+    for sig in all_signals:
+        if sig.get("source_type") == "scan_error":
+            continue
+        key = _dedup_key(sig.get("title", ""), sig.get("url", ""))
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        deduped.append(sig)
+
+    if not deduped:
+        return []
+
+    max_upvotes = float(max((s.get("upvotes", 0) or 0) for s in deduped) or 1)
+    max_citations = float(max((s.get("citations", 0) or 0) for s in deduped) or 1)
+    kw_list = list(keywords or [])
+
+    scored: list = []
+    for sig in deduped:
+        enriched = dict(sig)
+        enriched["scores"] = _compute_dual_score(sig, kw_list, max_upvotes, max_citations)
+        scored.append(enriched)
+
+    scored.sort(key=lambda s: s["scores"]["total"], reverse=True)
+    return scored
 
 
 def _http_get(url: str, headers: dict | None = None, params: dict | None = None) -> tuple:
@@ -733,10 +836,12 @@ def scan_social_trends(
     total = len(all_signals)
     errors = sum(1 for s in all_signals if s.get("source_type") == "scan_error")
 
+    merged = merge_and_score_clusters(results, keywords=keywords)
+
     _audit(
         "social_trend.scan",
-        f"Social trend scan complete: {total} signals ({errors} errors)",
-        {"total": total, "errors": errors, "sources": list(active)},
+        f"Social trend scan complete: {total} signals ({errors} errors), {len(merged)} merged unique",
+        {"total": total, "errors": errors, "merged": len(merged), "sources": list(active)},
     )
 
     return {
@@ -744,6 +849,8 @@ def scan_social_trends(
         "sources": list(active),
         "total_signals": total,
         "error_count": errors,
+        "merged_count": len(merged),
+        "merged_signals": merged,
         "results": results,
     }
 
@@ -758,6 +865,7 @@ def _print_human(result: dict) -> None:
     print(f"  Scanned at:   {result.get('scanned_at', '')}")
     print(f"  Sources:      {', '.join(result.get('sources', []))}")
     print(f"  Total signals:{result.get('total_signals', 0):>6d}")
+    print(f"  Merged unique:{result.get('merged_count', 0):>6d}")
     print(f"  Errors:       {result.get('error_count', 0):>6d}")
     print()
     for src, info in result.get("results", {}).items():
@@ -772,6 +880,18 @@ def _print_human(result: dict) -> None:
             print(f"    [{ups:>5d}] {title}")
         if count > 3:
             print(f"           ... {count - 3} more")
+    merged = result.get("merged_signals", [])
+    if merged:
+        print()
+        print("  Top 5 by dual score (relevance + fun):")
+        for sig in merged[:5]:
+            scores = sig.get("scores", {})
+            total = scores.get("total", 0.0)
+            rel = scores.get("relevance", 0.0)
+            fun = scores.get("fun", 0.0)
+            src = sig.get("source_type", "?")[:8]
+            title = sig.get("title", "")[:52]
+            print(f"    [{total:.3f}] rel={rel:.2f} fun={fun:.2f}  [{src}] {title}")
     print("=" * 70)
 
 
