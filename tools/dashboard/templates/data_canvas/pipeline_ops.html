@@ -352,7 +352,7 @@
               <div class="node-icon">&#128190;</div>
               <div class="node-name">RAG Chunk Store</div>
               <div class="node-metrics">
-                <div class="node-metric"><span class="node-metric-k">chunks</span><span class="node-metric-v blue">1,536</span></div>
+                <div class="node-metric"><span class="node-metric-k">chunks</span><span class="node-metric-v blue" id="rag-chunk-count">1,536</span></div>
                 <div class="node-metric"><span class="node-metric-k">freshness</span><span class="node-metric-v green">1.2 hrs</span></div>
                 <div class="node-metric"><span class="node-metric-k">SLA</span><span class="node-metric-v">4 hr max</span></div>
               </div>
@@ -372,8 +372,8 @@
               <div class="node-icon">&#128279;</div>
               <div class="node-name">KG Entity Store</div>
               <div class="node-metrics">
-                <div class="node-metric"><span class="node-metric-k">entities</span><span class="node-metric-v blue">2,191</span></div>
-                <div class="node-metric"><span class="node-metric-k">edges</span><span class="node-metric-v blue">6,803</span></div>
+                <div class="node-metric"><span class="node-metric-k">entities</span><span class="node-metric-v blue" id="kg-entity-count">2,191</span></div>
+                <div class="node-metric"><span class="node-metric-k">edges</span><span class="node-metric-v blue" id="kg-edge-count">6,803</span></div>
                 <div class="node-metric"><span class="node-metric-k">types</span><span class="node-metric-v">9</span></div>
               </div>
             </div>
@@ -408,7 +408,7 @@
             </div>
             <span class="cw-status-badge watching">WATCHING</span>
           </div>
-          <div class="cw-insight">
+          <div class="cw-insight" id="aria-acc-insight">
             <span class="cw-stage-tag aiml">AI/ML</span>
             <span class="cw-insight-icon">&#9432;</span>
             Accuracy holding at <strong style="color:#66bb6a">94.2%</strong>. Feature null rate nominal. Next retraining in <span id="aria-countdown">6h 42m</span>.
@@ -425,7 +425,7 @@
             </div>
             <span class="cw-status-badge active">ON-CALL</span>
           </div>
-          <div class="cw-insight">
+          <div class="cw-insight" id="max-queue-insight">
             <span class="cw-stage-tag agentic">AGENTIC</span>
             <span class="cw-insight-icon">&#9888;</span>
             Task queue at <strong style="color:#ff9800">591</strong> — elevated but within SLA. A2A bus stable at 480 msg/s.
@@ -442,7 +442,7 @@
             </div>
             <span class="cw-status-badge active">ACTIVE</span>
           </div>
-          <div class="cw-insight">
+          <div class="cw-insight" id="sage-rag-insight">
             <span class="cw-stage-tag ragkg">RAG+KG</span>
             <span class="cw-insight-icon">&#9989;</span>
             Hallucination rate <strong style="color:#66bb6a">1.8%</strong> &mdash; below 2% target. KG expanded <strong>+23 nodes</strong> this hour.
@@ -546,17 +546,15 @@
 {% endblock %}
 {% block scripts %}
 <script>
-/* ── Feed timestamps ─────────────────────────────── */
-(function stampFeed() {
-  var now = new Date();
-  var times = [0, 2, 5, 8, 12, 18];
-  times.forEach(function(minsAgo, i) {
-    var t = new Date(now - minsAgo * 60000);
-    var h = String(t.getHours()).padStart(2,'0');
-    var m = String(t.getMinutes()).padStart(2,'0');
-    var el = document.getElementById('ft' + i);
-    if (el) el.textContent = h + ':' + m;
-  });
+/* ── Briefing timestamp ──────────────────────────── */
+(function stampBriefing() {
+  var el = document.getElementById('briefingTime');
+  if (!el) return;
+  var n = new Date();
+  el.textContent = 'Prepared by ARIA, MAX & SAGE — ' +
+    n.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) + ' ' +
+    String(n.getHours()).padStart(2,'0') + ':' + String(n.getMinutes()).padStart(2,'0') +
+    ' UTC — CUI // SP-CTI';
 })();
 
 /* ── Countdown timer ─────────────────────────────── */
@@ -571,49 +569,119 @@
   setInterval(tick, 60000);
 })();
 
-/* ── Briefing time stamp ─────────────────────────── */
-(function stampBriefing() {
-  var el = document.getElementById('briefingTime');
-  if (!el) return;
-  var n = new Date();
-  el.textContent = 'Prepared by ARIA, MAX & SAGE — ' +
-    n.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) + ' ' +
-    String(n.getHours()).padStart(2,'0') + ':' + String(n.getMinutes()).padStart(2,'0') +
-    ' UTC — CUI // SP-CTI';
-})();
+/* ── Live metrics poll (every 30s) ──────────────── */
+function fmt(n) { return n >= 1000 ? n.toLocaleString() : String(n); }
 
-/* ── Live feed ticker ────────────────────────────── */
-(function liveFeed() {
-  var items = [
-    {who:'aria',cls:'aria', msg:'Inference API responding at 41ms p99 — within SLA'},
-    {who:'max', cls:'max',  msg:'Security agent completed NIST AC-2 gap task #3 of 48'},
-    {who:'sage',cls:'sage', msg:'RAG chunk freshness check passed — 0 stale chunks'},
-    {who:'aria',cls:'aria', msg:'Feature Store row count stable at 18,400'},
-    {who:'max', cls:'max',  msg:'A2A bus throughput 477 msg/s — nominal'},
-    {who:'sage',cls:'sage', msg:'KG query by Compliance agent: 14 entities returned in 6ms'},
-    {who:'aria',cls:'aria', msg:'XGBoost threat-classifier batch eval: 94.3% on latest hold-out'},
-    {who:'max', cls:'max',  msg:'Task Planner dispatched 12 new subtasks to Builder agent'},
-    {who:'sage',cls:'sage', msg:'Grounded response abstained on 1 low-confidence query — HITL queued'},
-  ];
-  var idx = 0;
-  var list = document.getElementById('feedList');
-  function addItem() {
-    var item = items[idx % items.length]; idx++;
-    var now = new Date();
-    var h = String(now.getHours()).padStart(2,'0');
-    var m = String(now.getMinutes()).padStart(2,'0');
-    var div = document.createElement('div');
-    div.className = 'feed-item';
-    div.innerHTML = '<span class="feed-time">' + h + ':' + m + '</span>' +
-                    '<span class="feed-who ' + item.cls + '">' + item.who.toUpperCase() + '</span>' +
-                    '<span class="feed-msg">' + item.msg + '</span>';
-    div.style.opacity = '0'; div.style.transition = 'opacity .5s';
-    list.insertBefore(div, list.firstChild);
-    setTimeout(function(){ div.style.opacity = '1'; }, 20);
-    while (list.children.length > 12) list.removeChild(list.lastChild);
+function applyMetrics(d) {
+  var map = {
+    'met-throughput': fmt(d.throughput || 3200),
+    'met-accuracy':   (d.accuracy || 94.2).toFixed(1) + '%',
+    'met-agents':     fmt(d.active_agents || 17),
+    'met-halluc':     (d.hallucination || 1.8).toFixed(1) + '%',
+    'met-decisions':  fmt(d.decisions || 1937),
+  };
+  Object.keys(map).forEach(function(id) {
+    var el = document.getElementById(id);
+    if (el) el.textContent = map[id];
+  });
+  // Update KG node in pipeline: entity + edge counts
+  var kgEnt = document.getElementById('kg-entity-count');
+  if (kgEnt && d.kg_entities) kgEnt.textContent = fmt(d.kg_entities);
+  var kgEdge = document.getElementById('kg-edge-count');
+  if (kgEdge && d.kg_edges) kgEdge.textContent = fmt(d.kg_edges);
+  var ragChunks = document.getElementById('rag-chunk-count');
+  if (ragChunks && d.rag_chunks) ragChunks.textContent = fmt(d.rag_chunks);
+  // Health ring: rough composite (accuracy - hallucination*5)
+  var health = Math.round(Math.min(99, Math.max(70,
+    (d.accuracy || 94) - (d.hallucination || 1.8) * 2)));
+  var hl = document.getElementById('health-label');
+  if (hl) hl.querySelector('div').textContent = health;
+  var ring = document.querySelector('.health-ring circle:last-child');
+  if (ring) {
+    var circ = 2 * Math.PI * 21;
+    var dash = (health / 100) * circ;
+    ring.setAttribute('stroke-dasharray', dash.toFixed(1) + ' ' + circ.toFixed(1));
+    ring.setAttribute('stroke', health >= 90 ? '#66bb6a' : health >= 75 ? '#ff9800' : '#ef5350');
   }
-  setInterval(addItem, 7000);
-})();
+  // MAX co-worker insight: reflect real task queue
+  var maxInsight = document.getElementById('max-queue-insight');
+  if (maxInsight) {
+    var q = d.active_agents || 0;
+    var color = q > 50 ? '#ff9800' : '#66bb6a';
+    maxInsight.innerHTML = '<span class="cw-stage-tag agentic">AGENTIC</span>' +
+      '<span class="cw-insight-icon">&#9888;</span> Task queue at ' +
+      '<strong style="color:' + color + '">' + fmt(q) + ' in-progress</strong>' +
+      ' — ' + (q > 50 ? 'elevated but within SLA' : 'nominal') +
+      '. Decisions logged: <strong>' + fmt(d.decisions || 0) + '</strong>.';
+  }
+  // SAGE co-worker insight: reflect real RAG+KG counts
+  var sageInsight = document.getElementById('sage-rag-insight');
+  if (sageInsight) {
+    var h = (d.hallucination || 1.8).toFixed(1);
+    var kge = fmt(d.kg_entities || 0);
+    sageInsight.innerHTML = '<span class="cw-stage-tag ragkg">RAG+KG</span>' +
+      '<span class="cw-insight-icon">&#9989;</span> Hallucination rate ' +
+      '<strong style="color:#66bb6a">' + h + '%</strong> &mdash; ' +
+      (parseFloat(h) < 2 ? 'below 2% target' : 'approaching threshold') +
+      '. KG has <strong>' + kge + ' entities</strong>.';
+  }
+  // ARIA co-worker insight: reflect real accuracy
+  var ariaInsight = document.getElementById('aria-acc-insight');
+  if (ariaInsight) {
+    var acc = (d.accuracy || 94.2).toFixed(1);
+    ariaInsight.innerHTML = '<span class="cw-stage-tag aiml">AI/ML</span>' +
+      '<span class="cw-insight-icon">&#9432;</span> Accuracy holding at ' +
+      '<strong style="color:#66bb6a">' + acc + '%</strong>. ' +
+      'Feature null rate nominal. Next retraining in <span id="aria-countdown">6h 42m</span>.';
+  }
+}
+
+function pollMetrics() {
+  fetch('/data/api/pipeline/status')
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(d){ if (d) applyMetrics(d); })
+    .catch(function(){});
+}
+pollMetrics();
+setInterval(pollMetrics, 30000);
+
+/* ── Live feed from DB (poll every 20s, inject new items) ── */
+var _feedSeen = new Set();
+
+function renderFeedItem(item) {
+  var list = document.getElementById('feedList');
+  if (!list) return;
+  var key = item.who + ':' + item.msg;
+  if (_feedSeen.has(key)) return;
+  _feedSeen.add(key);
+  var div = document.createElement('div');
+  div.className = 'feed-item';
+  div.innerHTML = '<span class="feed-time">' + (item.time || '--:--') + '</span>' +
+                  '<span class="feed-who ' + item.who + '">' + item.who.toUpperCase() + '</span>' +
+                  '<span class="feed-msg">' + item.msg + '</span>';
+  div.style.opacity = '0'; div.style.transition = 'opacity .5s';
+  list.insertBefore(div, list.firstChild);
+  setTimeout(function(){ div.style.opacity = '1'; }, 20);
+  while (list.children.length > 14) list.removeChild(list.lastChild);
+}
+
+function pollFeed() {
+  fetch('/data/api/pipeline/feed')
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(d){
+      if (!d || !d.items) return;
+      // seed seen on first load so we don't flash all at once
+      var isFirst = _feedSeen.size === 0;
+      if (isFirst) {
+        var list = document.getElementById('feedList');
+        if (list) list.innerHTML = '';
+      }
+      d.items.forEach(function(item){ renderFeedItem(item); });
+    })
+    .catch(function(){});
+}
+pollFeed();
+setInterval(pollFeed, 20000);
 
 /* ── Node click detail ───────────────────────────── */
 function nodeClick(title, body) {
@@ -623,10 +691,8 @@ function nodeClick(title, body) {
 }
 function closeNodeModal() { document.getElementById('nodeModal').classList.remove('open'); }
 
-/* ── Co-worker card modal (reuses briefing with section) ─────────── */
-function openCwModal(who) { openBriefing(); }
-
 /* ── Full AI Briefing ────────────────────────────── */
+function openCwModal(who) { openBriefing(); }
 function openBriefing()  { document.getElementById('briefingModal').classList.add('open'); }
 function closeBriefing() { document.getElementById('briefingModal').classList.remove('open'); }
 </script>
