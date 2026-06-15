@@ -3650,6 +3650,87 @@ def create_data_canvas_blueprint():
             "model_used": model_used,
         })
 
+    # ── GeoINT routes ────────────────────────────────────────────────────────
+
+    @bp.route("/geoint")
+    def dc_geoint():
+        return render_template("data_canvas/geoint.html",
+                               page_title="GeoINT Situational Awareness")
+
+    @bp.route("/osint")
+    def dc_osint():
+        return render_template("data_canvas/osint.html",
+                               page_title="OSINT Intelligence Feed")
+
+    @bp.route("/api/geoint/events")
+    def dc_api_geoint_events():
+        from tools.geoint.geoint_ingestor import list_events, _ensure_tables
+        from tools.db.storage import get_connection as _mc
+        try:
+            limit = min(int(request.args.get("limit", 500)), 2000)
+            source = request.args.get("source")
+            event_type = request.args.get("type")
+            events = list_events(limit=limit, source=source, event_type=event_type)
+            return jsonify({"events": events, "count": len(events)})
+        except Exception as e:
+            logger.warning("geoint events error: %s", e)
+            return jsonify({"events": [], "count": 0})
+
+    @bp.route("/api/geoint/ingest", methods=["POST"])
+    def dc_api_geoint_ingest():
+        from tools.geoint.geoint_ingestor import ingest as _gi
+        try:
+            sources = request.get_json(silent=True, force=True) or {}
+            src_list = sources.get("sources") or None
+            result = _gi(src_list)
+            return jsonify({"status": "ok", "result": result})
+        except Exception as e:
+            logger.warning("geoint ingest error: %s", e)
+            return jsonify({"status": "error", "error": str(e)}), 500
+
+    @bp.route("/api/geoint/stats")
+    def dc_api_geoint_stats():
+        from tools.geoint.geoint_ingestor import event_stats
+        try:
+            return jsonify(event_stats())
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @bp.route("/api/osint/signals")
+    def dc_api_osint_signals():
+        from tools.osint.osint_ingestor import list_signals
+        try:
+            limit = min(int(request.args.get("limit", 500)), 2000)
+            source = request.args.get("source")
+            severity = request.args.get("severity")
+            signals = list_signals(limit=limit, source=source, severity=severity)
+            return jsonify({"signals": signals, "count": len(signals)})
+        except Exception as e:
+            logger.warning("osint signals error: %s", e)
+            return jsonify({"signals": [], "count": 0})
+
+    @bp.route("/api/osint/ingest", methods=["POST"])
+    def dc_api_osint_ingest():
+        from tools.osint.osint_ingestor import ingest as _oi
+        try:
+            body = request.get_json(silent=True, force=True) or {}
+            src_list = body.get("sources") or None
+            result = _oi(src_list)
+            return jsonify({"status": "ok", "result": result})
+        except Exception as e:
+            logger.warning("osint ingest error: %s", e)
+            return jsonify({"status": "error", "error": str(e)}), 500
+
+    @bp.route("/api/osint/stats")
+    def dc_api_osint_stats():
+        from tools.osint.osint_ingestor import signal_stats
+        try:
+            return jsonify(signal_stats())
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    # ── Pipeline Command Center ───────────────────────────────────────────────
+
     @bp.route("/pipeline-ops")
     def dc_pipeline_ops():
         return render_template("data_canvas/pipeline_ops.html",

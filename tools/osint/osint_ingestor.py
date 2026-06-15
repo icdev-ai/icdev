@@ -1,0 +1,389 @@
+# CUI // SP-CTI — OSINT Multi-Source Ingestor
+"""
+Free sources (no API key):
+  - CISA Known Exploited Vulnerabilities (KEV)
+  - Abuse.ch ThreatFox (recent IOCs)
+  - Abuse.ch URLhaus (malicious URLs)
+  - Abuse.ch MalwareBazaar (recent samples)
+  - Abuse.ch Feodo Tracker (C2 IPs)
+  - CISA Alerts RSS
+
+Usage:
+    python tools/osint/osint_ingestor.py --fetch --json
+    python tools/osint/osint_ingestor.py --fetch --source cisa_kev
+    python tools/osint/osint_ingestor.py --list --json
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import logging
+import sys
+import urllib.request
+import urllib.error
+import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+
+logger = logging.getLogger("icdev.osint")
+
+_SOURCES: dict[str, dict] = {
+    "cisa_kev": {
+        "url": "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json",
+        "label": "CISA Known Exploited Vulnerabilities",
+        "ioc_type": "cve",
+    },
+    "threatfox": {
+        "url": "https://threatfox-api.abuse.ch/api/v1/",
+        "label": "Abuse.ch ThreatFox",
+        "ioc_type": "multi",
+        "method": "POST",
+        "body": json.dumps({"query": "get_iocs", "days": 1}).encode(),
+    },
+    "urlhaus": {
+        "url": "https://urlhaus-api.abuse.ch/v1/urls/recent/limit/100/",
+        "label": "Abuse.ch URLhaus",
+        "ioc_type": "url",
+    },
+    "feodo": {
+        "url": "https://feodotracker.abuse.ch/downloads/ipblocklist.json",
+        "label": "Abuse.ch Feodo C2 Tracker",
+        "ioc_type": "ip",
+    },
+    "cisa_alerts": {
+        "url": "https://www.cisa.gov/uscert/ncas/alerts.xml",
+        "label": "CISA Alerts RSS",
+        "ioc_type": "advisory",
+    },
+}
+
+_SEVERITY_MAP = {
+    "critical": "critical",
+    "high": "high",
+    "medium": "medium",
+    "low": "low",
+    "orange": "high",
+    "red": "critical",
+    "green": "low",
+}
+
+
+def _req(url: str, method: str = "GET", body: bytes | None = None,
+         timeout: int = 15) -> bytes | None:
+    headers = {"User-Agent": "ICDEV-OSINT/1.0 (security research)",
+               "Content-Type": "application/json"}
+    req = urllib.request.Request(url, data=body, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.read()
+    except urllib.error.URLError as e:
+        logger.warning("fetch %s failed: %s", url, e)
+        return None
+
+
+def _signal_id(source: str, value: str) -> str:
+    raw = f"{source}:{value}"
+    return "osint-" + hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+# ── Per-source parsers ──────────────────────────────────────────────────────
+
+def _parse_cisa_kev(raw: bytes) -> list[dict]:
+    data = json.loads(raw)
+    out = []
+    for v in data.get("vulnerabilities", [])[:50]:
+        cve = v.get("cveID", "")
+        out.append({
+            "id": _signal_id("cisa_kev", cve),
+            "source": "cisa_kev",
+            "title": f"{cve} — {v.get('vulnerabilityName', '')}",
+            "description": v.get("shortDescription", ""),
+            "ioc_type": "cve",
+            "ioc_value": cve,
+            "severity": "high",
+            "tags": ["kev", v.get("product", ""), v.get("vendorProject", "")],
+            "published_at": v.get("dateAdded", _now_iso()),
+        })
+    return out
+
+
+def _parse_threatfox(raw: bytes) -> list[dict]:
+    data = json.loads(raw)
+    if data.get("query_status") != "ok":
+        return []
+    out = []
+    for ioc in (data.get("data") or [])[:60]:
+        val = ioc.get("ioc", "")
+        out.append({
+            "id": _signal_id("threatfox", val),
+            "source": "threatfox",
+            "title": f"ThreatFox IOC [{ioc.get('ioc_type','')}]: {val[:80]}",
+            "description": ioc.get("malware_printable", ""),
+            "ioc_type": ioc.get("ioc_type", "unknown"),
+            "ioc_value": val,
+            "severity": _SEVERITY_MAP.get(
+                (ioc.get("confidence_level", 0) >= 75 and "high") or "medium", "medium"),
+            "tags": [ioc.get("malware_printable", ""), ioc.get("threat_type", "")],
+            "published_at": ioc.get("first_seen", _now_iso()),
+        })
+    return out
+
+
+def _parse_urlhaus(raw: bytes) -> list[dict]:
+    data = json.loads(raw)
+    out = []
+    for u in (data.get("urls") or [])[:50]:
+        url_val = u.get("url", "")
+        out.append({
+            "id": _signal_id("urlhaus", url_val),
+            "source": "urlhaus",
+            "title": f"Malicious URL [{u.get('url_status','')}]: {url_val[:80]}",
+            "description": u.get("threat", ""),
+            "ioc_type": "url",
+            "ioc_value": url_val,
+            "severity": "high" if u.get("url_status") == "online" else "medium",
+            "tags": [t.get("tag", "") for t in (u.get("tags") or [])],
+            "published_at": u.get("date_added", _now_iso()),
+        })
+    return out
+
+
+def _parse_feodo(raw: bytes) -> list[dict]:
+    data = json.loads(raw)
+    out = []
+    for ip in data[:60]:
+        val = ip.get("ip_address", "")
+        out.append({
+            "id": _signal_id("feodo", val),
+            "source": "feodo",
+            "title": f"C2 IP [{ip.get('malware','')}]: {val}:{ip.get('port','')}",
+            "description": f"Botnet C2 — {ip.get('malware','')} hosted in {ip.get('country','')}",
+            "ioc_type": "ip",
+            "ioc_value": val,
+            "severity": "critical",
+            "tags": [ip.get("malware", ""), ip.get("country", "")],
+            "published_at": ip.get("first_seen", _now_iso()),
+        })
+    return out
+
+
+def _parse_cisa_alerts(raw: bytes) -> list[dict]:
+    root = ET.fromstring(raw)
+    ns = {"atom": "http://www.w3.org/2005/Atom"}
+    out = []
+    channel = root.find("channel")
+    if channel is None:
+        # try Atom
+        items = root.findall("atom:entry", ns)
+        for item in items[:20]:
+            title = (item.findtext("atom:title", "", ns) or "").strip()
+            link  = (item.findtext("atom:link", "", ns) or "")
+            pub   = (item.findtext("atom:published", "", ns) or _now_iso())
+            out.append({
+                "id": _signal_id("cisa_alerts", title),
+                "source": "cisa_alerts",
+                "title": title,
+                "description": item.findtext("atom:summary", "", ns) or "",
+                "ioc_type": "advisory",
+                "ioc_value": link,
+                "severity": "high",
+                "tags": ["advisory", "cisa"],
+                "published_at": pub,
+            })
+    else:
+        for item in channel.findall("item")[:20]:
+            title = (item.findtext("title") or "").strip()
+            link  = item.findtext("link") or ""
+            pub   = item.findtext("pubDate") or _now_iso()
+            out.append({
+                "id": _signal_id("cisa_alerts", title),
+                "source": "cisa_alerts",
+                "title": title,
+                "description": item.findtext("description") or "",
+                "ioc_type": "advisory",
+                "ioc_value": link,
+                "severity": "high",
+                "tags": ["advisory", "cisa"],
+                "published_at": pub,
+            })
+    return out
+
+
+_PARSERS = {
+    "cisa_kev":    _parse_cisa_kev,
+    "threatfox":   _parse_threatfox,
+    "urlhaus":     _parse_urlhaus,
+    "feodo":       _parse_feodo,
+    "cisa_alerts": _parse_cisa_alerts,
+}
+
+
+# ── DB helpers ──────────────────────────────────────────────────────────────
+
+def _ensure_tables(conn) -> None:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS osint_signals (
+            id TEXT PRIMARY KEY,
+            source TEXT NOT NULL,
+            title TEXT,
+            description TEXT,
+            ioc_type TEXT,
+            ioc_value TEXT,
+            severity TEXT DEFAULT 'medium',
+            tags TEXT,
+            published_at TEXT,
+            fetched_at TEXT,
+            classification TEXT DEFAULT 'CUI // SP-CTI'
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_osint_source ON osint_signals(source)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_osint_severity ON osint_signals(severity)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_osint_fetched ON osint_signals(fetched_at)")
+    conn.commit()
+
+
+def _upsert(conn, signals: list[dict]) -> int:
+    now = _now_iso()
+    inserted = 0
+    for s in signals:
+        try:
+            conn.execute(
+                """INSERT INTO osint_signals
+                   (id, source, title, description, ioc_type, ioc_value, severity,
+                    tags, published_at, fetched_at, classification)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   ON CONFLICT (id) DO NOTHING""",
+                (s["id"], s["source"], s.get("title",""), s.get("description",""),
+                 s.get("ioc_type",""), s.get("ioc_value",""), s.get("severity","medium"),
+                 json.dumps(s.get("tags",[])), s.get("published_at", now),
+                 now, "CUI // SP-CTI")
+            )
+            inserted += 1
+        except Exception as e:
+            logger.debug("upsert skip %s: %s", s.get("id"), e)
+    conn.commit()
+    return inserted
+
+
+# ── Public API ──────────────────────────────────────────────────────────────
+
+def fetch_source(source_key: str) -> list[dict]:
+    cfg = _SOURCES.get(source_key)
+    if not cfg:
+        raise ValueError(f"Unknown source: {source_key}")
+    raw = _req(cfg["url"], method=cfg.get("method", "GET"), body=cfg.get("body"))
+    if not raw:
+        return []
+    parser = _PARSERS.get(source_key)
+    if not parser:
+        return []
+    try:
+        return parser(raw)
+    except Exception as e:
+        logger.warning("parse %s failed: %s", source_key, e)
+        return []
+
+
+def ingest(sources: list[str] | None = None) -> dict:
+    from tools.db.storage import get_canvas_connection as get_connection
+    conn = get_connection()
+    _ensure_tables(conn)
+    sources = sources or list(_SOURCES.keys())
+    results: dict[str, int] = {}
+    for key in sources:
+        signals = fetch_source(key)
+        inserted = _upsert(conn, signals)
+        results[key] = inserted
+        logger.info("osint %s: %d fetched, %d new", key, len(signals), inserted)
+    conn.close()
+    return results
+
+
+def list_signals(limit: int = 100, source: str | None = None,
+                 severity: str | None = None) -> list[dict]:
+    from tools.db.storage import get_canvas_connection as get_connection
+    conn = get_connection()
+    _ensure_tables(conn)
+    where, params = ["1=1"], []
+    if source:
+        where.append("source = %s"); params.append(source)
+    if severity:
+        where.append("severity = %s"); params.append(severity)
+    rows = conn.execute(
+        f"SELECT * FROM osint_signals WHERE {' AND '.join(where)} "
+        f"ORDER BY fetched_at DESC LIMIT %s",
+        [*params, limit]
+    ).fetchall()
+    conn.close()
+    cols = ["id","source","title","description","ioc_type","ioc_value",
+            "severity","tags","published_at","fetched_at","classification"]
+    return [dict(zip(cols, r)) for r in rows]
+
+
+def signal_stats() -> dict:
+    from tools.db.storage import get_canvas_connection as get_connection
+    conn = get_connection()
+    try:
+        _ensure_tables(conn)
+        total = (conn.execute("SELECT COUNT(*) FROM osint_signals").fetchone() or [0])[0]
+        by_sev = {}
+        for row in conn.execute(
+            "SELECT severity, COUNT(*) FROM osint_signals GROUP BY severity"
+        ).fetchall():
+            by_sev[row[0]] = row[1]
+        by_src = {}
+        for row in conn.execute(
+            "SELECT source, COUNT(*) FROM osint_signals GROUP BY source"
+        ).fetchall():
+            by_src[row[0]] = row[1]
+        return {"total": total, "by_severity": by_sev, "by_source": by_src}
+    finally:
+        conn.close()
+
+
+# ── CLI ─────────────────────────────────────────────────────────────────────
+
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    p = argparse.ArgumentParser(description="ICDEV OSINT Ingestor")
+    p.add_argument("--fetch", action="store_true")
+    p.add_argument("--list", action="store_true")
+    p.add_argument("--stats", action="store_true")
+    p.add_argument("--source", help="Specific source key")
+    p.add_argument("--severity", help="Filter by severity")
+    p.add_argument("--json", action="store_true")
+    args = p.parse_args()
+
+    if args.fetch:
+        sources = [args.source] if args.source else None
+        result = ingest(sources)
+        if args.json:
+            print(json.dumps(result, indent=2))
+        else:
+            for k, v in result.items():
+                print(f"  {k}: {v} new signals")
+    elif args.list:
+        signals = list_signals(source=args.source, severity=args.severity)
+        if args.json:
+            print(json.dumps(signals, indent=2, default=str))
+        else:
+            for s in signals:
+                print(f"[{s['severity'].upper():8}] [{s['source']:12}] {s['title'][:80]}")
+    elif args.stats:
+        stats = signal_stats()
+        if args.json:
+            print(json.dumps(stats, indent=2))
+        else:
+            print(f"Total: {stats['total']}")
+            for k, v in stats.get("by_severity", {}).items():
+                print(f"  {k}: {v}")
+    else:
+        p.print_help()
