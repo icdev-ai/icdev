@@ -245,9 +245,15 @@ def test_profile_api_llm_keys(results: TestResult) -> None:
 
 def test_profile_api_llm_keys_revoke_parameterised(results: TestResult) -> None:
     # Route: /profile/api/llm-keys//revoke  (Flask: /profile/api/llm-keys/<key_id>/revoke)
-    # Revoke requires auth + a real key_id; use sentinel and accept 4xx
-    _smoke(results, "profile_api_llm_keys_revoke_sentinel",
-           "/profile/api/llm-keys/nonexistent/revoke", max_status=499)
+    # POST-only; returns 401 (no auth) or 404 (key not found) — both are valid smoke responses
+    key_id = _lookup_id("dashboard_user_llm_keys") or "nonexistent"
+    path = f"/profile/api/llm-keys/{key_id}/revoke"
+    try:
+        r = _post(path)
+        assert r.status_code <= 499, f"{path} POST returned HTTP {r.status_code}"
+        results.ok("profile_api_llm_keys_revoke_sentinel", f"HTTP {r.status_code}")
+    except Exception as exc:
+        results.fail("profile_api_llm_keys_revoke_sentinel", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -271,8 +277,24 @@ def test_dev_profiles_api_templates(results: TestResult) -> None:
 
 
 def test_dev_profiles_api_create(results: TestResult) -> None:
-    # Route: /dev-profiles/api/create  (POST; GET returns 405 or 400 which is expected)
-    _smoke(results, "dev_profiles_api_create_get", "/dev-profiles/api/create", max_status=499)
+    # Route: /dev-profiles/api/create  (POST-only; GET must return 405)
+    try:
+        r = _get("/dev-profiles/api/create")
+        assert r.status_code == 405, f"GET /dev-profiles/api/create expected 405, got {r.status_code}"
+        results.ok("dev_profiles_api_create_get_405", f"HTTP {r.status_code}")
+    except Exception as exc:
+        results.fail("dev_profiles_api_create_get_405", exc)
+
+    # POST with minimal payload — 201 on success, 400 on validation error,
+    # 500 when the builder module or DB is unavailable in the test env.
+    try:
+        r = _post("/dev-profiles/api/create", {"scope": "project", "scope_id": "e2e-test"})
+        assert r.status_code < 600, f"/dev-profiles/api/create POST returned HTTP {r.status_code}"
+        body = r.json()
+        assert isinstance(body, dict), "response is not a JSON object"
+        results.ok("dev_profiles_api_create_post", f"HTTP {r.status_code}")
+    except Exception as exc:
+        results.fail("dev_profiles_api_create_post", exc)
 
 
 # ---------------------------------------------------------------------------
