@@ -1,0 +1,49 @@
+# Platform Connectors Configuration
+# CUI // SP-CTI
+# Governs the unified platform connector registry (tools/platform_connectors/).
+# All web-platform access for AI agents routes through this registry.
+
+# Per-adapter enable/disable flags
+adapters:
+  github_rest:
+    enabled: true
+    max_results_default: 20
+    since_days_default: 7
+  hackernews_algolia:
+    enabled: true
+    max_results_default: 20
+    since_days_default: 7
+  stackoverflow_v2:
+    enabled: true
+    max_results_default: 20
+    since_days_default: 30
+  reddit_json:
+    enabled: true
+    max_results_default: 20
+    subreddits_default:
+      - programming
+      - MachineLearning
+      - devops
+      - netsec
+      - sysadmin
+  youtube_data_api:
+    enabled: true
+    max_results_default: 10
+  youtube_ytdlp:
+    enabled: true
+    max_results_default: 10
+
+# Health probe settings ("doctor" command)
+health:
+  timeout_ms: 5000
+  cache_ttl_seconds: 300
+
+# Routing policy
+routing:
+  # On error, automatically try next adapter in priority order
+  fallback_enabled: true
+  # Circuit breaker: after N consecutive failures, skip adapter for backoff_seconds
+  circuit_breaker:
+    enabled: true
+    failure_threshold: 5
+    backoff_seconds: 300
