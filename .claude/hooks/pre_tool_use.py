@@ -427,6 +427,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "wne_artifacts",
         # Genesis reflex run log (migration 116, NIST AU — cooldown tracking + audit)
         "genesis_reflex_log",
+        # Genesis phase execution log (migration 188, NIST AU — phase completion history is immutable)
+        "genesis_phase_log",
         # NMCE — AI conversation audit trail (migration canvas, NIST AU)
         "mc_net_ai_sessions",
         # STRATEGOS — war readiness event log (migration 118, NIST AU — append-only I&W audit)
