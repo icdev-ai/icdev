@@ -1136,10 +1136,11 @@ def detect_view_anomalies(collection_id: str | None = None,
         conn.close()
 
 
-# ── Ingest Job Task Anomaly Detection (aiify-opp-91) ─────────────────────────
+# ── Ingest Job Task Anomaly Detection (aiify-opp-91, aiify-opp-92) ──────────
 # Analogous to paperless-ngx tasks.py hardcoded_threshold → anomaly_detection.
-# Detects failure-rate anomalies, stale queued jobs, and latency outliers across
-# dic_ingest_jobs using IQR-based detection — no hardcoded pass/fail thresholds.
+# opp-91 and opp-92 both flag separate hardcoded values in the same source file;
+# both are resolved here: IQR-based detection adapts to actual job distributions
+# with no hardcoded pass/fail thresholds.
 
 _JOB_TASK_SYSTEM_PROMPT = (
     "You are a document ingestion pipeline quality analyst. You are given metrics "
@@ -1214,7 +1215,7 @@ def detect_ingest_job_anomalies(collection_id: str | None = None,
     """Detect anomalous patterns in document ingestion task processing.
 
     No hardcoded pass/fail thresholds — IQR-based latency outlier detection
-    adapts to the actual job duration distribution (aiify-opp-91:
+    adapts to the actual job duration distribution (aiify-opp-91, aiify-opp-92:
     hardcoded_threshold → anomaly_detection).
 
     Args:
@@ -1373,6 +1374,273 @@ def detect_ingest_job_anomalies(collection_id: str | None = None,
         "latency_outliers": sorted(
             latency_outliers, key=lambda x: x["duration_seconds"], reverse=True
         )[:50],
+        "summary": summary,
+        "severity": severity,
+        "severity_source": severity_source,
+        "heuristic_severity": heuristic_sev,
+        "empty": False,
+        "message": None,
+    }
+
+
+# ── Document Field Validation Anomaly Detection (aiify-rm-a3344-phase-137) ────
+# Analogous to paperless-ngx validators.py hardcoded_threshold → anomaly_detection.
+# paperless hardcodes CharField max_length, color hex patterns, and ASN format
+# bounds; DIC replaces those with IQR-based corpus-adaptive thresholds and an
+# LLM severity grader so limits evolve with the document corpus.
+#
+# Detects: title length outliers (too long / too short / empty), filename length
+# outliers (excessively long), missing/empty filenames, and unsupported
+# content-type values — none of these use hardcoded cut-offs.
+
+_FIELD_VALIDATOR_SYSTEM_PROMPT = (
+    "You are a document metadata quality analyst. You are given anomaly statistics "
+    "about document field values ingested into a DIC corpus: title length outliers, "
+    "filename length outliers, empty field counts, and unsupported content types. "
+    "Assess the overall metadata quality health. "
+    "Respond ONLY with a JSON object: "
+    '{"severity": "low|medium|high", "rationale": "<=160 chars", '
+    '"top_concern": "<the single most concerning anomaly category>"}. '
+    "Never invent anomalies beyond those provided."
+)
+
+
+def _ai_field_validator_severity(summary: dict, samples: dict) -> dict | None:
+    """Grade field validation anomaly severity with the LLM."""
+    if not any(summary.get(k, 0) for k in (
+        "empty_title_count", "empty_filename_count", "title_too_long_count",
+        "title_too_short_count", "filename_too_long_count", "unsupported_type_count",
+    )):
+        return None
+    try:
+        import json as _json
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        heuristic = _field_validator_heuristic_severity(summary)
+        lines = [
+            f"Field validation anomaly summary: {_json.dumps(summary, sort_keys=True)}",
+            f"Deterministic baseline severity: {heuristic}",
+            "Sample empty-title docs: " + _json.dumps(samples.get("empty_title", [])[:5]),
+            "Sample title-too-long docs: " + _json.dumps(samples.get("title_too_long", [])[:5]),
+            "Sample filename-too-long docs: " + _json.dumps(samples.get("filename_too_long", [])[:5]),
+            "Sample unsupported-type docs: " + _json.dumps(samples.get("unsupported_type", [])[:5]),
+        ]
+        req = LLMRequest(
+            function_name="anomaly_detection",
+            prompt="\n".join(lines),
+            system=_FIELD_VALIDATOR_SYSTEM_PROMPT,
+            max_tokens=256,
+        )
+        result = LLMRouter().invoke("anomaly_detection", req)
+        raw = (result.content or "").strip()
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1:
+            return None
+        parsed = _json.loads(raw[start:end + 1])
+        if parsed.get("severity") not in ("low", "medium", "high"):
+            return None
+        return parsed
+    except Exception as exc:
+        logger.debug("dic.analytics: field validator LLM grade failed: %s", exc)
+        return None
+
+
+def _field_validator_heuristic_severity(summary: dict) -> str:
+    """Deterministic severity for field validation anomalies — always-available baseline."""
+    if summary.get("empty_filename_count", 0) > 0 or summary.get("unsupported_type_count", 0) > 0:
+        return "high"
+    if (
+        summary.get("empty_title_count", 0) > 0
+        or summary.get("title_too_long_count", 0) > 0
+        or summary.get("filename_too_long_count", 0) > 0
+    ):
+        return "medium"
+    if summary.get("title_too_short_count", 0) > 0:
+        return "low"
+    return "low"
+
+
+# Content types supported by the DIC ingest pipeline (from constants.SUPPORTED_EXTENSIONS
+# translated to MIME equivalents). Values outside this set are flagged as anomalous.
+_SUPPORTED_CONTENT_TYPES: frozenset[str] = frozenset({
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "text/plain",
+    "text/markdown",
+    "text/html",
+    "image/png",
+    "image/jpeg",
+    "image/tiff",
+})
+
+
+def detect_field_validation_anomalies(collection_id: str | None = None) -> dict:
+    """Detect anomalous document field values in the DIC corpus.
+
+    Analogous to paperless-ngx validators.py hardcoded_threshold →
+    anomaly_detection (aiify-rm-a3344-phase-137). paperless validators.py
+    hard-codes CharField max_length, color pattern lengths, and ASN format
+    bounds. This function replaces those fixed limits with IQR-based outlier
+    detection that adapts to the actual corpus distribution, plus an LLM
+    severity grader.
+
+    Detects:
+      - Empty/missing titles (always anomalous — no threshold needed)
+      - Title length outliers: IQR upper fence (too long) and lower fence (too
+        short, excluding empty docs already caught above)
+      - Empty/missing filenames (always anomalous)
+      - Filename length outliers: IQR upper fence (excessively long paths)
+      - Unsupported content_type values (outside the DIC ingest MIME set)
+
+    Args:
+        collection_id: Scope to one collection; ``None`` checks all.
+
+    Returns::
+
+        {
+          "empty_title": [{doc_id, filename, collection_id}],
+          "title_too_long": [{doc_id, title, title_len, collection_id}],
+          "title_too_short": [{doc_id, title, title_len, collection_id}],
+          "empty_filename": [{doc_id, title, collection_id}],
+          "filename_too_long": [{doc_id, filename, filename_len, collection_id}],
+          "unsupported_type": [{doc_id, title, content_type, collection_id}],
+          "summary": {empty_title_count, title_too_long_count, title_too_short_count,
+                      empty_filename_count, filename_too_long_count,
+                      unsupported_type_count, total_docs, thresholds},
+          "severity": "low|medium|high",
+          "severity_source": "llm|heuristic",
+          "heuristic_severity": "low|medium|high",
+          "empty": bool,
+          "message": str | None,
+        }
+    """
+    conn = _conn()
+    try:
+        params: tuple = (collection_id,) if collection_id else ()
+        cid_filter = "WHERE collection_id = ?" if collection_id else ""
+        rows = _safe(
+            conn,
+            f"SELECT doc_id, title, filename, content_type, collection_id "
+            f"FROM dic_documents {cid_filter} ORDER BY doc_id",
+            params,
+        )
+    finally:
+        conn.close()
+
+    if not rows:
+        return {
+            "empty_title": [], "title_too_long": [], "title_too_short": [],
+            "empty_filename": [], "filename_too_long": [], "unsupported_type": [],
+            "summary": {
+                "empty_title_count": 0, "title_too_long_count": 0,
+                "title_too_short_count": 0, "empty_filename_count": 0,
+                "filename_too_long_count": 0, "unsupported_type_count": 0,
+                "total_docs": 0,
+                "thresholds": {},
+            },
+            "severity": "low",
+            "severity_source": "heuristic",
+            "heuristic_severity": "low",
+            "empty": True,
+            "message": "No documents ingested yet.",
+        }
+
+    # Split into docs with and without populated titles/filenames for IQR.
+    titled = [r for r in rows if (r.get("title") or "").strip()]
+    filed = [r for r in rows if (r.get("filename") or "").strip()]
+
+    title_lens = [float(len((r.get("title") or "").strip())) for r in titled]
+    fname_lens = [float(len((r.get("filename") or "").strip())) for r in filed]
+
+    title_lo, title_hi = _iqr_outliers(title_lens) if len(title_lens) >= 4 else (0.0, float("inf"))
+    fname_lo, fname_hi = _iqr_outliers(fname_lens) if len(fname_lens) >= 4 else (0.0, float("inf"))
+
+    empty_title: list[dict] = []
+    title_too_long: list[dict] = []
+    title_too_short: list[dict] = []
+    empty_filename: list[dict] = []
+    filename_too_long: list[dict] = []
+    unsupported_type: list[dict] = []
+
+    for r in rows:
+        doc_id = r["doc_id"]
+        title = (r.get("title") or "").strip()
+        filename = (r.get("filename") or "").strip()
+        ctype = (r.get("content_type") or "").strip().lower()
+        cid = r.get("collection_id") or ""
+
+        if not title:
+            empty_title.append({"doc_id": doc_id, "filename": filename, "collection_id": cid})
+        else:
+            tlen = len(title)
+            if title_hi < float("inf") and tlen > title_hi:
+                title_too_long.append({
+                    "doc_id": doc_id, "title": title[:80], "title_len": tlen,
+                    "collection_id": cid,
+                })
+            elif title_lo > 0 and tlen < title_lo:
+                title_too_short.append({
+                    "doc_id": doc_id, "title": title, "title_len": tlen,
+                    "collection_id": cid,
+                })
+
+        if not filename:
+            empty_filename.append({"doc_id": doc_id, "title": title[:80], "collection_id": cid})
+        else:
+            flen = len(filename)
+            if fname_hi < float("inf") and flen > fname_hi:
+                filename_too_long.append({
+                    "doc_id": doc_id, "filename": filename[:120], "filename_len": flen,
+                    "collection_id": cid,
+                })
+
+        if ctype and ctype not in _SUPPORTED_CONTENT_TYPES:
+            unsupported_type.append({
+                "doc_id": doc_id, "title": title[:80], "content_type": ctype,
+                "collection_id": cid,
+            })
+
+    summary = {
+        "empty_title_count": len(empty_title),
+        "title_too_long_count": len(title_too_long),
+        "title_too_short_count": len(title_too_short),
+        "empty_filename_count": len(empty_filename),
+        "filename_too_long_count": len(filename_too_long),
+        "unsupported_type_count": len(unsupported_type),
+        "total_docs": len(rows),
+        "thresholds": {
+            "title_len_low": round(title_lo, 1) if title_lo > 0 else None,
+            "title_len_high": round(title_hi, 1) if title_hi < float("inf") else None,
+            "filename_len_high": round(fname_hi, 1) if fname_hi < float("inf") else None,
+        },
+    }
+
+    heuristic_sev = _field_validator_heuristic_severity(summary)
+    samples = {
+        "empty_title": empty_title[:5],
+        "title_too_long": title_too_long[:5],
+        "filename_too_long": filename_too_long[:5],
+        "unsupported_type": unsupported_type[:5],
+    }
+    ai_grade = _ai_field_validator_severity(summary, samples) if heuristic_sev != "low" else None
+
+    if ai_grade:
+        severity = ai_grade["severity"]
+        severity_source = "llm"
+    else:
+        severity = heuristic_sev
+        severity_source = "heuristic"
+
+    return {
+        "empty_title": empty_title[:50],
+        "title_too_long": title_too_long[:50],
+        "title_too_short": title_too_short[:50],
+        "empty_filename": empty_filename[:50],
+        "filename_too_long": filename_too_long[:50],
+        "unsupported_type": unsupported_type[:50],
         "summary": summary,
         "severity": severity,
         "severity_source": severity_source,
@@ -1622,6 +1890,266 @@ def detect_output_export_anomalies(
         "errors": errors[:50],
         "stale": stale[:50],
         "provider_concentration": provider_counts,
+        "summary": summary,
+        "severity": severity,
+        "severity_source": severity_source,
+        "heuristic_severity": heuristic_sev,
+        "empty": False,
+        "message": None,
+    }
+
+
+# ── Document Model Attribute Anomaly Detection (aiify-rm-a3344-phase-58) ──────
+# Analogous to paperless-ngx models.py hardcoded_threshold → anomaly_detection.
+# paperless models.py hard-codes Django CharField max_length constraints, ASN
+# sequence bounds, and Correspondent/Tag/DocumentType match-score field choices.
+# DIC replaces those fixed model-level constraints with IQR-based corpus-adaptive
+# detection and an LLM severity grader.
+#
+# Detects: NULL provider (model attribute absent at DB level), NULL content_type
+# at DB level (distinct from format validation in phase-137 which checks
+# non-null values), incomplete chunk-embedding ratios (IQR on
+# chunks_done/chunks_total for completed jobs), and orphaned ingest jobs (status
+# "done" but doc_id NULL — model record never created).
+
+_MODEL_ATTR_SYSTEM_PROMPT = (
+    "You are a document intelligence model quality analyst. You are given statistics "
+    "about model-level attribute anomalies in a DIC corpus: null provider counts, "
+    "null content_type counts at the DB level, incomplete chunk-embedding job counts, "
+    "and orphaned ingest jobs (done but no document record created). "
+    "Assess the overall model data quality health. "
+    "Respond ONLY with a JSON object: "
+    '{"severity": "low|medium|high", "rationale": "<=160 chars", '
+    '"top_concern": "<the single most concerning anomaly category>"}. '
+    "Never invent anomalies beyond those provided."
+)
+
+
+def _ai_model_attr_severity(summary: dict, samples: dict) -> dict | None:
+    """Grade model attribute anomaly severity with the LLM."""
+    if not any(summary.get(k, 0) for k in (
+        "null_provider_count", "null_content_type_count",
+        "incomplete_embedding_count", "orphaned_job_count",
+    )):
+        return None
+    try:
+        import json as _json
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        heuristic = _model_attr_heuristic_severity(summary)
+        lines = [
+            f"Model attribute anomaly summary: {_json.dumps(summary, sort_keys=True)}",
+            f"Deterministic baseline severity: {heuristic}",
+            "Sample null-provider docs: " + _json.dumps(samples.get("null_provider", [])[:5]),
+            "Sample incomplete-embedding jobs: " + _json.dumps(
+                samples.get("incomplete_embedding", [])[:5]
+            ),
+            "Sample orphaned jobs: " + _json.dumps(samples.get("orphaned_jobs", [])[:5]),
+        ]
+        req = LLMRequest(
+            function_name="anomaly_detection",
+            prompt="\n".join(lines),
+            system=_MODEL_ATTR_SYSTEM_PROMPT,
+            max_tokens=256,
+        )
+        result = LLMRouter().invoke("anomaly_detection", req)
+        raw = (result.content or "").strip()
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1:
+            return None
+        parsed = _json.loads(raw[start:end + 1])
+        if parsed.get("severity") not in ("low", "medium", "high"):
+            return None
+        return parsed
+    except Exception as exc:
+        logger.debug("dic.analytics: model attr LLM grade failed: %s", exc)
+        return None
+
+
+def _model_attr_heuristic_severity(summary: dict) -> str:
+    """Deterministic severity for model attribute anomalies — always-available baseline."""
+    if summary.get("orphaned_job_count", 0) > 0:
+        return "high"
+    if summary.get("null_provider_count", 0) > 0 or summary.get("null_content_type_count", 0) > 0:
+        return "medium"
+    if summary.get("incomplete_embedding_count", 0) > 0:
+        return "medium"
+    return "low"
+
+
+def detect_document_model_anomalies(collection_id: str | None = None) -> dict:
+    """Detect anomalous model-level attribute gaps in the DIC corpus.
+
+    Analogous to paperless-ngx models.py hardcoded_threshold →
+    anomaly_detection (aiify-rm-a3344-phase-58). paperless models.py defines
+    Django model fields with hardcoded constraints (CharField max_length, ASN
+    bounds, match-score field choices). This function replaces those fixed
+    model-level constraints with IQR-based corpus-adaptive detection.
+
+    Detects:
+      - NULL provider at DB level (model attribute not populated at ingest time)
+      - NULL content_type at DB level (distinct from empty-string format checks
+        in phase-137 which validate the format of non-null values)
+      - Incomplete chunk-embedding ratio: completed ingest jobs where
+        chunks_done/chunks_total is below the IQR lower fence (indicating a
+        partial embedding failure, not captured by job status alone)
+      - Orphaned ingest jobs: status="done" but doc_id IS NULL (job marked
+        complete but the dic_documents model record was never created)
+
+    Args:
+        collection_id: Scope to one collection; ``None`` checks all.
+
+    Returns::
+
+        {
+          "null_provider": [{doc_id, filename, collection_id}],
+          "null_content_type": [{doc_id, title, collection_id}],
+          "incomplete_embedding": [{job_id, filename, chunks_done, chunks_total,
+                                    ratio, collection_id}],
+          "orphaned_jobs": [{job_id, filename, collection_id}],
+          "summary": {null_provider_count, null_content_type_count,
+                      incomplete_embedding_count, orphaned_job_count,
+                      total_docs, total_jobs, thresholds},
+          "severity": "low|medium|high",
+          "severity_source": "llm|heuristic",
+          "heuristic_severity": "low|medium|high",
+          "empty": bool,
+          "message": str | None,
+        }
+    """
+    conn = _conn()
+    try:
+        doc_cid_filter = "WHERE collection_id = ?" if collection_id else ""
+        job_cid_filter = "WHERE collection_id = ?" if collection_id else ""
+        cid_params: tuple = (collection_id,) if collection_id else ()
+
+        doc_rows = _safe(
+            conn,
+            f"SELECT doc_id, title, filename, content_type, provider, collection_id "
+            f"FROM dic_documents {doc_cid_filter} ORDER BY doc_id",
+            cid_params,
+        )
+        job_rows = _safe(
+            conn,
+            f"SELECT job_id, filename, collection_id, status, doc_id, "
+            f"chunks_done, chunks_total "
+            f"FROM dic_ingest_jobs {job_cid_filter} ORDER BY job_id",
+            cid_params,
+        )
+    finally:
+        conn.close()
+
+    if not doc_rows and not job_rows:
+        return {
+            "null_provider": [],
+            "null_content_type": [],
+            "incomplete_embedding": [],
+            "orphaned_jobs": [],
+            "summary": {
+                "null_provider_count": 0, "null_content_type_count": 0,
+                "incomplete_embedding_count": 0, "orphaned_job_count": 0,
+                "total_docs": 0, "total_jobs": 0, "thresholds": {},
+            },
+            "severity": "low",
+            "severity_source": "heuristic",
+            "heuristic_severity": "low",
+            "empty": True,
+            "message": "No documents or ingest jobs found.",
+        }
+
+    # ── NULL model attributes ─────────────────────────────────────────────────
+    null_provider: list[dict] = []
+    null_content_type: list[dict] = []
+
+    for row in doc_rows:
+        prov = row.get("provider")
+        ctype = row.get("content_type")
+        if prov is None:
+            null_provider.append({
+                "doc_id": row["doc_id"],
+                "filename": row.get("filename", ""),
+                "collection_id": row.get("collection_id", ""),
+            })
+        if ctype is None:
+            null_content_type.append({
+                "doc_id": row["doc_id"],
+                "title": row.get("title", ""),
+                "collection_id": row.get("collection_id", ""),
+            })
+
+    # ── Chunk embedding completion ratio (IQR-based) ──────────────────────────
+    # Only consider completed (done) jobs with chunks_total > 0.
+    done_jobs = [
+        r for r in job_rows
+        if r.get("status") == "done" and (r.get("chunks_total") or 0) > 0
+    ]
+    ratios = [
+        row["chunks_done"] / row["chunks_total"]
+        for row in done_jobs
+        if row.get("chunks_done") is not None and row.get("chunks_total")
+    ]
+    ratio_lo, _ = _iqr_outliers(ratios)
+
+    incomplete_embedding: list[dict] = []
+    for row, ratio in zip(done_jobs, ratios):
+        if ratio < ratio_lo:
+            incomplete_embedding.append({
+                "job_id": row["job_id"],
+                "filename": row.get("filename", ""),
+                "chunks_done": row.get("chunks_done", 0),
+                "chunks_total": row.get("chunks_total", 0),
+                "ratio": round(ratio, 4),
+                "collection_id": row.get("collection_id", ""),
+            })
+
+    # ── Orphaned jobs: done but no doc_id ─────────────────────────────────────
+    orphaned_jobs: list[dict] = [
+        {
+            "job_id": r["job_id"],
+            "filename": r.get("filename", ""),
+            "collection_id": r.get("collection_id", ""),
+        }
+        for r in job_rows
+        if r.get("status") == "done" and not r.get("doc_id")
+    ]
+
+    # ── Thresholds ────────────────────────────────────────────────────────────
+    thresholds: dict = {}
+    if ratio_lo < float("inf") and ratios:
+        thresholds["embedding_ratio_low"] = round(ratio_lo, 4)
+
+    summary = {
+        "null_provider_count": len(null_provider),
+        "null_content_type_count": len(null_content_type),
+        "incomplete_embedding_count": len(incomplete_embedding),
+        "orphaned_job_count": len(orphaned_jobs),
+        "total_docs": len(doc_rows),
+        "total_jobs": len(job_rows),
+        "thresholds": thresholds,
+    }
+
+    heuristic_sev = _model_attr_heuristic_severity(summary)
+    samples = {
+        "null_provider": null_provider[:5],
+        "null_content_type": null_content_type[:5],
+        "incomplete_embedding": incomplete_embedding[:5],
+        "orphaned_jobs": orphaned_jobs[:5],
+    }
+    ai_grade = _ai_model_attr_severity(summary, samples) if heuristic_sev != "low" else None
+
+    if ai_grade:
+        severity = ai_grade["severity"]
+        severity_source = "llm"
+    else:
+        severity = heuristic_sev
+        severity_source = "heuristic"
+
+    return {
+        "null_provider": null_provider[:50],
+        "null_content_type": null_content_type[:50],
+        "incomplete_embedding": incomplete_embedding[:50],
+        "orphaned_jobs": orphaned_jobs[:50],
         "summary": summary,
         "severity": severity,
         "severity_source": severity_source,
