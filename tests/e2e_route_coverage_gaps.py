@@ -222,7 +222,15 @@ def test_intake_prd_view_parameterised(results: TestResult) -> None:
 
 def test_profile_api_theme(results: TestResult) -> None:
     # Route: /profile/api/theme  (GET current theme or POST to change)
-    _smoke(results, "profile_api_theme", "/profile/api/theme")
+    _smoke(results, "profile_api_theme_get", "/profile/api/theme")
+    try:
+        r = _post("/profile/api/theme", json={"theme": "light"})
+        assert r.status_code <= 499, f"/profile/api/theme POST returned HTTP {r.status_code}"
+        data = r.json()
+        assert data.get("theme") == "light", f"unexpected theme value: {data}"
+        results.ok("profile_api_theme_post", f"HTTP {r.status_code} theme={data.get('theme')}")
+    except Exception as exc:
+        results.fail("profile_api_theme_post", exc)
 
 
 def test_profile_api_keys(results: TestResult) -> None:
