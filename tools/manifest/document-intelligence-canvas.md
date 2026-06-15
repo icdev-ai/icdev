@@ -133,6 +133,28 @@ print(update["content"], update["citation_count"], update["status"])
 |------|---------|
 | `tools/document_intelligence/verifier.py` | CoT/CoD claim replay + citation validation + abstention gate. Every AI-generated draft passes through `verify()` before persisting. Pipeline: `validate_citations` (structural), claim extraction, per-claim CoT/CoD replay against cited chunk (LLM + deterministic lexical-overlap fallback), optional corrective retrieval, and disposition (strip unsupported claims or reject/abstain). Reuses `icdev.tools.rag.retriever.validate_citations` and `icdev.tools.rag.corrective_rag`. Air-gap safe — functions headless without an LLM provider. |
 
+## Edit History
+
+| Tool | Purpose |
+|------|---------|
+| `tools/document_intelligence/history_recorder.py` | Append-only NIST AU audit trail for DIC section content changes. `record_edit(section_id, editor, content_before, content_after, ...)` skips no-ops (before == after), computes a `char_delta`, generates a truncated unified diff via stdlib `difflib`, and inserts into `dic_edit_history` (immutable — no UPDATE/DELETE). When `|char_delta| > 50`, best-effort calls `consistency_checker.extract_changed_concepts` + `find_related_docs` and emits `dic.consistency_flag` canvas events to related documents. `get_section_history(section_id, limit, since)` returns edit rows most-recent first. All rows carry `tenant_id`/`classification` (RLS-compatible). |
+
+### Key API
+
+```python
+from tools.document_intelligence.history_recorder import record_edit, get_section_history
+
+edit_id = record_edit("sec_abc123", "alice", old_content, new_content)
+# Returns new edit_id str, or None if before == after (no-op)
+
+history = get_section_history("sec_abc123", limit=20, since="2026-01-01T00:00:00+00:00")
+# Returns list of dicts: edit_id, section_id, doc_id, version_id, editor, char_delta, diff_summary, edited_at, classification
+```
+
+### Table
+
+- `dic_edit_history` — append-only audit log (edit_id, section_id, doc_id, version_id, editor, content_before, content_after, char_delta, diff_summary, edited_at, tenant_id, classification). `_ensure_table()` creates it on first use.
+
 ## Analytics & Discovery
 
 | Tool | Purpose |

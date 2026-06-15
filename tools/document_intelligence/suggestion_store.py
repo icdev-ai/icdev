@@ -111,7 +111,7 @@ def _notify_collection_members(conn, suggestion_id: str, collection_id: str,
     Best-effort: any exception is swallowed — notification failure never blocks creation.
     """
     try:
-        import hashlib
+        import zlib
         members = conn.execute(
             """
             SELECT user_id FROM dic_team_access
@@ -123,7 +123,7 @@ def _notify_collection_members(conn, suggestion_id: str, collection_id: str,
             uid = _col(member, "user_id", 0) or ""
             if not uid:
                 continue
-            log_id = f"nlog-{hashlib.sha256(f'{now}{suggestion_id}{uid}'.encode()).hexdigest()[:12]}"
+            log_id = f"nlog-{format(zlib.crc32(f'{now}{suggestion_id}{uid}'.encode()) & 0xFFFFFFFF, '08x')}"
             conn.execute(
                 """
                 INSERT INTO notification_log

@@ -160,7 +160,7 @@ def _emit_canvas_event(conn, collection_id: str, info: dict, now: str) -> None:
 def _emit_notifications(conn, collection_id: str, info: dict, now: str) -> None:
     """Best-effort: notify editors/reviewers of this collection."""
     try:
-        import hashlib
+        import zlib
         members = conn.execute(
             "SELECT user_id FROM dic_team_access "
             "WHERE collection_id = %s AND role IN ('editor', 'reviewer')",
@@ -171,7 +171,7 @@ def _emit_notifications(conn, collection_id: str, info: dict, now: str) -> None:
                    else member["user_id"] if hasattr(member, "__getitem__") else "")
             if not uid:
                 continue
-            log_id = f"nlog-{hashlib.sha256(f'{now}{collection_id}{uid}'.encode()).hexdigest()[:12]}"
+            log_id = f"nlog-{format(zlib.crc32(f'{now}{collection_id}{uid}'.encode()) & 0xFFFFFFFF, '08x')}"
             title = (
                 f"Review overdue: {info['collection_name']} "
                 f"({info['days_overdue']}d past {info['review_interval_days']}d interval)"
