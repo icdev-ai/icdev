@@ -15,7 +15,6 @@ Routing:
 Design references: D66 (ABC), D146 (circuit breaker), D-RES-3 (function registry).
 """
 
-import os
 from pathlib import Path
 from typing import Any
 
