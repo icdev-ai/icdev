@@ -706,7 +706,7 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
         "agent_errors", "agent_metrics",                 # handle_agent_incident_handler
         "canvas_assessments", "canvas_findings",         # render_and_deliver_canvas_status
         "canvas_gate_results",                           # report_service canvas gate report
-        "compliance_gates",                              # render compliance gate notice
+        "compliance_gates", "gate_failures",             # render compliance gate notice
         "data_mapping_runs", "data_mapping_field_matches",
         "data_mapping_schemas",                          # render_and_notify_data_mapping_run
         "dic_chunks", "dic_entities",                    # render_and_send_dic_document_summary
