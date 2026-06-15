@@ -968,8 +968,8 @@ def _ai_extract_identifiers(text: str) -> list[dict] | None:
         return None
 
 
-# Identifier extraction anomaly detection (aiify-opp-6: hardcoded_threshold ->
-# anomaly_detection). The external scan flagged paperless-ngx
+# Identifier extraction anomaly detection (aiify-opp-6 / aiify-rm-a3344-phase-7:
+# hardcoded_threshold -> anomaly_detection). The external scan flagged paperless-ngx
 # src/documents/barcodes.py — the barcode/QR reader that accepts or rejects a
 # decoded barcode against hardcoded confidence thresholds.  A fixed cutoff is
 # brittle: a high-contrast barcode always scores 1.0, while a faded one may
@@ -3012,4 +3012,186 @@ def validate_import_documents(
         rejected=rejected_count,
         anomalous_count=anomalous_count,
         per_file=results,
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Collection-level consumption pipeline health anomaly detection
+# (aiify-opp-38: hardcoded_threshold -> anomaly_detection). The external scan
+# flagged paperless-ngx src/documents/management/commands/document_consumer.py
+# — the top-level document consumption pipeline orchestrator. Its hardcoded
+# thresholds govern the minimum OCR character count before success, the max
+# consecutive-failure retry limit before quarantine, and the queue-depth
+# warning ceiling when the consume directory backlog grows too large.
+#
+# The ICDEV analog lands in DIC ingest_orchestrator.py. The "document consumer"
+# role maps to the full ingest pipeline: files arrive, are processed by
+# ingest_file/ingest_batch, and outcomes are stored in dic_documents. Rather
+# than fixed constants this detector queries dic_documents for recent ingestion
+# history and applies IQR-based anomaly detection on page_count and byte_size
+# distributions:
+#
+#   - page_count outliers flag documents with far too many or too few pages,
+#     indicating scanning/splitting errors at the consumption stage.
+#   - byte_size outliers flag corrupt/re-submitted/oversized documents that
+#     passed the ingest-time gate but are anomalous in context.
+#   - A configurable queue-depth ceiling (DIC_CONSUMER_MAX_QUEUE_DOCS)
+#     replaces the hardcoded consume-directory backlog limit.
+#
+# Health verdict:
+#   "healthy"  — outlier fraction < DIC_CONSUMER_WARN_RATIO (default 0.10)
+#   "degraded" — ≥ warn but < DIC_CONSUMER_CRITICAL_RATIO (default 0.25)
+#   "critical" — ≥ critical ratio or backlog ceiling breached
+#
+# Returns None when sample < 4 or on any error (air-gap safe).
+# --------------------------------------------------------------------------- #
+
+_CONSUMER_HEALTH_LOOKBACK: int = int(os.environ.get("DIC_CONSUMER_HEALTH_LOOKBACK", "100"))
+_CONSUMER_HEALTH_IQR_FENCE: float = float(
+    os.environ.get("DIC_CONSUMER_HEALTH_IQR_FENCE", "1.5")
+)
+_CONSUMER_WARN_RATIO: float = float(os.environ.get("DIC_CONSUMER_WARN_RATIO", "0.10"))
+_CONSUMER_CRITICAL_RATIO: float = float(
+    os.environ.get("DIC_CONSUMER_CRITICAL_RATIO", "0.25")
+)
+_CONSUMER_MAX_QUEUE_DOCS: int = int(os.environ.get("DIC_CONSUMER_MAX_QUEUE_DOCS", "500"))
+
+
+@dataclass
+class ConsumerHealthReport:
+    collection_id: str
+    doc_count: int
+    outlier_count: int
+    outlier_fraction: float
+    verdict: str  # "healthy" | "degraded" | "critical"
+    backlog_warning: bool
+    outlier_doc_ids: list[str]
+    signals: list[str]
+
+    def to_dict(self) -> dict:
+        return {
+            "collection_id": self.collection_id,
+            "doc_count": self.doc_count,
+            "outlier_count": self.outlier_count,
+            "outlier_fraction": round(self.outlier_fraction, 4),
+            "verdict": self.verdict,
+            "backlog_warning": self.backlog_warning,
+            "outlier_doc_ids": self.outlier_doc_ids,
+            "signals": self.signals,
+        }
+
+
+def detect_collection_anomalies(
+    collection_id: str,
+    *,
+    tenant_id: "str | None" = None,
+    limit: "int | None" = None,
+    conn=None,
+) -> "ConsumerHealthReport | None":
+    """Detect anomalies in recently-ingested documents for a collection.
+
+    Queries dic_documents for the most recent ``limit`` (default
+    DIC_CONSUMER_HEALTH_LOOKBACK) documents and applies IQR-based outlier
+    detection on page_count and byte_size, replacing the hardcoded quality
+    thresholds in paperless-ngx document_consumer.py (aiify-opp-38).
+
+    Returns None when the sample has fewer than 4 documents (insufficient for
+    IQR) or on any error. All failures degrade gracefully — callers proceed
+    with ingestion unchanged.
+    """
+    lookback = limit if limit is not None else _CONSUMER_HEALTH_LOOKBACK
+    own_conn = conn is None
+    try:
+        if own_conn:
+            conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT doc_id, page_count, byte_size
+            FROM dic_documents
+            WHERE collection_id = %s
+            ORDER BY created_at DESC
+            LIMIT %s
+            """,
+            (collection_id, lookback),
+        )
+        rows = cur.fetchall()
+    except Exception:
+        return None
+    finally:
+        if own_conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+    if not rows or len(rows) < 4:
+        return None
+
+    doc_count = len(rows)
+    page_counts: list[int] = [int(r["page_count"] or 1) for r in rows]
+    byte_sizes: list[int] = [int(r["byte_size"] or 0) for r in rows]
+
+    # Reuse the existing IQR helper (same logic as batch/import anomaly detectors).
+    pc_lo, pc_hi = _detect_file_size_anomalies(page_counts, _CONSUMER_HEALTH_IQR_FENCE)
+    bs_lo, bs_hi = _detect_file_size_anomalies(byte_sizes, _CONSUMER_HEALTH_IQR_FENCE)
+
+    signals: list[str] = []
+    outlier_doc_ids: list[str] = []
+
+    for r in rows:
+        doc_id = r["doc_id"]
+        pc = int(r["page_count"] or 1)
+        bs = int(r["byte_size"] or 0)
+        is_outlier = False
+
+        if pc > pc_hi:
+            signals.append(f"page_count_high:{doc_id}:{pc}>{pc_hi:.0f}")
+            is_outlier = True
+        elif pc_lo > 0 and pc < pc_lo:
+            signals.append(f"page_count_low:{doc_id}:{pc}<{pc_lo:.0f}")
+            is_outlier = True
+
+        if bs > bs_hi:
+            signals.append(f"byte_size_high:{doc_id}:{bs}>{bs_hi:.0f}")
+            is_outlier = True
+        elif bs_lo > 0 and bs < bs_lo:
+            signals.append(f"byte_size_low:{doc_id}:{bs}<{bs_lo:.0f}")
+            is_outlier = True
+
+        if is_outlier and doc_id not in outlier_doc_ids:
+            outlier_doc_ids.append(doc_id)
+
+    backlog_warning = doc_count >= _CONSUMER_MAX_QUEUE_DOCS
+    if backlog_warning:
+        signals.append(
+            f"backlog_warning:collection_size={doc_count}>={_CONSUMER_MAX_QUEUE_DOCS}"
+        )
+
+    outlier_count = len(outlier_doc_ids)
+    outlier_fraction = outlier_count / doc_count if doc_count else 0.0
+
+    if outlier_fraction >= _CONSUMER_CRITICAL_RATIO or backlog_warning:
+        verdict = "critical"
+    elif outlier_fraction >= _CONSUMER_WARN_RATIO:
+        verdict = "degraded"
+    else:
+        verdict = "healthy"
+
+    logger.info(
+        "consumer health: collection=%s docs=%d outliers=%d verdict=%s",
+        collection_id,
+        doc_count,
+        outlier_count,
+        verdict,
+    )
+    return ConsumerHealthReport(
+        collection_id=collection_id,
+        doc_count=doc_count,
+        outlier_count=outlier_count,
+        outlier_fraction=outlier_fraction,
+        verdict=verdict,
+        backlog_warning=backlog_warning,
+        outlier_doc_ids=outlier_doc_ids,
+        signals=signals,
     )
