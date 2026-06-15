@@ -744,6 +744,10 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
         "read_csv_auto",
         "read_parquet",
         "glob",
+        # PostgreSQL schema name used schema-qualified as ``FROM cache.stats`` in
+        # cache_savings/constants.py; from_re captures ``cache`` as the table name
+        # because it stops at the dot — the real table is ``cache.stats``.
+        "cache",               # tools/cache_savings/constants.py schema-qualified ref
     }
 
     create_re = re.compile(
