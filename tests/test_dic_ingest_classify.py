@@ -244,3 +244,67 @@ def test_llm_failure_returns_none(monkeypatch):
         if "llm.router" in _key and hasattr(_mod, "LLMRouter"):
             monkeypatch.setattr(_mod, "LLMRouter", _Boom)
     assert ingest._ai_classify_into_taxonomy("some text", TAXO) is None
+
+
+# --------------------------------------------------------------------------- #
+# _detect_classify_anomaly (aiify-rm-a3344-phase-18)
+# --------------------------------------------------------------------------- #
+
+def _result(labels, confidence):
+    return {"labels": labels, "confidence": confidence}
+
+
+def test_no_anomaly_clean_result():
+    high_conf = ingest._CLASSIFY_MIN_CONFIDENCE + ingest._CLASSIFY_BORDER_BAND + 0.1
+    result = _result(["Legal"], high_conf)
+    assert ingest._detect_classify_anomaly(result, TAXO) is None
+
+
+def test_max_labels_hit_signal():
+    # Exactly _CLASSIFY_MAX_SELECTED labels returned → cap hit signal.
+    labels = [f"label{i}" for i in range(ingest._CLASSIFY_MAX_SELECTED)]
+    taxo = labels + ["extra"]
+    high_conf = ingest._CLASSIFY_MIN_CONFIDENCE + ingest._CLASSIFY_BORDER_BAND + 0.1
+    result = _result(labels, high_conf)
+    assert ingest._detect_classify_anomaly(result, taxo) == "max_labels_hit"
+
+
+def test_borderline_confidence_signal():
+    # Confidence just above the floor but within the border band.
+    border_conf = ingest._CLASSIFY_MIN_CONFIDENCE + ingest._CLASSIFY_BORDER_BAND * 0.5
+    result = _result(["Legal"], border_conf)
+    assert ingest._detect_classify_anomaly(result, TAXO) == "borderline_confidence"
+
+
+def test_confidence_at_floor_is_borderline():
+    result = _result(["Legal"], ingest._CLASSIFY_MIN_CONFIDENCE)
+    assert ingest._detect_classify_anomaly(result, TAXO) == "borderline_confidence"
+
+
+def test_confidence_above_border_band_not_borderline():
+    clean_conf = ingest._CLASSIFY_MIN_CONFIDENCE + ingest._CLASSIFY_BORDER_BAND + 0.01
+    result = _result(["Legal"], clean_conf)
+    assert ingest._detect_classify_anomaly(result, TAXO) != "borderline_confidence"
+
+
+def test_trivial_taxonomy_signal():
+    # Only one usable label in the taxonomy — no real choice was made.
+    result = _result(["Solo"], ingest._CLASSIFY_MIN_CONFIDENCE + ingest._CLASSIFY_BORDER_BAND + 0.1)
+    assert ingest._detect_classify_anomaly(result, ["Solo"]) == "trivial_taxonomy"
+
+
+def test_none_result_returns_none():
+    assert ingest._detect_classify_anomaly(None, TAXO) is None
+
+
+def test_empty_result_returns_none():
+    assert ingest._detect_classify_anomaly({}, TAXO) is None
+
+
+def test_max_labels_hit_takes_precedence_over_borderline():
+    # max_labels_hit checked first in the function.
+    labels = [f"label{i}" for i in range(ingest._CLASSIFY_MAX_SELECTED)]
+    taxo = labels + ["extra"]
+    borderline_conf = ingest._CLASSIFY_MIN_CONFIDENCE
+    result = _result(labels, borderline_conf)
+    assert ingest._detect_classify_anomaly(result, taxo) == "max_labels_hit"
