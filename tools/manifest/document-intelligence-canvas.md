@@ -132,6 +132,27 @@ print(update["content"], update["citation_count"], update["status"])
 |------|---------|
 | `tools/document_intelligence/verifier.py` | CoT/CoD claim replay + citation validation + abstention gate. Every AI-generated draft passes through `verify()` before persisting. Pipeline: `validate_citations` (structural), claim extraction, per-claim CoT/CoD replay against cited chunk (LLM + deterministic lexical-overlap fallback), optional corrective retrieval, and disposition (strip unsupported claims or reject/abstain). Reuses `icdev.tools.rag.retriever.validate_citations` and `icdev.tools.rag.corrective_rag`. Air-gap safe — functions headless without an LLM provider. |
 
+## Style Enforcement
+
+| Tool | Purpose |
+|------|---------|
+| `tools/document_intelligence/style_engine.py` | DIC Style Engine — deterministic "one voice" gate. Checks document section text against configurable rules in `args/dic_style_rules.yaml`. No LLM required; all checks are regex + heuristic (air-gap safe). `check_style(text)` returns `StyleResult(score, passed, violations, stats)` where each `Violation` carries `rule_id`, `severity` (error/warning/info), `message`, `suggestion`, and `match`. `check_sections(sections)` accepts a list of `{heading, content}` dicts and returns an `overall_score` plus per-section results. Rule types: `forbidden_terms`/`replacement_terms` (regex term matching), `passive_ratio` (passive-voice sentence ratio), `sentence_length` (avg + per-sentence word count), `acronym_check` (undefined first-use detection). Score starts at 100 and deducts per violation (error: −15, warning: −5, info: −1); passing threshold is configurable via `meta.passing_score` in the YAML (default 70). |
+
+### Key API
+
+```python
+from tools.document_intelligence.style_engine import check_style, check_sections
+
+result = check_style("The Contractor will utilize AI to facilitate...")
+print(result.score, result.passed, result.violations)
+
+report = check_sections([{"heading": "Overview", "content": "..."}])
+print(report["overall_score"], report["passed"])
+```
+
+> Rules file: `args/dic_style_rules.yaml` — add/disable rules there without touching code.
+> Called by `doc_generator.py` after CoD verification to enforce "one voice" before persisting sections.
+
 ## Analytics & Discovery
 
 | Tool | Purpose |
