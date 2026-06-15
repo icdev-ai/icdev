@@ -968,6 +968,49 @@ def _ai_extract_identifiers(text: str) -> list[dict] | None:
         return None
 
 
+# Identifier extraction anomaly detection (aiify-opp-6: hardcoded_threshold ->
+# anomaly_detection). The external scan flagged paperless-ngx
+# src/documents/barcodes.py — the barcode/QR reader that accepts or rejects a
+# decoded barcode against hardcoded confidence thresholds.  A fixed cutoff is
+# brittle: a high-contrast barcode always scores 1.0, while a faded one may
+# score below threshold even when the decode is correct.
+#
+# The ICDEV analog lands here, applied to the LLM-based identifier extractor.
+# The extractor already gates on the configurable _IDENTIFIER_MIN_CONFIDENCE
+# floor; this adds a second-layer *pattern* check on the extraction result as a
+# whole, detecting signals that the LLM may be over-generating or producing
+# artificially uniform scores — anomalies that a single fixed threshold
+# cannot catch:
+#   cap_hit             – extracted exactly _IDENTIFIER_MAX_ITEMS items; the
+#                         model may have kept generating rather than stopping at a
+#                         lower natural count.
+#   uniform_confidence  – all items share the same rounded per-item confidence
+#                         (copy-paste behavior; real documents rarely have
+#                         identical per-code scores).
+#   over_confidence     – every item reports confidence ≥ 0.99 (suspiciously
+#                         perfect scores signal the model is not genuinely
+#                         discriminating between identifiers).
+# The signal is advisory only — a HITL flag, never a blocker.
+def _detect_identifier_anomaly(identifiers: list[dict]) -> str | None:
+    """Return an anomaly signal if the identifier extraction result looks suspicious.
+
+    Returns the first signal found from {cap_hit, uniform_confidence,
+    over_confidence}, or None when no anomaly is detected.  Callers MUST treat
+    this as advisory — a signal does not mean the identifiers are wrong, only
+    that they warrant extra HITL scrutiny.
+    """
+    if not identifiers:
+        return None
+    if len(identifiers) >= _IDENTIFIER_MAX_ITEMS:
+        return "cap_hit"
+    confs = [round(float(item.get("confidence") or 0.0), 2) for item in identifiers]
+    if len(confs) >= 2 and len(set(confs)) == 1:
+        return "uniform_confidence"
+    if all(c >= 0.99 for c in confs):
+        return "over_confidence"
+    return None
+
+
 # --------------------------------------------------------------------------- #
 # LLM taxonomy classification (aiify-opp-6043: manual_classification_ui ->
 # llm_generation). The external scan flagged paperless-ngx
@@ -1443,6 +1486,30 @@ _ANOMALY_MIN_CHARS_PER_PAGE: int = int(
     os.environ.get("DIC_ANOMALY_MIN_CHARS_PER_PAGE", "10")
 )
 
+# Duplex-scan artifact detection (aiify-opp-27: hardcoded_threshold ->
+# anomaly_detection). The external scan flagged paperless-ngx
+# src/documents/double_sided.py, which uses a hardcoded blank-page threshold
+# (e.g. pixels below a fixed ink-density cutoff) to decide whether a page was
+# a blank backing sheet produced by duplex scanning of single-sided documents.
+# That cutoff is brittle: it ignores document type, scanner settings, and batch
+# characteristics, so it both over-triggers (stamps / watermarks flagged blank)
+# and under-triggers (light ink passes unchecked).
+#
+# The ICDEV analog lands here, in the DIC extraction-quality pre-check suite.
+# Instead of a fixed absolute cutoff the detector fires when:
+#   chars_per_page < _ANOMALY_MIN_CHARS_PER_PAGE × _ANOMALY_DUPLEX_CPP_RATIO
+# That is: when average content per page is below a *ratio* of the already
+# configurable chars-per-page floor, not a second independently hardcoded
+# constant.  Both operands are env-var-backed so the operator can tune once
+# and both thresholds adjust together.  The parity guard (page_count even, ≥4)
+# is a low-cost discriminator: duplex scanning always produces an even page
+# count, while odd totals rule out the artifact pattern entirely.  The LLM
+# score call — already triggered whenever any pre-check fires — then provides
+# the holistic assessment, so the decision is never left to a single number.
+_ANOMALY_DUPLEX_CPP_RATIO: float = float(
+    os.environ.get("DIC_ANOMALY_DUPLEX_CPP_RATIO", "3.0")
+)
+
 _ANOMALY_SYSTEM_PROMPT = (
     "You are a document quality inspector. Given signals about a document's "
     "extraction quality, rate the overall anomaly score from 0.0 (normal) to "
@@ -1451,7 +1518,10 @@ _ANOMALY_SYSTEM_PROMPT = (
     '{"score": <0.0-1.0>, "verdict": "normal"|"suspicious"|"anomalous", '
     '"reason": "<one short sentence>"}. '
     "Use 0.0-0.3 for normal documents, 0.3-0.7 for suspicious, 0.7-1.0 for "
-    "likely corrupt or malformed."
+    "likely corrupt or malformed. "
+    "A 'possible_duplex_artifact' signal means the document may have been "
+    "scanned in duplex mode with blank backing pages included — score 0.4-0.7 "
+    "unless other signals also fire."
 )
 
 
@@ -1490,6 +1560,19 @@ def _ai_metadata_anomaly_detection(extraction: "Extraction", filename: str) -> d
     # Pre-check 4: extraction warnings already surfaced by the provider.
     if extraction.warnings:
         signals.append(f"provider_warnings:{len(extraction.warnings)}")
+
+    # Pre-check 5: possible duplex-scan artifact (aiify-opp-27).
+    # Even page count ≥ 4 AND chars_per_page below the adaptive duplex floor
+    # (a ratio of the configurable chars-per-page minimum rather than a second
+    # independent hardcoded constant) indicates potential blank backing pages.
+    if extraction.page_count >= 4 and extraction.page_count % 2 == 0 and text:
+        cpp = len(text) / extraction.page_count
+        duplex_floor = _ANOMALY_MIN_CHARS_PER_PAGE * _ANOMALY_DUPLEX_CPP_RATIO
+        if cpp < duplex_floor:
+            signals.append(
+                f"possible_duplex_artifact:cpp={cpp:.1f}<{duplex_floor:.0f}"
+                f",pages={extraction.page_count}(even)"
+            )
 
     # No signals → normal document; skip the LLM call entirely.
     if not signals:
@@ -2221,6 +2304,9 @@ def ingest_file(
         ids = _ai_extract_identifiers(text)
         if ids:
             ai_metadata = {**ai_metadata, "identifiers": ids}
+            id_anomaly = _detect_identifier_anomaly(ids)
+            if id_anomaly:
+                ai_metadata = {**ai_metadata, "identifier_anomaly": id_anomaly}
 
     # LLM taxonomy classification (best-effort): file the document under one (or
     # several, when multi-label) of the caller's existing curated labels — the
