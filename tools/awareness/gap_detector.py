@@ -711,6 +711,7 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
         "data_mapping_schemas",                          # render_and_notify_data_mapping_run
         "dic_chunks", "dic_entities",                    # render_and_send_dic_document_summary
         "fedramp_ato_packages",                          # render fedramp ATO package notice
+        "finetune_eval_results", "finetune_jobs", "finetune_metrics",  # render_handler_service finetune
     }
 
     # Table names that are legitimately referenced but are DBMS-provided
