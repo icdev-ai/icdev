@@ -719,7 +719,6 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
         "fedramp_controls",                              # render_handler_service fedramp notice
         "gate_failures",                                 # render_handler_service gate report
         "genesis_designs",                               # multiple notification_service files
-        "genesis_phase_log",                             # handler_service genesis_reflex_handler (same synthetic stub family as genesis_designs)
         # RAG tool uses a plausible SQL template string for demonstration; no real table.
         "entitlements",                                  # tools/rag/entitlement_rag.py template
         # CTE alias: gap_detector doesn't parse WITH ... AS (...) and flags the alias name.
