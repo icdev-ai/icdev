@@ -2157,3 +2157,270 @@ def detect_document_model_anomalies(collection_id: str | None = None) -> dict:
         "empty": False,
         "message": None,
     }
+
+
+# ── Document Routing Anomaly Detection (aiify-rm-a3344-phase-53) ──────────────
+# Analogous to paperless-ngx matching.py hardcoded_threshold → anomaly_detection.
+# paperless matching.py hard-codes fuzzy-match score thresholds (e.g. >= 86 for
+# fuzz.partial_ratio), algorithm-specific cutoffs for MATCH_LITERAL/MATCH_FUZZY/
+# MATCH_AUTO, and per-algorithm routing constants.  DIC replaces those fixed
+# routing thresholds with IQR-based corpus-adaptive anomaly detection over three
+# signals:
+#
+#   1. Collection concentration — documents over-concentrated in a single
+#      collection (analogous to all docs matching the same correspondent/tag).
+#   2. Default-collection backlog — documents that completed ingest but were
+#      never routed out of the 'default' collection (analogous to unmatched docs).
+#   3. Content-type imbalance — IQR on per-type document counts to flag when one
+#      content_type dominates the corpus (analogous to over-permissive match rules).
+
+_ROUTING_SYSTEM_PROMPT = (
+    "You are a document routing quality analyst. You are given statistics about "
+    "collection-assignment and content-type distribution anomalies in a DIC corpus: "
+    "collection concentration ratios, unrouted document counts, content-type "
+    "imbalance data, and a deterministic baseline severity. "
+    "Assess whether the routing health poses a real risk to retrieval quality. "
+    "Respond ONLY with a JSON object: "
+    '{"severity": "low|medium|high", "rationale": "<=160 chars", '
+    '"top_concern": "<the single most concerning routing anomaly>"}. '
+    "Never invent anomalies beyond those provided."
+)
+
+
+def _ai_routing_severity(summary: dict, samples: dict) -> dict | None:
+    """Grade routing anomaly severity with the LLM."""
+    if not any(summary.get(k, 0) for k in (
+        "unrouted_count", "dominant_collection_docs",
+        "dominant_type_docs", "over_concentrated_collection",
+    )):
+        return None
+    try:
+        import json as _json
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        heuristic = _routing_heuristic_severity(summary)
+        lines = [
+            f"Routing anomaly summary: {_json.dumps(summary, sort_keys=True)}",
+            f"Deterministic baseline severity: {heuristic}",
+            "Sample unrouted docs: " + _json.dumps(samples.get("unrouted", [])[:5]),
+            "Sample dominant-collection docs: " + _json.dumps(
+                samples.get("dominant_collection", [])[:5]
+            ),
+        ]
+        req = LLMRequest(
+            function_name="anomaly_detection",
+            prompt="\n".join(lines),
+            system=_ROUTING_SYSTEM_PROMPT,
+            max_tokens=256,
+        )
+        result = LLMRouter().invoke("anomaly_detection", req)
+        raw = (result.content or "").strip()
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1:
+            return None
+        parsed = _json.loads(raw[start:end + 1])
+        if parsed.get("severity") not in ("low", "medium", "high"):
+            return None
+        return parsed
+    except Exception as exc:
+        logger.debug("dic.analytics: routing LLM grade failed: %s", exc)
+        return None
+
+
+def _routing_heuristic_severity(summary: dict) -> str:
+    """Deterministic severity for routing anomalies — always-available baseline."""
+    if summary.get("over_concentrated_collection"):
+        return "high"
+    if summary.get("unrouted_count", 0) > 0:
+        return "medium"
+    if summary.get("dominant_type_docs", 0) > 0:
+        return "medium"
+    return "low"
+
+
+def detect_document_routing_anomalies(collection_id: str | None = None) -> dict:
+    """Detect anomalous routing patterns in the DIC corpus.
+
+    Analogous to paperless-ngx matching.py hardcoded_threshold →
+    anomaly_detection (aiify-rm-a3344-phase-53).  Instead of fixed
+    algorithm-specific match-score cutoffs (e.g. fuzzy >= 86), this function
+    characterises the actual document distribution across collections and
+    content types using IQR-based statistics and flags statistical outliers.
+
+    Detects:
+      - Unrouted documents: completed-ingest docs still in the 'default'
+        collection (analogous to docs that matched no routing rule).
+      - Collection concentration: a single collection holds more than
+        Q3+1.5×IQR of the per-collection document count (over-permissive
+        routing — one rule is matching everything).
+      - Content-type imbalance: one content_type dominates beyond the IQR
+        upper fence (may indicate a misconfigured classifier or missing
+        type-specific routing rules).
+
+    Args:
+        collection_id: When provided, scope the analysis to that collection
+            only; ``None`` analyses the full corpus.
+
+    Returns::
+
+        {
+          "unrouted": [{doc_id, filename, collection_id, content_type}],
+          "dominant_collection": [{collection_id, doc_count}],
+          "dominant_type": [{content_type, doc_count}],
+          "collection_distribution": {collection_id: count},
+          "type_distribution": {content_type: count},
+          "summary": {unrouted_count, total_docs, collection_count,
+                      dominant_collection_docs, dominant_type_docs,
+                      over_concentrated_collection, thresholds},
+          "severity": "low|medium|high",
+          "severity_source": "llm|heuristic",
+          "heuristic_severity": "low|medium|high",
+          "empty": bool,
+          "message": str | None,
+        }
+    """
+    conn = _conn()
+    try:
+        cid_filter = "WHERE collection_id = ?" if collection_id else ""
+        cid_params: tuple = (collection_id,) if collection_id else ()
+        doc_rows = _safe(
+            conn,
+            f"SELECT doc_id, filename, collection_id, content_type "
+            f"FROM dic_documents {cid_filter} ORDER BY doc_id",
+            cid_params,
+        )
+    finally:
+        conn.close()
+
+    if not doc_rows:
+        return {
+            "unrouted": [],
+            "dominant_collection": [],
+            "dominant_type": [],
+            "collection_distribution": {},
+            "type_distribution": {},
+            "summary": {
+                "unrouted_count": 0, "total_docs": 0, "collection_count": 0,
+                "dominant_collection_docs": 0, "dominant_type_docs": 0,
+                "over_concentrated_collection": False, "thresholds": {},
+            },
+            "severity": "low",
+            "severity_source": "heuristic",
+            "heuristic_severity": "low",
+            "empty": True,
+            "message": "No documents found.",
+        }
+
+    total = len(doc_rows)
+
+    # ── Unrouted documents ────────────────────────────────────────────────────
+    unrouted: list[dict] = [
+        {
+            "doc_id": r["doc_id"],
+            "filename": r.get("filename", ""),
+            "collection_id": r.get("collection_id", "default"),
+            "content_type": r.get("content_type", ""),
+        }
+        for r in doc_rows
+        if (r.get("collection_id") or "default") == "default"
+    ]
+
+    # ── Per-collection document counts ────────────────────────────────────────
+    col_counts: dict[str, int] = defaultdict(int)
+    for r in doc_rows:
+        cid = r.get("collection_id") or "default"
+        col_counts[cid] += 1
+
+    col_values = sorted(col_counts.values())
+    n_cols = len(col_values)
+
+    dominant_collection: list[dict] = []
+    over_concentrated = False
+    col_q1 = col_q3 = col_iqr = 0.0
+    col_upper_fence = float("inf")
+
+    if n_cols >= 4:
+        col_q1 = col_values[n_cols // 4]
+        col_q3 = col_values[(3 * n_cols) // 4]
+        col_iqr = col_q3 - col_q1
+        col_upper_fence = col_q3 + 1.5 * col_iqr
+        for cid, cnt in col_counts.items():
+            if cnt > col_upper_fence:
+                dominant_collection.append({"collection_id": cid, "doc_count": cnt})
+                over_concentrated = True
+    elif n_cols == 1:
+        # Single collection — always flag if corpus is non-trivial
+        only_cid, only_cnt = next(iter(col_counts.items()))
+        if only_cnt >= 5:
+            dominant_collection.append({"collection_id": only_cid, "doc_count": only_cnt})
+            over_concentrated = True
+
+    # ── Per-content-type document counts ─────────────────────────────────────
+    type_counts: dict[str, int] = defaultdict(int)
+    for r in doc_rows:
+        ctype = r.get("content_type") or "unknown"
+        type_counts[ctype] += 1
+
+    type_values = sorted(type_counts.values())
+    n_types = len(type_values)
+
+    dominant_type: list[dict] = []
+    type_upper_fence = float("inf")
+
+    if n_types >= 4:
+        tq3 = type_values[(3 * n_types) // 4]
+        tq1 = type_values[n_types // 4]
+        tiqr = tq3 - tq1
+        type_upper_fence = tq3 + 1.5 * tiqr
+        for ctype, cnt in type_counts.items():
+            if cnt > type_upper_fence:
+                dominant_type.append({"content_type": ctype, "doc_count": cnt})
+
+    dominant_col_docs = max((d["doc_count"] for d in dominant_collection), default=0)
+    dominant_type_docs = max((d["doc_count"] for d in dominant_type), default=0)
+
+    thresholds: dict = {}
+    if col_upper_fence < float("inf"):
+        thresholds["collection_upper_fence"] = round(col_upper_fence, 2)
+    if type_upper_fence < float("inf"):
+        thresholds["type_upper_fence"] = round(type_upper_fence, 2)
+
+    summary = {
+        "unrouted_count": len(unrouted),
+        "total_docs": total,
+        "collection_count": n_cols,
+        "dominant_collection_docs": dominant_col_docs,
+        "dominant_type_docs": dominant_type_docs,
+        "over_concentrated_collection": over_concentrated,
+        "thresholds": thresholds,
+    }
+
+    heuristic_sev = _routing_heuristic_severity(summary)
+    samples = {
+        "unrouted": unrouted[:5],
+        "dominant_collection": dominant_collection[:5],
+        "dominant_type": dominant_type[:5],
+    }
+    ai_grade = _ai_routing_severity(summary, samples) if heuristic_sev != "low" else None
+
+    if ai_grade:
+        severity = ai_grade["severity"]
+        severity_source = "llm"
+    else:
+        severity = heuristic_sev
+        severity_source = "heuristic"
+
+    return {
+        "unrouted": unrouted[:50],
+        "dominant_collection": dominant_collection,
+        "dominant_type": dominant_type,
+        "collection_distribution": dict(col_counts),
+        "type_distribution": dict(type_counts),
+        "summary": summary,
+        "severity": severity,
+        "severity_source": severity_source,
+        "heuristic_severity": heuristic_sev,
+        "empty": False,
+        "message": None,
+    }
