@@ -15182,6 +15182,24 @@ CREATE TABLE public.genesis_learned_goals (
 
 
 --
+-- Name: genesis_outputs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.genesis_outputs (
+    id             text NOT NULL,
+    reflex_name    text NOT NULL,
+    output_type    text NOT NULL,
+    output_ref     text,
+    summary        text,
+    created_at     text NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    classification character varying(50) DEFAULT 'CUI'::character varying
+);
+
+CREATE INDEX idx_go_reflex_name ON public.genesis_outputs (reflex_name);
+CREATE INDEX idx_go_created_at  ON public.genesis_outputs (created_at);
+
+
+--
 -- Name: genesis_reflex_log; Type: TABLE; Schema: public; Owner: -
 --
 

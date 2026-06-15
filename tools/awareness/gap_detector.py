@@ -683,8 +683,6 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
     deferred_write_tables = {
         "ad_trap_events",      # write path deferred to Phase 7.12 (trap scanner daemon)
         "ad_radar_snapshots",  # write path deferred pending radar reflex wiring
-        "genesis_outputs",     # tools/genesis/reflexes/slides.py — explicitly deferred:
-                               # "genesis_outputs table may not exist yet — non-fatal"
     }
 
     # Idealized table names referenced ONLY by the synthetic AI-ify
@@ -719,16 +717,13 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
         "canvas_designs",                                # handler_service canvas status handler
         "cmmc_practice_gaps", "cmmc_systems",            # handler_service cmmc gap handler
         "fedramp_controls",                              # render_handler_service fedramp notice
-        "finetune_eval_results", "finetune_jobs", "finetune_metrics",  # render_handler_service finetune
         "gate_failures",                                 # render_handler_service gate report
         "genesis_designs",                               # multiple notification_service files
         # RAG tool uses a plausible SQL template string for demonstration; no real table.
         "entitlements",                                  # tools/rag/entitlement_rag.py template
         # CTE alias: gap_detector doesn't parse WITH ... AS (...) and flags the alias name.
         "domain_coverage",                               # tools/govcon/gap_analyzer.py CTE
-        # Planned DIC feature not yet fully implemented; blueprint.py query is wrapped
-        # in try/except and fails gracefully when the table is absent.
-        "dic_document_versions",                         # tools/document_intelligence/blueprint.py
+
     }
 
     # Table names that are legitimately referenced but are DBMS-provided
