@@ -432,6 +432,24 @@ CREATE TABLE IF NOT EXISTS dm_output_ports (
 
 CREATE INDEX IF NOT EXISTS idx_dm_output_ports_product ON dm_output_ports(product_id);
 
+CREATE TABLE IF NOT EXISTS dm_ports (
+    id              TEXT PRIMARY KEY,
+    product_id      TEXT REFERENCES dm_data_products(id) ON DELETE CASCADE,
+    name            TEXT NOT NULL,
+    port_type       TEXT NOT NULL DEFAULT 'input'
+                    CHECK (port_type IN ('input', 'output')),
+    transport_type  TEXT DEFAULT 'api',
+    schema_json     TEXT DEFAULT '{}',
+    endpoint        TEXT DEFAULT '',
+    source_system   TEXT DEFAULT '',
+    sla_json        TEXT DEFAULT '{}',
+    classification  TEXT DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dm_ports_product   ON dm_ports(product_id);
+CREATE INDEX IF NOT EXISTS idx_dm_ports_port_type ON dm_ports(port_type);
+
 CREATE TABLE IF NOT EXISTS dm_domain_maturity (
     id              TEXT PRIMARY KEY,
     domain_id       TEXT REFERENCES dm_domains(id) ON DELETE CASCADE,
