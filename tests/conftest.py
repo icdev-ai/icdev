@@ -1369,6 +1369,24 @@ CREATE TABLE IF NOT EXISTS llm_context_compression_log (
     headroom_available  INTEGER NOT NULL DEFAULT 0,
     created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
 );
+CREATE TABLE IF NOT EXISTS entitlements (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    principal_id    TEXT NOT NULL,
+    entitlement     TEXT NOT NULL,
+    risk_level      TEXT NOT NULL DEFAULT 'standard'
+                    CHECK (risk_level IN ('privileged', 'standard', 'external')),
+    granted_by      TEXT,
+    granted_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at      TEXT,
+    last_used_at    TEXT,
+    revoked_at      TEXT,
+    revoked_by      TEXT,
+    status          TEXT NOT NULL DEFAULT 'active'
+                    CHECK (status IN ('active', 'revoked', 'expired')),
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id       TEXT,
+    UNIQUE (principal_id, entitlement, tenant_id)
+);
 """
 
 
