@@ -11476,7 +11476,8 @@ CREATE TABLE public.dic_documents (
     created_at text NOT NULL,
     tenant_id text,
     classification text,
-    owner_id text
+    owner_id text,
+    summary text DEFAULT ''
 );
 
 

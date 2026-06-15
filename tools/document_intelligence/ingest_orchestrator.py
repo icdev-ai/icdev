@@ -1695,6 +1695,169 @@ def _ai_metadata_anomaly_detection(extraction: "Extraction", filename: str) -> d
 
 
 # --------------------------------------------------------------------------- #
+# Email-specific ingestion anomaly detection (aiify-opp-148: hardcoded_threshold
+# -> anomaly_detection). The external scan flagged paperless-ngx
+# src/paperless_mail/serialisers.py — the MailAccount / MailRule DRF serialisers
+# that validate email ingestion inputs with static field limits (maximum age,
+# attachment count caps, subject length bounds). Those fixed constants are
+# brittle: they are tuned once at install time, don't adapt to the actual volume
+# or content distribution of a mailbox, and silently over- or under-filter as
+# mailbox behaviour evolves.
+#
+# The ICDEV analog lands here, alongside the existing extraction-quality checks.
+# Instead of a single hardcoded ceiling the detector:
+#   1. Evaluates five deterministic pre-checks (attachment count, attachment
+#      size, email age, subject length, missing sender) against env-var-backed
+#      thresholds — both operands are configurable so the operator tunes once.
+#   2. Only calls the LLM when at least one pre-check fires, keeping the cost
+#      zero for the common normal case.
+#   3. Returns a structured anomaly report as a *proposal* — never blocking,
+#      never stored without HITL confirmation.
+#
+# Caller: _enrich_ingest_outcome() adds the result (when not None) to
+# IngestOutcome.metadata["email_anomaly_report"] so the HITL / API layer
+# can surface it without changing the ingest result itself.
+# --------------------------------------------------------------------------- #
+
+_EMAIL_ANOMALY_MAX_ATTACHMENT_COUNT: int = int(
+    os.environ.get("DIC_EMAIL_ANOMALY_MAX_ATTACHMENT_COUNT", "10")
+)
+_EMAIL_ANOMALY_MAX_ATTACHMENT_SIZE_MB: float = float(
+    os.environ.get("DIC_EMAIL_ANOMALY_MAX_ATTACHMENT_SIZE_MB", "25.0")
+)
+_EMAIL_ANOMALY_MAX_AGE_DAYS: int = int(
+    os.environ.get("DIC_EMAIL_ANOMALY_MAX_AGE_DAYS", "365")
+)
+_EMAIL_ANOMALY_MAX_SUBJECT_LEN: int = int(
+    os.environ.get("DIC_EMAIL_ANOMALY_MAX_SUBJECT_LEN", "500")
+)
+
+_EMAIL_ANOMALY_SYSTEM_PROMPT = (
+    "You are an email security and quality inspector. Given signals about an "
+    "email's ingestion characteristics, rate the overall anomaly score from 0.0 "
+    "(normal) to 1.0 (highly suspicious or malformed). Respond with a strict JSON "
+    "object and nothing else: "
+    '{"score": <0.0-1.0>, "verdict": "normal"|"suspicious"|"anomalous", '
+    '"reason": "<one short sentence>"}. '
+    "Score 0.0-0.3 for normal emails, 0.3-0.7 for suspicious, 0.7-1.0 for "
+    "likely malicious, corrupt, or mis-classified emails."
+)
+
+
+def _ai_email_ingestion_anomaly_detection(
+    correspondence: "dict | None",
+    attachment_count: int = 0,
+    attachment_size_bytes: int = 0,
+    email_age_days: "float | None" = None,
+) -> "dict | None":
+    """Detect anomalous email ingestion patterns via configurable thresholds + LLM.
+
+    Analog of the hardcoded field validators in paperless_mail/serialisers.py
+    (aiify-opp-148). Replaces static ceilings with env-var-backed thresholds that
+    trigger an LLM quality score only when a pre-check fires.
+
+    Args:
+        correspondence: structured envelope dict from _ai_extract_correspondence_fields
+            (keys: from_name, from_email, to, subject, sent_date, confidence), or None.
+        attachment_count: number of attachments on the email.
+        attachment_size_bytes: total size of all attachments in bytes.
+        email_age_days: age of the email in days at ingestion time, or None if unknown.
+
+    Returns:
+        dict with ``score`` (0.0–1.0), ``verdict``, ``reason``, and ``signals`` when
+        at least one pre-check fires; ``None`` when all pre-checks pass (normal email).
+        Never raises — degrades to ``None`` on any failure so the caller can proceed.
+    """
+    signals: list[str] = []
+
+    # Pre-check 1: attachment count exceeds configurable ceiling.
+    if attachment_count > _EMAIL_ANOMALY_MAX_ATTACHMENT_COUNT:
+        signals.append(
+            f"high_attachment_count:{attachment_count}>{_EMAIL_ANOMALY_MAX_ATTACHMENT_COUNT}"
+        )
+
+    # Pre-check 2: total attachment size exceeds configurable ceiling.
+    size_mb = attachment_size_bytes / (1024 * 1024)
+    if size_mb > _EMAIL_ANOMALY_MAX_ATTACHMENT_SIZE_MB:
+        signals.append(
+            f"large_attachments:{size_mb:.1f}MB>{_EMAIL_ANOMALY_MAX_ATTACHMENT_SIZE_MB}MB"
+        )
+
+    # Pre-check 3: email age outlier (analog of MailRule.maximum_age validator).
+    if email_age_days is not None and email_age_days > _EMAIL_ANOMALY_MAX_AGE_DAYS:
+        signals.append(
+            f"stale_email:{email_age_days:.0f}d>{_EMAIL_ANOMALY_MAX_AGE_DAYS}d"
+        )
+
+    # Pre-check 4: subject length outlier (analog of subject max_length).
+    subject = ""
+    if correspondence:
+        subject = str(correspondence.get("subject", "") or "")
+        if len(subject) > _EMAIL_ANOMALY_MAX_SUBJECT_LEN:
+            signals.append(
+                f"long_subject:{len(subject)}>{_EMAIL_ANOMALY_MAX_SUBJECT_LEN}"
+            )
+
+    # Pre-check 5: completely missing sender (from_name AND from_email absent).
+    if correspondence:
+        from_email = str(correspondence.get("from_email", "") or "")
+        from_name = str(correspondence.get("from_name", "") or "")
+        if not from_email and not from_name:
+            signals.append("missing_sender")
+
+    # No signals → normal email; skip the LLM call entirely.
+    if not signals:
+        return None
+
+    # At least one signal — ask the LLM for a holistic anomaly score.
+    signal_text = "; ".join(signals)
+    age_line = f"Age: {email_age_days:.0f} days\n" if email_age_days is not None else ""
+    prompt = (
+        f"Email signals: {signal_text}\n"
+        f"Subject: {subject[:100]!r}\n"
+        f"Attachments: {attachment_count} ({size_mb:.1f} MB total)\n"
+        f"{age_line}"
+        "Rate the anomaly score for this email."
+    )
+    try:
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+        import json as _json
+
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            system_prompt=_EMAIL_ANOMALY_SYSTEM_PROMPT,
+            max_tokens=128,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("anomaly_detection", req)
+        if not resp or not resp.content:
+            raise ValueError("empty response")
+        raw = resp.content.strip()
+        if raw.startswith("```"):
+            raw = raw.strip("`").strip()
+        parsed = _json.loads(raw)
+        score = float(parsed.get("score", 0.5))
+        verdict = str(parsed.get("verdict", "suspicious"))
+        reason = str(parsed.get("reason", ""))
+        if verdict not in {"normal", "suspicious", "anomalous"}:
+            verdict = "suspicious"
+    except Exception:
+        score = 0.5
+        verdict = "suspicious"
+        reason = "llm_unavailable"
+
+    return {
+        "score": round(score, 4),
+        "verdict": verdict,
+        "reason": reason,
+        "signals": signals,
+    }
+
+
+# --------------------------------------------------------------------------- #
 # LLM workflow mutation proposals (aiify-opp-111: metadata_extraction ->
 # llm_generation). The external scan flagged paperless-ngx
 # src/documents/workflows/mutations.py — the workflow action executor that
@@ -2506,14 +2669,14 @@ def ingest_file(
             INSERT OR REPLACE INTO dic_documents
                 (doc_id, collection_id, source_id, filename, filepath,
                  content_type, provider, title, byte_size, content_sha256,
-                 page_count, created_at, tenant_id, classification)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 page_count, created_at, tenant_id, classification, summary)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 doc_id, collection_id, source_id, p.name, str(p),
                 extraction.content_type, extraction.provider,
                 extraction.title or ai_title or p.stem, p.stat().st_size, content_hash,
-                extraction.page_count, now, tid, cls,
+                extraction.page_count, now, tid, cls, ai_summary,
             ),
         )
 

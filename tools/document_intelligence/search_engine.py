@@ -182,6 +182,10 @@ class DICSearchResult:
     # actually supports the query (attribution lens), reusing the verifier's
     # claim-vs-evidence overlap measure. Drives attribution-lens reranking.
     attribution_score: float = 0.0
+    # LLM-generated 1-3 sentence summary of the full document, stored at ingest
+    # time via _ai_document_summary() in ingest_orchestrator. Empty string when
+    # the document was ingested before this field was added.
+    doc_summary: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -200,6 +204,7 @@ class DICSearchResult:
             "attribution_pct": self.attribution_pct,
             "attribution_score": round(self.attribution_score, 4),
             "archive_url": f"/document-intelligence/doc/{self.doc_id}" if self.doc_id else "#",
+            "doc_summary": self.doc_summary,
         }
 
 
@@ -423,15 +428,19 @@ def _normalize_keywords(keywords: list[str] | None) -> list[str]:
 def _doc_meta(conn, doc_id: str) -> dict[str, Any]:
     try:
         cur = conn.execute(
-            "SELECT title, classification FROM dic_documents WHERE doc_id = ?",
+            "SELECT title, classification, summary FROM dic_documents WHERE doc_id = ?",
             (doc_id,),
         )
         row = cur.fetchone()
         if row:
-            return {"title": row[0] or doc_id, "classification": row[1] or "CUI"}
+            return {
+                "title": row[0] or doc_id,
+                "classification": row[1] or "CUI",
+                "summary": row[2] or "",
+            }
     except Exception:
         pass
-    return {"title": doc_id, "classification": "CUI"}
+    return {"title": doc_id, "classification": "CUI", "summary": ""}
 
 
 def _chunk_meta(conn, chunk_id: str) -> dict[str, Any]:
@@ -1278,6 +1287,7 @@ class DICSearchEngine:
                     citation=citation,
                     sha256=meta.get("sha256", ""),
                     attribution_pct=meta.get("attribution_pct", 0),
+                    doc_summary=doc_info.get("summary", ""),
                 ))
         finally:
             conn.close()
