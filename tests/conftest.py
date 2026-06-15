@@ -1355,6 +1355,20 @@ CREATE TABLE IF NOT EXISTS finetune_eval_results (
     classification  TEXT    NOT NULL DEFAULT 'CUI',
     created_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS llm_context_compression_log (
+    id                  TEXT PRIMARY KEY,
+    session_id          TEXT,
+    content_type        TEXT NOT NULL DEFAULT 'text',
+    method              TEXT NOT NULL,
+    original_tokens     INTEGER NOT NULL DEFAULT 0,
+    compressed_tokens   INTEGER NOT NULL DEFAULT 0,
+    compression_ratio   REAL NOT NULL DEFAULT 1.0,
+    reversible          INTEGER NOT NULL DEFAULT 1,
+    budget_tokens       INTEGER,
+    duration_ms         INTEGER DEFAULT 0,
+    headroom_available  INTEGER NOT NULL DEFAULT 0,
+    created_at          TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
 """
 
 
