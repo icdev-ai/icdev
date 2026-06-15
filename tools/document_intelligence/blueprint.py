@@ -13,12 +13,13 @@ Routes:
   GET  /document-intelligence/templates     use-case templates page
 
   POST /document-intelligence/api/ingest                         multi-modal upload
-  POST /document-intelligence/api/search                         grounded search JSON
+  POST /document-intelligence/api/search                         grounded search JSON (opt-in: classify_intent, expand, keywords, explain_access)
   POST /document-intelligence/api/chat                           document chat JSON
   GET  /document-intelligence/api/collections                    list collections
   POST /document-intelligence/api/collections                    create collection
   GET  /document-intelligence/api/collections/<id>/team          list team members
   POST /document-intelligence/api/collections/<id>/team          add team member
+  POST /document-intelligence/api/documents/<id>/re-enrich       re-run LLM metadata extraction on ingested doc
   POST /document-intelligence/api/review/<id>/approve            approve fragment/version
   POST /document-intelligence/api/review/<id>/reject             reject fragment/version
   POST /document-intelligence/api/generate                       AI draft generation
@@ -891,12 +892,19 @@ def api_search():
     top_k = min(int(data.get("top_k", 10)), 50)
     explain_access = bool(data.get("explain_access"))
     expand = bool(data.get("expand"))
+    classify_intent = bool(data.get("classify_intent"))
     keywords = data.get("keywords")
     tenant_id, clearance = _security_context()
 
     try:
         from tools.document_intelligence.search_engine import DICSearchEngine
         engine = DICSearchEngine(tenant_id=tenant_id)
+        # Opt-in: classify query intent (aiify-opp-28) BEFORE expansion/search so
+        # the caller can inspect the recommended strategy alongside results.
+        # Degrades gracefully — llm_used=False when model unavailable.
+        intent = None
+        if classify_intent:
+            intent = engine.classify_query_intent(query)
         # Opt-in: broaden the query with LLM-suggested synonyms for better recall.
         # Degrades to the original query when the LLM is unavailable.
         expansion = None
@@ -916,6 +924,8 @@ def api_search():
             "count": len(results),
             "citation_quality": round(_citation_quality(results), 4),
         }
+        if intent is not None:
+            payload["intent"] = intent.to_dict()
         if expansion is not None:
             payload["expansion"] = expansion.to_dict()
         # Opt-in: embedding-based search over a literal keyword list. Semantic
@@ -2243,7 +2253,8 @@ def api_analytics():
             entity_frequency, co_occurrence, detect_anomalies,
             detect_ingest_anomalies, detect_patterns, run_full_analytics,
             detect_view_anomalies, detect_ingest_job_anomalies,
-            detect_output_export_anomalies,
+            detect_output_export_anomalies, detect_document_model_anomalies,
+            detect_bulk_edit_anomalies,
         )
         if mode == "frequency":
             return jsonify(entity_frequency(limit=int(data.get("limit", 50))))
@@ -2269,6 +2280,14 @@ def api_analytics():
             return jsonify(detect_output_export_anomalies(
                 collection_id=data.get("collection_id") or None,
                 stale_minutes=int(data.get("stale_minutes", 30)),
+            ))
+        elif mode == "model_anomalies":
+            return jsonify(detect_document_model_anomalies(
+                collection_id=data.get("collection_id") or None,
+            ))
+        elif mode == "bulk_edit_anomalies":
+            return jsonify(detect_bulk_edit_anomalies(
+                collection_id=data.get("collection_id") or None,
             ))
         elif mode == "patterns":
             return jsonify(detect_patterns())
@@ -3411,6 +3430,39 @@ def api_generate_roadmap():
         "milestone_ids": milestone_ids,
         "errors": errors[:5],
     })
+
+
+@dic_bp.route("/api/documents/<doc_id>/re-enrich", methods=["POST"])
+def api_document_re_enrich(doc_id: str):
+    """POST /document-intelligence/api/documents/<doc_id>/re-enrich
+
+    Re-runs LLM metadata extraction on a previously ingested document without
+    requiring the original file. Reconstructs text from stored rag_chunks and
+    returns a HITL proposal dict — never silently writes to dic_documents.
+    (aiify-opp-89: signals/handlers.py → re_enrich_metadata in DIC)
+
+    Body (optional JSON): {"extract_identifiers": bool, "extract_correspondence": bool}
+    Returns: {"doc_id", "filename", "proposals": {...}} or {"error": "..."}
+    """
+    body = request.get_json(silent=True) or {}
+    extract_identifiers = bool(body.get("extract_identifiers", True))
+    extract_correspondence = bool(body.get("extract_correspondence", True))
+
+    try:
+        from tools.document_intelligence.ingest_orchestrator import re_enrich_metadata
+        result = re_enrich_metadata(
+            doc_id,
+            extract_identifiers=extract_identifiers,
+            extract_correspondence=extract_correspondence,
+        )
+    except Exception as exc:
+        logger.warning("dic: re_enrich_metadata raised: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+    if result is None:
+        return jsonify({"error": f"document {doc_id!r} not found"}), 404
+
+    return jsonify(result)
 
 
 @dic_bp.route("/api/collections/<collection_id>/attach-coworker", methods=["POST"])

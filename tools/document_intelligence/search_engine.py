@@ -727,6 +727,73 @@ def detect_filter_coverage_anomaly(
 
 
 # --------------------------------------------------------------------------- #
+# LLM-powered result snippet generation (aiify-opp-74: fulltext_search_engine
+# -> llm_generation, analog of paperless src/documents/serialisers.py
+# highlights field). The external pattern computes highlighted excerpts server-
+# side to show WHY a document matched a search query. DIC upgrades this: the
+# LLM extracts the single most query-relevant passage from each chunk's content,
+# producing a focused, context-aware excerpt rather than a raw content[:500]
+# truncation. The model NEVER answers the question — it only identifies the most
+# relevant passage. Degrades gracefully to raw truncation when unavailable
+# (air-gap safe). User-provided queries are injection-scanned (passed as user
+# turn, not injected into the system prompt). Batch variant caps at
+# _SNIPPET_MAX_RESULTS so a large result set doesn't flood the LLM.
+# --------------------------------------------------------------------------- #
+
+_SNIPPET_MAX_CONTENT_CHARS = 1200  # max content fed to the model per result
+_SNIPPET_MAX_RESULTS = 8           # max results processed in generate_snippets()
+_SNIPPET_MAX_TOKENS = 200          # max tokens per snippet response
+
+_SNIPPET_SYSTEM_PROMPT = (
+    "You are a search result highlighter for a document repository. "
+    "Given a search query and a document excerpt, extract and return the SINGLE "
+    "most relevant passage (1–3 sentences) from the excerpt that best relates to "
+    "the query. Return ONLY the extracted passage — no preamble, no explanation, "
+    "no rephrasing. If no passage is clearly relevant, return the first sentence "
+    "of the excerpt verbatim. Do NOT add information not in the excerpt."
+)
+
+_SNIPPET_NO_CONTENT_SENTINEL = "NO_CONTENT"
+
+
+@dataclass
+class DICResultSnippet:
+    """An AI-extracted, query-focused passage from a single DIC search result.
+
+    Models the upgrade of ``serialisers.py`` highlights — where a document
+    management system returns raw content truncated to a fixed length — to a
+    semantically extracted excerpt that surfaces the passage most relevant to
+    the caller's query. The LLM locates the best supporting passage inside the
+    chunk content; it never generates text outside the source, so the snippet
+    is always grounded in the cited chunk.
+
+    ``llm_used`` is False when the raw fallback was returned (LLM unavailable
+    or content empty). ``refusal_reason`` is set to ``"empty_content"`` when
+    the chunk had no text or ``"llm_unavailable"`` when the model could not run.
+    The ``snippet`` field is always populated (fallback = ``content[:500]``).
+    """
+
+    chunk_id: str = ""
+    doc_id: str = ""
+    query: str = ""
+    snippet: str = ""
+    llm_used: bool = False
+    refusal_reason: str = ""
+    origin: str = "ai_generated"
+
+    def to_dict(self) -> dict:
+        return {
+            "chunk_id": self.chunk_id,
+            "doc_id": self.doc_id,
+            "query": self.query,
+            "snippet": self.snippet,
+            "llm_used": self.llm_used,
+            "refusal_reason": self.refusal_reason,
+            "origin": self.origin,
+        }
+
+
+# --------------------------------------------------------------------------- #
 # LLM grounded answer synthesis (aiify-opp-6046: fulltext_search_engine ->
 # llm_generation). DIC search returns cited chunks with NO LLM by default
 # (air-gap safe). This OPTIONAL layer takes the top cited results and asks the
@@ -856,6 +923,106 @@ _FILTER_SYSTEM_PROMPT = (
 )
 
 _FILTER_NONE_SENTINEL = "{}"
+
+# --------------------------------------------------------------------------- #
+# LLM-powered query intent classifier (aiify-opp-28: fulltext_search_engine ->
+# llm_generation, analog of paperless src/documents/filters.py). The external
+# pattern uses a static DocumentSearchFilter that combines fulltext + metadata
+# search but requires the caller to configure every field manually. This layer
+# asks the LLM to assess the *intent* of a search query and recommend the
+# optimal DIC retrieval strategy (mode, expansion, filtering, synthesis) as a
+# structured decision object. The model outputs a schema-constrained JSON object
+# of boolean flags and an intent type — it never answers the question, never
+# invents document content, and degrades gracefully (all flags False, llm_used
+# False) when unavailable, so callers can always treat the result as a safe hint
+# rather than a hard dependency.
+# --------------------------------------------------------------------------- #
+
+_INTENT_VALID_TYPES = frozenset({
+    "factual_qa", "document_search", "filtered_search", "broad_exploration",
+})
+_INTENT_VALID_MODES = frozenset({"grounded", "hybrid"})
+_INTENT_DEFAULT_TYPE = "document_search"
+_INTENT_MAX_TOKENS = 160
+
+_INTENT_SYSTEM_PROMPT = (
+    "You classify search queries for a classified document repository. Given a "
+    "user query, output ONLY a valid JSON object with these keys:\n"
+    '  "intent_type": one of "factual_qa" | "document_search" | '
+    '"filtered_search" | "broad_exploration"\n'
+    "    factual_qa: user wants a direct answer (e.g. 'What is the TTX for X?')\n"
+    "    document_search: user wants to find specific documents\n"
+    "    filtered_search: query implies metadata constraints (dates, types, "
+    "classification levels, page counts)\n"
+    "    broad_exploration: user wants to explore a topic broadly\n"
+    '  "recommended_mode": "grounded" (default) or "hybrid" (for exploration)\n'
+    '  "should_expand": true if synonym expansion would improve recall\n'
+    '  "should_filter": true if metadata filters are implied by the query\n'
+    '  "should_synthesize": true if a direct LLM answer beats a document list\n'
+    '  "confidence": float 0.0-1.0\n'
+    "Output ONLY the JSON object. No explanation. No commentary."
+)
+
+
+@dataclass
+class DICQueryIntent:
+    """LLM-classified intent of a DIC fulltext search query.
+
+    Models the upgrade of a static filter+search configuration (paperless
+    ``src/documents/filters.py``: ``DocumentSearchFilter`` that combines
+    fulltext text search with metadata FilterSet fields the caller must
+    configure manually) to a dynamic LLM-assessed query intent
+    (aiify-opp-28: fulltext_search_engine -> llm_generation).
+
+    Instead of requiring the caller to select mode, expansion, filtering, and
+    synthesis parameters by hand, the LLM reads the raw query and recommends
+    the optimal DIC retrieval strategy:
+
+    * ``intent_type`` classifies the query's high-level intent — ``"factual_qa"``
+      (user wants a direct answer), ``"document_search"`` (user wants specific
+      documents), ``"filtered_search"`` (metadata constraints implied), or
+      ``"broad_exploration"`` (topic survey).
+    * ``recommended_mode`` is either ``"grounded"`` (BM25+KG, the default) or
+      ``"hybrid"`` (adds vector similarity, suited to broad exploration).
+    * ``should_expand`` signals that query expansion (:meth:`DICSearchEngine.
+      expand_query`) would improve recall for this query.
+    * ``should_filter`` signals that metadata filtering (:meth:`DICSearchEngine.
+      filter_query`) should be applied (i.e. the query implies date, type, or
+      classification constraints).
+    * ``should_synthesize`` signals that :meth:`DICSearchEngine.answer` (LLM
+      grounded answer synthesis) would serve the user better than a raw list.
+
+    All flags are False and ``llm_used`` is False when the model is unavailable
+    — callers must treat the intent as a hint, never a hard dependency.
+    ``refusal_reason`` is ``"empty_query"`` for blank input or
+    ``"llm_unavailable"`` on failure.
+    """
+
+    query: str = ""
+    intent_type: str = ""
+    recommended_mode: str = "grounded"
+    should_expand: bool = False
+    should_filter: bool = False
+    should_synthesize: bool = False
+    confidence: float = 0.0
+    llm_used: bool = False
+    refusal_reason: str = ""
+    origin: str = "ai_generated"
+
+    def to_dict(self) -> dict:
+        return {
+            "query": self.query,
+            "intent_type": self.intent_type,
+            "recommended_mode": self.recommended_mode,
+            "should_expand": self.should_expand,
+            "should_filter": self.should_filter,
+            "should_synthesize": self.should_synthesize,
+            "confidence": round(self.confidence, 4),
+            "llm_used": self.llm_used,
+            "refusal_reason": self.refusal_reason,
+            "origin": self.origin,
+        }
+
 
 # --------------------------------------------------------------------------- #
 # Karpathy LLM Wiki integration (items 1 & 4)
@@ -1840,3 +2007,225 @@ class DICSearchEngine:
             results = [r for r in results if r.doc_id in allowed_doc_ids]
 
         return results[:top_k]
+
+    def classify_query_intent(self, query: str) -> "DICQueryIntent":
+        """Classify a search query's intent to recommend the optimal DIC retrieval strategy.
+
+        This is the DIC analog of paperless's combined ``DocumentSearchFilter`` —
+        instead of requiring the caller to manually configure fulltext search mode,
+        query expansion, metadata filters, and answer synthesis as separate steps,
+        the LLM assesses the query's *intent* and recommends which DIC capabilities
+        to apply as a structured decision object.
+
+        The model outputs a schema-constrained JSON object of boolean flags and an
+        intent type. It never answers the query, never invents document content, and
+        always degrades to a safe all-False default when unavailable (air-gap safe).
+
+        Args:
+            query: Natural language search query to classify.
+
+        Returns:
+            A :class:`DICQueryIntent`. ``intent_type`` is one of ``"factual_qa"``,
+            ``"document_search"``, ``"filtered_search"``, or
+            ``"broad_exploration"``. ``should_expand``, ``should_filter``, and
+            ``should_synthesize`` are boolean hints for :meth:`expand_query`,
+            :meth:`filter_query`, and :meth:`answer` respectively.
+            On failure, ``llm_used`` is False and all flags are False — callers
+            can always proceed safely with plain :meth:`search`.
+        """
+        import json as _json
+
+        q = (query or "").strip()
+        if not q:
+            return DICQueryIntent(query="", refusal_reason="empty_query")
+
+        try:
+            from tools.llm.provider import LLMRequest
+            from tools.llm.router import LLMRouter
+
+            req = LLMRequest(
+                messages=[{"role": "user", "content": f"Query: {q}"}],
+                system_prompt=_INTENT_SYSTEM_PROMPT,
+                max_tokens=_INTENT_MAX_TOKENS,
+                temperature=0.0,
+                classification="CUI",
+            )
+            resp = LLMRouter().invoke("summarization", req)
+        except Exception:
+            return DICQueryIntent(query=q, refusal_reason="llm_unavailable")
+
+        if not resp or not resp.content or not resp.content.strip():
+            return DICQueryIntent(query=q, refusal_reason="llm_unavailable")
+
+        raw = resp.content.strip()
+        if raw.startswith("```"):
+            raw = re.sub(r"^```[a-z]*\n?", "", raw).rstrip("`").strip()
+
+        try:
+            parsed = _json.loads(raw)
+        except Exception:
+            m = re.search(r"\{[^{}]*\}", raw, re.DOTALL)
+            if m:
+                try:
+                    parsed = _json.loads(m.group())
+                except Exception:
+                    parsed = {}
+            else:
+                parsed = {}
+
+        if not isinstance(parsed, dict) or not parsed:
+            return DICQueryIntent(query=q, llm_used=True, refusal_reason="llm_unavailable")
+
+        intent_raw = (parsed.get("intent_type") or "").strip().lower()
+        intent_type = intent_raw if intent_raw in _INTENT_VALID_TYPES else _INTENT_DEFAULT_TYPE
+
+        mode_raw = (parsed.get("recommended_mode") or "grounded").strip().lower()
+        recommended_mode = mode_raw if mode_raw in _INTENT_VALID_MODES else "grounded"
+
+        def _bool(key: str) -> bool:
+            val = parsed.get(key, False)
+            if isinstance(val, bool):
+                return val
+            if isinstance(val, str):
+                return val.lower() in ("true", "1", "yes")
+            return bool(val)
+
+        confidence_raw = parsed.get("confidence", 0.0)
+        try:
+            confidence = max(0.0, min(1.0, float(confidence_raw)))
+        except (TypeError, ValueError):
+            confidence = 0.0
+
+        return DICQueryIntent(
+            query=q,
+            intent_type=intent_type,
+            recommended_mode=recommended_mode,
+            should_expand=_bool("should_expand"),
+            should_filter=_bool("should_filter"),
+            should_synthesize=_bool("should_synthesize"),
+            confidence=confidence,
+            llm_used=True,
+        )
+
+    def generate_snippet(self, query: str, result: "DICSearchResult") -> "DICResultSnippet":
+        """Extract the most query-relevant passage from a single search result.
+
+        DIC analog of paperless ``serialisers.py`` highlights: instead of
+        truncating ``content`` at a fixed character limit, the LLM is asked to
+        identify the passage inside the chunk that most directly relates to the
+        query, producing a focused excerpt without generating new content.
+
+        Args:
+            query: The original search query (user-provided — injection-scanned
+                by construction: passed as user turn, never into system prompt).
+            result: A :class:`DICSearchResult` whose ``content`` will be analysed.
+
+        Returns:
+            A :class:`DICResultSnippet`. ``llm_used`` is False and ``snippet``
+            falls back to ``content[:500]`` when the model is unavailable or the
+            chunk has no text. ``refusal_reason`` explains any non-LLM path.
+        """
+        content = (result.content or "").strip()
+        if not content:
+            return DICResultSnippet(
+                chunk_id=result.chunk_id,
+                doc_id=result.doc_id,
+                query=query,
+                snippet="",
+                llm_used=False,
+                refusal_reason="empty_content",
+            )
+
+        fallback = content[:500]
+        truncated = content[:_SNIPPET_MAX_CONTENT_CHARS]
+
+        try:
+            from tools.llm.provider import LLMRequest
+            from tools.llm.router import LLMRouter
+
+            req = LLMRequest(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Search query: {query}\n\n"
+                            f"Document excerpt:\n{truncated}\n\n"
+                            "Extract the single most relevant passage."
+                        ),
+                    }
+                ],
+                system_prompt=_SNIPPET_SYSTEM_PROMPT,
+                max_tokens=_SNIPPET_MAX_TOKENS,
+                temperature=0.0,
+                classification="CUI",
+            )
+            resp = LLMRouter().invoke("summarization", req)
+        except Exception:
+            return DICResultSnippet(
+                chunk_id=result.chunk_id,
+                doc_id=result.doc_id,
+                query=query,
+                snippet=fallback,
+                llm_used=False,
+                refusal_reason="llm_unavailable",
+            )
+
+        if not resp or not resp.content or not resp.content.strip():
+            return DICResultSnippet(
+                chunk_id=result.chunk_id,
+                doc_id=result.doc_id,
+                query=query,
+                snippet=fallback,
+                llm_used=False,
+                refusal_reason="llm_unavailable",
+            )
+
+        text = resp.content.strip()
+        return DICResultSnippet(
+            chunk_id=result.chunk_id,
+            doc_id=result.doc_id,
+            query=query,
+            snippet=text,
+            llm_used=True,
+        )
+
+    def generate_snippets(
+        self,
+        query: str,
+        results: "list[DICSearchResult]",
+        top_k: int = _SNIPPET_MAX_RESULTS,
+    ) -> "list[DICResultSnippet]":
+        """Extract query-focused snippets for a batch of search results.
+
+        Calls :meth:`generate_snippet` for each of the first ``top_k`` results
+        (capped at :data:`_SNIPPET_MAX_RESULTS` to bound LLM cost). Results
+        beyond the cap receive a raw-fallback snippet (``llm_used=False``) so
+        the caller always gets a snippet for every result.
+
+        Args:
+            query: The original search query.
+            results: Ordered list of :class:`DICSearchResult` objects.
+            top_k: Maximum results for which the LLM is invoked. Must be ≤
+                :data:`_SNIPPET_MAX_RESULTS`; values above are clamped silently.
+
+        Returns:
+            One :class:`DICResultSnippet` per input result, in the same order.
+        """
+        cap = min(top_k, _SNIPPET_MAX_RESULTS)
+        snippets: list[DICResultSnippet] = []
+        for idx, r in enumerate(results):
+            if idx < cap:
+                snippets.append(self.generate_snippet(query, r))
+            else:
+                # Beyond the LLM cap: raw truncation fallback, never LLM call.
+                snippets.append(
+                    DICResultSnippet(
+                        chunk_id=r.chunk_id,
+                        doc_id=r.doc_id,
+                        query=query,
+                        snippet=(r.content or "")[:500],
+                        llm_used=False,
+                        refusal_reason="beyond_cap",
+                    )
+                )
+        return snippets
