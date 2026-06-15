@@ -638,6 +638,56 @@ _METADATA_TAG_MAX_LEN: int = int(os.environ.get("DIC_METADATA_TAG_MAX_LEN", "40"
 _DATE_MIN_YEAR: int = int(os.environ.get("DIC_DATE_MIN_YEAR", "1900"))
 _DATE_MAX_YEAR_OFFSET: int = int(os.environ.get("DIC_DATE_MAX_YEAR_OFFSET", "5"))
 
+# --------------------------------------------------------------------------- #
+# Routing-metadata constants (aiify-opp-110: metadata_extraction ->
+# llm_generation). The external scan flagged paperless-ngx
+# src/documents/workflows/mutations.py — the workflow action executor that
+# needs to know WHO issued a document, WHAT organization they represent, and
+# WHAT project/case/program context the document belongs to before it can
+# evaluate workflow trigger conditions. This constant block supports
+# _ai_extract_routing_metadata(), the pre-mutation routing-context extractor
+# described in full below (after _ai_metadata_extraction).
+# --------------------------------------------------------------------------- #
+
+# Only the leading slice carries the routing signal (originator, org, and
+# project context appear in headers/cover pages); keep the call cheap.
+_ROUTING_INPUT_CHARS = 5000
+
+# Below this confidence the whole routing proposal is dropped (HITL fallback).
+_ROUTING_MIN_CONFIDENCE: float = float(
+    os.environ.get("DIC_ROUTING_MIN_CONFIDENCE", "0.70")
+)
+
+_ROUTING_MAX_KEYWORDS: int = int(os.environ.get("DIC_ROUTING_MAX_KEYWORDS", "5"))
+_ROUTING_KEYWORD_MAX_LEN: int = int(os.environ.get("DIC_ROUTING_KEYWORD_MAX_LEN", "60"))
+_ROUTING_ORIGINATOR_MAX_LEN: int = int(os.environ.get("DIC_ROUTING_ORIGINATOR_MAX_LEN", "120"))
+_ROUTING_ORG_MAX_LEN: int = int(os.environ.get("DIC_ROUTING_ORG_MAX_LEN", "120"))
+
+# Closed enum for priority — prevents the model from emitting free-text
+# urgency labels that workflow trigger conditions can't match.
+_ROUTING_PRIORITIES = frozenset({"routine", "urgent", "immediate", "time_sensitive"})
+
+_ROUTING_SYSTEM_PROMPT = (
+    "You extract workflow routing metadata for a single ingested document in a "
+    "document-management system. This metadata is used to evaluate which "
+    "workflow rules (trigger conditions) apply to the document BEFORE any "
+    "mutations are applied. Use ONLY the provided text — never invent, "
+    "complete, or guess information not present in it. "
+    "Respond with a strict JSON object and nothing else:\n"
+    '{"originator": "<person or entity who issued/signed/sent the document, '
+    "or null if unknown>\", "
+    '"originator_org": "<organization the originator represents, or null if '
+    "unknown>\", "
+    '"routing_keywords": ["<project/program/case/contract identifiers, up to '
+    "5 short strings>\"], "
+    '"priority": "<one of: routine | urgent | immediate | time_sensitive>\", '
+    '"confidence": <0..1 overall confidence>}. '
+    "Set originator/originator_org to null rather than guessing. "
+    "routing_keywords must be short identifiers (project codes, case numbers, "
+    "program names) that appear verbatim in the text. "
+    'Default priority to "routine" when no urgency cue is present.'
+)
+
 
 def _detect_date_anomaly(date_str: str) -> str | None:
     """Return an anomaly signal if a parsed ISO date is implausible, else None.
@@ -777,6 +827,165 @@ def _ai_metadata_extraction(text: str, filename: str) -> dict | None:
             "tags": tags,
             "date": date_str,
             "date_anomaly": date_anomaly,
+            "confidence": round(confidence, 4),
+        }
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------- #
+# LLM routing-metadata extraction (aiify-opp-110: metadata_extraction ->
+# llm_generation). The external scan flagged paperless-ngx
+# src/documents/workflows/mutations.py — the workflow action executor that
+# evaluates trigger conditions to decide which mutations to apply. Before a
+# mutation can fire, the system needs to know WHO issued the document (the
+# originator / correspondent), WHAT organization they represent, and WHICH
+# project/program/case context the document belongs to. These are the metadata
+# values workflow conditions match against. The repo is ephemeral, so per the
+# established aiify-opp pattern the augmentation lands in the analogous ICDEV
+# subsystem (DIC).
+#
+# This is deliberately distinct from the other DIC enrichment helpers:
+#   - aiify-opp-6086 (_ai_metadata_extraction): open-vocabulary document_type,
+#     topic tags, and document date — NOT who issued it or what project it
+#     belongs to.
+#   - aiify-opp-6100 (_ai_extract_correspondence): email envelope fields
+#     (sender, recipients, subject, sent date) — only applies to email-sourced
+#     documents and extracts the full envelope, not the lightweight routing
+#     context needed for workflow condition matching.
+#   - aiify-opp-111 (_ai_propose_workflow_mutations): proposes WHAT metadata
+#     values to assign (output/mutation side); this helper extracts the context
+#     that determines WHICH workflow rule fires (input/trigger side).
+#
+# Grounding + safety (mirrors the 6086/5988/6100 designs):
+#   - originator / originator_org: alphanumeric core must appear verbatim in
+#     the source text (anti-hallucination). Fields that fail the check are
+#     returned as null rather than a fabricated value.
+#   - routing_keywords: each keyword's alphanumeric core must appear verbatim
+#     in the source text; items that fail the check are silently dropped.
+#   - priority: constrained to a closed enum (routine / urgent / immediate /
+#     time_sensitive); anything else collapses to "routine".
+#   - overall confidence gate: below _ROUTING_MIN_CONFIDENCE the whole result
+#     is discarded; callers degrade to "no routing metadata".
+#   - the result is surfaced as a *proposal* under
+#     IngestOutcome.metadata["routing_metadata"] — never silently written to
+#     dic_documents — so a human or downstream workflow engine confirms before
+#     applying.
+#   - any failure / LLM unavailability degrades to None (air-gap safe).
+# --------------------------------------------------------------------------- #
+
+
+def _ai_extract_routing_metadata(text: str, filename: str) -> dict | None:
+    """Propose workflow routing metadata from ``text`` via the LLM.
+
+    Extracts the originator, originating organization, routing keywords
+    (project/case/program identifiers), and priority signal needed to evaluate
+    workflow trigger conditions before mutations are applied.  This is the
+    LLM-generation analog of the pre-mutation metadata extraction in paperless
+    ``workflows/mutations.py`` (aiify-opp-110).
+
+    Args:
+        text: full extracted document text; only the leading
+            ``_ROUTING_INPUT_CHARS`` characters are sent to the model (cheap,
+            bounded — originator/org/project context appears near the top).
+        filename: weak context; the model is told to ground on the text.
+
+    Returns:
+        ``{"originator": str | None, "originator_org": str | None,
+        "routing_keywords": list[str], "priority": str,
+        "confidence": float}`` on success, or ``None`` when extraction is
+        unavailable, the text is empty, the model output is unusable, or
+        confidence is below ``_ROUTING_MIN_CONFIDENCE``. Callers MUST treat
+        ``None`` as "no routing metadata" — this is a HITL proposal, never
+        silently persisted.
+    """
+    snippet = (text or "").strip()
+    if not snippet:
+        return None
+    snippet = snippet[:_ROUTING_INPUT_CHARS]
+    haystack = "".join(ch for ch in snippet if ch.isalnum()).lower()
+
+    try:
+        import json as _json
+
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        req = LLMRequest(
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Filename: {filename}\n"
+                        "Document text (leading excerpt):\n"
+                        f"{snippet}\n\n"
+                        "Produce the routing metadata JSON."
+                    ),
+                }
+            ],
+            system_prompt=_ROUTING_SYSTEM_PROMPT,
+            max_tokens=256,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("summarization", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        parsed = _json.loads(raw[start : end + 1])
+
+        # Confidence gate.
+        try:
+            confidence = float(parsed.get("confidence"))
+        except (TypeError, ValueError):
+            return None
+        if confidence < _ROUTING_MIN_CONFIDENCE:
+            return None
+
+        def _ground_str(val, max_len: int) -> str | None:
+            if not val or not isinstance(val, str):
+                return None
+            s = val.strip()[:max_len]
+            if not s:
+                return None
+            core = "".join(ch for ch in s if ch.isalnum()).lower()
+            if not core or core[:20] not in haystack:
+                return None
+            return s
+
+        originator = _ground_str(parsed.get("originator"), _ROUTING_ORIGINATOR_MAX_LEN)
+        originator_org = _ground_str(parsed.get("originator_org"), _ROUTING_ORG_MAX_LEN)
+
+        keywords: list[str] = []
+        seen_kw: set[str] = set()
+        for kw in parsed.get("routing_keywords") or []:
+            s = str(kw).strip()[:_ROUTING_KEYWORD_MAX_LEN]
+            if not s or s in seen_kw:
+                continue
+            core = "".join(ch for ch in s if ch.isalnum()).lower()
+            if not core or core[:15] not in haystack:
+                continue
+            seen_kw.add(s)
+            keywords.append(s)
+            if len(keywords) >= _ROUTING_MAX_KEYWORDS:
+                break
+
+        raw_priority = str(parsed.get("priority") or "").strip().lower()
+        priority = raw_priority if raw_priority in _ROUTING_PRIORITIES else "routine"
+
+        return {
+            "originator": originator,
+            "originator_org": originator_org,
+            "routing_keywords": keywords,
+            "priority": priority,
             "confidence": round(confidence, 4),
         }
     except Exception:
@@ -2371,6 +2580,7 @@ def ingest_file(
     summarize: bool = True,
     clean_ocr: bool = True,
     extract_metadata: bool = True,
+    extract_routing: bool = True,
     extract_identifiers: bool = True,
     classify_taxonomy: list[str] | None = None,
     classify_multi_label: bool = False,
@@ -2402,6 +2612,17 @@ def ingest_file(
             document date (aiify-opp-6086) — grounded in the text and confidence
             gated. Surfaced as a HITL proposal on ``IngestOutcome.metadata``;
             never silently persisted. Failures degrade silently to no metadata.
+        extract_routing: when True, best-effort LLM extraction of workflow
+            routing metadata — originator (person/entity who issued the
+            document), originating organization, routing keywords
+            (project/program/case/contract identifiers), and priority signal
+            (aiify-opp-110). These are the metadata values workflow trigger
+            conditions match against before mutations are applied — the
+            pre-mutation analog of paperless ``workflows/mutations.py``.
+            Grounding-guarded (values must appear verbatim in the source text)
+            and confidence-gated. Surfaced as a HITL proposal under
+            ``IngestOutcome.metadata["routing_metadata"]``; never silently
+            persisted. Failures degrade silently to no routing metadata.
         extract_identifiers: when True, best-effort LLM extraction of structured
             document identifiers — the codes a barcode/label would carry (ASN,
             invoice/contract/PO/reference/document/tracking/control/case/serial
@@ -2480,6 +2701,7 @@ def ingest_file(
     # 0) Consumer pre-validation (aiify-rm-a3344-phase-20): check basic file
     #    characteristics before the extraction pipeline runs. Anomalies are
     #    surfaced as metadata["consumer_pre_validation"]; they never block ingest.
+    _cpv = None
     if detect_anomalies:
         _emit("pre_validate", "Pre-validating file…", 3)
         _cpv = detect_consumer_file_anomaly(p)
@@ -2538,6 +2760,17 @@ def ingest_file(
         md = _ai_metadata_extraction(text, p.name)
         if md:
             ai_metadata = md
+
+    # LLM routing-metadata extraction (best-effort): originator, organization,
+    # routing keywords (project/program/case), and priority — the pre-mutation
+    # routing context workflow trigger conditions match against (aiify-opp-110).
+    # Grounding-guarded and confidence-gated; surfaced as a HITL proposal under
+    # metadata["routing_metadata"], never silently written.
+    if extract_routing and text.strip():
+        _emit("routing_metadata", "Extracting workflow routing metadata…", 9)
+        rm = _ai_extract_routing_metadata(text, p.name)
+        if rm:
+            ai_metadata = {**ai_metadata, "routing_metadata": rm}
 
     # LLM identifier extraction (best-effort): the codes a barcode would carry
     # (ASN, invoice/contract/PO/etc. numbers), extracted from the text when no
@@ -2768,6 +3001,21 @@ def ingest_file(
                     kg_rels += int(summary.get("edges_written", 0) or 0)
             except Exception as e:
                 errors.append(f"kg bridge unavailable: {e}")
+
+        # Post-ingest outcome anomaly detection (aiify-rm-a3344-phase-21):
+        # check for quality signals in the completed ingest outcome — zero
+        # chunks from non-empty text, low embedding success rate, and high
+        # accumulated error counts. Advisory only; never blocks ingest.
+        if detect_anomalies:
+            _outcome_anomaly = detect_consumer_outcome_anomaly(
+                len(chunks),
+                chunks_embedded,
+                errors,
+                text_was_nonempty=bool(text.strip()),
+                embed_requested=embed,
+            )
+            if _outcome_anomaly:
+                ai_metadata = {**ai_metadata, "consumer_outcome_anomaly": _outcome_anomaly}
 
         _emit("done", f"Done — {len(chunks)} chunks, {kg_entities} entities", 100)
         return IngestOutcome(
@@ -3588,6 +3836,230 @@ def detect_consumer_file_anomaly(path: Path) -> "dict | None":
 
 
 # --------------------------------------------------------------------------- #
+# Post-ingest consumption outcome anomaly detection
+# (aiify-rm-a3344-phase-21: hardcoded_threshold -> anomaly_detection). The
+# external scan flagged paperless-ngx src/documents/consumer.py — the Consumer
+# class methods that evaluate whether a consumption pipeline run "succeeded":
+# a hardcoded minimum chunk count before success, a fixed embedding-failure
+# ceiling, and a static error-count limit before a file is quarantined. Those
+# constants are brittle: they cannot adapt to different document types (a
+# one-paragraph memo and a 300-page report have different natural chunk counts)
+# and they produce no intermediate signal when a run is degraded but not fully
+# failed. The repo is ephemeral; per the established aiify-opp pattern the
+# augmentation lands in the analogous ICDEV subsystem (DIC).
+#
+# Design (distinct from phases 20 / opp-38 / opp-77):
+#   - detect_consumer_file_anomaly (phase-20) runs BEFORE extraction and checks
+#     file-level characteristics (size, filename, MIME mismatch).
+#   - _ai_metadata_anomaly_detection (opp-77) runs AFTER extraction and checks
+#     the raw extracted TEXT for quality signals (near-empty, binary, CPP ratio).
+#   - detect_collection_anomalies (opp-38) runs ON A COLLECTION of recent docs
+#     and applies IQR-based outlier detection on aggregate statistics.
+#   - detect_consumer_outcome_anomaly (phase-21) runs ON A SINGLE INGEST RESULT
+#     and checks the PIPELINE OUTCOME for degraded-success patterns:
+#       zero_chunks         — chunker produced 0 chunks from non-empty text;
+#                             indicates chunker failure post-extraction.
+#       low_embed_rate      — fraction of chunks embedded < _OUTCOME_MIN_EMBED_RATIO;
+#                             partial embedding failure leaves most content
+#                             unsearchable even though the document was "accepted".
+#       high_error_count    — more errors accumulated than _OUTCOME_MAX_ERRORS;
+#                             noisy ingestion likely to produce poor search results.
+# All signals are advisory (HITL only) — stored in
+# IngestOutcome.metadata["consumer_outcome_anomaly"], never blocking.
+# --------------------------------------------------------------------------- #
+
+_OUTCOME_MIN_EMBED_RATIO: float = float(
+    os.environ.get("DIC_OUTCOME_MIN_EMBED_RATIO", "0.5")
+)
+_OUTCOME_MAX_ERRORS: int = int(
+    os.environ.get("DIC_OUTCOME_MAX_ERRORS", "5")
+)
+
+
+def detect_consumer_outcome_anomaly(
+    chunks: int,
+    chunks_embedded: int,
+    errors: "list[str]",
+    *,
+    text_was_nonempty: bool = True,
+    embed_requested: bool = True,
+) -> "dict | None":
+    """Detect anomalous ingest outcome signals, replacing hardcoded success criteria.
+
+    The analog of paperless-ngx Consumer's fixed success/failure determination
+    (aiify-rm-a3344-phase-21). Instead of static thresholds, uses configurable
+    env-var-backed floors/ceilings and emits advisory signals for HITL review.
+
+    Args:
+        chunks: number of chunks produced by the chunker.
+        chunks_embedded: number of chunks successfully embedded.
+        errors: accumulated error list from the ingest run.
+        text_was_nonempty: True when the extracted text was non-empty — used to
+            distinguish a genuinely empty document from a chunking failure.
+        embed_requested: True when embedding was requested for this ingest run.
+
+    Returns:
+        dict with ``source`` and ``signals`` list when any signal fires, or
+        None when the outcome looks clean. Never raises — failures degrade to
+        None so the caller proceeds with ingestion unchanged.
+    """
+    try:
+        signals: list[str] = []
+
+        # Signal 1: zero chunks from non-empty text → chunker failure.
+        if chunks == 0 and text_was_nonempty:
+            signals.append("zero_chunks:chunker_produced_no_chunks_from_non_empty_text")
+
+        # Signal 2: low embedding success rate.
+        if embed_requested and chunks > 0:
+            ratio = chunks_embedded / chunks
+            if ratio < _OUTCOME_MIN_EMBED_RATIO:
+                signals.append(
+                    f"low_embed_rate:{chunks_embedded}/{chunks}={ratio:.2f}"
+                    f"<{_OUTCOME_MIN_EMBED_RATIO} (DIC_OUTCOME_MIN_EMBED_RATIO)"
+                )
+
+        # Signal 3: high accumulated error count.
+        if len(errors) > _OUTCOME_MAX_ERRORS:
+            signals.append(
+                f"high_error_count:{len(errors)}>{_OUTCOME_MAX_ERRORS}"
+                f" (DIC_OUTCOME_MAX_ERRORS)"
+            )
+
+        if not signals:
+            return None
+        return {
+            "source": "consumer_outcome_anomaly",
+            "signals": signals,
+        }
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------- #
+# Document lifecycle assignment anomaly detection (aiify-rm-a3344-phase-88:
+# hardcoded_threshold -> anomaly_detection). The external scan flagged
+# paperless-ngx src/documents/signals/handlers.py — the Django-signals layer
+# that fires after each Document model save and triggers auto-assignment by
+# running correspondent, document_type, tag, and storage_path matching rules,
+# then applying results based on hardcoded match-score floors (e.g. >= 86 for
+# fuzzy matches, MATCH_LITERAL/MATCH_FUZZY constants from matching.py).  Those
+# static cutoffs are brittle: they cannot adapt to corpus distribution shifts,
+# produce no signal when assignments are systematically marginal, and mask cases
+# where rules over-fire (too many items assigned) or under-fire (nothing ever
+# assigned).  The repo is ephemeral; per the established aiify-opp pattern the
+# augmentation lands in the analogous ICDEV subsystem (DIC).
+#
+# Design (distinct from phases 21 / 53):
+#   - detect_consumer_outcome_anomaly (phase-21) checks PIPELINE OUTCOME counts
+#     (chunks / embed / errors).  This checks ASSIGNMENT PATTERN quality.
+#   - detect_document_routing_anomalies (phase-53) checks CORPUS-LEVEL routing
+#     concentration.  This checks SINGLE-DOCUMENT assignment signals.
+#
+#   Three advisory signals (HITL-only — never blocking):
+#     no_assignments      — 0 items assigned when ≥1 rule was evaluated; rules
+#                           are systematically failing to match.
+#     over_assignment     — total assignments > _LIFECYCLE_MAX_ASSIGNMENTS;
+#                           too many rules match (noisy / over-permissive rules).
+#     confidence_floor_hit — every assignment confidence is within
+#                           _LIFECYCLE_CONFIDENCE_EPSILON of the configured floor,
+#                           suggesting all matches are marginal (static-floor bias
+#                           rather than genuine discrimination).
+# --------------------------------------------------------------------------- #
+
+_LIFECYCLE_MAX_ASSIGNMENTS: int = int(
+    os.environ.get("DIC_LIFECYCLE_MAX_ASSIGNMENTS", "20")
+)
+_LIFECYCLE_MIN_CONFIDENCE: float = float(
+    os.environ.get("DIC_LIFECYCLE_MIN_CONFIDENCE", "0.60")
+)
+_LIFECYCLE_CONFIDENCE_EPSILON: float = float(
+    os.environ.get("DIC_LIFECYCLE_CONFIDENCE_EPSILON", "0.05")
+)
+
+
+def detect_lifecycle_assignment_anomaly(
+    assignments: "list[dict]",
+    *,
+    rules_evaluated: int = 0,
+) -> "dict | None":
+    """Detect anomalous auto-assignment patterns in a document lifecycle event.
+
+    The analog of paperless-ngx ``signals/handlers.py`` hardcoded match-score
+    floors for auto-assignment of tags, document types, correspondents, and
+    storage paths (aiify-rm-a3344-phase-88).  Instead of fixed cutoffs, emits
+    advisory signals when the assignment set looks systematically degraded.
+
+    Args:
+        assignments: List of assignment dicts produced by auto-matching rules.
+            Each dict should contain at minimum ``field`` (str — one of
+            ``tag``, ``document_type``, ``correspondent``, ``storage_path``) and
+            ``confidence`` (float in [0, 1]).  Extra keys are ignored.
+        rules_evaluated: Number of matching rules that were considered.  Used
+            to distinguish "no rules exist" from "rules ran but nothing matched."
+            When 0, the no_assignments signal is suppressed.
+
+    Returns:
+        dict with ``source`` (``"lifecycle_assignment_anomaly"``) and
+        ``signals`` (list[str]) when any advisory signal fires, or ``None``
+        when the assignment set looks clean.  Never raises — failures degrade
+        to ``None`` so the caller proceeds unchanged.
+    """
+    try:
+        if not isinstance(assignments, list):
+            return None
+
+        signals: list[str] = []
+
+        n = len(assignments)
+
+        # Signal 1: no assignments despite rules being evaluated.
+        if n == 0 and rules_evaluated > 0:
+            signals.append(
+                f"no_assignments:0_assigned_from_{rules_evaluated}_rules_evaluated"
+            )
+
+        # Signal 2: over-assignment (too many matches — over-permissive rules).
+        if n > _LIFECYCLE_MAX_ASSIGNMENTS:
+            signals.append(
+                f"over_assignment:{n}>{_LIFECYCLE_MAX_ASSIGNMENTS}"
+                f" (DIC_LIFECYCLE_MAX_ASSIGNMENTS)"
+            )
+
+        # Signal 3: all confidences within epsilon of the floor (marginal matches).
+        if n >= 2:
+            scores = []
+            for item in assignments:
+                if isinstance(item, dict):
+                    c = item.get("confidence")
+                    if isinstance(c, (int, float)):
+                        scores.append(float(c))
+            if len(scores) >= 2:
+                floor = _LIFECYCLE_MIN_CONFIDENCE
+                eps = _LIFECYCLE_CONFIDENCE_EPSILON
+                all_marginal = all(
+                    abs(s - floor) <= eps for s in scores
+                )
+                if all_marginal:
+                    lo = min(scores)
+                    hi = max(scores)
+                    signals.append(
+                        f"confidence_floor_hit:all_{len(scores)}_scores_in"
+                        f"[{lo:.3f},{hi:.3f}]±{eps} of floor {floor}"
+                        f" (DIC_LIFECYCLE_MIN_CONFIDENCE)"
+                    )
+
+        if not signals:
+            return None
+        return {
+            "source": "lifecycle_assignment_anomaly",
+            "signals": signals,
+        }
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------- #
 # Post-update metadata re-enrichment (aiify-opp-89: metadata_extraction ->
 # llm_generation). The external scan flagged paperless-ngx
 # src/documents/signals/handlers.py — the Django-signals layer that fires after
@@ -3612,6 +4084,7 @@ def re_enrich_metadata(
     doc_id: str,
     *,
     extract_identifiers: bool = True,
+    extract_routing: bool = True,
     extract_correspondence: bool = True,
     conn=None,
 ) -> "dict | None":
@@ -3620,6 +4093,8 @@ def re_enrich_metadata(
     Args:
         doc_id: The ``dic_documents.doc_id`` of the target document.
         extract_identifiers: Also run identifier extraction (opp-5988).
+        extract_routing: Also run workflow routing-metadata extraction
+            (opp-110): originator, org, routing keywords, priority.
         extract_correspondence: Also run correspondence extraction (opp-6100).
         conn: Optional existing DB connection; managed internally if None.
 
@@ -3677,6 +4152,11 @@ def re_enrich_metadata(
         if md:
             proposals.update(md)
 
+        if extract_routing:
+            rm = _ai_extract_routing_metadata(text, filename)
+            if rm:
+                proposals["routing_metadata"] = rm
+
         if extract_identifiers:
             ids = _ai_extract_identifiers(text)
             if ids:
@@ -3705,3 +4185,446 @@ def re_enrich_metadata(
                 conn.close()
             except Exception:
                 pass
+
+
+# --------------------------------------------------------------------------- #
+# NLP-based label match-criteria suggestion (aiify-rm-a3344-phase-75:
+# regex_user_input -> nlp_extractor). The external scan flagged paperless-ngx
+# src/documents/serialisers.py — the DRF serialisers for Correspondent,
+# DocumentType, and Tag models, each of which exposes a ``match`` field that
+# users fill with regex/literal/fuzzy patterns to configure auto-assignment of
+# newly ingested documents to those categories. Writing correct regex patterns
+# is error-prone for non-technical users, does not adapt to corpus drift, and
+# fails silently when the pattern drifts from how documents are actually
+# authored.
+#
+# The ICDEV analog lands here, in the DIC ingest orchestrator, as an NLP-based
+# match-criteria suggester. Rather than asking users to write regex, they provide
+# the label's name and an optional natural-language description or example
+# sentence; this helper proposes discriminating match criteria (keywords,
+# required phrases, contextual signals) via the LLM so that the caller can
+# surface them as HITL-reviewed auto-match rules.
+#
+# This is deliberately distinct from:
+#   - _ai_classify_into_taxonomy (opp-6043) — classifies a *document* into an
+#     existing label set; this proposes *rules* for a label, not a filing.
+#   - _ai_extract_correspondence (opp-6100) — extracts email envelope fields
+#     from document text, not label configuration.
+#   - DICSearchFilterProposal (opp-29) — parses a user search query, not a
+#     category-definition description.
+#
+# Grounding + safety:
+#   - proposed keywords must have an alphanumeric core derivable from the
+#     label_name + description text (same membership guard as the identifier
+#     extractor), so the model cannot fabricate criteria unrelated to the label.
+#   - all output is length-capped, de-duplicated, and count-capped.
+#   - a confidence score gates the result: below _LABEL_MATCH_MIN_CONFIDENCE
+#     the suggestion is dropped for the HITL / manual-entry path.
+#   - result is returned as a plain dict for the caller to surface as a proposal
+#     — never silently written to any store.
+#   - any failure degrades to None (air-gap safe); the caller may prompt the
+#     user to write the match rule manually.
+# --------------------------------------------------------------------------- #
+
+# Leading chars of description/example text sent to the model.  Keep short —
+# this is label configuration, not full-document analysis.
+_LABEL_MATCH_INPUT_CHARS: int = 3000
+
+# Below this confidence the whole suggestion is dropped for manual entry.
+_LABEL_MATCH_MIN_CONFIDENCE: float = float(
+    os.environ.get("DIC_LABEL_MATCH_MIN_CONFIDENCE", "0.60")
+)
+
+# Maximum number of keywords / required-phrases / contextual-signals items.
+_LABEL_MATCH_MAX_KEYWORDS: int = int(os.environ.get("DIC_LABEL_MATCH_MAX_KEYWORDS", "10"))
+
+# Maximum character length of any single proposed term.
+_LABEL_MATCH_KEYWORD_MAX_LEN: int = int(
+    os.environ.get("DIC_LABEL_MATCH_KEYWORD_MAX_LEN", "80")
+)
+
+_LABEL_MATCH_SYSTEM_PROMPT = (
+    "You propose discriminating match criteria for a document-management label "
+    "(a correspondent, document type, or tag). Given the label name and an "
+    "optional description or example sentence, identify the keywords, required "
+    "phrases, and contextual signals that would reliably identify documents "
+    "belonging to that label. Use ONLY terms derivable from the provided name "
+    "and description — never invent proper nouns, brand names, or technical "
+    "identifiers not present in the input. Respond with a strict JSON object "
+    "and nothing else: "
+    '{"keywords": ["<term>", ...], '
+    '"required_phrases": ["<phrase>", ...], '
+    '"contextual_signals": ["<signal>", ...], '
+    '"match_mode": "any"|"all"|"contextual", '
+    '"confidence": <0.0-1.0>}. '
+    "``keywords`` are literal discriminating terms (any match sufficient for "
+    "``any`` mode). ``required_phrases`` are multi-word sequences that must ALL "
+    "appear. ``contextual_signals`` are soft indicators for ``contextual`` mode. "
+    "``match_mode`` is ``any`` when individual keywords suffice, ``all`` when "
+    "every required phrase must appear, ``contextual`` when signals collectively "
+    "point to the label without any single term being definitive. Return low "
+    "confidence (< 0.5) when the label name is ambiguous or too generic."
+)
+
+
+def _ai_suggest_label_match_criteria(
+    label_name: str,
+    description: str = "",
+    example_text: str = "",
+) -> "dict | None":
+    """Suggest NLP-based match criteria for a DIC label (correspondent / document type / tag).
+
+    The NLP-extractor analog of the user-written regex/literal match patterns in
+    paperless-ngx ``src/documents/serialisers.py`` (aiify-rm-a3344-phase-75).
+    Instead of requiring users to write regex, they provide the label name and
+    an optional description or example; this helper proposes structured match
+    criteria the UI can surface as a HITL-reviewed auto-assignment rule.
+
+    Args:
+        label_name: The display name of the label (e.g., "Acme Corp Invoice").
+        description: Optional natural-language description of what documents
+            belong to this label.
+        example_text: Optional short excerpt from a representative document.
+            Combined with ``description`` up to ``_LABEL_MATCH_INPUT_CHARS``.
+
+    Returns:
+        dict with ``keywords`` (list[str]), ``required_phrases`` (list[str]),
+        ``contextual_signals`` (list[str]), ``match_mode`` (str), and
+        ``confidence`` (float) when the LLM produces a high-confidence result.
+        ``None`` when the label name is blank, the LLM is unavailable, or
+        confidence is below ``_LABEL_MATCH_MIN_CONFIDENCE``. Never raises.
+    """
+    label_name = (label_name or "").strip()
+    if not label_name:
+        return None
+
+    # Build the user context block.
+    parts: list[str] = [f"Label: {label_name}"]
+    combined_extra = " ".join(filter(None, [description.strip(), example_text.strip()]))
+    if combined_extra:
+        parts.append(f"Context: {combined_extra[:_LABEL_MATCH_INPUT_CHARS]}")
+    user_input = "\n".join(parts)
+
+    # Pre-compute the alnum haystack for grounding checks.
+    haystack = "".join(ch for ch in user_input.lower() if ch.isalnum())
+
+    try:
+        import json as _json
+
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        req = LLMRequest(
+            messages=[
+                {
+                    "role": "user",
+                    "content": user_input,
+                }
+            ],
+            system_prompt=_LABEL_MATCH_SYSTEM_PROMPT,
+            max_tokens=512,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("nlp_extraction", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+
+        # Tolerate fenced code blocks around the JSON object.
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        data = _json.loads(raw[start : end + 1])
+
+    except Exception as exc:
+        logger.debug("_ai_suggest_label_match_criteria: LLM call failed: %s", exc)
+        return None
+
+    if not isinstance(data, dict):
+        return None
+
+    confidence = data.get("confidence")
+    if not isinstance(confidence, (int, float)):
+        return None
+    confidence = float(confidence)
+    if confidence < _LABEL_MATCH_MIN_CONFIDENCE:
+        return None
+
+    match_mode = data.get("match_mode", "any")
+    if match_mode not in ("any", "all", "contextual"):
+        match_mode = "any"
+
+    def _clean_terms(raw_list: object) -> list[str]:
+        """Validate, length-cap, ground, and de-duplicate a list of term strings."""
+        if not isinstance(raw_list, list):
+            return []
+        seen: set[str] = set()
+        out: list[str] = []
+        for item in raw_list:
+            term = str(item).strip()[: _LABEL_MATCH_KEYWORD_MAX_LEN]
+            if not term:
+                continue
+            # Grounding: alphanumeric core must appear in the user input.
+            core = "".join(ch for ch in term.lower() if ch.isalnum())
+            if not core or core not in haystack:
+                continue
+            key = core
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(term)
+            if len(out) >= _LABEL_MATCH_MAX_KEYWORDS:
+                break
+        return out
+
+    keywords = _clean_terms(data.get("keywords"))
+    required_phrases = _clean_terms(data.get("required_phrases"))
+    contextual_signals = _clean_terms(data.get("contextual_signals"))
+
+    # At least one term must survive grounding for the suggestion to be useful.
+    if not keywords and not required_phrases and not contextual_signals:
+        return None
+
+    return {
+        "keywords": keywords,
+        "required_phrases": required_phrases,
+        "contextual_signals": contextual_signals,
+        "match_mode": match_mode,
+        "confidence": round(confidence, 4),
+        "origin": "ai_generated",
+    }
+
+
+# --------------------------------------------------------------------------- #
+# NLP-based workflow action parameter extraction (aiify-rm-a3344-phase-109:
+# regex_user_input -> nlp_extractor). The external scan flagged paperless-ngx
+# src/documents/workflows/actions.py — the WorkflowAction executor, which
+# processes user-defined action parameters (correspondent assignments, document-
+# type assignments, tag assignments, custom-field values) by applying regex
+# template substitution (e.g. {title}, {created}) against document metadata.
+# Writing correct template expressions is brittle, does not adapt to schema
+# changes, and fails silently when template variables are misspelled or drift
+# from how the metadata is actually stored.
+#
+# The ICDEV analog lands here, in the DIC ingest orchestrator, as an NLP-based
+# workflow action parameter extractor. Rather than requiring users to write
+# regex templates, they describe the desired action in natural language (e.g.
+# "assign correspondent to Acme Corp and tag as invoice"); this helper proposes
+# structured action parameters the caller can surface as a HITL-reviewed
+# workflow step.
+#
+# This is deliberately distinct from:
+#   - _ai_suggest_label_match_criteria (phase-75) — proposes *match criteria*
+#     for a label; this proposes *action parameters* for a matched document.
+#   - _ai_extract_correspondence (opp-6100) — extracts *email envelope fields*
+#     from document text, not workflow action intent.
+#   - _ai_classify_into_taxonomy (opp-6043) — classifies a document into an
+#     existing label set, not into a parameterized action.
+#
+# Grounding + safety:
+#   - every proposed field value must have an alphanumeric core that appears
+#     literally in the combined action_description + doc_context text — same
+#     membership guard as phase-75 and opp-6100 so the model cannot fabricate
+#     assignees or values not mentioned by the caller.
+#   - action_type is constrained to an allowed set; unknown types coerce to
+#     "custom" rather than being silently dropped.
+#   - assignments and removals are de-duplicated by (field, value) pair and
+#     count-capped at _ACTION_PARAMS_MAX_ASSIGNMENTS.
+#   - a confidence gate: below _ACTION_PARAMS_MIN_CONFIDENCE the result is
+#     dropped for HITL / manual entry (caller prompts the user to write the
+#     action parameters manually).
+#   - result returned as a plain dict proposal — never written to any store
+#     directly; the caller decides what to persist after human review.
+#   - any failure degrades to None (air-gap safe).
+# --------------------------------------------------------------------------- #
+
+_ACTION_PARAMS_INPUT_CHARS: int = 4000
+_ACTION_PARAMS_MIN_CONFIDENCE: float = float(
+    os.environ.get("DIC_ACTION_PARAMS_MIN_CONFIDENCE", "0.65")
+)
+_ACTION_PARAMS_MAX_ASSIGNMENTS: int = int(
+    os.environ.get("DIC_ACTION_PARAMS_MAX_ASSIGNMENTS", "8")
+)
+_ACTION_PARAMS_VALUE_MAX_LEN: int = int(
+    os.environ.get("DIC_ACTION_PARAMS_VALUE_MAX_LEN", "200")
+)
+
+_ALLOWED_ACTION_TYPES: frozenset = frozenset(
+    {"assignment", "removal", "notification", "custom"}
+)
+_ALLOWED_ACTION_FIELDS: frozenset = frozenset(
+    {"correspondent", "document_type", "tag", "owner", "title", "custom_field", "due_date"}
+)
+
+_ACTION_PARAMS_SYSTEM_PROMPT = (
+    "You extract structured workflow action parameters from a natural-language "
+    "description and optional document context for a document-management system. "
+    "Use ONLY terms and values present in the provided description and context — "
+    "never invent names, dates, or identifiers not mentioned in the input. "
+    "Respond with a strict JSON object and nothing else: "
+    '{"action_type": "assignment"|"removal"|"notification"|"custom", '
+    '"assignments": [{"field": "correspondent"|"document_type"|"tag"|"owner"'
+    '|"title"|"custom_field"|"due_date", "value": "<value from description>"}], '
+    '"removals": [{"field": "<field>", "value": "<value or * for all>"}], '
+    '"rationale": "<one-sentence explanation>", '
+    '"confidence": <0.0-1.0>}. '
+    "``action_type`` is ``assignment`` when adding/setting fields, ``removal`` when "
+    "removing them, ``notification`` for alert/message actions, ``custom`` otherwise. "
+    "``assignments`` and ``removals`` are empty arrays when inapplicable. Return low "
+    "confidence (< 0.5) when the description is ambiguous or contradicts the context."
+)
+
+
+def _ai_extract_workflow_action_params(
+    action_description: str,
+    doc_context: "dict | None" = None,
+    available_fields: "list[str] | None" = None,
+) -> "dict | None":
+    """Extract structured workflow action parameters from a natural-language description.
+
+    The NLP-extractor analog of the regex/template-based action parameters in
+    paperless-ngx src/documents/workflows/actions.py (aiify-rm-a3344-phase-109).
+    Rather than requiring users to write regex templates ({title}, {created}, etc.),
+    they describe the desired action in natural language; this helper proposes
+    structured action parameters the UI can surface as a HITL-reviewed workflow step.
+
+    Args:
+        action_description: Natural-language description of the desired workflow
+            action, e.g. "assign correspondent to Acme Corp and tag as invoice".
+        doc_context: Optional dict of current document metadata (title,
+            correspondent, tags, etc.) used to ground and validate value extraction.
+        available_fields: Optional list of field names the caller supports. When
+            provided, proposed fields outside this list are silently filtered.
+
+    Returns:
+        dict with ``action_type`` (str), ``assignments`` (list[dict]),
+        ``removals`` (list[dict]), ``rationale`` (str), and ``confidence`` (float)
+        when the LLM produces a sufficiently-confident, grounded result.
+        ``None`` when description is blank, LLM is unavailable, or confidence
+        falls below ``_ACTION_PARAMS_MIN_CONFIDENCE``. Never raises.
+    """
+    action_description = (action_description or "").strip()
+    if not action_description:
+        return None
+
+    # Build the user context block sent to the LLM.
+    parts: list[str] = [f"Action description: {action_description[:_ACTION_PARAMS_INPUT_CHARS]}"]
+    if doc_context and isinstance(doc_context, dict):
+        ctx_lines = [
+            f"{k}: {str(v)[:120]}"
+            for k, v in list(doc_context.items())[:20]
+            if v is not None
+        ]
+        if ctx_lines:
+            parts.append("Document context:\n" + "\n".join(ctx_lines))
+    if available_fields:
+        parts.append("Available fields: " + ", ".join(str(f) for f in available_fields[:20]))
+    user_input = "\n".join(parts)
+
+    # Pre-compute the alnum haystack for grounding checks.
+    haystack = "".join(ch for ch in user_input.lower() if ch.isalnum())
+
+    try:
+        import json as _json
+
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        req = LLMRequest(
+            messages=[{"role": "user", "content": user_input}],
+            system_prompt=_ACTION_PARAMS_SYSTEM_PROMPT,
+            max_tokens=512,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("nlp_extraction", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+
+        # Tolerate fenced code blocks around the JSON object.
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        data = _json.loads(raw[start: end + 1])
+
+    except Exception as exc:
+        logger.debug("_ai_extract_workflow_action_params: LLM call failed: %s", exc)
+        return None
+
+    if not isinstance(data, dict):
+        return None
+
+    confidence = data.get("confidence")
+    if not isinstance(confidence, (int, float)):
+        return None
+    confidence = float(confidence)
+    if confidence < _ACTION_PARAMS_MIN_CONFIDENCE:
+        return None
+
+    action_type = str(data.get("action_type", "custom")).strip().lower()
+    if action_type not in _ALLOWED_ACTION_TYPES:
+        action_type = "custom"
+
+    field_allowlist: "frozenset | None" = None
+    if available_fields:
+        field_allowlist = frozenset(str(f).lower() for f in available_fields)
+
+    def _clean_items(raw_list: object) -> "list[dict]":
+        if not isinstance(raw_list, list):
+            return []
+        seen: set[str] = set()
+        out: list[dict] = []
+        for item in raw_list:
+            if not isinstance(item, dict):
+                continue
+            field = str(item.get("field", "")).strip().lower()
+            value = str(item.get("value", "")).strip()[: _ACTION_PARAMS_VALUE_MAX_LEN]
+            if not field or not value:
+                continue
+            if field not in _ALLOWED_ACTION_FIELDS:
+                continue
+            if field_allowlist is not None and field not in field_allowlist:
+                continue
+            # Grounding: value core must appear in the user input haystack.
+            # Wildcard "*" (remove-all) bypasses the check.
+            if value != "*":
+                core = "".join(ch for ch in value.lower() if ch.isalnum())
+                if core and core not in haystack:
+                    continue
+            dedup_key = f"{field}:{value}"
+            if dedup_key in seen:
+                continue
+            seen.add(dedup_key)
+            out.append({"field": field, "value": value})
+            if len(out) >= _ACTION_PARAMS_MAX_ASSIGNMENTS:
+                break
+        return out
+
+    assignments = _clean_items(data.get("assignments", []))
+    removals = _clean_items(data.get("removals", []))
+    rationale = str(data.get("rationale", "")).strip()[:300]
+
+    # At least one actionable item is required for assignment/removal actions.
+    if not assignments and not removals and action_type not in ("notification", "custom"):
+        return None
+
+    return {
+        "action_type": action_type,
+        "assignments": assignments,
+        "removals": removals,
+        "rationale": rationale,
+        "confidence": round(confidence, 4),
+        "origin": "ai_generated",
+    }
