@@ -493,3 +493,25 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   Golden eval JSONL is first-party developer-authored content in `context/evolution/golden/`.
 - **Revisit if:** auto-merge of evolved artifacts is ever enabled (would require sandboxing
   the SIPA integrity check on the candidate).
+
+### Gap 22 — CLI Bridge Manager (`tools/llm/cli_bridge_manager.py`)
+
+- **File:** `tools/llm/cli_bridge_manager.py`
+- **Risk:** Reads and writes the project's own `.env` file on disk to get/set `ICDEV_CLI_BRIDGE`
+  and to detect the presence of cloud API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+  `GOOGLE_API_KEY`). No user-supplied content is ingested — only the developer's own `.env`.
+- **Decision:** **trusted-first-party**
+- **Rationale:** The file is a developer-facing CLI configuration utility that reads and writes
+  only the project's own `.env` file. Its entire declared purpose (stated in the module docstring)
+  is to manage `ICDEV_CLI_BRIDGE` in `.env`. No `exec()`, `eval()`, `subprocess`, dynamic import,
+  or external network call occurs. The `.env` is a first-party developer-authored file; there is
+  no external or user-controlled ingress path. The `filesystem` capability is intentional,
+  scoped, and authorized via intake requirement `REQ-TOOLS-LLM-CLI-01/02/03` in the ICDEV RTM
+  (`project_id = icdev-tools-rtm`).
+- **Guardrails:**
+  - Reads and writes only `<repo_root>/.env` (resolved from `_find_repo_root()` heuristic).
+  - No shell expansion, no path traversal, no user-supplied filename.
+  - Module is invoked explicitly via `python tools/llm/cli_bridge_manager.py --<flag>` or
+    imported by `tools/llm/router.py` for auto-detection only.
+- **Revisit if:** the manager is extended to accept a user-supplied file path, or to write
+  to any file outside `<repo_root>/.env`.

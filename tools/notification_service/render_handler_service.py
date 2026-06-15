@@ -26,6 +26,8 @@ from intake_sessions and intake_requirements.
 
 from __future__ import annotations
 
+import json
+
 from tools.db.storage import get_connection
 from .event_service import render_template as render
 from .event_service import send, sendmail, notify, emit, publish, dispatch
@@ -820,16 +822,22 @@ def render_and_notify_finetune_job_result(job_id: str, recipient: str, ai_narrat
     conn = get_connection()
     try:
         job = conn.execute(
-            "SELECT id, model_base, status, epochs, started_at, completed_at "
-            "FROM finetune_jobs WHERE id = ?", (job_id,)
+            "SELECT id, base_model AS model_base, status, epochs, started_at, completed_at, loss_history "
+            "FROM ft_training_jobs WHERE id = ?", (job_id,)
         ).fetchone()
-        metrics = conn.execute(
-            "SELECT metric_name, value, epoch FROM finetune_metrics "
-            "WHERE job_id = ? ORDER BY epoch DESC LIMIT 10", (job_id,)
-        ).fetchall()
+        # Derive per-epoch loss metrics from the stored loss_history JSON array
+        _loss = json.loads((job or {}).get("loss_history", "[]") or "[]") if job else []
+        metrics = [
+            {"metric_name": "loss", "value": float(v) if isinstance(v, (int, float)) else float(v.get("loss", 0.0)), "epoch": i + 1}
+            for i, v in enumerate(_loss[-10:])
+        ]
         eval_results = conn.execute(
-            "SELECT benchmark_name, score, delta FROM finetune_eval_results "
-            "WHERE job_id = ? ORDER BY score DESC LIMIT 5", (job_id,)
+            "SELECT e.eval_type AS benchmark_name, "
+            "COALESCE(e.bleu_score, 0.0) AS score, 0.0 AS delta "
+            "FROM ft_evaluations e "
+            "JOIN ft_model_versions mv ON mv.id = e.model_version_id "
+            "WHERE mv.job_id = ? ORDER BY e.bleu_score DESC LIMIT 5",
+            (job_id,)
         ).fetchall()
         best_score = max((float(r["score"] or 0) for r in eval_results), default=0.0)
         body = render(

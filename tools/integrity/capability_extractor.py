@@ -63,6 +63,8 @@ import re
 from pathlib import Path
 from typing import Any, Optional
 
+import yaml
+
 from tools.integrity.constants import RISK_WEIGHTS_CAPABILITY
 from tools.integrity.db.init_db import init_db
 
@@ -77,6 +79,20 @@ logger = get_logger("icdev.integrity.capability_extractor")
 # Directories never worth walking when a directory tree is scanned.
 _EXCLUDE_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv", ".tmp", ".mypy_cache"}
 _MAX_FILE_BYTES = 5_000_000  # skip files larger than 5 MB (generated/vendored blobs)
+
+
+def _load_safe_env_vars() -> frozenset[str]:
+    """Load the known_safe_env_vars allowlist from args/integrity_config.yaml."""
+    cfg_path = Path(__file__).parents[2] / "args" / "integrity_config.yaml"
+    try:
+        with cfg_path.open(encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+        return frozenset(data.get("known_safe_env_vars") or [])
+    except Exception:
+        return frozenset()
+
+
+_SAFE_ENV_VARS: frozenset[str] = _load_safe_env_vars()
 
 
 # --------------------------------------------------------------------------- #
@@ -560,6 +576,9 @@ def _detect_crypto(name: str, head: str, tail: str, node: ast.Call) -> list[tupl
 
 def _detect_env_secret(name: str, head: str, node: ast.Call) -> list[tuple[str, dict]]:
     if name in _ENVSECRET_EXACT or head in _ENVSECRET_HEADS:
+        key = _literal(_first_arg(node))
+        if isinstance(key, str) and key in _SAFE_ENV_VARS:
+            return []
         return [("env_secret", _env_secret_evidence(name, node))]
     return []
 
@@ -707,6 +726,9 @@ class _CapabilityVisitor(ast.NodeVisitor):
                 inner = getattr(node.slice, "value", None)
                 key = _literal(inner)
             if isinstance(key, str):
+                if key in _SAFE_ENV_VARS:
+                    self.generic_visit(node)
+                    return
                 ev["key"] = key
                 ev["literal"] = key
             self._emit("env_secret", ev, node)

@@ -2424,3 +2424,535 @@ def detect_document_routing_anomalies(collection_id: str | None = None) -> dict:
         "empty": False,
         "message": None,
     }
+
+
+# ── Bulk Edit Anomaly Detection (aiify-rm-a3344-phase-12) ─────────────────────
+# Analogous to paperless-ngx bulk_edit.py hardcoded_threshold → anomaly_detection.
+# paperless bulk_edit.py uses a hardcoded CHUNK_SIZE constant and fixed per-operation
+# document-count guards to gate bulk tag/correspondent/type/storage-path mutations.
+# DIC replaces those with IQR-based detection over dic_ingest_jobs batch sizes and
+# error rates, adapting to the actual throughput of the corpus rather than a static cap.
+#
+# Detects:
+#   - Oversized batch jobs (chunks_total outlier, IQR upper fence)
+#   - High error-rate jobs (errors_json non-empty at an abnormal rate)
+#   - Failed jobs at collection level (status='error' cluster within one collection)
+#   - Chunk-completion ratio anomalies (jobs abandoned mid-batch)
+
+_BULK_EDIT_SYSTEM_PROMPT = (
+    "You are a document batch-processing quality analyst. You are given metrics "
+    "about bulk ingest/edit jobs: oversized batch counts, error rate, failed job "
+    "counts, and abandoned (partial-completion) job counts. "
+    "Assess the overall health of the bulk editing pipeline. "
+    "Respond ONLY with a JSON object: "
+    '{"severity": "low|medium|high", "rationale": "<=160 chars", '
+    '"top_concern": "<the single most concerning anomaly category>"}. '
+    "Never invent anomalies beyond those provided."
+)
+
+
+def _ai_bulk_edit_severity(summary: dict, samples: dict) -> dict | None:
+    """Grade bulk-edit anomaly severity with the LLM."""
+    if not any(summary.get(k, 0) for k in (
+        "oversized_batch_count", "error_job_count", "abandoned_job_count",
+        "collection_failure_clusters",
+    )):
+        return None
+    try:
+        import json as _json
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        heuristic = _bulk_edit_heuristic_severity(summary)
+        lines = [
+            f"Bulk edit anomaly summary: {_json.dumps(summary, sort_keys=True)}",
+            f"Deterministic baseline severity: {heuristic}",
+            "Sample oversized batch jobs: " + _json.dumps(samples.get("oversized", [])[:5]),
+            "Sample error jobs: " + _json.dumps(samples.get("errors", [])[:5]),
+            "Sample abandoned jobs: " + _json.dumps(samples.get("abandoned", [])[:5]),
+        ]
+        req = LLMRequest(
+            function_name="anomaly_detection",
+            prompt="\n".join(lines),
+            system=_BULK_EDIT_SYSTEM_PROMPT,
+            max_tokens=256,
+        )
+        result = LLMRouter().invoke("anomaly_detection", req)
+        raw = (result.content or "").strip()
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1:
+            return None
+        parsed = _json.loads(raw[start:end + 1])
+        if parsed.get("severity") not in ("low", "medium", "high"):
+            return None
+        return parsed
+    except Exception as exc:
+        logger.debug("dic.analytics: bulk edit LLM grade failed: %s", exc)
+        return None
+
+
+def _bulk_edit_heuristic_severity(summary: dict) -> str:
+    """Deterministic severity for bulk-edit anomalies — always-available baseline."""
+    if summary.get("error_job_count", 0) > 0 or summary.get("collection_failure_clusters", 0) > 0:
+        return "high"
+    if summary.get("abandoned_job_count", 0) > 0 or summary.get("oversized_batch_count", 0) > 0:
+        return "medium"
+    return "low"
+
+
+def detect_bulk_edit_anomalies(
+    collection_id: str | None = None,
+) -> dict:
+    """Detect anomalous patterns in bulk document editing/ingest operations.
+
+    Analogous to paperless-ngx bulk_edit.py hardcoded_threshold →
+    anomaly_detection (aiify-rm-a3344-phase-12). paperless bulk_edit.py uses a
+    static CHUNK_SIZE constant and per-operation document-count caps to guard bulk
+    mutations. This function replaces those fixed limits with IQR-based outlier
+    detection over dic_ingest_jobs, adapting to the actual batch distribution of
+    the corpus.
+
+    Detects:
+      - Oversized batch jobs: chunks_total above IQR upper fence
+      - Error jobs: status='error' or non-empty errors_json
+      - Abandoned jobs: done=False and chunks_done < chunks_total (partial completion)
+      - Collection failure clusters: ≥2 failed jobs in the same collection
+
+    Args:
+        collection_id: Scope to one collection; ``None`` checks all.
+
+    Returns::
+
+        {
+          "oversized_batches": [{job_id, filename, collection_id, chunks_total}],
+          "error_jobs": [{job_id, filename, collection_id, status, error_count}],
+          "abandoned_jobs": [{job_id, filename, collection_id,
+                              chunks_done, chunks_total, completion_ratio}],
+          "collection_failure_clusters": [{collection_id, failure_count}],
+          "summary": {oversized_batch_count, error_job_count, abandoned_job_count,
+                      collection_failure_clusters, total_jobs, thresholds},
+          "severity": "low|medium|high",
+          "severity_source": "llm|heuristic",
+          "heuristic_severity": "low|medium|high",
+          "empty": bool,
+          "message": str | None,
+        }
+    """
+    import json as _json
+
+    conn = _conn()
+    try:
+        params: tuple = (collection_id,) if collection_id else ()
+        cid_filter = "WHERE collection_id = ?" if collection_id else ""
+        rows = _safe(
+            conn,
+            f"SELECT job_id, filename, collection_id, status, "
+            f"chunks_total, chunks_done, errors_json "
+            f"FROM dic_ingest_jobs {cid_filter} ORDER BY job_id",
+            params,
+        )
+    finally:
+        conn.close()
+
+    if not rows:
+        return {
+            "oversized_batches": [],
+            "error_jobs": [],
+            "abandoned_jobs": [],
+            "collection_failure_clusters": [],
+            "summary": {
+                "oversized_batch_count": 0,
+                "error_job_count": 0,
+                "abandoned_job_count": 0,
+                "collection_failure_clusters": 0,
+                "total_jobs": 0,
+                "thresholds": {},
+            },
+            "severity": "low",
+            "severity_source": "heuristic",
+            "heuristic_severity": "low",
+            "empty": True,
+            "message": "No ingest jobs found.",
+        }
+
+    # IQR over batch sizes to replace the paperless hardcoded CHUNK_SIZE cap.
+    chunk_totals = [float(r.get("chunks_total") or 0) for r in rows if (r.get("chunks_total") or 0) > 0]
+    _, size_hi = _iqr_outliers(chunk_totals) if len(chunk_totals) >= 4 else (0.0, float("inf"))
+
+    oversized_batches: list[dict] = []
+    error_jobs: list[dict] = []
+    abandoned_jobs: list[dict] = []
+    failure_by_collection: dict[str, int] = defaultdict(int)
+
+    for r in rows:
+        job_id = r.get("job_id") or ""
+        filename = r.get("filename") or ""
+        cid = r.get("collection_id") or ""
+        status = (r.get("status") or "").lower()
+        chunks_total = int(r.get("chunks_total") or 0)
+        chunks_done = int(r.get("chunks_done") or 0)
+
+        try:
+            errors = _json.loads(r.get("errors_json") or "[]")
+            error_count = len(errors) if isinstance(errors, list) else 0
+        except Exception:
+            error_count = 0
+
+        # Oversized batch — IQR upper fence instead of a hardcoded max.
+        if size_hi < float("inf") and chunks_total > size_hi:
+            oversized_batches.append({
+                "job_id": job_id,
+                "filename": filename,
+                "collection_id": cid,
+                "chunks_total": chunks_total,
+            })
+
+        # Error jobs — status 'error' or any entries in errors_json.
+        if status == "error" or error_count > 0:
+            error_jobs.append({
+                "job_id": job_id,
+                "filename": filename,
+                "collection_id": cid,
+                "status": status,
+                "error_count": error_count,
+            })
+            failure_by_collection[cid] += 1
+
+        # Abandoned jobs — non-terminal status but chunks_done < chunks_total.
+        elif status not in ("done", "error") and chunks_total > 0 and chunks_done < chunks_total:
+            ratio = round(chunks_done / chunks_total, 3) if chunks_total else 0.0
+            abandoned_jobs.append({
+                "job_id": job_id,
+                "filename": filename,
+                "collection_id": cid,
+                "chunks_done": chunks_done,
+                "chunks_total": chunks_total,
+                "completion_ratio": ratio,
+            })
+
+    collection_failure_clusters = [
+        {"collection_id": cid, "failure_count": cnt}
+        for cid, cnt in failure_by_collection.items()
+        if cnt >= 2
+    ]
+
+    thresholds: dict = {}
+    if size_hi < float("inf"):
+        thresholds["chunks_total_upper_fence"] = round(size_hi, 1)
+
+    summary = {
+        "oversized_batch_count": len(oversized_batches),
+        "error_job_count": len(error_jobs),
+        "abandoned_job_count": len(abandoned_jobs),
+        "collection_failure_clusters": len(collection_failure_clusters),
+        "total_jobs": len(rows),
+        "thresholds": thresholds,
+    }
+
+    heuristic_sev = _bulk_edit_heuristic_severity(summary)
+    samples = {
+        "oversized": oversized_batches[:5],
+        "errors": error_jobs[:5],
+        "abandoned": abandoned_jobs[:5],
+    }
+    ai_grade = _ai_bulk_edit_severity(summary, samples) if heuristic_sev != "low" else None
+
+    if ai_grade:
+        severity = ai_grade["severity"]
+        severity_source = "llm"
+    else:
+        severity = heuristic_sev
+        severity_source = "heuristic"
+
+    return {
+        "oversized_batches": oversized_batches[:50],
+        "error_jobs": error_jobs[:50],
+        "abandoned_jobs": abandoned_jobs[:50],
+        "collection_failure_clusters": collection_failure_clusters,
+        "summary": summary,
+        "severity": severity,
+        "severity_source": severity_source,
+        "heuristic_severity": heuristic_sev,
+        "empty": False,
+        "message": None,
+    }
+
+
+# ── Ingest Throughput Anomaly Detection (aiify-rm-a3344-phase-93) ─────────────
+# Analogous to paperless-ngx src/documents/tasks.py hardcoded_threshold →
+# anomaly_detection (opp-93). paperless hardcodes queue-depth and task-expiry
+# constants that silently break at scale; DIC replaces them with IQR-based
+# per-hour throughput outlier detection that adapts to actual pipeline cadence.
+#
+# Detects: hours with abnormally low completed-job counts (below the IQR lower
+# fence computed from the rolling 30-day hourly completion distribution).
+# No hardcoded minimum-throughput threshold — the fence adapts to the corpus.
+
+_THROUGHPUT_SYSTEM_PROMPT = (
+    "You are a document ingestion pipeline throughput analyst. You are given "
+    "statistics about completed ingestion jobs bucketed by hour over the past "
+    "30 days: the hourly distribution summary and the hours that fell below the "
+    "IQR-derived lower fence (abnormally low throughput). Assess the severity. "
+    "Respond ONLY with a JSON object: "
+    '{"severity": "low|medium|high", "rationale": "<=160 chars", '
+    '"top_concern": "<brief label for the most pressing throughput issue>"}. '
+    "Never invent anomalies beyond those provided."
+)
+
+
+def _throughput_heuristic_severity(summary: dict) -> str:
+    """Deterministic throughput anomaly severity — always-available baseline.
+
+    Low-throughput hours above 20% of the sample window or any zero-throughput
+    hour in an otherwise active pipeline are elevated to medium or high.
+    """
+    n_low = summary.get("low_throughput_hours", 0)
+    n_zero = summary.get("zero_throughput_hours_in_active_window", 0)
+    n_total = summary.get("sample_hours", 0)
+    if n_total == 0:
+        return "low"
+    if n_zero >= 3 or (n_total > 0 and n_low / n_total > 0.4):
+        return "high"
+    if n_zero >= 1 or (n_total > 0 and n_low / n_total > 0.2):
+        return "medium"
+    return "low"
+
+
+def _ai_throughput_severity(summary: dict, samples: dict) -> dict | None:
+    """Grade throughput anomaly severity with the LLM."""
+    if not any(summary.get(k, 0) for k in (
+        "low_throughput_hours", "zero_throughput_hours_in_active_window",
+    )):
+        return None
+    try:
+        import json as _json
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        heuristic = _throughput_heuristic_severity(summary)
+        lines = [
+            f"Throughput anomaly summary: {_json.dumps(summary, sort_keys=True)}",
+            f"Deterministic baseline severity: {heuristic}",
+            "Sample low-throughput hours: " + _json.dumps(samples.get("low_hours", [])[:5]),
+            "Sample zero-throughput hours: " + _json.dumps(samples.get("zero_hours", [])[:5]),
+        ]
+        req = LLMRequest(
+            function_name="anomaly_detection",
+            prompt="\n".join(lines),
+            system=_THROUGHPUT_SYSTEM_PROMPT,
+            max_tokens=256,
+        )
+        result = LLMRouter().invoke("anomaly_detection", req)
+        raw = (result.content or "").strip()
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1:
+            return None
+        parsed = _json.loads(raw[start:end + 1])
+        if parsed.get("severity") not in ("low", "medium", "high"):
+            return None
+        return parsed
+    except Exception as exc:
+        logger.debug("dic.analytics: throughput LLM grade failed: %s", exc)
+        return None
+
+
+def detect_ingest_throughput_anomaly(
+    collection_id: str | None = None,
+    lookback_days: int = 30,
+) -> dict:
+    """Detect hours with abnormally low document ingestion throughput.
+
+    Buckets completed ingest jobs by UTC hour over the past ``lookback_days``
+    days, then applies IQR-based outlier detection to the per-hour counts.
+    Hours whose count falls below the lower fence are flagged as anomalous.
+    No hardcoded minimum-throughput threshold — the fence adapts to the actual
+    pipeline cadence (aiify-rm-a3344-phase-93: hardcoded_threshold →
+    anomaly_detection, analogous to paperless tasks.py queue constants).
+
+    Args:
+        collection_id: Scope to one collection; ``None`` checks all.
+        lookback_days: Rolling window for the hourly distribution baseline.
+            Defaults to 30 days; callers can widen without touching source code.
+
+    Returns::
+
+        {
+          "low_throughput_hours": [{"hour_utc": "YYYY-MM-DDTHH", "count": int,
+                                    "lower_fence": float}],
+          "zero_throughput_hours_in_active_window": [{"hour_utc": "YYYY-MM-DDTHH"}],
+          "hourly_distribution": {"p25": float, "p50": float, "p75": float,
+                                  "lower_fence": float, "upper_fence": float},
+          "summary": {low_throughput_hours, zero_throughput_hours_in_active_window,
+                      sample_hours, total_completed_jobs, thresholds},
+          "severity": "low|medium|high",
+          "severity_source": "llm|heuristic",
+          "heuristic_severity": "low|medium|high",
+          "empty": bool,
+          "message": str | None,
+        }
+    """
+    from datetime import timedelta
+
+    conn = _conn()
+    try:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+        cid_clause = "AND collection_id = ?" if collection_id else ""
+        params: tuple = (cutoff.isoformat(), collection_id) if collection_id else (cutoff.isoformat(),)
+        rows = _safe(
+            conn,
+            f"SELECT job_id, collection_id, created_at, updated_at, status "
+            f"FROM dic_ingest_jobs "
+            f"WHERE status = 'done' AND updated_at >= ? {cid_clause} "
+            f"ORDER BY updated_at",
+            params,
+        )
+    finally:
+        conn.close()
+
+    if not rows:
+        return {
+            "low_throughput_hours": [],
+            "zero_throughput_hours_in_active_window": [],
+            "hourly_distribution": {},
+            "summary": {
+                "low_throughput_hours": 0,
+                "zero_throughput_hours_in_active_window": 0,
+                "sample_hours": 0,
+                "total_completed_jobs": 0,
+                "thresholds": {},
+            },
+            "severity": "low",
+            "severity_source": "heuristic",
+            "heuristic_severity": "low",
+            "empty": True,
+            "message": "No completed ingestion jobs in the lookback window.",
+        }
+
+    def _parse_ts(v) -> datetime | None:
+        if v is None:
+            return None
+        if isinstance(v, datetime):
+            dt = v
+        else:
+            try:
+                dt = datetime.fromisoformat(str(v))
+            except (ValueError, TypeError):
+                return None
+        return dt.replace(tzinfo=timezone.utc) if dt.tzinfo is None else dt
+
+    # Bucket by UTC hour string "YYYY-MM-DDTHH"
+    from collections import defaultdict as _dd
+    hour_counts: dict[str, int] = _dd(int)
+    for r in rows:
+        ts = _parse_ts(r.get("updated_at"))
+        if ts is None:
+            continue
+        bucket = ts.strftime("%Y-%m-%dT%H")
+        hour_counts[bucket] += 1
+
+    if not hour_counts:
+        return {
+            "low_throughput_hours": [],
+            "zero_throughput_hours_in_active_window": [],
+            "hourly_distribution": {},
+            "summary": {
+                "low_throughput_hours": 0,
+                "zero_throughput_hours_in_active_window": 0,
+                "sample_hours": 0,
+                "total_completed_jobs": len(rows),
+                "thresholds": {},
+            },
+            "severity": "low",
+            "severity_source": "heuristic",
+            "heuristic_severity": "low",
+            "empty": True,
+            "message": "No parseable timestamps in completed jobs.",
+        }
+
+    counts_list = list(hour_counts.values())
+    lo_fence, hi_fence = _iqr_outliers([float(c) for c in counts_list])
+    sorted_hours = sorted(hour_counts.items())
+
+    # Hours below the lower fence are flagged as low-throughput outliers.
+    low_hours: list[dict] = []
+    if lo_fence > float("-inf"):
+        for bucket, cnt in sorted_hours:
+            if cnt < lo_fence:
+                low_hours.append({
+                    "hour_utc": bucket,
+                    "count": cnt,
+                    "lower_fence": round(lo_fence, 2),
+                })
+
+    # Zero-throughput hours only flagged when there are active hours nearby,
+    # meaning the pipeline was running but produced nothing for that hour.
+    # We define "active window" as any hour that has ≥1 job in the dataset,
+    # so isolated zero-hour gaps between runs are not surfaced as anomalies.
+    # (gap detection is left to stale-job detection in detect_ingest_job_anomalies)
+    zero_hours: list[dict] = []
+    if len(sorted_hours) >= 4:
+        active_set = {bucket for bucket, cnt in sorted_hours if cnt > 0}
+        # For each consecutive pair of active hours more than 1 hour apart,
+        # emit intermediate hours as zero-throughput gaps (max 5 per pair).
+        from datetime import timedelta as _td
+        for i in range(len(sorted_hours) - 1):
+            b0, _ = sorted_hours[i]
+            b1, _ = sorted_hours[i + 1]
+            try:
+                t0 = datetime.strptime(b0, "%Y-%m-%dT%H").replace(tzinfo=timezone.utc)
+                t1 = datetime.strptime(b1, "%Y-%m-%dT%H").replace(tzinfo=timezone.utc)
+            except ValueError:
+                continue
+            gap_hours = int((t1 - t0).total_seconds() // 3600)
+            if 1 < gap_hours <= 6:
+                for g in range(1, gap_hours):
+                    gh = (t0 + _td(hours=g)).strftime("%Y-%m-%dT%H")
+                    zero_hours.append({"hour_utc": gh})
+
+    n = len(counts_list)
+    s = sorted(counts_list)
+    dist: dict = {}
+    if n >= 2:
+        dist = {
+            "p25": round(s[n // 4], 2),
+            "p50": round(s[n // 2], 2),
+            "p75": round(s[(3 * n) // 4], 2),
+            "lower_fence": round(lo_fence, 2) if lo_fence > float("-inf") else None,
+            "upper_fence": round(hi_fence, 2) if hi_fence < float("inf") else None,
+        }
+
+    summary = {
+        "low_throughput_hours": len(low_hours),
+        "zero_throughput_hours_in_active_window": len(zero_hours),
+        "sample_hours": len(hour_counts),
+        "total_completed_jobs": len(rows),
+        "thresholds": {
+            "lookback_days": lookback_days,
+            "lower_fence": round(lo_fence, 2) if lo_fence > float("-inf") else None,
+        },
+    }
+    heuristic_sev = _throughput_heuristic_severity(summary)
+    samples = {
+        "low_hours": low_hours[:5],
+        "zero_hours": zero_hours[:5],
+    }
+    ai_grade = _ai_throughput_severity(summary, samples) if heuristic_sev != "low" else None
+
+    if ai_grade:
+        severity = ai_grade["severity"]
+        severity_source = "llm"
+    else:
+        severity = heuristic_sev
+        severity_source = "heuristic"
+
+    return {
+        "low_throughput_hours": low_hours[:50],
+        "zero_throughput_hours_in_active_window": zero_hours[:50],
+        "hourly_distribution": dist,
+        "summary": summary,
+        "severity": severity,
+        "severity_source": severity_source,
+        "heuristic_severity": heuristic_sev,
+        "empty": False,
+        "message": None,
+    }

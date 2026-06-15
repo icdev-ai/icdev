@@ -349,6 +349,137 @@ def assess_ocr_confidence(word_confidences: list[float]) -> OcrConfidenceReport:
     )
 
 
+@dataclass
+class TextParseQualityReport:
+    """Per-document plain-text quality assessment via IQR on line-length distribution.
+
+    Replaces the external pattern of hard-coding minimum text-length or word-count
+    thresholds (e.g. ``if len(text) < 100: raise ParseError("too short")``) with
+    distribution-aware analysis of the document's internal line structure. Detection
+    adapts to the document's actual content so no fixed cutoff is maintained.
+
+    Three anomaly types:
+
+    * ``binary_noise``         — encoding replacement character ratio (\\ufffd) exceeds
+      5 %, indicating binary content misread as text or a severe encoding mismatch.
+    * ``line_length_outliers`` — lines far above the pack (> Q3 + 1.5 × IQR) dominate
+      when IQR > 10, suggesting base64 blobs, minified content, or structured data
+      embedded in plain text.
+    * *(no type)*              — document has fewer than 3 non-empty lines; not enough
+      structure to characterise, returned clean unless binary_noise applies.
+
+    ``is_anomalous`` is False when the document passes all checks.
+    """
+
+    is_anomalous: bool = False
+    anomaly_type: str = ""
+    line_count: int = 0
+    mean_line_length: float = 0.0
+    q3_line_length: float = 0.0
+    replacement_char_ratio: float = 0.0
+    outlier_line_count: int = 0
+    detail: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "is_anomalous": self.is_anomalous,
+            "anomaly_type": self.anomaly_type,
+            "line_count": self.line_count,
+            "mean_line_length": round(self.mean_line_length, 1),
+            "q3_line_length": round(self.q3_line_length, 1),
+            "replacement_char_ratio": round(self.replacement_char_ratio, 4),
+            "outlier_line_count": self.outlier_line_count,
+            "detail": self.detail,
+        }
+
+
+def assess_text_parse_quality(text: str) -> TextParseQualityReport:
+    """Assess quality anomalies in a single plain-text document.
+
+    Analyzes the document's internal line-length distribution with IQR statistics
+    rather than hardcoded minimum thresholds. Intended for use inside a text-file
+    extractor so quality issues surface as structured warnings rather than silent
+    truncation or hard parser errors.
+
+    Args:
+        text: Raw text content (may be empty; ``errors='replace'`` encoding assumed).
+
+    Returns:
+        :class:`TextParseQualityReport` — ``is_anomalous=False`` when the document
+        passes all checks or has too few lines to characterise (< 3 non-empty lines),
+        provided the encoding replacement ratio is also below the noise floor.
+    """
+    # Encoding replacement-character density (applies regardless of line count)
+    total_chars = len(text)
+    replacement_ratio = text.count("�") / max(total_chars, 1)
+    if replacement_ratio > 0.05:
+        return TextParseQualityReport(
+            is_anomalous=True,
+            anomaly_type="binary_noise",
+            line_count=len(text.splitlines()),
+            replacement_char_ratio=replacement_ratio,
+            detail=(
+                f"Encoding replacement character ratio is {replacement_ratio:.2%} — "
+                "document appears to be binary content misread as text or has a "
+                "severe encoding mismatch."
+            ),
+        )
+
+    non_empty_lines = [ln for ln in text.splitlines() if ln.strip()]
+    n = len(non_empty_lines)
+
+    if n < 3:
+        return TextParseQualityReport(
+            line_count=n,
+            replacement_char_ratio=replacement_ratio,
+        )
+
+    lengths = [len(ln) for ln in non_empty_lines]
+    sorted_l = sorted(lengths)
+    q1 = sorted_l[n // 4]
+    q3 = sorted_l[(3 * n) // 4]
+    iqr = q3 - q1
+    mean_l = sum(lengths) / n
+    high_fence = q3 + 1.5 * iqr
+
+    # line_length_outliers: long lines dominate when IQR shows meaningful spread.
+    # When IQR = 0 (all lines uniform except extremes), fall back to mean + 2*std
+    # so lone long-line blobs in otherwise short-line documents are still caught.
+    variance = sum((l - mean_l) ** 2 for l in lengths) / n
+    std_l = variance ** 0.5
+    if iqr > 10:
+        effective_fence = high_fence
+    elif std_l > 10:
+        effective_fence = mean_l + 2 * std_l
+    else:
+        effective_fence = None
+
+    if effective_fence is not None:
+        outliers = [ln for ln in lengths if ln > effective_fence]
+        if outliers:
+            return TextParseQualityReport(
+                is_anomalous=True,
+                anomaly_type="line_length_outliers",
+                line_count=n,
+                mean_line_length=mean_l,
+                q3_line_length=float(q3),
+                replacement_char_ratio=replacement_ratio,
+                outlier_line_count=len(outliers),
+                detail=(
+                    f"{len(outliers)} line(s) exceed the high fence "
+                    f"({effective_fence:.0f} chars), suggesting base64 blobs, "
+                    "minified content, or structured data embedded in plain text."
+                ),
+            )
+
+    return TextParseQualityReport(
+        line_count=n,
+        mean_line_length=mean_l,
+        q3_line_length=float(q3),
+        replacement_char_ratio=replacement_ratio,
+    )
+
+
 # --------------------------------------------------------------------------- #
 # Extractor implementations
 # --------------------------------------------------------------------------- #
@@ -364,12 +495,19 @@ def _strip_html(raw: str) -> str:
 
 def _extract_text(path: Path) -> Extraction:
     raw = path.read_text(encoding="utf-8", errors="replace")
+    warnings: list[str] = []
+    quality = assess_text_parse_quality(raw)
+    if quality.is_anomalous:
+        warnings.append(
+            f"text_parse_anomaly:{quality.anomaly_type} — {quality.detail}"
+        )
     return Extraction(
         text=raw,
         provider="builtin-text",
         content_type="text/plain",
         page_count=1,
         title=path.stem,
+        warnings=warnings,
     )
 
 

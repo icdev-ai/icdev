@@ -162,7 +162,7 @@ def _emit_notifications(conn, collection_id: str, info: dict, now: str) -> None:
     try:
         import hashlib
         members = conn.execute(
-            "SELECT user_id FROM dic_collection_members "
+            "SELECT user_id FROM dic_team_access "
             "WHERE collection_id = %s AND role IN ('editor', 'reviewer')",
             (collection_id,),
         ).fetchall()
@@ -189,7 +189,7 @@ def _emit_notifications(conn, collection_id: str, info: dict, now: str) -> None:
 
 # ── Kanban HITL task creation (dsyn-suggest-03) ───────────────────────────────
 
-import os as _os
+_DSYN_PROJECT_ID = "dsyn"
 
 
 def _open_hitl_task_exists(collection_id: str, collection_name: str) -> bool:
@@ -224,7 +224,7 @@ def _create_hitl_task(collection_id: str, info: dict) -> bool:
     days_overdue = info["days_overdue"]
     interval = info["review_interval_days"]
     last = info["last_review_date"] or "never"
-    project_id = _os.getenv("DSYN_DEFAULT_PROJECT_ID", "dsyn")
+    project_id = _DSYN_PROJECT_ID
     title = f"Review overdue: {cname} ({collection_id})"
     description = (
         f"The DIC collection '{cname}' (ID: {collection_id}) is overdue for its periodic review.\n\n"

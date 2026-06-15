@@ -491,6 +491,7 @@ def test_ingest_file_wires_workflow_mutations(tmp_path, monkeypatch):
         def __enter__(self): return self
         def __exit__(self, *a): pass
     monkeypatch.setattr(_storage, "get_connection", lambda: _FakeConn())
+    monkeypatch.setattr(ingest, "get_connection", lambda: _FakeConn())
 
     # Override summarize/metadata/identifiers/classify/correspondence/anomaly
     # to keep the test focused on workflow_mutations.
