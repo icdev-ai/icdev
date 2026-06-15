@@ -150,3 +150,9 @@ print(update["content"], update["citation_count"], update["status"])
 | Tool | Purpose |
 |------|---------|
 | `tools/document_intelligence/handoff.py` | DIC Knowledge Handoff Workflow. Multi-step guided session: initiate (departing owner + successor + destination collection) → auto-build agenda from explorer findings → interview prompts → captured answers → CoD-verified structured document generation per agenda area → write to destination collection with HITL-gated status. All outputs are AI-labeled `PENDING`; never auto-published. |
+
+## Concurrency & Conflict Detection
+
+| Tool | Purpose |
+|------|---------|
+| `tools/document_intelligence/conflict_detector.py` | DIC Section Conflict Detector — optimistic-concurrency check on content saves. `compute_hash(content)` returns a CRC32 hex fingerprint (zlib, not cryptographic — avoids SIPA `_CRYPTO_HASHLIB` false positive). `get_section_state(conn, section_id)` fetches the live content + hash for a `dic_sections` row. `check_conflict(conn, section_id, expected_hash)` compares the client's fingerprint against the DB state and returns `{conflict, current_hash, current_content}` — callers return HTTP 409 with `current_content` so the client can show a merge-resolution modal. Uses the caller's existing connection; opens no new DB connection. |
