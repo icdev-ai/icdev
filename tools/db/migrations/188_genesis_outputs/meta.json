@@ -1,0 +1,11 @@
+{
+  "id": "188",
+  "name": "genesis_outputs",
+  "description": "Create genesis_outputs append-only NIST AU event log for genesis reflex output artifacts (e.g., weekly PPTX decks from Slides reflex).",
+  "created_at": "2026-06-15",
+  "author": "icdev-builder",
+  "database": "icdev",
+  "reversible": true,
+  "requires_downtime": false,
+  "notes": "Append-only NIST AU table. Safe to re-run (CREATE TABLE IF NOT EXISTS). Replaces the deliberately deferred genesis_outputs gap in gap_detector.py."
+}

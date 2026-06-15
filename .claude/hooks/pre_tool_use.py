@@ -426,6 +426,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "wne_artifacts",
         # Genesis reflex run log (migration 116, NIST AU — cooldown tracking + audit)
         "genesis_reflex_log",
+        # Genesis output event log (migration 188, NIST AU — reflex output artifact history)
+        "genesis_outputs",
         # NMCE — AI conversation audit trail (migration canvas, NIST AU)
         "mc_net_ai_sessions",
         # STRATEGOS — war readiness event log (migration 118, NIST AU — append-only I&W audit)

@@ -1373,6 +1373,15 @@ CREATE TABLE IF NOT EXISTS product_intel_runs (
     status              TEXT,
     classification      TEXT DEFAULT 'CUI'
 );
+CREATE TABLE IF NOT EXISTS genesis_outputs (
+    id             TEXT PRIMARY KEY,
+    reflex_name    TEXT NOT NULL,
+    output_type    TEXT NOT NULL,
+    output_ref     TEXT,
+    summary        TEXT,
+    created_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    classification TEXT DEFAULT 'CUI'
+);
 """
 
 
