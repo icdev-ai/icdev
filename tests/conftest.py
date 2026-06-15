@@ -1382,6 +1382,14 @@ CREATE TABLE IF NOT EXISTS genesis_outputs (
     created_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     classification TEXT DEFAULT 'CUI'
 );
+CREATE TABLE IF NOT EXISTS genesis_phase_log (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    design_id    TEXT NOT NULL,
+    phase        TEXT NOT NULL,
+    status       TEXT NOT NULL,
+    started_at   TEXT,
+    completed_at TEXT
+);
 """
 
 
