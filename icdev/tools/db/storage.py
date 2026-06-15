@@ -768,7 +768,7 @@ class StorageCursor:
         if not ctx:
             return sql, params
         try:
-            from tools.security.row_security import inject_row_predicate, _RE_UPDATE, _RE_DELETE
+            from tools.security.row_security import inject_row_predicate
             tenant_id = getattr(ctx, "tenant_id", None)
             classification = getattr(ctx, "classification", None)
             # Derive LAC and COI label sets from the compartments frozenset.

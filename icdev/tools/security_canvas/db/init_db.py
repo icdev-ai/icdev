@@ -1514,14 +1514,14 @@ def _seed_zig(conn):
     """Seed ZIG pillars, capabilities, and activities (idempotent)."""
     try:
         from tools.security_canvas.constants import (
-            ZIG_PILLARS, ZIG_CAPABILITIES, ZIG_ACTIVITIES, ZIG_MATURITY_LEVELS,
+            ZIG_PILLARS, ZIG_CAPABILITIES, ZIG_ACTIVITIES,
         )
     except ImportError:
         try:
             import sys
             sys.path.insert(0, str(_ICDEV_ROOT))
             from tools.security_canvas.constants import (
-                ZIG_PILLARS, ZIG_CAPABILITIES, ZIG_ACTIVITIES, ZIG_MATURITY_LEVELS,
+                ZIG_PILLARS, ZIG_CAPABILITIES, ZIG_ACTIVITIES,
             )
         except ImportError:
             print("[init_db] WARNING: Could not import ZIG constants — skipping ZIG seed.")
