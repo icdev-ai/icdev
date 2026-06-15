@@ -1321,6 +1321,40 @@ CREATE TABLE IF NOT EXISTS cpmp_collection_requirements (
 CREATE INDEX IF NOT EXISTS idx_cpmp_creq_coverage  ON cpmp_collection_requirements(coverage_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_creq_contract  ON cpmp_collection_requirements(contract_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_creq_status    ON cpmp_collection_requirements(status);
+
+-- finetune_jobs / finetune_metrics / finetune_eval_results (migration 187)
+-- Backing tables for render_handler_service finetune notification chain.
+CREATE TABLE IF NOT EXISTS finetune_jobs (
+    id             TEXT    PRIMARY KEY,
+    model_base     TEXT,
+    status         TEXT    NOT NULL DEFAULT 'queued',
+    epochs         INTEGER DEFAULT 0,
+    started_at     TEXT,
+    completed_at   TEXT,
+    tenant_id      TEXT    NOT NULL DEFAULT 'default',
+    classification TEXT    NOT NULL DEFAULT 'CUI',
+    created_at     TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS finetune_metrics (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id      TEXT    NOT NULL,
+    metric_name TEXT    NOT NULL,
+    value       REAL,
+    epoch       INTEGER DEFAULT 0,
+    tenant_id   TEXT    NOT NULL DEFAULT 'default',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    created_at  TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS finetune_eval_results (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id          TEXT    NOT NULL,
+    benchmark_name  TEXT    NOT NULL,
+    score           REAL,
+    delta           REAL,
+    tenant_id       TEXT    NOT NULL DEFAULT 'default',
+    classification  TEXT    NOT NULL DEFAULT 'CUI',
+    created_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
