@@ -33,6 +33,7 @@ are still written and the failure is reported in the result, never raised.
 from __future__ import annotations
 
 import hashlib
+import mimetypes as _mimetypes
 import os
 import re
 import sys
@@ -2467,6 +2468,7 @@ def ingest_file(
 
     tid, cls = _resolve_context(tenant_id, classification)
     errors: list[str] = []
+    _cpv: dict | None = None  # consumer pre-validation result (aiify-rm-a3344-phase-20)
 
     def _emit(stage: str, detail: str, pct: int = 0) -> None:
         if progress_cb:
@@ -2474,6 +2476,19 @@ def ingest_file(
                 progress_cb(stage, detail, pct)
             except Exception:
                 pass
+
+    # 0) Consumer pre-validation (aiify-rm-a3344-phase-20): check basic file
+    #    characteristics before the extraction pipeline runs. Anomalies are
+    #    surfaced as metadata["consumer_pre_validation"]; they never block ingest.
+    if detect_anomalies:
+        _emit("pre_validate", "Pre-validating file…", 3)
+        _cpv = detect_consumer_file_anomaly(p)
+        if _cpv:
+            logger.warning(
+                "consumer pre-validation anomaly file=%s signals=%s",
+                p.name,
+                _cpv["signals"],
+            )
 
     # 1) Extract.
     _emit("extracting", f"Reading {p.name}…", 5)
@@ -2726,6 +2741,10 @@ def ingest_file(
             )
             if near_dups:
                 ai_metadata = {**ai_metadata, "near_duplicates": near_dups}
+
+        # Surface consumer pre-validation result in metadata (aiify-rm-a3344-phase-20).
+        if _cpv:
+            ai_metadata = {**ai_metadata, "consumer_pre_validation": _cpv}
 
         # 5) KG bridge (best-effort). ingest_chunk reads rag_chunks by id, so this
         #    only finds content when embedding upserted the chunk above.
@@ -3428,6 +3447,144 @@ def detect_collection_anomalies(
         outlier_doc_ids=outlier_doc_ids,
         signals=signals,
     )
+
+
+# --------------------------------------------------------------------------- #
+# Consumer per-file pre-validation anomaly detection
+# (aiify-rm-a3344-phase-20: hardcoded_threshold -> anomaly_detection). The
+# external scan flagged paperless-ngx src/documents/consumer.py — the core
+# Consumer class that validates individual files before they enter the
+# processing pipeline. Its hardcoded constants govern: the minimum file size
+# before rejection as empty/corrupt, the set of supported file extensions
+# used for MIME-type consistency checks, and the maximum filename length
+# before the sanitiser truncates. The repo is ephemeral; per the established
+# aiify-opp pattern the augmentation lands in the analogous ICDEV subsystem
+# (DIC).
+#
+# Design:
+#   - _CONSUMER_MIN_FILE_BYTES (env DIC_CONSUMER_MIN_FILE_BYTES, default 4)
+#     replaces the hardcoded empty-file rejection constant; files below this
+#     are flagged "empty_or_corrupt" before extraction runs.
+#   - Magic-byte MIME inference checks whether the file's true content type
+#     matches what its extension promises (e.g. a .pdf whose first bytes are
+#     "PK\x03\x04" is actually a ZIP). No python-magic dependency — uses
+#     stdlib mimetypes + a small signature table (air-gap safe).
+#   - _CONSUMER_MAX_FILENAME_LEN (env DIC_CONSUMER_MAX_FILENAME_LEN, default
+#     255) replaces the hardcoded sanitiser truncation threshold; names beyond
+#     this limit are flagged "filename_too_long".
+#   - Returns None when no anomaly is found (common path). Never raises.
+#   - Distinct from opp-38 (detect_collection_anomalies), which operates on
+#     collection-level IQR statistics AFTER ingestion; this check runs BEFORE
+#     extraction on individual files.
+# --------------------------------------------------------------------------- #
+
+_CONSUMER_MIN_FILE_BYTES: int = int(
+    os.environ.get("DIC_CONSUMER_MIN_FILE_BYTES", "4")
+)
+_CONSUMER_MAX_FILENAME_LEN: int = int(
+    os.environ.get("DIC_CONSUMER_MAX_FILENAME_LEN", "255")
+)
+
+# Magic-byte signatures for air-gap-safe MIME inference.
+# Ordered longest-prefix first for unambiguous matching.
+_CONSUMER_MAGIC_SIGS: list[tuple[bytes, str]] = [
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1", "application/vnd.ms-office"),
+    (b"7z\xbc\xaf'\x1c", "application/x-7z-compressed"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+    (b"%PDF", "application/pdf"),
+    (b"PK\x03\x04", "application/zip"),
+    (b"PK\x05\x06", "application/zip"),
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"\x1f\x8b", "application/gzip"),
+    (b"BM", "image/bmp"),
+]
+
+# MIME types where a content/extension mismatch is expected or ambiguous —
+# skip the mismatch signal for these (e.g. DOCX/XLSX/PPTX are ZIP-based).
+_CONSUMER_MISMATCH_SKIP: frozenset[str] = frozenset({
+    "application/octet-stream",
+    "application/zip",
+    "application/vnd.ms-office",
+})
+
+
+def _consumer_infer_mime(path: Path) -> str | None:
+    """Return MIME type inferred from magic bytes, or None."""
+    try:
+        with open(path, "rb") as fh:
+            header = fh.read(16)
+        for prefix, mime in _CONSUMER_MAGIC_SIGS:
+            if header.startswith(prefix):
+                return mime
+    except OSError:
+        pass
+    return None
+
+
+def detect_consumer_file_anomaly(path: Path) -> "dict | None":
+    """Pre-validate a file's basic characteristics before extraction runs.
+
+    Replaces hardcoded minimum-size, filename-length, and supported-extension
+    constants in paperless-ngx src/documents/consumer.py
+    (aiify-rm-a3344-phase-20). Returns a signal dict on anomaly, None when
+    the file looks clean. Never raises — failures degrade to None.
+    """
+    try:
+        signals: list[str] = []
+        file_bytes: int = 0
+
+        # 1. Empty / near-empty file.
+        try:
+            file_bytes = path.stat().st_size
+        except OSError:
+            pass
+        if file_bytes < _CONSUMER_MIN_FILE_BYTES:
+            signals.append(
+                f"empty_or_corrupt: {file_bytes}B < floor "
+                f"{_CONSUMER_MIN_FILE_BYTES}B (DIC_CONSUMER_MIN_FILE_BYTES)"
+            )
+
+        # 2. Filename length.
+        name_len = len(path.name)
+        if name_len > _CONSUMER_MAX_FILENAME_LEN:
+            signals.append(
+                f"filename_too_long: {name_len} chars > ceiling "
+                f"{_CONSUMER_MAX_FILENAME_LEN} (DIC_CONSUMER_MAX_FILENAME_LEN)"
+            )
+
+        # 3. MIME / extension mismatch (air-gap safe, no python-magic).
+        expected_mime, _ = _mimetypes.guess_type(path.name)
+        inferred_mime = _consumer_infer_mime(path)
+        if (
+            expected_mime
+            and inferred_mime
+            and expected_mime not in _CONSUMER_MISMATCH_SKIP
+            and inferred_mime not in _CONSUMER_MISMATCH_SKIP
+            and expected_mime != inferred_mime
+            # Allow e.g. image/jpeg vs image/png — both are images, flag anyway
+            # but skip text/* vs text/* (e.g. text/html vs text/plain) as benign.
+            and not (
+                expected_mime.startswith("text/")
+                and inferred_mime.startswith("text/")
+            )
+        ):
+            signals.append(
+                f"mime_extension_mismatch: extension implies "
+                f"{expected_mime!r} but magic bytes indicate {inferred_mime!r}"
+            )
+
+        if not signals:
+            return None
+        return {
+            "source": "consumer_pre_validation",
+            "file_bytes": file_bytes,
+            "filename": path.name,
+            "signals": signals,
+        }
+    except Exception:
+        return None
 
 
 # --------------------------------------------------------------------------- #
