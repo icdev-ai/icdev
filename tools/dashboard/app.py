@@ -5813,6 +5813,8 @@ def create_app() -> Flask:
     @app.route("/knowledge-search")
     def knowledge_search_page():
         """RAG Knowledge Search — natural language search across all ICDEV™ knowledge (Phase 64, D-RAG-1)."""
+        import concurrent.futures
+
         status = None
         recent_searches = []
         source_types = []
@@ -5820,8 +5822,14 @@ def create_app() -> Flask:
             from tools.rag.ingestion_manager import get_status as rag_get_status
             from tools.rag.source_registry import SOURCE_REGISTRY
 
-            status = rag_get_status()
             source_types = sorted(SOURCE_REGISTRY.keys())
+            # rag_get_status() issues 60+ DB queries; cap at 3s to avoid page timeout.
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _ex:
+                _fut = _ex.submit(rag_get_status)
+                try:
+                    status = _fut.result(timeout=3)
+                except (concurrent.futures.TimeoutError, Exception):
+                    status = None
         except Exception:
             pass
         try:
