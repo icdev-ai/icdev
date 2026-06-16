@@ -28,7 +28,6 @@ import urllib.error
 import xml.etree.ElementTree as ET
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 # SSL context that skips verification — used only for threat intel ingestion feeds
 # where the data itself is untrusted anyway; we parse, not exec it.

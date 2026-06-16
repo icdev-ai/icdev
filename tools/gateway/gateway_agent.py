@@ -47,6 +47,10 @@ from tools.gateway.adapters.internal import InternalChatAdapter  # noqa: E402
 from tools.gateway.adapters.telegram import TelegramAdapter  # noqa: E402
 from tools.gateway.adapters.slack import SlackAdapter  # noqa: E402
 from tools.gateway.adapters.mattermost import MattermostAdapter  # noqa: E402
+from tools.gateway.adapters.teams import TeamsAdapter  # noqa: E402
+from tools.gateway.adapters.github import GitHubAdapter  # noqa: E402
+from tools.gateway.adapters.gitlab import GitLabAdapter  # noqa: E402
+from tools.gateway.adapters.skype import SkypeAdapter  # noqa: E402
 
 logger = get_logger("icdev.gateway.agent")
 
@@ -79,6 +83,10 @@ def _load_adapters(config: Dict) -> Dict[str, Any]:
         "telegram": TelegramAdapter,
         "slack": SlackAdapter,
         "mattermost": MattermostAdapter,
+        "teams": TeamsAdapter,
+        "github": GitHubAdapter,
+        "gitlab": GitLabAdapter,
+        "skype": SkypeAdapter,
     }
 
     for channel_name, channel_config in channels.items():

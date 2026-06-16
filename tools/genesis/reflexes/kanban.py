@@ -2616,6 +2616,105 @@ Execute this task as described above. When complete:
     return str(prompt_path)
 
 
+def _run_adversarial_verify(task_id: str, work_dir: str) -> tuple:
+    """Adversarial verifier gate — spawn a short Claude CLI review of completed work.
+
+    Only fires when adversarial_enabled=1 on the task (loop_type='non_deterministic').
+    Uses a separate Claude CLI session with a review-only prompt and --max-turns 10
+    so the verifier cannot make changes, only judge.
+
+    Returns (passed: bool, feedback: str). Fails open on any error so the
+    adversarial gate never permanently blocks a task.
+    """
+    try:
+        with get_connection() as _c:
+            row = _c.execute(
+                "SELECT adversarial_enabled, title, description "
+                "FROM kanban_tasks WHERE id = %s",
+                (task_id,),
+            ).fetchone()
+        if not row or not dict(row).get("adversarial_enabled"):
+            return True, ""
+        task_title = dict(row).get("title", task_id)
+        task_desc = (dict(row).get("description") or "")[:1200]
+    except Exception as exc:
+        logger.warning("adversarial_verify: DB read failed for %s: %s", task_id, exc)
+        return True, ""
+
+    claude_cli = _resolve_claude_cli()
+    if not claude_cli:
+        logger.warning("adversarial_verify: claude CLI not found — skipping for %s", task_id)
+        return True, ""
+
+    review_prompt = (
+        "You are an adversarial code reviewer. "
+        "Review the changes made in this worktree for the task below.\n\n"
+        f"Task: {task_title}\n\n"
+        f"Acceptance criteria:\n{task_desc}\n\n"
+        "Run `git diff main...HEAD` to inspect what changed. "
+        "Check new/modified files against the acceptance criteria.\n\n"
+        "Respond with EXACTLY one of these two formats and nothing else:\n"
+        "APPROVED: <one sentence reason>\n"
+        "REJECTED: <specific actionable feedback on what is missing or wrong>\n\n"
+        "Be strict. Missing tests, unfulfilled criteria, or obvious bugs = REJECTED."
+    )
+
+    import tempfile as _tempfile2
+    import os as _os2
+
+    try:
+        _tmp = _tempfile2.NamedTemporaryFile(
+            mode="w", suffix="_adv_review.txt", delete=False,
+            dir=str(BASE_DIR / ".tmp"), encoding="utf-8",
+        )
+        _tmp.write(review_prompt)
+        _tmp.close()
+
+        _stdin_fh = open(_tmp.name, "r", encoding="utf-8")
+        result = subprocess.run(
+            [claude_cli, "--dangerously-skip-permissions",
+             "--max-turns", "10", "--output-format", "text"],
+            cwd=work_dir,
+            stdin=_stdin_fh,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        _stdin_fh.close()
+        try:
+            _os2.unlink(_tmp.name)
+        except Exception:
+            pass
+
+        output = (result.stdout or "").strip()
+        if not output:
+            logger.warning("adversarial_verify: empty output for %s — passing", task_id)
+            return True, ""
+
+        for line in reversed(output.splitlines()):
+            line = line.strip()
+            if line.upper().startswith("APPROVED"):
+                feedback = line[len("APPROVED"):].lstrip(": ").strip()
+                logger.info("adversarial_verify: APPROVED %s — %s", task_id, feedback[:80])
+                return True, feedback
+            if line.upper().startswith("REJECTED"):
+                feedback = line[len("REJECTED"):].lstrip(": ").strip()
+                logger.warning(
+                    "adversarial_verify: REJECTED %s — %s", task_id, feedback[:200]
+                )
+                return False, feedback
+
+        logger.warning("adversarial_verify: no verdict found for %s — passing", task_id)
+        return True, ""
+
+    except subprocess.TimeoutExpired:
+        logger.warning("adversarial_verify: timeout for %s — passing", task_id)
+        return True, ""
+    except Exception as exc:
+        logger.warning("adversarial_verify: error for %s: %s", task_id, exc)
+        return True, ""
+
+
 def _fetch_verification_details(task_id: str) -> Dict[str, Any]:
     """Load the most recent kanban_verifications row for a task.
 
@@ -2811,6 +2910,30 @@ def _poll_telegram():
         return poll_updates()
     except Exception:
         return []
+
+
+def _poll_all_channels():
+    """Poll all configured channels (Telegram + Teams + MatterMost + GitHub + GitLab + Skype)."""
+    results = list(_poll_telegram())
+
+    _channel_listeners = [
+        ("tools.notifications.adapters.teams_listener", "Teams"),
+        ("tools.notifications.adapters.mattermost_listener", "MatterMost"),
+        ("tools.notifications.adapters.github_listener", "GitHub"),
+        ("tools.notifications.adapters.gitlab_listener", "GitLab"),
+        ("tools.notifications.adapters.skype_listener", "Skype"),
+    ]
+    for module_path, name in _channel_listeners:
+        try:
+            import importlib
+            mod = importlib.import_module(module_path)
+            channel_results = mod.poll_updates()
+            if channel_results:
+                results.extend(channel_results)
+        except Exception:
+            pass
+
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -6506,6 +6629,42 @@ def _check_completed():
                 verified, reason = _verify_task_completed(task_id, claude_output)
 
                 if verified:
+                    # ── ADVERSARIAL VERIFY GATE ────────────────────────────
+                    # For non_deterministic tasks with adversarial_enabled=1,
+                    # spawn a second Claude CLI review session. If the verifier
+                    # rejects, return to backlog with feedback injected so the
+                    # next dispatch incorporates the verifier's critique.
+                    _adv_work_dir = _worktrees.get(task_id, str(BASE_DIR))
+                    _adv_passed, _adv_feedback = _run_adversarial_verify(
+                        task_id, _adv_work_dir
+                    )
+                    if not _adv_passed:
+                        _adv_reason = (
+                            f"adversarial_verify: REJECTED — {_adv_feedback[:300]}"
+                        )
+                        logger.warning(
+                            "adversarial gate blocked done for %s: %s",
+                            task_id, _adv_feedback[:100],
+                        )
+                        print(
+                            f"  Kanban: {task_id} ADVERSARIAL REJECTED "
+                            f"— returning to backlog"
+                        )
+                        try:
+                            _move_task(
+                                task_id, "backlog",
+                                actor="adversarial_verifier",
+                                reason=_adv_reason,
+                            )
+                        except Exception as _adv_mt_exc:
+                            logger.error(
+                                "adversarial _move_task(backlog) failed for %s: %s",
+                                task_id, _adv_mt_exc,
+                            )
+                        del _running[task_id]
+                        _dispatch_times.pop(task_id, None)
+                        continue
+
                     try:
                         _move_task(task_id, "done",
                                    actor="scheduler",
@@ -7363,10 +7522,10 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     # 1. Check for completed claude subprocesses
     completed = _check_completed()
 
-    # 2. Poll Telegram for new commands
-    tg_results = _poll_telegram()
+    # 2. Poll all channels for new commands
+    tg_results = _poll_all_channels()
     if tg_results:
-        print(f"  Kanban: {len(tg_results)} Telegram commands")
+        print(f"  Kanban: {len(tg_results)} channel commands")
 
     # 3. Don't promote new tasks if claude is already running
     #    BUT first clean up stale entries — if the task was marked done/backlog

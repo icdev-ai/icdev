@@ -3664,8 +3664,7 @@ def create_data_canvas_blueprint():
 
     @bp.route("/api/geoint/events")
     def dc_api_geoint_events():
-        from tools.geoint.geoint_ingestor import list_events, _ensure_tables
-        from tools.db.storage import get_connection as _mc
+        from tools.geoint.geoint_ingestor import list_events
         try:
             limit = min(int(request.args.get("limit", 500)), 2000)
             source = request.args.get("source")
@@ -3740,7 +3739,6 @@ def create_data_canvas_blueprint():
     def dc_api_pipeline_status():
         """Real metrics from live DB tables for the Pipeline Command Center."""
         from tools.db.storage import get_connection as _get_main_conn
-        import math, datetime
 
         out = {
             "active_agents": 17, "decisions": 0, "rag_chunks": 0,

@@ -151,6 +151,16 @@ CREATE TABLE IF NOT EXISTS ace_event_results (
     created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_ace_event_results_event ON ace_event_results(event_id);
+
+CREATE TABLE IF NOT EXISTS ace_sessions (
+    session_id   TEXT PRIMARY KEY,
+    instance_id  TEXT,
+    history_json TEXT NOT NULL DEFAULT '[]',
+    turn_count   INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ace_sessions_instance ON ace_sessions(instance_id);
 """
 
 # ---------------------------------------------------------------------------

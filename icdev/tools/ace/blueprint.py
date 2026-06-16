@@ -598,6 +598,134 @@ def api_abort(instance_id: str):
     return jsonify({"instance_id": instance_id, "state": "cancelled", "aborted": True})
 
 
+@ace_api_bp.route("/<instance_id>/nova-state", methods=["GET"])
+def api_nova_state(instance_id: str):
+    """NOVA soul state for all coworkers in this instance.
+
+    Returns trust_score, learned fact count, and recent improvement artifacts
+    per coworker role so the UI can render a 'Learning State' panel.
+
+    Response shape::
+
+        {
+          "instance_id": "<id>",
+          "coworkers": [
+            {
+              "role_id": "...",
+              "trust_score": 0.5,
+              "fact_count": 3,
+              "recent_improvements": [
+                {"artifact_id": "...", "task_type": "...", "improvement_text": "...",
+                 "composite_score": 0.0, "status": "pending", "created_at": "..."}
+              ]
+            }
+          ]
+        }
+    """
+    # --- 1. Coworker role_ids from canvas DB ---
+    role_ids: list[str] = []
+    conn = None
+    try:
+        conn = _db()
+        rows = _rows(
+            conn.execute(
+                _q(conn, "SELECT DISTINCT role_id FROM ace_coworkers WHERE instance_id = ?"),
+                (instance_id,),
+            )
+        )
+        role_ids = [r["role_id"] for r in rows if r.get("role_id")]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("api_nova_state: canvas read failed for %s: %s", instance_id, exc)
+    finally:
+        if conn is not None:
+            conn.close()
+
+    # --- 2. Enrich each role from main DB (NOVA tables) ---
+    result: list[dict] = []
+    mconn = None
+    try:
+        from icdev.tools.db.storage import get_connection
+        mconn = get_connection()
+        # Ensure NOVA tables exist (idempotent)
+        try:
+            from tools.nova.db.init_db import init_nova_tables
+            init_nova_tables(mconn)
+        except Exception:  # noqa: BLE001
+            pass
+
+        # Recent improvement artifacts are global (not per-role), fetch once
+        recent_improvements: list[dict] = []
+        try:
+            rows_aia = mconn.execute(
+                "SELECT artifact_id, task_type, improvement_text, composite_score, status, created_at "
+                "FROM agent_improvement_artifacts ORDER BY created_at DESC LIMIT 3",
+                (),
+            ).fetchall()
+            for r in rows_aia:
+                if isinstance(r, dict):
+                    recent_improvements.append({
+                        "artifact_id": r.get("artifact_id"),
+                        "task_type": r.get("task_type"),
+                        "improvement_text": (r.get("improvement_text") or "")[:200],
+                        "composite_score": r.get("composite_score"),
+                        "status": r.get("status"),
+                        "created_at": r.get("created_at"),
+                    })
+                else:
+                    recent_improvements.append({
+                        "artifact_id": r[0],
+                        "task_type": r[1],
+                        "improvement_text": (r[2] or "")[:200],
+                        "composite_score": r[3],
+                        "status": r[4],
+                        "created_at": r[5],
+                    })
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("api_nova_state: improvements query failed: %s", exc)
+
+        for role_id in role_ids:
+            # Trust score — latest ledger entry
+            trust_score = 0.5
+            try:
+                row = mconn.execute(
+                    "SELECT new_score FROM ace_trust_ledger "
+                    "WHERE role_id = ? ORDER BY recorded_at DESC LIMIT 1",
+                    (role_id,),
+                ).fetchone()
+                if row is not None:
+                    trust_score = float(
+                        row["new_score"] if isinstance(row, dict) else row[0]
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("api_nova_state: trust query failed for %s: %s", role_id, exc)
+
+            # Fact count — ace_coworker_memory
+            fact_count = 0
+            try:
+                row = mconn.execute(
+                    "SELECT COUNT(*) FROM ace_coworker_memory WHERE role_id = ?",
+                    (role_id,),
+                ).fetchone()
+                if row is not None:
+                    fact_count = int(row[0] if not isinstance(row, dict) else next(iter(row.values())))
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("api_nova_state: fact count failed for %s: %s", role_id, exc)
+
+            result.append({
+                "role_id": role_id,
+                "trust_score": trust_score,
+                "fact_count": fact_count,
+                "recent_improvements": recent_improvements,
+            })
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("api_nova_state: main DB read failed for %s: %s", instance_id, exc)
+    finally:
+        if mconn is not None:
+            mconn.close()
+
+    return jsonify({"instance_id": instance_id, "coworkers": result})
+
+
 @ace_api_bp.route("/profiles", methods=["GET"])
 def api_profiles_list():
     """List all coworker profiles (both built-in and generated)."""
@@ -686,6 +814,191 @@ def api_profiles_delete(role_id: str):
     except Exception as exc:
         logger.warning("ace profiles delete failed: %s", exc)
         return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Chat — multi-turn conversational interface
+# ---------------------------------------------------------------------------
+
+_CHAT_POLL_TIMEOUT = int(os.environ.get("ACE_CHAT_POLL_TIMEOUT", "10"))
+_CHAT_SYSTEM_PROMPT = (
+    "You are an ICDEV AI assistant powered by the ACE (Autonomous Collaborative Engine). "
+    "Provide concise, helpful responses. When continuing a conversation, always reference "
+    "and build upon prior messages in the thread."
+)
+
+
+def _utcnow() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _build_chat_messages(history: list[dict]) -> list[dict]:
+    """Return OpenAI-style message list from session history (all turns)."""
+    return [
+        {"role": t.get("role", "user"), "content": t.get("content", "")}
+        for t in history
+        if t.get("content")
+    ]
+
+
+def _write_ace_message(conn, instance_id: str, role: str, content: str) -> str:
+    """Insert a row into ace_messages and return its generated id."""
+    import uuid as _uuid
+    msg_id = f"msg-{_uuid.uuid4().hex[:12]}"
+    now = _utcnow()
+    try:
+        conn.execute(
+            _q(conn,
+               "INSERT INTO ace_messages (id, instance_id, role, content, message_type, created_at) "
+               "VALUES (?, ?, ?, ?, 'info', ?)"),
+            (msg_id, instance_id, role, content, now),
+        )
+        conn.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace chat: failed to write ace_message: %s", exc)
+    return msg_id
+
+
+def _ensure_ace_session_instance(instance_id: str | None, session_id: str, problem_text: str) -> str:
+    """Return instance_id, launching a background ACE instance on first turn."""
+    if instance_id:
+        return instance_id
+    try:
+        ctrl = ACEController.get_instance()
+        return ctrl.launch(
+            problem_text=problem_text,
+            trigger_source="ace_chat",
+            trigger_ref=session_id,
+            user_id="chat",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace chat: background ACE launch failed: %s", exc)
+        import uuid as _uuid
+        return f"ace-chat-{_uuid.uuid4().hex[:12]}"
+
+
+@ace_api_bp.route("/chat", methods=["POST"])
+def api_ace_chat():
+    """Multi-turn conversational endpoint.
+
+    Request body: ``{session_id, user_message, instance_id?}``
+    Response:     ``{session_id, assistant_message, turn_count}``
+
+    Workflow
+    --------
+    1. Load (or create) the ``ace_sessions`` row for ``session_id``.
+    2. Append the user message to the stored history.
+    3. Invoke the LLM with the full history as context (synchronous).
+    4. Write both messages to ``ace_messages`` for traceability.
+    5. Persist updated history + turn_count back to ``ace_sessions``.
+    """
+    try:
+        body = request.get_json(silent=True) or {}
+        session_id = (body.get("session_id") or "").strip()
+        user_message = (body.get("user_message") or "").strip()
+        provided_instance_id = (body.get("instance_id") or "").strip() or None
+
+        if not session_id:
+            return jsonify({"error": "session_id is required"}), 400
+        if not user_message:
+            return jsonify({"error": "user_message is required"}), 400
+
+        now = _utcnow()
+        conn = _db()
+        try:
+            # 1. Load or create session
+            cur = conn.execute(
+                _q(conn, "SELECT session_id, instance_id, history_json, turn_count "
+                         "FROM ace_sessions WHERE session_id = ?"),
+                (session_id,),
+            )
+            session_row = _one(cur)
+
+            if session_row is None:
+                history: list[dict] = []
+                turn_count = 0
+                instance_id = provided_instance_id
+                conn.execute(
+                    _q(conn,
+                       "INSERT INTO ace_sessions (session_id, instance_id, history_json, "
+                       "turn_count, created_at, updated_at) VALUES (?, ?, '[]', 0, ?, ?)"),
+                    (session_id, instance_id, now, now),
+                )
+                conn.commit()
+            else:
+                raw = session_row.get("history_json") or "[]"
+                try:
+                    history = json.loads(raw) if isinstance(raw, str) else raw
+                    if not isinstance(history, list):
+                        history = []
+                except (TypeError, ValueError):
+                    history = []
+                turn_count = int(session_row.get("turn_count") or 0)
+                instance_id = provided_instance_id or session_row.get("instance_id") or None
+
+            # 2. Append user message to history
+            history.append({"role": "user", "content": user_message})
+
+            # 3. Invoke LLM with full history as context
+            assistant_message = _invoke_chat_llm(history)
+
+            # 4. Append assistant message to history
+            history.append({"role": "assistant", "content": assistant_message})
+            turn_count += 1
+
+            # Lazily associate an ACE instance for traceability (best-effort, async)
+            if instance_id is None:
+                instance_id = _ensure_ace_session_instance(
+                    None, session_id, problem_text=user_message
+                )
+
+            # Write both turns to ace_messages for traceability
+            _write_ace_message(conn, instance_id, "user", user_message)
+            _write_ace_message(conn, instance_id, "assistant", assistant_message)
+
+            # 5. Update session
+            conn.execute(
+                _q(conn,
+                   "UPDATE ace_sessions SET instance_id = ?, history_json = ?, "
+                   "turn_count = ?, updated_at = ? WHERE session_id = ?"),
+                (instance_id, json.dumps(history), turn_count, now, session_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        return jsonify({
+            "session_id": session_id,
+            "assistant_message": assistant_message,
+            "turn_count": turn_count,
+        })
+
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("api_ace_chat error")
+        return jsonify({"error": str(exc)}), 500
+
+
+def _invoke_chat_llm(history: list[dict]) -> str:
+    """Call LLMRouter with the full conversation history and return the response text."""
+    try:
+        from icdev.tools.llm.router import LLMRequest, LLMRouter
+        messages = _build_chat_messages(history)
+        req = LLMRequest(
+            messages=messages,
+            system_prompt=_CHAT_SYSTEM_PROMPT,
+            max_tokens=1024,
+        )
+        resp = LLMRouter().invoke("ace_chat", req)
+        return (resp.content or "").strip() or "I'm processing your request."
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace chat LLM invoke failed: %s", exc)
+        # Fallback: acknowledge the context from prior turns
+        prior = [t for t in history[:-1] if t.get("role") == "user"]
+        if prior:
+            topics = "; ".join(t["content"][:60] for t in prior[-2:])
+            return f"Continuing from our earlier discussion ({topics}): I'll address your latest request."
+        return "I'm ready to help. Please continue."
 
 
 @ace_api_bp.route("/iqe-query", methods=["POST"])

@@ -109,7 +109,9 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
     lines_removed         INTEGER DEFAULT 0,
     completed_via_bypass  INTEGER DEFAULT 0,
     source_doc_id         TEXT,
-    source_collection_id  TEXT
+    source_collection_id  TEXT,
+    loop_type             TEXT DEFAULT 'deterministic',
+    adversarial_enabled   INTEGER DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS kanban_task_deps (
     task_id         TEXT NOT NULL,
@@ -1389,6 +1391,57 @@ CREATE TABLE IF NOT EXISTS genesis_phase_log (
     status       TEXT NOT NULL,
     started_at   TEXT,
     completed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS teams_inbox (
+    message_id   TEXT PRIMARY KEY,
+    message_json TEXT NOT NULL,
+    channel_id   TEXT,
+    sender_id    TEXT,
+    text         TEXT,
+    processed_at TEXT,
+    error        TEXT,
+    created_at   TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS mattermost_inbox (
+    post_id      TEXT PRIMARY KEY,
+    message_json TEXT NOT NULL,
+    channel_id   TEXT,
+    user_id      TEXT,
+    text         TEXT,
+    processed_at TEXT,
+    error        TEXT,
+    created_at   TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS github_inbox (
+    comment_id   INTEGER PRIMARY KEY,
+    message_json TEXT NOT NULL,
+    issue_number INTEGER,
+    user_login   TEXT,
+    text         TEXT,
+    processed_at TEXT,
+    error        TEXT,
+    created_at   TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS gitlab_inbox (
+    note_id          INTEGER PRIMARY KEY,
+    message_json     TEXT NOT NULL,
+    issue_iid        INTEGER,
+    author_username  TEXT,
+    text             TEXT,
+    processed_at     TEXT,
+    error            TEXT,
+    created_at       TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS skype_inbox (
+    activity_id     TEXT PRIMARY KEY,
+    message_json    TEXT NOT NULL,
+    conversation_id TEXT,
+    service_url     TEXT,
+    sender_id       TEXT,
+    text            TEXT,
+    processed_at    TEXT,
+    error           TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 """
 
