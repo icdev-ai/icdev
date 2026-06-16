@@ -23,9 +23,9 @@ jobs:
           python-version: "3.11"
       - run: pip install ruff
       - name: Ruff auto-fix
-        run: ruff check tools/ tests/ --select E,F,W --ignore E402,E501,E701,E702,E721,E722,E731,E741,F404 --fix
+        run: python -m ruff check tools/ tests/ --select E,F,W --ignore E402,E501,E701,E702,E721,E722,E731,E741,F404 --fix
       - name: Ruff lint
-        run: ruff check tools/ tests/ --select E,F,W --ignore E402,E501,E701,E702,E721,E722,E731,E741,F404
+        run: python -m ruff check tools/ tests/ --select E,F,W --ignore E402,E501,E701,E702,E721,E722,E731,E741,F404
 
   # ── Tier 1: Unit Tests (pure Python — no LLM) ───────────────────────────
   test:
