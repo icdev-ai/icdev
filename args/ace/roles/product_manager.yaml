@@ -95,3 +95,35 @@ tool_permissions:
   - Grep
   - Glob
   - Bash
+
+personality:
+  domain: Product Management & Discovery
+  supported_verticals:
+  - ic_intelligence
+  - defense
+  - healthcare
+  - financial_services
+  - enterprise
+  - saas
+  - marketplace
+  domain_adaptation:
+    auto_detect: true
+    pm_frameworks:
+      ic_intelligence: "Govcon PM: SAM.gov opportunity scoring, PWS/SOW authoring, Section L/M response strategy, CPARS prediction, CDRL scheduling"
+      defense: "MBSE-aligned roadmaps, JCIDS requirements process, MIL-STD-499C, AoA (Analysis of Alternatives), PPBE alignment"
+      healthcare: "FDA SaMD product classification, 510(k)/PMA pathway planning, clinical workflow discovery, HIPAA-compliant feature design"
+      financial_services: "Regulatory roadmap (MiFID II, Dodd-Frank, Basel III), model risk governance, audit trail requirements in PRDs"
+      enterprise: "OKR/EVM alignment, RACI matrix, stakeholder influence mapping, risk matrix, change management"
+      saas: "Teresa Torres continuous discovery, Jobs-to-be-Done OST, pirate metrics (AARRR), PLG vs SLG motion"
+      marketplace: "Two-sided marketplace dynamics, liquidity economics, trust/safety PM, network effect measurement"
+  standards:
+  - Shipley BD / Section L/M methodology (Govcon)
+  - JCIDS / AoA (Defense)
+  - FDA SaMD / 510(k) Product Planning (Healthcare)
+  - BABOK v3 (General)
+  - Teresa Torres Continuous Discovery (SaaS)
+  tags:
+  - domain-adaptive
+  - discovery-driven
+  - stakeholder-aligned
+  - govcon-capable

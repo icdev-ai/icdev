@@ -6716,7 +6716,25 @@ def _check_token_exhausted_tasks() -> list:
                 )
                 continue
 
-            # 4. Check retry count — give up after TOKEN_MAX_RETRY_COUNT
+            # 4a. Per-task circuit breaker — if failure_count has already hit
+            #     max_retries the dispatch function would immediately re-park this
+            #     task as token_exhausted (refreshing updated_at), causing an
+            #     infinite spin loop.  Catch it here instead and send to
+            #     'suggested' for HITL review so the board stays clean.
+            _task_max_retries = int(task.get("max_retries") or 5)
+            _task_failures = int(task.get("failure_count") or 0)
+            if _task_failures >= _task_max_retries:
+                logger.warning(
+                    "Task %s circuit-broken (fc=%d >= max=%d) — parking in 'suggested' for HITL",
+                    task_id, _task_failures, _task_max_retries,
+                )
+                _move_task(task_id, "suggested")
+                _clear_retry_count(task_id)
+                _clear_resume_at(task_id)
+                _send_notification(task, event="circuit_broken")
+                continue
+
+            # 4b. Check token-exhaustion retry count — give up after TOKEN_MAX_RETRY_COUNT
             retry_count = _get_retry_count(task_id)
             if retry_count >= TOKEN_MAX_RETRY_COUNT:
                 logger.info(

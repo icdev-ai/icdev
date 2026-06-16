@@ -94,11 +94,37 @@
       {% endif %}
       <div id="src-list-new"></div>
     </div>
-    <!-- Co-Worker attachment -->
+    <!-- Co-Worker attachment — Intel Team quick-launch -->
     <div style="padding:8px 12px;border-top:1px solid #1a3560;background:#091426;">
+      <div style="font-size:10px;color:#7ab3f0;margin-bottom:6px;font-weight:600;letter-spacing:.05em;">
+        INTEL TEAM
+      </div>
+      <!-- Role chips — all pre-selected by default -->
+      <div id="cwk-role-chips" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;">
+        <button class="cwk-chip" data-role="researcher"
+          style="background:#1a1a40;color:#a5b4fc;padding:3px 7px;border:1px solid #3730a3;border-radius:10px;cursor:pointer;font-size:10px;"
+          onclick="toggleChip(this)">Researcher</button>
+        <button class="cwk-chip" data-role="intelligence_analyst"
+          style="background:#1a1a40;color:#a5b4fc;padding:3px 7px;border:1px solid #3730a3;border-radius:10px;cursor:pointer;font-size:10px;"
+          onclick="toggleChip(this)">Intel Analyst</button>
+        <button class="cwk-chip" data-role="writer"
+          style="background:#1a1a40;color:#a5b4fc;padding:3px 7px;border:1px solid #3730a3;border-radius:10px;cursor:pointer;font-size:10px;"
+          onclick="toggleChip(this)">Writer</button>
+        <button class="cwk-chip" data-role="editor"
+          style="background:#1a1a40;color:#a5b4fc;padding:3px 7px;border:1px solid #3730a3;border-radius:10px;cursor:pointer;font-size:10px;"
+          onclick="toggleChip(this)">Editor</button>
+        <button class="cwk-chip" data-role="derivative_classifier"
+          style="background:#1a1a40;color:#a5b4fc;padding:3px 7px;border:1px solid #3730a3;border-radius:10px;cursor:pointer;font-size:10px;"
+          onclick="toggleChip(this)">Derivative Classifier</button>
+      </div>
+      <button id="launch-intel-team-btn" onclick="launchIntelTeam()"
+        style="width:100%;background:#1e1b4b;color:#c7d2fe;padding:6px;border:1px solid #3730a3;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">
+        Launch Intel Team →
+      </button>
+      <!-- legacy single-attach fallback -->
       <button id="attach-cwk-btn" onclick="attachToCoWorker()"
-        style="width:100%;background:#1a1a30;color:#a78bfa;padding:6px;border:1px solid #2a2a50;border-radius:4px;cursor:pointer;font-size:11px;">
-        🤝 Attach to Co-Worker
+        style="width:100%;background:#0f172a;color:#64748b;padding:4px;border:1px solid #1e293b;border-radius:4px;cursor:pointer;font-size:10px;margin-top:4px;">
+        🤝 Attach to Co-Worker (generic)
       </button>
       <div id="attach-cwk-status" style="font-size:10px;color:#7ab3f0;margin-top:4px;min-height:12px;"></div>
     </div>
@@ -641,6 +667,55 @@ function addToRoadmap() {
       : 'No events found';
   })
   .catch(e => { btn.disabled=false; btn.textContent='🗺 Add to Roadmap'; st.textContent='⚠ '+e; });
+}
+
+// ── Intel Team role chip toggle ───────────────────────────────────────────────
+function toggleChip(btn) {
+  const active = btn.getAttribute('data-active') === 'true';
+  btn.setAttribute('data-active', String(!active));
+  btn.style.background  = !active ? '#3730a3' : '#1a1a40';
+  btn.style.color       = !active ? '#fff'    : '#a5b4fc';
+  btn.style.borderColor = !active ? '#818cf8' : '#3730a3';
+}
+
+function launchIntelTeam() {
+  const chips    = document.querySelectorAll('.cwk-chip');
+  const selected = [];
+  chips.forEach(c => {
+    // treat a chip as selected if not explicitly deactivated
+    if (c.getAttribute('data-active') !== 'false') {
+      selected.push(c.getAttribute('data-role'));
+    }
+  });
+  if (selected.length === 0) {
+    document.getElementById('attach-cwk-status').textContent = 'Select at least one role.';
+    return;
+  }
+  const btn = document.getElementById('launch-intel-team-btn');
+  const st  = document.getElementById('attach-cwk-status');
+  btn.disabled = true; btn.textContent = '⏳ Launching…';
+  fetch('/api/ace/launch', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      problem_text: `Produce an Intelligence Report (INTSUM) for collection: ${COLLECTION}. Apply CAPCO portion markings per EO 13526/ICD 710.`,
+      role_ids: selected,
+      dic_collection_ids: [COLLECTION],
+      trigger_source: 'dic_notebook',
+    }),
+  })
+  .then(r => r.json())
+  .then(d => {
+    btn.disabled = false;
+    if (d.error) { st.textContent = '⚠ ' + d.error; btn.textContent = 'Launch Intel Team →'; return; }
+    btn.textContent = '✓ Launched';
+    btn.style.background = '#14532d'; btn.style.color = '#86efac';
+    const instId = d.instance_id || d.id || '';
+    if (instId) {
+      st.innerHTML = `<a href="/coworker/${instId}" style="color:#a78bfa;">Open Team Session →</a>`;
+    }
+  })
+  .catch(e => { btn.disabled=false; btn.textContent='Launch Intel Team →'; st.textContent='⚠ '+e; });
 }
 
 function attachToCoWorker() {

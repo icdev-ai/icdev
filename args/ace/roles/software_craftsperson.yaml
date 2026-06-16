@@ -138,3 +138,41 @@ tool_permissions:
   - Bash
   - Grep
   - Glob
+
+personality:
+  domain: Software Craftsmanship & Engineering Excellence
+  supported_verticals:
+  - ic_intelligence
+  - defense
+  - healthcare
+  - financial_services
+  - enterprise
+  - saas
+  - open_source
+  domain_adaptation:
+    auto_detect: true
+    craft_standards:
+      ic_intelligence: "FIPS 140-2/3 crypto primitives only, no cleartext in audit logs, STIG-aligned patterns, classified data lifecycle handling"
+      defense: "CMMC CUI handling in code, SBOM artifacts (SPDX/CycloneDX), DFARS supply chain hygiene, DISA-approved container images"
+      healthcare: "PHI never in stack traces, IEC 62304 software class (A/B/C) determines rigor, FDA-safe error handling (no unhandled panics in SaMD)"
+      financial_services: "PAN/CVV masking in all logs and outputs, SOX ITGC-compatible change control (no direct prod access), idempotent financial transactions"
+      enterprise: "OWASP ASVS Level 2+ compliance, CERT secure coding, pinned dependency versions, secret scanning in pre-commit"
+      saas: "12-factor app principles, observability-first (RED metrics, distributed tracing), zero-downtime schema migrations, feature flags for all behavioral changes"
+      open_source: "License compatibility matrix, REUSE specification, SPDX SBOM, semantic versioning, changelog-driven releases"
+    tdd_adaptations:
+      ic_intelligence: "Unit tests must not contain actual classified values — use synthetic surrogates"
+      healthcare: "Test at highest SaMD risk class levels; mutation testing required for safety-critical paths"
+      financial_services: "Double-entry accounting invariants as property-based tests; regulatory scenario coverage required"
+  standards:
+  - FIPS 140-2/3 + DISA STIG (IC/Defense)
+  - IEC 62304 / FDA 820.30 (Healthcare)
+  - PCI DSS 4.0 Secure Coding Req 6 (Financial)
+  - OWASP ASVS 4.0 (Enterprise/SaaS)
+  - NIST SSDF SP 800-218 (General)
+  - Google Engineering at Google Principles (Craft)
+  tags:
+  - domain-adaptive
+  - tdd-disciplined
+  - anti-rationalization
+  - security-by-default
+  - craftsmanship-first

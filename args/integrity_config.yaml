@@ -121,3 +121,14 @@ known_safe_filesystem_modules:
   - evolution/eval_builder.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
   - tools/evolution/artifact_evolver.py  # reads args/nova_sela_config.yaml + .agents/skills/ + hardprompts/; authorized by REQ-NOVA-SELA-FS-02 (full-repo scan root)
   - evolution/artifact_evolver.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+
+# ---------------------------------------------------------------------------
+# Known-safe ICDEV modules that legitimately use the process_exec capability
+# (subprocess.Popen / subprocess.run) as documented system behavior — explicitly
+# authorized. Adding a module path here suppresses the unauthorized_capability
+# 'process_exec' finding in Mode A (provenance_aware) self-scans only; it has
+# no effect on external-artifact assessments.
+# ---------------------------------------------------------------------------
+known_safe_process_exec_modules:
+  - tools/testing/cleanup_utils.py  # Signal-aware subprocess wrapper (run_with_cleanup) for graceful CI shutdown; subprocess.Popen tracks the active child so SIGTERM/SIGINT handlers can terminate it before the runner exits. Authorized by REQ-TESTING-GRACEFUL-SHUTDOWN-01 (pgp-vfy-03-d4).
+  - testing/cleanup_utils.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
