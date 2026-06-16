@@ -504,6 +504,93 @@ def _attach_advisory(
 
 
 # --------------------------------------------------------------------------- #
+# Text-based capability scanner (for runtime behavioral monitoring)
+# --------------------------------------------------------------------------- #
+_TEXT_CAP_PATTERNS: list[tuple[Any, str]] = []  # populated lazily below
+
+
+def _build_text_patterns() -> list[tuple[Any, str]]:
+    """Compile regex patterns for detecting capabilities in plain text output."""
+    patterns = [
+        (r"\beval\s*\(|\bexec\s*\(|\bcompile\s*\(|\b__import__\s*\(|importlib\.import_module\s*\(", "dynamic_code"),
+        (r"base64\.[a-z0-9_]*decode|binascii\.a2b_[a-z]+|bytes\.fromhex\s*\(|codecs\.decode|zlib\.decompress\s*\(", "obfuscation"),
+        (r"subprocess\.\w+\s*\(|os\.system\s*\(|os\.popen\s*\(|os\.exec[vle]\w*\s*\(|pty\.spawn\s*\(", "process_exec"),
+        (r"socket\.socket\s*\(|requests\.\w+\s*\(|urllib\.request\.\w+\s*\(|http\.client\.HTTP[SC]*Connection|httpx\.\w+\s*\(", "network_egress"),
+        (r"\bopen\s*\([^)]*[\"'][aw+bx]|os\.remove\s*\(|os\.unlink\s*\(|shutil\.(?:copy|move|rmtree)\s*\(", "filesystem"),
+        (r"os\.getenv\s*\(|os\.environ\b|keyring\.\w+\s*\(|dotenv\.\w+\s*\(", "env_secret"),
+        (r"pickle\.loads?\s*\(|marshal\.loads?\s*\(|yaml\.(?:load|unsafe_load|full_load)\s*\(", "serialization"),
+    ]
+    compiled = []
+    for pat, cap in patterns:
+        compiled.append((re.compile(pat), cap))
+    return compiled
+
+
+def _text_to_manifest(text: str) -> list[dict]:
+    """Scan plain text for dangerous API patterns; return a minimal capability manifest.
+
+    Produces one record per matched capability type (de-duplicated to avoid inflating
+    the reconciler's undisclosed-capability count). The file_path is synthetic so the
+    intrinsic-risk pass (dynamic_code + obfuscation) can fire correctly.
+    """
+    global _TEXT_CAP_PATTERNS
+    if not _TEXT_CAP_PATTERNS:
+        _TEXT_CAP_PATTERNS = _build_text_patterns()
+
+    found: dict[str, list[dict]] = {}
+    for pattern, cap in _TEXT_CAP_PATTERNS:
+        for m in pattern.finditer(text):
+            if cap not in found:
+                found[cap] = []
+            found[cap].append({
+                "capability_type": cap,
+                "file_path": "<step_output>",
+                "function_name": None,
+                "line_start": text.count("\n", 0, m.start()) + 1,
+                "evidence": {"api": m.group(0).strip()},
+            })
+
+    # Flatten; one record per capability type is enough for the reconciler passes.
+    records: list[dict] = []
+    for cap_records in found.values():
+        records.append(cap_records[0])
+
+    # Emit an obfuscated_input-tainted dynamic_code record when both dynamic_code and
+    # obfuscation appear — this triggers _intrinsic_findings' decode-then-exec rule.
+    if "dynamic_code" in found and "obfuscation" in found:
+        tainted = dict(found["dynamic_code"][0])
+        ev = dict(tainted.get("evidence") or {})
+        ev["obfuscated_input"] = True
+        tainted["evidence"] = ev
+        records = [r for r in records if r["capability_type"] != "dynamic_code"]
+        records.append(tainted)
+
+    return records
+
+
+def reconcile_mode_b(artifact_text: str, claimed_capabilities: list[str]) -> list[dict]:
+    """Mode B reconciliation for runtime behavioral monitoring.
+
+    Scans *artifact_text* (a step's output or generated code) for dangerous API
+    patterns, builds a minimal capability manifest, then delegates to
+    :func:`reconcile_blind` against the *claimed_capabilities* (role.tool_permissions).
+
+    Intended for in-flight ACE instance monitoring — not a replacement for the
+    full static-analysis path (:func:`assess_blind`).
+
+    Args:
+        artifact_text:       Plain text output from a running ACE step.
+        claimed_capabilities: The role's declared tool_permissions (the allowed set).
+
+    Returns:
+        A list of integrity_findings-shaped dicts, same shape as :func:`reconcile_blind`.
+        Empty list when no dangerous patterns are found or all are claimed.
+    """
+    manifest = _text_to_manifest(artifact_text)
+    return reconcile_blind(manifest, set(claimed_capabilities))
+
+
+# --------------------------------------------------------------------------- #
 # Public reconciliation API
 # --------------------------------------------------------------------------- #
 def reconcile_blind(manifest: Any, claim: Any) -> list[dict]:
