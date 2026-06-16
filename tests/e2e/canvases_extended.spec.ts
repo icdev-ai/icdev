@@ -70,6 +70,9 @@ const SOFT_CANVAS_PAGES = [
   { label: 'GovLift Audit',             path: '/govlift/audit' },
   // Mission Control canvas
   { label: 'Mission Control Dashboard',  path: '/mission-canvas/' },
+  // AISG canvas — feature-gated via ICDEV_AISG_ENABLED; 404 is acceptable when disabled
+  { label: 'AI Wizard',                  path: '/ai-wizard' },
+  { label: 'AI Patterns',               path: '/ai-patterns' },
 ];
 
 function noServerError(body: string | null, path: string) {

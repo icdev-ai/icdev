@@ -265,6 +265,19 @@ jobs:
           for i in $(seq 1 30); do
             curl -sf http://localhost:5050/ && break || sleep 1
           done
+      - name: Verify ai-wizard and ai-patterns routes (non-blocking)
+        # These AISG-canvas routes must not stop the pipeline if they fail;
+        # emit a warning annotation but always exit 0 so subsequent steps run.
+        run: |
+          for route in /ai-wizard /ai-patterns; do
+            status=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:5050${route}")
+            if [ "$status" -lt 400 ]; then
+              echo "::notice::${route} OK (HTTP ${status})"
+            else
+              echo "::warning::${route} returned HTTP ${status} — check ICDEV_AISG_ENABLED"
+            fi
+          done
+        continue-on-error: true
       - name: Run Playwright E2E tests
         run: npx playwright test
       - name: Stop dashboard server
