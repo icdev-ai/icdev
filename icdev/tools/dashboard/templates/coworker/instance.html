@@ -123,6 +123,16 @@
   /* ── Abort section ──────────────────────────────────────────────── */
   .abort-zone { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border-color, #2a2a4a); }
 
+  /* ── Resume session ─────────────────────────────────────────────── */
+  .resume-session-btn {
+    background: rgba(74,144,217,.15);
+    border: 1px solid #4a90d9;
+    color: #4a90d9;
+  }
+  .resume-session-btn:hover { background: rgba(74,144,217,.25); }
+  .history-item { opacity: .78; }
+  .history-item .history-tag { font-size: 10px; opacity: .7; }
+
   /* ── SSE indicator ──────────────────────────────────────────────── */
   .sse-badge {
     display: inline-flex; align-items: center; gap: 5px;
@@ -188,6 +198,10 @@
           <span class="sse-dot" id="sse-dot"></span>
           <span id="sse-label">Live</span>
         </span>
+        {% if resume_token %}
+        <button class="btn btn-sm resume-session-btn" id="resume-session-btn"
+                onclick="resumeSession()">&#8617; Resume Session</button>
+        {% endif %}
         {% if instance.state in ('pending', 'assembling', 'active', 'paused') %}
         <button class="btn btn-sm" style="background:rgba(231,76,60,.15);border:1px solid #e74c3c;color:#e74c3c;"
                 onclick="openAbortModal()">Abort Instance</button>
@@ -371,7 +385,8 @@
 (function () {
   "use strict";
 
-  const INSTANCE_ID = {{ instance.id | tojson }};
+  const INSTANCE_ID   = {{ instance.id | tojson }};
+  const RESUME_TOKEN  = {{ resume_token | tojson }};
 
   // ── Tab switching ────────────────────────────────────────────────
   document.querySelectorAll(".tab-btn").forEach(function (btn) {
@@ -648,6 +663,73 @@
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape") { closeArtModal(); closeAbortModal(); }
   });
+
+  // ── Resume Session ────────────────────────────────────────────────
+  window.resumeSession = function () {
+    if (!RESUME_TOKEN) return;
+    var btn = document.getElementById("resume-session-btn");
+    if (btn) { btn.disabled = true; btn.textContent = "Loading…"; }
+
+    fetch("/coworker/" + INSTANCE_ID + "/resume?token=" + encodeURIComponent(RESUME_TOKEN))
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (data) {
+        var history = data.conversation_history || [];
+        if (btn) { btn.textContent = history.length ? "Session Resumed" : "No History"; btn.disabled = true; }
+        if (!history.length) return;
+
+        var timeline = document.getElementById("msg-timeline");
+        if (!timeline) {
+          var empty = document.getElementById("msg-empty");
+          var tab = document.getElementById("tab-messages");
+          if (empty) empty.remove();
+          timeline = document.createElement("ul");
+          timeline.id = "msg-timeline";
+          timeline.className = "msg-timeline";
+          tab.prepend(timeline);
+        }
+
+        // Track already-inserted history indices to avoid duplicates on re-click.
+        var existing = new Set();
+        timeline.querySelectorAll(".msg-item[data-history-idx]").forEach(function (el) {
+          existing.add(el.getAttribute("data-history-idx"));
+        });
+
+        // Prepend history turns (oldest first = prepend in reverse order).
+        var fragment = document.createDocumentFragment();
+        history.forEach(function (turn, idx) {
+          if (existing.has(String(idx))) return;
+          fragment.prepend(buildHistoryItem(turn, idx));
+        });
+        timeline.prepend(fragment);
+
+        updateStatCard("stat-messages", timeline.querySelectorAll(".msg-item").length);
+        updateBadge("badge-msg-count", timeline.querySelectorAll(".msg-item").length);
+      })
+      .catch(function () {
+        if (btn) { btn.disabled = false; btn.textContent = "↩ Resume Session"; }
+      });
+  };
+
+  function buildHistoryItem(turn, idx) {
+    var role    = (turn.role || "user");
+    var content = (turn.content || "");
+    var ts      = (turn.timestamp || turn.created_at || "");
+    var label   = role.replace(/_/g, " ").replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+
+    var li = document.createElement("li");
+    li.className = "msg-item history-item";
+    li.setAttribute("data-history-idx", String(idx));
+    li.innerHTML =
+      '<div class="msg-time">' + (ts ? escHtml(ts.replace("T", " ").slice(0, 19)) : "<em>history</em>") + "</div>" +
+      '<div class="msg-body">' +
+        '<div class="msg-meta">' +
+          '<span class="badge badge-msg-info" style="font-size:10px;">' + escHtml(label) + "</span>" +
+          '<span class="badge badge-info history-tag">history</span>' +
+        "</div>" +
+        '<div class="msg-text">' + escHtml(content.slice(0, 300)) + (content.length > 300 ? "…" : "") + "</div>" +
+      "</div>";
+    return li;
+  }
 
 })();
 </script>

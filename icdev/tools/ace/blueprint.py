@@ -256,6 +256,7 @@ def instance_detail(instance_id: str):
     coworkers: list[dict] = []
     messages: list[dict] = []
     artifacts: list[dict] = []
+    resume_token: Optional[str] = None
     conn = None
     try:
         conn = _db()
@@ -310,6 +311,19 @@ def instance_detail(instance_id: str):
                     (instance_id,),
                 )
             )
+            # Fetch resume_token for the most recent session on this instance.
+            session_row = _one(
+                conn.execute(
+                    _q(
+                        conn,
+                        "SELECT resume_token FROM ace_sessions "
+                        "WHERE instance_id = ? ORDER BY created_at DESC LIMIT 1",
+                    ),
+                    (instance_id,),
+                )
+            )
+            if session_row:
+                resume_token = session_row.get("resume_token")
     except Exception as exc:  # noqa: BLE001
         logger.warning("ace instance_detail read failed for %s: %s", instance_id, exc)
     finally:
@@ -329,6 +343,7 @@ def instance_detail(instance_id: str):
             messages=messages,
             artifacts=artifacts,
             coworker_display=coworker_display,
+            resume_token=resume_token,
         )
     except Exception as exc:  # noqa: BLE001
         logger.info("coworker/instance.html unavailable (%s); JSON fallback", exc)
@@ -340,6 +355,58 @@ def instance_detail(instance_id: str):
                 "artifacts": artifacts,
             }
         )
+
+
+@ace_bp.route("/<instance_id>/resume")
+def instance_resume(instance_id: str):
+    """Return conversation_history for a session identified by resume_token.
+
+    GET /coworker/<id>/resume?token=<resume_token>
+    Returns JSON: {session_id, conversation_history, turn_count}
+    """
+    token = (request.args.get("token") or "").strip()
+    if not token:
+        return jsonify({"error": "token required"}), 400
+
+    conn = None
+    try:
+        conn = _db()
+        session = _one(
+            conn.execute(
+                _q(
+                    conn,
+                    "SELECT session_id, conversation_history, turn_count "
+                    "FROM ace_sessions WHERE resume_token = ? AND instance_id = ?",
+                ),
+                (token, instance_id),
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace instance_resume read failed for %s: %s", instance_id, exc)
+        return jsonify({"error": "db error"}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+    if session is None:
+        return jsonify({"error": "session not found"}), 404
+
+    history = session["conversation_history"]
+    if isinstance(history, str):
+        try:
+            history = json.loads(history)
+        except (TypeError, ValueError):
+            history = []
+    if not isinstance(history, list):
+        history = []
+
+    return jsonify(
+        {
+            "session_id": session["session_id"],
+            "conversation_history": history,
+            "turn_count": session.get("turn_count") or len(history),
+        }
+    )
 
 
 # --------------------------------------------------------------------------- #
