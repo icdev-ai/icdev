@@ -48,6 +48,11 @@ from tools.daemon.base import (  # noqa: E402
 from tools.db.storage import get_connection  # noqa: E402
 from tools.genesis.constants import TRUST_MODES  # noqa: E402
 
+try:
+    from tools.a2a.agent_client import A2AAgentClient  # noqa: E402
+except Exception:  # ImportError or requests not installed
+    A2AAgentClient = None  # type: ignore[assignment,misc]
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -192,6 +197,21 @@ class GenesisDaemon(DaemonBase):
                     last_metric_value   REAL,
                     last_error          TEXT,
                     updated_at          TEXT NOT NULL
+                );
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS agent_a2a_tasks (
+                    id              TEXT PRIMARY KEY,
+                    reflex_name     TEXT NOT NULL,
+                    skill_id        TEXT NOT NULL,
+                    agent_url       TEXT NOT NULL,
+                    task_id         TEXT NOT NULL,
+                    status          TEXT NOT NULL DEFAULT 'submitted',
+                    input_data      TEXT,
+                    result          TEXT,
+                    error           TEXT,
+                    submitted_at    TEXT NOT NULL,
+                    updated_at      TEXT NOT NULL
                 );
             """)
             conn.execute("""
@@ -373,6 +393,72 @@ class GenesisDaemon(DaemonBase):
             return False, 0.0, {"error": str(box["error"]), "stage": "reflex_execution"}
         return box.get("result", (False, 0.0, {"error": "no result from reflex thread"}))
 
+    def _record_a2a_task(
+        self,
+        reflex_name: str,
+        agent_url: str,
+        task_id: str,
+        input_data: Dict,
+        status: str = "submitted",
+        error: str = None,
+    ) -> None:
+        """Persist an A2A task submission row to agent_a2a_tasks."""
+        record_id = generate_id("a2a")
+        now = utcnow_iso()
+        conn = get_connection()
+        try:
+            conn.execute(
+                """
+                INSERT INTO agent_a2a_tasks
+                    (id, reflex_name, skill_id, agent_url, task_id, status,
+                     input_data, error, submitted_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record_id,
+                    reflex_name,
+                    reflex_name,
+                    agent_url,
+                    task_id,
+                    status,
+                    json.dumps(input_data),
+                    error,
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _submit_reflex_a2a(self, name: str, config: Dict[str, Any]) -> Tuple[bool, float, Dict]:
+        """Dispatch an a2a_eligible reflex to the configured A2A agent endpoint."""
+        if A2AAgentClient is None:
+            return False, 0.0, {"error": "A2AAgentClient unavailable (requests not installed)", "stage": "a2a_dispatch"}
+
+        a2a_cfg = self.config.get("a2a", {})
+        agent_url = a2a_cfg.get("gateway_url") or os.environ.get(
+            "ICDEV_A2A_GATEWAY_URL", "https://localhost:8443"
+        )
+
+        session_ctx: Dict[str, Any] = {
+            "reflex_name": name,
+            "reflex_config": config,
+            "daemon_version": self.daemon_version,
+        }
+
+        try:
+            client = A2AAgentClient(verify_ssl=False)
+            result = client.submit_task(skill_id=name, input_data=session_ctx, agent_url=agent_url)
+            task_id = result.get("id") or result.get("task_id", "")
+            self._record_a2a_task(name, agent_url, task_id, session_ctx, status="submitted")
+            logger.info("[GENESIS] Reflex '%s' dispatched via A2A: task_id=%s", name, task_id)
+            return True, 0.0, {"status": "a2a_submitted", "task_id": task_id, "agent_url": agent_url}
+        except Exception as exc:
+            logger.error("[GENESIS] A2A dispatch failed for reflex '%s': %s", name, exc)
+            self._record_a2a_task(name, agent_url, "", session_ctx, status="error", error=str(exc))
+            return False, 0.0, {"error": str(exc), "stage": "a2a_dispatch"}
+
     def _run_reflex_impl_inner(self, name: str, config: Dict[str, Any], trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
         """Actual reflex dispatch (wrapped by the watchdog in run_reflex_impl)."""
         risk_tier = config.get("risk_tier", RISK_GREEN)
@@ -380,6 +466,11 @@ class GenesisDaemon(DaemonBase):
         # ORANGE tier — log that human review is needed
         if trust.requires_human_approval(risk_tier):
             return True, 0.0, {"status": "awaiting_human_approval", "risk_tier": risk_tier}
+
+        # A2A fan-out: dispatch to agent network when reflex is eligible
+        a2a_cfg = self.config.get("a2a", {})
+        if a2a_cfg.get("enabled", False) and config.get("a2a_eligible", False):
+            return self._submit_reflex_a2a(name, config)
 
         try:
             module = importlib.import_module(f"tools.genesis.reflexes.{name}")
