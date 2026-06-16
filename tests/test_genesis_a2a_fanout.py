@@ -10,14 +10,10 @@ Acceptance criteria (acw-a2a-01):
 """
 from __future__ import annotations
 
-import json
 import sqlite3
-import sys
-import types
 from typing import Any, Dict
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 
 # ---------------------------------------------------------------------------

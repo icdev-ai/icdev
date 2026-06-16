@@ -423,7 +423,6 @@ class TestCoWorkerThreadBehavioralMonitor:
             lambda *args: cfg if "ace_config.yaml" in str(args) else Path(*args),
         )
 
-        from icdev.tools.ace.coworker_thread import _load_monitor_interval
 
         # Patch Path resolution directly
         with patch(

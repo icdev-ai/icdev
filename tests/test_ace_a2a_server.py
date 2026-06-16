@@ -5,7 +5,6 @@
 import sys
 import types
 
-import pytest
 
 
 def _make_server():
