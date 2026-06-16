@@ -516,13 +516,23 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
     return False
 
 
+def _get_repo_root() -> Path:
+    """Return the repository root as an absolute path, independent of cwd.
+
+    This hook lives at .claude/hooks/pre_tool_use.py, so the root is
+    three levels up.  Using __file__ (not os.getcwd()) means the hook
+    works correctly regardless of which directory Claude or CI invokes it from.
+    """
+    return Path(__file__).resolve().parent.parent.parent
+
+
 def _load_file_access_tiers():
     """Load file access tier config from args/file_access_tiers.yaml."""
     try:
         import yaml
     except ImportError:
         return None
-    config_path = Path(__file__).resolve().parent.parent.parent / "args" / "file_access_tiers.yaml"
+    config_path = _get_repo_root() / "args" / "file_access_tiers.yaml"
     if not config_path.exists():
         return None
     try:
