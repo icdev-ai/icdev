@@ -75,6 +75,12 @@ python tools/awareness/suggested_card_writer.py --write --json   # Promote predi
 python -c "from tools.genesis.reflexes.awareness import run; run({}, None)"  # Full 5-phase cycle
 # UI: http://localhost:5050/components-map (visual map) + /ask-icdev (Q&A chat)
 # Config: args/awareness_config.yaml — 3h cadence, 7 gap rules, 0.7 threshold
+
+# GEPA Optimizer — Genome Evolution Pressure Analyzer (MCP tool: gepa_optimizer)
+python tools/skills/gepa_optimizer.py --json           # Run optimization pass (prune low-fitness genome entries)
+python tools/skills/gepa_optimizer.py --dry-run --json # Scan without writing changes
+# MCP tool: gepa_optimizer  params: dry_run (bool, default false)
+#   Returns: {applied: [...], skipped: [...], errors: [...]}
 ```
 
 ### Python Dependencies
