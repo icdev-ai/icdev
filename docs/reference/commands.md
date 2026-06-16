@@ -1495,6 +1495,27 @@ python tools/skills/gepa_optimizer.py --dry-run --json                   # Scan 
 #   Thresholds: args/security_gates.yaml → loop_engineering.gepa_min_composite_score (0.60)
 #                                           loop_engineering.gepa_min_score_delta (0.05)
 
+# adversarial_verify — Multi-agent adversarial verification for loop-generated outputs
+# Spawns N independent skeptic agents, each prompted to REFUTE a finding; result survives
+# only when ≥majority agents fail to refute (default threshold: 2 of 3).
+# MCP tool: adversarial_verify
+#   Parameters: claim (str) — the finding or output to verify
+#               agents (int, default 3) — number of skeptic agents to spawn
+#               threshold (int, default 2) — minimum non-refuting votes to pass
+#               context (str, optional) — supporting context injected into each skeptic prompt
+#   Returns:    {survives: bool, votes: int, refuted: int, rationale: str}
+#   Handler:    tools/mcp/gap_handlers.py::get_adversarial_verify_handler
+# CLI usage (single finding):
+python tools/skills/adversarial_verify.py --claim "Finding text here" --agents 3 --json
+python tools/skills/adversarial_verify.py --claim "Finding text here" --threshold 2 --json
+python tools/skills/adversarial_verify.py --dry-run --json                              # Preview skeptic prompts without spawning agents
+# Batch verify (read findings from a JSONL file, one claim per line):
+python tools/skills/adversarial_verify.py --batch .tmp/findings.jsonl --json
+# Integration: call from workflow scripts via agent() inside pipeline()/parallel() stages
+#   const votes = await parallel(Array.from({length: 3}, () => () =>
+#     agent(`Try to refute: ${claim}`, {schema: VERDICT})))
+#   const survives = votes.filter(Boolean).filter(v => !v.refuted).length >= 2
+
 # Cloud-Agnostic Architecture (Phase 38)
 # Cloud Mode Manager (D232)
 python tools/cloud/cloud_mode_manager.py --status --json                                               # Current cloud mode and config
