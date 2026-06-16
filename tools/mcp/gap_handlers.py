@@ -2166,3 +2166,31 @@ def handle_foundry_status(args: dict) -> dict:
     except Exception as exc:
         logger.warning("handle_foundry_status: %s", exc)
         return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# GEPA Optimizer (gepa-mcp-01)
+# ---------------------------------------------------------------------------
+
+
+def get_gepa_optimizer_handler(args: dict) -> dict:
+    """Run the GEPA optimization pass via tools.skills.gepa_optimizer.run().
+
+    Scans the capability genome registry for low-fitness entries and applies
+    pruning / promotion passes.  With dry_run=True the full scan runs but no
+    DB writes are committed.
+
+    Returns:
+        dict with keys:
+            applied  – list of optimization actions actually applied.
+            skipped  – list of candidates skipped (dry_run or low confidence).
+            errors   – list of error messages encountered during the pass.
+    """
+    try:
+        from tools.skills.gepa_optimizer import run
+
+        dry_run = bool(args.get("dry_run", False))
+        return run(dry_run=dry_run)
+    except Exception as exc:
+        logger.warning("get_gepa_optimizer_handler: %s", exc)
+        return {"applied": [], "skipped": [], "errors": [str(exc)]}
