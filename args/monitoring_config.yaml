@@ -149,6 +149,10 @@ heartbeat:
     review_board_health:
       enabled: true
       interval_seconds: 1800
+    kanban_stale:
+      enabled: true
+      interval_seconds: 300
+      stale_threshold_minutes: 5
 
 # Push-Based Metrics Sidecar (Coolify Sentinel)
 push_agent:

@@ -143,6 +143,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "enabled": True,
             "interval_seconds": 3600,
         },
+        "kanban_stale": {
+            "enabled": True,
+            "interval_seconds": 300,
+            "stale_threshold_minutes": 5,
+        },
     },
 }
 
@@ -568,6 +573,110 @@ def check_review_board_health(
 
 
 # ---------------------------------------------------------------------------
+# Kanban stale-scheduler check + wakeup (acw-sched-02)
+# ---------------------------------------------------------------------------
+def _trigger_kanban_wakeup(db_path: Optional[Path] = None) -> str:  # noqa: ARG001
+    """POST to /api/genesis/reflex/kanban to wake the kanban scheduler.
+
+    Falls back to importing and calling the reflex run() directly when the
+    dashboard is unreachable.  Returns a short status string.
+    """
+    import os as _os
+
+    dash_port = _os.environ.get("ICDEV_DASHBOARD_PORT", "5050")
+    try:
+        payload = json.dumps({"force": False}).encode("utf-8")
+        req = urllib.request.Request(
+            f"http://localhost:{dash_port}/api/genesis/reflex/kanban",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=5)  # noqa: S310  # nosec B310 -- internal configured endpoint
+        return "triggered_via_api"
+    except (urllib.error.URLError, OSError, ValueError):
+        pass
+
+    # Fallback: call run() directly in-process
+    try:
+        from tools.genesis.reflexes.kanban import run as _kanban_run  # type: ignore[import-untyped]
+
+        _kanban_run({}, None)
+        return "triggered_direct"
+    except Exception as exc:
+        return f"wakeup_failed: {exc}"
+
+
+def check_kanban_stale(
+    config: Optional[dict] = None,
+    db_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Detect a stale kanban reflex and trigger a wakeup if overdue.
+
+    Queries genesis_reflex_state for reflex_name='kanban'.  When last_run_at
+    is older than stale_threshold_minutes (default 5), the check fires a wakeup
+    via POST /api/genesis/reflex/kanban (falling back to a direct import call)
+    and returns status='warning' so the notification fan-out alerts operators.
+    """
+    stale_minutes = 5
+    if config and isinstance(config, dict):
+        stale_minutes = config.get("stale_threshold_minutes", stale_minutes)
+
+    try:
+        conn = _get_connection(db_path)
+        try:
+            row = conn.execute(
+                """SELECT reflex_name, last_run_at, enabled, circuit_breaker_open
+                   FROM genesis_reflex_state
+                   WHERE reflex_name = 'kanban'"""
+            ).fetchone()
+        finally:
+            conn.close()
+    except Exception as exc:
+        return {"status": "ok", "count": 0, "items": [], "note": f"genesis_reflex_state unavailable: {exc}"}
+
+    if row is None:
+        return {"status": "ok", "count": 0, "items": [], "note": "kanban reflex state not seeded yet"}
+
+    row_dict = dict(row) if hasattr(row, "keys") else {
+        "reflex_name": row[0],
+        "last_run_at": row[1],
+        "enabled": row[2],
+        "circuit_breaker_open": row[3],
+    }
+
+    if not row_dict.get("enabled", 1) or row_dict.get("circuit_breaker_open", 0):
+        return {"status": "ok", "count": 0, "items": [], "note": "kanban reflex disabled or circuit breaker open"}
+
+    last_run_at = row_dict.get("last_run_at")
+    if last_run_at is None:
+        return {"status": "ok", "count": 0, "items": [], "note": "kanban reflex has never run"}
+
+    try:
+        last_dt = datetime.fromisoformat(last_run_at)
+        if last_dt.tzinfo is None:
+            last_dt = last_dt.replace(tzinfo=timezone.utc)
+        elapsed_minutes = (datetime.now(timezone.utc) - last_dt).total_seconds() / 60
+    except (ValueError, TypeError) as exc:
+        return {"status": "ok", "count": 0, "items": [], "note": f"could not parse last_run_at: {exc}"}
+
+    if elapsed_minutes < stale_minutes:
+        return {"status": "ok", "count": 0, "items": []}
+
+    wakeup = _trigger_kanban_wakeup(db_path=db_path)
+    return {
+        "status": "warning",
+        "count": 1,
+        "items": [{
+            "reflex": "kanban",
+            "last_run_at": last_run_at,
+            "elapsed_minutes": round(elapsed_minutes, 1),
+            "wakeup": wakeup,
+        }],
+    }
+
+
+# ---------------------------------------------------------------------------
 # Check registry
 # ---------------------------------------------------------------------------
 CHECK_REGISTRY: Dict[str, Callable] = {
@@ -580,6 +689,7 @@ CHECK_REGISTRY: Dict[str, Callable] = {
     "memory_maintenance": check_memory_maintenance,
     "coherence_health": check_coherence_health,
     "review_board_health": check_review_board_health,
+    "kanban_stale": check_kanban_stale,
 }
 
 
