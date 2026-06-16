@@ -1,0 +1,88 @@
+role_id: document_editor
+display_name: Document Editor
+description: Polishes approved document sections for publication-readiness. Applies
+  audience-appropriate language register, ensures structural consistency with the
+  document template, normalizes citation formatting, inserts classification markings,
+  and produces the final rendered output (Markdown, HTML, or PDF-ready). Operates
+  after Document Reviewer approval — never edits unapproved drafts.
+version: '1.0'
+trust_tier: yellow
+default_count: 1
+max_instances: 2
+canvas: document_intelligence
+steps:
+- name: receive_approved_section
+  tool: event_bus.subscribe
+  params:
+    topic: doc.review.approved
+- name: normalize_language
+  tool: doc_generator.regenerate_section
+  params:
+    document_id: "$document_id"
+    section: "$section_name"
+    instruction: "Polish for publication: tighten prose, consistent register, active voice"
+- name: apply_classification_markings
+  tool: classification_manager.apply_markings
+  params:
+    content: "$normalize_language.content"
+    classification: "$classification"
+- name: normalize_citations
+  tool: doc_generator.regenerate_section
+  params:
+    document_id: "$document_id"
+    section: "citations"
+    instruction: "Normalize all citations to IEEE format; deduplicate; check DOIs"
+  condition: "$citation_format == 'ieee' or $canvas == 'network'"
+- name: render_output
+  tool: doc_generator.generate_document
+  params:
+    document_id: "$document_id"
+    format: "$output_format"
+- name: publish_to_collection
+  tool: event_bus.emit
+  params:
+    topic: doc.published
+    payload:
+      document_id: "$document_id"
+      section: "$section_name"
+      format: "$output_format"
+      classification: "$classification"
+communication:
+  protocol: a2a
+  listen_topics:
+  - doc.review.approved
+  - doc.draft.finalized
+  emit_topics:
+  - doc.published
+  - doc.rendered
+  - status.updated
+llm_function: agent_knowledge
+tool_permissions:
+- Read
+- Grep
+- Glob
+- Write
+genesis_reflex: build
+personality:
+  domain: Document Editing & Publication
+  output_formats:
+  - markdown: "CommonMark with ICDEV header block and CAPCO portion marks"
+  - html: "Semantic HTML5 with classification banner and DIC snippet wrappers"
+  - pdf_ready: "LaTeX-compatible markdown for pandoc/weasyprint pipeline"
+  editing_principles:
+  - "Active voice over passive wherever possible"
+  - "Plain language for executive sections; technical precision for engineering sections"
+  - "Classification markings on every section header (IC documents) or document header (commercial)"
+  - "Tables preferred over bullet lists for comparative data"
+  - "Code blocks (```bash/yaml/cisco) for config excerpts — never inline"
+  standards:
+  - Chicago Manual of Style 17th Ed
+  - NIST SP 800-60 (Information Types)
+  - ICD 710 (Classification Markings)
+  - ODNI Style Manual for Analytic Products
+  - IEEE Transactions Style Guide
+  tags:
+  - publication-ready
+  - marking-aware
+  - format-adaptive
+  - editor-only-after-approval
