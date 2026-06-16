@@ -1551,8 +1551,12 @@ python tools/workflow/process_verifier.py --check --project-id "proj-123" --loop
 #             adversarial review before the result is persisted.
 #   Security: The reviewer subprocess is NOT granted --dangerously-allow-filesystem write
 #             access or network egress. Re-scope to sandboxed executor if either is added.
-#   Set via SQL / kanban CLI:
-#     python tools/kanban/cli.py --set-field loop-reg-02-d4-d2 adversarial_enabled 1
+#   Set via task_factory (preferred) or kanban CLI:
+#     # task_factory: pass adversarial_enabled=True (and loop_type) when seeding tasks
+#     from tools.kanban.task_factory import create_tasks
+#     create_tasks([{"title": "...", "loop_type": "non_deterministic", "adversarial_enabled": True}])
+#     # CLI fallback:
+#     python tools/kanban/cli.py --set-field <task-id> adversarial_enabled 1
 
 # Cloud-Agnostic Architecture (Phase 38)
 # Cloud Mode Manager (D232)
