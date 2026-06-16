@@ -101,10 +101,14 @@ class ACEController:
         trigger_ref: str,
         user_id: str = "system",
         project_id: str = "",
+        webhook_url: str = "",
     ) -> str:
         """Launch an ACE run non-blocking.  Returns instance_id immediately."""
         instance_id = f"ace-{uuid.uuid4().hex[:12]}"
-        self._executor.submit(self._run, instance_id, problem_text, trigger_source, trigger_ref, user_id, project_id)
+        self._executor.submit(
+            self._run,
+            instance_id, problem_text, trigger_source, trigger_ref, user_id, project_id, webhook_url,
+        )
         return instance_id
 
     def status(self, instance_id: str) -> dict[str, Any]:
@@ -176,6 +180,7 @@ class ACEController:
         trigger_ref: str,
         user_id: str,
         project_id: str,
+        webhook_url: str = "",
     ) -> None:
         """Full orchestration pipeline executed in ThreadPoolExecutor."""
         self._emit_sse(instance_id, "assembling", "Classifying problem")
@@ -200,6 +205,9 @@ class ACEController:
             assembler = TeamAssembler()
             team = assembler.assemble(manifest, instance_id, context)
             logger.info("ACE %s: assembled %d coworker(s)", instance_id, len(team.specs))
+
+            if webhook_url:
+                self._persist_webhook_url(instance_id, webhook_url)
 
             self._set_instance_state(instance_id, "active")
             self._emit_sse(instance_id, "active", f"Team assembled ({len(team.specs)} coworkers)")
@@ -239,6 +247,8 @@ class ACEController:
             self._finalize_instance(instance_id)
             self._emit_sse(instance_id, "complete", "All coworkers finished")
             self._emit_task_completed(instance_id)
+            if webhook_url:
+                self._deliver_webhook(instance_id, webhook_url)
             logger.info("ACE %s: complete", instance_id)
 
         except Exception as exc:
@@ -361,6 +371,44 @@ class ACEController:
             )
         except Exception:
             pass  # event publish is best-effort; never crash the run
+
+    @staticmethod
+    def _persist_webhook_url(instance_id: str, webhook_url: str) -> None:
+        """Store webhook_url on the ace_instances row (best-effort)."""
+        try:
+            from icdev.tools.db.storage import get_canvas_connection
+
+            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            conn = get_canvas_connection(_DB_ENV)
+            try:
+                conn.execute(
+                    "UPDATE ace_instances SET webhook_url = ?, updated_at = ? WHERE id = ?",
+                    (webhook_url, now, instance_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as exc:
+            logger.debug("_persist_webhook_url(%s) failed: %s", instance_id, exc)
+
+    @staticmethod
+    def _deliver_webhook(instance_id: str, webhook_url: str) -> None:
+        """POST completion payload to webhook_url (best-effort)."""
+        try:
+            from icdev.tools.ace.webhook import deliver
+
+            payload = {
+                "event": "ace.instance.complete",
+                "instance_id": instance_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            }
+            result = deliver(instance_id, webhook_url, payload)
+            logger.info(
+                "ACE %s: webhook delivered status=%s attempts=%d",
+                instance_id, result.get("status_code"), result.get("attempt_count"),
+            )
+        except Exception as exc:
+            logger.debug("_deliver_webhook(%s) failed: %s", instance_id, exc)
 
 
 # ---------------------------------------------------------------------------
