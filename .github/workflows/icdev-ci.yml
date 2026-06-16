@@ -53,6 +53,7 @@ jobs:
             tests/test_session_context_builder.py \
             tests/test_code_analyzer.py \
             tests/test_pgp_tx02_json_portability.py \
+            tests/test_knowledge_search_route.py \
             -v --tb=short -x
 
   # ── Tier 1: Security Scan (pure Python — no LLM) ────────────────────────
