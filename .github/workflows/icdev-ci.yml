@@ -223,6 +223,7 @@ jobs:
       ICDEV_MISSION_CANVAS_ENABLED: "true"
       ICDEV_OPS_HUB_ENABLED: "true"
       ICDEV_AIML_CANVAS_ENABLED: "true"
+      ICDEV_AISG_ENABLED: "true"
       # Network canvas disabled in E2E until PGP migration resolves shared-DB
       # table collisions (simulation_results/topologies schema mismatch).
       ICDEV_NDC_ENABLED: "false"

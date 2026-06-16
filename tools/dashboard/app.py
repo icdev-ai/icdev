@@ -170,7 +170,7 @@ _CANVAS_DEFS = [
     ("logs", "ICDEV_LOGS_ENABLED", "tools.logging.blueprint", "create_logs_blueprint"),
 ]
 
-_CANVAS_DEFAULTS_TRUE = {"ndc", "sdc", "aimc", "mission_canvas", "ohc", "integrity", "logs"}
+_CANVAS_DEFAULTS_TRUE = {"ndc", "sdc", "aimc", "mission_canvas", "ohc", "integrity", "logs", "aisg"}
 
 for _key, _env, _mod, _attr in _CANVAS_DEFS:
     _default = "true" if _key in _CANVAS_DEFAULTS_TRUE else "false"
