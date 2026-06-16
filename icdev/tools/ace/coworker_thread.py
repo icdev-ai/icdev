@@ -10,7 +10,9 @@ import json
 import logging
 import threading
 import time
+import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from icdev.tools.ace.message_bus import MessageBus
@@ -26,6 +28,20 @@ logger = logging.getLogger("icdev.ace.coworker_thread")
 
 _DB_ENV = "ICDEV_ACE_DB_URL"
 _HITL_POLL_INTERVAL = 2.0  # seconds between HITL resolution checks
+_DEFAULT_MONITOR_INTERVAL = 10  # steps between behavioral compliance checks
+
+
+def _load_monitor_interval() -> int:
+    """Read monitor_interval from args/ace/ace_config.yaml; default 10."""
+    try:
+        import yaml
+
+        cfg_path = Path(__file__).parents[4] / "args" / "ace" / "ace_config.yaml"
+        with open(cfg_path, encoding="utf-8") as fh:
+            cfg = yaml.safe_load(fh) or {}
+        return int(cfg.get("monitor_interval", _DEFAULT_MONITOR_INTERVAL))
+    except Exception:
+        return _DEFAULT_MONITOR_INTERVAL
 
 
 # ---------------------------------------------------------------------------
@@ -135,6 +151,7 @@ class CoWorkerThread(threading.Thread):
         instance_id: str,
         message_bus: MessageBus,
         trust_kernel: Any,
+        monitor_interval: int | None = None,
     ) -> None:
         super().__init__(name=f"ace-cw-{spec.coworker_id}", daemon=True)
         self.spec = spec
@@ -143,6 +160,10 @@ class CoWorkerThread(threading.Thread):
         self.trust_kernel = trust_kernel
         self._context: dict[str, Any] = {"instance_id": instance_id}
         self._stop_event = threading.Event()
+        self._step_count = 0
+        self._monitor_interval: int = (
+            monitor_interval if monitor_interval is not None else _load_monitor_interval()
+        )
 
     # ------------------------------------------------------------------
     # Public
@@ -210,6 +231,14 @@ class CoWorkerThread(threading.Thread):
                         return  # stop signalled during HITL wait
                 else:
                     self._audit("step_failed_optional", f"step={step.get('id')} reason={exc}")
+                continue
+
+            # 6. Behavioral compliance check every monitor_interval steps
+            self._step_count += 1
+            if self._monitor_interval > 0 and self._step_count % self._monitor_interval == 0:
+                step_text = str(result) if result is not None else ""
+                if self._check_behavioral_compliance(step_text, role):
+                    return  # instance paused to hitl_pending
 
         # 6. Broadcast completion and update state
         try:
@@ -317,6 +346,113 @@ class CoWorkerThread(threading.Thread):
 
         self._set_state("working")
         return True
+
+    # ------------------------------------------------------------------
+    # Behavioral compliance monitoring
+    # ------------------------------------------------------------------
+
+    def _check_behavioral_compliance(self, step_output: str, role: Any) -> bool:
+        """Run Mode B reconciliation on step output; trigger HITL if dangerous.
+
+        Returns True when HITL was triggered (caller should stop the thread).
+        """
+        try:
+            from tools.integrity.intent_reconciler import reconcile_mode_b
+
+            claimed = list(getattr(role, "tool_permissions", []) or [])
+            findings = reconcile_mode_b(step_output, claimed)
+            dangerous = [
+                f for f in findings
+                if f.get("finding_type") in ("undisclosed_capability", "dangerous_api")
+            ]
+            if dangerous:
+                self._trigger_compliance_hitl(dangerous)
+                return True
+        except Exception as exc:
+            logger.warning(
+                "behavioral_monitor: reconcile failed for %s: %s",
+                self.spec.coworker_id,
+                exc,
+            )
+        return False
+
+    def _trigger_compliance_hitl(self, findings: list[dict]) -> None:
+        """Pause instance to hitl_pending, emit compliance event, create kanban card."""
+        self._set_state("hitl_pending")
+        self._audit("compliance_gap_found", f"findings_count={len(findings)}")
+        logger.warning(
+            "behavioral_monitor: %d compliance finding(s) for coworker=%s — entering hitl_pending",
+            len(findings),
+            self.spec.coworker_id,
+        )
+        self._emit_compliance_event(findings)
+        self._create_hitl_kanban_card(findings)
+        self._stop_event.set()
+
+    def _emit_compliance_event(self, findings: list[dict]) -> None:
+        """Publish compliance.gap.found to the canvas event bus (best-effort)."""
+        try:
+            from icdev.tools.canvas.event_bus import publish
+
+            publish(
+                source_canvas="ace",
+                event_type="compliance.gap.found",
+                payload_dict={
+                    "topic": "compliance.gap.found",
+                    "instance_id": self.instance_id,
+                    "coworker_id": self.spec.coworker_id,
+                    "findings_count": len(findings),
+                    "finding_types": sorted({f.get("finding_type") for f in findings}),
+                },
+                target_canvas="ace",
+            )
+        except Exception as exc:
+            logger.warning(
+                "behavioral_monitor: event publish failed for %s: %s",
+                self.spec.coworker_id,
+                exc,
+            )
+
+    def _create_hitl_kanban_card(self, findings: list[dict]) -> None:
+        """Insert a backlog HITL kanban task for human review (best-effort)."""
+        try:
+            from icdev.tools.db.storage import get_connection
+
+            now = datetime.now(timezone.utc).isoformat()
+            card_id = f"ace-hitl-{self.spec.coworker_id[:8]}-{uuid.uuid4().hex[:6]}"
+            summary = "; ".join(
+                f"{f.get('finding_type')}({f.get('severity', '?')})" for f in findings[:3]
+            )
+            conn = get_connection()
+            try:
+                conn.execute(
+                    "INSERT INTO kanban_tasks "
+                    "(id, title, description, task_type, priority, status, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        card_id,
+                        f"HITL Review: ACE compliance gap — {self.spec.coworker_id}",
+                        (
+                            f"Behavioral monitor detected a compliance gap in ACE instance "
+                            f"'{self.instance_id}' coworker '{self.spec.coworker_id}'.\n"
+                            f"Findings: {summary}"
+                        ),
+                        "hitl",
+                        "high",
+                        "backlog",
+                        now,
+                        now,
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as exc:
+            logger.warning(
+                "behavioral_monitor: kanban card creation failed for %s: %s",
+                self.spec.coworker_id,
+                exc,
+            )
 
     # ------------------------------------------------------------------
     # DB helpers
