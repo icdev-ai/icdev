@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -29,6 +30,36 @@ logger = logging.getLogger("icdev.ace.controller")
 
 _DB_ENV = "ICDEV_ACE_DB_URL"
 _MAX_WORKERS = 16  # max concurrent CoWorkerThreads across all instances
+_MEMORY_CAP = 50   # max ace_coworker_memory rows per role
+
+# Patterns that identify decision/outcome/lesson sentences worth persisting
+_FACT_RE = re.compile(
+    r"\b(decided|chose|selected|will use|going with|adopted|implemented|"
+    r"completed|finished|produced|output|result|learned|lesson|should|avoid|"
+    r"fixed|resolved|issue|error|note:|important:|key:)\b",
+    re.IGNORECASE,
+)
+
+
+def _extract_facts(content_md: str, max_facts: int = 10) -> list[str]:
+    """Return up to *max_facts* key sentences from *content_md* via pattern match.
+
+    Prefers lines that contain decision/outcome/lesson keywords; falls back to
+    the first substantial sentences if none match.
+    """
+    candidates: list[str] = []
+    for line in content_md.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or line.startswith("```") or line.startswith("|"):
+            continue
+        clean = re.sub(r"^[-*+]\s+", "", line)
+        clean = re.sub(r"^\d+\.\s+", "", clean)
+        if 20 <= len(clean) <= 500:
+            candidates.append(clean)
+
+    keyword_hits = [c for c in candidates if _FACT_RE.search(c)]
+    selected = keyword_hits if keyword_hits else candidates
+    return selected[:max_facts]
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +236,7 @@ class ACEController:
                 t.join()
 
             self._set_instance_state(instance_id, "complete")
+            self._finalize_instance(instance_id)
             self._emit_sse(instance_id, "complete", "All coworkers finished")
             self._emit_task_completed(instance_id)
             logger.info("ACE %s: complete", instance_id)
@@ -216,6 +248,67 @@ class ACEController:
         finally:
             with self._threads_lock:
                 self._threads.pop(instance_id, None)
+
+    def _finalize_instance(self, instance_id: str) -> None:
+        """Extract facts from the final artifact and persist to ace_coworker_memory (best-effort)."""
+        try:
+            from icdev.tools.db.storage import get_canvas_connection, get_connection
+
+            # --- read artifact + role from ACE canvas DB ---
+            ace_conn = get_canvas_connection(_DB_ENV)
+            try:
+                inst_row = ace_conn.execute(
+                    "SELECT role_id FROM ace_instances WHERE id = ?", (instance_id,)
+                ).fetchone()
+                if not inst_row:
+                    return
+                role_id = inst_row[0] or "unknown"
+
+                art_row = ace_conn.execute(
+                    "SELECT content_md FROM ace_artifacts"
+                    " WHERE instance_id = ? ORDER BY created_at DESC LIMIT 1",
+                    (instance_id,),
+                ).fetchone()
+            finally:
+                ace_conn.close()
+
+            if not art_row or not art_row[0]:
+                return
+
+            facts = _extract_facts(art_row[0])
+            if not facts:
+                return
+
+            # --- write to NOVA DB (ace_coworker_memory) ---
+            nova_conn = get_connection()
+            try:
+                now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                for fact in facts:
+                    nova_conn.execute(
+                        "INSERT INTO ace_coworker_memory"
+                        " (id, role_id, fact_type, content, confidence, source_task_id, created_at)"
+                        " VALUES (?, ?, 'outcome', ?, 0.8, ?, ?)",
+                        (uuid.uuid4().hex, role_id, fact, instance_id, now),
+                    )
+                # Cap at _MEMORY_CAP rows per role — delete oldest by created_at
+                nova_conn.execute(
+                    "DELETE FROM ace_coworker_memory"
+                    " WHERE role_id = ? AND id NOT IN ("
+                    "   SELECT id FROM ace_coworker_memory"
+                    "   WHERE role_id = ? ORDER BY created_at DESC LIMIT ?"
+                    ")",
+                    (role_id, role_id, _MEMORY_CAP),
+                )
+                nova_conn.commit()
+            finally:
+                nova_conn.close()
+
+            logger.info(
+                "ACE %s: persisted %d memory fact(s) for role '%s'",
+                instance_id, len(facts), role_id,
+            )
+        except Exception as exc:
+            logger.debug("_finalize_instance(%s) failed: %s", instance_id, exc)
 
     def _set_instance_state(self, instance_id: str, state: str) -> None:
         """Update ace_instances.state (best-effort)."""
