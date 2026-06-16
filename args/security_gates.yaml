@@ -1502,6 +1502,15 @@ ontology:
     closure_max_age_days: 7
     require_external_mappings_current: true
 
+# Adversarial Verify Loop Gate (loop-eng — D-LOOP-1 through D-LOOP-3)
+# Governs the second-pass Claude CLI session that reviews completed kanban work.
+# fail_open: true means a timeout or unreachable reviewer does NOT block the task.
+loop_engineering:
+  adversarial_verify_timeout_seconds: 180
+  adversarial_verify_fail_open: true
+  gepa_min_composite_score: 0.60
+  gepa_min_score_delta: 0.05
+
 # Named security gate registry — structured entries consumed by mcp_scanner and gate dispatcher
 gates:
   - id: AI-TRACE-001
