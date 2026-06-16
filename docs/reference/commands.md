@@ -1516,6 +1516,44 @@ python tools/skills/adversarial_verify.py --batch .tmp/findings.jsonl --json
 #     agent(`Try to refute: ${claim}`, {schema: VERDICT})))
 #   const survives = votes.filter(Boolean).filter(v => !v.refuted).length >= 2
 
+# --- Loop Engineering Parameters ---
+#
+# loop_type — Classifies the intent of a workflow loop; gates which required processes
+#             the process verifier enforces for that loop (see args/workflow_loop_config.yaml).
+#   Column:   workflow_loops.loop_type  (TEXT, DEFAULT 'build')
+#   CLI arg:  --loop-type <value>  (tools/workflow/loop_engine.py --create)
+#   Valid values:
+#     'build'      — Standard feature/implementation loop (default). Enforces security scan,
+#                    tests, CUI marking, and compliance check.
+#     'compliance' — Compliance-only loop (policy updates, ATO artifacts). Enforces compliance
+#                    check and CUI marking; security scan is advisory.
+#     'deploy'     — Deployment and release loop. Enforces health check and smoke tests.
+#     'fix'        — Bug-fix / hotfix loop. Enforces tests and security scan.
+#     'research'   — Research / discovery loop (no deploy gate). No process enforcement;
+#                    outputs are informational only.
+#     'custom'     — User-defined loop. Required processes are caller-specified via
+#                    --boundaries; process verifier skips default enforcement.
+#   Example:
+python tools/workflow/loop_engine.py --create --project-id "proj-123" --phase "integrate" --loop-type fix --json
+python tools/workflow/process_verifier.py --check --project-id "proj-123" --loop-type build --json
+#
+# adversarial_enabled — Per-task flag that opts a kanban task into the adversarial gate.
+#   Column:   kanban_tasks.adversarial_enabled  (INTEGER, DEFAULT 0; 0=off, 1=on)
+#   Scope:    Applies only to kanban task dispatch, not to generic workflow loops.
+#   Behavior: When adversarial_enabled=1, the kanban scheduler spawns a second Claude CLI
+#             subprocess in review-only mode (--max-turns 10) inside a git worktree. The
+#             subprocess reads the task title and description (truncated to 1 200 chars) and
+#             must emit 'APPROVED:' or 'REJECTED:' on its last non-empty line. Any failure
+#             (timeout after 180 s, non-zero exit, unrecognised output) is treated as APPROVED
+#             so the gate is never permanently blocking.
+#   Pairing:  Conventionally used together with loop_type='non_deterministic' tasks — those
+#             whose outputs are non-reproducible and therefore benefit from an independent
+#             adversarial review before the result is persisted.
+#   Security: The reviewer subprocess is NOT granted --dangerously-allow-filesystem write
+#             access or network egress. Re-scope to sandboxed executor if either is added.
+#   Set via SQL / kanban CLI:
+#     python tools/kanban/cli.py --set-field loop-reg-02-d4-d2 adversarial_enabled 1
+
 # Cloud-Agnostic Architecture (Phase 38)
 # Cloud Mode Manager (D232)
 python tools/cloud/cloud_mode_manager.py --status --json                                               # Current cloud mode and config
