@@ -1387,6 +1387,19 @@ CREATE TABLE IF NOT EXISTS entitlements (
     tenant_id       TEXT,
     UNIQUE (principal_id, entitlement, tenant_id)
 );
+CREATE TABLE IF NOT EXISTS agent_a2a_tasks (
+    id              TEXT PRIMARY KEY,
+    reflex_name     TEXT NOT NULL,
+    skill_id        TEXT NOT NULL,
+    agent_url       TEXT NOT NULL,
+    task_id         TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'submitted',
+    input_data      TEXT,
+    result          TEXT,
+    error           TEXT,
+    submitted_at    TEXT NOT NULL,
+    updated_at      TEXT NOT NULL
+);
 """
 
 

@@ -24,6 +24,17 @@ defaults:
   stub_loc_min: 10
   stub_loc_full: 15
 
+# ── A2A Fan-Out ──────────────────────────────────────────────────────────────
+# When enabled, reflexes tagged `a2a_eligible: true` are dispatched to an
+# A2A agent endpoint instead of running inline.  This enables horizontal
+# scaling across multiple daemon processes.
+#
+# Override gateway URL via env: ICDEV_A2A_GATEWAY_URL
+
+a2a:
+  enabled: false          # flip to true once A2A agent network is operational
+  gateway_url: "https://localhost:8443"   # Core Orchestrator agent
+
 # ── Master Switch ────────────────────────────────────────────────────────────
 
 enabled: true  # D-GEN-9: enabled for persistent daemon
@@ -150,6 +161,7 @@ reflexes:
     timeout_seconds: 90   # network fetch — cut hangs fast so the loop proceeds
     enabled: true
     risk_tier: green
+    a2a_eligible: true    # stateless network fetch — safe to distribute
     schedule: "every 6h"
     description: "Scrape NIST/CISA/DoD feeds, SAM.gov, GitHub trending"
     success_metric:
@@ -174,6 +186,7 @@ reflexes:
     timeout_seconds: 90   # network fetch — cut hangs fast so the loop proceeds
     enabled: true
     risk_tier: green
+    a2a_eligible: true    # stateless competitor scan — safe to distribute
     schedule: "daily 10:30"
     description: "Monitor competitor/adjacent GitHub repos for intel"
     success_metric:
@@ -185,6 +198,7 @@ reflexes:
   audit:
     enabled: true
     risk_tier: green
+    a2a_eligible: true    # read-only self-audit — safe to distribute
     schedule: "daily 09:15"
     description: "Self-audit: code quality, security, compliance, STIG, SbD"
     success_metric:
@@ -708,6 +722,7 @@ reflexes:
   oracle:
     enabled: true
     risk_tier: green
+    a2a_eligible: true    # multi-lens analytics — safe to distribute
     schedule: "daily 08:00"
     description: "Multi-lens predictive intelligence — trends, risks, opportunities, horizon, compliance, knowledge gaps"
     success_metric:
@@ -730,6 +745,7 @@ reflexes:
     timeout_seconds: 900   # heavy reflex — needs > default 300s
     enabled: true
     risk_tier: green
+    a2a_eligible: true    # component indexing is read-heavy — safe to distribute
     schedule: "every 3h"
     interval_seconds: 10800  # 3 hours — user-approved cadence
     cooldown_minutes: 60     # Minimum gap between consecutive cycles
