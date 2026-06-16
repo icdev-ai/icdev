@@ -117,13 +117,14 @@ AI orchestrates; deterministic tools execute.
 5. **Launch** — refactor, security scan, compliance map, merge
 
 ### Multi-Agent System
-15 agents across 3 tiers communicate via A2A protocol (JSON-RPC 2.0 over mutual TLS).
+16 agents across 4 tiers communicate via A2A protocol (JSON-RPC 2.0 over mutual TLS).
 
 | Tier | Agents | Port Range |
 |------|--------|------------|
 | Core | Orchestrator, Architect | 8443–8444 |
 | Domain | Builder, Compliance, Security, Infrastructure, MBSE, Modernization, Requirements, Supply Chain, Simulation, DevSecOps & ZTA, Gateway | 8445–8458 |
 | Support | Knowledge, Monitor | 8449–8450 |
+| Application | ACE Co-Worker Engine | 8460 |
 
 Claude Code interacts with agents through MCP servers using stdio transport.
 
