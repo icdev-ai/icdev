@@ -206,6 +206,7 @@ class ACEController:
 
             self._set_instance_state(instance_id, "complete")
             self._emit_sse(instance_id, "complete", "All coworkers finished")
+            self._emit_task_completed(instance_id)
             logger.info("ACE %s: complete", instance_id)
 
         except Exception as exc:
@@ -252,6 +253,21 @@ class ACEController:
             )
         except Exception:
             pass  # SSE is best-effort; never crash the run
+
+    @staticmethod
+    def _emit_task_completed(instance_id: str) -> None:
+        """Publish task.completed to nova canvas so reflexion_loop can react (best-effort)."""
+        try:
+            from icdev.tools.canvas.event_bus import publish
+
+            publish(
+                source_canvas="ace",
+                event_type="task.completed",
+                payload_dict={"trigger": "instance_complete", "instance_id": instance_id},
+                target_canvas="nova",
+            )
+        except Exception:
+            pass  # event publish is best-effort; never crash the run
 
 
 # ---------------------------------------------------------------------------
