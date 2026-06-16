@@ -4,6 +4,46 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: loop
+  name: Loop Project
+  description: Auto-registered project for tasks with prefix 'loop-'. Update name
+    and description to reflect the project purpose.
+  task_prefix: loop-
+  default_open: true
+  briefs: []
+  epics:
+  - key: reg
+    title: REG
+    priority: medium
+- key: acw
+  name: Acw Project
+  description: Auto-registered project for tasks with prefix 'acw-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: acw-
+  default_open: true
+  briefs: []
+  epics:
+  - key: a2a
+    title: A2A
+    priority: medium
+  - key: conv
+    title: CONV
+    priority: medium
+  - key: ctx
+    title: CTX
+    priority: medium
+  - key: evt
+    title: EVT
+    priority: medium
+  - key: heal
+    title: HEAL
+    priority: medium
+  - key: nova
+    title: NOVA
+    priority: medium
+  - key: sched
+    title: SCHED
+    priority: medium
 - key: nmce
   name: Nmce Project
   description: Auto-registered project for tasks with prefix 'nmce-'. Update name
@@ -5728,11 +5768,11 @@ projects:
     title: V&V — icdev mirror + Playwright verification
     priority: high
 - key: adapt
-  name: "External Repo Adaptation"
-  description: "Adapt 8 scouted GitHub repos into ICDEV engines: Taste Skill (design
+  name: External Repo Adaptation
+  description: 'Adapt 8 scouted GitHub repos into ICDEV engines: Taste Skill (design
     hardprompts), MarkItDown (DIC multi-format), last30days (social trend scanner),
-    Tolaria (air-gap vault), Hermes (FTS5 memory), Headroom (LLM compression),
-    Agent Reach (platform connectors), iii (A2A discovery registry). 39 tasks."
+    Tolaria (air-gap vault), Hermes (FTS5 memory), Headroom (LLM compression), Agent
+    Reach (platform connectors), iii (A2A discovery registry). 39 tasks.'
   task_prefix: adapt-
   default_open: true
   briefs:
@@ -5746,89 +5786,90 @@ projects:
   - 'iii: A2A discovery registry over 15 agents (adapt-iii-01..03)'
   epics:
   - key: taste
-    title: "Taste Skill — Design-Quality Hardprompts"
+    title: Taste Skill — Design-Quality Hardprompts
     priority: high
   - key: md
-    title: "MarkItDown — DIC Multi-Format Ingestion"
+    title: MarkItDown — DIC Multi-Format Ingestion
     priority: high
   - key: l30
-    title: "last30days — Social Trend Research Scanner"
+    title: last30days — Social Trend Research Scanner
     priority: high
   - key: tol
-    title: "Tolaria — Air-Gap Knowledge Vault"
+    title: Tolaria — Air-Gap Knowledge Vault
     priority: medium
   - key: hermes
-    title: "Hermes — FTS5 Session History Search"
+    title: Hermes — FTS5 Session History Search
     priority: medium
   - key: hd
-    title: "Headroom — LLM Router Context Compression"
+    title: Headroom — LLM Router Context Compression
     priority: high
   - key: conn
-    title: "Agent Reach — Unified Platform Connectors"
+    title: Agent Reach — Unified Platform Connectors
     priority: high
   - key: iii
-    title: "iii — A2A Discovery Registry"
+    title: iii — A2A Discovery Registry
     priority: medium
 - key: ski
-  name: "Skill Integration Initiative — SkillSpector + pm-skills + agent-skills"
-  description: >
-    Three-repo integration: (1) NVIDIA SkillSpector security scanner wired into SIPA,
-    SkillHub, CodeLens, and Coherence to gate malicious AI skill imports; (2) phuryn/pm-skills
-    (68+ PM skills, 9 plugins) imported and wired into /govcon, /proposals, /cpmp, and the
-    ACE Product Manager digital coworker role; (3) addyosmani/agent-skills (24 engineering
-    discipline skills + 4 personas) imported and wired into ANVIL slash commands, CodeLens
-    discipline dimension, and the ACE Software Craftsperson digital coworker role.
-    14 tasks across 6 epics: security gate, skill imports, coworker profiles, ANVIL hardening,
-    GovCon PM pipeline, and NOVA persistence.
+  name: Skill Integration Initiative — SkillSpector + pm-skills + agent-skills
+  description: 'Three-repo integration: (1) NVIDIA SkillSpector security scanner wired
+    into SIPA, SkillHub, CodeLens, and Coherence to gate malicious AI skill imports;
+    (2) phuryn/pm-skills (68+ PM skills, 9 plugins) imported and wired into /govcon,
+    /proposals, /cpmp, and the ACE Product Manager digital coworker role; (3) addyosmani/agent-skills
+    (24 engineering discipline skills + 4 personas) imported and wired into ANVIL
+    slash commands, CodeLens discipline dimension, and the ACE Software Craftsperson
+    digital coworker role. 14 tasks across 6 epics: security gate, skill imports,
+    coworker profiles, ANVIL hardening, GovCon PM pipeline, and NOVA persistence.
+
+    '
   task_prefix: ski-
   default_open: true
   briefs:
-  - 'sipsec: SkillSpector SIPA adapter (source_scanner=skillspector) + SkillHub risk badge
-    + Coherence check #15 skill_security — ski-sipsec-01, ski-hub-01, ski-coh-01'
-  - 'sklib: Import addyosmani/agent-skills (24 skills) + phuryn/pm-skills (68+ skills, 9
-    plugins) via SkillHub paste/detect + SIPA quarantine — ski-sklib-01, ski-sklib-02'
-  - 'cwk: ACE Product Manager role YAML (phuryn skills, 20 steps, govcon A2A topics) +
-    ACE Software Craftsperson role YAML (addyosmani 24 skills, 4 sub-personas, anti-rationalization)
+  - 'sipsec: SkillSpector SIPA adapter (source_scanner=skillspector) + SkillHub risk
+    badge + Coherence check #15 skill_security — ski-sipsec-01, ski-hub-01, ski-coh-01'
+  - 'sklib: Import addyosmani/agent-skills (24 skills) + phuryn/pm-skills (68+ skills,
+    9 plugins) via SkillHub paste/detect + SIPA quarantine — ski-sklib-01, ski-sklib-02'
+  - 'cwk: ACE Product Manager role YAML (phuryn skills, 20 steps, govcon A2A topics)
+    + ACE Software Craftsperson role YAML (addyosmani 24 skills, 4 sub-personas, anti-rationalization)
     — ski-pm-01, ski-craft-01'
   - 'anvil: 7 addyosmani slash commands as .claude/commands/ wrappers + CodeLens --discipline
     flag (5-axis review + doubt-driven dimension) + Coherence check #16 spec_discipline
     — ski-anvil-01, ski-anvil-02, ski-coh-02'
-  - 'govcon: tools/govcon/pm_skills_bridge.py (SWOT/ICP/battlecards from pm-skills against
-    govcon DB) + args/ace/prompt_chains/pm_govcon_prd.yaml (OST→PRD→proposal chain) —
-    ski-govcon-01, ski-govcon-02'
-  - 'cpmp: CPMP pm-skills wiring (sprint→CDRL, retro→CPARS, OKR→EVM, WWAS→milestone) +
-    NOVA SOUL layer for PM + Craftsperson coworkers — ski-cpmp-01, ski-nova-01'
+  - 'govcon: tools/govcon/pm_skills_bridge.py (SWOT/ICP/battlecards from pm-skills
+    against govcon DB) + args/ace/prompt_chains/pm_govcon_prd.yaml (OST→PRD→proposal
+    chain) — ski-govcon-01, ski-govcon-02'
+  - 'cpmp: CPMP pm-skills wiring (sprint→CDRL, retro→CPARS, OKR→EVM, WWAS→milestone)
+    + NOVA SOUL layer for PM + Craftsperson coworkers — ski-cpmp-01, ski-nova-01'
   epics:
   - key: sipsec
-    title: "Security Gate — SkillSpector SIPA Adapter + SkillHub Risk Badge"
+    title: Security Gate — SkillSpector SIPA Adapter + SkillHub Risk Badge
     priority: critical
   - key: hub
-    title: "SkillHub — Risk Badge + Install Gate + Scan-on-Import"
+    title: SkillHub — Risk Badge + Install Gate + Scan-on-Import
     priority: critical
   - key: coh
-    title: "Coherence — skill_security (#15) + spec_discipline (#16)"
+    title: Coherence — skill_security (#15) + spec_discipline (#16)
     priority: high
   - key: sklib
-    title: "Skill Library Import — addyosmani (24) + phuryn (68+)"
+    title: Skill Library Import — addyosmani (24) + phuryn (68+)
     priority: high
   - key: pm
-    title: "ACE Product Manager — Digital Coworker Role (phuryn)"
+    title: ACE Product Manager — Digital Coworker Role (phuryn)
     priority: high
   - key: craft
-    title: "ACE Software Craftsperson — Digital Coworker Role (addyosmani)"
+    title: ACE Software Craftsperson — Digital Coworker Role (addyosmani)
     priority: high
   - key: anvil
-    title: "ANVIL Hardening — 7 Slash Commands + CodeLens Discipline"
+    title: ANVIL Hardening — 7 Slash Commands + CodeLens Discipline
     priority: medium
   - key: govcon
-    title: "GovCon PM Bridge — pm_skills_bridge.py + PRD Prompt Chain"
+    title: GovCon PM Bridge — pm_skills_bridge.py + PRD Prompt Chain
     priority: high
   - key: cpmp
-    title: "CPMP pm-skills Wiring — Sprint/Retro/OKR/WWAS"
+    title: CPMP pm-skills Wiring — Sprint/Retro/OKR/WWAS
     priority: medium
   - key: nova
-    title: "NOVA Persistence — SOUL Layer for PM + Craftsperson"
+    title: NOVA Persistence — SOUL Layer for PM + Craftsperson
     priority: medium
   - key: vv
-    title: "V&V — Coherence + Companion Sync + E2E Smoke"
+    title: V&V — Coherence + Companion Sync + E2E Smoke
     priority: high

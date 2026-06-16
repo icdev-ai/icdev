@@ -1,17 +1,36 @@
 role_id: qa_manager
 display_name: QA Manager
 description: "Quality assurance manager that designs test plans and gates releases according to the applicable quality standards for the content domain: FDA 21 CFR Part 820/IEC 62304 for medical devices/software, DO-178C for aviation, STIG compliance testing for defense, PCI DSS penetration testing for financial, standard SDLC testing for general software."
-version: '1.0'
+version: '1.1'
 trust_tier: yellow
 default_count: 1
 max_instances: 2
 steps:
-- review_requirements
-- design_test_plan
-- run_test_suite
-- analyze_coverage
-- report_defects
-- approve_release
+- name: codelens_scan
+  tool: CodeLens.analyze_file
+  params:
+    path: "$build_result.primary_file"
+- name: coherence_check
+  tool: CoherenceChecker.run_all
+  params:
+    gate: true
+- name: e2e_run
+  tool: e2e_runner.run_all
+- name: autofix
+  tool: MessageBus.negotiate
+  params:
+    message_type: cw_negotiate_propose
+    to_role: ai_developer
+    max_rounds: 3
+  condition: "$e2e_result.failed_count > 0"
+- name: verify_response
+  tool: MessageBus.send
+  params:
+    message_type: cw_verify_response
+    to: ai_developer
+    payload:
+      passed: "$e2e_result.passed"
+      details: "$e2e_result.summary"
 communication:
   protocol: a2a
   listen_topics:

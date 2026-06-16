@@ -66,6 +66,9 @@ def _db():
 
 def _q(conn, sql: str) -> str:
     """Translate ``?`` placeholders to ``%s`` for the PostgreSQL backend."""
+    import sqlite3 as _sqlite3
+    if isinstance(conn, _sqlite3.Connection):
+        return sql  # raw sqlite3 connections use ? already
     declared = getattr(conn, "_backend", None)
     if declared:
         is_pg = str(declared).lower().startswith(("postgre", "pg"))

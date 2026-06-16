@@ -44,10 +44,12 @@ def client(ace_db, monkeypatch):
     """Flask test client with DB and LLM stubbed out."""
     # Patch get_canvas_connection to use our temp SQLite file
     def _fake_canvas_conn(env_var=None):
-        conn = sqlite3.connect(str(ace_db))
+        class _C(sqlite3.Connection):
+            pass
+        conn = sqlite3.connect(str(ace_db), factory=_C)
         conn.row_factory = None
         # Mark as SQLite so _q() keeps '?' placeholders
-        conn._backend = "sqlite"  # type: ignore[attr-defined]
+        conn._backend = "sqlite"
         return conn
 
     _storage = importlib.import_module("icdev.tools.db.storage")

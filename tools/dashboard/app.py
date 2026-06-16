@@ -164,6 +164,7 @@ _CANVAS_DEFS = [
     ("demo_runner", "ICDEV_DEMO_RUNNER_ENABLED", "tools.showcase.blueprint", "demo_runner_bp"),
     ("integrity", "ICDEV_INTEGRITY_ENABLED", "tools.integrity.blueprint", "create_integrity_blueprint"),
     ("ace", "ICDEV_ACE_ENABLED", "icdev.tools.ace.blueprint", "ace_bp"),
+    ("aisg", "ICDEV_AISG_ENABLED", "tools.aisg.blueprint", "bp"),
 ]
 
 _CANVAS_DEFAULTS_TRUE = {"ndc", "sdc", "aimc", "mission_canvas", "ohc", "integrity", "ace"}
@@ -1531,12 +1532,15 @@ def _build_icdev_skill_md(path, skill: dict, framework: str) -> None:
     _P(path).write_text(content, encoding="utf-8")
 
 
-def create_app() -> Flask:
+def create_app(testing: bool = False) -> Flask:
     app = Flask(
         __name__,
         template_folder=str(Path(__file__).resolve().parent / "templates"),
         static_folder=str(Path(__file__).resolve().parent / "static"),
     )
+
+    if testing:
+        app.config["TESTING"] = True
 
     # Auto-reload templates on change (no server restart needed)
     app.config["TEMPLATES_AUTO_RELOAD"] = True
@@ -2108,6 +2112,7 @@ def create_app() -> Flask:
         "dsoc": "",
         "integrity": "",
         "ace": "",
+        "aisg": "",
     }
     for _ck, _cbp in _CANVAS_BLUEPRINTS.items():
         try:

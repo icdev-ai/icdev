@@ -104,10 +104,12 @@ def get_trust_score(role_id: str) -> float:
     try:
         conn = _conn()
         _ensure_tables(conn)
-        # Try ace_coworkers first (may not exist in test/SQLite environments)
+        _backend = getattr(conn, "_backend", "")
+        _is_pg = str(_backend).lower().startswith(("postgre", "pg"))
+        # Try ace_coworkers first (canvas table — column is created_at, no updated_at)
         try:
             row = conn.execute(
-                "SELECT trust_score FROM ace_coworkers WHERE role_id = ? ORDER BY updated_at DESC LIMIT 1",
+                "SELECT trust_score FROM ace_coworkers WHERE role_id = ? ORDER BY created_at DESC LIMIT 1",
                 (role_id,),
             ).fetchone()
             if row:
@@ -115,10 +117,15 @@ def get_trust_score(role_id: str) -> float:
                 if val is not None:
                     return float(val)
         except Exception:
-            pass  # ace_coworkers may not exist in all environments
-        # Fall back to ledger (always available via init_nova_tables)
+            # PG aborts the txn on error; rollback so the ledger query can run
+            try:
+                conn.rollback()
+            except Exception:
+                conn = _conn()  # fresh connection if rollback fails
+        # Fall back to ledger — PG has µs precision so recorded_at DESC is stable
+        _order = "recorded_at DESC" if _is_pg else "recorded_at DESC, rowid DESC"
         row = conn.execute(
-            "SELECT new_score FROM ace_trust_ledger WHERE role_id = ? ORDER BY recorded_at DESC LIMIT 1",
+            f"SELECT new_score FROM ace_trust_ledger WHERE role_id = ? ORDER BY {_order} LIMIT 1",
             (role_id,),
         ).fetchone()
         if row:
@@ -157,7 +164,8 @@ def record_trust_event(
     try:
         conn = _conn()
         _ensure_tables(conn)
-        ledger_id = f"trust-{uuid.uuid4().hex[:10]}"
+        _ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S%f")
+        ledger_id = f"trust-{_ts}-{uuid.uuid4().hex[:6]}"
         conn.execute(
             """
             INSERT INTO ace_trust_ledger (id, role_id, delta, reason, new_score, source_task_id)
