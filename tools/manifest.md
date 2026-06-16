@@ -997,3 +997,19 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Harness Bridge | tools\foundry\harness_bridge.py | Auto-registered: foundry/harness_bridge.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Personnel Manager | tools\govcon\personnel_manager.py | Auto-registered: govcon/personnel_manager.py | --json | JSON |
+| Reflexion Loop | tools\nova\reflexion_loop.py | Auto-registered: nova/reflexion_loop.py | --json | JSON |
+| Credential Monitor | tools\pma\credential_monitor.py | Auto-registered: pma/credential_monitor.py | --json | JSON |
+| Int Gap Monitor | tools\pma\int_gap_monitor.py | Auto-registered: pma/int_gap_monitor.py | --json | JSON |
+| Meeting Coordinator | tools\pma\meeting_coordinator.py | Auto-registered: pma/meeting_coordinator.py | --json | JSON |
+| Gepa Optimizer | tools\skills\gepa_optimizer.py | Auto-registered: skills/gepa_optimizer.py | --json | JSON |
+| Reflexion Agent | tools\workflow\reflexion_agent.py | Auto-registered: workflow/reflexion_agent.py | --json | JSON |
+| Trace Logger | tools\workflow\trace_logger.py | Auto-registered: workflow/trace_logger.py | --json | JSON |
+| Social Trend Scanner | tools\research\source_scanners\social_trend_scanner.py | Auto-registered: source_scanners/social_trend_scanner.py | --json | JSON |
+| Pma Credential Monitor | tools\genesis\reflexes\pma_credential_monitor.py | Auto-registered: reflexes/pma_credential_monitor.py | --json | JSON |
+| Pma Int Gap Monitor | tools\genesis\reflexes\pma_int_gap_monitor.py | Auto-registered: reflexes/pma_int_gap_monitor.py | --json | JSON |
