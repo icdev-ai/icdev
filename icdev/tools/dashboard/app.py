@@ -1531,12 +1531,15 @@ def _build_icdev_skill_md(path, skill: dict, framework: str) -> None:
     _P(path).write_text(content, encoding="utf-8")
 
 
-def create_app() -> Flask:
+def create_app(testing: bool = False) -> Flask:
     app = Flask(
         __name__,
         template_folder=str(Path(__file__).resolve().parent / "templates"),
         static_folder=str(Path(__file__).resolve().parent / "static"),
     )
+
+    if testing:
+        app.config["TESTING"] = True
 
     # Auto-reload templates on change (no server restart needed)
     app.config["TEMPLATES_AUTO_RELOAD"] = True

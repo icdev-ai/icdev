@@ -97,10 +97,12 @@ def client(ace_db, nova_db, monkeypatch):
     # Patch canvas connection to the temporary ACE DB
     def _fake_canvas_conn(env_var=None):
         import sqlite3 as _sqlite3
-        conn = _sqlite3.connect(str(ace_db))
+        # Subclass allows setting _backend on Python 3.14 C extension type
+        class _CanvasConn(_sqlite3.Connection):
+            pass
+        conn = _sqlite3.connect(str(ace_db), factory=_CanvasConn)
         conn.row_factory = None
-        # Use an attribute that the blueprint helpers check via getattr
-        object.__setattr__(conn, "_backend", "sqlite") if hasattr(type(conn), "__slots__") else setattr(conn, "_backend", "sqlite")
+        conn._backend = "sqlite"
         return conn
 
     # Patch main DB connection to the temporary NOVA DB

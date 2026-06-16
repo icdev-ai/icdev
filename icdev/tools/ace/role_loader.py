@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +19,31 @@ class RoleNotFoundError(KeyError):
 
 
 @dataclass
+class RoleStep:
+    """A single step in a role definition — supports both plain names and structured dicts."""
+
+    name: str
+    tool: str = ""
+    params: dict[str, Any] = field(default_factory=dict)
+    condition: str | None = None
+
+    @classmethod
+    def from_raw(cls, raw: "str | dict[str, Any]") -> "RoleStep":
+        if isinstance(raw, str):
+            return cls(name=raw)
+        if isinstance(raw, dict):
+            if "name" not in raw:
+                raise ValueError(f"Structured step missing 'name' field: {raw!r}")
+            return cls(
+                name=raw["name"],
+                tool=raw.get("tool", ""),
+                params=dict(raw.get("params") or {}),
+                condition=raw.get("condition"),
+            )
+        raise TypeError(f"Expected str or dict for step, got {type(raw)!r}")
+
+
+@dataclass
 class RoleTemplate:
     role_id: str
     display_name: str
@@ -27,18 +52,16 @@ class RoleTemplate:
     trust_tier: str
     default_count: int
     max_instances: int
-    steps: list[str]
+    steps: list[RoleStep]
     communication: dict[str, Any]
     llm_function: str
     tool_permissions: list[str]
     genesis_reflex: str
     # Extended fields (optional — absent in legacy role YAMLs)
     canvas: str = ""
-    personality: dict[str, Any] = None  # type: ignore[assignment]
+    personality: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
-        if self.personality is None:
-            self.personality = {}
         # Expose listen_topics at top level for dispatcher hot-path
         if not hasattr(self, "_listen_topics_cache"):
             object.__setattr__(
@@ -59,7 +82,7 @@ class RoleTemplate:
             trust_tier=data["trust_tier"],
             default_count=int(data.get("default_count", 1)),
             max_instances=int(data.get("max_instances", 1)),
-            steps=list(data["steps"]),
+            steps=[RoleStep.from_raw(s) for s in data["steps"]],
             communication=dict(data.get("communication", {})),
             llm_function=data.get("llm_function", ""),
             tool_permissions=list(data["tool_permissions"]),
