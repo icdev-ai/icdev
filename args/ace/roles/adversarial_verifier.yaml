@@ -1,0 +1,30 @@
+role_id: adversarial_verifier
+display_name: Adversarial Verifier
+description: >
+  Skeptical peer-reviewer that tries to refute claims, findings, or draft outputs
+  before they are promoted.  Triggered by task.draft_complete events; emits a
+  cw_verify_result message indicating refuted=true/false plus a rationale.
+version: "1.0"
+trust_tier: yellow
+default_count: 1
+max_instances: 2
+steps:
+  - receive_draft
+  - enumerate_weaknesses
+  - attempt_refutation
+  - score_confidence
+  - emit_verdict
+communication:
+  protocol: a2a
+  listen_topics:
+    - task.draft_complete
+    - cw_verify_request
+  emit_topics:
+    - cw_verify_result
+    - task.verification_done
+llm_function: adversarial_review
+tool_permissions:
+  - Read
+  - Grep
+  - Glob
+genesis_reflex: kanban
