@@ -87,6 +87,36 @@ def _register_adapters():
         ADAPTER_CLASSES["webhook"] = WebhookAdapter
     except ImportError:
         pass
+    try:
+        from tools.notifications.adapters.mattermost import MattermostNotificationAdapter
+
+        ADAPTER_CLASSES["mattermost"] = MattermostNotificationAdapter
+    except ImportError:
+        pass
+    try:
+        from tools.notifications.adapters.teams_bot import TeamsBotNotificationAdapter
+
+        ADAPTER_CLASSES["teams_bot"] = TeamsBotNotificationAdapter
+    except ImportError:
+        pass
+    try:
+        from tools.notifications.adapters.github_notify import GitHubNotificationAdapter
+
+        ADAPTER_CLASSES["github"] = GitHubNotificationAdapter
+    except ImportError:
+        pass
+    try:
+        from tools.notifications.adapters.gitlab_notify import GitLabNotificationAdapter
+
+        ADAPTER_CLASSES["gitlab"] = GitLabNotificationAdapter
+    except ImportError:
+        pass
+    try:
+        from tools.notifications.adapters.skype_notify import SkypeNotificationAdapter
+
+        ADAPTER_CLASSES["skype"] = SkypeNotificationAdapter
+    except ImportError:
+        pass
 
 
 # ---------------------------------------------------------------------------

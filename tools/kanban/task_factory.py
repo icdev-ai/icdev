@@ -76,9 +76,9 @@ def create_tasks(task_specs: list[dict]) -> list[str]:
                     depends_on_task_id, source_prediction_id,
                     source_doc_id, source_collection_id,
                     dispatch_source, idempotency_key, max_retries,
-                    max_runtime_seconds,
+                    max_runtime_seconds, loop_type, adversarial_enabled,
                     created_at, updated_at)
-                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     task_id,
                     str(t.get("title", "Untitled task"))[:255],
@@ -94,6 +94,8 @@ def create_tasks(task_specs: list[dict]) -> list[str]:
                     idem_key,
                     max_retries,
                     max_runtime_seconds,
+                    t.get("loop_type", "deterministic"),
+                    1 if t.get("adversarial_enabled") else 0,
                     now,
                     now,
                 ),

@@ -30351,6 +30351,87 @@ CREATE TABLE public.telegram_inbox (
 
 
 --
+-- Name: teams_inbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.teams_inbox (
+    message_id   text NOT NULL,
+    message_json text NOT NULL,
+    channel_id   text,
+    sender_id    text,
+    text         text,
+    processed_at text,
+    error        text,
+    created_at   text DEFAULT now()
+);
+
+
+--
+-- Name: mattermost_inbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mattermost_inbox (
+    post_id      text NOT NULL,
+    message_json text NOT NULL,
+    channel_id   text,
+    user_id      text,
+    text         text,
+    processed_at text,
+    error        text,
+    created_at   text DEFAULT now()
+);
+
+
+--
+-- Name: github_inbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.github_inbox (
+    comment_id   integer NOT NULL,
+    message_json text NOT NULL,
+    issue_number integer,
+    user_login   text,
+    text         text,
+    processed_at text,
+    error        text,
+    created_at   text DEFAULT now()
+);
+
+
+--
+-- Name: gitlab_inbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.gitlab_inbox (
+    note_id          integer NOT NULL,
+    message_json     text NOT NULL,
+    issue_iid        integer,
+    author_username  text,
+    text             text,
+    processed_at     text,
+    error            text,
+    created_at       text DEFAULT now()
+);
+
+
+--
+-- Name: skype_inbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.skype_inbox (
+    activity_id     text NOT NULL,
+    message_json    text NOT NULL,
+    conversation_id text,
+    service_url     text,
+    sender_id       text,
+    text            text,
+    processed_at    text,
+    error           text,
+    created_at      text DEFAULT now()
+);
+
+
+--
 -- Name: tenant_llm_keys; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -45848,6 +45929,46 @@ ALTER TABLE ONLY public.tech_radar_history
 
 ALTER TABLE ONLY public.telegram_inbox
     ADD CONSTRAINT telegram_inbox_pkey PRIMARY KEY (update_id);
+
+
+--
+-- Name: teams_inbox teams_inbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.teams_inbox
+    ADD CONSTRAINT teams_inbox_pkey PRIMARY KEY (message_id);
+
+
+--
+-- Name: mattermost_inbox mattermost_inbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mattermost_inbox
+    ADD CONSTRAINT mattermost_inbox_pkey PRIMARY KEY (post_id);
+
+
+--
+-- Name: github_inbox github_inbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_inbox
+    ADD CONSTRAINT github_inbox_pkey PRIMARY KEY (comment_id);
+
+
+--
+-- Name: gitlab_inbox gitlab_inbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.gitlab_inbox
+    ADD CONSTRAINT gitlab_inbox_pkey PRIMARY KEY (note_id);
+
+
+--
+-- Name: skype_inbox skype_inbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.skype_inbox
+    ADD CONSTRAINT skype_inbox_pkey PRIMARY KEY (activity_id);
 
 
 --

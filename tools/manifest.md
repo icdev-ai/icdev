@@ -1047,3 +1047,28 @@
 | Zig External Adapter | tools\security_canvas\zig_external_adapter.py | Auto-registered: security_canvas/zig_external_adapter.py | --json | JSON |
 | Zig Portfolio | tools\security_canvas\zig_portfolio.py | Auto-registered: security_canvas/zig_portfolio.py | --json | JSON |
 | Seed Official Skills | tools\skillhub\seed_official_skills.py | Auto-registered: skillhub/seed_official_skills.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Problem Classifier | tools\ace\problem_classifier.py | Auto-registered: ace/problem_classifier.py | --json | JSON |
+| Simulate Roles | tools\ace\simulate_roles.py | Auto-registered: ace/simulate_roles.py | --json | JSON |
+| Pm Skills Wiring | tools\cpmp\pm_skills_wiring.py | Auto-registered: cpmp/pm_skills_wiring.py | --json | JSON |
+| Geoint Ingestor | tools\geoint\geoint_ingestor.py | Auto-registered: geoint/geoint_ingestor.py | --json | JSON |
+| Personnel Manager | tools\govcon\personnel_manager.py | Auto-registered: govcon/personnel_manager.py | --json | JSON |
+| Osint Ingestor | tools\osint\osint_ingestor.py | Auto-registered: osint/osint_ingestor.py | --json | JSON |
+| Credential Monitor | tools\pma\credential_monitor.py | Auto-registered: pma/credential_monitor.py | --json | JSON |
+| Int Gap Monitor | tools\pma\int_gap_monitor.py | Auto-registered: pma/int_gap_monitor.py | --json | JSON |
+| Meeting Coordinator | tools\pma\meeting_coordinator.py | Auto-registered: pma/meeting_coordinator.py | --json | JSON |
+| Gepa Optimizer | tools\skills\gepa_optimizer.py | Auto-registered: skills/gepa_optimizer.py | --json | JSON |
+| Govcon Discovery | tools\nova\reflexes\govcon_discovery.py | Auto-registered: reflexes/govcon_discovery.py | --json | JSON |
+| Product Manager Soul | tools\nova\souls\product_manager_soul.py | Auto-registered: souls/product_manager_soul.py | --json | JSON |
+| Software Craftsperson Soul | tools\nova\souls\software_craftsperson_soul.py | Auto-registered: souls/software_craftsperson_soul.py | --json | JSON |
+| Github Listener | tools\notifications\adapters\github_listener.py | Auto-registered: adapters/github_listener.py | --json | JSON |
+| Github Notify | tools\notifications\adapters\github_notify.py | Auto-registered: adapters/github_notify.py | --json | JSON |
+| Gitlab Listener | tools\notifications\adapters\gitlab_listener.py | Auto-registered: adapters/gitlab_listener.py | --json | JSON |
+| Gitlab Notify | tools\notifications\adapters\gitlab_notify.py | Auto-registered: adapters/gitlab_notify.py | --json | JSON |
+| Listener Base | tools\notifications\adapters\listener_base.py | Auto-registered: adapters/listener_base.py | --json | JSON |
+| Mattermost Listener | tools\notifications\adapters\mattermost_listener.py | Auto-registered: adapters/mattermost_listener.py | --json | JSON |
+| Skype Listener | tools\notifications\adapters\skype_listener.py | Auto-registered: adapters/skype_listener.py | --json | JSON |

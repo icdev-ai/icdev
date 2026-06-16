@@ -446,6 +446,7 @@ class ACEController:
             self._file_session_to_wiki(instance_id, problem_text, role_ids)
 
             self._set_instance_state(instance_id, "complete")
+            self._emit_completion_event(instance_id)
             self._emit_sse(instance_id, "complete", "All coworkers finished")
             logger.info("ACE %s: complete", instance_id)
 
@@ -523,6 +524,20 @@ class ACEController:
             record_trust_event(role_id, event_type, source_task_id=instance_id)
         except Exception as exc:
             logger.debug("[TRUST] _record_trust_outcome failed for %s: %s", role_id, exc)
+
+    @staticmethod
+    def _emit_completion_event(instance_id: str) -> None:
+        """Emit task.completed to ace_events so reflexion_loop reflex fires (best-effort)."""
+        try:
+            from icdev.tools.ace.event_bus import emit as ace_emit
+            ace_emit(
+                "task.completed",
+                {"trigger": "instance_complete", "instance_id": instance_id},
+                source_canvas="ace",
+                source_id=instance_id,
+            )
+        except Exception:
+            pass
 
     @staticmethod
     def _emit_sse(instance_id: str, phase: str, detail: str) -> None:
