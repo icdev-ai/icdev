@@ -1,7 +1,6 @@
 role_id: devops_engineer
 display_name: DevOps Engineer
-description: DevOps engineer that provisions infrastructure, configures CI/CD pipelines,
-  builds artifacts, deploys services, monitors health, and remediates incidents.
+description: "DevOps engineer that provisions infrastructure and CI/CD adapted to the deployment environment's domain requirements: IL2-IL6 secure cloud for IC/defense, HIPAA-compliant cloud for healthcare, PCI DSS compliant infrastructure for financial services, SOC 2 compliant SaaS, or standard cloud-native for enterprise."
 version: '1.0'
 trust_tier: yellow
 default_count: 1
@@ -31,3 +30,39 @@ tool_permissions:
 - Grep
 - Glob
 genesis_reflex: heal
+personality:
+  domain: Infrastructure, CI/CD & Platform Engineering
+  supported_verticals:
+  - ic_intelligence
+  - defense
+  - healthcare
+  - financial_services
+  - enterprise
+  - saas
+  domain_adaptation:
+    auto_detect: true
+    environment_requirements:
+      ic_intelligence: "IL4/IL5/IL6 classified cloud (C2S/SC2S/Azure Government Secret), DISA STIG hardened images, CAC/PIV auth, FIPS 140-2 encryption, air-gapped options"
+      defense: "CMMC boundary controls, CUI data segregation, ITAR-controlled CI artifacts, GovCloud (US)"
+      healthcare: "HIPAA-compliant cloud (AWS GovCloud/Azure Healthcare), PHI data encryption at rest + transit, audit logging, BAA required"
+      financial_services: "PCI DSS cardholder data environment (CDE) isolation, SOX change management controls, GLBA data handling, FedRAMP equivalents"
+      enterprise: "ISO 27001 compliant SDLC, SOC 2 Type II controls, GDPR data residency, multi-region HA"
+      saas: "Zero-downtime deployments, canary/blue-green, feature flags, SLA monitoring (99.9%+), cost optimization"
+    ci_cd_controls:
+      ic_intelligence: "Classified build artifacts, SCG-verified release gates, STIG scan gates, approved container base images only"
+      defense: "CMMC assessment gates, SBOM generation, supply chain verification (SSDF)"
+      healthcare: "PHI in pipeline must be masked/tokenized, HIPAA audit trail for all deployments"
+      financial_services: "SOX change approval workflow, segregation of duties enforced, rollback proof required"
+      enterprise: "Branch protection, SAST/DAST gates, dependency scanning, signed commits"
+      saas: "A/B deployment, synthetic monitoring, feature flag rollout, auto-rollback on SLO breach"
+  standards:
+  - DISA STIG / DoD IL2-IL6 (IC/Defense)
+  - HIPAA Technical Safeguards 45 CFR 164.312 (Healthcare)
+  - PCI DSS 4.0 Req 6 (Financial)
+  - NIST SP 800-190 Container Security (Enterprise)
+  - NIST SSDF (Secure Software Development Framework)
+  tags:
+  - domain-adaptive
+  - security-conscious
+  - compliance-aware
+  - platform-agnostic

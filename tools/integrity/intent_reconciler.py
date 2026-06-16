@@ -141,6 +141,35 @@ def _is_safe_filesystem_module(file_path: Optional[str]) -> bool:
     return any(normalised.endswith(m) for m in _SAFE_FS_MODULES)
 
 
+def _load_safe_process_exec_modules() -> frozenset[str]:
+    """Load the known_safe_process_exec_modules allowlist from integrity_config.yaml.
+
+    Returns module paths (forward-slash, repo-relative) whose 'process_exec'
+    unauthorized_capability findings are suppressed in Mode A self-scans.
+    Only affects ICDEV's own tools/ tree; external artifacts are unaffected.
+    """
+    try:
+        data = _load_config()
+        return frozenset(data.get("known_safe_process_exec_modules") or [])
+    except Exception:
+        return frozenset()
+
+
+_SAFE_PROCESS_EXEC_MODULES: frozenset[str] = _load_safe_process_exec_modules()
+
+
+def _is_safe_process_exec_module(file_path: Optional[str]) -> bool:
+    """True when ``file_path`` matches an entry in known_safe_process_exec_modules.
+
+    Normalises separators so ``tools\\testing\\cleanup_utils.py`` matches the
+    config's ``tools/testing/cleanup_utils.py`` regardless of OS.
+    """
+    if not file_path:
+        return False
+    normalised = file_path.replace("\\", "/")
+    return any(normalised.endswith(m) for m in _SAFE_PROCESS_EXEC_MODULES)
+
+
 # --------------------------------------------------------------------------- #
 # Severity derivation — capability inherent risk -> integrity_findings.severity
 # --------------------------------------------------------------------------- #

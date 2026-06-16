@@ -408,6 +408,11 @@ def api_launch():
             dic_context = "\n\n".join(context_blocks)
             problem_text = f"Context from document collections:\n{dic_context}\n\n---\n\n{problem_text}"
 
+    # Explicit role override — bypasses problem classifier
+    explicit_roles: list[str] | None = data.get("role_ids") or None
+    if isinstance(explicit_roles, list):
+        explicit_roles = [str(r).strip() for r in explicit_roles if r] or None
+
     try:
         instance_id = ACEController.get_instance().launch(
             problem_text=problem_text,
@@ -415,6 +420,7 @@ def api_launch():
             trigger_ref=(data.get("trigger_ref") or ""),
             user_id=(data.get("user_id") or "dashboard"),
             project_id=(data.get("project_id") or ""),
+            role_ids=explicit_roles,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("ace launch failed: %s", exc)

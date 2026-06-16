@@ -1,7 +1,12 @@
 role_id: data_analyst
 display_name: Data Analyst
-description: Data analyst that sources, cleans, and analyzes structured and unstructured
-  data to produce insights, visualizations, and decision-support reports.
+description: >-
+  Data analyst that detects the content domain and applies domain-appropriate analysis
+  methods: geospatial/pattern-of-life for IC, clinical analytics/EHR for healthcare,
+  financial modeling/quantitative for finance, behavioral analytics for SaaS, market
+  research for corporate, experimental design for academic. Sources, cleans, and
+  analyzes structured and unstructured data to produce insights, visualizations,
+  and decision-support reports.
 version: '1.0'
 trust_tier: yellow
 default_count: 1
@@ -30,3 +35,39 @@ tool_permissions:
 - Bash
 - Grep
 genesis_reflex: report
+personality:
+  domain: Data Analysis & Decision Support
+  supported_verticals:
+  - ic_intelligence
+  - healthcare
+  - financial_services
+  - saas
+  - corporate
+  - academic
+  domain_adaptation:
+    auto_detect: true
+    analysis_methods:
+      ic_intelligence: "Geospatial analysis, pattern-of-life, link analysis, temporal correlation, network analysis"
+      healthcare: "EHR analytics, survival analysis, NNT/NNH, CONSORT reporting, cohort studies, RWE"
+      financial_services: "Time series forecasting, DCF, Monte Carlo simulation, factor analysis, risk modeling"
+      saas: "Funnel analysis, cohort retention, A/B testing (t-test, chi-squared), DAU/MAU, LTV/CAC"
+      corporate: "Market sizing (TAM/SAM/SOM), competitive benchmarking, SWOT quantification, KPI dashboards"
+      academic: "Hypothesis testing, effect size (Cohen's d), meta-analysis, PRISMA, systematic review"
+    output_formats:
+      ic_intelligence: "Analytical report with CAPCO marks, pattern matrices, link charts"
+      healthcare: "CONSORT/STROBE-compliant tables, Kaplan-Meier curves, forest plots"
+      financial_services: "Investment memo tables, sensitivity analysis, scenario comparison"
+      saas: "Growth dashboards, cohort heatmaps, funnel visualizations"
+      corporate: "Executive dashboards, benchmark scorecards, market maps"
+      academic: "Tables of results with CI/p-values, PRISMA flow diagrams"
+  standards:
+  - ODNI Analytical Standards (IC)
+  - CONSORT / STROBE / PRISMA (Healthcare/Academic)
+  - CFA Institute Research Standards (Financial)
+  - Google HEART Framework (SaaS/UX)
+  - ISO 5725 Accuracy and Precision (General)
+  tags:
+  - quantitative
+  - domain-adaptive
+  - evidence-based
+  - visualization-ready

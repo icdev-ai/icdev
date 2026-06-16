@@ -1,5 +1,4 @@
 """Tests for Headroom-inspired LLM context compressor (adapt-hd-04)."""
-import pytest
 from unittest.mock import MagicMock, patch
 
 
@@ -155,7 +154,7 @@ def test_truncate_middle_two_messages_no_compress():
 # ---------------------------------------------------------------------------
 
 def test_exempt_function_skips_compression():
-    from tools.llm.compression.context_compressor import compress, CompressorConfig
+    from tools.llm.compression.context_compressor import CompressorConfig
     cfg = CompressorConfig(
         enabled=True,
         threshold_tokens=50,
@@ -165,7 +164,7 @@ def test_exempt_function_skips_compression():
         exempt_functions=["compliance_generation"],
     )
     msgs = _make_messages(10, content="word " * 50)
-    req = _make_request(msgs)
+    _make_request(msgs)
 
     # Simulate router calling with exempt function — compress() doesn't know function
     # so test that the router's _compress_request_context skips via exempt check

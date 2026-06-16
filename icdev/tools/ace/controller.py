@@ -70,10 +70,19 @@ class ACEController:
         trigger_ref: str,
         user_id: str = "system",
         project_id: str = "",
+        role_ids: list[str] | None = None,
     ) -> str:
-        """Launch an ACE run non-blocking.  Returns instance_id immediately."""
+        """Launch an ACE run non-blocking.  Returns instance_id immediately.
+
+        Args:
+            role_ids: When provided, bypasses the problem classifier and builds
+                      the team directly from the given role IDs.
+        """
         instance_id = f"ace-{uuid.uuid4().hex[:12]}"
-        self._executor.submit(self._run, instance_id, problem_text, trigger_source, trigger_ref, user_id, project_id)
+        self._executor.submit(
+            self._run, instance_id, problem_text, trigger_source, trigger_ref,
+            user_id, project_id, role_ids,
+        )
         return instance_id
 
     def status(self, instance_id: str) -> dict[str, Any]:
@@ -263,22 +272,31 @@ class ACEController:
         trigger_ref: str,
         user_id: str,
         project_id: str,
+        role_ids: list[str] | None = None,
     ) -> None:
         """Full orchestration pipeline executed in ThreadPoolExecutor."""
         self._emit_sse(instance_id, "assembling", "Classifying problem")
         try:
             # 0. Wiki context (Item 2): enrich problem_text with relevant wiki knowledge
-            wiki_ctx = self._query_role_wiki([], problem_text)
+            wiki_ctx = self._query_role_wiki(role_ids or [], problem_text)
             enriched_problem = (
                 f"{problem_text}\n\n[Wiki context]\n{wiki_ctx}"
                 if wiki_ctx
                 else problem_text
             )
 
-            # 1. Classify
-            from icdev.tools.ace.problem_classifier import ProblemClassifierLens
-
-            manifest = ProblemClassifierLens(enriched_problem).run()
+            # 1. Classify — or use explicit role_ids if provided
+            if role_ids:
+                from icdev.tools.ace.problem_classifier import TeamManifest, RoleSlot
+                manifest = TeamManifest(
+                    slots=[RoleSlot(role_id=r, count=1, priority="high") for r in role_ids]
+                )
+                logger.info(
+                    "ACE %s: using explicit roles: %s", instance_id, role_ids
+                )
+            else:
+                from icdev.tools.ace.problem_classifier import ProblemClassifierLens
+                manifest = ProblemClassifierLens(enriched_problem).run()
             logger.info("ACE %s: manifest has %d slot(s)", instance_id, len(manifest.slots))
 
             # 2. Assemble + persist
