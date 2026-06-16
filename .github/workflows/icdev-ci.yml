@@ -338,6 +338,24 @@ jobs:
           done
           exit 1
 
+  # ── Tier 1: Documentation Coherence Gate ─────────────────────────────────
+  # Validates that docs/reference/commands.md contains the required parameter
+  # strings for loop_type and adversarial_enabled (Loop Engineering section).
+  doc-coherence:
+    name: Doc Coherence Gate
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert loop_type present in commands.md
+        run: |
+          grep -q 'loop_type' docs/reference/commands.md || \
+            (echo "::error::docs/reference/commands.md is missing 'loop_type'" && exit 1)
+      - name: Assert adversarial_enabled present in commands.md
+        run: |
+          grep -q 'adversarial_enabled' docs/reference/commands.md || \
+            (echo "::error::docs/reference/commands.md is missing 'adversarial_enabled'" && exit 1)
+
   # ── Tier 3: Helm Chart Validation ────────────────────────────────────────
   helm-lint:
     name: Helm Lint
