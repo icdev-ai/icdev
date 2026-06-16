@@ -1475,6 +1475,17 @@ python tools/registry/evolution_daemon.py --enable discover              # Enabl
 python tools/registry/evolution_daemon.py --disable absorb               # Disable a reflex
 python tools/registry/evolution_daemon.py --reset test --json            # Reset circuit breaker
 
+# GEPA Optimizer — Genome Evolution Pressure Analyzer (gepa-mcp-01)
+python tools/skills/gepa_optimizer.py --json                             # Run optimization pass (prune low-fitness genome entries)
+python tools/skills/gepa_optimizer.py --dry-run --json                   # Scan without applying writes
+# MCP tool: gepa_optimizer
+#   Parameters: dry_run (bool, default false) — when true, scan runs but no DB writes are committed.
+#   Returns:    {applied: [{capability_id, action, fitness, dry_run}],
+#                skipped: [{capability_id, reason, fitness}],
+#                errors:  [str]}
+#   Handler:    tools/mcp/gap_handlers.py::get_gepa_optimizer_handler
+#   Skill:      tools/skills/gepa_optimizer.py::run()
+
 # Cloud-Agnostic Architecture (Phase 38)
 # Cloud Mode Manager (D232)
 python tools/cloud/cloud_mode_manager.py --status --json                                               # Current cloud mode and config
