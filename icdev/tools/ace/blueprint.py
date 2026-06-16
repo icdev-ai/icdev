@@ -427,6 +427,7 @@ def api_launch():
             trigger_ref=(data.get("trigger_ref") or ""),
             user_id=(data.get("user_id") or "dashboard"),
             project_id=(data.get("project_id") or ""),
+            webhook_url=(data.get("webhook_url") or ""),
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("ace launch failed: %s", exc)
