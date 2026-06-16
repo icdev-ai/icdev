@@ -48,7 +48,7 @@ def _check(values: tuple[str, ...]) -> str:
 _CHECK_INSTANCE_STATE = _check(INSTANCE_STATES)
 _CHECK_COWORKER_STATE = _check(COWORKER_STATES)
 
-SCHEMA = f"""
+_BASE_SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS ace_instances (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL DEFAULT '',
@@ -124,17 +124,63 @@ CREATE INDEX IF NOT EXISTS idx_ace_audit_instance ON ace_audit_log(instance_id);
 """
 
 # ---------------------------------------------------------------------------
+# ace_sessions — multi-turn conversation history (PG-primary)
+# PG uses JSONB for conversation_history and TIMESTAMPTZ for timestamps.
+# SQLite fallback stores the same data as TEXT / TEXT.
+# ---------------------------------------------------------------------------
+
+_SESSIONS_SCHEMA_SQLITE = """
+CREATE TABLE IF NOT EXISTS ace_sessions (
+    session_id             TEXT PRIMARY KEY,
+    instance_id            TEXT NOT NULL REFERENCES ace_instances(id) ON DELETE CASCADE,
+    conversation_history   TEXT NOT NULL DEFAULT '[]',
+    resume_token           TEXT NOT NULL UNIQUE,
+    last_user_message      TEXT,
+    last_agent_message     TEXT,
+    turn_count             INTEGER NOT NULL DEFAULT 0,
+    created_at             TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at             TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ace_sessions_instance ON ace_sessions(instance_id);
+CREATE INDEX IF NOT EXISTS idx_ace_sessions_resume ON ace_sessions(resume_token);
+"""
+
+_SESSIONS_SCHEMA_PG = """
+CREATE TABLE IF NOT EXISTS ace_sessions (
+    session_id             TEXT PRIMARY KEY,
+    instance_id            TEXT NOT NULL REFERENCES ace_instances(id) ON DELETE CASCADE,
+    conversation_history   JSONB NOT NULL DEFAULT '[]',
+    resume_token           TEXT NOT NULL UNIQUE,
+    last_user_message      TEXT,
+    last_agent_message     TEXT,
+    turn_count             INTEGER NOT NULL DEFAULT 0,
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ace_sessions_instance ON ace_sessions(instance_id);
+CREATE INDEX IF NOT EXISTS idx_ace_sessions_resume ON ace_sessions(resume_token);
+"""
+
+# SCHEMA keeps the SQLite variant appended so existing tests that import SCHEMA
+# and open sqlite3.connect() directly continue to work unchanged.
+SCHEMA = _BASE_SCHEMA + _SESSIONS_SCHEMA_SQLITE
+
+# ---------------------------------------------------------------------------
 # Init
 # ---------------------------------------------------------------------------
 
 
 def init() -> None:
     """Create all ACE canvas tables (idempotent)."""
-    from icdev.tools.db.storage import get_canvas_connection
+    from icdev.tools.db.storage import get_canvas_connection, is_pg
 
     conn = get_canvas_connection("ICDEV_ACE_DB_URL")
     try:
-        conn.executescript(SCHEMA)
+        if is_pg(conn):
+            conn.executescript(_BASE_SCHEMA)
+            conn.executescript(_SESSIONS_SCHEMA_PG)
+        else:
+            conn.executescript(SCHEMA)
         conn.commit()
     finally:
         conn.close()
