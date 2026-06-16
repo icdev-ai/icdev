@@ -570,7 +570,7 @@ def _matches_tier(file_path: str, patterns: list) -> bool:
     return False
 
 
-def check_file_access_tiers(tool_name: str, tool_input: dict) -> str:
+def check_file_access_tiers(tool_name: str, tool_input: dict) -> str | None:
     """Check file access tiers. Returns error message if blocked, None if allowed.
 
     Decision D-ORCH-8: Tiered file access control.
