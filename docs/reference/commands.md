@@ -566,6 +566,36 @@ python tools/genesis/reporter.py --list --json                # List all reports
 
 ---
 
+## Loop Engineering — GEPA Optimizer & Adversarial Verify
+```bash
+# GEPA (Genetic Evolution of Prompt Architectures) optimizer
+python tools/skills/gepa_optimizer.py --dry-run              # Preview evolution cycle without writing
+python tools/skills/gepa_optimizer.py --json                 # Run full GEPA cycle, JSON output
+python tools/genesis/reflexes/gepa_optimizer.py --dry-run    # Same via genesis reflex path
+
+# Genesis daemon — GEPA reflex (24 h interval, registered in daemon.py REFLEX_NAMES)
+python tools/genesis/daemon.py --reflex gepa --json          # Run GEPA reflex immediately
+
+# Kanban task_factory — loop_type and adversarial fields
+# Create a looping task (loop_type: "fixed" | "adaptive" | "gepa")
+python -c "
+from tools.kanban.task_factory import create_tasks
+create_tasks([{
+  'id': 'loop-example-01',
+  'title': 'Example loop task',
+  'loop_type': 'adaptive',          # fixed | adaptive | gepa
+  'adversarial_enabled': True,      # spawns _run_adversarial_verify after each iteration
+  'description': '...',
+  'acceptance_criteria': '...',
+}])
+"
+
+# Adversarial verify (invoked automatically when adversarial_enabled=True on a looping task)
+# _run_adversarial_verify(task_id) in tools/kanban/task_factory.py — not a standalone CLI
+```
+
+---
+
 ## Bayesian Autoresearch Commands (Phase 67)
 ```bash
 # Experiment engine (Karpathy Loop)
