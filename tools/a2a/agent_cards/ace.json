@@ -1,0 +1,30 @@
+{
+  "name": "ace",
+  "description": "ACE Co-Worker Engine — autonomous multi-role collaborative AI team",
+  "url": "http://localhost:8460",
+  "version": "1.0.0",
+  "capabilities": {
+    "streaming": false,
+    "pushNotifications": false
+  },
+  "authentication": {
+    "schemes": ["api_key"]
+  },
+  "skills": [
+    {
+      "id": "coworker.launch",
+      "name": "Launch ACE coworker team",
+      "description": "Launch ACE coworker team",
+      "inputModes": ["application/json"],
+      "outputModes": ["application/json"],
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "problem_text": {"type": "string", "description": "Problem or task description"},
+          "role_ids": {"type": "array", "items": {"type": "string"}, "description": "Role IDs to include"}
+        },
+        "required": ["problem_text"]
+      }
+    }
+  ]
+}
