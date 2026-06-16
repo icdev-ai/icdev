@@ -463,3 +463,28 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   write access, network egress, or `--max-turns` is removed, which would change it from a
   read-only judge to an actor → re-scope as **sandboxed** via `SandboxExecutor` with
   explicit network/FS deny-lists.
+
+### Gap 19 — GEPA Optimizer (`tools/skills/gepa_optimizer.py`)
+- **File:** `tools/skills/gepa_optimizer.py`
+- **Risk:** The GEPA Optimizer (Genome Evolution Pressure Analyzer) reads capability
+  genome entries from the first-party `genome_manager` registry and the ICDEV DB, then
+  prunes or promotes entries based on fitness scores. It accepts an operator-supplied
+  `dry_run` flag but no user-controlled content from the network or file system.
+- **Decision:** **trusted-first-party**
+- **Rationale:** GEPA reads only from first-party DB tables (`get_genome_entries` via
+  `get_connection()`) and writes only compact summary rows back to those tables. No
+  `exec()`/`eval()`/`compile()`/`subprocess` call exists in the optimizer pass itself.
+  Genome entry data (capability names, fitness scores) are typed Python dicts treated as
+  opaque data — never executed or interpreted as code. The `dry_run=True` path performs
+  no writes at all. MCP tool invocation (`gepa_optimizer` params: `dry_run`) passes only
+  the boolean flag; no user-supplied paths or expressions reach the engine.
+- **Guardrails:**
+  - All reads go through `get_connection()` (RLS-aware; no raw `sqlite3.connect()`).
+  - `dry_run=True` is the safe default in automated scans; mutations require explicit opt-in.
+  - No shell calls, no file writes outside the DB column, no network egress.
+  - Genome entries are scored via deterministic arithmetic (fitness threshold comparisons);
+    no dynamic code generation or external executable invocation.
+- **Revisit if:** GEPA gains a step that executes, imports, or subprocesses genome-derived
+  code (e.g. capability self-modification) → re-decide as **sandboxed** via
+  `SandboxExecutor`; or if `dry_run` flag is accepted from an unauthenticated HTTP
+  endpoint without authorization checks.
