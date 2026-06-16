@@ -1475,6 +1475,7 @@ python tools/registry/evolution_daemon.py --enable discover              # Enabl
 python tools/registry/evolution_daemon.py --disable absorb               # Disable a reflex
 python tools/registry/evolution_daemon.py --reset test --json            # Reset circuit breaker
 
+# Loop Engineering — GEPA Optimizer & Genesis Daemon Trigger
 # GEPA Optimizer — Genome Evolution Pressure Analyzer (gepa-mcp-01)
 python tools/skills/gepa_optimizer.py --json                             # Run optimization pass (prune low-fitness genome entries)
 python tools/skills/gepa_optimizer.py --dry-run --json                   # Scan without applying writes
@@ -1485,6 +1486,14 @@ python tools/skills/gepa_optimizer.py --dry-run --json                   # Scan 
 #                errors:  [str]}
 #   Handler:    tools/mcp/gap_handlers.py::get_gepa_optimizer_handler
 #   Skill:      tools/skills/gepa_optimizer.py::run()
+# Genesis daemon 24h trigger — GEPA reflex fires daily via the genesis daemon loop:
+#   Config:     args/genesis_config.yaml — add a "gepa_optimizer" entry with interval_seconds: 86400
+#   Interval:   86400 s (24 h); controlled by interval_seconds / interval_hours in genesis_config.yaml
+#   Enable:     python tools/genesis/daemon.py --enable gepa_optimizer
+#   Disable:    python tools/genesis/daemon.py --disable gepa_optimizer
+#   Run once:   python tools/genesis/daemon.py --reflex gepa_optimizer --json
+#   Thresholds: args/security_gates.yaml → loop_engineering.gepa_min_composite_score (0.60)
+#                                           loop_engineering.gepa_min_score_delta (0.05)
 
 # Cloud-Agnostic Architecture (Phase 38)
 # Cloud Mode Manager (D232)
