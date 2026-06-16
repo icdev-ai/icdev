@@ -431,3 +431,35 @@ scanner then runs against the *staged copy as data* — the target is read, hash
 - **Revisit if:** the harvester ever adds a non-first-party source (web fetch,
   user upload, external API) or begins executing / importing harvested content →
   re-decide as **sandboxed** (route through `tools/security/sandbox_executor.py`).
+
+### Gap 18 — Kanban Adversarial Verifier (`tools/genesis/reflexes/kanban.py` — `_run_adversarial_verify`)
+- **File:** `tools/genesis/reflexes/kanban.py` — `_run_adversarial_verify()`
+- **Risk:** Spawns a second Claude CLI subprocess (`claude --dangerously-skip-permissions
+  --max-turns 10`) in the task worktree directory to adversarially review completed work.
+  The subprocess receives a reviewer prompt via stdin piped from a `.tmp/` temp file and
+  its stdout output (APPROVED/REJECTED verdict) is parsed by the reflex. An adversarial
+  prompt or malicious task title/description injected into DB could influence the
+  reviewer's verdict or cause unexpected subprocess behaviour.
+- **Decision:** **sandboxed**
+- **Rationale:** The verifier subprocess is inherently isolated — it runs in a dedicated
+  git worktree directory (`work_dir`), not the main repo, with `--max-turns 10` capping
+  its ability to take actions. Its only output surface is stdout, which is parsed for
+  an `APPROVED:` / `REJECTED:` prefix. The function **fails open** on any error
+  (timeout, non-zero exit, missing verdict) so the adversarial gate can never
+  permanently block a task. The subprocess invocation is equivalent in isolation to the
+  primary task Claude CLI dispatch already classified **sandboxed** in Gap 2.
+- **Guardrails:**
+  - Only fires when `adversarial_enabled=1` on the task (`loop_type='non_deterministic'`)
+    — opt-in per task, not the default path.
+  - Hard 180-second timeout (`subprocess.TimeoutExpired` → pass). The Claude CLI is not
+    given a `--dangerously-allow-filesystem` flag — it runs in review-only mode.
+  - Task title and description are truncated at 1,200 chars before embedding in the
+    prompt; no shell interpolation is used (args list, not `shell=True`).
+  - Prompt file is written to `.tmp/` (not `tools/`) and deleted immediately after the
+    subprocess reads it.
+  - Verdict parser scans only the last non-empty line; unrecognised output → pass,
+    preventing a prompt-injection verdict.
+- **Revisit if:** the verifier subprocess is ever granted `--dangerously-allow-filesystem`
+  write access, network egress, or `--max-turns` is removed, which would change it from a
+  read-only judge to an actor → re-scope as **sandboxed** via `SandboxExecutor` with
+  explicit network/FS deny-lists.
