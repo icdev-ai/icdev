@@ -383,71 +383,116 @@ def _try_pdf_ocr(path: Path, total_pages: int, max_pages: int = 50) -> str:
     return "\n".join(text_parts)
 
 
-def _extract_pdf(path: Path) -> Extraction:
-    """Extract text from PDF using pypdf (fast text path) + pypdfium2→OCR (scanned fallback)."""
+def _try_pymupdf(path: Path) -> tuple[str, int]:
+    """Extract text via pymupdf (fitz) — best for CID-mapped fonts and complex encodings."""
     try:
-        from pypdf import PdfReader
+        import fitz
+        doc = fitz.open(str(path))
+        total_pages = doc.page_count
+        parts: list[str] = []
+        for i, page in enumerate(doc):
+            try:
+                t = page.get_text("text") or ""
+                if t.strip():
+                    parts.append(f"\n--- Page {i + 1} ---\n{t.strip()}")
+            except Exception:
+                pass
+        doc.close()
+        return "\n".join(parts), total_pages
     except Exception as exc:
-        logger.warning("dic.extractors: pypdf not available: %s", exc)
+        logger.debug("dic.extractors: pymupdf failed: %s", exc)
+        return "", 0
+
+
+def _try_pdfplumber(path: Path) -> tuple[str, int]:
+    """Extract text via pdfplumber — handles unusual font encodings well."""
+    try:
+        import pdfplumber
+        parts: list[str] = []
+        total_pages = 0
+        with pdfplumber.open(str(path)) as pdf:
+            total_pages = len(pdf.pages)
+            for i, page in enumerate(pdf.pages):
+                try:
+                    t = page.extract_text() or ""
+                    if t.strip():
+                        parts.append(f"\n--- Page {i + 1} ---\n{t.strip()}")
+                except Exception:
+                    pass
+        return "\n".join(parts), total_pages
+    except Exception as exc:
+        logger.debug("dic.extractors: pdfplumber failed: %s", exc)
+        return "", 0
+
+
+def _extract_pdf(path: Path) -> Extraction:
+    """Extract text from PDF using a four-pass fallback chain.
+
+    Pass 1: pymupdf/fitz    — gold standard; handles CID-mapped fonts, complex encodings
+    Pass 2: pdfplumber      — good for non-standard font maps
+    Pass 3: pypdf           — fast baseline
+    Pass 4: OCR             — last resort for genuinely scanned/image PDFs
+    """
+    total_pages = 0
+
+    text, total_pages = _try_pymupdf(path)
+    if text.strip():
         return Extraction(
-            text="",
-            provider="pypdf-missing",
-            content_type="application/pdf",
-            page_count=0,
-            title=path.stem,
-            warnings=["pypdf not installed — run: pip install pypdf>=4.0"],
+            text=text, provider="pymupdf", content_type="application/pdf",
+            page_count=total_pages or 1, title=path.stem,
         )
 
-    text_parts: list[str] = []
+    text, pl_pages = _try_pdfplumber(path)
+    if total_pages == 0:
+        total_pages = pl_pages
+    if text.strip():
+        return Extraction(
+            text=text, provider="pdfplumber", content_type="application/pdf",
+            page_count=total_pages or 1, title=path.stem,
+        )
+
     try:
+        from pypdf import PdfReader
+        text_parts: list[str] = []
         reader = PdfReader(str(path))
-        total_pages = len(reader.pages)
+        if total_pages == 0:
+            total_pages = len(reader.pages)
         for i, page in enumerate(reader.pages):
             try:
                 page_text = page.extract_text() or ""
                 if page_text.strip():
                     text_parts.append(f"\n--- Page {i + 1} ---\n{page_text.strip()}")
             except Exception as exc:
-                logger.warning("dic.extractors: page %s extraction error: %s", i + 1, exc)
-
-        full_text = "\n".join(text_parts)
-        warnings: list[str] = []
-
-        # Phase 2: OCR fallback for scanned/image PDFs.
-        if not full_text.strip():
-            ocr_text = _try_pdf_ocr(path, total_pages)
-            if ocr_text.strip():
-                return Extraction(
-                    text=ocr_text,
-                    provider="pypdf+ocr",
-                    content_type="application/pdf",
-                    page_count=total_pages,
-                    title=path.stem,
-                    warnings=["PDF text extracted via OCR (scanned/image PDF)."],
-                )
-            warnings.append(
-                "PDF produced no extractable text — may be a scanned/image PDF. "
-                "OCR unavailable: install easyocr, start Ollama/vLLM with a vision model (llava/gemma4), or install pytesseract."
+                logger.warning("dic.extractors: pypdf page %s error: %s", i + 1, exc)
+        text = "\n".join(text_parts)
+        if text.strip():
+            return Extraction(
+                text=text, provider="pypdf", content_type="application/pdf",
+                page_count=total_pages or 1, title=path.stem,
             )
-
-        return Extraction(
-            text=full_text,
-            provider="pypdf",
-            content_type="application/pdf",
-            page_count=total_pages,
-            title=path.stem,
-            warnings=warnings,
-        )
     except Exception as exc:
-        logger.warning("dic.extractors: PDF read failed: %s", exc)
+        logger.warning("dic.extractors: pypdf failed: %s", exc)
+
+    if total_pages == 0:
+        total_pages = 1
+
+    ocr_text = _try_pdf_ocr(path, total_pages)
+    if ocr_text.strip():
         return Extraction(
-            text="",
-            provider="pypdf-error",
-            content_type="application/pdf",
-            page_count=0,
-            title=path.stem,
-            warnings=[f"PDF read failed: {exc}"],
+            text=ocr_text, provider="pdf+ocr", content_type="application/pdf",
+            page_count=total_pages, title=path.stem,
+            warnings=["PDF text extracted via OCR (scanned/image PDF)."],
         )
+
+    return Extraction(
+        text="", provider="pdf-all-failed", content_type="application/pdf",
+        page_count=total_pages, title=path.stem,
+        warnings=[
+            "All PDF extraction passes failed (pymupdf, pdfplumber, pypdf, OCR). "
+            "File may be password-protected, corrupted, or a purely graphical PDF. "
+            "For scanned PDFs, install Tesseract: winget install UB-Mannheim.TesseractOCR"
+        ],
+    )
 
 
 def _extract_docx(path: Path) -> Extraction:
