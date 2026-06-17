@@ -1601,8 +1601,12 @@ def api_review_assign(item_id):
         return _forbid("editor")
     conn = _conn()
     try:
-        table = "dic_versions" if item_type == "version" else "dic_ssp_fragments"
-        pk = "version_id" if item_type == "version" else "fragment_id"
+        if item_type == "version":
+            table, pk = "dic_versions", "version_id"
+        elif item_type == "section":
+            table, pk = "dic_sections", "section_id"
+        else:
+            table, pk = "dic_ssp_fragments", "fragment_id"
         conn.execute(f"UPDATE {table} SET assigned_to = ? WHERE {pk} = ?", (assigned_to, item_id))  # nosec B608 — table/pk from ternary constants, not user input
         conn.commit()
         return jsonify({"status": "assigned", "item_id": item_id, "assigned_to": assigned_to})

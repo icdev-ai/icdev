@@ -713,8 +713,7 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
         "fedramp_ato_packages",                          # render fedramp ATO package notice
         # notification_service handler stubs (aiify-scanner-generated candidates,
         # never wired to production routes; all tests mock get_connection())
-        "aiify_roadmap_items",                           # handler_service aiify progress handler
-        "canvas_designs",                                # handler_service canvas status handler
+"canvas_designs",                                # handler_service canvas status handler
         "cmmc_practice_gaps", "cmmc_systems",            # handler_service cmmc gap handler
         "fedramp_controls",                              # render_handler_service fedramp notice
         "gate_failures",                                 # render_handler_service gate report
