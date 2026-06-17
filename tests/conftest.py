@@ -1412,6 +1412,24 @@ CREATE TABLE IF NOT EXISTS dd_pii_scans (
 CREATE INDEX IF NOT EXISTS idx_dd_pii_scans_design  ON dd_pii_scans (design_id);
 CREATE INDEX IF NOT EXISTS idx_dd_pii_scans_risk    ON dd_pii_scans (overall_risk);
 CREATE INDEX IF NOT EXISTS idx_dd_pii_scans_tenant  ON dd_pii_scans (tenant_id);
+CREATE TABLE IF NOT EXISTS dm_ports (
+    id              TEXT    PRIMARY KEY,
+    product_id      TEXT,
+    name            TEXT    NOT NULL,
+    port_type       TEXT    NOT NULL DEFAULT 'input'
+                    CHECK (port_type IN ('input', 'output')),
+    transport_type  TEXT    DEFAULT 'api',
+    schema_json     TEXT    DEFAULT '{}',
+    endpoint        TEXT    DEFAULT '',
+    source_system   TEXT    DEFAULT '',
+    sla_json        TEXT    DEFAULT '{}',
+    tenant_id       TEXT    NOT NULL DEFAULT 'default',
+    classification  TEXT    NOT NULL DEFAULT 'CUI',
+    created_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dm_ports_product   ON dm_ports (product_id);
+CREATE INDEX IF NOT EXISTS idx_dm_ports_port_type ON dm_ports (port_type);
+CREATE INDEX IF NOT EXISTS idx_dm_ports_tenant    ON dm_ports (tenant_id);
 """
 
 
