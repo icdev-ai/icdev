@@ -122,6 +122,7 @@
     }
 
     processNext();
+    fileInput.value = '';  // allow re-uploading the same file
   }
 
   function openStream(jobId, filename, onDone) {
@@ -154,10 +155,24 @@
 
       if (stage === 'done') {
         bar.style.width = '100%';
-        var info = (ev.chunks || 0) + ' chunks';
+        var chunkCount = ev.chunks || 0;
+        var hasWarnings = ev.errors && ev.errors.length;
+        var isDuplicate = hasWarnings && ev.errors.some(function(e) { return e.indexOf('Duplicate') >= 0; });
+        var isEmpty = chunkCount === 0 && !isDuplicate;
+        var info = chunkCount + ' chunks';
         if (ev.kg_entities) info += ' · ' + ev.kg_entities + ' KG entities';
-        if (ev.errors && ev.errors.length) info += ' · ' + ev.errors.length + ' warn(s)';
-        results.innerHTML += rowHtml(filename, true, info);
+        if (isDuplicate) {
+          info = 'Duplicate detected — linked to existing document' + (ev.doc_id ? ' (' + ev.doc_id + ')' : '');
+        }
+        if (isEmpty) {
+          info = '0 chunks — file may be image-based, corrupted, or unsupported. Try re-exporting as text.';
+        }
+        results.innerHTML += rowHtml(filename, !isEmpty, info);
+        if (hasWarnings) {
+          ev.errors.forEach(function(err) {
+            results.innerHTML += '<div style="padding:2px 8px;font-size:11px;color:#fbbf24;">⚠ ' + err + '</div>';
+          });
+        }
         src.close();
         if (onDone) onDone();
       } else if (stage === 'error') {

@@ -36,6 +36,7 @@ import hashlib
 import json
 import os
 import queue as _queue
+import re
 import tempfile
 import threading
 import time
@@ -622,8 +623,11 @@ def api_ingest():
     def _run():
         outcome = None
         try:
-            def _cb(stage: str, detail: str, pct: int) -> None:
-                q.put({"stage": stage, "detail": detail, "pct": pct})
+            def _cb(stage: str, detail: str, pct: int, extra: dict | None = None) -> None:
+                event = {"stage": stage, "detail": detail, "pct": pct}
+                if extra:
+                    event.update(extra)
+                q.put(event)
                 # Update DB status.
                 try:
                     c = _conn()
@@ -735,7 +739,11 @@ def api_ingest_stream(job_id: str):
                 if event is None:
                     break
                 yield f"data: {json.dumps(event)}\n\n"
-                if event.get("stage") in ("done", "error"):
+                if event.get("stage") == "error":
+                    break
+                # Treat "done" as terminal only when it carries the outcome
+                # metadata (chunks). Progress-style done events are not final.
+                if event.get("stage") == "done" and "chunks" in event:
                     break
         finally:
             with _JOB_LOCK:
@@ -1031,7 +1039,9 @@ def api_provenance(chunk_id: str):
 
 # ── API: Chat ─────────────────────────────────────────────────────────────────
 
-# Synthesis keywords — LLM is warranted only for these query types.
+# Synthesis keywords — LLM is warranted for these query types.
+# Simple "what is / what are" factual lookups are answered directly when the
+# evidence contains the query terms, so they are NOT synthesis triggers.
 _SYNTHESIS_KEYWORDS = frozenset([
     "summarize", "summary", "compare", "contrast", "explain", "describe",
     "how does", "why does", "what does", "what is the difference",
@@ -1039,47 +1049,274 @@ _SYNTHESIS_KEYWORDS = frozenset([
 ])
 
 
+_STOP_WORDS = frozenset({
+    "what", "is", "are", "was", "were", "be", "been", "being", "the", "a", "an",
+    "this", "that", "these", "those", "of", "in", "on", "at", "to", "for", "with",
+    "by", "from", "and", "or", "as", "it", "its", "their", "they", "them", "his",
+    "her", "he", "she", "we", "you", "i", "me", "my", "our", "us", "do", "does",
+    "did", "has", "have", "had", "can", "could", "would", "should", "will", "shall",
+    "may", "might", "must", "about", "against", "all", "any", "each", "every",
+    "some", "many", "much", "more", "most", "other", "than", "then", "now", "here",
+    "there", "where", "why", "how", "who", "which", "whom", "whose", "when", "am",
+})
+
+
+def _significant_terms(query: str) -> list[str]:
+    """Return content-bearing terms from a query, dropping stop words."""
+    terms = [t.lower() for t in re.findall(r"\b\w{3,}\b", query)]
+    return [t for t in terms if t not in _STOP_WORDS and not t.isdigit()]
+
+
+def _query_match_score(query: str, result) -> float:
+    """Lexical confidence that `result` directly answers `query`.
+
+    Rewards query-term and exact-phrase coverage inside the focused passage
+    returned by :func:`_extract_passage`, plus definition-breadth signals
+    (multi-sentence passage, repeated phrase). A chunk that only mentions the
+    query topic in passing now scores lower than a chunk whose focused passage
+    actually defines it. Air-gap safe: no LLM required.
+    """
+    terms = _significant_terms(query)
+    if not terms:
+        return 0.0
+    content = (result.content or "").lower()
+    if not content:
+        return 0.0
+
+    passage = _extract_passage(result.content or "", query, max_chars=900).lower()
+    if not passage:
+        return 0.0
+    phrase = " ".join(terms)
+
+    # Focused-passage coverage (primary signal).
+    matched_passage = [t for t in terms if t in passage]
+    coverage_passage = len(matched_passage) / len(terms)
+
+    # Exact-phrase and repetition inside the focused passage.
+    phrase_in_passage = 0.2 if phrase and phrase in passage else 0.0
+    phrase_hits = passage.count(phrase) if phrase else 0
+    phrase_repeat = min(0.45, phrase_hits * 0.15)
+
+    # Definition breadth: multi-sentence focused passages are more likely to
+    # define a concept than a single passing mention.
+    sentences = [s for s in re.split(r"[.!?]+", passage) if s.strip()]
+    breadth = min(0.45, max(0, len(sentences) - 1) * 0.15)
+
+    # Full-content coverage (secondary confirmation).
+    matched_full = [t for t in terms if t in content]
+    coverage_full = len(matched_full) / len(terms)
+
+    return min(
+        1.0,
+        coverage_passage * 0.35
+        + phrase_in_passage
+        + phrase_repeat
+        + breadth
+        + coverage_full * 0.1,
+    )
+
+
+def _extract_passage(content: str, query: str, max_chars: int = 800) -> str:
+    """Return a focused passage from content that answers the query.
+
+    Anchors on the exact phrase formed by the query's significant terms (or the
+    first matching term), then expands only enough to capture the surrounding
+    sentence(s).  This avoids dragging in unrelated paragraphs from large
+    Wikipedia-style chunks.
+    """
+    if not content:
+        return ""
+    terms = _significant_terms(query)
+    content_lower = content.lower()
+    if not terms:
+        return content[:max_chars].strip()
+
+    phrase = " ".join(terms)
+    anchor = -1
+    if phrase:
+        anchor = content_lower.find(phrase)
+    if anchor == -1:
+        positions = [content_lower.find(t) for t in terms if content_lower.find(t) != -1]
+        if positions:
+            anchor = min(positions)
+    if anchor == -1:
+        return content[:max_chars].strip()
+
+    half = max_chars // 2
+    # Start a little before the anchor but snap to a sentence/paragraph boundary.
+    start = max(0, anchor - half)
+    para_break = content.rfind("\n\n", 0, start)
+    if para_break != -1 and start - para_break < 200:
+        start = para_break + 2
+    else:
+        while start > 0 and content[start - 1] not in ".!?\n":
+            start -= 1
+
+    # End at the first sentence terminator after the anchor window so the
+    # snippet stays focused on the matching phrase.
+    min_end = min(len(content), anchor + max(40, half // 2))
+    end = min_end
+    while end < len(content) and content[end] not in ".!?\n":
+        end += 1
+    if end < len(content):
+        end += 1  # include the terminator
+
+    # Allow a second sentence only if it is short and keeps us within budget.
+    next_end = end
+    budget_left = max_chars - (end - start)
+    if budget_left > 60:
+        while next_end < len(content) and content[next_end] in " \n":
+            next_end += 1
+        sentence_end = next_end
+        while sentence_end < len(content) and content[sentence_end] not in ".!?\n":
+            sentence_end += 1
+        if sentence_end < len(content) and sentence_end - end <= budget_left:
+            end = sentence_end + 1
+
+    return content[start:end].strip()
+
+
+def _snippet_focus_score(query: str, result) -> float:
+    """Tie-breaker that rewards chunks whose focused passage *defines* the query topic.
+
+    Prefers higher query-term and exact-phrase density inside the passage
+    returned by :func:`_extract_passage` (the passage actually surrounding
+    the query terms), and boosts results that come from fully-enriched
+    documents carrying a ``doc_summary``. This lets a chunk that defines
+    "Bill of Rights" outrank a shorter chunk that only mentions it in passing.
+    """
+    content = (result.content or "").lower()
+    if not content:
+        return 0.0
+    terms = _significant_terms(query)
+    if not terms:
+        return 0.0
+
+    passage = _extract_passage(result.content or "", query, max_chars=900).lower()
+    phrase = " ".join(terms)
+    passage_len = max(1, len(passage))
+
+    # Density of query terms inside the focused passage (defines vs. mentions).
+    term_hits = sum(passage.count(t) for t in terms)
+    density = min(1.0, term_hits * 8 / passage_len)
+
+    # Exact phrase presence and repetition inside the focused passage.
+    phrase_hits = passage.count(phrase) if phrase else 0
+    phrase_anchor = 0.5 if phrase_hits else 0.0
+    phrase_repeat = min(0.3, phrase_hits * 0.15)
+
+    # Boost fully-enriched documents that produced a doc_summary at ingest time.
+    summary_boost = 0.25 if (result.doc_summary or "").strip() else 0.0
+
+    # Mild reward for a tight, focused passage over a sprawling one.
+    focus_bonus = max(0.0, 1.0 - passage_len / 1000)
+
+    # Small length preference: avoid giant Wikipedia-style dumps.
+    length_penalty = max(0.0, 1.0 - len(content) / 6000)
+
+    return density + phrase_anchor + phrase_repeat + summary_boost + focus_bonus + length_penalty
+
+
 def _needs_synthesis(query: str) -> bool:
     q = query.lower()
     return any(kw in q for kw in _SYNTHESIS_KEYWORDS)
 
 
-def _compile_grounded_answer(results: list, query: str) -> str:
-    """Build a grounded answer directly from RAG chunks — no LLM."""
+def _build_sources(results: list) -> list[dict]:
+    """Build a numbered, human-readable source list for chat citations.
+
+    Each source links to the original document detail page and includes the
+    page/classification metadata needed for a clickable citation badge.
+    """
+    sources = []
+    seen = set()
+    for r in results:
+        key = (r.doc_id, r.page)
+        if key in seen:
+            continue
+        seen.add(key)
+        title = r.doc_title or r.doc_id or "Document"
+        sources.append({
+            "num": len(sources) + 1,
+            "doc_id": r.doc_id,
+            "doc_title": title,
+            "page": r.page,
+            "section": r.section,
+            "classification": getattr(r.citation, "classification", None) or "CUI",
+            "score": round(getattr(r, "score", 0.0), 4),
+            "archive_url": f"/document-intelligence/doc/{r.doc_id}" if r.doc_id else "#",
+        })
+    return sources
+
+
+def _compile_grounded_answer(results: list, query: str) -> dict:
+    """Build a grounded answer directly from RAG chunks — no LLM.
+
+    Returns a dict with 'answer' (numbered citation markers [1], [2], …) and
+    'sources' (human-readable links to the original documents).
+    """
     if not results:
-        return "No relevant documents found."
+        return {"answer": "No relevant documents found.", "sources": []}
+    cited_results = results[:4]
+    sources = _build_sources(cited_results)
+    source_map = {(s["doc_id"], s["page"]): s["num"] for s in sources}
     lines = []
-    for r in results[:4]:
-        citation = f"[{r.doc_title or r.doc_id} · p.{r.page}]" if r.page else f"[{r.doc_title or r.doc_id}]"
-        snippet = r.content[:300].strip()
-        if snippet:
-            lines.append(f"{citation} {snippet}")
-    return "\n\n".join(lines) if lines else results[0].content[:400]
+    for r in cited_results:
+        num = source_map.get((r.doc_id, r.page))
+        citation = f"[{num}]" if num else f"[{r.doc_title or r.doc_id}]"
+        passage = _extract_passage(r.content or "", query, max_chars=900)
+        if passage:
+            lines.append(f"{citation} {passage}")
+    answer = "\n\n".join(lines) if lines else _extract_passage(results[0].content or "", query, max_chars=1200)
+    return {"answer": answer, "sources": sources}
 
 
-def _llm_synthesize(message: str, results: list, evidence: str) -> str | None:
-    """Call LLM only when synthesis is warranted. Returns None on failure."""
+def _llm_synthesize(message: str, results: list) -> str | None:
+    """Call LLM only when synthesis is warranted. Returns None on failure.
+
+    Uses LLMRouter.invoke() with a system prompt instructing the model to answer
+    only from the provided evidence — grounded, no hallucination. Cites sources
+    with [N] markers that match the sources list returned by api_chat.
+    """
+    evidence_results = results[:5]
+    sources = _build_sources(evidence_results)
+    source_map = {(s["doc_id"], s["page"]): s["num"] for s in sources}
+    evidence_lines = []
+    for r in evidence_results:
+        num = source_map.get((r.doc_id, r.page), "?")
+        passage = _extract_passage(r.content or "", message, max_chars=1000)
+        evidence_lines.append(
+            f"[{num}] {r.doc_title or r.doc_id or 'Document'} "
+            f"(p.{r.page or '?'})\n{passage}"
+        )
+    evidence = "\n\n".join(evidence_lines)
+    prompt = (
+        "You are a document assistant. Answer ONLY using the provided evidence — "
+        "do not add information beyond what is cited. "
+        "Cite supporting facts with [N] markers that match the evidence numbers. "
+        "If the evidence is insufficient, say so explicitly.\n\n"
+        f"Evidence:\n{evidence}\n\n"
+        f"Question: {message}"
+    )
     try:
         for ns in ("icdev.tools.llm.router", "tools.llm.router"):
             try:
                 import importlib
                 mod = importlib.import_module(ns)
+                LLMRequest = importlib.import_module(
+                    ns.replace("router", "provider")
+                ).LLMRequest
                 router = mod.LLMRouter()
-                prompt = (
-                    "You are a document assistant. Answer ONLY using the provided evidence — "
-                    "do not add information beyond what is cited. Cite sources inline as "
-                    "[chunk <id>]. If the evidence is insufficient, say so explicitly.\n\n"
-                    f"Evidence:\n{evidence}\n\n"
-                    f"Question: {message}\n\nAnswer:"
+                if router.is_no_llm_mode():
+                    return None
+                req = LLMRequest(
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=1024,
+                    skip_injection_scan=True,
                 )
-                for meth in ("generate", "complete", "chat", "route", "call"):
-                    fn = getattr(router, meth, None)
-                    if callable(fn):
-                        result = fn(prompt)
-                        if isinstance(result, str):
-                            return result
-                        if isinstance(result, dict):
-                            return result.get("text") or result.get("content")
+                resp = router.invoke("question_answering", req)
+                if resp and getattr(resp, "content", None):
+                    return resp.content.strip() or None
             except ImportError:
                 continue
     except Exception as exc:
@@ -1093,12 +1330,15 @@ def api_chat():
 
     Mode logic:
     1. Always retrieve from RAG+KG (grounded, air-gap safe).
-    2. If top result confidence is high (≥0.4) AND query is a direct lookup:
+    2. If top result confidence is high (≥0.7) AND query is a direct lookup:
        → return grounded answer directly, mode="grounded", NO LLM call.
     3. If query needs synthesis (summarize/compare/explain/…) AND LLM available:
        → synthesize from evidence, mode="ai_assisted", verify with CoD gate.
     4. If LLM unavailable or synthesis not needed:
        → compile grounded answer from top chunks, mode="grounded".
+
+    Every response includes a numbered 'sources' array with human-readable
+    titles and clickable archive_url links back to the original document.
     """
     data = request.get_json(silent=True) or {}
     message = (data.get("message") or "").strip()
@@ -1115,45 +1355,54 @@ def api_chat():
         if not results:
             return jsonify({
                 "answer": "No relevant documents found in this collection. Upload documents first.",
+                "sources": [],
                 "citations": [],
                 "abstained": True,
                 "mode": "grounded",
             })
 
         citations = [r.citation.to_dict() for r in results[:5]]
-        top_score = results[0].score if results else 0.0
+        # Use a lexical match score that works in air-gap mode; raw vector/BM25
+        # scores are not calibrated for a fixed threshold. Re-rank by lexical
+        # match quality + focus on the passage actually surrounding query terms.
+        scored_results = sorted(
+            results,
+            key=lambda r: (_query_match_score(message, r), _snippet_focus_score(message, r)),
+            reverse=True,
+        )
+        best_result = scored_results[0] if scored_results else None
+        top_match_score = _query_match_score(message, best_result) if best_result else 0.0
 
         # ── Path 1: High-confidence direct lookup — NO LLM ──────────────────
-        if top_score >= 0.4 and not _needs_synthesis(message):
-            answer = _compile_grounded_answer(results, message)
+        if best_result and top_match_score >= 0.7 and not _needs_synthesis(message):
+            grounded = _compile_grounded_answer([best_result], message)
             return jsonify({
-                "answer": answer,
+                "answer": grounded["answer"],
+                "sources": grounded["sources"],
                 "citations": citations,
                 "abstained": False,
                 "mode": "grounded",
             })
 
         # ── Path 2: Grounded answer from top chunks — NO LLM ────────────────
-        grounded_answer = _compile_grounded_answer(results, message)
+        grounded = _compile_grounded_answer(scored_results, message)
+        answer = grounded["answer"]
+        sources = grounded["sources"]
 
         # ── Path 3: LLM synthesis if query warrants it ───────────────────────
-        answer = grounded_answer
         mode = "grounded"
         abstained = False
 
         if _needs_synthesis(message):
-            evidence = "\n\n".join(
-                f"[chunk {r.chunk_id}] {r.content[:400]}" for r in results
-            )
-            llm_answer = _llm_synthesize(message, results, evidence)
+            llm_answer = _llm_synthesize(message, scored_results)
             if llm_answer:
                 # Verify LLM answer against evidence before returning.
                 try:
                     from tools.document_intelligence.verifier import verify
-                    vr = verify(llm_answer, [r.content for r in results])
+                    vr = verify(llm_answer, [r.content for r in scored_results])
                     if vr.abstained:
                         abstained = True
-                        answer = grounded_answer  # fall back to grounded
+                        answer = grounded["answer"]  # fall back to grounded
                     else:
                         answer = vr.verified_text or llm_answer
                         mode = "ai_assisted"
@@ -1163,13 +1412,14 @@ def api_chat():
 
         return jsonify({
             "answer": answer,
+            "sources": sources,
             "citations": citations,
             "abstained": abstained,
             "mode": mode,
         })
     except Exception as exc:
         logger.warning("dic: chat error: %s", exc)
-        return jsonify({"answer": f"Error: {exc}", "citations": [], "abstained": True, "mode": "grounded"}), 500
+        return jsonify({"answer": f"Error: {exc}", "sources": [], "citations": [], "abstained": True, "mode": "grounded"}), 500
 
 
 # ── API: Collections ──────────────────────────────────────────────────────────
@@ -2726,7 +2976,8 @@ def notebook(collection_id: str = "default"):
     try:
         docs = _safe_rows(
             conn,
-            "SELECT id, title, filename, source_type, created_at FROM dic_documents "
+            "SELECT doc_id AS id, title, filename, provider AS source_type, created_at "
+            "FROM dic_documents "
             "WHERE collection_id = ? AND tenant_id = ? ORDER BY created_at DESC LIMIT 50",
             (collection_id, tenant_id),
         )

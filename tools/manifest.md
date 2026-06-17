@@ -1072,3 +1072,20 @@
 | Listener Base | tools\notifications\adapters\listener_base.py | Auto-registered: adapters/listener_base.py | --json | JSON |
 | Mattermost Listener | tools\notifications\adapters\mattermost_listener.py | Auto-registered: adapters/mattermost_listener.py | --json | JSON |
 | Skype Listener | tools\notifications\adapters\skype_listener.py | Auto-registered: adapters/skype_listener.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Synthetic Config Gen | tools\network\synthetic_config_gen.py | Auto-registered: network/synthetic_config_gen.py | --json | JSON |
+| Skype Notify | tools\notifications\adapters\skype_notify.py | Auto-registered: adapters/skype_notify.py | --json | JSON |
+| Teams Bot | tools\notifications\adapters\teams_bot.py | Auto-registered: adapters/teams_bot.py | --json | JSON |
+| Teams Listener | tools\notifications\adapters\teams_listener.py | Auto-registered: adapters/teams_listener.py | --json | JSON |
+| Skillspector Adapter | tools\integrity\adapters\skillspector_adapter.py | Auto-registered: adapters/skillspector_adapter.py | --json | JSON |
+| Pma Credential Monitor | tools\genesis\reflexes\pma_credential_monitor.py | Auto-registered: reflexes/pma_credential_monitor.py | --json | JSON |
+| Pma Int Gap Monitor | tools\genesis\reflexes\pma_int_gap_monitor.py | Auto-registered: reflexes/pma_int_gap_monitor.py | --json | JSON |
+| Botframework Base | tools\gateway\adapters\botframework_base.py | Auto-registered: adapters/botframework_base.py | --json | JSON |
+| Clawhub Connector | tools\databridge\connectors\clawhub_connector.py | Auto-registered: connectors/clawhub_connector.py | --json | JSON |
+| Github Connector | tools\databridge\connectors\github_connector.py | Auto-registered: connectors/github_connector.py | --json | JSON |
+| Skype Connector | tools\databridge\connectors\skype_connector.py | Auto-registered: connectors/skype_connector.py | --json | JSON |
+| Teams Connector | tools\databridge\connectors\teams_connector.py | Auto-registered: connectors/teams_connector.py | --json | JSON |

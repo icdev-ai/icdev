@@ -316,7 +316,7 @@ def generate_study_guide(collection_id: str, tenant_id: str = "default",
     """
     chunks = _get_ranked_chunks(
         collection_id, tenant_id,
-        query="key concepts definitions overview topics",
+        query="key concepts main points important principles overview sections",
         limit=40, doc_id=doc_id,
     )
     if not chunks:
@@ -374,17 +374,16 @@ def _deterministic_study_guide(chunks: list[dict], collection_id: str,
     else:
         # Extract proper nouns (CapitalizedWord or Multi Word Proper Noun)
         all_text = " ".join(_html.unescape(c.get("chunk_text", "")) for c in chunks)
-        # Require 4+ lowercase chars after capital to exclude "And", "The", "Was", etc.
+        # Only exclude pure grammatical/structural connectors — do NOT exclude domain terms
+        # (prior version excluded "Amendment", "Constitution", "Rights", etc. which are
+        # exactly the most important terms for legal/constitutional documents)
         noise_caps = {
-            "The", "This", "That", "These", "Those", "Section", "Article",
-            "Chapter", "Amendment", "Paragraph", "Such", "Any", "All",
+            "The", "This", "That", "These", "Those", "Such", "Any", "All",
             "Each", "No", "Not", "Its", "Their", "His", "Her", "Our",
-            "Your", "United", "States", "And", "But", "For", "Nor", "Yet",
+            "Your", "And", "But", "For", "Nor", "Yet",
             "With", "From", "When", "Where", "Which", "What", "How", "Who",
             "Was", "Were", "Has", "Have", "Had", "Are", "Been", "Being",
             "Shall", "Will", "May", "Can", "Must", "Should", "Would", "Could",
-            "President", "Congress", "Senate", "House", "Court", "Government",
-            "Constitution", "Rights", "Powers", "State", "Federal", "National",
         }
         freq: dict[str, int] = {}
         for m in re.finditer(r"\b([A-Z][a-z]{3,}(?:\s+[A-Z][a-z]{3,}){0,2})\b", all_text):
@@ -411,11 +410,24 @@ def _deterministic_study_guide(chunks: list[dict], collection_id: str,
         top_terms = sorted(freq, key=lambda t: -freq[t])[:15]
 
     sources = list({c.get("source_doc", "unknown") for c in chunks})[:10]
+    # Build a meaningful overview from document title or key points
+    doc_titles = [s for s in sources if s and s != "unknown"]
+    if doc_titles:
+        title_str = ", ".join(doc_titles[:3])
+        overview = (
+            f"This study guide covers {title_str}. "
+            f"It is based on {len(chunks)} extracted passages."
+        )
+    else:
+        overview = (
+            f"Study guide for collection '{collection_id}' — "
+            f"{len(chunks)} passages across {len(sources)} document(s)."
+        )
     return {
         "format": "bm25-kg",
         "collection_id": collection_id,
         "chunks_used": len(chunks),
-        "overview": f"Study guide for collection '{collection_id}' covering {len(sources)} source document(s).",
+        "overview": overview,
         "key_points": key_points,
         "key_terms": top_terms,
         "sources": sources,
@@ -445,20 +457,74 @@ def generate_faq(collection_id: str, tenant_id: str = "default", n: int = 10,
     return content
 
 
+_FAQ_SKIP_STARTERS = frozenset([
+    "but", "when", "if", "as", "since", "after", "before", "while",
+    "a", "an", "resolved", "that", "these",
+    "those", "such", "no", "not", "and", "or", "for", "nor", "so", "yet",
+    "be", "is", "it", "he", "she", "they", "we", "you", "i", "any",
+    "all", "each", "both", "neither", "either", "whenever", "wherever",
+    "thereafter", "hereby", "thereof", "hereof", "therein", "herein",
+    "whereas", "provided", "except", "unless", "until", "upon", "during",
+    "section", "paragraph", "article",  # structural labels, not topics
+])
+
+# Trailing verb phrases that get captured in the topic match and should be stripped
+_TRAILING_VERB_RE = re.compile(
+    r"\s+(is|are|was|were|means|refers\s+to|defined\s+as|used\s+to|defines|establishes|provides)\s*$",
+    re.I,
+)
+
+
+_FAQ_DEFN_VERB_RE = re.compile(
+    r"\b(is|are|means|refers\s+to|defined\s+as|defines|establishes|provides)\b", re.I
+)
+
+
 def _deterministic_faq(chunks: list[dict], collection_id: str, n: int) -> dict:
-    # Mine sentences that look like questions or definitions
+    """Mine definition-like sentences and turn them into Q&A pairs.
+
+    Extracts the topic as everything BEFORE the first definition verb
+    ("Bill of Rights refers to..." → topic = "Bill of Rights").
+    Filters out topics that start with conjunctions, procedural legalese, etc.
+    """
     pairs = []
+    seen_topics: set[str] = set()
     for c in chunks:
         text = (c.get("chunk_text") or "").strip()
         sentences = re.split(r"(?<=[.!?])\s+", text)
-        for i, s in enumerate(sentences):
-            # Look for definition-like or explanatory sentences
-            if re.search(r"\b(is|are|means|refers to|defined as|used to)\b", s, re.I) and len(s) > 50:
-                # Turn it into a question
-                topic_match = re.match(r"^([A-Z][^,\.]{3,40})\b", s)
-                if topic_match:
-                    topic = topic_match.group(1).strip()
-                    pairs.append({"q": f"What is {topic}?", "a": s.strip()})
+        for s in sentences:
+            if len(s) < 60:
+                continue
+            verb_m = _FAQ_DEFN_VERB_RE.search(s)
+            if not verb_m:
+                continue
+            # Topic = everything before the definition verb
+            topic = s[:verb_m.start()].strip().rstrip(" ,;:")
+            if not topic:
+                continue
+            # Strip leading "The " / "This " — keep the noun phrase
+            topic = re.sub(r"^(The|This|A)\s+", "", topic)
+            topic = topic.strip()
+            if not topic:
+                continue
+            # Filter: must start with a capital letter (proper noun or formal term)
+            if not topic[0].isupper():
+                continue
+            first_word = re.sub(r"[^\w]", "", topic.split()[0]).lower()
+            if first_word in _FAQ_SKIP_STARTERS:
+                continue
+            # Require ≥2 words OR a single word ≥8 chars
+            words = topic.split()
+            if len(words) < 2 and len(topic) < 8:
+                continue
+            # Must not be excessively long (>7 words = likely a clause, not a noun phrase)
+            if len(words) > 7:
+                continue
+            sig = re.sub(r"\W", "", topic[:25].lower())
+            if sig in seen_topics:
+                continue
+            seen_topics.add(sig)
+            pairs.append({"q": f"What is {topic}?", "a": s.strip()})
             if len(pairs) >= n:
                 break
         if len(pairs) >= n:

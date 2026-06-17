@@ -1,29 +1,530 @@
-[2026-05-25 12:14:24,720] WARNING in app: RAG-KG blueprint failed to register: The name 'rag_kg_api' is already registered for this blueprint. Use 'name=' to provide a unique name.
-[2026-05-25 12:14:25,105] WARNING in app: TA Patterns blueprint failed to register: No module named 'tools.trading.ta.blueprint'
-[2026-05-25 12:14:25,135] WARNING in app: AISG Wizard blueprint failed to register: The name 'aisg' is already registered for this blueprint. Use 'name=' to provide a unique name.
+[BP-REG] meta_api
+[BP-REG] auth_api
+[BP-REG] core blueprints
+[BP-REG] projects_api
+[BP-REG] kanban_api
+[BP-REG] kanban_plan_api
+[BP-REG] agents_api
+[BP-REG] compliance_api
+[BP-REG] poam_api
+[BP-REG] audit_api
+[BP-REG] metrics_api
+[BP-REG] events_bp
+[BP-REG] nlq_bp
+[BP-REG] batch_api
+[BP-REG] diagrams_api
+[BP-REG] cicd_api
+[BP-REG] intake_api: import
+[BP-REG] intake_api: mount
+[BP-REG] intake_api: done
+[BP-REG] admin_api
+[BP-REG] activity_api
+[BP-REG] usage_api
+[BP-REG] traces_api
+[BP-REG] ai_transparency_api
+[BP-REG] ALL BLUEPRINTS MOUNTED
+[ACE] already registered
+GovLift DB init error: column "template_id" does not exist
+
+[2026-06-17 01:12:47,069] WARNING in app: GovLift blueprint failed to register: column "template_id" does not exist
+
+[BP-REG] meta_api
+[BP-REG] auth_api
+[BP-REG] core blueprints
+[BP-REG] projects_api
+[BP-REG] kanban_api
+[BP-REG] kanban_plan_api
+[BP-REG] agents_api
+[BP-REG] compliance_api
+[BP-REG] poam_api
+[BP-REG] audit_api
+[BP-REG] metrics_api
+[BP-REG] events_bp
+[BP-REG] nlq_bp
+[BP-REG] batch_api
+[BP-REG] diagrams_api
+[BP-REG] cicd_api
+[BP-REG] intake_api: import
+[BP-REG] intake_api: mount
+[BP-REG] intake_api: done
+[BP-REG] admin_api
+[BP-REG] activity_api
+[BP-REG] usage_api
+[BP-REG] traces_api
+[BP-REG] ai_transparency_api
+[BP-REG] ALL BLUEPRINTS MOUNTED
+[ACE] already registered
+GovLift DB init error: column "template_id" does not exist
+
+[2026-06-17 01:13:00,639] WARNING in app: GovLift blueprint failed to register: column "template_id" does not exist
+
 Werkzeug appears to be used in a production deployment. Consider switching to a production web server instead.
 WARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.
  * Running on http://127.0.0.1:5050
 Press CTRL+C to quit
-127.0.0.1 - - [25/May/2026 13:26:03] "GET /api/alerts HTTP/1.1" 200 -
-127.0.0.1 - - [25/May/2026 13:26:03] "GET /api/events/poll?limit=25&since=Mon,%2025%20May%202026%2016:16:50%20GMT HTTP/1.1" 200 -
-127.0.0.1 - - [25/May/2026 13:26:03] "GET /api/metrics/health HTTP/1.1" 200 -
-127.0.0.1 - - [25/May/2026 13:26:03] "GET /api/alerts HTTP/1.1" 200 -
-127.0.0.1 - - [25/May/2026 13:26:03] "GET /api/strategos/briefs?reviewed=0&limit=1 HTTP/1.1" 200 -
-127.0.0.1 - - [25/May/2026 13:26:03] "GET /api/metrics/health HTTP/1.1" 200 -
-127.0.0.1 - - [25/May/2026 13:26:03] "GET /api/alerts HTTP/1.1" 200 -
-127.0.0.1 - - [25/May/2026 13:26:03] "GET /api/strategos/briefs?reviewed=0&limit=1 HTTP/1.1" 200 -
-127.0.0.1 - - [25/May/2026 13:26:03] "GET /api/metrics/health HTTP/1.1" 200 -
-127.0.0.1 - - [25/May/2026 13:26:03] "GET /api/alerts HTTP/1.1" 200 -
-127.0.0.1 - - [25/May/2026 13:26:03] "GET /api/metrics/health HTTP/1.1" 200 -
-127.0.0.1 - - [25/May/2026 13:26:04] "GET /api/events/poll?limit=25&since=Mon,%2025%20May%202026%2016:16:50%20GMT HTTP/1.1" 200 -
-127.0.0.1 - - [25/May/2026 13:26:06] "GET /api/events/poll?limit=25&since=Mon,%2025%20May%202026%2016:16:50%20GMT HTTP/1.1" 200 -
-127.0.0.1 - - [25/May/2026 13:26:08] "GET /api/events/poll?limit=25&since=Mon,%2025%20May%202026%2016:16:50%20GMT HTTP/1.1" 200 -
-127.0.0.1 - - [25/May/2026 13:26:09] "GET /api/events/poll?limit=25&since=Mon,%2025%20May%202026%2016:16:50%20GMT HTTP/1.1" 200 -
-127.0.0.1 - - [25/May/2026 13:26:12] "GET /api/kanban/last-update HTTP/1.1" 200 -
-127.0.0.1 - - [25/May/2026 13:26:12] "GET /api/alerts HTTP/1.1" 200 -
-127.0.0.1 - - [25/May/2026 13:26:12] "GET /api/events/poll?limit=25&since=Mon,%2025%20May%202026%2016:16:50%20GMT HTTP/1.1" 200 -
-127.0.0.1 - - [25/May/2026 13:26:12] "GET /api/metrics/health HTTP/1.1" 200 -
-127.0.0.1 - - [25/May/2026 13:26:12] "GET /api/events/poll?limit=25&since=Mon,%2025%20May%202026%2016:16:50%20GMT HTTP/1.1" 200 -
-127.0.0.1 - - [25/May/2026 13:26:16] "GET /api/events/poll?limit=25&since=Mon,%2025%20May%202026%2016:16:50%20GMT HTTP/1.1" 200 -
-127.0.0.1 - - [25/May/2026 13:26:16] "GET /api/events/poll?limit=25&since=Mon,%2025%20May%202026%2016:16:50%20GMT HTTP/1.1" 200 -
+Launch failed for role compliance_manager: sequence item 0: expected str instance, RoleStep found
+Launch failed for role derivative_classifier: sequence item 0: expected str instance, RoleStep found
+Launch failed for role document_classification_specialist: sequence item 0: expected str instance, RoleStep found
+Launch failed for role editor: sequence item 0: expected str instance, RoleStep found
+Launch failed for role intelligence_analyst: sequence item 0: expected str instance, RoleStep found
+Launch failed for role requirements_engineer: sequence item 0: expected str instance, RoleStep found
+Launch failed for role writer: sequence item 0: expected str instance, RoleStep found
+ "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:00] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:02] "POST /document-intelligence/api/chat HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:03] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+Launch failed for role compliance_manager: sequence item 0: expected str instance, RoleStep found
+Launch failed for role derivative_classifier: sequence item 0: expected str instance, RoleStep found
+Launch failed for role document_classification_specialist: sequence item 0: expected str instance, RoleStep found
+Launch failed for role editor: sequence item 0: expected str instance, RoleStep found
+Launch failed for role intelligence_analyst: sequence item 0: expected str instance, RoleStep found
+Launch failed for role requirements_engineer: sequence item 0: expected str instance, RoleStep found
+Launch failed for role writer: sequence item 0: expected str instance, RoleStep found
+127.0.0.1 - - [17/Jun/2026 01:13:06] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:09] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:10] "POST /document-intelligence/api/chat HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:11] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:11] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:11] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:12] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:16] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:19] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:22] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:25] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:28] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:31] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:35] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:38] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:40] "GET /api/strategos/briefs?reviewed=0&limit=1 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:41] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:41] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:41] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:41] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:44] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:47] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:51] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:54] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:13:57] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:00] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:03] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:06] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:10] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:11] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:11] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:11] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:13] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:16] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:19] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:22] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:26] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:29] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:32] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:35] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:38] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:41] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:41] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:41] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:42] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:45] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:48] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:51] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:55] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:14:58] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:01] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:04] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:07] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:10] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:11] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:11] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:11] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:13] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:17] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:20] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:23] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:26] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:29] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:32] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:36] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:39] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:40] "GET /api/strategos/briefs?reviewed=0&limit=1 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:41] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:41] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:41] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:42] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:45] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:48] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:51] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:55] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:15:58] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:01] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:04] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:07] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:10] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:11] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:11] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:11] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:13] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:17] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:20] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:23] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:26] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:29] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:32] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:36] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:39] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:41] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:41] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:41] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:42] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:45] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:48] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:51] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:55] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:16:58] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:01] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:04] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:07] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:11] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:11] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:11] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:11] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:14] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:17] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:20] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:23] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:26] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:30] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:33] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:36] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:39] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:40] "GET /api/strategos/briefs?reviewed=0&limit=1 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:41] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:41] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:41] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:42] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:45] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:49] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:52] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:55] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:17:58] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:01] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:04] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:08] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:11] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:11] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:11] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:11] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:14] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:17] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:21] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:24] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:27] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:30] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:33] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:36] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:40] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:41] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:41] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:41] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:43] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:46] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:49] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:52] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:56] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:18:59] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:02] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:05] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:08] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:11] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:11] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:11] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:12] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:15] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:18] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:21] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:24] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:27] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:31] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:34] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:37] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:39] "GET /api/strategos/briefs?reviewed=0&limit=1 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:40] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:41] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:41] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:41] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:43] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:47] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:50] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:53] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:56] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:19:59] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:02] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:06] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:09] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:11] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:11] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:11] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:12] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:15] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:18] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:21] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:24] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:28] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:31] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:34] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:37] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:40] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:41] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:41] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:41] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:43] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:47] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:50] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:53] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:56] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:20:59] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:02] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:06] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:09] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:11] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:11] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:11] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:12] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:15] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:18] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:22] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:25] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:28] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:31] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:34] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:37] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:40] "GET /api/strategos/briefs?reviewed=0&limit=1 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:40] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:41] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:41] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:41] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:43] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:47] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:50] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:53] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:55] "GET /health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:56] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:57] "GET /health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:21:59] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:00] "GET / HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:02] "GET /projects HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:02] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:04] "GET /agents HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:06] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:06] "GET /kanban HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:08] "GET /cicd HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:09] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:10] "GET /orchestration HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:11] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:11] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:11] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:12] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:12] "GET /monitoring HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:14] "GET /platform-health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:15] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:16] "GET /activity HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:18] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:19] "GET /chat HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:21] "GET /ai-wizard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:21] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:23] "GET /dev-profiles HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:24] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:25] "GET /finetune HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:27] "GET /diagrams HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:28] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:29] "GET /connector-forge HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:31] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:31] "GET /translations HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:33] "GET /ai-patterns HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:34] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:35] "GET /ai-observatory HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:37] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:38] "GET /components-map HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:40] "GET /ask-icdev HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:40] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:41] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:41] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:41] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:42] "GET /research HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:43] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:44] "GET /autoresearch HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:47] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:47] "GET /knowledge-search HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:49] "GET /code-quality HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:50] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:51] "GET /writeguard HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:53] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:54] "GET /govcon HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:56] "GET /govcon/requirements HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:56] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:58] "GET /govcon/capabilities HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:22:59] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:00] "GET /proposals HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:02] "GET /cpmp HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:02] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:05] "GET /oscal HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:06] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:07] "GET /fedramp-20x HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:09] "GET /compliance HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:09] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:11] "GET /poam HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:11] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:11] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:11] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:12] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:13] "GET /ato-compliance HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:15] "GET /safety HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:15] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:17] "GET /stig-manager HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:18] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:19] "GET /digital-twin HTTP/1.1" 302 -
+127.0.0.1 - - [17/Jun/2026 01:23:21] "GET /kanban HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:22] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:23] "GET /fathomdesk HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:25] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:25] "GET /supply_chain HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:27] "GET /strategos HTTP/1.1" 308 -
+127.0.0.1 - - [17/Jun/2026 01:23:28] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:29] "GET /strategos/ HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:31] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:32] "GET /innovation HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:34] "GET /migration-canvas/network-migration/ HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:34] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:36] "GET /studio/workflows HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:37] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:38] "GET /studio/forms HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:40] "GET /api/strategos/briefs?reviewed=0&limit=1 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:40] "GET /studio/cases HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:40] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:41] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:41] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:41] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:42] "GET /studio/automations HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:43] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:44] "GET /studio/dashboards HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:46] "GET /studio/marketplace HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:47] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:48] "GET /ai-ml/modernize HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:50] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:51] "GET /knowledge-graph HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:53] "GET /pulse HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:53] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:55] "GET /leads HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:56] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:23:59] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:02] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:06] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:09] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:11] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:11] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:11] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:12] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:15] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:18] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:21] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:24] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:28] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:31] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:34] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:37] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:40] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:41] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:41] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:41] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:43] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:47] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:50] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:53] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:56] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:24:59] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:25:02] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:25:06] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:25:09] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:25:11] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:25:11] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:25:11] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:25:12] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:25:15] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:25:18] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:25:21] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:25:24] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:25:28] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:25:31] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:25:34] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:25:37] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:25:40] "GET /api/strategos/briefs?reviewed=0&limit=1 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:25:40] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:25:41] "GET /api/alerts HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:25:41] "GET /api/metrics/health HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:25:41] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:25:43] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:26:00] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:26:02] "GET /document-intelligence/ HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:26:02] "GET /static/css/ux.css HTTP/1.1" 304 -
+127.0.0.1 - - [17/Jun/2026 01:26:02] "GET /static/css/assistant-widget.css HTTP/1.1" 304 -
+127.0.0.1 - - [17/Jun/2026 01:26:02] "GET /static/css/style.css HTTP/1.1" 304 -
+127.0.0.1 - - [17/Jun/2026 01:26:02] "GET /static/vendor/hljs/github-dark.min.css HTTP/1.1" 304 -
+127.0.0.1 - - [17/Jun/2026 01:26:03] "GET /static/js/charts.js HTTP/1.1" 304 -
+127.0.0.1 - - [17/Jun/2026 01:26:03] "GET /static/js/mermaid-icdev.js HTTP/1.1" 304 -
+127.0.0.1 - - [17/Jun/2026 01:26:03] "GET /static/js/api.js HTTP/1.1" 304 -
+127.0.0.1 - - [17/Jun/2026 01:26:03] "GET /static/js/ux.js HTTP/1.1" 304 -
+127.0.0.1 - - [17/Jun/2026 01:26:03] "GET /static/vendor/mermaid/mermaid.min.js HTTP/1.1" 304 -
+127.0.0.1 - - [17/Jun/2026 01:26:03] "GET /api/strategos/briefs?reviewed=0&limit=1 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:26:03] "GET /static/js/tables.js HTTP/1.1" 304 -
+127.0.0.1 - - [17/Jun/2026 01:26:03] "GET /static/js/tour.js HTTP/1.1" 304 -
+127.0.0.1 - - [17/Jun/2026 01:26:03] "GET /static/js/live.js HTTP/1.1" 304 -
+127.0.0.1 - - [17/Jun/2026 01:26:03] "GET /static/js/shortcuts.js HTTP/1.1" 304 -
+127.0.0.1 - - [17/Jun/2026 01:26:03] "GET /static/js/batch.js HTTP/1.1" 304 -
+127.0.0.1 - - [17/Jun/2026 01:26:03] "GET /static/js/kanban.js HTTP/1.1" 304 -
+127.0.0.1 - - [17/Jun/2026 01:26:04] "GET /static/js/proposals.js HTTP/1.1" 304 -
+127.0.0.1 - - [17/Jun/2026 01:26:04] "GET /static/vendor/marked/marked.min.js HTTP/1.1" 304 -
+127.0.0.1 - - [17/Jun/2026 01:26:04] "GET /static/js/chat-renderers.js HTTP/1.1" 304 -
+127.0.0.1 - - [17/Jun/2026 01:26:04] "GET /static/vendor/hljs/highlight.min.js HTTP/1.1" 304 -
+127.0.0.1 - - [17/Jun/2026 01:26:04] "GET /static/js/assistant-widget.js HTTP/1.1" 304 -
+127.0.0.1 - - [17/Jun/2026 01:26:04] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:26:04] "GET /api/assistant/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:26:04] "GET /api/cli-bridge/status HTTP/1.1" 200 -
+127.0.0.1 - - [17/Jun/2026 01:26:04] "GET /favicon.ico HTTP/1.1" 204 -
+127.0.0.1 - - [17/Jun/2026 01:26:07] "GET /api/events/poll?limit=25 HTTP/1.1" 200 -
+[2026-06-17 01:26:09,850] ERROR in app: Exception on /document-intelligence/notebook [GET]
+Traceback (most recent call last):
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\flask\app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\flask\app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\flask\app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\flask\app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "C:\AI\ICDev\tools\document_intelligence\blueprint.py", line 2941, in notebook
+    return render_template(
+        "document_intelligence/notebook.html",
+    ...<3 lines>...
+        mode_info=mode_info,
+    )
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\flask\templating.py", line 151, in render_template
+    return _render(app, template, context)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\flask\templating.py", line 132, in _render
+    rv = template.render(context)
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\jinja2\environment.py", line 1295, in render
+    self.environment.handle_exception()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\schuo\AppData\Roaming\Python\Python314\site-packages\jinja2\environment.py", line 942, in handle_exception
+    raise rewrite_traceback_stack(source=source)
+  File "C:\AI\ICDev\tools\dashboard\templates\document_intelligence\notebook.html", line 1, in top-level template code
+    {% extends "base.html" %}
+  File "C:\AI\ICDev\tools\dashboard\templates\base.html", line 641, in top-level template code
+    {% block content %}{% endblock %}
+    ^^^^^^^^^^^^^^^^^
+  File "C:\AI\ICDev\tools\dashboard\templates\document_intelligence\notebook.html", line 210, in block 'content'
+    {{ out.provider }} · {{ out.created_at[:10] if out.created_at else '' }}
+    ^^^^^^^^^^^^^
+TypeError: 'datetime.datetime' object is not subscriptable
+127.0.0.1 - - [17/Jun/2026 01:26:09] "GET /document-intelligence/notebook HTTP/1.1" 500 -
+127.0.0.1 - - [17/Jun/2026 01:26:09] "GET /favicon.ico HTTP/1.1" 204 -

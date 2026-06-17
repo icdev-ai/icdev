@@ -1459,10 +1459,10 @@ def ingest_file(
     tid, cls = _resolve_context(tenant_id, classification)
     errors: list[str] = []
 
-    def _emit(stage: str, detail: str, pct: int = 0) -> None:
+    def _emit(stage: str, detail: str, pct: int = 0, extra: dict | None = None) -> None:
         if progress_cb:
             try:
-                progress_cb(stage, detail, pct)
+                progress_cb(stage, detail, pct, extra or {})
             except Exception:
                 pass
 
@@ -1573,7 +1573,19 @@ def ingest_file(
                 (version_id,),
             ).fetchone()
             existing_chunks = chunk_row[0] if chunk_row else 0
-            _emit("done", f"Idempotent — duplicate of {existing_doc_id}", 100)
+            dup_error = f"Duplicate detected — this file already exists as '{existing_filename}' in this collection. No new version created (idempotent)."
+            _emit(
+                "done",
+                f"Idempotent — duplicate of {existing_doc_id}",
+                100,
+                extra={
+                    "doc_id": existing_doc_id,
+                    "chunks": existing_chunks,
+                    "chunks_embedded": existing_chunks,
+                    "kg_entities": 0,
+                    "errors": errors + [dup_error],
+                },
+            )
             return IngestOutcome(
                 doc_id=existing_doc_id,
                 version_id=version_id,
@@ -1586,7 +1598,7 @@ def ingest_file(
                 kg_relationships=0,
                 tenant_id=tid,
                 classification=cls,
-                errors=errors + [f"Duplicate detected — this file already exists as '{existing_filename}' in this collection. No new version created (idempotent)."],
+                errors=errors + [dup_error],
             )
 
         doc_id = _doc_id(collection_id, str(p))
@@ -1704,7 +1716,18 @@ def ingest_file(
             except Exception as e:
                 errors.append(f"kg bridge unavailable: {e}")
 
-        _emit("done", f"Done — {len(chunks)} chunks, {kg_entities} entities", 100)
+        _emit(
+            "done",
+            f"Done — {len(chunks)} chunks, {kg_entities} entities",
+            100,
+            extra={
+                "doc_id": doc_id,
+                "chunks": len(chunks),
+                "chunks_embedded": chunks_embedded,
+                "kg_entities": kg_entities,
+                "errors": list(errors),
+            },
+        )
         return IngestOutcome(
             doc_id=doc_id,
             version_id=version_id,
