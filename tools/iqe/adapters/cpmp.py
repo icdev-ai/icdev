@@ -5,8 +5,8 @@ Collections:
     cpmp.contracts    — cpmp_contracts (active contract portfolio)
     cpmp.deliverables — cpmp_deliverables (CDRL deliverable tracking)
     cpmp.clins        — cpmp_clins (contract line item numbers)
-    cpmp.cpars        — cpmp_cpars (contractor performance assessments)
-    cpmp.evm          — cpmp_evm_snapshots (earned value management data)
+    cpmp.cpars        — cpmp_cpars_assessments (contractor performance assessments)
+    cpmp.evm          — cpmp_evm_periods (earned value management data)
 """
 from __future__ import annotations
 
@@ -69,11 +69,11 @@ def cpars_adapter(conn: Any) -> list[dict]:
     c = _conn(conn)
     try:
         cur = c.execute(
-            "SELECT id, contract_id, evaluation_period, quality_rating, "
-            "schedule_rating, cost_control_rating, management_rating, "
+            "SELECT id, contract_id, period_start, period_end, quality_rating, "
+            "schedule_rating, cost_rating, management_rating, "
             "small_business_rating, overall_rating, narrative, "
             "classification, created_at "
-            "FROM cpmp_cpars ORDER BY created_at DESC"
+            "FROM cpmp_cpars_assessments ORDER BY created_at DESC"
         )
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]
@@ -85,9 +85,9 @@ def evm_adapter(conn: Any) -> list[dict]:
     c = _conn(conn)
     try:
         cur = c.execute(
-            "SELECT id, contract_id, snapshot_date, bcws, bcwp, acwp, "
+            "SELECT id, contract_id, period_date, bcws, bcwp, acwp, "
             "cpi, spi, eac, bac, vac, classification, created_at "
-            "FROM cpmp_evm_snapshots ORDER BY snapshot_date DESC LIMIT 500"
+            "FROM cpmp_evm_periods ORDER BY period_date DESC LIMIT 500"
         )
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]
