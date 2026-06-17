@@ -189,7 +189,12 @@ def _current_user() -> str:
 
 
 def _user_role(collection_id: str, user_id: str) -> str:
-    """Look up the user's role in a collection via dic_team_access."""
+    """Look up the user's role in a collection via dic_team_access.
+
+    Falls back to 'admin' for the anonymous local-dev sentinel ('current_user')
+    so that unauthenticated single-user dashboards are not blocked by RBAC.
+    All other users without an explicit row default to 'viewer'.
+    """
     conn = _conn()
     try:
         row = conn.execute(
@@ -202,6 +207,8 @@ def _user_role(collection_id: str, user_id: str) -> str:
         pass
     finally:
         conn.close()
+    if user_id in ("current_user", "", None):
+        return "admin"
     return "viewer"
 
 
