@@ -235,7 +235,7 @@ def _patch_pipeline(monkeypatch, classifications):
     monkeypatch.setattr(storage, "get_connection", lambda *a, **k: _Conn())
     monkeypatch.setattr(
         se.DICSearchEngine, "_rag_search",
-        lambda self, query, top_k, mode: [_Raw(i) for i in range(len(classifications))],
+        lambda self, query, top_k, mode, collection_id=None: [_Raw(i) for i in range(len(classifications))],
     )
     # doc_id -> classification injected via _doc_meta; chunk meta resolves doc_id.
     monkeypatch.setattr(

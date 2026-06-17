@@ -1443,6 +1443,24 @@ CREATE TABLE IF NOT EXISTS skype_inbox (
     error           TEXT,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS domain_coverage (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    domain_key      TEXT    NOT NULL,
+    domain_name     TEXT    NOT NULL,
+    domain_type     TEXT    NOT NULL DEFAULT 'knowledge',
+    source_canvas   TEXT,
+    coverage_score  REAL    NOT NULL DEFAULT 0.0,
+    gap_count       INTEGER NOT NULL DEFAULT 0,
+    status          TEXT    NOT NULL DEFAULT 'active',
+    orphan_reason   TEXT,
+    last_checked_at TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resolved_at     TEXT,
+    detail          TEXT    NOT NULL DEFAULT '{}',
+    tenant_id       TEXT    NOT NULL DEFAULT 'default',
+    classification  TEXT    NOT NULL DEFAULT 'CUI',
+    created_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 

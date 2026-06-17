@@ -40,6 +40,16 @@ def _is_expired(expires_at: str) -> bool:
         return True
 
 
+# Columns added after initial deployment (idempotent ALTER TABLE).
+# SQLite does not support ADD COLUMN IF NOT EXISTS, so failures are ignored.
+_ALTER_MIGRATIONS = [
+    ("lock_id", "TEXT"),
+    ("doc_id", "TEXT"),
+    ("tenant_id", "TEXT"),
+    ("classification", "TEXT DEFAULT 'CUI'"),
+]
+
+
 def _ensure_table(conn) -> None:
     conn.execute("""
         CREATE TABLE IF NOT EXISTS dic_section_locks (
@@ -53,6 +63,12 @@ def _ensure_table(conn) -> None:
             classification TEXT DEFAULT 'CUI'
         )
     """)
+    # Best-effort add missing columns for backward compatibility.
+    for col, dtype in _ALTER_MIGRATIONS:
+        try:
+            conn.execute(f"ALTER TABLE dic_section_locks ADD COLUMN {col} {dtype}")
+        except Exception:
+            pass
     conn.commit()
 
 
@@ -73,7 +89,7 @@ def acquire_lock(section_id: str, user_id: str, ttl_seconds: int = _DEFAULT_TTL,
     with get_connection() as conn:
         _ensure_table(conn)
         existing = conn.execute(
-            "SELECT * FROM dic_section_locks WHERE section_id = %s LIMIT 1",
+            "SELECT * FROM dic_section_locks WHERE section_id = ? LIMIT 1",
             (section_id,),
         ).fetchone()
 
@@ -82,7 +98,7 @@ def acquire_lock(section_id: str, user_id: str, ttl_seconds: int = _DEFAULT_TTL,
             if _is_expired(row["expires_at"]):
                 # Stale lock — delete and let the caller acquire below
                 conn.execute(
-                    "DELETE FROM dic_section_locks WHERE section_id = %s", (section_id,)
+                    "DELETE FROM dic_section_locks WHERE section_id = ?", (section_id,)
                 )
                 conn.commit()
             elif row["locked_by"] != user_id:
@@ -92,7 +108,7 @@ def acquire_lock(section_id: str, user_id: str, ttl_seconds: int = _DEFAULT_TTL,
                 # Caller already holds it — renew
                 new_exp = _expires_iso(ttl_seconds)
                 conn.execute(
-                    "UPDATE dic_section_locks SET expires_at = %s WHERE section_id = %s",
+                    "UPDATE dic_section_locks SET expires_at = ? WHERE section_id = ?",
                     (new_exp, section_id),
                 )
                 conn.commit()
@@ -105,7 +121,7 @@ def acquire_lock(section_id: str, user_id: str, ttl_seconds: int = _DEFAULT_TTL,
         conn.execute(
             """INSERT INTO dic_section_locks
                (lock_id, section_id, locked_by, locked_at, expires_at, doc_id, classification)
-               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (lock_id, section_id, user_id, now, exp, doc_id or "", "CUI"),
         )
         conn.commit()
@@ -126,13 +142,13 @@ def release_lock(section_id: str, user_id: str) -> bool:
     with get_connection() as conn:
         _ensure_table(conn)
         row = conn.execute(
-            "SELECT locked_by FROM dic_section_locks WHERE section_id = %s LIMIT 1",
+            "SELECT locked_by FROM dic_section_locks WHERE section_id = ? LIMIT 1",
             (section_id,),
         ).fetchone()
         if not row or dict(row)["locked_by"] != user_id:
             return False
         conn.execute(
-            "DELETE FROM dic_section_locks WHERE section_id = %s AND locked_by = %s",
+            "DELETE FROM dic_section_locks WHERE section_id = ? AND locked_by = ?",
             (section_id, user_id),
         )
         conn.commit()
@@ -147,14 +163,14 @@ def renew_lock(section_id: str, user_id: str, ttl_seconds: int = _DEFAULT_TTL) -
     with get_connection() as conn:
         _ensure_table(conn)
         row = conn.execute(
-            "SELECT locked_by FROM dic_section_locks WHERE section_id = %s LIMIT 1",
+            "SELECT locked_by FROM dic_section_locks WHERE section_id = ? LIMIT 1",
             (section_id,),
         ).fetchone()
         if not row or dict(row)["locked_by"] != user_id:
             return False
         new_exp = _expires_iso(ttl_seconds)
         conn.execute(
-            "UPDATE dic_section_locks SET expires_at = %s WHERE section_id = %s AND locked_by = %s",
+            "UPDATE dic_section_locks SET expires_at = ? WHERE section_id = ? AND locked_by = ?",
             (new_exp, section_id, user_id),
         )
         conn.commit()
@@ -166,7 +182,7 @@ def get_lock(section_id: str) -> dict | None:
     with get_connection() as conn:
         _ensure_table(conn)
         row = conn.execute(
-            "SELECT * FROM dic_section_locks WHERE section_id = %s LIMIT 1",
+            "SELECT * FROM dic_section_locks WHERE section_id = ? LIMIT 1",
             (section_id,),
         ).fetchone()
         if not row:
@@ -174,7 +190,7 @@ def get_lock(section_id: str) -> dict | None:
         d = _row_to_dict(row)
         if _is_expired(d["expires_at"]):
             conn.execute(
-                "DELETE FROM dic_section_locks WHERE section_id = %s", (section_id,)
+                "DELETE FROM dic_section_locks WHERE section_id = ?", (section_id,)
             )
             conn.commit()
             return None
@@ -187,7 +203,7 @@ def purge_expired_locks() -> int:
     with get_connection() as conn:
         _ensure_table(conn)
         cur = conn.execute(
-            "DELETE FROM dic_section_locks WHERE expires_at < %s", (now,)
+            "DELETE FROM dic_section_locks WHERE expires_at < ?", (now,)
         )
         conn.commit()
         return cur.rowcount if cur else 0

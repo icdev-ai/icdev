@@ -119,21 +119,33 @@ def _targeted_evidence_block(results: list) -> str:
     return "\n\n".join(lines) or "(no evidence available)"
 
 
-def _llm_generate(prompt: str) -> str | None:
+def _llm_generate(
+    prompt: str, *, function: str = "document_qna", max_tokens: int = 2048
+) -> str | None:
+    """Call the ICDEV LLM router using the canonical ``invoke(fn, LLMRequest)`` API.
+
+    Degrades gracefully to ``None`` when no LLM provider is available (air-gapped
+    / headless mode) so the caller can abstain rather than hallucinate.
+    """
     try:
         try:
             from icdev.tools.llm.router import LLMRouter
-        except ImportError:
+            from icdev.tools.llm.provider import LLMRequest
+        except Exception:
             from tools.llm.router import LLMRouter  # type: ignore[import]
+            from tools.llm.provider import LLMRequest  # type: ignore[import]
         router = LLMRouter()
-        for meth in ("generate", "complete", "chat", "route", "call"):
-            fn = getattr(router, meth, None)
-            if callable(fn):
-                result = fn(prompt)
-                if isinstance(result, str):
-                    return result
-                if isinstance(result, dict):
-                    return result.get("text") or result.get("content") or str(result)
+        if router.is_no_llm_mode():
+            logger.info("doc_generator: no-LLM mode; skipping generation")
+            return None
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+            skip_injection_scan=True,
+        )
+        resp = router.invoke(function, req)
+        if resp and getattr(resp, "content", None):
+            return resp.content.strip() or None
     except Exception as exc:
         logger.warning("doc_generator: LLM call failed: %s", exc)
     return None
@@ -330,9 +342,9 @@ def regenerate_section(
         row = cur.fetchone()
         doc_id = row[0] if row else ""
         doc_title = (row[1] if row else "") or heading
-        # Load all sections for this version ordered by rowid to find neighbors.
+        # Load all sections for this version ordered by section_id to find neighbors.
         cur.execute(
-            "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY rowid",
+            "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY section_id",
             (version_id,),
         )
         all_sections = cur.fetchall()
@@ -457,7 +469,7 @@ def regenerate_section(
             )
         # Reassemble full version blob from all sections.
         cur.execute(
-            "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY rowid",
+            "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY section_id",
             (version_id,),
         )
         rows = cur.fetchall()

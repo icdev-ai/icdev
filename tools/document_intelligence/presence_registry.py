@@ -97,19 +97,19 @@ def join_document(
         _ensure_table(conn)
         # Purge stale rows for this user+doc first
         conn.execute(
-            "DELETE FROM dic_presence_sessions WHERE doc_id = %s AND user_id = %s AND expires_at < %s",
+            "DELETE FROM dic_presence_sessions WHERE doc_id = ? AND user_id = ? AND expires_at < ?",
             (doc_id, user_id, now),
         )
         # Check if user already has an active session on this doc
         existing = conn.execute(
-            "SELECT session_key FROM dic_presence_sessions WHERE doc_id = %s AND user_id = %s LIMIT 1",
+            "SELECT session_key FROM dic_presence_sessions WHERE doc_id = ? AND user_id = ? LIMIT 1",
             (doc_id, user_id),
         ).fetchone()
         if existing:
             # Renew the existing session instead of creating a duplicate
             old_key = dict(existing)["session_key"]
             conn.execute(
-                "UPDATE dic_presence_sessions SET last_seen = %s, expires_at = %s WHERE session_key = %s",
+                "UPDATE dic_presence_sessions SET last_seen = ?, expires_at = ? WHERE session_key = ?",
                 (now, exp, old_key),
             )
             conn.commit()
@@ -118,7 +118,7 @@ def join_document(
         conn.execute(
             """INSERT INTO dic_presence_sessions
                (session_key, doc_id, user_id, joined_at, last_seen, expires_at, tenant_id, classification)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (session_key, doc_id, user_id, now, now, exp, tenant_id or "", "CUI"),
         )
         conn.commit()
@@ -132,7 +132,7 @@ def heartbeat(session_key: str, ttl_seconds: int = _DEFAULT_TTL) -> bool:
     with get_connection() as conn:
         _ensure_table(conn)
         cur = conn.execute(
-            "UPDATE dic_presence_sessions SET last_seen = %s, expires_at = %s WHERE session_key = %s",
+            "UPDATE dic_presence_sessions SET last_seen = ?, expires_at = ? WHERE session_key = ?",
             (now, exp, session_key),
         )
         conn.commit()
@@ -144,7 +144,7 @@ def leave_document(session_key: str) -> bool:
     with get_connection() as conn:
         _ensure_table(conn)
         cur = conn.execute(
-            "DELETE FROM dic_presence_sessions WHERE session_key = %s",
+            "DELETE FROM dic_presence_sessions WHERE session_key = ?",
             (session_key,),
         )
         conn.commit()
@@ -158,14 +158,14 @@ def get_present_users(doc_id: str) -> list[dict]:
         _ensure_table(conn)
         # Purge expired rows opportunistically
         conn.execute(
-            "DELETE FROM dic_presence_sessions WHERE doc_id = %s AND expires_at < %s",
+            "DELETE FROM dic_presence_sessions WHERE doc_id = ? AND expires_at < ?",
             (doc_id, now),
         )
         conn.commit()
         rows = conn.execute(
             """SELECT session_key, user_id, joined_at, last_seen, expires_at
                FROM dic_presence_sessions
-               WHERE doc_id = %s
+               WHERE doc_id = ?
                ORDER BY joined_at ASC""",
             (doc_id,),
         ).fetchall()
@@ -180,17 +180,17 @@ def ping(doc_id: str, user_id: str, section_id: str, ttl_seconds: int = _DEFAULT
         _ensure_table(conn)
         _ensure_active_section_col(conn)
         conn.execute(
-            "DELETE FROM dic_presence_sessions WHERE doc_id = %s AND user_id = %s AND expires_at < %s",
+            "DELETE FROM dic_presence_sessions WHERE doc_id = ? AND user_id = ? AND expires_at < ?",
             (doc_id, user_id, now),
         )
         existing = conn.execute(
-            "SELECT session_key FROM dic_presence_sessions WHERE doc_id = %s AND user_id = %s LIMIT 1",
+            "SELECT session_key FROM dic_presence_sessions WHERE doc_id = ? AND user_id = ? LIMIT 1",
             (doc_id, user_id),
         ).fetchone()
         if existing:
             old_key = dict(existing)["session_key"]
             conn.execute(
-                "UPDATE dic_presence_sessions SET last_seen = %s, expires_at = %s, active_section_id = %s WHERE session_key = %s",
+                "UPDATE dic_presence_sessions SET last_seen = ?, expires_at = ?, active_section_id = ? WHERE session_key = ?",
                 (now, exp, section_id, old_key),
             )
             conn.commit()
@@ -199,7 +199,7 @@ def ping(doc_id: str, user_id: str, section_id: str, ttl_seconds: int = _DEFAULT
         conn.execute(
             """INSERT INTO dic_presence_sessions
                (session_key, doc_id, user_id, joined_at, last_seen, expires_at, active_section_id, tenant_id, classification)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (session_key, doc_id, user_id, now, now, exp, section_id, "", "CUI"),
         )
         conn.commit()
@@ -213,14 +213,14 @@ def get_presence(doc_id: str) -> list[dict]:
         _ensure_table(conn)
         _ensure_active_section_col(conn)
         conn.execute(
-            "DELETE FROM dic_presence_sessions WHERE doc_id = %s AND expires_at < %s",
+            "DELETE FROM dic_presence_sessions WHERE doc_id = ? AND expires_at < ?",
             (doc_id, now),
         )
         conn.commit()
         rows = conn.execute(
             """SELECT user_id, active_section_id, last_seen
                FROM dic_presence_sessions
-               WHERE doc_id = %s
+               WHERE doc_id = ?
                ORDER BY joined_at ASC""",
             (doc_id,),
         ).fetchall()
@@ -241,12 +241,12 @@ def purge_stale(doc_id: str = "") -> int:
         _ensure_table(conn)
         if doc_id:
             cur = conn.execute(
-                "DELETE FROM dic_presence_sessions WHERE doc_id = %s AND expires_at < %s",
+                "DELETE FROM dic_presence_sessions WHERE doc_id = ? AND expires_at < ?",
                 (doc_id, now),
             )
         else:
             cur = conn.execute(
-                "DELETE FROM dic_presence_sessions WHERE expires_at < %s",
+                "DELETE FROM dic_presence_sessions WHERE expires_at < ?",
                 (now,),
             )
         conn.commit()

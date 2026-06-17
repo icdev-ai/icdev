@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS dic_team_access (
     role            TEXT        NOT NULL DEFAULT 'viewer',
     granted_by      TEXT        DEFAULT '',
     tenant_id       TEXT        DEFAULT 'default',
+    classification  TEXT        DEFAULT 'CUI',
     created_at      TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_dic_team_access_collection ON dic_team_access(collection_id);

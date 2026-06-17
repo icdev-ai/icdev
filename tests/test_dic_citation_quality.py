@@ -56,7 +56,7 @@ def _patch_pipeline(monkeypatch, hits):
     monkeypatch.setattr(storage, "get_connection", lambda *a, **k: _Conn())
     monkeypatch.setattr(
         se.DICSearchEngine, "_rag_search",
-        lambda self, query, top_k, mode: [
+        lambda self, query, top_k, mode, collection_id=None: [
             _Raw(i, content, score) for i, (content, score) in enumerate(hits)
         ],
     )
@@ -167,7 +167,7 @@ def test_grounded_search_citations_mandatory(monkeypatch):
 def test_grounded_search_to_dict_shape(monkeypatch):
     _patch_pipeline(monkeypatch, [(_STRONG, 0.5)])
     d = se.DICSearchEngine().grounded_search(_QUERY).to_dict()
-    assert set(d) == {"query", "results", "result_count", "citation_quality", "origin"}
+    assert set(d) == {"query", "results", "result_count", "citation_quality", "origin", "anomaly_report"}
     assert d["results"][0]["attribution_score"] > 0.0
 
 
