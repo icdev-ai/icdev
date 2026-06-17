@@ -13788,6 +13788,60 @@ ALTER SEQUENCE public.fedramp_assessments_id_seq OWNED BY public.fedramp_assessm
 
 
 --
+-- Name: fedramp_ato_packages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fedramp_ato_packages (
+    id                   TEXT        PRIMARY KEY,
+    system_name          TEXT        NOT NULL,
+    ato_status           TEXT        NOT NULL DEFAULT 'in_progress'
+                         CHECK (ato_status IN (
+                             'in_progress', 'authorized', 'conditional',
+                             'denied', 'expired'
+                         )),
+    authorization_date   DATE,
+    expiry_date          DATE,
+    package_type         TEXT        DEFAULT 'moderate'
+                         CHECK (package_type IN ('low', 'moderate', 'high')),
+    authorizing_official TEXT,
+    notes                TEXT        NOT NULL DEFAULT '',
+    tenant_id            TEXT        NOT NULL DEFAULT 'default',
+    classification       TEXT        NOT NULL DEFAULT 'CUI // SP-CTI',
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
+--
+-- Name: fedramp_controls; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.fedramp_controls (
+    id                     TEXT        PRIMARY KEY,
+    package_id             TEXT        NOT NULL REFERENCES public.fedramp_ato_packages(id) ON DELETE CASCADE,
+    control_id             TEXT        NOT NULL,
+    control_name           TEXT        NOT NULL DEFAULT '',
+    implementation_status  TEXT        NOT NULL DEFAULT 'not_implemented'
+                           CHECK (implementation_status IN (
+                               'implemented', 'partially_implemented',
+                               'planned', 'not_implemented', 'not_applicable'
+                           )),
+    implementation_origin  TEXT        NOT NULL DEFAULT 'service_provider'
+                           CHECK (implementation_origin IN (
+                               'service_provider', 'customer', 'hybrid', 'inherited'
+                           )),
+    responsible_role       TEXT        NOT NULL DEFAULT '',
+    implementation_detail  TEXT        NOT NULL DEFAULT '',
+    assessment_date        DATE,
+    assessed_by            TEXT        NOT NULL DEFAULT '',
+    tenant_id              TEXT        NOT NULL DEFAULT 'default',
+    classification         TEXT        NOT NULL DEFAULT 'CUI // SP-CTI',
+    created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+
+--
 -- Name: field_filter_audit; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -40038,6 +40092,22 @@ ALTER TABLE ONLY public.fedramp_assessments
 
 
 --
+-- Name: fedramp_ato_packages fedramp_ato_packages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fedramp_ato_packages
+    ADD CONSTRAINT fedramp_ato_packages_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: fedramp_controls fedramp_controls_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.fedramp_controls
+    ADD CONSTRAINT fedramp_controls_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: field_filter_audit field_filter_audit_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -51457,6 +51527,41 @@ CREATE INDEX idx_fedramp_baseline ON public.fedramp_assessments USING btree (bas
 --
 
 CREATE INDEX idx_fedramp_project ON public.fedramp_assessments USING btree (project_id);
+
+
+--
+-- Name: idx_fedramp_ato_pkgs_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fedramp_ato_pkgs_status ON public.fedramp_ato_packages USING btree (ato_status);
+
+
+--
+-- Name: idx_fedramp_ato_pkgs_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fedramp_ato_pkgs_tenant ON public.fedramp_ato_packages USING btree (tenant_id);
+
+
+--
+-- Name: idx_fedramp_controls_package; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fedramp_controls_package ON public.fedramp_controls USING btree (package_id);
+
+
+--
+-- Name: idx_fedramp_controls_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fedramp_controls_status ON public.fedramp_controls USING btree (implementation_status);
+
+
+--
+-- Name: idx_fedramp_controls_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_fedramp_controls_tenant ON public.fedramp_controls USING btree (tenant_id);
 
 
 --
