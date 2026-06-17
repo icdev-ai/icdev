@@ -11910,6 +11910,27 @@ CREATE TABLE public.dispatcher_mode_overrides (
 
 
 --
+-- Name: dm_ports; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dm_ports (
+    id text NOT NULL,
+    product_id text,
+    name text NOT NULL,
+    port_type text DEFAULT 'input'::text NOT NULL,
+    transport_type text DEFAULT 'api'::text,
+    schema_json text DEFAULT '{}'::text,
+    endpoint text DEFAULT ''::text,
+    source_system text DEFAULT ''::text,
+    sla_json text DEFAULT '{}'::text,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_at text DEFAULT now() NOT NULL,
+    CONSTRAINT dm_ports_port_type_check CHECK ((port_type = ANY (ARRAY['input'::text, 'output'::text])))
+);
+
+
+--
 -- Name: doors_requirements; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -39325,6 +39346,14 @@ ALTER TABLE ONLY public.dispatcher_mode_overrides
 
 
 --
+-- Name: dm_ports dm_ports_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dm_ports
+    ADD CONSTRAINT dm_ports_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: doors_requirements doors_requirements_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -51008,6 +51037,27 @@ CREATE INDEX idx_dic_team_access_collection ON public.dic_team_access USING btre
 --
 
 CREATE INDEX idx_dispatcher_mode_project ON public.dispatcher_mode_overrides USING btree (project_id);
+
+
+--
+-- Name: idx_dm_ports_product; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_ports_product ON public.dm_ports USING btree (product_id);
+
+
+--
+-- Name: idx_dm_ports_port_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_ports_port_type ON public.dm_ports USING btree (port_type);
+
+
+--
+-- Name: idx_dm_ports_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dm_ports_tenant ON public.dm_ports USING btree (tenant_id);
 
 
 --
