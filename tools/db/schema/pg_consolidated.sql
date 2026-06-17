@@ -13935,6 +13935,67 @@ ALTER SEQUENCE public.fine_tuning_datasets_id_seq OWNED BY public.fine_tuning_da
 
 
 --
+-- Name: finetune_jobs; Type: TABLE; Schema: public; Owner: -
+-- Platform-level fine-tuning job tracking (render_handler_service notification chain).
+-- Distinct from dic_finetune_jobs which tracks DIC-canvas fine-tuning runs.
+--
+
+CREATE TABLE public.finetune_jobs (
+    id             TEXT        PRIMARY KEY,
+    model_base     TEXT,
+    status         TEXT        NOT NULL DEFAULT 'queued'
+                   CHECK (status IN ('queued', 'running', 'completed', 'failed', 'cancelled')),
+    epochs         INTEGER     DEFAULT 0,
+    started_at     TEXT,
+    completed_at   TEXT,
+    tenant_id      TEXT        NOT NULL DEFAULT 'default',
+    classification TEXT        NOT NULL DEFAULT 'CUI',
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_finetune_jobs_status ON public.finetune_jobs(status);
+CREATE INDEX IF NOT EXISTS idx_finetune_jobs_tenant ON public.finetune_jobs(tenant_id);
+
+
+--
+-- Name: finetune_metrics; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.finetune_metrics (
+    id             BIGSERIAL   PRIMARY KEY,
+    job_id         TEXT        NOT NULL REFERENCES public.finetune_jobs(id),
+    metric_name    TEXT        NOT NULL,
+    value          REAL,
+    epoch          INTEGER     DEFAULT 0,
+    tenant_id      TEXT        NOT NULL DEFAULT 'default',
+    classification TEXT        NOT NULL DEFAULT 'CUI',
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_finetune_metrics_job   ON public.finetune_metrics(job_id);
+CREATE INDEX IF NOT EXISTS idx_finetune_metrics_epoch ON public.finetune_metrics(epoch);
+
+
+--
+-- Name: finetune_eval_results; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.finetune_eval_results (
+    id             BIGSERIAL   PRIMARY KEY,
+    job_id         TEXT        NOT NULL REFERENCES public.finetune_jobs(id),
+    benchmark_name TEXT        NOT NULL,
+    score          REAL,
+    delta          REAL,
+    tenant_id      TEXT        NOT NULL DEFAULT 'default',
+    classification TEXT        NOT NULL DEFAULT 'CUI',
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_finetune_eval_job   ON public.finetune_eval_results(job_id);
+CREATE INDEX IF NOT EXISTS idx_finetune_eval_score ON public.finetune_eval_results(score);
+
+
+--
 -- Name: fips199_categorizations; Type: TABLE; Schema: public; Owner: -
 --
 
