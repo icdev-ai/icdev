@@ -290,9 +290,10 @@ def index():
 
 @dic_bp.route("/collections")
 def collections():
+    tenant_id, _ = _security_context()
     conn = _conn()
     try:
-        cols = _safe_rows(conn, "SELECT * FROM dic_collections ORDER BY created_at DESC LIMIT 100")
+        cols = _safe_rows(conn, "SELECT * FROM dic_collections WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 100", (tenant_id,))
         for c in cols:
             try:
                 doc_count_row = conn.execute(
