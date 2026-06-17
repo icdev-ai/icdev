@@ -253,7 +253,6 @@ def scan_result(
 def save_pii_scan(result: dict, design_id: str | None = None) -> str:
     """Persist PII scan result to dd_pii_scans."""
     import uuid
-    from pathlib import Path
     run_id = uuid.uuid4().hex
     now = datetime.now(timezone.utc).isoformat()
     payload = json.dumps(result)
@@ -262,9 +261,7 @@ def save_pii_scan(result: dict, design_id: str | None = None) -> str:
         from tools.db.storage import get_connection
         conn = get_connection()
     except Exception:
-        import sqlite3
-        db = Path(__file__).resolve().parents[2] / "data" / "icdev.db"
-        conn = sqlite3.connect(str(db))
+        return run_id  # storage unavailable — scan result not persisted
 
     try:
         try:

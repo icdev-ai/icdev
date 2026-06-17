@@ -1400,6 +1400,18 @@ CREATE TABLE IF NOT EXISTS agent_a2a_tasks (
     submitted_at    TEXT NOT NULL,
     updated_at      TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS dd_pii_scans (
+    scan_id         TEXT    PRIMARY KEY,
+    design_id       TEXT,
+    overall_risk    TEXT    DEFAULT 'none',
+    findings_json   TEXT    DEFAULT '[]',
+    scanned_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    tenant_id       TEXT    NOT NULL DEFAULT 'default',
+    classification  TEXT    NOT NULL DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_dd_pii_scans_design  ON dd_pii_scans (design_id);
+CREATE INDEX IF NOT EXISTS idx_dd_pii_scans_risk    ON dd_pii_scans (overall_risk);
+CREATE INDEX IF NOT EXISTS idx_dd_pii_scans_tenant  ON dd_pii_scans (tenant_id);
 """
 
 

@@ -10932,6 +10932,21 @@ CREATE TABLE public.dd_freshness_runs (
 
 
 --
+-- Name: dd_pii_scans; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dd_pii_scans (
+    scan_id text NOT NULL,
+    design_id text,
+    overall_risk text DEFAULT 'none'::text,
+    findings_json text DEFAULT '[]'::text,
+    scanned_at text NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL
+);
+
+
+--
 -- Name: dependency_inventory; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -38958,6 +38973,14 @@ ALTER TABLE ONLY public.dd_freshness_runs
 
 
 --
+-- Name: dd_pii_scans dd_pii_scans_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dd_pii_scans
+    ADD CONSTRAINT dd_pii_scans_pkey PRIMARY KEY (scan_id);
+
+
+--
 -- Name: dependency_inventory dependency_inventory_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -50740,6 +50763,27 @@ CREATE INDEX idx_dd_freshness_design ON public.dd_freshness_runs USING btree (de
 --
 
 CREATE INDEX idx_dd_freshness_run_at ON public.dd_freshness_runs USING btree (run_at DESC);
+
+
+--
+-- Name: idx_dd_pii_scans_design; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_pii_scans_design ON public.dd_pii_scans USING btree (design_id);
+
+
+--
+-- Name: idx_dd_pii_scans_risk; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_pii_scans_risk ON public.dd_pii_scans USING btree (overall_risk);
+
+
+--
+-- Name: idx_dd_pii_scans_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_dd_pii_scans_tenant ON public.dd_pii_scans USING btree (tenant_id);
 
 
 --
