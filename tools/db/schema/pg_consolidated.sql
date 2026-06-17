@@ -11422,6 +11422,26 @@ CREATE TABLE public.dic_acoic_regen_queue (
 
 
 --
+-- Name: dic_chat_memory; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dic_chat_memory (
+    memory_id text NOT NULL,
+    session_id text NOT NULL,
+    collection_id text DEFAULT 'default'::text NOT NULL,
+    user_id text DEFAULT ''::text NOT NULL,
+    role text DEFAULT 'user'::text NOT NULL,
+    content text DEFAULT ''::text NOT NULL,
+    citations_json text DEFAULT '[]'::text NOT NULL,
+    token_count integer DEFAULT 0 NOT NULL,
+    tenant_id text DEFAULT 'default'::text NOT NULL,
+    classification text DEFAULT 'CUI'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT dic_chat_memory_role_check CHECK ((role = ANY (ARRAY['user'::text, 'assistant'::text, 'system'::text])))
+);
+
+
+--
 -- Name: dic_chunk_links; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -39159,6 +39179,14 @@ ALTER TABLE ONLY public.dic_acoic_impacts
 
 ALTER TABLE ONLY public.dic_acoic_regen_queue
     ADD CONSTRAINT dic_acoic_regen_queue_pkey PRIMARY KEY (item_id);
+
+
+--
+-- Name: dic_chat_memory dic_chat_memory_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dic_chat_memory
+    ADD CONSTRAINT dic_chat_memory_pkey PRIMARY KEY (memory_id);
 
 
 --

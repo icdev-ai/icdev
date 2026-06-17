@@ -778,6 +778,23 @@ CREATE TABLE IF NOT EXISTS dic_presence_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_dic_presence_sessions_doc ON dic_presence_sessions(doc_id);
 CREATE INDEX IF NOT EXISTS idx_dic_presence_sessions_last_seen ON dic_presence_sessions(last_seen);
+CREATE TABLE IF NOT EXISTS dic_chat_memory (
+    memory_id       TEXT    PRIMARY KEY,
+    session_id      TEXT    NOT NULL,
+    collection_id   TEXT    NOT NULL DEFAULT 'default',
+    user_id         TEXT    NOT NULL DEFAULT '',
+    role            TEXT    NOT NULL DEFAULT 'user'
+                    CHECK (role IN ('user', 'assistant', 'system')),
+    content         TEXT    NOT NULL DEFAULT '',
+    citations_json  TEXT    NOT NULL DEFAULT '[]',
+    token_count     INTEGER NOT NULL DEFAULT 0,
+    tenant_id       TEXT    NOT NULL DEFAULT 'default',
+    classification  TEXT    NOT NULL DEFAULT 'CUI',
+    created_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dic_chat_memory_session    ON dic_chat_memory (session_id);
+CREATE INDEX IF NOT EXISTS idx_dic_chat_memory_collection ON dic_chat_memory (collection_id);
+CREATE INDEX IF NOT EXISTS idx_dic_chat_memory_tenant     ON dic_chat_memory (tenant_id);
 CREATE TABLE IF NOT EXISTS dd_mapping_sessions (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL DEFAULT 'Untitled Mapping',
