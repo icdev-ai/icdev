@@ -1582,6 +1582,14 @@ def create_app(testing: bool = False) -> Flask:
     except ImportError:
         pass
 
+    # CLI bridge toggle middleware + /api/cli-bridge/* routes
+    try:
+        from tools.dashboard.api.cli_bridge_api import register_cli_bridge
+
+        register_cli_bridge(app)
+    except Exception:
+        pass
+
     # Budget monitor + throttling controller — background daemon wired into the
     # generative intelligence and predictive analysis pipeline (services package).
     try:
