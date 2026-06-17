@@ -377,23 +377,37 @@ def api_launch():
 
     Optional: include ``dic_collection_ids: ["col-id"]`` to prepend BM25 context
     from DIC into the problem_text before the team is assembled.
+
+    Optional: ``role_ids`` bypasses the problem classifier and uses the requested
+    team. ``context_query`` overrides the DIC search query (defaults to the
+    problem_text) for better retrieval of relevant document snippets.
     """
     data = request.get_json(silent=True) or {}
     problem_text = (data.get("problem_text") or data.get("question") or data.get("text") or "").strip()
     if not problem_text:
         return jsonify({"error": "problem_text is required"}), 400
 
-    # DIC context injection — prepend BM25 results from attached collections
+    role_ids = data.get("role_ids") or []
+    if isinstance(role_ids, str):
+        role_ids = [role_ids]
+    role_ids = [r for r in role_ids if isinstance(r, str) and r.strip()]
+
+    # DIC context injection — prepend BM25 results from attached collections.
+    # Use an explicit context_query if the caller provided one; this avoids
+    # searching with a report-generation prompt and instead searches with a
+    # document-focused query, yielding more relevant snippets.
     dic_collection_ids = data.get("dic_collection_ids") or []
     if isinstance(dic_collection_ids, str):
         dic_collection_ids = [dic_collection_ids]
+    context_query = (data.get("context_query") or "").strip()
     if dic_collection_ids:
         context_blocks: list[str] = []
         for col_id in dic_collection_ids[:3]:
             try:
                 from icdev.tools.document_intelligence.search_engine import DICSearchEngine
                 engine = DICSearchEngine(tenant_id="default")
-                results = engine.search(problem_text[:500], collection_id=col_id, top_k=5)
+                search_query = context_query or problem_text[:500]
+                results = engine.search(search_query, collection_id=col_id, top_k=5)
                 if results:
                     snippets = "\n".join(
                         f"- {r.to_dict().get('content', '')[:300]}"
@@ -415,6 +429,7 @@ def api_launch():
             trigger_ref=(data.get("trigger_ref") or ""),
             user_id=(data.get("user_id") or "dashboard"),
             project_id=(data.get("project_id") or ""),
+            role_ids=role_ids or None,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("ace launch failed: %s", exc)

@@ -61,6 +61,7 @@ class Citation:
             "chunk_id": self.chunk_id,
             "source_uri": self.source_uri,
             "classification": self.classification,
+            "archive_url": f"/document-intelligence/doc/{self.doc_id}" if self.doc_id else "#",
         }
 
 
@@ -1252,7 +1253,10 @@ class DICSearchEngine:
                 doc_id = meta["doc_id"] or r.source_id or ""
                 col_id = meta["collection_id"] or ""
 
-                if collection_id and col_id and col_id != collection_id:
+                # When a collection filter is requested, exclude chunks whose
+                # collection_id doesn't match — including empty-string col_id
+                # (chunks from other canvases that share the rag_chunks table).
+                if collection_id and col_id != collection_id:
                     continue
 
                 doc_info = _doc_meta(conn, doc_id) if doc_id else {"title": doc_id, "classification": "CUI"}

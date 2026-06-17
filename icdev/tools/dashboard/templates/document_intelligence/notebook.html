@@ -77,13 +77,13 @@
     <div style="flex:1;overflow-y:auto;padding:8px;">
       {% if docs %}
         {% for doc in docs %}
-        <div style="background:#091426;border:1px solid #1a3560;border-radius:5px;padding:8px 10px;margin-bottom:6px;cursor:pointer;"
+        <div class="source-card" data-doc-title="{{ doc.title or doc.filename or doc.id }}" style="background:#091426;border:1px solid #1a3560;border-radius:5px;padding:8px 10px;margin-bottom:6px;cursor:pointer;"
              onclick="loadDocContext('{{ doc.id }}')">
           <div style="color:#b8d0e8;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="{{ doc.title or doc.filename }}">
             {{ doc.title or doc.filename or doc.id }}
           </div>
           <div style="color:#5a7aa0;font-size:10px;margin-top:2px;">
-            {{ doc.source_type or 'file' }} · {{ doc.created_at[:10] if doc.created_at else '' }}
+            {{ doc.source_type or 'file' }} · {{ (doc.created_at|string)[:10] if doc.created_at else '' }}
           </div>
         </div>
         {% endfor %}
@@ -93,6 +93,31 @@
         </div>
       {% endif %}
       <div id="src-list-new"></div>
+    </div>
+    <!-- Co-Worker attachment — Document Team quick-launch -->
+    <div style="padding:8px 12px;border-top:1px solid #1a3560;background:#091426;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <div style="font-size:10px;color:#7ab3f0;font-weight:600;letter-spacing:.05em;">
+          DOCUMENT TEAM
+        </div>
+        <span id="detected-domain-badge" style="font-size:9px;color:#5a7aa0;background:#0a1525;border:1px solid #1a3560;border-radius:3px;padding:1px 5px;">
+          auto-detecting…
+        </span>
+      </div>
+      <!-- Role chips — rendered dynamically from detected domain -->
+      <div id="cwk-role-chips" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;">
+        <!-- populated by renderTeamRoles() -->
+      </div>
+      <button id="launch-doc-team-btn" onclick="launchDocTeam()"
+        style="width:100%;background:#1e1b4b;color:#c7d2fe;padding:6px;border:1px solid #3730a3;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">
+        Launch Document Team →
+      </button>
+      <!-- legacy single-attach fallback -->
+      <button id="attach-cwk-btn" onclick="attachToCoWorker()"
+        style="width:100%;background:#0f172a;color:#64748b;padding:4px;border:1px solid #1e293b;border-radius:4px;cursor:pointer;font-size:10px;margin-top:4px;">
+        🤝 Attach to Co-Worker (generic)
+      </button>
+      <div id="attach-cwk-status" style="font-size:10px;color:#7ab3f0;margin-top:4px;min-height:12px;"></div>
     </div>
   </div>
 
@@ -173,7 +198,7 @@
             {{ {'study_guide': '📚 Study Guide', 'faq': '❓ FAQ', 'timeline': '📅 Timeline', 'audio_overview': '🎙 Audio'}.get(out.output_type, out.output_type) }}
           </div>
           <div style="color:#5a7aa0;font-size:10px;margin-top:2px;">
-            {{ out.provider }} · {{ out.created_at[:10] if out.created_at else '' }}
+            {{ out.provider }} · {{ (out.created_at|string)[:10] if out.created_at else '' }}
           </div>
         </div>
         {% endfor %}
@@ -247,6 +272,10 @@
         <button id="slides-btn" onclick="generateSlidesFromOutput()"
           style="background:#1a1a40;color:#a78bfa;padding:5px 12px;border:1px solid #2a2a60;border-radius:4px;cursor:pointer;font-size:12px;">
           📊 Generate Slides
+        </button>
+        <button id="roadmap-btn" onclick="addToRoadmap()"
+          style="background:#2a1a10;color:#fb923c;padding:5px 12px;border:1px solid #4a2a10;border-radius:4px;cursor:pointer;font-size:12px;display:none;">
+          🗺 Add to Roadmap
         </button>
         <span id="action-status" style="font-size:11px;color:#7ab3f0;"></span>
       </div>
@@ -602,6 +631,186 @@ function generateSlidesFromOutput() {
   .catch(e => { btn.disabled=false; btn.textContent='📊 Generate Slides'; st.textContent='⚠ '+e; });
 }
 
+function addToRoadmap() {
+  if (!_CURRENT_OUTPUT || _CURRENT_OUTPUT.type !== 'timeline') return;
+  const st  = document.getElementById('action-status');
+  const btn = document.getElementById('roadmap-btn');
+  const contract_id = prompt('Enter PMO contract ID to attach milestones to:');
+  if (!contract_id) return;
+  btn.disabled = true; btn.textContent = '⏳ Creating milestones…';
+  st.textContent = '';
+  fetch('/document-intelligence/api/generate/roadmap', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      output_id: _CURRENT_OUTPUT.output_id,
+      contract_id,
+      collection_id: COLLECTION,
+    }),
+  })
+  .then(r=>r.json())
+  .then(d => {
+    btn.disabled = false;
+    if (d.error) { st.textContent = '⚠ ' + d.error; btn.textContent = '🗺 Add to Roadmap'; return; }
+    btn.textContent = `✓ ${d.milestone_count} milestone${d.milestone_count===1?'':'s'}`;
+    btn.style.background='#2a1800'; btn.style.color='#fb923c';
+    st.innerHTML = d.milestone_count
+      ? `<a href="/cpmp/contracts/${contract_id}" target="_blank" style="color:#7ab3f0;">View in PMO →</a>`
+      : 'No events found';
+  })
+  .catch(e => { btn.disabled=false; btn.textContent='🗺 Add to Roadmap'; st.textContent='⚠ '+e; });
+}
+
+// ── Document Team: domain detection + dynamic role chips ───────────────────────
+const TEAM_CONFIGS = {
+  ic_intelligence: {
+    label: 'Intel Team',
+    badgeColor: '#e94560',
+    roles: [
+      {id: 'researcher', label: 'Researcher'},
+      {id: 'intelligence_analyst', label: 'Intel Analyst'},
+      {id: 'writer', label: 'Writer'},
+      {id: 'editor', label: 'Editor'},
+      {id: 'derivative_classifier', label: 'Derivative Classifier'},
+    ],
+    problem: 'Produce an Intelligence Report (INTSUM) for collection: {collection}. Apply CAPCO portion markings per EO 13526/ICD 710. Ground all findings in the uploaded documents.',
+    context_query: 'key judgments threat assessment',
+  },
+  generic: {
+    label: 'Document Team',
+    badgeColor: '#7ab3f0',
+    roles: [
+      {id: 'researcher', label: 'Researcher'},
+      {id: 'document_classification_specialist', label: 'Doc Specialist'},
+      {id: 'writer', label: 'Writer'},
+      {id: 'editor', label: 'Editor'},
+      {id: 'document_reviewer', label: 'Reviewer'},
+    ],
+    problem: 'Analyze the uploaded documents in collection: {collection} and produce a structured summary with key findings, citations, and recommended actions. Ground all claims in the source documents.',
+    context_query: 'summarize key topics main points',
+  }
+};
+
+const DOMAIN_KEYWORDS = {
+  ic_intelligence: ['intsum','sitrep','osint','humint','sigint','capco','bluf','threat','classified','intel','intelligence','recon','spy','national security','targeting','all-source'],
+  legal: ['constitution','law','legal','statute','court','contract','brief','motion','regulation','compliance','policy','legislation','amendment','rights','jurisdiction'],
+  medical: ['patient','diagnosis','clinical','medical','healthcare','hipaa','treatment','physician','hospital','disease'],
+  financial: ['10-k','10-q','earnings','revenue','sec','financial','investment','audit','balance sheet','proxy statement'],
+  corporate: ['executive summary','strategy','market share','competitive','kpi','okr','roadmap','stakeholder','m&a','board memo'],
+  technical: ['specification','rfc','adr','architecture','api','protocol','schema','ieee','patent','sbom','test plan'],
+  academic: ['journal','literature review','peer review','thesis','dissertation','hypothesis','methodology','systematic review']
+};
+
+function detectDomain() {
+  const cards = document.querySelectorAll('.source-card, #src-list-new > div');
+  const texts = [];
+  cards.forEach(c => {
+    const t = c.getAttribute('data-doc-title') || c.textContent || '';
+    texts.push(t.toLowerCase());
+  });
+  const text = texts.join(' ');
+  if (!text.trim()) return 'generic';
+  const scores = {};
+  for (const [domain, kws] of Object.entries(DOMAIN_KEYWORDS)) {
+    scores[domain] = kws.reduce((sum, kw) => sum + (text.includes(kw) ? 1 : 0), 0);
+  }
+  const best = Object.entries(scores).sort((a, b) => b[1] - a[1])[0];
+  return (best && best[1] > 0) ? best[0] : 'generic';
+}
+
+function getTeamConfig() {
+  const domain = detectDomain();
+  // Only the ic_intelligence domain gets the specialized intel team.
+  // All other detected domains (legal, medical, financial, etc.) fall back to the generic document team.
+  return domain === 'ic_intelligence' ? TEAM_CONFIGS.ic_intelligence : TEAM_CONFIGS.generic;
+}
+
+function renderTeamRoles() {
+  const cfg = getTeamConfig();
+  const container = document.getElementById('cwk-role-chips');
+  const badge = document.getElementById('detected-domain-badge');
+  container.innerHTML = cfg.roles.map(r =>
+    `<button class="cwk-chip" data-role="${esc(r.id)}" data-active="true"
+      style="background:#3730a3;color:#fff;padding:3px 7px;border:1px solid #818cf8;border-radius:10px;cursor:pointer;font-size:10px;"
+      onclick="toggleChip(this)">${esc(r.label)}</button>`
+  ).join('');
+  if (badge) {
+    badge.textContent = cfg.label;
+    badge.style.color = cfg.badgeColor;
+    badge.style.borderColor = cfg.badgeColor;
+  }
+}
+
+function toggleChip(btn) {
+  const active = btn.getAttribute('data-active') === 'true';
+  btn.setAttribute('data-active', String(!active));
+  btn.style.background  = !active ? '#3730a3' : '#1a1a40';
+  btn.style.color       = !active ? '#fff'    : '#a5b4fc';
+  btn.style.borderColor = !active ? '#818cf8' : '#3730a3';
+}
+
+function launchDocTeam() {
+  const chips    = document.querySelectorAll('.cwk-chip');
+  const selected = [];
+  chips.forEach(c => {
+    if (c.getAttribute('data-active') === 'true') {
+      selected.push(c.getAttribute('data-role'));
+    }
+  });
+  if (selected.length === 0) {
+    document.getElementById('attach-cwk-status').textContent = 'Select at least one role.';
+    return;
+  }
+  const cfg = getTeamConfig();
+  const btn = document.getElementById('launch-doc-team-btn');
+  const st  = document.getElementById('attach-cwk-status');
+  btn.disabled = true; btn.textContent = '⏳ Launching…';
+  fetch('/api/ace/launch', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      problem_text: cfg.problem.replace('{collection}', COLLECTION),
+      role_ids: selected,
+      dic_collection_ids: [COLLECTION],
+      context_query: cfg.context_query,
+      trigger_source: 'dic_notebook',
+    }),
+  })
+  .then(r => r.json())
+  .then(d => {
+    btn.disabled = false;
+    if (d.error) { st.textContent = '⚠ ' + d.error; btn.textContent = 'Launch Document Team →'; return; }
+    btn.textContent = '✓ Launched';
+    btn.style.background = '#14532d'; btn.style.color = '#86efac';
+    const instId = d.instance_id || d.id || '';
+    if (instId) {
+      st.innerHTML = `<a href="/coworker/${instId}" style="color:#a78bfa;">Open Team Session →</a>`;
+    }
+  })
+  .catch(e => { btn.disabled=false; btn.textContent='Launch Document Team →'; st.textContent='⚠ '+e; });
+}
+
+// Render the dynamic team on page load and whenever a new source is added.
+document.addEventListener('DOMContentLoaded', renderTeamRoles);
+
+function attachToCoWorker() {
+  const btn = document.getElementById('attach-cwk-btn');
+  const st  = document.getElementById('attach-cwk-status');
+  btn.disabled = true; btn.textContent = '⏳ Attaching…';
+  fetch(`/document-intelligence/api/collections/${COLLECTION}/attach-coworker`, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:'{}',
+  })
+  .then(r=>r.json())
+  .then(d => {
+    btn.disabled = false;
+    if (d.error) { st.textContent = '⚠ ' + d.error; btn.textContent = '🤝 Attach to Co-Worker'; return; }
+    btn.textContent = '✓ Attached';
+    btn.style.background='#1a1a00'; btn.style.color='#fbbf24';
+    localStorage.setItem('dic_attached_collection', COLLECTION);
+    st.innerHTML = `<a href="${d.coworker_url}" style="color:#a78bfa;">Open Co-Worker →</a>`;
+  })
+  .catch(e => { btn.disabled=false; btn.textContent='🤝 Attach to Co-Worker'; st.textContent='⚠ '+e; });
+}
+
 // ── URL ingest ────────────────────────────────────────────────────────────────
 function ingestURL() {
   const url = document.getElementById('src-url').value.trim();
@@ -690,10 +899,16 @@ function addSourceCard(id, title, type) {
   const icons = {web_url: '🌐', youtube_transcript: '▶', video_transcript: '▶', file: '📄'};
   const labels = {web_url: 'url', youtube_transcript: 'video', video_transcript: 'video', file: 'file'};
   const el = document.createElement('div');
-  el.style.cssText = 'background:#091426;border:1px solid #1a3560;border-radius:5px;padding:8px 10px;margin-bottom:6px;';
-  el.innerHTML = `<div style="color:#b8d0e8;font-size:12px;">${icons[type]||'📎'} ${esc(title.slice(0,40))}</div>
+  el.className = 'source-card';
+  el.setAttribute('data-doc-title', title);
+  el.setAttribute('data-doc-id', id || '');
+  el.style.cssText = 'background:#091426;border:1px solid #1a3560;border-radius:5px;padding:8px 10px;margin-bottom:6px;cursor:pointer;';
+  el.onclick = function() { loadDocContext(id); };
+  el.innerHTML = `<div style="color:#b8d0e8;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(title)}">${icons[type]||'📎'} ${esc(title.slice(0,40))}</div>
     <div style="color:#5a7aa0;font-size:10px;">${labels[type]||type} · just now</div>`;
   document.getElementById('src-list-new').prepend(el);
+  // Re-render role chips whenever a new source is added.
+  renderTeamRoles();
 }
 
 // ── Chat ──────────────────────────────────────────────────────────────────────
@@ -715,11 +930,25 @@ function sendChat() {
     if (el) el.remove();
     if (d.error) { appendChat('assistant', '⚠ ' + d.error); return; }
     const ans = d.answer || d.text || d.content || JSON.stringify(d);
-    const citations = (d.citations || d.sources || d.chunks || []).slice(0, 5).map(c =>
-      `<span style="background:#1a3560;color:#93c5fd;font-size:10px;padding:1px 6px;border-radius:3px;margin:0 2px;">[${c.doc_title || c.source_doc || c.doc_id || 'src'}]</span>`
-    ).join('');
+    const sources = (d.sources || d.citations || d.chunks || []).slice(0, 5);
+    let answerHtml = esc(ans);
+    sources.forEach((s, i) => {
+      const num = s.num || (i + 1);
+      const url = s.archive_url || (s.doc_id ? '/document-intelligence/doc/' + s.doc_id : '#');
+      answerHtml = answerHtml.replace(
+        new RegExp('\\[' + num + '\\]', 'g'),
+        `<a href="${esc(url)}" target="_blank" style="color:#4f8ef7;text-decoration:none;font-weight:600;" title="${esc(s.doc_title || s.doc_id || 'source')}">[${num}]</a>`
+      );
+    });
+    const sourceLinks = sources.map((s, i) => {
+      const num = s.num || (i + 1);
+      const url = s.archive_url || (s.doc_id ? '/document-intelligence/doc/' + s.doc_id : '#');
+      const page = s.page ? ' · p.' + s.page : '';
+      const label = s.doc_title || s.doc_id || 'source';
+      return `<a href="${esc(url)}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;background:#0a2040;color:#4f8ef7;font-size:10px;padding:2px 7px;border-radius:3px;border:1px solid #1a3a60;text-decoration:none;margin:0 2px 4px 0;">${num}. ${esc(label)}${page}</a>`;
+    }).join('');
     const modeTag = d.mode ? `<span style="color:#5a7aa0;font-size:10px;margin-left:6px;">(${d.mode})</span>` : '';
-    appendChat('assistant', ans + modeTag + (citations ? '<div style="margin-top:6px;">' + citations + '</div>' : ''));
+    appendChat('assistant', answerHtml + modeTag + (sourceLinks ? '<div style="margin-top:8px;">Sources: ' + sourceLinks + '</div>' : ''));
   })
   .catch(e => { const el = document.getElementById('thinking'); if (el) el.remove(); appendChat('assistant', '⚠ ' + e); });
 }
@@ -884,12 +1113,14 @@ function showOutputModal(type, data, outputId) {
 
   // Action bar — show export buttons based on output type
   const nt = type.replace('-','_');
-  const canTasks  = oid && (nt === 'study_guide' || nt === 'faq');
-  const canSlides = oid && (nt === 'study_guide' || nt === 'timeline');
-  document.getElementById('tasks-btn').style.display  = canTasks  ? '' : 'none';
-  document.getElementById('slides-btn').style.display = canSlides ? '' : 'none';
+  const canTasks   = oid && (nt === 'study_guide' || nt === 'faq');
+  const canSlides  = oid && (nt === 'study_guide' || nt === 'timeline');
+  const canRoadmap = oid && nt === 'timeline';
+  document.getElementById('tasks-btn').style.display   = canTasks   ? '' : 'none';
+  document.getElementById('slides-btn').style.display  = canSlides  ? '' : 'none';
+  document.getElementById('roadmap-btn').style.display = canRoadmap ? '' : 'none';
   document.getElementById('action-status').textContent = '';
-  document.getElementById('modal-action-bar').style.display = (canTasks || canSlides) ? '' : 'none';
+  document.getElementById('modal-action-bar').style.display = (canTasks || canSlides || canRoadmap) ? '' : 'none';
 
   document.getElementById('output-modal').style.display = '';
 }

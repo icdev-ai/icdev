@@ -28,7 +28,7 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="python -m tools.document_intelligence",
         description="DIC ingest orchestrator — file -> provider -> RAG + KG + dic rows",
     )
-    ap.add_argument("--ingest", metavar="PATH", help="file to ingest")
+    ap.add_argument("--ingest", metavar="PATH", help="file to ingest (single-file mode)")
     ap.add_argument("--collection", metavar="ID", help="target collection id")
     ap.add_argument("--tenant", "--tenant-id", dest="tenant", help="tenant id stamp")
     ap.add_argument(
@@ -41,6 +41,18 @@ def _build_parser() -> argparse.ArgumentParser:
     ap.add_argument(
         "--no-kg", action="store_true", help="skip knowledge-graph bridging"
     )
+    ap.add_argument(
+        "--no-summarize", action="store_true", help="skip LLM title/abstract enrichment"
+    )
+    ap.add_argument(
+        "--no-metadata", action="store_true", help="skip LLM metadata extraction"
+    )
+    ap.add_argument(
+        "--no-identifiers", action="store_true", help="skip LLM identifier extraction"
+    )
+    ap.add_argument(
+        "--no-correspondence", action="store_true", help="skip LLM correspondence extraction"
+    )
     ap.add_argument("--json", action="store_true", help="emit JSON")
     return ap
 
@@ -48,11 +60,12 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
 
-    if not args.ingest or not args.collection:
-        print(
-            "error: --ingest <path> and --collection <id> are required",
-            file=sys.stderr,
-        )
+    if not args.collection:
+        print("error: --collection <id> is required", file=sys.stderr)
+        return 2
+
+    if not args.ingest:
+        print("error: --ingest <path> is required", file=sys.stderr)
         return 2
 
     try:
@@ -64,6 +77,10 @@ def main(argv: list[str] | None = None) -> int:
             created_by=args.created_by,
             embed=not args.no_embed,
             bridge_kg=not args.no_kg,
+            summarize=not args.no_summarize,
+            extract_metadata=not args.no_metadata,
+            extract_identifiers=not args.no_identifiers,
+            extract_correspondence=not args.no_correspondence,
         )
     except FileNotFoundError as e:
         if args.json:

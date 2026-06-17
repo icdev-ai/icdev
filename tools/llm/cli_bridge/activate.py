@@ -106,10 +106,14 @@ CLOUD_KEY_ENV_VARS = (
     "GOOGLE_API_KEY",
     "AZURE_OPENAI_API_KEY",
     "IBM_CLOUD_API_KEY",
+    "OLLAMA_API_KEY",
+    "MISTRAL_API_KEY",
+    "MISTRAL_VLLM_API_KEY",
+    "VLLM_API_KEY",
 )
 
 # Providers probed via BYOK key resolution.
-_BYOK_PROVIDERS = ("anthropic", "openai", "google", "azure", "ibm", "bedrock")
+_BYOK_PROVIDERS = ("anthropic", "openai", "google", "azure", "ibm", "bedrock", "ollama_cloud", "mistral", "mistral_vllm", "vllm")
 
 
 def _has_cloud_key() -> bool:
