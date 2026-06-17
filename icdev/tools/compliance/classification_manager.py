@@ -660,6 +660,7 @@ def get_clearance_order(classification: str) -> int:
     """Return numeric clearance order for comparison (higher = more sensitive)."""
     return {
         "PUBLIC": 0,
+        "UNCLASSIFIED": 0,
         "CUI": 1,
         "ECI": 2,
         "SECRET": 3,

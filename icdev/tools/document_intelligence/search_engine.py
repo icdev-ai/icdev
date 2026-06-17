@@ -1239,7 +1239,7 @@ class DICSearchEngine:
 
         max_rank = _clearance_rank(clearance) if clearance else None
 
-        raw_results = self._rag_search(query, top_k=top_k * 2, mode=mode)
+        raw_results = self._rag_search(query, top_k=top_k * 2, mode=mode, collection_id=collection_id)
         if not raw_results:
             return []
 
@@ -1342,13 +1342,20 @@ class DICSearchEngine:
             anomaly_report=detect_search_anomalies(results),
         )
 
-    def _rag_search(self, query: str, top_k: int, mode: str):
+    def _rag_search(self, query: str, top_k: int, mode: str, collection_id: str | None = None):
         try:
             from tools.rag.retriever import RAGRetriever
 
             retriever = RAGRetriever(tenant_id=self._tenant_id)
             rerank = mode == "hybrid"
-            return retriever.search(query, top_k=top_k, rerank=rerank)
+            # Scope vector retrieval to the collection when one is requested so
+            # the returned chunk ids are the ones actually linked to that collection.
+            return retriever.search(
+                query,
+                top_k=top_k,
+                rerank=rerank,
+                project_id=collection_id or "",
+            )
         except Exception as exc:
             logger.warning("DICSearchEngine: RAG search failed (%s), trying BM25 fallback", exc)
             return self._bm25_fallback(query, top_k)

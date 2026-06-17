@@ -347,7 +347,7 @@ def doc_detail(doc_id: str):
             sections = _safe_rows(
                 conn,
                 "SELECT section_id, heading, content, citations_json, status, origin, assigned_to "
-                "FROM dic_sections WHERE version_id = ? ORDER BY rowid",
+                "FROM dic_sections WHERE version_id = ? ORDER BY section_id",
                 (active_version_id,),
             )
             for s in sections:
@@ -794,18 +794,71 @@ def api_kg_explore():
     """
     data = request.get_json(silent=True) or {}
     mode = data.get("mode", "entities")
-    label = (data.get("label") or "").strip()
+    query_text = (data.get("query") or "").strip()
+    label = (data.get("label") or query_text or "").strip()
     entity_type = data.get("entity_type")
     limit = min(int(data.get("limit", 50)), 200)
+    collection_id = (data.get("collection_id") or "").strip() or None
+    doc_id = (data.get("doc_id") or "").strip() or None
     conn = _conn()
+    # KG tables (kg_nodes/kg_edges/kg_graphs) do not carry tenant_id, so the
+    # global RLS predicate would add an UndefinedColumn clause.  Disable RLS for
+    # this read-only KG endpoint; collection/doc scoping is enforced below via
+    # dic_chunk_links / dic_documents.
+    conn.set_security_context(None)
+
+    def _collection_chunk_clause(alias: str = "n") -> tuple[str, list]:
+        """Return a predicate and params that restrict a kg_nodes alias to
+        chunks that belong to a DIC document in the requested collection."""
+        sql = (
+            f"{alias}.source_chunk_id IS NOT NULL AND "
+            f"{alias}.source_chunk_id IN ("
+            f"SELECT l.rag_chunk_id FROM dic_chunk_links l "
+            f"JOIN dic_documents d ON d.doc_id = l.doc_id "
+            f"WHERE d.collection_id = ?)"
+        )
+        return sql, [collection_id]
+
+    def _chunk_ids_for_query(query: str, coll_id: str) -> list[str]:
+        """Return chunk IDs whose text matches the query within the collection.
+
+        This is a deterministic BM25-style fallback (no embeddings / no LLM) so
+        the KG relevance path works air-gapped and does not depend on the
+        embedding provider being configured.
+        """
+        try:
+            from tools.document_intelligence.search_engine import _extract_terms
+
+            terms = _extract_terms(query)
+            if not terms or not coll_id:
+                return []
+            like = " OR ".join(["LOWER(rc.content) LIKE LOWER(?)"] * len(terms))
+            params = [coll_id] + [f"%{t}%" for t in terms]
+            cur = conn.execute(
+                "SELECT DISTINCT rc.id FROM rag_chunks rc "
+                "JOIN dic_chunk_links l ON l.rag_chunk_id = rc.id "
+                "JOIN dic_documents d ON d.doc_id = l.doc_id "
+                f"WHERE d.collection_id = ? AND ({like}) "
+                "LIMIT 50",
+                tuple(params),
+            )
+            return [row[0] for row in cur.fetchall() if row[0]]
+        except Exception as exc:
+            logger.debug("dic kg-explore chunk fallback error: %s", exc)
+            return []
+
     try:
         if mode == "entities":
             sql = (
-                "SELECT n.id, n.label, n.entity_type, n.centrality, n.source_chunk_id, "
-                "g.source_doc_id FROM kg_nodes n LEFT JOIN kg_graphs g ON g.id = n.graph_id"
+                "SELECT n.id, n.label, n.entity_type, n.centrality, n.source_chunk_id "
+                "FROM kg_nodes n"
             )
             params: list = []
             clauses = []
+            if collection_id:
+                cc_sql, cc_params = _collection_chunk_clause("n")
+                clauses.append(cc_sql)
+                params.extend(cc_params)
             if label:
                 clauses.append("LOWER(n.label) LIKE LOWER(?)")
                 params.append(f"%{label}%")
@@ -814,40 +867,87 @@ def api_kg_explore():
                 params.append(entity_type)
             if clauses:
                 sql += " WHERE " + " AND ".join(clauses)
-            sql += " ORDER BY n.centrality DESC LIMIT ?"
+            sql += " ORDER BY COALESCE(n.centrality, 0) DESC LIMIT ?"
             params.append(limit)
             rows = _safe_rows(conn, sql, tuple(params))
+            if not rows and query_text and collection_id:
+                chunk_ids = _chunk_ids_for_query(query_text, collection_id)[:50]
+                if chunk_ids:
+                    ph = ",".join("?" * len(chunk_ids))
+                    fallback_sql = (
+                        "SELECT n.id, n.label, n.entity_type, n.centrality, n.source_chunk_id "
+                        f"FROM kg_nodes n WHERE n.source_chunk_id IN ({ph}) "
+                        "ORDER BY COALESCE(n.centrality, 0) DESC LIMIT ?"
+                    )
+                    rows = _safe_rows(
+                        conn,
+                        fallback_sql,
+                        tuple(chunk_ids + [limit]),
+                    )
             return jsonify({"entities": rows, "count": len(rows)})
 
         elif mode == "relations":
             if not label:
                 return jsonify({"error": "label is required for relations mode"}), 400
+            params = [f"%{label}%", f"%{label}%"]
+            collection_clause = ""
+            if collection_id:
+                src_sql, src_params = _collection_chunk_clause("src")
+                tgt_sql, tgt_params = _collection_chunk_clause("tgt")
+                collection_clause = f" AND ({src_sql}) AND ({tgt_sql})"
+                params.extend(src_params + tgt_params)
+            params.append(limit)
             rows = _safe_rows(
                 conn,
                 "SELECT src.label AS source, tgt.label AS target, e.relationship, e.weight "
                 "FROM kg_edges e "
                 "JOIN kg_nodes src ON src.id = e.source_id "
                 "JOIN kg_nodes tgt ON tgt.id = e.target_id "
-                "WHERE LOWER(src.label) LIKE LOWER(?) OR LOWER(tgt.label) LIKE LOWER(?) "
+                "WHERE (LOWER(src.label) LIKE LOWER(?) OR LOWER(tgt.label) LIKE LOWER(?)) "
+                + collection_clause +
                 "ORDER BY e.weight DESC LIMIT ?",
-                (f"%{label}%", f"%{label}%", limit),
+                tuple(params),
             )
             return jsonify({"relationships": rows, "count": len(rows)})
 
         elif mode == "graph":
-            # Returns top nodes and connecting edges for a doc or collection
-            doc_id = (data.get("doc_id") or "").strip() or None
+            graph_query = (data.get("query") or "").strip()
             node_sql = (
                 "SELECT n.id, n.label, n.entity_type, n.centrality "
-                "FROM kg_nodes n LEFT JOIN kg_graphs g ON g.id = n.graph_id "
+                "FROM kg_nodes n "
             )
             node_params: list = []
+            clauses = []
+            if collection_id:
+                cc_sql, cc_params = _collection_chunk_clause("n")
+                clauses.append(cc_sql)
+                node_params.extend(cc_params)
             if doc_id:
-                node_sql += " WHERE g.source_doc_id = ?"
+                clauses.append(
+                    "n.source_chunk_id IN ("
+                    "SELECT l.rag_chunk_id FROM dic_chunk_links l "
+                    "WHERE l.doc_id = ?)"
+                )
                 node_params.append(doc_id)
-            node_sql += " ORDER BY n.centrality DESC LIMIT ?"
+            if clauses:
+                node_sql += " WHERE " + " AND ".join(clauses)
+            node_sql += " ORDER BY COALESCE(n.centrality, 0) DESC LIMIT ?"
             node_params.append(limit)
             nodes = _safe_rows(conn, node_sql, tuple(node_params))
+            if not nodes and graph_query and collection_id and not doc_id:
+                chunk_ids = _chunk_ids_for_query(graph_query, collection_id)[:50]
+                if chunk_ids:
+                    ph = ",".join("?" * len(chunk_ids))
+                    fallback_sql = (
+                        "SELECT n.id, n.label, n.entity_type, n.centrality "
+                        f"FROM kg_nodes n WHERE n.source_chunk_id IN ({ph}) "
+                        "ORDER BY COALESCE(n.centrality, 0) DESC LIMIT ?"
+                    )
+                    nodes = _safe_rows(
+                        conn,
+                        fallback_sql,
+                        tuple(chunk_ids + [limit]),
+                    )
             node_ids = [n["id"] for n in nodes]
             if not node_ids:
                 return jsonify({"nodes": [], "edges": [], "count": 0})
@@ -865,23 +965,37 @@ def api_kg_explore():
         elif mode == "neighbors":
             if not label:
                 return jsonify({"error": "label is required for neighbors mode"}), 400
-            # Find the node id first
+            node_params = [f"%{label}%"]
+            collection_clause = ""
+            if collection_id:
+                cc_sql, cc_params = _collection_chunk_clause("kg_nodes")
+                collection_clause = " AND " + cc_sql
+                node_params.extend(cc_params)
             node_rows = _safe_rows(
                 conn,
-                "SELECT id, label, entity_type FROM kg_nodes WHERE LOWER(label) LIKE LOWER(?) LIMIT 1",
-                (f"%{label}%",),
+                "SELECT id, label, entity_type FROM kg_nodes "
+                "WHERE LOWER(label) LIKE LOWER(?)" + collection_clause + " LIMIT 1",
+                tuple(node_params),
             )
             if not node_rows:
                 return jsonify({"neighbors": [], "relationships": [], "count": 0})
             node_id = node_rows[0]["id"]
+            neighbor_params = [node_id, node_id, node_id]
+            collection_clause = ""
+            if collection_id:
+                cc_sql, cc_params = _collection_chunk_clause("n")
+                collection_clause = f" AND ({cc_sql})"
+                neighbor_params.extend(cc_params)
+            neighbor_params.append(limit)
             neighbors = _safe_rows(
                 conn,
                 "SELECT DISTINCT n.label, n.entity_type, e.relationship, e.weight "
                 "FROM kg_edges e "
                 "JOIN kg_nodes n ON (n.id = e.target_id OR n.id = e.source_id) "
                 "WHERE (e.source_id = ? OR e.target_id = ?) AND n.id != ? "
+                + collection_clause +
                 "ORDER BY e.weight DESC LIMIT ?",
-                (node_id, node_id, node_id, limit),
+                tuple(neighbor_params),
             )
             return jsonify({
                 "entity": node_rows[0],
@@ -1481,13 +1595,13 @@ def api_team_add(collection_id):
     if not _require_role(collection_id, "admin"):
         return _forbid("admin")
     role = data.get("role", "viewer")
-    tenant_id, _ = _security_context()
+    tenant_id, classification = _security_context()
     access_id = _hid("dic_access", collection_id, user_id, _now())
     conn = _conn()
     try:
         conn.execute(
-            "INSERT INTO dic_team_access (access_id, collection_id, user_id, role, tenant_id) VALUES (?,?,?,?,?)",
-            (access_id, collection_id, user_id, role, tenant_id),
+            "INSERT INTO dic_team_access (access_id, collection_id, user_id, role, tenant_id, classification) VALUES (?,?,?,?,?,?)",
+            (access_id, collection_id, user_id, role, tenant_id, classification or "CUI"),
         )
         conn.commit()
         return jsonify({"access_id": access_id, "user_id": user_id, "role": role})
@@ -1754,7 +1868,7 @@ def api_section_lock_acquire(section_id: str):
     _c = _conn()
     try:
         doc_row = _c.execute(
-            "SELECT doc_id FROM dic_sections WHERE section_id = %s LIMIT 1", (section_id,)
+            "SELECT doc_id FROM dic_sections WHERE section_id = ? LIMIT 1", (section_id,)
         ).fetchone()
         doc_id = doc_row["doc_id"] if doc_row else ""
     finally:
@@ -2246,7 +2360,7 @@ def api_version_sections(version_id):
         rows = _safe_rows(
             conn,
             "SELECT section_id, heading, content, citations_json, status, origin "
-            "FROM dic_sections WHERE version_id = ? ORDER BY rowid",
+            "FROM dic_sections WHERE version_id = ? ORDER BY section_id",
             (version_id,),
         )
         for r in rows:
@@ -2294,7 +2408,7 @@ def api_version_style_check(version_id: str):
     try:
         rows = _safe_rows(
             conn,
-            "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY rowid",
+            "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY section_id",
             (version_id,),
         )
         result = check_sections([dict(r) for r in rows])
@@ -2336,7 +2450,7 @@ def api_version_diff(version_a: str, version_b: str):
         def _get_sections(vid):
             rows = _safe_rows(
                 conn,
-                "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY rowid",
+                "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY section_id",
                 (vid,),
             )
             return {(r.get("heading") or "").strip(): (r.get("content") or "") for r in rows}

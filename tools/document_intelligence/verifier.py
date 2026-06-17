@@ -214,34 +214,22 @@ def _llm_supports(claim: str, chunk_text: str) -> tuple[bool, float] | None:
         "Answer on the LAST line exactly one token: SUPPORTED or UNSUPPORTED."
     )
     try:
-        from icdev.tools.llm.router import LLMRouter  # type: ignore
-    except Exception:
         try:
-            from tools.llm.router import LLMRouter  # type: ignore
+            from icdev.tools.llm.router import LLMRouter
+            from icdev.tools.llm.provider import LLMRequest
         except Exception:
-            return None
-    try:
+            from tools.llm.router import LLMRouter  # type: ignore[import]
+            from tools.llm.provider import LLMRequest  # type: ignore[import]
         router = LLMRouter()
-        text = None
-        # Try the common router entry points without assuming one shape.
-        for meth in ("generate", "complete", "chat", "route", "call"):
-            fn = getattr(router, meth, None)
-            if not callable(fn):
-                continue
-            try:
-                resp = fn(prompt)
-            except TypeError:
-                try:
-                    resp = fn(prompt=prompt)
-                except Exception:
-                    continue
-            except Exception:
-                continue
-            text = resp if isinstance(resp, str) else getattr(resp, "text", None)
-            if text is None and isinstance(resp, dict):
-                text = resp.get("text") or resp.get("content") or resp.get("response")
-            if text:
-                break
+        if router.is_no_llm_mode():
+            return None
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=512,
+            skip_injection_scan=True,
+        )
+        resp = router.invoke("chat_response", req)
+        text = resp.content.strip() if resp and getattr(resp, "content", None) else None
         if not text:
             return None
         last = text.strip().splitlines()[-1].upper()

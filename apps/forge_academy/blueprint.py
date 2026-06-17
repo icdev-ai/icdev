@@ -12,7 +12,7 @@ from .db import (
     migrate, get_or_create_user, get_user, update_user_role, list_missions, get_mission, get_mission_progress, start_mission, complete_mission,
     get_step_progress, complete_step, user_progress_summary,
     get_user_achievements, grant_achievement, update_user_xp,
-    create_guild, join_guild, get_guild_stats, get_leaderboard,
+    create_guild, join_guild, get_guild_stats, get_leaderboard, refresh_leaderboard_cache,
     get_user_skills, unlock_skill,
     check_cert_eligibility, issue_certificate, get_user_certificates,
     verify_certificate_token,

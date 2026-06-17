@@ -61808,6 +61808,44 @@ ALTER TABLE ONLY public.wne_artifacts
 
 
 --
+-- Name: domain_coverage; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.domain_coverage (
+    id               BIGSERIAL PRIMARY KEY,
+    domain_key       TEXT    NOT NULL,
+    domain_name      TEXT    NOT NULL,
+    domain_type      TEXT    NOT NULL DEFAULT 'knowledge'
+                     CHECK (domain_type IN ('knowledge', 'data', 'system', 'integration', 'canvas')),
+    source_canvas    TEXT,
+    coverage_score   REAL    NOT NULL DEFAULT 0.0
+                     CHECK (coverage_score >= 0.0 AND coverage_score <= 1.0),
+    gap_count        INTEGER NOT NULL DEFAULT 0,
+    status           TEXT    NOT NULL DEFAULT 'active'
+                     CHECK (status IN ('active', 'orphaned', 'resolved', 'pending')),
+    orphan_reason    TEXT
+                     CHECK (orphan_reason IS NULL OR orphan_reason IN (
+                         'no_canvas', 'no_source', 'schema_mismatch',
+                         'stale_data', 'removed_integration'
+                     )),
+    last_checked_at  TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resolved_at      TEXT,
+    detail           TEXT    NOT NULL DEFAULT '{}',
+    tenant_id        TEXT    NOT NULL DEFAULT 'default',
+    classification   TEXT    NOT NULL DEFAULT 'CUI',
+    created_at       TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_domain_coverage_key     ON public.domain_coverage(domain_key);
+CREATE INDEX IF NOT EXISTS idx_domain_coverage_status  ON public.domain_coverage(status);
+CREATE INDEX IF NOT EXISTS idx_domain_coverage_canvas  ON public.domain_coverage(source_canvas);
+CREATE INDEX IF NOT EXISTS idx_domain_coverage_score   ON public.domain_coverage(coverage_score);
+CREATE INDEX IF NOT EXISTS idx_domain_coverage_tenant  ON public.domain_coverage(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_domain_coverage_checked ON public.domain_coverage(last_checked_at);
+
+
+--
 -- PostgreSQL database dump complete
 --
 

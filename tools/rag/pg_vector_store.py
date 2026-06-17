@@ -90,6 +90,52 @@ class PgVectorStore(VectorStoreProvider):
         except Exception:
             return False
 
+    def get_by_content_hash(self, content_hash: str) -> Optional[VectorChunk]:
+        """Look up an existing chunk by content hash (D-RAG-5 dedup path)."""
+        if not content_hash or not get_connection:
+            return None
+        try:
+            conn = get_connection()
+            try:
+                row = conn.execute(
+                    """
+                    SELECT id, content, content_hash, source_type, source_id,
+                           source_table, chunk_index, total_chunks, metadata,
+                           tier, tenant_id, project_id, classification
+                    FROM rag_chunks
+                    WHERE content_hash = ?
+                    LIMIT 1
+                    """,
+                    (content_hash,),
+                ).fetchone()
+                if not row:
+                    return None
+                meta: dict = {}
+                if row["metadata"]:
+                    try:
+                        meta = json.loads(row["metadata"])
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+                return VectorChunk(
+                    chunk_id=row["id"],
+                    content=row["content"] or "",
+                    content_hash=row["content_hash"] or content_hash,
+                    source_type=row["source_type"] or "",
+                    source_id=row["source_id"] or "",
+                    source_table=row["source_table"] or "",
+                    chunk_index=row["chunk_index"] or 0,
+                    total_chunks=row["total_chunks"] or 1,
+                    metadata=meta,
+                    tier=row["tier"] or "hot",
+                    tenant_id=row["tenant_id"] or "",
+                    project_id=row["project_id"] or "",
+                    classification=row["classification"] or "CUI",
+                )
+            finally:
+                conn.close()
+        except Exception:
+            return None
+
     def upsert(self, chunks: List[VectorChunk]) -> int:
         """Insert or update chunks with embeddings."""
         conn = get_connection()
