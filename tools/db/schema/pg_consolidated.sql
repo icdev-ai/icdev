@@ -13792,7 +13792,7 @@ ALTER SEQUENCE public.fedramp_assessments_id_seq OWNED BY public.fedramp_assessm
 --
 
 CREATE TABLE public.fedramp_ato_packages (
-    id                   TEXT        PRIMARY KEY,
+    id                   TEXT        NOT NULL,
     system_name          TEXT        NOT NULL,
     ato_status           TEXT        NOT NULL DEFAULT 'in_progress'
                          CHECK (ato_status IN (
@@ -13817,7 +13817,7 @@ CREATE TABLE public.fedramp_ato_packages (
 --
 
 CREATE TABLE public.fedramp_controls (
-    id                     TEXT        PRIMARY KEY,
+    id                     TEXT        NOT NULL,
     package_id             TEXT        NOT NULL REFERENCES public.fedramp_ato_packages(id) ON DELETE CASCADE,
     control_id             TEXT        NOT NULL,
     control_name           TEXT        NOT NULL DEFAULT '',
