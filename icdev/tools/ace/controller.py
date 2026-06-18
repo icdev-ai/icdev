@@ -18,7 +18,6 @@ CLI usage::
 from __future__ import annotations
 
 import json
-import logging
 import re
 import threading
 import uuid
@@ -26,7 +25,9 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger("icdev.ace.controller")
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.ace.controller")
 
 _DB_ENV = "ICDEV_ACE_DB_URL"
 _MAX_WORKERS = 16  # max concurrent CoWorkerThreads across all instances

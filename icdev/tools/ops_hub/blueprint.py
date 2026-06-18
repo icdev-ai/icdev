@@ -30,6 +30,9 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify, render_template, request
 from tools.security.canvas_access import check_access as _canvas_check_access
+from tools.logging.icdev_logger import get_logger
+
+_logger = get_logger(__name__)
 
 
 def create_ops_hub_blueprint() -> Blueprint:
@@ -51,8 +54,7 @@ def create_ops_hub_blueprint() -> Blueprint:
             if not _canvas_check_access(user_id, tenant_id, "ops_hub"):
                 abort(403)
         except Exception as exc:
-            import logging
-            logging.getLogger(__name__).debug("canvas_access check error: %s", exc)
+            _logger.debug("canvas_access check error: %s", exc)
             abort(403)
 
 
@@ -61,8 +63,7 @@ def create_ops_hub_blueprint() -> Blueprint:
         from tools.ops_hub.db.init_db import init_db
         init_db()
     except Exception as exc:  # pragma: no cover
-        import logging
-        logging.getLogger(__name__).warning("OHC DB init failed: %s", exc)
+        _logger.warning("OHC DB init failed: %s", exc)
 
     # ── Page Routes ──────────────────────────────────────────────────────────
 

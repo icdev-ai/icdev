@@ -17,6 +17,9 @@ from flask import Blueprint, jsonify, render_template, request
 from tools.security.canvas_access import check_access as _canvas_check_access
 
 from tools.ontology.constants import CANVAS_KEY, DOMAIN_LABELS
+from tools.logging.icdev_logger import get_logger
+
+_logger = get_logger(__name__)
 
 bp = Blueprint("ontology", __name__)
 
@@ -36,8 +39,7 @@ def _check_canvas_access():
         if not _canvas_check_access(user_id, tenant_id, "ontology"):
             abort(403)
     except Exception as exc:
-        import logging
-        logging.getLogger(__name__).debug("canvas_access check error: %s", exc)
+        _logger.debug("canvas_access check error: %s", exc)
         abort(403)
 
 

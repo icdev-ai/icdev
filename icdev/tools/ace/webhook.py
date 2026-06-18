@@ -6,12 +6,13 @@ Logs each delivery attempt to ace_webhook_log.
 """
 from __future__ import annotations
 
-import logging
 import time
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger("icdev.ace.webhook")
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.ace.webhook")
 
 _DB_ENV = "ICDEV_ACE_DB_URL"
 _TIMEOUT = 10

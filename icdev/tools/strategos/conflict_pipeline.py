@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,8 +27,9 @@ if str(ROOT) not in sys.path:
 from icdev.tools.strategos.federated_mesh import run as mesh_run  # noqa: E402
 from icdev.tools.strategos.conflict_timeline import fetch_timeline, render_timeline_html  # noqa: E402
 from icdev.tools.strategos.intel_report_engine import generate_leadership_brief  # noqa: E402
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
-logger = logging.getLogger("icdev.strategos.conflict_pipeline")
+logger = get_logger("icdev.strategos.conflict_pipeline")
 
 
 def run_pipeline(

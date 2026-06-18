@@ -12,12 +12,13 @@ full traceability within the canvas.
 from __future__ import annotations
 
 import json
-import logging
 import time
 import uuid
 from typing import Any
 
-logger = logging.getLogger("icdev.ace.message_bus")
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.ace.message_bus")
 
 
 class NegotiationFailedError(Exception):

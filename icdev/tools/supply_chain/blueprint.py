@@ -260,8 +260,7 @@ def create_supply_chain_blueprint() -> Blueprint:
             if not check_access(user_id, tenant_id, 'supply_chain'):
                 abort(403)
         except Exception as exc:
-            import logging
-            logging.getLogger(__name__).debug('canvas_access check error: %s', exc)
+            logger.debug('canvas_access check error: %s', exc)
             abort(403)
 
     return bp

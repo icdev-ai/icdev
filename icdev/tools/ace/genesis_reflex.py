@@ -17,7 +17,6 @@ from __future__ import annotations
 IMPLEMENTATION_STATUS = "full"
 
 import json
-import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,7 +26,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Stale threshold — read from ACE constants, fallback to task-spec default
