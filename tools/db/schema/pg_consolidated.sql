@@ -40267,14 +40267,6 @@ ALTER TABLE ONLY public.fedramp_assessments
 
 
 --
--- Name: genesis_phase_log genesis_phase_log_design_id_phase_key; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.genesis_phase_log
-    ADD CONSTRAINT genesis_phase_log_design_id_phase_key UNIQUE (design_id, phase);
-
-
---
 -- Name: fedramp_ato_packages fedramp_ato_packages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
