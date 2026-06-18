@@ -10066,6 +10066,43 @@ def create_app() -> Flask:
         try:
             from tools.marketplace.openclaw_bridge import promote_import, _get_db
 
+            # ── Skill Security Gate ───────────────────────────────────────────
+            # Fetch quarantine path and run assess_skill_for_promotion BEFORE
+            # executing any DB writes or calling promote_import.
+            try:
+                from tools.kanban.skill_promotion_gate import assess_skill_for_promotion
+
+                _conn_gate = _get_db()
+                try:
+                    _cur_gate = _conn_gate.cursor()
+                    _cur_gate.execute(
+                        "SELECT quarantine_path FROM openclaw_imports WHERE id = %s",
+                        (import_id,),
+                    )
+                    _row_gate = _cur_gate.fetchone()
+                finally:
+                    _conn_gate.close()
+
+                if _row_gate:
+                    _qpath_gate = (
+                        _row_gate["quarantine_path"]
+                        if hasattr(_row_gate, "keys")
+                        else _row_gate[0]
+                    )
+                    gate = assess_skill_for_promotion(_qpath_gate)
+                    if not gate["allowed"]:
+                        return (
+                            jsonify(
+                                {
+                                    "error": "Promotion blocked by security gate",
+                                    "gate": gate,
+                                }
+                            ),
+                            409,
+                        )
+            except ImportError:
+                pass  # Gate module unavailable — proceed without blocking
+
             # Auto-approve review if not yet done (dashboard user = ISSO)
             conn = _get_db()
             try:
@@ -10140,6 +10177,23 @@ def create_app() -> Flask:
             status = row[2] if not hasattr(row, "keys") else row["status"]
             if status != "promoted":
                 return jsonify({"error": f"Must be promoted first (current: {status})"})
+            # ── Skill Security Gate ───────────────────────────────────────────
+            try:
+                from tools.kanban.skill_promotion_gate import assess_skill_for_promotion
+
+                gate = assess_skill_for_promotion(qpath)
+                if not gate["allowed"]:
+                    return (
+                        jsonify(
+                            {
+                                "error": "Installation blocked by security gate",
+                                "gate": gate,
+                            }
+                        ),
+                        409,
+                    )
+            except ImportError:
+                pass  # Gate module unavailable — proceed without blocking
             src = Path(qpath)
             if not src.is_dir():
                 return jsonify({"error": "Quarantine path not found"})
