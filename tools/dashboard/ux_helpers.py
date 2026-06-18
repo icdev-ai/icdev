@@ -31,6 +31,25 @@ from datetime import datetime, timezone
 
 
 # ---------------------------------------------------------------------------
+# Markdown → safe HTML helper (used by Jinja2 `markdown` filter)
+# ---------------------------------------------------------------------------
+
+def _md_to_html(text: str | None) -> str:
+    """Convert markdown text to safe HTML.
+
+    Falls back to an escaped <pre> block if the ``markdown`` package is
+    unavailable or parsing fails, so the page never breaks on bad input.
+    """
+    if not text:
+        return ""
+    try:
+        import markdown as md_lib
+        return md_lib.markdown(text, extensions=["fenced_code", "tables", "nl2br"])
+    except Exception:
+        return f"<pre>{html.escape(text)}</pre>"
+
+
+# ---------------------------------------------------------------------------
 # Glossary of acronyms (used by glossary_term filter)
 # ---------------------------------------------------------------------------
 
@@ -939,6 +958,8 @@ def register_ux_filters(app):
     app.jinja_env.filters["time_ago"] = format_time_ago
     app.jinja_env.filters["ts"] = format_ts
     app.jinja_env.filters["glossary"] = glossary_term
+    # Markdown → safe HTML (used by DIC document detail and other canvas pages)
+    app.jinja_env.filters["markdown"] = _md_to_html
 
     # Template globals (callable directly in templates)
     app.jinja_env.globals["score_display"] = score_display

@@ -86,7 +86,7 @@
     <!-- Content -->
     <div style="background:#050d1f;border-left:3px solid #1e3a6e;padding:10px 14px;border-radius:0 4px 4px 0;color:#a8c8e0;font-size:12px;line-height:1.7;margin-bottom:10px;max-height:200px;overflow-y:auto;" id="content-{{ s.section_id }}">
       {% if s.content %}
-        {{ s.content[:1000] | replace('\n', '<br>') }}{% if s.content|length > 1000 %}…{% endif %}
+        {{ s.content | markdown | safe }}{% if s.content|length > 1000 %}…{% endif %}
       {% else %}
         <em style="color:#5a7aa0;">Empty — use AI Assist or edit manually.</em>
       {% endif %}
