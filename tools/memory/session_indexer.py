@@ -20,10 +20,11 @@ import argparse
 import hashlib
 import json
 import logging
+from tools.logging.icdev_logger import get_logger
 import sys
 from datetime import datetime, timezone
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 BASE_DIR = __import__("pathlib").Path(__file__).resolve().parent.parent.parent
 

@@ -40,7 +40,7 @@ try:
     from tools.logging.icdev_logger import get_logger
     logger = get_logger("icdev.gateway.adapters.skype")
 except Exception:
-    logger = logging.getLogger("icdev.gateway.adapters.skype")
+    logger = get_logger("icdev.gateway.adapters.skype")
 
 
 class SkypeAdapter(BotFrameworkBaseAdapter):

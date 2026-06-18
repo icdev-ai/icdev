@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+from tools.logging.icdev_logger import get_logger
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,7 +27,7 @@ _BASE = Path(__file__).resolve().parent.parent.parent
 if str(_BASE) not in sys.path:
     sys.path.insert(0, str(_BASE))
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Minimum score improvement over baseline to trigger a skill update
 _MIN_SCORE_DELTA = 0.05

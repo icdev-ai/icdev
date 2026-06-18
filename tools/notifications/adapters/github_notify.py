@@ -35,7 +35,7 @@ try:
     from tools.logging.icdev_logger import get_logger
     logger = get_logger("icdev.notifications.github")
 except Exception:
-    logger = logging.getLogger("icdev.notifications.github")
+    logger = get_logger("icdev.notifications.github")
 
 
 class GitHubNotificationAdapter(NotificationAdapter):

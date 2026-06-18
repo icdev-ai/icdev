@@ -53,7 +53,7 @@ try:
     logger = get_logger("databridge.github")
 except Exception:
     import logging
-    logger = logging.getLogger("databridge.github")
+    logger = get_logger("databridge.github")
 
 _OFFSET_FILE = BASE_DIR / ".tmp" / "github_offset.txt"
 _ICDEV_PREFIX = "!icdev "

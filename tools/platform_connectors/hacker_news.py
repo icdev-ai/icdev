@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import logging
+from tools.logging.icdev_logger import get_logger
 import time
 from tools.platform_connectors.registry import _safe_get, register
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _SEARCH_URL = "https://hn.algolia.com/api/v1/search"
 _HEALTH_URL = "https://hn.algolia.com/api/v1/search?query=test&hitsPerPage=1"

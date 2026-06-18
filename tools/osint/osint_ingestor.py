@@ -21,6 +21,7 @@ import hashlib
 import io
 import json
 import logging
+from tools.logging.icdev_logger import get_logger
 import ssl
 import sys
 import urllib.request
@@ -37,7 +38,7 @@ _SSL_CTX.verify_mode = ssl.CERT_NONE
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-logger = logging.getLogger("icdev.osint")
+logger = get_logger("icdev.osint")
 
 _SOURCES: dict[str, dict] = {
     "cisa_kev": {

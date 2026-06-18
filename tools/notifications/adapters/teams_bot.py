@@ -37,7 +37,7 @@ try:
     from tools.logging.icdev_logger import get_logger
     logger = get_logger("icdev.notifications.teams_bot")
 except Exception:
-    logger = logging.getLogger("icdev.notifications.teams_bot")
+    logger = get_logger("icdev.notifications.teams_bot")
 
 
 class TeamsBotNotificationAdapter(NotificationAdapter):

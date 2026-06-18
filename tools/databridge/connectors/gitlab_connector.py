@@ -56,7 +56,7 @@ try:
     logger = get_logger("databridge.gitlab")
 except Exception:
     import logging
-    logger = logging.getLogger("databridge.gitlab")
+    logger = get_logger("databridge.gitlab")
 
 _OFFSET_FILE = BASE_DIR / ".tmp" / "gitlab_offset.txt"
 _ICDEV_PREFIX = "!icdev "

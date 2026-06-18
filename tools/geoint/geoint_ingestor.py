@@ -18,6 +18,7 @@ import argparse
 import hashlib
 import json
 import logging
+from tools.logging.icdev_logger import get_logger
 import sys
 import urllib.request
 import urllib.error
@@ -27,7 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-logger = logging.getLogger("icdev.geoint")
+logger = get_logger("icdev.geoint")
 
 _SOURCES = {
     "usgs_significant": {

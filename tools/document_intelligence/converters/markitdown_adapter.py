@@ -22,13 +22,14 @@ Usage (format detection):
 from __future__ import annotations
 
 import logging
+from tools.logging.icdev_logger import get_logger
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     pass
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Extensions where MarkItDown produces higher-fidelity output than built-ins
 # (structured Markdown with headers/tables preserved vs. plain text extraction)
