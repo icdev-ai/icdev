@@ -1532,6 +1532,37 @@ CREATE TABLE IF NOT EXISTS genesis_phase_log (
 CREATE INDEX IF NOT EXISTS idx_gpl_design_id    ON genesis_phase_log (design_id);
 CREATE INDEX IF NOT EXISTS idx_gpl_completed_at ON genesis_phase_log (completed_at);
 CREATE INDEX IF NOT EXISTS idx_gpl_tenant       ON genesis_phase_log (tenant_id);
+CREATE TABLE IF NOT EXISTS cmmc_systems (
+    id                   TEXT    PRIMARY KEY,
+    name                 TEXT    NOT NULL,
+    classification       TEXT    NOT NULL DEFAULT 'CUI'
+                         CHECK (classification IN ('CUI', 'SECRET', 'TOP SECRET', 'UNCLASSIFIED')),
+    boundary             TEXT,
+    level                INTEGER CHECK (level IN (1, 2, 3)),
+    system_owner         TEXT,
+    authorizing_official TEXT,
+    tenant_id            TEXT    NOT NULL DEFAULT 'default',
+    created_at           TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_cmmc_systems_classification ON cmmc_systems (classification);
+CREATE INDEX IF NOT EXISTS idx_cmmc_systems_tenant         ON cmmc_systems (tenant_id);
+CREATE TABLE IF NOT EXISTS cmmc_practice_gaps (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    assessment_id     INTEGER NOT NULL,
+    practice_id       TEXT    NOT NULL,
+    domain            TEXT    NOT NULL,
+    status            TEXT    NOT NULL DEFAULT 'gap'
+                      CHECK (status IN ('gap', 'partial', 'met', 'not_applicable')),
+    gap_description   TEXT,
+    remediation_notes TEXT,
+    tenant_id         TEXT    NOT NULL DEFAULT 'default',
+    created_at        TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (assessment_id, practice_id)
+);
+CREATE INDEX IF NOT EXISTS idx_cmmc_gaps_assessment ON cmmc_practice_gaps (assessment_id);
+CREATE INDEX IF NOT EXISTS idx_cmmc_gaps_domain     ON cmmc_practice_gaps (domain);
+CREATE INDEX IF NOT EXISTS idx_cmmc_gaps_tenant     ON cmmc_practice_gaps (tenant_id);
 """
 
 

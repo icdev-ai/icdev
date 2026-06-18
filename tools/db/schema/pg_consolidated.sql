@@ -8260,6 +8260,61 @@ ALTER SEQUENCE public.cmmc_assessments_id_seq OWNED BY public.cmmc_assessments.i
 
 
 --
+-- Name: cmmc_systems; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cmmc_systems (
+    id                   text        NOT NULL,
+    name                 text        NOT NULL,
+    classification       text        NOT NULL DEFAULT 'CUI'::text,
+    boundary             text,
+    level                integer,
+    system_owner         text,
+    authorizing_official text,
+    tenant_id            text        NOT NULL DEFAULT 'default'::text,
+    created_at           timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    updated_at           timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT cmmc_systems_pkey PRIMARY KEY (id),
+    CONSTRAINT cmmc_systems_classification_check CHECK ((classification = ANY (ARRAY['CUI'::text, 'SECRET'::text, 'TOP SECRET'::text, 'UNCLASSIFIED'::text]))),
+    CONSTRAINT cmmc_systems_level_check CHECK ((level = ANY (ARRAY[1, 2, 3])))
+);
+CREATE INDEX idx_cmmc_systems_classification ON public.cmmc_systems USING btree (classification);
+CREATE INDEX idx_cmmc_systems_tenant ON public.cmmc_systems USING btree (tenant_id);
+
+
+--
+-- Name: cmmc_practice_gaps; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cmmc_practice_gaps (
+    id                  integer     NOT NULL,
+    assessment_id       integer     NOT NULL,
+    practice_id         text        NOT NULL,
+    domain              text        NOT NULL,
+    status              text        NOT NULL DEFAULT 'gap'::text,
+    gap_description     text,
+    remediation_notes   text,
+    tenant_id           text        NOT NULL DEFAULT 'default'::text,
+    created_at          timestamp without time zone DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT cmmc_practice_gaps_pkey PRIMARY KEY (id),
+    CONSTRAINT cmmc_practice_gaps_status_check CHECK ((status = ANY (ARRAY['gap'::text, 'partial'::text, 'met'::text, 'not_applicable'::text]))),
+    CONSTRAINT cmmc_practice_gaps_assessment_practice_uniq UNIQUE (assessment_id, practice_id)
+);
+CREATE INDEX idx_cmmc_gaps_assessment ON public.cmmc_practice_gaps USING btree (assessment_id);
+CREATE INDEX idx_cmmc_gaps_domain ON public.cmmc_practice_gaps USING btree (domain);
+CREATE INDEX idx_cmmc_gaps_tenant ON public.cmmc_practice_gaps USING btree (tenant_id);
+
+CREATE SEQUENCE public.cmmc_practice_gaps_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+ALTER SEQUENCE public.cmmc_practice_gaps_id_seq OWNED BY public.cmmc_practice_gaps.id;
+
+
+--
 -- Name: cmmi_level3_assessments; Type: TABLE; Schema: public; Owner: -
 --
 
