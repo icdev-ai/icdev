@@ -258,6 +258,29 @@ jobs:
         # load the authoritative consolidated schema and mark migrations applied.
         # Regenerate the snapshot with: docker exec ... pg_dump --schema-only ...
         run: python tools/db/bootstrap_pg.py
+      - name: Ensure genesis_phase_log unique constraint (design_id, phase)
+        # Idempotent guard: pg_consolidated.sql already creates the inline UNIQUE
+        # constraint; this step makes the intent explicit and protects against
+        # partial schema loads or future snapshot gaps.
+        env:
+          PGPASSWORD: icdev_ci
+        run: |
+          psql -h localhost -U icdev -d icdev -c "
+            DO \$\$
+            BEGIN
+              IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'genesis_phase_log_design_id_phase_key'
+              ) THEN
+                ALTER TABLE genesis_phase_log
+                  ADD CONSTRAINT genesis_phase_log_design_id_phase_key
+                  UNIQUE (design_id, phase);
+                RAISE NOTICE 'genesis_phase_log unique constraint created';
+              ELSE
+                RAISE NOTICE 'genesis_phase_log unique constraint already present';
+              END IF;
+            END \$\$;
+          "
       - name: Start dashboard server
         run: |
           python tools/dashboard/app.py &
