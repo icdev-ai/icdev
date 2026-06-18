@@ -15453,7 +15453,8 @@ CREATE TABLE public.genesis_phase_log (
     detail_json    TEXT        DEFAULT '{}',
     tenant_id      TEXT        NOT NULL DEFAULT 'default',
     classification TEXT        NOT NULL DEFAULT 'CUI',
-    created_at     TEXT        NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at     TEXT        NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT genesis_phase_log_design_id_phase_key UNIQUE (design_id, phase)
 );
 
 CREATE INDEX IF NOT EXISTS idx_gpl_design_id    ON public.genesis_phase_log (design_id);
@@ -40263,6 +40264,14 @@ ALTER TABLE ONLY public.fedramp_assessments
 
 ALTER TABLE ONLY public.fedramp_assessments
     ADD CONSTRAINT fedramp_assessments_project_id_baseline_control_id_key UNIQUE (project_id, baseline, control_id);
+
+
+--
+-- Name: genesis_phase_log genesis_phase_log_design_id_phase_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.genesis_phase_log
+    ADD CONSTRAINT genesis_phase_log_design_id_phase_key UNIQUE (design_id, phase);
 
 
 --
