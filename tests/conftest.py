@@ -1516,6 +1516,22 @@ CREATE TABLE IF NOT EXISTS genesis_reflexes (
     tenant_id      TEXT    NOT NULL DEFAULT 'default',
     classification TEXT    NOT NULL DEFAULT 'CUI'
 );
+CREATE TABLE IF NOT EXISTS genesis_phase_log (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    design_id       TEXT    NOT NULL,
+    phase           TEXT    NOT NULL,
+    status          TEXT    NOT NULL DEFAULT 'running'
+                    CHECK (status IN ('running', 'completed', 'failed', 'skipped')),
+    started_at      TEXT,
+    completed_at    TEXT,
+    detail_json     TEXT    DEFAULT '{}',
+    tenant_id       TEXT    NOT NULL DEFAULT 'default',
+    classification  TEXT    NOT NULL DEFAULT 'CUI',
+    created_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_gpl_design_id    ON genesis_phase_log (design_id);
+CREATE INDEX IF NOT EXISTS idx_gpl_completed_at ON genesis_phase_log (completed_at);
+CREATE INDEX IF NOT EXISTS idx_gpl_tenant       ON genesis_phase_log (tenant_id);
 """
 
 
