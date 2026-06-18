@@ -1461,6 +1461,32 @@ CREATE TABLE IF NOT EXISTS domain_coverage (
     created_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS compliance_gates (
+    id              TEXT    PRIMARY KEY,
+    gate_name       TEXT    NOT NULL DEFAULT '',
+    status          TEXT    NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending', 'pass', 'fail', 'error', 'skipped')),
+    triggered_at    TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    project_id      TEXT    NOT NULL DEFAULT '',
+    notes           TEXT    NOT NULL DEFAULT '',
+    tenant_id       TEXT    NOT NULL DEFAULT 'default',
+    classification  TEXT    NOT NULL DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS gate_failures (
+    id              TEXT    PRIMARY KEY,
+    gate_id         TEXT    NOT NULL REFERENCES compliance_gates(id) ON DELETE CASCADE,
+    criterion       TEXT    NOT NULL DEFAULT '',
+    detail          TEXT    NOT NULL DEFAULT '',
+    severity        TEXT    NOT NULL DEFAULT 'warning'
+                    CHECK (severity IN ('critical', 'high', 'warning', 'info')),
+    tenant_id       TEXT    NOT NULL DEFAULT 'default',
+    classification  TEXT    NOT NULL DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
