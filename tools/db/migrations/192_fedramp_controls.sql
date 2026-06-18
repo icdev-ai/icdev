@@ -72,7 +72,7 @@ CREATE INDEX IF NOT EXISTS idx_fedramp_controls_tenant  ON fedramp_controls (ten
 -- ── PostgreSQL ────────────────────────────────────────────────────────────
 -- @pg-only
 CREATE TABLE IF NOT EXISTS fedramp_ato_packages (
-    id                   TEXT        PRIMARY KEY,
+    id                   TEXT        NOT NULL,
     system_name          TEXT        NOT NULL,
     ato_status           TEXT        NOT NULL DEFAULT 'in_progress'
                          CHECK (ato_status IN (
@@ -90,6 +90,8 @@ CREATE TABLE IF NOT EXISTS fedramp_ato_packages (
     created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+-- PRIMARY KEY is added idempotently by migration 196 and pg_consolidated.sql
+-- (ALTER TABLE fedramp_ato_packages ADD CONSTRAINT fedramp_ato_packages_pkey PRIMARY KEY (id))
 CREATE INDEX IF NOT EXISTS idx_fedramp_ato_pkgs_status ON fedramp_ato_packages (ato_status);
 CREATE INDEX IF NOT EXISTS idx_fedramp_ato_pkgs_tenant ON fedramp_ato_packages (tenant_id);
 
