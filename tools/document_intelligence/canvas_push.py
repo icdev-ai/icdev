@@ -17,10 +17,11 @@ Usage:
 from __future__ import annotations
 
 import logging
+from tools.logging.icdev_logger import get_logger
 import os
 import tempfile
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def push_artifact(

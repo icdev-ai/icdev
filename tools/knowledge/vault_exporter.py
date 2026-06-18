@@ -24,12 +24,13 @@ import argparse
 import hashlib
 import json
 import logging
+from tools.logging.icdev_logger import get_logger
 import sys
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 CONTEXT_DIR = BASE_DIR / "context"

@@ -7,6 +7,7 @@ with GovCon canvas tools (SWOT analysis, ICP profiling, battlecard generation).
 
 import json
 import logging
+from tools.logging.icdev_logger import get_logger
 import sys
 from pathlib import Path
 
@@ -14,7 +15,7 @@ _ROOT = Path(__file__).resolve().parent.parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _LLM_FUNCTION = "agent_product_manager"
 

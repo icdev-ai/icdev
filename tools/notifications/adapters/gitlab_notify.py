@@ -38,7 +38,7 @@ try:
     from tools.logging.icdev_logger import get_logger
     logger = get_logger("icdev.notifications.gitlab")
 except Exception:
-    logger = logging.getLogger("icdev.notifications.gitlab")
+    logger = get_logger("icdev.notifications.gitlab")
 
 
 class GitLabNotificationAdapter(NotificationAdapter):

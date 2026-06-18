@@ -11,8 +11,9 @@ do NOT auto-propagate; `tools/memory/session_indexer.py::reindex_all()` refreshe
 the index on demand.
 """
 import logging
+from tools.logging.icdev_logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _FTS5_DDL = """
 CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts

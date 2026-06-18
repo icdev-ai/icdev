@@ -48,7 +48,7 @@ try:
     from tools.logging.icdev_logger import get_logger
     logger = get_logger("icdev.gateway.adapters.github")
 except Exception:
-    logger = logging.getLogger("icdev.gateway.adapters.github")
+    logger = get_logger("icdev.gateway.adapters.github")
 
 _ICDEV_PREFIX = "!icdev "
 

@@ -27,9 +27,10 @@ from __future__ import annotations
 
 import json
 import logging
+from tools.logging.icdev_logger import get_logger
 from typing import Any
 
-logger = logging.getLogger("icdev.ace.event_bus")
+logger = get_logger("icdev.ace.event_bus")
 
 _DB_ENV = "ICDEV_ACE_DB_URL"
 

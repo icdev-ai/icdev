@@ -20,9 +20,10 @@ Usage:
 from __future__ import annotations
 
 import logging
+from tools.logging.icdev_logger import get_logger
 from datetime import datetime, timezone
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 def create_tasks(task_specs: list[dict]) -> list[str]:

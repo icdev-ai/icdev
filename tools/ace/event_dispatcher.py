@@ -20,6 +20,7 @@ Supported topic → role topic mapping is declared in each role's YAML:
 from __future__ import annotations
 
 import logging
+from tools.logging.icdev_logger import get_logger
 import threading
 import time
 from typing import TYPE_CHECKING
@@ -27,7 +28,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from icdev.tools.ace.role_loader import RoleTemplate
 
-logger = logging.getLogger("icdev.ace.event_dispatcher")
+logger = get_logger("icdev.ace.event_dispatcher")
 
 _POLL_INTERVAL = 5        # seconds between DB polls
 _MAX_ROLES_PER_EVENT = 3  # fanout cap

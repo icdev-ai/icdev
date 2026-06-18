@@ -33,7 +33,7 @@ try:
     from tools.logging.icdev_logger import get_logger
     logger = get_logger("icdev.notifications.mattermost")
 except Exception:
-    logger = logging.getLogger("icdev.notifications.mattermost")
+    logger = get_logger("icdev.notifications.mattermost")
 
 
 class MattermostNotificationAdapter(NotificationAdapter):

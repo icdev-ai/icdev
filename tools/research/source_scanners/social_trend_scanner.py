@@ -24,10 +24,11 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+from tools.logging.icdev_logger import get_logger
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _HAS_REQUESTS: bool | None = None
 

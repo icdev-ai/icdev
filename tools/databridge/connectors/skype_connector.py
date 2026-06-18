@@ -54,7 +54,7 @@ try:
     logger = get_logger("databridge.skype")
 except Exception:
     import logging
-    logger = logging.getLogger("databridge.skype")
+    logger = get_logger("databridge.skype")
 
 _TOKEN_CACHE: Dict[str, Any] = {}
 

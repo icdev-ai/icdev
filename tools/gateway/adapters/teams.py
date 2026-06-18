@@ -35,7 +35,7 @@ try:
     from tools.logging.icdev_logger import get_logger
     logger = get_logger("icdev.gateway.adapters.teams")
 except Exception:
-    logger = logging.getLogger("icdev.gateway.adapters.teams")
+    logger = get_logger("icdev.gateway.adapters.teams")
 
 
 class TeamsAdapter(BotFrameworkBaseAdapter):

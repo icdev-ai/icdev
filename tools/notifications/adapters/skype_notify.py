@@ -36,7 +36,7 @@ try:
     from tools.logging.icdev_logger import get_logger
     logger = get_logger("icdev.notifications.skype")
 except Exception:
-    logger = logging.getLogger("icdev.notifications.skype")
+    logger = get_logger("icdev.notifications.skype")
 
 _MSA_TOKEN_URL = "https://login.microsoftonline.com/botframework.com/oauth2/v2.0/token"
 _MSA_SCOPE = "https://api.botframework.com/.default"

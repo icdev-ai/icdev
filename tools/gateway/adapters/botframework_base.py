@@ -45,7 +45,7 @@ try:
     from tools.logging.icdev_logger import get_logger
     logger = get_logger("icdev.gateway.adapters.botframework")
 except Exception:
-    logger = logging.getLogger("icdev.gateway.adapters.botframework")
+    logger = get_logger("icdev.gateway.adapters.botframework")
 
 _BOTFRAMEWORK_OPENID_URL = "https://login.botframework.com/v1/.well-known/openidconfiguration"
 _JWKS_CACHE: Dict[str, Any] = {}  # {"keys": [...], "expires_at": float}

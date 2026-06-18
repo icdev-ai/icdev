@@ -52,7 +52,7 @@ try:
     logger = get_logger("databridge.teams")
 except Exception:
     import logging
-    logger = logging.getLogger("databridge.teams")
+    logger = get_logger("databridge.teams")
 
 _OFFSET_FILE = BASE_DIR / ".tmp" / "teams_offset.txt"
 _TOKEN_CACHE: Dict[str, Any] = {}  # {"token": str, "expires_at": float}

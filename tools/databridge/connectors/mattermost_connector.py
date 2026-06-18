@@ -50,7 +50,7 @@ try:
     logger = get_logger("databridge.mattermost")
 except Exception:
     import logging
-    logger = logging.getLogger("databridge.mattermost")
+    logger = get_logger("databridge.mattermost")
 
 _OFFSET_FILE = BASE_DIR / ".tmp" / "mattermost_offset.txt"
 

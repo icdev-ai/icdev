@@ -12,9 +12,10 @@ Usage:
 from __future__ import annotations
 
 import logging
+from tools.logging.icdev_logger import get_logger
 from typing import Any, Protocol, runtime_checkable
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _DEFAULT_TIMEOUT = 10
 _DEFAULT_UA = "ICDev-Platform-Connector/1.0 (air-gap-safe)"

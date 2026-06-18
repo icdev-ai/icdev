@@ -50,7 +50,7 @@ try:
     from tools.logging.icdev_logger import get_logger
     logger = get_logger("icdev.gateway.adapters.gitlab")
 except Exception:
-    logger = logging.getLogger("icdev.gateway.adapters.gitlab")
+    logger = get_logger("icdev.gateway.adapters.gitlab")
 
 _ICDEV_PREFIX = "!icdev "
 

@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import logging
+from tools.logging.icdev_logger import get_logger
 import os
 from typing import Any, Optional
 
@@ -41,7 +42,7 @@ from flask import Blueprint, jsonify, render_template, request
 from icdev.tools.ace.controller import ACEController
 from icdev.tools.ace import constants as _const
 
-logger = logging.getLogger("icdev.ace.blueprint")
+logger = get_logger("icdev.ace.blueprint")
 
 _DB_ENV = "ICDEV_ACE_DB_URL"
 _DEFAULT_LIMIT = 50
