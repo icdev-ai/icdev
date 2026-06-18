@@ -15383,6 +15383,30 @@ CREATE TABLE public.genesis_reflex_log (
 
 
 --
+-- Name: genesis_phase_log; Type: TABLE; Schema: public; Owner: -
+-- Phase execution log for Genesis design runs (migration 188, NIST AU — append-only).
+--
+
+CREATE TABLE public.genesis_phase_log (
+    id             BIGSERIAL   PRIMARY KEY,
+    design_id      TEXT        NOT NULL,
+    phase          TEXT        NOT NULL,
+    status         TEXT        NOT NULL DEFAULT 'running'
+                   CHECK (status IN ('running', 'completed', 'failed', 'skipped')),
+    started_at     TEXT,
+    completed_at   TEXT,
+    detail_json    TEXT        DEFAULT '{}',
+    tenant_id      TEXT        NOT NULL DEFAULT 'default',
+    classification TEXT        NOT NULL DEFAULT 'CUI',
+    created_at     TEXT        NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_gpl_design_id    ON public.genesis_phase_log (design_id);
+CREATE INDEX IF NOT EXISTS idx_gpl_completed_at ON public.genesis_phase_log (completed_at);
+CREATE INDEX IF NOT EXISTS idx_gpl_tenant       ON public.genesis_phase_log (tenant_id);
+
+
+--
 -- Name: genesis_reflexes; Type: TABLE; Schema: public; Owner: -
 --
 
