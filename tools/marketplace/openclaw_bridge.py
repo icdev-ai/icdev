@@ -1764,7 +1764,7 @@ def list_quarantine(status_filter=None):
             rows = conn.execute(
                 "SELECT id, skill_name, openclaw_author, scan_status, status, "
                 "trust_score, has_executable_content, review_required, created_at, "
-                "rejected_by, rejected_reason, gate_results "
+                "rejected_by, rejected_reason, gate_results, quarantine_path "
                 "FROM openclaw_imports WHERE status = ? ORDER BY created_at DESC",
                 (status_filter,),
             ).fetchall()
@@ -1772,7 +1772,7 @@ def list_quarantine(status_filter=None):
             rows = conn.execute(
                 "SELECT id, skill_name, openclaw_author, scan_status, status, "
                 "trust_score, has_executable_content, review_required, created_at, "
-                "rejected_by, rejected_reason, gate_results "
+                "rejected_by, rejected_reason, gate_results, quarantine_path "
                 "FROM openclaw_imports ORDER BY created_at DESC",
             ).fetchall()
 
@@ -1794,6 +1794,7 @@ def list_quarantine(status_filter=None):
                     "rejected_by": r[9],
                     "rejected_reason": r[10],
                     "gate_results": r[11],
+                    "quarantine_path": r[12],
                 }
             # Parse gate_results to extract failed gates summary
             gate_raw = d.get("gate_results") or d.get("gate_results_raw")

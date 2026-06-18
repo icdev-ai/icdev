@@ -157,6 +157,7 @@
                     <th>Scan</th>
                     <th>Status</th>
                     <th>Trust</th>
+                    <th>Risk</th>
                     <th>Imported</th>
                     <th>Actions</th>
                 </tr>
@@ -221,13 +222,34 @@
                             <span class="badge badge-red" title="Blocked — all actions blocked">{{ '%.2f'|format(trust) }}</span>
                         {% endif %}
                     </td>
+                    <td>
+                        {% set risk_score = imp[12] if imp|length > 12 else 0 %}
+                        {% set risk_severity = imp[13] if imp|length > 13 else 'none' %}
+                        {% set risk_blocked = imp[14] if imp|length > 14 else false %}
+                        {% set risk_reason = imp[15] if imp|length > 15 else '' %}
+                        {% if risk_blocked %}
+                            <span class="badge badge-red oc-tooltip" data-tip="{{ risk_reason|e }}">BLOCKED {{ risk_score }}</span>
+                        {% elif risk_score > 0 %}
+                            {% if risk_severity in ('critical', 'high') %}
+                                <span class="badge badge-red oc-tooltip" data-tip="{{ risk_reason|e }}">{{ risk_severity|upper }} {{ risk_score }}</span>
+                            {% elif risk_severity == 'medium' %}
+                                <span class="badge badge-yellow oc-tooltip" data-tip="{{ risk_reason|e }}">{{ risk_severity|upper }} {{ risk_score }}</span>
+                            {% else %}
+                                <span class="badge badge-green oc-tooltip" data-tip="{{ risk_reason|e }}">{{ risk_severity|upper }} {{ risk_score }}</span>
+                            {% endif %}
+                        {% else %}
+                            <span style="color: var(--text-dim); font-size: 12px;">—</span>
+                        {% endif %}
+                    </td>
                     <td style="font-size: 12px; color: var(--text-muted);">{{ (imp[8]|string)[:10] if imp[8] else '' }}</td>
                     <td style="white-space: nowrap;">
-                        {% if imp[4] in ('quarantined', 'review_pending') and imp[3] == 'passed' %}
+                        {% if imp[4] in ('quarantined', 'review_pending') and imp[3] == 'passed' and not risk_blocked %}
                             <button class="btn btn-sm btn-primary" onclick="promoteImport('{{ imp[0] }}')">Promote</button>
                             <button class="btn btn-sm btn-danger" onclick="rejectImport('{{ imp[0] }}')">Reject</button>
                         {% elif imp[4] == 'promoted' %}
+                            {% if not risk_blocked %}
                             <button class="btn btn-sm" style="border:1px solid #4ade80; color:#4ade80;" onclick="installToProject('{{ imp[0] }}', '{{ imp[1] }}')">Install</button>
+                            {% endif %}
                             <button class="btn btn-sm" style="border:1px solid var(--border-color);" onclick="boostTrust('{{ imp[0] }}', '{{ imp[1] }}', {{ trust }})">Trust</button>
                             <button class="btn btn-sm" style="border:1px solid #60a5fa; color:#60a5fa;" onclick="checkUpdate('{{ imp[0] }}', '{{ imp[1] }}')">Update?</button>
                             <button class="btn btn-sm" style="border:1px solid #facc15; color:#facc15;" onclick="rateSkill('{{ imp[0] }}', '{{ imp[1] }}')">Rate</button>

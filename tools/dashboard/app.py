@@ -9985,23 +9985,47 @@ def create_app() -> Flask:
 
             result = list_quarantine()
             if result.get("success"):
-                imports = [
-                    (
-                        i.get("id", ""),
-                        i.get("skill_name", ""),
-                        i.get("author", i.get("openclaw_author", "")),
-                        i.get("scan_status", ""),
-                        i.get("status", ""),
-                        i.get("trust_score", 0.3),
-                        i.get("has_scripts", i.get("has_executable_content", False)),
-                        i.get("review_required", False),
-                        str(i.get("created_at", ""))[:19],
-                        i.get("rejected_by", ""),
-                        i.get("rejected_reason", ""),
-                        i.get("failed_gates", []),
+                from tools.kanban.skill_promotion_gate import assess_skill_for_promotion
+
+                def _risk_for_import(imp: dict):
+                    qpath = imp.get("quarantine_path")
+                    if qpath and Path(qpath).is_dir():
+                        try:
+                            return assess_skill_for_promotion(qpath)
+                        except Exception:
+                            pass
+                    return {
+                        "allowed": True,
+                        "risk_score": 0.0,
+                        "risk_severity": "none",
+                        "findings_count": 0,
+                        "reason": "No cached assessment available.",
+                    }
+
+                imports = []
+                for i in result.get("imports", []):
+                    risk = _risk_for_import(i)
+                    blocked = risk.get("risk_score", 0.0) > 50
+                    imports.append(
+                        (
+                            i.get("id", ""),
+                            i.get("skill_name", ""),
+                            i.get("author", i.get("openclaw_author", "")),
+                            i.get("scan_status", ""),
+                            i.get("status", ""),
+                            i.get("trust_score", 0.3),
+                            i.get("has_scripts", i.get("has_executable_content", False)),
+                            i.get("review_required", False),
+                            str(i.get("created_at", ""))[:19],
+                            i.get("rejected_by", ""),
+                            i.get("rejected_reason", ""),
+                            i.get("failed_gates", []),
+                            round(float(risk.get("risk_score", 0.0)), 2),
+                            risk.get("risk_severity", "none"),
+                            blocked,
+                            risk.get("reason", ""),
+                        )
                     )
-                    for i in result.get("imports", [])
-                ]
         except Exception:
             imports = []
         return render_template("clawhub.html", imports=imports, enabled=enabled)
