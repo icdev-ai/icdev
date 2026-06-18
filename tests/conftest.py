@@ -1527,7 +1527,8 @@ CREATE TABLE IF NOT EXISTS genesis_phase_log (
     detail_json     TEXT    DEFAULT '{}',
     tenant_id       TEXT    NOT NULL DEFAULT 'default',
     classification  TEXT    NOT NULL DEFAULT 'CUI',
-    created_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (design_id, phase)
 );
 CREATE INDEX IF NOT EXISTS idx_gpl_design_id    ON genesis_phase_log (design_id);
 CREATE INDEX IF NOT EXISTS idx_gpl_completed_at ON genesis_phase_log (completed_at);
