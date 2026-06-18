@@ -281,6 +281,29 @@ jobs:
               END IF;
             END \$\$;
           "
+      - name: Ensure fedramp_ato_packages PRIMARY KEY (unique) constraint
+        # Idempotent guard: pg_consolidated.sql adds the PK via ALTER TABLE after
+        # CREATE TABLE; this step protects against partial schema loads or future
+        # snapshot gaps that would cause fedramp_controls FK validation to fail.
+        env:
+          PGPASSWORD: icdev_ci
+        run: |
+          psql -h localhost -U icdev -d icdev -c "
+            DO \$\$
+            BEGIN
+              IF NOT EXISTS (
+                SELECT 1 FROM pg_constraint
+                WHERE conname = 'fedramp_ato_packages_pkey'
+                  AND conrelid = 'fedramp_ato_packages'::regclass
+              ) THEN
+                ALTER TABLE fedramp_ato_packages
+                  ADD CONSTRAINT fedramp_ato_packages_pkey PRIMARY KEY (id);
+                RAISE NOTICE 'fedramp_ato_packages unique constraint created';
+              ELSE
+                RAISE NOTICE 'fedramp_ato_packages unique constraint already present';
+              END IF;
+            END \$\$;
+          "
       - name: Start dashboard server
         run: |
           python tools/dashboard/app.py &
