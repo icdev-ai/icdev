@@ -15260,6 +15260,24 @@ CREATE TABLE public.genesis_convergence_log (
 
 
 --
+-- Name: genesis_designs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.genesis_designs (
+    id text NOT NULL,
+    name text NOT NULL DEFAULT '',
+    status text NOT NULL DEFAULT 'pending',
+    current_phase text,
+    detail_json text DEFAULT '{}',
+    tenant_id text NOT NULL DEFAULT 'default',
+    classification character varying(50) DEFAULT 'CUI'::character varying,
+    created_at text NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at text NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT genesis_designs_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'completed'::text, 'failed'::text, 'cancelled'::text])))
+);
+
+
+--
 -- Name: genesis_generated_goals; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -15360,6 +15378,22 @@ CREATE TABLE public.genesis_reflex_log (
     reflex_name text NOT NULL,
     ran_at text NOT NULL,
     result_json text,
+    classification character varying(50) DEFAULT 'CUI'::character varying
+);
+
+
+--
+-- Name: genesis_reflexes; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.genesis_reflexes (
+    id text NOT NULL,
+    design_id text NOT NULL,
+    name text NOT NULL,
+    confidence real NOT NULL DEFAULT 0.0,
+    fired_at text NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    result_json text DEFAULT '{}',
+    tenant_id text NOT NULL DEFAULT 'default',
     classification character varying(50) DEFAULT 'CUI'::character varying
 );
 
@@ -40585,6 +40619,14 @@ ALTER TABLE ONLY public.genesis_convergence_log
 
 
 --
+-- Name: genesis_designs genesis_designs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.genesis_designs
+    ADD CONSTRAINT genesis_designs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: genesis_generated_goals genesis_generated_goals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -40622,6 +40664,14 @@ ALTER TABLE ONLY public.genesis_learned_goals
 
 ALTER TABLE ONLY public.genesis_reflex_log
     ADD CONSTRAINT genesis_reflex_log_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: genesis_reflexes genesis_reflexes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.genesis_reflexes
+    ADD CONSTRAINT genesis_reflexes_pkey PRIMARY KEY (id);
 
 
 --
@@ -52064,6 +52114,48 @@ CREATE INDEX idx_gd_pairs_round ON public.gd_ai_training_pairs USING btree (roun
 --
 
 CREATE INDEX idx_gd_tournaments_game ON public.gd_ai_tournaments USING btree (game_key, status);
+
+
+--
+-- Name: idx_gd_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_gd_created ON public.genesis_designs USING btree (created_at);
+
+
+--
+-- Name: idx_gd_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_gd_status ON public.genesis_designs USING btree (status);
+
+
+--
+-- Name: idx_gd_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_gd_tenant ON public.genesis_designs USING btree (tenant_id);
+
+
+--
+-- Name: idx_gr_design_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_gr_design_id ON public.genesis_reflexes USING btree (design_id);
+
+
+--
+-- Name: idx_gr_fired_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_gr_fired_at ON public.genesis_reflexes USING btree (fired_at);
+
+
+--
+-- Name: idx_gr_tenant; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX idx_gr_tenant ON public.genesis_reflexes USING btree (tenant_id);
 
 
 --

@@ -1494,6 +1494,28 @@ CREATE TABLE IF NOT EXISTS fedramp_controls (
 CREATE INDEX IF NOT EXISTS idx_fedramp_controls_package ON fedramp_controls (package_id);
 CREATE INDEX IF NOT EXISTS idx_fedramp_controls_status  ON fedramp_controls (implementation_status);
 CREATE INDEX IF NOT EXISTS idx_fedramp_controls_tenant  ON fedramp_controls (tenant_id);
+CREATE TABLE IF NOT EXISTS genesis_designs (
+    id             TEXT    PRIMARY KEY,
+    name           TEXT    NOT NULL DEFAULT '',
+    status         TEXT    NOT NULL DEFAULT 'pending'
+                   CHECK (status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
+    current_phase  TEXT,
+    detail_json    TEXT    DEFAULT '{}',
+    tenant_id      TEXT    NOT NULL DEFAULT 'default',
+    classification TEXT    NOT NULL DEFAULT 'CUI',
+    created_at     TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at     TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS genesis_reflexes (
+    id             TEXT    PRIMARY KEY,
+    design_id      TEXT    NOT NULL,
+    name           TEXT    NOT NULL,
+    confidence     REAL    NOT NULL DEFAULT 0.0,
+    fired_at       TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    result_json    TEXT    DEFAULT '{}',
+    tenant_id      TEXT    NOT NULL DEFAULT 'default',
+    classification TEXT    NOT NULL DEFAULT 'CUI'
+);
 """
 
 
