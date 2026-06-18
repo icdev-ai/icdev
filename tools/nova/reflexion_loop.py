@@ -10,10 +10,11 @@ Call register() once at app startup to wire the event-driven trigger.
 """
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timezone
 
-logger = logging.getLogger("icdev.nova.reflexion_loop")
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.nova.reflexion_loop")
 
 # Topics this reflex listens to on the nova canvas
 LISTEN_TOPICS = ("task.completed",)

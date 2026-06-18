@@ -3597,8 +3597,7 @@ def create_app() -> Flask:
                 health_status=health,
             )
         except Exception as exc:  # noqa: BLE001
-            import logging as _mon_log
-            _mon_log.getLogger(__name__).error("monitoring_overview DB error: %s", exc)
+            get_logger(__name__).error("monitoring_overview DB error: %s", exc)
             return render_template(
                 "monitoring/overview.html",
                 firing_alerts=[],
@@ -10444,9 +10443,7 @@ def create_app() -> Flask:
             )
 
     except ImportError as _ph_err:
-        import logging as _logging
-
-        _logging.getLogger(__name__).warning("Platform health module unavailable: %s", _ph_err)
+        get_logger(__name__).warning("Platform health module unavailable: %s", _ph_err)
 
     # ---- Air-gap Next.js static export ----
     try:
@@ -10461,9 +10458,7 @@ def create_app() -> Flask:
 
             app.logger.info("Air-gap Next.js static route registered at /next/")
     except Exception as _ag_err:
-        import logging as _logging
-
-        _logging.getLogger(__name__).warning("Air-gap Next.js route skipped: %s", _ag_err)
+        get_logger(__name__).warning("Air-gap Next.js route skipped: %s", _ag_err)
 
     # ── Projects-in-Flight registry ─────────────────────────────────────────
     # Config-driven: args/projects.yaml. Each project renders as a collapsible
@@ -10485,8 +10480,7 @@ def create_app() -> Flask:
     # Violations are logged via the app logger and cause the offending entry
     # (or epic) to be dropped from the rendered output so the rest still
     # works.
-    import logging as _proj_logging
-    _proj_log = _proj_logging.getLogger(__name__ + ".projects")
+    _proj_log = get_logger(__name__ + ".projects")
 
     _LIKE_ESCAPE = "\\"
 

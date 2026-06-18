@@ -7,7 +7,6 @@ dedicated daemon thread, handling inter-coworker messaging and HITL gates.
 from __future__ import annotations
 
 import json
-import logging
 import threading
 import time
 import uuid
@@ -23,8 +22,9 @@ from icdev.tools.ace.step_executor import (
     TrustKernelDeniedError,
 )
 from icdev.tools.ace.team_assembler import CoWorkerSpec
+from tools.logging.icdev_logger import get_logger
 
-logger = logging.getLogger("icdev.ace.coworker_thread")
+logger = get_logger("icdev.ace.coworker_thread")
 
 _DB_ENV = "ICDEV_ACE_DB_URL"
 _HITL_POLL_INTERVAL = 2.0  # seconds between HITL resolution checks

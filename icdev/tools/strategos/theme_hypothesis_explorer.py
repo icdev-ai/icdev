@@ -13,7 +13,6 @@ NIST 800-53: SI-12, RA-3, AU-9
 from __future__ import annotations
 
 import json
-import logging
 import re
 import uuid
 from datetime import datetime, timezone
@@ -26,8 +25,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
-logger = logging.getLogger("icdev.strategos.theme_hypothesis_explorer")
+logger = get_logger("icdev.strategos.theme_hypothesis_explorer")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS sg_hypotheses (

@@ -9,14 +9,14 @@ Routes:
 """
 
 import argparse
-import logging
 from pathlib import Path
 from typing import Optional
 
 from tools.a2a.agent_server import A2AAgentServer
 from tools.a2a.task import Task, TaskStatus
+from tools.logging.icdev_logger import get_logger
 
-logger = logging.getLogger("a2a.ace")
+logger = get_logger("a2a.ace")
 
 PORT = 8460
 AGENT_ID = "ace"

@@ -46,8 +46,7 @@ def create_info_ops_blueprint() -> Blueprint | None:
             if not _canvas_check_access(user_id, tenant_id, "info_ops"):
                 abort(403)
         except Exception as exc:
-            import logging
-            logging.getLogger(__name__).debug("canvas_access check error: %s", exc)
+            log.debug("canvas_access check error: %s", exc)
             abort(403)
 
 

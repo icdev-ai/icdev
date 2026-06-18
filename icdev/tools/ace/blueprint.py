@@ -30,7 +30,6 @@ attached (see CLAUDE.md canvas DB guardrail).
 from __future__ import annotations
 
 import json
-import logging
 import os
 from typing import Any, Optional
 
@@ -40,8 +39,9 @@ from flask import Blueprint, jsonify, render_template, request
 # stdlib at module scope, so this is safe and gives the blueprint a stable handle.
 from icdev.tools.ace.controller import ACEController
 from icdev.tools.ace import constants as _const
+from tools.logging.icdev_logger import get_logger
 
-logger = logging.getLogger("icdev.ace.blueprint")
+logger = get_logger("icdev.ace.blueprint")
 
 _DB_ENV = "ICDEV_ACE_DB_URL"
 _DEFAULT_LIMIT = 50

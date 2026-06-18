@@ -11,7 +11,6 @@ NIST 800-53: SI-12, AU-9, RA-3
 from __future__ import annotations
 
 import json
-import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,8 +22,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
-logger = logging.getLogger("icdev.strategos.intel_report_engine")
+logger = get_logger("icdev.strategos.intel_report_engine")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS sg_intel_reports (

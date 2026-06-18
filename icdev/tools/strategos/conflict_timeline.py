@@ -15,7 +15,6 @@ NIST 800-53: AU-9, SI-12
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
 from typing import Any
 
@@ -25,8 +24,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools.db.storage import get_connection  # noqa: E402
+from tools.logging.icdev_logger import get_logger  # noqa: E402
 
-logger = logging.getLogger("icdev.strategos.conflict_timeline")
+logger = get_logger("icdev.strategos.conflict_timeline")
 
 # ── Marker filter definitions ─────────────────────────────────────────────
 ENCIRCLEMENT_KEYWORDS = frozenset([

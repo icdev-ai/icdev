@@ -3190,7 +3190,6 @@ def create_app() -> Flask:
     @app.route("/api/core/iqe-query", methods=["POST"])
     def core_iqe_query():
         """Natural-language IQE query against agents and projects collections."""
-        import logging as _log
         import tools.iqe.adapters.core_agents  # noqa: F401 — registers agents.* + projects.* collections
         from tools.iqe.nl_to_iqe import nl_to_iqe
         from tools.iqe.parser import Parser
@@ -3216,13 +3215,12 @@ def create_app() -> Flask:
             return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation,
                             "results": rows, "row_count": len(rows)})
         except Exception as exc:
-            _log.getLogger(__name__).warning("core IQE error: %s", exc)
+            get_logger(__name__).warning("core IQE error: %s", exc)
             return jsonify({"error": str(exc), "iqe": iqe_str}), 500
 
     @app.route("/api/iqe/dispatch", methods=["POST"])
     def iqe_dispatch():
         """Canvas-aware IQE dispatcher — routes question to correct adapter by canvas name."""
-        import logging as _dlog
         from tools.iqe.nl_to_iqe import nl_to_iqe
         from tools.iqe.parser import parse as _iqe_parse, IQESyntaxError as _IQESyntaxError
         from tools.iqe.executor import execute_query
@@ -3289,7 +3287,7 @@ def create_app() -> Flask:
             return jsonify({"ok": True, "canvas": canvas, "iqe": iqe_str,
                             "explanation": explanation, "results": rows, "row_count": len(rows)})
         except Exception as exc:
-            _dlog.getLogger(__name__).warning("IQE dispatch error [%s]: %s", canvas, exc)
+            get_logger(__name__).warning("IQE dispatch error [%s]: %s", canvas, exc)
             return jsonify({"error": str(exc), "canvas": canvas, "iqe": iqe_str}), 500
 
     @app.route("/monitoring")
@@ -3345,8 +3343,7 @@ def create_app() -> Flask:
                 health_status=health,
             )
         except Exception as exc:  # noqa: BLE001
-            import logging as _mon_log
-            _mon_log.getLogger(__name__).error("monitoring_overview DB error: %s", exc)
+            get_logger(__name__).error("monitoring_overview DB error: %s", exc)
             return render_template(
                 "monitoring/overview.html",
                 firing_alerts=[],
@@ -10194,9 +10191,7 @@ def create_app() -> Flask:
             )
 
     except ImportError as _ph_err:
-        import logging as _logging
-
-        _logging.getLogger(__name__).warning("Platform health module unavailable: %s", _ph_err)
+        get_logger(__name__).warning("Platform health module unavailable: %s", _ph_err)
 
     # ---- Air-gap Next.js static export ----
     try:
@@ -10211,9 +10206,7 @@ def create_app() -> Flask:
 
             app.logger.info("Air-gap Next.js static route registered at /next/")
     except Exception as _ag_err:
-        import logging as _logging
-
-        _logging.getLogger(__name__).warning("Air-gap Next.js route skipped: %s", _ag_err)
+        get_logger(__name__).warning("Air-gap Next.js route skipped: %s", _ag_err)
 
     # ── Projects-in-Flight registry ─────────────────────────────────────────
     # Config-driven: args/projects.yaml. Each project renders as a collapsible
@@ -10235,8 +10228,7 @@ def create_app() -> Flask:
     # Violations are logged via the app logger and cause the offending entry
     # (or epic) to be dropped from the rendered output so the rest still
     # works.
-    import logging as _proj_logging
-    _proj_log = _proj_logging.getLogger(__name__ + ".projects")
+    _proj_log = get_logger(__name__ + ".projects")
 
     _LIKE_ESCAPE = "\\"
 
