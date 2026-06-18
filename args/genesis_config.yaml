@@ -832,6 +832,21 @@ reflexes:
       threshold: 0
       operator: gte         # 0 new capabilities = clean; >0 surfaces real drift (always succeeds)
 
+  # ── Skill Security Monitor (SkillSpector scan of ICDEV skills) ────────────────
+
+  skill_security_monitor:
+    timeout_seconds: 300
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    interval_seconds: 21600  # 6 hours — SKILL.md files change slowly
+    cooldown_minutes: 120
+    description: "SkillSpector scan of .agents/skills/icdev-* — open a Kanban card per skill with blocking or high/critical findings; deduped by skill name + dispatch_source"
+    success_metric:
+      name: cards_created
+      threshold: 0
+      operator: gte         # 0 = all skills pass; >0 surfaces real security drift (always succeeds)
+
   # ── Foundry Cycle (ACF — Autonomous Capability Foundry, 0→1 product factory) ──
 
   foundry_cycle:
