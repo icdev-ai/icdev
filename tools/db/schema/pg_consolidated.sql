@@ -13866,6 +13866,9 @@ CREATE TABLE public.fedramp_ato_packages (
     updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE ONLY public.fedramp_ato_packages
+    ADD CONSTRAINT fedramp_ato_packages_pkey PRIMARY KEY (id);
+
 
 --
 -- Name: fedramp_controls; Type: TABLE; Schema: public; Owner: -
@@ -40264,14 +40267,6 @@ ALTER TABLE ONLY public.fedramp_assessments
 
 ALTER TABLE ONLY public.fedramp_assessments
     ADD CONSTRAINT fedramp_assessments_project_id_baseline_control_id_key UNIQUE (project_id, baseline, control_id);
-
-
---
--- Name: fedramp_ato_packages fedramp_ato_packages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
---
-
-ALTER TABLE ONLY public.fedramp_ato_packages
-    ADD CONSTRAINT fedramp_ato_packages_pkey PRIMARY KEY (id);
 
 
 --
