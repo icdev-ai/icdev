@@ -251,6 +251,30 @@ def check_process_running(
         return _result("process_running", f"{host}:{process_name}", "error", str(exc), elapsed)
 
 
+# ── Convenience aliases ───────────────────────────────────────────────────────
+
+def http_smoke_test(url: str, expected_status: int = 200, timeout: int = _TIMEOUT) -> dict:
+    """HTTP GET smoke test; alias for check_service_health with renamed keys."""
+    result = check_service_health(url, expected_status=expected_status, timeout=timeout)
+    result["response_time_ms"] = result.get("elapsed_ms", 0)
+    return result
+
+
+def db_connectivity_check(
+    host: str,
+    port: int,
+    db_type: str = "postgresql",
+    db_name: str = "",
+    timeout: int = _TIMEOUT,
+) -> dict:
+    """TCP connectivity check to a database port."""
+    result = check_connectivity(host, [port], timeout=timeout)
+    result["ok"] = result.get("status") == "pass"
+    result["db_type"] = db_type
+    result["db_name"] = db_name
+    return result
+
+
 # ── Aggregate runner ──────────────────────────────────────────────────────────
 
 def run_validation_suite(session_id: str, targets: list[dict]) -> dict:
