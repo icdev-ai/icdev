@@ -1011,6 +1011,7 @@
 | Gepa Optimizer | tools\skills\gepa_optimizer.py | Auto-registered: skills/gepa_optimizer.py | --json | JSON |
 | Reflexion Agent | tools\workflow\reflexion_agent.py | Auto-registered: workflow/reflexion_agent.py | --json | JSON |
 | Trace Logger | tools\workflow\trace_logger.py | Auto-registered: workflow/trace_logger.py | --json | JSON |
+| Dic Scanner | tools\research\source_scanners\dic_scanner.py | Auto-registered: source_scanners/dic_scanner.py | --json | JSON |
 | Social Trend Scanner | tools\research\source_scanners\social_trend_scanner.py | Auto-registered: source_scanners/social_trend_scanner.py | --json | JSON |
 | Pma Credential Monitor | tools\genesis\reflexes\pma_credential_monitor.py | Auto-registered: reflexes/pma_credential_monitor.py | --json | JSON |
 | Pma Int Gap Monitor | tools\genesis\reflexes\pma_int_gap_monitor.py | Auto-registered: reflexes/pma_int_gap_monitor.py | --json | JSON |
