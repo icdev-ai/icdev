@@ -14,14 +14,6 @@ env:
   PYTHONPATH: "${{ github.workspace }}"
   ICDEV_CUI_BANNER_ENABLED: "true"
 
-# Anchor every shell step to the checkout root. This prevents path-sensitive
-# tooling (ruff, coherence_checker RLS checks, pre_tool_use.py validators,
-# and the 184-file changed-file scanners) from reading/writing against the
-# wrong directory in worktree or CI contexts.
-defaults:
-  run:
-    working-directory: ${{ github.workspace }}
-
 jobs:
   # ── Tier 0: Lint (full codebase — ruff.toml enforces line-length=120) ────
   lint:
