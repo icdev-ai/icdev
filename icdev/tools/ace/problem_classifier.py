@@ -293,9 +293,11 @@ class ProblemClassifierLens(BaseLens):
     def propose(self, predictions: list[OraclePrediction]) -> TeamManifest:  # type: ignore[override]
         """Convert ranked predictions to a TeamManifest.
 
-        When max confidence < 0.5, calls LLMRouter.invoke('task_decomposition')
-        for role suggestions. Falls back to [ai_developer, qa_manager] if LLM
-        is also unavailable.
+        Two-tier classification:
+          1. Fast path  — if any regex domain scores ≥ 0.65, use that directly.
+          2. Intent path — otherwise, call LLM with the full problem text and the
+             loaded role catalog so it can classify intent and pick catalog-valid roles.
+          3. Fallback    — [ai_developer, qa_manager] if LLM is also unavailable.
 
         Args:
             predictions: Sorted list produced by score().
@@ -305,20 +307,22 @@ class ProblemClassifierLens(BaseLens):
         """
         max_confidence = max((p.confidence for p in predictions), default=0.0)
 
-        if max_confidence < 0.5:
-            llm_slots = self._llm_suggest_roles()
-            return TeamManifest(slots=llm_slots or list(_FALLBACK_SLOTS))
+        # Fast path: high-signal regex match — trust the pattern directly.
+        if max_confidence >= 0.65:
+            seen: dict[str, RoleSlot] = {}
+            for pred in predictions:
+                if pred.confidence < 0.1:
+                    continue
+                priority = "high" if pred.confidence >= 0.6 else "medium"
+                for role_id in pred.data.get("preferred_roles", []):
+                    if role_id not in seen:
+                        seen[role_id] = RoleSlot(role_id=role_id, count=1, priority=priority)
+            if seen:
+                return TeamManifest(slots=list(seen.values()))
 
-        seen: dict[str, RoleSlot] = {}
-        for pred in predictions:
-            if pred.confidence < 0.1:
-                continue
-            priority = "high" if pred.confidence >= 0.6 else "medium"
-            for role_id in pred.data.get("preferred_roles", []):
-                if role_id not in seen:
-                    seen[role_id] = RoleSlot(role_id=role_id, count=1, priority=priority)
-
-        return TeamManifest(slots=list(seen.values()) or list(_FALLBACK_SLOTS))
+        # Intent path: send problem text + catalog to LLM for free-form classification.
+        llm_slots = self._llm_classify_intent()
+        return TeamManifest(slots=llm_slots or list(_FALLBACK_SLOTS))
 
     # ------------------------------------------------------------------
     # run() override — returns TeamManifest instead of list[OraclePrediction]
@@ -331,13 +335,15 @@ class ProblemClassifierLens(BaseLens):
         return self.propose(predictions)
 
     # ------------------------------------------------------------------
-    # LLM helper
+    # LLM intent classifier
     # ------------------------------------------------------------------
 
-    def _llm_suggest_roles(self) -> list[RoleSlot]:
-        """Call LLMRouter for role suggestions when pattern confidence is low.
+    def _llm_classify_intent(self) -> list[RoleSlot]:
+        """Classify problem intent via LLM using the loaded role catalog as a constraint.
 
-        Returns empty list if LLM is unavailable so the caller uses the fallback.
+        Passes the exact role_ids available in args/ace/roles/ so the LLM cannot
+        hallucinate IDs that don't exist. Returns empty list on any failure so the
+        caller falls back to the hardcoded default.
         """
         try:
             from icdev.tools.llm.router import LLMRouter
@@ -345,44 +351,70 @@ class ProblemClassifierLens(BaseLens):
         except ImportError:
             return []
 
+        # Build the catalog constraint from loaded roles.
+        try:
+            roles = self._role_loader.list_roles()
+            catalog_ids = [r.role_id for r in roles]
+        except Exception:
+            catalog_ids = list({
+                rid
+                for domain_roles in _DOMAIN_ROLES.values()
+                for rid in domain_roles
+            })
+
+        catalog_json = json.dumps(catalog_ids)
+
+        system_prompt = (
+            "You are an AI team composition advisor for ICDEV, a defense/govcon software platform. "
+            "Your job is to read a problem description and select the best team of AI co-workers "
+            "from the available role catalog to solve it. "
+            "You MUST only use role_id values from the provided catalog — never invent new ones. "
+            "Return ONLY a JSON object with this exact shape (no prose, no markdown):\n"
+            '{"domain": "<one word domain>", "roles": [{"role_id": "<id>", "priority": "high|medium|low"}, ...]}\n'
+            "Select 2-4 roles. First role should be primary (high priority)."
+        )
+
+        user_prompt = (
+            f"Available role catalog:\n{catalog_json}\n\n"
+            f"Problem description:\n{self._problem_text}\n\n"
+            "Select the best roles from the catalog above."
+        )
+
         try:
             router = LLMRouter()
             request = LLMRequest(
-                messages=[
-                    {
-                        "role": "user",
-                        "content": (
-                            "Given the following problem description, list the top 3 most "
-                            "appropriate AI team roles using snake_case IDs (e.g. ai_developer, "
-                            "qa_manager, devops_engineer, compliance_manager, data_analyst). "
-                            "Return ONLY a JSON array of strings.\n\n"
-                            f"Problem: {self._problem_text}"
-                        ),
-                    }
-                ],
-                system_prompt=(
-                    "You are an AI team composition advisor. "
-                    "Return only valid JSON — a JSON array of role_id strings."
-                ),
-                max_tokens=256,
-                temperature=0.2,
+                messages=[{"role": "user", "content": user_prompt}],
+                system_prompt=system_prompt,
+                max_tokens=512,
+                temperature=0.1,
                 skip_injection_scan=True,
             )
             response = router.invoke("task_decomposition", request)
-            content = response.content.strip()
-            start = content.find("[")
-            end = content.rfind("]") + 1
-            if start >= 0 and end > start:
-                role_ids: list = json.loads(content[start:end])
-                return [
-                    RoleSlot(
-                        role_id=str(r),
-                        count=1,
-                        priority="high" if i == 0 else "medium",
-                    )
-                    for i, r in enumerate(role_ids[:3])
-                    if isinstance(r, str) and r
-                ]
-        except Exception:  # noqa: BLE001 — LLMUnavailableError, network, parse errors
-            pass
-        return []
+            content = (response.content if hasattr(response, "content") else str(response)).strip()
+
+            # Extract the JSON object from the response.
+            start = content.find("{")
+            end = content.rfind("}") + 1
+            if start < 0 or end <= start:
+                return []
+
+            parsed = json.loads(content[start:end])
+            raw_roles = parsed.get("roles", [])
+            valid_ids = set(catalog_ids)
+
+            slots: list[RoleSlot] = []
+            for entry in raw_roles[:4]:
+                if not isinstance(entry, dict):
+                    continue
+                rid = str(entry.get("role_id", "")).strip()
+                if not rid or rid not in valid_ids:
+                    continue
+                priority = str(entry.get("priority", "medium")).lower()
+                if priority not in ("high", "medium", "low"):
+                    priority = "medium"
+                slots.append(RoleSlot(role_id=rid, count=1, priority=priority))
+
+            return slots
+
+        except Exception:  # noqa: BLE001
+            return []
