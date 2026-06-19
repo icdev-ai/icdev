@@ -328,6 +328,16 @@ python tools/workflow/coherence_checker.py --all --gate                # coheren
   7. `python tools/dx/companion.py --sync --write --json` — sync to all AI platforms
   8. `python tools/workflow/coherence_checker.py --all --fix --gate` — coherence validation
 
+### RLS Bypass Annotations for cwd-Sensitive Hook Logic
+
+`.claude/hooks/pre_tool_use.py` runs before every tool call and contains path-sensitive checks (e.g. resolving `args/file_access_tiers.yaml` and repo-root-relative exemption lists). When Claude Code is invoked from a git worktree or from a directory other than the canonical repo root, `os.getcwd()` can point at the worktree root, so path-sensitive logic may fail or apply the wrong rules. The hook already resolves the repo root via `__file__` (`_get_repo_root()`), but any future line that intentionally bypasses a path/cwd-dependent safety check must be annotated:
+
+```python
+# rls-bypass: <reason> — required for task-3bc9eb0918 because cwd changes in worktrees
+```
+
+This annotation documents why the bypass is safe and lets `tools/workflow/coherence_checker.py::check_security_context_wiring` distinguish intentional exceptions from accidental wiring gaps. The file involved is `.claude/hooks/pre_tool_use.py`.
+
 ### Compliance & Security Rules
 - All artifacts MUST include classification markings (CUI for IL4/IL5, SECRET for IL6)
 - Use `classification_manager.py` for markings — don't hard-code CUI banners
