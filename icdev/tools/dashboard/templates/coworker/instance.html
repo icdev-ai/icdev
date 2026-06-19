@@ -120,6 +120,33 @@
   .artifact-card .art-preview { font-size: 11px; color: var(--text-secondary, #7a8cb0); line-height: 1.5; max-height: 3.6em; overflow: hidden; }
   .artifact-card .art-meta { font-size: 11px; color: var(--text-secondary, #7a8cb0); margin-top: 4px; }
 
+  /* ── Lifecycle stepper ──────────────────────────────────────────── */
+  .lifecycle-stepper { display: flex; align-items: center; margin: 0 0 18px; flex-wrap: wrap; gap: 0; }
+  .lifecycle-step { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .lifecycle-step-circle { width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--border-color, #2a2a4a); background: var(--bg-card, #16213e); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: var(--text-secondary, #555); z-index: 1; }
+  .lifecycle-step.ls-done .lifecycle-step-circle { background: #27ae60; border-color: #27ae60; color: #fff; }
+  .lifecycle-step.ls-active .lifecycle-step-circle { background: #4a90d9; border-color: #4a90d9; color: #fff; animation: pulse 1.2s infinite; }
+  .lifecycle-step.ls-failed .lifecycle-step-circle { background: #e74c3c; border-color: #e74c3c; color: #fff; }
+  .lifecycle-step-label { font-size: 10px; color: var(--text-secondary, #7a8cb0); white-space: nowrap; }
+  .lifecycle-step.ls-done .lifecycle-step-label { color: #27ae60; }
+  .lifecycle-step.ls-active .lifecycle-step-label { color: #4a90d9; }
+  .lifecycle-step.ls-failed .lifecycle-step-label { color: #e74c3c; }
+  .lifecycle-connector { height: 2px; flex: 1; min-width: 16px; max-width: 52px; background: var(--border-color, #2a2a4a); margin-bottom: 14px; transition: background .4s; }
+  .lifecycle-connector.lc-done { background: #27ae60; }
+
+  /* ── Activity log ────────────────────────────────────────────────── */
+  .activity-list { list-style: none; padding: 0; margin: 0; }
+  .activity-item { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border-color, #1e1e3a); font-size: 12px; }
+  .activity-item:last-child { border-bottom: none; }
+  .activity-time { font-size: 11px; color: var(--text-secondary, #555); min-width: 80px; flex-shrink: 0; padding-top: 1px; }
+  .activity-action { font-weight: 600; color: var(--text-primary, #e0e0e0); margin-right: 4px; }
+  .activity-detail { color: var(--text-secondary, #a0a0b8); font-size: 11px; }
+  .activity-actor { font-size: 10px; color: var(--text-secondary, #555); border: 1px solid var(--border-color, #2a2a4a); border-radius: 10px; padding: 1px 6px; flex-shrink: 0; white-space: nowrap; }
+
+  /* ── Diagnostic banner ───────────────────────────────────────────── */
+  .diag-banner { background: rgba(243,156,18,.08); border: 1px solid rgba(243,156,18,.3); border-radius: 6px; padding: 10px 14px; margin: 0 0 16px; font-size: 12px; color: #c68a00; display: none; line-height: 1.6; }
+  .diag-banner.show { display: block; }
+
   /* ── Abort section ──────────────────────────────────────────────── */
   .abort-zone { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border-color, #2a2a4a); }
 
@@ -230,6 +257,39 @@
     </div>
   </div>
 
+  <!-- ── Lifecycle stepper ────────────────────────────────────────── -->
+  <div class="lifecycle-stepper" id="lifecycle-stepper">
+    <div class="lifecycle-step" id="ls-pending">
+      <div class="lifecycle-step-circle">1</div>
+      <div class="lifecycle-step-label">Pending</div>
+    </div>
+    <div class="lifecycle-connector" id="lc-1"></div>
+    <div class="lifecycle-step" id="ls-assembling">
+      <div class="lifecycle-step-circle">2</div>
+      <div class="lifecycle-step-label">Assembling</div>
+    </div>
+    <div class="lifecycle-connector" id="lc-2"></div>
+    <div class="lifecycle-step" id="ls-active">
+      <div class="lifecycle-step-circle">3</div>
+      <div class="lifecycle-step-label">Active</div>
+    </div>
+    <div class="lifecycle-connector" id="lc-3"></div>
+    <div class="lifecycle-step" id="ls-complete">
+      <div class="lifecycle-step-circle">4</div>
+      <div class="lifecycle-step-label">Done</div>
+    </div>
+  </div>
+
+  <!-- ── Diagnostic banner (no LLM / permission mismatch) ─────────── -->
+  <div class="diag-banner" id="diag-banner">
+    <strong>No output recorded.</strong>
+    This instance completed with 0 messages and 0 artifacts — co-workers likely exited before producing output.
+    Common causes: (a) no LLM provider configured in <code>.env</code>,
+    (b) all role steps skipped due to tool-permission constraints, or
+    (c) the role YAML has no steps.
+    Check the <strong>Activity Log</strong> tab for per-step details.
+  </div>
+
   <!-- ── Co-worker status cards ─────────────────────────────────── -->
   <section>
     <h2 style="font-size:14px; font-weight:600; margin:0 0 12px; color:var(--text-secondary,#7a8cb0); text-transform:uppercase; letter-spacing:.04em;">
@@ -283,6 +343,7 @@
   <div class="tabs" style="margin-top:8px;">
     <button class="tab-btn active" data-tab="tab-messages">Messages <span class="badge badge-info" style="font-size:10px; vertical-align:middle;" id="badge-msg-count">{{ messages | length }}</span></button>
     <button class="tab-btn" data-tab="tab-artifacts">Artifacts <span class="badge badge-info" style="font-size:10px; vertical-align:middle;" id="badge-art-count">{{ artifacts | length }}</span></button>
+    <button class="tab-btn" data-tab="tab-activity">Activity Log <span class="badge badge-info" style="font-size:10px; vertical-align:middle;" id="badge-audit-count">0</span></button>
   </div>
 
   <!-- ── Messages Tab ───────────────────────────────────────────── -->
@@ -336,6 +397,13 @@
       No artifacts produced yet.
     </div>
     {% endif %}
+  </div>
+
+  <!-- ── Activity Log Tab ─────────────────────────────────────────── -->
+  <div id="tab-activity" class="tab-content" style="display:none; margin-top:16px;">
+    <ul class="activity-list" id="activity-list">
+      <li id="activity-loading" style="padding:20px 0; color:var(--text-secondary,#555); font-size:13px; text-align:center;">Loading…</li>
+    </ul>
   </div>
 
   <!-- ── Abort zone ─────────────────────────────────────────────── -->
@@ -444,20 +512,85 @@
 
   connectSSE();
 
+  // ── Lifecycle state helpers ───────────────────────────────────────
+  var _TERMINAL_STATES = {"complete": true, "failed": true, "cancelled": true};
+  var _STEP_ORDER = ["pending", "assembling", "active", "complete", "failed", "cancelled"];
+  var _instanceState = {{ instance.state | tojson }};
+
+  function updateLifecycleStepper(state) {
+    var order = ["pending", "assembling", "active", "complete"];
+    var isFailed = state === "failed" || state === "cancelled";
+    var currentIdx = order.indexOf(isFailed ? "active" : state);
+    order.forEach(function (step, i) {
+      var el = document.getElementById("ls-" + step);
+      if (!el) return;
+      el.className = "lifecycle-step";
+      if (isFailed && i === currentIdx) {
+        el.classList.add("ls-failed");
+      } else if (i < currentIdx || (state === "complete" && step === "complete")) {
+        el.classList.add("ls-done");
+      } else if (i === currentIdx) {
+        el.classList.add("ls-active");
+      }
+    });
+    for (var j = 1; j <= 3; j++) {
+      var conn = document.getElementById("lc-" + j);
+      if (conn) conn.className = "lifecycle-connector" + (j <= currentIdx ? " lc-done" : "");
+    }
+    // Show diagnostic banner when complete with no output
+    if ((state === "complete" || state === "failed") && _msgCount === 0 && _artCount === 0) {
+      var banner = document.getElementById("diag-banner");
+      if (banner) banner.classList.add("show");
+    }
+  }
+
+  // Initialise stepper from server-rendered state
+  var _msgCount = {{ messages | length }};
+  var _artCount = {{ artifacts | length }};
+  updateLifecycleStepper(_instanceState);
+
+  // ── Auto-poll when not terminal ───────────────────────────────────
+  var _pollTimer = null;
+  function startPolling() {
+    if (_pollTimer) return;
+    _pollTimer = setInterval(function () {
+      fetchCoworkers();
+      fetchMessages();
+      fetchAuditLog();
+    }, 3000);
+  }
+  function stopPolling() {
+    if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+  }
+
+  // Immediate fetch on load (don't wait for SSE)
+  fetchCoworkers();
+  fetchMessages();
+  fetchAuditLog();
+
+  // Start polling if not already in a terminal state
+  if (!_TERMINAL_STATES[_instanceState]) {
+    startPolling();
+  }
+
   // ── Handle incoming ACE progress event ───────────────────────────
   function handleAceProgress(data) {
     // Update top-level instance state badge
     if (data.phase) {
+      _instanceState = data.phase;
       var badge = document.getElementById("state-badge");
       if (badge) {
         badge.className = "badge badge-state-" + data.phase;
         badge.textContent = data.phase.replace(/_/g, " ").replace(/\b\w/g, function(c){return c.toUpperCase();});
       }
+      updateLifecycleStepper(data.phase);
+      if (_TERMINAL_STATES[data.phase]) { stopPolling(); }
     }
 
     // Refresh co-worker data from server
     fetchCoworkers();
     fetchMessages();
+    fetchAuditLog();
   }
 
   // ── Fetch co-worker state refresh ────────────────────────────────
@@ -468,6 +601,18 @@
         if (!data || !data.coworkers) return;
         data.coworkers.forEach(updateCoworkerCard);
         updateStatCard("stat-done-cw", data.coworkers.filter(function(c){return c.state==="done"||c.state==="complete";}).length);
+        // Sync stepper + polling from live state
+        if (data.state && data.state !== _instanceState) {
+          _instanceState = data.state;
+          updateLifecycleStepper(data.state);
+          var badge = document.getElementById("state-badge");
+          if (badge) {
+            badge.className = "badge badge-state-" + data.state;
+            badge.textContent = data.state.replace(/_/g, " ").replace(/\b\w/g, function(c){return c.toUpperCase();});
+          }
+          if (_TERMINAL_STATES[data.state]) { stopPolling(); }
+          else if (!_pollTimer) { startPolling(); }
+        }
       })
       .catch(function () { /* silently ignore */ });
   }
@@ -538,8 +683,9 @@
             panel.scrollTop = panel.scrollHeight;
           }
         });
-        updateStatCard("stat-messages", timeline.querySelectorAll(".msg-item").length);
-        updateBadge("badge-msg-count", timeline.querySelectorAll(".msg-item").length);
+        _msgCount = timeline.querySelectorAll(".msg-item").length;
+        updateStatCard("stat-messages", _msgCount);
+        updateBadge("badge-msg-count", _msgCount);
       })
       .catch(function () { /* ignore */ });
   }
@@ -563,6 +709,58 @@
         '</div>' +
         '<div class="msg-text">' + escHtml((msg.content || "").slice(0, 300)) + (msg.content && msg.content.length > 300 ? "…" : "") + '</div>' +
       '</div>';
+    return li;
+  }
+
+  // ── Fetch + render audit log ─────────────────────────────────────
+  var _auditLoaded = false;
+  function fetchAuditLog() {
+    fetch("/api/ace/" + INSTANCE_ID + "/audit?limit=200")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (!data) return;
+        var events = data.events || [];
+        var list = document.getElementById("activity-list");
+        if (!list) return;
+
+        // Remove loading placeholder
+        var placeholder = document.getElementById("activity-loading");
+        if (placeholder) placeholder.remove();
+
+        // Rebuild list on first load; append only new items on refresh
+        if (!_auditLoaded) {
+          _auditLoaded = true;
+          list.innerHTML = "";
+          if (events.length === 0) {
+            list.innerHTML = '<li style="padding:20px 0; color:var(--text-secondary,#555); font-size:13px; text-align:center;">No activity recorded yet.</li>';
+          } else {
+            events.forEach(function (ev) { list.appendChild(buildAuditItem(ev)); });
+          }
+        } else if (events.length > list.querySelectorAll(".activity-item").length) {
+          // Append only newly added events
+          var existing = list.querySelectorAll(".activity-item").length;
+          events.slice(existing).forEach(function (ev) { list.appendChild(buildAuditItem(ev)); });
+        }
+
+        updateBadge("badge-audit-count", events.length);
+      })
+      .catch(function () { /* ignore */ });
+  }
+
+  function buildAuditItem(ev) {
+    var ts = (ev.created_at || "").replace("T", " ").slice(11, 19);
+    var action = (ev.action || "").replace(/_/g, " ");
+    var detail = ev.detail || "";
+    var actor = ev.actor || "";
+    var li = document.createElement("li");
+    li.className = "activity-item";
+    li.innerHTML =
+      '<div class="activity-time">' + escHtml(ts) + '</div>' +
+      '<div style="flex:1; min-width:0;">' +
+        '<span class="activity-action">' + escHtml(action) + '</span>' +
+        (detail ? '<span class="activity-detail">' + escHtml(detail.slice(0, 180)) + '</span>' : '') +
+      '</div>' +
+      (actor ? '<div class="activity-actor">' + escHtml(actor) + '</div>' : '');
     return li;
   }
 
