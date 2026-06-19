@@ -813,8 +813,16 @@ def _create_worktree(task_id: str) -> Optional[str]:
             )
             _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
                     capture_output=True, text=True, timeout=10)
-            _sp.run(["git", "branch", "-D", branch_name], cwd=str(BASE_DIR),
+            _del = _sp.run(["git", "branch", "-D", branch_name], cwd=str(BASE_DIR),
                     capture_output=True, text=True, timeout=10)
+            if _del.returncode != 0:
+                # On Windows a branch checked out in a (now-pruned) worktree may
+                # resist `git branch -D`. Force-delete via the low-level ref path.
+                _sp.run(
+                    ["git", "update-ref", "-d", f"refs/heads/{branch_name}"],
+                    cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+                )
+                logger.info("Stale branch %s deleted via update-ref fallback", branch_name)
 
     # Determine the best base commit for the new worktree:
     # prefer origin/main so tasks build on the latest pushed state even when
@@ -5422,6 +5430,9 @@ def _promote_stale_suggested() -> None:
             # MAX_AUTO_REVIVE per task (tracked in kanban_task_revivals so the
             # cap survives re-quarantine), then held for HITL with one alert.
             _revive_quarantined_suggested(conn)
+            # Critical-path unblock: revive low-fc 'suggested' tasks that are
+            # directly blocking 'backlog' children (executor-transient failures).
+            _unblock_dep_chain(conn)
     except Exception as exc:
         logger.warning("suggested-decay sweep failed: %s", exc)
 
@@ -5561,6 +5572,63 @@ def _revive_quarantined_suggested(conn: Any) -> None:
                     )
                 except Exception:
                     pass
+
+
+def _unblock_dep_chain(conn: Any) -> None:
+    """Revive 'suggested' tasks that are blocking 'backlog' children.
+
+    When an executor is transiently unavailable (e.g., claude_cli not on PATH
+    during a previous scheduler run), tasks are moved to 'suggested' with
+    reason "no executor available". The standard _revive_quarantined_suggested
+    only targets fc>=5 tasks, leaving these low-fc transient failures stuck.
+
+    This function finds any 'suggested' task that is the direct dependency of a
+    'backlog' task and revives it to 'backlog' unconditionally — because a child
+    waiting in backlog proves the parent is on the critical path.
+    """
+    try:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        # Find suggested tasks that are blocking at least one backlog child
+        rows = conn.execute(
+            "SELECT DISTINCT p.id, p.failure_count, p.last_failure_reason "
+            "FROM kanban_tasks p "
+            "JOIN kanban_tasks c ON c.depends_on_task_id = p.id "
+            "WHERE p.status = 'suggested' AND c.status = 'backlog'"
+        ).fetchall()
+        unblocked: list[str] = []
+        for r in rows:
+            d = dict(r)
+            tid = d["id"]
+            fc = d.get("failure_count") or 0
+            reason = (d.get("last_failure_reason") or "").lower()
+            # Only auto-revive transient failures (no executor / low fc).
+            # Hard-quarantined (fc>=5 without "no executor" reason) or HITL tasks
+            # are left for _revive_quarantined_suggested which has the revive cap.
+            is_hard_quarantine = fc >= 5 and "no executor" not in reason
+            is_hitl = "hitl" in reason or "hard-quarantine" in reason
+            if is_hard_quarantine or is_hitl:
+                continue
+            conn.execute(
+                "UPDATE kanban_tasks SET status = 'backlog', failure_count = 0, "
+                "last_failure_reason = ?, updated_at = ? "
+                "WHERE id = ? AND status = 'suggested'",
+                (
+                    f"dep-chain-unblock: child waiting in backlog, revived from suggested (fc was {fc})",
+                    now_iso,
+                    tid,
+                ),
+            )
+            unblocked.append(tid)
+        if unblocked:
+            conn.commit()
+            for tid in unblocked:
+                print(f"  Kanban: dep-chain-unblock {tid} -> backlog (was blocking child)")
+            logger.info(
+                "dep-chain-unblock: revived %d critical-path task(s): %s",
+                len(unblocked), unblocked,
+            )
+    except Exception as exc:
+        logger.warning("dep-chain-unblock: failed: %s", exc)
 
 
 def _reap_stale_in_progress() -> None:
