@@ -183,20 +183,39 @@ class TeamAssembler:
 
         conn = get_canvas_connection("ICDEV_ACE_DB_URL")
         try:
-            conn.execute(
-                "INSERT INTO ace_instances "
-                "(id, name, role_id, state, trust_tier, config_json, created_at, updated_at) "
-                "VALUES (?, ?, ?, 'assembling', ?, ?, ?, ?)",
-                (
-                    instance_id,
-                    context.get("name", instance_id),
-                    primary_role,
-                    instance_tier,
-                    json.dumps(context),
-                    now,
-                    now,
-                ),
-            )
+            # If a pending stub row was pre-inserted by launch(), update it in-place
+            # so the browser page never 404s during the async assembly phase.
+            existing = conn.execute(
+                "SELECT id FROM ace_instances WHERE id = ?", (instance_id,)
+            ).fetchone()
+            if existing:
+                conn.execute(
+                    "UPDATE ace_instances SET name=?, role_id=?, state='assembling', "
+                    "trust_tier=?, config_json=?, updated_at=? WHERE id=?",
+                    (
+                        context.get("name", instance_id),
+                        primary_role,
+                        instance_tier,
+                        json.dumps(context),
+                        now,
+                        instance_id,
+                    ),
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO ace_instances "
+                    "(id, name, role_id, state, trust_tier, config_json, created_at, updated_at) "
+                    "VALUES (?, ?, ?, 'assembling', ?, ?, ?, ?)",
+                    (
+                        instance_id,
+                        context.get("name", instance_id),
+                        primary_role,
+                        instance_tier,
+                        json.dumps(context),
+                        now,
+                        now,
+                    ),
+                )
 
             for spec in specs:
                 conn.execute(

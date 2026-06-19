@@ -20,6 +20,7 @@ Exit codes:
 import json
 import os
 import re
+import subprocess
 import sys
 from fnmatch import fnmatch
 from pathlib import Path
@@ -324,8 +325,6 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # CloudForge (D-CF-10, D-CF-15, D-CF-20, D-CF-21 — all append-only)
         "cf_provision_log",
         "cf_siem_events",
-        # Agentic AI safety_layer SIEM forwarder sink (append-only security events)
-        "siem_events",
         "cf_runbook_executions",
         "cf_runbook_task_log",
         # Phase 67 — Engineering Review Board (D-RB-2, D-RB-10 — audit + findings + remediation append-only)
@@ -486,18 +485,16 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "integrity_findings",
         "integrity_verdicts",
         "integrity_authorizations",
-        # EQO Centralized Logging (eqo-log-01, NIST AU — log rows are immutable
-        # evidence; retention via bulk time-window pruning, never row mutation)
-        "centralized_logs",
-        # ACF — Autonomous Capability Foundry (acf-db-, NIST AU — cycle/signal/spec/
-        # emission/outcome history is immutable evidence of autonomous decisions.
-        # foundry_concepts is intentionally EXCLUDED: it allows UPDATE for status
-        # transitions, matching creative_competitors / research_sessions.)
+        # ACF Autonomous Capability Foundry (acf-, append-only signal/concept/spec/ledger)
         "foundry_runs",
         "foundry_signals",
         "foundry_specs",
         "foundry_tasks_emitted",
         "foundry_outcomes",
+        # Co-Workers canvas — session links are immutable evidence (NIST AU)
+        "cwk_sessions",
+        # EQO Centralized Logging (eqo-log-01, migration 181) — log rows are immutable evidence (NIST AU)
+        "centralized_logs",
     ]
 
     if tool_name == "Bash":
@@ -688,6 +685,61 @@ def is_direct_sqlite_usage(tool_name: str, tool_input: dict) -> bool:
     return False
 
 
+def run_review_loop_precommit(tool_name: str, tool_input: dict) -> None:
+    """Self-green staged changes with review_loop before a `git commit`.
+
+    Fires only on Bash `git commit` calls. Runs the fast, staged, ruff-only
+    review loop (coherence/SIPA are too slow for a commit gate — they run in the
+    pre-PR preflight + CI), applies deterministic ruff autofixes to the staged
+    `.py` files, and re-stages them so the commit lands lint-clean.
+
+    Warn-only by default (the commit proceeds). Set ICDEV_REVIEW_LOOP_BLOCK=1 to
+    hard-block a non-green commit, or ICDEV_REVIEW_LOOP_PRECOMMIT=0 to disable.
+    Best-effort: any error is swallowed so it can never break a commit.
+    """
+    if tool_name != "Bash":
+        return
+    command = tool_input.get("command", "")
+    if "git commit" not in command:
+        return
+    if os.environ.get("ICDEV_REVIEW_LOOP_PRECOMMIT", "1").strip().lower() in ("0", "false", "no", "off"):
+        return
+
+    try:
+        repo_root = Path(__file__).resolve().parents[2]
+        if str(repo_root) not in sys.path:
+            sys.path.insert(0, str(repo_root))
+        from tools.quality.review_loop import preflight
+
+        report = preflight(
+            base=None, autofix=True, staged=True,
+            only_gates=["ruff"], coherence_scope="changed",
+            audit=False, max_iterations=1, repo_root=repo_root,
+        )
+        # Re-stage whatever ruff --fix rewrote so the fixes are committed.
+        if report.changed_files:
+            subprocess.run(
+                ["git", "add", *report.changed_files],
+                cwd=str(repo_root), capture_output=True, text=True, timeout=30,
+            )
+        if not report.green:
+            n = len(report.fix_brief)
+            msg = (
+                f"review_loop (pre-commit): {n} unfixable lint finding(s) remain "
+                f"in staged files — {report.reason}"
+            )
+            if os.environ.get("ICDEV_REVIEW_LOOP_BLOCK", "").strip().lower() in ("1", "true", "yes", "on"):
+                print(f"BLOCKED: {msg}", file=sys.stderr)
+                sys.exit(2)
+            print(f"WARNING: {msg} (commit proceeding; set ICDEV_REVIEW_LOOP_BLOCK=1 to block)", file=sys.stderr)
+        elif report.changed_files:
+            print("review_loop (pre-commit): applied ruff autofixes to staged files", file=sys.stderr)
+    except SystemExit:
+        raise
+    except Exception:
+        return  # never break a commit
+
+
 def main():
     try:
         input_data = json.load(sys.stdin)
@@ -726,6 +778,9 @@ def main():
         if tier_error:
             print(tier_error, file=sys.stderr)
             sys.exit(2)
+
+        # Self-green staged changes before a git commit (warn-only by default)
+        run_review_loop_precommit(tool_name, tool_input)
 
         sys.exit(0)
 

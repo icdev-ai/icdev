@@ -420,6 +420,10 @@ def api_launch():
     if not problem_text:
         return jsonify({"error": "problem_text is required"}), 400
 
+    explicit_roles = data.get("role_ids") or None
+    if isinstance(explicit_roles, list):
+        explicit_roles = [str(r).strip() for r in explicit_roles if r] or None
+
     try:
         instance_id = ACEController.get_instance().launch(
             problem_text=problem_text,
@@ -427,7 +431,7 @@ def api_launch():
             trigger_ref=(data.get("trigger_ref") or ""),
             user_id=(data.get("user_id") or "dashboard"),
             project_id=(data.get("project_id") or ""),
-            webhook_url=(data.get("webhook_url") or ""),
+            role_ids=explicit_roles,
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("ace launch failed: %s", exc)
