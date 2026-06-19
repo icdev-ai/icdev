@@ -169,28 +169,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: [test]
     timeout-minutes: 30
-<<<<<<< HEAD
-
-    # Service containers are started before steps and managed by GitHub Actions
-    # infrastructure — avoids manual docker pull which is prone to Docker Hub
-    # rate-limiting and transient registry timeouts on shared runners.
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_USER: icdev
-          POSTGRES_PASSWORD: icdev_ci
-          POSTGRES_DB: icdev
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U icdev -d icdev"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
-
-=======
->>>>>>> 95434302c (chore: auto-commit from Claude Code session)
     env:
       ICDEV_STORAGE_BACKEND: postgresql
       ICDEV_PG_HOST: localhost
@@ -208,7 +186,6 @@ jobs:
       ICDEV_MISSION_CANVAS_ENABLED: "true"
       ICDEV_OPS_HUB_ENABLED: "true"
       ICDEV_AIML_CANVAS_ENABLED: "true"
-<<<<<<< HEAD
       ICDEV_AISG_ENABLED: "true"
       # Network canvas disabled in E2E until PGP migration resolves shared-DB
       # table collisions (simulation_results/topologies schema mismatch).
@@ -220,9 +197,6 @@ jobs:
       SC_STORAGE_BACKEND: sqlite
       MC_STORAGE_BACKEND: sqlite
       AIMC_STORAGE_BACKEND: sqlite
-=======
-      ICDEV_NDC_ENABLED: "false"
->>>>>>> 95434302c (chore: auto-commit from Claude Code session)
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
