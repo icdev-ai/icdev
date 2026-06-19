@@ -232,7 +232,7 @@ def run(config: Optional[Dict[str, Any]] = None, context: Any = None) -> Dict[st
             db = get_connection()
             # kanban_tasks has no classification/tenant_id columns; RLS bypass is safe.
             if hasattr(db, "set_security_context"):
-                db.set_security_context(None)
+                db.set_security_context(None)  # rls-bypass: kanban_tasks has no classification/tenant_id columns
 
         skills = _discover_skills(ctx)
         result["scanned"] = len(skills)
