@@ -103,12 +103,49 @@ class ACEController:
         user_id: str = "system",
         project_id: str = "",
         webhook_url: str = "",
+        role_ids: list[str] | None = None,
     ) -> str:
-        """Launch an ACE run non-blocking.  Returns instance_id immediately."""
+        """Launch an ACE run non-blocking.  Returns instance_id immediately.
+
+        Writes a ``pending`` stub row synchronously before handing off to
+        the background thread so that ``/coworker/<id>`` never 404s right
+        after launch.  The thread upgrades the row to ``assembling`` once
+        TeamAssembler.assemble() runs.
+        """
         instance_id = f"ace-{uuid.uuid4().hex[:12]}"
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        config = {
+            "problem_text": problem_text,
+            "trigger_source": trigger_source,
+            "trigger_ref": trigger_ref,
+            "user_id": user_id,
+            "project_id": project_id,
+        }
+        name = f"ace:{trigger_source}:{trigger_ref}"[:120]
+
+        try:
+            from icdev.tools.db.storage import get_canvas_connection
+            from icdev.tools.ace.db.init_db import init as _init_ace_db
+
+            _init_ace_db()
+            conn = get_canvas_connection(_DB_ENV)
+            try:
+                conn.execute(
+                    "INSERT INTO ace_instances "
+                    "(id, name, state, config_json, created_at, updated_at) "
+                    "VALUES (?, ?, 'pending', ?, ?, ?)",
+                    (instance_id, name, json.dumps(config), now, now),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as exc:
+            logger.warning("ace launch: pre-insert failed for %s: %s", instance_id, exc)
+
         self._executor.submit(
             self._run,
-            instance_id, problem_text, trigger_source, trigger_ref, user_id, project_id, webhook_url,
+            instance_id, problem_text, trigger_source, trigger_ref, user_id, project_id,
+            role_ids,
         )
         return instance_id
 

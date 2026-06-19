@@ -1,9 +1,0 @@
-{
-  "description": "DIC community summaries — lightweight indexable structure for community_id, summary_text, citations_list",
-  "date": "2026-06-07",
-  "author": "icdev-builder",
-  "database": "icdev",
-  "reversible": true,
-  "requires_downtime": false,
-  "notes": "Idempotent CREATE TABLE IF NOT EXISTS. Existing KG nodes/edges untouched."
-}

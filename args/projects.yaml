@@ -4,6 +4,26 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: rec
+  name: Rec Project
+  description: Auto-registered project for tasks with prefix 'rec-'. Update name and
+    description to reflect the project purpose.
+  task_prefix: rec-
+  default_open: true
+  briefs: []
+  epics:
+  - key: a
+    title: A
+    priority: medium
+  - key: b
+    title: B
+    priority: medium
+  - key: c
+    title: C
+    priority: medium
+  - key: d
+    title: D
+    priority: medium
 - key: acf
   name: Acf Project
   description: Auto-registered project for tasks with prefix 'acf-'. Update name and
@@ -5451,6 +5471,9 @@ projects:
     priority: high
   - key: infra
     title: ZIG Infrastructure — mirror + manifest + sync + coherence
+    priority: medium
+  - key: ext
+    title: EXT
     priority: medium
 - key: pmodemo
   name: PMO Demo Wow Factors

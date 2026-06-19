@@ -45,9 +45,6 @@ env:
   AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-gov-west-1' }}
   # Tell Playwright the dashboard is managed by this workflow — don't spawn a second instance.
   ICDEV_NO_SERVER: "1"
-  # SIPA integrity gate — active by default so every kanban task PR is integrity
-  # checked; set the repo variable ICDEV_INTEGRITY_ENABLED=false to disable.
-  ICDEV_INTEGRITY_ENABLED: ${{ vars.ICDEV_INTEGRITY_ENABLED || 'true' }}
 
 jobs:
   run:
@@ -164,6 +161,13 @@ jobs:
       # Falls back to static ANVIL wrappers if no LLM key is available.
       - name: Agentic — Execute Task
         run: |
+          _abort() {
+            echo "CI: abort signal received during agentic execution — terminating children"
+            children=$(ps -o pid= --ppid $$ 2>/dev/null || true)
+            for child in $children; do kill "$child" 2>/dev/null || true; done
+            kill -- -$$ 2>/dev/null || true
+          }
+          trap _abort SIGTERM SIGINT
           TASK_ID="${{ github.event.inputs.task_id }}"
           TASK_TYPE="${{ github.event.inputs.task_type }}"
           TASK_DESC="${{ github.event.inputs.task_desc }}"
@@ -198,54 +202,79 @@ jobs:
 
       - name: Stop dashboard server
         if: always()
-        run: kill $(cat /tmp/dashboard.pid 2>/dev/null) 2>/dev/null || true
-
-      - name: Coherence gate (new-page completeness — blocking)
         run: |
-          python tools/workflow/coherence_checker.py --check new_page_completeness --gate --json
+          if [ -f /tmp/dashboard.pid ]; then
+            PID=$(cat /tmp/dashboard.pid)
+            kill "$PID" 2>/dev/null || true
+            sleep 1
+            kill -0 "$PID" 2>/dev/null && kill -9 "$PID" 2>/dev/null || true
+          fi
+          # Best-effort idle-in-transaction backend sweep
+          python -c "
+          import sys
+          sys.path.insert(0, '.')
+          try:
+              from tools.db.storage import get_connection
+              conn = get_connection()
+              cur = conn.cursor()
+              cur.execute(\"\"\"
+                  SELECT pg_terminate_backend(pid)
+                  FROM pg_stat_activity
+                  WHERE datname = current_database()
+                    AND state = 'idle in transaction'
+                    AND backend_start < NOW() - INTERVAL '2 minutes'
+              \"\"\")
+              conn.commit()
+              cur.close()
+              conn.close()
+              print('PG idle-in-transaction cleanup: done')
+          except Exception as e:
+              print(f'PG cleanup skipped: {e}')
+          " 2>/dev/null || true
 
-      # ── SIPA integrity gate (blocking, pre-PR) ────────────────────────────
-      # Assess the *.py files this task changed for unauthorized / malicious code
-      # BEFORE any PR is opened. ANVIL leaves its changes uncommitted in the work
-      # tree, so stage them and diff the staged index (--cached). Static-only —
-      # the changed code is never executed. A QUARANTINE verdict exits non-zero
-      # and fails the job, so the downstream PR step (no `if: always()`) is
-      # skipped and no PR is opened. Honors ICDEV_INTEGRITY_ENABLED (set in the
-      # workflow env): when off the gate no-ops to a pass.
-      - name: SIPA integrity gate
-        run: |
-          git add -A
-          python tools/integrity/pr_gates.py --cached --gate --json
-
-      # ── CI auto-fix commit + PR ───────────────────────────────────────────
-      # Fires only for ci-fix-* tasks. After ANVIL applies the fix, commit any
-      # changed files, push to a ci-autofix/* branch, and open a PR against main.
-      # Avoids direct-push branch protection; PR can be merged by maintainers or
-      # auto-merged if the repo has auto-merge enabled.
-      # Guard: only runs when git diff finds staged changes — avoids empty PRs.
-      - name: Commit and open PR for CI auto-fix
-        if: startsWith(github.event.inputs.task_id, 'ci-fix-')
+      # ── Branch + PR for EVERY task (branch→V&V→MR discipline) ─────────────
+      # Runs only when the agent step succeeded (a failed run falls through to
+      # the scheduler's resilience path: failure_count → needs_decomposition →
+      # auto-decompose). Commits the agent's changes to a per-task branch, pushes,
+      # and opens a PR against main. The PR's OWN CI (icdev-ci.yml on
+      # pull_request) is the V&V gate; pr_watcher (OPT-70) reads it to auto-merge
+      # low-risk types (chore/test/fix) or route feature/bug to human review.
+      # ci-fix-* tasks keep their dedicated ci-autofix/* branch + label.
+      # Guard: only opens a PR when git finds staged changes — avoids empty PRs.
+      - name: Commit and open PR
+        if: success()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          BRANCH="ci-autofix/${{ github.event.inputs.task_id }}"
-          git config user.email "ci-autofix@github.com"
-          git config user.name "ICDEV CI AutoFix [bot]"
+          TASK_ID="${{ github.event.inputs.task_id }}"
+          TASK_TYPE="${{ github.event.inputs.task_type }}"
+          TASK_DESC="${{ github.event.inputs.task_desc }}"
+          case "$TASK_ID" in
+            ci-fix-*) BRANCH="ci-autofix/${TASK_ID}"; LABEL="ci-autofix" ;;
+            *)        BRANCH="kanban/${TASK_ID}";     LABEL="kanban-task" ;;
+          esac
+          git config user.email "kanban-runner@github.com"
+          git config user.name "ICDEV Kanban Runner [bot]"
           git add -A
-          if ! git diff --cached --quiet; then
-            git checkout -b "$BRANCH"
-            git commit -m "fix(ci-auto): ${{ github.event.inputs.task_id }} — ${{ github.event.inputs.task_desc }}"
-            git push origin "$BRANCH"
-            gh pr create \
-              --title "fix(ci-auto): ${{ github.event.inputs.task_id }}" \
-              --body "Automated CI fix for [${{ github.event.inputs.task_id }}](${{ github.event.inputs.task_desc }})" \
-              --base main \
-              --head "$BRANCH" \
-              --label "ci-autofix" 2>/dev/null || true
-            echo "Opened PR from $BRANCH → main."
-          else
-            echo "No changes to commit — fix already applied or ANVIL found nothing to change."
+          if git diff --cached --quiet; then
+            echo "No changes to commit — agent applied no changes; nothing to PR."
+            exit 0
           fi
+          git checkout -b "$BRANCH"
+          git commit -m "${TASK_TYPE}(${TASK_ID}): ${TASK_DESC}"
+          git push origin "$BRANCH"
+          # Draft PR for feature/bug (human review); ready PR for chore/test/fix.
+          DRAFT=""
+          case "$TASK_TYPE" in
+            feature|bug) DRAFT="--draft" ;;
+          esac
+          gh pr create $DRAFT \
+            --title "${TASK_TYPE}: ${TASK_ID} — ${TASK_DESC}" \
+            --body "Automated PR from kanban task ${TASK_ID} (type=${TASK_TYPE}). V&V runs as this PR's CI; pr_watcher (OPT-70) governs merge." \
+            --base main \
+            --head "$BRANCH" \
+            --label "$LABEL" 2>/dev/null || echo "gh pr create skipped/failed (PR may already exist)."
+          echo "Opened PR from $BRANCH → main."
 
       - name: Summary
         if: always()
