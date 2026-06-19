@@ -190,6 +190,22 @@ class CoWorkerThread(threading.Thread):
     # ------------------------------------------------------------------
 
     def _run_inner(self) -> None:
+        # 0. Enrich context with instance-level data from DB
+        try:
+            from icdev.tools.db.storage import get_canvas_connection
+            _conn = get_canvas_connection(_DB_ENV)
+            try:
+                _row = _conn.execute(
+                    "SELECT problem_text FROM ace_instances WHERE id = %s",
+                    (self.instance_id,),
+                ).fetchone()
+                if _row:
+                    self._context["problem_text"] = dict(_row).get("problem_text", "")
+            finally:
+                _conn.close()
+        except Exception as _exc:
+            logger.debug("ace context enrich failed for %s: %s", self.instance_id, _exc)
+
         # 1. Load role
         loader = RoleLoader()
         try:
@@ -501,25 +517,45 @@ class CoWorkerThread(threading.Thread):
             now = datetime.now(timezone.utc).isoformat(timespec="seconds")
             conn = get_canvas_connection(_DB_ENV)
             try:
+                # Canvas DB is PG-primary at runtime — use %s placeholders.
                 conn.execute(
                     "INSERT INTO ace_audit_log "
                     "(instance_id, coworker_id, action, detail, actor, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
                     (self.instance_id, self.spec.coworker_id, action, detail, "coworker_thread", now),
                 )
                 conn.commit()
             finally:
                 conn.close()
-        except Exception:
-            pass  # audit is best-effort; never crash the thread
+        except Exception as _exc:
+            logger.debug("ace audit write failed for %s/%s: %s", self.instance_id, action, _exc)
 
     # ------------------------------------------------------------------
     # Utility
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _normalise_step(raw_step: Any) -> dict[str, Any]:
-        """Convert a string step ID to a minimal step dict if needed."""
+    def _normalise_step(self, raw_step: Any) -> dict[str, Any]:
+        """Convert a string step ID to an LLM-invoke step dict.
+
+        String steps (e.g. 'analyze_requirements') are expanded into a
+        structured LLM invocation so that bare role YAMLs produce real output
+        instead of silently failing with ToolPermissionDeniedError.
+        """
         if isinstance(raw_step, dict):
             return raw_step
-        return {"id": str(raw_step)}
+        step_name = str(raw_step)
+        # Build an LLM step: invoke LLMRouter with the step description + problem
+        return {
+            "id": step_name,
+            "tool": "icdev.tools.ace.llm_step.invoke",
+            "args": {
+                "step_name": step_name,
+                "instance_id": self.instance_id,
+                "coworker_id": self.spec.coworker_id,
+                "llm_function": self.spec.llm_function or "code_generation",
+                "problem_text": self._context.get("problem_text", ""),
+                "role_description": self.spec.description or "",
+            },
+            "output_var": f"{step_name}_result",
+            "required": False,
+        }
