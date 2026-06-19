@@ -1022,3 +1022,11 @@
 | Skillspector Cache | tools\integrity\skillspector_cache.py | Auto-registered: integrity/skillspector_cache.py | --json | JSON |
 | Skill Promotion Gate | tools\kanban\skill_promotion_gate.py | Auto-registered: kanban/skill_promotion_gate.py | --json | JSON |
 | Skill Security Monitor | tools\genesis\reflexes\skill_security_monitor.py | Auto-registered: reflexes/skill_security_monitor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| A2A Registry | tools\agents\a2a_registry.py | Auto-registered: agents/a2a_registry.py | --json | JSON |
+| Cli Bridge Manager | tools\llm\cli_bridge_manager.py | Auto-registered: llm/cli_bridge_manager.py | --json | JSON |
+| Provider Health | tools\llm\provider_health.py | Auto-registered: llm/provider_health.py | --json | JSON |
