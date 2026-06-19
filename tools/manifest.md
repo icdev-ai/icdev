@@ -1014,3 +1014,11 @@
 | Social Trend Scanner | tools\research\source_scanners\social_trend_scanner.py | Auto-registered: source_scanners/social_trend_scanner.py | --json | JSON |
 | Pma Credential Monitor | tools\genesis\reflexes\pma_credential_monitor.py | Auto-registered: reflexes/pma_credential_monitor.py | --json | JSON |
 | Pma Int Gap Monitor | tools\genesis\reflexes\pma_int_gap_monitor.py | Auto-registered: reflexes/pma_int_gap_monitor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Skillspector Cache | tools\integrity\skillspector_cache.py | Auto-registered: integrity/skillspector_cache.py | --json | JSON |
+| Skill Promotion Gate | tools\kanban\skill_promotion_gate.py | Auto-registered: kanban/skill_promotion_gate.py | --json | JSON |
+| Skill Security Monitor | tools\genesis\reflexes\skill_security_monitor.py | Auto-registered: reflexes/skill_security_monitor.py | --json | JSON |
