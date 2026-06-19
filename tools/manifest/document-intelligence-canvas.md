@@ -153,6 +153,12 @@ print(report["overall_score"], report["passed"])
 > Rules file: `args/dic_style_rules.yaml` — add/disable rules there without touching code.
 > Called by `doc_generator.py` after CoD verification to enforce "one voice" before persisting sections.
 
+## Filtering
+
+| Tool | Purpose |
+|------|---------|
+| `tools/document_intelligence/filters.py` | DIC Adaptive Document Filters — replaces hardcoded relevance/size/age thresholds with statistically-derived bounds (IQR fence and Z-score) computed from the live corpus. `filter_by_relevance(docs, scores)`, `filter_by_size(docs)`, and `filter_by_age(docs)` return filtered lists; anomalous outliers are flagged for HITL review rather than silently dropped. `anomaly_report(docs)` returns a dict summarising which documents triggered each filter and why. Falls back to conservative constants (`_MIN_RELEVANCE`, `_MAX_DOC_SIZE_MB`, `_MAX_AGE_DAYS`) when the corpus is too small for statistical bounds (< 4 samples). No LLM calls — pure statistics (stdlib `statistics`). |
+
 ## Analytics & Discovery
 
 | Tool | Purpose |
