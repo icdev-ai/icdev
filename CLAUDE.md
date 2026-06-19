@@ -338,6 +338,29 @@ python tools/workflow/coherence_checker.py --all --gate                # coheren
 
 This annotation documents why the bypass is safe and lets `tools/workflow/coherence_checker.py::check_security_context_wiring` distinguish intentional exceptions from accidental wiring gaps. The file involved is `.claude/hooks/pre_tool_use.py`.
 
+#### Notes for agents working from worktrees or non-root directories
+
+1. **Do not rely on `os.getcwd()` for repo-root-relative paths.** In git worktrees the current working directory is the worktree root, while CI runners and test harnesses may change directory into a subdirectory. Always resolve the repository root from a known file location (`__file__`, `pathlib.Path(__file__).resolve()`, or a `REPO_ROOT` constant) rather than from `os.getcwd()`.
+
+2. **Tests started from the wrong directory break RLS/coherence validation.** Running `pytest` from inside `tests/`, `tools/`, or a worktree subdirectory can cause coherence checks to compute relative paths against a non-canonical root, which in turn makes RLS predicates, changed-file scans, and exemption lists fail. Always run the test command from the canonical repo root with an absolute `PYTHONPATH`:
+
+   ```bash
+   # Correct (absolute PYTHONPATH, root working directory)
+   $env:PYTHONPATH="C:\AI\ICDev"  # Windows
+   export PYTHONPATH=/opt/icdev    # Unix
+   pytest tests/ -v --tb=short
+   ```
+
+3. **GitHub Actions must set the working directory and PYTHONPATH explicitly.** The CI workflow `.github/workflows/icdev-ci.yml` uses a workflow-level `defaults.run.working-directory` and absolute `PYTHONPATH: ${{ github.workspace }}` so that all steps, including coherence/RLS checks, operate against the canonical checkout root rather than whatever directory the runner happens to start in. If you add a new job or reusable workflow, preserve this path isolation.
+
+4. **When a path/cwd check is intentionally bypassed, annotate it.** If you write a line in `pre_tool_use.py` (or any other security hook) that deliberately ignores `os.getcwd()` or otherwise bypasses path-sensitive logic, add the `# rls-bypass:` comment on the same line or immediately above it. Include:
+   - The concrete reason the bypass is safe (e.g. repo root resolved via `__file__`, not cwd).
+   - The task ID that introduced the bypass, so future `check_security_context_wiring` runs can correlate it with a known change.
+
+5. **If coherence checker reports a security-context wiring gap, check cwd first.** Many "unexpected bypass" findings are actually false positives caused by running the checker from a non-root directory. Re-run from the repo root with `PYTHONPATH` set before concluding that the hook logic is wrong.
+
+6. **Keep the canonical/legacy import namespace distinction in mind.** Tests that patch `tools.xxx` via string form may hit a different object than imports of `icdev.tools.xxx`. This interacts with cwd because the `tools/` shim resolution also depends on `sys.path` order, which is sensitive to how the process was launched. Patch via `importlib.import_module("tools.x")` and `setattr`, and launch tests from a single canonical root.
+
 ### Compliance & Security Rules
 - All artifacts MUST include classification markings (CUI for IL4/IL5, SECRET for IL6)
 - Use `classification_manager.py` for markings — don't hard-code CUI banners
