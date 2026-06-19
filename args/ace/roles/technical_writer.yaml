@@ -1,0 +1,65 @@
+role_id: technical_writer
+display_name: Technical Writer
+description: Reviews, audits, and updates project documentation — CLI references, runbooks, manifests, and API guides.
+version: "1.0"
+trust_tier: yellow
+default_count: 1
+max_instances: 2
+steps:
+  - name: audit_existing_docs
+    tool: icdev.tools.ace.llm_step.invoke
+    args:
+      step_name: audit_existing_docs
+      instance_id: "$instance_id"
+      coworker_id: "$coworker_id"
+      llm_function: documentation
+      problem_text: "$problem_text"
+      role_description: "Technical Writer auditing existing documentation for gaps and staleness."
+    output_var: audit_result
+  - name: identify_gaps
+    tool: icdev.tools.ace.llm_step.invoke
+    args:
+      step_name: identify_gaps
+      instance_id: "$instance_id"
+      coworker_id: "$coworker_id"
+      llm_function: documentation
+      problem_text: "$problem_text"
+      role_description: "Technical Writer identifying documentation gaps: missing commands, outdated sections, broken references."
+    output_var: gaps_result
+  - name: draft_updates
+    tool: icdev.tools.ace.llm_step.invoke
+    args:
+      step_name: draft_updates
+      instance_id: "$instance_id"
+      coworker_id: "$coworker_id"
+      llm_function: documentation
+      problem_text: "$problem_text"
+      role_description: "Technical Writer drafting the documentation updates: new entries, corrected sections, regenerated summaries."
+    output_var: draft_result
+  - name: produce_report
+    tool: icdev.tools.ace.llm_step.invoke
+    args:
+      step_name: produce_report
+      instance_id: "$instance_id"
+      coworker_id: "$coworker_id"
+      llm_function: documentation
+      problem_text: "$problem_text"
+      role_description: "Technical Writer producing the final gap report and change summary."
+    output_var: report_result
+communication:
+  protocol: a2a
+  listen_topics:
+    - task.assigned
+    - doc.review_feedback
+  emit_topics:
+    - doc.draft_ready
+    - doc.report_ready
+llm_function: documentation
+tool_permissions:
+  - Read
+  - Write
+  - Edit
+  - Grep
+  - Glob
+  - icdev.tools.ace.llm_step.invoke
+genesis_reflex: documentation

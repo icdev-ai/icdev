@@ -78,6 +78,22 @@ _SIGNALS: dict[str, tuple[str, float]] = {
         r"(?:^|\. )(?:analyze|analyse|process|correlate|aggregate|ingest|expose)\b",
         0.60,
     ),
+    # domain: documentation / writing
+    "doc_verb":        (
+        r"\b(?:document|review|audit|update|regenerate|rewrite|draft|summarize|"
+        r"report|write up|produce a report|produce a written)\b",
+        0.72,
+    ),
+    "doc_noun":        (
+        r"\b(?:documentation|docs?|runbook|readme|manifest|changelog|report|"
+        r"commands\.md|reference|guide|manual|specification)\b",
+        0.68,
+    ),
+    "doc_action":      (
+        r"\b(?:gap[s]? found|changes made|missing commands?|missing cli|"
+        r"out.of.date|stale docs?|outdated)\b",
+        0.65,
+    ),
     # domain: compliance / security
     "compliance_verb": (
         r"(?:^|\. )(?:ensure|enforce|provide|enable|allow|establish|configure)\b",
@@ -102,12 +118,13 @@ _DOMAIN_SIGNALS: dict[str, list[str]] = {
         "user_story", "bdd", "acceptance", "functional_req", "system_shall",
         "as_a_i_want", "capability",
     ],
-    "build":       ["build_verb", "feature_request"],
-    "devops":      ["deploy_verb"],
-    "monitoring":  ["monitor_verb"],
-    "analytics":   ["analytics_verb"],
-    "compliance":  ["compliance_verb"],
-    "interest":    ["i_want", "we_want", "interest", "looking_for", "would_like", "id_like"],
+    "build":         ["build_verb", "feature_request"],
+    "devops":        ["deploy_verb"],
+    "monitoring":    ["monitor_verb"],
+    "analytics":     ["analytics_verb"],
+    "compliance":    ["compliance_verb"],
+    "documentation": ["doc_verb", "doc_noun", "doc_action"],
+    "interest":      ["i_want", "we_want", "interest", "looking_for", "would_like", "id_like"],
 }
 
 # Domain -> preferred role_ids (matched against loaded catalog first)
@@ -118,6 +135,7 @@ _DOMAIN_ROLES: dict[str, list[str]] = {
     "monitoring":   ["system_monitor", "devops_engineer", "qa_manager"],
     "analytics":    ["data_analyst", "ai_developer", "analyst"],
     "compliance":   ["compliance_manager", "security_analyst", "compliance_officer"],
+    "documentation": ["technical_writer", "doc_reviewer", "requirements_engineer"],
     "interest":     [],  # too weak to assign roles directly
 }
 
