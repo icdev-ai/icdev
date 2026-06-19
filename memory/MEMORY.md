@@ -46,6 +46,8 @@
 
 ## Lessons Learned
 
+- [Standard Planning Workflow](feedback_planning_workflow.md) — plan→decompose→dependency-order→kanban→harmonize→V&V for all implementation tasks.
+
 - Background agents may be denied Write/Bash permissions by user settings — create files directly when agents fail
 - Large parallel agent spawns can hit rate limits — stagger if possible
 - MCP servers should use lazy imports (_import_tool pattern) so they work even when underlying tools are still being built
