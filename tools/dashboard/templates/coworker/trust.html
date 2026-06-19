@@ -1,0 +1,139 @@
+<!-- CUI // SP-CTI — ACE Trust Leaderboard -->
+{% extends "base.html" %}
+{% block title %}Trust Leaderboard — Co-Worker Engine — ICDEV™{% endblock %}
+
+{% block content %}
+<style>
+  .ace-trust-page { padding: 20px 28px; }
+  .trust-red    { color: #e74c3c; }
+  .trust-orange { color: #e67e22; }
+  .trust-yellow { color: #f1c40f; }
+  .trust-green  { color: #27ae60; }
+  .trust-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .trust-table th { text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border-color,#2a2a4a); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary,#7a8cb0); }
+  .trust-table td { padding: 10px 12px; border-bottom: 1px solid var(--border-color,#1e1e3a); vertical-align: middle; }
+  .trust-table tr:last-child td { border-bottom: none; }
+  .trust-tier-badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+  .trust-tier-green  { background: rgba(39,174,96,.15);  color: #27ae60; border: 1px solid #27ae60; }
+  .trust-tier-yellow { background: rgba(241,196,15,.15); color: #f1c40f; border: 1px solid #f1c40f; }
+  .trust-tier-orange { background: rgba(230,126,34,.15); color: #e67e22; border: 1px solid #e67e22; }
+  .trust-tier-red    { background: rgba(231,76,60,.15);  color: #e74c3c; border: 1px solid #e74c3c; }
+  .score-bar { height: 6px; border-radius: 3px; background: var(--bg-secondary,#1a1a2e); overflow: hidden; min-width: 80px; }
+  .score-fill { height: 100%; border-radius: 3px; background: #27ae60; transition: width .4s; }
+</style>
+
+<div class="ace-trust-page">
+  <!-- ── Breadcrumbs ─────────────────────────────────────────────── -->
+  <div class="breadcrumbs">
+    <a href="/">Home</a>
+    <span class="separator">/</span>
+    <a href="/coworker/">Co-Worker Engine</a>
+    <span class="separator">/</span>
+    <span>Trust Leaderboard</span>
+  </div>
+
+  <!-- ── Header ────────────────────────────────────────────────────── -->
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:24px;">
+    <div>
+      <h1 style="font-size:20px; font-weight:700; margin:0 0 6px;">Trust Leaderboard</h1>
+      <p style="font-size:13px; color:var(--text-secondary,#7a8cb0); margin:0;">
+        Co-worker trust scores aggregated from completed instance audit logs.
+        Tiers: <span class="trust-green">GREEN</span> ≥ 90 ·
+               <span class="trust-yellow">YELLOW</span> 70–89 ·
+               <span class="trust-orange">ORANGE</span> 50–69 ·
+               <span class="trust-red">RED</span> &lt; 50
+      </p>
+    </div>
+    <a href="/coworker/" class="btn btn-secondary" style="font-size:12px;">← Back to Co-Workers</a>
+  </div>
+
+  <!-- ── Stat row ───────────────────────────────────────────────────── -->
+  <div class="stat-grid" style="grid-template-columns:repeat(4,1fr); margin-bottom:24px;">
+    <div class="stat-card">
+      <div class="stat-value">{{ stats.total_coworkers }}</div>
+      <div class="stat-label">Co-Workers Tracked</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ stats.green_count }}</div>
+      <div class="stat-label">GREEN Tier</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ stats.instances_run }}</div>
+      <div class="stat-label">Instances Run</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-value">{{ stats.avg_score | round(0) | int }}%</div>
+      <div class="stat-label">Avg Trust Score</div>
+    </div>
+  </div>
+
+  <!-- ── Leaderboard table ───────────────────────────────────────────── -->
+  {% if rows %}
+  <div style="background:var(--bg-card,#16213e); border:1px solid var(--border-color,#2a2a4a); border-radius:8px; overflow:hidden;">
+    <table class="trust-table">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Co-Worker / Role</th>
+          <th>Instance</th>
+          <th>Trust Tier</th>
+          <th>Score</th>
+          <th>Steps Done</th>
+          <th>HITL Events</th>
+          <th>Last Active</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td style="color:var(--text-secondary,#555);">{{ loop.index }}</td>
+          <td>
+            <div style="font-weight:600;">{{ row.role_id | replace('_', ' ') | title }}</div>
+            <div style="font-size:11px; color:var(--text-secondary,#555);">{{ row.coworker_id[:20] }}</div>
+          </td>
+          <td>
+            <a href="/coworker/{{ row.instance_id }}" style="font-size:11px; color:var(--accent-color,#4a90d9);">
+              {{ row.instance_id[:16] }}…
+            </a>
+          </td>
+          <td>
+            <span class="trust-tier-badge trust-tier-{{ row.trust_tier }}">{{ row.trust_tier }}</span>
+          </td>
+          <td>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <div class="score-bar">
+                <div class="score-fill" style="width:{{ row.score }}%;{% if row.score < 50 %} background:#e74c3c;{% elif row.score < 70 %} background:#e67e22;{% elif row.score < 90 %} background:#f1c40f;{% endif %}"></div>
+              </div>
+              <span style="font-size:12px; min-width:32px;">{{ row.score }}%</span>
+            </div>
+          </td>
+          <td style="text-align:center;">{{ row.steps_done }}</td>
+          <td style="text-align:center;">
+            {% if row.hitl_events > 0 %}
+            <span style="color:#f39c12;">{{ row.hitl_events }}</span>
+            {% else %}
+            <span style="color:var(--text-secondary,#555);">0</span>
+            {% endif %}
+          </td>
+          <td style="font-size:11px; color:var(--text-secondary,#555);">
+            {{ (row.last_active or '') | replace('T', ' ') | truncate(16, True, '') }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="background:var(--bg-card,#16213e); border:1px solid var(--border-color,#2a2a4a); border-radius:8px; padding:40px; text-align:center;">
+    <div style="font-size:28px; margin-bottom:12px; opacity:.4;">🤝</div>
+    <div style="font-size:14px; font-weight:600; margin-bottom:6px;">No co-worker runs yet</div>
+    <p style="font-size:13px; color:var(--text-secondary,#7a8cb0); margin:0 0 16px; max-width:400px; margin-left:auto; margin-right:auto;">
+      Trust scores accumulate as co-workers complete instance runs.
+      Launch an instance from the <a href="/coworker/" style="color:var(--accent-color,#4a90d9);">Co-Worker Engine</a> to get started.
+    </p>
+  </div>
+  {% endif %}
+
+  {% include "includes/iqe_query_widget.html" ignore missing %}
+</div>
+{% endblock %}

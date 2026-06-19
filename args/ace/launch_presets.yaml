@@ -1,0 +1,109 @@
+# CUI // SP-CTI
+# ACE Quick Launch Presets — 16 presets across 8 canvases
+# Each preset auto-fills the launch textarea and is color-coded by canvas.
+# canvas values map to CSS class: preset-canvas-<canvas>
+
+presets:
+  # ── Build / Dev ────────────────────────────────────────────────────────────
+  - id: build_module
+    label: "Build Python Module"
+    canvas: build
+    color: "#2563eb"
+    problem_text: "Build a Python module with clean architecture, comprehensive unit tests, and docstrings. Follow TDD (RED → GREEN → REFACTOR) and ensure ≥90% test coverage."
+
+  - id: refactor_codebase
+    label: "Refactor & Simplify"
+    canvas: build
+    color: "#2563eb"
+    problem_text: "Refactor the existing codebase to improve modularity, reduce technical debt, and apply the Ponytail ladder (skip → stdlib → installed deps → minimum code). Produce a before/after complexity report."
+
+  # ── QA / Test ──────────────────────────────────────────────────────────────
+  - id: qa_full_suite
+    label: "Design Full Test Suite"
+    canvas: qa
+    color: "#16a34a"
+    problem_text: "Design and execute a complete test suite covering unit, integration, and E2E scenarios. Generate Gherkin BDD scenarios, pytest fixtures, and a coverage report identifying gaps."
+
+  - id: qa_coverage_audit
+    label: "Audit Coverage Gaps"
+    canvas: qa
+    color: "#16a34a"
+    problem_text: "Audit test coverage gaps across the codebase. Identify untested critical paths, edge cases, and error-handling branches. Generate missing test cases with acceptance criteria."
+
+  # ── Security ───────────────────────────────────────────────────────────────
+  - id: security_auth_review
+    label: "Auth Security Review"
+    canvas: security
+    color: "#dc2626"
+    problem_text: "Perform a security assessment of the authentication and authorization layer. Check for broken auth, insecure session handling, privilege escalation paths, and OWASP A01-A03 issues. Produce a findings report with CVE cross-references."
+
+  - id: security_owasp_scan
+    label: "OWASP Top 10 Scan"
+    canvas: security
+    color: "#dc2626"
+    problem_text: "Scan the codebase for OWASP Top 10 vulnerabilities (injection, XSS, SSRF, IDOR, etc.) and generate prioritized remediation recommendations with code-level fixes."
+
+  # ── Compliance ─────────────────────────────────────────────────────────────
+  - id: compliance_ato_package
+    label: "Generate ATO Package"
+    canvas: compliance
+    color: "#7c3aed"
+    problem_text: "Generate an ATO package including SSP (System Security Plan), POAM (Plan of Action and Milestones), and STIG checklist. Apply FedRAMP High baseline controls and include CUI markings on all artifacts."
+
+  - id: compliance_nist_gap
+    label: "NIST 800-53 Gap Analysis"
+    canvas: compliance
+    color: "#7c3aed"
+    problem_text: "Map the current system controls to NIST 800-53 Rev 5 and identify compliance gaps. Cross-walk findings to FedRAMP, CMMC Level 2, and DISA STIG. Produce an executive summary with risk prioritization."
+
+  # ── Data ───────────────────────────────────────────────────────────────────
+  - id: data_pipeline
+    label: "Design Data Pipeline"
+    canvas: data
+    color: "#0891b2"
+    problem_text: "Design a data ingestion pipeline with validation, transformation, deduplication, and error-handling stages. Include schema enforcement, anomaly detection, and a data quality report template."
+
+  - id: data_quality_audit
+    label: "Data Quality Audit"
+    canvas: data
+    color: "#0891b2"
+    problem_text: "Analyze the target dataset for quality issues: missing values, duplicates, schema drift, outliers, and referential integrity gaps. Generate a remediation plan with prioritized action items."
+
+  # ── DevOps ─────────────────────────────────────────────────────────────────
+  - id: devops_cicd_pipeline
+    label: "CI/CD Pipeline"
+    canvas: devops
+    color: "#d97706"
+    problem_text: "Create a CI/CD pipeline with automated security gates (SAST, dependency audit, secret detection), parallel test stages, and blue-green deployment. Produce GitLab CI YAML and a runbook."
+
+  - id: devops_k8s_manifests
+    label: "K8s Manifests"
+    canvas: devops
+    color: "#d97706"
+    problem_text: "Design Kubernetes manifests with resource limits, readiness/liveness probes, HPA scaling policies, network policies, and RBAC. Target a DoD IL4 hardened cluster. Include a Helm chart skeleton."
+
+  # ── Requirements ───────────────────────────────────────────────────────────
+  - id: req_intake
+    label: "Requirements Intake"
+    canvas: requirements
+    color: "#0d9488"
+    problem_text: "Extract and formalize functional and non-functional requirements from the stakeholder inputs provided. Produce SAFe-aligned epics, features, and user stories with MoSCoW prioritization and acceptance criteria."
+
+  - id: req_bdd_stories
+    label: "BDD User Stories"
+    canvas: requirements
+    color: "#0d9488"
+    problem_text: "Generate user stories with BDD Gherkin acceptance criteria following SAFe and Given/When/Then patterns. Include edge cases, negative scenarios, and traceability IDs for each story."
+
+  # ── Business / Strategy ────────────────────────────────────────────────────
+  - id: biz_roadmap_analysis
+    label: "Roadmap Analysis"
+    canvas: strategy
+    color: "#be185d"
+    problem_text: "Analyze the current product roadmap and identify high-impact feature opportunities, quick wins, and strategic risks. Produce a prioritized backlog recommendation with estimated effort and value scores."
+
+  - id: biz_competitive_analysis
+    label: "Competitive Analysis"
+    canvas: strategy
+    color: "#be185d"
+    problem_text: "Draft a competitive analysis and market positioning strategy for the target segment. Identify differentiators, gaps vs. top 5 competitors, and a go-to-market recommendation with win/loss themes."

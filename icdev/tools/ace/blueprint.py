@@ -249,6 +249,59 @@ def roles():
         return jsonify({"roles": [r.role_id for r in role_list]})
 
 
+@ace_bp.route("/trust")
+def trust_leaderboard():
+    """Trust leaderboard — co-worker scores aggregated from ace_audit_log."""
+    rows: list[dict] = []
+    stats: dict = {"total_coworkers": 0, "green_count": 0, "instances_run": 0, "avg_score": 0.0}
+    conn = None
+    try:
+        conn = _db()
+        # Aggregate per coworker: steps done, hitl events, last active
+        raw = _rows(
+            conn.execute(
+                _q(
+                    conn,
+                    "SELECT al.coworker_id, cw.role_id, cw.trust_tier, al.instance_id, "
+                    "SUM(CASE WHEN al.action='step_complete' THEN 1 ELSE 0 END) AS steps_done, "
+                    "SUM(CASE WHEN al.action LIKE 'hitl%' THEN 1 ELSE 0 END) AS hitl_events, "
+                    "MAX(al.created_at) AS last_active "
+                    "FROM ace_audit_log al "
+                    "LEFT JOIN ace_coworkers cw ON cw.id = al.coworker_id "
+                    "WHERE al.coworker_id IS NOT NULL "
+                    "GROUP BY al.coworker_id, cw.role_id, cw.trust_tier, al.instance_id "
+                    "ORDER BY steps_done DESC, last_active DESC "
+                    "LIMIT 100",
+                )
+            )
+        )
+        for r in raw:
+            steps = int(r.get("steps_done") or 0)
+            hitl = int(r.get("hitl_events") or 0)
+            tier = (r.get("trust_tier") or "yellow").lower()
+            # Simple score: steps completions minus hitl penalty, bounded 0-100
+            score = min(100, max(0, steps * 10 - hitl * 5))
+            if score >= 90:
+                tier = "green"
+            elif score >= 70:
+                tier = "yellow" if tier != "orange" else "orange"
+            rows.append({**r, "score": score, "trust_tier": tier})
+        stats["total_coworkers"] = len(rows)
+        stats["green_count"] = sum(1 for r in rows if r["trust_tier"] == "green")
+        stats["instances_run"] = len({r.get("instance_id") for r in rows})
+        stats["avg_score"] = (sum(r["score"] for r in rows) / len(rows)) if rows else 0.0
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace trust_leaderboard load failed: %s", exc)
+    finally:
+        if conn is not None:
+            conn.close()
+    try:
+        return render_template("coworker/trust.html", rows=rows, stats=stats)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("coworker/trust.html unavailable (%s); JSON fallback", exc)
+        return jsonify({"rows": rows, "stats": stats})
+
+
 @ace_bp.route("/<instance_id>")
 def instance_detail(instance_id: str):
     """Single instance: header, coworkers, message timeline, artifacts."""
@@ -577,19 +630,81 @@ def api_artifacts(instance_id: str):
     return jsonify({"artifacts": items, "count": len(items)})
 
 
+@ace_api_bp.route("/<instance_id>/audit", methods=["GET"])
+def api_audit(instance_id: str):
+    """Audit log events for an instance (chronological, newest last)."""
+    limit = _int_arg("limit", 200, lo=1, hi=500)
+    items: list[dict] = []
+    conn = None
+    try:
+        conn = _db()
+        items = _rows(
+            conn.execute(
+                _q(
+                    conn,
+                    "SELECT id, coworker_id, action, detail, actor, created_at "
+                    "FROM ace_audit_log WHERE instance_id = ? "
+                    "ORDER BY created_at ASC, id ASC LIMIT ?",
+                ),
+                (instance_id, limit),
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace api_audit read failed for %s: %s", instance_id, exc)
+    finally:
+        if conn is not None:
+            conn.close()
+    return jsonify({"events": items, "count": len(items)})
+
+
 @ace_api_bp.route("/<instance_id>/abort", methods=["POST"])
 def api_abort(instance_id: str):
     """Signal all coworkers to stop; marks the instance ``cancelled``.
 
-    (The schema CHECK constraint allows ``cancelled``, not ``aborted`` — the
-    controller's ``abort()`` sets the canonical terminal state.)
+    Returns 404 if the instance does not exist (C-7 fix).
     """
+    # Existence check — abort on a phantom ID silently succeeds otherwise.
+    conn = None
+    try:
+        conn = _db()
+        row = _one(conn.execute(_q(conn, "SELECT id FROM ace_instances WHERE id = ?"), (instance_id,)))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace abort: existence check failed for %s: %s", instance_id, exc)
+        row = None
+    finally:
+        if conn is not None:
+            conn.close()
+
+    if row is None:
+        return jsonify({"error": f"instance not found: {instance_id}"}), 404
+
     try:
         ACEController.get_instance().abort(instance_id)
     except Exception as exc:  # noqa: BLE001
         logger.warning("ace abort failed for %s: %s", instance_id, exc)
         return jsonify({"error": str(exc)}), 500
     return jsonify({"instance_id": instance_id, "state": "cancelled", "aborted": True})
+
+
+@ace_api_bp.route("/presets", methods=["GET"])
+def api_presets():
+    """Return the Quick Launch preset list from ``args/ace/launch_presets.yaml``.
+
+    Response: ``{presets: [{id, label, canvas, color, problem_text}]}``
+    """
+    import pathlib
+    import yaml  # type: ignore[import]
+
+    presets_path = pathlib.Path(__file__).parent.parent.parent.parent / "args" / "ace" / "launch_presets.yaml"
+    try:
+        with presets_path.open(encoding="utf-8") as fh:
+            data = yaml.safe_load(fh)
+        return jsonify({"presets": data.get("presets", []), "count": len(data.get("presets", []))})
+    except FileNotFoundError:
+        return jsonify({"presets": [], "count": 0, "warning": "launch_presets.yaml not found"})
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace api_presets: failed to load presets: %s", exc)
+        return jsonify({"error": str(exc)}), 500
 
 
 @ace_api_bp.route("/iqe-query", methods=["POST"])
