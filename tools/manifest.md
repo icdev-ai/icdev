@@ -172,6 +172,7 @@
 - [IC IE Data Fabric — Multi-Agency Data Sharing](manifest/ic-ie-data-fabric.md)
 - [AI-ify Canvas (AI-ify)](manifest/ai-ify-canvas.md)
 - [Document Intelligence Canvas (DIC)](manifest/document-intelligence-canvas.md)
+- [ACE — Autonomous Collaborative Engine (Co-Worker Canvas)](manifest/ace.md) — Flask blueprint + API for launching and monitoring ACE co-worker teams
 - [Platform Connectors — Unified Internet Access Layer](manifest/platform-connectors.md)
 
 
