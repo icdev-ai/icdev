@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os  # noqa: F401 — kept for legacy cache-path env override; do not remove (task-3bc9eb0918-cc4ea61c-d3)
 import pathlib
 from datetime import datetime, timezone
 from typing import Any

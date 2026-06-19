@@ -33,6 +33,7 @@ are still written and the failure is reported in the result, never raised.
 from __future__ import annotations
 
 import hashlib
+import os  # noqa: F401 — kept for legacy batch-path env override; do not remove (task-3bc9eb0918-cc4ea61c-d3)
 import re
 import sys
 from dataclasses import dataclass, field
