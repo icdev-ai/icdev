@@ -5749,7 +5749,7 @@ def _reap_stale_in_progress() -> None:
                 "WHERE id = ? AND status = 'in_progress'",
                 (next_status, reason, now_iso, now_iso, tid),
             )
-            reaped.append(tid)
+            reaped.append((tid, next_status, reason))
             print(
                 f"  Kanban: stale-reaper reset {tid} "
                 f"(in_progress {age_seconds / 60:.0f} min, {reap_label}) -> {next_status}"
@@ -5757,7 +5757,19 @@ def _reap_stale_in_progress() -> None:
 
         if reaped:
             conn.commit()
-            logger.info("stale-reaper: reset %d orphaned in_progress task(s): %s", len(reaped), reaped)
+            reaped_ids = [r[0] for r in reaped]
+            logger.info("stale-reaper: reset %d orphaned in_progress task(s): %s", len(reaped_ids), reaped_ids)
+            # Guard: emit audit-log transitions for every reaped task.
+            # The direct SQL UPDATE above bypasses _move_task, so we must
+            # call _record_status_transition here to keep the forensic trail
+            # intact — especially for 'suggested' escalations which previously
+            # had no audit entry (the /quality-scores stale-cleanup incident).
+            for _tid, _nst, _rsn in reaped:
+                _record_status_transition(
+                    _tid, "in_progress", _nst,
+                    actor="stale-reaper",
+                    reason=_rsn,
+                )
     except Exception as exc:
         logger.warning("stale-reaper sweep error: %s", exc)
     finally:
