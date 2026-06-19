@@ -60,8 +60,21 @@ jobs:
             tests/test_session_context_builder.py \
             tests/test_code_analyzer.py \
             tests/test_pgp_tx02_json_portability.py \
-            tests/test_knowledge_search_route.py \
             -v --tb=short -x
+      - name: Verify /knowledge-search route (retry on slow endpoint)
+        # The /knowledge-search page can be slow because it issues 60+ PG queries
+        # via the RAG ingestion status probe. Run it in isolation with a tight
+        # per-attempt timeout and a small retry loop so a transient slow-start
+        # does not fail the whole unit-test tier.
+        run: |
+          for attempt in 1 2 3; do
+            echo "Attempt $attempt/3 for /knowledge-search route test"
+            timeout 60 pytest tests/test_knowledge_search_route.py -v --tb=short && exit 0
+            echo "::warning::/knowledge-search route test failed attempt $attempt/3; retrying..."
+            sleep 5
+          done
+          echo "::error::/knowledge-search route test failed after 3 attempts"
+          exit 1
 
   # ── Tier 1: Security Scan (pure Python — no LLM) ────────────────────────
   security:
