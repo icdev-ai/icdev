@@ -96,14 +96,125 @@ def _ensure_table() -> None:
         logger.warning("dic_presence_sessions table init error: %s", exc)
 
 
-def heartbeat(doc_id: str, user_id: str, section_id: Optional[str] = None) -> str:
-    """Upsert a presence row for user_id on doc_id. Returns session_id."""
-    _ensure_table()
+# ── Session-key API ────────────────────────────────────────────────────────────
 
+def join_document(
+    doc_id: str,
+    user_id: str,
+    ttl_seconds: int = _PRESENCE_TTL_S,
+    tenant_id: str = "",
+) -> str:
+    """Register user_id as present on doc_id. Returns session_id (the session_key).
+
+    If the user already has a session on this doc, the existing key is renewed.
+    """
+    _ensure_table()
     from tools.db.storage import get_connection
 
     sid = _session_id(doc_id, user_id)
-    last_seen = _now_iso()
+    now = _now_iso()
+
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        if _is_pg():
+            cur.execute(
+                """
+                INSERT INTO dic_presence_sessions
+                    (session_id, doc_id, user_id, last_seen, tenant_id, classification)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (session_id) DO UPDATE SET
+                    last_seen  = EXCLUDED.last_seen,
+                    tenant_id  = EXCLUDED.tenant_id
+                """,
+                (sid, doc_id, user_id, now, tenant_id or "default", "CUI"),
+            )
+        else:
+            cur.execute(
+                """
+                INSERT OR REPLACE INTO dic_presence_sessions
+                    (session_id, doc_id, user_id, last_seen, tenant_id, classification)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (sid, doc_id, user_id, now, tenant_id or "default", "CUI"),
+            )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return sid
+
+
+def leave_document(session_key: str) -> bool:
+    """Remove the presence session identified by session_key. Returns True if it existed."""
+    _ensure_table()
+    from tools.db.storage import get_connection
+
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        if _is_pg():
+            cur.execute(
+                "DELETE FROM dic_presence_sessions WHERE session_id = %s",
+                (session_key,),
+            )
+        else:
+            cur.execute(
+                "DELETE FROM dic_presence_sessions WHERE session_id = ?",
+                (session_key,),
+            )
+        conn.commit()
+        return (cur.rowcount or 0) > 0
+    finally:
+        conn.close()
+
+
+def get_present_users(doc_id: str) -> list[dict]:
+    """Return active (non-expired) users viewing doc_id."""
+    _ensure_table()
+    from tools.db.storage import get_connection
+
+    cutoff = datetime.now(timezone.utc) - timedelta(seconds=_PRESENCE_TTL_S)
+    cutoff_iso = cutoff.isoformat(timespec="seconds")
+
+    conn = get_connection()
+    try:
+        cur = conn.cursor()
+        if _is_pg():
+            cur.execute(
+                "SELECT session_id, user_id, active_section_id, last_seen "
+                "FROM dic_presence_sessions WHERE doc_id = %s AND last_seen >= %s",
+                (doc_id, cutoff_iso),
+            )
+        else:
+            cur.execute(
+                "SELECT session_id, user_id, active_section_id, last_seen "
+                "FROM dic_presence_sessions WHERE doc_id = ? AND last_seen >= ?",
+                (doc_id, cutoff_iso),
+            )
+        rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    _keys = ["session_id", "user_id", "active_section_id", "last_seen"]
+    return [
+        dict(r) if hasattr(r, "keys") else dict(zip(_keys, r))
+        for r in rows
+    ]
+
+
+def ping(
+    doc_id: str,
+    user_id: str,
+    section_id: Optional[str] = None,
+    ttl_seconds: int = _PRESENCE_TTL_S,
+) -> str:
+    """Upsert a presence session recording active_section_id. Returns session_key."""
+    _ensure_table()
+    from tools.db.storage import get_connection
+
+    sid = _session_id(doc_id, user_id)
+    now = _now_iso()
 
     conn = get_connection()
     try:
@@ -119,7 +230,7 @@ def heartbeat(doc_id: str, user_id: str, section_id: Optional[str] = None) -> st
                     last_seen         = EXCLUDED.last_seen,
                     active_section_id = EXCLUDED.active_section_id
                 """,
-                (sid, doc_id, user_id, section_id, last_seen, "default", "CUI"),
+                (sid, doc_id, user_id, section_id, now, "default", "CUI"),
             )
         else:
             cur.execute(
@@ -129,7 +240,7 @@ def heartbeat(doc_id: str, user_id: str, section_id: Optional[str] = None) -> st
                      tenant_id, classification)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (sid, doc_id, user_id, section_id, last_seen, "default", "CUI"),
+                (sid, doc_id, user_id, section_id, now, "default", "CUI"),
             )
         conn.commit()
     finally:
@@ -138,84 +249,53 @@ def heartbeat(doc_id: str, user_id: str, section_id: Optional[str] = None) -> st
     return sid
 
 
+# ── Legacy API (kept for backward compatibility) ───────────────────────────────
+
+def heartbeat(doc_id: str, user_id: str, section_id: Optional[str] = None) -> str:
+    """Upsert a presence row for user_id on doc_id. Returns session_id.
+
+    Delegates to ping() — kept for backward compatibility.
+    """
+    return ping(doc_id, user_id, section_id=section_id)
+
+
 def get_presence(doc_id: str) -> list[dict]:
-    """Return presence rows for doc_id whose last_seen is within 60 seconds."""
-    _ensure_table()
+    """Return presence rows for doc_id whose last_seen is within 60 seconds.
 
-    from tools.db.storage import get_connection
-
-    conn = get_connection()
-    try:
-        cur = conn.cursor()
-        if _is_pg():
-            cur.execute(
-                "SELECT session_id, doc_id, user_id, active_section_id, last_seen "
-                "FROM dic_presence_sessions WHERE doc_id = %s",
-                (doc_id,),
-            )
-        else:
-            cur.execute(
-                "SELECT session_id, doc_id, user_id, active_section_id, last_seen "
-                "FROM dic_presence_sessions WHERE doc_id = ?",
-                (doc_id,),
-            )
-        rows = cur.fetchall()
-    finally:
-        conn.close()
-
-    _keys = ["session_id", "doc_id", "user_id", "active_section_id", "last_seen"]
-    cutoff = datetime.now(timezone.utc) - timedelta(seconds=_PRESENCE_TTL_S)
-    result = []
-    for row in rows:
-        r = dict(row) if hasattr(row, "keys") else dict(zip(_keys, row))
-        if _parse_ts(str(r["last_seen"])) >= cutoff:
-            result.append(r)
-    return result
+    Delegates to get_present_users() — kept for backward compatibility.
+    """
+    rows = get_present_users(doc_id)
+    # Add doc_id field expected by legacy callers
+    for r in rows:
+        r.setdefault("doc_id", doc_id)
+    return rows
 
 
 def cleanup_stale(doc_id: str) -> int:
     """Delete presence rows for doc_id older than 120 seconds. Returns count deleted."""
     _ensure_table()
-
     from tools.db.storage import get_connection
 
     cutoff = datetime.now(timezone.utc) - timedelta(seconds=_STALE_TTL_S)
+    cutoff_iso = cutoff.isoformat(timespec="seconds")
 
     conn = get_connection()
     try:
         cur = conn.cursor()
         if _is_pg():
             cur.execute(
-                "SELECT session_id, last_seen FROM dic_presence_sessions WHERE doc_id = %s",
-                (doc_id,),
+                "DELETE FROM dic_presence_sessions WHERE doc_id = %s AND last_seen < %s",
+                (doc_id, cutoff_iso),
             )
         else:
             cur.execute(
-                "SELECT session_id, last_seen FROM dic_presence_sessions WHERE doc_id = ?",
-                (doc_id,),
+                "DELETE FROM dic_presence_sessions WHERE doc_id = ? AND last_seen < ?",
+                (doc_id, cutoff_iso),
             )
-        rows = cur.fetchall()
-
-        stale_ids = []
-        for row in rows:
-            if hasattr(row, "keys"):
-                sid, ts = row["session_id"], row["last_seen"]
-            else:
-                sid, ts = row[0], row[1]
-            if _parse_ts(str(ts)) < cutoff:
-                stale_ids.append(sid)
-
-        for sid in stale_ids:
-            if _is_pg():
-                cur.execute(
-                    "DELETE FROM dic_presence_sessions WHERE session_id = %s", (sid,)
-                )
-            else:
-                cur.execute(
-                    "DELETE FROM dic_presence_sessions WHERE session_id = ?", (sid,)
-                )
         conn.commit()
+        return cur.rowcount or 0
     finally:
         conn.close()
 
-    return len(stale_ids)
+
+purge_stale = cleanup_stale
