@@ -22,6 +22,7 @@ Checks:
  12. karpathy_sync  — 5 canonical Karpathy headings present in all 10 AI platform configs
  13. openapi_parity — generate_openapi_spec(app) paths match app.url_map /api/v1/* routes
  14. security_context — RLS auto-wiring intact; set_security_context(None) bypasses documented
+ 15. canvas_placeholder_style — bare ? in execute() SQL for get_canvas_connection callers (use %s)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -35,6 +36,7 @@ Usage:
     python tools/workflow/coherence_checker.py --all --human
     python tools/workflow/coherence_checker.py --all --gate
     python tools/workflow/coherence_checker.py --all --fix --json   # Auto-fix safe issues
+    python tools/workflow/coherence_checker.py --check canvas_placeholder_style --gate
 """
 
 from __future__ import annotations
@@ -3170,6 +3172,122 @@ def check_log_standard_compliance() -> CoherenceCheck:
 
 
 # ---------------------------------------------------------------------------
+# Check 15: canvas_placeholder_style — bare ? in canvas execute() SQL
+# ---------------------------------------------------------------------------
+
+
+def check_canvas_placeholder_style(
+    changed_files: Optional[List[Path]] = None,
+) -> CoherenceCheck:
+    """Detect bare ? SQL parameter placeholders in canvas-connection execute() calls.
+
+    PostgreSQL (psycopg2) requires %s parameter placeholders. A bare ? raises
+    ProgrammingError that broad except blocks may silently swallow — the pattern
+    that concealed the ACE coworker threading bug for weeks.
+
+    Scan: every Python file under tools/ that imports get_canvas_connection.
+    Flag: any .execute() call whose SQL string literal (or f-string constant
+          parts) contains a bare ? character.
+
+    Tier: FAIL — blocks --gate on violation so CI catches the mistake before merge.
+    """
+    tools_dir = PROJECT_ROOT / "tools"
+    if not tools_dir.exists():
+        return CoherenceCheck(
+            check_id="canvas_placeholder_style",
+            check_name="Canvas Connection Placeholder Style",
+            status="pass",
+            expected=["get_canvas_connection callers use %s not ? placeholders"],
+            actual=["tools/ directory not found — scan skipped"],
+            missing=[],
+            extra=[],
+            message="tools/ directory missing — scan skipped",
+        )
+
+    candidates: List[Path] = []
+    if changed_files:
+        candidates = [p for p in changed_files if p.suffix == ".py" and p.exists()]
+    else:
+        candidates = list(tools_dir.rglob("*.py"))
+
+    violations: List[str] = []
+    scanned = 0
+
+    for py_path in candidates:
+        try:
+            source = py_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+
+        if "get_canvas_connection" not in source:
+            continue
+
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            continue
+
+        scanned += 1
+        try:
+            rel = py_path.relative_to(PROJECT_ROOT).as_posix()
+        except ValueError:
+            rel = str(py_path)
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not (isinstance(node.func, ast.Attribute) and node.func.attr == "execute"):
+                continue
+            if not node.args:
+                continue
+
+            sql_arg = node.args[0]
+            sql_text: Optional[str] = None
+
+            if isinstance(sql_arg, ast.Constant) and isinstance(sql_arg.value, str):
+                sql_text = sql_arg.value
+            elif isinstance(sql_arg, ast.JoinedStr):
+                # f-string: collect constant fragments only
+                parts = []
+                for frag in sql_arg.values:
+                    if isinstance(frag, ast.Constant) and isinstance(frag.value, str):
+                        parts.append(frag.value)
+                sql_text = "".join(parts)
+
+            if sql_text and "?" in sql_text:
+                lineno = getattr(node, "lineno", 0)
+                violations.append(
+                    f"{rel}:{lineno}: execute() SQL uses bare ? placeholder — use %s for psycopg2"
+                )
+
+    if violations:
+        return CoherenceCheck(
+            check_id="canvas_placeholder_style",
+            check_name="Canvas Connection Placeholder Style",
+            status="fail",
+            expected=["All get_canvas_connection callers use %s placeholders (psycopg2)"],
+            actual=[f"{len(violations)} violation(s) across {scanned} canvas file(s)"],
+            missing=violations,
+            extra=[],
+            message=(
+                f"{len(violations)} execute() call(s) use bare ? placeholder — "
+                "psycopg2 requires %s; ? raises ProgrammingError on PostgreSQL"
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="canvas_placeholder_style",
+        check_name="Canvas Connection Placeholder Style",
+        status="pass",
+        expected=["All get_canvas_connection callers use %s placeholders (psycopg2)"],
+        actual=[f"Scanned {scanned} canvas file(s), 0 ? placeholders found"],
+        missing=[],
+        extra=[],
+        message=f"All canvas execute() calls use %s placeholders — {scanned} file(s) checked",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -3198,6 +3316,7 @@ CHECK_REGISTRY = {
     "nav_route_parity": check_nav_route_parity,
     "blueprint_imports": check_blueprint_imports,
     "new_page_completeness": check_new_page_completeness,
+    "canvas_placeholder_style": check_canvas_placeholder_style,
 }
 
 
@@ -3227,6 +3346,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "hitl_workflow": "skip",  # module fixes require human judgment
     "mcp_security": "skip",  # scanner module creation requires human judgment
     "security_context": "skip",  # RLS bypass documentation and wiring fixes require human judgment
+    "canvas_placeholder_style": "skip",  # SQL placeholder fixes require human judgment (search+replace in SQL strings)
 }
 
 

@@ -1123,10 +1123,27 @@ coherence:
     - signature_call_risk
     - manifest_incomplete
     - import_unused
+    - canvas_execute_uses_question_mark_placeholder
   thresholds:
     max_schema_mismatches: 0
     max_fixture_mismatches: 0
     coherence_required: true
+
+# Canvas Connection Placeholder Style Gate (D-WF-8 sub-check)
+# Detects bare ? SQL parameter placeholders in execute() calls inside files
+# that import get_canvas_connection. psycopg2 requires %s; ? raises
+# ProgrammingError that broad except blocks may silently swallow.
+# Run: python tools/workflow/coherence_checker.py --check canvas_placeholder_style --gate
+canvas_placeholder_style:
+  description: "Detect bare ? SQL placeholders in canvas execute() calls — use %s for psycopg2"
+  blocking: []
+  warning:
+    - canvas_execute_uses_question_mark_placeholder
+  note: >
+    Violations detected by tools/workflow/coherence_checker.py::check_canvas_placeholder_style.
+    Replace ? with %s in any execute() SQL string in files importing get_canvas_connection.
+    The coherence checker returns FAIL (exits 1 with --gate) on any violation so CI blocks
+    the merge before the ProgrammingError reaches production.
 
 # Engineering Review Board Gate (Phase 67, D-RB-1 through D-RB-7)
 review_board:
