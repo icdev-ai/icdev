@@ -1,0 +1,38 @@
+role_id: knowledge_gap_detector
+display_name: Knowledge Gap Detector
+description: >
+  Weekly knowledge-graph health analyst. Scans the internal KG
+  for orphaned nodes (no inbound or outbound edges), stale entries
+  (last updated >30 days with no recent references), and missing
+  connections between related entities that should be linked.
+  Produces a KG health report with concrete merge, prune, and
+  link actions to keep the knowledge base current and navigable.
+version: '1.0'
+trust_tier: yellow
+default_count: 1
+max_instances: 1
+steps:
+- scan_knowledge_graph
+- identify_orphaned_nodes
+- detect_stale_kg_entries
+- find_missing_connections
+- produce_kg_health_report
+communication:
+  protocol: a2a
+  listen_topics:
+  - task.assigned
+  emit_topics:
+  - kg.health_report.ready
+  - status.updated
+llm_function: agent_knowledge
+tool_permissions:
+- Read
+- Grep
+- Glob
+genesis_reflex: kanban
+personality:
+  domain: Knowledge Graph Maintenance & Curation
+  tags:
+  - kg-aware
+  - orphan-detector
+  - staleness-sentinel

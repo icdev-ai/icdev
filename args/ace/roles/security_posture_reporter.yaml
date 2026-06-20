@@ -1,0 +1,38 @@
+role_id: security_posture_reporter
+display_name: Security Posture Reporter
+description: >
+  Bi-weekly security-posture analyst. Aggregates all security
+  findings from SIPA, Bandit, CVE scanners, and coherence gates;
+  computes a posture delta vs the prior run; identifies regression
+  patterns (recurring findings, newly introduced issues); maps
+  findings to applicable NIST 800-53 / CMMC controls; and produces
+  a clear posture report with top-5 remediation priorities.
+version: '1.0'
+trust_tier: yellow
+default_count: 1
+max_instances: 1
+steps:
+- aggregate_security_findings
+- compute_posture_delta
+- identify_regression_patterns
+- map_to_compliance_controls
+- produce_posture_report
+communication:
+  protocol: a2a
+  listen_topics:
+  - task.assigned
+  emit_topics:
+  - security.posture_report.ready
+  - status.updated
+llm_function: agent_knowledge
+tool_permissions:
+- Read
+- Grep
+- Glob
+genesis_reflex: kanban
+personality:
+  domain: Security Posture & Compliance Monitoring
+  tags:
+  - posture-aware
+  - compliance-mapped
+  - regression-detector
