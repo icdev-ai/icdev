@@ -1564,6 +1564,18 @@ CREATE TABLE IF NOT EXISTS cmmc_practice_gaps (
 CREATE INDEX IF NOT EXISTS idx_cmmc_gaps_assessment ON cmmc_practice_gaps (assessment_id);
 CREATE INDEX IF NOT EXISTS idx_cmmc_gaps_domain     ON cmmc_practice_gaps (domain);
 CREATE INDEX IF NOT EXISTS idx_cmmc_gaps_tenant     ON cmmc_practice_gaps (tenant_id);
+CREATE TABLE IF NOT EXISTS ace_preflight_decisions (
+    id          TEXT PRIMARY KEY,
+    instance_id TEXT NOT NULL,
+    coworker_id TEXT NOT NULL DEFAULT '',
+    step_name   TEXT NOT NULL DEFAULT '',
+    decision    TEXT NOT NULL DEFAULT '',
+    confidence  REAL NOT NULL DEFAULT 0.0,
+    rationale   TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ace_preflight_instance ON ace_preflight_decisions(instance_id);
+CREATE INDEX IF NOT EXISTS idx_ace_preflight_coworker ON ace_preflight_decisions(coworker_id);
 """
 
 
