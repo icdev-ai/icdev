@@ -33,6 +33,18 @@ _DB_ENV = "ICDEV_ACE_DB_URL"
 _MAX_WORKERS = 16  # max concurrent CoWorkerThreads across all instances
 _MEMORY_CAP = 50   # max ace_coworker_memory rows per role
 
+_REQUIRED_ACE_TABLES = (
+    "ace_instances",
+    "ace_coworkers",
+    "ace_messages",
+    "ace_artifacts",
+    "ace_agent_workflows",
+    "ace_audit_log",
+    "ace_webhook_log",
+    "ace_sessions",
+    "ace_preflight_decisions",
+)
+
 # Patterns that identify decision/outcome/lesson sentences worth persisting
 _FACT_RE = re.compile(
     r"\b(decided|chose|selected|will use|going with|adopted|implemented|"
