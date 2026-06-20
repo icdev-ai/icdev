@@ -44,6 +44,7 @@ class CoWorkerSpec:
     llm_function: str       # e.g. "code_generation" — used to route LLM calls
     tool_permissions: list[str] = field(default_factory=list)
     trust_tier: str = TRUST_TIER_DEFAULT
+    description: str = ""
 
 
 @dataclass

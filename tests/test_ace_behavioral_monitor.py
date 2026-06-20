@@ -131,6 +131,7 @@ def _fake_loader_cls(steps, tool_permissions=None):
             return types.SimpleNamespace(
                 steps=list(steps),
                 tool_permissions=list(tool_permissions or []),
+                communication={},
             )
 
     return _Loader
