@@ -211,13 +211,19 @@ class TestStepExecutorRun:
 
     # -- import errors --
 
-    def test_import_error_propagates(self):
+    def test_import_error_returns_error_dict(self):
+        """ImportError is caught; run() returns a structured error dict so
+        callers get a clear signal instead of a bare exception propagating
+        from an internal module boundary."""
         spec = _spec(tool_permissions=["bad.module.fn"])
         step = _make_step(tool="bad.module.fn")
         with patch("importlib.import_module", side_effect=ImportError("no such module")), \
              patch.object(self.executor, "_audit"):
-            with pytest.raises(ImportError):
-                self.executor.run(step, {}, spec, _AlwaysAllow())
+            result = self.executor.run(step, {}, spec, _AlwaysAllow())
+        assert isinstance(result, dict)
+        assert result["error"] == "import_error"
+        assert result["tool"] == "bad.module.fn"
+        assert "no such module" in result["message"]
 
     # -- audit is best-effort --
 
