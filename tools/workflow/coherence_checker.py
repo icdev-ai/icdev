@@ -23,6 +23,7 @@ Checks:
  13. openapi_parity — generate_openapi_spec(app) paths match app.url_map /api/v1/* routes
  14. security_context — RLS auto-wiring intact; set_security_context(None) bypasses documented
  15. canvas_placeholder_style — bare ? in execute() SQL for get_canvas_connection callers (use %s)
+ 16. ace_yaml_listen_topics   — role YAMLs must not mix task.assigned with reactive topics (deadlock risk)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -3288,6 +3289,117 @@ def check_canvas_placeholder_style(
 
 
 # ---------------------------------------------------------------------------
+# Check 16: ACE YAML listen_topics deadlock guard
+# ---------------------------------------------------------------------------
+
+# Mirror of _BOOTSTRAP_TOPICS in coworker_thread.py — kept in sync manually.
+# Only topics that can safely appear alongside task.assigned belong here.
+_ACE_BOOTSTRAP_TOPICS: frozenset = frozenset({"task.assigned"})
+
+
+def check_ace_yaml_listen_topics(
+    changed_files: Optional[List[Path]] = None,
+) -> CoherenceCheck:
+    """Warn when a role YAML lists both task.assigned and a non-bootstrap topic.
+
+    A co-worker that receives task.assigned will start executing steps
+    immediately.  Any other topic in listen_topics that is not a gateway
+    prerequisite (e.g. doc.review_feedback, doc.draft_ready) creates a
+    circular deadlock: the thread blocks waiting for a message that will never
+    arrive until after the co-worker itself finishes a step.
+
+    This check is WARN-only (not a gate blocker).  Fix by moving reactive
+    topics out of listen_topics and into role steps (emit/poll patterns).
+    """
+    if not _HAS_YAML:
+        return CoherenceCheck(
+            check_id="ace_yaml_listen_topics",
+            check_name="ACE YAML listen_topics Deadlock Guard",
+            status="warn",
+            expected=[],
+            actual=[],
+            missing=[],
+            extra=[],
+            message="PyYAML not available — skipping ace_yaml_listen_topics check",
+        )
+
+    roles_dir = PROJECT_ROOT / "args" / "ace" / "roles"
+
+    violations: List[str] = []
+    scanned = 0
+
+    yaml_files: List[Path]
+    if changed_files:
+        # Trust the caller: process any YAML files they explicitly provide.
+        yaml_files = [f for f in changed_files if f.suffix in (".yaml", ".yml")]
+        if not yaml_files and roles_dir.exists():
+            yaml_files = list(roles_dir.glob("*.yaml"))
+    else:
+        if not roles_dir.exists():
+            return CoherenceCheck(
+                check_id="ace_yaml_listen_topics",
+                check_name="ACE YAML listen_topics Deadlock Guard",
+                status="warn",
+                expected=["args/ace/roles/ directory present"],
+                actual=["args/ace/roles/ not found"],
+                missing=[],
+                extra=[],
+                message="args/ace/roles/ not found — skipping ace_yaml_listen_topics check",
+            )
+        yaml_files = list(roles_dir.glob("*.yaml"))
+
+    for yaml_path in yaml_files:
+        try:
+            data = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            continue
+
+        scanned += 1
+        comm = data.get("communication") or {}
+        topics: list = comm.get("listen_topics") or []
+        if not isinstance(topics, list):
+            continue
+
+        if "task.assigned" not in topics:
+            continue
+
+        reactive = [t for t in topics if t not in _ACE_BOOTSTRAP_TOPICS]
+        for topic in reactive:
+            violations.append(
+                f"{yaml_path.name}: listen_topics contains both 'task.assigned' and "
+                f"non-bootstrap topic {topic!r} — deadlock risk; move to role steps"
+            )
+
+    if violations:
+        return CoherenceCheck(
+            check_id="ace_yaml_listen_topics",
+            check_name="ACE YAML listen_topics Deadlock Guard",
+            status="warn",
+            expected=[
+                "No role YAML lists task.assigned alongside a non-bootstrap topic"
+            ],
+            actual=violations,
+            missing=[],
+            extra=violations,
+            message=(
+                f"{len(violations)} role YAML(s) mix task.assigned with reactive "
+                f"topics — deadlock risk (see extra field)"
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="ace_yaml_listen_topics",
+        check_name="ACE YAML listen_topics Deadlock Guard",
+        status="pass",
+        expected=["No listen_topics deadlock risk in role YAMLs"],
+        actual=[f"Scanned {scanned} role YAML(s)"],
+        missing=[],
+        extra=[],
+        message=f"All {scanned} role YAML(s) have clean listen_topics",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -3317,6 +3429,7 @@ CHECK_REGISTRY = {
     "blueprint_imports": check_blueprint_imports,
     "new_page_completeness": check_new_page_completeness,
     "canvas_placeholder_style": check_canvas_placeholder_style,
+    "ace_yaml_listen_topics": check_ace_yaml_listen_topics,
 }
 
 
@@ -3347,6 +3460,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "mcp_security": "skip",  # scanner module creation requires human judgment
     "security_context": "skip",  # RLS bypass documentation and wiring fixes require human judgment
     "canvas_placeholder_style": "skip",  # SQL placeholder fixes require human judgment (search+replace in SQL strings)
+    "ace_yaml_listen_topics": "skip",  # YAML restructuring requires human judgment
 }
 
 

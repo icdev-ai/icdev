@@ -30,6 +30,35 @@ _DB_ENV = "ICDEV_ACE_DB_URL"
 _HITL_POLL_INTERVAL = 2.0  # seconds between HITL resolution checks
 _DEFAULT_MONITOR_INTERVAL = 10  # steps between behavioral compliance checks
 
+# Topics that may legitimately appear alongside task.assigned (gateway prerequisites only).
+# Reactive callback topics (e.g. doc.review_feedback) must NOT be listed here; they
+# create circular deadlocks when a co-worker blocks on them before running any step.
+_BOOTSTRAP_TOPICS: frozenset[str] = frozenset({"task.assigned"})
+
+
+def _filter_listen_topics(topics: list[str], coworker_id: str) -> list[str]:
+    """Return filtered listen_topics, dropping reactive entries when task.assigned is present.
+
+    If task.assigned is in the list, every topic NOT in _BOOTSTRAP_TOPICS is logged as a
+    WARNING and removed from the effective list.  This prevents future role YAMLs that
+    accidentally list reactive topics (e.g. doc.review_feedback) from deadlocking the
+    thread by blocking on a message that will never arrive before steps run.
+    """
+    if "task.assigned" not in topics:
+        return list(topics)
+    filtered: list[str] = []
+    for topic in topics:
+        if topic in _BOOTSTRAP_TOPICS:
+            filtered.append(topic)
+        else:
+            logger.warning(
+                "ace_listen_topics_guard: coworker=%s skipping non-bootstrap topic %r "
+                "(task.assigned is present; reactive topics belong in role steps, not listen_topics)",
+                coworker_id,
+                topic,
+            )
+    return filtered
+
 
 def _load_monitor_interval() -> int:
     """Read monitor_interval from args/ace/ace_config.yaml; default 10."""
@@ -214,6 +243,10 @@ class CoWorkerThread(threading.Thread):
             self._set_state("failed")
             self._audit("role_not_found", str(exc))
             return
+
+        # 1b. Defensive listen_topics guard — prune reactive topics when task.assigned present
+        raw_topics: list[str] = list(role.communication.get("listen_topics") or [])
+        _filter_listen_topics(raw_topics, self.spec.coworker_id)
 
         # 2. Transition to working state
         self._set_state("working")
