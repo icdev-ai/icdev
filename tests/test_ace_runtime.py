@@ -97,7 +97,7 @@ def _fake_loader_cls(steps):
             pass
 
         def get_role(self, role_id):
-            return types.SimpleNamespace(steps=list(steps))
+            return types.SimpleNamespace(steps=list(steps), communication={})
 
     return _Loader
 
@@ -326,15 +326,18 @@ def test_controller_launch_returns_instance_id(ace_db, monkeypatch):
     assert captured["fn"] == ctrl._run
     assert captured["args"][0] == instance_id
 
-    # _run never executed → no row was written (proves it didn't block on the work).
+    # launch() synchronously writes a 'pending' stub row before submitting the
+    # executor task — proves it doesn't block on the full pipeline but does
+    # ensure the instance is immediately visible to status checks.
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT id FROM ace_instances WHERE id = ?", (instance_id,)
+            "SELECT id, state FROM ace_instances WHERE id = ?", (instance_id,)
         ).fetchone()
     finally:
         conn.close()
-    assert row is None
+    assert row is not None
+    assert row[1] == "pending"
 
     # --- Phase 2: drive the run synchronously, frozen at assembling ---
     class _FakeClassifier:
