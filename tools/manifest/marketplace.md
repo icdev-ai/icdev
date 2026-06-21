@@ -30,3 +30,10 @@
 | Module Runtime | tools/marketplace/module_runtime.py | Module gating runtime (D-MKT-S4) | (library) | is_module_enabled() |
 | Token Store | tools/marketplace/token_store.py | Local JSON token cache (D-MKT-S4) | (library) | Token management |
 
+## AAC Skill Pack (FORGE Marketplace)
+| Spec / Tool | File | Description | Input | Output |
+|-------------|------|-------------|-------|--------|
+| AAC Skill Pack Spec | docs/marketplace/aac-skill-pack-spec.md | Bundle format spec for framework-specific AAC rule packs (manifest, Semgrep rules, pattern catalog, guardrails) | (documentation) | Format definition |
+| AAC Pack Validator | tools/marketplace/aac_pack_validator.py | Validate AAC Skill Pack manifest, rules, and extensions | --input, --strict | Validation report JSON |
+| AAC Pack Builder | tools/marketplace/aac_pack_builder.py | Sign and package AAC Skill Packs into `.aacsp` archives | --input, --sign, --output | Signed `.aacsp` file |
+
