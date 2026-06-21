@@ -2304,6 +2304,14 @@ def create_app(testing: bool = False) -> Flask:
     except Exception as _exc:
         app.logger.warning("GovLift blueprint failed to register: %s", _exc)
 
+    # ---- MCIP DAT (Diplomatic Activity Tracker) ----
+    try:
+        from tools.mcip.blueprint import bp as _dat_bp
+        app.register_blueprint(_dat_bp)
+        app.logger.info("MCIP DAT blueprint registered at /dat")
+    except Exception as _exc:
+        app.logger.warning("MCIP DAT blueprint failed to register: %s", _exc)
+
     # ---- AI Observatory (cross-canvas AI decision traceability) ----
     try:
         from tools.ai_observatory.blueprint import bp as _ao_bp
@@ -3344,6 +3352,7 @@ def create_app(testing: bool = False) -> Flask:
             "mission_canvas": ("tools.iqe.adapters.mission_canvas",  ["mission.sessions", "mission.twins", "mission.evidence", "mission.alerts"]),
             "govcon":         ("tools.iqe.adapters.govcon",           ["govcon.opportunities", "govcon.awards", "govcon.blackhat", "govcon.competitors"]),
             "security_zig":   ("tools.iqe.adapters.security",         ["zig.pillars", "zig.capabilities", "zig.activities", "zig.maturity", "zig.gaps", "zig.targets"]),
+            "dat":           ("tools.iqe.adapters.mcip",           ["dat.events", "dat.dti_history"]),
         }
 
         data = flask_request.get_json(silent=True) or {}

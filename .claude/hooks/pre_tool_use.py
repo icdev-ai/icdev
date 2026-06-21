@@ -510,6 +510,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ace_trust_ledger",
         # DIC View Log — document access events for anomaly detection (aiify-opp-105, NIST AU)
         "dic_doc_views",
+        # MCIP DAT — DTI score snapshots (NIST AU-2, SI-4 — append-only scoring audit trail)
+        "mcip_dti_scores",
     ]
 
     if tool_name == "Bash":
