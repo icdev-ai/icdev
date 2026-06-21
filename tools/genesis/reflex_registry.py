@@ -70,6 +70,7 @@ REGISTRY: List[ReflexEntry] = [
     ReflexEntry("foundry_cycle",              DOMAIN, 12.0,
                 "ACF: run one Autonomous Capability Foundry cycle (harvest→synth→novelty-gate→"
                 "score→CoD→SIPA→seed); clean no-op when ICDEV_FOUNDRY_ENABLED is off"),
+    ReflexEntry("mcip_dti_scorer",            DOMAIN, 6.0,  "MCIP DAT — compute and persist Diplomatic Tension Index every 6 h"),
 
     # ── SUPPORT ───────────────────────────────────────────────────────────────
     ReflexEntry("audit",       SUPPORT, 6.0,  "Compliance and security audit sweep"),

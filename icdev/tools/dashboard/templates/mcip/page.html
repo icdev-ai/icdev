@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}DAT — Diplomatic Activity Tracker{% endblock %}
+{% block content %}
+{# CUI // SP-CTI #}
+<div style="background:#7c0000;color:#fff;text-align:center;padding:4px 0;font-size:11px;font-weight:700;letter-spacing:1px;margin-bottom:0;">
+  CUI // SP-CTI
+</div>
+
+<style>
+  .dat-hero{padding:28px 32px 12px;border-bottom:1px solid #1e293b;}
+  .dat-hero h1{margin:0 0 4px;font-size:1.6rem;color:#eaeaea;}
+  .dat-hero p{margin:0;color:#94a3b8;font-size:.9rem;}
+  .dat-cards{display:flex;gap:16px;padding:20px 32px;flex-wrap:wrap;}
+  .dat-card{background:#0f1e35;border:1px solid #1e3a5f;border-radius:8px;padding:18px 22px;min-width:160px;flex:1;}
+  .dat-card .label{font-size:.72rem;color:#64748b;text-transform:uppercase;letter-spacing:.06em;}
+  .dat-card .value{font-size:2rem;font-weight:700;margin-top:4px;color:#eaeaea;}
+  .dat-card .sub{font-size:.78rem;color:#94a3b8;margin-top:2px;}
+  .dat-gauge{font-size:3.5rem;font-weight:800;}
+  .dat-section{padding:0 32px 24px;}
+  .dat-section h2{font-size:1rem;color:#a78bfa;text-transform:uppercase;letter-spacing:.08em;margin-bottom:12px;}
+  .dat-table{width:100%;border-collapse:collapse;font-size:.82rem;}
+  .dat-table th{text-align:left;padding:6px 10px;color:#64748b;border-bottom:1px solid #1e293b;font-weight:500;}
+  .dat-table td{padding:6px 10px;border-bottom:1px solid #0f1e35;color:#cbd5e1;}
+  .dat-table tr:hover td{background:#0f1e35;}
+  .band-low{color:#10b981;} .band-moderate{color:#f59e0b;} .band-high{color:#e94560;}
+  .src-badge{display:inline-block;border-radius:3px;padding:1px 6px;font-size:.72rem;font-weight:600;}
+  svg.trend-chart{width:100%;height:120px;display:block;}
+  .iqe-wrap{padding:0 32px 28px;}
+</style>
+
+<div class="dat-hero">
+  <h1>Diplomatic Activity Tracker (DAT)</h1>
+  <p>Diplomatic Tension Index updated every {{ update_interval_h }} hours &mdash; synthesized from
+  State Dept cable traffic, UNSC meeting schedules, and back-channel metadata.</p>
+</div>
+
+{# ── Stat cards ── #}
+<div class="dat-cards">
+  <div class="dat-card" id="card-dti">
+    <div class="label">Diplomatic Tension Index</div>
+    <div class="value dat-gauge band-{{ dti_band }}">{{ dti_score|round(1) }}</div>
+    <div class="sub band-{{ dti_band }}">{{ dti_band|upper }}</div>
+  </div>
+  <div class="dat-card">
+    <div class="label">Events Ingested (48 h)</div>
+    <div class="value" style="color:#a78bfa;">{{ recent_events|length }}</div>
+    <div class="sub">across all sources</div>
+  </div>
+  <div class="dat-card">
+    <div class="label">DTI Snapshots (48 h)</div>
+    <div class="value" style="color:#06b6d4;">{{ dti_history|length }}</div>
+    <div class="sub">computed cycles</div>
+  </div>
+  <div class="dat-card">
+    <div class="label">Last Computed</div>
+    <div class="value" style="font-size:1rem;padding-top:8px;color:#eaeaea;">
+      {% if current_dti %}{{ current_dti.computed_at[:16]|replace('T',' ') }} Z{% else %}—{% endif %}
+    </div>
+    <div class="sub">UTC</div>
+  </div>
+</div>
+
+{# ── DTI Trend chart ── #}
+{% if dti_history %}
+<div class="dat-section">
+  <h2>DTI Trend — Last 48 Hours</h2>
+  <svg class="trend-chart" id="dti-trend" viewBox="0 0 800 120" preserveAspectRatio="none"></svg>
+</div>
+{% endif %}
+
+{# ── Sub-score breakdown ── #}
+{% if current_dti %}
+<div class="dat-section">
+  <h2>Source Sub-Scores</h2>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;">
+    {% for src in source_types %}
+    <div class="dat-card" style="min-width:140px;max-width:200px;">
+      <div class="label" style="color:{{ source_colors[src] }};">{{ source_labels[src] }}</div>
+      <div class="value" style="font-size:1.6rem;color:{{ source_colors[src] }};">
+        {% if src == 'cable_traffic' %}{{ current_dti.cable_sub|round(1) }}
+        {% elif src == 'unsc_schedule' %}{{ current_dti.unsc_sub|round(1) }}
+        {% else %}{{ current_dti.backchannel_sub|round(1) }}{% endif %}
+      </div>
+      <div class="sub">weight {{ ({"cable_traffic":0.45,"unsc_schedule":0.30,"backchannel_metadata":0.25})[src] }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{# ── Event feed ── #}
+<div class="dat-section">
+  <h2>Recent DAT Events</h2>
+  {% if recent_events %}
+  <table class="dat-table">
+    <thead>
+      <tr>
+        <th>Source</th><th>Sender</th><th>Recipient</th>
+        <th>Tension Signal</th><th>Classification</th><th>Ingested</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for ev in recent_events[:50] %}
+      <tr>
+        <td>
+          <span class="src-badge" style="background:{{ source_colors.get(ev.source_type,'#334155') }}22;color:{{ source_colors.get(ev.source_type,'#94a3b8') }};">
+            {{ source_labels.get(ev.source_type, ev.source_type) }}
+          </span>
+        </td>
+        <td>{{ ev.sender }}</td>
+        <td>{{ ev.recipient }}</td>
+        <td>
+          {% set sig = ev.tension_signal|float %}
+          <span class="{% if sig >= 0.67 %}band-high{% elif sig >= 0.34 %}band-moderate{% else %}band-low{% endif %}">
+            {{ (sig * 100)|round(1) }}
+          </span>
+        </td>
+        <td style="color:#64748b;font-size:.75rem;">{{ ev.classification }}</td>
+        <td style="color:#64748b;">{{ ev.ingested_at[:16]|replace('T',' ') }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p style="color:#475569;">No events ingested yet. POST to <code>/api/dat/events</code> to begin.</p>
+  {% endif %}
+</div>
+
+{# ── IQE Query Widget ── #}
+<div class="iqe-wrap">
+  {% include "includes/iqe_query_widget.html" ignore missing %}
+</div>
+
+<script>
+(function(){
+  var history = {{ dti_history | tojson | safe }};
+  if(!history || history.length < 2) return;
+  var pts = history.slice().reverse();
+  var scores = pts.map(function(r){ return parseFloat(r.score)||0; });
+  var min = Math.min.apply(null,scores), max = Math.max.apply(null,scores)||100;
+  var range = max - min || 1;
+  var W = 800, H = 120, pad = 8;
+  var xs = pts.map(function(_,i){ return pad + (i/(pts.length-1))*(W-2*pad); });
+  var ys = scores.map(function(s){ return H - pad - ((s-min)/range)*(H-2*pad); });
+  var d = 'M'+xs[0]+' '+ys[0];
+  for(var i=1;i<xs.length;i++) d += ' L'+xs[i]+' '+ys[i];
+  var fill = d + ' L'+xs[xs.length-1]+' '+H+' L'+xs[0]+' '+H+' Z';
+  var svg = document.getElementById('dti-trend');
+  if(!svg) return;
+  svg.innerHTML =
+    '<defs><linearGradient id="dtg" x1="0" y1="0" x2="0" y2="1">'
+    +'<stop offset="0%" stop-color="#a78bfa" stop-opacity="0.35"/>'
+    +'<stop offset="100%" stop-color="#a78bfa" stop-opacity="0"/>'
+    +'</linearGradient></defs>'
+    +'<path d="'+fill+'" fill="url(#dtg)"/>'
+    +'<path d="'+d+'" stroke="#a78bfa" stroke-width="2" fill="none"/>';
+})();
+</script>
+
+<div style="background:#7c0000;color:#fff;text-align:center;padding:4px 0;font-size:11px;font-weight:700;letter-spacing:1px;margin-top:24px;">
+  CUI // SP-CTI
+</div>
+{% endblock %}

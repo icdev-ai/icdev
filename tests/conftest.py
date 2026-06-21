@@ -1794,6 +1794,236 @@ CREATE TABLE IF NOT EXISTS gate_failures (
     classification  TEXT    NOT NULL DEFAULT 'CUI // SP-CTI',
     created_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS ohc_experiment_runs (
+    id TEXT PRIMARY KEY,
+    experiment_id TEXT NOT NULL,
+    run_name TEXT,
+    status TEXT NOT NULL DEFAULT 'running',
+    start_time TEXT NOT NULL DEFAULT (datetime('now')),
+    end_time TEXT,
+    duration_ms INTEGER,
+    params TEXT DEFAULT '{}',
+    metrics TEXT DEFAULT '{}',
+    tags TEXT DEFAULT '{}',
+    artifact_uri TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS ohc_model_registry (
+    id TEXT PRIMARY KEY,
+    model_name TEXT NOT NULL,
+    version TEXT NOT NULL DEFAULT '1',
+    stage TEXT NOT NULL DEFAULT 'none',
+    framework TEXT,
+    run_id TEXT,
+    artifact_uri TEXT,
+    description TEXT,
+    metrics TEXT DEFAULT '{}',
+    tags TEXT DEFAULT '{}',
+    promoted_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS ohc_dataset_versions (
+    id TEXT PRIMARY KEY,
+    dataset_name TEXT NOT NULL,
+    version TEXT NOT NULL DEFAULT '1',
+    path TEXT,
+    size_bytes INTEGER,
+    hash_sha256 TEXT,
+    drift_flag INTEGER NOT NULL DEFAULT 0,
+    drift_score REAL,
+    schema_json TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS ohc_adapter_status (
+    adapter_name TEXT PRIMARY KEY,
+    adapter_type TEXT,
+    domain TEXT,
+    available INTEGER NOT NULL DEFAULT 0,
+    latency_ms REAL,
+    version TEXT,
+    error TEXT,
+    details TEXT DEFAULT '{}',
+    last_checked TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS ohc_adapter_health_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    adapter_name TEXT NOT NULL,
+    available INTEGER NOT NULL DEFAULT 0,
+    latency_ms REAL,
+    error TEXT,
+    details TEXT DEFAULT '{}',
+    checked_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS ohc_data_drift_events (
+    id TEXT PRIMARY KEY,
+    dataset_name TEXT NOT NULL,
+    reference_path TEXT,
+    current_path TEXT,
+    drift_detected INTEGER NOT NULL DEFAULT 0,
+    drift_score REAL,
+    feature_drift_json TEXT DEFAULT '{}',
+    report_json TEXT DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS govlift_workloads (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    workload_type TEXT,
+    os_name TEXT,
+    os_version TEXT,
+    environment TEXT DEFAULT 'production',
+    ip_address TEXT,
+    cpu_cores INTEGER,
+    memory_gb REAL,
+    storage_tb REAL,
+    classification TEXT DEFAULT 'CUI',
+    risk_level TEXT DEFAULT 'medium',
+    migration_status TEXT DEFAULT 'discovered',
+    wave_id TEXT,
+    last_scanned TEXT,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS govlift_waves (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    sequence_num INTEGER DEFAULT 1,
+    status TEXT DEFAULT 'planned',
+    planned_start TEXT,
+    planned_end TEXT,
+    workload_count INTEGER DEFAULT 0,
+    notes TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS govlift_migrations (
+    id TEXT PRIMARY KEY,
+    workload_id TEXT NOT NULL,
+    wave_id TEXT,
+    status TEXT DEFAULT 'pending',
+    started_at TEXT,
+    completed_at TEXT,
+    executor_log TEXT,
+    pre_check_passed INTEGER,
+    post_check_passed INTEGER,
+    rollback_deadline TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS govlift_rollback_events (
+    id TEXT PRIMARY KEY,
+    migration_id TEXT NOT NULL,
+    workload_id TEXT NOT NULL,
+    status TEXT DEFAULT 'initiated',
+    initiated_at TEXT NOT NULL,
+    deadline_at TEXT NOT NULL,
+    completed_at TEXT,
+    reason TEXT DEFAULT '',
+    steps_log TEXT DEFAULT '[]',
+    sla_met INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS govlift_stig_checks (
+    id TEXT PRIMARY KEY,
+    workload_id TEXT NOT NULL,
+    stig_benchmark TEXT,
+    check_id TEXT,
+    check_name TEXT,
+    severity TEXT DEFAULT 'cat2',
+    status TEXT DEFAULT 'not_reviewed',
+    finding TEXT,
+    remediation TEXT,
+    checked_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS govlift_audit_log (
+    id TEXT PRIMARY KEY,
+    user_id TEXT,
+    action TEXT NOT NULL,
+    resource_type TEXT,
+    resource_id TEXT,
+    details TEXT DEFAULT '{}',
+    classification TEXT DEFAULT 'CUI',
+    ip_address TEXT,
+    session_id TEXT,
+    timestamp TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS govlift_integrations (
+    id TEXT PRIMARY KEY,
+    system_name TEXT UNIQUE NOT NULL,
+    status TEXT DEFAULT 'disconnected',
+    endpoint TEXT,
+    last_sync TEXT,
+    sync_count INTEGER DEFAULT 0,
+    error_message TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS govlift_rollback_events (
+    id TEXT PRIMARY KEY,
+    migration_id TEXT NOT NULL,
+    workload_id TEXT NOT NULL,
+    status TEXT DEFAULT 'initiated',
+    initiated_at TEXT NOT NULL,
+    deadline_at TEXT NOT NULL,
+    completed_at TEXT,
+    reason TEXT DEFAULT '',
+    steps_log TEXT DEFAULT '[]',
+    sla_met INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS llm_chain_telemetry (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT NOT NULL,
+    function TEXT NOT NULL,
+    chain_mode TEXT NOT NULL,
+    models_used TEXT NOT NULL DEFAULT '[]',
+    rounds TEXT NOT NULL DEFAULT '{}',
+    input_tokens INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    cost_usd REAL DEFAULT 0.0,
+    duration_ms INTEGER DEFAULT 0,
+    final_model_id TEXT,
+    stop_reason TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS mcip_dat_events (
+    id TEXT PRIMARY KEY,
+    source_type TEXT NOT NULL CHECK(source_type IN ('cable_traffic','unsc_schedule','backchannel_metadata')),
+    content_hash TEXT NOT NULL,
+    sender TEXT NOT NULL DEFAULT 'unknown',
+    recipient TEXT NOT NULL DEFAULT 'unknown',
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tension_signal REAL NOT NULL DEFAULT 0.5 CHECK(tension_signal >= 0.0 AND tension_signal <= 1.0),
+    ingested_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS mcip_dti_scores (
+    id TEXT PRIMARY KEY,
+    score REAL NOT NULL DEFAULT 0.0,
+    cable_sub REAL NOT NULL DEFAULT 0.0,
+    unsc_sub REAL NOT NULL DEFAULT 0.0,
+    backchannel_sub REAL NOT NULL DEFAULT 0.0,
+    event_count INTEGER NOT NULL DEFAULT 0,
+    computed_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_chain_telemetry_function ON llm_chain_telemetry (function);
+CREATE INDEX IF NOT EXISTS idx_chain_telemetry_created ON llm_chain_telemetry (created_at);
 """
 
 
