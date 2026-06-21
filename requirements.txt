@@ -60,6 +60,9 @@ networkx>=3.2            # Graph analysis for topology NL query engine
 # === Infrastructure ===
 # boto3>=1.34             # AWS SDK for Bedrock/GovCloud (install when needed)
 
+# === Language Parsers ===
+javalang>=0.13.0         # Java AST parser — fallback pattern detection for .java files (air-gap safe)
+
 # === Monitoring ===
 requests>=2.31           # HTTP client for ELK/Splunk/Prometheus APIs
 
