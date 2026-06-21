@@ -37,6 +37,8 @@ _DEFAULTS: dict[str, Any] = {
     "enhanced_path_py_sample": 10,
     "doc_sample": 5,
     "crosswalk_py_sample": 30,
+    "nlp_primary_scan_limit": 20,
+    "nlp_primary_doc_scan_limit": 10,
 }
 
 
@@ -65,6 +67,12 @@ def _load_thresholds() -> dict[str, Any]:
             "enhanced_path_py_sample": int(cfg.get("enhanced_path_py_sample", _DEFAULTS["enhanced_path_py_sample"])),
             "doc_sample": int(cfg.get("doc_sample", _DEFAULTS["doc_sample"])),
             "crosswalk_py_sample": int(cfg.get("crosswalk_py_sample", _DEFAULTS["crosswalk_py_sample"])),
+            "nlp_primary_scan_limit": int(
+                cfg.get("nlp_primary_scan_limit", _DEFAULTS["nlp_primary_scan_limit"])
+            ),
+            "nlp_primary_doc_scan_limit": int(
+                cfg.get("nlp_primary_doc_scan_limit", _DEFAULTS["nlp_primary_doc_scan_limit"])
+            ),
         }
     except Exception:  # noqa: BLE001
         return dict(_DEFAULTS)
@@ -138,6 +146,12 @@ def _check_control_ids_in_code(repo: pathlib.Path) -> CriterionResult:
     # Enhanced path: NLP for natural-language control references missed by regex
     min_confidence = thresholds["nlp_extractor_confidence_threshold"]
     for f in py_files[:thresholds["enhanced_path_py_sample"]]:
+    thresholds = _load_thresholds()
+    min_confidence = thresholds["nlp_extractor_confidence_threshold"]
+
+    # Primary path: NLP extraction for natural-language control references in user content
+    nlp_limit = thresholds["nlp_primary_scan_limit"]
+    for f in py_files[:nlp_limit]:
         content = f.read_text(encoding="utf-8", errors="replace")
         result = _nlp_extract_nist_refs(
             content,
@@ -148,6 +162,16 @@ def _check_control_ids_in_code(repo: pathlib.Path) -> CriterionResult:
             refs = result.get("refs", [])
             ref_str = ", ".join(refs[:3]) if refs else "detected reference"
             return CriterionResult(cid, True, f"NIST control IDs detected via NLP in {f.name}: {ref_str}")
+
+    # Fallback path: regex when NLP is unavailable or exhausted its scan window
+    hits = []
+    for f in py_files[:50]:
+        content = f.read_text(encoding="utf-8", errors="replace")
+        if re.search(_NIST_CONTROL_PATTERN, content):
+            hits.append(f.name)
+    if hits:
+        return CriterionResult(cid, True,
+                               f"NIST 800-53 control IDs found in {len(hits)} file(s): {', '.join(hits[:5])}")
 
     return CriterionResult(cid, False, "No NIST 800-53 control IDs found in Python source files.",
                            "Reference NIST control IDs (e.g. # NIST: AC-2, AU-12) in relevant code sections.")
@@ -160,17 +184,13 @@ def _check_nist_in_docs(repo: pathlib.Path) -> CriterionResult:
         + _glob_files(repo, "*.md")
         + _glob_files(repo, "docs/**/*.rst")
     )
-
-    # Fast path: regex detection
-    for f in doc_files:
-        content = f.read_text(encoding="utf-8", errors="replace")
-        if _search(content, _NIST_DOC_PATTERN) or re.search(_NIST_CONTROL_PATTERN, content):
-            return CriterionResult(cid, True, f"NIST 800-53 reference found in docs: {f.name}")
-
-    # Enhanced path: NLP for natural-language NIST references missed by regex
     thresholds = _load_thresholds()
     min_confidence = thresholds["nlp_extractor_confidence_threshold"]
     for f in doc_files[:thresholds["doc_sample"]]:
+
+    # Primary path: NLP extraction for natural-language NIST references in user content
+    doc_limit = thresholds["nlp_primary_doc_scan_limit"]
+    for f in doc_files[:doc_limit]:
         content = f.read_text(encoding="utf-8", errors="replace")
         result = _nlp_extract_nist_refs(
             content,
@@ -181,6 +201,12 @@ def _check_nist_in_docs(repo: pathlib.Path) -> CriterionResult:
             refs = result.get("refs", [])
             ref_str = ", ".join(refs[:3]) if refs else "natural language reference"
             return CriterionResult(cid, True, f"NIST 800-53 reference detected via NLP in {f.name}: {ref_str}")
+
+    # Fallback path: regex when NLP is unavailable or exhausted its scan window
+    for f in doc_files:
+        content = f.read_text(encoding="utf-8", errors="replace")
+        if _search(content, _NIST_DOC_PATTERN) or re.search(_NIST_CONTROL_PATTERN, content):
+            return CriterionResult(cid, True, f"NIST 800-53 reference found in docs: {f.name}")
 
     return CriterionResult(cid, False, "No NIST 800-53 references in documentation.",
                            "Add NIST 800-53 control mappings to architecture or compliance documentation.")
