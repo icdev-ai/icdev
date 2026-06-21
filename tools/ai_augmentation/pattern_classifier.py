@@ -25,6 +25,7 @@ from __future__ import annotations
 import ast
 import json
 import pathlib
+import re
 import subprocess
 import shutil
 from typing import Any
@@ -317,9 +318,13 @@ def _ast_detect_file(file_path: str) -> list[dict]:
     return raw
 
 
+def _cs_detect_file(file_path: str) -> list[dict]:
+    """C# pattern detection stub — not yet implemented."""
+    return []
+
+
 def _detect_via_ast_fallback(target_path: str) -> list[dict]:
-    """AST-based fallback for Python and Java files when Semgrep is unavailable."""
-    """AST-based fallback for Python/C#/TypeScript files when Semgrep is unavailable."""
+    """AST-based fallback for Python/Java/C#/TypeScript files when Semgrep is unavailable."""
     p = pathlib.Path(target_path)
     if p.is_file():
         suffix = p.suffix.lower()
@@ -327,21 +332,16 @@ def _detect_via_ast_fallback(target_path: str) -> list[dict]:
             return _ast_detect_file(target_path)
         if suffix == ".java":
             return _java_detect_file(target_path)
+        if suffix == ".cs":
+            return _cs_detect_file(target_path)
+        if suffix in (".ts", ".tsx", ".js", ".jsx"):
+            return _ts_detect_file(target_path)
         return []
     results: list[dict] = []
     for py_file in sorted(p.rglob("*.py")):
         results.extend(_ast_detect_file(str(py_file)))
     for java_file in sorted(p.rglob("*.java")):
         results.extend(_java_detect_file(str(java_file)))
-        if suffix == ".cs":
-            return _cs_detect_file(target_path)
-        if suffix in (".ts", ".tsx", ".js", ".jsx"):
-            return _ts_detect_file(target_path)
-        return []
-    # Directory: walk recursively for supported file types.
-    results: list[dict] = []
-    for py_file in sorted(p.rglob("*.py")):
-        results.extend(_ast_detect_file(str(py_file)))
     for cs_file in sorted(p.rglob("*.cs")):
         results.extend(_cs_detect_file(str(cs_file)))
     for ts_file in sorted(p.rglob("*.ts")):

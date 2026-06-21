@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import importlib
 
-import pytest
 
 orch = importlib.import_module("tools.document_intelligence.ingest_orchestrator")
 detect_lifecycle_assignment_anomaly = orch.detect_lifecycle_assignment_anomaly

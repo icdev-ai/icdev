@@ -6,7 +6,6 @@ with GovCon canvas tools (SWOT analysis, ICP profiling, battlecard generation).
 """
 
 import json
-import logging
 from tools.logging.icdev_logger import get_logger
 import sys
 from pathlib import Path

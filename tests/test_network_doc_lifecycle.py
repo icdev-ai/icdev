@@ -18,12 +18,10 @@ ICDEV_STORAGE_BACKEND=sqlite). No network I/O, no LLM calls.
 from __future__ import annotations
 
 import json
-import os
 import sqlite3
 import sys
-import types
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
@@ -304,7 +302,7 @@ class TestAcoicIntegration:
 
     def test_emit_drift_events_from_report(self, acoic_db):
         conn, db_path = acoic_db
-        from tools.network.drift_detector import detect_drift, DriftReport, DriftItem
+        from tools.network.drift_detector import DriftReport, DriftItem
         # Build a minimal report with two items
         report = DriftReport(
             topology_id=TOPOLOGY_ID,

@@ -6535,15 +6535,6 @@ TOOL_REGISTRY = {
             "Reduces token usage 60-95% via SmartCrusher (text) or CodeCompressor (code). "
             "Uses headroom library when installed; falls back to deterministic built-in compressor. "
             "All compression is reversible — original messages preserved via decompression_map."
-    # ── Document Intelligence Canvas (DIC) ──────────────────────────────────
-    "dic_ingest": {
-        "category": "dic",
-        "module": "tools.document_intelligence.gap_handlers",
-        "handler": "handle_dic_ingest",
-        "description": (
-            "Ingest a URL or plain text into a DIC collection for BM25+KG search and "
-            "AI output generation (study guide, FAQ, timeline, audio). "
-            "Returns {job_id, doc_id, collection_id, status}."
         ),
         "input_schema": {
             "type": "object",
@@ -6572,6 +6563,19 @@ TOOL_REGISTRY = {
             "required": ["messages"],
         },
     },
+    # ── Document Intelligence Canvas (DIC) ──────────────────────────────────
+    "dic_ingest": {
+        "category": "dic",
+        "module": "tools.document_intelligence.gap_handlers",
+        "handler": "handle_dic_ingest",
+        "description": (
+            "Ingest a URL or plain text into a DIC collection for BM25+KG search and "
+            "AI output generation (study guide, FAQ, timeline, audio). "
+            "Returns {job_id, doc_id, collection_id, status}."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
                 "url": {"type": "string", "description": "URL to ingest (mutually exclusive with text)"},
                 "text": {"type": "string", "description": "Plain text content to ingest"},
                 "title": {"type": "string", "description": "Document title (optional)"},
@@ -7075,7 +7079,8 @@ RESOURCE_REGISTRY = {
     # ============================================================
     # INTELLIGENCE (3 tools) — JISE Portal Data Feed
     # NIST 800-53: SA-11, CM-3, AC-3, AU-2
-    # =====================================================    "jise_get_portal_data": {
+    # =====================================================
+    "jise_get_portal_data": {
         "category": "intelligence",
         "module": "tools.intelligence.jise_portal",
         "handler": "get_jise_portal_data",
@@ -7099,7 +7104,10 @@ RESOURCE_REGISTRY = {
                     "default": 200,
                     "minimum": 1,
                     "maximum": 1000,
-=======
+                },
+            },
+        },
+    },
     # CONFLICT MESH (3 tools)
     # ============================================================
     "conflict_mesh_etl": {
@@ -7407,7 +7415,8 @@ RESOURCE_REGISTRY = {
         "input_schema": {
             "type": "object",
             "properties": {},
-=======
+        },
+    },
     "conflict_mesh_predict": {
         "category": "conflict_mesh",
         "module": "tools.conflict_mesh.escalation_predictor",

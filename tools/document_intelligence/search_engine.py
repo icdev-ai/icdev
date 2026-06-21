@@ -1765,19 +1765,6 @@ class DICSearchEngine:
             llm_used=llm_used,
         )
 
-    def classify_query_intent(self, query: str) -> "DICQueryIntent":
-        """Classify a search query's intent to recommend the optimal DIC retrieval strategy.
-
-        DIC analog of paperless's combined ``DocumentSearchFilter`` — instead of
-        requiring the caller to manually configure fulltext search mode, query
-        expansion, metadata filters, and answer synthesis as separate steps, the
-        LLM assesses the query's *intent* and recommends which DIC capabilities
-        to apply as a structured decision object (aiify-opp-28).
-
-        The model outputs a schema-constrained JSON object of boolean flags and
-        an intent type. It never answers the query, never invents document
-        content, and always degrades to a safe all-False default when unavailable
-        (air-gap safe).
     def filter_query(self, natural_query: str) -> "DICFilterQuery":
         """Parse natural language into structured document search filters.
 

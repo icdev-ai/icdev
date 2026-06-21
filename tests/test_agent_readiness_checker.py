@@ -9,9 +9,7 @@ Covers:
 from __future__ import annotations
 
 import pathlib
-import tempfile
 
-import pytest
 
 from tools.ai_augmentation.agent_readiness.checker import (
     _DEFAULT_ANOMALY,

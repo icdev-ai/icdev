@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import importlib
 
-import pytest
 
 orch = importlib.import_module("tools.document_intelligence.ingest_orchestrator")
 detect_consumer_outcome_anomaly = orch.detect_consumer_outcome_anomaly

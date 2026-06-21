@@ -8,15 +8,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
-import sys
-import tempfile
-from pathlib import Path
-from types import ModuleType
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import importlib
 
-import pytest
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
