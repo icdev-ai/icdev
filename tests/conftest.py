@@ -1697,6 +1697,636 @@ CREATE TABLE IF NOT EXISTS genesis_phase_log (
     phase        TEXT NOT NULL,
     status       TEXT NOT NULL,
     started_at   TEXT,
+CREATE TABLE IF NOT EXISTS voc_documents (
+    id TEXT PRIMARY KEY,
+    filename TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    ingested_at TEXT NOT NULL,
+    word_count INTEGER,
+    job_statement_count INTEGER,
+    classification TEXT DEFAULT 'CUI // SP-CTI'
+);
+CREATE TABLE IF NOT EXISTS voc_job_statements (
+    id TEXT PRIMARY KEY,
+    document_id TEXT NOT NULL,
+    raw_text TEXT NOT NULL,
+    job_category TEXT,
+    frequency INTEGER,
+    severity_score REAL,
+    strategic_fit_score REAL,
+    composite_score REAL,
+    creative_gap_id TEXT,
+    analyzed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_voc_score ON voc_job_statements(composite_score);
+CREATE INDEX IF NOT EXISTS idx_voc_document_id ON voc_job_statements(document_id);
+CREATE INDEX IF NOT EXISTS idx_voc_category ON voc_job_statements(job_category);
+
+-- FathomDesk analyst panel decision audit (migration 078, SEC Rule 17a-4 / NIST AU)
+CREATE TABLE IF NOT EXISTS ad_decision_audit (
+    id                  TEXT PRIMARY KEY,
+    ticker              TEXT NOT NULL,
+    as_of_date          TEXT NOT NULL,
+    fundamentals_score  REAL,
+    technical_score     REAL,
+    sentiment_score     REAL,
+    macro_score         REAL,
+    bull_confidence     REAL,
+    bear_confidence     REAL,
+    final_direction     TEXT,
+    final_confidence    REAL,
+    reasoning           TEXT,
+    venue               TEXT,
+    instrument_type     TEXT,
+    mifid_timestamp     TEXT,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ad_decision_audit_ticker ON ad_decision_audit(ticker);
+CREATE INDEX IF NOT EXISTS idx_ad_decision_audit_date   ON ad_decision_audit(as_of_date);
+CREATE INDEX IF NOT EXISTS idx_ad_decision_audit_dir    ON ad_decision_audit(final_direction);
+
+-- FathomDesk backtest result store (migration 057, NIST AU — append-only)
+CREATE TABLE IF NOT EXISTS ad_backtest_runs (
+    id                TEXT PRIMARY KEY,
+    ticker            TEXT NOT NULL,
+    strategy_id       TEXT NOT NULL,
+    backtest_start    TEXT NOT NULL,
+    backtest_end      TEXT NOT NULL,
+    sharpe_ratio      REAL,
+    calmar_ratio      REAL,
+    max_drawdown_pct  REAL,
+    win_rate          REAL,
+    trade_count       INT,
+    triggered_by      TEXT,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ad_backtest_runs_ticker      ON ad_backtest_runs(ticker);
+CREATE INDEX IF NOT EXISTS idx_ad_backtest_runs_strategy    ON ad_backtest_runs(strategy_id);
+CREATE INDEX IF NOT EXISTS idx_ad_backtest_runs_created_at  ON ad_backtest_runs(created_at);
+
+-- WNE session and artifact tables (migration 084)
+CREATE TABLE IF NOT EXISTS wne_sessions (
+    id TEXT PRIMARY KEY,
+    workflow_id TEXT,
+    template_slug TEXT,
+    status TEXT CHECK(status IN (
+        'collecting','confirming','generating','reviewing','done','failed'
+    )),
+    context_json TEXT,
+    chat_context_id TEXT,
+    org_name TEXT,
+    audience TEXT,
+    program_name TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_wne_sessions_status ON wne_sessions(status);
+
+CREATE TABLE IF NOT EXISTS wne_artifacts (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES wne_sessions(id),
+    artifact_type TEXT CHECK(artifact_type IN (
+        'exec_brief','coa_comparison','budget_table',
+        'roi_analysis','slide_outline','zip_bundle'
+    )),
+    content TEXT,
+    generated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_wne_artifacts_session_id ON wne_artifacts(session_id);
+
+CREATE TABLE IF NOT EXISTS aisg_wizard_sessions (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_token       TEXT UNIQUE NOT NULL,
+    use_case            TEXT,
+    compliance_level    TEXT,
+    tech_stack          TEXT,
+    ai_maturity         TEXT CHECK (ai_maturity IN ('none', 'pilot', 'scaling')),
+    cloud_provider      TEXT,
+    generated_args_json TEXT,
+    created_at          TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS genesis_reflex_log (
+    id           TEXT PRIMARY KEY,
+    reflex_name  TEXT NOT NULL,
+    ran_at       TEXT NOT NULL,
+    result_json  TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_grl_reflex_name ON genesis_reflex_log (reflex_name);
+CREATE INDEX IF NOT EXISTS idx_grl_ran_at       ON genesis_reflex_log (ran_at);
+
+CREATE TABLE IF NOT EXISTS mcp_tool_registry (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    name              TEXT NOT NULL,
+    source            TEXT NOT NULL,
+    capabilities_json TEXT,
+    updated_at        TEXT NOT NULL,
+    UNIQUE (name, source)
+);
+CREATE INDEX IF NOT EXISTS idx_mcp_tr_name   ON mcp_tool_registry (name);
+CREATE INDEX IF NOT EXISTS idx_mcp_tr_source ON mcp_tool_registry (source);
+
+CREATE TABLE IF NOT EXISTS canvas_ai_decisions (
+    id            TEXT PRIMARY KEY,
+    canvas_type   TEXT NOT NULL,
+    record_id     TEXT,
+    decision_type TEXT NOT NULL,
+    decision      TEXT NOT NULL,
+    rationale     TEXT,
+    model_used    TEXT,
+    confidence    REAL,
+    alternatives  TEXT,
+    trace_id      TEXT,
+    span_id       TEXT,
+    actor         TEXT DEFAULT 'icdev-system',
+    project_id    TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at    TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE INDEX IF NOT EXISTS idx_cad_canvas_type ON canvas_ai_decisions (canvas_type);
+CREATE INDEX IF NOT EXISTS idx_cad_record_id   ON canvas_ai_decisions (record_id);
+CREATE INDEX IF NOT EXISTS idx_cad_trace_id    ON canvas_ai_decisions (trace_id);
+
+-- Ontology federation tables (tools/ontology/federation.py)
+CREATE TABLE IF NOT EXISTS ontology_classes (
+    id TEXT PRIMARY KEY,
+    domain TEXT NOT NULL,
+    label TEXT NOT NULL,
+    superclasses TEXT DEFAULT '[]',
+    canonical_id TEXT,
+    merged_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS ontology_properties (
+    id TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    domain_class TEXT,
+    range_class TEXT,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS ontology_alignments (
+    id TEXT PRIMARY KEY,
+    source TEXT NOT NULL,
+    target TEXT NOT NULL,
+    assertion TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS ontology_subclass_closure (
+    id TEXT PRIMARY KEY,
+    subclass TEXT NOT NULL,
+    superclass TEXT NOT NULL,
+    distance INTEGER DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS ontology_federation_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Security Framework (Phase 74 — sec-fnd)
+CREATE TABLE IF NOT EXISTS security_context_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    role TEXT,
+    clearance_level INTEGER,
+    compartments TEXT,
+    tenant_id TEXT,
+    classification TEXT,
+    auth_method TEXT,
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS abac_decisions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    policy_name TEXT,
+    decision TEXT NOT NULL,
+    subject TEXT,
+    resource TEXT,
+    action TEXT,
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS mac_violations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    event_type TEXT,
+    resource_classification TEXT,
+    action TEXT,
+    details TEXT,
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS rls_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    table_name TEXT NOT NULL,
+    action TEXT,
+    tenant_id TEXT,
+    details TEXT,
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS column_mask_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    table_name TEXT NOT NULL,
+    role TEXT,
+    masked_columns TEXT,
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS field_filter_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    schema_name TEXT,
+    role TEXT,
+    filtered_fields TEXT,
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Blockchain / GovChain (D-GC-1 through D-GC-11, migrations 149 + 151)
+CREATE TABLE IF NOT EXISTS source_citation_registry (
+    id TEXT PRIMARY KEY,
+    citation_type TEXT NOT NULL,
+    source_table TEXT NOT NULL,
+    source_record_id TEXT NOT NULL,
+    source_doc TEXT,
+    source_hash TEXT,
+    anchor_hash TEXT,
+    merkle_root TEXT,
+    blockchain_tx_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    project_id TEXT,
+    trust_score REAL DEFAULT 0.0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS govchain_pending_operations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    operation_type TEXT NOT NULL,
+    payload_hash TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Cross-Agency Data Transfer Audit (NIST AU-2, AU-9 — append-only)
+CREATE TABLE IF NOT EXISTS cross_agency_transfers (
+    id                  TEXT PRIMARY KEY,
+    transfer_id         TEXT NOT NULL,
+    event_type          TEXT NOT NULL CHECK(event_type IN (
+                            'initiated', 'completed', 'failed', 'rejected')),
+    source_agency       TEXT NOT NULL,
+    target_agency       TEXT NOT NULL,
+    data_type           TEXT,
+    data_classification TEXT NOT NULL DEFAULT 'CUI',
+    actor               TEXT NOT NULL DEFAULT '',
+    project_id          TEXT,
+    bytes_transferred   INTEGER,
+    checksum            TEXT,
+    duration_ms         INTEGER,
+    rejection_reason    TEXT,
+    error_code          TEXT,
+    details             TEXT,
+    occurred_at         TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cat_transfer_id ON cross_agency_transfers(transfer_id);
+CREATE INDEX IF NOT EXISTS idx_cat_occurred_at ON cross_agency_transfers(occurred_at);
+
+-- IL5 data ingestion log (30-second display SLA, CUI/IL5)
+CREATE TABLE IF NOT EXISTS il5_ingestion_log (
+    id                  TEXT PRIMARY KEY,
+    source_id           TEXT NOT NULL,
+    content_hash        TEXT NOT NULL,
+    classification      TEXT NOT NULL DEFAULT 'CUI',
+    impact_level        TEXT NOT NULL DEFAULT 'IL5',
+    ingested_at         TEXT NOT NULL,
+    source_published_at TEXT,
+    display_latency_s   REAL,
+    sla_met             INTEGER,
+    metadata            TEXT NOT NULL DEFAULT '{}'
+);
+
+-- Adversarial Data Validation Audit (NIST AU-9 — append-only)
+CREATE TABLE IF NOT EXISTS sg_adversarial_validation_audit (
+    id                  TEXT PRIMARY KEY,
+    timestamp           TEXT NOT NULL,
+    signal_id           TEXT NOT NULL,
+    source_type         TEXT,
+    status              TEXT NOT NULL,
+    issues              TEXT,
+    bias_score          REAL,
+    deepfake_score      REAL,
+    manipulation_score  REAL,
+    details             TEXT
+);
+
+CREATE TABLE IF NOT EXISTS sg_conflict_events (
+    id          TEXT NOT NULL PRIMARY KEY,
+    event_type  TEXT NOT NULL,
+    geometry    TEXT,
+    event_date  TEXT,
+    source      TEXT,
+    metadata    TEXT,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS conflict_predictions (
+    id               TEXT NOT NULL PRIMARY KEY,
+    event_id         TEXT NOT NULL,
+    source           TEXT,
+    prediction_date  TEXT,
+    escalation_risk  REAL NOT NULL,
+    signals          TEXT,
+    model_version    TEXT NOT NULL DEFAULT 'v1.0',
+    confidence       REAL,
+    created_at       TEXT NOT NULL
+);
+"""
+
+# ---------------------------------------------------------------------------
+# Minimal Platform DB schema (SaaS)
+# ---------------------------------------------------------------------------
+MINIMAL_PLATFORM_SCHEMA = """
+CREATE TABLE IF NOT EXISTS tenants (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    slug TEXT UNIQUE NOT NULL,
+    tier TEXT DEFAULT 'starter',
+    impact_level TEXT DEFAULT 'IL4',
+    status TEXT DEFAULT 'active',
+    settings TEXT DEFAULT '{}',
+    compartments TEXT DEFAULT '[]',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS users (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    email TEXT NOT NULL,
+    display_name TEXT,
+    role TEXT DEFAULT 'developer',
+    password_hash TEXT,
+    compartments TEXT DEFAULT '[]',
+    last_login TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+);
+
+CREATE TABLE IF NOT EXISTS api_keys (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    key_hash TEXT NOT NULL UNIQUE,
+    key_prefix TEXT NOT NULL,
+    scopes TEXT DEFAULT '["*"]',
+    is_active INTEGER DEFAULT 1,
+    expires_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+);
+
+CREATE TABLE IF NOT EXISTS subscriptions (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL UNIQUE,
+    tier TEXT NOT NULL DEFAULT 'starter',
+    status TEXT DEFAULT 'active',
+    started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+);
+
+CREATE TABLE IF NOT EXISTS usage_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id TEXT NOT NULL,
+    endpoint TEXT NOT NULL,
+    method TEXT NOT NULL,
+    status_code INTEGER,
+    response_time_ms INTEGER,
+    recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (tenant_id) REFERENCES tenants(id)
+);
+
+CREATE TABLE IF NOT EXISTS audit_platform (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id TEXT,
+    actor TEXT NOT NULL,
+    action TEXT NOT NULL,
+    resource_type TEXT,
+    resource_id TEXT,
+    details TEXT,
+    ip_address TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Knowledge Graph (D-KARL-1 through D-KARL-8)
+CREATE TABLE IF NOT EXISTS kg_graphs (
+    id TEXT PRIMARY KEY, project_id TEXT, name TEXT NOT NULL,
+    description TEXT, entity_count INTEGER DEFAULT 0,
+    edge_count INTEGER DEFAULT 0, metadata TEXT DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS kg_nodes (
+    id TEXT PRIMARY KEY, graph_id TEXT NOT NULL,
+    label TEXT NOT NULL, entity_type TEXT NOT NULL,
+    properties TEXT DEFAULT '{}', embedding BLOB,
+    centrality REAL DEFAULT 0.0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS kg_edges (
+    id TEXT PRIMARY KEY, graph_id TEXT NOT NULL,
+    source_id TEXT NOT NULL, target_id TEXT NOT NULL,
+    relationship TEXT NOT NULL, weight REAL DEFAULT 1.0,
+    properties TEXT DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS kg_retrieval_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, query_hash TEXT NOT NULL,
+    profile TEXT, project_id TEXT, node_count INTEGER DEFAULT 0,
+    edge_count INTEGER DEFAULT 0, top_score REAL DEFAULT 0.0,
+    compressed INTEGER DEFAULT 0, duration_ms REAL DEFAULT 0.0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS kg_ontology (
+    id TEXT PRIMARY KEY,
+    graph_id TEXT NOT NULL REFERENCES kg_graphs(id),
+    subject_type TEXT NOT NULL,
+    predicate TEXT NOT NULL,
+    object_type TEXT NOT NULL,
+    path_distance INTEGER DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_kgo_subject ON kg_ontology(subject_type);
+CREATE INDEX IF NOT EXISTS idx_kgo_object ON kg_ontology(object_type);
+
+-- Fine-Tuning datasets and examples (D-FT-9)
+CREATE TABLE IF NOT EXISTS ft_datasets (
+    id TEXT PRIMARY KEY, name TEXT NOT NULL, purpose TEXT DEFAULT 'general',
+    description TEXT, base_model TEXT, version INTEGER DEFAULT 1,
+    example_count INTEGER DEFAULT 0, classification TEXT DEFAULT 'CUI',
+    status TEXT DEFAULT 'draft',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS ft_dataset_examples (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, dataset_id TEXT,
+    system_prompt TEXT DEFAULT '', user_input TEXT,
+    expected_output TEXT, source TEXT DEFAULT 'manual',
+    source_chunk_id TEXT, source_document_id TEXT,
+    quality_score REAL DEFAULT 0.0, compliance_score REAL DEFAULT 0.0,
+    relevance_score REAL DEFAULT 0.0, approved INTEGER DEFAULT 0,
+    labeled_by TEXT, labeled_at TIMESTAMP, content_hash TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- RAG-to-FT Pipeline (D-KARL-5)
+CREATE TABLE IF NOT EXISTS ft_pipeline_runs (
+    id TEXT PRIMARY KEY, run_type TEXT NOT NULL DEFAULT 'rag_to_ft',
+    source_type TEXT, chunks_processed INTEGER DEFAULT 0,
+    pairs_generated INTEGER DEFAULT 0, pairs_approved INTEGER DEFAULT 0,
+    retrain_triggered INTEGER DEFAULT 0, status TEXT DEFAULT 'running',
+    error TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP
+);
+
+-- Quality Monitoring (D-KARL-8)
+CREATE TABLE IF NOT EXISTS ft_quality_snapshots (
+    id TEXT PRIMARY KEY, snapshot_type TEXT NOT NULL,
+    metric_name TEXT NOT NULL, metric_value REAL NOT NULL,
+    baseline_value REAL, below_threshold INTEGER DEFAULT 0,
+    details TEXT DEFAULT '{}',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Hyperparameter Search
+CREATE TABLE IF NOT EXISTS ft_hp_searches (
+    id TEXT PRIMARY KEY,
+    dataset_id TEXT NOT NULL,
+    method TEXT NOT NULL DEFAULT 'grid',
+    search_space TEXT NOT NULL DEFAULT '{}',
+    max_trials INTEGER DEFAULT 9,
+    completed_trials INTEGER DEFAULT 0,
+    best_trial_id TEXT,
+    best_score REAL,
+    best_params TEXT DEFAULT '{}',
+    status TEXT DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS ft_hp_trials (
+    id TEXT PRIMARY KEY,
+    search_id TEXT NOT NULL,
+    trial_number INTEGER NOT NULL,
+    params TEXT NOT NULL DEFAULT '{}',
+    training_job_id TEXT,
+    eval_score REAL,
+    eval_metrics TEXT DEFAULT '{}',
+    status TEXT DEFAULT 'pending',
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Phase 71 — Sandbox Executor (D-SEC-10)
+CREATE TABLE IF NOT EXISTS sandbox_execution_log (
+    id TEXT PRIMARY KEY,
+    executor_type TEXT NOT NULL,
+    language TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    runtime TEXT NOT NULL,
+    exit_code INTEGER,
+    runtime_ms INTEGER,
+    stdout_preview TEXT,
+    stderr_preview TEXT,
+    network_enabled INTEGER DEFAULT 0,
+    memory_limit_mb INTEGER,
+    timeout_seconds INTEGER,
+    container_id TEXT,
+    artifact_count INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'completed' CHECK(status IN ('running','completed','failed','timeout')),
+    actor TEXT,
+    project_id TEXT,
+    tenant_id TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Phase 72 — ICDEV™ Studio
+CREATE TABLE IF NOT EXISTS studio_workflows (
+    workflow_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    template_yaml TEXT NOT NULL,
+    category TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    version INTEGER DEFAULT 1,
+    shared INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS studio_forms (
+    form_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    schema_json TEXT NOT NULL,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    version INTEGER DEFAULT 1,
+    status TEXT DEFAULT 'draft' CHECK(status IN ('draft','published','archived'))
+);
+CREATE TABLE IF NOT EXISTS studio_form_submissions (
+    submission_id TEXT PRIMARY KEY,
+    form_id TEXT NOT NULL REFERENCES studio_forms(form_id),
+    data_json TEXT NOT NULL,
+    submitted_by TEXT,
+    submitted_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS studio_case_types (
+    type_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    lifecycle_json TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS studio_cases (
+    case_id TEXT PRIMARY KEY,
+    type_id TEXT NOT NULL REFERENCES studio_case_types(type_id),
+    title TEXT NOT NULL,
+    description TEXT,
+    current_state TEXT NOT NULL,
+    priority TEXT DEFAULT 'medium' CHECK(priority IN ('critical','high','medium','low')),
+    assigned_to TEXT,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    due_date TEXT,
+    form_submission_id TEXT REFERENCES studio_form_submissions(submission_id)
+);
+CREATE TABLE IF NOT EXISTS studio_case_history (
+    history_id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL REFERENCES studio_cases(case_id),
+    from_state TEXT,
+    to_state TEXT NOT NULL,
+    changed_by TEXT,
+    changed_at TEXT DEFAULT (datetime('now')),
+    comment TEXT
+);
+CREATE TABLE IF NOT EXISTS studio_automations (
+    automation_id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    trigger_json TEXT NOT NULL,
+    condition_json TEXT,
+    action_json TEXT NOT NULL,
+    enabled INTEGER DEFAULT 1,
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS studio_automation_runs (
+    run_id TEXT PRIMARY KEY,
+    automation_id TEXT NOT NULL REFERENCES studio_automations(automation_id),
+    trigger_event TEXT,
+    status TEXT CHECK(status IN ('triggered','running','success','failed','skipped')),
+    result_json TEXT,
+    started_at TEXT DEFAULT (datetime('now')),
     completed_at TEXT
 );
 CREATE TABLE IF NOT EXISTS teams_inbox (
