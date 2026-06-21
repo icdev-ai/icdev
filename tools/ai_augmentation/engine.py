@@ -20,16 +20,104 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
+import shutil
+import subprocess
+import tempfile
 from datetime import datetime, timezone
 from typing import Any
 
+import yaml
+
 from tools.ai_augmentation.agent_readiness import run_readiness_check
-from tools.ai_augmentation.batch_processor import is_batch_eligible, run_batch_scan
-from tools.ai_augmentation.capability_mapper import map_capabilities
 from tools.ai_augmentation.db.init_db import get_connection, init_db
 from tools.ai_augmentation.opportunity_scorer import score_opportunity
 from tools.ai_augmentation.pattern_classifier import detect_patterns
 from tools.ai_augmentation.roadmap_generator import generate_roadmap
+
+_CONFIG_PATH = pathlib.Path(__file__).resolve().parent.parent.parent / "args" / "aac_config.yaml"
+
+_FALLBACK_ANOMALY_THRESHOLDS = {
+    "innovation_signal_min_score": 0.60,
+    "phase": {
+        "p1_min_score": 0.70,
+        "p2_min_score": 0.50,
+        "p3_min_score": 0.30,
+    },
+    "priority_high_min_score": 0.70,
+    "value_feasibility_max_delta": 0.50,
+    "component_outlier_floor": 0.05,
+    "component_outlier_ceiling": 0.95,
+}
+
+
+def _load_anomaly_thresholds() -> dict:
+    """Load anomaly_detection thresholds from args/aac_config.yaml with fallback."""
+    try:
+        with open(_CONFIG_PATH, "r", encoding="utf-8") as fh:
+            cfg = yaml.safe_load(fh)
+        if isinstance(cfg, dict) and "anomaly_detection" in cfg:
+            return cfg["anomaly_detection"]
+    except Exception:
+        pass
+    return dict(_FALLBACK_ANOMALY_THRESHOLDS)
+
+
+def detect_score_anomalies(rows: list, thresholds: dict | None = None) -> list:
+    """Detect scoring anomalies across a list of opportunity score rows.
+
+    All threshold comparisons use values loaded from args/aac_config.yaml
+    ``anomaly_detection`` section rather than hardcoded constants.
+
+    Args:
+        rows:       List of score dicts (opportunity_id, value_score,
+                    feasibility_score, risk_score, composite_score).
+        thresholds: Optional explicit thresholds dict; falls back to
+                    _load_anomaly_thresholds() when omitted.
+
+    Returns:
+        List of anomaly dicts with keys: anomaly_type, opportunity_id, detail.
+    """
+    if thresholds is None:
+        thresholds = _load_anomaly_thresholds()
+
+    max_delta = float(thresholds.get("value_feasibility_max_delta", 0.50))
+    floor = float(thresholds.get("component_outlier_floor", 0.05))
+    ceiling = float(thresholds.get("component_outlier_ceiling", 0.95))
+
+    score_fields = ("value_score", "feasibility_score", "risk_score", "composite_score")
+    anomalies: list[dict] = []
+
+    for row in rows:
+        opp_id = row.get("opportunity_id")
+        value = float(row.get("value_score", 0.0))
+        feasibility = float(row.get("feasibility_score", 0.0))
+
+        delta = abs(value - feasibility)
+        if delta > max_delta:
+            anomalies.append({
+                "anomaly_type": "value_feasibility_imbalance",
+                "opportunity_id": opp_id,
+                "detail": {"delta": round(delta, 4), "value": value, "feasibility": feasibility},
+            })
+
+        for field in score_fields:
+            val = float(row.get(field, 0.0))
+            if val < floor:
+                anomalies.append({
+                    "anomaly_type": "component_outlier_low",
+                    "opportunity_id": opp_id,
+                    "detail": {"component": field, "value": val, "floor": floor},
+                })
+            elif val > ceiling:
+                anomalies.append({
+                    "anomaly_type": "component_outlier_high",
+                    "opportunity_id": opp_id,
+                    "detail": {"component": field, "value": val, "ceiling": ceiling},
+                })
+
+    return anomalies
+
 
 # Maps each pattern type to a valid AI paradigm (constants.AI_PARADIGMS)
 _PATTERN_TO_PARADIGM: dict[str, str] = {
@@ -63,22 +151,143 @@ def _dump(value: Any) -> Any:
         "AAC_STORAGE_BACKEND",
         os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", "postgresql"),
     ).lower()
-    return value if backend == "postgresql" else json.dumps(value)
+    if backend == "postgresql":
+        try:
+            from psycopg2.extras import Json
+            return Json(value)
+        except ImportError:
+            pass
+    return json.dumps(value)
 
 
 def _exec(conn: Any, sql: str, params: tuple) -> Any:
     try:
         return conn.execute(sql, params)
     except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return conn.execute(sql.replace("?", "%s"), params)
 
 
-def _phase_label(score: float) -> str:
-    if score >= 0.7:
+def _backend() -> str:
+    return os.environ.get(
+        "AAC_STORAGE_BACKEND",
+        os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", "postgresql"),
+    ).lower()
+
+
+def _insert(conn: Any, sql: str, params: tuple, id_col: str = "id") -> int:
+    """Execute INSERT and return the generated PK for both SQLite and PostgreSQL."""
+    if _backend() == "postgresql":
+        pg_sql = sql.replace("?", "%s") + f" RETURNING {id_col}"
+        cur = conn.execute(pg_sql, params)
+        row = cur.fetchone()
+        conn.commit()
+        return int(row[0]) if row else 0
+    cur = conn.execute(sql, params)
+    conn.commit()
+    return cur.lastrowid or 0
+
+
+def _build_summary(input_ref: str, opp_rows: list[dict]) -> str:
+    """Derive a one-sentence plain-English project summary without LLM calls."""
+    ref = input_ref.strip().rstrip("/")
+    if re.match(r"^(https?://|git@)", ref):
+        name = ref.rstrip("/").split("/")[-1].replace(".git", "")
+    else:
+        name = pathlib.Path(ref).name or ref
+
+    if not opp_rows:
+        return f"'{name}' — no AI-augmentable patterns detected."
+
+    pattern_counts: dict[str, int] = {}
+    paradigm_counts: dict[str, int] = {}
+    for opp in opp_rows:
+        pt = opp.get("pattern_type", "unknown")
+        pa = opp.get("ai_paradigm", "")
+        pattern_counts[pt] = pattern_counts.get(pt, 0) + 1
+        if pa:
+            paradigm_counts[pa] = paradigm_counts.get(pa, 0) + 1
+
+    top_patterns = sorted(pattern_counts.items(), key=lambda x: x[1], reverse=True)[:3]
+    top_paradigms = sorted(paradigm_counts.items(), key=lambda x: x[1], reverse=True)[:2]
+    pattern_str = ", ".join(f"{count}× {pt}" for pt, count in top_patterns)
+    paradigm_str = " + ".join(p for p, _ in top_paradigms) if top_paradigms else "llm_generation"
+    return (
+        f"'{name}' — {len(opp_rows)} augmentation opportunities: "
+        f"{pattern_str}. Recommended AI: {paradigm_str}."
+    )
+
+
+def _register_innovation_signals(opp_rows: list[dict], score_rows: list[dict], scan_id: int) -> int:
+    """Option C: cross-register high-scoring AAC opportunities to innovation_signals."""
+    thresholds = _load_anomaly_thresholds()
+    innovation_min = thresholds.get(
+        "innovation_signal_min_score",
+        _FALLBACK_ANOMALY_THRESHOLDS["innovation_signal_min_score"],
+    )
+    score_index = {int(s["opportunity_id"]): s for s in score_rows}
+    registered = 0
+    try:
+        from tools.db.storage import get_connection as _icdev_conn
+        import hashlib
+        conn = _icdev_conn()
+        try:
+            for opp in opp_rows:
+                opp_id = int(opp.get("opportunity_id", 0))
+                score = score_index.get(opp_id, {})
+                composite = float(score.get("composite_score", 0.0))
+                if composite < innovation_min:
+                    continue
+                pattern = opp.get("pattern_type", "")
+                paradigm = opp.get("ai_paradigm", "")
+                module = opp.get("module_path", "")
+                title = f"AI Augmentation: {pattern} → {paradigm} in {module}"
+                description = (
+                    f"Detected by AAC scan #{scan_id}. Pattern: {pattern}, "
+                    f"AI paradigm: {paradigm}, composite score: {composite:.2f}."
+                )
+                content_hash = hashlib.sha256(
+                    f"aac-{scan_id}-{opp_id}".encode()
+                ).hexdigest()[:32]
+                signal_id = f"aac-{scan_id}-{opp_id}"
+                # Skip if already registered
+                existing = conn.execute(
+                    "SELECT id FROM innovation_signals WHERE id = ?", (signal_id,)
+                ).fetchone()
+                if existing:
+                    continue
+                conn.execute(
+                    "INSERT INTO innovation_signals "
+                    "(id, source, source_type, title, description, content_hash, "
+                    "discovered_at, status, category, innovation_score) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        signal_id, "aac_opportunities", "internal_analysis",
+                        title, description, content_hash,
+                        _now(), "approved", "ai_augmentation_opportunity", composite,
+                    ),
+                )
+                conn.commit()
+                registered += 1
+        finally:
+            conn.close()
+    except Exception:
+        pass  # innovation_signals table may not exist in all environments
+    return registered
+
+
+def _phase_label(score: float, thresholds: dict | None = None) -> str:
+    if thresholds is None:
+        thresholds = _load_anomaly_thresholds()
+    phase_cfg = thresholds.get("phase", _FALLBACK_ANOMALY_THRESHOLDS["phase"])
+    if score >= phase_cfg.get("p1_min_score", 0.70):
         return "P1 — Quick Wins"
-    if score >= 0.5:
+    if score >= phase_cfg.get("p2_min_score", 0.50):
         return "P2 — Core Modernization"
-    if score >= 0.3:
+    if score >= phase_cfg.get("p3_min_score", 0.30):
         return "P3 — Long-Horizon Investments"
     return "Unclassified"
 
@@ -120,6 +329,11 @@ def _promote_top_opportunities(
     if not top5:
         return 0
 
+    thresholds = _load_anomaly_thresholds()
+    priority_high_min = thresholds.get(
+        "priority_high_min_score",
+        _FALLBACK_ANOMALY_THRESHOLDS["priority_high_min_score"],
+    )
     promoted_opps: list[dict] = []
     icdev_conn = _icdev_get_connection()
     try:
@@ -135,7 +349,7 @@ def _promote_top_opportunities(
             if existing:
                 continue
 
-            priority = "high" if opp["composite_score"] >= 0.7 else "medium"
+            priority = "high" if opp["composite_score"] >= priority_high_min else "medium"
             title = (
                 f"[AI Opp] {opp['pattern_type']} in "
                 f"{opp['module_path']}:{opp['function_name']} "
@@ -293,165 +507,6 @@ def _promote_phase_opportunities(
     return inserted
 
 
-def _compute_score_stats(rows: list, field: str) -> dict | None:
-    """Return mean, stdev, Q1, Q3, IQR for *field* across *rows*.
-
-    Returns None when fewer than 2 non-None values are present.
-    """
-    vals = [float(r[field]) for r in rows if r.get(field) is not None]
-    if len(vals) < 2:
-        return None
-    n = len(vals)
-    mean = sum(vals) / n
-    variance = sum((v - mean) ** 2 for v in vals) / (n - 1)
-    stdev = variance ** 0.5
-    sorted_vals = sorted(vals)
-    q1 = sorted_vals[int(n * 0.25)]
-    q3 = sorted_vals[min(int(n * 0.75), n - 1)]
-    iqr = q3 - q1
-    return {"mean": mean, "stdev": stdev, "q1": q1, "q3": q3, "iqr": iqr, "n": n}
-
-
-def detect_score_anomalies(rows: list, thresholds: dict | None = None) -> list:
-    """Detect statistical anomalies in a batch of scored opportunities.
-
-    Uses thresholds from the ``anomaly_detection`` section of aac_config.yaml
-    so that sensitivity can be tuned without touching source code.
-
-    When the batch contains at least ``min_sample_size`` rows and
-    ``statistical_detection_enabled`` is true, z-score and IQR-fence methods
-    are applied to each score component.  For smaller batches the fixed
-    floor/ceiling bounds are used instead.
-
-    Args:
-        rows:       List of score row dicts with ``opportunity_id``,
-                    ``value_score``, ``feasibility_score``, ``risk_score``,
-                    ``composite_score``.
-        thresholds: Optional threshold dict; defaults to the
-                    ``anomaly_detection`` section from aac_config.yaml.
-
-    Returns:
-        List of anomaly dicts; empty means no anomalies.  Each dict has:
-            ``opportunity_id``, ``anomaly_type``, ``detail``.
-    """
-    if thresholds is None:
-        thresholds = _load_anomaly_thresholds()
-
-    max_delta = float(thresholds.get("value_feasibility_max_delta", 0.50))
-    floor = float(thresholds.get("component_outlier_floor", 0.05))
-    ceiling = float(thresholds.get("component_outlier_ceiling", 0.95))
-    stat_enabled = bool(thresholds.get("statistical_detection_enabled", True))
-    min_sample = int(thresholds.get("min_sample_size", 5))
-    z_threshold = float(thresholds.get("z_score_threshold", 2.5))
-    iqr_mult = float(thresholds.get("iqr_multiplier", 1.5))
-
-    # Pre-compute per-field statistics when the batch is large enough.
-    _SCORE_FIELDS = ("value_score", "feasibility_score", "risk_score", "composite_score")
-    use_stats = stat_enabled and len(rows) >= min_sample
-    stats: dict[str, dict] = {}
-    if use_stats:
-        for field in _SCORE_FIELDS:
-            s = _compute_score_stats(rows, field)
-            if s is not None:
-                stats[field] = s
-
-    anomalies: list = []
-    for row in rows:
-        opp_id = row.get("opportunity_id")
-        value = float(row.get("value_score", 0.0))
-        feasibility = float(row.get("feasibility_score", 0.0))
-        risk = float(row.get("risk_score", 0.0))
-        composite = float(row.get("composite_score", 0.0))
-
-        # ── value/feasibility imbalance (fixed-threshold; always applied) ──
-        delta = abs(value - feasibility)
-        if delta > max_delta:
-            anomalies.append({
-                "opportunity_id": opp_id,
-                "anomaly_type": "value_feasibility_imbalance",
-                "detail": {
-                    "value_score": value,
-                    "feasibility_score": feasibility,
-                    "delta": round(delta, 4),
-                    "threshold": max_delta,
-                },
-            })
-
-        # ── per-component outlier detection ────────────────────────────────
-        for comp_name, comp_val in [
-            ("value_score", value),
-            ("feasibility_score", feasibility),
-            ("risk_score", risk),
-            ("composite_score", composite),
-        ]:
-            if use_stats and comp_name in stats:
-                s = stats[comp_name]
-                # z-score check
-                if s["stdev"] > 0:
-                    z = abs(comp_val - s["mean"]) / s["stdev"]
-                    if z > z_threshold:
-                        direction = "low" if comp_val < s["mean"] else "high"
-                        anomalies.append({
-                            "opportunity_id": opp_id,
-                            "anomaly_type": f"statistical_outlier_{direction}",
-                            "detail": {
-                                "component": comp_name,
-                                "value": comp_val,
-                                "z_score": round(z, 4),
-                                "mean": round(s["mean"], 4),
-                                "stdev": round(s["stdev"], 4),
-                                "z_threshold": z_threshold,
-                                "method": "z_score",
-                            },
-                        })
-                        continue  # skip IQR check to avoid duplicate flag
-                # IQR fence check
-                lower_fence = s["q1"] - iqr_mult * s["iqr"]
-                upper_fence = s["q3"] + iqr_mult * s["iqr"]
-                if comp_val < lower_fence:
-                    anomalies.append({
-                        "opportunity_id": opp_id,
-                        "anomaly_type": "iqr_outlier_low",
-                        "detail": {
-                            "component": comp_name,
-                            "value": comp_val,
-                            "lower_fence": round(lower_fence, 4),
-                            "q1": round(s["q1"], 4),
-                            "iqr": round(s["iqr"], 4),
-                            "method": "iqr",
-                        },
-                    })
-                elif comp_val > upper_fence:
-                    anomalies.append({
-                        "opportunity_id": opp_id,
-                        "anomaly_type": "iqr_outlier_high",
-                        "detail": {
-                            "component": comp_name,
-                            "value": comp_val,
-                            "upper_fence": round(upper_fence, 4),
-                            "q3": round(s["q3"], 4),
-                            "iqr": round(s["iqr"], 4),
-                            "method": "iqr",
-                        },
-                    })
-            else:
-                # Fallback: fixed floor/ceiling bounds
-                if comp_val < floor:
-                    anomalies.append({
-                        "opportunity_id": opp_id,
-                        "anomaly_type": "component_outlier_low",
-                        "detail": {"component": comp_name, "value": comp_val, "floor": floor, "method": "fixed"},
-                    })
-                elif comp_val > ceiling:
-                    anomalies.append({
-                        "opportunity_id": opp_id,
-                        "anomaly_type": "component_outlier_high",
-                        "detail": {"component": comp_name, "value": comp_val, "ceiling": ceiling, "method": "fixed"},
-                    })
-
-    return anomalies
-
-
 def _is_git_url(ref: str) -> bool:
     """Return True if ref looks like a git or HTTPS repository URL."""
     return bool(
@@ -514,168 +569,173 @@ def run_scan(
 
     init_db()
 
-    total_files, total_loc = _count_source(input_ref)
+    # ── Git URL normalisation ───────────────────────────────────────────────────
+    cloned_path: str | None = None
+    scan_path = input_ref
+    if input_type == "git_url" or _is_git_url(input_ref):
+        cloned_path = _clone_git_url(input_ref)
+        scan_path = cloned_path
 
-    # 1a. Agent Readiness check (runs before Semgrep scan)
     try:
-        readiness_result = run_readiness_check(input_ref)
-    except Exception as exc:  # noqa: BLE001
-        readiness_result = {
-            "pillar_scores": {},
-            "overall_readiness_score": 0.0,
-            "icdev_checks": {},
-            "error": str(exc),
+        total_files, total_loc = _count_source(scan_path)
+
+        # 1a. Agent Readiness check (runs before Semgrep scan)
+        try:
+            readiness_result = run_readiness_check(scan_path)
+        except Exception as exc:  # noqa: BLE001
+            readiness_result = {
+                "pillar_scores": {},
+                "overall_readiness_score": 0.0,
+                "icdev_checks": {},
+                "error": str(exc),
+            }
+
+        language_profile: dict = {
+            "python": total_files,
+            "agent_readiness_summary": {
+                "pillar_scores": readiness_result["pillar_scores"],
+                "overall_readiness_score": readiness_result["overall_readiness_score"],
+                "icdev_checks": readiness_result["icdev_checks"],
+            },
         }
 
-    language_profile: dict = {
-        "python": total_files,
-        "agent_readiness_summary": {
-            "pillar_scores": readiness_result["pillar_scores"],
-            "overall_readiness_score": readiness_result["overall_readiness_score"],
-            "icdev_checks": readiness_result["icdev_checks"],
-        },
-    }
-
-    # 1b. Insert scan record
-    conn = get_connection()
-    try:
-        cur = _exec(
-            conn,
-            "INSERT INTO aac_scans "
-            "(input_type, input_ref, language_profile, total_files, total_loc, status) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (input_type, input_ref, _dump(language_profile), total_files, total_loc, "running"),
-        )
-        conn.commit()
-        scan_id: int = cur.lastrowid
-
-        _exec(
-            conn,
-            "INSERT INTO aac_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
-            ("scan_started", scan_id, "system", _dump({"input_type": input_type, "input_ref": input_ref})),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-    # 2. Detect patterns — batch API path for large repos, else Semgrep/AST
-    if is_batch_eligible(total_files):
-        batch_patterns, batch_id = run_batch_scan(input_ref, scan_id)
-        if batch_id is not None:
-            language_profile["batch_id"] = batch_id
-            conn = get_connection()
-            try:
-                _exec(
-                    conn,
-                    "UPDATE aac_scans SET language_profile = ? WHERE scan_id = ?",
-                    (_dump(language_profile), scan_id),
-                )
-                conn.commit()
-            finally:
-                conn.close()
-        patterns = batch_patterns if batch_patterns else detect_patterns(input_ref)
-    else:
-        patterns = detect_patterns(input_ref)
-
-    # 3. Insert opportunities + scores
-    opp_rows: list[dict] = []
-    score_rows: list[dict] = []
-
-    conn = get_connection()
-    try:
-        for pat in patterns:
-            paradigm = _PATTERN_TO_PARADIGM.get(pat["pattern_type"], "llm_generation")
-            il_model = _PARADIGM_TO_MODEL.get(paradigm, "claude-sonnet-4-6")
-
-            # Compute score first so capability mapper can use it.
-            score = score_opportunity(pat, scan_context)
-
-            # Enrich pattern_detail with NIST AI RMF + OWASP tags.
-            tags = map_capabilities(pat, score, scan_context)
-            pattern_detail = dict(pat.get("pattern_detail", {}))
-            pattern_detail["nist_ai_rmf"] = tags["nist_ai_rmf"]
-            pattern_detail["owasp_llm_risk"] = tags["owasp_llm_risk"]
-
-            cur = _exec(
+        # 1b. Insert scan record
+        conn = get_connection()
+        try:
+            scan_id: int = _insert(
                 conn,
-                "INSERT INTO aac_opportunities "
-                "(scan_id, module_path, function_name, line_start, line_end, language, "
-                "pattern_type, pattern_detail, ai_paradigm, il_recommended_model, data_requirements) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    scan_id,
-                    pat["module_path"],
-                    pat.get("function_name", "<unknown>"),
-                    pat.get("line_start", 0),
-                    pat.get("line_end", 0),
-                    pat.get("language", "python"),
-                    pat["pattern_type"],
-                    _dump(pattern_detail),
-                    paradigm,
-                    il_model,
-                    _dump({}),
-                ),
+                "INSERT INTO aac_scans "
+                "(input_type, input_ref, language_profile, total_files, total_loc, status) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (input_type, input_ref, _dump(language_profile), total_files, total_loc, "running"),
+                "scan_id",
             )
-            conn.commit()
-            opp_id: int = cur.lastrowid
 
             _exec(
                 conn,
-                "INSERT INTO aac_scores "
-                "(opportunity_id, value_score, feasibility_score, risk_score, composite_score, score_detail) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "INSERT INTO aac_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
+                ("scan_started", scan_id, "system", _dump({"input_type": input_type, "input_ref": input_ref})),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        # 2. Detect patterns (Semgrep or AST fallback)
+        patterns = detect_patterns(scan_path)
+
+        # 3. Insert opportunities + scores
+        opp_rows: list[dict] = []
+        score_rows: list[dict] = []
+
+        conn = get_connection()
+        try:
+            for pat in patterns:
+                paradigm = _PATTERN_TO_PARADIGM.get(pat["pattern_type"], "llm_generation")
+                il_model = _PARADIGM_TO_MODEL.get(paradigm, "claude-sonnet-4-6")
+
+                opp_id: int = _insert(
+                    conn,
+                    "INSERT INTO aac_opportunities "
+                    "(scan_id, module_path, function_name, line_start, line_end, language, "
+                    "pattern_type, pattern_detail, ai_paradigm, il_recommended_model, data_requirements) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        scan_id,
+                        pat["module_path"],
+                        pat.get("function_name", "<unknown>"),
+                        pat.get("line_start", 0),
+                        pat.get("line_end", 0),
+                        pat.get("language", "python"),
+                        pat["pattern_type"],
+                        _dump(pat.get("pattern_detail", {})),
+                        paradigm,
+                        il_model,
+                        _dump({}),
+                    ),
+                    "opportunity_id",
+                )
+
+                score = score_opportunity(pat, scan_context)
+                _exec(
+                    conn,
+                    "INSERT INTO aac_scores "
+                    "(opportunity_id, value_score, feasibility_score, risk_score, composite_score, score_detail) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        opp_id,
+                        score["value_score"],
+                        score["feasibility_score"],
+                        score["risk_score"],
+                        score["composite_score"],
+                        _dump(score["score_detail"]),
+                    ),
+                )
+                conn.commit()
+
+                opp_rows.append({
+                    "opportunity_id": opp_id,
+                    "ai_paradigm": paradigm,
+                    "il_recommended_model": il_model,
+                    **pat,
+                })
+                score_rows.append({"opportunity_id": opp_id, **score})
+        finally:
+            conn.close()
+
+        # 4. Generate roadmap (persists to aac_roadmaps internally)
+        roadmap = generate_roadmap(scan_id, opp_rows, score_rows)
+
+        # 4a. Build and store deterministic project summary
+        project_summary = _build_summary(input_ref, opp_rows)
+        conn = get_connection()
+        try:
+            _exec(conn, "UPDATE aac_scans SET project_summary = ? WHERE scan_id = ?",
+                  (project_summary, scan_id))
+            conn.commit()
+        finally:
+            conn.close()
+
+        # 5. Promote top opportunities to kanban (top-5 [AI Opp] + all-phase [Phase])
+        kanban_promoted = _promote_top_opportunities(opp_rows, score_rows, scan_id, roadmap["roadmap_id"])
+        phase_promoted = _promote_phase_opportunities(roadmap, opp_rows, score_rows, scan_id)
+
+        # 5a. Option C: register high-scoring opps as innovation signals
+        _register_innovation_signals(opp_rows, score_rows, scan_id)
+
+        # 6. Mark scan completed + final audit entry
+        conn = get_connection()
+        try:
+            _exec(
+                conn,
+                "UPDATE aac_scans SET status = ?, completed_at = ? WHERE scan_id = ?",
+                ("completed", _now(), scan_id),
+            )
+            _exec(
+                conn,
+                "INSERT INTO aac_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
                 (
-                    opp_id,
-                    score["value_score"],
-                    score["feasibility_score"],
-                    score["risk_score"],
-                    score["composite_score"],
-                    _dump(score["score_detail"]),
+                    "scan_completed",
+                    scan_id,
+                    "system",
+                    _dump({"opportunities_count": len(opp_rows), "roadmap_id": roadmap["roadmap_id"]}),
                 ),
             )
             conn.commit()
+        finally:
+            conn.close()
 
-            opp_rows.append({"opportunity_id": opp_id, **pat})
-            score_rows.append({"opportunity_id": opp_id, **score})
+        return {
+            "scan_id": scan_id,
+            "opportunities_count": len(opp_rows),
+            "scores_count": len(score_rows),
+            "roadmap_id": roadmap["roadmap_id"],
+            "kanban_promoted": kanban_promoted,
+            "phase_promoted": phase_promoted,
+            "status": "completed",
+            "pillar_scores": readiness_result["pillar_scores"],
+            "overall_readiness_score": readiness_result["overall_readiness_score"],
+            "icdev_checks": readiness_result["icdev_checks"],
+        }
     finally:
-        conn.close()
-
-    # 4. Generate roadmap (persists to aac_roadmaps internally)
-    roadmap = generate_roadmap(scan_id, opp_rows, score_rows)
-
-    # 5. Promote top opportunities to kanban
-    kanban_promoted = _promote_top_opportunities(opp_rows, score_rows, scan_id, roadmap["roadmap_id"])
-
-    # 6. Mark scan completed + final audit entry
-    conn = get_connection()
-    try:
-        _exec(
-            conn,
-            "UPDATE aac_scans SET status = ?, completed_at = ? WHERE scan_id = ?",
-            ("completed", _now(), scan_id),
-        )
-        _exec(
-            conn,
-            "INSERT INTO aac_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
-            (
-                "scan_completed",
-                scan_id,
-                "system",
-                _dump({"opportunities_count": len(opp_rows), "roadmap_id": roadmap["roadmap_id"]}),
-            ),
-        )
-        conn.commit()
-    finally:
-        conn.close()
-
-    return {
-        "scan_id": scan_id,
-        "opportunities_count": len(opp_rows),
-        "scores_count": len(score_rows),
-        "roadmap_id": roadmap["roadmap_id"],
-        "kanban_promoted": kanban_promoted,
-        "status": "completed",
-        "pillar_scores": readiness_result["pillar_scores"],
-        "overall_readiness_score": readiness_result["overall_readiness_score"],
-        "icdev_checks": readiness_result["icdev_checks"],
-    }
+        if cloned_path:
+            shutil.rmtree(cloned_path, ignore_errors=True)

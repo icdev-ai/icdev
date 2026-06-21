@@ -1,176 +1,157 @@
 # CUI // SP-CTI
-"""AI Augmentation Canvas — NLP Input-Type Extractor.
+"""NLP extractor for regex_user_input patterns.
 
-Replaces the regex pattern ``re.match(r"^(https?://|git@)", input_ref)``
-in blueprint.py with an LLM-based entity recognizer that handles variation
-and ambiguity more robustly (GitHub shorthand, bare repo names, etc.).
+Uses an LLM (default: claude-haiku-4-5-20251001) to enrich AST/Semgrep-detected
+regex call sites with semantic context: intent classification, inferred input
+type, user-facing flag, and a one-sentence NLP alternative recommendation.
 
 Public API:
-    classify_input_ref(input_ref, *, timeout=10) -> str
-        Returns "git_url", "local_path", or "unknown".
-        Falls back to regex on LLM error so the caller is never blocked.
+    enrich_regex_patterns(patterns, source_root=None) -> list[dict]
 
-Acceptance criterion: ≥85% entity recognition F1 on git-URL / local-path
-classification. Regex fallback preserves backward-compatibility for clear-cut
-cases while the LLM handles ambiguous inputs.
-
-CLI (smoke test):
-    python tools/ai_augmentation/nlp_extractor.py "https://github.com/org/repo"
-    python tools/ai_augmentation/nlp_extractor.py "C:/projects/myapp"
+Falls back silently when the LLM is unavailable or ICDEV_NO_LLM is set.
 """
-
 from __future__ import annotations
 
 import json
-import re
-import sys
-from pathlib import Path
+import os
+import pathlib
+from typing import Any
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(_REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(_REPO_ROOT))
+import yaml
 
-from tools.logging.icdev_logger import get_logger
+_CONFIG_PATH = pathlib.Path(__file__).resolve().parent.parent.parent / "args" / "aac_config.yaml"
 
-logger = get_logger(__name__)
-
-# ---------------------------------------------------------------------------
-# Regex fallback — covers the deterministic cases the LLM also handles
-# ---------------------------------------------------------------------------
-
-_GIT_URL_RE = re.compile(r"^(https?://|git@|ssh://|git://)")
-
-
-def _regex_classify(input_ref: str) -> str:
-    """Fast deterministic fallback used when LLM is unavailable."""
-    if _GIT_URL_RE.match(input_ref):
-        return "git_url"
-    return "local_path"
-
-
-# ---------------------------------------------------------------------------
-# NLP prompt
-# ---------------------------------------------------------------------------
-
-_CLASSIFY_PROMPT = """\
-Classify the following repository or file-system reference into exactly one
-of these input types:
-  - "git_url"    : a remote git repository (HTTP/HTTPS, SSH, git@ syntax, or
-                   shorthand like "org/repo" implying GitHub)
-  - "local_path" : an absolute or relative path on the local file system
-  - "unknown"    : cannot determine from the text alone
-
-Reference: {input_ref}
-
-Respond with a JSON object only — no markdown, no extra text:
-{{
-  "input_type": "<git_url|local_path|unknown>",
-  "confidence": <0.0-1.0>,
-  "reason": "<one sentence>"
-}}
-"""
+_FALLBACK_MAX_ENRICH = 10
+_FALLBACK_SNIPPET_CTX = 10
+_FALLBACK_MODEL = "claude-haiku-4-5-20251001"
 
 _SYSTEM_PROMPT = (
-    "You are a repository-reference classifier. "
-    "Respond only with valid JSON as specified — no prose, no markdown fences."
+    "You are a code-intelligence assistant. Analyze the provided code snippet "
+    "containing a regex operation and return a JSON object with exactly these keys:\n"
+    '- "intent": one of "validation", "extraction", "transformation", "matching", "unknown"\n'
+    '- "input_type": short label for what the regex operates on, e.g. "email", "url", '
+    '"phone", "date", "path", "user_text", "generic"\n'
+    '- "is_user_facing": true if the regex likely processes end-user-supplied input, '
+    "false otherwise\n"
+    '- "nlp_alternative": one sentence describing how NLP/AI could replace or improve '
+    "this regex\n"
+    "Return ONLY valid JSON with no markdown fences."
 )
 
 
-# ---------------------------------------------------------------------------
-# LLM-based classification
-# ---------------------------------------------------------------------------
+def _load_config() -> dict[str, Any]:
+    try:
+        with open(_CONFIG_PATH, encoding="utf-8") as fh:
+            cfg = yaml.safe_load(fh) or {}
+        return cfg.get("nlp_extractor", {})
+    except Exception:
+        return {}
 
 
-def _llm_classify(input_ref: str, timeout: int) -> str:
-    """Call Claude Haiku via LLMRouter to classify the input reference."""
-    from tools.llm.provider import LLMRequest
-    from tools.llm.router import LLMRouter, LLMUnavailableError
+def _read_snippet(module_path: str, line_start: int, context: int) -> str:
+    """Return ±context lines around line_start (1-based) from the source file."""
+    try:
+        lines = pathlib.Path(module_path).read_text(encoding="utf-8", errors="replace").splitlines()
+        lo = max(0, line_start - context - 1)
+        hi = min(len(lines), line_start + context)
+        numbered = [f"{lo + i + 1}: {line}" for i, line in enumerate(lines[lo:hi])]
+        return "\n".join(numbered)
+    except OSError:
+        return ""
 
-    router = LLMRouter()
-    request = LLMRequest(
-        messages=[
-            {
-                "role": "user",
-                "content": _CLASSIFY_PROMPT.format(input_ref=input_ref),
-            }
-        ],
-        system_prompt=_SYSTEM_PROMPT,
-        agent_id="aac-nlp-extractor",
-        classification="CUI",
-        max_tokens=128,
-        effort="low",
-        model_override="claude-haiku-4-5-20251001",
+
+def _call_llm(snippet: str, call_expr: str) -> dict[str, Any]:
+    """Invoke the LLM router and return the parsed enrichment dict.
+
+    Returns an empty dict on any failure so callers can skip enrichment
+    without crashing.
+    """
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+    except ImportError:
+        return {}
+
+    try:
+        router = LLMRouter()
+    except Exception:
+        return {}
+
+    user_msg = (
+        f"Regex call: `{call_expr}`\n\nCode snippet:\n```\n{snippet}\n```\n\n"
+        "Return the JSON analysis."
     )
     try:
-        response = router.invoke("nlp_extraction", request)
-    except LLMUnavailableError:
-        raise
-    raw = response.content or ""
-    return _parse_llm_response(raw)
-
-
-def _parse_llm_response(raw: str) -> str:
-    """Extract input_type from LLM JSON output."""
-    text = re.sub(r"```(?:json)?|```", "", raw).strip()
-    try:
-        data = json.loads(text)
-    except (json.JSONDecodeError, ValueError):
-        m = re.search(r"\{.*\}", text, re.DOTALL)
-        if m:
-            try:
-                data = json.loads(m.group(0))
-            except (json.JSONDecodeError, ValueError):
-                data = {}
-        else:
-            data = {}
-    input_type = data.get("input_type", "unknown")
-    if input_type not in ("git_url", "local_path", "unknown"):
-        return "unknown"
-    return input_type
-
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
-
-
-def classify_input_ref(input_ref: str, *, timeout: int = 10) -> str:
-    """Classify a user-provided repository reference using NLP extraction.
-
-    Uses Claude Haiku for ambiguous inputs. Falls back to regex when the LLM
-    is unavailable so that callers (e.g. api_scan) are never blocked.
-
-    Returns one of: "git_url", "local_path", "unknown".
-    """
-    if not input_ref or not input_ref.strip():
-        return "unknown"
-
-    ref = input_ref.strip()
-
-    try:
-        result = _llm_classify(ref, timeout)
-        logger.debug("nlp_extractor: '%s' -> '%s' (LLM)", ref[:60], result)
-        return result
-    except Exception as exc:
-        logger.debug(
-            "nlp_extractor: LLM unavailable (%s), falling back to regex", exc
+        req = LLMRequest(
+            messages=[{"role": "user", "content": user_msg}],
+            system_prompt=_SYSTEM_PROMPT,
+            agent_id="nlp_extractor",
+            effort="low",
+            max_tokens=256,
+            classification="CUI",
         )
-        result = _regex_classify(ref)
-        logger.debug("nlp_extractor: '%s' -> '%s' (regex fallback)", ref[:60], result)
-        return result
+        response = router.invoke("code_analysis", req)
+        content = getattr(response, "content", None) or str(response)
+        content = content.strip()
+        # Strip markdown fences if the model wraps its JSON
+        if content.startswith("```"):
+            content = content.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+        result = json.loads(content)
+        if isinstance(result, dict):
+            return result
+    except Exception:
+        pass
+    return {}
 
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
+def enrich_regex_patterns(
+    patterns: list[dict],
+    source_root: str | None = None,
+    max_enrich: int | None = None,
+    model: str | None = None,
+) -> list[dict]:
+    """Enrich regex_user_input patterns with LLM-derived semantic context.
 
-if __name__ == "__main__":
-    import argparse
+    Patterns with pattern_type != "regex_user_input" pass through unchanged.
+    When enrichment succeeds, a "nlp" sub-dict is added to pattern_detail
+    containing: intent, input_type, is_user_facing, nlp_alternative.
 
-    parser = argparse.ArgumentParser(description="Classify a repository reference")
-    parser.add_argument("input_ref", help="The reference to classify")
-    parser.add_argument("--timeout", type=int, default=10)
-    args = parser.parse_args()
+    Args:
+        patterns:    Pattern dicts from detect_patterns().
+        source_root: Base path used to resolve relative module_path values.
+        max_enrich:  Cap on LLM calls per invocation (default from aac_config.yaml).
+        model:       Unused — model selection is delegated to LLMRouter config.
+                     Accepted for forward-compatibility only.
 
-    result = classify_input_ref(args.input_ref, timeout=args.timeout)
-    print(json.dumps({"input_ref": args.input_ref, "input_type": result}))
+    Returns:
+        The same list with enriched pattern_detail fields (modified in-place).
+    """
+    if os.environ.get("ICDEV_NO_LLM", "").lower() in ("1", "true", "yes"):
+        return patterns
+
+    cfg = _load_config()
+    if max_enrich is None:
+        max_enrich = int(cfg.get("max_enrich", _FALLBACK_MAX_ENRICH))
+    snippet_ctx = int(cfg.get("snippet_context_lines", _FALLBACK_SNIPPET_CTX))
+
+    enriched_count = 0
+    for pat in patterns:
+        if pat.get("pattern_type") != "regex_user_input":
+            continue
+        if enriched_count >= max_enrich:
+            break
+
+        module_path = pat.get("module_path", "")
+        if source_root and module_path and not pathlib.Path(module_path).is_absolute():
+            module_path = str(pathlib.Path(source_root) / module_path)
+
+        line_start = pat.get("line_start", 0)
+        call_expr = pat.get("pattern_detail", {}).get("call", "re.search")
+
+        snippet = _read_snippet(module_path, line_start, snippet_ctx)
+        nlp_data = _call_llm(snippet, call_expr)
+        if nlp_data:
+            pat.setdefault("pattern_detail", {})["nlp"] = nlp_data
+            enriched_count += 1
+
+    return patterns

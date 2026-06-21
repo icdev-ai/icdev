@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-import tools.aiify.pattern_classifier as pc
+import tools.ai_augmentation.pattern_classifier as pc
 
 
 # ── _is_threshold_anomalous ───────────────────────────────────────────────────
@@ -322,6 +322,25 @@ class TestAnomalyScore:
         # Identical population → zero variance and zero IQR → score = 0
         pop = [5.0] * 10
         assert pc._anomaly_score(5.0, pop) == 0.0
+
+    def test_iqr_only_outlier_score_exceeds_one(self, monkeypatch):
+        """Regression: when a single extreme value inflates population std so that
+        z-score misses an outlier on the opposite tail, IQR must still flag it and
+        _anomaly_score must return >= 1.0 to agree with _is_threshold_anomalous."""
+        monkeypatch.setattr(pc, "_AD_MIN_SAMPLE_SIZE", 5)
+        monkeypatch.setattr(pc, "_AD_Z_SCORE_THRESHOLD", 2.0)
+        monkeypatch.setattr(pc, "_AD_IQR_MULTIPLIER", 1.5)
+        monkeypatch.setattr(pc, "_AD_FALLBACK_TO_ALL", False)
+        monkeypatch.setattr(pc, "_AD_Q1_PERCENTILE", 25.0)
+        monkeypatch.setattr(pc, "_AD_Q3_PERCENTILE", 75.0)
+        monkeypatch.setattr(pc, "_AD_PERCENTILE_SCALE", 100.0)
+        # 1-9 are tightly clustered; 10000 inflates std so z(-20) ≈ 0.34 < 2.0.
+        # IQR is robust to 10000: q1=3, q3=8, lower=-4.5 → -20 is outside the fence.
+        pop = [float(i) for i in range(1, 10)] + [10000.0]
+        value = -20.0
+        assert pc._is_threshold_anomalous(value, pop) is True
+        score = pc._anomaly_score(value, pop)
+        assert score >= 1.0, f"_anomaly_score={score} but _is_threshold_anomalous=True"
 
 
 # ── min_constant_magnitude filter ────────────────────────────────────────────

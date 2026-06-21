@@ -33,10 +33,23 @@ supported_languages:
   - rust
   - typescript
 
-pattern_min_depth: 3   # min if-depth for conditional pattern detection
-rule_min_keys: 10      # min dict keys for rule-table pattern detection
+pattern_min_depth: 3        # min if-depth for conditional pattern detection
+rule_min_keys: 10           # min dict keys for rule-table pattern detection
+keyword_list_min_strings: 3 # min string literals for keyword-list-search detection
+java_min_if_depth: 2        # min if-depth for Java nested-conditional detection
+java_static_int_max_digits: 4   # max digit count for Java static-int threshold detection (captures values up to 10^N - 1)
+java_static_int_min_value: 1    # skip Java static int constants below this value (filters out zero sentinel checks)
 
-batch_threshold_files: 10000
+threshold_anomaly_detection:
+  enabled: true
+  z_score_threshold: 2.0  # flag constants with |z| above this
+  iqr_multiplier: 1.5     # IQR fence: Q1 - m*IQR to Q3 + m*IQR
+  min_sample_size: 5      # minimum distinct constants before z-score is applied
+  fallback_to_all: true   # when sample < min_sample_size, flag all constants
+  min_constant_magnitude: 1.0  # skip constants with |value| ≤ this when AD enabled (filters out zero/one boundary checks)
+  q1_percentile: 25       # lower percentile for IQR lower fence (0–100, default = Q1 = 25th)
+  q3_percentile: 75       # upper percentile for IQR upper fence (0–100, default = Q3 = 75th)
+  percentile_scale: 100   # divisor converting q1/q3 percentile values to fractions (default 100 = percentage scale)
 
 semgrep:
   rules_dir: context/ai_augmentation/semgrep_rules
@@ -63,11 +76,6 @@ anomaly_detection:
   value_feasibility_max_delta: 0.50   # flag when |value - feasibility| exceeds this
   component_outlier_floor: 0.05       # flag component below this value
   component_outlier_ceiling: 0.95     # flag component above this value
-  # Statistical / adaptive detection (applied when batch >= min_sample_size)
-  statistical_detection_enabled: true
-  min_sample_size: 5          # minimum rows required to use z-score / IQR methods
-  z_score_threshold: 2.5      # flag component when |z| exceeds this
-  iqr_multiplier: 1.5         # IQR fence: Q1 - m*IQR  /  Q3 + m*IQR
 
 ml_nested_conditionals:
   # ML classifier enrichment for nested_conditionals detections.
@@ -76,3 +84,12 @@ ml_nested_conditionals:
   model: claude-haiku-4-5-20251001
   max_tokens: 256
   context_lines: 5          # source lines of context above/below the matched block
+
+ml_hardcoded_threshold:
+  # ML classifier enrichment for hardcoded_threshold detections.
+  # Opt-in: set enabled: true here OR export ICDEV_AAC_ML_CLASSIFY=true.
+  # Uses anomaly score + source context to rate AI augmentation potential.
+  enabled: false
+  model: claude-haiku-4-5-20251001
+  max_tokens: 256
+  context_lines: 3          # source lines of context above/below the matched line
