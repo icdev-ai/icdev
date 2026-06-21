@@ -238,3 +238,25 @@ pillars:
       # Denominator for adaptive percentage: sample ≈ total_files // adaptive_denominator.
       # At 5, approximately 20% of the corpus is sampled. Lower = broader coverage, higher = faster.
       adaptive_denominator: 5
+scoring:
+  # Pillar score below this value is flagged as anomalously low (0.0–1.0).
+  # At 0.5, any pillar failing more than half its criteria is considered anomalous.
+  # Raise to 0.6–0.7 for stricter anomaly detection; lower to 0.3 for lenient mode.
+  anomaly_threshold: 0.5
+
+  # Per-pillar weight multipliers applied when computing the overall readiness score.
+  # Values >1.0 increase a pillar's influence; <1.0 decreases it.
+  # ICDEV compliance pillars (il-classification, nist-controls, stig-compliance,
+  # append-only-audit) are weighted higher to reflect their regulatory importance.
+  pillar_weights:
+    code-quality:      1.0
+    documentation:     1.0
+    testing:           1.2
+    structure:         0.8
+    dependencies:      1.0
+    configuration:     0.8
+    security:          1.2
+    il-classification: 1.5
+    nist-controls:     1.5
+    stig-compliance:   1.3
+    append-only-audit: 1.3
