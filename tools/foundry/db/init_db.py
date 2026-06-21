@@ -23,6 +23,7 @@ foundry_tasks_emitted / foundry_outcomes (see APPEND_ONLY_TABLES in
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from tools.foundry.constants import (
     CONCEPT_STATUSES,

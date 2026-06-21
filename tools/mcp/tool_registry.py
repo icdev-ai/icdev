@@ -6535,6 +6535,9 @@ TOOL_REGISTRY = {
             "Reduces token usage 60-95% via SmartCrusher (text) or CodeCompressor (code). "
             "Uses headroom library when installed; falls back to deterministic built-in compressor. "
             "All compression is reversible — original messages preserved via decompression_map."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
     # ── Document Intelligence Canvas (DIC) ──────────────────────────────────
     "dic_ingest": {
         "category": "dic",
@@ -6548,30 +6551,6 @@ TOOL_REGISTRY = {
         "input_schema": {
             "type": "object",
             "properties": {
-                "messages": {
-                    "type": "array",
-                    "description": "List of role/content message dicts (OpenAI message format)",
-                    "items": {"type": "object"},
-                },
-                "budget_tokens": {
-                    "type": "integer",
-                    "description": "Target token budget after compression (default: 8000)",
-                    "default": 8000,
-                },
-                "content_type": {
-                    "type": "string",
-                    "description": "Compression strategy: auto (detect per-message), text, or code",
-                    "enum": ["auto", "text", "code"],
-                    "default": "auto",
-                },
-                "session_id": {
-                    "type": "string",
-                    "description": "Optional session ID for compression log correlation",
-                },
-            },
-            "required": ["messages"],
-        },
-    },
                 "url": {"type": "string", "description": "URL to ingest (mutually exclusive with text)"},
                 "text": {"type": "string", "description": "Plain text content to ingest"},
                 "title": {"type": "string", "description": "Document title (optional)"},
@@ -7075,7 +7054,8 @@ RESOURCE_REGISTRY = {
     # ============================================================
     # INTELLIGENCE (3 tools) — JISE Portal Data Feed
     # NIST 800-53: SA-11, CM-3, AC-3, AU-2
-    # =====================================================    "jise_get_portal_data": {
+    # =====================================================
+    "jise_get_portal_data": {
         "category": "intelligence",
         "module": "tools.intelligence.jise_portal",
         "handler": "get_jise_portal_data",
@@ -7099,7 +7079,11 @@ RESOURCE_REGISTRY = {
                     "default": 200,
                     "minimum": 1,
                     "maximum": 1000,
-=======
+                },
+            },
+        },
+    },
+    # ============================================================
     # CONFLICT MESH (3 tools)
     # ============================================================
     "conflict_mesh_etl": {
@@ -7407,7 +7391,8 @@ RESOURCE_REGISTRY = {
         "input_schema": {
             "type": "object",
             "properties": {},
-=======
+        },
+    },
     "conflict_mesh_predict": {
         "category": "conflict_mesh",
         "module": "tools.conflict_mesh.escalation_predictor",
