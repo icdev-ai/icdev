@@ -21,13 +21,12 @@ Usage (format detection):
 
 from __future__ import annotations
 
-import logging
 from tools.logging.icdev_logger import get_logger
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    pass
+    from tools.document_intelligence.extractors import Extraction
 
 logger = get_logger(__name__)
 
@@ -67,7 +66,7 @@ def is_available() -> bool:
     return _markitdown_available
 
 
-def convert(path: Path, llm_client=None) -> "Extraction":
+def convert(path: Path, llm_client=None) -> Extraction:
     """Convert a file to Markdown via MarkItDown.
 
     Args:

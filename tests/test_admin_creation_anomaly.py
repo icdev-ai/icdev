@@ -14,7 +14,6 @@ import pytest
 
 from tools.dashboard.api.admin import (
     _ADMIN_BURST_MAX,
-    _ADMIN_BURST_WINDOW_SECONDS,
     _ADMIN_MAX_TOTAL,
     _OFF_HOURS_END_UTC,
     _OFF_HOURS_START_UTC,
@@ -50,7 +49,7 @@ def tmp_db(tmp_path, monkeypatch):
     # Monkeypatch get_connection so it opens the temp DB, not the real one.
     import tools.dashboard.api.admin as admin_mod
 
-    original_get_conn = admin_mod.get_connection
+    _original_get_conn = admin_mod.get_connection
 
     def _fake_get_connection(db_path=None, **kwargs):
         return sqlite3.connect(db_path or str(db_file))

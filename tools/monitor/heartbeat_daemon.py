@@ -150,6 +150,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "enabled": True,
             "interval_seconds": 300,
             "stale_threshold_minutes": 5,
+        },
         "a2a_agent_health": {
             "enabled": True,
             "interval_seconds": 300,
@@ -637,7 +638,7 @@ def _trigger_kanban_wakeup(db_path: Optional[Path] = None) -> str:  # noqa: ARG0
         return f"wakeup_failed: {exc}"
 
 
-def check_kanban_stale(
+def check_kanban_reflex_wakeup(
     config: Optional[dict] = None,
     db_path: Optional[Path] = None,
 ) -> Dict[str, Any]:
@@ -922,8 +923,8 @@ CHECK_REGISTRY: Dict[str, Callable] = {
     "coherence_health": check_coherence_health,
     "review_board_health": check_review_board_health,
     "kanban_stale": check_kanban_stale,
+    "kanban_reflex_wakeup": check_kanban_reflex_wakeup,
     "ace_instance_stale": check_ace_instance_stale,
-    "kanban_stale": check_kanban_stale,
     "a2a_agent_health": check_a2a_agent_health,
 }
 

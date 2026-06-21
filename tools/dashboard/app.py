@@ -10015,7 +10015,7 @@ def create_app(testing: bool = False) -> Flask:
         promoted = []
         try:
             import json as _json
-            from tools.marketplace.openclaw_bridge import _get_db
+            from tools.marketplace.openclaw_bridge import _get_db, list_quarantine
 
             result = list_quarantine()
             if result.get("success"):
@@ -10558,7 +10558,7 @@ def create_app(testing: bool = False) -> Flask:
         except ImportError:
             verdict = "unavailable"
         except Exception as exc:
-            logger.warning("skillhub scan-skill failed for %s: %s", import_id, exc)
+            get_logger("icdev.dashboard").warning("skillhub scan-skill failed for %s: %s", import_id, exc)
             verdict = "error"
 
         # Persist risk_score in metadata regardless of scan outcome

@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import hmac
 import json
-import logging
 import os
 import sys
 from datetime import datetime, timezone
@@ -100,7 +99,6 @@ class GitLabAdapter(BaseChannelAdapter):
             return None
 
         user = request_data.get("user", {})
-        noteable_id = note.get("noteable_id", 0)
         issue_iid = (
             request_data.get("issue", {}).get("iid")
             or request_data.get("merge_request", {}).get("iid")

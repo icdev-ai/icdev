@@ -182,7 +182,7 @@ class TestApplyEnvOverrides:
 # _apply_env_overrides — env var priority layer
 # ---------------------------------------------------------------------------
 
-class TestApplyEnvOverrides:
+class TestApplyEnvOverridesEnvPriority:
     def test_env_var_overrides_yaml_value(self, monkeypatch):
         monkeypatch.setenv("ICDEV_CONFIG_MIN_CI_WORKFLOWS", "5")
         base = {"min_ci_workflows": 1, "min_iac_files": 1, "min_makefile_targets": 3, "min_npm_scripts": 3}
@@ -439,7 +439,7 @@ class TestCheckCdDeployment:
 # _apply_env_overrides — env var priority layer
 # ---------------------------------------------------------------------------
 
-class TestApplyEnvOverrides:
+class TestApplyEnvOverridesModuleLevel:
     def test_env_var_overrides_min_ci_workflows(self, monkeypatch):
         import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
         monkeypatch.setenv("ICDEV_CONFIG_MIN_CI_WORKFLOWS", "5")
