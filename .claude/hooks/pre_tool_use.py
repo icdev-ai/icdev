@@ -512,6 +512,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "dic_doc_views",
         # MCIP DAT — DTI score snapshots (NIST AU-2, SI-4 — append-only scoring audit trail)
         "mcip_dti_scores",
+        # Conflict Mesh — ML escalation predictions (migration 158, NIST AU-2, AU-12 — append-only)
+        "conflict_predictions",
     ]
 
     if tool_name == "Bash":
