@@ -1,0 +1,167 @@
+{
+  "version": "1.0.0",
+  "description": "IL-level model recommendations for AI paradigms used in AAC capability mapping.",
+  "mappings": {
+    "llm_generation": {
+      "il4": {
+        "recommended_model": "gpt-4o",
+        "provider": "azure_openai",
+        "data_requirements": "none",
+        "zero_shot_feasible": true,
+        "notes": "Use Azure OpenAI Service with CUI banner and private endpoint. No fine-tuning required for standard generation tasks."
+      },
+      "il5": {
+        "recommended_model": "gpt-4o",
+        "provider": "azure_openai_gov",
+        "data_requirements": "none",
+        "zero_shot_feasible": true,
+        "notes": "Azure OpenAI on IL5-accredited tenant with private networking and token auditing enabled."
+      },
+      "il6": {
+        "recommended_model": "llama-3-70b-instruct",
+        "provider": "ollama_on_prem",
+        "data_requirements": "none",
+        "zero_shot_feasible": true,
+        "notes": "Air-gapped deployment on SIPR-only infrastructure. NSA Type 1 encryption at rest and in transit."
+      }
+    },
+    "ml_classifier": {
+      "il4": {
+        "recommended_model": "xgboost",
+        "provider": "scikit_learn",
+        "data_requirements": "labeled_dataset_required",
+        "zero_shot_feasible": false,
+        "notes": "Requires curated labeled dataset (≥1K samples). Use scikit-learn or XGBoost with standard cross-validation."
+      },
+      "il5": {
+        "recommended_model": "lightgbm",
+        "provider": "aws_sagemaker",
+        "data_requirements": "labeled_dataset_required",
+        "zero_shot_feasible": false,
+        "notes": "Train on IL5-classified compute (SageMaker GovCloud or Azure ML). Encrypt training artifacts with CMK."
+      },
+      "il6": {
+        "recommended_model": "random_forest",
+        "provider": "on_prem_python",
+        "data_requirements": "sanitized_labeled_dataset",
+        "zero_shot_feasible": false,
+        "notes": "Train on air-gapped compute. Data must be sanitized and labeled by cleared personnel. Export models via approved media only."
+      }
+    },
+    "embedding_search": {
+      "il4": {
+        "recommended_model": "all-MiniLM-L6-v2",
+        "provider": "huggingface",
+        "data_requirements": "corpus_required",
+        "zero_shot_feasible": true,
+        "notes": "Use sentence-transformers with local vector DB (ChromaDB, Qdrant, or Milvus). No fine-tuning needed for generic semantic search."
+      },
+      "il5": {
+        "recommended_model": "all-mpnet-base-v2",
+        "provider": "huggingface",
+        "data_requirements": "corpus_required",
+        "zero_shot_feasible": true,
+        "notes": "Host embedding model on IL5 compute. Index vectors in dedicated VPC with no public egress."
+      },
+      "il6": {
+        "recommended_model": "all-MiniLM-L6-v2",
+        "provider": "local_huggingface",
+        "data_requirements": "sanitized_corpus",
+        "zero_shot_feasible": true,
+        "notes": "Run sentence-transformers locally on SIPR. Corpus must be sanitized; no cloud vector store. Use FAISS or flat index on classified storage."
+      }
+    },
+    "anomaly_detection": {
+      "il4": {
+        "recommended_model": "isolation_forest",
+        "provider": "scikit_learn",
+        "data_requirements": "historical_data_required",
+        "zero_shot_feasible": false,
+        "notes": "Requires historical time-series or tabular data. Unsupervised approach but needs baseline distribution."
+      },
+      "il5": {
+        "recommended_model": "autoencoder",
+        "provider": "tensorflow",
+        "data_requirements": "historical_data_required",
+        "zero_shot_feasible": false,
+        "notes": "Deep autoencoder on IL5 GPU compute. Historical data must be encrypted at rest and access-logged per NIST AU-6."
+      },
+      "il6": {
+        "recommended_model": "statistical_plus_ml_hybrid",
+        "provider": "local_python",
+        "data_requirements": "sanitized_historical_data",
+        "zero_shot_feasible": false,
+        "notes": "Hybrid statistical thresholds + small ML model on air-gapped compute. All data must be sanitized and cleared for training."
+      }
+    },
+    "decision_agent": {
+      "il4": {
+        "recommended_model": "ppo",
+        "provider": "stable_baselines3",
+        "data_requirements": "simulation_environment_required",
+        "zero_shot_feasible": false,
+        "notes": "Requires simulation environment or sandbox. RL training is not zero-shot; policy must be validated before deployment."
+      },
+      "il5": {
+        "recommended_model": "multi_agent_framework",
+        "provider": "autogen",
+        "data_requirements": "policy_examples_required",
+        "zero_shot_feasible": false,
+        "notes": "Multi-agent orchestration on IL5 compute. Provide policy examples and guardrails; agents must be audited per NIST AC-2."
+      },
+      "il6": {
+        "recommended_model": "rule_based_plus_local_llm",
+        "provider": "on_prem_agents",
+        "data_requirements": "policy_plus_simulation",
+        "zero_shot_feasible": false,
+        "notes": "Combine deterministic rule engine with local LLM on SIPR. All agent actions logged; no external tool access."
+      }
+    },
+    "agentic_trigger": {
+      "il4": {
+        "recommended_model": "react_agent",
+        "provider": "langchain",
+        "data_requirements": "none",
+        "zero_shot_feasible": true,
+        "notes": "LangChain ReAct agent with LLM as reasoning engine. No training data needed; configure tools and prompts."
+      },
+      "il5": {
+        "recommended_model": "langgraph_workflow",
+        "provider": "langchain",
+        "data_requirements": "workflow_definitions",
+        "zero_shot_feasible": true,
+        "notes": "LangGraph state-machine agent on IL5 compute. Define workflow nodes and edges; all state transitions logged."
+      },
+      "il6": {
+        "recommended_model": "local_llm_agent",
+        "provider": "ollama_on_prem",
+        "data_requirements": "none",
+        "zero_shot_feasible": true,
+        "notes": "Replace cron with local LLM-driven agentic scheduler on SIPR. Uses Ollama + custom trigger logic; no cloud dependency."
+      }
+    },
+    "nlp_extractor": {
+      "il4": {
+        "recommended_model": "bert_ner",
+        "provider": "huggingface",
+        "data_requirements": "few_shot_examples_optional",
+        "zero_shot_feasible": true,
+        "notes": "Use pre-trained BERT-NER or spaCy NER. Zero-shot for standard entities; few-shot fine-tuning improves domain accuracy."
+      },
+      "il5": {
+        "recommended_model": "roberta_ner",
+        "provider": "huggingface",
+        "data_requirements": "annotated_corpus",
+        "zero_shot_feasible": false,
+        "notes": "Fine-tuned RoBERTa on IL5 compute. Requires annotated corpus for domain-specific entity extraction."
+      },
+      "il6": {
+        "recommended_model": "spacy_small_transformer",
+        "provider": "local_spacy",
+        "data_requirements": "sanitized_annotated_data",
+        "zero_shot_feasible": false,
+        "notes": "Local spaCy transformer pipeline on SIPR. Annotated data must be sanitized; model trained offline and transferred via approved media."
+      }
+    }
+  }
+}

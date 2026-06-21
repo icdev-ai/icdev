@@ -8,8 +8,8 @@ poll_interval_seconds: 30
 max_resume_cycles_per_task: 5
 
 # Auto-merge squash on CI green + review approved
-auto_merge_enabled: false
-auto_merge_require_approval: true
+auto_merge_enabled: true
+auto_merge_require_approval: false
 
 # Truncate CI log excerpts before injecting as resume context
 ci_log_max_chars: 4000
