@@ -93,6 +93,90 @@ class TestLoadThresholds:
         assert result["min_makefile_targets"] == 3
         mod._load_thresholds.cache_clear()
 
+    def test_env_vars_override_yaml_values(self, tmp_path, monkeypatch):
+        cfg = tmp_path / "args" / "agent_readiness_config.yaml"
+        cfg.parent.mkdir(parents=True)
+        cfg.write_text(
+            "pillars:\n"
+            "  configuration:\n"
+            "    ci_pipeline:\n"
+            "      min_workflows: 2\n"
+            "    iac:\n"
+            "      min_files: 2\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("ICDEV_CONFIG_MIN_CI_WORKFLOWS", "5")
+        monkeypatch.setenv("ICDEV_CONFIG_MIN_IAC_FILES", "4")
+        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
+        mod._load_thresholds.cache_clear()
+        result = mod._load_thresholds()
+        assert result["min_ci_workflows"] == 5   # env var wins over YAML=2
+        assert result["min_iac_files"] == 4       # env var wins over YAML=2
+        mod._load_thresholds.cache_clear()
+
+    def test_env_vars_override_defaults_when_yaml_absent(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("ICDEV_CONFIG_MIN_MAKEFILE_TARGETS", "10")
+        monkeypatch.setenv("ICDEV_CONFIG_MIN_NPM_SCRIPTS", "8")
+        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        monkeypatch.setattr(mod, "_ARGS_PATH", tmp_path / "nonexistent.yaml")
+        mod._load_thresholds.cache_clear()
+        result = mod._load_thresholds()
+        assert result["min_makefile_targets"] == 10  # env var wins over default=3
+        assert result["min_npm_scripts"] == 8         # env var wins over default=3
+        mod._load_thresholds.cache_clear()
+
+    def test_malformed_env_var_is_ignored(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("ICDEV_CONFIG_MIN_CI_WORKFLOWS", "not-a-number")
+        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        monkeypatch.setattr(mod, "_ARGS_PATH", tmp_path / "nonexistent.yaml")
+        mod._load_thresholds.cache_clear()
+        result = mod._load_thresholds()
+        assert result["min_ci_workflows"] == 1  # falls back to default
+        mod._load_thresholds.cache_clear()
+
+
+# ---------------------------------------------------------------------------
+# _apply_env_overrides — unit tests for the env override helper
+# ---------------------------------------------------------------------------
+
+class TestApplyEnvOverrides:
+    def test_no_env_vars_returns_input_unchanged(self, monkeypatch):
+        for key in ("ICDEV_CONFIG_MIN_CI_WORKFLOWS", "ICDEV_CONFIG_MIN_IAC_FILES",
+                    "ICDEV_CONFIG_MIN_MAKEFILE_TARGETS", "ICDEV_CONFIG_MIN_NPM_SCRIPTS"):
+            monkeypatch.delenv(key, raising=False)
+        base = {"min_ci_workflows": 1, "min_iac_files": 1, "min_makefile_targets": 3, "min_npm_scripts": 3}
+        result = _apply_env_overrides(base)
+        assert result == base
+
+    def test_single_env_var_overrides_one_key(self, monkeypatch):
+        monkeypatch.setenv("ICDEV_CONFIG_MIN_CI_WORKFLOWS", "7")
+        base = {"min_ci_workflows": 1, "min_iac_files": 1, "min_makefile_targets": 3, "min_npm_scripts": 3}
+        result = _apply_env_overrides(base)
+        assert result["min_ci_workflows"] == 7
+        assert result["min_iac_files"] == 1       # unchanged
+
+    def test_all_env_vars_override_all_keys(self, monkeypatch):
+        monkeypatch.setenv("ICDEV_CONFIG_MIN_CI_WORKFLOWS", "9")
+        monkeypatch.setenv("ICDEV_CONFIG_MIN_IAC_FILES", "6")
+        monkeypatch.setenv("ICDEV_CONFIG_MIN_MAKEFILE_TARGETS", "12")
+        monkeypatch.setenv("ICDEV_CONFIG_MIN_NPM_SCRIPTS", "5")
+        base = {"min_ci_workflows": 1, "min_iac_files": 1, "min_makefile_targets": 3, "min_npm_scripts": 3}
+        result = _apply_env_overrides(base)
+        assert result == {"min_ci_workflows": 9, "min_iac_files": 6, "min_makefile_targets": 12, "min_npm_scripts": 5}
+
+    def test_malformed_env_var_leaves_value_unchanged(self, monkeypatch):
+        monkeypatch.setenv("ICDEV_CONFIG_MIN_IAC_FILES", "two")
+        base = {"min_iac_files": 3}
+        result = _apply_env_overrides(base)
+        assert result["min_iac_files"] == 3  # malformed → original preserved
+
+    def test_does_not_mutate_input_dict(self, monkeypatch):
+        monkeypatch.setenv("ICDEV_CONFIG_MIN_CI_WORKFLOWS", "99")
+        base = {"min_ci_workflows": 1}
+        _apply_env_overrides(base)
+        assert base["min_ci_workflows"] == 1  # original dict untouched
+
 
 # ---------------------------------------------------------------------------
 # _apply_env_overrides — env var priority layer
