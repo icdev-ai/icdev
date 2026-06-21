@@ -1,0 +1,38 @@
+role_id: performance_profiler
+display_name: Performance Profiler
+description: >
+  Weekly performance analyst. Probes dashboard route latencies,
+  identifies slow DB queries (>200ms), analyzes canvas page-load
+  times, detects memory growth anomalies across the reflex/daemon
+  layer, and produces a prioritised performance report with
+  specific optimization recommendations — index candidates, query
+  rewrites, caching opportunities, and memory leak suspects.
+version: '1.0'
+trust_tier: yellow
+default_count: 1
+max_instances: 1
+steps:
+- probe_route_latencies
+- identify_slow_queries
+- analyze_canvas_load_times
+- detect_memory_anomalies
+- produce_performance_report
+communication:
+  protocol: a2a
+  listen_topics:
+  - task.assigned
+  emit_topics:
+  - performance.report.ready
+  - status.updated
+llm_function: agent_knowledge
+tool_permissions:
+- Read
+- Grep
+- Glob
+genesis_reflex: kanban
+personality:
+  domain: Performance Analysis & Optimization
+  tags:
+  - latency-aware
+  - query-optimizer
+  - memory-sentinel

@@ -1,0 +1,237 @@
+{
+  "id": "vert-ai-assistant",
+  "name": "AI Assistant",
+  "slug": "ai-assistant",
+  "description": "Conversational AI systems that engage in multi-turn dialogue to answer questions, generate content, reason through problems, and take actions — with a strong emphasis on session continuity, persona consistency, trust, and explainability. Covers general-purpose LLM assistants (ChatGPT, Claude, Gemini, Perplexity, Copilot), enterprise conversational AI platforms (IBM watsonx Assistant, Google CCAI, Amazon Lex, Salesforce Einstein Bots), and specialized domain assistants (legal, medical, financial). Key challenges: conversation continuity across sessions, persona/identity stability, hallucination reduction, citation and grounding, user trust building, and explainability for regulated industries (FedRAMP IL4/5, HIPAA, FINRA).",
+  "keywords": [
+    "AI assistant",
+    "conversational AI",
+    "ChatGPT",
+    "Claude",
+    "Gemini",
+    "Perplexity",
+    "Microsoft Copilot",
+    "IBM watsonx Assistant",
+    "Google CCAI",
+    "Amazon Lex",
+    "Salesforce Einstein Bot",
+    "multi-turn conversation",
+    "session continuity",
+    "conversation memory",
+    "persistent context",
+    "persona consistency",
+    "AI identity",
+    "hallucination reduction",
+    "grounded AI",
+    "citation AI",
+    "explainable AI",
+    "RAG assistant",
+    "knowledge-grounded chatbot",
+    "domain-specific assistant",
+    "legal AI assistant",
+    "medical AI assistant",
+    "financial AI assistant",
+    "enterprise chatbot",
+    "AI trust",
+    "AI explainability",
+    "conversational UX",
+    "chat interface AI",
+    "AI persona",
+    "chat history",
+    "context window management",
+    "long context AI",
+    "voice assistant",
+    "multimodal assistant",
+    "AI onboarding",
+    "AI feedback loop",
+    "assistant fine-tuning",
+    "RLHF",
+    "constitutional AI"
+  ],
+  "regulatory_bodies": [
+    "NIST AI RMF",
+    "FedRAMP",
+    "HIPAA",
+    "FINRA",
+    "GDPR",
+    "EU AI Act",
+    "CISA",
+    "DISA",
+    "DoD AI Principles",
+    "OMB M-24-10",
+    "EO 14110 AI Safety"
+  ],
+  "academic_categories": {
+    "arxiv": [
+      "cs.AI",
+      "cs.CL",
+      "cs.LG",
+      "cs.HC",
+      "cs.IR"
+    ],
+    "ieee": [
+      "natural language processing",
+      "dialogue systems",
+      "conversational AI",
+      "question answering",
+      "information retrieval"
+    ],
+    "acm": [
+      "natural language processing",
+      "human-computer interaction",
+      "information retrieval",
+      "machine learning"
+    ]
+  },
+  "community_sources": {
+    "reddit": [
+      "r/ChatGPT",
+      "r/ClaudeAI",
+      "r/Bard",
+      "r/AIAssistants",
+      "r/artificial",
+      "r/MachineLearning",
+      "r/LocalLLaMA",
+      "r/PromptEngineering",
+      "r/OpenAI",
+      "r/singularity"
+    ],
+    "stackexchange": [
+      "ai.stackexchange.com",
+      "stackoverflow.com/questions/tagged/chatgpt",
+      "stackoverflow.com/questions/tagged/openai-api",
+      "stackoverflow.com/questions/tagged/claude-api"
+    ],
+    "discord": [
+      "OpenAI Discord",
+      "Anthropic Claude Discord",
+      "Google Bard Discord",
+      "LocalLLaMA Discord",
+      "PromptEngineering Discord"
+    ],
+    "github_discussions": [
+      "openai/openai-python",
+      "anthropics/anthropic-sdk-python",
+      "google/generative-ai-python",
+      "BerriAI/litellm",
+      "langchain-ai/langchain"
+    ]
+  },
+  "review_sites": {
+    "g2": ["ai-assistants", "conversational-ai-platform", "chatbot-platforms"],
+    "capterra": ["ai-assistant-software", "chatbot-software", "natural-language-processing-nlp-software"],
+    "trustpilot": []
+  },
+  "saas_commercial": [
+    "https://chat.openai.com",
+    "https://claude.ai",
+    "https://gemini.google.com",
+    "https://www.perplexity.ai",
+    "https://copilot.microsoft.com",
+    "https://www.ibm.com/products/watsonx-assistant"
+  ],
+  "open_source": {
+    "github_topics": [
+      "chatbot",
+      "conversational-ai",
+      "ai-assistant",
+      "llm-chat",
+      "open-chat",
+      "rag-chatbot",
+      "ai-chat",
+      "chat-ui",
+      "ollama",
+      "open-webui"
+    ],
+    "awesome_lists": [
+      "awesome-chatgpt",
+      "awesome-claude",
+      "awesome-llm",
+      "awesome-open-source-llm"
+    ],
+    "package_registries": {
+      "pypi": [
+        "openai",
+        "anthropic",
+        "google-generativeai",
+        "litellm",
+        "chainlit",
+        "streamlit",
+        "gradio"
+      ],
+      "npm": [
+        "openai",
+        "@anthropic-ai/sdk",
+        "@google/generative-ai",
+        "vercel-ai"
+      ],
+      "crates": []
+    }
+  },
+  "news_sources": [
+    "https://openai.com/news",
+    "https://www.anthropic.com/news",
+    "https://blog.google/technology/ai",
+    "https://venturebeat.com/category/ai",
+    "https://techcrunch.com/tag/artificial-intelligence",
+    "https://towardsdatascience.com",
+    "https://www.wired.com/tag/artificial-intelligence"
+  ],
+  "patent_categories": [
+    "G06F 40/56",
+    "G06N 3/08",
+    "G06F 40/30",
+    "G06N 5/04",
+    "G06F 16/903"
+  ],
+  "compliance_frameworks": [
+    "NIST AI RMF",
+    "FedRAMP High",
+    "DoD IL4/IL5",
+    "HIPAA Technical Safeguards",
+    "FINRA 17a-4",
+    "EU AI Act",
+    "ISO/IEC 42001",
+    "GDPR Article 22",
+    "EO 14110 AI Safety",
+    "OMB M-24-10"
+  ],
+  "video_sources": [
+    "youtube:ChatGPT vs Claude vs Gemini comparison 2024",
+    "youtube:AI assistant enterprise use cases",
+    "youtube:conversational AI session memory",
+    "youtube:RAG chatbot tutorial",
+    "youtube:AI assistant trust explainability",
+    "youtube:enterprise AI assistant deployment"
+  ],
+  "competitive_landscape": {
+    "primary_competitors": [
+      "ChatGPT (OpenAI)",
+      "Claude (Anthropic)",
+      "Gemini (Google)",
+      "Perplexity",
+      "Microsoft Copilot",
+      "IBM watsonx Assistant",
+      "Google CCAI",
+      "Amazon Lex / Bedrock",
+      "Meta AI",
+      "Mistral Le Chat"
+    ],
+    "adjacent_competitors": [
+      "Intercom Fin AI",
+      "Zendesk AI",
+      "Salesforce Einstein Bots",
+      "ServiceNow Now Assist",
+      "Freshdesk Freddy AI",
+      "Drift Conversational AI",
+      "Ada CX AI"
+    ]
+  },
+  "icdev_capability_map": {
+    "ace_engine": "15-role ACE co-worker engine with multi-agent coordination",
+    "iqe_widget": "IQE query widget on each canvas for natural language Q&A",
+    "chat_interface": "/chat route with use case catalog and LLM Router",
+    "dic_canvas": "Document Intelligence Canvas: grounded, cited, RAG-based search",
+    "gaps": "No multi-turn session persistence, no conversation history reload, no persona continuity across sessions"
+  }
+}

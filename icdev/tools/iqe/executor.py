@@ -1,12 +1,16 @@
 """IQE executor — dispatches ForeachNode AST to registered collection adapters."""
 from __future__ import annotations
 
+import logging as _log
 import re
+from concurrent.futures import ThreadPoolExecutor as _ThreadPoolExecutor
+from concurrent.futures import as_completed as _as_completed
 from typing import Any, Callable, Optional
 
 from tools.iqe.ast_nodes import AttrRef, BinOp, CollectionCall, ForeachNode, Literal, SelectNode, WhereNode
 
 _SAFE_IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_logger = _log.getLogger("iqe.executor")
 
 
 class Executor:
@@ -35,6 +39,17 @@ class Executor:
     def _fetch(self, name: str, conn: Any, call_args: list | None = None) -> list[dict]:
         if call_args is None:
             call_args = []
+
+        # Built-in: union("col1", "col2", ...) — parallel fetch + concatenate
+        if name == "union":
+            return self._fetch_union([str(a) for a in call_args], conn)
+
+        # Built-in: join("col1", "col2", "key_field") — parallel fetch + inner join
+        if name == "join":
+            if len(call_args) < 3:  # noqa: PLR2004
+                raise ValueError("join() requires 3 args: join(\"col1\", \"col2\", \"key_field\")")
+            return self._fetch_join(str(call_args[0]), str(call_args[1]), str(call_args[2]), conn)
+
         if name in self._registry:
             fn = self._registry[name]
             if call_args:
@@ -47,6 +62,53 @@ class Executor:
         cursor = conn.execute(f"SELECT * FROM {table}")  # noqa: S608  # nosec B608
         cols = [d[0] for d in cursor.description]
         return [dict(zip(cols, row)) for row in cursor.fetchall()]
+
+    def _fetch_union(self, collections: list[str], conn: Any) -> list[dict]:
+        """Fetch multiple collections in parallel and concatenate their rows.
+
+        Order is preserved: rows from collections[0] appear before collections[1],
+        even though fetches run concurrently.  A failed sub-fetch logs a warning
+        and contributes an empty slice rather than aborting the whole union.
+        """
+        if not collections:
+            return []
+        n_workers = min(len(collections), 8)
+        results: dict[int, list[dict]] = {}
+
+        def _fetch_one(idx: int, cname: str) -> tuple[int, list[dict]]:
+            return idx, self._fetch(cname, conn, [])
+
+        with _ThreadPoolExecutor(max_workers=n_workers, thread_name_prefix="iqe-union") as pool:
+            futures = {pool.submit(_fetch_one, i, c): i for i, c in enumerate(collections)}
+            for fut in _as_completed(futures):
+                try:
+                    idx, rows = fut.result()
+                    results[idx] = rows
+                except Exception as exc:  # noqa: BLE001
+                    _logger.warning("union: sub-fetch failed: %s", exc)
+
+        merged: list[dict] = []
+        for i in range(len(collections)):
+            merged.extend(results.get(i, []))
+        return merged
+
+    def _fetch_join(self, col1: str, col2: str, key: str, conn: Any) -> list[dict]:
+        """Fetch two collections in parallel and inner-join on *key*.
+
+        Tries DuckDB first (type coercion, handles mixed numeric/string keys).
+        Falls back to a pure-Python dict-lookup join when DuckDB is not installed
+        or raises for any reason.
+        """
+        with _ThreadPoolExecutor(max_workers=2, thread_name_prefix="iqe-join") as pool:
+            f1 = pool.submit(self._fetch, col1, conn, [])
+            f2 = pool.submit(self._fetch, col2, conn, [])
+            left = f1.result()
+            right = f2.result()
+
+        try:
+            return _duckdb_join(left, right, key)
+        except Exception:  # noqa: BLE001
+            return _python_join(left, right, key)
 
     def _filter(self, rows: list[dict], var: str, clauses: list[WhereNode]) -> list[dict]:
         if not clauses:
@@ -125,6 +187,77 @@ class Executor:
     def _strip_var(parts: list[str], var: str) -> list[str]:
         return parts[1:] if parts and parts[0] == var else parts
 
+
+# ---------------------------------------------------------------------------
+# Module-level join helpers (used by Executor._fetch_join)
+# ---------------------------------------------------------------------------
+
+def _python_join(left: list[dict], right: list[dict], key: str) -> list[dict]:
+    """Inner join two row lists on a shared key field — no external dependencies.
+
+    When both sides have the same field name (other than the join key), the
+    left row's value takes precedence in the merged dict.
+    """
+    right_idx: dict[Any, list[dict]] = {}
+    for row in right:
+        k = row.get(key)
+        if k is not None:
+            right_idx.setdefault(k, []).append(row)
+
+    merged: list[dict] = []
+    for lrow in left:
+        k = lrow.get(key)
+        if k in right_idx:
+            for rrow in right_idx[k]:
+                merged.append({**rrow, **lrow})  # left wins on field conflict
+    return merged
+
+
+def _duckdb_join(left: list[dict], right: list[dict], key: str) -> list[dict]:
+    """Inner join using DuckDB for type coercion.
+
+    Writes both sides to temp JSON files, executes a JOIN inside DuckDB, then
+    cleans up.  Raises ``ImportError`` when duckdb is not installed (caller
+    falls back to ``_python_join``).  Any other exception also propagates to
+    the caller's except clause.
+    """
+    import json           # noqa: PLC0415
+    import tempfile       # noqa: PLC0415
+    from pathlib import Path  # noqa: PLC0415
+
+    import duckdb         # noqa: PLC0415  — raises ImportError if not installed
+
+    tmp = Path(tempfile.gettempdir())
+    lp = tmp / "_iqe_join_left.json"
+    rp = tmp / "_iqe_join_right.json"
+    lp.write_text(json.dumps(left), encoding="utf-8")
+    rp.write_text(json.dumps(right), encoding="utf-8")
+    try:
+        con = duckdb.connect()
+        esc = key.replace('"', '""')
+        result = con.execute(
+            f"SELECT * FROM read_json_auto('{lp.as_posix()}') l "
+            f"JOIN read_json_auto('{rp.as_posix()}') r "
+            f'ON l."{esc}" = r."{esc}"'
+        )
+        cols = [d[0] for d in result.description]
+        raw_rows = [dict(zip(cols, row)) for row in result.fetchall()]
+        # Post-process: overlay original left-row values so left wins on field
+        # conflict (consistent with _python_join semantics).
+        left_map: dict[Any, dict] = {}
+        for lrow in left:
+            k_val = lrow.get(key)
+            if k_val is not None and k_val not in left_map:
+                left_map[k_val] = lrow
+        return [{**row, **left_map.get(row.get(key), {})} for row in raw_rows]
+    finally:
+        lp.unlink(missing_ok=True)
+        rp.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Module-level singleton and public API
+# ---------------------------------------------------------------------------
 
 _default = Executor()
 

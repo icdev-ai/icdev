@@ -17,4 +17,18 @@
 | Innovation Config | args/innovation_config.yaml | Configuration: sources, scoring weights, triage rules, scheduling, competitive intel, standards monitoring | (data) | YAML config |
 | Kanban Promoter | tools/innovation/kanban_promoter.py | Promote approved/suggested innovation signals into kanban_tasks (status=suggested) with source_prediction_id provenance (OPT-60) | --triage-result, --limit, --min-innovation-score, --dry-run, --list, --promote-id, --json | Summary JSON + inserted task ids |
 | Innovation Promoter Config | args/innovation_promoter.yaml | Config for kanban_promoter: triage states, score gate, priority thresholds | (data) | YAML config |
+| External Repo Seeder | tools/innovation/seed_external_repos.py | Seed external GitHub repos as innovation signals for technology scouting (source_type=external_repo_scouting) | --register-all, --status, --score-all, --json | Registered signal ids + scores |
 
+
+## DIC Integration (Epic D — dic-syn-ri)
+
+`stage_discover()` in `innovation_manager.py` accepts an optional `dic_collection_id` parameter.
+When provided, it calls `tools/research/source_scanners/dic_scanner.scan_dic_collection()` and
+includes the result as a `dic_collection` sub_result — treating DIC RAG chunks as pre-synthesized
+signals alongside web scanner output.
+
+```python
+from tools.innovation.innovation_manager import stage_discover
+result = stage_discover(dic_collection_id="my-collection")
+# result["sub_results"]["dic_collection"] = {collection_id, signals: N}
+```

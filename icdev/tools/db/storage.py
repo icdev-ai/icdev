@@ -20,7 +20,7 @@ PostgreSQL SQL so existing code works without changes:
     - last_insert_rowid() → lastval()
 
 Configuration:
-    ICDEV_STORAGE_BACKEND=postgresql|sqlite  (default: sqlite)
+    ICDEV_STORAGE_BACKEND=postgresql|sqlite  (default: postgresql)
     ICDEV_PG_HOST=localhost
     ICDEV_PG_PORT=5432
     ICDEV_PG_USER=icdev
@@ -103,8 +103,9 @@ def _default_db_path() -> str:
 
 DB_PATH = os.environ.get("ICDEV_DB_PATH", _default_db_path())
 
-# Backend detection
-_BACKEND = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()
+# Backend detection — PostgreSQL is the primary backend (PG-primary policy).
+# SQLite is an init-only fallback used when PG is unreachable or explicitly pinned.
+_BACKEND = os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql").lower()
 
 # ---------------------------------------------------------------------------
 # Audit logging flags — disabled by default (overhead on every query).
@@ -289,6 +290,34 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
         # BOOLEAN is native in PG
         # TEXT, REAL, INTEGER are compatible
 
+    # 8b. ALTER TABLE ... ADD COLUMN  →  ADD COLUMN IF NOT EXISTS (PG 9.6+).
+    #     Migrations add columns idempotently but guard only
+    #     sqlite3.OperationalError ("duplicate column"), which does NOT catch
+    #     PostgreSQL's DuplicateColumn. Making ADD COLUMN idempotent at the
+    #     dialect layer fixes this uniformly across every migration instead of
+    #     patching each one's exception handling.
+    if "ALTER TABLE" in sql.upper() and "ADD COLUMN" in sql.upper():
+        sql = re.sub(
+            r"(ADD\s+COLUMN\s+)(?!IF\s+NOT\s+EXISTS\b)",
+            r"\1IF NOT EXISTS ",
+            sql,
+            flags=re.IGNORECASE,
+        )
+
+    # 8c. ALTER TABLE <t>  →  ALTER TABLE IF EXISTS <t> (PG 9.x+).
+    #     The migration chain has historical ordering assumptions where some
+    #     ALTERs reference a table created by a *later* migration (or by an
+    #     older init script). IF EXISTS turns those into safe no-ops on a fresh
+    #     PostgreSQL replay instead of "relation does not exist" failures.
+    #     (Genuinely-required base tables are created explicitly by their
+    #     migrations; this only tolerates out-of-order incremental ALTERs.)
+    if re.match(r"\s*ALTER\s+TABLE\s+", sql, re.IGNORECASE) and not re.match(
+        r"\s*ALTER\s+TABLE\s+IF\s+EXISTS", sql, re.IGNORECASE
+    ):
+        sql = re.sub(
+            r"(\bALTER\s+TABLE\s+)", r"\1IF EXISTS ", sql, count=1, flags=re.IGNORECASE
+        )
+
     # 9. Datetime expressions: leave as native PG timestamp (no ::text cast).
     #    PostgreSQL columns are proper TIMESTAMP type after migration from SQLite.
     #    NOW() and NOW() +/- INTERVAL compare natively with timestamp columns.
@@ -383,10 +412,49 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
         flags=re.IGNORECASE,
     )
 
-    # 16. json_array_length(col) → jsonb_array_length(col::jsonb)
+    # 16. json_array_length(X) → jsonb_array_length((X)::jsonb)
+    #     X is parenthesized before the ::jsonb cast because :: binds tighter
+    #     than ->/->>. When X is a translated json_extract (rule 15 →
+    #     graph_json::jsonb->>'nodes'), an un-parenthesized cast would parse as
+    #     graph_json::jsonb ->> ('nodes'::jsonb), and 'nodes'::jsonb is invalid
+    #     JSON ("invalid input syntax for type json") — the network home/project
+    #     500s. (X)::jsonb casts the whole extracted text value instead.
     sql = re.sub(
         r"\bjson_array_length\(\s*([^)]+)\s*\)",
-        r"jsonb_array_length(\1::jsonb)",
+        r"jsonb_array_length((\1)::jsonb)",
+        sql,
+        flags=re.IGNORECASE,
+    )
+
+    # 16b. json_each(col, '$.path') → jsonb_array_elements((col::jsonb)->'path')
+    #      SQLite json_each() is a table-valued function that expands a JSON
+    #      array into rows; PG's equivalent over a nested array is
+    #      jsonb_array_elements() applied to the extracted sub-document. There
+    #      was previously NO rule, so json_each() passed through verbatim and
+    #      broke on PG. Nested paths ($.a.b) chain -> operators; the no-path
+    #      form (json_each(col)) expands the column itself.
+    def _replace_json_each(m):
+        col = m.group(1).strip()
+        raw_path = m.group(2) if m.lastindex and m.lastindex >= 2 else ""
+        path = (raw_path or "").strip().strip("'\"")
+        path = re.sub(r"^\$\.?", "", path)
+        chain = f"({col}::jsonb)"
+        if path:
+            for part in path.split("."):
+                chain += f"->'{part}'"
+        return f"jsonb_array_elements({chain})"
+
+    # Two-arg form: json_each(col, '$.path')
+    sql = re.sub(
+        r"\bjson_each\(\s*([^,]+?)\s*,\s*(['\"][^'\"]+['\"])\s*\)",
+        _replace_json_each,
+        sql,
+        flags=re.IGNORECASE,
+    )
+    # One-arg form: json_each(col)
+    sql = re.sub(
+        r"\bjson_each\(\s*([^,()]+?)\s*\)",
+        _replace_json_each,
         sql,
         flags=re.IGNORECASE,
     )
@@ -488,9 +556,16 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
     if is_fts5_query(sql):
         # 22a. col MATCH 'term' / col MATCH "term" → table.col <@> BM25Query('term')
         #      Resolves col to parent table via FTS5_TABLES registry; falls back to col name.
+        #      Skips table-level MATCH (where identifier is a table key in FTS5_TABLES) — those
+        #      go to rule 22b which uses plainto_tsquery.
+        _fts5_table_names = {t.lower() for t in FTS5_TABLES}
+
         def _fts5_bm25_match(m):
             col = m.group(1)
             term = m.group(2)
+            # Table-level MATCH: leave unchanged so rule 22b can translate it
+            if col.lower() in _fts5_table_names:
+                return m.group(0)
             table = col
             for tbl, cols in FTS5_TABLES.items():
                 if col in cols:
@@ -632,6 +707,58 @@ def _write_column_audit(table_name: str, role: str, masked_cols: list) -> None:
         pass
 
 
+def _pg_exec_statements(cursor, sql: str, backend: str) -> None:
+    """Execute a multi-statement script on PostgreSQL, statement-isolated.
+
+    Each statement runs inside its own SAVEPOINT so one failing statement
+    (already-exists DDL, an out-of-order reference, or an untranslatable
+    construct) only rolls back ITSELF — never the objects created earlier in
+    the script. A bare conn.rollback() here would discard the whole schema and
+    cascade "relation ... does not exist" into every dependent statement.
+    Comment-only / empty chunks are skipped, and autocommit connections (where
+    SAVEPOINT is unavailable) fall back to direct per-statement execution.
+    """
+    def _is_empty(s: str) -> bool:
+        # Strip -- line and /* */ block comments; whitespace/comment-only chunks
+        # are not executable statements (PG raises "can't execute an empty query").
+        no_line = re.sub(r"--[^\n]*", "", s)
+        no_block = re.sub(r"/\*.*?\*/", "", no_line, flags=re.DOTALL)
+        return not no_block.strip()
+
+    # Strip -- line comments BEFORE splitting on ';' — a ';' inside a comment
+    # would otherwise corrupt the split into a bogus "statement" (prose) whose
+    # syntax error would skip a real CREATE/ALTER that follows it on the line.
+    for raw in _strip_sql_line_comments(sql).split(";"):
+        stmt = raw.strip()
+        if not stmt or _is_empty(stmt):
+            continue
+        translated = translate_sql(stmt, backend)
+        if _is_empty(translated) or translated.strip() == "SELECT 1":
+            continue
+        # Isolate each statement in a SAVEPOINT so one failure (already-exists
+        # DDL, an out-of-order reference, an untranslatable construct) cannot
+        # roll back the objects created earlier in the script. If the connection
+        # is in autocommit mode SAVEPOINT raises ("can only be used in
+        # transaction blocks") — then run the statement directly (each is its
+        # own txn, so a failure cannot poison the next).
+        use_sp = True
+        try:
+            cursor.execute("SAVEPOINT icdev_es_stmt")
+        except Exception:
+            use_sp = False
+        try:
+            cursor.execute(translated)
+            if use_sp:
+                cursor.execute("RELEASE SAVEPOINT icdev_es_stmt")
+        except Exception:  # noqa: BLE001 — skip; keep prior successful statements
+            if use_sp:
+                try:
+                    cursor.execute("ROLLBACK TO SAVEPOINT icdev_es_stmt")
+                    cursor.execute("RELEASE SAVEPOINT icdev_es_stmt")
+                except Exception:
+                    pass
+
+
 # ---------------------------------------------------------------------------
 # Cursor wrapper — translates SQL and wraps results
 # ---------------------------------------------------------------------------
@@ -656,6 +783,20 @@ class StorageCursor:
                 self._cursor.execute(sql, params)
             else:
                 self._cursor.execute(sql, (params,))
+        return self
+
+    def executescript(self, sql: str):
+        """Run multiple statements (SQLite executescript parity).
+
+        Some migrations call cursor.executescript(...). SQLite cursors have
+        this natively; psycopg2 cursors do not. On PostgreSQL, split on ';'
+        and run each statement in its own SAVEPOINT so a single failing
+        statement does not abort the whole transaction (mirrors
+        StorageConnection.executescript). Commit is left to the caller.
+        """
+        if self._backend == "sqlite":
+            return self._cursor.executescript(sql)
+        _pg_exec_statements(self._cursor, sql, self._backend)
         return self
 
     def executemany(self, sql: str, params_list):
@@ -769,8 +910,15 @@ class StorageCursor:
             return sql, params
         try:
             from tools.security.row_security import inject_row_predicate
+            from tools.security.security_context import classifications_dominated_by
             tenant_id = getattr(ctx, "tenant_id", None)
             classification = getattr(ctx, "classification", None)
+            # Bell-LaPadula read-down: a caller may read any classification their
+            # clearance dominates, so inject `classification IN (<dominated set>)`
+            # rather than `classification = ?` (exact match, which wrongly hid a
+            # CUI row from a TOP SECRET//SCI caller). The set never includes a
+            # label above the caller's clearance, so read-up stays blocked.
+            classifications = classifications_dominated_by(classification) or None
             # Derive LAC and COI label sets from the compartments frozenset.
             # LAC_* prefixed tags → label-based access control predicate.
             # COI_* prefixed tags → community-of-interest predicate.
@@ -780,7 +928,7 @@ class StorageCursor:
             new_sql, extra, n_before = inject_row_predicate(
                 sql,
                 tenant_id=tenant_id,
-                classification=classification,
+                classifications=classifications,
                 lac_labels=lac_labels,
                 coi_tags=coi_tags,
             )
@@ -825,6 +973,45 @@ class StorageCursor:
             pass
 
 
+def _strip_sql_line_comments(sql: str) -> str:
+    """Remove ``--`` line comments outside of single-quoted string literals.
+
+    The PG ``executescript`` path splits a multi-statement script on ``;``.
+    A semicolon inside a ``-- ...`` comment would otherwise corrupt that split,
+    producing a bogus statement (e.g. ``this table persists ...``) whose syntax
+    error aborts the whole transaction and rolls back every prior CREATE TABLE.
+    Stripping comments first makes the split robust. Single-quoted strings are
+    respected (SQL doubled-quote escaping ``''`` is handled by toggling).
+    """
+    out = []
+    in_string = False
+    i = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        if in_string:
+            out.append(ch)
+            if ch == "'":
+                in_string = False
+            i += 1
+            continue
+        if ch == "'":
+            in_string = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "-" and i + 1 < n and sql[i + 1] == "-":
+            # Skip to end of line (keep the newline as a statement separator).
+            j = sql.find("\n", i)
+            if j == -1:
+                break
+            i = j
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 # ---------------------------------------------------------------------------
 # Connection wrapper — the main abstraction
 # ---------------------------------------------------------------------------
@@ -860,21 +1047,15 @@ class StorageConnection:
         if self._backend == "sqlite":
             return self._conn.executescript(sql)
 
-        # PostgreSQL: split statements and execute each
-        statements = [s.strip() for s in sql.split(";") if s.strip()]
+        # PostgreSQL: split statements and execute each, isolating every
+        # statement in its own SAVEPOINT. A single failing statement (e.g.
+        # already-exists DDL or an untranslatable construct) must only roll
+        # back ITSELF — not the whole transaction. A bare conn.rollback()
+        # here would discard every object created earlier in the script,
+        # making later dependent statements fail with "relation ... does not
+        # exist" and cascading the whole baseline schema load to failure.
         cursor = self._conn.cursor()
-        for stmt in statements:
-            if not stmt:
-                continue
-            translated = translate_sql(stmt, self._backend)
-            if translated.strip() and translated.strip() != "SELECT 1":
-                try:
-                    cursor.execute(translated)
-                except Exception:
-                    # Skip DDL errors (table already exists, etc.)
-                    self._conn.rollback()
-                    # Re-establish transaction
-                    pass
+        _pg_exec_statements(cursor, sql, self._backend)
         self._conn.commit()
         return cursor
 
@@ -1121,14 +1302,18 @@ def get_connection(db_path: str = None) -> StorageConnection:
     Flask request context the connection is automatically scoped to the
     authenticated user's tenant and classification via set_security_context.
     """
-    backend = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()
+    backend = os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql").lower()
 
-    # When a specific db_path is given for a canvas/auxiliary DB, use SQLite
-    # directly regardless of the main backend setting.  Do NOT force SQLite for
-    # the primary icdev.db when PostgreSQL is configured.
+    # A db_path ending in '.db' selects a dedicated SQLite file ONLY when the
+    # process backend is pinned to sqlite.  On a PostgreSQL-primary stack the
+    # '.db' path is ignored and the connection goes to the shared icdev database
+    # (canvas tables are namespaced by table-name prefix to avoid collisions).
+    # This removes the old ambiguity where any '.db' path silently forced SQLite
+    # even on PG, while a non-'.db' name fell through to shared PG.
     _main_db = os.environ.get("ICDEV_DB_PATH", str(Path.cwd() / "data" / "icdev.db"))
     if (
-        db_path
+        backend == "sqlite"
+        and db_path
         and str(db_path).endswith(".db")
         and Path(db_path).resolve() != Path(_main_db).resolve()
     ):
@@ -1169,30 +1354,68 @@ def get_connection(db_path: str = None) -> StorageConnection:
         return conn
 
 
+def resolve_canvas_backend(canvas_backend_env_var: str = None) -> str:
+    """Resolve the storage backend a canvas should use — PG-primary, no sqlite default.
+
+    Canvases inherit the platform backend rather than hard-coding SQLite.  The
+    resolution order is:
+
+        1. The canvas-specific override (e.g. ``NC_STORAGE_BACKEND``), if given
+           and set.
+        2. ``ICDEV_CANVAS_STORAGE_BACKEND`` — platform-wide canvas override.
+        3. ``ICDEV_STORAGE_BACKEND`` — the platform backend.
+        4. ``"postgresql"`` — PG is primary; SQLite is an init-only fallback.
+
+    There is intentionally NO hard ``"sqlite"`` default at any step: with every
+    backend env var unset this returns ``"postgresql"``.
+    """
+    candidates = []
+    if canvas_backend_env_var:
+        candidates.append(canvas_backend_env_var)
+    candidates += ["ICDEV_CANVAS_STORAGE_BACKEND", "ICDEV_STORAGE_BACKEND"]
+    for var in candidates:
+        val = os.environ.get(var)
+        if val:
+            return val.lower()
+    return "postgresql"
+
+
 def get_canvas_connection(canvas_env_var: str = None) -> "StorageConnection":
-    """Return a StorageConnection for a canvas-specific database, RLS disabled.
+    """Return a StorageConnection for canvas tables, RLS disabled.
 
     Canvas tables (aac_*, dsoc_*, ccc_*, etc.) do not have classification/tenant_id
     columns, so the global RLS predicate injected by _attach_flask_security_context
     would raise UndefinedColumn on every query.  Call this instead of get_connection()
-    in any canvas db/init_db.py that connects to a dedicated canvas schema.
+    in any canvas db/init_db.py that connects to canvas-specific tables.
+
+    Policy (PG-primary): on PostgreSQL the canvas tables live in the SHARED icdev
+    database, namespaced by table-name prefix — there is no separate per-canvas PG
+    database.  The dedicated ``.db`` SQLite file is used ONLY when the resolved
+    backend is sqlite.
 
     Args:
-        canvas_env_var: Optional env-var name for a custom PG database name
-                        (e.g. ``"AAC_PG_DATABASE"``).  Falls through to the
-                        main backend if not set.
+        canvas_env_var: Optional env-var name carrying a SQLite ``.db`` path used
+                        only in sqlite-pinned mode (e.g. ``"AAC_DB_PATH"``).  On
+                        PostgreSQL it is ignored.
 
     Returns:
         A StorageConnection with security_context=None (no RLS filtering).
     """
-    conn = get_connection(db_path=canvas_env_var and os.environ.get(canvas_env_var))
+    backend = resolve_canvas_backend()
+    if backend == "sqlite":
+        # SQLite-pinned: use the dedicated canvas .db file if one is configured.
+        db_path = canvas_env_var and os.environ.get(canvas_env_var)
+        conn = get_connection(db_path=db_path)
+    else:
+        # PG-primary: shared icdev database (canvas tables namespaced by prefix).
+        conn = get_connection()
     conn.set_security_context(None)
     return conn
 
 
 def get_backend() -> str:
-    """Return the current storage backend name."""
-    return os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()
+    """Return the current storage backend name (PG-primary default)."""
+    return os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql").lower()
 
 
 def is_pg(conn=None) -> bool:

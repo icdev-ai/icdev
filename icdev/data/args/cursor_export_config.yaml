@@ -1,0 +1,201 @@
+# ICDEV™ Cursor AI Export Configuration
+# Maps dev_profile dimensions to .cursorrules / .cursor/rules/*.mdc blocks
+# ---
+# description: Declarative mapping from dev_profile dimensions to Cursor AI editor rules
+# version: 1.0.0
+
+export:
+  formats:
+    cursorrules:
+      extension: ".cursorrules"
+      description: "Single project-root file; applies to all files unless globs overridden"
+      header_template: |
+        # ICDEV™ Cursor Profile — {{ scope }}/{{ scope_id }}
+        # Resolved: {{ resolved_at }}
+        # Dimensions: {{ dimensions|join(', ') }}
+        # Classification: {{ classification or 'none' }}
+
+    mdc:
+      extension: ".mdc"
+      description: "Scoped rule file in .cursor/rules/ with globs support"
+      header_template: |
+        ---
+        description: ICDEV™ {{ scope }}/{{ scope_id }} rules — {{ dimensions|join(', ') }}
+        globs:
+          - "**/*.py"
+          - "**/*.yaml"
+          - "**/*.md"
+          - "**/*.json"
+          - "**/*.ts"
+          - "**/*.tsx"
+        alwaysApply: true
+        ---
+
+  dimension_map:
+    style:
+      section: "Style & Formatting"
+      priority: 1
+      rules:
+        - condition: "max_line_length"
+          template: "Keep all lines under {{ max_line_length }} characters."
+        - condition: "naming_convention"
+          template: "Use {{ naming_convention }} naming conventions consistently."
+        - condition: "indent_style"
+          template: "Use {{ indent_style }} with {{ indent_size }} spaces per indent level."
+        - condition: "quote_style"
+          template: "Prefer {{ quote_style }} quotes."
+        - condition: "trailing_commas"
+          template: "{% if trailing_commas %}Always include trailing commas in multi-line structures.{% else %}Omit trailing commas.{% endif %}"
+        - condition: "formatter"
+          template: "Run formatters before commits: {{ formatter.values()|list|join(', ') }}."
+        - condition: "linter"
+          template: "Run linters before commits: {{ linter.values()|list|join(', ') }}."
+
+    language:
+      section: "Languages & Runtime"
+      priority: 2
+      rules:
+        - condition: "primary"
+          template: "Primary language: {{ primary }}."
+        - condition: "versions"
+          template: "Language versions: {{ versions|dictsort|map('join', ' ')|join(', ') }}."
+        - condition: "forbidden"
+          template: "{% if forbidden %}Forbidden languages: {{ forbidden|join(', ') }}.{% endif %}"
+        - condition: "package_managers"
+          template: "Package managers: {{ package_managers.values()|list|join(', ') }}."
+
+    testing:
+      section: "Testing & Quality"
+      priority: 3
+      rules:
+        - condition: "min_coverage"
+          template: "Minimum test coverage: {{ min_coverage }}%."
+        - condition: "methodology"
+          template: "Testing methodology: {{ methodology }}."
+        - condition: "require_unit"
+          template: "{% if require_unit %}Unit tests are required for all non-trivial logic.{% endif %}"
+        - condition: "require_bdd"
+          template: "{% if require_bdd %}BDD / acceptance tests required via {{ bdd_framework.values()|list|join(', ') }}.{% endif %}"
+        - condition: "flaky_test_policy"
+          template: "Flaky test policy: {{ flaky_test_policy }}."
+
+    architecture:
+      section: "Architecture & Patterns"
+      priority: 4
+      rules:
+        - condition: "web_framework"
+          template: "Web framework preference: {{ web_framework.values()|list|join(', ') }}."
+        - condition: "database"
+          template: "Database: {{ database }}."
+        - condition: "api_style"
+          template: "API style: {{ api_style }}."
+        - condition: "auth_pattern"
+          template: "Auth pattern: {{ auth_pattern }}."
+        - condition: "project_structure"
+          template: "Project structure: {{ project_structure }}."
+        - condition: "error_handling"
+          template: "Error handling: {{ error_handling }}."
+        - condition: "logging_format"
+          template: "Log format: {{ logging_format }}."
+        - condition: "container_base"
+          template: "Container bases: {{ container_base.values()|list|join(', ') }}."
+
+    security:
+      section: "Security & Compliance"
+      priority: 5
+      rules:
+        - condition: "sast_tools"
+          template: "Run SAST tools before merge: {{ sast_tools.values()|list|join(', ') }}."
+        - condition: "dependency_audit"
+          template: "{% if dependency_audit %}Dependency audit is required on every build.{% endif %}"
+        - condition: "vulnerability_sla.critical"
+          template: "Vulnerability SLA — critical: {{ vulnerability_sla.critical }}."
+        - condition: "secret_management"
+          template: "Secret management: {{ secret_management }}."
+        - condition: "encryption_standard"
+          template: "Encryption standard: {{ encryption_standard }}."
+
+    compliance:
+      section: "Compliance Markings"
+      priority: 6
+      rules:
+        - condition: "classification_level"
+          template: "Default data classification: {{ classification_level|upper }}."
+        - condition: "cui_required"
+          template: "{% if cui_required %}CUI markings required on all artifacts.{% endif %}"
+        - condition: "audit_trail_required"
+          template: "{% if audit_trail_required %}All actions must be auditable (append-only trail).{% endif %}"
+        - condition: "frameworks"
+          template: "{% if frameworks %}Compliance frameworks: {{ frameworks|join(', ') }}.{% endif %}"
+        - condition: "sbom_format"
+          template: "SBOM format: {{ sbom_format }}."
+
+    git:
+      section: "Git & Workflow"
+      priority: 7
+      rules:
+        - condition: "commit_format"
+          template: "Commit format: {{ commit_format }}."
+        - condition: "branching_strategy"
+          template: "Branching strategy: {{ branching_strategy }}."
+        - condition: "merge_strategy"
+          template: "Merge strategy: {{ merge_strategy }}."
+        - condition: "min_approvals"
+          template: "Minimum PR approvals: {{ min_approvals }}."
+        - condition: "pr_size_limit"
+          template: "Keep PRs under {{ pr_size_limit }} lines changed."
+        - condition: "delete_branch_on_merge"
+          template: "{% if delete_branch_on_merge %}Delete feature branches after merge.{% endif %}"
+
+    documentation:
+      section: "Documentation"
+      priority: 8
+      rules:
+        - condition: "readme_required"
+          template: "{% if readme_required %}Every project must have a README.md.{% endif %}"
+        - condition: "api_docs_required"
+          template: "{% if api_docs_required %}All public APIs must be documented.{% endif %}"
+        - condition: "adr_required"
+          template: "{% if adr_required %}Architecture Decision Records (ADRs) required for significant choices.{% endif %}"
+        - condition: "diagram_tool"
+          template: "Diagrams: {{ diagram_tool }}."
+
+    operations:
+      section: "Operations & Deployment"
+      priority: 9
+      rules:
+        - condition: "deployment_target"
+          template: "Deployment target: {{ deployment_target }}."
+        - condition: "ci_cd_platform"
+          template: "CI/CD platform: {{ ci_cd_platform }}."
+        - condition: "monitoring_stack"
+          template: "Monitoring: {{ monitoring_stack|join(', ') }}."
+        - condition: "backup_strategy"
+          template: "Backup strategy: {{ backup_strategy }}."
+
+    ai:
+      section: "AI & LLM Governance"
+      priority: 10
+      rules:
+        - condition: "preferred_provider"
+          template: "Preferred LLM provider: {{ preferred_provider }}."
+        - condition: "code_gen_model"
+          template: "Code generation model: {{ code_gen_model }}."
+        - condition: "token_budget_monthly"
+          template: "Monthly token budget: {{ token_budget_monthly|number_format }}."
+        - condition: "byok_enabled"
+          template: "{% if byok_enabled %}Bring-your-own-key is permitted.{% else %}Use organization-managed keys only.{% endif %}"
+        - condition: "prompt_governance"
+          template: "Prompt governance: {{ prompt_governance }}."
+
+  # ICDEV-specific additions that are not in standard dev_profile dimensions
+  # but can be injected from the resolved profile metadata or CLAUDE.md
+  icdev_overrides:
+    classification_banner: "All artifacts MUST include classification markings (CUI for IL4/IL5, SECRET for IL6)."
+    karpathy_principles: |
+      Before writing code, apply these 5 heuristics:
+      1. State assumptions — Name the constraints, inputs, invariants you're relying on.
+      2. Enumerate interpretations — For any ambiguous requirement, list the 2–4 ways it could be read before picking one.
+      3. Prefer simpler — Three similar lines beats one clever abstraction. Don't design for hypothetical future requirements. YAGNI.
+      4. Bound your edit scope — Only touch what the task requires. No drive-by refactors, no surrounding cleanup, no speculative error handling.
+      5. Success criteria — State how you'll know the change is done before writing it.

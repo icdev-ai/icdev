@@ -1,0 +1,63 @@
+role_id: doc_reviewer
+display_name: Documentation Reviewer
+description: Performs quality review of updated documentation — verifies accuracy, completeness, and cross-reference consistency.
+version: "1.0"
+trust_tier: yellow
+default_count: 1
+max_instances: 1
+steps:
+  - name: review_draft
+    tool: icdev.tools.ace.llm_step.invoke
+    args:
+      step_name: review_draft
+      instance_id: "$instance_id"
+      coworker_id: "$coworker_id"
+      llm_function: documentation
+      problem_text: "$problem_text"
+      role_description: "Documentation Reviewer checking the draft for accuracy, completeness, and internal consistency."
+    output_var: review_result
+  - name: cross_reference_check
+    tool: icdev.tools.ace.llm_step.invoke
+    args:
+      step_name: cross_reference_check
+      instance_id: "$instance_id"
+      coworker_id: "$coworker_id"
+      llm_function: documentation
+      problem_text: "$problem_text"
+      role_description: "Documentation Reviewer verifying all cross-references, links, and command examples are valid."
+    output_var: xref_result
+  - name: verify_completeness
+    tool: icdev.tools.ace.llm_step.invoke
+    args:
+      step_name: verify_completeness
+      instance_id: "$instance_id"
+      coworker_id: "$coworker_id"
+      llm_function: documentation
+      problem_text: "$problem_text"
+      role_description: "Documentation Reviewer confirming all required sections are present and no command is left undocumented."
+    output_var: completeness_result
+  - name: sign_off
+    tool: icdev.tools.ace.llm_step.invoke
+    args:
+      step_name: sign_off
+      instance_id: "$instance_id"
+      coworker_id: "$coworker_id"
+      llm_function: documentation
+      problem_text: "$problem_text"
+      role_description: "Documentation Reviewer providing final approval or flagging remaining issues before merge."
+    output_var: signoff_result
+communication:
+  protocol: a2a
+  listen_topics:
+    - doc.draft_ready
+    - task.assigned
+  emit_topics:
+    - doc.review_complete
+    - doc.approved
+llm_function: documentation
+tool_permissions:
+  - Read
+  - Grep
+  - Glob
+  - icdev.tools.ace.llm_step.invoke
+genesis_reflex: documentation

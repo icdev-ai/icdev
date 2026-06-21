@@ -16,7 +16,7 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Dict
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -42,7 +42,7 @@ def run(trigger_data=None, context=None):
     try:
         from tools.db.storage import get_connection
         conn = get_connection()
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: background reflex, no Flask request/tenant context; cpmp tables use CUI universally
         active = conn.execute(
             "SELECT id, contract_number, title FROM cpmp_contracts WHERE status = 'active'"
         ).fetchall()
@@ -156,7 +156,7 @@ def run(trigger_data=None, context=None):
                         results["subcon_alerts"] += 1
                         results["cards_created"] += 1
                         try:
-                            from tools.notification_service.event_service import notify_kanban_task_created
+                            pass
                         except Exception:
                             pass
                     except Exception as ce:
@@ -202,10 +202,9 @@ def _suggest_kanban_card(
 ):
     """Create a kanban suggestion card. Skips duplicates by title + dispatch_source."""
     import uuid as _uuid
-    from datetime import datetime, timezone
     from tools.db.storage import get_connection
     conn = get_connection()
-    conn.set_security_context(None)
+    conn.set_security_context(None)  # rls-bypass: background reflex; kanban_tasks has no classification/tenant_id columns
     try:
         # Dedup: skip if same title + same source already open
         existing = conn.execute(

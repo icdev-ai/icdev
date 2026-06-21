@@ -105,7 +105,7 @@ CUI_PORTION_MARKING = CUI_CONFIG.get("portion_marking", "(CUI)")
 
 # Server
 PORT = int(os.environ.get("ICDEV_DASHBOARD_PORT", "5050"))
-HOST = os.environ.get("ICDEV_DASHBOARD_HOST", "0.0.0.0")
+HOST = os.environ.get("ICDEV_DASHBOARD_HOST", "0.0.0.0")  # nosec B104 — dashboard default; override via ICDEV_DASHBOARD_HOST
 DEBUG = os.environ.get("ICDEV_DASHBOARD_DEBUG", "false").lower() in ("1", "true", "yes")
 
 # Monitoring thresholds (from monitoring_config.yaml)
@@ -114,10 +114,10 @@ HEALTH_CHECK = MONITORING_CONFIG.get("health_check", {})
 SLA = MONITORING_CONFIG.get("sla", {})
 
 # CUI banner toggle (D173) — env var takes precedence, then args/cui_markings.yaml `enabled` key
-CUI_BANNER_ENABLED = os.environ.get(
+CUI_BANNER_ENABLED = str(os.environ.get(
     "ICDEV_CUI_BANNER_ENABLED",
     CUI_CONFIG.get("enabled", "false"),
-).lower() in ("1", "true", "yes")
+)).lower() in ("1", "true", "yes")
 
 # Dashboard auth (D169-D172)
 DASHBOARD_SECRET = os.environ.get(

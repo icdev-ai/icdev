@@ -5,12 +5,6 @@ Records reflex decisions and their actual outcomes in the append-only
 ``harness_eval`` table. Computes precision, recall, ECE, and false-heal rate
 so the ``harness`` reflex can surface degradation cards to Kanban.
 
-Gate thresholds are loaded from ``args/genesis_config.yaml::harness.gates``
-instead of being hardcoded. When enough historical window data exists
-(>= harness.anomaly_detection.min_samples), thresholds are tightened
-adaptively via z-score anomaly detection (mean ± z*std), always at least
-as strict as the static floors/ceilings in config.
-
 Usage (from any reflex):
     from tools.genesis.harness.eval_harness import record_decision, record_outcome
 
@@ -142,6 +136,13 @@ class _AnomalyDetector:
         self.z_score = float(ad.get("z_score", 2.0))
         self.window_days = int(ad.get("window_days", self._DEFAULT_WINDOW))
         self.chunk_size = int(ad.get("chunk_size", self._DEFAULT_CHUNK))
+        bounds = ad.get("adaptive_bounds", {})
+        self._bounds = {
+            "precision_min_floor": float(bounds.get("precision_min_floor", 0.50)),
+            "ece_max_ceiling": float(bounds.get("ece_max_ceiling", 0.50)),
+            "false_heal_max_ceiling": float(bounds.get("false_heal_max_ceiling", 0.60)),
+            "heal_success_min_floor": float(bounds.get("heal_success_min_floor", 0.30)),
+        }
         self._cache: dict[str, dict] = {}
 
     def get_thresholds(self, reflex: str) -> dict[str, float]:
@@ -168,6 +169,7 @@ class _AnomalyDetector:
 
     def _collect_snapshots(self, reflex: str) -> list[dict]:
         conn = None
+        # window_days is the per-snapshot window size; total lookback spans min_samples windows
         total_days = self.window_days * self.min_samples
         try:
             conn = _conn()
@@ -232,6 +234,7 @@ class _AnomalyDetector:
     def _compute_adaptive(self, snapshots: list[dict]) -> dict:
         adaptive: dict = {}
         z = self.z_score
+        b = self._bounds
 
         def _mean_std(vals: list[float]) -> tuple[float, float]:
             m = statistics.mean(vals)
@@ -241,22 +244,22 @@ class _AnomalyDetector:
         precisions = [s["precision"] for s in snapshots if "precision" in s]
         if len(precisions) >= self.min_samples:
             m, s = _mean_std(precisions)
-            adaptive["precision_min"] = max(0.50, m - z * s)
+            adaptive["precision_min"] = max(b["precision_min_floor"], m - z * s)
 
         eces = [s["ece"] for s in snapshots if "ece" in s]
         if len(eces) >= self.min_samples:
             m, s = _mean_std(eces)
-            adaptive["ece_max"] = min(0.50, m + z * s)
+            adaptive["ece_max"] = min(b["ece_max_ceiling"], m + z * s)
 
         false_heals = [s["false_heal"] for s in snapshots if "false_heal" in s]
         if len(false_heals) >= self.min_samples:
             m, s = _mean_std(false_heals)
-            adaptive["false_heal_max"] = min(0.60, m + z * s)
+            adaptive["false_heal_max"] = min(b["false_heal_max_ceiling"], m + z * s)
 
         heal_successes = [s["heal_success"] for s in snapshots if "heal_success" in s]
         if len(heal_successes) >= self.min_samples:
             m, s = _mean_std(heal_successes)
-            adaptive["heal_success_min"] = max(0.30, m - z * s)
+            adaptive["heal_success_min"] = max(b["heal_success_min_floor"], m - z * s)
 
         return adaptive
 
@@ -277,9 +280,9 @@ def record_decision(
     Parameters
     ----------
     task_id:    Kanban task ID or failure ID being decided on.
-    reflex:     Originating reflex name (oracle_triage | heal | harness ...).
+    reflex:     Originating reflex name (oracle_triage | heal | harness …).
     decision:   What the reflex decided (promote | dismiss | heal | skip | rate_limited).
-    confidence: Score used by the reflex (0.0-1.0); None if not applicable.
+    confidence: Score used by the reflex (0.0–1.0); None if not applicable.
     metadata:   Extra context stored as JSON.
 
     Returns the new row ID.
@@ -425,7 +428,8 @@ def check_gates() -> list[dict[str, Any]]:
     """
     alerts: list[dict] = []
     detector = _AnomalyDetector()
-    min_decisions = int(_DEFAULT_GATES["min_decisions"])
+    cfg = _load_harness_config()
+    min_decisions = int(cfg.get("gates", {}).get("min_decisions", _DEFAULT_GATES["min_decisions"]))
 
     for reflex in ("oracle_triage", "heal"):
         m = compute_metrics(reflex)

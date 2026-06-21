@@ -52,7 +52,6 @@ class TestILPenaltyFromConfig:
         """Penalty dict must come from config; injecting a custom config overrides it."""
         _extract_components, _load_config, _, _ = _import_scorer()
         from tools.ai_augmentation.opportunity_scorer import _extract_components as ec_fn
-        import types
 
         # Patch config with a different il5 penalty (0.20 instead of default 0.10)
         custom_cfg = {

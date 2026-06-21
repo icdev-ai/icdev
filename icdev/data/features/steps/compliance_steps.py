@@ -312,18 +312,6 @@ def step_gate_reported(context):
 # Helpers
 # ---------------------------------------------------------------------------
 
-class _StubResult:
-    """Minimal subprocess.CompletedProcess-like stub for error cases."""
-    def __init__(self, msg: str):
-        self.returncode = 1
-        self.stdout = ""
-        self.stderr = msg
-
-
-def _make_stub_result(msg: str) -> _StubResult:
-    return _StubResult(msg)
-
-
 def _parse_json_output(stdout):
     """Parse JSON from tool stdout, handling markdown-wrapped JSON."""
     text = stdout.strip()

@@ -14,6 +14,7 @@ from tools.db.storage import get_connection
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
+from tools.dashboard.auth import require_role
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
@@ -419,6 +420,137 @@ def api_pg_capture_plans():
         return jsonify({"plans": plans, "count": len(plans)})
     except Exception as exc:
         return jsonify({"plans": [], "count": 0, "note": str(exc)})
+    finally:
+        conn.close()
+
+
+# ── Phase B: Capture Plan Phase Gates ────────────────────────────────────────
+
+CAPTURE_PHASES = ['qualify', 'pursue', 'capture', 'bid', 'proposal']
+CAPTURE_PHASE_LABELS = {
+    'qualify':  'Qualify',
+    'pursue':   'Pursue',
+    'capture':  'Capture',
+    'bid':      'Bid/No-Bid',
+    'proposal': 'Proposal',
+}
+
+
+@proposal_genesis_api.route("/capture-plans/<plan_id>/gates", methods=["GET"])
+def api_pg_capture_plan_gates(plan_id):
+    """GET /api/proposal-genesis/capture-plans/<plan_id>/gates — Gate decision history."""
+    conn = _get_db()
+    try:
+        plan = conn.execute(
+            "SELECT id, opportunity_id, current_phase FROM pg_capture_plans WHERE id = ?",
+            (plan_id,),
+        ).fetchone()
+        if not plan:
+            return jsonify({"error": "not_found"}), 404
+        rows = conn.execute(
+            "SELECT * FROM pg_capture_gate_decisions WHERE capture_plan_id = ? ORDER BY created_at DESC",
+            (plan_id,),
+        ).fetchall()
+        gates = [dict(r) for r in rows]
+        return jsonify({
+            "plan_id": plan_id,
+            "current_phase": plan["current_phase"] or "qualify",
+            "phase_label": CAPTURE_PHASE_LABELS.get(plan["current_phase"] or "qualify", "Qualify"),
+            "phases": CAPTURE_PHASES,
+            "gates": gates,
+            "count": len(gates),
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+@proposal_genesis_api.route("/capture-plans/<plan_id>/advance", methods=["POST"])
+@require_role("capture_mgr", "admin")
+def api_pg_capture_plan_advance(plan_id):
+    """POST /api/proposal-genesis/capture-plans/<plan_id>/advance — Advance phase gate (capture_mgr, admin)."""
+    import uuid as _uuid
+    body = request.get_json(silent=True) or {}
+    decision = body.get("decision", "advance")
+    rationale = body.get("rationale", "")
+    decided_by = body.get("decided_by", "")
+    criteria_met = body.get("gate_criteria_met", "")
+
+    if decision not in ("advance", "hold", "no_bid", "return"):
+        return jsonify({"error": "invalid decision"}), 400
+
+    conn = _get_db()
+    try:
+        plan = conn.execute(
+            "SELECT id, opportunity_id, current_phase FROM pg_capture_plans WHERE id = ?",
+            (plan_id,),
+        ).fetchone()
+        if not plan:
+            return jsonify({"error": "not_found"}), 404
+
+        current = plan["current_phase"] or "qualify"
+        opp_id = plan["opportunity_id"]
+
+        if decision == "no_bid":
+            to_phase = "no_bid"
+            new_phase = current
+        elif decision == "advance":
+            idx = CAPTURE_PHASES.index(current) if current in CAPTURE_PHASES else -1
+            if idx == -1 or idx >= len(CAPTURE_PHASES) - 1:
+                return jsonify({"error": "already_at_final_phase"}), 400
+            to_phase = CAPTURE_PHASES[idx + 1]
+            new_phase = to_phase
+        else:
+            to_phase = current
+            new_phase = current
+
+        gate_id = str(_uuid.uuid4())
+        from datetime import datetime, timezone as _tz
+        now = datetime.now(_tz.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        conn.execute(
+            "INSERT INTO pg_capture_gate_decisions "
+            "(id, capture_plan_id, opportunity_id, from_phase, to_phase, decision, rationale, decided_by, gate_criteria_met, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (gate_id, plan_id, opp_id, current, to_phase, decision, rationale, decided_by, criteria_met, now),
+        )
+
+        if decision == "advance":
+            conn.execute(
+                "UPDATE pg_capture_plans SET current_phase = ?, updated_at = ? WHERE id = ?",
+                (new_phase, now, plan_id),
+            )
+
+        conn.commit()
+        return jsonify({
+            "gate_id": gate_id,
+            "plan_id": plan_id,
+            "from_phase": current,
+            "to_phase": to_phase,
+            "decision": decision,
+            "new_phase": new_phase,
+        }), 201
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+@proposal_genesis_api.route("/capture-plans/pipeline-summary", methods=["GET"])
+@require_role("capture_mgr", "admin")
+def api_pg_capture_pipeline_summary():
+    """GET /api/proposal-genesis/capture-plans/pipeline-summary — Aggregated plan counts per phase."""
+    conn = _get_db()
+    try:
+        rows = conn.execute(
+            "SELECT COALESCE(current_phase,'qualify') AS phase, COUNT(*) AS cnt "
+            "FROM pg_capture_plans GROUP BY COALESCE(current_phase,'qualify')"
+        ).fetchall()
+        summary = {r["phase"]: r["cnt"] for r in rows}
+        return jsonify({"summary": summary, "phases": CAPTURE_PHASES})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
     finally:
         conn.close()
 

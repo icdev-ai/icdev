@@ -1,3 +1,22 @@
+# Anomaly-detection calibration for the RAG ingestion pipeline.
+# Replaces the former hardcoded embed-batch / skip-rate constants in
+# tools/rag/ingestion_manager.py with thresholds derived from the historical
+# rag_ingestion_log. Change config here, not code.
+ingestion_manager:
+  anomaly_detection:
+    enabled: true
+    # Minimum rag_ingestion_log rows before adaptive calibration kicks in;
+    # below this, the fallback_* values are used.
+    min_samples: 30
+    # Fallbacks when disabled or insufficient history (mirror module defaults).
+    fallback_embed_batch: 20
+    fallback_skip_rate_anomaly: 0.95
+    # Safe clamps for the adaptively-computed values.
+    adaptive_bounds:
+      batch_floor: 5
+      batch_ceil: 100
+      skip_floor: 0.50
+      skip_ceil: 0.99
 enabled_sources:
 - innovation_signals
 - innovation_solutions

@@ -18,7 +18,7 @@ from pathlib import Path
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]
 DB_PATH = _ICDEV_ROOT / "data" / "observability_canvas.db"
 
-_OC_BACKEND = os.environ.get("OC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", "sqlite")).lower()
+_OC_BACKEND = os.environ.get("OC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql"))).lower()
 
 
 def get_connection():

@@ -34,11 +34,33 @@ import re
 import sys
 from pathlib import Path
 
+try:
+    import yaml as _yaml
+except ImportError:
+    _yaml = None  # type: ignore[assignment]
+
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 PKG_DIR = REPO_ROOT / "icdev"
 SYNC_SCRIPT = REPO_ROOT / "tools" / "installer" / "sync_package_tree.py"
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 MANIFEST = REPO_ROOT / "MANIFEST.in"
+_PKG_CONFIG = REPO_ROOT / "args" / "package_config.yaml"
+
+
+def _load_pkg_config() -> dict:
+    """Load args/package_config.yaml; return empty dict on any failure."""
+    if _yaml is None or not _PKG_CONFIG.exists():
+        return {}
+    try:
+        with open(_PKG_CONFIG, encoding="utf-8") as fh:
+            return _yaml.safe_load(fh) or {}
+    except Exception:
+        return {}
+
+
+def _min_slash_command_count() -> int:
+    cfg = _load_pkg_config()
+    return int(cfg.get("validate", {}).get("min_slash_command_count", 40))
 
 
 # ---------------------------------------------------------------------------
@@ -195,17 +217,17 @@ def check_bootstrap_populated() -> dict:
         if not p.is_dir() or not any(p.iterdir()):
             missing.append(rel)
 
-    # Count slash commands — should be >= 40
     cmds_dir = REPO_ROOT / "icdev" / "data" / "claude_bootstrap" / "claude" / "commands"
     cmd_count = len(list(cmds_dir.glob("*.md"))) if cmds_dir.exists() else 0
+    min_cmds = _min_slash_command_count()
 
-    ok = not missing and cmd_count >= 40
+    ok = not missing and cmd_count >= min_cmds
     return {
         "check": "bootstrap_populated",
         "ok": ok,
         "missing": missing,
         "slash_command_count": cmd_count,
-        "min_command_count": 40,
+        "min_command_count": min_cmds,
     }
 
 

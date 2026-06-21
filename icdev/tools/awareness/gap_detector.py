@@ -661,14 +661,18 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
     """
     findings: List[Dict[str, Any]] = []
     tools_dir = BASE_DIR / "tools"
-    # icdev/ is the canonical package root (this file lives inside it).
-    # tools/ is a backward-compat shim.  When run from the repo root the
-    # gap detector also needs to see CREATE TABLEs in the legacy tools/
-    # and apps/ trees so references from those trees aren't mis-flagged.
-    # Use the grandparent of BASE_DIR ("icdev"'s parent = repo root) if it
-    # looks like the real repo root; fall back to BASE_DIR-only otherwise.
-    _repo_root = BASE_DIR.parent if (BASE_DIR.parent / "tools").is_dir() else BASE_DIR
-    schema_roots = [tools_dir, _repo_root / "tools", _repo_root / "apps"]
+    # CREATE TABLE statements legitimately live outside tools/ as well:
+    # canvas / app schema modules under apps/ own their own DDL (e.g.
+    # apps/innovation/db.py defines innov_ideas, innov_assessments, ...).
+    # The reference scan below only looks at tools/, so a table created in
+    # apps/ but read from a tools/ adapter (e.g. tools/iqe/adapters/
+    # innovation.py SELECTs innov_ideas) was mis-flagged as an orphan.
+    # Scan apps/ for schema too so those CREATE TABLEs are seen.
+    # icdev/ is the canonical package location (tools/ is a shim); canvas
+    # schemas defined under icdev/tools/ (e.g. aac_scans in
+    # icdev/tools/ai_augmentation/db/init_db.py) must also be covered so
+    # seed/adapter references in tools/ don't false-fire as orphans.
+    schema_roots = [tools_dir, BASE_DIR / "apps", BASE_DIR / "icdev"]
 
     created: Set[str] = set()
     referenced: Dict[str, str] = {}  # table → first referencing file
@@ -710,11 +714,9 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
         "finetune_eval_results", "finetune_jobs", "finetune_metrics",  # render_handler_service finetune
         # notification_service handler stubs (aiify-scanner-generated candidates,
         # never wired to production routes; all tests mock get_connection())
-        "aiify_roadmap_items",                           # handler_service aiify progress handler
-        "canvas_designs",                                # handler_service canvas status handler
+"canvas_designs",                                # handler_service canvas status handler
         "cmmc_practice_gaps", "cmmc_systems",            # handler_service cmmc gap handler
         "fedramp_controls",                              # render_handler_service fedramp notice
-        "finetune_eval_results", "finetune_jobs", "finetune_metrics",  # render_handler_service finetune
         "gate_failures",                                 # render_handler_service gate report
         "genesis_designs",                               # multiple notification_service files
         # RAG tool uses a plausible SQL template string for demonstration; no real table.
@@ -730,6 +732,12 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
     system_tables = {
         "information_schema",  # Postgres catalog namespace
         "pg_catalog",          # Postgres catalog namespace
+        # Oracle catalog view — appears in SQL documentation/examples in migration_canvas
+        "all_tables",          # tools/migration_canvas/cam_refactor_engine.py example SQL
+        # PostgreSQL schema name used schema-qualified as ``FROM cache.stats`` in
+        # cache_savings/constants.py; from_re captures ``cache`` as the table name
+        # because it stops at the dot — the real table is ``cache.stats``.
+        "cache",               # tools/cache_savings/constants.py schema-qualified ref
         # pg_catalog tables used by migration introspection
         "pg_tables", "pg_indexes", "pg_class", "pg_namespace",
         "pg_constraint",       # constraint catalog (ALTER TABLE CHECK introspection)
@@ -754,10 +762,14 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
         "read_csv_auto",
         "read_parquet",
         "glob",
+        # PostgreSQL schema name used schema-qualified as ``FROM cache.stats`` in
+        # cache_savings/constants.py; from_re captures ``cache`` as the table name
+        # because it stops at the dot — the real table is ``cache.stats``.
+        "cache",               # tools/cache_savings/constants.py schema-qualified ref
     }
 
     create_re = re.compile(
-        r"CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+([a-zA-Z_][\w]*)",
+        r"CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+(?:[a-zA-Z_][\w]*\.)?([a-zA-Z_][\w]*)",
         re.IGNORECASE,
     )
     # ALTER TABLE x RENAME TO y is equivalent to "CREATE TABLE y" for the
@@ -788,8 +800,8 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
     # First pass: collect CREATE TABLE (and RENAME TO) from SQL-shaped string
     # literals in .py files. Comments are stripped first so documentation
     # inside SQL doesn't leak English prose into the regex matcher.
-    for _sroot in schema_roots:
-        for py in _walk_py(_sroot):
+    for root in schema_roots:
+        for py in _walk_py(root):
             for sql in _extract_py_string_literals(py):
                 if not _is_likely_sql(sql):
                     continue
@@ -802,8 +814,8 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
     # Also scan raw .sql files (migrations written as pure SQL). These
     # don't need the _is_likely_sql gate — if it's a .sql file, assume
     # it's SQL. Comments still get stripped.
-    for _sroot in schema_roots:
-        for sql_path in _sroot.rglob("*.sql"):
+    for root in schema_roots:
+        for sql_path in root.rglob("*.sql"):
             if any(part in _EXCLUDED_PARTS for part in sql_path.parts):
                 continue
             src = _strip_sql_comments(_read_text(sql_path))

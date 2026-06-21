@@ -6,6 +6,10 @@ Scans aiml_nodes for foundation-model nodes whose model_id is not present
 in the FOUNDATION_MODELS catalog constant.  Reports orphans; in non-dry-run
 mode writes a Kanban suggestion if any are found.
 
+Anomaly detection (oracle_anomaly_detection routing) decides whether the
+orphan count warrants a Kanban suggestion rather than a hardcoded threshold.
+Falls back to deterministic rule (any orphan → suggest) if LLM unavailable.
+
 COOLDOWN_HOURS = 4 (enforced by Genesis daemon).
 """
 IMPLEMENTATION_STATUS = "full"
@@ -45,6 +49,14 @@ try:
 except ImportError:
     FOUNDATION_MODELS = []
     _CATALOG_IDS = frozenset()
+
+try:
+    from icdev.tools.llm.router import LLMRouter as _LLMRouter
+    from icdev.tools.llm.provider import LLMRequest as _LLMRequest
+    _llm_router = _LLMRouter()
+except Exception:
+    _llm_router = None  # type: ignore[assignment]
+    _LLMRequest = None  # type: ignore[assignment]
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -153,6 +165,73 @@ def _create_kanban_suggestion(orphans: List[Dict[str, Any]]) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
+# Anomaly detection
+# ---------------------------------------------------------------------------
+
+def _is_anomalous(orphans: List[Dict[str, Any]], catalog_size: int) -> Dict[str, Any]:
+    """Use LLM anomaly detection to decide if orphan count warrants a Kanban suggestion.
+
+    Returns a dict with keys:
+        anomalous (bool): whether a Kanban suggestion should be created
+        reason (str): explanation from LLM or deterministic fallback
+        method (str): 'llm' | 'fallback'
+    """
+    if not orphans:
+        return {"anomalous": False, "reason": "no orphans found", "method": "deterministic"}
+
+    # Deterministic fallback when LLM unavailable
+    if _llm_router is None or _LLMRequest is None:
+        return {"anomalous": True, "reason": "LLM unavailable; any orphan triggers suggestion", "method": "fallback"}
+
+    try:
+        if _llm_router.is_no_llm_mode():
+            return {"anomalous": True, "reason": "no-LLM mode; any orphan triggers suggestion", "method": "fallback"}
+    except Exception:
+        pass
+
+    orphan_rate = round(len(orphans) / max(catalog_size, 1) * 100, 1)
+    sample_ids = [o["model_id"] for o in orphans[:5]]
+    prompt = (
+        "You are an anomaly detector for an AI/ML model catalog. "
+        "Analyze the following scan result and decide if it is anomalous enough to require "
+        "a Kanban work item. Respond ONLY with a JSON object with keys: "
+        "\"anomalous\" (bool), \"severity\" (\"low\"|\"medium\"|\"high\"), \"reason\" (string ≤120 chars).\n\n"
+        f"Scan context:\n"
+        f"  catalog_size: {catalog_size} known foundation model IDs\n"
+        f"  orphan_count: {len(orphans)} nodes reference model IDs absent from catalog\n"
+        f"  orphan_rate: {orphan_rate}% of catalog size\n"
+        f"  sample_orphan_ids: {sample_ids}\n\n"
+        "Consider: a single new orphan in a large catalog may be noise; "
+        "many orphans or a high orphan_rate is likely a real catalog drift. "
+        "If uncertain, prefer anomalous=true."
+    )
+
+    try:
+        req = _LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            system_prompt="You are a concise JSON-only anomaly detector. No prose outside the JSON object.",
+            classification="IL4",
+        )
+        resp = _llm_router.invoke(function="oracle_anomaly_detection", request=req)
+        raw = resp.content.strip()
+        # Strip markdown code fences if present
+        if raw.startswith("```"):
+            raw = raw.split("```")[1]
+            if raw.startswith("json"):
+                raw = raw[4:]
+        decision = json.loads(raw)
+        return {
+            "anomalous": bool(decision.get("anomalous", True)),
+            "reason": str(decision.get("reason", "")),
+            "severity": str(decision.get("severity", "medium")),
+            "method": "llm",
+        }
+    except Exception as exc:
+        print(f"  [aimc_orphan_refs] WARNING: anomaly LLM call failed ({exc}); using fallback")
+        return {"anomalous": True, "reason": f"LLM error ({exc}); fallback: any orphan triggers suggestion", "method": "fallback"}
+
+
+# ---------------------------------------------------------------------------
 # Reflex entry point
 # ---------------------------------------------------------------------------
 
@@ -175,8 +254,14 @@ def run(payload: dict, ctx: Any = None) -> Dict[str, Any]:
 
     print(f"  [aimc_orphan_refs] orphans_found={len(orphans)}  elapsed_ms={elapsed_ms}")
 
+    anomaly = _is_anomalous(orphans, len(_CATALOG_IDS))
+    print(
+        f"  [aimc_orphan_refs] anomaly_detection  method={anomaly['method']}"
+        f"  anomalous={anomaly['anomalous']}  reason={anomaly.get('reason', '')!r}"
+    )
+
     suggestion_id: Optional[str] = None
-    if orphans and not dry_run:
+    if anomaly["anomalous"] and not dry_run:
         suggestion_id = _create_kanban_suggestion(orphans)
 
     result: Dict[str, Any] = {
@@ -185,6 +270,7 @@ def run(payload: dict, ctx: Any = None) -> Dict[str, Any]:
         "dry_run": dry_run,
         "orphans_found": len(orphans),
         "orphans": orphans,
+        "anomaly_detection": anomaly,
         "suggestion_id": suggestion_id,
         "elapsed_ms": elapsed_ms,
         "catalog_size": len(_CATALOG_IDS),

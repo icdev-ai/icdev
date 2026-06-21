@@ -62,34 +62,43 @@ _AI_KEYWORDS = {
 
 
 def _project_mentions_ai(project_id: str, conn) -> bool:
-    """Scan project requirements and session context for AI/ML keywords."""
-    # Check requirements text for any session linked to this project
-    rows = conn.execute(
-        "SELECT raw_text FROM intake_requirements WHERE session_id IN ("
-        "SELECT id FROM intake_sessions WHERE project_id = ?)"
-        ,(project_id,),
-    ).fetchall()
-    all_text = " ".join((r[0] if isinstance(r, (tuple, list)) else r.get("raw_text", "")) for r in rows).lower()
-    if any(kw in all_text for kw in _AI_KEYWORDS):
-        return True
+    """Scan project requirements and session context for AI/ML keywords.
 
-    # Check session context_summary
-    ctx_rows = conn.execute(
-        "SELECT context_summary FROM intake_sessions WHERE project_id = ?", (project_id,)
-    ).fetchall()
-    for row in ctx_rows:
-        ctx = row[0] if isinstance(row, (tuple, list)) else row.get("context_summary", "")
-        if ctx:
-            try:
-                parsed = json.loads(ctx)
-                goal = (parsed.get("goal") or "").lower()
-                if any(kw in goal for kw in _AI_KEYWORDS):
+    Returns True when tables don't exist (conservative: assume AI-relevant
+    when we can't determine otherwise).
+    """
+    try:
+        # Check requirements text for any session linked to this project
+        rows = conn.execute(
+            "SELECT raw_text FROM intake_requirements WHERE session_id IN ("
+            "SELECT id FROM intake_sessions WHERE project_id = ?)",
+            (project_id,),
+        ).fetchall()
+        all_text = " ".join(
+            (r[0] if isinstance(r, (tuple, list)) else (dict(r).get("raw_text") or "")) for r in rows
+        ).lower()
+        if any(kw in all_text for kw in _AI_KEYWORDS):
+            return True
+
+        # Check session context_summary
+        ctx_rows = conn.execute(
+            "SELECT context_summary FROM intake_sessions WHERE project_id = ?", (project_id,)
+        ).fetchall()
+        for row in ctx_rows:
+            ctx = row[0] if isinstance(row, (tuple, list)) else (dict(row).get("context_summary") or "")
+            if ctx:
+                try:
+                    parsed = json.loads(ctx)
+                    goal = (parsed.get("goal") or "").lower()
+                    if any(kw in goal for kw in _AI_KEYWORDS):
+                        return True
+                except (ValueError, TypeError):
+                    pass
+                if any(kw in ctx.lower() for kw in _AI_KEYWORDS):
                     return True
-            except (ValueError, TypeError):
-                pass
-            if any(kw in ctx.lower() for kw in _AI_KEYWORDS):
-                return True
-    return False
+        return False
+    except Exception:  # noqa: BLE001 — intake tables absent → conservative assume relevant
+        return True
 
 
 def _table_exists(conn, table_name: str) -> bool:

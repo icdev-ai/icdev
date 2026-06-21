@@ -86,6 +86,57 @@ def _persist_scores(pillar_scores: list):
         conn.close()
 
 
+def reconcile_capability_status() -> int:
+    """Promote/demote capability implementation_status from activity completion.
+
+    A capability whose activities are mostly complete IS implemented; one with
+    partial progress is in_progress. This keeps the 40% capability weight in the
+    pillar score consistent with the 60% activity weight instead of letting them
+    drift. Returns the number of capabilities whose status changed.
+
+    Thresholds (effective completion = complete + 0.5*in_progress, per activity):
+        >= 0.70  -> implemented
+        >= 0.30  -> in_progress
+        else     -> unchanged (preserves manual not_started/planned)
+    """
+    conn = get_connection()
+    changed = 0
+    try:
+        caps = conn.execute(
+            "SELECT id, implementation_status FROM zig_capabilities"
+        ).fetchall()
+        for cap in caps:
+            acts = conn.execute(
+                "SELECT id FROM zig_activities WHERE capability_id=?", (cap["id"],)
+            ).fetchall()
+            if not acts:
+                continue
+            act_ids = [a["id"] for a in acts]
+            placeholders = ",".join("?" * len(act_ids))
+            comps = conn.execute(
+                f"SELECT status FROM zig_activity_completions WHERE activity_id IN ({placeholders})",
+                act_ids,
+            ).fetchall()
+            complete = sum(1 for c in comps if c["status"] == "complete")
+            in_prog = sum(1 for c in comps if c["status"] == "in_progress")
+            rate = (complete + 0.5 * in_prog) / len(act_ids)
+            new_status = cap["implementation_status"]
+            if rate >= 0.70:
+                new_status = "implemented"
+            elif rate >= 0.30:
+                new_status = "in_progress"
+            if new_status != cap["implementation_status"]:
+                conn.execute(
+                    "UPDATE zig_capabilities SET implementation_status=? WHERE id=?",
+                    (new_status, cap["id"]),
+                )
+                changed += 1
+        conn.commit()
+    finally:
+        conn.close()
+    return changed
+
+
 def run_zig_assessment() -> dict:
     """Run full ZIG assessment across all 7 pillars.
 
@@ -99,6 +150,9 @@ def run_zig_assessment() -> dict:
             assessed_at: ISO timestamp,
         }
     """
+    # Keep capability status in sync with activity completion before scoring
+    reconcile_capability_status()
+
     pillar_scores = score_all_pillars()
 
     # Attempt ZTA bridge enrichment for pillars with no activity data yet

@@ -2,133 +2,202 @@
 """Shared types for the agent-readiness pillar system."""
 from __future__ import annotations
 
-import math
+import os
 import pathlib
 import re
 from dataclasses import dataclass, field
-from typing import Callable, Optional
+from functools import lru_cache
+from typing import Any, Callable, Optional
 
 # ---------------------------------------------------------------------------
-# Configuration loading
+# Shared YAML config loader — used by all pillars that define configurable
+# anomaly-detection thresholds in args/agent_readiness_config.yaml.
 # ---------------------------------------------------------------------------
-
-_CONFIG_PATH = pathlib.Path(__file__).parents[4] / "args" / "agent_readiness.yaml"
-_config_cache: Optional[dict] = None
+_ARGS_PATH = pathlib.Path(__file__).parents[4] / "args" / "agent_readiness_config.yaml"
 
 
-def _load_config() -> dict:
-    global _config_cache
-    if _config_cache is not None:
-        return _config_cache
+@lru_cache(maxsize=1)
+def _load_agent_readiness_config() -> dict:
+    """Load the full args/agent_readiness_config.yaml once, cached for the process lifetime."""
     try:
-        import yaml  # type: ignore[import]
-        with open(_CONFIG_PATH, encoding="utf-8") as fh:
-            _config_cache = yaml.safe_load(fh) or {}
-    except Exception:
-        _config_cache = {}
-    return _config_cache
+        import yaml  # optional dep — present in all ICDEV environments
+        raw = _ARGS_PATH.read_text(encoding="utf-8")
+        return yaml.safe_load(raw) or {}
+    except Exception:  # noqa: BLE001
+        return {}
 
 
-def get_threshold(key: str, default):
-    """Return the configured numeric threshold for *key*, falling back to *default*."""
-    return _load_config().get("thresholds", {}).get(key, default)
+def load_pillar_config(pillar_key: str) -> dict[str, Any]:
+    """Return the pillars.<pillar_key> sub-dict from the config, or {} if absent/malformed.
 
+    Pillar files use this instead of duplicating the YAML-load boilerplate:
 
-def get_pillar_weights() -> dict[str, float]:
-    """Return the configured pillar weight mapping (falls back to empty dict)."""
-    return _load_config().get("pillar_weights", {})
-
-
-# ---------------------------------------------------------------------------
-# Anomaly detection — adaptive threshold engine
-# ---------------------------------------------------------------------------
-
-class AnomalyDetector:
-    """Statistical anomaly detector for pillar score histories.
-
-    Flags score values that deviate significantly from recent history using
-    z-score or IQR fencing.  Falls back to the static threshold when the
-    history is too short to be meaningful.
+        cfg = load_pillar_config("append_only_audit")
+        sample_size = int(cfg.get("audit_log_inserts", {}).get("scan_sample_size", 40))
     """
-
-    def __init__(self, static_threshold: float = 0.5) -> None:
-        cfg = _load_config().get("anomaly_detection", {})
-        self.enabled: bool = cfg.get("enabled", True)
-        self.method: str = cfg.get("method", "zscore")
-        self.zscore_threshold: float = float(cfg.get("zscore_threshold", 2.5))
-        self.iqr_multiplier: float = float(cfg.get("iqr_multiplier", 1.5))
-        self.min_samples: int = int(cfg.get("min_samples", 5))
-        self.window_size: int = int(cfg.get("window_size", 20))
-        self.static_threshold: float = static_threshold
-        self._history: list[float] = []
-
-    # ------------------------------------------------------------------
-    def record(self, score: float) -> None:
-        """Append *score* to the rolling history window."""
-        self._history.append(score)
-        if len(self._history) > self.window_size:
-            self._history.pop(0)
-
-    # ------------------------------------------------------------------
-    def is_anomalous(self, score: float) -> bool:
-        """Return True when *score* is a statistical outlier relative to history."""
-        if not self.enabled or len(self._history) < self.min_samples:
-            return False
-        if self.method == "iqr":
-            return self._iqr_flag(score)
-        return self._zscore_flag(score)
-
-    def adaptive_threshold(self) -> float:
-        """Return an adaptive lower-bound threshold based on history, or the static fallback."""
-        if not self.enabled or len(self._history) < self.min_samples:
-            return self.static_threshold
-        if self.method == "iqr":
-            q1, _ = self._quartiles()
-            iqr = self._iqr()
-            return max(0.0, q1 - self.iqr_multiplier * iqr)
-        # zscore: mean minus N*std gives a lower fence
-        mean = sum(self._history) / len(self._history)
-        std = self._std()
-        return max(0.0, mean - self.zscore_threshold * std)
-
-    # ------------------------------------------------------------------
-    def _std(self) -> float:
-        n = len(self._history)
-        if n < 2:
-            return 0.0
-        mean = sum(self._history) / n
-        variance = sum((x - mean) ** 2 for x in self._history) / (n - 1)
-        return math.sqrt(variance)
-
-    def _zscore_flag(self, score: float) -> bool:
-        mean = sum(self._history) / len(self._history)
-        std = self._std()
-        if std == 0:
-            return False
-        return abs((score - mean) / std) > self.zscore_threshold
-
-    def _quartiles(self) -> tuple[float, float]:
-        s = sorted(self._history)
-        n = len(s)
-        mid = n // 2
-        q1 = sorted(s[:mid])[len(s[:mid]) // 2]
-        q3 = sorted(s[mid + (n % 2):])[len(s[mid + (n % 2):]) // 2]
-        return float(q1), float(q3)
-
-    def _iqr(self) -> float:
-        q1, q3 = self._quartiles()
-        return q3 - q1
-
-    def _iqr_flag(self, score: float) -> bool:
-        q1, _ = self._quartiles()
-        iqr = self._iqr()
-        lower_fence = q1 - self.iqr_multiplier * iqr
-        return score < lower_fence
+    return _load_agent_readiness_config().get("pillars", {}).get(pillar_key, {})
 
 
 # ---------------------------------------------------------------------------
-# Core pillar data types
+# Score-level anomaly detection — flags pillars with anomalously low pass rates
+# and optionally enriches findings with Claude Haiku reasoning.
 # ---------------------------------------------------------------------------
+
+# Defaults for score_anomaly config block in agent_readiness_config.yaml.
+# Values are used verbatim when the config key is absent or malformed.
+_SCORE_ANOMALY_DEFAULTS: dict[str, Any] = {
+    # A pillar percentage below this is flagged as anomalously low.
+    # 0.3 means a pillar passing fewer than 30 % of its criteria is anomalous.
+    "min_passing_pct": 0.3,
+    # Set to true to call Claude Haiku for natural-language remediation guidance.
+    "ai_analysis_enabled": False,
+    "ai_model": "claude-haiku-4-5-20251001",
+    "ai_max_tokens": 256,
+}
+
+
+def load_score_anomaly_config() -> dict[str, Any]:
+    """Load score-anomaly detection config from args/agent_readiness_config.yaml.
+
+    Falls back to _SCORE_ANOMALY_DEFAULTS if the key is absent or malformed.
+    """
+    cfg = _load_agent_readiness_config().get("score_anomaly", {})
+    return {
+        "min_passing_pct": float(cfg.get("min_passing_pct", _SCORE_ANOMALY_DEFAULTS["min_passing_pct"])),
+        "ai_analysis_enabled": bool(cfg.get("ai_analysis_enabled", _SCORE_ANOMALY_DEFAULTS["ai_analysis_enabled"])),
+        "ai_model": str(cfg.get("ai_model", _SCORE_ANOMALY_DEFAULTS["ai_model"])),
+        "ai_max_tokens": int(cfg.get("ai_max_tokens", _SCORE_ANOMALY_DEFAULTS["ai_max_tokens"])),
+    }
+
+
+@dataclass
+class AnomalyReport:
+    """Result of a score-anomaly detection pass for one pillar."""
+    pillar_id: str
+    score_pct: float
+    threshold: float
+    is_anomalous: bool
+    reason: str
+    ai_reasoning: str = ""
+
+
+def _analyze_anomaly_with_ai(
+    pillar_id: str,
+    score_pct: float,
+    threshold: float,
+    failing_messages: list[str],
+    model: str,
+    max_tokens: int,
+) -> str:
+    """Call Claude Haiku to explain a score anomaly in one or two sentences.
+
+    Returns an empty string when the API key is absent, the provider import
+    fails, or the LLM call raises an exception — callers must not depend on
+    a non-empty result.
+    """
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
+    if not api_key:
+        return ""
+    try:
+        from tools.llm.anthropic_provider import AnthropicLLMProvider  # type: ignore[import]
+        from tools.llm.provider import LLMRequest  # type: ignore[import]
+    except ImportError:
+        return ""
+
+    msgs_str = "\n".join(f"- {m}" for m in failing_messages[:5])
+    prompt = (
+        f"Agent-readiness pillar '{pillar_id}' scored {score_pct:.0%}, "
+        f"below the anomaly threshold of {threshold:.0%}.\n\n"
+        f"Failing criteria:\n{msgs_str}\n\n"
+        "In 1-2 sentences, explain why this score is anomalously low and "
+        "name the single most impactful remediation step.\n"
+        "Plain text only — no JSON, no bullet points."
+    )
+    try:
+        provider = AnthropicLLMProvider(api_key=api_key)
+        request = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=max_tokens,
+        )
+        model_cfg = {"max_output_tokens": max_tokens}
+        response = provider.invoke(request, model, model_cfg)
+        return response.content.strip()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def detect_score_anomalies(
+    pillar_scores: dict[str, dict],
+    criterion_results: Optional[dict[str, list[dict]]] = None,
+) -> list[AnomalyReport]:
+    """Detect pillars with anomalously low pass rates.
+
+    Args:
+        pillar_scores: Mapping of pillar_id → {"passed": int, "total": int,
+            "percentage": float} as returned by Pillar.score().
+        criterion_results: Optional mapping of pillar_id → list of criterion
+            result dicts ({"criterion_id", "passed", "message", ...}).
+            Required for AI-enriched reasoning; ignored when ai_analysis is off.
+
+    Returns:
+        One AnomalyReport per pillar that has at least one evaluated criterion.
+        Reports for anomalous pillars set is_anomalous=True; non-anomalous
+        pillars are included so callers can inspect the full picture.
+    """
+    cfg = load_score_anomaly_config()
+    min_pct = cfg["min_passing_pct"]
+    ai_enabled = cfg["ai_analysis_enabled"]
+
+    reports: list[AnomalyReport] = []
+    for pillar_id, score in pillar_scores.items():
+        total = score.get("total", 0)
+        if total == 0:
+            continue
+        pct = float(score.get("percentage", 0.0))
+
+        if pct >= min_pct:
+            reports.append(AnomalyReport(
+                pillar_id=pillar_id,
+                score_pct=pct,
+                threshold=min_pct,
+                is_anomalous=False,
+                reason=f"Score {pct:.0%} meets anomaly threshold {min_pct:.0%}.",
+            ))
+            continue
+
+        # Anomaly detected — optionally enrich with AI reasoning.
+        reason = (
+            f"Pillar '{pillar_id}' scored {pct:.0%} — "
+            f"anomalously low (configured threshold: {min_pct:.0%})."
+        )
+        ai_reasoning = ""
+        if ai_enabled and criterion_results:
+            failing = [
+                r.get("message", "")
+                for r in criterion_results.get(pillar_id, [])
+                if not r.get("passed") and not r.get("skipped")
+            ]
+            if failing:
+                ai_reasoning = _analyze_anomaly_with_ai(
+                    pillar_id=pillar_id,
+                    score_pct=pct,
+                    threshold=min_pct,
+                    failing_messages=failing,
+                    model=cfg["ai_model"],
+                    max_tokens=cfg["ai_max_tokens"],
+                )
+
+        reports.append(AnomalyReport(
+            pillar_id=pillar_id,
+            score_pct=pct,
+            threshold=min_pct,
+            is_anomalous=True,
+            reason=reason,
+            ai_reasoning=ai_reasoning,
+        ))
+
+    return reports
+
 
 @dataclass
 class CriterionResult:

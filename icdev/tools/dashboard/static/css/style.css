@@ -44,7 +44,7 @@
 }
 
 html[data-theme="light"] {
-    --bg-primary: #f4f5f7;
+    --bg-primary: #ffffff;
     --bg-secondary: #ffffff;
     --bg-card: #ffffff;
     --bg-card-hover: #eef0f5;

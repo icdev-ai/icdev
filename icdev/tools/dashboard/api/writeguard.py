@@ -201,13 +201,293 @@ def _persist_result(
 
 @writeguard_api.route("/modes", methods=["GET"])
 def get_modes():
-    """GET /api/writeguard/modes — Return available content-type modes."""
+    """GET /api/writeguard/modes — Return available content-type modes.
+
+    Query param ``opp_id`` merges opportunity-specific style guides
+    (scope='project' in wg_style_guides) into the mode list.
+    """
     try:
         from tools.writing.content_modes import list_modes
-        return jsonify({"modes": list_modes()})
+        modes = list_modes()
     except Exception as exc:
         logger.error("Failed to load content modes: %s", exc)
-        return jsonify({"modes": [{"key": "default", "label": "Default", "description": "Standard WriteGuard rules."}]})
+        modes = [{"key": "default", "label": "Default", "description": "Standard WriteGuard rules."}]
+
+    opp_id = request.args.get("opp_id", "").strip()
+    if opp_id:
+        try:
+            conn = get_connection()
+            rows = conn.execute(
+                "SELECT guide_name, id FROM wg_style_guides WHERE scope='project' AND scope_id=? AND is_active=1 ORDER BY guide_name",
+                (opp_id,),
+            ).fetchall()
+            for r in rows:
+                modes.append({
+                    "key": r["id"],
+                    "label": r["guide_name"],
+                    "description": "Project-specific style guide",
+                    "source": "project",
+                    "opp_id": opp_id,
+                })
+            conn.close()
+        except Exception as exc:
+            logger.warning("Failed to load opportunity modes: %s", exc)
+
+    return jsonify({"modes": modes})
+
+
+# ---------------------------------------------------------------------------
+# Glossary CRUD (D-WG-14)
+# ---------------------------------------------------------------------------
+
+
+@writeguard_api.route("/glossary", methods=["GET"])
+def list_glossary():
+    """GET /api/writeguard/glossary — List glossary entries.
+
+    Query params: opp_id (scopes to project), term_type, domain, q (search).
+    """
+    conn = get_connection()
+    try:
+        opp_id = request.args.get("opp_id", "").strip()
+        term_type = request.args.get("term_type", "").strip()
+        domain = request.args.get("domain", "").strip()
+        q = request.args.get("q", "").strip()
+
+        clauses = ["is_active = 1"]
+        params = []
+        if opp_id:
+            clauses.append("scope = 'project' AND scope_id = ?")
+            params.append(opp_id)
+        else:
+            clauses.append("scope = 'platform'")
+        if term_type:
+            clauses.append("term_type = ?")
+            params.append(term_type)
+        if domain:
+            clauses.append("domain = ?")
+            params.append(domain)
+        if q:
+            clauses.append("(term LIKE ? OR definition LIKE ? OR replacement LIKE ?)")
+            params.extend([f"%{q}%", f"%{q}%", f"%{q}%"])
+
+        query = "SELECT * FROM wg_glossary WHERE " + " AND ".join(clauses) + " ORDER BY term_type, term"
+        rows = conn.execute(query, params).fetchall()
+        return jsonify({"entries": [dict(r) for r in rows]})
+    finally:
+        conn.close()
+
+
+@writeguard_api.route("/glossary", methods=["POST"])
+def create_glossary():
+    """POST /api/writeguard/glossary — Create a glossary entry."""
+    data = request.get_json(silent=True) or {}
+    required = ["term", "term_type"]
+    missing = [f for f in required if not data.get(f)]
+    if missing:
+        return jsonify({"error": f"Missing fields: {', '.join(missing)}"}), 400
+
+    conn = get_connection()
+    try:
+        opp_id = data.get("opp_id", "").strip()
+        entry_id = data.get("id") or str(uuid.uuid4())
+        conn.execute(
+            """INSERT INTO wg_glossary
+               (id, term, term_type, expansion, replacement, definition, domain,
+                scope, scope_id, case_sensitive, enforcement, source, approved_by,
+                created_by, created_at, is_active, classification)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                entry_id,
+                data["term"],
+                data["term_type"],
+                data.get("expansion", ""),
+                data.get("replacement", ""),
+                data.get("definition", ""),
+                data.get("domain", "general"),
+                "project" if opp_id else "platform",
+                opp_id,
+                1 if data.get("case_sensitive", True) else 0,
+                data.get("enforcement", "suggest"),
+                data.get("source", "admin"),
+                data.get("approved_by", ""),
+                data.get("created_by", "dashboard_api"),
+                datetime.now(timezone.utc).isoformat(),
+                1,
+                data.get("classification", "CUI"),
+            ),
+        )
+        conn.commit()
+        return jsonify({"id": entry_id, "status": "created"})
+    finally:
+        conn.close()
+
+
+@writeguard_api.route("/glossary/<entry_id>", methods=["GET"])
+def get_glossary_entry(entry_id):
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT * FROM wg_glossary WHERE id = ?", (entry_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify(dict(row))
+    finally:
+        conn.close()
+
+
+@writeguard_api.route("/glossary/<entry_id>", methods=["PUT"])
+def update_glossary_entry(entry_id):
+    data = request.get_json(silent=True) or {}
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT * FROM wg_glossary WHERE id = ?", (entry_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        updatable = {
+            "term": data.get("term", row["term"]),
+            "term_type": data.get("term_type", row["term_type"]),
+            "expansion": data.get("expansion", row["expansion"]),
+            "replacement": data.get("replacement", row["replacement"]),
+            "definition": data.get("definition", row["definition"]),
+            "domain": data.get("domain", row["domain"]),
+            "case_sensitive": 1 if data.get("case_sensitive", row["case_sensitive"]) else 0,
+            "enforcement": data.get("enforcement", row["enforcement"]),
+            "is_active": 1 if data.get("is_active", row["is_active"]) else 0,
+        }
+        conn.execute(
+            """UPDATE wg_glossary SET
+               term=?, term_type=?, expansion=?, replacement=?, definition=?,
+               domain=?, case_sensitive=?, enforcement=?, is_active=?
+               WHERE id=?""",
+            tuple(updatable[k] for k in [
+                "term", "term_type", "expansion", "replacement", "definition",
+                "domain", "case_sensitive", "enforcement", "is_active"
+            ]) + (entry_id,),
+        )
+        conn.commit()
+        return jsonify({"id": entry_id, "status": "updated"})
+    finally:
+        conn.close()
+
+
+@writeguard_api.route("/glossary/<entry_id>", methods=["DELETE"])
+def delete_glossary_entry(entry_id):
+    conn = get_connection()
+    try:
+        conn.execute("UPDATE wg_glossary SET is_active = 0 WHERE id = ?", (entry_id,))
+        conn.commit()
+        return jsonify({"id": entry_id, "status": "deleted"})
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Taxonomy CRUD (D-WG-14)
+# ---------------------------------------------------------------------------
+
+
+@writeguard_api.route("/taxonomy", methods=["GET"])
+def list_taxonomy():
+    """GET /api/writeguard/taxonomy — List proposal taxonomy nodes.
+
+    Query param: opp_id (required).
+    """
+    opp_id = request.args.get("opp_id", "").strip()
+    if not opp_id:
+        return jsonify({"error": "opp_id is required"}), 400
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT * FROM proposal_taxonomy WHERE opportunity_id = ? AND is_active = 1 ORDER BY label",
+            (opp_id,),
+        ).fetchall()
+        return jsonify({"entries": [dict(r) for r in rows]})
+    finally:
+        conn.close()
+
+
+@writeguard_api.route("/taxonomy", methods=["POST"])
+def create_taxonomy():
+    data = request.get_json(silent=True) or {}
+    opp_id = data.get("opportunity_id", "").strip()
+    if not opp_id:
+        return jsonify({"error": "opportunity_id is required"}), 400
+    if not data.get("label"):
+        return jsonify({"error": "label is required"}), 400
+
+    conn = get_connection()
+    try:
+        entry_id = data.get("id") or str(uuid.uuid4())
+        conn.execute(
+            """INSERT INTO proposal_taxonomy
+               (id, opportunity_id, parent_id, label, description, weight, is_active, created_at, classification)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                entry_id,
+                opp_id,
+                data.get("parent_id") or None,
+                data["label"],
+                data.get("description", ""),
+                float(data.get("weight", 1.0)),
+                1,
+                datetime.now(timezone.utc).isoformat(),
+                data.get("classification", "CUI"),
+            ),
+        )
+        conn.commit()
+        return jsonify({"id": entry_id, "status": "created"})
+    finally:
+        conn.close()
+
+
+@writeguard_api.route("/taxonomy/<entry_id>", methods=["GET"])
+def get_taxonomy_entry(entry_id):
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT * FROM proposal_taxonomy WHERE id = ?", (entry_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        return jsonify(dict(row))
+    finally:
+        conn.close()
+
+
+@writeguard_api.route("/taxonomy/<entry_id>", methods=["PUT"])
+def update_taxonomy_entry(entry_id):
+    data = request.get_json(silent=True) or {}
+    conn = get_connection()
+    try:
+        row = conn.execute("SELECT * FROM proposal_taxonomy WHERE id = ?", (entry_id,)).fetchone()
+        if not row:
+            return jsonify({"error": "Not found"}), 404
+        conn.execute(
+            """UPDATE proposal_taxonomy SET
+               label=?, description=?, weight=?, parent_id=?, is_active=?
+               WHERE id=?""",
+            (
+                data.get("label", row["label"]),
+                data.get("description", row["description"]),
+                float(data.get("weight", row["weight"])),
+                data.get("parent_id", row["parent_id"]),
+                1 if data.get("is_active", row["is_active"]) else 0,
+                entry_id,
+            ),
+        )
+        conn.commit()
+        return jsonify({"id": entry_id, "status": "updated"})
+    finally:
+        conn.close()
+
+
+@writeguard_api.route("/taxonomy/<entry_id>", methods=["DELETE"])
+def delete_taxonomy_entry(entry_id):
+    conn = get_connection()
+    try:
+        conn.execute("UPDATE proposal_taxonomy SET is_active = 0 WHERE id = ?", (entry_id,))
+        conn.commit()
+        return jsonify({"id": entry_id, "status": "deleted"})
+    finally:
+        conn.close()
 
 
 @writeguard_api.route("/analyze", methods=["POST"])

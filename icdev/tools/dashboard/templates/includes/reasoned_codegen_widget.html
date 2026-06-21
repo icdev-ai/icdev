@@ -1,0 +1,122 @@
+{# CUI // SP-CTI — Reasoned Codegen panel (tools/llm/reasoned_codegen*.py) #}
+{% set rc = data.reasoned_codegen if data is defined and data.reasoned_codegen is defined else {} %}
+<div class="card" id="reasoned-codegen-panel" style="margin-top:1rem;">
+  <h2 style="display:flex;align-items:center;gap:.5rem;">
+    🧠 Reasoned Codegen
+    {% if rc.section_enabled is sameas false %}
+      <span style="font-size:.7rem;background:#7f1d1d;color:#fecaca;padding:.1rem .5rem;border-radius:6px;">KILL-SWITCH OFF</span>
+    {% else %}
+      <span style="font-size:.7rem;background:#064e3b;color:#a7f3d0;padding:.1rem .5rem;border-radius:6px;">ENABLED</span>
+    {% endif %}
+  </h2>
+  <p style="color:var(--text-muted,#94a3b8);font-size:.82rem;margin:.25rem 0 .75rem;">
+    CoT/CoD generation + adversarial critique + verify/repair for code pipelines.
+    Section kill-switch + per-function defaults from <code>args/llm_config.yaml</code>.
+  </p>
+
+  {# ── Per-function config ────────────────────────────────────────────── #}
+  <table style="width:100%;border-collapse:collapse;font-size:.85rem;">
+    <thead><tr style="text-align:left;color:var(--text-muted,#94a3b8);">
+      <th style="padding:.3rem .5rem;">Function</th><th>Enabled</th><th>Mode</th>
+      <th>Critique</th><th>Repair rounds</th>
+    </tr></thead>
+    <tbody>
+      {% for fn in rc.get('functions', []) %}
+      <tr style="border-top:1px solid var(--border,#1f2937);">
+        <td style="padding:.3rem .5rem;font-family:monospace;">{{ fn.function }}</td>
+        <td style="color:{{ '#22c55e' if fn.enabled else '#64748b' }}">{{ 'on' if fn.enabled else 'off' }}</td>
+        <td><span style="text-transform:uppercase;font-size:.72rem;background:#1e293b;padding:.1rem .4rem;border-radius:5px;">{{ fn.mode }}</span></td>
+        <td>{{ '✓' if fn.critique else '—' }}</td>
+        <td>{{ fn.max_repair_rounds }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" style="padding:.5rem;color:var(--text-muted,#94a3b8);">No per-function config found.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div style="font-size:.78rem;color:var(--text-muted,#94a3b8);margin-top:.4rem;">
+    Caps: cost ≤ ${{ rc.get('cost_cap_usd', '—') }} · tokens ≤ {{ rc.get('token_cap', '—') }} · default mode <code>{{ rc.get('default_mode', 'off') }}</code>
+  </div>
+
+  {# ── Advisor "try it" ───────────────────────────────────────────────── #}
+  <h3 style="margin-top:1rem;font-size:.95rem;">Advisor — should this task use reasoned codegen?</h3>
+  <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-start;">
+    <textarea id="rc-adv-spec" rows="3" placeholder="Paste a task spec, e.g. 'Add OAuth2 auth with encrypted tokens and NIST audit logging across the API and session schema'"
+      style="flex:1 1 320px;min-width:260px;padding:.5rem;background:var(--bg-input,#0f172a);color:inherit;border:1px solid var(--border,#1f2937);border-radius:6px;"></textarea>
+    <div style="display:flex;flex-direction:column;gap:.35rem;">
+      <select id="rc-adv-fn" style="padding:.35rem;background:var(--bg-input,#0f172a);color:inherit;border:1px solid var(--border,#1f2937);border-radius:6px;">
+        <option value="code_generation">code_generation</option>
+        <option value="code_translation">code_translation</option>
+        <option value="child_app">child_app</option>
+      </select>
+      <input id="rc-adv-files" type="number" min="0" value="0" title="files in scope"
+        style="width:7rem;padding:.35rem;background:var(--bg-input,#0f172a);color:inherit;border:1px solid var(--border,#1f2937);border-radius:6px;" placeholder="# files"/>
+      <label style="font-size:.75rem;color:var(--text-muted,#94a3b8);"><input id="rc-adv-llm" type="checkbox"/> LLM refine</label>
+      <button id="rc-adv-run" onclick="rcRunAdvisor()" style="padding:.4rem .8rem;background:#2563eb;color:#fff;border:none;border-radius:6px;cursor:pointer;">Run Advisor</button>
+    </div>
+  </div>
+  <div id="rc-adv-result" style="margin-top:.6rem;font-size:.85rem;"></div>
+
+  {# ── Recent chain runs ──────────────────────────────────────────────── #}
+  <h3 style="margin-top:1rem;font-size:.95rem;">Recent reasoned / chain runs
+    <button onclick="rcLoadRuns()" style="font-size:.7rem;margin-left:.5rem;padding:.15rem .5rem;background:#1e293b;color:inherit;border:1px solid var(--border,#1f2937);border-radius:5px;cursor:pointer;">↻ refresh</button>
+  </h3>
+  <div id="rc-runs" style="font-size:.82rem;color:var(--text-muted,#94a3b8);">Loading…</div>
+</div>
+
+<script>
+async function rcRunAdvisor() {
+  const btn = document.getElementById('rc-adv-run');
+  const out = document.getElementById('rc-adv-result');
+  btn.disabled = true; out.textContent = 'Running advisor…';
+  try {
+    const resp = await fetch('/api/ops/reasoned-codegen/advise', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        function: document.getElementById('rc-adv-fn').value,
+        spec: document.getElementById('rc-adv-spec').value,
+        file_count: parseInt(document.getElementById('rc-adv-files').value || '0', 10),
+        use_llm: document.getElementById('rc-adv-llm').checked,
+      }),
+    });
+    const r = await resp.json();
+    if (r.error) { out.innerHTML = '<span style="color:#ef4444;">Error: ' + r.error + '</span>'; return; }
+    const color = r.recommended ? '#22c55e' : '#64748b';
+    const modeBadge = '<span style="text-transform:uppercase;background:#1e293b;padding:.1rem .4rem;border-radius:5px;">' + (r.mode || 'off') + '</span>';
+    out.innerHTML =
+      '<div style="padding:.5rem;border:1px solid var(--border,#1f2937);border-radius:6px;">' +
+      '<b style="color:' + color + ';">' + (r.recommended ? 'RECOMMENDED' : 'not recommended') + '</b> · mode ' + modeBadge +
+      ' · critique ' + (r.critique ? '✓' : '—') + ' · confidence ' + (r.confidence ?? '—') +
+      ' · <i>' + (r.source || 'heuristic') + '</i>' +
+      '<div style="margin-top:.35rem;color:var(--text-muted,#94a3b8);">' + (r.rationale || '') + '</div></div>';
+  } catch (e) {
+    out.innerHTML = '<span style="color:#ef4444;">Request failed: ' + e + '</span>';
+  } finally { btn.disabled = false; }
+}
+
+async function rcLoadRuns() {
+  const el = document.getElementById('rc-runs');
+  el.textContent = 'Loading…';
+  try {
+    const resp = await fetch('/api/ops/reasoned-codegen');
+    const data = await resp.json();
+    const runs = (data.recent_runs || []).filter(r => !r.error);
+    if (!runs.length) { el.textContent = 'No chain runs recorded yet.'; return; }
+    let html = '<table style="width:100%;border-collapse:collapse;"><thead><tr style="text-align:left;color:#94a3b8;">' +
+      '<th style="padding:.25rem .5rem;">When</th><th>Function</th><th>Mode</th><th>Tokens</th><th>Cost</th><th>ms</th><th>Stop</th></tr></thead><tbody>';
+    for (const r of runs) {
+      const tok = (r.input_tokens || 0) + (r.output_tokens || 0);
+      html += '<tr style="border-top:1px solid #1f2937;">' +
+        '<td style="padding:.25rem .5rem;">' + (r.created_at || '') + '</td>' +
+        '<td style="font-family:monospace;">' + (r.function || '') + '</td>' +
+        '<td>' + (r.chain_mode || '') + '</td>' +
+        '<td>' + tok + '</td>' +
+        '<td>$' + (r.cost_usd != null ? Number(r.cost_usd).toFixed(4) : '0') + '</td>' +
+        '<td>' + (r.duration_ms || 0) + '</td>' +
+        '<td>' + (r.stop_reason || '') + '</td></tr>';
+    }
+    el.innerHTML = html + '</tbody></table>';
+  } catch (e) { el.innerHTML = '<span style="color:#ef4444;">Failed to load runs: ' + e + '</span>'; }
+}
+document.addEventListener('DOMContentLoaded', rcLoadRuns);
+</script>

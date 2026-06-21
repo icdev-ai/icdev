@@ -1,0 +1,8 @@
+# IQE-EXT-004: Pending ServiceNow change requests
+# Returns change requests awaiting approval or implementation.
+# Use: change board review, freeze window enforcement, CAB prep.
+# Requires: servicenow_itsm connector configured with credentials.
+
+foreach cr in ext.servicenow.change_requests
+  where cr.state == "assess"
+  select cr.number, cr.short_description, cr.type, cr.state, cr.assigned_to

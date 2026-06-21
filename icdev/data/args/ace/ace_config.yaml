@@ -1,0 +1,8 @@
+# ACE (Autonomous Collaborative Engine) — Global Configuration
+max_team_size: 8
+max_negotiation_rounds: 3
+hitl_threshold: 0.6
+trust_tier_default: yellow
+stale_instance_hours: 4
+hot_reload_roles: true
+monitor_interval: 10  # check behavioral compliance every N steps

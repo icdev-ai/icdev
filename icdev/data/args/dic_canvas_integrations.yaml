@@ -1,0 +1,375 @@
+# CUI // SP-CTI
+# DIC Canvas Integration Configuration
+#
+# Maps canvas_events event_type values to affected DIC document collections.
+# Used by tools/document_intelligence/canvas_adapter.py to resolve which
+# DIC collections need AI-drafted update suggestions when a canvas event fires.
+#
+# Each entry:
+#   event_type           — canvas_events.event_type value (exact match first,
+#                          then prefix match on the dot-separated prefix, then fallback)
+#   target_canvas        — always 'dic' (set by the emitter; config for documentation)
+#   target_collection_tags — DIC collection tags to match; Python-side set intersection
+#   doc_types            — categories of documents likely to be affected
+#   priority             — high | medium | low  (suggestion priority in DIC HITL queue)
+#   rationale            — one-sentence human-readable description for HITL reviewer
+#   patch_mode           — true = ask LLM for targeted minimal edit; false = full rewrite
+#
+# Naming convention (matches existing canvas_events usage):
+#   {canvas_code}.{entity}.{action}
+# ─────────────────────────────────────────────────────────────────────────────
+
+integrations:
+
+  # ── NDC — Network Device Canvas ───────────────────────────────────────────
+
+  ndc.topology.drift_detected:
+    target_canvas: dic
+    target_collection_tags:
+      - network_architecture
+      - network_topology
+      - infrastructure
+    doc_types:
+      - sop
+      - runbook
+      - architecture_diagram_notes
+    priority: high
+    rationale: >-
+      Network topology drift was detected; runbooks and architecture SOPs
+      that describe the current network layout may need updating.
+    patch_mode: true
+
+  ndc.config.push:
+    target_canvas: dic
+    target_collection_tags:
+      - network_architecture
+      - device_configuration
+      - change_management
+    doc_types:
+      - sop
+      - change_log
+      - runbook
+    priority: high
+    rationale: >-
+      A configuration was pushed to a network device; change management
+      documents and device-specific SOPs may need a new revision entry.
+    patch_mode: true
+
+  ndc.baseline.deviation:
+    target_canvas: dic
+    target_collection_tags:
+      - network_architecture
+      - compliance
+      - security_baseline
+    doc_types:
+      - policy
+      - sop
+      - compliance_report
+    priority: high
+    rationale: >-
+      Running config deviated from the golden baseline; security policy and
+      baseline documentation should reflect the current approved state.
+    patch_mode: true
+
+  # ── Network Canvas — migration analysis ───────────────────────────────────
+
+  network.migration.phase_complete:
+    target_canvas: dic
+    target_collection_tags:
+      - migration
+      - network_architecture
+      - project_documentation
+    doc_types:
+      - sop
+      - project_plan
+      - runbook
+    priority: medium
+    rationale: >-
+      A migration phase completed; migration SOPs and project documentation
+      should be updated to reflect the new state and lessons learned.
+    patch_mode: true
+
+  network.anomaly.detected:
+    target_canvas: dic
+    target_collection_tags:
+      - network_architecture
+      - incident_response
+      - security_baseline
+    doc_types:
+      - incident_report
+      - runbook
+      - sop
+    priority: high
+    rationale: >-
+      A network anomaly was detected during migration analysis; incident
+      response runbooks and anomaly-handling SOPs may need updating.
+    patch_mode: true
+
+  # ── ZIG — Zero Trust Implementation Guide ─────────────────────────────────
+
+  zig.posture.score_drop:
+    target_canvas: dic
+    target_collection_tags:
+      - zero_trust
+      - security_posture
+      - compliance
+    doc_types:
+      - policy
+      - sop
+      - implementation_guide
+    priority: high
+    rationale: >-
+      Zero Trust posture score dropped; implementation guides and policies
+      describing the current ZT posture should be updated with the gap.
+    patch_mode: true
+
+  zig.pillar.gap_detected:
+    target_canvas: dic
+    target_collection_tags:
+      - zero_trust
+      - security_architecture
+      - compliance
+    doc_types:
+      - implementation_guide
+      - policy
+      - roadmap
+    priority: high
+    rationale: >-
+      A Zero Trust pillar gap was identified; architecture documentation
+      and implementation roadmaps should reflect the open gap and remediation plan.
+    patch_mode: true
+
+  # ── Compliance Canvas ──────────────────────────────────────────────────────
+
+  compliance.finding.created:
+    target_canvas: dic
+    target_collection_tags:
+      - compliance
+      - security_controls
+      - policy
+    doc_types:
+      - policy
+      - sop
+      - compliance_report
+      - poam
+    priority: high
+    rationale: >-
+      A new compliance finding was recorded; affected policies and the POAM
+      document should be updated to reflect the open finding.
+    patch_mode: true
+
+  compliance.poam.overdue:
+    target_canvas: dic
+    target_collection_tags:
+      - compliance
+      - poam
+      - risk_management
+    doc_types:
+      - poam
+      - risk_assessment
+      - compliance_report
+    priority: high
+    rationale: >-
+      A POAM item is overdue; the POAM document and risk assessment should
+      be updated to reflect the missed milestone and revised timeline.
+    patch_mode: false
+
+  # ── SIPA — Software Integrity & Protection Assessor ───────────────────────
+
+  sipa.vulnerability.found:
+    target_canvas: dic
+    target_collection_tags:
+      - security_baseline
+      - software_integrity
+      - vulnerability_management
+    doc_types:
+      - security_report
+      - sop
+      - incident_report
+    priority: high
+    rationale: >-
+      SIPA found a high or critical vulnerability; security SOPs and
+      vulnerability management procedures may need an updated remediation entry.
+    patch_mode: true
+
+  sipa.quarantine.triggered:
+    target_canvas: dic
+    target_collection_tags:
+      - software_integrity
+      - incident_response
+      - security_baseline
+    doc_types:
+      - incident_report
+      - sop
+      - runbook
+    priority: high
+    rationale: >-
+      A file was quarantined by SIPA; incident response runbooks and
+      software integrity SOPs should document the quarantine action.
+    patch_mode: true
+
+  # ── DevSecOps Canvas ───────────────────────────────────────────────────────
+
+  devsecops.pipeline.stage_failed:
+    target_canvas: dic
+    target_collection_tags:
+      - devsecops
+      - ci_cd
+      - quality_gates
+    doc_types:
+      - runbook
+      - sop
+      - incident_report
+    priority: medium
+    rationale: >-
+      A DevSecOps pipeline stage failed; runbooks for that stage and
+      CI/CD SOPs may need an updated failure-handling procedure.
+    patch_mode: true
+
+  devsecops.stig.finding_new:
+    target_canvas: dic
+    target_collection_tags:
+      - compliance
+      - security_baseline
+      - devsecops
+    doc_types:
+      - compliance_report
+      - sop
+      - poam
+    priority: high
+    rationale: >-
+      A new STIG finding was detected in the pipeline; the STIG findings
+      register and relevant hardening SOPs should be updated.
+    patch_mode: true
+
+  # ── CloudForge ─────────────────────────────────────────────────────────────
+
+  cloudforge.resource.provisioned:
+    target_canvas: dic
+    target_collection_tags:
+      - infrastructure
+      - cloud_architecture
+      - asset_inventory
+    doc_types:
+      - architecture_diagram_notes
+      - sop
+      - runbook
+    priority: medium
+    rationale: >-
+      A cloud resource was provisioned; infrastructure architecture docs
+      and asset inventory runbooks should reflect the new resource.
+    patch_mode: true
+
+  cloudforge.runbook.executed:
+    target_canvas: dic
+    target_collection_tags:
+      - runbook
+      - operations
+      - change_management
+    doc_types:
+      - runbook
+      - change_log
+      - sop
+    priority: low
+    rationale: >-
+      A CloudForge runbook was executed; the runbook document should be
+      reviewed for accuracy based on the actual execution results.
+    patch_mode: false
+
+  # ── AI-ify Canvas ──────────────────────────────────────────────────────────
+
+  aiify.canvas.scored:
+    target_canvas: dic
+    target_collection_tags:
+      - ai_strategy
+      - transformation_roadmap
+      - capability_assessment
+    doc_types:
+      - assessment_report
+      - roadmap
+      - sop
+    priority: medium
+    rationale: >-
+      An AI-ify canvas score changed; AI strategy assessments and
+      transformation roadmaps should reflect the new maturity grade.
+    patch_mode: true
+
+  aiify.gap.identified:
+    target_canvas: dic
+    target_collection_tags:
+      - ai_strategy
+      - transformation_roadmap
+      - capability_gaps
+    doc_types:
+      - roadmap
+      - assessment_report
+      - implementation_guide
+    priority: medium
+    rationale: >-
+      An AI-ify capability gap was identified; transformation roadmaps
+      and AI implementation guides should include the new gap entry.
+    patch_mode: true
+
+  # ── DIC internal consistency events ───────────────────────────────────────
+
+  dic.review_overdue:
+    target_canvas: dic
+    target_collection_tags:
+      - all
+    doc_types:
+      - sop
+      - policy
+      - runbook
+      - guideline
+    priority: medium
+    rationale: >-
+      A DIC collection's scheduled review interval has elapsed; the
+      collection documents should be reviewed for freshness and accuracy.
+    patch_mode: false
+
+  dic.consistency_flag:
+    target_canvas: dic
+    target_collection_tags:
+      - all
+    doc_types:
+      - sop
+      - policy
+      - runbook
+      - guideline
+      - architecture_diagram_notes
+    priority: low
+    rationale: >-
+      A referenced document changed; documents sharing KG concept nodes
+      should be checked for consistency with the updated source document.
+    patch_mode: true
+
+  # ── Crowdsource (viewer suggest-edit) ─────────────────────────────────────
+
+  crowdsource:
+    target_canvas: dic
+    target_collection_tags:
+      - all
+    doc_types:
+      - sop
+      - policy
+      - runbook
+      - guideline
+    priority: medium
+    rationale: >-
+      A viewer submitted a proposed edit via the suggest-edit workflow;
+      the suggestion is queued for editor review.
+    patch_mode: false
+
+  # ── Fallback — unknown or unmapped event types ─────────────────────────────
+
+  fallback:
+    target_canvas: dic
+    target_collection_tags:
+      - general
+    doc_types:
+      - general
+    priority: low
+    rationale: >-
+      An unrecognized canvas event was received; a general DIC review
+      suggestion is created for manual triage.
+    patch_mode: false

@@ -6,13 +6,11 @@ config-driven module constants loaded from oracle_trajectory_config.yaml,
 and that the scoring logic respects those values.
 """
 import sys
-import tempfile
 import textwrap
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 

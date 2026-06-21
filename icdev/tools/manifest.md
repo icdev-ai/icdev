@@ -15,7 +15,6 @@
 - [Audit Trail](manifest/audit-trail.md)
 - [MCP Servers](manifest/mcp-servers.md)
 - [Innovation Engine (Phase 35 — D199-D208)](manifest/innovation-engine.md)
-- [Autonomous Capability Foundry (ACF)](manifest/autonomous-capability-foundry.md)
 - [A2A Protocol](manifest/a2a-protocol.md)
 - [Project Management](manifest/project-management.md)
 - [DX Companion — Universal AI Coding Tool Support (D194-D198)](manifest/dx-companion-universal-ai-coding-tool-support.md)
@@ -158,7 +157,6 @@
 - [AISG — AI Strategy Guide Tools](manifest/aisg.md)
 - [IQE — Internal Query Engine](manifest/iqe-query-engine.md)
 - [Kanban System](manifest/kanban.md)
-- [Cross-Session Coordination (`tools/coordination/`)](manifest/session-coordination.md) — LLM-agnostic session registry + leases + advisory/git locks so concurrent agent sessions (Claude CLI, Cursor, Kanban) don't collide
 - [Regulatory Foresight Engine (D352 — pint-regfore)](manifest/regulatory-foresight-engine.md)
 - [Voice-of-Customer (VOC) Signal Capture (pint-voc)](manifest/voc.md)
 - [Strategos — DIB Supply Chain & Strategy Intelligence](manifest/strategos.md)
@@ -169,8 +167,7 @@
 - [Data Mesh (dm-*)](manifest/data-mesh.md) — Data Mesh: Domains, Products, Contracts, Governance, CSP (9 tables, 6 modules, 6 pages)
 - [System Graph — Federated Sigma.js Graph](manifest/system-graph.md)
 - [IC IE Data Fabric — Multi-Agency Data Sharing](manifest/ic-ie-data-fabric.md)
-- [AI-ify Canvas (AI-ify)](manifest/ai-ify-canvas.md)
-- [Document Intelligence Canvas (DIC)](manifest/document-intelligence-canvas.md)
+- [AI Augmentation Canvas (AAC)](manifest/ai-augmentation-canvas.md)
 
 
 ## Auto-Registered (Coherence Fix)
@@ -220,7 +217,7 @@
 | Support Resistance | tools\trading\ta\support_resistance.py | Auto-registered: ta/support_resistance.py | --json | JSON |
 | Combo Analyzer | tools\trading\options\combo_analyzer.py | Auto-registered: options/combo_analyzer.py | --json | JSON |
 | Auto Trade Options | tools\trading\options\auto_trade_options.py | Auto-registered: options/auto_trade_options.py | --json | JSON |
-| Alphadesk Trap Scenarios | tools\genesis\reflexes\alphadesk_trap_scenarios.py | Auto-registered: reflexes/alphadesk_trap_scenarios.py | --json | JSON |
+| FathomDesk Trap Scenarios | tools\genesis\reflexes\fathomdesk_trap_scenarios.py | Auto-registered: reflexes/fathomdesk_trap_scenarios.py | --json | JSON |
 | Git Utils | tools\workflow\git_utils.py | Auto-registered: workflow/git_utils.py | --json | JSON |
 | Twin Chat | tools\twin_chat.py | Auto-registered: tools/twin_chat.py | --json | JSON |
 | Bond Etf Data | tools\trading\data\bond_etf_data.py | Auto-registered: data/bond_etf_data.py | --json | JSON |
@@ -759,12 +756,12 @@
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Opportunity Scorer | tools\aiify\opportunity_scorer.py | Auto-registered: aiify/opportunity_scorer.py | --json | JSON |
-| Pattern Classifier | tools\aiify\pattern_classifier.py | Auto-registered: aiify/pattern_classifier.py | --json | JSON |
-| Roadmap Generator | tools\aiify\roadmap_generator.py | Auto-registered: aiify/roadmap_generator.py | --json | JSON |
+| Opportunity Scorer | tools\ai_augmentation\opportunity_scorer.py | Auto-registered: ai_augmentation/opportunity_scorer.py | --json | JSON |
+| Pattern Classifier | tools\ai_augmentation\pattern_classifier.py | Auto-registered: ai_augmentation/pattern_classifier.py | --json | JSON |
+| Roadmap Generator | tools\ai_augmentation\roadmap_generator.py | Auto-registered: ai_augmentation/roadmap_generator.py | --json | JSON |
 | Bgp Hijack Detector | tools\dsoc_canvas\bgp_hijack_detector.py | Auto-registered: dsoc_canvas/bgp_hijack_detector.py | --json | JSON |
 | Bgpq4 Wrapper | tools\pmc_canvas\bgpq4_wrapper.py | Auto-registered: pmc_canvas/bgpq4_wrapper.py | --json | JSON |
-| Ai Augmentation | tools\iqe\adapters\aiify.py | Auto-registered: adapters/aiify.py | --json | JSON |
+| Ai Augmentation | tools\iqe\adapters\ai_augmentation.py | Auto-registered: adapters/ai_augmentation.py | --json | JSON |
 | Bgp Alerter Ingest | tools\genesis\reflexes\bgp_alerter_ingest.py | Auto-registered: reflexes/bgp_alerter_ingest.py | --json | JSON |
 | Peering Manager Connector | tools\databridge\connectors\peering_manager_connector.py | Auto-registered: connectors/peering_manager_connector.py | --json | JSON |
 | Pmacct Connector | tools\databridge\connectors\pmacct_connector.py | Auto-registered: connectors/pmacct_connector.py | --json | JSON |
@@ -784,10 +781,10 @@
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Append Only Audit | tools\aiify\agent_readiness\pillars\append_only_audit.py | Auto-registered: pillars/append_only_audit.py | --json | JSON |
-| Il Classification | tools\aiify\agent_readiness\pillars\il_classification.py | Auto-registered: pillars/il_classification.py | --json | JSON |
-| Nist Controls | tools\aiify\agent_readiness\pillars\nist_controls.py | Auto-registered: pillars/nist_controls.py | --json | JSON |
-| Stig Compliance | tools\aiify\agent_readiness\pillars\stig_compliance.py | Auto-registered: pillars/stig_compliance.py | --json | JSON |
+| Append Only Audit | tools\ai_augmentation\agent_readiness\pillars\append_only_audit.py | Auto-registered: pillars/append_only_audit.py | --json | JSON |
+| Il Classification | tools\ai_augmentation\agent_readiness\pillars\il_classification.py | Auto-registered: pillars/il_classification.py | --json | JSON |
+| Nist Controls | tools\ai_augmentation\agent_readiness\pillars\nist_controls.py | Auto-registered: pillars/nist_controls.py | --json | JSON |
+| Stig Compliance | tools\ai_augmentation\agent_readiness\pillars\stig_compliance.py | Auto-registered: pillars/stig_compliance.py | --json | JSON |
 
 
 ## Auto-Registered (Coherence Fix)
@@ -830,7 +827,7 @@
 ## Auto-Registered (Coherence Fix)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
-| Version Anomaly Detector | tools\aiify\version_anomaly_detector.py | Auto-registered: aiify/version_anomaly_detector.py | --json | JSON |
+| Version Anomaly Detector | tools\ai_augmentation\version_anomaly_detector.py | Auto-registered: ai_augmentation/version_anomaly_detector.py | --json | JSON |
 | Migrate To Icdev Logger | tools\refactor\migrate_to_icdev_logger.py | Auto-registered: refactor/migrate_to_icdev_logger.py | --json | JSON |
 
 
@@ -845,7 +842,7 @@
 |------|------|-------------|-------|--------|
 | Agent Entrypoint | tools\a2a\agent_entrypoint.py | Auto-registered: a2a/agent_entrypoint.py | --json | JSON |
 | Provision Dev Certs | tools\a2a\provision_dev_certs.py | Auto-registered: a2a/provision_dev_certs.py | --json | JSON |
-| Signal Ingester | tools\aiify\signal_ingester.py | Auto-registered: aiify/signal_ingester.py | --json | JSON |
+| Signal Ingester | tools\ai_augmentation\signal_ingester.py | Auto-registered: ai_augmentation/signal_ingester.py | --json | JSON |
 | Agentic Runner | tools\anvil\agentic_runner.py | Auto-registered: anvil/agentic_runner.py | --json | JSON |
 | Eval Harness | tools\genesis\harness\eval_harness.py | Auto-registered: harness/eval_harness.py | --json | JSON |
 | Heuristic Writer | tools\genesis\harness\heuristic_writer.py | Auto-registered: harness/heuristic_writer.py | --json | JSON |
@@ -865,127 +862,3 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Ext Databridge | tools\iqe\adapters\ext_databridge.py | Auto-registered: adapters/ext_databridge.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
-| Ste Validator | tools\airgap\ste_validator.py | Auto-registered: airgap/ste_validator.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
-| Seed Dic Kanban | tools\kanban\seed_dic_kanban.py | Auto-registered: kanban/seed_dic_kanban.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
-| Seed Chyg Kanban | tools\kanban\seed_chyg_kanban.py | Auto-registered: kanban/seed_chyg_kanban.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
-| Diagram Generator | tools\aiify\diagram_generator.py | Auto-registered: aiify/diagram_generator.py | --json | JSON |
-| Scheduler Control | tools\kanban\scheduler_control.py | Auto-registered: kanban/scheduler_control.py | --json | JSON |
-| Seed Prop Security Kanban | tools\kanban\seed_prop_security_kanban.py | Auto-registered: kanban/seed_prop_security_kanban.py | --json | JSON |
-| Lesson Learned | tools\workflow\lesson_learned.py | Auto-registered: workflow/lesson_learned.py | --json | JSON |
-| Lesson Learned Remediation | tools\workflow\lesson_learned_remediation.py | Auto-registered: workflow/lesson_learned_remediation.py | --json | JSON |
-| Inspect Adapt | tools\genesis\reflexes\inspect_adapt.py | Auto-registered: reflexes/inspect_adapt.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
-| Contract Mods Manager | tools\govcon\contract_mods_manager.py | Auto-registered: govcon/contract_mods_manager.py | --json | JSON |
-| Milestone Manager | tools\govcon\milestone_manager.py | Auto-registered: govcon/milestone_manager.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
-| Freshness Engine | tools\document_intelligence\freshness_engine.py | Auto-registered: document_intelligence/freshness_engine.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
-| Generate Icdev Proposal Content | tools\govcon\generate_icdev_proposal_content.py | Auto-registered: govcon/generate_icdev_proposal_content.py | --json | JSON |
-| Map Icdev Capabilities | tools\govcon\map_icdev_capabilities.py | Auto-registered: govcon/map_icdev_capabilities.py | --json | JSON |
-| Seed Icdev Knowledge Base | tools\govcon\seed_icdev_knowledge_base.py | Auto-registered: govcon/seed_icdev_knowledge_base.py | --json | JSON |
-| Seed Solicitation Requirements | tools\govcon\seed_solicitation_requirements.py | Auto-registered: govcon/seed_solicitation_requirements.py | --json | JSON |
-| Update Icdev Proposal Metadata | tools\govcon\update_icdev_proposal_metadata.py | Auto-registered: govcon/update_icdev_proposal_metadata.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
-| Run Writeguard On Drafts | tools\govcon\run_writeguard_on_drafts.py | Auto-registered: govcon/run_writeguard_on_drafts.py | --json | JSON |
-| Seed Zig Kanban | tools\kanban\seed_zig_kanban.py | Auto-registered: kanban/seed_zig_kanban.py | --json | JSON |
-| Zig Activity Tracker | tools\security_canvas\zig_activity_tracker.py | Auto-registered: security_canvas/zig_activity_tracker.py | --json | JSON |
-| Zig Artifact Generator | tools\security_canvas\zig_artifact_generator.py | Auto-registered: security_canvas/zig_artifact_generator.py | --json | JSON |
-| Zig Assessor | tools\security_canvas\zig_assessor.py | Auto-registered: security_canvas/zig_assessor.py | --json | JSON |
-| Zig Phase Tracker | tools\security_canvas\zig_phase_tracker.py | Auto-registered: security_canvas/zig_phase_tracker.py | --json | JSON |
-| Zig Pillar Scorer | tools\security_canvas\zig_pillar_scorer.py | Auto-registered: security_canvas/zig_pillar_scorer.py | --json | JSON |
-| Zig Roadmap Generator | tools\security_canvas\zig_roadmap_generator.py | Auto-registered: security_canvas/zig_roadmap_generator.py | --json | JSON |
-| Qa Verify Backgrounds | tools\testing\qa_verify_backgrounds.py | Auto-registered: testing/qa_verify_backgrounds.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
-| Option Period Tracker | tools\govcon\option_period_tracker.py | Auto-registered: govcon/option_period_tracker.py | --json | JSON |
-| Pmo Ai Advisor | tools\govcon\pmo_ai_advisor.py | Auto-registered: govcon/pmo_ai_advisor.py | --json | JSON |
-| Alert Service | tools\notification_service\alert_service.py | Auto-registered: notification_service/alert_service.py | --json | JSON |
-| Digest Service | tools\notification_service\digest_service.py | Auto-registered: notification_service/digest_service.py | --json | JSON |
-| Event Service | tools\notification_service\event_service.py | Auto-registered: notification_service/event_service.py | --json | JSON |
-| Handler Service | tools\notification_service\handler_service.py | Auto-registered: notification_service/handler_service.py | --json | JSON |
-| Render Handler Service | tools\notification_service\render_handler_service.py | Auto-registered: notification_service/render_handler_service.py | --json | JSON |
-| Report Service | tools\notification_service\report_service.py | Auto-registered: notification_service/report_service.py | --json | JSON |
-| Cpmp Monitor | tools\genesis\reflexes\cpmp_monitor.py | Auto-registered: reflexes/cpmp_monitor.py | --json | JSON |
-| Pmo Option Tracker | tools\genesis\reflexes\pmo_option_tracker.py | Auto-registered: reflexes/pmo_option_tracker.py | --json | JSON |
-| Pmo Weekly Report | tools\genesis\reflexes\pmo_weekly_report.py | Auto-registered: reflexes/pmo_weekly_report.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
-| Agent Layer | tools\agentic_ai_canvas\agent_layer.py | Auto-registered: agentic_ai_canvas/agent_layer.py | --json | JSON |
-| Governance Layer | tools\agentic_ai_canvas\governance_layer.py | Auto-registered: agentic_ai_canvas/governance_layer.py | --json | JSON |
-| Initiative Allocator | tools\budget\initiative_allocator.py | Auto-registered: budget/initiative_allocator.py | --json | JSON |
-| Provenance Adapter | tools\dic\provenance_adapter.py | Auto-registered: dic/provenance_adapter.py | --json | JSON |
-| Igce Estimator | tools\govcon\igce_estimator.py | Auto-registered: govcon/igce_estimator.py | --json | JSON |
-| Vehicle Identifier | tools\govcon\vehicle_identifier.py | Auto-registered: govcon/vehicle_identifier.py | --json | JSON |
-| Seed Ace Kanban | tools\kanban\seed_ace_kanban.py | Auto-registered: kanban/seed_ace_kanban.py | --json | JSON |
-| Seed Irad Kanban | tools\kanban\seed_irad_kanban.py | Auto-registered: kanban/seed_irad_kanban.py | --json | JSON |
-| Seed Pmo Demo Wow | tools\kanban\seed_pmo_demo_wow.py | Auto-registered: kanban/seed_pmo_demo_wow.py | --json | JSON |
-| Seed Wgint | tools\kanban\seed_wgint.py | Auto-registered: kanban/seed_wgint.py | --json | JSON |
-| Seed Demo Showcase | tools\ndc\seed_demo_showcase.py | Auto-registered: ndc/seed_demo_showcase.py | --json | JSON |
-| Entitlement Rag | tools\rag\entitlement_rag.py | Auto-registered: rag/entitlement_rag.py | --json | JSON |
-| Ndaa 889 Screener | tools\supply_chain\ndaa_889_screener.py | Auto-registered: supply_chain/ndaa_889_screener.py | --json | JSON |
-| Lac Scenarios | tools\zta\lac_scenarios.py | Auto-registered: zta/lac_scenarios.py | --json | JSON |
-| Lac Simulator | tools\zta\lac_simulator.py | Auto-registered: zta/lac_simulator.py | --json | JSON |
-| Aidp Monitor | tools\genesis\reflexes\aidp_monitor.py | Auto-registered: reflexes/aidp_monitor.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
-| Icdev Executive Overview | tools\slides\curated_decks\icdev_executive_overview.py | Auto-registered: curated_decks/icdev_executive_overview.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
-| Procurement Vehicles | tools\govcon\procurement_vehicles.py | Auto-registered: govcon/procurement_vehicles.py | --json | JSON |
-
-
-## Auto-Registered (Coherence Fix)
-| Tool | File | Description | Input | Output |
-|------|------|-------------|-------|--------|
-| Seed Aisg Ship | tools\kanban\seed_aisg_ship.py | Auto-registered: kanban/seed_aisg_ship.py | --json | JSON |
-| Seed Appendix Initiatives | tools\kanban\seed_appendix_initiatives.py | Auto-registered: kanban/seed_appendix_initiatives.py | --json | JSON |
-| Seed Sipa Integrity | tools\kanban\seed_sipa_integrity.py | Auto-registered: kanban/seed_sipa_integrity.py | --json | JSON |
-| Integrity Monitor | tools\genesis\reflexes\integrity_monitor.py | Auto-registered: reflexes/integrity_monitor.py | --json | JSON |

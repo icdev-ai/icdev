@@ -22,6 +22,8 @@ Checks:
  12. karpathy_sync  — 5 canonical Karpathy headings present in all 10 AI platform configs
  13. openapi_parity — generate_openapi_spec(app) paths match app.url_map /api/v1/* routes
  14. security_context — RLS auto-wiring intact; set_security_context(None) bypasses documented
+ 15. canvas_placeholder_style — bare ? in execute() SQL for get_canvas_connection callers (use %s)
+ 16. ace_yaml_listen_topics   — role YAMLs must not mix task.assigned with reactive topics (deadlock risk)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -35,6 +37,7 @@ Usage:
     python tools/workflow/coherence_checker.py --all --human
     python tools/workflow/coherence_checker.py --all --gate
     python tools/workflow/coherence_checker.py --all --fix --json   # Auto-fix safe issues
+    python tools/workflow/coherence_checker.py --check canvas_placeholder_style --gate
 """
 
 from __future__ import annotations
@@ -182,7 +185,7 @@ def _parse_create_tables(sql_text: str) -> Dict[str, List[str]]:
             segments.append(current.strip())
 
         skip_kw = {"foreign", "primary", "check", "unique", "constraint", "create", "index"}
-        type_kw = r"(TEXT|INTEGER|REAL|BLOB|TIMESTAMP|BOOLEAN|DATE|DEFAULT|NOT|CHECK|REFERENCES|AUTOINCREMENT)"
+        type_kw = r"(TEXT|INTEGER|REAL|BLOB|NUMERIC|DECIMAL|TIMESTAMP|BOOLEAN|DATE|DEFAULT|NOT|CHECK|REFERENCES|AUTOINCREMENT)"
 
         for seg in segments:
             seg = seg.strip()
@@ -1125,6 +1128,8 @@ _DB_CALL_PATTERNS = re.compile(
     r"|yf\.Ticker|yfinance|fetch_latest_quote|requests\.get\("
     # Cookie reads are a valid key-value storage layer (e.g. theme preferences)
     r"|\.cookies\.get\(|set_cookie\("
+    # Flask route introspection — live url_map is real dynamic data, not a literal
+    r"|url_map|iter_rules\("
     r")",
     re.IGNORECASE,
 )
@@ -1548,6 +1553,17 @@ _ATTRIBUTION_REGISTRY: Dict[str, Dict[str, str]] = {
             "for GitHub public repos). tools/requirements/"
             "clarification_engine.py cites it as inspiration. No class "
             "or method overlap on structural diff."
+        ),
+    },
+    "kodustech/agent-readiness": {
+        "url": "https://github.com/kodustech/agent-readiness",
+        "license": "MIT",
+        "audit_status": (
+            "2026-05-28 verified — kodustech/agent-readiness is MIT-licensed. "
+            "tools/ai_augmentation/agent_readiness/checker.py cites it as structural "
+            "inspiration for the readiness check architecture. Structural diff confirmed "
+            "no class or method overlap; ICDEV implementation uses its own scoring model, "
+            "DB schema, and LLMRouter integration."
         ),
     },
 }
@@ -2820,6 +2836,13 @@ def check_new_page_completeness() -> CoherenceCheck:
 
     Only checks page.html files under canvas sub-directories (not top-level
     flat templates like code_quality.html).
+
+    Plus a full mirror-parity sub-check: for every canvas sub-directory,
+    every tools/dashboard/templates/<dir>/*.html must have a matching
+    icdev/tools/dashboard/templates/<dir>/*.html mirror. Each missing one
+    is reported as `<rel_path>: icdev/ mirror missing` and folded into the
+    same `missing` list. This catches canvases that have no page.html at
+    all (e.g. slides/mfa/zta) which the page.html loop above never sees.
     """
     templates_dir = PROJECT_ROOT / "tools" / "dashboard" / "templates"
     base_html_path = templates_dir / "base.html"
@@ -2886,21 +2909,70 @@ def check_new_page_completeness() -> CoherenceCheck:
         if missing:
             violations.append(f"{rel_page}: missing [{', '.join(missing)}]")
 
-    status = "fail" if violations else "pass"
+    # ------------------------------------------------------------------
+    # Sub-check: full icdev/ mirror parity for ALL canvas templates.
+    # The 8-component check above is keyed on page.html, so a canvas whose
+    # templates are named differently (e.g. slides/{index,detail,new}.html,
+    # mfa/{enroll,challenge}.html, zta/lac_simulator.html) can ship with no
+    # icdev/ mirror at all and slip through entirely. Here we set-diff the
+    # *.html filenames per canvas directory — cheap, no content compare —
+    # and flag every source template that lacks a matching icdev/ mirror.
+    # ------------------------------------------------------------------
+    icdev_templates_dir = (
+        PROJECT_ROOT / "icdev" / "tools" / "dashboard" / "templates"
+    )
+    mirror_violations: List[str] = []
+    for canvas_subdir in sorted(p for p in templates_dir.iterdir() if p.is_dir()):
+        canvas = canvas_subdir.name
+        if canvas in whitelist:
+            continue
+        src_names = {p.name for p in canvas_subdir.glob("*.html")}
+        if not src_names:
+            continue
+        mirror_subdir = icdev_templates_dir / canvas
+        mirror_names = (
+            {p.name for p in mirror_subdir.glob("*.html")}
+            if mirror_subdir.exists()
+            else set()
+        )
+        for name in sorted(src_names - mirror_names):
+            # page.html mirror is already covered by component #1 above.
+            if name == "page.html":
+                continue
+            rel = (canvas_subdir / name).relative_to(PROJECT_ROOT)
+            mirror_violations.append(f"{rel}: icdev/ mirror missing")
+
+    all_violations = violations + mirror_violations
+    status = "fail" if all_violations else "pass"
     canvas_count = len(list(templates_dir.rglob("*/page.html")))
+    checked_count = canvas_count - whitelisted_count
     wl_note = f" ({whitelisted_count} whitelisted)" if whitelisted_count else ""
+    incomplete_count = len(violations)
+    mirror_count = len(mirror_violations)
+    mirror_note = f"; {mirror_count} icdev/ mirror gap(s)" if mirror_count else ""
     return CoherenceCheck(
         check_id="new_page_completeness",
         check_name="New Page 8-Component Completeness",
         status=status,
-        expected=[f"All {canvas_count - whitelisted_count} canvas pages have all 8 required components"],
-        actual=[f"{len(violations)} incomplete page(s){wl_note}"],
-        missing=violations,
+        expected=[
+            f"0 incomplete pages out of {checked_count} checked{wl_note}; "
+            "0 icdev/ mirror gaps"
+        ],
+        actual=[
+            f"{incomplete_count} incomplete page(s) out of {checked_count} "
+            f"checked{wl_note}{mirror_note}"
+        ],
+        missing=all_violations,
         extra=[],
         message=(
-            f"{len(violations)} canvas page(s) are missing required components — "
-            "these features will be broken or unreachable"
-        ) if violations else f"All {canvas_count - whitelisted_count} canvas pages have required components{wl_note}",
+            f"{incomplete_count} canvas page(s) missing components"
+            f"{mirror_note} — these features will be broken, unreachable, "
+            "or absent from the icdev/ package"
+        ) if all_violations else (
+            f"All {checked_count} canvas pages complete and icdev/ mirrors in parity{wl_note}"
+            if checked_count > 0
+            else f"No new canvas pages to check{wl_note}"
+        ),
     )
 
 
@@ -3101,10 +3173,127 @@ def check_log_standard_compliance() -> CoherenceCheck:
 
 
 # ---------------------------------------------------------------------------
-# Check: ACE YAML listen_topics deadlock guard
+# Check 15: canvas_placeholder_style — bare ? in canvas execute() SQL
+# ---------------------------------------------------------------------------
+
+
+def check_canvas_placeholder_style(
+    changed_files: Optional[List[Path]] = None,
+) -> CoherenceCheck:
+    """Detect bare ? SQL parameter placeholders in canvas-connection execute() calls.
+
+    PostgreSQL (psycopg2) requires %s parameter placeholders. A bare ? raises
+    ProgrammingError that broad except blocks may silently swallow — the pattern
+    that concealed the ACE coworker threading bug for weeks.
+
+    Scan: every Python file under tools/ that imports get_canvas_connection.
+    Flag: any .execute() call whose SQL string literal (or f-string constant
+          parts) contains a bare ? character.
+
+    Tier: FAIL — blocks --gate on violation so CI catches the mistake before merge.
+    """
+    tools_dir = PROJECT_ROOT / "tools"
+    if not tools_dir.exists():
+        return CoherenceCheck(
+            check_id="canvas_placeholder_style",
+            check_name="Canvas Connection Placeholder Style",
+            status="pass",
+            expected=["get_canvas_connection callers use %s not ? placeholders"],
+            actual=["tools/ directory not found — scan skipped"],
+            missing=[],
+            extra=[],
+            message="tools/ directory missing — scan skipped",
+        )
+
+    candidates: List[Path] = []
+    if changed_files:
+        candidates = [p for p in changed_files if p.suffix == ".py" and p.exists()]
+    else:
+        candidates = list(tools_dir.rglob("*.py"))
+
+    violations: List[str] = []
+    scanned = 0
+
+    for py_path in candidates:
+        try:
+            source = py_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+
+        if "get_canvas_connection" not in source:
+            continue
+
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            continue
+
+        scanned += 1
+        try:
+            rel = py_path.relative_to(PROJECT_ROOT).as_posix()
+        except ValueError:
+            rel = str(py_path)
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not (isinstance(node.func, ast.Attribute) and node.func.attr == "execute"):
+                continue
+            if not node.args:
+                continue
+
+            sql_arg = node.args[0]
+            sql_text: Optional[str] = None
+
+            if isinstance(sql_arg, ast.Constant) and isinstance(sql_arg.value, str):
+                sql_text = sql_arg.value
+            elif isinstance(sql_arg, ast.JoinedStr):
+                # f-string: collect constant fragments only
+                parts = []
+                for frag in sql_arg.values:
+                    if isinstance(frag, ast.Constant) and isinstance(frag.value, str):
+                        parts.append(frag.value)
+                sql_text = "".join(parts)
+
+            if sql_text and "?" in sql_text:
+                lineno = getattr(node, "lineno", 0)
+                violations.append(
+                    f"{rel}:{lineno}: execute() SQL uses bare ? placeholder — use %s for psycopg2"
+                )
+
+    if violations:
+        return CoherenceCheck(
+            check_id="canvas_placeholder_style",
+            check_name="Canvas Connection Placeholder Style",
+            status="fail",
+            expected=["All get_canvas_connection callers use %s placeholders (psycopg2)"],
+            actual=[f"{len(violations)} violation(s) across {scanned} canvas file(s)"],
+            missing=violations,
+            extra=[],
+            message=(
+                f"{len(violations)} execute() call(s) use bare ? placeholder — "
+                "psycopg2 requires %s; ? raises ProgrammingError on PostgreSQL"
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="canvas_placeholder_style",
+        check_name="Canvas Connection Placeholder Style",
+        status="pass",
+        expected=["All get_canvas_connection callers use %s placeholders (psycopg2)"],
+        actual=[f"Scanned {scanned} canvas file(s), 0 ? placeholders found"],
+        missing=[],
+        extra=[],
+        message=f"All canvas execute() calls use %s placeholders — {scanned} file(s) checked",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check 16: ACE YAML listen_topics deadlock guard
 # ---------------------------------------------------------------------------
 
 # Mirror of _BOOTSTRAP_TOPICS in coworker_thread.py — kept in sync manually.
+# Only topics that can safely appear alongside task.assigned belong here.
 _ACE_BOOTSTRAP_TOPICS: frozenset = frozenset({"task.assigned"})
 
 
@@ -3115,9 +3304,12 @@ def check_ace_yaml_listen_topics(
 
     A co-worker that receives task.assigned will start executing steps
     immediately.  Any other topic in listen_topics that is not a gateway
-    prerequisite creates a circular deadlock: the thread blocks waiting for a
-    message that will never arrive until after the co-worker itself finishes a
-    step.  This check is WARN-only (not a gate blocker).
+    prerequisite (e.g. doc.review_feedback, doc.draft_ready) creates a
+    circular deadlock: the thread blocks waiting for a message that will never
+    arrive until after the co-worker itself finishes a step.
+
+    This check is WARN-only (not a gate blocker).  Fix by moving reactive
+    topics out of listen_topics and into role steps (emit/poll patterns).
     """
     if not _HAS_YAML:
         return CoherenceCheck(
@@ -3183,7 +3375,9 @@ def check_ace_yaml_listen_topics(
             check_id="ace_yaml_listen_topics",
             check_name="ACE YAML listen_topics Deadlock Guard",
             status="warn",
-            expected=["No role YAML lists task.assigned alongside a non-bootstrap topic"],
+            expected=[
+                "No role YAML lists task.assigned alongside a non-bootstrap topic"
+            ],
             actual=violations,
             missing=[],
             extra=violations,
@@ -3202,6 +3396,245 @@ def check_ace_yaml_listen_topics(
         missing=[],
         extra=[],
         message=f"All {scanned} role YAML(s) have clean listen_topics",
+    )
+
+
+# Check #15: skill_security — SkillSpector fast static gate on changed SKILL.md
+# ---------------------------------------------------------------------------
+
+def check_skill_security(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Run SkillSpector --no-llm on any SKILL.md files in changed_files.
+
+    Degrades gracefully (warn not fail) when the skillspector CLI is absent,
+    matching the ruff_lint graceful-skip pattern.
+
+    Severity thresholds:
+        risk_score 0-20   → pass
+        risk_score 21-50  → warn  (MEDIUM — flag for review)
+        risk_score 51-100 → fail  (HIGH/CRITICAL — block)
+    """
+    import shutil
+    import subprocess as _sp
+
+    skill_files: List[Path] = []
+    if changed_files:
+        for f in changed_files:
+            if "SKILL.md" in f.name and f.exists():
+                skill_dirs = [f.parent]
+                skill_files.extend(skill_dirs)
+    else:
+        # Full scan: all .agents/skills/*/SKILL.md
+        skills_root = PROJECT_ROOT / ".agents" / "skills"
+        if skills_root.exists():
+            skill_files = [p.parent for p in skills_root.rglob("SKILL.md")]
+
+    if not skill_files:
+        return CoherenceCheck(
+            check_id="skill_security",
+            check_name="Skill Security (SkillSpector)",
+            status="pass",
+            expected=["All SKILL.md files pass SkillSpector scan"],
+            actual=["No SKILL.md files to scan"],
+            missing=[],
+            extra=[],
+            message="No SKILL.md files in scope — skip",
+        )
+
+    cli = shutil.which("skillspector")
+    docker = shutil.which("docker")
+    if not cli and not docker:
+        return CoherenceCheck(
+            check_id="skill_security",
+            check_name="Skill Security (SkillSpector)",
+            status="warn",
+            expected=["skillspector CLI or Docker available"],
+            actual=["Neither skillspector nor docker found on PATH"],
+            missing=["skillspector or docker"],
+            extra=[],
+            message="skillspector and Docker not found — install to enable skill security scanning",
+        )
+
+    failures: List[str] = []
+    warnings: List[str] = []
+
+    for skill_dir in skill_files:
+        target = str(skill_dir)
+        if cli:
+            cmd = [cli, "scan", target, "--no-llm", "--format", "json"]
+        else:
+            cmd = [
+                docker, "run", "--rm",
+                "-v", f"{target}:/scan:ro",
+                "registry.icdev.local/skillspector:latest",
+                "scan", "/scan", "--no-llm", "--format", "json",
+            ]
+        try:
+            result = _sp.run(cmd, capture_output=True, text=True, timeout=60, check=False)
+            raw = (result.stdout or "").strip()
+            if not raw:
+                continue
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+            score = data.get("risk_score") or 0
+            severity = data.get("risk_severity", "")
+            label = f"{skill_dir.name} (score={score}, severity={severity})"
+            if score > 50:
+                failures.append(label)
+            elif score > 20:
+                warnings.append(label)
+        except (_sp.TimeoutExpired, FileNotFoundError):
+            warnings.append(f"{skill_dir.name} (scan timed out or errored)")
+
+    if failures:
+        status = "fail"
+    elif warnings:
+        status = "warn"
+    else:
+        status = "pass"
+
+    scanned = len(skill_files)
+    msg = (
+        f"{len(failures)} HIGH/CRITICAL skill(s) detected — block install/promote"
+        if failures else
+        f"{len(warnings)} MEDIUM risk skill(s) flagged for review"
+        if warnings else
+        f"All {scanned} skill(s) passed SkillSpector scan"
+    )
+    return CoherenceCheck(
+        check_id="skill_security",
+        check_name="Skill Security (SkillSpector)",
+        status=status,
+        expected=[f"All {scanned} skill(s) risk_score <= 20"],
+        actual=failures + warnings or [f"{scanned} skills passed"],
+        missing=failures,
+        extra=[],
+        message=msg,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check #16: spec_discipline — Anti-Rationalization Rules (addyosmani/agent-skills)
+# ---------------------------------------------------------------------------
+
+def check_spec_discipline(changed_files: Optional[List[Path]] = None) -> CoherenceCheck:
+    """Enforce addyosmani/agent-skills anti-rationalization rules as deterministic checks.
+
+    Rules:
+    (a) No spec-before-code: impl .py changed but no context/specs/*.md for that task → warn
+    (b) Beyoncé Rule: new function defined but no corresponding test_ file found → fail
+    (c) Change-size: single file >100-line delta (approximated by file size heuristic) → warn
+    (d) ADR missing: new @bp.route() without any docs/ ADR referencing the path → warn
+
+    All checks are stdlib-only (ast, pathlib, re). Degraded gracefully — each rule
+    is independent so one failure doesn't block the others.
+    """
+    if not changed_files:
+        return CoherenceCheck(
+            check_id="spec_discipline",
+            check_name="Spec Discipline (addyosmani anti-rationalization)",
+            status="pass",
+            expected=["Discipline checks run on changed files"],
+            actual=["No changed files provided — full-scan not applicable"],
+            missing=[],
+            extra=[],
+            message="spec_discipline requires --changed-files to evaluate",
+        )
+
+    failures: List[str] = []
+    warnings: List[str] = []
+
+    impl_files = [
+        f for f in changed_files
+        if f.suffix == ".py"
+        and "test" not in f.name.lower()
+        and f.exists()
+        and str(f).startswith(str(PROJECT_ROOT / "tools"))
+    ]
+    test_files = {f.stem for f in changed_files if f.name.startswith("test_")}
+
+    for impl in impl_files:
+        # (b) Beyoncé Rule — new functions without a test file
+        try:
+            tree = ast.parse(impl.read_text(encoding="utf-8"))
+            new_fns = [
+                n.name for n in ast.walk(tree)
+                if isinstance(n, ast.FunctionDef)
+                and not n.name.startswith("_")
+            ]
+            if new_fns:
+                expected_test = f"test_{impl.stem}"
+                if expected_test not in test_files:
+                    failures.append(
+                        f"[beyonce-rule] {impl.name}: {len(new_fns)} public function(s) "
+                        f"but no {expected_test}.py in changed files"
+                    )
+        except (SyntaxError, OSError):
+            pass
+
+        # (c) Change-size heuristic — large files as proxy (>150KB suggests >100-line change)
+        try:
+            if impl.stat().st_size > 150_000:
+                warnings.append(
+                    f"[change-size] {impl.name}: file is large (>150KB) — "
+                    "consider splitting into smaller change sets (~100 lines each)"
+                )
+        except OSError:
+            pass
+
+        # (d) ADR missing — new blueprint routes without docs/ ADR
+        try:
+            content = impl.read_text(encoding="utf-8")
+            if "@bp.route(" in content or "@app.route(" in content:
+                docs_dir = PROJECT_ROOT / "docs"
+                if docs_dir.exists():
+                    adrs = list(docs_dir.rglob("*.md"))
+                    stem = impl.stem
+                    has_adr = any(stem.replace("_", "-") in a.name for a in adrs)
+                    if not has_adr:
+                        warnings.append(
+                            f"[adr-missing] {impl.name}: defines route(s) but no ADR "
+                            f"found in docs/ referencing '{stem}'"
+                        )
+        except OSError:
+            pass
+
+    # (a) Spec-before-code — check for context/specs/ entry
+    specs_dir = PROJECT_ROOT / "context" / "specs"
+    if impl_files and specs_dir.exists():
+        spec_names = {p.stem for p in specs_dir.glob("*.md")}
+        for impl in impl_files:
+            # Heuristic: spec name should share stem prefix with impl or task ID
+            stem = re.sub(r"_v\d+$", "", impl.stem)
+            if not any(stem in s or s in stem for s in spec_names):
+                warnings.append(
+                    f"[spec-before-code] {impl.name}: no matching spec in context/specs/ "
+                    f"(expected a file with '{stem}' in the name)"
+                )
+
+    if failures:
+        status = "fail"
+    elif warnings:
+        status = "warn"
+    else:
+        status = "pass"
+
+    all_issues = failures + warnings
+    msg = (
+        f"{len(failures)} Beyoncé Rule violation(s) detected" if failures else
+        f"{len(warnings)} discipline warning(s) — spec/ADR/change-size" if warnings else
+        f"All {len(impl_files)} impl file(s) passed discipline checks"
+    )
+    return CoherenceCheck(
+        check_id="spec_discipline",
+        check_name="Spec Discipline (addyosmani anti-rationalization)",
+        status=status,
+        expected=["Specs before code, tests for new functions, ADRs for routes, small change sets"],
+        actual=all_issues or [f"{len(impl_files)} impl files passed"],
+        missing=failures,
+        extra=[],
+        message=msg,
     )
 
 
@@ -3234,7 +3667,10 @@ CHECK_REGISTRY = {
     "nav_route_parity": check_nav_route_parity,
     "blueprint_imports": check_blueprint_imports,
     "new_page_completeness": check_new_page_completeness,
+    "canvas_placeholder_style": check_canvas_placeholder_style,
     "ace_yaml_listen_topics": check_ace_yaml_listen_topics,
+    "skill_security": check_skill_security,
+    "spec_discipline": check_spec_discipline,
 }
 
 
@@ -3264,6 +3700,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "hitl_workflow": "skip",  # module fixes require human judgment
     "mcp_security": "skip",  # scanner module creation requires human judgment
     "security_context": "skip",  # RLS bypass documentation and wiring fixes require human judgment
+    "canvas_placeholder_style": "skip",  # SQL placeholder fixes require human judgment (search+replace in SQL strings)
     "ace_yaml_listen_topics": "skip",  # YAML restructuring requires human judgment
 }
 

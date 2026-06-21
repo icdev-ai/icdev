@@ -149,8 +149,8 @@ promotion_filters:
 # Use for child-app scripts and renamed/removed tools that are still
 # referenced in the knowledge graph but do not belong to ICDEV core.
 module_import_suppressions:
-  - tools/db/migrate_alphadesk.py          # child app (AlphaDesk → FathomDesk); not in ICDEV core
-  - tools/scripts/schedule_alphadesk_news_plan.py  # stale auto-added script; child app artifact
+  - tools/db/migrate_fathomdesk.py         # child app FathomDesk migration helper; not in ICDEV core
+  - tools/scripts/schedule_fathomdesk_news_plan.py  # stale auto-added script; child app artifact
 
 # --------------------------------------------------------------------------
 # Network Migration Canvas (NMCE) — added 2026-05-08

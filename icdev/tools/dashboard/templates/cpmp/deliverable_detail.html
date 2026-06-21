@@ -121,7 +121,7 @@
 <!-- CDRL Generation -->
 <div class="table-container" style="margin-top:20px;">
     <div class="table-header" style="display:flex; justify-content:space-between; align-items:center;">
-        <h2>CDRL Generation</h2>
+        <h2>CDRL Generation<a href='/writeguard' target='_blank' class='btn btn-secondary btn-sm' style='font-size:0.78rem;margin-left:8px;' title='Open WriteGuard to validate this generated CDRL'>🛡️ Validate with WriteGuard</a></h2>
         <form method="POST" action="/api/cpmp/contracts/{{ contract.id }}/generate-cdrl/{{ deliverable.id }}" style="margin:0;">
             <button type="submit" class="btn btn-primary">Generate CDRL</button>
         </form>

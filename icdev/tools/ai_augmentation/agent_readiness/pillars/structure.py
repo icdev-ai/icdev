@@ -11,15 +11,22 @@ from tools.ai_augmentation.agent_readiness.pillars._base import (
     _exists,
     _read,
     _search,
+    load_pillar_config,
 )
+
+
+def _load_thresholds() -> dict:
+    cfg = load_pillar_config("structure").get("gitignore", {})
+    return {"min_gitignore_lines": int(cfg.get("min_lines", 5))}
 
 
 def _check_gitignore(repo: pathlib.Path) -> CriterionResult:
     cid = "gitignore-present"
+    min_lines = _load_thresholds()["min_gitignore_lines"]
     found = _exists(repo, ".gitignore")
     if found:
         content = _read(repo, ".gitignore") or ""
-        if len(content.splitlines()) >= 5:
+        if len(content.splitlines()) >= min_lines:
             return CriterionResult(cid, True, ".gitignore found with meaningful rules")
         return CriterionResult(cid, False, ".gitignore found but very sparse.",
                                "Expand .gitignore to cover build artifacts, secrets, and IDE files.")

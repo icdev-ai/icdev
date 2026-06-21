@@ -435,7 +435,7 @@ def generate_security_stages(project_id: str, profile: dict = None) -> dict:
 
     yaml_content = "\n".join(yaml_parts)
 
-    return {
+    result = {
         "project_id": project_id,
         "maturity_level": maturity,
         "stages_generated": generated,
@@ -443,6 +443,45 @@ def generate_security_stages(project_id: str, profile: dict = None) -> dict:
         "yaml_content": yaml_content,
         "stage_count": len(generated),
     }
+
+    # DIC Canvas Synergy — emit STIG stage active event when stig_compliance is generated (dsyn-emit-06)
+    if "stig_compliance" in generated or "policy_as_code" in generated:
+        try:
+            from tools.devsecops.event_emitter import emit_stig_finding_new
+            for stig_stage in [s for s in generated if "stig" in s or "policy" in s]:
+                emit_stig_finding_new(
+                    pipeline_id=project_id,
+                    stage_name=stig_stage,
+                    severity="CAT2",
+                    control_id="",
+                )
+        except Exception:
+            pass  # event emission never blocks stage generation
+
+    return result
+
+
+def record_pipeline_stage_failure(
+    project_id: str,
+    stage_name: str,
+    severity: str = "high",
+    change_summary: str = "",
+) -> bool:
+    """Record a CI/CD pipeline stage failure and emit a canvas_events row.
+
+    Called by CI/CD hooks when a security gate fails (SAST, SCA, STIG, etc.).
+    Returns True on successful emit, False on any failure.
+    """
+    try:
+        from tools.devsecops.event_emitter import emit_pipeline_stage_failed
+        return emit_pipeline_stage_failed(
+            pipeline_id=project_id,
+            stage_name=stage_name,
+            severity=severity,
+            change_summary=change_summary,
+        )
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------------------

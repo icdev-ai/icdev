@@ -1,5 +1,4 @@
 """Tests for Taste Skill design-quality hardprompts (adapt-taste-04)."""
-import pytest
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent

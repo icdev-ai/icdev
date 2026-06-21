@@ -19,7 +19,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from flask import Blueprint, Response, jsonify, render_template, request, stream_with_context
-from tools.security.canvas_access import check_access as _canvas_check_access
 
 _ROOT = Path(__file__).resolve().parents[2]
 logger = get_logger(__name__)
@@ -30,26 +29,6 @@ demo_runner_bp = Blueprint(
     url_prefix="/demo-runner",
     template_folder="../../tools/dashboard/templates",
 )
-
-@demo_runner_bp.before_request
-def _check_canvas_access():
-    """G-02: DENY-ALL canvas access gate. Requires explicit grant in canvas_access_grants."""
-    try:
-        from flask import g, abort, request as _req
-        # Skip health/status utility endpoints
-        if _req.path.endswith(("/health", "/status", "/ping")):
-            return
-        user = getattr(g, "current_user", None) or {}
-        user_id = str(user.get("id", "") or user.get("user_id", "") or "")
-        tenant_id = str(getattr(g, "tenant_id", None) or user.get("tenant_id", "") or "")
-        if not user_id or not tenant_id:
-            abort(403)
-        if not _canvas_check_access(user_id, tenant_id, "showcase"):
-            abort(403)
-    except Exception as exc:
-        logger.debug("canvas_access check error: %s", exc)
-        abort(403)
-
 
 _INIT_DONE = False
 

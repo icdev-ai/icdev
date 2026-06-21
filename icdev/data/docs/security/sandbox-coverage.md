@@ -121,20 +121,36 @@ These 6 paths adopted `SandboxExecutor` in Phase 72 (D-SEC-11):
   - Any new caller that receives command input from a user-facing API must add a gap entry here.
 - **Revisit if:** `CredentialProxy.spawn()` is called from a route that accepts user-supplied command arguments.
 
-### Gap 13 — AI Augmentation Canvas scan engine (`tools/ai_augmentation/`)
+### Gap 13 — AI-ify Canvas scan engine (`tools/aiify/`)
 
-**Module:** `tools/ai_augmentation/engine.py`, `tools/ai_augmentation/pattern_classifier.py`
+**Module:** `tools/aiify/engine.py`, `tools/aiify/pattern_classifier.py`
 
-**Ingress path:** `POST /ai-augmentation/api/scan` accepts `input_ref` (a local file-system path) and `il_level`. The engine reads source files from that path, runs AST-based pattern detection (and optionally Semgrep), scores opportunities, and stores results in `aac_scans` / `aac_opportunities` / `aac_scores` tables.
+**Ingress path:** `POST /ai-ify/api/scan` accepts `input_type` + `input_ref` and `il_level`. Supported `input_ref` forms: local path, UNC share (`\\server\share`), `file://` URI, git URL (shallow clone), and `s3://` (download). `tools/aiify/engine.py:_resolve_input` validates the reference and rejects unsupported transports (`smb://`, `ftp://`, bare `http(s)` non-repo) with a clear error rather than fetching them. The engine reads source files from the resolved path, runs AST-based pattern detection (and optionally Semgrep), scores opportunities, and stores results in `aiify_scans` / `aiify_opportunities` / `aiify_scores` tables. No scanned code is executed.
 
 - **Decision:** **trusted-first-party**
-- **Rationale:** `input_ref` is a developer/operator-supplied directory path — not end-user HTTP input from the public internet. The scanner performs read-only static analysis (AST walk + Semgrep subprocess with fixed argument list); it does not execute any code from the scanned directory. No `eval()`/`exec()` appears in the analysis hot path. Template files under `tools/dashboard/templates/ai_augmentation/` and `icdev/tools/dashboard/templates/ai_augmentation/` are first-party and code-reviewed.
+- **Rationale:** `input_ref` is a developer/operator-supplied source reference — not end-user HTTP input from the public internet. The scanner performs read-only static analysis (AST walk + Semgrep subprocess with fixed argument list); it does not execute any code from the scanned directory. No `eval()`/`exec()` appears in the analysis hot path. Template files under `tools/dashboard/templates/aiify/` are first-party and code-reviewed.
 - **Guardrails:**
   - `input_ref` is resolved with `pathlib.Path.resolve()` before use; empty paths return a 400 before engine invocation.
   - Semgrep subprocess uses a fixed argument list; no `shell=True`; no user-controlled command interpolation.
   - Canvas templates are first-party; the IQE query widget renders query results as text only (no raw HTML).
-  - Scan results are written to append-only audit log (`aac_audit_log`).
+  - `_resolve_input` rejects unsupported transports (`smb://`, `ftp://`, bare `http(s)`) instead of fetching them; git/`s3://` fetch into a temp dir that is removed after the scan.
+  - Scan results are written to append-only audit log (`aiify_audit_log`).
 - **Revisit if:** `input_ref` is ever accepted from an unauthenticated public endpoint, or if the engine adds a step that executes code from the scanned directory.
+
+### Gap 14 — Aggregation Guard (`tools/security/aggregation_guard.py`)
+
+**Module:** `tools/security/aggregation_guard.py`
+
+**Ingress path:** `guard_result(result_set, ctx, surface)` and `evaluate_rules(result_set)` receive row dicts originating from GovCon/proposals DB queries. The rows are structured data (dicts of column→value); they are never `eval()`-ed or `exec()`-ed. The guard applies declarative SCG rules from `args/classification_aggregation.yaml` (pure dict/list comparisons — no code execution) and writes audit events to the append-only `aggregation_events` table.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** The guard performs pure data classification checks — no subprocess spawning, no `eval()`/`exec()`, no file writes outside the append-only `aggregation_events` audit table. Row dicts from the DB are treated as opaque data structures; no field value is ever interpreted as code. Rule evaluation is deterministic (comparators: `>=`, `<`, `in`, `distinct_count`) with no dynamic code path.
+- **Guardrails:**
+  - `args/classification_aggregation.yaml` is first-party config; it defines rule metadata, not executable code.
+  - Row field values are compared via Python built-in operators only; no `eval()` or string-interpolated SQL.
+  - All events written to `aggregation_events` via `get_connection()` with append-only protection enforced by `pre_tool_use.py` hook.
+  - `guard_result()` never returns row data to callers — only `{derived, action, throttled, events_written}`.
+- **Revisit if:** a future rule type adds a `custom_expr` field that evaluates arbitrary expressions, or if result rows are ever rendered as HTML without escaping.
 
 ## Coherence rule
 
@@ -253,6 +269,49 @@ When a new `tools/` module ingests user-provided content:
   - DB reload path (`source='db'`) reads from first-party `ni_device_configs` only — no new user content enters.
 - **Revisit if:** config content is ever passed to a shell command, rendered outside Jinja2 auto-escape, or accepted from an unauthenticated endpoint.
 
+### Gap 15 — Reasoned Codegen wrapper + advisor (`tools/llm/reasoned_codegen*.py`)
+
+**Modules:** `tools/llm/reasoned_codegen.py`, `tools/llm/reasoned_codegen_advisor.py`
+
+**Ingress path:** The wrapper receives LLM-generated code strings (from CoT/CoD/plain
+generation via `LLMRouter`), runs them through an optional **injected verifier** and a
+repair loop, and returns the final code string. The advisor scores a task spec to
+recommend whether to enable reasoned codegen.
+
+- **Decision:** **bypass-documented** (safe by construction — never executes generated code)
+- **Rationale:** Neither module contains `exec()`, `eval()`, `subprocess`, `os.system`,
+  or `os.popen`. The wrapper only (a) calls `LLMRouter` for generation/repair, (b) calls
+  `anvil_critique` (which itself routes through the router), and (c) invokes a verifier
+  *callback supplied by the caller*. The wrapper does not run the code it produces — any
+  execution is the responsibility of the downstream pipeline (e.g. the agentic runner's
+  pre-existing allowlisted `run_command`, or the translation validator's compiler check),
+  each already covered by its own decision. The advisor consumes only the spec text and a
+  context dict and emits a recommendation dict — pure data.
+- **Guardrails:**
+  - Regression test `tests/security/test_reasoned_codegen_no_exec.py` fails the build if
+    either module gains `exec(`, `eval(`, `subprocess`, `os.system(`, or `os.popen(`.
+  - Generated code is gated by deterministic verifiers (FORGE gate, `code_lens`,
+    `translation_validator`, acceptance criteria) before any downstream execution.
+  - Under `ICDEV_STRICT_SANDBOX=1` the downstream executors (agentic runner) already
+    enforce their isolation; the wrapper adds no new execution surface.
+- **Revisit if:** the wrapper ever directly executes, compiles, or `subprocess`-runs the
+  code it generates → re-decide as **sandboxed**.
+
+### Bypass — non-LLM code generators (template/scaffold emitters)
+
+These paths were assessed as reasoned-codegen wiring targets and found to contain **no LLM
+generation call**, so they remain deterministic and out of scope:
+
+| Module | Decision | Rationale |
+|--------|----------|-----------|
+| `tools/builder/child_app_generator.py` | **trusted-first-party** | 20-step scaffold/template copier; 0 `router.invoke` calls. Output validated by `forge_validator --gate` + syntax checks. |
+| `tools/builder/code_generator.py` | **trusted-first-party** | Deprecated template emitter; 0 `router.invoke` calls. |
+| `tools/modernization/migration_code_generator.py` | **trusted-first-party** | Template-based adapter/facade emitter; no LLM generation. |
+| `tools/aiify/` scoring (AI-ify) | **trusted-first-party** | Deterministic weighted scoring; LLM optional (covered by Gap 13). |
+
+**Revisit if:** any of these adds an `LLMRouter.invoke` code-generation call → wire through
+`reasoned_codegen` and re-decide.
+
 ## References
 
 - D-SEC-10 — SandboxExecutor (container isolation, Phase 71)
@@ -286,3 +345,229 @@ When a new `tools/` module ingests user-provided content:
 | `tools/ndc/migration_document_generator.py` | **trusted-first-party** | Orchestrates deterministic NDC tools (`eol_scanner`, `replacement_recommender`, `network_migration`, `config_alignment_analyzer`) to assemble a Jinja2-rendered Markdown runbook. All inputs are internal DB rows or first-party tool outputs. No user-supplied code execution. Templates live under `tools/ndc/templates/migration_runbook/` (first-party, code-reviewed). |
 | `tools/ndc/eol_scanner.py` | **trusted-first-party** | Reads from `ni_devices` and `nc_hardware_profiles`. Pure SQL + arithmetic scoring. No external input, no code execution. |
 | `tools/ndc/replacement_recommender.py` | **trusted-first-party** | Reads hardware profiles from DB, scores via deterministic arithmetic. Optional RAG retrieval returns text-only SOP excerpts. No code execution of external content. |
+
+### Gap 16 — SIPA Ingest: git clone / UNC share / file:// URI fetch (`tools/integrity/ingest.py`)
+
+**Module:** `tools/integrity/` (ingest seam: `tools/integrity/ingest.py`)
+
+**Ingress path:** SIPA (Software Integrity & Provenance Assessor) assesses an
+*untrusted target* supplied by an operator: a local path, a UNC share
+(`\\host\share`), a `file://` URI, or a git clone URL
+(`https://github.com/...` / `https://gitlab.com/...`). `stage()` copies the
+target bytes (local/UNC/`file://`) or shallow-clones the repo (git) into an
+isolated quarantine directory (`<quarantine_dir>/<assessment_id>/`) and records
+an `integrity_assessments` row in `status='quarantine'`. Every downstream
+scanner then runs against the *staged copy as data* — the target is read, hashed
+(SHA-256 tamper baseline), and statically analyzed, **never executed**.
+
+- **Decision:** **bypass-documented** (safe by construction — never executes the fetched target)
+- **Rationale:** SIPA is static-only. The fetch path performs exactly two kinds
+  of action against untrusted input: (1) **copy bytes** (`shutil.copy2` /
+  `shutil.copytree`) for local/UNC/`file://` sources, and (2) a single
+  **fixed-arg, `shell=False` `git clone`** (`subprocess.run([...], shell=False)`)
+  for git sources. `git clone` fires no repository hooks, and the cloned/copied
+  tree is treated as inert data — it is never imported, `exec`-ed, `eval`-ed, or
+  run as a subprocess. The scanner fan-out (`tools/integrity/scanners.py`) runs
+  *first-party* analyzers (SAST/secrets/deps/Semgrep) in their own fixed-arg,
+  `shell=False` subprocesses with the staged tree as a **read-only input path**,
+  not as an executable. No module under `tools/integrity/` calls `exec`, `eval`,
+  `compile`, `__import__`, `os.system`, `os.popen`, `os.exec*`, `os.spawn*`,
+  `runpy.run_*`, `importlib.import_module`, or `pty.spawn` on target data (the
+  string literals `exec`/`eval`/`__import__` that appear in `scanners.py` and
+  `capability_extractor.py` are *detection signatures* for malicious code in the
+  assessed target, not calls).
+- **Guardrails:**
+  - **No `shell=True`** anywhere under `tools/integrity/` — all subprocess
+    invocations use a fixed argument list with `shell=False`.
+  - **Scheme allowlist** (`args/integrity_config.yaml` → `scheme_allowlist`) is
+    enforced *before* any row is written or any byte copied; disallowed schemes
+    (`smb://`, `ftp://`, bare non-repo `http(s)`, custom URIs) are refused with a
+    clear `IngestRejected` error.
+  - **Git URL allowlist** — git sources must be `https://` to an allowlisted host
+    (`github.com` / `gitlab.com`) or a local `file://` repo; the URL is validated
+    before any subprocess runs, `--` terminates git option parsing (argument-
+    injection defence), `GIT_TERMINAL_PROMPT=0` / `GIT_ASKPASS=true` prevent
+    interactive hangs, and embedded credentials are redacted from every log line.
+  - **Quarantine-first** — staging lands in `<quarantine_dir>/<assessment_id>/`;
+    a SHA-256 directory digest baselines the tree and `reverify()` re-checks it to
+    detect tampering between stage and assess. A HITL gate releases or rejects.
+  - **Regression test** `tests/test_integrity_no_shell_exec.py` fails the build if
+    any module under `tools/integrity/` introduces `shell=True` or a call that
+    executes fetched code (`exec`/`eval`/`compile`/`__import__`/`execfile`,
+    `os.system`/`os.popen`/`os.exec*`/`os.spawn*`, `runpy.run_*`,
+    `importlib.import_module`, `pty.spawn`). Detection is AST-based, so the
+    scanner's string/regex *signatures* for these patterns are not false-positives.
+- **Revisit if:** SIPA ever adds a step that imports, `exec`s, or `subprocess`-runs
+  the staged target (e.g. dynamic-analysis sandboxing) → re-decide as **sandboxed**
+  (route through `tools/security/sandbox_executor.py`); or if a non-`https`/non-
+  allowlisted transport is added to the fetch path.
+
+### Gap 17 — ACF Foundry Harvester (`tools/foundry/harvester.py`)
+- **File:** `tools/foundry/harvester.py`
+- **Risk:** Reads raw signal rows from EXISTING first-party engine stores (no web
+  re-scan, no network egress) across 5 sources — innovation
+  (`innovation_signals`/`innovation_trends`), creative
+  (`creative_pain_points`/`creative_feature_gaps`), research
+  (`research_challenges`/`research_dossiers`), genesis (`oracle_predictions`),
+  and read-only telemetry (`introspective_analyzer` analyses) — then normalizes
+  each row into the `foundry_signals` shape and appends it under a `run_id`.
+- **Decision:** **bypass-documented**
+- **Rationale:** The harvester is a **data-only** ingress: every source is a
+  first-party ICDEV DB table populated by ICDEV's own engines, read through the
+  RLS-aware `get_connection()`. It performs no `exec`/`eval`/`compile`/
+  `__import__`/`subprocess`/`os.system`, opens no files, and makes no network
+  call — it only `SELECT`s rows and writes normalized `INSERT`s. Signal text is
+  stored verbatim as data and never interpreted as code or a path. There is no
+  attacker-controlled execution surface to isolate.
+- **Guardrails:**
+  - Read path is `SELECT`-only over first-party tables via `get_connection()`;
+    tenant_id/classification are stamped on every `foundry_signals` row (RLS).
+  - Per-source enable / `max_signals` caps from `args/foundry_config.yaml` bound
+    ingestion volume; cross-source SHA-256 dedup collapses duplicates.
+  - Best-effort isolation: an empty / disabled / unmigrated source yields 0
+    signals and never raises — a malformed upstream store cannot crash the cycle.
+  - Downstream concepts are novelty-gated and the ACF-generated **code** (not the
+    signals) is self-vetted by SIPA + the security/coherence gate before merge.
+- **Revisit if:** the harvester ever adds a non-first-party source (web fetch,
+  user upload, external API) or begins executing / importing harvested content →
+  re-decide as **sandboxed** (route through `tools/security/sandbox_executor.py`).
+
+### Gap 18 — Kanban Adversarial Verifier (`tools/genesis/reflexes/kanban.py` — `_run_adversarial_verify`)
+- **File:** `tools/genesis/reflexes/kanban.py` — `_run_adversarial_verify()`
+- **Risk:** Spawns a second Claude CLI subprocess (`claude --dangerously-skip-permissions
+  --max-turns 10`) in the task worktree directory to adversarially review completed work.
+  The subprocess receives a reviewer prompt via stdin piped from a `.tmp/` temp file and
+  its stdout output (APPROVED/REJECTED verdict) is parsed by the reflex. An adversarial
+  prompt or malicious task title/description injected into DB could influence the
+  reviewer's verdict or cause unexpected subprocess behaviour.
+- **Decision:** **sandboxed**
+- **Rationale:** The verifier subprocess is inherently isolated — it runs in a dedicated
+  git worktree directory (`work_dir`), not the main repo, with `--max-turns 10` capping
+  its ability to take actions. Its only output surface is stdout, which is parsed for
+  an `APPROVED:` / `REJECTED:` prefix. The function **fails open** on any error
+  (timeout, non-zero exit, missing verdict) so the adversarial gate can never
+  permanently block a task. The subprocess invocation is equivalent in isolation to the
+  primary task Claude CLI dispatch already classified **sandboxed** in Gap 2.
+- **Guardrails:**
+  - Only fires when `adversarial_enabled=1` on the task (`loop_type='non_deterministic'`)
+    — opt-in per task, not the default path.
+  - Hard 180-second timeout (`subprocess.TimeoutExpired` → pass). The Claude CLI is not
+    given a `--dangerously-allow-filesystem` flag — it runs in review-only mode.
+  - Task title and description are truncated at 1,200 chars before embedding in the
+    prompt; no shell interpolation is used (args list, not `shell=True`).
+  - Prompt file is written to `.tmp/` (not `tools/`) and deleted immediately after the
+    subprocess reads it.
+  - Verdict parser scans only the last non-empty line; unrecognised output → pass,
+    preventing a prompt-injection verdict.
+- **Revisit if:** the verifier subprocess is ever granted `--dangerously-allow-filesystem`
+  write access, network egress, or `--max-turns` is removed, which would change it from a
+  read-only judge to an actor → re-scope as **sandboxed** via `SandboxExecutor` with
+  explicit network/FS deny-lists.
+
+### Gap 19 — GEPA Optimizer (`tools/skills/gepa_optimizer.py`)
+- **File:** `tools/skills/gepa_optimizer.py`
+- **Risk:** The GEPA Optimizer (Genome Evolution Pressure Analyzer) reads capability
+  genome entries from the first-party `genome_manager` registry and the ICDEV DB, then
+  prunes or promotes entries based on fitness scores. It accepts an operator-supplied
+  `dry_run` flag but no user-controlled content from the network or file system.
+- **Decision:** **trusted-first-party**
+- **Rationale:** GEPA reads only from first-party DB tables (`get_genome_entries` via
+  `get_connection()`) and writes only compact summary rows back to those tables. No
+  `exec()`/`eval()`/`compile()`/`subprocess` call exists in the optimizer pass itself.
+  Genome entry data (capability names, fitness scores) are typed Python dicts treated as
+  opaque data — never executed or interpreted as code. The `dry_run=True` path performs
+  no writes at all. MCP tool invocation (`gepa_optimizer` params: `dry_run`) passes only
+  the boolean flag; no user-supplied paths or expressions reach the engine.
+- **Guardrails:**
+  - All reads go through `get_connection()` (RLS-aware; no raw `sqlite3.connect()`).
+  - `dry_run=True` is the safe default in automated scans; mutations require explicit opt-in.
+  - No shell calls, no file writes outside the DB column, no network egress.
+  - Genome entries are scored via deterministic arithmetic (fitness threshold comparisons);
+    no dynamic code generation or external executable invocation.
+- **Revisit if:** GEPA gains a step that executes, imports, or subprocesses genome-derived
+  code (e.g. capability self-modification) → re-decide as **sandboxed** via
+  `SandboxExecutor`; or if `dry_run` flag is accepted from an unauthenticated HTTP
+  endpoint without authorization checks.
+### Gap 18 — NOVA Execution Tracing (`tools/workflow/trace_logger.py`, `tools/workflow/reflexion_agent.py`)
+- **Files:** `tools/workflow/trace_logger.py`, `tools/workflow/reflexion_agent.py`
+- **Risk:** `trace_logger` records task execution events (tool calls, LLM decisions,
+  intermediate outputs) as structured rows. `reflexion_agent` reads those rows and
+  passes a 600-char snippet to the LLM to generate an improvement artifact text.
+  The snippet is user-task-derived data (indirectly user-controlled via task descriptions).
+- **Decision:** **bypass-documented**
+- **Rationale:** Neither module `exec`s, `eval`s, or `subprocess`-runs any content.
+  Trace payloads are stored as JSON-encoded strings in `agent_execution_traces`, read
+  back as data, and passed only as LLM message content (not code). The reflexion agent
+  slices to 600 chars, preventing prompt injection via oversized payloads. Improvement
+  artifacts are written to `agent_improvement_artifacts` as TEXT and prepended to skill
+  prompts only when `ICDEV_HARNESS_COLEARN=true`. There is no execution surface.
+- **Guardrails:** HITL — reflexion output is a `suggested` kanban card before any
+  hardprompt change; `artifact_evolver.py` (SELA) never auto-merges evolved text.
+
+### Gap 19 — NOVA SOUL Memory (`icdev/tools/ace/soul_manager.py`)
+- **Files:** `icdev/tools/ace/soul_manager.py`, `tools/ace/roles/*/MEMORY.md`
+- **Risk:** Reads per-role MEMORY.md (written by reflexion_agent from task output
+  snippets) and injects it into dispatch prompts as system context. Also stores
+  LLM-extracted facts from task output when `ICDEV_HARNESS_COLEARN=true`.
+- **Decision:** **bypass-documented**
+- **Rationale:** MEMORY.md content is capped at 8 KB and 40 facts. Content is injected
+  as plain text into LLM prompts, not executed. Fact extraction is done via LLMRouter
+  (no eval/exec). No file system traversal beyond `tools/ace/roles/<role_id>/`.
+  Max 2 LLM-extracted facts per trace; `regex.search` is used to parse the JSON array,
+  not `eval`. Path is constructed from a validated role_id (DB FK, not user freeform input).
+- **Guardrails:** 8 KB size cap + 40-fact prune; trust_score gate ensures low-trust
+  roles cannot escalate via memory injection (probationary band = dispatch paused).
+
+### Gap 21 — ZIG External Ingest Adapters (`tools/security_canvas/zig_external_adapter.py`)
+
+- **Files:** `tools/security_canvas/zig_external_adapter.py`
+- **Risk:** Parses user-supplied content from 5 external scan formats: CycloneDX SBOM (JSON),
+  Bandit SAST output (JSON), security survey responses (JSON), Nmap scan results (XML),
+  and OpenAPI specifications (YAML/JSON). All content arrives from an authenticated API
+  endpoint (`POST /security/api/zig/targets/<id>/ingest`).
+- **Decision:** **bypass-documented**
+- **Rationale:** All 5 parsers use safe stdlib decoders only — `json.loads()`,
+  `xml.etree.ElementTree.fromstring()`, `yaml.safe_load()`. No `eval()`, `exec()`,
+  `subprocess`, or filesystem writes occur. Parsed data flows only to `set_activity_status()`
+  via parameterized SQL inserts. XML parsing uses stdlib `ElementTree` (no DTD expansion,
+  no external entity resolution). YAML uses `safe_load` (no custom constructors). This
+  guarantee is enforced by `tests/test_zig_ingest_adapters.py` (31 unit tests, all
+  using a DB-stub that verifies no real SQL calls reach the DB).
+- **Revisit if:** any ingest path adds `eval()`, subprocess execution of scan tools,
+  or resolves external references from within the uploaded content.
+
+### Gap 20 — NOVA SELA Skill Evolution (`tools/evolution/artifact_evolver.py`)
+- **Files:** `tools/evolution/artifact_evolver.py`, `tools/evolution/fitness.py`
+- **Risk:** Reads `.agents/skills/icdev-*` skill files, generates mutated candidates
+  via LLM, writes proposals to `oracle_predictions`. The `score_full()` path passes
+  example inputs/outputs to LLMRouter as judge.
+- **Decision:** **bypass-documented**
+- **Rationale:** Evolved skill text is **never auto-merged** — it is written to
+  `oracle_predictions` with `status='suggested'` and requires human HITL review before
+  any file is modified. The evolver validates: size ≤ 15 KB, growth ≤ +20%, must have
+  a `# heading`, non-empty. Fitness scorer uses LLMRouter.invoke() (no exec/eval).
+  Golden eval JSONL is first-party developer-authored content in `context/evolution/golden/`.
+- **Revisit if:** auto-merge of evolved artifacts is ever enabled (would require sandboxing
+  the SIPA integrity check on the candidate).
+
+### Gap 22 — CLI Bridge Manager (`tools/llm/cli_bridge_manager.py`)
+
+- **File:** `tools/llm/cli_bridge_manager.py`
+- **Risk:** Reads and writes the project's own `.env` file on disk to get/set `ICDEV_CLI_BRIDGE`
+  and to detect the presence of cloud API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+  `GOOGLE_API_KEY`). No user-supplied content is ingested — only the developer's own `.env`.
+- **Decision:** **trusted-first-party**
+- **Rationale:** The file is a developer-facing CLI configuration utility that reads and writes
+  only the project's own `.env` file. Its entire declared purpose (stated in the module docstring)
+  is to manage `ICDEV_CLI_BRIDGE` in `.env`. No `exec()`, `eval()`, `subprocess`, dynamic import,
+  or external network call occurs. The `.env` is a first-party developer-authored file; there is
+  no external or user-controlled ingress path. The `filesystem` capability is intentional,
+  scoped, and authorized via intake requirement `REQ-TOOLS-LLM-CLI-01/02/03` in the ICDEV RTM
+  (`project_id = icdev-tools-rtm`).
+- **Guardrails:**
+  - Reads and writes only `<repo_root>/.env` (resolved from `_find_repo_root()` heuristic).
+  - No shell expansion, no path traversal, no user-supplied filename.
+  - Module is invoked explicitly via `python tools/llm/cli_bridge_manager.py --<flag>` or
+    imported by `tools/llm/router.py` for auto-detection only.
+- **Revisit if:** the manager is extended to accept a user-supplied file path, or to write
+  to any file outside `<repo_root>/.env`.

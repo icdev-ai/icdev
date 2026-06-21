@@ -137,6 +137,45 @@ abac_policies:
       - PUT
     decision: Deny
 
+  # --- Proposal section write policies ---
+
+  - name: proposal_section_privileged_write
+    subject:
+      role:
+        operator: in
+        values:
+          - capture_mgr
+          - proposal_mgr
+          - tenant_admin
+          - admin
+    resource:
+      type: proposal_section
+    action:
+      - PUT
+      - PATCH
+    decision: Permit
+
+  - name: proposal_section_writer_own
+    subject:
+      role: section_writer
+    resource:
+      type: proposal_section
+      writer_email: "${subject.user_id}"
+    action:
+      - PUT
+      - PATCH
+    decision: Permit
+
+  - name: proposal_section_writer_deny_unassigned
+    subject:
+      role: section_writer
+    resource:
+      type: proposal_section
+    action:
+      - PUT
+      - PATCH
+    decision: Deny
+
 # ---------------------------------------------------------------------------
 # Column-Level Security — per-role, per-table column masking
 # ---------------------------------------------------------------------------
@@ -182,6 +221,49 @@ column_policies:
     columns:
       system_prompt: "null"
       context_config: "null"
+
+  # --- Proposal column masking ---
+
+  - table: proposal_opportunities
+    role: reviewer
+    columns:
+      win_themes: "null"
+      key_discriminators: "null"
+      ptw_low: "null"
+      ptw_high: "null"
+      estimated_value_low: "null"
+      estimated_value_high: "null"
+  - table: proposal_opportunities
+    role: co
+    columns:
+      win_themes: "null"
+      key_discriminators: "null"
+      ptw_low: "null"
+      ptw_high: "null"
+      estimated_value_low: "null"
+      estimated_value_high: "null"
+  - table: proposal_competitors
+    role: reviewer
+    columns:
+      strengths: "null"
+      weaknesses: "null"
+      estimated_price: "null"
+      win_probability_pct: "null"
+  - table: proposal_competitors
+    role: co
+    columns:
+      strengths: "null"
+      weaknesses: "null"
+      estimated_price: "null"
+      win_probability_pct: "null"
+  - table: cpmp_clins
+    role: reviewer
+    columns:
+      value: "null"
+  - table: cpmp_clins
+    role: co
+    columns:
+      value: "null"
 
 # ---------------------------------------------------------------------------
 # Field-Level Security — API response field filtering

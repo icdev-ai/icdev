@@ -22,7 +22,7 @@ DB_PATH = _ICDEV_ROOT / "data" / "agentic_ai_canvas.db"
 
 _BACKEND = os.environ.get(
     "AADC_STORAGE_BACKEND",
-    os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", "sqlite"),
+    os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql")),
 ).lower()
 
 

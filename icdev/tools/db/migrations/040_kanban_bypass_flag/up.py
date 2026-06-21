@@ -23,9 +23,30 @@ def _column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
     return any(row[1] == column for row in rows)
 
 
+def _table_exists(conn, table: str) -> bool:
+    """True if ``table`` exists (backend-agnostic). ``kanban_tasks`` is created at
+    app runtime by tools/kanban/init_db.py, so a migrate-only fresh DB (CI E2E
+    PostgreSQL job) legitimately lacks it — skip rather than fail the chain."""
+    if getattr(conn, "_backend", "sqlite") == "postgresql":
+        row = conn.execute(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema='public' AND table_name=?",
+            (table,),
+        ).fetchone()
+        return row is not None
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table,),
+    ).fetchone()
+    return row is not None
+
+
 def up(conn: sqlite3.Connection) -> dict:
     """Apply migration: add completed_via_bypass column (idempotent)."""
     actions = []
+
+    if not _table_exists(conn, "kanban_tasks"):
+        return {"status": "skipped", "reason": "kanban_tasks absent (created at runtime by tools/kanban/init_db.py)"}
 
     if _column_exists(conn, "kanban_tasks", "completed_via_bypass"):
         actions.append("column_exists")

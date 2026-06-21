@@ -1,0 +1,14 @@
+# CUI // SP-CTI
+# ICDEV™ Build Configuration
+# Thresholds previously hardcoded in setup.py / pyproject.toml are managed here.
+# Run `python tools/build/llm_threshold_advisor.py --write` to refresh LLM-advised values.
+
+# Minimum Python version required to run this package.
+# Kept here (not in setup.py) so llm_threshold_advisor can update it without
+# touching packaging metadata directly.
+min_python_version: "3.9"
+
+# LLM-advised thresholds — populated by llm_threshold_advisor.py.
+# Keys match the source location fingerprint: "<module_path>:<line>:<kind>".
+# Each entry records the original constant, the LLM recommendation, and rationale.
+llm_advised_thresholds: {}

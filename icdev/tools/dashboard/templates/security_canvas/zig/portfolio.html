@@ -1,0 +1,385 @@
+{% extends "security_canvas/base.html" %}
+{% block title %}ZIG Portfolio — Security Canvas{% endblock %}
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+/* ── Nav Tabs ── */
+.zig-tabs{display:flex;gap:0;border-bottom:2px solid #2a2a4a;margin-bottom:24px;overflow-x:auto;}
+.zig-tab{padding:10px 18px;color:#aaa;font-size:0.85rem;font-weight:600;text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-2px;white-space:nowrap;transition:color .2s,border-color .2s;}
+.zig-tab:hover{color:#fff;}
+.zig-tab.active{color:#e94560;border-bottom-color:#e94560;}
+/* ── Hero ── */
+.port-hero{background:linear-gradient(135deg,#0f0f1a 0%,#1a1a2e 50%,#16213e 100%);border-radius:12px;padding:28px 32px;margin-bottom:24px;border:1px solid #2a2a4a;}
+.port-hero h1{font-size:1.6rem;color:#fff;margin:0 0 6px;}
+.port-hero .subtitle{color:#aaa;font-size:0.85rem;}
+/* ── Health ── */
+.health-panel{background:#1a1a2e;border-radius:10px;border:1px solid #2a2a4a;padding:24px;margin-bottom:24px;}
+.health-panel h2{color:#fff;font-size:1rem;margin:0 0 20px;font-weight:600;}
+.kpi-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-bottom:20px;}
+.kpi-box{text-align:center;padding:16px;background:#0f0f1a;border-radius:8px;border:1px solid #2a2a4a;}
+.kpi-val{font-size:2rem;font-weight:700;color:#e94560;line-height:1;}
+.kpi-lbl{font-size:0.72rem;color:#aaa;margin-top:4px;text-transform:uppercase;letter-spacing:.05em;}
+.health-refresh{float:right;font-size:0.78rem;color:#60a5fa;cursor:pointer;background:none;border:none;padding:0;}
+.health-refresh:hover{text-decoration:underline;}
+/* ── Maturity Dist ── */
+.dist-row{display:flex;gap:10px;flex-wrap:wrap;}
+.dist-item{flex:1;min-width:80px;}
+.dist-label{font-size:0.7rem;color:#aaa;text-transform:uppercase;margin-bottom:4px;}
+.dist-track{height:8px;background:#2a2a4a;border-radius:4px;overflow:hidden;}
+.dist-fill{height:100%;border-radius:4px;transition:width .6s;}
+.dist-count{font-size:0.72rem;color:#fff;margin-top:3px;text-align:right;}
+.maturity-chip{display:inline-block;padding:2px 9px;border-radius:12px;font-size:0.72rem;font-weight:600;text-transform:uppercase;white-space:nowrap;}
+.chip-preparation{background:#3a3a5a;color:#aaa;}
+.chip-basic{background:#1e3a5f;color:#60a5fa;}
+.chip-intermediate{background:#1e4a2a;color:#4ade80;}
+.chip-advanced{background:#4a1e2a;color:#f472b6;}
+/* ── Compare / Radar ── */
+.compare-panel{background:#1a1a2e;border-radius:10px;border:1px solid #2a2a4a;padding:24px;margin-bottom:24px;}
+.compare-panel h2{color:#fff;font-size:1rem;font-weight:600;margin:0 0 16px;}
+.compare-controls{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px;align-items:center;}
+.compare-input{background:#0f0f1a;border:1px solid #2a2a4a;border-radius:6px;padding:7px 12px;color:#fff;font-size:0.85rem;flex:1;min-width:220px;}
+.compare-input:focus{outline:none;border-color:#e94560;}
+.compare-btn{background:#e94560;color:#fff;border:none;border-radius:6px;padding:8px 16px;font-size:0.85rem;font-weight:600;cursor:pointer;}
+.compare-btn:hover{background:#c73652;}
+.radar-canvas-wrap{max-width:520px;margin:0 auto;}
+.radar-toggle-row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;}
+.radar-toggle{display:flex;align-items:center;gap:6px;cursor:pointer;background:#0f0f1a;border-radius:6px;padding:6px 12px;border:1px solid #2a2a4a;user-select:none;}
+.radar-toggle:hover{border-color:#e94560;}
+.radar-toggle input[type=checkbox]{accent-color:#e94560;}
+.tog-swatch{width:11px;height:11px;border-radius:50%;flex-shrink:0;}
+.tog-name{font-size:0.78rem;color:#fff;}
+/* ── Targets Table ── */
+.targets-panel{background:#1a1a2e;border-radius:10px;border:1px solid #2a2a4a;padding:24px;margin-bottom:24px;}
+.targets-panel h2{color:#fff;font-size:1rem;font-weight:600;margin:0 0 16px;}
+.tbl-search{background:#0f0f1a;border:1px solid #2a2a4a;border-radius:6px;padding:7px 12px;color:#fff;font-size:0.85rem;width:220px;margin-bottom:14px;}
+.tbl-search:focus{outline:none;border-color:#e94560;}
+.zig-table{width:100%;border-collapse:collapse;font-size:0.84rem;}
+.zig-table thead th{text-align:left;padding:10px 12px;color:#aaa;font-weight:600;font-size:0.73rem;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #2a2a4a;cursor:pointer;white-space:nowrap;user-select:none;}
+.zig-table thead th:hover{color:#fff;}
+.zig-table thead th .sort-arr{margin-left:4px;opacity:.35;}
+.zig-table thead th.s-asc .sort-arr::after{content:'▲';opacity:1;}
+.zig-table thead th.s-desc .sort-arr::after{content:'▼';opacity:1;}
+.zig-table tbody tr{border-bottom:1px solid #1f1f3a;transition:background .12s;}
+.zig-table tbody tr:hover{background:#1f1f3a;}
+.zig-table tbody td{padding:10px 12px;color:#fff;vertical-align:middle;}
+.tbl-score{color:#e94560;font-weight:700;}
+.tbl-bar{height:5px;background:#2a2a4a;border-radius:3px;margin-top:4px;width:90px;}
+.tbl-bar-fill{height:100%;border-radius:3px;}
+.tbl-link{color:#60a5fa;text-decoration:none;font-size:0.78rem;margin-right:8px;}
+.tbl-link:hover{text-decoration:underline;}
+.report-btn{background:#1a1a2e;border:1px solid #2a2a4a;color:#aaa;border-radius:5px;padding:4px 10px;font-size:0.75rem;cursor:pointer;text-decoration:none;display:inline-block;}
+.report-btn:hover{border-color:#60a5fa;color:#60a5fa;}
+.pillar-bar{height:5px;border-radius:3px;background:#2a2a4a;margin:6px 0;}
+.pillar-bar-fill{height:100%;border-radius:3px;}
+</style>
+{% endblock %}
+{% block content %}
+<div style="padding:24px;max-width:1400px;margin:0 auto;">
+
+  <!-- Nav Tabs -->
+  <nav class="zig-tabs">
+    <a class="zig-tab" href="/security/zig/">Dashboard</a>
+    <a class="zig-tab" href="/security/zig/pillar/usr">Pillars</a>
+    <a class="zig-tab" href="/security/zig/phase">Phases</a>
+    <a class="zig-tab" href="/security/zig/assessment">Assessment</a>
+    <a class="zig-tab" href="/security/zig/roadmap">Roadmap</a>
+    <a class="zig-tab active" href="/security/zig/portfolio/">Portfolio</a>
+  </nav>
+
+  <!-- Hero -->
+  <div class="port-hero">
+    <h1>ZIG Portfolio</h1>
+    <div class="subtitle">
+      NSA Zero Trust Implementation Guide &bull; Portfolio health &bull; Side-by-side compare &bull; Per-pillar reports
+    </div>
+  </div>
+
+  <!-- Health Panel -->
+  <div class="health-panel">
+    <h2>
+      Portfolio Health
+      <button class="health-refresh" onclick="refreshHealth()" title="Refresh live from API">&#x21BA; Refresh</button>
+    </h2>
+    <div class="kpi-row" id="healthKpis">
+      <div class="kpi-box">
+        <div class="kpi-val" id="kpiTotal">{{ portfolio.total_targets }}</div>
+        <div class="kpi-lbl">Total Pillars</div>
+      </div>
+      <div class="kpi-box">
+        <div class="kpi-val" id="kpiAvg"
+             style="color:#{{ 'f59e0b' if portfolio.avg_score < 0.5 else ('4ade80' if portfolio.avg_score >= 0.75 else 'e94560') }};">
+          {{ (portfolio.avg_score * 100)|round(1) }}%
+        </div>
+        <div class="kpi-lbl">Avg Score</div>
+      </div>
+      <div class="kpi-box">
+        <div class="kpi-val" id="kpiAttn" style="color:#ef4444;">{{ portfolio.attention_count }}</div>
+        <div class="kpi-lbl">Need Attention</div>
+      </div>
+      <div class="kpi-box">
+        <div class="kpi-val" id="kpiAdv" style="color:#4ade80;">{{ portfolio.advanced_count }}</div>
+        <div class="kpi-lbl">Advanced Level</div>
+      </div>
+    </div>
+    <div style="margin-bottom:8px;font-size:0.78rem;color:#aaa;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Maturity Distribution</div>
+    <div class="dist-row">
+      {% set dist_meta = [
+        ('Preparation', portfolio.maturity_dist.preparation, '#6b7280', 'chip-preparation'),
+        ('Basic',       portfolio.maturity_dist.basic,       '#60a5fa', 'chip-basic'),
+        ('Intermediate',portfolio.maturity_dist.intermediate,'#4ade80', 'chip-intermediate'),
+        ('Advanced',    portfolio.maturity_dist.advanced,    '#f472b6', 'chip-advanced'),
+      ] %}
+      {% for label, count, color, chip_cls in dist_meta %}
+      <div class="dist-item">
+        <div class="dist-label"><span class="maturity-chip {{ chip_cls }}">{{ label }}</span></div>
+        <div class="dist-track" style="margin-top:6px;">
+          <div class="dist-fill" style="width:{{ ((count / portfolio.total_targets * 100)|round(0)|int) if portfolio.total_targets else 0 }}%;background:{{ color }};"></div>
+        </div>
+        <div class="dist-count">{{ count }} / {{ portfolio.total_targets }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Compare Panel -->
+  <div class="compare-panel">
+    <h2>Side-by-Side Radar</h2>
+    <div class="compare-controls">
+      <input class="compare-input" id="compareInput" type="text"
+             placeholder="Pillar slugs comma-separated (e.g. usr,dev,net) — leave blank for all"
+             value="{{ targets|map(attribute='slug')|list|join(',') }}">
+      <button class="compare-btn" onclick="loadCompare()">Compare</button>
+    </div>
+    <div class="radar-toggle-row" id="radarToggles">
+      {% set rcols = ['#e94560','#60a5fa','#4ade80','#f59e0b'] %}
+      {% for t in targets[:4] %}
+      <label class="radar-toggle">
+        <input type="checkbox" class="radar-cb" data-idx="{{ loop.index0 }}" checked>
+        <span class="tog-swatch" style="background:{{ rcols[loop.index0] }};"></span>
+        <span class="tog-name">{{ t.name }}</span>
+      </label>
+      {% endfor %}
+    </div>
+    <div class="radar-canvas-wrap">
+      <canvas id="portRadar" height="380"></canvas>
+    </div>
+    <div style="margin-top:12px;font-size:0.78rem;color:#aaa;text-align:center;">
+      <a href="/security/api/zig/portfolio/compare?targets={{ targets|map(attribute='slug')|list|join(',') }}"
+         target="_blank" style="color:#60a5fa;">View raw JSON &rarr;</a>
+    </div>
+  </div>
+
+  <!-- Targets Table -->
+  <div class="targets-panel">
+    <h2>All Pillars</h2>
+    <input class="tbl-search" id="tblSearch" type="text" placeholder="Filter by pillar name...">
+    <table class="zig-table" id="tgtTable">
+      <thead>
+        <tr>
+          <th data-col="name">Pillar<span class="sort-arr"></span></th>
+          <th data-col="score" class="s-desc">Score<span class="sort-arr"></span></th>
+          <th data-col="maturity">Maturity<span class="sort-arr"></span></th>
+          <th data-col="caps">Capabilities<span class="sort-arr"></span></th>
+          <th data-col="acts">Activities<span class="sort-arr"></span></th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="tgtBody">
+        {% for t in targets %}
+        <tr data-name="{{ t.name|lower }}"
+            data-score="{{ t.overall_score }}"
+            data-maturity="{{ t.maturity_level }}"
+            data-caps="{{ t.implemented_capabilities }}"
+            data-acts="{{ t.complete_activities }}">
+          <td>
+            <div style="font-weight:600;color:#fff;">{{ t.name }}</div>
+            <div style="font-size:0.73rem;color:#aaa;">{{ t.full_name }}</div>
+          </td>
+          <td>
+            <div class="tbl-score" style="color:{{ t.color }};">{{ (t.overall_score * 100)|round(1) }}%</div>
+            <div class="tbl-bar">
+              <div class="tbl-bar-fill" style="width:{{ (t.overall_score * 100)|round(0)|int }}%;background:{{ t.color }};"></div>
+            </div>
+          </td>
+          <td><span class="maturity-chip chip-{{ t.maturity_level }}">{{ t.maturity_level|title }}</span></td>
+          <td>
+            {{ t.implemented_capabilities }} / {{ t.capability_count }}
+            <div class="pillar-bar">
+              <div class="pillar-bar-fill" style="width:{{ ((t.implemented_capabilities / t.capability_count * 100)|round(0)|int) if t.capability_count else 0 }}%;background:{{ t.color }};"></div>
+            </div>
+          </td>
+          <td>
+            {{ t.complete_activities }} / {{ t.activity_count }}
+            {% if t.in_progress_activities > 0 %}
+            <div style="font-size:0.72rem;color:#aaa;">{{ t.in_progress_activities }} in progress</div>
+            {% endif %}
+          </td>
+          <td>
+            <a href="/security/zig/pillar/{{ t.slug }}" class="tbl-link">Details &rarr;</a>
+            <a href="/security/api/zig/targets/{{ t.slug }}/report"
+               class="report-btn" download="zig_{{ t.slug }}_report.md">&#x2B07; Report</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if not targets %}
+    <div style="text-align:center;padding:40px;color:#aaa;">No targets found.</div>
+    {% endif %}
+  </div>
+
+  <!-- IQE Query Widget -->
+  {% set iqe_canvas = "security_zig" %}
+  {% include "includes/iqe_query_widget.html" ignore missing %}
+
+</div>
+
+<script>
+const PILLAR_LABELS = {{ pillar_names | tojson }};
+let TARGET_DATA = {{ radar_datasets | tojson }};
+const RADAR_COLORS = ['#e94560','#60a5fa','#4ade80','#f59e0b','#8b5cf6','#f97316','#06b6d4','#84cc16'];
+
+/* ── Radar ── */
+function buildDatasets(active) {
+  return TARGET_DATA.filter((_, i) => active.has(i)).map((t, i) => {
+    const c = t.color || RADAR_COLORS[TARGET_DATA.indexOf(t)] || '#aaa';
+    return {
+      label: t.name,
+      data: t.scores.map(s => Math.round(s * 100)),
+      backgroundColor: c + '20',
+      borderColor: c,
+      pointBackgroundColor: c,
+      pointBorderColor: '#fff',
+      pointRadius: 4,
+      borderWidth: 2,
+    };
+  });
+}
+
+const radarCtx = document.getElementById('portRadar').getContext('2d');
+const radarChart = new Chart(radarCtx, {
+  type: 'radar',
+  data: {
+    labels: PILLAR_LABELS,
+    datasets: buildDatasets(new Set(TARGET_DATA.map((_, i) => i))),
+  },
+  options: {
+    responsive: true,
+    plugins: { legend: { labels: { color: '#ccc', font: { size: 11 } } } },
+    scales: {
+      r: {
+        min: 0, max: 100,
+        ticks: { color: '#aaa', backdropColor: 'transparent', stepSize: 25, font: { size: 10 } },
+        grid: { color: '#2a2a4a' },
+        angleLines: { color: '#2a2a4a' },
+        pointLabels: { color: '#fff', font: { size: 11 } },
+      }
+    }
+  }
+});
+
+document.querySelectorAll('.radar-cb').forEach(cb => {
+  cb.addEventListener('change', () => {
+    const active = new Set();
+    document.querySelectorAll('.radar-cb:checked').forEach(c => active.add(parseInt(c.dataset.idx)));
+    radarChart.data.datasets = buildDatasets(active);
+    radarChart.update();
+  });
+});
+
+/* ── Compare API ── */
+function loadCompare() {
+  const targets = document.getElementById('compareInput').value.trim();
+  const url = '/security/api/zig/portfolio/compare' + (targets ? '?targets=' + encodeURIComponent(targets) : '');
+  fetch(url)
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return;
+      TARGET_DATA = data.targets.map(t => ({ name: t.name, color: t.color, scores: t.scores_by_pillar }));
+      const active = new Set(TARGET_DATA.map((_, i) => i));
+      radarChart.data.datasets = buildDatasets(active);
+      radarChart.update();
+
+      /* Rebuild toggles */
+      const toggleRow = document.getElementById('radarToggles');
+      toggleRow.innerHTML = '';
+      TARGET_DATA.forEach((t, i) => {
+        const lbl = document.createElement('label');
+        lbl.className = 'radar-toggle';
+        lbl.innerHTML = `<input type="checkbox" class="radar-cb" data-idx="${i}" checked>
+          <span class="tog-swatch" style="background:${t.color || RADAR_COLORS[i]};"></span>
+          <span class="tog-name">${t.name}</span>`;
+        toggleRow.appendChild(lbl);
+      });
+      document.querySelectorAll('.radar-cb').forEach(cb => {
+        cb.addEventListener('change', () => {
+          const act = new Set();
+          document.querySelectorAll('.radar-cb:checked').forEach(c => act.add(parseInt(c.dataset.idx)));
+          radarChart.data.datasets = buildDatasets(act);
+          radarChart.update();
+        });
+      });
+    })
+    .catch(err => console.error('compare error', err));
+}
+
+/* ── Health Refresh ── */
+function refreshHealth() {
+  fetch('/security/api/zig/portfolio/health')
+    .then(r => r.json())
+    .then(data => {
+      if (!data.ok) return;
+      const h = data.health;
+      document.getElementById('kpiTotal').textContent = h.total_pillars;
+      document.getElementById('kpiAvg').textContent = (h.avg_score * 100).toFixed(1) + '%';
+      document.getElementById('kpiAttn').textContent = h.attention_count;
+      document.getElementById('kpiAdv').textContent = h.advanced_count;
+    })
+    .catch(err => console.error('health error', err));
+}
+
+/* ── Sortable Table ── */
+let sortCol = 'score', sortDir = 'desc';
+
+function tblVal(row, col) {
+  if (col === 'name') return row.dataset.name || '';
+  if (col === 'score') return parseFloat(row.dataset.score) || 0;
+  if (col === 'caps') return parseInt(row.dataset.caps) || 0;
+  if (col === 'acts') return parseInt(row.dataset.acts) || 0;
+  const order = { preparation: 0, basic: 1, intermediate: 2, advanced: 3 };
+  if (col === 'maturity') return order[row.dataset.maturity] ?? 0;
+  return 0;
+}
+
+function sortTable() {
+  const tbody = document.getElementById('tgtBody');
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  rows.sort((a, b) => {
+    const va = tblVal(a, sortCol), vb = tblVal(b, sortCol);
+    if (typeof va === 'string') return sortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+    return sortDir === 'asc' ? va - vb : vb - va;
+  });
+  rows.forEach(r => tbody.appendChild(r));
+}
+
+document.querySelectorAll('#tgtTable thead th[data-col]').forEach(th => {
+  th.addEventListener('click', () => {
+    const col = th.dataset.col;
+    sortDir = sortCol === col ? (sortDir === 'asc' ? 'desc' : 'asc') : (col === 'name' ? 'asc' : 'desc');
+    sortCol = col;
+    document.querySelectorAll('#tgtTable thead th').forEach(h => h.classList.remove('s-asc', 's-desc'));
+    th.classList.add(sortDir === 'asc' ? 's-asc' : 's-desc');
+    sortTable();
+  });
+});
+
+document.getElementById('tblSearch').addEventListener('input', function () {
+  const q = this.value.toLowerCase();
+  document.querySelectorAll('#tgtBody tr').forEach(row => {
+    row.style.display = (row.dataset.name || '').includes(q) ? '' : 'none';
+  });
+});
+
+sortTable();
+</script>
+{% endblock %}

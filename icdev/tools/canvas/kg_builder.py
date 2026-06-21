@@ -314,7 +314,7 @@ def upsert_from_dic(
     now_iso = datetime.now(timezone.utc).isoformat()
 
     try:
-        from icdev.tools.db.storage import get_connection
+        from tools.db.storage import get_connection
 
         icdev_conn = get_connection()
         raw_conn = getattr(icdev_conn, "conn", icdev_conn)

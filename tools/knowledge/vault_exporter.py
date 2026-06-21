@@ -23,7 +23,6 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import logging
 from tools.logging.icdev_logger import get_logger
 import sys
 import zipfile

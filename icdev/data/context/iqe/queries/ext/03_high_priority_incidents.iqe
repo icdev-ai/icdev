@@ -1,0 +1,8 @@
+# IQE-EXT-003: High-priority open ServiceNow incidents
+# Returns P1 incidents that are not yet resolved or closed.
+# Use: escalation triage, SLA enforcement, NOC handoff.
+# Requires: servicenow_itsm connector configured with credentials.
+
+foreach i in ext.servicenow.incidents
+  where i.priority == "1"
+  select i.number, i.short_description, i.priority, i.state, i.assigned_to

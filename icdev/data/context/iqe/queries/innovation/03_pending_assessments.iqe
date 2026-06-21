@@ -1,0 +1,6 @@
+// IQE-INNOV-003: Ideas pending human approval — assessments not yet approved
+foreach a in innovation.assessments
+where a.human_approved = 0
+select a.id, a.idea_id, a.assessed_by, a.business_value_score, a.strategic_alignment_score, a.technical_feasibility_score, a.created_at
+order by a.created_at desc
+limit 50

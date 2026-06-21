@@ -49,6 +49,12 @@ _FALLBACK_CONFIG = {
     "value_weights": {"usage_freq": 0.40, "task_complexity": 0.35, "automation_deficit": 0.25},
     "feasibility_weights": {"data_avail": 0.40, "il_model_exists": 0.35, "integration_simplicity": 0.25},
     "risk_weights": {"reversibility": 0.40, "compliance_impact_inv": 0.35, "dep_simplicity": 0.25},
+    "il_penalties": {"il4": 0.0, "il5": 0.1, "il6": 0.2},
+    "anomaly_detection": {
+        "value_feasibility_max_delta": 0.50,
+        "component_outlier_floor": 0.05,
+        "component_outlier_ceiling": 0.95,
+    },
 }
 
 
@@ -102,7 +108,7 @@ def _norm(raw, *, default: float = 0.5) -> float:
     return _clamp(float(raw))
 
 
-def _extract_components(opportunity: dict, scan_context: dict) -> dict:
+def _extract_components(opportunity: dict, scan_context: dict, config: dict | None = None) -> dict:
     """Extract and normalize all scoring components from the opportunity dict.
 
     Missing keys fall back to neutral defaults (0.5) so partial opportunity
@@ -143,7 +149,9 @@ def _extract_components(opportunity: dict, scan_context: dict) -> dict:
     # compliance_impact is not explicitly provided.
     il_level = str(scan_context.get("il_level", "il4")).lower()
     if "compliance_impact_inv" not in opportunity and "compliance_impact" not in opportunity:
-        il_penalty = {"il4": 0.0, "il5": 0.1, "il6": 0.2}.get(il_level, 0.0)
+        cfg = config if config is not None else _load_config()
+        il_penalties = cfg.get("il_penalties", _FALLBACK_CONFIG["il_penalties"])
+        il_penalty = il_penalties.get(il_level, 0.0)
         compliance_impact_inv = _clamp(compliance_impact_inv - il_penalty)
 
     return {
@@ -318,6 +326,67 @@ def _compute_composite_score(value_score: float, feasibility_score: float, risk_
 # ============================================================================
 
 
+def detect_score_anomalies(score_result: dict, config: dict | None = None) -> list:
+    """Detect statistical anomalies in a scored opportunity.
+
+    Uses thresholds from the ``anomaly_detection`` section of aac_config.yaml
+    rather than hardcoded values.  Returns a list of anomaly dicts; empty list
+    means no anomalies detected.
+
+    Checks performed:
+      1. ``value_feasibility_delta`` — |value_score - feasibility_score| > threshold
+      2. ``component_outlier_low``  — any component below the floor threshold
+      3. ``component_outlier_high`` — any component above the ceiling threshold
+
+    Args:
+        score_result: Return value of ``score_opportunity``.
+        config:       Optional pre-loaded config dict; loaded from file if None.
+
+    Returns:
+        List of anomaly dicts, each with at least ``type`` and ``severity`` keys.
+    """
+    cfg = config if config is not None else _load_config()
+    anomaly_cfg = cfg.get("anomaly_detection", _FALLBACK_CONFIG["anomaly_detection"])
+
+    max_delta = float(anomaly_cfg.get("value_feasibility_max_delta", 0.50))
+    floor = float(anomaly_cfg.get("component_outlier_floor", 0.05))
+    ceiling = float(anomaly_cfg.get("component_outlier_ceiling", 0.95))
+
+    anomalies = []
+
+    value = float(score_result.get("value_score", 0.0))
+    feasibility = float(score_result.get("feasibility_score", 0.0))
+    delta = abs(value - feasibility)
+    if delta > max_delta:
+        anomalies.append({
+            "type": "value_feasibility_delta",
+            "detail": f"|value({value:.4f}) - feasibility({feasibility:.4f})| = {delta:.4f} > {max_delta}",
+            "severity": "warning",
+        })
+
+    components = score_result.get("score_detail", {}).get("components", {})
+    for name, val in components.items():
+        fval = float(val)
+        if fval < floor:
+            anomalies.append({
+                "type": "component_outlier_low",
+                "component": name,
+                "value": fval,
+                "threshold": floor,
+                "severity": "warning",
+            })
+        elif fval > ceiling:
+            anomalies.append({
+                "type": "component_outlier_high",
+                "component": name,
+                "value": fval,
+                "threshold": ceiling,
+                "severity": "warning",
+            })
+
+    return anomalies
+
+
 def score_opportunity(opportunity: dict, scan_context: dict) -> dict:
     """Score a single AI augmentation opportunity.
 
@@ -349,6 +418,7 @@ def score_opportunity(opportunity: dict, scan_context: dict) -> dict:
             risk_score       — float [0.0, 1.0]: higher = safer (less risky)
             composite_score  — float [0.0, 1.0]: overall opportunity attractiveness
             score_detail     — dict with weights used and normalized components
+            anomaly_flags    — list of anomaly dicts (empty = no anomalies)
     """
     cfg = _load_config()
 
@@ -357,7 +427,7 @@ def score_opportunity(opportunity: dict, scan_context: dict) -> dict:
     feasibility_w = cfg.get("feasibility_weights", _FALLBACK_CONFIG["feasibility_weights"])
     risk_w = cfg.get("risk_weights", _FALLBACK_CONFIG["risk_weights"])
 
-    components = _extract_components(opportunity, scan_context)
+    components = _extract_components(opportunity, scan_context, config=cfg)
 
     value_score = _compute_value_score(components, value_w)
     feasibility_score = _compute_feasibility_score(components, feasibility_w)
@@ -379,13 +449,15 @@ def score_opportunity(opportunity: dict, scan_context: dict) -> dict:
         },
     }
 
-    return {
+    result = {
         "value_score": round(value_score, 4),
         "feasibility_score": round(feasibility_score, 4),
         "risk_score": round(risk_score, 4),
         "composite_score": round(composite_score, 4),
         "score_detail": score_detail,
     }
+    result["anomaly_flags"] = detect_score_anomalies(result, config=cfg)
+    return result
 
 
 # ============================================================================

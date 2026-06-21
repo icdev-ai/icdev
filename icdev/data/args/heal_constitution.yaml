@@ -52,3 +52,16 @@ rules:
       - reset_circuit_breaker
     max_per_day: 3
     on_violation: hold
+
+# Anomaly-detection parameters for adaptive confidence threshold (heal.py).
+# All values formerly hardcoded in _compute_adaptive_confidence_threshold.
+anomaly_detection:
+  # Fallback threshold when DB has fewer than min_samples patterns
+  fallback_threshold: 0.70
+  # Minimum number of patterns required to compute a statistical threshold
+  min_samples: 10
+  # threshold = mean - z_score_factor * std_dev
+  z_score_factor: 0.5
+  # Clamp bounds for the computed threshold
+  threshold_floor: 0.50
+  threshold_ceiling: 0.95

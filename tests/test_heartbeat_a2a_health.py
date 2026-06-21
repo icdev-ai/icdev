@@ -8,13 +8,12 @@ Validates that the A2A endpoint health check:
 - sends a Telegram alert when an agent has been dead for >= dead_alert_minutes
 """
 
-import importlib
 import json
 import sqlite3
 import sys
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -24,7 +23,6 @@ os.environ["ICDEV_STORAGE_BACKEND"] = "sqlite"  # force sqlite so writes land in
 import tools.monitor.heartbeat_daemon as _hb_mod
 from tools.monitor.heartbeat_daemon import (
     _build_default_a2a_agents,
-    _ensure_table,
     _load_config,
     check_a2a_agent_health,
     run_single_check,

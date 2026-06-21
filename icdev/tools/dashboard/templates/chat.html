@@ -85,6 +85,7 @@
                 <button id="btn-ricoas-toggle" class="chat-toggle-btn chat-toggle-btn--ricoas" title="Toggle Requirements sidebar">Requirements</button>
                 <button id="btn-gov-toggle" class="chat-toggle-btn chat-toggle-btn--gov" title="Toggle AI Governance sidebar">Governance</button>
                 <button id="btn-intel-toggle" class="chat-toggle-btn chat-toggle-btn--intel" title="Toggle Knowledge &amp; Intelligence sidebar">Knowledge</button>
+                <button id="btn-reasoning-toggle" class="chat-toggle-btn chat-toggle-btn--reasoning" title="Reasoned codegen for code requests — click to cycle off / auto / on" data-mode="off">🧠 Reason: <span id="reasoning-mode-badge">OFF</span></button>
                 <button id="btn-focus-mode" class="chat-toggle-btn chat-toggle-btn--focus" title="Focus mode — hide side panels for a cleaner chat view">Focus</button>
                 <button id="btn-close-context" class="chat-toggle-btn chat-toggle-btn--close">Close</button>
             </div>
@@ -357,6 +358,14 @@
                     <option value="sonnet">Sonnet</option>
                     <option value="opus">Opus</option>
                     <option value="haiku">Haiku</option>
+                </select>
+            </div>
+            <div class="chat-modal__field">
+                <label class="chat-modal__label">Reasoned Codegen</label>
+                <select id="new-ctx-reasoning" class="chat-modal__select">
+                    <option value="off" selected>Off — standard responses</option>
+                    <option value="auto">Auto — advisor decides for code requests</option>
+                    <option value="on">On — always reason (CoT/CoD) on code requests</option>
                 </select>
             </div>
             <div class="chat-modal__field">

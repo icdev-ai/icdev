@@ -1,0 +1,10 @@
+graph TB
+    A["Network Changes<br/>(Forward Network, CSP, GNS3)"]
+    B["Drift Detected"]
+    C["Auto-Regenerate<br/>SOPs, Runbooks, SSPs"]
+    D["Compliance Verified<br/>& Mission Ready"]
+
+    A --> B
+    B --> C
+    C --> D
+    D -.>|Feedback Loop| A

@@ -1,0 +1,46 @@
+name: A2A Agent Mesh Integration Test
+description: Validate all 15 A2A agent certificates, test mTLS handshakes, probe health endpoints, and generate mesh readiness report.
+category: ops
+tags: [a2a, mtls, agents, integration-test, mesh]
+author: builtin
+steps:
+  - id: cert_check
+    name: Certificate Validity Check (90-day window)
+    tool: tools/a2a/provision_dev_certs.py
+    node_type: tool
+    required: true
+    timeout: 120
+  - id: health_probe
+    name: Agent Health Probe (all 15 agents)
+    tool: tools/awareness/health_prober.py
+    node_type: tool
+    required: true
+    timeout: 300
+  - id: mtls_test
+    name: mTLS Handshake Test
+    tool: tools/a2a/mtls_tester.py
+    node_type: tool
+    required: true
+    timeout: 180
+    depends_on: [cert_check]
+  - id: coherence
+    name: Coherence Gate Check
+    tool: tools/workflow/coherence_checker.py
+    node_type: tool
+    required: true
+    timeout: 180
+    depends_on: [health_probe]
+  - id: ops_review
+    name: Ops Engineer Sign-off
+    tool: ""
+    node_type: human
+    role: reviewer
+    required: true
+    depends_on: [mtls_test, coherence]
+  - id: mesh_report
+    name: Mesh Readiness Report
+    tool: tools/awareness/drift_detector.py
+    node_type: tool
+    required: false
+    timeout: 120
+    depends_on: [ops_review]

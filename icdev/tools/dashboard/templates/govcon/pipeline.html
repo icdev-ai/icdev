@@ -3,6 +3,7 @@
 {% block content %}
 {% from "includes/classification_macros.html" import design_classification_banner %}
 {{ design_classification_banner('CUI') }}
+{% include "includes/ai_brief_banner.html" ignore missing %}
 
 <style>
 .gc-hero { background: linear-gradient(135deg, rgba(74,144,217,0.12) 0%, rgba(40,167,69,0.08) 100%); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 20px 24px; margin-bottom: 20px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
@@ -223,6 +224,7 @@
           <th>pWin</th>
           <th>Wtd Value</th>
           <th>Capture Mgr</th>
+          <th title='Last WriteGuard quality score'>WG</th>
         </tr>
       </thead>
       <tbody>
@@ -304,9 +306,17 @@
             {% endif %}
           </td>
           <td style="color:var(--text-secondary);font-size:0.82rem;">{{ opp.capture_manager or '—' }}</td>
+          <td>
+            <span class='wg-score-badge' data-opp-id='{{ opp.id }}'
+                  style='cursor:pointer;display:inline-block;padding:2px 7px;
+                         border-radius:4px;font-size:0.75rem;font-weight:700;
+                         background:var(--bg-secondary);color:var(--text-muted);'
+                  title='Last WriteGuard score — click to open analysis'
+                  onclick="window.open('/writeguard?opp_id={{ opp.id }}','_blank')">—</span>
+          </td>
         </tr>
         {% else %}
-        <tr><td colspan="10" style="text-align:center;padding:1.5rem;color:var(--text-muted);">No active proposals in the pipeline.</td></tr>
+        <tr><td colspan="11" style="text-align:center;padding:1.5rem;color:var(--text-muted);">No active proposals in the pipeline.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -399,6 +409,17 @@
   <p style="margin-top:0.5rem;color:var(--text-muted);font-size:0.78rem;">Last pipeline run: {{ stats.last_pipeline_run }}</p>
   {% endif %}
 </div>
+
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "govcon" %}
+{% set iqe_api_route = "/api/govcon/iqe-query" %}
+{% set iqe_title = "Ask the AI — GovCon Intelligence" %}
+{% set iqe_examples = [
+    {"label": "Top competitors", "query": "list top competitors by NAICS code 541512"},
+    {"label": "Recent awards", "query": "show recent contract awards in the past 90 days"},
+    {"label": "Capability gaps", "query": "show capability gaps across active opportunities"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
 
 <script>
 function setMsg(txt, color) {
@@ -494,5 +515,35 @@ function refreshPipelineValue() {
     .then(function(d) { if (d.status === 'ok') location.reload(); })
     .catch(function(){});
 }
+
+// WG score badge batch-fetch
+document.addEventListener('DOMContentLoaded', function() {
+  var badges = document.querySelectorAll('.wg-score-badge[data-opp-id]');
+  if (!badges.length) return;
+  var ids = Array.from(badges).map(function(b) { return b.getAttribute('data-opp-id'); });
+  fetch('/api/govcon/opportunities/wg-scores?ids=' + ids.join(','))
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var scores = d.scores || {};
+      badges.forEach(function(badge) {
+        var oppId = badge.getAttribute('data-opp-id');
+        var score = scores[oppId];
+        if (score == null) return;
+        var pct = Math.round(score);
+        var bg, color;
+        if (pct >= 70) {
+          bg = 'rgba(40,167,69,0.2)'; color = '#4caf50';
+        } else if (pct >= 40) {
+          bg = 'rgba(255,193,7,0.2)'; color = '#ffc107';
+        } else {
+          bg = 'rgba(220,53,69,0.2)'; color = '#dc3545';
+        }
+        badge.textContent = pct;
+        badge.style.background = bg;
+        badge.style.color = color;
+      });
+    })
+    .catch(function() {});
+});
 </script>
 {% endblock %}

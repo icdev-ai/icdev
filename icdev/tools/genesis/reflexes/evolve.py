@@ -24,6 +24,7 @@ DGM/Hyperagents-inspired capabilities:
 IMPLEMENTATION_STATUS = "full"
 
 import json
+import math
 import os
 import subprocess
 import sys
@@ -76,6 +77,67 @@ def _get_recently_evolved(hours: int = 72) -> set:
         conn.close()
 
 
+def _compute_anomaly_thresholds(anomaly_cfg: Optional[Dict] = None) -> Dict[str, float]:
+    """Compute anomaly-based thresholds from the code quality metric distribution.
+
+    Uses population variance (mean ± sigma·σ) to surface true outliers rather than
+    applying static cutoffs.  Falls back to configured defaults when fewer than
+    min_samples data points are available.
+
+    All tuning constants are drawn from anomaly_cfg (evolve.anomaly_detection in
+    genesis_config.yaml) so they can be adjusted without code changes.
+    """
+    cfg = anomaly_cfg or {}
+    min_samples = cfg.get("min_samples", 10)
+    sigma_multiplier = cfg.get("sigma_multiplier", 0.5)
+    fallback_smell = cfg.get("fallback_smell_threshold", 1.0)
+    fallback_maint = cfg.get("fallback_maintainability_threshold", 50.0)
+    bounds = cfg.get("adaptive_bounds", {})
+    smell_floor: float = bounds.get("smell_threshold_floor", fallback_smell)
+    maint_floor: float = bounds.get("maint_threshold_floor", 0.0)
+
+    conn = None
+    try:
+        conn = get_connection()
+        row = conn.execute("""
+            SELECT
+                AVG(smell_count) AS mean_smells,
+                AVG(smell_count * smell_count) - AVG(smell_count) * AVG(smell_count) AS var_smells,
+                AVG(maintainability_score) AS mean_maint,
+                AVG(maintainability_score * maintainability_score)
+                    - AVG(maintainability_score) * AVG(maintainability_score) AS var_maint,
+                COUNT(*) AS n
+            FROM code_quality_metrics
+            WHERE smell_count IS NOT NULL AND maintainability_score IS NOT NULL
+        """).fetchone()
+        if row:
+            n = row["n"] if isinstance(row, dict) else row[4]
+            if n and n >= min_samples:
+                mean_smells = float(row["mean_smells"] if isinstance(row, dict) else row[0])
+                var_smells = max(0.0, float(row["var_smells"] if isinstance(row, dict) else row[1]))
+                mean_maint = float(row["mean_maint"] if isinstance(row, dict) else row[2])
+                var_maint = max(0.0, float(row["var_maint"] if isinstance(row, dict) else row[3]))
+                std_smells = math.sqrt(var_smells)
+                std_maint = math.sqrt(var_maint)
+                smell_threshold = max(smell_floor, mean_smells + sigma_multiplier * std_smells)
+                maint_threshold = max(maint_floor, mean_maint - sigma_multiplier * std_maint)
+                print(
+                    f"  Evolve: anomaly thresholds from {n} samples — "
+                    f"smell>{smell_threshold:.1f}, maint<{maint_threshold:.1f}"
+                )
+                return {
+                    "smell_threshold": smell_threshold,
+                    "maintainability_threshold": maint_threshold,
+                    "computed": True,
+                }
+    except Exception as e:
+        print(f"  WARN: anomaly threshold computation failed: {e}")
+    finally:
+        if conn is not None:
+            conn.close()
+    return {"smell_threshold": fallback_smell, "maintainability_threshold": fallback_maint, "computed": False}
+
+
 def _refresh_file_metrics(file_path: str) -> Optional[Dict[str, Any]]:
     """Re-run code_analyzer on a single file to get fresh metrics."""
     try:
@@ -111,41 +173,47 @@ def _compute_confidence(
     tests_passed: bool,
     metrics_improved: bool,
     sandbox_passed: bool = True,
+    tiers_cfg: Optional[Dict] = None,
 ) -> Tuple[float, str]:
     """Compute GKP confidence based on quality gates.
 
+    Confidence tier values are drawn from tiers_cfg (evolve.thresholds.confidence_tiers
+    in genesis_config.yaml) so they can be tuned without code changes.
+
     Returns (confidence, rationale).
     """
-    if not tests_passed:
-        return 0.35, "tests_failed"
-
-    # Sandbox failure reduces confidence by 0.10 (D-SEC-10)
-    sandbox_penalty = 0.0 if sandbox_passed else 0.10
+    t = tiers_cfg or {}
+    tests_failed_conf = t.get("tests_failed", 0.35)
+    low_improved_conf = t.get("low_risk_improved", 0.75)
+    low_conf = t.get("low_risk", 0.65)
+    med_improved_conf = t.get("medium_risk_improved", 0.60)
+    med_conf = t.get("medium_risk", 0.50)
+    high_conf = t.get("high_risk", 0.45)
+    sandbox_penalty = 0.0 if sandbox_passed else t.get("sandbox_penalty", 0.10)
     sandbox_suffix = "" if sandbox_passed else "+sandbox_failed"
 
+    if not tests_passed:
+        return tests_failed_conf, "tests_failed"
+
     if risk == "low" and metrics_improved:
-        tag = "low_risk_tests_pass_metrics_improved"
-        return 0.75 - sandbox_penalty, tag + sandbox_suffix
+        return low_improved_conf - sandbox_penalty, "low_risk_tests_pass_metrics_improved" + sandbox_suffix
     if risk == "low":
-        tag = "low_risk_tests_pass"
-        return 0.65 - sandbox_penalty, tag + sandbox_suffix
+        return low_conf - sandbox_penalty, "low_risk_tests_pass" + sandbox_suffix
     if risk == "medium" and metrics_improved:
-        tag = "medium_risk_metrics_improved"
-        return 0.60 - sandbox_penalty, tag + sandbox_suffix
+        return med_improved_conf - sandbox_penalty, "medium_risk_metrics_improved" + sandbox_suffix
     if risk == "medium":
-        tag = "medium_risk_tests_pass"
-        return 0.50 - sandbox_penalty, tag + sandbox_suffix
-    # high risk
-    tag = "high_risk_human_review"
-    return 0.45 - sandbox_penalty, tag + sandbox_suffix
+        return med_conf - sandbox_penalty, "medium_risk_tests_pass" + sandbox_suffix
+    return high_conf - sandbox_penalty, "high_risk_human_review" + sandbox_suffix
 
 
 def _get_worst_quality_file(
     allowed_dirs: List[str],
     forbidden_files: List[str],
+    thresholds: Optional[Dict[str, float]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Find the file with worst code quality metrics."""
     recently_evolved = _get_recently_evolved(hours=72)
+    smell_threshold = (thresholds or {}).get("smell_threshold", 0)
 
     conn = get_connection()
     try:
@@ -153,10 +221,10 @@ def _get_worst_quality_file(
             SELECT file_path, cyclomatic_complexity, cognitive_complexity,
                    maintainability_score, smell_count, function_count
             FROM code_quality_metrics
-            WHERE smell_count > 0
+            WHERE smell_count > ?
             ORDER BY smell_count DESC, cyclomatic_complexity DESC
             LIMIT 50
-        """).fetchall()
+        """, (smell_threshold,)).fetchall()
 
         for row in rows:
             fp = row["file_path"] if isinstance(row, dict) else row[0]
@@ -207,6 +275,7 @@ def _get_worst_quality_file(
 def _select_most_failures(
     allowed_dirs: List[str],
     forbidden_files: List[str],
+    thresholds: Optional[Dict[str, float]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Select the file with most recent test failures."""
     recently_evolved = _get_recently_evolved(hours=72)
@@ -265,6 +334,7 @@ def _select_most_failures(
 def _select_highest_churn(
     allowed_dirs: List[str],
     forbidden_files: List[str],
+    thresholds: Optional[Dict[str, float]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Select the file with highest churn (most GKP mutations)."""
     recently_evolved = _get_recently_evolved(hours=72)
@@ -327,19 +397,21 @@ def _select_highest_churn(
 def _select_lowest_coverage(
     allowed_dirs: List[str],
     forbidden_files: List[str],
+    thresholds: Optional[Dict[str, float]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Select the file with lowest test coverage."""
     recently_evolved = _get_recently_evolved(hours=72)
+    maint_threshold = (thresholds or {}).get("maintainability_threshold", 50.0)
     conn = get_connection()
     try:
         rows = conn.execute("""
             SELECT file_path, cyclomatic_complexity, cognitive_complexity,
                    maintainability_score, smell_count, function_count
             FROM code_quality_metrics
-            WHERE maintainability_score < 50
+            WHERE maintainability_score < ?
             ORDER BY maintainability_score ASC
             LIMIT 50
-        """).fetchall()
+        """, (maint_threshold,)).fetchall()
         for row in rows:
             fp = row["file_path"] if isinstance(row, dict) else row[0]
             if not fp:
@@ -385,13 +457,14 @@ def _select_target(
     strategy: str,
     allowed_dirs: List[str],
     forbidden_files: List[str],
+    thresholds: Optional[Dict[str, float]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Select a target file using the given strategy, falling back to worst_code_quality."""
     selector = _STRATEGY_SELECTORS.get(strategy, _get_worst_quality_file)
-    target = selector(allowed_dirs, forbidden_files)
+    target = selector(allowed_dirs, forbidden_files, thresholds)
     if target is None and strategy != "worst_code_quality":
         print(f"  Evolve: strategy '{strategy}' found nothing, falling back to worst_code_quality")
-        target = _get_worst_quality_file(allowed_dirs, forbidden_files)
+        target = _get_worst_quality_file(allowed_dirs, forbidden_files, thresholds)
     return target
 
 
@@ -1007,9 +1080,20 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     cycle_count = _get_evolve_cycle_count()
     strategy = _meta_evolve_check(config, base_strategy, cycle_count)
 
+    # ── Anomaly thresholds: data-driven instead of hardcoded cutoffs ─────────
+    anomaly_cfg = config.get("anomaly_detection", {})
+    anomaly_thresholds = _compute_anomaly_thresholds(anomaly_cfg)
+
+    # ── Config-driven confidence gates (fall back to documented defaults) ────
+    thresholds_cfg = config.get("thresholds", {})
+    min_confidence = thresholds_cfg.get("min_confidence", 0.50)
+    expedited_review_confidence = thresholds_cfg.get("expedited_review", 0.55)
+    auto_promotable_confidence = thresholds_cfg.get("auto_promotable", 0.70)
+    tiers_cfg = thresholds_cfg.get("confidence_tiers", {})
+
     # Step 1: Find target file using (possibly rotated) strategy
     print(f"  Evolve: scanning with strategy='{strategy}'...")
-    target = _select_target(strategy, allowed_dirs, forbidden_files)
+    target = _select_target(strategy, allowed_dirs, forbidden_files, anomaly_thresholds)
     if not target:
         return {
             "success": True,
@@ -1118,15 +1202,15 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             metrics_improved = new_smells < old_smells or new_cc < old_cc or new_maint > old_maint
 
     # Step 6: Compute quality-gated confidence
-    confidence, rationale = _compute_confidence(risk, tests_passed, metrics_improved, sandbox_passed)
+    confidence, rationale = _compute_confidence(risk, tests_passed, metrics_improved, sandbox_passed, tiers_cfg)
     print(f"  Evolve: confidence={confidence:.2f} ({rationale})")
 
     # ── Variant Archive: store the result ───────────────────────────────────
-    variant_status = "accepted" if tests_passed and confidence >= 0.50 else "rejected"
+    variant_status = "accepted" if tests_passed and confidence >= min_confidence else "rejected"
     rejection_reason = ""
     if not tests_passed:
         rejection_reason = "tests_failed"
-    elif confidence < 0.50:
+    elif confidence < min_confidence:
         rejection_reason = f"low_confidence_{confidence:.2f}"
 
     _archive_variant(
@@ -1155,9 +1239,9 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     )
 
     status = "proposed_for_human_review"
-    if confidence >= 0.70:
+    if confidence >= auto_promotable_confidence:
         status = "auto_promotable"
-    elif confidence >= 0.55:
+    elif confidence >= expedited_review_confidence:
         status = "expedited_review"
 
     return {

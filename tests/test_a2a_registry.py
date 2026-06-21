@@ -1,7 +1,5 @@
 """Tests for A2A discovery registry (adapt-iii-03)."""
-import pytest
 from pathlib import Path
-import json
 
 
 # ---------------------------------------------------------------------------

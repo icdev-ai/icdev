@@ -8,7 +8,6 @@ outlier detection — no hardcoded chunk-size caps.
 from __future__ import annotations
 
 import importlib
-import json
 import sqlite3
 
 import pytest

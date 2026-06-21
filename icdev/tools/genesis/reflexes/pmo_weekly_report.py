@@ -9,11 +9,10 @@ executive summary pushed to kanban + memory.
 IMPLEMENTATION_STATUS = "full"
 
 import json
-import os
 import sys
-from datetime import date, datetime, timezone
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -24,7 +23,6 @@ REPORTS_DIR = BASE_DIR / "data" / "reports"
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute weekly PMO report reflex."""
-    today = date.today().isoformat()
     report_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -35,7 +33,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     report_path = REPORTS_DIR / f"pmo_weekly_{report_date}.html"
     try:
         report_path.write_text(html, encoding="utf-8")
-    except Exception as e:
+    except Exception:
         pass
 
     # Push to kanban
@@ -324,7 +322,7 @@ def _push_kanban_task(snapshot: Dict[str, Any], narrative: str, report_date: str
     try:
         from tools.db.storage import get_connection
         conn = get_connection(db_path=str(BASE_DIR / "data" / "icdev.db"))
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: background reflex; kanban_tasks has no classification/tenant_id columns
         health = snapshot.get("health", {})
         import uuid as _uuid3
         from datetime import datetime, timezone
@@ -339,7 +337,7 @@ def _push_kanban_task(snapshot: Dict[str, Any], narrative: str, report_date: str
             "critical_options": snapshot.get("critical_options", 0),
             "report_path": str(REPORTS_DIR / f"pmo_weekly_{report_date}.html"),
         })
-        cur = conn.execute(
+        conn.execute(
             """INSERT INTO kanban_tasks
                (id, task_type, title, description, status, priority,
                 tags, dispatch_source, created_at, updated_at)

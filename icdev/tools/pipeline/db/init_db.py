@@ -17,7 +17,7 @@ from pathlib import Path
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]
 DB_PATH = _ICDEV_ROOT / "data" / "pipeline_canvas.db"
 
-_PC_BACKEND = os.environ.get("PC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", "sqlite")).lower()
+_PC_BACKEND = os.environ.get("PC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql"))).lower()
 
 
 def get_connection():
@@ -27,6 +27,10 @@ def get_connection():
             from tools.db.storage import get_connection as _icdev_conn
 
             conn = _icdev_conn(db_path=os.environ.get("PC_PG_DATABASE", "pipeline_canvas"))
+            # Canvas tables (pipelines, pc_templates, pc_snippets, etc.) have no
+            # tenant_id/classification columns — disable RLS so the global
+            # row-level predicate does not raise UndefinedColumn on every query.
+            conn.set_security_context(None)  # rls-bypass: canvas tables lack tenant_id/classification cols
             return conn
         except ImportError:
             pass

@@ -22,6 +22,7 @@
     <div>
       <label style="color:#5a7aa0;font-size:11px;display:block;margin-bottom:4px;text-transform:uppercase;">Document Query *</label>
       <input type="text" id="gen-query" placeholder="e.g. Draft a runbook for network failover"
+        value="{{ default_query }}"
         style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:9px 12px;border-radius:5px;font-size:13px;">
     </div>
     <div>
@@ -39,7 +40,7 @@
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       {% for t in templates %}
       <label style="cursor:pointer;display:flex;align-items:center;gap:5px;font-size:12px;color:#94a3b8;">
-        <input type="radio" name="gen-template" value="{{ t.id }}" {% if loop.first %}checked{% endif %}>
+        <input type="radio" name="gen-template" value="{{ t.id }}" {% if loop.first and not preselected_template %}checked{% endif %} {% if preselected_template == t.id %}checked{% endif %}>
         {{ t.name }}{% if t.flagship %} ⭐{% endif %}
       </label>
       {% endfor %}
@@ -133,20 +134,78 @@ function startGeneration() {
 function renderDraft(data) {
   document.getElementById('draft-title').textContent = data.title || 'Draft Document';
   var sections = data.sections || [];
+  var collection = document.getElementById('gen-collection').value.trim() || 'default';
   var html = sections.map(function(s) {
     var badge = s.abstained
       ? '<span style="background:#3a1a00;color:#fbbf24;font-size:10px;padding:1px 6px;border-radius:3px;margin-left:8px;">⚠ Abstained</span>'
       : s.verified
         ? '<span style="background:#052e16;color:#4ade80;font-size:10px;padding:1px 6px;border-radius:3px;margin-left:8px;">✓ Verified</span>'
         : '<span style="background:#1e293b;color:#94a3b8;font-size:10px;padding:1px 6px;border-radius:3px;margin-left:8px;">Unverified</span>';
+    var regenBtn = s.abstained ? '' :
+      '<button onclick="regenerateSection(\'' + escJs(s.heading || '') + '\', \'' + escJs(collection) + '\')" ' +
+      'style="margin-top:8px;background:#1a2e52;color:#7ab3f0;padding:5px 12px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:11px;">' +
+      '↻ Regenerate Section (targeted retrieval)</button>' +
+      '<span id="regen-status-' + escJs(s.heading || '') + '" style="margin-left:8px;color:#5a7aa0;font-size:11px;display:none;">Working…</span>';
+    var citationChips = '';
+    if (s.citations && s.citations.length) {
+      citationChips = '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;">' +
+        s.citations.map(function(c) {
+          var docTitle = c.doc_title || c.doc_id || 'Source';
+          var page = c.page ? 'p.' + c.page : '?';
+          return '<span style="background:#0a1a2e;border:1px solid #1a3a5e;border-radius:3px;padding:3px 8px;font-size:10px;color:#7ab3f0;" title="' + escHtml(docTitle + ' · ' + page + ' · ' + (c.chunk_id || '')) + '">' +
+            '📄 ' + escHtml(docTitle) + ' · ' + page +
+            '</span>';
+        }).join('') +
+        '</div>';
+    }
     return '<div style="background:#0b1726;border:1px solid #1a3560;border-radius:6px;padding:14px;margin-bottom:12px;">' +
       '<div style="margin-bottom:8px;"><strong style="color:#9bb8d8;font-size:13px;">' + (s.heading || '') + '</strong>' + badge + '</div>' +
       '<div style="color:#a8c8e0;font-size:12px;line-height:1.7;">' + (s.abstained ? '<em style="color:#fbbf24;">Insufficient evidence — this section was omitted.</em>' : escHtml(s.content || '')) + '</div>' +
-      (s.citation_count ? '<div style="margin-top:6px;color:#5a7aa0;font-size:11px;">' + s.citation_count + ' citation(s)</div>' : '') +
+      citationChips +
+      regenBtn +
       '</div>';
   }).join('');
   document.getElementById('draft-sections').innerHTML = html || '<p style="color:#5a7aa0;">No sections generated.</p>';
   document.getElementById('draft-result').style.display = 'block';
+}
+
+function regenerateSection(heading, collectionId) {
+  if (!_currentVersionId) { alert('No draft loaded.'); return; }
+  var statusEl = document.getElementById('regen-status-' + heading);
+  if (statusEl) statusEl.style.display = 'inline';
+  fetch('/document-intelligence/api/generate/section', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({version_id: _currentVersionId, heading: heading, collection_id: collectionId})
+  }).then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (statusEl) statusEl.style.display = 'none';
+      if (data.error) { alert('Regeneration failed: ' + data.error); return; }
+      // Fetch updated sections and re-render inline
+      fetch('/document-intelligence/api/versions/' + _currentVersionId + '/sections')
+        .then(function(r) { return r.json(); })
+        .then(function(secData) {
+          if (secData.sections) {
+            renderDraft({title: document.getElementById('draft-title').textContent, sections: secData.sections.map(function(s) {
+              return {
+                heading: s.heading,
+                content: s.content,
+                verified: s.status === 'approved',
+                abstained: s.status === 'abstained',
+                citation_count: (s.citations || []).length
+              };
+            })});
+          }
+        });
+    })
+    .catch(function(e) {
+      if (statusEl) statusEl.style.display = 'none';
+      alert('Regeneration failed: ' + e.message);
+    });
+}
+
+function escJs(s) {
+  return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"').replace(/\n/g,'\\n');
 }
 
 function submitForReview() {

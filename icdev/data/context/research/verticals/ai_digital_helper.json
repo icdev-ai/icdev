@@ -1,0 +1,213 @@
+{
+  "id": "vert-ai-digital-helper",
+  "name": "AI Digital Helper",
+  "slug": "ai-digital-helper",
+  "description": "Always-on AI systems that proactively assist users with scheduling, notifications, context awareness, and routine task automation — without waiting to be asked. Distinct from reactive chatbots: digital helpers monitor context, surface relevant information, and initiate actions on behalf of the user. Covers enterprise personal assistants (Microsoft Cortana Enterprise, Google Workspace Duet AI, Apple Intelligence, Amazon Alexa for Business), scheduling AIs (Reclaim.ai, Motion, Clockwise), and proactive notification engines. Key challenges: always-on architecture, proactive push vs. pull, context persistence, notification fatigue, privacy guardrails, and 24x7 reliable operation.",
+  "keywords": [
+    "AI digital helper",
+    "proactive AI assistant",
+    "always-on AI",
+    "24x7 AI",
+    "context-aware AI",
+    "proactive notifications",
+    "AI scheduler",
+    "intelligent scheduling",
+    "Reclaim.ai",
+    "Motion AI",
+    "Clockwise",
+    "Microsoft Cortana",
+    "Google Duet AI",
+    "Apple Intelligence",
+    "Amazon Alexa for Business",
+    "proactive automation",
+    "smart assistant",
+    "ambient computing",
+    "persistent context",
+    "background AI agent",
+    "push notifications AI",
+    "AI calendar management",
+    "automated follow-up",
+    "digital concierge",
+    "AI workflow automation",
+    "proactive task management",
+    "notification engine",
+    "event-driven AI",
+    "ambient intelligence",
+    "AI workflow triggers",
+    "background task agent",
+    "autonomous scheduling",
+    "AI reminder",
+    "intelligent briefing",
+    "daily digest AI",
+    "AI status updates",
+    "federated AI helper",
+    "enterprise AI assistant",
+    "team AI coordinator"
+  ],
+  "regulatory_bodies": [
+    "NIST AI RMF",
+    "GDPR",
+    "CCPA",
+    "FedRAMP",
+    "DISA",
+    "CISA",
+    "DoD AI Principles",
+    "OMB M-24-10"
+  ],
+  "academic_categories": {
+    "arxiv": [
+      "cs.AI",
+      "cs.HC",
+      "cs.CL",
+      "cs.LG",
+      "cs.IR"
+    ],
+    "ieee": [
+      "intelligent personal assistants",
+      "proactive computing",
+      "context-aware systems",
+      "ambient intelligence",
+      "human-computer interaction"
+    ],
+    "acm": [
+      "human-computer interaction",
+      "intelligent user interfaces",
+      "ubiquitous computing",
+      "natural language processing"
+    ]
+  },
+  "community_sources": {
+    "reddit": [
+      "r/AIAssistants",
+      "r/productivity",
+      "r/artificial",
+      "r/ChatGPT",
+      "r/Notion",
+      "r/gtd",
+      "r/selfhosted",
+      "r/MachineLearning",
+      "r/PKMS"
+    ],
+    "stackexchange": [
+      "stackoverflow.com/questions/tagged/ai-assistant",
+      "ai.stackexchange.com",
+      "productivity.stackexchange.com"
+    ],
+    "discord": [
+      "Notion AI Discord",
+      "Motion Discord",
+      "AI productivity tools Discord"
+    ],
+    "github_discussions": [
+      "microsoft/Cortana-Skills-Kit",
+      "aws/alexa-skills-kit-sdk-for-python",
+      "reclaim-ai/reclaim"
+    ]
+  },
+  "review_sites": {
+    "g2": ["ai-assistants", "scheduling-software", "productivity-software"],
+    "capterra": ["ai-assistant-software", "scheduling-software", "task-management-software"],
+    "trustpilot": []
+  },
+  "saas_commercial": [
+    "https://reclaim.ai",
+    "https://www.usemotion.com",
+    "https://www.clockwise.ai",
+    "https://copilot.microsoft.com",
+    "https://workspace.google.com/intl/en/products/gemini"
+  ],
+  "open_source": {
+    "github_topics": [
+      "ai-assistant",
+      "proactive-ai",
+      "scheduling-agent",
+      "calendar-ai",
+      "notification-agent",
+      "ambient-ai",
+      "personal-assistant",
+      "always-on-agent"
+    ],
+    "awesome_lists": [
+      "awesome-ai-assistants",
+      "awesome-personal-ai",
+      "awesome-productivity-ai"
+    ],
+    "package_registries": {
+      "pypi": [
+        "apscheduler",
+        "schedule",
+        "celery",
+        "rq",
+        "dramatiq"
+      ],
+      "npm": [
+        "node-cron",
+        "bull",
+        "agenda"
+      ],
+      "crates": []
+    }
+  },
+  "news_sources": [
+    "https://www.theverge.com/ai-artificial-intelligence",
+    "https://venturebeat.com/category/ai",
+    "https://techcrunch.com/tag/artificial-intelligence",
+    "https://towardsdatascience.com",
+    "https://hbr.org/topic/subject/ai-and-machine-learning",
+    "https://www.fastcompany.com/technology"
+  ],
+  "patent_categories": [
+    "G06Q 10/06",
+    "G06N 5/04",
+    "G06F 9/451",
+    "H04L 67/00",
+    "G06F 40/56"
+  ],
+  "compliance_frameworks": [
+    "NIST AI RMF",
+    "GDPR Article 22",
+    "FedRAMP Moderate",
+    "DoD IL4",
+    "ISO/IEC 27001",
+    "NIST SP 800-53 SI-4"
+  ],
+  "video_sources": [
+    "youtube:proactive AI assistant 2024",
+    "youtube:always on AI agent background",
+    "youtube:AI scheduling assistant review",
+    "youtube:Reclaim AI tutorial",
+    "youtube:Microsoft Copilot proactive",
+    "youtube:ambient AI computing"
+  ],
+  "competitive_landscape": {
+    "primary_competitors": [
+      "Reclaim.ai",
+      "Motion",
+      "Clockwise",
+      "Microsoft Copilot (M365)",
+      "Google Duet AI / Gemini for Workspace",
+      "Apple Intelligence",
+      "Amazon Alexa for Business",
+      "Notion AI",
+      "Superhuman AI",
+      "Otter.ai"
+    ],
+    "adjacent_competitors": [
+      "Zapier AI",
+      "Make (Integromat)",
+      "n8n",
+      "Tray.io",
+      "UiPath",
+      "Automation Anywhere",
+      "Power Automate (Microsoft)"
+    ]
+  },
+  "icdev_capability_map": {
+    "genesis_reflexes": "43 scheduled reflexes provide proactive background execution",
+    "event_dispatcher": "ACE EventDispatcher polls ace_events every 5s for trigger-based dispatch",
+    "heartbeat_daemon": "tools/monitor/heartbeat_daemon.py monitors and alerts",
+    "telegram_notifier": "Existing Telegram integration for notifications",
+    "kanban_scheduler": "Autonomous background task execution loop",
+    "gaps": "No sub-second event delivery, no user-push notification channel, no proactive context injection"
+  }
+}

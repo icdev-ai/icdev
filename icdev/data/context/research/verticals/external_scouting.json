@@ -1,0 +1,186 @@
+{
+  "id": "vert-external-scouting",
+  "name": "External Repository Technology Scouting",
+  "slug": "external-scouting",
+  "description": "Technology scouting analysis of 9 open-source GitHub repositories for adaptation into ICDEV: context compression (Headroom), social trend synthesis (last30days), unified platform connectors (Agent Reach), multi-format document conversion (MarkItDown), A2A runtime composition (iii), self-improving agents (Hermes), knowledge vaults (Tolaria), design-quality skills (Taste Skill), and edge inference (RuView).",
+  "keywords": [
+    "context compression",
+    "token reduction",
+    "KV cache alignment",
+    "social trend synthesis",
+    "multi-source aggregation",
+    "entity disambiguation",
+    "unified platform connector",
+    "agent reach",
+    "document format conversion",
+    "MarkItDown",
+    "markitdown",
+    "multi-format ingestion",
+    "runtime service composition",
+    "unified trigger",
+    "distributed tracing",
+    "self-improving agent",
+    "persistent memory FTS5",
+    "autonomous skill creation",
+    "git-backed knowledge vault",
+    "offline knowledge base",
+    "air-gap export",
+    "parametric design quality",
+    "design instruction skills",
+    "WiFi CSI sensing",
+    "edge inference",
+    "self-supervised anomaly detection",
+    "technology scouting",
+    "open source adaptation",
+    "AI agent infrastructure",
+    "agent skill framework"
+  ],
+  "regulatory_bodies": [],
+  "academic_categories": {
+    "arxiv": [
+      "cs.AI",
+      "cs.LG",
+      "cs.SE",
+      "cs.IR"
+    ],
+    "ieee": [
+      "context compression",
+      "agent systems",
+      "document processing"
+    ],
+    "acm": [
+      "AI agents",
+      "information retrieval",
+      "system integration"
+    ]
+  },
+  "community_sources": {
+    "reddit": [
+      "r/MachineLearning",
+      "r/LocalLLaMA",
+      "r/artificial",
+      "r/selfhosted",
+      "r/devops",
+      "r/programmingtools"
+    ],
+    "stackexchange": [
+      "stackoverflow.com/questions/tagged/llm",
+      "softwareengineering.stackexchange.com"
+    ],
+    "discord": [],
+    "forums": [
+      "news.ycombinator.com"
+    ],
+    "social_trends": {
+      "scanner": "social_trends",
+      "keywords": [
+        "context compression AI agents",
+        "LLM token reduction",
+        "agent skill framework",
+        "document intelligence conversion",
+        "unified agent platform connector",
+        "FTS5 semantic search"
+      ],
+      "max_per_source": 30
+    }
+  },
+  "review_sites": {
+    "g2": [],
+    "capterra": [],
+    "trustpilot": []
+  },
+  "open_source": {
+    "github_topics": [
+      "context-compression",
+      "token-optimization",
+      "agent-skill",
+      "mcp-server",
+      "document-converter",
+      "knowledge-base",
+      "service-composition",
+      "distributed-tracing",
+      "ai-agent",
+      "self-improving-ai"
+    ],
+    "awesome_lists": [
+      "awesome-mcp-servers",
+      "awesome-llm-apps",
+      "awesome-ai-agents"
+    ],
+    "package_registries": {
+      "pypi": [
+        "headroom",
+        "markitdown",
+        "hermes-agent"
+      ],
+      "npm": [],
+      "crates": []
+    },
+    "specific_repos": [
+      "https://github.com/chopratejas/headroom",
+      "https://github.com/mvanhorn/last30days-skill",
+      "https://github.com/Panniantong/agent-reach",
+      "https://github.com/microsoft/markitdown",
+      "https://github.com/iii-hq/iii",
+      "https://github.com/nousresearch/hermes-agent",
+      "https://github.com/refactoringhq/tolaria",
+      "https://github.com/leonxlnx/taste-skill",
+      "https://github.com/ruvnet/RuView"
+    ]
+  },
+  "news_sources": {
+    "rss_feeds": [],
+    "keywords": [
+      "context compression AI agents",
+      "token reduction LLM",
+      "agent skill framework",
+      "document intelligence conversion",
+      "self-supervised edge inference",
+      "unified agent platform connector"
+    ]
+  },
+  "patent_categories": {
+    "cpc_classes": [
+      "G06F40",
+      "G06N3",
+      "G06F16"
+    ],
+    "keywords": [
+      "context compression language model",
+      "multi-source information aggregation",
+      "unified service composition agent"
+    ]
+  },
+  "compliance_frameworks": [],
+  "video_sources": {
+    "youtube_channels": [],
+    "youtube_search_queries": [
+      "Headroom context compression AI",
+      "MarkItDown Microsoft document converter",
+      "agent skill framework MCP",
+      "last 30 days trend synthesis AI"
+    ],
+    "manual_urls": []
+  },
+  "scouting_metadata": {
+    "scan_date": "2026-06-14",
+    "priority_repos": [
+      "headroom",
+      "last30days-skill",
+      "agent-reach",
+      "markitdown"
+    ],
+    "deferred_repos": ["ruview"],
+    "adaptation_map": {
+      "headroom": "tools/llm/router.py compression middleware",
+      "last30days-skill": "tools/research/source_scanners/social_trend_scanner.py",
+      "agent-reach": "tools/platform_connectors/ unified adapter registry",
+      "markitdown": "tools/document_intelligence/converters/markitdown_adapter.py",
+      "iii": "tools/agents/a2a_registry.py unified trigger patterns",
+      "hermes-agent": "tools/memory/hybrid_search.py FTS5 session history",
+      "tolaria": "context/ air-gap vault export patterns",
+      "taste-skill": "hardprompts/design_quality_instructions.md",
+      "ruview": "tools/monitor/ self-supervised anomaly (future)"
+    }
+  }
+}

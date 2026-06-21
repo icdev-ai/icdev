@@ -14,11 +14,23 @@
   <a href="/document-intelligence/collections" style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border-radius:5px;text-decoration:none;font-size:13px;">← Collections</a>
 </div>
 
+<!-- Presence Bar (rted-pres-03) -->
+<div id="presence-bar" style="display:flex;align-items:center;gap:8px;margin-bottom:14px;min-height:28px;">
+  <span style="color:#5a7aa0;font-size:11px;">Viewing:</span>
+  <div id="presence-avatars" style="display:flex;gap:4px;"></div>
+  <span id="presence-count" style="color:#5a7aa0;font-size:10px;"></span>
+</div>
+
 <!-- Version Selector -->
 <div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:14px;margin-bottom:18px;">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
     <h3 style="margin:0;color:#9bb8d8;font-size:13px;">Versions</h3>
-    <span style="color:#7a8cb0;font-size:11px;">Active: {{ active_version_id[:16] }}…</span>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span style="color:#7a8cb0;font-size:11px;">Active: {{ active_version_id[:16] }}…</span>
+      {% if versions|length >= 2 %}
+      <button onclick="openDiffModal()" style="background:#1a2e52;color:#7ab3f0;padding:4px 12px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:11px;">⟺ Compare</button>
+      {% endif %}
+    </div>
   </div>
   <div style="display:flex;gap:8px;flex-wrap:wrap;">
     {% for v in versions %}
@@ -31,6 +43,21 @@
     {% else %}
     <span style="color:#5a7aa0;font-size:11px;">No versions yet.</span>
     {% endfor %}
+  </div>
+</div>
+
+<!-- dsyn-patch-03: AI Suggestions panel -->
+<div id="ai-suggestions-panel" style="margin-bottom:18px;display:none;">
+  <div style="background:#1a1a0a;border:1px solid #5a3a1a;border-radius:8px;padding:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <h3 style="margin:0;color:#f59e0b;font-size:14px;">⚡ AI Suggestions</h3>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <span id="sug-filter-label" style="color:#7a8cb0;font-size:11px;">pending</span>
+        <button onclick="closeSuggestionsPanel()" style="background:none;border:none;color:#5a7aa0;cursor:pointer;font-size:16px;padding:0;">✕</button>
+      </div>
+    </div>
+    <div id="sug-list" style="font-size:12px;color:#b8d0e8;max-height:400px;overflow-y:auto;"></div>
+    <div id="sug-empty" style="display:none;color:#5a7aa0;font-size:12px;font-style:italic;">No pending suggestions.</div>
   </div>
 </div>
 
@@ -59,7 +86,7 @@
     <!-- Content -->
     <div style="background:#050d1f;border-left:3px solid #1e3a6e;padding:10px 14px;border-radius:0 4px 4px 0;color:#a8c8e0;font-size:12px;line-height:1.7;margin-bottom:10px;max-height:200px;overflow-y:auto;" id="content-{{ s.section_id }}">
       {% if s.content %}
-        {{ s.content[:1000] | replace('\n', '<br>') }}{% if s.content|length > 1000 %}…{% endif %}
+        {{ s.content | markdown | safe }}{% if s.content|length > 1000 %}…{% endif %}
       {% else %}
         <em style="color:#5a7aa0;">Empty — use AI Assist or edit manually.</em>
       {% endif %}
@@ -85,10 +112,11 @@
       </button>
       {% endif %}
       {% if role_levels.get(user_role, 0) >= 1 %}
-      <button onclick="editSection('{{ s.section_id }}')"
+      <button id="edit-btn-{{ s.section_id }}" onclick="editSection('{{ s.section_id }}')"
         style="background:#0f3460;color:#7ab3f0;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;">
         ✏️ Edit
       </button>
+      <span id="lock-badge-{{ s.section_id }}" style="display:none;font-size:10px;padding:2px 8px;border-radius:8px;"></span>
       {% endif %}
       {% if role_levels.get(user_role, 0) >= 2 %}
       <button onclick="sectionAction('{{ s.section_id }}', 'approve')"
@@ -104,6 +132,28 @@
         ✏️ Revise
       </button>
       {% endif %}
+      <button onclick="toggleAnnPanel('{{ s.section_id }}')"
+        style="background:#1a1a3a;color:#a78bfa;padding:6px 14px;border:1px solid #3a2a6e;border-radius:5px;cursor:pointer;font-size:12px;">
+        💬 Comments <span id="ann-count-{{ s.section_id }}" style="background:#3a2a6e;border-radius:8px;padding:0 5px;margin-left:3px;font-size:10px;">0</span>
+      </button>
+      <!-- dsyn-suggest-01: viewer suggest-edit -->
+      <button onclick="openSuggestModal('{{ s.section_id }}', '{{ s.heading | replace("'","") }}', {{ s.content | tojson }})"
+        style="background:#1a1a1a;color:#94a3b8;padding:6px 14px;border:1px solid #2a3a4a;border-radius:5px;cursor:pointer;font-size:12px;">
+        💡 Suggest Edit
+      </button>
+      <!-- dsyn-patch-03: per-section suggestions badge -->
+      <button id="sug-btn-{{ s.section_id }}" onclick="openSectionSuggestions('{{ s.section_id }}')"
+        style="display:none;background:#2a1a0a;color:#f59e0b;padding:6px 14px;border:1px solid #5a3a1a;border-radius:5px;cursor:pointer;font-size:12px;">
+        ⚡ <span id="sug-count-{{ s.section_id }}">0</span> suggestions
+      </button>
+      <button onclick="runStyleCheck('{{ s.section_id }}')"
+        style="background:#1a2a1a;color:#7fd8a0;padding:6px 14px;border:1px solid #2a4a2a;border-radius:5px;cursor:pointer;font-size:12px;">
+        ✓ Style <span id="style-badge-{{ s.section_id }}" style="border-radius:8px;padding:0 5px;margin-left:3px;font-size:10px;"></span>
+      </button>
+      <button onclick="toggleHistoryPanel('{{ s.section_id }}')"
+        style="background:#1a2030;color:#93c5fd;padding:6px 14px;border:1px solid #1e3560;border-radius:5px;cursor:pointer;font-size:12px;">
+        🕒 History <span id="hist-count-{{ s.section_id }}" style="background:#1e3560;border-radius:8px;padding:0 5px;margin-left:3px;font-size:10px;display:none;"></span>
+      </button>
       <select onchange="assignSection('{{ s.section_id }}', this.value)"
         style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:5px 8px;border-radius:5px;font-size:11px;">
         <option value="">Assign to…</option>
@@ -113,6 +163,51 @@
       </select>
       <span id="status-{{ s.section_id }}" style="color:#5a7aa0;font-size:11px;display:none;"></span>
     </div>
+
+    <!-- Style check panel (hidden by default) -->
+    <div id="style-panel-{{ s.section_id }}" style="display:none;margin-top:10px;border-top:1px solid #1a3a1a;padding-top:10px;"></div>
+
+    <!-- Edit history panel (hidden by default) -->
+    <div id="hist-panel-{{ s.section_id }}" style="display:none;margin-top:10px;border-top:1px solid #1e3560;padding-top:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <div style="color:#93c5fd;font-size:12px;font-weight:700;">Edit History</div>
+        <button onclick="toggleHistoryPanel('{{ s.section_id }}')"
+          style="background:transparent;color:#5a7aa0;border:1px solid #1e3560;border-radius:4px;padding:2px 8px;cursor:pointer;font-size:11px;">
+          Close
+        </button>
+      </div>
+      <div id="hist-list-{{ s.section_id }}" style="font-size:11px;color:#b8d0e8;"></div>
+    </div>
+
+    <!-- Annotation panel (hidden by default) -->
+    <div id="ann-panel-{{ s.section_id }}" style="display:none;margin-top:12px;border-top:1px solid #1a3560;padding-top:12px;">
+      <!-- Add comment form -->
+      <div style="background:#050d1f;border:1px solid #2a1a5e;border-radius:6px;padding:12px;margin-bottom:10px;">
+        <div style="display:flex;gap:8px;margin-bottom:8px;">
+          <select id="ann-cat-{{ s.section_id }}" style="background:#0b1726;border:1px solid #1a3560;color:#b8d0e8;padding:5px 8px;border-radius:4px;font-size:11px;flex:0 0 140px;">
+            <option value="">Category…</option>
+            <option value="question">Question</option>
+            <option value="improvement">Improvement</option>
+            <option value="compliance">Compliance</option>
+            <option value="strength">Strength</option>
+            <option value="weakness">Weakness</option>
+            <option value="risk">Risk</option>
+            <option value="editorial">Editorial</option>
+          </select>
+          <input id="ann-text-sel-{{ s.section_id }}" placeholder="Selected text (optional)" style="background:#0b1726;border:1px solid #1a3560;color:#b8d0e8;padding:5px 8px;border-radius:4px;font-size:11px;flex:1;" />
+        </div>
+        <textarea id="ann-comment-{{ s.section_id }}" placeholder="Add a comment…" rows="2"
+          style="width:100%;background:#0b1726;border:1px solid #1a3560;color:#b8d0e8;padding:8px;border-radius:4px;font-size:12px;box-sizing:border-box;resize:vertical;"></textarea>
+        <div style="display:flex;justify-content:flex-end;margin-top:6px;">
+          <button onclick="saveAnnotation('{{ s.section_id }}')"
+            style="background:#2a1a6e;color:#a78bfa;padding:5px 14px;border:1px solid #3a2a8e;border-radius:4px;cursor:pointer;font-size:12px;">
+            + Add Comment
+          </button>
+        </div>
+      </div>
+      <!-- Comment list -->
+      <div id="ann-list-{{ s.section_id }}"></div>
+    </div>
   </div>
   {% else %}
   <p style="color:#5a7aa0;font-size:12px;">No sections yet. Generate a draft or instantiate a template.</p>
@@ -120,6 +215,95 @@
 </div>
 
 <script>
+// dsyn-patch-03: AI Suggestions panel logic
+var _sugSectionId = null;
+function loadSuggestionsForDoc() {
+  var collectionId = '{{ doc.collection_id }}';
+  fetch('/document-intelligence/api/suggestions?collection_id=' + encodeURIComponent(collectionId))
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var bySection = {};
+      (data.suggestions || []).forEach(function(s) {
+        var sid = s.section_id || '';
+        if (!bySection[sid]) bySection[sid] = 0;
+        bySection[sid]++;
+      });
+      Object.keys(bySection).forEach(function(sid) {
+        var btn = document.getElementById('sug-btn-' + sid);
+        var cnt = document.getElementById('sug-count-' + sid);
+        if (btn && cnt) {
+          cnt.textContent = bySection[sid];
+          btn.style.display = 'inline-flex';
+        }
+      });
+      if (Object.keys(bySection).length > 0) {
+        document.getElementById('ai-suggestions-panel').style.display = 'block';
+        renderSuggestions(data.suggestions || []);
+      }
+    }).catch(function() {});
+}
+function openSectionSuggestions(sectionId) {
+  _sugSectionId = sectionId;
+  var panel = document.getElementById('ai-suggestions-panel');
+  panel.style.display = 'block';
+  panel.scrollIntoView({behavior:'smooth',block:'start'});
+  loadSuggestionsForDoc();
+}
+function closeSuggestionsPanel() {
+  document.getElementById('ai-suggestions-panel').style.display = 'none';
+}
+function renderSuggestions(suggestions) {
+  var list = document.getElementById('sug-list');
+  var empty = document.getElementById('sug-empty');
+  var filtered = _sugSectionId
+    ? suggestions.filter(function(s) { return s.section_id === _sugSectionId; })
+    : suggestions;
+  if (filtered.length === 0) {
+    list.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  list.innerHTML = filtered.map(function(s) {
+    var srcColor = {'ndc':'#4f8ef7','network':'#7ab3f0','zig':'#a78bfa','compliance':'#34d399',
+                    'sipa':'#f87171','devsecops':'#fb923c','cloudforge':'#38bdf8','aiify':'#fbbf24'}[s.canvas_source] || '#94a3b8';
+    var diff = '';
+    if (s.current_content && s.suggested_content) {
+      diff = '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px;">'
+        + '<div style="background:#1e0505;border-left:3px solid #f87171;padding:6px;border-radius:0 4px 4px 0;font-size:10px;color:#f87171;max-height:80px;overflow:hidden;">'
+        + '- ' + escHtml(s.current_content.slice(0,200)) + '</div>'
+        + '<div style="background:#052e16;border-left:3px solid #4ade80;padding:6px;border-radius:0 4px 4px 0;font-size:10px;color:#4ade80;max-height:80px;overflow:hidden;">'
+        + '+ ' + escHtml(s.suggested_content.slice(0,200)) + '</div></div>';
+    }
+    return '<div style="background:#0a0a1a;border:1px solid #2a1a0a;border-radius:6px;padding:12px;margin-bottom:10px;">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">'
+      + '<span style="background:' + srcColor + '22;color:' + srcColor + ';border:1px solid ' + srcColor + '44;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;">' + escHtml(s.canvas_source || 'canvas') + '</span>'
+      + '<span style="color:#5a7aa0;font-size:10px;">' + escHtml(s.created_at ? s.created_at.slice(0,10) : '') + '</span>'
+      + '</div>'
+      + '<p style="color:#b8d0e8;font-size:11px;margin:4px 0;">' + escHtml(s.rationale || '') + '</p>'
+      + diff
+      + '<div style="display:flex;gap:8px;margin-top:10px;">'
+      + '<button onclick="decideSuggestion(\'' + s.suggestion_id + '\',\'accepted\')" style="background:#052e16;color:#4ade80;padding:4px 12px;border:1px solid #1a5a30;border-radius:4px;cursor:pointer;font-size:11px;">✓ Accept</button>'
+      + '<button onclick="decideSuggestion(\'' + s.suggestion_id + '\',\'rejected\')" style="background:#2e0505;color:#f87171;padding:4px 12px;border:1px solid #5a1a1a;border-radius:4px;cursor:pointer;font-size:11px;">✕ Reject</button>'
+      + '</div></div>';
+  }).join('');
+}
+function decideSuggestion(suggestionId, decision) {
+  var url = '/document-intelligence/api/suggestions/' + suggestionId + '/' + (decision === 'accepted' ? 'accept' : 'reject');
+  fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({decided_by:'user'})})
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error) { alert('Error: ' + d.error); return; }
+      loadSuggestionsForDoc();
+      if (decision === 'accepted') window.location.reload();
+    }).catch(function(e) { alert('Decision failed: ' + e.message); });
+}
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+// Load suggestion counts on page load
+document.addEventListener('DOMContentLoaded', function() { loadSuggestionsForDoc(); });
+
 function aiAssistSection(sectionId, heading, collectionId) {
   var statusEl = document.getElementById('status-' + sectionId);
   statusEl.style.display = 'inline';
@@ -141,26 +325,149 @@ function aiAssistSection(sectionId, heading, collectionId) {
     });
 }
 
+var _lockRenewTimers = {};
+
 function editSection(sectionId) {
+  var btn = document.getElementById('edit-btn-' + sectionId);
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+
+  fetch('/document-intelligence/api/sections/' + sectionId + '/lock', {method: 'POST'})
+    .then(function(r) {
+      if (r.status === 409) {
+        return r.json().then(function(d) {
+          if (btn) { btn.disabled = false; btn.textContent = '✏️ Edit'; }
+          alert('Section locked by ' + (d.locked_by || 'another user') +
+                '. Try again after ' + (d.expires_at || '').slice(11, 19) + ' UTC.');
+        });
+      }
+      return r.json().then(function() { _enterEditMode(sectionId); });
+    })
+    .catch(function() { if (btn) { btn.disabled = false; btn.textContent = '✏️ Edit'; } });
+}
+
+// Content hash captured when edit mode is entered — used for conflict detection
+var _editBaseHash = {};
+
+function _enterEditMode(sectionId) {
+  var btn = document.getElementById('edit-btn-' + sectionId);
+  var badge = document.getElementById('lock-badge-' + sectionId);
+  if (btn) { btn.disabled = false; btn.textContent = '✏️ Edit'; }
+  if (badge) {
+    badge.style.display = 'inline';
+    badge.style.background = '#052e16';
+    badge.style.color = '#4ade80';
+    badge.textContent = '🔒 Editing (locked by you)';
+  }
+
+  // Renew every 270s to stay within 300s TTL
+  _lockRenewTimers[sectionId] = setInterval(function() {
+    fetch('/document-intelligence/api/sections/' + sectionId + '/lock/renew', {method: 'PUT'});
+  }, 270000);
+
+  // Fetch current hash as the baseline for conflict detection
+  fetch('/document-intelligence/api/sections/' + sectionId + '/hash')
+    .then(function(r) { return r.json(); })
+    .then(function(d) { if (d.hash) _editBaseHash[sectionId] = d.hash; })
+    .catch(function() {});
+
   var contentDiv = document.getElementById('content-' + sectionId);
   var currentText = contentDiv.innerText;
   var textarea = document.createElement('textarea');
   textarea.value = currentText;
+  textarea.id = 'textarea-' + sectionId;
   textarea.style = 'width:100%;min-height:120px;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:10px;border-radius:5px;font-size:12px;box-sizing:border-box;';
-  var saveBtn = document.createElement('button');
-  saveBtn.textContent = 'Save';
-  saveBtn.style = 'margin-top:8px;background:#0f3460;color:#7ab3f0;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;';
-  saveBtn.onclick = function() {
+
+  function _releaseLock() {
+    clearInterval(_lockRenewTimers[sectionId]);
+    delete _lockRenewTimers[sectionId];
+    delete _editBaseHash[sectionId];
+    if (badge) { badge.style.display = 'none'; }
+    fetch('/document-intelligence/api/sections/' + sectionId + '/lock', {method: 'DELETE'});
+  }
+
+  function _doSave(forceOverwrite) {
+    var body = {content: textarea.value};
+    if (_editBaseHash[sectionId]) body.expected_hash = _editBaseHash[sectionId];
+    if (forceOverwrite) body.force = true;
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving…';
     fetch('/document-intelligence/api/sections/' + sectionId + '/content', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({content: textarea.value})
-    }).then(function() { window.location.reload(); });
-  };
+      body: JSON.stringify(body),
+    }).then(function(r) {
+      if (r.status === 409) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'Save';
+        return r.json().then(function(d) {
+          _showConflictModal(sectionId, textarea.value, d.current_content || '', d.current_hash || '');
+        });
+      }
+      _releaseLock();
+      window.location.reload();
+    }).catch(function() {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save';
+    });
+  }
+
+  var saveBtn = document.createElement('button');
+  saveBtn.textContent = 'Save';
+  saveBtn.style = 'margin-top:8px;margin-right:6px;background:#0f3460;color:#7ab3f0;padding:6px 14px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;';
+  saveBtn.onclick = function() { _doSave(false); };
+
+  var cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.style = 'margin-top:8px;background:#1e293b;color:#94a3b8;padding:6px 12px;border:1px solid #1a3560;border-radius:5px;cursor:pointer;font-size:12px;';
+  cancelBtn.onclick = function() { _releaseLock(); window.location.reload(); };
+
   contentDiv.innerHTML = '';
   contentDiv.appendChild(textarea);
   contentDiv.appendChild(document.createElement('br'));
   contentDiv.appendChild(saveBtn);
+  contentDiv.appendChild(cancelBtn);
+}
+
+// ── Conflict Resolution Modal (rted-conf-02) ─────────────────────────────────
+
+function _showConflictModal(sectionId, myContent, theirContent, theirHash) {
+  document.getElementById('conf-modal-sid').value = sectionId;
+  document.getElementById('conf-modal-theirs').textContent = theirContent;
+  document.getElementById('conf-modal-mine').value = myContent;
+  document.getElementById('conf-modal-their-hash').value = theirHash;
+  document.getElementById('conf-modal').style.display = 'block';
+}
+
+function _closeConflictModal() {
+  document.getElementById('conf-modal').style.display = 'none';
+}
+
+function _conflictKeepMine() {
+  var sid = document.getElementById('conf-modal-sid').value;
+  var myContent = document.getElementById('conf-modal-mine').value;
+  _closeConflictModal();
+  // Force-save: bypasses conflict check
+  fetch('/document-intelligence/api/sections/' + sid + '/content', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({content: myContent, force: true}),
+  }).then(function() { window.location.reload(); });
+}
+
+function _conflictAcceptTheirs() {
+  _closeConflictModal();
+  window.location.reload();
+}
+
+function _conflictSaveMerged() {
+  var sid = document.getElementById('conf-modal-sid').value;
+  var merged = document.getElementById('conf-modal-mine').value;
+  _closeConflictModal();
+  fetch('/document-intelligence/api/sections/' + sid + '/content', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({content: merged, force: true}),
+  }).then(function() { window.location.reload(); });
 }
 
 function sectionAction(sectionId, action) {
@@ -183,6 +490,566 @@ function assignSection(sectionId, userId) {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({assigned_to: userId, type: 'section'})
   }).then(function() { window.location.reload(); });
+}
+
+// ── Section Annotations ──────────────────────────────────────────────────────
+var _ANN_CURRENT_USER = '{{ (current_user.display_name or current_user.email or current_user.username) if current_user else "reviewer" }}';
+
+var _CAT_COLORS = {
+  question:    '#1d4ed8', improvement: '#0f766e', compliance: '#7c3aed',
+  strength:    '#166534', weakness:    '#991b1b',  risk:       '#b45309',
+  editorial:   '#374151'
+};
+
+function escH(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function toggleAnnPanel(sid) {
+  var panel = document.getElementById('ann-panel-' + sid);
+  if (!panel) return;
+  if (panel.style.display === 'none') {
+    panel.style.display = 'block';
+    loadAnnotations(sid);
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+function loadAnnotations(sid) {
+  fetch('/document-intelligence/api/sections/' + sid + '/annotations')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var list = data.annotations || [];
+      var countEl = document.getElementById('ann-count-' + sid);
+      if (countEl) countEl.textContent = list.length;
+      renderAnnotations(sid, list);
+    });
+}
+
+function renderAnnotations(sid, list) {
+  var el = document.getElementById('ann-list-' + sid);
+  if (!el) return;
+  if (!list.length) { el.innerHTML = '<p style="color:#5a7aa0;font-size:11px;">No comments yet.</p>'; return; }
+  el.innerHTML = list.map(function(a) {
+    var cat = a.category || 'editorial';
+    var bg  = _CAT_COLORS[cat] || '#374151';
+    var resolved = a.status === 'resolved';
+    return '<div style="background:#080f1f;border:1px solid ' + (resolved ? '#1a3a1a' : '#2a1a5e') + ';border-radius:6px;padding:10px 12px;margin-bottom:8px;opacity:' + (resolved ? '0.65' : '1') + ';">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">' +
+        '<span style="background:' + bg + ';color:#fff;font-size:9px;padding:2px 7px;border-radius:8px;text-transform:uppercase;">' + escH(cat) + '</span>' +
+        '<span style="color:#7ab3f0;font-size:10px;"><strong>' + escH(a.author || 'reviewer') + '</strong> &middot; ' + escH((a.created_at || '').slice(0,10)) + '</span>' +
+        (resolved ? '<span style="margin-left:auto;color:#4ade80;font-size:10px;">Resolved by ' + escH(a.resolved_by || '') + '</span>' : '') +
+      '</div>' +
+      (a.selected_text ? '<p style="color:#5a7aa0;font-size:10px;font-style:italic;margin:0 0 4px;">&ldquo;' + escH(a.selected_text.slice(0,120)) + '&rdquo;</p>' : '') +
+      '<p style="color:#c8d8e8;font-size:12px;margin:0 0 6px;">' + escH(a.comment) + '</p>' +
+      (!resolved
+        ? '<div style="display:flex;gap:6px;">' +
+            '<button onclick="resolveAnnotation(\'' + a.ann_id + '\',\'' + sid + '\')" style="background:#052e16;color:#4ade80;border:1px solid #1a5a30;border-radius:3px;padding:3px 10px;font-size:10px;cursor:pointer;">Resolve</button>' +
+            '<button onclick="deleteAnnotation(\'' + a.ann_id + '\',\'' + sid + '\')" style="background:#2e0505;color:#f87171;border:1px solid #5a1a1a;border-radius:3px;padding:3px 10px;font-size:10px;cursor:pointer;">Delete</button>' +
+          '</div>'
+        : '') +
+    '</div>';
+  }).join('');
+}
+
+function saveAnnotation(sid) {
+  var cat  = document.getElementById('ann-cat-' + sid).value;
+  var sel  = document.getElementById('ann-text-sel-' + sid).value.trim();
+  var comm = document.getElementById('ann-comment-' + sid).value.trim();
+  if (!cat)  { alert('Please select a category.'); return; }
+  if (!comm) { alert('Please enter a comment.'); return; }
+  fetch('/document-intelligence/api/sections/' + sid + '/annotations', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({category: cat, selected_text: sel, comment: comm, author: _ANN_CURRENT_USER})
+  }).then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) { alert('Error: ' + data.error); return; }
+      document.getElementById('ann-cat-' + sid).value = '';
+      document.getElementById('ann-text-sel-' + sid).value = '';
+      document.getElementById('ann-comment-' + sid).value = '';
+      loadAnnotations(sid);
+    });
+}
+
+function resolveAnnotation(annId, sid) {
+  fetch('/document-intelligence/api/annotations/' + annId, {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({status: 'resolved', resolved_by: _ANN_CURRENT_USER})
+  }).then(function(r) { return r.json(); })
+    .then(function() { loadAnnotations(sid); });
+}
+
+function deleteAnnotation(annId, sid) {
+  if (!confirm('Delete this comment?')) return;
+  fetch('/document-intelligence/api/annotations/' + annId, {method: 'DELETE'})
+    .then(function() { loadAnnotations(sid); });
+}
+
+// ── Edit History ─────────────────────────────────────────────────────────────
+
+function _relTime(isoStr) {
+  if (!isoStr) return '';
+  var then = new Date(isoStr), now = new Date();
+  var secs = Math.floor((now - then) / 1000);
+  if (secs < 60) return 'just now';
+  if (secs < 3600) return Math.floor(secs / 60) + 'm ago';
+  if (secs < 86400) return Math.floor(secs / 3600) + 'h ago';
+  if (secs < 604800) return Math.floor(secs / 86400) + 'd ago';
+  return isoStr.substring(0, 10);
+}
+
+function toggleHistoryPanel(sid) {
+  var panel = document.getElementById('hist-panel-' + sid);
+  if (!panel) return;
+  if (panel.style.display === 'none') {
+    panel.style.display = 'block';
+    loadSectionHistory(sid);
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+function loadSectionHistory(sid) {
+  var list = document.getElementById('hist-list-' + sid);
+  var badge = document.getElementById('hist-count-' + sid);
+  if (!list) return;
+  list.innerHTML = '<span style="color:#5a7aa0;">Loading…</span>';
+  fetch('/document-intelligence/api/sections/' + sid + '/history?limit=20')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      var entries = d.history || [];
+      if (badge) {
+        badge.textContent = entries.length;
+        badge.style.display = entries.length ? 'inline' : 'none';
+      }
+      if (!entries.length) {
+        list.innerHTML = '<span style="color:#5a7aa0;font-style:italic;">No edit history yet.</span>';
+        return;
+      }
+      var html = '';
+      entries.forEach(function(e) {
+        var deltaVal = e.char_delta || 0;
+        var deltaLabel = deltaVal > 0 ? ('+' + deltaVal) : String(deltaVal);
+        var deltaBg = deltaVal > 0 ? '#052e16' : (deltaVal < 0 ? '#2e0505' : '#0a1a2e');
+        var deltaFg = deltaVal > 0 ? '#4ade80' : (deltaVal < 0 ? '#f87171' : '#7ab3f0');
+        html += '<div style="border-bottom:1px solid #1a3060;padding:8px 0;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+            '<div>' +
+              '<span style="color:#93c5fd;font-weight:600;">' + _esc(e.editor || 'unknown') + '</span>' +
+              '<span style="color:#5a7aa0;margin-left:8px;font-size:10px;">' + _relTime(e.edited_at) + '</span>' +
+            '</div>' +
+            '<span style="background:' + deltaBg + ';color:' + deltaFg + ';font-size:10px;font-family:monospace;border-radius:4px;padding:1px 6px;">' + _esc(deltaLabel) + '</span>' +
+          '</div>';
+        if (e.diff_summary) {
+          html += '<pre style="background:#030a15;color:#7ab3f0;font-size:10px;border-radius:4px;padding:6px;margin:4px 0 0;overflow-x:auto;white-space:pre-wrap;max-height:120px;overflow-y:auto;">' +
+            _esc(e.diff_summary.substring(0, 800)) +
+          '</pre>';
+        }
+        html += '</div>';
+      });
+      list.innerHTML = html;
+    })
+    .catch(function() {
+      list.innerHTML = '<span style="color:#f87171;">Failed to load history.</span>';
+    });
+}
+
+// ── Style Gate ───────────────────────────────────────────────────────────────
+var _SEV_COLORS = {error: '#f87171', warning: '#fbbf24', info: '#7ab3f0'};
+var _SEV_BG     = {error: '#2e0505',  warning: '#2e1a05',  info: '#0a1a2e'};
+
+function runStyleCheck(sid) {
+  var badge  = document.getElementById('style-badge-' + sid);
+  var panel  = document.getElementById('style-panel-' + sid);
+  if (!panel) return;
+  badge.style.background = '#1a2e52';
+  badge.style.color = '#7ab3f0';
+  badge.textContent = '…';
+  panel.style.display = 'block';
+  panel.innerHTML = '<p style="color:#5a7aa0;font-size:11px;">Running style check…</p>';
+
+  fetch('/document-intelligence/api/sections/' + sid + '/style-check', {method:'POST'})
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) {
+        panel.innerHTML = '<p style="color:#f87171;font-size:11px;">Error: ' + escH(data.error) + '</p>';
+        return;
+      }
+      var passed = data.passed;
+      var score  = data.score;
+      badge.style.background = passed ? '#052e16' : '#2e0505';
+      badge.style.color      = passed ? '#4ade80' : '#f87171';
+      badge.textContent      = score + '/100';
+
+      var stats = data.stats || {};
+      var statsHtml =
+        '<span style="color:#7a8cb0;font-size:10px;">' +
+        (stats.word_count || 0) + ' words &middot; ' +
+        (stats.sentence_count || 0) + ' sentences &middot; avg ' +
+        (stats.avg_sentence_words || 0) + ' words/sentence &middot; ' +
+        '<span style="color:#f87171;">' + (stats.error_count || 0) + ' errors</span> &middot; ' +
+        '<span style="color:#fbbf24;">' + (stats.warning_count || 0) + ' warnings</span>' +
+        '</span>';
+
+      var viols = data.violations || [];
+      var violsHtml = '';
+      if (!viols.length) {
+        violsHtml = '<p style="color:#4ade80;font-size:11px;margin:6px 0 0;">No violations — style gate passed.</p>';
+      } else {
+        violsHtml = '<div style="margin-top:8px;">' +
+          viols.map(function(v) {
+            var col = _SEV_COLORS[v.severity] || '#94a3b8';
+            var bg  = _SEV_BG[v.severity]    || '#1e293b';
+            return '<div style="background:' + bg + ';border-left:3px solid ' + col + ';border-radius:0 4px 4px 0;padding:7px 10px;margin-bottom:5px;">' +
+              '<div style="display:flex;gap:8px;align-items:center;margin-bottom:3px;">' +
+                '<span style="color:' + col + ';font-size:9px;text-transform:uppercase;font-weight:700;">' + escH(v.severity) + '</span>' +
+                '<span style="color:#9bb8d8;font-size:11px;font-weight:600;">' + escH(v.rule_name) + '</span>' +
+                (v.match ? '<code style="background:#050d1f;color:#fbbf24;font-size:10px;padding:1px 5px;border-radius:3px;">' + escH(v.match.slice(0,60)) + '</code>' : '') +
+              '</div>' +
+              '<p style="color:#c8d8e8;font-size:11px;margin:0 0 2px;">' + escH(v.message) + '</p>' +
+              (v.suggestion ? '<p style="color:#5a7aa0;font-size:10px;margin:0;">Suggestion: ' + escH(v.suggestion) + '</p>' : '') +
+            '</div>';
+          }).join('') +
+        '</div>';
+      }
+
+      panel.innerHTML =
+        '<div style="background:#050d1f;border:1px solid ' + (passed ? '#1a3a1a' : '#3a1a1a') + ';border-radius:6px;padding:10px 14px;">' +
+          '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
+            '<span style="color:' + (passed ? '#4ade80' : '#f87171') + ';font-size:12px;font-weight:700;">' +
+              (passed ? '✓ Style gate passed' : '✕ Style gate failed') +
+              ' — ' + score + '/100' +
+            '</span>' +
+            '<button onclick="document.getElementById(\'style-panel-' + sid + '\').style.display=\'none\'" ' +
+              'style="background:none;border:none;color:#5a7aa0;cursor:pointer;font-size:13px;">✕</button>' +
+          '</div>' +
+          statsHtml +
+          violsHtml +
+        '</div>';
+    })
+    .catch(function(e) {
+      panel.innerHTML = '<p style="color:#f87171;font-size:11px;">Error: ' + escH(e.message) + '</p>';
+    });
+}
+
+// Auto-load counts and lock status on page load
+document.addEventListener('DOMContentLoaded', function() {
+  {% for s in sections %}
+  (function(sid) {
+    // Annotation counts
+    fetch('/document-intelligence/api/sections/' + sid + '/annotations')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        var el = document.getElementById('ann-count-' + sid);
+        if (el) el.textContent = (d.annotations || []).length;
+      });
+    // Lock status
+    fetch('/document-intelligence/api/sections/' + sid + '/lock')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (!d.locked) return;
+        var badge = document.getElementById('lock-badge-' + sid);
+        var btn   = document.getElementById('edit-btn-' + sid);
+        if (badge) {
+          badge.style.display = 'inline';
+          badge.style.background = '#2e0505';
+          badge.style.color = '#f87171';
+          badge.textContent = '🔒 Locked by ' + escH(d.locked_by || 'another user');
+        }
+        if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
+      });
+  })('{{ s.section_id }}');
+  {% endfor %}
+
+  // Presence (rted-pres-03) — join + SSE avatar stream
+  _presenceInit('{{ doc.doc_id }}');
+});
+
+// ── Presence Avatars ──────────────────────────────────────────────────────────
+
+var _presenceSessionKey = null;
+var _presenceDocId = null;
+var _presenceColors = ['#3b82f6','#8b5cf6','#ec4899','#f97316','#10b981','#facc15','#06b6d4','#f43f5e'];
+
+function _presenceColor(uid) {
+  var h = 0;
+  for (var i = 0; i < uid.length; i++) h = (h * 31 + uid.charCodeAt(i)) & 0xFFFFFF;
+  return _presenceColors[Math.abs(h) % _presenceColors.length];
+}
+
+function _presenceInitials(uid) {
+  var parts = uid.replace(/_/g, ' ').trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return uid.substring(0, 2).toUpperCase();
+}
+
+function _renderAvatars(users) {
+  var bar = document.getElementById('presence-avatars');
+  var cnt = document.getElementById('presence-count');
+  if (!bar) return;
+  bar.innerHTML = '';
+  (users || []).forEach(function(u) {
+    var el = document.createElement('div');
+    el.title = u.user_id;
+    el.textContent = _presenceInitials(u.user_id);
+    el.style.cssText = 'width:24px;height:24px;border-radius:50%;background:' + _presenceColor(u.user_id) +
+      ';color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;cursor:default;';
+    bar.appendChild(el);
+  });
+  if (cnt) cnt.textContent = users && users.length > 1 ? ('(' + users.length + ' active)') : '';
+}
+
+function _presenceInit(docId) {
+  _presenceDocId = docId;
+
+  // Join
+  fetch('/document-intelligence/api/documents/' + docId + '/presence/join', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({}),
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) {
+    _presenceSessionKey = d.session_key;
+
+    // Heartbeat every 20 s
+    setInterval(function() {
+      if (!_presenceSessionKey) return;
+      fetch('/document-intelligence/api/documents/' + docId + '/presence/heartbeat', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({session_key: _presenceSessionKey}),
+      });
+    }, 20000);
+
+    // SSE stream for live presence updates
+    var es = new EventSource('/document-intelligence/api/documents/' + docId + '/presence/stream');
+    es.onmessage = function(ev) {
+      try {
+        var d = JSON.parse(ev.data);
+        _renderAvatars(d.users || []);
+      } catch(e) {}
+    };
+    es.onerror = function() {
+      // Fallback: poll once on error
+      fetch('/document-intelligence/api/documents/' + docId + '/presence')
+        .then(function(r) { return r.json(); })
+        .then(function(d) { _renderAvatars(d.users || []); });
+    };
+
+    // Leave on page unload
+    window.addEventListener('beforeunload', function() {
+      if (_presenceSessionKey) {
+        navigator.sendBeacon(
+          '/document-intelligence/api/documents/' + docId + '/presence/leave',
+          JSON.stringify({session_key: _presenceSessionKey})
+        );
+      }
+    });
+
+    // Initial render from join response
+    fetch('/document-intelligence/api/documents/' + docId + '/presence')
+      .then(function(r) { return r.json(); })
+      .then(function(d) { _renderAvatars(d.users || []); });
+  })
+  .catch(function() {});
+}
+</script>
+
+<!-- Conflict Resolution Modal (rted-conf-02) -->
+<div id="conf-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.82);z-index:9500;overflow-y:auto;padding:32px 16px;">
+  <input type="hidden" id="conf-modal-sid" value="">
+  <input type="hidden" id="conf-modal-their-hash" value="">
+  <div style="max-width:860px;margin:0 auto;background:#0b1726;border:2px solid #f59e0b;border-radius:10px;padding:24px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h3 style="margin:0;color:#f59e0b;font-size:15px;">⚠ Edit Conflict</h3>
+      <button onclick="_closeConflictModal()" style="background:none;border:none;color:#7a8cb0;font-size:18px;cursor:pointer;">✕</button>
+    </div>
+    <p style="color:#94a3b8;font-size:12px;margin:0 0 16px;">
+      Someone else saved this section while you were editing. Choose how to resolve:
+    </p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+      <div>
+        <div style="color:#f87171;font-size:11px;font-weight:700;margin-bottom:6px;">Their version (current in DB)</div>
+        <pre id="conf-modal-theirs" style="background:#1a0505;border:1px solid #7f1d1d;border-radius:6px;padding:10px;color:#fca5a5;font-size:11px;white-space:pre-wrap;min-height:120px;max-height:260px;overflow-y:auto;margin:0;"></pre>
+      </div>
+      <div>
+        <div style="color:#4ade80;font-size:11px;font-weight:700;margin-bottom:6px;">Your version (edit yours below)</div>
+        <textarea id="conf-modal-mine" style="width:100%;min-height:120px;max-height:260px;background:#050d1f;border:1px solid #166534;color:#b8d0e8;padding:10px;border-radius:6px;font-size:11px;box-sizing:border-box;resize:vertical;"></textarea>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <button onclick="_conflictKeepMine()"
+        style="background:#0f3460;color:#7ab3f0;padding:7px 18px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;">
+        Overwrite with Mine
+      </button>
+      <button onclick="_conflictAcceptTheirs()"
+        style="background:#1e293b;color:#94a3b8;padding:7px 18px;border:1px solid #1a3560;border-radius:5px;cursor:pointer;font-size:12px;">
+        Accept Theirs (discard my changes)
+      </button>
+      <button onclick="_conflictSaveMerged()"
+        style="background:#052e16;color:#4ade80;padding:7px 18px;border:1px solid #166534;border-radius:5px;cursor:pointer;font-size:12px;">
+        Save Edited Version Above
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- dsyn-suggest-01: Suggest Edit Modal -->
+<div id="suggest-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9100;overflow-y:auto;padding:32px 16px;">
+  <div style="max-width:700px;margin:0 auto;background:#0b1726;border:1px solid #1a3560;border-radius:10px;padding:24px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h3 style="margin:0;color:#eaeaea;">💡 Suggest Edit — <span id="sug-modal-heading" style="color:#7ab3f0;"></span></h3>
+      <button onclick="closeSuggestModal()" style="background:none;border:none;color:#7a8cb0;font-size:20px;cursor:pointer;">✕</button>
+    </div>
+    <input type="hidden" id="sug-modal-section-id" value="">
+    <label style="color:#7a8cb0;font-size:11px;display:block;margin-bottom:6px;">Proposed content</label>
+    <textarea id="sug-modal-content" rows="10"
+      style="width:100%;background:#050d1f;border:1px solid #1a3560;color:#a8c8e0;padding:10px;border-radius:5px;font-size:12px;font-family:monospace;resize:vertical;box-sizing:border-box;"></textarea>
+    <label style="color:#7a8cb0;font-size:11px;display:block;margin:10px 0 6px;">Rationale <span style="color:#5a7aa0;">(explain why this change improves the document)</span></label>
+    <input id="sug-modal-rationale" type="text" placeholder="e.g. More accurate based on recent test results"
+      style="width:100%;background:#050d1f;border:1px solid #1a3560;color:#a8c8e0;padding:8px;border-radius:5px;font-size:12px;box-sizing:border-box;">
+    <div style="display:flex;gap:10px;margin-top:16px;">
+      <button onclick="submitSuggestEdit()"
+        style="background:#1a4a2e;color:#4ade80;padding:8px 20px;border:1px solid #166534;border-radius:5px;cursor:pointer;font-size:13px;font-weight:600;">
+        Submit Suggestion
+      </button>
+      <button onclick="closeSuggestModal()"
+        style="background:#1e293b;color:#94a3b8;padding:8px 20px;border:1px solid #1a3560;border-radius:5px;cursor:pointer;font-size:12px;">
+        Cancel
+      </button>
+    </div>
+    <div id="sug-modal-status" style="margin-top:10px;font-size:12px;color:#7a8cb0;"></div>
+  </div>
+</div>
+
+<!-- Version Diff Modal -->
+<div id="diff-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9000;overflow-y:auto;padding:32px 16px;">
+  <div style="max-width:900px;margin:0 auto;background:#0b1726;border:1px solid #1a3560;border-radius:10px;padding:24px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h3 style="margin:0;color:#eaeaea;font-size:15px;">⟺ Version Diff</h3>
+      <button onclick="closeDiffModal()" style="background:none;border:none;color:#7a8cb0;font-size:18px;cursor:pointer;">✕</button>
+    </div>
+    <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+      <div>
+        <label style="color:#7a8cb0;font-size:11px;display:block;margin-bottom:4px;">From (A)</label>
+        <select id="diff-va" style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:6px 10px;border-radius:4px;font-size:12px;">
+          {% for v in versions %}
+          <option value="{{ v.version_id }}">v{{ v.version_no }} — {{ v.status }} ({{ v.origin }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <span style="color:#4f8ef7;font-size:18px;margin-top:14px;">→</span>
+      <div>
+        <label style="color:#7a8cb0;font-size:11px;display:block;margin-bottom:4px;">To (B)</label>
+        <select id="diff-vb" style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:6px 10px;border-radius:4px;font-size:12px;">
+          {% for v in versions %}
+          <option value="{{ v.version_id }}" {% if loop.last %}selected{% endif %}>v{{ v.version_no }} — {{ v.status }} ({{ v.origin }})</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button onclick="runDiff()" style="background:#0f3460;color:#7ab3f0;padding:6px 16px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;margin-top:14px;">Compare</button>
+    </div>
+    <div id="diff-summary" style="display:none;margin-bottom:12px;padding:8px 14px;background:#050d1f;border-radius:5px;font-size:12px;color:#94a3b8;"></div>
+    <div id="diff-body"></div>
+  </div>
+</div>
+
+<script>
+// dsyn-suggest-01: Suggest Edit modal
+function openSuggestModal(sectionId, heading, currentContent) {
+  document.getElementById('sug-modal-section-id').value = sectionId;
+  document.getElementById('sug-modal-heading').textContent = heading;
+  document.getElementById('sug-modal-content').value = currentContent || '';
+  document.getElementById('sug-modal-rationale').value = '';
+  document.getElementById('sug-modal-status').textContent = '';
+  document.getElementById('suggest-modal').style.display = 'block';
+}
+function closeSuggestModal() {
+  document.getElementById('suggest-modal').style.display = 'none';
+}
+function submitSuggestEdit() {
+  var sectionId = document.getElementById('sug-modal-section-id').value;
+  var proposed = document.getElementById('sug-modal-content').value.trim();
+  var rationale = document.getElementById('sug-modal-rationale').value.trim();
+  var statusEl = document.getElementById('sug-modal-status');
+  if (!proposed) { statusEl.textContent = 'Proposed content cannot be empty.'; return; }
+  statusEl.textContent = 'Submitting…';
+  fetch('/document-intelligence/api/sections/' + encodeURIComponent(sectionId) + '/suggest', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({proposed_content: proposed, rationale: rationale})
+  }).then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.error) { statusEl.style.color = '#f87171'; statusEl.textContent = 'Error: ' + d.error; return; }
+      statusEl.style.color = '#4ade80';
+      statusEl.textContent = 'Suggestion submitted! ID: ' + d.suggestion_id;
+      setTimeout(closeSuggestModal, 1800);
+      loadSuggestionsForDoc();
+    }).catch(function(e) {
+      statusEl.style.color = '#f87171';
+      statusEl.textContent = 'Error: ' + e.message;
+    });
+}
+
+function openDiffModal() {
+  document.getElementById('diff-modal').style.display = 'block';
+}
+function closeDiffModal() {
+  document.getElementById('diff-modal').style.display = 'none';
+}
+
+function runDiff() {
+  var va = document.getElementById('diff-va').value;
+  var vb = document.getElementById('diff-vb').value;
+  if (va === vb) { alert('Select two different versions to compare.'); return; }
+  var body = document.getElementById('diff-body');
+  body.innerHTML = '<p style="color:#5a7aa0;font-size:12px;">Computing diff…</p>';
+  document.getElementById('diff-summary').style.display = 'none';
+
+  fetch('/document-intelligence/api/versions/' + va + '/diff/' + vb)
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) { body.innerHTML = '<p style="color:#f87171;">Error: ' + escH(data.error) + '</p>'; return; }
+
+      var sumEl = document.getElementById('diff-summary');
+      sumEl.style.display = 'block';
+      sumEl.innerHTML =
+        '<span style="color:#4ade80;">+' + data.total_added + ' added</span>' +
+        '&nbsp;&nbsp;<span style="color:#f87171;">−' + data.total_removed + ' removed</span>' +
+        '&nbsp;&nbsp;<span style="color:#7a8cb0;">' + data.sections.length + ' sections</span>';
+
+      body.innerHTML = data.sections.map(function(sec) {
+        var statusBadge = '';
+        if (!sec.in_a) statusBadge = '<span style="background:#052e16;color:#4ade80;font-size:9px;padding:1px 6px;border-radius:8px;margin-left:6px;">NEW</span>';
+        else if (!sec.in_b) statusBadge = '<span style="background:#2e0505;color:#f87171;font-size:9px;padding:1px 6px;border-radius:8px;margin-left:6px;">REMOVED</span>';
+        else if (sec.added || sec.removed) statusBadge = '<span style="background:#1a2e08;color:#7fd8a0;font-size:9px;padding:1px 6px;border-radius:8px;margin-left:6px;">CHANGED +' + sec.added + ' −' + sec.removed + '</span>';
+        else statusBadge = '<span style="background:#0b1726;color:#5a7aa0;font-size:9px;padding:1px 6px;border-radius:8px;margin-left:6px;">UNCHANGED</span>';
+
+        var changed = sec.added > 0 || sec.removed > 0 || !sec.in_a || !sec.in_b;
+        var linesHtml = '';
+        if (changed) {
+          linesHtml = '<div style="font-family:monospace;font-size:11px;margin-top:8px;border-radius:4px;overflow:hidden;">' +
+            sec.lines.map(function(l) {
+              if (l.tag === 'insert') return '<div style="background:#052e16;color:#4ade80;padding:2px 10px;white-space:pre-wrap;">+ ' + escH(l.text) + '</div>';
+              if (l.tag === 'delete') return '<div style="background:#2e0505;color:#f87171;padding:2px 10px;white-space:pre-wrap;">− ' + escH(l.text) + '</div>';
+              return '<div style="color:#4a6080;padding:2px 10px;white-space:pre-wrap;">  ' + escH(l.text) + '</div>';
+            }).join('') +
+          '</div>';
+        }
+
+        return '<div style="background:#050d1f;border:1px solid ' + (changed ? '#1e3a4e' : '#0e1e2e') + ';border-radius:6px;padding:12px;margin-bottom:8px;">' +
+          '<div style="font-size:12px;color:#9bb8d8;font-weight:600;">' + escH(sec.heading || '(untitled)') + statusBadge + '</div>' +
+          linesHtml +
+        '</div>';
+      }).join('');
+    })
+    .catch(function(e) {
+      body.innerHTML = '<p style="color:#f87171;">Error: ' + escH(e.message) + '</p>';
+    });
 }
 </script>
 

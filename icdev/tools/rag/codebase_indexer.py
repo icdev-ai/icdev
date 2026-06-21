@@ -1,8 +1,8 @@
 # CUI // SP-CTI
-# Classification: CUI — Controlled Unclassified Information
-# Distribution: Authorized ICDEV™ personnel only
-# Codebase Indexer — Phase 69, D-CA-1, D-CA-2
-"""Codebase indexer for the ICDEV™ project.
+# Classification: CUI â€” Controlled Unclassified Information
+# Distribution: Authorized ICDEVâ„¢ personnel only
+# Codebase Indexer â€” Phase 69, D-CA-1, D-CA-2
+"""Codebase indexer for the ICDEVâ„¢ project.
 
 Indexes Python source files using AST parsing and other files using
 text chunking.  Stores indexed records in the ``codebase_index`` table
@@ -123,6 +123,18 @@ MAX_TEXT_CHUNK_CHARS = 2000
 DEFAULT_CLASSIFICATION = "CUI // SP-CTI"
 
 # ---------------------------------------------------------------------------
+# Module-level fallback constants â€” overridable from args/rag_config.yaml
+# under rag.codebase_indexer.  Change config, not code.
+# ---------------------------------------------------------------------------
+_GIT_HISTORY_LIMIT      = 200   # default max git commits to index
+_GIT_LOG_TIMEOUT        = 30    # subprocess timeout (s) for git log
+_MAX_CHANGED_FILES      = 20    # max changed_files included per commit chunk
+_SYMBOL_MAX_WIDTH       = 120   # max chars for commit subject / symbol_name
+_DOCSTRING_MAX_WIDTH    = 500   # max chars for textwrap.shorten() on docstrings
+_BACKGROUND_INTERVAL    = 30    # default background indexing interval (minutes)
+_HASH_DIGEST_LEN        = 32    # SHA-256 hex digest prefix length for chunk IDs
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -213,7 +225,7 @@ def index_python_file(file_path: Path, base_dir: Path) -> list[dict]:
                 "line_end": 68,
                 "symbol_name": "scan_codebase",
                 "symbol_type": "function",
-                "docstring": "Scan the codebase …",
+                "docstring": "Scan the codebase â€¦",
             },
         }
 
@@ -228,7 +240,7 @@ def index_python_file(file_path: Path, base_dir: Path) -> list[dict]:
     try:
         tree = ast.parse(source, filename=str(file_path))
     except SyntaxError:
-        LOG.info("SyntaxError in %s — falling back to text chunking", file_path)
+        LOG.info("SyntaxError in %s â€” falling back to text chunking", file_path)
         return index_text_file(file_path, base_dir)
 
     source_lines = source.splitlines()
@@ -264,7 +276,7 @@ def index_python_file(file_path: Path, base_dir: Path) -> list[dict]:
                     "line_end": line_end,
                     "symbol_name": symbol_name,
                     "symbol_type": symbol_type,
-                    "docstring": textwrap.shorten(docstring, width=500, placeholder="…"),
+                    "docstring": textwrap.shorten(docstring, width=_DOCSTRING_MAX_WIDTH, placeholder="â€¦"),
                     "signature": sig_line,
                 },
             }
@@ -369,7 +381,7 @@ def index_text_file(file_path: Path, base_dir: Path) -> list[dict]:
 
         # Truncate oversized chunks
         if len(content) > MAX_TEXT_CHUNK_CHARS:
-            content = content[:MAX_TEXT_CHUNK_CHARS] + "…"
+            content = content[:MAX_TEXT_CHUNK_CHARS] + "â€¦"
 
         # Attempt to extract a heading / key name
         first_line = content.split("\n", 1)[0].strip()
@@ -416,7 +428,7 @@ def index_git_history(base_dir: Path, limit: int = 200) -> list[dict]:
             cwd=str(base_dir),
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=_GIT_LOG_TIMEOUT,
         )
         if result.returncode != 0:
             LOG.warning("git log failed: %s", result.stderr.strip())
@@ -443,7 +455,7 @@ def index_git_history(base_dir: Path, limit: int = 200) -> list[dict]:
             f"Author: {author}\n"
             f"Date: {date_str}\n"
             f"Subject: {subject}\n"
-            f"Files: {', '.join(changed_files[:20])}"
+            f"Files: {', '.join(changed_files[:_MAX_CHANGED_FILES])}"
         )
         chunks.append(
             {
@@ -510,7 +522,7 @@ def _store_record(
     # Derive module name from path
     module = rel_path.rsplit("/", 1)[0] if "/" in rel_path else ""
 
-    record_id = hashlib.sha256(rel_path.encode("utf-8")).hexdigest()[:32]
+    record_id = hashlib.sha256(rel_path.encode("utf-8")).hexdigest()[:_HASH_DIGEST_LEN]
     now = datetime.now(timezone.utc).isoformat()
 
     conn.execute(
@@ -586,12 +598,12 @@ def scan_codebase(
     # exception, but empirically that still persisted 0 rows on full
     # scan even though a per-file-commit diagnostic of the same
     # function successfully landed 4964 rows. Root cause of the batch
-    # variant failing is unclear — possibly a psycopg2 pool interaction
+    # variant failing is unclear â€” possibly a psycopg2 pool interaction
     # where an intermediate commit followed by more work within the
     # same connection gets retroactively rolled back.
     #
     # Per-file commit is ~2-3x slower than batch commit but REPRODUCIBLY
-    # correct. For a 7200-file full scan that's ~90s vs ~30s — acceptable
+    # correct. For a 7200-file full scan that's ~90s vs ~30s â€” acceptable
     # for a tool that runs on-demand or in a 30-minute background
     # interval. Reliability trumps speed here.
     for fp in files:
@@ -604,7 +616,7 @@ def scan_codebase(
                     rel = str(fp.relative_to(base_dir)).replace("\\", "/")
                 except ValueError:
                     rel = str(fp)
-                rec_id = hashlib.sha256(rel.encode("utf-8")).hexdigest()[:32]
+                rec_id = hashlib.sha256(rel.encode("utf-8")).hexdigest()[:_HASH_DIGEST_LEN]
                 row = conn.execute(
                     "SELECT file_hash FROM codebase_index WHERE id = ?",
                     (rec_id,),
@@ -636,7 +648,7 @@ def scan_codebase(
                     symbols,
                     len(chunks),
                 )
-                # Per-file commit — see comment above for why.
+                # Per-file commit â€” see comment above for why.
                 try:
                     conn.commit()
                 except Exception as commit_exc:
@@ -720,7 +732,7 @@ def run_background(
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="codebase_indexer",
-        description="Index ICDEV™ codebase for RAG retrieval.",
+        description="Index ICDEVâ„¢ codebase for RAG retrieval.",
     )
     parser.add_argument(
         "--scan",
@@ -747,7 +759,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--interval",
         type=int,
-        default=30,
+        default=_BACKGROUND_INTERVAL,
         help="Minutes between background scans (default: 30).",
     )
     parser.add_argument(
@@ -812,3 +824,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+

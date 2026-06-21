@@ -16,9 +16,8 @@ Returns:
 from __future__ import annotations
 
 import pathlib
-from typing import Union
-
-import yaml
+from functools import lru_cache
+from typing import Any, Union
 
 from tools.ai_augmentation.agent_readiness.pillars import (
     append_only_audit,
@@ -33,7 +32,7 @@ from tools.ai_augmentation.agent_readiness.pillars import (
     structure,
     testing,
 )
-from tools.ai_augmentation.agent_readiness.pillars._base import Pillar, get_pillar_weights
+from tools.ai_augmentation.agent_readiness.pillars._base import Pillar, detect_score_anomalies
 
 # All 11 pillars in evaluation order.
 # Pillars 1–7 are ported from kodustech/agent-readiness.
@@ -52,11 +51,14 @@ _ALL_PILLARS: list[Pillar] = [
     append_only_audit.PILLAR,  # 11 — Append-Only Audit Tables (ICDEV)
 ]
 
-<<<<<<< HEAD:icdev/tools/ai_augmentation/agent_readiness/checker.py
-=======
-# Fallback weights used when args/agent_readiness.yaml is absent or incomplete.
->>>>>>> kanban/aac-opp-498:tools/ai_augmentation/agent_readiness/checker.py
-_DEFAULT_PILLAR_WEIGHTS: dict[str, float] = {
+_ICDEV_PILLAR_IDS = {"il-classification", "nist-controls", "stig-compliance", "append-only-audit"}
+
+# ---------------------------------------------------------------------------
+# Anomaly-detection weight loader — reads from args/agent_readiness_config.yaml
+# ---------------------------------------------------------------------------
+_ARGS_PATH = pathlib.Path(__file__).parents[3] / "args" / "agent_readiness_config.yaml"
+
+_WEIGHT_DEFAULTS: dict[str, Any] = {
     "code-quality":      1.0,
     "documentation":     1.0,
     "testing":           1.2,
@@ -69,35 +71,32 @@ _DEFAULT_PILLAR_WEIGHTS: dict[str, float] = {
     "stig-compliance":   1.3,
     "append-only-audit": 1.3,
 }
-_DEFAULT_ANOMALY_THRESHOLD = 0.5
-
-# Merge config weights over defaults so partial overrides work correctly.
-_PILLAR_WEIGHTS: dict[str, float] = {**_DEFAULT_PILLAR_WEIGHTS, **get_pillar_weights()}
-
-_ICDEV_PILLAR_IDS = {"il-classification", "nist-controls", "stig-compliance", "append-only-audit"}
+# Minimum weight accepted from config — values below this are anomalously low.
+_MIN_WEIGHT = 0.1
 
 
-def _load_scoring_config() -> tuple[dict[str, float], float]:
-    """Load pillar weights and anomaly threshold from args/agent_readiness_config.yaml.
+@lru_cache(maxsize=1)
+def _load_pillar_weights() -> dict[str, float]:
+    """Load pillar weights from args/agent_readiness_config.yaml.
 
-    Falls back to defaults if the file is missing or the scoring section is absent.
+    Falls back to built-in defaults if the file is absent or malformed.
+    Values below _MIN_WEIGHT are clamped to prevent anomalously low weights
+    from distorting the overall score.
     """
-    config_path = pathlib.Path(__file__).resolve().parents[4] / "args" / "agent_readiness_config.yaml"
     try:
-        with config_path.open(encoding="utf-8") as fh:
-            cfg = yaml.safe_load(fh) or {}
-        scoring = cfg.get("scoring", {})
-        weights = {str(k): float(v) for k, v in scoring.get("pillar_weights", {}).items()}
-        threshold = float(scoring.get("anomaly_threshold", _DEFAULT_ANOMALY_THRESHOLD))
-        if not weights:
-            weights = _DEFAULT_PILLAR_WEIGHTS
-    except (OSError, ValueError, KeyError, TypeError):
-        weights = _DEFAULT_PILLAR_WEIGHTS
-        threshold = _DEFAULT_ANOMALY_THRESHOLD
-    return weights, threshold
-
-
-_PILLAR_WEIGHTS, _ANOMALY_THRESHOLD = _load_scoring_config()
+        import yaml  # optional dep — present in all ICDEV environments
+        raw = _ARGS_PATH.read_text(encoding="utf-8")
+        data = yaml.safe_load(raw) or {}
+        cfg = data.get("pillar_weights", {})
+        if not cfg:
+            return dict(_WEIGHT_DEFAULTS)
+        merged = dict(_WEIGHT_DEFAULTS)
+        for pillar_id, raw_weight in cfg.items():
+            weight = float(raw_weight)
+            merged[pillar_id] = max(_MIN_WEIGHT, weight)
+        return merged
+    except Exception:  # noqa: BLE001
+        return dict(_WEIGHT_DEFAULTS)
 
 
 def run_readiness_check(repo_path: Union[str, pathlib.Path]) -> dict:
@@ -118,10 +117,11 @@ def run_readiness_check(repo_path: Union[str, pathlib.Path]) -> dict:
     pillar_scores: dict[str, dict] = {}
     icdev_checks: dict[str, list] = {}
     all_results: list[tuple[str, float, float]] = []  # (pillar_id, weighted_pct, weight)
+    weights = _load_pillar_weights()
 
     for pillar in _ALL_PILLARS:
         results = pillar.run(repo)
-        score = pillar.score(results, anomaly_threshold=_ANOMALY_THRESHOLD)
+        score = pillar.score(results)
         pillar_scores[pillar.id] = score
 
         # Serialise criterion results
@@ -137,19 +137,31 @@ def run_readiness_check(repo_path: Union[str, pathlib.Path]) -> dict:
         ]
         icdev_checks[pillar.id] = result_dicts
 
-        weight = _PILLAR_WEIGHTS.get(pillar.id, 1.0)
+        weight = weights.get(pillar.id, 1.0)
         all_results.append((pillar.id, score["percentage"], weight))
 
     # Weighted average overall score
     total_weight = sum(w for _, _, w in all_results)
     overall = sum(pct * w for _, pct, w in all_results) / total_weight if total_weight > 0 else 0.0
 
-    anomalous_pillars = [pid for pid, score in pillar_scores.items() if score.get("anomalous")]
+    # Detect anomalously low pillar scores; optionally enrich with Claude Haiku.
+    anomaly_reports = detect_score_anomalies(pillar_scores, icdev_checks)
+    score_anomalies = [
+        {
+            "pillar_id": r.pillar_id,
+            "score_pct": r.score_pct,
+            "threshold": r.threshold,
+            "is_anomalous": r.is_anomalous,
+            "reason": r.reason,
+            "ai_reasoning": r.ai_reasoning,
+        }
+        for r in anomaly_reports
+        if r.is_anomalous
+    ]
 
     return {
         "pillar_scores": pillar_scores,
         "overall_readiness_score": round(overall, 4),
         "icdev_checks": icdev_checks,
-        "anomalous_pillars": anomalous_pillars,
-        "anomaly_threshold": _ANOMALY_THRESHOLD,
+        "score_anomalies": score_anomalies,
     }

@@ -21,7 +21,6 @@ Must complete within 60s; LLM call is skipped when unavailable (air-gap safe).
 from __future__ import annotations
 
 import json
-import uuid
 from datetime import datetime, timezone
 from typing import Any
 
@@ -162,7 +161,7 @@ def _draft_suggestion(
         logger.debug("dic_integration: LLM draft unavailable (%s), using stub", exc)
 
     # Stub suggestion — human can edit before accepting
-    lines = [f"[REVIEW REQUIRED] The following system change may affect this section:"]
+    lines = ["[REVIEW REQUIRED] The following system change may affect this section:"]
     lines.append("")
     lines.append(f"Change context: {change_context}")
     lines.append("")
@@ -182,12 +181,6 @@ def _emit_notification(suggestion_id: str, collection_id: str, canvas_source: st
         import zlib
         now = _now()
         log_id = f"nlog-{format(zlib.crc32(f'{now}{suggestion_id}'.encode()) & 0xFFFFFFFF, '08x')}"
-        payload = json.dumps({
-            "suggestion_id": suggestion_id,
-            "collection_id": collection_id,
-            "canvas_source": canvas_source,
-            "rationale": rationale,
-        })
         conn.execute(
             """
             INSERT INTO notification_log

@@ -1,0 +1,184 @@
+# AI-ify (Autonomous Automation Candidate) Engine Configuration
+# CUI // SP-CTI
+
+scoring_weights:
+  value: 0.45
+  feasibility: 0.35
+  risk_inv: 0.20
+
+value_weights:
+  usage_freq: 0.40
+  task_complexity: 0.35
+  automation_deficit: 0.25
+
+feasibility_weights:
+  data_avail: 0.40
+  il_model_exists: 0.35
+  integration_simplicity: 0.25
+
+risk_weights:
+  reversibility: 0.40
+  compliance_impact_inv: 0.35
+  dep_simplicity: 0.25
+
+confidence_threshold: 0.65  # only register high-confidence AI augmentation candidates
+
+scan_depth: full  # options: full | shallow | summary
+
+supported_languages:
+  - python
+  - java
+  - csharp
+  - go
+  - rust
+  - typescript
+
+pattern_min_depth: 3        # min if-depth for conditional pattern detection
+rule_min_keys: 10           # min dict keys for rule-table pattern detection
+keyword_list_min_strings: 3 # min string literals for keyword-list-search detection
+java_min_if_depth: 2        # min if-depth for Java nested-conditional detection
+java_static_int_max_digits: 4   # max digit count for Java static-int threshold detection (captures values up to 10^N - 1)
+java_static_int_min_value: 1    # skip Java static int constants below this value (filters out zero sentinel checks)
+
+threshold_anomaly_detection:
+  enabled: true
+  z_score_threshold: 2.0  # flag constants with |z| above this
+  iqr_multiplier: 1.5     # IQR fence: Q1 - m*IQR to Q3 + m*IQR
+  min_sample_size: 5      # minimum distinct constants before z-score is applied
+  fallback_to_all: true   # when sample < min_sample_size, flag all constants
+  min_constant_magnitude: 1.0  # skip constants with |value| ≤ this when AD enabled (filters out zero/one boundary checks)
+  q1_percentile: 25       # lower percentile for IQR lower fence (0–100, default = Q1 = 25th)
+  q3_percentile: 75       # upper percentile for IQR upper fence (0–100, default = Q3 = 75th)
+  percentile_scale: 100   # divisor converting q1/q3 percentile values to fractions (default 100 = percentage scale)
+
+semgrep:
+  rules_dir: context/aiify/semgrep_rules
+  timeout_seconds: 60
+  metrics: "off"
+
+il_penalties:
+  # Compliance burden added per IL level when compliance_impact is not provided
+  il4: 0.0
+  il5: 0.1
+  il6: 0.2
+
+anomaly_detection:
+  # Minimum composite score for an opportunity to be registered as an innovation signal
+  innovation_signal_min_score: 0.60
+  # Composite score thresholds that determine roadmap phase labels
+  phase:
+    p1_min_score: 0.70  # "P1 — Quick Wins"
+    p2_min_score: 0.50  # "P2 — Core Modernization"
+    p3_min_score: 0.30  # "P3 — Long-Horizon Investments"
+  # Minimum composite score to assign "high" priority to a kanban task
+  priority_high_min_score: 0.70
+  # Score anomaly detection thresholds (used by detect_score_anomalies)
+  value_feasibility_max_delta: 0.50   # flag when |value - feasibility| exceeds this
+  component_outlier_floor: 0.05       # flag component below this value
+  component_outlier_ceiling: 0.95     # flag component above this value
+
+ml_nested_conditionals:
+  # ML classifier enrichment for nested_conditionals detections.
+  # Opt-in: set enabled: true here OR export ICDEV_AIIFY_ML_CLASSIFY=true.
+  enabled: false
+  model: claude-haiku-4-5-20251001
+  max_tokens: 256
+  context_lines: 5          # source lines of context above/below the matched block
+
+ml_regex_user_input:
+  # NLP extractor enrichment for regex_user_input detections in pattern_classifier.py.
+  # Opt-in: set enabled: true here OR export ICDEV_AIIFY_NLP_REGEX=true.
+  enabled: false
+  model: claude-haiku-4-5-20251001
+  max_tokens: 256
+  context_lines: 5          # source lines of context above/below the matched call
+
+nlp_ref_extractor:
+  # NLP extractor for scan target ref classification in engine.py.
+  # Replaces regex URL/path parsing with Claude Haiku NLP extraction for richer
+  # project metadata (hosting platform, language hints, canonical project name).
+  # Opt-in: set enabled: true here OR export ICDEV_AIIFY_NLP_REF=true.
+  enabled: false
+  model: claude-haiku-4-5-20251001
+  max_tokens: 128
+
+research_nlp_scraper:
+  # NLP extractor for html_scrape feed type in tools/genesis/reflexes/research.py.
+  # Replaces regex href extraction with Claude Haiku NLP extraction for topic-aware
+  # link filtering. Falls back to regex if disabled or LLM unavailable.
+  # Opt-in: set enabled: true here OR export ICDEV_RESEARCH_NLP_SCRAPER=true.
+  enabled: false
+  model: claude-haiku-4-5-20251001
+  max_tokens: 256
+
+research_reflex:
+  # Configurable thresholds for tools/genesis/reflexes/research.py.
+  # Replaces hardcoded constants so anomaly-detection behavior can be tuned
+  # without modifying source code (aiify-rm-ff651-phase-5344).
+  max_entries_per_feed: 10   # new entries processed per feed per cycle
+  max_json_items: 20         # items parsed from generic JSON array feeds
+  max_kev_vulns: 20          # KEV vulnerability entries to parse per cycle
+  signal_confidence: 0.7     # GKP export confidence for research signals
+  signal_base_score: 50      # base relevance score for research signals
+  html_snippet_limit: 4000   # max HTML chars sent to NLP link extractor
+
+cato_monitor:
+  # Configurable thresholds for tools/genesis/reflexes/cato_monitor.py.
+  # Replaces the hardcoded `total_violations > 0` check with a tunable value
+  # so POAM generation sensitivity can be adjusted without modifying source
+  # code (aiify-rm-ff651-phase-5259).
+  violation_threshold: 1     # generate POAM when violations >= this value (default: any violation)
+
+  # Optional LLM-based anomaly assessment of compliance violation patterns.
+  # Opt-in: set enabled: true here. When disabled (default), the reflex runs
+  # scanner-tier with zero Claude token consumption. Air-gap safe.
+  llm_anomaly_detection:
+    enabled: false
+    model: claude-haiku-4-5-20251001
+    max_tokens: 256
+
+comply_reflex:
+  # Configurable thresholds for tools/genesis/reflexes/comply.py.
+  # Replaces the hardcoded `len(completed) > 0` success check with a tunable
+  # minimum so sensitivity can be adjusted without modifying source code
+  # (aiify-rm-ff651-phase-5264).
+  min_completed_checks: 1    # require at least this many checks to succeed (default: 1)
+
+  # Optional LLM-based anomaly assessment of evidence freshness metrics.
+  # Opt-in: set enabled: true here. When disabled (default), the reflex runs
+  # scanner-tier with zero Claude token consumption. Air-gap safe.
+  llm_anomaly_detection:
+    enabled: false
+    model: claude-haiku-4-5-20251001
+    max_tokens: 256
+
+ndc_topology_drift:
+  # Configurable staleness threshold for tools/genesis/reflexes/ndc_topology_drift.py.
+  # Replaces the hardcoded 7-day window with a tunable value so drift sensitivity
+  # can be adjusted without modifying source code (aiify-rm-ff651-phase-5317).
+  staleness_threshold_days: 7    # flag topologies with days_since_update <= this value
+
+  # Optional LLM-based anomaly detection for dynamic staleness assessment.
+  # When enabled, Claude Haiku evaluates topology update patterns to identify
+  # anomalous drift beyond what a fixed threshold would catch. Opt-in; disabled
+  # by default so the reflex remains air-gap safe with zero token consumption.
+  llm_anomaly_detection:
+    enabled: false
+    model: claude-haiku-4-5-20251001
+    max_tokens: 300
+
+govchain_anchor:
+  # Configurable thresholds for tools/genesis/reflexes/govchain_anchor.py.
+  # Replaces hardcoded subprocess timeout and pending-queue warning limit with
+  # tunable values so sensitivity can be adjusted without modifying source code
+  # (aiify-rm-ff651-phase-5283).
+  anchor_timeout_seconds: 120  # subprocess timeout for chain_anchor --periodic
+  pending_queue_warning: 500   # warn when pending ops queue depth exceeds this
+
+  # Optional LLM-based anomaly assessment of anchor result and queue depth.
+  # Opt-in: set enabled: true here. When disabled (default), the reflex runs
+  # scanner-tier with zero Claude token consumption. Air-gap safe.
+  llm_anomaly_detection:
+    enabled: false
+    model: claude-haiku-4-5-20251001
+    max_tokens: 256

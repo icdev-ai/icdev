@@ -139,7 +139,7 @@ def _parse_vmware_ovf(raw: str, errors: list) -> tuple:
                  "bios_type": "UEFI", "virtualization_ext": 1, "raw_export_json": "{}"}
     nics, disks, services = [], [], []
     try:
-        root = ET.fromstring(raw)
+        root = ET.fromstring(raw)  # nosec B314 — OVF XML from controlled VMware export, not user-supplied input
         # OVF namespace URIs used inline via Clark notation in findtext calls below
         # OS
         os_el = root.find(".//{http://schemas.dmtf.org/ovf/envelope/1}OperatingSystemSection")

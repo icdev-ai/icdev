@@ -13,7 +13,7 @@ import os
 import sys
 from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parents[4]
+_ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(_ROOT))
 
 _IS_PG = os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql").lower() == "postgresql"
@@ -75,7 +75,7 @@ _AIMC_DEPLOYMENT_IDX = [
 
 def init_db() -> None:
     """Create AIMC tables if they do not exist."""
-    from icdev.tools.db.storage import get_connection
+    from tools.db.storage import get_connection
 
     models_ddl = _AIMC_MODELS_DDL_PG if _IS_PG else _AIMC_MODELS_DDL_SQLITE
     deployment_ddl = _AIMC_DEPLOYMENT_DDL_PG if _IS_PG else _AIMC_DEPLOYMENT_DDL_SQLITE

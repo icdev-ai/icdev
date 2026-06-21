@@ -176,7 +176,7 @@ def check_access(
             if row:
                 level = row[0] if isinstance(row, (tuple, list)) else row["access_level"]
                 if _LEVEL_ORDER.get(level, -1) >= required_order:
-                    return _pdp_second_opinion(user_id, tenant_id, canvas_name, required_level)
+                    return True
 
             # 2 — Group grants
             group_rows = conn.execute(
@@ -196,7 +196,7 @@ def check_access(
             for r in group_rows:
                 level = r[0] if isinstance(r, (tuple, list)) else r["access_level"]
                 if _LEVEL_ORDER.get(level, -1) >= required_order:
-                    return _pdp_second_opinion(user_id, tenant_id, canvas_name, required_level)
+                    return True
 
             # 3 — Role grant (resolve user's direct platform role)
             # Use caller-supplied role first; fall back to users table lookup.
@@ -223,36 +223,13 @@ def check_access(
                 if role_row:
                     level = role_row[0] if isinstance(role_row, (tuple, list)) else role_row["access_level"]
                     if _LEVEL_ORDER.get(level, -1) >= required_order:
-                        return _pdp_second_opinion(user_id, tenant_id, canvas_name, required_level)
+                        return True
 
     except Exception as exc:
         logger.warning("Canvas access check error for %s/%s: %s", canvas_name, user_id, exc)
         return False
 
     return False
-
-
-def _pdp_second_opinion(user_id: str, tenant_id: str, canvas_name: str, required_level: str) -> bool:
-    """G-12: Optional PDP second-opinion gate (gated by ICDEV_PDP_ENABLED env var).
-
-    Returns True to permit, False to deny. Defaults to True when PDP is disabled or errors out.
-    """
-    import os
-    if os.environ.get("ICDEV_PDP_ENABLED", "false").lower() != "true":
-        return True
-    try:
-        from tools.security.pdp_client import evaluate_access
-        user_ctx = {"user_id": user_id, "tenant_id": tenant_id}
-        decision = evaluate_access(user_ctx, f"canvas:{canvas_name}", required_level)
-        if not decision.permit:
-            logger.warning(
-                "PDP denied canvas access: user=%s canvas=%s level=%s reason=%s",
-                user_id, canvas_name, required_level, decision.reason,
-            )
-            return False
-    except Exception as exc:
-        logger.debug("PDP second-opinion error: %s — defaulting to permit", exc)
-    return True
 
 
 # ---------------------------------------------------------------------------
@@ -313,7 +290,7 @@ def require_canvas_access(canvas_name: str, min_level: str = "read"):
         @functools.wraps(f)
         def wrapper(*args, **kwargs):
             try:
-                from flask import g, request  # noqa: F401
+                from flask import g, request
             except ImportError:
                 return f(*args, **kwargs)
 

@@ -6,14 +6,17 @@ Full GovCon proposal lifecycle — opportunities, volumes, sections,
 compliance matrix (L/M/N), color team reviews, findings, and status history.
 """
 
+import json as _mac_json
 import os
 import sys
 import uuid
 from tools.db.storage import get_connection
+from tools.security.abac_engine import abac_protect
+from tools.dashboard.auth import require_role
 from datetime import datetime, timezone
 from pathlib import Path
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, make_response, request
 
 from tools.common.helpers import now_iso
 
@@ -31,6 +34,98 @@ def _get_db():
     return conn
 
 
+# ---------------------------------------------------------------------------
+# Bell-LaPadula MAC helpers (prop-sec-02)
+# ---------------------------------------------------------------------------
+
+def _mac_ctx():
+    """Return current security context from Flask g (None = system/unauthenticated)."""
+    try:
+        from flask import g
+        return getattr(g, "security_context", None)
+    except RuntimeError:
+        return None
+
+
+def _mac_compartments(raw):
+    """Parse compartments from JSON string or collection to a plain set."""
+    if isinstance(raw, (list, tuple, set, frozenset)):
+        return set(raw)
+    try:
+        return set(_mac_json.loads(raw or "[]"))
+    except Exception:
+        return set()
+
+
+def _mac_filter(rows):
+    """Filter row list — keep only those the current user can read per Bell-LaPadula.
+
+    Applies no-read-up (clearance >= classification) and strict-subset
+    compartment check (resource compartments ⊆ user compartments).
+    """
+    from tools.security.classification_enforcer import can_read, can_access_compartment
+    ctx = _mac_ctx()
+    if ctx is None:
+        return [dict(r) if not isinstance(r, dict) else r for r in rows]
+    result = []
+    for row in rows:
+        d = dict(row) if not isinstance(row, dict) else row
+        cls = d.get("classification", "CUI") or "CUI"
+        comps = _mac_compartments(d.get("compartments", "[]"))
+        if can_read(cls, ctx) and can_access_compartment(comps, ctx):
+            result.append(d)
+    return result
+
+
+def _mac_deny_read(row):
+    """Return 403 JSON response if current user cannot read this row. Returns None on pass."""
+    from tools.security.classification_enforcer import can_read, can_access_compartment
+    ctx = _mac_ctx()
+    if ctx is None:
+        return None
+    d = dict(row) if not isinstance(row, dict) else row
+    cls = d.get("classification", "CUI") or "CUI"
+    comps = _mac_compartments(d.get("compartments", "[]"))
+    if not can_read(cls, ctx) or not can_access_compartment(comps, ctx):
+        return make_response(
+            jsonify({"error": "Insufficient clearance", "code": "MAC_DENIED"}), 403
+        )
+    return None
+
+
+def _mac_deny_write(classification, compartments_raw="[]"):
+    """Return 403 JSON response if current user cannot write at this classification.
+
+    Implements no-write-down: user clearance must be >= target classification so
+    a lower-cleared user cannot create or update a higher-classified resource.
+    """
+    from tools.security.classification_enforcer import can_read, can_access_compartment
+    ctx = _mac_ctx()
+    if ctx is None:
+        return None
+    cls = (classification or "CUI").upper()
+    comps = _mac_compartments(compartments_raw)
+    if not can_read(cls, ctx) or not can_access_compartment(comps, ctx):
+        return make_response(
+            jsonify({"error": "MAC write policy denied", "code": "MAC_WRITE_DENIED"}), 403
+        )
+    return None
+
+
+def _mac_check_parent_opp(opp_id, conn):
+    """Check MAC read access on the parent opportunity. Returns 403 response or None."""
+    try:
+        row = conn.execute(
+            "SELECT classification, compartments FROM proposal_opportunities WHERE id = ?",
+            (opp_id,),
+        ).fetchone()
+        if not row:
+            return None  # Let child route return 404
+        return _mac_deny_read(row)
+    except Exception:
+        return None
+
+
 def _uuid():
     return str(uuid.uuid4())
 
@@ -42,6 +137,24 @@ def _record_status_change(conn, entity_type, entity_id, old_status, new_status, 
         "VALUES (?, ?, ?, ?, ?, ?)",
         (entity_type, entity_id, old_status, new_status, changed_by, reason),
     )
+
+
+def _section_resource_attrs(request):
+    """Build ABAC resource dict for a proposal section endpoint."""
+    sec_id = (request.view_args or {}).get("sec_id", "")
+    writer_email = ""
+    if sec_id:
+        try:
+            conn = _get_db()
+            row = conn.execute(
+                "SELECT writer_email FROM proposal_sections WHERE id = ?", (sec_id,)
+            ).fetchone()
+            conn.close()
+            if row:
+                writer_email = row["writer_email"] or ""
+        except Exception:
+            pass
+    return {"type": "proposal_section", "writer_email": writer_email}
 
 
 # Valid status transitions for sections (D-PROP-1)
@@ -104,7 +217,8 @@ def list_opportunities():
             params.append(status_filter)
         sql += " ORDER BY due_date ASC"
         rows = conn.execute(sql, params).fetchall()
-        items = [dict(r) for r in rows]
+        # Bell-LaPadula: filter to only rows the caller can read (no-read-up)
+        items = _mac_filter(rows)
         return jsonify({"opportunities": items, "total": len(items)})
     finally:
         conn.close()
@@ -118,6 +232,11 @@ def create_opportunity():
     missing = [f for f in required if not data.get(f)]
     if missing:
         return jsonify({"error": f"Missing required fields: {', '.join(missing)}"}), 400
+
+    # Bell-LaPadula: no-write-down — caller must have clearance >= target classification
+    denied = _mac_deny_write(data.get("classification", "CUI"), data.get("compartments", "[]"))
+    if denied:
+        return denied
 
     opp_id = _uuid()
     conn = _get_db()
@@ -166,6 +285,10 @@ def get_opportunity(opp_id):
         row = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
         if not row:
             return jsonify({"error": "Opportunity not found"}), 404
+        # Bell-LaPadula: no-read-up check before serving data
+        denied = _mac_deny_read(row)
+        if denied:
+            return denied
         opp = dict(row)
 
         # Aggregate stats
@@ -233,6 +356,21 @@ def update_opportunity(opp_id):
     data = request.get_json(force=True, silent=True) or {}
     conn = _get_db()
     try:
+        # Bell-LaPadula: check read + write access on existing record before updating
+        existing = conn.execute(
+            "SELECT classification, compartments FROM proposal_opportunities WHERE id = ?", (opp_id,)
+        ).fetchone()
+        if not existing:
+            return jsonify({"error": "Opportunity not found"}), 404
+        denied = _mac_deny_read(existing)
+        if denied:
+            return denied
+        # If caller is upgrading classification, they must also hold that level
+        new_cls = data.get("classification", existing["classification"] or "CUI")
+        denied = _mac_deny_write(new_cls, data.get("compartments", existing.get("compartments", "[]")))
+        if denied:
+            return denied
+
         allowed = [
             "title",
             "agency",
@@ -267,6 +405,46 @@ def update_opportunity(opp_id):
         conn.execute(f"UPDATE proposal_opportunities SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         return jsonify({"id": opp_id, "updated": True})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/opportunities/<opp_id>/language-config", methods=["GET"])
+def get_language_config(opp_id):
+    """GET /api/proposals/opportunities/<id>/language-config — Aggregated language settings.
+
+    Returns the opportunity's glossary, wall-of-truth, taxonomy, and active style templates.
+    """
+    conn = _get_db()
+    try:
+        existing = conn.execute(
+            "SELECT classification, compartments FROM proposal_opportunities WHERE id = ?", (opp_id,)
+        ).fetchone()
+        if not existing:
+            return jsonify({"error": "Opportunity not found"}), 404
+        denied = _mac_deny_read(existing)
+        if denied:
+            return denied
+
+        glossary = conn.execute(
+            "SELECT * FROM wg_glossary WHERE scope = 'project' AND scope_id = ? AND is_active = 1 ORDER BY term_type, term",
+            (opp_id,),
+        ).fetchall()
+        taxonomy = conn.execute(
+            "SELECT * FROM proposal_taxonomy WHERE opportunity_id = ? AND is_active = 1 ORDER BY label",
+            (opp_id,),
+        ).fetchall()
+        style_guides = conn.execute(
+            "SELECT id, guide_name, version, created_at FROM wg_style_guides WHERE scope = 'project' AND scope_id = ? AND is_active = 1 ORDER BY guide_name",
+            (opp_id,),
+        ).fetchall()
+        return jsonify({
+            "opportunity_id": opp_id,
+            "glossary": [dict(r) for r in glossary],
+            "wall_of_truth": [dict(r) for r in glossary if r["term_type"] in ("banned", "deprecated")],
+            "taxonomy": [dict(r) for r in taxonomy],
+            "style_guides": [dict(r) for r in style_guides],
+        })
     finally:
         conn.close()
 
@@ -333,6 +511,10 @@ def list_volumes(opp_id):
     """GET /api/proposals/<opp_id>/volumes — List volumes for opportunity."""
     conn = _get_db()
     try:
+        # Bell-LaPadula: inherit parent opportunity classification
+        denied = _mac_check_parent_opp(opp_id, conn)
+        if denied:
+            return denied
         rows = conn.execute(
             "SELECT * FROM proposal_volumes WHERE opportunity_id = ? ORDER BY sort_order, volume_number",
             (opp_id,),
@@ -407,6 +589,10 @@ def list_sections(opp_id):
     """GET /api/proposals/<opp_id>/sections — List all sections for opportunity."""
     conn = _get_db()
     try:
+        # Bell-LaPadula: inherit parent opportunity classification
+        denied = _mac_check_parent_opp(opp_id, conn)
+        if denied:
+            return denied
         sql = """SELECT s.*, v.title as volume_title, v.volume_number
                  FROM proposal_sections s
                  LEFT JOIN proposal_volumes v ON s.volume_id = v.id
@@ -529,6 +715,7 @@ def get_section(sec_id):
 
 
 @proposals_api.route("/sections/<sec_id>", methods=["PUT"])
+@abac_protect(_section_resource_attrs, "PUT")
 def update_section(sec_id):
     """PUT /api/proposals/sections/<id> — Update section fields (not status)."""
     data = request.get_json(force=True, silent=True) or {}
@@ -571,6 +758,7 @@ def update_section(sec_id):
 
 
 @proposals_api.route("/sections/<sec_id>/status", methods=["PUT"])
+@abac_protect(_section_resource_attrs, "PUT")
 def advance_section_status(sec_id):
     """PUT /api/proposals/sections/<id>/status — Advance section status (enforces transitions)."""
     data = request.get_json(force=True, silent=True) or {}
@@ -1035,6 +1223,165 @@ def update_finding(find_id):
 
         conn.commit()
         return jsonify({"id": find_id, "updated": True})
+    finally:
+        conn.close()
+
+
+# =====================================================================
+# HITL Reviewer Assignment + Hand-off (prop-rev-09)
+# =====================================================================
+
+
+@proposals_api.route("/reviews/<rev_id>/assignments", methods=["GET"])
+def list_assignments(rev_id):
+    """GET /api/proposals/reviews/<rev_id>/assignments — List all reviewer assignments."""
+    conn = _get_db()
+    try:
+        rev = conn.execute("SELECT id FROM proposal_reviews WHERE id = ?", (rev_id,)).fetchone()
+        if not rev:
+            return jsonify({"error": "Review not found"}), 404
+        rows = conn.execute(
+            "SELECT * FROM proposal_reviewer_assignments WHERE review_id = ? ORDER BY created_at DESC",
+            (rev_id,),
+        ).fetchall()
+        return jsonify({"assignments": [dict(r) for r in rows]})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/reviews/<rev_id>/assign", methods=["POST"])
+@require_role("reviewer", "admin")
+def assign_reviewer(rev_id):
+    """POST /api/proposals/reviews/<rev_id>/assign — Assign a HITL reviewer."""
+    data = request.get_json(force=True, silent=True) or {}
+    reviewer = data.get("reviewer", "").strip()
+    assigned_by = data.get("assigned_by", "").strip()
+    if not reviewer:
+        return jsonify({"error": "reviewer is required"}), 400
+    if not assigned_by:
+        return jsonify({"error": "assigned_by is required"}), 400
+
+    conn = _get_db()
+    try:
+        rev = conn.execute("SELECT id, status FROM proposal_reviews WHERE id = ?", (rev_id,)).fetchone()
+        if not rev:
+            return jsonify({"error": "Review not found"}), 404
+
+        asgn_id = _uuid()
+        conn.execute(
+            """INSERT INTO proposal_reviewer_assignments
+               (id, review_id, reviewer, assigned_by, status, notes, classification)
+               VALUES (?, ?, ?, ?, 'pending', ?, ?)""",
+            (asgn_id, rev_id, reviewer, assigned_by, data.get("notes"), data.get("classification", "CUI")),
+        )
+        _record_status_change(conn, "review", rev_id, rev["status"], rev["status"], assigned_by,
+                              reason=f"assignment:assigned:{reviewer}")
+        conn.commit()
+        return jsonify({"id": asgn_id, "reviewer": reviewer, "status": "pending"}), 201
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/assignments/<asgn_id>/accept", methods=["POST"])
+@require_role("reviewer", "admin")
+def accept_assignment(asgn_id):
+    """POST /api/proposals/assignments/<asgn_id>/accept — Reviewer accepts the assignment."""
+    data = request.get_json(force=True, silent=True) or {}
+    conn = _get_db()
+    try:
+        asgn = conn.execute(
+            "SELECT * FROM proposal_reviewer_assignments WHERE id = ?", (asgn_id,)
+        ).fetchone()
+        if not asgn:
+            return jsonify({"error": "Assignment not found"}), 404
+        if asgn["status"] != "pending":
+            return jsonify({"error": f"Cannot accept assignment in status '{asgn['status']}'"}), 409
+
+        conn.execute(
+            "UPDATE proposal_reviewer_assignments SET status='accepted', accepted_at=datetime('now'), notes=? WHERE id=?",
+            (data.get("notes", asgn["notes"]), asgn_id),
+        )
+        _record_status_change(conn, "review", asgn["review_id"], "scheduled", "in_progress",
+                              asgn["reviewer"], reason=f"assignment:accepted:{asgn['reviewer']}")
+        conn.execute(
+            "UPDATE proposal_reviews SET status='in_progress', started_at=datetime('now') WHERE id=? AND status='scheduled'",
+            (asgn["review_id"],),
+        )
+        conn.commit()
+        return jsonify({"id": asgn_id, "status": "accepted"})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/assignments/<asgn_id>/reject", methods=["POST"])
+@require_role("reviewer", "admin")
+def reject_assignment(asgn_id):
+    """POST /api/proposals/assignments/<asgn_id>/reject — Reviewer rejects the assignment."""
+    data = request.get_json(force=True, silent=True) or {}
+    conn = _get_db()
+    try:
+        asgn = conn.execute(
+            "SELECT * FROM proposal_reviewer_assignments WHERE id = ?", (asgn_id,)
+        ).fetchone()
+        if not asgn:
+            return jsonify({"error": "Assignment not found"}), 404
+        if asgn["status"] not in ("pending", "accepted"):
+            return jsonify({"error": f"Cannot reject assignment in status '{asgn['status']}'"}), 409
+
+        reason = data.get("rejection_reason", "").strip()
+        conn.execute(
+            """UPDATE proposal_reviewer_assignments
+               SET status='rejected', rejected_at=datetime('now'), rejection_reason=?
+               WHERE id=?""",
+            (reason, asgn_id),
+        )
+        _record_status_change(conn, "review", asgn["review_id"], asgn["status"], "scheduled",
+                              asgn["reviewer"], reason=f"assignment:rejected:{asgn['reviewer']}")
+        conn.commit()
+        return jsonify({"id": asgn_id, "status": "rejected"})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/assignments/<asgn_id>/reassign", methods=["POST"])
+@require_role("admin")
+def reassign_reviewer(asgn_id):
+    """POST /api/proposals/assignments/<asgn_id>/reassign — Admin reassigns to a new reviewer."""
+    data = request.get_json(force=True, silent=True) or {}
+    new_reviewer = data.get("reviewer", "").strip()
+    assigned_by = data.get("assigned_by", "").strip()
+    if not new_reviewer:
+        return jsonify({"error": "reviewer is required"}), 400
+    if not assigned_by:
+        return jsonify({"error": "assigned_by is required"}), 400
+
+    conn = _get_db()
+    try:
+        asgn = conn.execute(
+            "SELECT * FROM proposal_reviewer_assignments WHERE id = ?", (asgn_id,)
+        ).fetchone()
+        if not asgn:
+            return jsonify({"error": "Assignment not found"}), 404
+
+        # Mark old assignment as reassigned
+        conn.execute(
+            "UPDATE proposal_reviewer_assignments SET status='reassigned' WHERE id=?", (asgn_id,)
+        )
+        # Create new assignment
+        new_id = _uuid()
+        conn.execute(
+            """INSERT INTO proposal_reviewer_assignments
+               (id, review_id, reviewer, assigned_by, status, notes, classification)
+               VALUES (?, ?, ?, ?, 'pending', ?, ?)""",
+            (new_id, asgn["review_id"], new_reviewer, assigned_by,
+             data.get("notes"), asgn["classification"]),
+        )
+        _record_status_change(conn, "review", asgn["review_id"], asgn["status"], "scheduled",
+                              assigned_by,
+                              reason=f"assignment:reassigned:{asgn['reviewer']}→{new_reviewer}")
+        conn.commit()
+        return jsonify({"id": new_id, "reviewer": new_reviewer, "status": "pending",
+                        "supersedes": asgn_id})
     finally:
         conn.close()
 
@@ -1945,6 +2292,435 @@ def get_orphaned_requirements(opp_id):
             (opp_id,),
         ).fetchall()
         return jsonify({"orphaned": [dict(r) for r in rows], "count": len(rows)})
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Black-hat / PTW Workspace (prop-cap-13)
+# ---------------------------------------------------------------------------
+
+_SCG_AGG_THRESHOLD = 3  # prop-sec-03: warn when aggregating ≥N competitors
+
+
+def _ensure_blackhat_table(conn):
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS proposal_blackhat_assessments (
+            id TEXT PRIMARY KEY,
+            opportunity_id TEXT NOT NULL,
+            competitor_name TEXT NOT NULL,
+            approach_hypothesis TEXT,
+            price_estimate_low REAL,
+            price_estimate_high REAL,
+            strengths TEXT,
+            weaknesses TEXT,
+            win_strategy TEXT,
+            differentiators TEXT,
+            risk_factors TEXT,
+            ptw_posture TEXT DEFAULT 'competitive',
+            leaderboard_rank INTEGER,
+            award_count INTEGER,
+            total_award_value REAL,
+            naics_diversity INTEGER,
+            agency_diversity INTEGER,
+            classification TEXT DEFAULT 'CUI',
+            created_at TEXT NOT NULL,
+            updated_at TEXT,
+            created_by TEXT
+        )
+    """)
+    conn.commit()
+
+
+def _mask_ptw_sensitive(row):
+    """Mask price fields per prop-sec-01 if MAC clearance insufficient."""
+    ctx = _mac_ctx()
+    if ctx is None:
+        return row
+    from tools.security.classification_enforcer import can_read
+    if not can_read("SECRET", ctx):
+        row = dict(row)
+        for field in ("price_estimate_low", "price_estimate_high"):
+            if field in row and row[field] is not None:
+                row[field] = None
+                row[f"{field}_masked"] = True
+    return row
+
+
+@proposals_api.route("/opportunities/<opp_id>/ptw/analysis", methods=["GET"])
+def ptw_analysis_endpoint(opp_id):
+    """GET /api/proposals/opportunities/<opp_id>/ptw/analysis — rate_benchmarker PTW + SCG gate."""
+    conn = _get_db()
+    try:
+        mac_err = _mac_check_parent_opp(opp_id, conn)
+        if mac_err:
+            return mac_err
+    finally:
+        conn.close()
+    try:
+        from tools.govcon.rate_benchmarker import ptw_analysis
+        result = ptw_analysis(opp_id)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    # prop-sec-03 SCG aggregation warning
+    n_competitors = result.get("competitor_count", 0)
+    if n_competitors >= _SCG_AGG_THRESHOLD:
+        result["scg_warning"] = (
+            f"Aggregating pricing across {n_competitors} competitors may trigger SCG rule "
+            "SCG-AGG-003 (pattern-of-life disclosure). Review disclosure permissions before sharing."
+        )
+    return jsonify(result)
+
+
+@proposals_api.route("/opportunities/<opp_id>/ptw/leaderboard", methods=["GET"])
+def ptw_leaderboard(opp_id):
+    """GET /api/proposals/opportunities/<opp_id>/ptw/leaderboard — competitor_profiler leaderboard."""
+    conn = _get_db()
+    try:
+        mac_err = _mac_check_parent_opp(opp_id, conn)
+        if mac_err:
+            return mac_err
+        # Pull opportunity NAICS for default leaderboard filter
+        opp_row = conn.execute(
+            "SELECT naics_code FROM proposal_opportunities WHERE id = ?", (opp_id,)
+        ).fetchone()
+    finally:
+        conn.close()
+    naics = request.args.get("naics") or (opp_row["naics_code"] if opp_row else None)
+    agency = request.args.get("agency")
+    limit = int(request.args.get("limit", 20))
+    try:
+        from tools.govcon.competitor_profiler import get_leaderboard
+        result = get_leaderboard(naics=naics, agency=agency, limit=limit)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    if result.get("leaderboard", []) and len(result["leaderboard"]) >= _SCG_AGG_THRESHOLD:
+        result["scg_warning"] = (
+            "Leaderboard aggregates award patterns across multiple vendors. "
+            "Comply with SCG-AGG-003 before external disclosure."
+        )
+    return jsonify(result)
+
+
+@proposals_api.route("/opportunities/<opp_id>/ptw/vendor-profile", methods=["POST"])
+def ptw_vendor_profile(opp_id):
+    """POST /api/proposals/opportunities/<opp_id>/ptw/vendor-profile — profile a competitor."""
+    conn = _get_db()
+    try:
+        mac_err = _mac_check_parent_opp(opp_id, conn)
+        if mac_err:
+            return mac_err
+    finally:
+        conn.close()
+    data = request.get_json(force=True, silent=True) or {}
+    vendor = data.get("vendor_name", "").strip()
+    if not vendor:
+        return jsonify({"error": "vendor_name is required"}), 400
+    try:
+        from tools.govcon.competitor_profiler import profile_vendor
+        result = profile_vendor(vendor)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify(result)
+
+
+@proposals_api.route("/opportunities/<opp_id>/ptw/bid-score", methods=["POST"])
+def ptw_bid_score(opp_id):
+    """POST /api/proposals/opportunities/<opp_id>/ptw/bid-score — Bayesian bid scorer."""
+    conn = _get_db()
+    try:
+        mac_err = _mac_check_parent_opp(opp_id, conn)
+        if mac_err:
+            return mac_err
+    finally:
+        conn.close()
+    data = request.get_json(force=True, silent=True) or {}
+    dimensions = data.get("dimensions", {})
+    try:
+        from tools.govcon.bayesian_bid_scorer import score_opportunity, optimal_assessment_order
+        score_result = score_opportunity(opp_id, dimensions)
+        order_result = optimal_assessment_order(opp_id)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"score": score_result, "optimal_order": order_result})
+
+
+@proposals_api.route("/opportunities/<opp_id>/ptw/blackhat", methods=["GET"])
+def list_blackhat_assessments(opp_id):
+    """GET /api/proposals/opportunities/<opp_id>/ptw/blackhat — list black-hat competitor models."""
+    conn = _get_db()
+    try:
+        mac_err = _mac_check_parent_opp(opp_id, conn)
+        if mac_err:
+            return mac_err
+        _ensure_blackhat_table(conn)
+        rows = conn.execute(
+            "SELECT * FROM proposal_blackhat_assessments WHERE opportunity_id = ? ORDER BY created_at DESC",
+            (opp_id,),
+        ).fetchall()
+        assessments = [_mask_ptw_sensitive(dict(r)) for r in rows]
+        assessments = _mac_filter(assessments)
+        return jsonify({"assessments": assessments, "count": len(assessments)})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/opportunities/<opp_id>/ptw/blackhat", methods=["POST"])
+def create_blackhat_assessment(opp_id):
+    """POST /api/proposals/opportunities/<opp_id>/ptw/blackhat — create competitor black-hat model."""
+    conn = _get_db()
+    try:
+        mac_err = _mac_check_parent_opp(opp_id, conn)
+        if mac_err:
+            return mac_err
+        data = request.get_json(force=True, silent=True) or {}
+        if not data.get("competitor_name"):
+            return jsonify({"error": "competitor_name is required"}), 400
+        classification = data.get("classification", "CUI")
+        deny = _mac_deny_write(classification)
+        if deny:
+            return deny
+        _ensure_blackhat_table(conn)
+        bh_id = _uuid()
+        ptw_posture = data.get("ptw_posture", "competitive")
+        if ptw_posture not in ("lpta", "aggressive", "competitive", "premium", "unknown"):
+            ptw_posture = "competitive"
+        conn.execute(
+            """INSERT INTO proposal_blackhat_assessments
+               (id, opportunity_id, competitor_name, approach_hypothesis,
+                price_estimate_low, price_estimate_high, strengths, weaknesses,
+                win_strategy, differentiators, risk_factors, ptw_posture,
+                leaderboard_rank, award_count, total_award_value,
+                naics_diversity, agency_diversity, classification, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                bh_id, opp_id, data["competitor_name"],
+                data.get("approach_hypothesis"),
+                data.get("price_estimate_low"), data.get("price_estimate_high"),
+                data.get("strengths"), data.get("weaknesses"),
+                data.get("win_strategy"), data.get("differentiators"),
+                data.get("risk_factors"), ptw_posture,
+                data.get("leaderboard_rank"), data.get("award_count"),
+                data.get("total_award_value"),
+                data.get("naics_diversity"), data.get("agency_diversity"),
+                classification, now_iso(),
+            ),
+        )
+        conn.commit()
+        return jsonify({"id": bh_id}), 201
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/blackhat/<bh_id>", methods=["PUT"])
+def update_blackhat_assessment(bh_id):
+    """PUT /api/proposals/blackhat/<bh_id> — update a black-hat competitor model."""
+    data = request.get_json(force=True, silent=True) or {}
+    allowed = {
+        "approach_hypothesis", "price_estimate_low", "price_estimate_high",
+        "strengths", "weaknesses", "win_strategy", "differentiators",
+        "risk_factors", "ptw_posture",
+    }
+    updates = {k: v for k, v in data.items() if k in allowed}
+    if "ptw_posture" in updates and updates["ptw_posture"] not in (
+        "lpta", "aggressive", "competitive", "premium", "unknown"
+    ):
+        updates["ptw_posture"] = "competitive"
+    if not updates:
+        return jsonify({"error": "No updatable fields provided"}), 400
+    updates["updated_at"] = now_iso()
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    conn = _get_db()
+    try:
+        _ensure_blackhat_table(conn)
+        conn.execute(
+            f"UPDATE proposal_blackhat_assessments SET {set_clause} WHERE id = ?",
+            list(updates.values()) + [bh_id],
+        )
+        conn.commit()
+        return jsonify({"id": bh_id})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/blackhat/<bh_id>", methods=["DELETE"])
+def delete_blackhat_assessment(bh_id):
+    """DELETE /api/proposals/blackhat/<bh_id> — remove a black-hat competitor model."""
+    conn = _get_db()
+    try:
+        _ensure_blackhat_table(conn)
+        conn.execute("DELETE FROM proposal_blackhat_assessments WHERE id = ?", (bh_id,))
+        conn.commit()
+        return jsonify({"deleted": bh_id})
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Inline Annotations
+# ---------------------------------------------------------------------------
+
+_ANNOTATION_CATEGORIES = {
+    "question", "improvement", "compliance",
+    "strength", "weakness", "risk", "editorial",
+}
+
+
+def _ensure_annotations_table(conn):
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS proposal_section_annotations (
+            id TEXT PRIMARY KEY,
+            section_id TEXT NOT NULL,
+            draft_id TEXT,
+            selected_text TEXT NOT NULL,
+            category TEXT NOT NULL CHECK(category IN (
+                'question','improvement','compliance',
+                'strength','weakness','risk','editorial'
+            )),
+            comment TEXT NOT NULL,
+            author TEXT DEFAULT 'reviewer',
+            status TEXT DEFAULT 'open' CHECK(status IN ('open','resolved')),
+            resolution_note TEXT,
+            resolved_by TEXT,
+            resolved_at TEXT,
+            classification TEXT DEFAULT 'CUI',
+            created_at TEXT NOT NULL,
+            updated_at TEXT
+        )
+    """)
+    conn.commit()
+
+
+def _annotation_row(row):
+    d = dict(row)
+    return d
+
+
+@proposals_api.route("/sections/<sec_id>/annotations", methods=["GET"])
+def list_annotations(sec_id):
+    """GET /api/proposals/sections/<sec_id>/annotations — list annotations, optional ?status=open|resolved."""
+    status_filter = request.args.get("status")
+    conn = _get_db()
+    try:
+        _ensure_annotations_table(conn)
+        if status_filter in ("open", "resolved"):
+            rows = conn.execute(
+                "SELECT * FROM proposal_section_annotations WHERE section_id = ? AND status = ? ORDER BY created_at ASC",
+                (sec_id, status_filter),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM proposal_section_annotations WHERE section_id = ? ORDER BY created_at ASC",
+                (sec_id,),
+            ).fetchall()
+        return jsonify({"annotations": [_annotation_row(r) for r in rows]})
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/sections/<sec_id>/annotations", methods=["POST"])
+def create_annotation(sec_id):
+    """POST /api/proposals/sections/<sec_id>/annotations — create an inline annotation."""
+    body = request.get_json(silent=True) or {}
+    selected_text = (body.get("selected_text") or "").strip()
+    category = (body.get("category") or "").strip().lower()
+    comment = (body.get("comment") or "").strip()
+
+    if not selected_text:
+        return jsonify({"error": "selected_text is required"}), 400
+    if category not in _ANNOTATION_CATEGORIES:
+        return jsonify({"error": f"category must be one of: {', '.join(sorted(_ANNOTATION_CATEGORIES))}"}), 400
+    if not comment:
+        return jsonify({"error": "comment is required"}), 400
+
+    ann_id = str(uuid.uuid4())
+    ts = now_iso()
+    conn = _get_db()
+    try:
+        _ensure_annotations_table(conn)
+        conn.execute(
+            """INSERT INTO proposal_section_annotations
+               (id, section_id, draft_id, selected_text, category, comment, author, status, classification, created_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (
+                ann_id,
+                sec_id,
+                body.get("draft_id"),
+                selected_text,
+                category,
+                comment,
+                body.get("author", "reviewer"),
+                "open",
+                "CUI",
+                ts,
+            ),
+        )
+        try:
+            conn.execute(
+                "INSERT INTO audit_trail (id,created_at,event_type,actor,action,details,session_id) VALUES (?,?,?,?,?,?,?)",
+                (str(uuid.uuid4()), ts, "proposals.annotation.create", body.get("author", "reviewer"),
+                 "create_annotation", f"section={sec_id} category={category}", "proposals"),
+            )
+        except Exception:
+            pass
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM proposal_section_annotations WHERE id = ?", (ann_id,)
+        ).fetchone()
+        return jsonify(_annotation_row(row)), 201
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/annotations/<ann_id>", methods=["PUT"])
+def update_annotation(ann_id):
+    """PUT /api/proposals/annotations/<ann_id> — update comment, category, status, or resolution_note."""
+    body = request.get_json(silent=True) or {}
+    allowed = {"comment", "category", "status", "resolution_note", "author"}
+    updates = {k: v for k, v in body.items() if k in allowed and v is not None}
+
+    if "category" in updates and updates["category"] not in _ANNOTATION_CATEGORIES:
+        return jsonify({"error": f"category must be one of: {', '.join(sorted(_ANNOTATION_CATEGORIES))}"}), 400
+    if "status" in updates and updates["status"] not in ("open", "resolved"):
+        return jsonify({"error": "status must be open or resolved"}), 400
+
+    if not updates:
+        return jsonify({"error": "No updatable fields provided"}), 400
+
+    updates["updated_at"] = now_iso()
+    ts = now_iso()
+    updates["updated_at"] = ts
+    if updates.get("status") == "resolved":
+        updates["resolved_by"] = body.get("resolved_by") or body.get("author", "reviewer")
+        updates["resolved_at"] = ts
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
+    conn = _get_db()
+    try:
+        _ensure_annotations_table(conn)
+        conn.execute(
+            f"UPDATE proposal_section_annotations SET {set_clause} WHERE id = ?",  # noqa: S608
+            list(updates.values()) + [ann_id],
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM proposal_section_annotations WHERE id = ?", (ann_id,)
+        ).fetchone()
+        if not row:
+            return jsonify({"error": "Annotation not found"}), 404
+        return jsonify(_annotation_row(row))
+    finally:
+        conn.close()
+
+
+@proposals_api.route("/annotations/<ann_id>", methods=["DELETE"])
+def delete_annotation(ann_id):
+    """DELETE /api/proposals/annotations/<ann_id> — remove an annotation."""
+    conn = _get_db()
+    try:
+        _ensure_annotations_table(conn)
+        conn.execute("DELETE FROM proposal_section_annotations WHERE id = ?", (ann_id,))
+        conn.commit()
+        return jsonify({"deleted": ann_id})
     finally:
         conn.close()
 

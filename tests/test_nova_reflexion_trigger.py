@@ -23,7 +23,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 # Disable co-learning so reflexion_loop.run() is a fast no-op
 os.environ.setdefault("ICDEV_HARNESS_COLEARN", "false")
 
-import pytest
 
 
 # ---------------------------------------------------------------------------

@@ -1,0 +1,92 @@
+# CUI // SP-CTI
+# ICDEV™ Slide Deck Generator Configuration
+# Controls deck generation pipeline, graphics, themes, and source connectors.
+# Enable with: ICDEV_SLIDES_ENABLED=true in .env
+
+classification: "CUI // SP-CTI"
+
+enabled: ${ICDEV_SLIDES_ENABLED:-true}
+
+# ── Generation Pipeline ─────────────────────────────────────────────────────
+pipeline:
+  max_slides: 12
+  min_slides: 5
+  # Slide outline planning temperature (lower = more structured)
+  outline_temperature: 0.2
+  # Content generation temperature (slightly higher for variety)
+  content_temperature: 0.35
+  # Max parallel content agent threads
+  max_parallel_agents: 4
+  # Timeout per LLM call (seconds)
+  llm_timeout_seconds: 60
+  # Output directory (relative to ICDEV root)
+  output_dir: "tools/presentations/slides"
+
+# ── Graphics ────────────────────────────────────────────────────────────────
+graphics:
+  enabled: ${SLIDES_IMAGE_ENABLED:-true}
+  # Provider: ollama_cloud | dalle | gemini | matplotlib (safe default)
+  provider: ${SLIDES_IMAGE_PROVIDER:-matplotlib}
+  # Image generation model (only used by ollama_cloud backend)
+  model: ${SLIDES_IMAGE_MODEL:-sdxl:latest}
+  # 16:9 widescreen for slides
+  size: "1024x576"
+  quality: standard
+  # Style hint injected into visual prompt
+  style: "professional corporate, dark navy and gold color palette, minimalist, no text, high quality"
+  per_slide: true
+  # Skip image and use placeholder on timeout
+  timeout_seconds: 30
+  # Images go into output_dir/images/
+  images_subdir: "images"
+
+# ── Themes ──────────────────────────────────────────────────────────────────
+themes:
+  default: midnight_executive
+  available:
+    - midnight_executive
+    - govcon_proposal
+    - compliance_briefing
+
+# ── Source Connectors ───────────────────────────────────────────────────────
+sources:
+  # ICDEV feature catalog from KG + manifest shards
+  icdev_capabilities:
+    enabled: true
+    max_capabilities: 30
+  # Active canvases from feature flags
+  canvases:
+    enabled: true
+  # Showcase / child apps
+  child_apps:
+    enabled: true
+    max_apps: 10
+  # Kanban epics + task burndown
+  kanban:
+    enabled: true
+    max_epics: 8
+    include_blockers: true
+  # Genesis reflex run summaries
+  genesis:
+    enabled: true
+    max_reflexes: 15
+    include_last_run: true
+
+# ── Genesis Reflex (auto weekly deck) ───────────────────────────────────────
+genesis_reflex:
+  schedule: "0 17 * * 5"     # Friday 17:00
+  deck_title_template: "ICDEV™ Weekly Status — {date}"
+  default_sources:
+    - icdev_capabilities
+    - canvases
+    - kanban
+    - genesis
+  default_theme: midnight_executive
+  max_slides: 10
+
+# ── LLM Routing Functions ────────────────────────────────────────────────────
+llm:
+  outline_function: slides_outline_planning
+  content_function: slides_content_generation
+  revision_function: slides_content_revision
+  viz_prompt_function: slides_visual_prompt

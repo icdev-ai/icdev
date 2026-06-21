@@ -1,0 +1,33 @@
+# CUI // SP-CTI
+# ACE Co-Worker Role: Reflexion Loop
+# Fires the NOVA ECHO batch reflexion reflex each time an ACE instance completes.
+# Routes task.completed events → genesis reflexion_loop reflex.
+role_id: reflexion_loop
+display_name: Reflexion Loop
+description: >
+  NOVA ECHO sentinel role. Listens for ACE instance completion events and
+  triggers the reflexion_loop genesis reflex to generate improvement artifacts
+  from the just-completed session. Each firing creates an agent_execution_trace
+  row so the batch reflexion agent can evaluate the completed work.
+version: '1.0'
+trust_tier: green
+default_count: 1
+max_instances: 1
+
+steps:
+  - record_execution_trace
+  - trigger_reflexion_reflex
+
+communication:
+  protocol: a2a
+  listen_topics:
+    - task.completed
+  emit_topics:
+    - reflexion.artifact.created
+
+# Triggers tools/genesis/reflexes/reflexion_loop.py via ACEEventDispatcher
+genesis_reflex: reflexion_loop
+llm_function: ''
+
+tool_permissions:
+  - Read

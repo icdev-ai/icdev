@@ -112,7 +112,7 @@ def _get_or_create_session(context_id: str) -> str:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT session_id FROM chat_intake_sessions WHERE context_id = %s",
+            "SELECT session_id FROM chat_intake_sessions WHERE context_id = ?",
             (context_id,),
         ).fetchone()
         if row:
@@ -138,7 +138,7 @@ def _get_or_create_session(context_id: str) -> str:
     conn = get_connection()
     try:
         conn.execute(
-            "INSERT INTO chat_intake_sessions (context_id, session_id, created_at) VALUES (%s, %s, %s)",
+            "INSERT INTO chat_intake_sessions (context_id, session_id, created_at) VALUES (?, ?, ?)",
             (context_id, session_id, _now()),
         )
         try:
@@ -156,7 +156,7 @@ def _req_count(session_id: str) -> int:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT COUNT(*) FROM intake_requirements WHERE session_id = %s",
+            "SELECT COUNT(*) FROM intake_requirements WHERE session_id = ?",
             (session_id,),
         ).fetchone()
         return row[0] if row else 0
@@ -183,7 +183,7 @@ def _create_hitl_review(session_id: str, context_id: str, req_count: int) -> str
             """INSERT INTO kanban_tasks
                (id, title, description, task_type, priority, status,
                 dispatch_source, scheduled_at, created_at, updated_at, hitl_stage)
-               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 task_id,
                 f"[HITL REVIEW] {req_count} requirement(s) from chat session",
@@ -224,7 +224,7 @@ def _create_hitl_review(session_id: str, context_id: str, req_count: int) -> str
         conn.execute(
             """INSERT INTO hitl_intake_pending
                (instance_id, session_id, context_id, created_at)
-               VALUES (%s, %s, %s, %s)
+               VALUES (?, ?, ?, ?)
                ON CONFLICT (instance_id) DO NOTHING""",
             (instance_id, session_id, context_id, now),
         )

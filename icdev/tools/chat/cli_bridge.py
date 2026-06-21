@@ -27,6 +27,7 @@ Programmatic API (import):
         create_context, send_message, get_messages,
         poll_until_response, close_context,
         get_or_create_context, link_intake_session, dashboard_url,
+        get_coworker_instances, dashboard_url_coworker,
     )
 """
 from __future__ import annotations
@@ -221,6 +222,66 @@ def get_or_create_context(
 def dashboard_url(context_id: str) -> str:
     """Return the browser URL for a chat context."""
     return f"{BASE_URL}/chat/{context_id}"
+
+
+def get_coworker_instances(context_id: str) -> list[dict]:
+    """Return ACE coworker instances triggered by a chat context.
+
+    ACE persists ``trigger_ref`` inside ``ace_instances.config_json`` (not a
+    top-level column), keys the instance by ``id``, and stores the assembled
+    team in ``ace_coworkers``.  This matches a context to its instances by
+    decoding each row's config_json and comparing ``trigger_ref``.
+
+    Returns a list of ``{instance_id, state, created_at, team_manifest}`` where
+    ``team_manifest`` is the list of ``{role_id, display_name}`` coworkers
+    assembled for that instance.  ``ace_*`` are canvas tables (no
+    classification/tenant_id columns) so the RLS-free canvas connection is used.
+
+    Returns an empty list if the table does not exist yet or on any DB error.
+    """
+    try:
+        from tools.db.storage import get_canvas_connection  # noqa: PLC0415
+        from tools.db.storage import sql_placeholder  # noqa: PLC0415
+
+        conn = get_canvas_connection("ICDEV_ACE_DB_URL")
+        try:
+            ph = sql_placeholder(conn)
+            inst_rows = conn.execute(
+                "SELECT id, state, created_at, config_json FROM ace_instances"
+            ).fetchall()
+
+            instances: list[dict] = []
+            for row in inst_rows:
+                try:
+                    ctx = json.loads(row[3]) if row[3] else {}
+                except (TypeError, ValueError):
+                    ctx = {}
+                if ctx.get("trigger_ref") != context_id:
+                    continue
+                instance_id = row[0]
+                cw_rows = conn.execute(
+                    f"SELECT role_id, display_name FROM ace_coworkers "
+                    f"WHERE instance_id = {ph} ORDER BY created_at ASC",
+                    (instance_id,),
+                ).fetchall()
+                instances.append({
+                    "instance_id": instance_id,
+                    "state": row[1],
+                    "created_at": row[2],
+                    "team_manifest": [
+                        {"role_id": cw[0], "display_name": cw[1]} for cw in cw_rows
+                    ],
+                })
+            return instances
+        finally:
+            conn.close()
+    except Exception:
+        return []
+
+
+def dashboard_url_coworker(instance_id: str) -> str:
+    """Return the browser URL for an ACE coworker instance."""
+    return f"{BASE_URL}/coworker/{instance_id}"
 
 
 # ---------------------------------------------------------------------------

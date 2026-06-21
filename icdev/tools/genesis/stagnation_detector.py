@@ -14,6 +14,7 @@
 ADRs: D-GEN-2 (scanner-tier only), D21 (deterministic detection), D6 (append-only)
 """
 
+import hashlib
 import json
 import re
 import sys
@@ -72,6 +73,19 @@ _STOPWORDS = frozenset(
     ]
 )
 
+# ---------------------------------------------------------------------------
+# Module-level fallback constants — overridable from genesis_config.yaml
+# under stagnation_detector.  Change config, not code.
+# ---------------------------------------------------------------------------
+_OSCILLATION_TOLERANCE       = 0.01    # period-2 cycle match tolerance
+_LLM_KEYWORD_CONTEXT_CHARS   = 2000    # max chars sent for keyword extraction
+_LLM_ALT_CONTEXT_CHARS       = 4000    # max chars sent for alternative generation
+_LLM_ALT_MAX_TOKENS          = 2048    # max tokens for alternative generation
+_LLM_ALT_TEMPERATURE         = 0.7    # LLM temperature for lateral thinking
+_SCORE_DENOMINATOR           = 3       # denominator for feasibility/novelty score (min 3 hits = 1.0)
+_RECENT_METRICS_LIMIT        = 10      # default max metric history rows to fetch
+
+
 _FEASIBILITY_KEYWORDS = frozenset(
     [
         "existing",
@@ -116,6 +130,78 @@ def _jaccard(a: set, b: set) -> float:
         return 1.0
     union = a | b
     return len(a & b) / len(union) if union else 1.0
+
+
+class _NLPExtractor:
+    """LLM-backed semantic keyword extractor with regex fallback.
+
+    Uses scanner-tier LLM (Haiku) for richer concept extraction when available;
+    silently falls back to _tokenize() in air-gap / no-LLM environments.
+    ADR D-GEN-2: scanner-tier only, zero Claude cost.
+    """
+
+    _SYSTEM = (
+        "Extract semantically meaningful keywords from the supplied text. "
+        "Return ONLY a JSON array of lowercase strings — no explanation, no markdown. "
+        "Include technical terms, domain nouns, and action verbs. "
+        "Exclude stopwords, articles, and prepositions. At most 30 keywords."
+    )
+    _FUNCTION = "stagnation_nlp_extract"
+    _cache: Dict[str, Set[str]] = {}
+
+    @classmethod
+    def extract(cls, text: str) -> Set[str]:
+        """Return keyword set. Uses LLM when available, else regex fallback."""
+        if not text:
+            return set()
+        key = hashlib.sha256(text.encode()).hexdigest()[:16]
+        if key in cls._cache:
+            return cls._cache[key]
+        result = cls._llm_extract(text) or _tokenize(text)
+        cls._cache[key] = result
+        return result
+
+    @classmethod
+    def _llm_extract(cls, text: str) -> Optional[Set[str]]:
+        """Attempt LLM extraction. Returns keyword set or None on any failure."""
+        try:
+            from icdev.tools.llm.router import LLMRequest, LLMRouter
+
+            router = LLMRouter()
+            if router.is_no_llm_mode() or not router.has_any_llm():
+                return None
+            resp = router.invoke(
+                cls._FUNCTION,
+                LLMRequest(
+                    messages=[{"role": "user", "content": text[:_LLM_KEYWORD_CONTEXT_CHARS]}],
+                    system_prompt=cls._SYSTEM,
+                ),
+            )
+            keywords = json.loads(resp.content.strip())
+            if isinstance(keywords, list):
+                return {str(k).lower() for k in keywords if k} - _STOPWORDS
+        except Exception:
+            return None
+        return None
+
+
+def _parse_json_array(text: str) -> Optional[List[Dict]]:
+    """Extract first JSON array from text using bracket counting (no regex)."""
+    start = text.find("[")
+    if start == -1:
+        return None
+    depth = 0
+    for i, ch in enumerate(text[start:], start):
+        if ch == "[":
+            depth += 1
+        elif ch == "]":
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(text[start : i + 1])
+                except json.JSONDecodeError:
+                    return None
+    return None
 
 
 class StagnationDetector:
@@ -204,7 +290,7 @@ class StagnationDetector:
         if len(metrics) < window:
             return None
         recent = metrics[-window:]
-        tol = 0.01
+        tol = _OSCILLATION_TOLERANCE
         # Check A≈C and B≈D (period-2)
         if abs(recent[0] - recent[2]) < tol and abs(recent[1] - recent[3]) < tol and abs(recent[0] - recent[1]) > tol:
             return {
@@ -283,11 +369,11 @@ class StagnationDetector:
         if len(rows) < 2:
             return None
 
-        # Tokenize each output
+        # Extract keywords from each output via NLP (regex fallback in air-gap)
         token_sets = []
         for row in rows:
             payload = row[0] if row[0] else ""
-            token_sets.append(_tokenize(payload))
+            token_sets.append(_NLPExtractor.extract(payload))
 
         # Compute pairwise Jaccard
         similarities = []
@@ -336,19 +422,15 @@ class StagnationDetector:
             request = LLMRequest(
                 messages=[
                     {"role": "system", "content": system},
-                    {"role": "user", "content": context[:4000]},
+                    {"role": "user", "content": context[:_LLM_ALT_CONTEXT_CHARS]},
                 ],
-                max_tokens=2048,
-                temperature=0.7,
+                max_tokens=_LLM_ALT_MAX_TOKENS,
+                temperature=_LLM_ALT_TEMPERATURE,
             )
             result = router.invoke("code_analysis", request)
             text = result.content if result and result.content else ""
-            # Parse JSON array from response
-            import re as _re
-
-            match = _re.search(r"\[.*\]", text, _re.DOTALL)
-            if match:
-                parsed = json.loads(match.group())
+            parsed = _parse_json_array(text)
+            if parsed is not None:
                 for item in parsed[: self.max_alts]:
                     if isinstance(item, dict) and "description" in item:
                         alternatives.append(item)
@@ -372,8 +454,8 @@ class StagnationDetector:
         f_hits = len(tokens & _FEASIBILITY_KEYWORDS)
         n_hits = len(tokens & _NOVELTY_KEYWORDS)
 
-        f_score = min(f_hits / 3, 1.0)
-        n_score = min(n_hits / 3, 1.0)
+        f_score = min(f_hits / _SCORE_DENOMINATOR, 1.0)
+        n_score = min(n_hits / _SCORE_DENOMINATOR, 1.0)
 
         w_f = self.scoring.get("feasibility_weight", 0.6)
         w_n = self.scoring.get("novelty_weight", 0.4)
@@ -382,7 +464,7 @@ class StagnationDetector:
 
     # ── Helpers ───────────────────────────────────────────────────────
 
-    def _get_recent_metrics(self, reflex_name: str, limit: int = 10) -> List[float]:
+    def _get_recent_metrics(self, reflex_name: str, limit: int = _RECENT_METRICS_LIMIT) -> List[float]:
         """Fetch last N metric_values from genesis_audit."""
         from tools.db.storage import get_connection
 

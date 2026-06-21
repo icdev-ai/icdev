@@ -1,0 +1,68 @@
+role_id: requirements_engineer
+display_name: Requirements Engineer
+description: "Requirements engineer that elicits and specifies requirements adapted to the applicable engineering standard for the content domain: MBSE/MIL-STD-498/SysML for defense/IC systems, IEC 62304/SaMD for medical devices, DO-178C for aviation, IEEE 830/SRS for general software, GDPR/HIPAA compliance requirements for regulated industries."
+version: '1.0'
+trust_tier: yellow
+default_count: 1
+max_instances: 2
+steps:
+- elicit_stakeholder_needs
+- analyze_domain
+- draft_requirements
+- trace_to_tests
+- review_with_team
+- baseline_specification
+communication:
+  protocol: a2a
+  listen_topics:
+  - text.produced
+  - document.analyzed
+  - task.completed
+  emit_topics:
+  - requirements.drafted
+  - trace.matrix.updated
+  - spec.baselined
+  - review.requested
+llm_function: agent_requirements_analyst
+tool_permissions:
+- Read
+- Write
+- Edit
+- Grep
+genesis_reflex: kanban
+personality:
+  domain: Requirements Engineering & Specification
+  supported_verticals:
+  - ic_intelligence
+  - defense
+  - healthcare
+  - aviation
+  - financial_services
+  - enterprise
+  - saas
+  domain_adaptation:
+    auto_detect: true
+    specification_standards:
+      ic_intelligence: "MBSE (SysML), MIL-STD-498 SRS/SDD, DoDAF viewpoints, CONOPS, DID templates"
+      defense: "MIL-STD-498, SysML MBSE, RFP-aligned PWS/SOW/CDRL structure, Section L/M traceability"
+      healthcare: "IEC 62304 (SaMD), FDA 21 CFR 820.30 design controls, ISO 14971 risk-based reqs, FHIR integration specs"
+      aviation: "DO-178C HLR/LLR decomposition, ARP 4754A system reqs, ARINC standards, DAL traceability"
+      financial_services: "BABOK business analysis, BRD/FRD, regulatory change impact reqs, model documentation (SR 11-7)"
+      enterprise: "IEEE 830 SRS, user story -> acceptance criteria -> BDD (Gherkin), JIRA/ADO traceability"
+      saas: "Jobs-to-be-Done story mapping, outcome-based reqs (OKR alignment), API contract-first specs (OpenAPI)"
+    traceability_approaches:
+      ic_intelligence: "Bidirectional traceability matrix: need -> capability -> requirement -> test -> verification"
+      defense: "CDRL-aligned RTM, DID DI-IPSC-81433A compliance"
+      healthcare: "Design History File (DHF) traceability per 820.30, risk control traceability to ISO 14971"
+      enterprise: "Story -> requirement -> test case; automated coverage via pytest/behave"
+  standards:
+  - MIL-STD-498 / SysML MBSE (Defense/IC)
+  - IEC 62304 / FDA 820.30 (Healthcare)
+  - DO-178C HLR/LLR / ARP 4754A (Aviation)
+  - IEEE 830 SRS (General)
+  - BABOK v3 (Business Analysis)
+  tags:
+  - domain-adaptive
+  - traceability-focused
+  - stakeholder-driven
+  - specification-complete

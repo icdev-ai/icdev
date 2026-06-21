@@ -1,0 +1,35 @@
+# CUI // SP-CTI
+# NOVA SELA (Skill Evolution via Lamarckian Acquisition) configuration
+# Controls the weekly skill mutation loop that surfaces low-performing skills
+# and generates candidate improvements via LLM.
+
+sela:
+  # Number of candidate mutations to generate per under-performing skill
+  mutation_count: 4
+
+  # Maximum number of skills to process per run
+  skill_limit: 10
+
+  # Look-back window (days) for sampling execution traces
+  trace_window_days: 7
+
+  # Skills with success_rate below this threshold are targeted for mutation
+  success_rate_threshold: 0.75
+
+  # Minimum composite score required to insert an artifact (status=pending)
+  artifact_min_score: 0.75
+
+  # Fitness function weights (must sum to 1.0)
+  fitness:
+    correctness: 0.5
+    procedure: 0.3
+    conciseness: 0.2
+
+  # When true the top mutation is auto-applied rather than held as pending
+  auto_merge: false
+
+  # LLM function key used for mutation generation
+  mutation_function: skill_mutation
+
+  # Minimum number of traces required before a skill is evaluated
+  min_trace_count: 3

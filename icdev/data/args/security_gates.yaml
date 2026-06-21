@@ -18,6 +18,7 @@ merge_gates:
     # Use ClassificationResolver.enforce_cui_marking_gate to check at runtime.
     - missing_cui_markings_if_required
     - secrets_detected
+    - incomplete_canvas_page          # new_page_completeness gate failure
   warn_on:
     - cat2_stig_finding
     - medium_vulnerability
@@ -100,6 +101,23 @@ api_contract_drift:
     phantom_in_spec: spec paths with no live url_map rule — remove or reroute them.
     Gracefully skips when Flask/dashboard deps are unavailable (air-gap environments).
 
+# New Page Completeness Gate (TCH — True Completion Hardening)
+# Blocks merges when a new dashboard page ships without all 8 required components
+# (template, icdev/ mirror, blueprint route, backing module, nav link, IQE adapter,
+# seed queries, IQE widget include). The sub-check also enforces icdev/ mirror
+# parity for every .html file in canvas template directories.
+# Run: python tools/workflow/coherence_checker.py --check new_page_completeness --json --gate
+new_page_completeness:
+  blocking:
+    - incomplete_canvas_page          # page.html exists but required component(s) missing
+    - icdev_mirror_gap                # icdev/ package mirror missing for canvas template
+  warning:
+    - template_missing_iqe_widget      # page.html lacks iqe_query_widget include
+  note: >
+    Violations are detected by tools/workflow/coherence_checker.py::check_new_page_completeness.
+    Whitelisted canvases are skipped via args/page_completeness_whitelist.yaml.
+    Canvas directories without page.html are checked by the mirror-parity sub-check.
+
 # Acceptance Criteria Validation Gate (V&V — "did we build what was asked?")
 acceptance_validation:
   blocking:
@@ -109,6 +127,21 @@ acceptance_validation:
   warning:
     - acceptance_criteria_unverified
     - page_content_empty
+
+# Aggregation Guard Gate — blocks when a result set's derived classification exceeds
+# the surface ceiling or the requesting user's clearance_level.
+# Run: python tools/security/aggregation_guard.py --gate --json
+aggregation_guard:
+  blocking:
+    - derived_classification_exceeds_surface_ceiling   # guard_result() returned action='block'
+    - derived_classification_exceeds_user_clearance    # derived > user clearance_level
+  warning:
+    - aggregation_rule_fired_warn                      # SCG rule matched; derived within ceiling
+    - user_volume_throttle_approaching                 # row×entity×time-window near limit
+  note: >
+    Detected by tools/security/aggregation_guard.py (guard_result / evaluate_rules).
+    SCG rules live in args/classification_aggregation.yaml.  Events are written to
+    the append-only aggregation_events table (NIST AU-9/AU-10); never UPDATE/DELETE.
 
 thresholds:
   sast:
@@ -174,6 +207,9 @@ thresholds:
     max_failed_criteria: 0
     max_error_pages: 0
     require_acceptance_criteria: true
+  aggregation_guard:
+    max_daily_block_events: 0       # any block event trips the gate
+    max_warn_rate_per_hour: 50      # high warn rate triggers policy review
 
 fedramp:
   blocking:
@@ -1008,6 +1044,36 @@ blueprint_integrity:
     require_digest_for_marketplace: true
     verification_max_age_days: 30
 
+# SIPA Integrity Gate (Software Integrity & Provenance Assessor)
+# Maps a SIPA assessment verdict to a CI / pre-merge exit-code policy. Wired to
+# `python -m tools.integrity.engine ... --gate`, which returns a non-zero exit
+# code (GATE_BLOCK=1) when the verdict is in `block_on` and zero (GATE_OK=0)
+# otherwise (including warn-only verdicts). The engine's own source of truth is
+# args/integrity_config.yaml -> gate.{block_on,warn_on}; this entry mirrors that
+# policy into the central gate catalog so reviewers see it alongside the other
+# merge/deploy gates. Keep the two in sync: block on QUARANTINE, warn on REVIEW.
+integrity_gate:
+  description: "SIPA software-integrity verdict gate — block on QUARANTINE, warn on REVIEW (engine --gate)"
+  blocking:
+    - integrity_verdict_quarantine          # assessment verdict == QUARANTINE (malicious / unauthorized code)
+  warning:
+    - integrity_verdict_review              # assessment verdict == REVIEW (needs HITL adjudication)
+  thresholds:
+    # Verdict-to-exit-code policy consumed by tools/integrity/engine.py --gate.
+    # Mirror of args/integrity_config.yaml -> gate; ALLOW always clears the gate.
+    block_on:
+      - QUARANTINE
+    warn_on:
+      - REVIEW
+    require_assessment_before_merge: false  # advisory until SIPA is wired into the merge pipeline
+  note: >
+    Run `python -m tools.integrity.engine --source <target> --gate` (optionally
+    `--json`) in CI to enforce this gate; exit code 1 means a QUARANTINE verdict
+    blocked the build. REVIEW is non-blocking (warn) so a human can adjudicate.
+    SIPA is static-only: it never executes the assessed target (see
+    docs/security/sandbox-coverage.md Gap 16 and the no-shell/no-exec regression
+    test tests/test_integrity_no_shell_exec.py).
+
 # Evolution Daemon Lifecycle Gates (Phase 36, D-EVO-1 through D-EVO-8)
 evolution_lifecycle:
   blocking:
@@ -1057,10 +1123,43 @@ coherence:
     - signature_call_risk
     - manifest_incomplete
     - import_unused
+    - canvas_execute_uses_question_mark_placeholder
   thresholds:
     max_schema_mismatches: 0
     max_fixture_mismatches: 0
     coherence_required: true
+
+# Canvas Connection Placeholder Style Gate (D-WF-8 sub-check)
+# Detects bare ? SQL parameter placeholders in execute() calls inside files
+# that import get_canvas_connection. psycopg2 requires %s; ? raises
+# ProgrammingError that broad except blocks may silently swallow.
+# Run: python tools/workflow/coherence_checker.py --check canvas_placeholder_style --gate
+canvas_placeholder_style:
+  description: "Detect bare ? SQL placeholders in canvas execute() calls — use %s for psycopg2"
+  blocking: []
+  warning:
+    - canvas_execute_uses_question_mark_placeholder
+  note: >
+    Violations detected by tools/workflow/coherence_checker.py::check_canvas_placeholder_style.
+    Replace ? with %s in any execute() SQL string in files importing get_canvas_connection.
+    The coherence checker returns FAIL (exits 1 with --gate) on any violation so CI blocks
+    the merge before the ProgrammingError reaches production.
+foundry_self_vet:
+  description: "ACF Autonomous Capability Foundry — self-vet gate before autonomous build (acf-engine-03)"
+  blocking:
+    - acf_emitted_task_missing_integrity_gate
+    - sipa_gate_failed_on_acf_patch
+    - security_gate_failed_on_acf_patch
+    - coherence_gate_failed_on_acf_patch
+    - circuit_breaker_open
+  warning:
+    - self_vet_score_below_threshold
+    - vv_fail_rate_elevated
+  thresholds:
+    require_integrity_gate: true
+    require_security_gate: true
+    vv_fail_rate_threshold: 0.5
+    circuit_window: 10
 
 # Engineering Review Board Gate (Phase 67, D-RB-1 through D-RB-7)
 review_board:
@@ -1436,6 +1535,15 @@ ontology:
     closure_max_age_days: 7
     require_external_mappings_current: true
 
+# Adversarial Verify Loop Gate (loop-eng — D-LOOP-1 through D-LOOP-3)
+# Governs the second-pass Claude CLI session that reviews completed kanban work.
+# fail_open: true means a timeout or unreachable reviewer does NOT block the task.
+loop_engineering:
+  adversarial_verify_timeout_seconds: 180
+  adversarial_verify_fail_open: true
+  gepa_min_composite_score: 0.60
+  gepa_min_score_delta: 0.05
+
 # Named security gate registry — structured entries consumed by mcp_scanner and gate dispatcher
 gates:
   - id: AI-TRACE-001
@@ -1550,3 +1658,15 @@ gates:
     threshold_confidence_pct: 90
     table: dsoc_threats
     nist_controls: [IR-4, SI-3, SC-5]
+
+  # ACE (Autonomous Coding Engine) HITL gates
+  - id: ACE-HITL-001
+    name: ace_stale_hitl
+    description: ACE team awaiting HITL approval for > 24h -- resolve before deploy
+    severity: WARN
+    warn_on: [ace_stale_hitl_pending]
+    action: block deploy
+    condition: "any ace_instances row with state=hitl_pending and started_at < NOW() - INTERVAL '24 hours'"
+    table: ace_instances
+    query: "SELECT COUNT(*) FROM ace_instances WHERE state='hitl_pending' AND started_at < NOW() - INTERVAL '24 hours'"
+    nist_controls: [CA-7, IR-4, SI-4]

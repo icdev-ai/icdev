@@ -363,6 +363,20 @@ reflexes:
       name: signals_detected
       threshold: 0
       operator: gte
+    anomaly_detection:
+      # Replaces the hardcoded ">= 5 postings = surge" cut-off with an adaptive
+      # upper control limit: mean + velocity_threshold_zscore*std over the
+      # competitor posting distribution in the window. See _compute_surge_threshold.
+      enabled: true
+      # Minimum distinct competitors with postings before the adaptive limit is
+      # computed. Below this, the static fallback_surge_count is used — i.e.
+      # behavior is unchanged with no/low history.
+      min_samples: 3
+      # Floor for the adaptive threshold so a flat, low-volume field never
+      # manufactures spurious surges.
+      min_absolute_surge: 5
+      # Static fallback when fewer than min_samples competitors exist.
+      fallback_surge_count: 5
 
   # R21: Lightweight Shipley Process Adaptation (§3.20)
   adapt:

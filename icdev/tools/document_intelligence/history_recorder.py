@@ -134,7 +134,8 @@ def _propagate_consistency_flags(
     if abs(char_delta) <= 50:
         return
     try:
-        import json as _json, uuid as _uuid
+        import json as _json
+        import uuid as _uuid
         from tools.document_intelligence.consistency_checker import (
             extract_changed_concepts, find_related_docs,
         )

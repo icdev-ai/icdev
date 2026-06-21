@@ -1,0 +1,8 @@
+# IQE-EXT-006: Tenable critical vulnerabilities
+# Returns vulnerability records with critical severity from the Tenable workbench.
+# Use: STIG gap identification, POA&M input, risk prioritization.
+# Requires: tenable connector configured with access_key + secret_key.
+
+foreach v in ext.tenable.vulnerabilities
+  where v.severity == "critical"
+  select v.plugin_name, v.asset_id, v.severity, v.state, v.first_found

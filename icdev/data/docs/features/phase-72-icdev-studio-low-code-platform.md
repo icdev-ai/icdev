@@ -1,4 +1,4 @@
-﻿# Phase 72: ICDEV™ Studio — Low-Code/No-Code Platform
+# Phase 72: ICDEV™ Studio — Low-Code/No-Code Platform
 
 **CUI // SP-CTI**
 
@@ -152,7 +152,7 @@ Visual marketplace UI replacing CLI-only `tools/marketplace/install_manager.py`.
 - **Rating & reviews** — Community feedback, usage stats, quality scores
 - **Publisher dashboard** — For asset creators: publish, version, analytics
 - **Federation** — Cross-org marketplace sync (existing `tools/marketplace/federation_sync.py`)
-- **OpenClaw bridge** — Import from SkillHub with 10-gate security scan (existing `tools/marketplace/openclaw_bridge.py`)
+- **OpenClaw bridge** — Import from ClawHub with 10-gate security scan (existing `tools/marketplace/openclaw_bridge.py`)
 
 **New Components:**
 - `tools/dashboard/templates/studio/marketplace.html` — Visual storefront
@@ -249,7 +249,7 @@ Features available to ALL users vs. air-gap-only:
 |---------|-----------|
 | NL App Builder (Claude/cloud LLM) | Cloud LLM API call for higher quality |
 | Marketplace federation sync | Cross-org HTTP sync |
-| OpenClaw/SkillHub bridge | External registry |
+| OpenClaw/ClawHub bridge | External registry |
 | SAM.gov automation triggers | External API |
 | Email/Slack notification actions | External services |
 | Web-sourced research in automations | Internet access |

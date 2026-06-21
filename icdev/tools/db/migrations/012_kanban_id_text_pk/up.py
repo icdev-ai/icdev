@@ -65,9 +65,14 @@ def up(conn: sqlite3.Connection) -> dict:
     """Apply migration: rebuild kanban_tasks with TEXT primary key."""
     id_type = _id_column_type(conn)
     if not id_type:
-        # Fresh DB without the table — nothing to migrate. The init script will
-        # create the canonical TEXT-PK version separately.
-        return {"status": "skipped", "reason": "kanban_tasks missing"}
+        # Fresh DB without the table. The baseline schema (init_icdev_db.py)
+        # does NOT define kanban_tasks, so create the canonical TEXT-PK version
+        # here — otherwise a fresh install never gets the table and every later
+        # `ALTER TABLE kanban_tasks` migration (020+) fails with
+        # "relation kanban_tasks does not exist".
+        conn.execute(_NEW_TABLE_DDL)
+        conn.commit()
+        return {"status": "created", "reason": "kanban_tasks created (absent on fresh DB)"}
 
     if "INT" not in id_type:
         # Already TEXT (or otherwise non-INTEGER) — nothing to do.

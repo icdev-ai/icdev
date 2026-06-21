@@ -68,6 +68,48 @@ sla:
   latency_p99_ms: 1000
   error_rate_percent: 1.0
 
+# Metric anomaly detection (anomaly_detection paradigm) for tools/monitor/
+# metric_collector.py. The static SLA thresholds above answer "is this value
+# above a fixed line?" — they cannot catch a metric that is drifting badly but
+# still inside its SLA, nor adapt to a service whose normal baseline differs
+# from the global default. This block adds baseline-relative detection: each
+# current metric is compared against its own historical metric_snapshots and
+# flagged when it deviates anomalously. Opt-in (run with --detect-anomalies);
+# a missing block/key or absent PyYAML degrades to these defaults.
+metric_anomaly:
+  method: "zscore"       # "zscore" (mean/std-dev) or "mad" (robust, median-based)
+  z_threshold: 3.0       # |z| above which a value is anomalous (zscore method)
+  mad_threshold: 3.5     # Modified z-score cutoff (mad method; Iglewicz-Hoaglin)
+  min_samples: 5         # Minimum history points required before scoring
+  direction: "both"      # "high" (only spikes), "low" (only drops), or "both"
+  history_limit: 200     # Most-recent snapshots per metric to baseline against
+
+# Log anomaly detection (anomaly_detection paradigm) — replaces the previously
+# hardcoded z-score (2.0) and error-rate spike (0.10) thresholds in
+# tools/monitor/log_analyzer.py with configurable, optionally-robust detection.
+# Omit this block (or any key) and the legacy hardcoded behavior is preserved.
+anomaly_detection:
+  # Frequency anomalies over fixed time buckets.
+  frequency:
+    method: "zscore"      # "zscore" (mean/std-dev) or "mad" (robust, median-based)
+    z_threshold: 2.0      # Std-devs above the mean to flag a bucket (zscore method)
+    mad_threshold: 3.5    # Modified z-score cutoff (mad method; Iglewicz-Hoaglin)
+    min_buckets: 2        # Minimum buckets required before computing statistics
+    bucket_window_minutes: 5  # Time-partition granularity for bucketing (>=1; wider masks short spikes, narrower adds noise)
+  # Error-rate spike detection.
+  error_rate:
+    spike_threshold: 0.10 # Fraction of error-level logs that constitutes a spike
+  # Silence-gap detection — the data-presence ("missing partition") counterpart
+  # to frequency-spike detection. Flags contiguous runs of empty/near-zero time
+  # buckets *between* periods of normal activity (an ingestion outage, or a log
+  # pipeline that silently stopped writing). Off by default; enable to add a
+  # ``silence_gaps`` list to analysis output. The bucket cadence is shared with
+  # frequency.bucket_window_minutes. No effect on existing behavior when off.
+  gaps:
+    enabled: false        # Off by default → output and behavior unchanged
+    min_active_buckets: 3 # Minimum populated buckets needed to set a baseline
+    drop_ratio: 0.2       # A bucket below median(active) * drop_ratio is "silent"
+
 # Phase 29: Heartbeat daemon (D141-D142)
 heartbeat:
   enabled: true
@@ -107,6 +149,15 @@ heartbeat:
     review_board_health:
       enabled: true
       interval_seconds: 1800
+    kanban_stale:
+      enabled: true
+      interval_seconds: 300
+      stale_threshold_minutes: 5
+    a2a_agent_health:
+      enabled: true
+      interval_seconds: 300
+      dead_alert_minutes: 10
+      request_timeout_seconds: 5
 
 # Push-Based Metrics Sidecar (Coolify Sentinel)
 push_agent:

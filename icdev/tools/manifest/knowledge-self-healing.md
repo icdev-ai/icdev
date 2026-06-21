@@ -6,6 +6,7 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Knowledge Ingest | tools/knowledge/knowledge_ingest.py | Ingest patterns and lessons | --content, --type | Pattern ID |
+| Vault Exporter | tools/knowledge/vault_exporter.py | Air-gap knowledge vault: exports context/ + hardprompts/ + memory_entries DB rows to dated .zip with manifest.json; --import-vault reverse path restores files + re-inserts memory rows (ON CONFLICT DO NOTHING). Graceful degradation when DB unavailable (adapt-tol-01/02). | --output DIR, --import-vault ZIP, --label, --dry-run, --json | vault-YYYY-MM-DD.zip or import summary |
 | Pattern Detector | tools/knowledge/pattern_detector.py | Detect patterns from logs/metrics | --source, --data | Patterns found |
 | Recommendation Engine | tools/knowledge/recommendation_engine.py | Generate recommendations via Bedrock | --context | Recommendations |
 | Self-Heal Analyzer | tools/knowledge/self_heal_analyzer.py | Analyze failures and auto-correct | --failure-data | Healing result |

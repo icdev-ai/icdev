@@ -198,5 +198,88 @@ def get_llmops_summary() -> dict[str, Any]:
             "cost_by_model": langfuse_cost,
             "latency_p95": langfuse_latency,
         },
+        "reasoned_codegen": get_reasoned_codegen_config(),
         "domain": "llmops",
     }
+
+
+# ── Reasoned Codegen (tools/llm/reasoned_codegen*.py) ──────────────────────────
+
+def get_reasoned_codegen_config() -> dict:
+    """Return the reasoned_codegen config block from args/llm_config.yaml."""
+    try:
+        from pathlib import Path
+        import yaml
+
+        base = Path(__file__).resolve().parents[2]
+        cfg_path = base / "args" / "llm_config.yaml"
+        raw = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+        rc = raw.get("reasoned_codegen", {}) or {}
+        per_fn = rc.get("per_function", {}) or {}
+        functions = []
+        for name, fn in per_fn.items():
+            functions.append({
+                "function": name,
+                "enabled": bool(fn.get("enabled", False)),
+                "mode": fn.get("mode", rc.get("default_mode", "off")),
+                "critique": bool(fn.get("critique", rc.get("default_critique", False))),
+                "max_repair_rounds": fn.get("max_repair_rounds", rc.get("max_repair_rounds", 2)),
+            })
+        return {
+            "section_enabled": bool(rc.get("enabled", True)),
+            "default_mode": rc.get("default_mode", "off"),
+            "cost_cap_usd": rc.get("cost_cap_usd"),
+            "token_cap": rc.get("token_cap"),
+            "functions": functions,
+        }
+    except Exception as exc:
+        return {"error": str(exc), "section_enabled": None, "functions": []}
+
+
+def get_recent_chain_runs(limit: int = 25, function: str = "") -> list[dict]:
+    """Recent CoT/CoD chain telemetry (from llm_chain_telemetry)."""
+    try:
+        from tools.db.storage import get_connection
+
+        conn = get_connection()
+        conn.set_security_context(None)  # rls-bypass: llm_chain_telemetry lacks tenant_id/classification
+        try:
+            where = "WHERE function = ?" if function else ""
+            params: tuple = (function,) if function else ()
+            rows = conn.execute(
+                f"""
+                SELECT function, chain_mode, models_used, final_model_id,
+                       input_tokens, output_tokens, cost_usd, duration_ms,
+                       stop_reason, created_at
+                FROM llm_chain_telemetry
+                {where}
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                params + (int(limit),),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    except Exception as exc:
+        return [{"error": str(exc)}]
+
+
+def run_reasoned_codegen_advisor(
+    function: str, spec: str, file_count: int = 0, past_failures: int = 0,
+    use_llm: bool = False,
+) -> dict:
+    """Run the reasoned-codegen advisor on a task spec (dashboard 'try it')."""
+    try:
+        from tools.llm.reasoned_codegen_advisor import recommend
+
+        return recommend(
+            function or "code_generation", spec or "",
+            context={"file_count": int(file_count or 0), "past_failures": int(past_failures or 0)},
+            use_llm=bool(use_llm),
+        )
+    except Exception as exc:
+        return {"error": str(exc), "recommended": False, "mode": "off"}

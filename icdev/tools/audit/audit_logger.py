@@ -258,6 +258,17 @@ VALID_EVENT_TYPES = (
     "pir_alert_generated",
     # ANVIL build validation events
     "code.validation",
+    # Agentic Research Pipeline — Governance Layer (Phase AADC-GOV)
+    "pipeline.run_started",
+    "pipeline.run_completed",
+    "pipeline.run_failed",
+    "pipeline.confidence_gate_passed",
+    "pipeline.confidence_gate_failed",
+    "pipeline.output_validated",
+    "pipeline.output_rejected",
+    # SIPA — software integrity HITL promote/reject events
+    "integrity_promoted",
+    "integrity_rejected",
 )
 
 

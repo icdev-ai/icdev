@@ -233,10 +233,26 @@ class MigrationRunner:
             conn.close()
 
     def get_pending_migrations(self) -> List[Dict]:
-        """Return list of migrations not yet applied."""
-        applied_versions = {m["version"] for m in self.get_applied_migrations()}
-        all_migrations = self.discover_migrations()
-        return [m for m in all_migrations if m["version"] not in applied_versions]
+        """Return list of migrations not yet applied.
+
+        schema_migrations.version is UNIQUE, so only one migration per version
+        number is ever recorded. Several version numbers are duplicated on disk
+        (e.g. two 010_* dirs); in steady state get_pending naturally yields only
+        the first because the version is already in applied_versions after the
+        first run. On a *fresh* database both same-version dirs would otherwise
+        be pending in the same run, and applying the second would violate the
+        UNIQUE constraint and fail the whole chain (seen on the CI E2E PG job).
+        Dedupe by version within the run too — keep the first by sort order,
+        matching the system's established one-migration-per-version behaviour.
+        """
+        seen = {m["version"] for m in self.get_applied_migrations()}
+        pending = []
+        for m in self.discover_migrations():
+            if m["version"] in seen:
+                continue
+            seen.add(m["version"])
+            pending.append(m)
+        return pending
 
     # ------------------------------------------------------------------
     # SQL parsing with engine directives
@@ -331,9 +347,14 @@ class MigrationRunner:
 
             elapsed_ms = int((time.time() - start) * 1000)
 
-            # Record in schema_migrations
+            # Record in schema_migrations. Use OR IGNORE (→ ON CONFLICT DO
+            # NOTHING on PG) so a duplicate version number — e.g. two distinct
+            # migration dirs both prefixed 010 (kanban_executor_schema and
+            # network_intelligence_schema) — does not crash a fresh full run.
+            # Both such migrations are individually idempotent; recording one
+            # version row is sufficient.
             conn.execute(
-                "INSERT INTO schema_migrations (version, name, checksum, execution_time_ms) VALUES (?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO schema_migrations (version, name, checksum, execution_time_ms) VALUES (?, ?, ?, ?)",
                 (version, name, migration.get("checksum", ""), elapsed_ms),
             )
             conn.commit()
@@ -426,8 +447,20 @@ class MigrationRunner:
     # ------------------------------------------------------------------
     # Bulk operations
     # ------------------------------------------------------------------
-    def migrate_up(self, target: Optional[str] = None, dry_run: bool = False) -> List[Dict]:
-        """Apply all pending migrations up to target version."""
+    def migrate_up(
+        self,
+        target: Optional[str] = None,
+        dry_run: bool = False,
+        continue_on_error: bool = False,
+    ) -> List[Dict]:
+        """Apply all pending migrations up to target version.
+
+        continue_on_error: when True, a failing migration does not stop the
+        pass — the remaining pending migrations are still attempted. Used by
+        the converge runner to tolerate out-of-order migrations (each
+        apply_migration is isolated on its own connection, rolled back on
+        failure, so a failure never poisons the next migration).
+        """
         self.ensure_migrations_table()
         pending = self.get_pending_migrations()
 
@@ -442,11 +475,51 @@ class MigrationRunner:
         for migration in pending:
             result = self.apply_migration(migration, dry_run=dry_run)
             results.append(result)
-            if not result.get("success"):
+            if not result.get("success") and not continue_on_error:
                 logger.error("Migration failed — stopping.")
                 break
 
         return results
+
+    def migrate_up_converge(
+        self, target: Optional[str] = None, max_passes: int = 12
+    ) -> Dict:
+        """Apply pending migrations in repeated passes until a pass makes no
+        progress (fixpoint), tolerating out-of-order migrations.
+
+        A migration that fails because a table it ALTERs is created by a LATER
+        migration is not recorded as applied, so it stays pending and is retried
+        on the next pass — by which time the later migration has created the
+        table. Converges to a complete schema without per-migration reordering.
+
+        Returns {passes: [...], applied_total, remaining_failures: [...]}.
+        """
+        passes: List[Dict] = []
+        for pass_num in range(1, max_passes + 1):
+            results = self.migrate_up(target=target, continue_on_error=True)
+            applied = [r for r in results if r.get("success")]
+            failed = [r for r in results if not r.get("success")]
+            passes.append({
+                "pass": pass_num,
+                "applied": len(applied),
+                "failed": len(failed),
+                "failures": [
+                    {"version": r["version"], "name": r.get("name"), "error": r.get("error")}
+                    for r in failed
+                ],
+            })
+            logger.info(
+                "converge pass %d: applied=%d failed=%d", pass_num, len(applied), len(failed)
+            )
+            if not results:
+                break  # nothing pending — fully applied
+            if not applied:
+                break  # no progress this pass — remaining failures are real
+        return {
+            "passes": passes,
+            "applied_total": sum(p["applied"] for p in passes),
+            "remaining_failures": passes[-1]["failures"] if passes else [],
+        }
 
     def migrate_down(self, target: Optional[str] = None) -> List[Dict]:
         """Roll back applied migrations down to (but not including) target."""

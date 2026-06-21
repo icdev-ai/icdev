@@ -109,6 +109,7 @@ class LLMRouter:
         self._cache_ttl: float = 1800.0
 
         self._load_config()
+        self._maybe_activate_cli_bridge()
         self._load_degraded_tier2_state()
 
     # -------------------------------------------------------------------
@@ -204,6 +205,21 @@ class LLMRouter:
         except Exception as exc:
             logger.error("Failed to load LLM config: %s", exc)
             self._config = {}
+
+    def _maybe_activate_cli_bridge(self):
+        """Prepend the local Claude CLI provider to routing chains when enabled.
+
+        Auto-on when air-gapped or no cloud API key is configured; gated by the
+        ``ICDEV_CLI_BRIDGE`` env var (false = hard-disable, true = force-enable).
+        Idempotent and failure-tolerant — never disrupts routing if anything
+        goes wrong (e.g. cli_bridge package missing).
+        """
+        try:
+            from tools.llm.cli_bridge.activate import maybe_activate
+
+            self._config = maybe_activate(self._config)
+        except Exception as exc:
+            logger.debug("CLI bridge hook skipped: %s", exc)
 
     # -------------------------------------------------------------------
     # Tier2 auto-degradation helpers (D-AUTO-DEGRADE)
@@ -524,6 +540,15 @@ class LLMRouter:
                     url=url,
                 )
 
+            elif ptype == "cli":
+                from tools.llm.cli_bridge.cli_provider import CLILLMProvider
+
+                instance = CLILLMProvider(
+                    cli_binary=_expand_env(provider_cfg.get("cli_binary", "claude")),
+                    backend=provider_cfg.get("backend", "auto"),
+                    soft_wait_seconds=int(provider_cfg.get("soft_wait_seconds", 60)),
+                )
+
             else:
                 logger.warning("Unknown provider type: %s", ptype)
                 return None
@@ -640,10 +665,23 @@ class LLMRouter:
         return route.get("effort", "medium")
 
     def _get_chain_for_function(self, function: str) -> list:
-        """Get the model chain for a function."""
+        """Get the model chain for a function.
+
+        Applies the request-scoped CLI bridge override (if set) so a per-page
+        toggle takes effect at invoke time even though the base config was
+        rewritten once at construction. A ``False`` override strips the
+        ``claude-cli`` model from the chain so invocation bypasses the bridge.
+        """
         routing = self._config.get("routing", {})
         route = routing.get(function, routing.get("default", {}))
-        return route.get("chain", [])
+        chain = route.get("chain", [])
+        try:
+            from tools.llm.cli_bridge.activate import apply_cli_bridge_override
+
+            return apply_cli_bridge_override(chain)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("CLI bridge override skipped: %s", exc)
+            return list(chain)
 
     def _log_telemetry(
         self,
@@ -754,6 +792,23 @@ class LLMRouter:
             return LLMRouter._redaction_sanitizer
         except ImportError:
             return None
+
+    def _compress_request_context(self, function: str, request: LLMRequest) -> LLMRequest:
+        """Apply Headroom-style context compression before the fallback chain (adapt-hd-03).
+
+        Only compresses when compression.enabled=true in llm_config.yaml and
+        function is not in compression.exempt_functions. No-op by default.
+        """
+        try:
+            from tools.llm.compression.context_compressor import compress, load_config_from_yaml
+            cfg = load_config_from_yaml()
+            if not cfg.enabled:
+                return request
+            if function in cfg.exempt_functions:
+                return request
+            return compress(request, cfg)
+        except Exception:
+            return request  # Never block the LLM call on compressor failure
 
     def _pre_invoke_redaction(self, function: str, request: LLMRequest) -> Optional[str]:
         """Sanitize PII in request messages before sending to any LLM.
@@ -1639,6 +1694,9 @@ class LLMRouter:
             cached = self._cache_lookup(function, request, model_id_for_key)
             if cached is not None:
                 return cached
+
+        # adapt-hd-03: Context compression — apply before fallback chain
+        request = self._compress_request_context(function, request)
 
         # Two-tier routing: qwen3 worker → Claude planner/reviewer
         two_tier_result = self._maybe_invoke_two_tier(function, request)

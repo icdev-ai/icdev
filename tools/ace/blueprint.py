@@ -30,7 +30,6 @@ attached (see CLAUDE.md canvas DB guardrail).
 from __future__ import annotations
 
 import json
-import logging
 from tools.logging.icdev_logger import get_logger
 import os
 from typing import Any, Optional

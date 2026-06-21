@@ -21,7 +21,7 @@ DB_PATH = _ICDEV_ROOT / "data" / "security_canvas.db"
 
 # Backend detection — SC_STORAGE_BACKEND only (NOT inherited from ICDEV_STORAGE_BACKEND)
 # SDC has its own DB (security_canvas.db). Set SC_STORAGE_BACKEND=postgresql to use PG.
-_SC_BACKEND = os.environ.get("SC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", "sqlite")).lower()
+_SC_BACKEND = os.environ.get("SC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql"))).lower()
 
 
 def get_connection():
@@ -312,7 +312,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_zig_comp_act ON zig_activity_completions(a
 CREATE TABLE IF NOT EXISTS zig_maturity_scores (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     pillar_slug     TEXT NOT NULL,
-    target_id       TEXT NOT NULL DEFAULT 'icdev-self',
     score           REAL NOT NULL DEFAULT 0.0,
     maturity_level  TEXT,
     capability_count INTEGER DEFAULT 0,
@@ -322,20 +321,6 @@ CREATE TABLE IF NOT EXISTS zig_maturity_scores (
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_zig_score_pillar ON zig_maturity_scores(pillar_slug);
-CREATE INDEX IF NOT EXISTS idx_zig_score_target ON zig_maturity_scores(target_id, pillar_slug);
-
-CREATE TABLE IF NOT EXISTS zig_targets (
-    id              TEXT PRIMARY KEY,
-    name            TEXT NOT NULL,
-    description     TEXT,
-    system_type     TEXT NOT NULL DEFAULT 'general',
-    classification  TEXT NOT NULL DEFAULT 'CUI',
-    status          TEXT NOT NULL DEFAULT 'active'
-                    CHECK(status IN ('active','inactive','archived')),
-    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
-);
-CREATE INDEX IF NOT EXISTS idx_zig_target_status ON zig_targets(status);
 
 CREATE TABLE IF NOT EXISTS fedramp_ato_packages (
     id                  TEXT PRIMARY KEY,
@@ -1720,31 +1705,6 @@ def init_db():
             conn.commit()
         except Exception:
             pass  # column already exists
-
-        # Runtime migration: add target_id to zig_maturity_scores for existing installs
-        try:
-            conn.execute(
-                "ALTER TABLE zig_maturity_scores ADD COLUMN target_id TEXT NOT NULL DEFAULT 'icdev-self'"
-            )
-            conn.commit()
-        except Exception:
-            pass  # column already exists
-
-        # Runtime migration: create zig_targets table for existing installs
-        try:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS zig_targets (
-                    id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT,
-                    system_type TEXT NOT NULL DEFAULT 'general',
-                    classification TEXT NOT NULL DEFAULT 'CUI',
-                    status TEXT NOT NULL DEFAULT 'active',
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
-                    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            conn.commit()
-        except Exception:
-            pass  # table already exists
 
         # Seed templates (upsert — inserts new templates even if some already exist)
         cur = conn.cursor()

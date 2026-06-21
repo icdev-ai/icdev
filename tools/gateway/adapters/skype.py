@@ -23,7 +23,6 @@ Decision D144: Skype has no polling API — inbound messages go through skype_in
 from __future__ import annotations
 
 import json
-import logging
 import sys
 from datetime import datetime, timezone
 from pathlib import Path

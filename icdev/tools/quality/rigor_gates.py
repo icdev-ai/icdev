@@ -94,7 +94,7 @@ def load_profile(tier: str) -> ILTierProfile:
 def _parse_coverage_xml(path: Path) -> Optional[float]:
     """Return line coverage percentage (0-100) from a coverage.xml file."""
     try:
-        root = ET.parse(path).getroot()
+        root = ET.parse(path).getroot()  # nosec B314 — parsing trusted coverage.xml from pytest-cov, not user-supplied input
         rate = root.attrib.get("line-rate")
         if rate is not None:
             return float(rate) * 100

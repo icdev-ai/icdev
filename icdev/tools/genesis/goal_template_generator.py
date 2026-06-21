@@ -46,6 +46,8 @@ CUI // SP-CTI
 
 {description}
 
+**Category:** {category}
+
 ## Observed Pattern
 
 This workflow was detected across {frequency} occurrences in {diversity} distinct
@@ -93,6 +95,39 @@ sessions over the past {lookback_days} days.
 """
 
 
+def _compute_confidence_anomaly_detection(
+    frequency: int,
+    diversity: int,
+    composite_score: float,
+) -> float:
+    """Compute goal confidence using anomaly detection on pattern statistics.
+
+    Patterns that deviate positively from empirical baselines (higher frequency,
+    broader session diversity, stronger composite score) earn higher confidence.
+    Clamped to [0.40, 0.90] to keep all generated goals in YELLOW tier (human
+    review always required — never auto-promote to GREEN).
+
+    At baseline inputs (freq≈3, diversity≈2, score≈0.5) the result is ~0.65.
+    Low-signal patterns approach 0.49; exceptional patterns approach 0.90.
+    """
+    _BASELINE_FREQ = 3.0
+    _BASELINE_DIV = 2.0
+    _BASELINE_SCORE = 0.5
+
+    _W_FREQ = 0.40
+    _W_DIV = 0.30
+    _W_SCORE = 0.30
+
+    freq_ratio = min(frequency / max(_BASELINE_FREQ, 1.0), 2.0)
+    div_ratio = min(diversity / max(_BASELINE_DIV, 1.0), 2.0)
+    score_ratio = min(composite_score / max(_BASELINE_SCORE, 1e-9), 2.0)
+
+    # Weighted sum in [0, 2]; map linearly to [0.40, 0.90]
+    raw = _W_FREQ * freq_ratio + _W_DIV * div_ratio + _W_SCORE * score_ratio
+    confidence = 0.40 + (raw / 2.0) * 0.50
+    return round(max(0.40, min(0.90, confidence)), 4)
+
+
 def _tool_name_to_title(tool_names: List[str]) -> str:
     """Generate a human-readable title from a tool chain."""
     # Take the most distinctive tools (skip generic ones)
@@ -106,16 +141,23 @@ def _tool_name_to_title(tool_names: List[str]) -> str:
     return f"{distinctive[0]} → ... → {distinctive[-1]} Pipeline ({len(tool_names)} steps)"
 
 
-def generate_goal_from_pattern(pattern: Dict[str, Any], lookback_days: int = 7) -> Dict[str, Any]:
+def generate_goal_from_pattern(
+    pattern: Dict[str, Any],
+    lookback_days: int = 7,
+    use_llm_metadata: bool = False,
+) -> Dict[str, Any]:
     """Generate a FORGE goal markdown from a detected tool-chain pattern.
 
     Args:
         pattern: Dict with 'pattern' (list of tool names), 'frequency',
                  'caller_diversity', 'composite_score', etc.
         lookback_days: For description context.
+        use_llm_metadata: When True, enrich title/description/inputs/outputs/
+                          category by calling extract_metadata_with_llm().
 
     Returns:
-        Dict with 'goal_markdown', 'title', 'pattern_id', 'confidence'.
+        Dict with 'goal_markdown', 'title', 'pattern_id', 'confidence',
+        and optionally 'llm_metadata_extracted' (bool).
     """
     tool_chain = pattern.get("pattern", [])
     frequency = pattern.get("frequency", 0)
@@ -127,25 +169,42 @@ def generate_goal_from_pattern(pattern: Dict[str, Any], lookback_days: int = 7) 
     chain_hash = hashlib.sha256(chain_json.encode()).hexdigest()[:16]
     pattern_id = f"tpat-{chain_hash}"
 
+    # Deterministic defaults
     title = _tool_name_to_title(tool_chain)
+    description = (
+        f"Automated workflow combining {len(tool_chain)} tools in a "
+        f"recurring sequence. Detected {frequency} times across "
+        f"{diversity} sessions."
+    )
+    inputs = "- Project context (from session)\n- Tool-specific arguments per step"
+    outputs = "- Combined output from final tool in sequence\n- Audit trail entries for each step"
+    category = "operational-workflow"
+
+    llm_metadata_extracted: bool | None = None
+    if use_llm_metadata:
+        llm_meta = extract_metadata_with_llm(tool_chain, frequency, diversity)
+        if llm_meta:
+            title = llm_meta.get("title", title)
+            description = llm_meta.get("description", description)
+            inputs = llm_meta.get("inputs", inputs)
+            outputs = llm_meta.get("outputs", outputs)
+            category = llm_meta.get("category", category)
+            llm_metadata_extracted = True
+        else:
+            llm_metadata_extracted = False
 
     # Build tool sequence as numbered list
     tool_sequence = "\n".join(f"{i}. `{tool}`" for i, tool in enumerate(tool_chain, 1))
-
-    # Build inputs/outputs (generic — LLM polish can improve these)
-    inputs = "- Project context (from session)\n- Tool-specific arguments per step"
-    outputs = "- Combined output from final tool in sequence\n- Audit trail entries for each step"
-
     tool_list = ", ".join(f"`{t}`" for t in tool_chain)
 
-    # Confidence: 0.55 base (always human review for YELLOW tier)
-    confidence = 0.55
+    # Confidence via anomaly detection: pattern statistics determine how far
+    # this pattern deviates from baseline; result stays in YELLOW tier [0.40, 0.90].
+    confidence = _compute_confidence_anomaly_detection(frequency, diversity, score)
 
     goal_md = GOAL_TEMPLATE.format(
         title=title,
-        description=f"Automated workflow combining {len(tool_chain)} tools in a "
-        f"recurring sequence. Detected {frequency} times across "
-        f"{diversity} sessions.",
+        description=description,
+        category=category,
         frequency=frequency,
         diversity=diversity,
         lookback_days=lookback_days,
@@ -158,7 +217,7 @@ def generate_goal_from_pattern(pattern: Dict[str, Any], lookback_days: int = 7) 
         confidence=confidence,
     )
 
-    return {
+    result: Dict[str, Any] = {
         "goal_markdown": goal_md,
         "title": title,
         "pattern_id": pattern_id,
@@ -168,6 +227,77 @@ def generate_goal_from_pattern(pattern: Dict[str, Any], lookback_days: int = 7) 
         "caller_diversity": diversity,
         "composite_score": score,
     }
+    if llm_metadata_extracted is not None:
+        result["llm_metadata_extracted"] = llm_metadata_extracted
+    return result
+
+
+def extract_metadata_with_llm(
+    tool_chain: List[str],
+    frequency: int = 0,
+    diversity: int = 0,
+) -> Dict[str, Any]:
+    """Extract structured metadata from a tool chain using scanner-tier LLM.
+
+    Loads hardprompts/genesis/metadata_extraction.md, fills placeholders,
+    calls LLM, and parses the JSON response into typed metadata fields.
+
+    Returns a dict with zero or more of: title, description, inputs, outputs,
+    category, prerequisites. Returns {} on failure or missing hardprompt.
+    """
+    hardprompt_path = BASE_DIR / "hardprompts" / "genesis" / "metadata_extraction.md"
+    if not hardprompt_path.exists():
+        return {}
+
+    try:
+        template = hardprompt_path.read_text(encoding="utf-8")
+        prompt = template.replace("{tool_chain}", json.dumps(tool_chain))
+        prompt = prompt.replace("{frequency}", str(frequency))
+        prompt = prompt.replace("{diversity}", str(diversity))
+
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        router = LLMRouter()
+        request = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=512,
+        )
+        response = router.invoke("memory_consolidation", request)
+        if not response or not response.content:
+            return {}
+
+        text = response.content.strip()
+        if "```json" in text:
+            text = text.split("```json", 1)[1].split("```")[0].strip()
+        elif "```" in text:
+            text = text.split("```", 1)[1].split("```")[0].strip()
+
+        raw = json.loads(text)
+        result: Dict[str, Any] = {}
+
+        if isinstance(raw.get("title"), str) and raw["title"]:
+            result["title"] = raw["title"]
+        if isinstance(raw.get("description"), str) and raw["description"]:
+            result["description"] = raw["description"]
+        if isinstance(raw.get("inputs"), list):
+            result["inputs"] = "\n".join(
+                f"- {i}" for i in raw["inputs"] if isinstance(i, str)
+            )
+        if isinstance(raw.get("outputs"), list):
+            result["outputs"] = "\n".join(
+                f"- {i}" for i in raw["outputs"] if isinstance(i, str)
+            )
+        if isinstance(raw.get("category"), str) and raw["category"]:
+            result["category"] = raw["category"]
+        if isinstance(raw.get("prerequisites"), list):
+            result["prerequisites"] = [
+                p for p in raw["prerequisites"] if isinstance(p, str)
+            ]
+        return result
+
+    except Exception:
+        return {}
 
 
 def polish_with_llm(goal_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -276,14 +406,34 @@ def main():
     parser.add_argument("--max-goals", type=int, default=3)
     parser.add_argument("--min-score", type=float, default=0.0)
     parser.add_argument("--no-llm", action="store_true", help="Skip LLM polishing")
+    parser.add_argument(
+        "--llm-metadata",
+        action="store_true",
+        help="Use LLM to extract richer title/description/inputs/outputs/category",
+    )
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
+
+    use_llm_meta = getattr(args, "llm_metadata", False)
 
     if args.from_detection:
         goals = generate_from_stored_patterns(
             max_goals=args.max_goals,
             min_score=args.min_score,
         )
+        if use_llm_meta:
+            goals = [
+                generate_goal_from_pattern(
+                    {
+                        "pattern": g["tool_chain"],
+                        "frequency": g["frequency"],
+                        "caller_diversity": g["caller_diversity"],
+                        "composite_score": g["composite_score"],
+                    },
+                    use_llm_metadata=True,
+                )
+                for g in goals
+            ]
         if not args.no_llm:
             goals = [polish_with_llm(g) for g in goals]
 
@@ -309,7 +459,7 @@ def main():
                     "caller_diversity": row["caller_diversity"] if isinstance(row, dict) else row[2],
                     "composite_score": row["composite_score"] if isinstance(row, dict) else row[3],
                 }
-                goal = generate_goal_from_pattern(pattern)
+                goal = generate_goal_from_pattern(pattern, use_llm_metadata=use_llm_meta)
                 if not args.no_llm:
                     goal = polish_with_llm(goal)
                 result = {"generated_at": _utcnow_iso(), "goals_generated": 1, "goals": [goal]}

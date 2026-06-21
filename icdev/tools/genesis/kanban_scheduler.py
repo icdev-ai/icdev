@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from tools.logging.icdev_logger import get_logger
 # CUI // SP-CTI
 """Kanban Scheduler -- standalone process that runs the kanban reflex on a loop.
 
@@ -32,6 +31,8 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
+
+from tools.logging.icdev_logger import get_logger  # noqa: E402 — must follow sys.path patch
 
 # Force UTF-8 on both stdout and stderr so emoji/Unicode in task titles never
 # silently kill the logger on Windows (cp1252 streams raise UnicodeEncodeError
@@ -188,19 +189,29 @@ def main():
     except Exception as exc:
         logger.warning("Startup recovery failed: %s", str(exc).encode("ascii", errors="replace").decode("ascii"))
 
-    # Startup inbox replay — process any Telegram messages that arrived while offline.
-    try:
-        from tools.notifications.adapters.telegram_listener import replay_inbox
-
-        inbox_result = replay_inbox()
-        if inbox_result["replayed"] or inbox_result["failed"]:
-            logger.info(
-                "Startup inbox replay: replayed=%d failed=%d",
-                inbox_result["replayed"],
-                inbox_result["failed"],
-            )
-    except Exception as exc:
-        logger.warning("Startup inbox replay failed: %s", exc)
+    # Startup inbox replay — process any messages that arrived while offline.
+    _startup_replay_listeners = [
+        ("tools.notifications.adapters.telegram_listener", "Telegram"),
+        ("tools.notifications.adapters.teams_listener", "Teams"),
+        ("tools.notifications.adapters.mattermost_listener", "MatterMost"),
+        ("tools.notifications.adapters.github_listener", "GitHub"),
+        ("tools.notifications.adapters.gitlab_listener", "GitLab"),
+        ("tools.notifications.adapters.skype_listener", "Skype"),
+    ]
+    for _module_path, _platform_name in _startup_replay_listeners:
+        try:
+            import importlib as _importlib
+            _mod = _importlib.import_module(_module_path)
+            _inbox_result = _mod.replay_inbox()
+            if _inbox_result["replayed"] or _inbox_result["failed"]:
+                logger.info(
+                    "Startup inbox replay [%s]: replayed=%d failed=%d",
+                    _platform_name,
+                    _inbox_result["replayed"],
+                    _inbox_result["failed"],
+                )
+        except Exception as _exc:
+            logger.debug("Startup inbox replay [%s] skipped: %s", _platform_name, _exc)
 
     if args.once:
         logger.info("Running single kanban cycle...")
@@ -229,6 +240,19 @@ def main():
 
     logger.info("Kanban scheduler started (interval=%ds)", args.interval)
     logger.info("Press Ctrl+C to stop")
+
+    # Cross-session coordination: register the scheduler as an agent session so
+    # interactive Claude/Cursor sessions can SEE that kanban is active and what
+    # it's dispatching (LLM-agnostic; tools/coordination). Best-effort.
+    _coord_reg = None
+    try:
+        import os as _os
+        _os.environ.setdefault("ICDEV_SESSION_ID", "kanban-scheduler")
+        _os.environ.setdefault("ICDEV_AGENT", "kanban")
+        from tools.coordination import session_registry as _coord_reg
+        _coord_reg.register(intent="kanban scheduler — dispatching due tasks")
+    except Exception:
+        _coord_reg = None
 
     # guard-6: Orphan cleanup on startup -- kill any Claude CLI subprocesses
     # left over from a previous run that may have crashed.
@@ -261,6 +285,29 @@ def main():
             )
         except Exception as exc:
             logger.debug("heartbeat write failed: %s", exc)
+
+        # Coordination heartbeat — keep the scheduler visible to other sessions.
+        try:
+            if _coord_reg is not None:
+                _coord_reg.heartbeat(intent=f"kanban scheduler — cycle {cycle}")
+        except Exception:
+            pass
+
+        # Pause gate: manual (dashboard "Pause Scheduler" button) or automatic
+        # (an interactive Claude/Cursor session is active). Skips the dispatch /
+        # git stash+merge churn so it can't clobber in-flight human work. We still
+        # heartbeat above so the scheduler shows as alive-but-paused.
+        try:
+            from tools.kanban.scheduler_control import should_pause
+            _pp = should_pause()
+        except Exception:
+            _pp = {"paused": False, "mode": ""}
+        if _pp.get("paused"):
+            logger.info("Cycle %d: paused (%s) — skipping dispatch; %s",
+                        cycle, _pp.get("mode"),
+                        _pp.get("reason") or _pp.get("intents") or "")
+            time.sleep(args.interval)
+            continue
 
         try:
             # [DISPATCH POINT - main loop]

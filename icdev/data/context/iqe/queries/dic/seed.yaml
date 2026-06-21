@@ -1,0 +1,24 @@
+canvas: dic
+queries:
+  - label: All drift events
+    query: "foreach d in dic.drift_events select d.source, d.entity, d.severity, d.detected_at"
+  - label: Critical drift events
+    query: "foreach d in dic.drift_events where d.severity == \"critical\" select d.source, d.entity, d.detected_at"
+  - label: Open regen queue
+    query: "foreach r in dic.regen_queue where r.state == \"queued\" select r.document_id, r.impact_level, r.queued_at"
+  - label: All SSP fragments
+    query: "foreach s in dic.ssp_fragments select s.control_id, s.document_id, s.status"
+  - label: Stale documents
+    query: "foreach f in dic.doc_freshness where f.state == \"stale\" select f.doc_id, f.collection_id, f.reason, f.score"
+  - label: Recent freshness scans
+    query: "foreach s in dic.freshness_scans orderby s.scanned_at desc select s.scan_id, s.collection_id, s.stale_count, s.regen_priority"
+  - label: Open handoff sessions
+    query: "foreach h in dic.handoff_sessions where h.status == \"open\" select h.session_id, h.title, h.departing_owner_id, h.answered_count, h.agenda_count"
+  - label: Pending handoff items
+    query: "foreach i in dic.handoff_items where i.status == \"pending\" select i.item_id, i.session_id, i.topic, i.item_kind"
+  - label: All generated outputs
+    query: "foreach o in dic.generated_outputs select o.id, o.output_type, o.collection_id, o.provider, o.status, o.created_at"
+  - label: Recent study guides
+    query: "foreach o in dic.generated_outputs where o.output_type == \"study_guide\" orderby o.created_at desc select o.id, o.collection_id, o.provider, o.created_at"
+  - label: Recent FAQs
+    query: "foreach o in dic.generated_outputs where o.output_type == \"faq\" orderby o.created_at desc select o.id, o.collection_id, o.provider, o.created_at"

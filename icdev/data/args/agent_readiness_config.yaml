@@ -3,6 +3,25 @@
 # Anomaly detection: values below min thresholds are flagged as anomalously low
 # for a project claiming task automation / CI readiness.
 
+# ---------------------------------------------------------------------------
+# Pillar weights — used by checker.py to compute the overall readiness score.
+# Weights are relative multipliers; a pillar with weight 1.5 contributes 50%
+# more than one with weight 1.0 to the weighted average.
+# Values below 0.1 are anomalously low and will be clamped to 0.1 at load time.
+# ---------------------------------------------------------------------------
+pillar_weights:
+  code-quality:      1.0
+  documentation:     1.0
+  testing:           1.2   # testing weighted slightly higher
+  structure:         0.8
+  dependencies:      1.0
+  configuration:     0.8
+  security:          1.2   # security weighted slightly higher
+  il-classification: 1.5   # ICDEV: IL classification is high-priority
+  nist-controls:     1.5   # ICDEV: NIST compliance is high-priority
+  stig-compliance:   1.3   # ICDEV: STIG compliance matters
+  append-only-audit: 1.3   # ICDEV: audit integrity matters
+
 pillars:
   documentation:
     readme:
@@ -21,6 +40,21 @@ pillars:
       # At 3, passes when ≥1/3 of sampled Python files have docstrings.
       # Raise to 2 to require ≥50% coverage; lower to 4 for a lighter gate.
       docstring_ratio_denominator: 3
+
+  nist_controls:
+    nlp_extractor:
+      # Enable Claude Haiku NLP extraction as a secondary pass when regex finds nothing.
+      # Set to false to run regex-only (no API calls, faster but less accurate for prose).
+      enabled: true
+      # Model used for NLP extraction. claude-haiku-4-5-20251001 balances speed and accuracy.
+      model: claude-haiku-4-5-20251001
+      # Max output tokens for the JSON response; 256 is sufficient for structured extraction.
+      max_tokens: 256
+      # Minimum confidence score (0.0–1.0) required to accept an NLP-detected reference.
+      # Lower values increase recall but risk false positives on ambiguous prose.
+      confidence_threshold: 0.7
+      # Characters of file content sampled per NLP call to control token cost.
+      text_sample_chars: 2000
 
   stig_compliance:
     nlp_extractor:
@@ -43,6 +77,18 @@ pillars:
       # A single stub workflow is anomalously low for a project claiming CI readiness.
       min_workflows: 1
 
+    cd_deployment:
+      # Keywords/patterns scanned in CI files and Makefiles to detect a deployment step.
+      # Values are Python regex alternations joined with | at load time.
+      # Add project-specific verbs (e.g. "ship", "publish-chart") without touching code.
+      deploy_keywords:
+        - deploy
+        - release
+        - publish
+        - "push.*image"
+        - "helm\\s+upgrade"
+        - "kubectl\\s+apply"
+
     iac:
       # Minimum IaC files (Terraform .tf, Helm Chart.yaml, K8s manifests) required to pass.
       # A single file is the floor; raise to 2+ for projects with complex multi-environment infra.
@@ -55,3 +101,56 @@ pillars:
       # Minimum npm script entries required to pass the task-runner criterion.
       # Fewer scripts indicate an underdeveloped automation setup.
       min_npm_scripts: 3
+
+  dependencies:
+    lock_file_freshness:
+      # Maximum age in months for a lock file to be considered fresh.
+      # A lock file older than this is anomalously stale for a project claiming dependency hygiene.
+      max_age_months: 6
+
+    pinned_versions:
+      # Minimum ratio (0.0–1.0) of requirements.txt entries that must use == pinning.
+      # A ratio below this is anomalously low for a project claiming reproducible builds.
+      min_pin_ratio: 0.8
+
+  structure:
+    gitignore:
+      # Minimum number of lines a .gitignore must contain to be considered non-trivial.
+      # A .gitignore with fewer lines is anomalously sparse for a project claiming
+      # artifact/secret hygiene. Raise to 10+ for stricter gates; lower to 3 for minimal repos.
+      min_lines: 5
+
+  append_only_audit:
+    audit_log_inserts:
+      # Maximum Python files scanned when searching for audit INSERT operations.
+      # Values below ~10 are anomalously low and risk missing insert coverage.
+      # Raise for very large repos; lower to trade accuracy for speed.
+      scan_sample_size: 40
+
+    nlp_extractor:
+      # Enable Claude Haiku NLP extraction as a secondary pass when regex finds nothing.
+      # Set to false to run regex-only (no API calls, faster but less accurate for dynamic SQL).
+      enabled: true
+      # Model used for NLP extraction. claude-haiku-4-5-20251001 balances speed and accuracy.
+      model: claude-haiku-4-5-20251001
+      # Max output tokens for the JSON response; 256 is sufficient for structured extraction.
+      max_tokens: 256
+      # Minimum confidence score (0.0–1.0) required to accept an NLP-detected reference.
+      # Lower values increase recall but risk false positives on ambiguous code patterns.
+      confidence_threshold: 0.7
+      # Characters of file content sampled per NLP call to control token cost.
+      text_sample_chars: 2000
+
+  il_classification:
+    cui_file_headers:
+      # Maximum number of Python source files sampled for CUI header detection.
+      # Actual sample is adaptive: min(sample_size, max(10, total_files // 5)).
+      # Raise for large repos where a fixed cap under-samples; lower to trade accuracy for speed.
+      sample_size: 30
+      # Minimum ratio (0.0–1.0) of sampled files that must carry CUI/classification headers
+      # to pass the criterion. Files below this are anomalously unmarked for IL4+ compliance.
+      min_header_ratio: 0.5
+      # Ratio below which the result is still a failure but the message is downgraded from
+      # "anomalously low" to a softer warning. Set equal to min_header_ratio to collapse
+      # the warning zone and always emit the stronger anomaly message below min_header_ratio.
+      warn_header_ratio: 0.3

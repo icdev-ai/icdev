@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-_ROLES_DIR = Path(__file__).parent.parent.parent.parent / "args" / "ace" / "roles"
+_ROLES_DIR = Path(__file__).parent.parent.parent / "args" / "ace" / "roles"
 _REQUIRED_FIELDS = {"role_id", "steps", "trust_tier", "tool_permissions"}
 _CACHE_TTL = 60  # seconds
 
@@ -20,36 +20,15 @@ class RoleNotFoundError(KeyError):
 
 @dataclass
 class RoleStep:
-    """A single step in a role definition.
-
-    Supports both plain string steps (name only) and structured steps with a
-    tool, params, and an optional condition expression.
-    """
     """A single step in a role definition — supports both plain names and structured dicts."""
 
     name: str
     tool: str = ""
     params: dict[str, Any] = field(default_factory=dict)
-    condition: str | None = None  # e.g. "$e2e_result.failed_count > 0"
-
-    @classmethod
-    def from_raw(cls, raw: str | dict[str, Any]) -> "RoleStep":
-        """Parse a step from a YAML value — either a plain string or a dict."""
-        if isinstance(raw, str):
-            return cls(name=raw)
-        name = raw.get("name", "")
-        if not name:
-            raise ValueError(f"Structured step missing 'name': {raw!r}")
-        return cls(
-            name=name,
-            tool=str(raw.get("tool", "")),
-            params=dict(raw.get("params") or {}),
-            condition=raw.get("condition") or None,
-        )
     condition: str | None = None
 
     @classmethod
-    def from_raw(cls, raw: "str | dict[str, Any]") -> "RoleStep":
+    def from_raw(cls, raw: str | dict[str, Any]) -> "RoleStep":
         if isinstance(raw, str):
             return cls(name=raw)
         if isinstance(raw, dict):
@@ -95,7 +74,6 @@ class RoleTemplate:
         missing = _REQUIRED_FIELDS - data.keys()
         if missing:
             raise ValueError(f"Role YAML missing required fields: {sorted(missing)}")
-        steps = [RoleStep.from_raw(s) for s in data["steps"]]
         return cls(
             role_id=data["role_id"],
             display_name=data.get("display_name", data["role_id"]),
@@ -104,7 +82,7 @@ class RoleTemplate:
             trust_tier=data["trust_tier"],
             default_count=int(data.get("default_count", 1)),
             max_instances=int(data.get("max_instances", 1)),
-            steps=steps,
+            steps=[RoleStep.from_raw(s) for s in data["steps"]],
             communication=dict(data.get("communication", {})),
             llm_function=data.get("llm_function", ""),
             tool_permissions=list(data["tool_permissions"]),

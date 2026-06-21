@@ -62,7 +62,7 @@ def parse_drawio(xml_str: str) -> dict:
 
     # draw.io files wrap content in <mxGraphModel>; also accept bare <root>
     try:
-        root = ET.fromstring(xml_str)
+        root = ET.fromstring(xml_str)  # nosec B314 — parsing trusted draw.io diagram XML from local files
     except ET.ParseError as exc:
         return {
             "diagram_type": "drawio",

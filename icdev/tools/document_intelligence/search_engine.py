@@ -988,6 +988,12 @@ class DICQueryIntent:
     synthesis parameters by hand, the LLM reads the raw query and recommends
     the optimal DIC retrieval strategy:
 
+    * ``intent_type`` classifies the query's high-level intent.
+    * ``recommended_mode`` is either ``"grounded"`` (BM25+KG) or ``"hybrid"``.
+    * ``should_expand`` signals that query expansion would improve recall.
+    * ``should_filter`` signals that metadata filtering should be applied.
+    * ``should_synthesize`` signals that grounded answer synthesis would serve
+      the user better than a raw document list.
     * ``intent_type`` classifies the query's high-level intent — ``"factual_qa"``
       (user wants a direct answer), ``"document_search"`` (user wants specific
       documents), ``"filtered_search"`` (metadata constraints implied), or
@@ -1759,6 +1765,19 @@ class DICSearchEngine:
             llm_used=llm_used,
         )
 
+    def classify_query_intent(self, query: str) -> "DICQueryIntent":
+        """Classify a search query's intent to recommend the optimal DIC retrieval strategy.
+
+        DIC analog of paperless's combined ``DocumentSearchFilter`` — instead of
+        requiring the caller to manually configure fulltext search mode, query
+        expansion, metadata filters, and answer synthesis as separate steps, the
+        LLM assesses the query's *intent* and recommends which DIC capabilities
+        to apply as a structured decision object (aiify-opp-28).
+
+        The model outputs a schema-constrained JSON object of boolean flags and
+        an intent type. It never answers the query, never invents document
+        content, and always degrades to a safe all-False default when unavailable
+        (air-gap safe).
     def filter_query(self, natural_query: str) -> "DICFilterQuery":
         """Parse natural language into structured document search filters.
 
@@ -2046,6 +2065,8 @@ class DICSearchEngine:
             query: Natural language search query to classify.
 
         Returns:
+            A :class:`DICQueryIntent`. On failure, ``llm_used`` is False and all
+            flags are False — callers can always proceed safely with plain search.
             A :class:`DICQueryIntent`. ``intent_type`` is one of ``"factual_qa"``,
             ``"document_search"``, ``"filtered_search"``, or
             ``"broad_exploration"``. ``should_expand``, ``should_filter``, and

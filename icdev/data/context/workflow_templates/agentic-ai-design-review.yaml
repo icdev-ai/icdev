@@ -1,0 +1,47 @@
+name: Agentic AI Design Review — OMB + Safety Assessment
+description: Review agentic AI design for OMB M-24-10 compliance, safety scoring, HITL requirements, and ATO artifact generation.
+category: ai
+tags: [agentic-ai, omb, safety, hitl, aadc]
+author: builtin
+steps:
+  - id: design_load
+    name: Load Agentic AI Design
+    tool: tools/ai_augmentation/aac_engine.py
+    node_type: tool
+    required: true
+    timeout: 120
+  - id: omb_check
+    name: OMB M-24-10 Compliance Check
+    tool: tools/compliance/omb_compliance_checker.py
+    node_type: tool
+    required: true
+    timeout: 180
+    depends_on: [design_load]
+  - id: safety_score
+    name: Safety & Rights Impact Scoring
+    tool: tools/ai_augmentation/safety_scorer.py
+    node_type: tool
+    required: true
+    timeout: 180
+    depends_on: [design_load]
+  - id: hitl_validate
+    name: HITL Requirement Validation
+    tool: tools/ai_augmentation/hitl_validator.py
+    node_type: tool
+    required: true
+    timeout: 120
+    depends_on: [design_load]
+  - id: ai_review
+    name: AI Safety Officer Review
+    tool: ""
+    node_type: human
+    role: isso
+    required: true
+    depends_on: [omb_check, safety_score, hitl_validate]
+  - id: ato_artifact
+    name: ATO Artifact Generation
+    tool: tools/ai_augmentation/ato_artifact_generator.py
+    node_type: tool
+    required: false
+    timeout: 180
+    depends_on: [ai_review]

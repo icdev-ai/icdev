@@ -1,0 +1,35 @@
+chain_id: ace_developer_analysis
+display_name: ACE Developer Analysis Chain
+description: Prompt chain for the AI Developer role to analyze requirements and plan implementation.
+version: "1.0"
+role_id: ai_developer
+
+steps:
+  - step_id: parse_requirements
+    prompt: |
+      You are an AI Developer analyzing a software task.
+      Task: {task_description}
+      Extract: acceptance criteria, constraints, affected modules, and test strategy.
+    output_key: parsed_requirements
+
+  - step_id: identify_dependencies
+    prompt: |
+      Given the parsed requirements:
+      {parsed_requirements}
+      List all code dependencies, existing tools to reuse, and any missing capabilities.
+    output_key: dependency_map
+
+  - step_id: draft_implementation_plan
+    prompt: |
+      Using the requirements and dependency map:
+      Requirements: {parsed_requirements}
+      Dependencies: {dependency_map}
+      Produce a step-by-step TDD implementation plan following the ANVIL workflow.
+    output_key: implementation_plan
+
+  - step_id: risk_assessment
+    prompt: |
+      Review the implementation plan:
+      {implementation_plan}
+      Identify top risks (security, compliance, performance) and mitigation strategies.
+    output_key: risk_summary

@@ -50,6 +50,54 @@ def _load_reflex_config() -> Dict[str, Any]:
         return {}
 
 
+def _compute_adaptive_confab_threshold(config: Dict) -> float:
+    """Return confabulation risk threshold, adapting from historical flag data when possible.
+
+    Queries canvas_ai_decisions for past confabulation_flag confidence values
+    from the genesis canvas.  When >= min_samples rows exist, computes
+    mean + sigma_multiplier * std (bounded by adaptive_bounds).  Falls back
+    to the static ``confabulation_risk_threshold`` config key otherwise.
+    """
+    static_fallback = config.get("confabulation_risk_threshold", 0.6)
+    ad_cfg = config.get("confabulation_anomaly_detection", {})
+    if not ad_cfg.get("enabled", False):
+        return static_fallback
+    if not ad_cfg.get("fallback_to_static", True):
+        pass  # will still fall through to static if query fails
+
+    min_samples = int(ad_cfg.get("min_samples", 5))
+    sigma_mult = float(ad_cfg.get("sigma_multiplier", 0.5))
+    bounds = ad_cfg.get("adaptive_bounds", {})
+    floor_ = float(bounds.get("threshold_floor", 0.3))
+    ceiling_ = float(bounds.get("threshold_ceiling", 0.9))
+
+    try:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                """
+                SELECT AVG(confidence),
+                       AVG(confidence * confidence) - AVG(confidence) * AVG(confidence) AS variance,
+                       COUNT(*)
+                FROM canvas_ai_decisions
+                WHERE canvas_type = 'genesis' AND decision_type = 'confabulation_flag'
+                """,
+            ).fetchone()
+        finally:
+            conn.close()
+
+        if row and row[2] is not None and int(row[2]) >= min_samples:
+            mean = float(row[0] or 0.0)
+            variance = max(float(row[1] or 0.0), 0.0)
+            std = variance ** 0.5
+            adaptive = mean + sigma_mult * std
+            return min(max(adaptive, floor_), ceiling_)
+    except Exception:
+        pass
+
+    return static_fallback
+
+
 def run(config: Dict = None, trust: Any = None, **kwargs) -> Dict[str, Any]:
     """Execute the Synthesize reflex.
 
@@ -75,6 +123,7 @@ def run(config: Dict = None, trust: Any = None, **kwargs) -> Dict[str, Any]:
     min_chain_length = config.get("min_chain_length", 3)
     lookback_days = config.get("lookback_days", 7)
     max_goals = config.get("max_goals_per_run", 3)
+    confab_risk_threshold = _compute_adaptive_confab_threshold(config)
 
     result: Dict[str, Any] = {
         "reflex": "synthesize",
@@ -141,7 +190,7 @@ def run(config: Dict = None, trust: Any = None, **kwargs) -> Dict[str, Any]:
                     confab = _confab_check("genesis-synthesize", goal_text)
                     goal["confabulation_risk"] = confab.get("risk_score", 0.0)
                     goal["confabulation_findings"] = confab.get("findings_count", 0)
-                    if confab.get("risk_score", 0.0) > 0.6:
+                    if confab.get("risk_score", 0.0) > confab_risk_threshold:
                         goal["confabulation_flagged"] = True
                         confab_flags += 1
                         try:

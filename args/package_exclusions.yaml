@@ -13,10 +13,7 @@ exclusions:
   - path: apps/fathomdesk
     category: marketplace
     reason: FathomDesk is a marketplace product, not ICDEV core
-  - path: apps/alphadesk
-    category: marketplace
-    reason: AlphaDesk is a marketplace product
-  - path: tools/trading
+- path: tools/trading
     category: marketplace
     reason: FathomDesk trading tools; ships with FathomDesk, not core
   - path: args/trading_config.yaml

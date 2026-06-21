@@ -90,7 +90,7 @@ REFLEX_NAMES = [
     "awareness",
     "canvas_indexer",
     "self_monitor",
-    "alphadesk_trap_scenarios",
+    "fathomdesk_trap_scenarios",
     "migration_canvas",
     "academy_reflex",
     "e2e_runner",

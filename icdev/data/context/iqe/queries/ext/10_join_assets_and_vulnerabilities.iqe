@@ -1,0 +1,8 @@
+# IQE-EXT-010: Join Tenable assets with vulnerability findings on hostname
+# Enriches each managed asset with its critical vulnerability data.
+# Use: risk-ranked asset inventory, ATO evidence, POA&M generation.
+# Phase II — requires join() fan-out executor.
+
+foreach r in join("ext.tenable.assets", "ext.tenable.vulnerabilities", "asset_id")
+  where r.severity == "critical"
+  select r.fqdn, r.asset_id, r.severity, r.plugin_name, r.state

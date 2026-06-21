@@ -1,0 +1,2 @@
+foreach p in aiify.posture
+  select p.created_at, p.grade, p.overall_score, p.posture, p.scan_count, p.opportunity_count

@@ -18,7 +18,7 @@ DB_PATH = _ICDEV_ROOT / "data" / "aiml_canvas.db"
 
 _AIMC_BACKEND = os.environ.get(
     "AIMC_STORAGE_BACKEND",
-    os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", "sqlite"),
+    os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql")),
 ).lower()
 
 

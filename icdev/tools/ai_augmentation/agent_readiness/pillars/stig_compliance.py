@@ -193,16 +193,21 @@ def _check_stig_checklist(repo: pathlib.Path) -> CriterionResult:
         if re.search(_STIG_VID_PATTERN, content) or _search(content, _STIG_DOC_PATTERN):
             return CriterionResult(cid, True, f"STIG checklist found: {f.name}")
     # Check icdev-comply output area
-    if (repo / "docs" / "compliance").is_dir():
-        for f in _glob_files(repo / "docs" / "compliance", "*.md"):
+    compliance_dir = repo / "docs" / "compliance"
+    compliance_files: list[pathlib.Path] = []
+    if compliance_dir.is_dir():
+        compliance_files = _glob_files(compliance_dir, "*.md")
+        for f in compliance_files:
             content = f.read_text(encoding="utf-8", errors="replace")
             if re.search(_STIG_VID_PATTERN, content) or _search(content, _STIG_DOC_PATTERN):
                 return CriterionResult(cid, True, f"STIG checklist in compliance docs: {f.name}")
 
     # Enhanced path: NLP for checklist content expressed in natural language
+    # Covers both standard checklist files AND compliance docs not caught by regex above.
     thresholds = _load_thresholds()
     min_confidence = thresholds["nlp_extractor_confidence_threshold"]
-    for f in checklist_files[:3]:
+    nlp_candidates = list(checklist_files[:3]) + list(compliance_files[:3])
+    for f in nlp_candidates:
         content = f.read_text(encoding="utf-8", errors="replace")
         result = _nlp_extract_stig_refs(
             content,

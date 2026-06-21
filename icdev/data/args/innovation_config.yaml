@@ -482,6 +482,72 @@ competitive_intel:
     - name: temporal
       repo: temporalio/temporal
       category: workflow_orchestration
+    # --- AI Data Mapping & ETL Integration competitors ---
+    - name: mapforce
+      website: https://www.altova.com/mapforce.html
+      category: data_mapping
+    - name: adeptia
+      website: https://www.adeptia.com/products/artificial-intelligence-mapping
+      category: data_mapping
+    - name: mulesoft
+      website: https://www.mulesoft.com
+      category: data_integration
+    - name: talend
+      website: https://www.talend.com
+      category: data_integration
+    - name: informatica
+      website: https://www.informatica.com
+      category: data_integration
+    - name: boomi
+      website: https://boomi.com
+      category: data_integration
+    - name: snaplogic
+      website: https://www.snaplogic.com
+      category: data_integration
+    - name: jitterbit
+      website: https://www.jitterbit.com
+      category: data_integration
+    - name: airbyte
+      repo: airbytehq/airbyte
+      category: data_integration
+    - name: fivetran
+      website: https://www.fivetran.com
+      category: data_integration
+    # open-notebook / knowledge management family
+    - name: open_notebook
+      repo: lfnovo/open-notebook
+      website: https://github.com/lfnovo/open-notebook
+      category: knowledge_management
+    - name: notebooklm
+      website: https://notebooklm.google.com
+      category: knowledge_management
+    - name: anythingllm
+      repo: Mintplex-Labs/anything-llm
+      category: knowledge_management
+    - name: ponder
+      website: https://ponder.ing
+      category: knowledge_management
+    # kuse.ai / workflow automation family
+    - name: kuse_ai
+      website: https://www.kuse.ai
+      category: ai_workflow_automation
+    - name: n8n
+      repo: n8n-io/n8n
+      category: ai_workflow_automation
+    - name: gumloop
+      website: https://www.gumloop.com
+      category: ai_workflow_automation
+    # coworker / desktop AI agent family
+    - name: coworker_ai
+      repo: accomplish-ai/coworker
+      website: https://github.com/accomplish-ai/coworker
+      category: desktop_ai_agent
+    - name: manus_ai
+      website: https://manus.im
+      category: desktop_ai_agent
+    - name: moveworks
+      website: https://www.moveworks.com
+      category: desktop_ai_agent
 
 # =========================================================================
 # Standards Body Monitoring

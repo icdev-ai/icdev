@@ -17,7 +17,6 @@ import hashlib
 import os
 import secrets
 import uuid
-from pathlib import Path
 from tools.db.storage import get_connection
 from datetime import datetime, timezone
 
@@ -33,59 +32,12 @@ from flask import (
 
 from tools.dashboard.config import DASHBOARD_SECRET, DB_PATH
 
-
-def _attach_security_context(user: dict) -> None:
-    """Build a SecurityContext from an authenticated user dict and attach to Flask g.
-
-    This is the single place that bridges the auth layer → RLS layer.
-    Called after every successful authentication path in _auth_before_request().
-    """
-    try:
-        from tools.security.security_context import SecurityContext
-        g.security_context = SecurityContext(
-            user_id=str(user.get("id", "") or ""),
-            role=user.get("role", "") or "",
-            tenant_id=user.get("tenant_id") or None,
-            classification=user.get("classification", "CUI") or "CUI",
-        )
-    except Exception:
-        pass
-
-# ---------------------------------------------------------------------------
-# Auth configuration — loaded from args/auth_config.yaml with env-var overrides
-# ---------------------------------------------------------------------------
-
-_AUTH_CONFIG_PATH = Path(__file__).resolve().parents[2] / "args" / "auth_config.yaml"
-
-
-def _load_auth_config() -> dict:
-    try:
-        import yaml
-        with open(_AUTH_CONFIG_PATH, "r", encoding="utf-8") as fh:
-            return yaml.safe_load(fh) or {}
-    except Exception:
-        return {}
-
-
-_auth_cfg = _load_auth_config()
-
-_api_key_entropy = int(
-    os.environ.get("ICDEV_API_KEY_ENTROPY_BYTES", None)
-    or _auth_cfg.get("api_key", {}).get("entropy_bytes", 32)
-)
-_key_prefix_display_length = int(
-    _auth_cfg.get("api_key", {}).get("prefix_display_length", 8)
-)
-_user_agent_max_length = int(
-    _auth_cfg.get("logging", {}).get("user_agent_max_length", 256)
-)
-
 # ---------------------------------------------------------------------------
 # Key generation & hashing
 # ---------------------------------------------------------------------------
 
 API_KEY_PREFIX = "icdev_dash_"
-API_KEY_LENGTH = _api_key_entropy
+API_KEY_LENGTH = 32  # 32 random bytes = 64 hex chars
 
 
 def generate_api_key() -> str:
@@ -100,10 +52,9 @@ def hash_api_key(raw_key: str) -> str:
 
 
 def key_prefix(raw_key: str) -> str:
-    """Extract the first N visible chars after the prefix for display."""
+    """Extract the first 8 visible chars after the prefix for display."""
     after_prefix = raw_key[len(API_KEY_PREFIX) :]
-    n = _key_prefix_display_length
-    return after_prefix[:n] if len(after_prefix) >= n else after_prefix
+    return after_prefix[:8] if len(after_prefix) >= 8 else after_prefix
 
 
 # ---------------------------------------------------------------------------
@@ -267,7 +218,7 @@ def list_users(status=None, tenant_id=None):
             clauses.append("(tenant_id IS NULL OR tenant_id = '')")
         where = "WHERE " + " AND ".join(clauses) if clauses else ""
         rows = conn.execute(
-            f"SELECT * FROM dashboard_users {where} ORDER BY created_at DESC",
+            f"SELECT * FROM dashboard_users {where} ORDER BY created_at DESC",  # nosec B608
             params,
         ).fetchall()
         return [dict(r) for r in rows]
@@ -392,7 +343,7 @@ def require_role(*roles):
                     user.get("id", "unknown") if isinstance(user, dict) else user["id"],
                     "permission_denied",
                     ip_address=request.remote_addr,
-                    user_agent=request.headers.get("User-Agent", "")[:_user_agent_max_length],
+                    user_agent=request.headers.get("User-Agent", "")[:256],
                     details=f"required={roles}, had={user_role}",
                 )
                 abort(403)
@@ -434,22 +385,6 @@ def _auth_before_request():
     """Flask before_request hook for authentication."""
     g.current_user = None
 
-    # E2E / CI bypass: ICDEV_AUTH_BYPASS=true skips all auth checks and
-    # injects a synthetic admin user so Playwright tests can exercise every
-    # API route without needing a real session or API key.
-    if os.environ.get("ICDEV_AUTH_BYPASS", "").lower() in ("1", "true", "yes"):
-        bypass_user = {
-            "id": "e2e-bypass",
-            "email": "e2e@icdev.local",
-            "role": "admin",
-            "status": "active",
-            "tenant_id": None,
-            "classification": "CUI",
-        }
-        g.current_user = bypass_user
-        _attach_security_context(bypass_user)
-        return None
-
     # Defer /api/v1/* to the new JWT middleware (tools.dashboard.api.auth,
     # Phase C / P1.3). This hook stays authoritative for legacy /api/* and
     # Jinja page routes; it only steps aside for the versioned surface.
@@ -470,7 +405,6 @@ def _auth_before_request():
         user = get_user_by_id(user_id)
         if user and user["status"] == "active":
             g.current_user = dict(user)
-            _attach_security_context(g.current_user)
             return None
         else:
             # Session invalid — clear it
@@ -483,14 +417,13 @@ def _auth_before_request():
         user = validate_api_key(raw_key)
         if user:
             g.current_user = dict(user)
-            _attach_security_context(g.current_user)
             # Set session so subsequent requests use cookie
             session["user_id"] = user["id"]
             log_auth_event(
                 user["id"],
                 "login_success",
                 ip_address=request.remote_addr,
-                user_agent=request.headers.get("User-Agent", "")[:_user_agent_max_length],
+                user_agent=request.headers.get("User-Agent", "")[:256],
                 details="via_api_key",
             )
             return None
@@ -500,7 +433,7 @@ def _auth_before_request():
                 None,
                 "login_failed",
                 ip_address=request.remote_addr,
-                user_agent=request.headers.get("User-Agent", "")[:_user_agent_max_length],
+                user_agent=request.headers.get("User-Agent", "")[:256],
                 details="invalid_api_key",
             )
             if request.is_json or request.path.startswith("/api/"):
@@ -509,15 +442,9 @@ def _auth_before_request():
     # Auto-login via .env API key if configured
     env_key = os.environ.get("ICDEV_DASHBOARD_API_KEY", "")
     if env_key:
-        try:
-            user = bootstrap_env_user(env_key)
-        except Exception:
-            # DB tables not yet initialized (e.g. CI first-run before init_db).
-            # Fall through to the login redirect instead of propagating a 500.
-            user = None
+        user = bootstrap_env_user(env_key)
         if user:
             g.current_user = dict(user)
-            _attach_security_context(g.current_user)
             session["user_id"] = user["id"]
             return None
 
@@ -530,8 +457,7 @@ def _auth_before_request():
 def _security_after_request(response):
     """Add security headers to all responses."""
     response.headers["X-Content-Type-Options"] = "nosniff"
-    # Use setdefault so routes can opt-in to SAMEORIGIN (e.g. iframe-served content)
-    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers["X-Frame-Options"] = "DENY"
     response.headers["X-XSS-Protection"] = "1; mode=block"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     return response
@@ -602,7 +528,7 @@ def register_dashboard_auth(app: Flask):
         app.secret_key = DASHBOARD_SECRET
     else:
         # Auto-generate — sessions won't survive restarts but that's OK for dev
-        app.secret_key = secrets.token_hex(_api_key_entropy)
+        app.secret_key = secrets.token_hex(32)
 
     # Auto-provision API key on first install
     _auto_provision_env_key()

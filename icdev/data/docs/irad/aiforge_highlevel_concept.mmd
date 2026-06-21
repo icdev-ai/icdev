@@ -1,0 +1,14 @@
+graph LR
+    AIIFY["AI-ify\n(Detect & Score)"]
+    QUEUE["Opportunity\nQueue"]
+    AGENT["Synthesis\nAgent"]
+    TEST["Test\nHarness"]
+    HITL["HITL\nGate"]
+    OUT["Git PR +\nATO Evidence"]
+
+    AIIFY -->|composite ≥ 0.70| QUEUE
+    QUEUE --> AGENT
+    AGENT -->|generated code| TEST
+    TEST -->|pass| HITL
+    TEST -->|fail| AGENT
+    HITL -->|approved| OUT

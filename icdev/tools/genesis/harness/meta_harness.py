@@ -20,8 +20,13 @@ from tools.logging.icdev_logger import get_logger
 
 LOG = get_logger(__name__)
 
-PRECISION_HARD_FLOOR = 0.70
-FALSE_HEAL_CEILING = 0.25
+# Last-resort fallback thresholds — active only when both _AnomalyDetector AND
+# genesis_config.yaml harness.gates are unavailable.  Values are kept aligned with
+# harness.gates in genesis_config.yaml so the fallback never silently diverges.
+# Adaptive thresholds are computed at runtime by _get_adaptive_thresholds();
+# config-driven values are loaded by _load_meta_config_gates().
+PRECISION_HARD_FLOOR = 0.80   # aligned with harness.gates.precision_min
+FALSE_HEAL_CEILING = 0.20     # aligned with harness.gates.false_heal_max
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 CONSTITUTION_PATH = BASE_DIR / "args" / "heal_constitution.yaml"
@@ -60,6 +65,72 @@ def _mark_ran_today() -> None:
         META_STATE_PATH.write_text(_utcnow().date().isoformat(), encoding="utf-8")
     except OSError as exc:
         LOG.warning("[meta_harness] Could not write state file: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# Config-gate loading — reads harness.gates from genesis_config.yaml
+# ---------------------------------------------------------------------------
+
+def _find_meta_config_path() -> "Path | None":
+    """Walk up from this file's location to find args/genesis_config.yaml."""
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "args" / "genesis_config.yaml"
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def _load_meta_config_gates() -> dict[str, float]:
+    """Return harness.gates thresholds from genesis_config.yaml.
+
+    Falls back to PRECISION_HARD_FLOOR / FALSE_HEAL_CEILING when config is
+    absent or unreadable, so the caller always receives numeric values.
+    Used as the second-tier fallback in _get_adaptive_thresholds() — after
+    _AnomalyDetector, before the module-level constants.
+    """
+    config_path = _find_meta_config_path()
+    if config_path is None:
+        return {"precision_min": PRECISION_HARD_FLOOR, "false_heal_max": FALSE_HEAL_CEILING}
+    try:
+        import yaml
+        with open(config_path, encoding="utf-8") as f:
+            cfg = yaml.safe_load(f) or {}
+        gates = cfg.get("harness", {}).get("gates", {})
+        return {
+            "precision_min": float(gates.get("precision_min", PRECISION_HARD_FLOOR)),
+            "false_heal_max": float(gates.get("false_heal_max", FALSE_HEAL_CEILING)),
+        }
+    except Exception as exc:
+        LOG.debug("[meta_harness] config gates load failed: %s", exc)
+        return {"precision_min": PRECISION_HARD_FLOOR, "false_heal_max": FALSE_HEAL_CEILING}
+
+
+# ---------------------------------------------------------------------------
+# Adaptive threshold resolution
+# ---------------------------------------------------------------------------
+
+def _get_adaptive_thresholds() -> tuple[float, float]:
+    """Return (precision_floor, false_heal_ceiling) via anomaly detection.
+
+    Delegates to _AnomalyDetector from eval_harness when sufficient historical
+    data exists; falls back to module-level static constants otherwise.
+    """
+    try:
+        from tools.genesis.harness.eval_harness import _AnomalyDetector
+        detector = _AnomalyDetector()
+        oracle_thresh = detector.get_thresholds("oracle_triage")
+        heal_thresh = detector.get_thresholds("heal")
+        precision_floor = oracle_thresh.get("precision_min", PRECISION_HARD_FLOOR)
+        false_heal_ceiling = heal_thresh.get("false_heal_max", FALSE_HEAL_CEILING)
+        LOG.debug(
+            "[meta_harness] adaptive thresholds: precision_floor=%.3f false_heal_ceiling=%.3f",
+            precision_floor, false_heal_ceiling,
+        )
+        return precision_floor, false_heal_ceiling
+    except Exception as exc:
+        LOG.debug("[meta_harness] anomaly detector unavailable, falling back to config gates: %s", exc)
+        gates = _load_meta_config_gates()
+        return gates["precision_min"], gates["false_heal_max"]
 
 
 # ---------------------------------------------------------------------------
@@ -145,9 +216,12 @@ def _get_error_case_heuristic_hits(reflex: str = "oracle_triage") -> dict[str, i
 def _propose_heuristic_retirements(
     precision: float,
     heuristic_hits: dict[str, int],
+    precision_floor: float | None = None,
 ) -> list[dict]:
     """Propose retiring heuristics with >= 2 error-case hits when precision is low."""
-    if precision >= PRECISION_HARD_FLOOR:
+    if precision_floor is None:
+        precision_floor, _ = _get_adaptive_thresholds()
+    if precision >= precision_floor:
         return []
 
     proposals = []
@@ -159,7 +233,7 @@ def _propose_heuristic_retirements(
                 "proposal": "retire",
                 "reason": (
                     f"Appeared in {hit_count} error cases while oracle precision "
-                    f"({precision:.3f}) is below hard floor {PRECISION_HARD_FLOOR}. "
+                    f"({precision:.3f}) is below floor {precision_floor:.3f}. "
                     "Consider retiring or inverting this heuristic."
                 ),
             })
@@ -202,9 +276,12 @@ def _propose_constitution_tightening(
     false_heal_rate: float,
     constitution: dict,
     error_types: dict[str, int],
+    false_heal_ceiling: float | None = None,
 ) -> list[dict]:
     """Propose raising min_confidence for resolution types with high failure counts."""
-    if false_heal_rate < FALSE_HEAL_CEILING:
+    if false_heal_ceiling is None:
+        _, false_heal_ceiling = _get_adaptive_thresholds()
+    if false_heal_rate < false_heal_ceiling:
         return []
 
     proposals = []
@@ -232,7 +309,7 @@ def _propose_constitution_tightening(
             "reason": (
                 f"Resolution type '{res_type}' had {fail_count} failures in last 30 days "
                 f"while false_heal_rate ({false_heal_rate:.3f}) exceeds ceiling "
-                f"{FALSE_HEAL_CEILING}. Propose raising min_confidence from "
+                f"{false_heal_ceiling:.3f}. Propose raising min_confidence from "
                 f"{current_floor} to {proposed_floor}."
             ),
         })
@@ -291,27 +368,29 @@ def run_meta_review(dry_run: bool = False) -> dict[str, Any]:
     precision = metrics_oracle.get("precision", 1.0)
     false_heal_rate = metrics_heal.get("false_heal_rate", 0.0)
 
+    precision_floor, false_heal_ceiling = _get_adaptive_thresholds()
+
     # Oracle heuristic retirement analysis
-    if precision < PRECISION_HARD_FLOOR:
+    if precision < precision_floor:
         hits = _get_error_case_heuristic_hits("oracle_triage")
-        oracle_proposals = _propose_heuristic_retirements(precision, hits)
+        oracle_proposals = _propose_heuristic_retirements(precision, hits, precision_floor)
         if oracle_proposals:
             LOG.info(
-                "[meta_harness] oracle precision=%.3f below floor %.2f — %d retirement proposals",
-                precision, PRECISION_HARD_FLOOR, len(oracle_proposals),
+                "[meta_harness] oracle precision=%.3f below floor %.3f — %d retirement proposals",
+                precision, precision_floor, len(oracle_proposals),
             )
 
     # Heal constitution tightening analysis
-    if false_heal_rate > FALSE_HEAL_CEILING:
+    if false_heal_rate > false_heal_ceiling:
         constitution = _load_constitution()
         error_types = _get_heal_error_types()
         heal_proposals = _propose_constitution_tightening(
-            false_heal_rate, constitution, error_types
+            false_heal_rate, constitution, error_types, false_heal_ceiling
         )
         if heal_proposals:
             LOG.info(
-                "[meta_harness] false_heal_rate=%.3f above ceiling %.2f — %d tightening proposals",
-                false_heal_rate, FALSE_HEAL_CEILING, len(heal_proposals),
+                "[meta_harness] false_heal_rate=%.3f above ceiling %.3f — %d tightening proposals",
+                false_heal_rate, false_heal_ceiling, len(heal_proposals),
             )
 
     proposals_written = bool(oracle_proposals or heal_proposals)
@@ -327,6 +406,8 @@ def run_meta_review(dry_run: bool = False) -> dict[str, Any]:
         "dry_run": dry_run,
         "precision": precision,
         "false_heal_rate": false_heal_rate,
+        "precision_floor": precision_floor,
+        "false_heal_ceiling": false_heal_ceiling,
         "oracle_proposals": oracle_proposals,
         "heal_proposals": heal_proposals,
         "proposals_written": proposals_written and not dry_run,

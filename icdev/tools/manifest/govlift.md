@@ -16,6 +16,7 @@ Blueprint: `tools/govlift/blueprint.py` · DB init: `tools/govlift/db/init_db.py
 | Migration Executor | tools/govlift/migration_executor.py | Track migration jobs; start/complete/rollback; phase timings | (library) | list_migrations(), start_migration(), complete_migration(), rollback_migration(), get_migration_summary() |
 | STIG Checker | tools/govlift/stig_checker.py | DISA STIG compliance checks; run_quick_scan() seeds 10 RHEL-09 checks; CAT1/2/3 severity | (library) | list_stig_checks(), run_quick_scan(), update_check_status(), get_stig_summary() |
 | Audit Engine | tools/govlift/audit_engine.py | NIST AU append-only audit log; log_action() + list_audit_log(); retention 7 years | (library) | log_action(), list_audit_log(), get_audit_summary() |
+| Runbook Marketplace | tools/govlift/marketplace.py | Submit/approve/reject/download runbook templates via govlift_marketplace_items; aggregate stats | template_id, author, reviewer, item_id | publish_template(), get_item(), list_items(), approve_item(), reject_item(), download_item(), get_stats() |
 | Blueprint | tools/govlift/blueprint.py | Flask Blueprint (url_prefix=""); 6 page routes + 18 API routes + IQE query route | (library) | create_govlift_blueprint() |
 | IQE Adapter | tools/iqe/adapters/govlift.py | 5 IQE collections: workloads, waves, migrations, stig, audit | (registered by app.py) | register_collection() calls |
 
@@ -28,6 +29,7 @@ Blueprint: `tools/govlift/blueprint.py` · DB init: `tools/govlift/db/init_db.py
 | govlift_stig_checks | No | STIG compliance findings |
 | govlift_audit_log | **Yes** | NIST AU immutable audit trail |
 | govlift_integrations | No | External system integration registry |
+| govlift_marketplace_items | No | Runbook template marketplace listings (submitted/approved/rejected) |
 
 ### Page Routes
 | Route | Template | Description |

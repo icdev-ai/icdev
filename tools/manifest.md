@@ -217,7 +217,7 @@
 | Support Resistance | tools\trading\ta\support_resistance.py | Auto-registered: ta/support_resistance.py | --json | JSON |
 | Combo Analyzer | tools\trading\options\combo_analyzer.py | Auto-registered: options/combo_analyzer.py | --json | JSON |
 | Auto Trade Options | tools\trading\options\auto_trade_options.py | Auto-registered: options/auto_trade_options.py | --json | JSON |
-| Alphadesk Trap Scenarios | tools\genesis\reflexes\alphadesk_trap_scenarios.py | Auto-registered: reflexes/alphadesk_trap_scenarios.py | --json | JSON |
+| FathomDesk Trap Scenarios | tools\genesis\reflexes\fathomdesk_trap_scenarios.py | Auto-registered: reflexes/fathomdesk_trap_scenarios.py | --json | JSON |
 | Git Utils | tools\workflow\git_utils.py | Auto-registered: workflow/git_utils.py | --json | JSON |
 | Twin Chat | tools\twin_chat.py | Auto-registered: tools/twin_chat.py | --json | JSON |
 | Bond Etf Data | tools\trading\data\bond_etf_data.py | Auto-registered: data/bond_etf_data.py | --json | JSON |

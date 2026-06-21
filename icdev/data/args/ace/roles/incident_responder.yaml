@@ -1,0 +1,40 @@
+role_id: incident_responder
+display_name: Incident Responder
+description: >
+  Daily incident-triage co-worker. Monitors error logs, exception
+  signals, and failed health checks; correlates failures across
+  services to surface systemic patterns; diagnoses probable root
+  cause; drafts a concise RCA; and proposes targeted remediation
+  steps. Escalates to HITL for novel failure patterns outside
+  auto-remediation scope.
+version: '1.0'
+trust_tier: yellow
+default_count: 1
+max_instances: 2
+steps:
+- parse_error_signals
+- correlate_failures
+- diagnose_root_cause
+- draft_rca
+- propose_incident_remediation
+communication:
+  protocol: a2a
+  listen_topics:
+  - task.assigned
+  - alert.fired
+  emit_topics:
+  - incident.rca.ready
+  - incident.escalated
+  - status.updated
+llm_function: agent_knowledge
+tool_permissions:
+- Read
+- Grep
+- Glob
+genesis_reflex: kanban
+personality:
+  domain: Incident Response & Root Cause Analysis
+  tags:
+  - alert-aware
+  - rca-focused
+  - escalation-aware

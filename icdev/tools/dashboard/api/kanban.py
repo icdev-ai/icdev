@@ -2,9 +2,11 @@ from __future__ import annotations
 # CUI // SP-CTI
 """Kanban Task Board API — CRUD for task cards on the dashboard Kanban."""
 
+import json
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from typing import Any, Dict, List
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -250,7 +252,7 @@ def list_tasks():
         backlog_limit = 100
     conn = get_connection()
     if hasattr(conn, "set_security_context"):
-        conn.set_security_context(None)  # kanban_tasks has no classification/tenant_id columns
+        conn.set_security_context(None)  # rls-bypass: kanban_tasks has no classification/tenant_id columns
     try:
         # Execution queue ordering: within the same priority, tasks that
         # will run first appear first. For `backlog` (queued for
@@ -535,7 +537,7 @@ def create_task():
 
     conn = get_connection()
     if hasattr(conn, "set_security_context"):
-        conn.set_security_context(None)  # kanban_tasks has no classification/tenant_id columns
+        conn.set_security_context(None)  # rls-bypass: kanban_tasks has no classification/tenant_id columns
     try:
         # Validate all deps via DFS cycle detection
         ok, err = _check_dependency_cycle_dfs(task_id, dep_ids, conn)
@@ -876,7 +878,6 @@ def task_subscribe(task_id):
     """Register a webhook subscription for terminal events on this task.
     Body: {"channel": "webhook"|"slack"|"teams", "target": "<url>", "events": ["done","token_exhausted"]}
     """
-    import json as _json
     data = request.get_json(force=True, silent=True) or {}
     channel = (data.get("channel") or "webhook").strip()
     target = (data.get("target") or "").strip()
@@ -1212,42 +1213,107 @@ def bulk_move_tasks():
 
 @kanban_api.route("/tasks/promote-all", methods=["POST"])
 def promote_all_suggested():
-    """Move ALL suggested cards to backlog in one shot.
+    """Move suggested cards to backlog, with optional value/confidence/rule gates.
 
-    No request body needed.  Returns ``{"promoted": N}``.
+    Body (all optional):
+        {
+          "min_confidence": 0.90,   # only promote cards with oracle_confidence >= N
+          "min_value": 1.0,         # only promote cards with oracle_value >= N
+          "rule": "route_not_listed" # only promote cards matching this oracle_rule
+        }
+
+    When no body is provided, promotes ALL non-quarantined suggested cards
+    (legacy behaviour preserved for backward compat).
+
+    Returns ``{"promoted": N, "filtered": M, "new_status": "backlog"}``.
     Used by the "Promote All" button on the Suggested column header.
     """
+    data = request.get_json(force=True, silent=True) or {}
+    min_confidence = data.get("min_confidence")
+    min_value = data.get("min_value")
+    rule_filter = data.get("rule")
+
     now = _utcnow()
     conn = get_connection()
     try:
-        # Exclude self_debug-quarantined rows from bulk-promote: they live in
-        # 'suggested' as a durable quarantine, not as awaiting-approval
-        # suggestions. Promoting them re-loops the scheduler.
-        rows = conn.execute(
-            "SELECT id FROM kanban_tasks WHERE status = 'suggested' "
-            "AND (last_failure_reason IS NULL OR last_failure_reason NOT LIKE ?)",
-            ("QUARANTINED by self_debug%",),
-        ).fetchall()
-        count = len(rows)
-        if count == 0:
-            return jsonify({"promoted": 0, "message": "No suggested cards to promote"})
+        # Fetch suggested cards with oracle metadata (same JOIN as list_tasks)
+        select = (
+            "SELECT kt.id, kt.title, "
+            "op.confidence AS oracle_confidence, "
+            "op.prediction_text AS oracle_proposed_action, "
+            "op.lens_name AS oracle_lens, "
+            "op.prediction_type AS oracle_prediction_type "
+            "FROM kanban_tasks kt "
+            "LEFT JOIN oracle_predictions op "
+            "ON kt.source_prediction_id = op.id "
+            "WHERE kt.status = 'suggested' "
+            "AND (kt.last_failure_reason IS NULL OR kt.last_failure_reason NOT LIKE ?) "
+        )
+        rows = conn.execute(select, ("QUARANTINED by self_debug%",)).fetchall()
+        tasks = [dict(r) for r in rows]
 
+        # Normalise oracle_rule exactly as list_tasks does
+        for t in tasks:
+            ptype = (t.get("oracle_prediction_type") or "")
+            lens = (t.get("oracle_lens") or "")
+            if ptype.startswith("gap::") or ptype.startswith("regression::"):
+                t["oracle_rule"] = ptype.split("::", 1)[1]
+            elif lens and lens != "internal_awareness":
+                t["oracle_rule"] = lens
+            else:
+                t["oracle_rule"] = lens or ""
+            if t["oracle_rule"] and t["oracle_rule"] != "internal_awareness":
+                t["oracle_lens"] = t["oracle_rule"]
+
+        # Compute oracle_value so we can gate on it
+        annotate_tasks_with_value(tasks)
+
+        filtered = 0
+        eligible_ids = []
+        for t in tasks:
+            # Rule filter
+            if rule_filter and t.get("oracle_rule") != rule_filter:
+                filtered += 1
+                continue
+            # Confidence filter
+            conf = t.get("oracle_confidence")
+            if min_confidence is not None:
+                if conf is None or conf < float(min_confidence):
+                    filtered += 1
+                    continue
+            # Value filter
+            val = t.get("oracle_value")
+            if min_value is not None:
+                if val is None or val < float(min_value):
+                    filtered += 1
+                    continue
+            eligible_ids.append(t["id"])
+
+        count = len(eligible_ids)
+        if count == 0:
+            return jsonify({
+                "promoted": 0,
+                "filtered": filtered,
+                "message": "No suggested cards matched the promotion gate",
+            })
+
+        # Batch update by IDs (safe cap at 1000 per existing bulk_move limit)
+        ph = ",".join(["?"] * len(eligible_ids))
         conn.execute(
-            "UPDATE kanban_tasks SET status = 'backlog', updated_at = ? "
-            "WHERE status = 'suggested' "
-            "AND (last_failure_reason IS NULL OR last_failure_reason NOT LIKE ?)",
-            (now, "QUARANTINED by self_debug%"),
+            f"UPDATE kanban_tasks SET status = 'backlog', updated_at = ? "  # nosec B608
+            f"WHERE id IN ({ph})",
+            (now, *eligible_ids),
         )
         conn.commit()
 
         try:
             sse_manager.broadcast(
-                {"action": "bulk_promoted", "count": count},
+                {"action": "bulk_promoted", "count": count, "filtered": filtered},
                 "kanban",
             )
         except Exception:
             pass
-        return jsonify({"promoted": count, "new_status": "backlog"})
+        return jsonify({"promoted": count, "filtered": filtered, "new_status": "backlog"})
     except Exception as exc:
         return jsonify({"error": str(exc)[:200]}), 500
     finally:
@@ -1281,7 +1347,7 @@ def move_task(task_id):
     now = _utcnow()
     conn = get_connection()
     if hasattr(conn, "set_security_context"):
-        conn.set_security_context(None)  # kanban_tasks has no classification/tenant_id columns
+        conn.set_security_context(None)  # rls-bypass: kanban_tasks has no classification/tenant_id columns
     try:
         existing = conn.execute("SELECT status, title FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone()
         if not existing:
@@ -1296,14 +1362,14 @@ def move_task(task_id):
                 "SELECT depends_on_task_id FROM kanban_tasks WHERE id = ?",
                 (task_id,),
             ).fetchone()
-            parent_id = dep_row["depends_on_task_id"] if dep_row else None
+            parent_id = (dep_row or {}).get("depends_on_task_id")
             parent_status = None
             if parent_id:
                 parent_row = conn.execute(
                     "SELECT status FROM kanban_tasks WHERE id = ?",
                     (parent_id,),
                 ).fetchone()
-                parent_status = parent_row["status"] if parent_row else None
+                parent_status = (parent_row or {}).get("status")
             if parent_id and parent_status not in ("done", "decomposed", None):
                     return jsonify({
                         "error": "dependency_not_done",
@@ -1918,3 +1984,68 @@ def create_from_plan():
     finally:
         conn.close()
 
+
+@kanban_api.route("/lessons", methods=["GET"])
+def list_lessons():
+    """Return lesson_learned memory entries for kanban tasks.
+
+    Query params:
+      pattern — filter by pattern (e.g. token_exhaustion)
+      systemic — 1/0 filter
+      days — look-back window (default 30)
+      limit — cap results (default 200)
+    """
+    pattern_filter = request.args.get("pattern")
+    systemic_filter = request.args.get("systemic")
+    try:
+        days = int(request.args.get("days") or 30)
+    except (ValueError, TypeError):
+        days = 30
+    try:
+        limit = int(request.args.get("limit") or 200)
+    except (ValueError, TypeError):
+        limit = 200
+
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    conn = get_connection()
+    try:
+        sql = (
+            "SELECT id, content, created_at, importance "
+            "FROM memory_entries WHERE type = ? AND created_at >= ?"
+        )
+        params: List[Any] = ["lesson_learned", since]
+        if pattern_filter:
+            sql += " AND content LIKE ?"
+            params.append(f'%"pattern": "{pattern_filter}"%')
+        if systemic_filter is not None:
+            sql += " AND content LIKE ?"
+            target = "true" if systemic_filter in ("1", "true", "yes") else "false"
+            params.append(f'%"is_systemic": {target}%')
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(sql, tuple(params)).fetchall()
+        lessons: List[Dict[str, Any]] = []
+        for r in rows:
+            d = dict(r)
+            payload: Dict[str, Any] = {}
+            try:
+                payload = json.loads(d.get("content") or "{}")
+            except Exception:
+                pass
+            lessons.append({
+                "id": d.get("id"),
+                "created_at": d.get("created_at"),
+                "importance": d.get("importance"),
+                "task_id": payload.get("task_id"),
+                "task_title": payload.get("task_title"),
+                "outcome": payload.get("outcome"),
+                "pattern": payload.get("pattern"),
+                "category": payload.get("category"),
+                "failure_count": payload.get("failure_count"),
+                "recurrence_score": payload.get("recurrence_score"),
+                "is_systemic": payload.get("is_systemic"),
+                "recommendation": payload.get("recommendation"),
+            })
+        return jsonify({"lessons": lessons, "total": len(lessons), "days": days})
+    finally:
+        conn.close()

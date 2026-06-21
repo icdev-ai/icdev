@@ -89,6 +89,8 @@ CONFIG_PATH = BASE_DIR / "args" / "foundry_config.yaml"
 _DEFAULT_RATE_LIMITS = {"max_concepts_per_cycle": 5, "max_active_projects": 3}
 _DEFAULT_SCORING = {"min_composite": 0.6}
 _DEFAULT_DELIBERATION = {"enabled": True, "defer_to_score_on_fallback": True}
+_DEFAULT_CIRCUIT = {"vv_fail_rate": 0.5, "window": 10}
+_DEFAULT_SELF_VET = {"require_integrity_gate": True, "require_security_gate": True}
 
 
 def _load_config(config: Optional[dict]) -> dict:
@@ -299,6 +301,54 @@ def _stage_emit(approved: list[dict], cfg: dict, conn: Any, *, dry_run: bool) ->
 
 
 # =========================================================================
+# HARNESS BRIDGE (acf-ada-01)
+# =========================================================================
+def _record_harness_decisions(run_id: str, approved: list[dict], all_concepts: list[dict]) -> None:
+    """Forward every concept decision to the Genesis Harness (acf-ada-01).
+
+    Writes one ``harness_eval`` row per concept:
+      * ``status='approved'``  -> decision ``'acf_approve'`` (positive class)
+      * ``status='rejected'``  -> decision ``'acf_reject'``  (negative class)
+      * status unchanged       -> decision ``'acf_skip'``    (proposed-only)
+
+    Confidence is the composite score (or 0.0 if missing). The bridge is
+    best-effort and degrades silently when ``tools.genesis.harness.eval_harness``
+    is unavailable — the cycle never crashes on a missing harness. Same
+    graceful-degradation pattern as the rest of the engine.
+    """
+    try:
+        from tools.foundry import harness_bridge
+    except Exception as exc:  # noqa: BLE001 - air-gap / pre-shipped
+        logger.debug("harness_bridge not importable (%s); skipping ACF decision recording", exc)
+        return
+
+    approved_slugs = {c.get("slug") for c in approved if c.get("slug")}
+    for c in all_concepts:
+        slug = c.get("slug")
+        if not slug:
+            continue
+        if c.get("status") == "approved" or slug in approved_slugs:
+            decision_type = harness_bridge.DECISION_APPROVE
+        elif c.get("status") == "rejected":
+            decision_type = harness_bridge.DECISION_REJECT
+        else:
+            decision_type = harness_bridge.DECISION_SKIP
+        try:
+            harness_bridge.record_acf_decision(
+                slug=slug,
+                decision_type=decision_type,
+                confidence=c.get("composite_score"),
+                metadata={
+                    "run_id": run_id,
+                    "novelty_score": c.get("novelty_score"),
+                    "reject_reason": c.get("reject_reason"),
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 - per-concept failure never aborts the cycle
+            logger.debug("harness_bridge record_acf_decision failed for %s: %s", slug, exc)
+
+
+# =========================================================================
 # RATE LIMITS
 # =========================================================================
 def _active_project_count(conn: Any) -> int:
@@ -331,6 +381,116 @@ def _active_project_count(conn: Any) -> int:
             return int(list(dict(row).values())[0] or 0)
         except Exception:  # noqa: BLE001
             return 0
+
+
+# =========================================================================
+# CIRCUIT BREAKER
+# =========================================================================
+
+def _recent_vv_fail_rate(conn: Any, window: int = 10) -> Optional[dict]:
+    """Return V&V outcome stats for the most recent *window* foundry_outcomes rows.
+
+    Only ``vv_fail`` and ``vv_pass`` outcomes are counted; ``abandoned`` rows are
+    inconclusive and excluded from both numerator and denominator.
+
+    Returns ``None`` when no vv_fail/vv_pass rows exist in the window (an empty or
+    all-abandoned window must not trip the circuit breaker).
+    """
+    try:
+        rows = conn.execute(
+            "SELECT outcome FROM foundry_outcomes ORDER BY id DESC LIMIT ?",
+            (window,),
+        ).fetchall()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("_recent_vv_fail_rate: DB read failed: %s", exc)
+        return None
+
+    fail_count = 0
+    pass_count = 0
+    for r in rows:
+        try:
+            outcome = r["outcome"]
+        except (KeyError, TypeError):
+            outcome = r[0]
+        if outcome == "vv_fail":
+            fail_count += 1
+        elif outcome == "vv_pass":
+            pass_count += 1
+
+    total = fail_count + pass_count
+    if total == 0:
+        return None
+    return {
+        "total": total,
+        "fail_count": fail_count,
+        "window": window,
+        "fail_rate": fail_count / total,
+    }
+
+
+def _circuit_breaker_open(conn: Any, config: dict) -> tuple:
+    """Evaluate the V&V circuit breaker.
+
+    Returns ``(opened, stats, cb_cfg)`` where:
+    - ``opened`` — True when fail_rate >= threshold
+    - ``stats``  — dict from _recent_vv_fail_rate, or None if window is empty
+    - ``cb_cfg`` — resolved circuit config (threshold + window)
+    """
+    cb_cfg = {**_DEFAULT_CIRCUIT, **(config.get("circuit", {}) or {})}
+    stats = _recent_vv_fail_rate(conn, window=int(cb_cfg["window"]))
+    if stats is None:
+        return False, None, cb_cfg
+    opened = stats["fail_rate"] >= float(cb_cfg["vv_fail_rate"])
+    return opened, stats, cb_cfg
+
+
+def _ensure_hitl_circuit_card(
+    *,
+    conn: Any,
+    run_id: Any,
+    tenant_id: str,
+    classification: str,
+    stats: dict,
+    cb_cfg: dict,
+) -> str:
+    """INSERT OR IGNORE a kanban HITL card for this circuit-open run.
+
+    Idempotent: the card id is deterministic (acf-hitl-circuit-<run_id>) so
+    re-calling for the same run_id silently no-ops.
+    Returns the card id.
+    """
+    from datetime import datetime, timezone
+
+    card_id = f"acf-hitl-circuit-{run_id}"
+    now = datetime.now(timezone.utc).isoformat()
+    desc = (
+        f"ACF circuit breaker triggered.\n\n"
+        f"V&V fail rate: {stats['fail_rate']:.0%} "
+        f"({stats['fail_count']}/{stats['total']}) in last {stats['window']} outcomes.\n"
+        f"Threshold: {cb_cfg['vv_fail_rate']:.0%}.\n\n"
+        f"Review the recent V&V failures in foundry_outcomes before re-enabling autonomous build."
+    )
+    try:
+        conn.execute(
+            """
+            INSERT OR IGNORE INTO kanban_tasks
+                (id, title, description, task_type, priority, status,
+                 hitl_stage, dispatch_source, created_at, updated_at,
+                 tenant_id, classification)
+            VALUES (?, ?, ?, 'hitl', 'critical', 'backlog',
+                    'circuit_breaker', 'foundry_circuit_breaker', ?, ?, ?, ?)
+            """,
+            (
+                card_id,
+                f"[ACF] Circuit breaker open — {stats['fail_rate']:.0%} V&V fail rate",
+                desc,
+                now, now, tenant_id, classification,
+            ),
+        )
+        conn.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("_ensure_hitl_circuit_card: insert failed: %s", exc)
+    return card_id
 
 
 # =========================================================================
@@ -444,6 +604,11 @@ def run_cycle(
     run_pk = _open_run(conn, tenant_id, classification)
     run_id = str(run_pk) if run_pk is not None else "0"
 
+    # Resolve self_vet and circuit configs early so they appear in detail
+    # even on short-circuit paths.
+    self_vet_cfg = {**_DEFAULT_SELF_VET, **(cfg.get("self_vet", {}) or {})}
+    _cb_cfg_early = {**_DEFAULT_CIRCUIT, **(cfg.get("circuit", {}) or {})}
+
     result: dict = {
         "run_id": run_id,
         "id": run_pk,
@@ -457,11 +622,33 @@ def run_cycle(
         "detail": {
             "max_concepts_per_cycle": cap_concepts,
             "max_active_projects": max_active,
+            "circuit": _cb_cfg_early,
+            "self_vet": self_vet_cfg,
         },
     }
     detail = result["detail"]
 
     try:
+        # 0. Circuit breaker — abort cycle if V&V fail rate is too high.
+        cb_open, cb_stats, cb_cfg = _circuit_breaker_open(conn, cfg)
+        detail["circuit"] = cb_cfg  # include resolved config (may differ from early default)
+        if cb_open:
+            card_id = _ensure_hitl_circuit_card(
+                conn=conn, run_id=run_pk, tenant_id=tenant_id,
+                classification=classification, stats=cb_stats, cb_cfg=cb_cfg,
+            )
+            result["status"] = "circuit_open"
+            result["circuit_open"] = True
+            detail["reason"] = "circuit breaker open: V&V fail rate exceeded threshold"
+            detail["hitl_card_id"] = card_id
+            detail["circuit_stats"] = cb_stats
+            logger.warning(
+                "foundry circuit breaker OPEN run=%s fail_rate=%.0f%% card=%s",
+                run_id, cb_stats["fail_rate"] * 100, card_id,
+            )
+            _finalize_run(conn, run_pk, result)
+            return result
+
         # 1. Harvest.
         signals = _stage_harvest(run_id, cfg, conn)
         result["harvested"] = len(signals)
@@ -472,6 +659,14 @@ def run_cycle(
 
         # 3-5. Novelty gate -> score -> CoD go/no-go.
         approved = _stage_evaluate(concepts, cfg, conn)
+
+        # 2b. Record every evaluation decision (approved + rejected) with the
+        # Genesis Harness so compute_metrics(reflex='acf') can compute
+        # precision/recall on the foundry's own approval choices (acf-ada-01).
+        # Rejected concepts are the ones _stage_evaluate mutated in place to
+        # status='rejected'; proposed-but-undecided (e.g. rate-limited upstream)
+        # would carry the default 'proposed' status.
+        _record_harness_decisions(run_id, approved, concepts)
 
         # Rate limit A — cap approved concepts per cycle.
         if len(approved) > cap_concepts:

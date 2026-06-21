@@ -1096,16 +1096,38 @@ const StudioWF = (() => {
             <span class="studio-text-muted" style="font-size:0.7rem;">
               ${new Date(wf.updated_at).toLocaleDateString()}
             </span>
-            <button class="studio-btn studio-btn--secondary studio-btn--sm"
-                    onclick="StudioWF.loadWorkflow('${wf.workflow_id}')">
-              Open
-            </button>
+            <div style="display:flex;gap:6px;align-items:center;">
+              <button class="studio-btn studio-btn--secondary studio-btn--sm"
+                      title="Edit workflow in canvas"
+                      onclick="StudioWF.loadWorkflow('${wf.workflow_id}')">
+                &#9998; Edit
+              </button>
+              <button class="studio-btn studio-btn--primary studio-btn--sm"
+                      title="Run workflow now"
+                      onclick="StudioWF.loadWorkflow('${wf.workflow_id}').then(()=>StudioWF.run())">
+                &#9654; Run
+              </button>
+              <button class="studio-btn studio-btn--ghost studio-btn--sm"
+                      title="Delete workflow"
+                      style="color:#f87171;border-color:#7f1d1d;"
+                      onclick="StudioWF.deleteSavedWorkflow('${wf.workflow_id}')">
+                &#128465;
+              </button>
+            </div>
           </div>
         </div>
       `).join('');
     } catch (e) {
       console.error(e);
     }
+  }
+
+  async function deleteSavedWorkflow(workflowId) {
+    if (!confirm('Delete this workflow? This cannot be undone.')) return;
+    try {
+      const resp = await fetch('/api/studio/workflows/' + encodeURIComponent(workflowId), {method: 'DELETE'});
+      if (resp.ok) loadSavedWorkflows();
+    } catch (e) { console.error(e); }
   }
 
   // ── Templates ──
@@ -1627,7 +1649,7 @@ const StudioWF = (() => {
     handleToolDragStart, handleDrop, filterTools,
     startConnect, endConnect,
     switchTab, save, exportYAML, importYAML, doImportYAML,
-    validate, createNew, loadTemplate, loadWorkflow, useTemplate,
+    validate, createNew, loadTemplate, loadWorkflow, useTemplate, deleteSavedWorkflow,
     openNodeConfig: openNodeConfig, closeModal, saveNodeConfig, deleteNode, onNodeTypeChange,
     zoomIn, zoomOut, fitView, undo, redo, togglePalette, toggleGroup,
     drillInto, drillBack, drillBackTo, hideContextMenu,

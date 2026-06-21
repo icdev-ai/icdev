@@ -5,14 +5,23 @@
 Queries marketplace license usage, feedback data, and module health to
 generate improvement suggestions as GKP artifacts.
 
+Anomaly detection replaces hardcoded thresholds (aiify-opp-5308):
+  - Low-rating detection uses z-score against the observed rating distribution.
+  - Feedback-gap detection uses median installs as the adaptive threshold.
+  - Optional LLM triage via LLMRouter("anomaly_detection") enriches findings.
+  - Graceful statistical fallback keeps this GREEN / air-gap safe.
+
 GREEN tier (read-only analytics).  Air-gap safe.
 """
 IMPLEMENTATION_STATUS = "full"
 
+import json
+import re
 import sys
 from datetime import datetime, timezone
+from math import sqrt
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
@@ -78,45 +87,191 @@ def _get_feedback_summary() -> Dict[str, Any]:
         conn.close()
 
 
+def _distribution_stats(values: List[float]) -> Dict[str, float]:
+    """Return mean and population std-dev for a numeric list (empty-safe)."""
+    n = len(values)
+    if n == 0:
+        return {"mean": 0.0, "std": 0.0, "median": 0.0, "n": 0}
+    mean = sum(values) / n
+    variance = sum((v - mean) ** 2 for v in values) / n
+    sorted_v = sorted(values)
+    mid = n // 2
+    median = sorted_v[mid] if n % 2 == 1 else (sorted_v[mid - 1] + sorted_v[mid]) / 2.0
+    return {"mean": mean, "std": sqrt(variance), "median": median, "n": n}
+
+
+def _adaptive_thresholds(stats: List[Dict], feedback: Dict) -> Dict[str, float]:
+    """Compute adaptive anomaly thresholds from observed data distributions.
+
+    Returns:
+        rating_threshold   — modules below this are flagged as low-rated
+        min_feedback_count — minimum reviews before a module is judged
+        installs_threshold — installs above this trigger feedback-gap flag
+        method             — how thresholds were derived
+    """
+    ratings = [
+        m["avg_rating"]
+        for m in feedback.get("details", [])
+        if m.get("count", 0) >= 1
+    ]
+    installs = [m["installs"] for m in stats]
+
+    r_stats = _distribution_stats(ratings)
+    i_stats = _distribution_stats([float(x) for x in installs])
+
+    if r_stats["n"] >= 3:
+        # Z-score: flag anything more than 1 std-dev below the mean
+        rating_threshold = max(1.0, r_stats["mean"] - r_stats["std"])
+        min_feedback_count = max(1, round(r_stats["n"] * 0.1))
+        method = "z_score"
+    elif r_stats["n"] >= 1:
+        # Too few points for z-score — use 80 % of the observed mean
+        rating_threshold = max(1.0, r_stats["mean"] * 0.8)
+        min_feedback_count = 1
+        method = "relative"
+    else:
+        # No rating data at all — neutral defaults (no false positives)
+        rating_threshold = 1.0
+        min_feedback_count = 1
+        method = "fallback"
+
+    if i_stats["n"] >= 1:
+        # Modules above the median install count are "popular" — expect feedback
+        installs_threshold = max(1.0, i_stats["median"])
+    else:
+        installs_threshold = 1.0
+
+    return {
+        "rating_threshold": round(rating_threshold, 3),
+        "min_feedback_count": min_feedback_count,
+        "installs_threshold": round(installs_threshold, 3),
+        "method": method,
+        "rating_stats": r_stats,
+        "install_stats": i_stats,
+    }
+
+
+def _llm_triage(anomalies: List[Dict], thresholds: Dict) -> Optional[List[Dict]]:
+    """Optional LLM enrichment of detected anomalies via anomaly_detection routing.
+
+    Returns enriched anomaly list on success, None on any failure (air-gap safe).
+    """
+    if not anomalies:
+        return None
+    try:
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        prompt = (
+            "You are a marketplace health analyst.\n\n"
+            "Adaptive thresholds (derived from live data):\n"
+            f"{json.dumps(thresholds, indent=2)}\n\n"
+            "Detected anomalies:\n"
+            f"{json.dumps(anomalies, indent=2)}\n\n"
+            "For each anomaly output a JSON array of objects with keys:\n"
+            "  module, severity (low/medium/high), root_cause (one sentence), "
+            "  recommended_action (one sentence).\n"
+            "Reply ONLY with the JSON array — no markdown, no extra text."
+        )
+        router = LLMRouter()
+        request = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            system_prompt="You are a marketplace anomaly triage engine. Reply only with JSON.",
+            agent_id="market-reflex-triage",
+            classification="CUI",
+            max_tokens=1024,
+            effort="low",
+        )
+        response = router.invoke("anomaly_detection", request)
+        raw = response.content or ""
+        text = re.sub(r"```(?:json)?|```", "", raw).strip()
+        parsed = json.loads(text)
+        if isinstance(parsed, list):
+            return parsed
+    except Exception:
+        pass
+    return None
+
+
 def _generate_suggestions(stats: List[Dict], feedback: Dict) -> List[Dict[str, str]]:
-    """Generate improvement suggestions based on usage and feedback."""
+    """Generate improvement suggestions using adaptive anomaly detection."""
     suggestions = []
+    thresholds = _adaptive_thresholds(stats, feedback)
 
-    # Suggest improvements for low-rated modules
+    rating_threshold = thresholds["rating_threshold"]
+    min_feedback_count = thresholds["min_feedback_count"]
+    installs_threshold = thresholds["installs_threshold"]
+    method = thresholds["method"]
+
+    # --- Low-rating anomalies ---
+    raw_anomalies: List[Dict] = []
     for mod in feedback.get("details", []):
-        if mod.get("avg_rating", 5) < 3.5 and mod.get("count", 0) >= 2:
-            suggestions.append(
-                {
-                    "type": "quality_improvement",
-                    "module": mod["slug"],
-                    "reason": f"Low average rating ({mod['avg_rating']}) across {mod['count']} reviews",
-                    "action": "Review feedback comments, prioritize fixes",
-                }
-            )
+        if mod.get("avg_rating", 5.0) < rating_threshold and mod.get("count", 0) >= min_feedback_count:
+            raw_anomalies.append({"type": "low_rating", "module": mod["slug"],
+                                   "avg_rating": mod["avg_rating"], "count": mod["count"]})
 
-    # Suggest promotion for high-install modules without feedback
+    # --- Feedback-gap anomalies ---
     slugs_with_feedback = {m["slug"] for m in feedback.get("details", [])}
     for mod in stats:
-        if mod["slug"] not in slugs_with_feedback and mod["installs"] > 3:
-            suggestions.append(
-                {
+        if mod["slug"] not in slugs_with_feedback and mod["installs"] > installs_threshold:
+            raw_anomalies.append({"type": "feedback_gap", "module": mod["slug"],
+                                   "installs": mod["installs"]})
+
+    # Optional LLM enrichment
+    enriched = _llm_triage(raw_anomalies, {k: v for k, v in thresholds.items()
+                                            if k not in ("rating_stats", "install_stats")})
+
+    if enriched:
+        _TYPE_MAP = {"low_rating": "quality_improvement", "feedback_gap": "feedback_gap"}
+        anom_type_by_module = {
+            a["module"]: _TYPE_MAP.get(a.get("type", ""), a.get("type", "anomaly"))
+            for a in raw_anomalies
+        }
+        for item in enriched:
+            mod = item.get("module", "unknown")
+            suggestions.append({
+                "type": anom_type_by_module.get(mod, "anomaly"),
+                "module": mod,
+                "reason": item.get("root_cause", "Anomaly detected"),
+                "action": item.get("recommended_action", "Investigate"),
+                "severity": item.get("severity", "medium"),
+                "detection_method": f"{method}+llm",
+            })
+    else:
+        # Pure statistical suggestions
+        for anom in raw_anomalies:
+            if anom["type"] == "low_rating":
+                suggestions.append({
+                    "type": "quality_improvement",
+                    "module": anom["module"],
+                    "reason": (
+                        f"Rating {anom['avg_rating']} is below the adaptive threshold "
+                        f"{rating_threshold:.2f} (method: {method})"
+                    ),
+                    "action": "Review feedback comments, prioritize fixes",
+                    "detection_method": method,
+                })
+            else:
+                suggestions.append({
                     "type": "feedback_gap",
-                    "module": mod["slug"],
-                    "reason": f"{mod['installs']} installs but no feedback collected",
+                    "module": anom["module"],
+                    "reason": (
+                        f"{anom['installs']} installs exceeds adaptive threshold "
+                        f"{installs_threshold:.1f} but no feedback collected"
+                    ),
                     "action": "Add feedback prompt to renewal flow",
-                }
-            )
+                    "detection_method": method,
+                })
 
     # If no marketplace data exists, suggest bootstrapping
     if not stats:
-        suggestions.append(
-            {
-                "type": "bootstrap",
-                "module": "all",
-                "reason": "No marketplace activity detected",
-                "action": "Enable marketplace and register initial modules",
-            }
-        )
+        suggestions.append({
+            "type": "bootstrap",
+            "module": "all",
+            "reason": "No marketplace activity detected",
+            "action": "Enable marketplace and register initial modules",
+            "detection_method": "fallback",
+        })
 
     return suggestions
 
@@ -125,6 +280,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Market Reflex."""
     stats = _get_module_stats()
     feedback = _get_feedback_summary()
+    thresholds = _adaptive_thresholds(stats, feedback)
     suggestions = _generate_suggestions(stats, feedback)
 
     # Export suggestions as GKP artifacts
@@ -159,5 +315,11 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "suggestions_generated": len(suggestions),
             "suggestions_exported": exported,
             "suggestions": suggestions,
+            "anomaly_detection": {
+                "method": thresholds["method"],
+                "rating_threshold": thresholds["rating_threshold"],
+                "installs_threshold": thresholds["installs_threshold"],
+                "min_feedback_count": thresholds["min_feedback_count"],
+            },
         },
     }

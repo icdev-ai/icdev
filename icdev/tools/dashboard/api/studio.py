@@ -974,7 +974,9 @@ def api_generate_code(workflow_id: str):
 @studio_api.route("/chat/generate-workflow", methods=["POST"])
 def api_chat_generate_workflow():
     """Generate workflow YAML from a natural language message via Ollama/Qwen3."""
-    from tools.studio.workflow_chat import generate_workflow_yaml
+    import concurrent.futures  # noqa: PLC0415
+
+    from tools.studio.workflow_chat import generate_workflow_yaml  # noqa: PLC0415
 
     data = request.get_json(silent=True) or {}
     message = (data.get("message") or "").strip()
@@ -982,7 +984,13 @@ def api_chat_generate_workflow():
         return jsonify({"error": "message is required"}), 400
 
     history = data.get("history", [])
-    result = generate_workflow_yaml(message, conversation_history=history or None)
+    _TIMEOUT = 25  # seconds — prevents dashboard hang when LLM is slow
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _ex:
+            _fut = _ex.submit(generate_workflow_yaml, message, history or None)
+            result = _fut.result(timeout=_TIMEOUT)
+    except concurrent.futures.TimeoutError:
+        return jsonify({"status": "error", "error": "LLM did not respond within 25 seconds. Try again or check Ollama status.", "raw": ""}), 504
     if result.get("status") == "error":
         return jsonify(result), 422
     return jsonify(result)

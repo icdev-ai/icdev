@@ -1,5 +1,4 @@
 """Tests for MarkItDown DIC adapter (adapt-md-04)."""
-import pytest
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 import tempfile
