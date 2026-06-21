@@ -1,9 +1,0 @@
-{
-    "version": "052",
-    "description": "Create sg_conflict_events base table — frontline positions, GDELT narrative events, STIX/cyber ops, kinetic/humanitarian/diplomatic activities",
-    "date": "2026-04-27",
-    "author": "icdev_builder",
-    "database": "icdev",
-    "reversible": true,
-    "notes": "Uses PostGIS GEOMETRY + JSONB on PostgreSQL; falls back to TEXT on SQLite. Migrations 053 and 055 extend this table with GDELT and STIX columns respectively."
-}

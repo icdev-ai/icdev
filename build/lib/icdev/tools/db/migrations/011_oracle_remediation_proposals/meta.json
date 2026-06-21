@@ -1,7 +1,0 @@
-{
-  "id": "011",
-  "name": "oracle_remediation_proposals",
-  "description": "Add Oracle observability tables: oracle_predictions (cross-canvas predictions from oracle lenses), oracle_remediation_proposals (proposed fixes with approval workflow), oracle_convergence_events (when multiple lenses agree), finding_approvals (canvas finding approval workflow). All append-only / NIST AU.",
-  "created_at": "2026-04-04",
-  "phase": "Phase 67"
-}

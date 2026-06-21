@@ -1,7 +1,0 @@
-{
-  "id": "031",
-  "name": "ddc_twin_tables",
-  "description": "Create data_nodes, data_edges, and data_twin_snapshots tables referenced by tools/data_canvas/twin.py. Resolves orphan_db_table gap flagged by the Internal Awareness Engine gap detector.",
-  "created_at": "2026-04-21",
-  "phase": "Phase 69"
-}

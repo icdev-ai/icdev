@@ -1,6 +1,0 @@
-{
-  "id": "039_canvas_events",
-  "description": "Cross-canvas event bus persistence table (canvas_events)",
-  "append_only_tables": ["canvas_events"],
-  "created_at": "2026-04-24"
-}

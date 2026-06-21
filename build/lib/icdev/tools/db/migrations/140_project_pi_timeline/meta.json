@@ -1,8 +1,0 @@
-{
-  "version": "140",
-  "name": "project_pi_timeline",
-  "description": "Add project_pi_timeline table for 18-month PI contract timelines",
-  "author": "icdev",
-  "created_at": "2026-05-12",
-  "classification": "CUI // SP-CTI"
-}
