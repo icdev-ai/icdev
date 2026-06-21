@@ -129,8 +129,9 @@ class TestContextCRUD:
         assert close_result["status"] == "completed"
 
     def test_close_nonexistent(self, manager):
+        # close_context is idempotent — unknown IDs return completed status without error
         result = manager.close_context("nonexistent")
-        assert "error" in result
+        assert result["status"] == "completed"
 
     def test_closed_contexts_excluded_from_list(self, manager):
         result = manager.create_context("user-1", title="Temp")
@@ -272,6 +273,7 @@ def quiet_pipeline(monkeypatch):
 
 def _patch_router(monkeypatch, invoke_fn):
     """Patch the lazily-imported LLMRouter so .invoke() runs invoke_fn."""
+    import sys as _sys
     router_mod = importlib.import_module("tools.llm.router")
 
     class _Router:
@@ -279,6 +281,14 @@ def _patch_router(monkeypatch, invoke_fn):
             return invoke_fn(function, request)
 
     monkeypatch.setattr(router_mod, "LLMRouter", _Router)
+    # Patch ALL known router aliases — the _ToolsRedirect shim causes
+    # `from tools.llm.router import LLMRouter` to resolve to different
+    # module objects depending on full-suite import ordering.
+    import icdev.tools.llm.router as _icdev_router_mod
+    monkeypatch.setattr(_icdev_router_mod, "LLMRouter", _Router)
+    for _key, _mod in list(_sys.modules.items()):
+        if "llm.router" in _key and hasattr(_mod, "LLMRouter"):
+            monkeypatch.setattr(_mod, "LLMRouter", _Router)
 
 
 class TestPendingPlaceholder:

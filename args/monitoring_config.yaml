@@ -153,6 +153,11 @@ heartbeat:
       enabled: true
       interval_seconds: 300
       stale_threshold_minutes: 5
+    a2a_agent_health:
+      enabled: true
+      interval_seconds: 300
+      dead_alert_minutes: 10
+      request_timeout_seconds: 5
 
 # Push-Based Metrics Sidecar (Coolify Sentinel)
 push_agent:

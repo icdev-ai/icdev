@@ -207,6 +207,10 @@ PROVIDER_ENV_MAP = {
     "openai": "OPENAI_API_KEY",
     "bedrock": "",  # Bedrock uses IAM, no key
     "ollama": "",  # Ollama is local, no key
+    "ollama_cloud": "OLLAMA_API_KEY",  # Ollama Cloud (e.g. ollama.com, Featherless)
+    "mistral": "MISTRAL_API_KEY",
+    "mistral_vllm": "MISTRAL_VLLM_API_KEY",
+    "vllm": "VLLM_API_KEY",
 }
 
 

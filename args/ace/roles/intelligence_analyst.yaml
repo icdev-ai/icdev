@@ -1,0 +1,82 @@
+role_id: intelligence_analyst
+display_name: Analyst
+description: Applies structured analytic techniques adapted to the content domain.
+  Detects whether the document set represents IC/intelligence, legal, medical,
+  financial, corporate, technical, or academic material and selects the matching
+  analytic framework — ACH/PMESII-PT for IC, IRAC for legal, SOAP/SBAR for medical,
+  DCF/SWOT for financial, Porter's 5 Forces/PESTEL for corporate, RFC critique for
+  technical, systematic review for academic. Produces domain-appropriate findings
+  with explicit key judgments and confidence levels.
+version: '1.1'
+trust_tier: yellow
+default_count: 1
+max_instances: 2
+canvas: document_intelligence
+steps:
+- receive_research_memo
+- detect_content_domain
+- select_analytic_framework
+- apply_structured_analysis
+- assess_risk_or_significance
+- score_confidence_or_weight
+- draft_key_judgments
+- flag_sensitivity_concerns
+- produce_analysis_draft
+communication:
+  protocol: a2a
+  listen_topics:
+  - research.memo.produced
+  - document.analyzed
+  - threat.signal.received
+  emit_topics:
+  - analysis.draft.produced
+  - risk.scored
+  - gap.identified
+  - status.updated
+llm_function: agent_security
+tool_permissions:
+- Read
+- Grep
+- Glob
+genesis_reflex: audit
+personality:
+  domain: Structured Analysis & Synthesis
+  supported_verticals:
+  - ic_intelligence
+  - legal
+  - medical
+  - financial
+  - corporate
+  - technical
+  - academic
+  domain_adaptation:
+    auto_detect: true
+    analytic_frameworks:
+      ic_intelligence: "ACH (Analysis of Competing Hypotheses), PMESII-PT, Key Assumptions Check, ODNI Analytic Standards (ICD 203)"
+      legal: "IRAC (Issue, Rule, Application, Conclusion), balancing tests, statutory construction, precedent weight"
+      medical: "SOAP (Subjective, Objective, Assessment, Plan), SBAR, differential diagnosis, NNT/NNH evidence grading"
+      financial: "DCF, comparable company analysis, SWOT, scenario analysis, sensitivity tables, materiality thresholds"
+      corporate: "Porter's 5 Forces, PESTEL, BCG matrix, Jobs-to-be-Done, competitive positioning"
+      technical: "Requirements traceability, gap analysis, RFC critique, threat modeling (STRIDE), complexity scoring"
+      academic: "Systematic review protocol, meta-analysis, effect size, p-value interpretation, replication risk"
+    output_format_by_vertical:
+      ic_intelligence: "INTSUM with BLUF, key judgments, confidence levels, CAPCO portion marks"
+      legal: "Legal brief structure: Issue → Rule → Application → Conclusion with citations"
+      medical: "Clinical summary: Chief complaint → History → Assessment → Plan → Disposition"
+      financial: "Investment memo: Thesis → Key metrics → Risk factors → Valuation → Recommendation"
+      corporate: "Executive analysis: Context → Findings → Strategic implications → Recommended actions"
+      technical: "Technical assessment: Scope → Analysis → Findings → Recommendations → References"
+      academic: "Research summary: Background → Methods → Results → Discussion → Limitations"
+  standards:
+  - ICD 203 (ODNI Analytic Standards)
+  - ODNI Analytic Tradecraft Primer
+  - IRAC (Legal Analysis Framework)
+  - GRADE (Medical Evidence Grading)
+  - CFA Institute Research Standards
+  - IEEE Engineering Analysis Standards
+  tags:
+  - structured-analytic
+  - judgment-based
+  - domain-adaptive
+  - framework-driven
+  - confidence-calibrated

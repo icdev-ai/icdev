@@ -267,6 +267,21 @@ def score_all_pillars(project_id: str) -> dict:
     sorted_pillars = sorted(pillar_results, key=lambda x: x["score"])
     weakest = sorted_pillars[:2] if len(sorted_pillars) >= 2 else sorted_pillars
 
+    # DIC Canvas Synergy — emit ZIG gap events for below-threshold pillars (dsyn-emit-03)
+    _ZIG_PILLAR_THRESHOLD = 0.70
+    for r in pillar_results:
+        if r["score"] < _ZIG_PILLAR_THRESHOLD:
+            try:
+                from tools.security.zig.event_emitter import emit_pillar_gap_detected
+                emit_pillar_gap_detected(
+                    pillar_name=r["pillar"],
+                    current_score=round(r["score"] * 100, 1),
+                    threshold=_ZIG_PILLAR_THRESHOLD * 100,
+                    project_id=project_id,
+                )
+            except Exception:
+                pass  # event emission never blocks scoring
+
     return {
         "project_id": project_id,
         "overall_score": overall_score,
@@ -329,6 +344,17 @@ def run_scheduled_assessment(project_id: str, drift_threshold: float = 0.1) -> d
             "ZTA maturity drift detected: project=%s previous=%.3f current=%.3f drop=%.3f (threshold=%.3f)",
             project_id, previous_score, current_score, drift, drift_threshold,
         )
+        # DIC Canvas Synergy — emit posture score drop event (dsyn-emit-03)
+        try:
+            from tools.security.zig.event_emitter import emit_posture_score_drop
+            emit_posture_score_drop(
+                pillar_name="overall",
+                previous_score=round(previous_score * 100, 1),
+                current_score=round(current_score * 100, 1),
+                project_id=project_id,
+            )
+        except Exception:
+            pass  # event emission never blocks assessment
     else:
         _log.info(
             "ZTA scheduled assessment: project=%s score=%.3f maturity=%s drift=%.3f",

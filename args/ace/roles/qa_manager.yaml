@@ -2,6 +2,8 @@ role_id: qa_manager
 display_name: QA Manager
 description: Quality assurance manager that runs CodeLens, coherence checks, E2E tests, and negotiates fixes with the AI Developer.
 version: "1.1"
+description: "Quality assurance manager that designs test plans and gates releases according to the applicable quality standards for the content domain: FDA 21 CFR Part 820/IEC 62304 for medical devices/software, DO-178C for aviation, STIG compliance testing for defense, PCI DSS penetration testing for financial, standard SDLC testing for general software."
+version: '1.1'
 trust_tier: yellow
 default_count: 1
 max_instances: 2
@@ -32,22 +34,86 @@ steps:
       payload:
         passed: "$e2e_result.failed_count == 0"
         details: "$e2e_result"
+- name: codelens_scan
+  tool: CodeLens.analyze_file
+  params:
+    path: "$build_result.primary_file"
+- name: coherence_check
+  tool: CoherenceChecker.run_all
+  params:
+    gate: true
+- name: e2e_run
+  tool: e2e_runner.run_all
+- name: autofix
+  tool: MessageBus.negotiate
+  params:
+    message_type: cw_negotiate_propose
+    to_role: ai_developer
+    max_rounds: 3
+  condition: "$e2e_result.failed_count > 0"
+- name: verify_response
+  tool: MessageBus.send
+  params:
+    message_type: cw_verify_response
+    to: ai_developer
+    payload:
+      passed: "$e2e_result.passed"
+      details: "$e2e_result.summary"
 communication:
   protocol: a2a
   listen_topics:
-    - task.completed
-    - pr.ready
+  - task.completed
+  - test.failed
+  - code.committed
   emit_topics:
-    - qa.approved
-    - qa.rejected
-    - defect.created
+  - qa.approved
+  - qa.rejected
+  - defect.created
 llm_function: test_generation
 tool_permissions:
-  - Read
-  - Bash
-  - Grep
+- Read
+- Bash
+- Grep
 genesis_reflex: test
 output_requirements:
   - If an orphan DB table gap (e.g., rule 'orphan_db_table' or any 'all_tables' finding) is detected, the response MUST include a complete CREATE TABLE SQL DDL statement for the missing table before any other remediation steps.
   - DDL statements must use standard SQL syntax compatible with both PostgreSQL and SQLite (i.e., no database-specific extensions unless inside an explicit dialect branch).
   - Gap items referencing database schema (table names, column definitions) must be accompanied by the full DDL needed to resolve the gap, not just a description.
+personality:
+  domain: Quality Assurance & Test Engineering
+  supported_verticals:
+  - ic_intelligence
+  - defense
+  - healthcare
+  - financial_services
+  - aviation
+  - enterprise
+  - saas
+  domain_adaptation:
+    auto_detect: true
+    quality_standards:
+      ic_intelligence: "DISA STIG verification, classified environment smoke tests, IL-level boundary testing, FIPS crypto validation"
+      defense: "CMMC control verification, MIL-STD-498 V&V, DO-178C DAL levels (for software), JITC interoperability"
+      healthcare: "IEC 62304 software lifecycle testing, FDA 21 CFR Part 820 DHR, ISO 13485, SaMD risk classification"
+      financial_services: "PCI DSS penetration testing, SOX ITGC testing, model risk validation, stress/load to SLA"
+      aviation: "DO-178C (avionics SW), DO-254 (complex hardware), ARINC 653, DAL A-E levels"
+      enterprise: "IEEE 829 test plans, shift-left SAST/DAST, regression gates, performance baselines"
+      saas: "A/B test statistical validity, synthetic monitoring, chaos engineering, SLO/error budget tracking"
+    release_gates:
+      ic_intelligence: "100% STIG findings resolved at CAT I, pen test clean, classification markings verified"
+      defense: "CMMC L2/L3 control coverage, SBOM reviewed, supply chain verified"
+      healthcare: "No open critical/high defects in safety-critical paths, FDA submission traceability complete"
+      financial_services: "PCI DSS scan pass, SOX ITGC controls validated, data integrity verified"
+      enterprise: ">=80% coverage, 0 critical defects, performance within baseline +-10%"
+      saas: "Error budget consumed <50%, p95 latency within SLO, rollback tested"
+  standards:
+  - IEC 62304 / FDA 21 CFR Part 820 (Medical)
+  - DO-178C / DO-254 (Aviation)
+  - MIL-STD-498 / JITC (Defense)
+  - PCI DSS 4.0 Req 11 (Financial)
+  - IEEE 829 Test Documentation Standard
+  tags:
+  - domain-adaptive
+  - standards-driven
+  - gate-enforcer
+  - coverage-focused

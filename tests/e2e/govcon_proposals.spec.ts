@@ -131,6 +131,28 @@ test.describe('gcpl-prop: GovCon Proposals — PROPOSALS', () => {
     expect(body).not.toBeNull();
   });
 
+  // ── Compliance Gaps ────────────────────────────────────────────────────
+
+  test('gcpl-prop-15: /proposals/<id>/compliance/gaps HTTP < 500, no server error', async ({ page }) => {
+    const resp = await page.request.get(`${BASE}/proposals/${oppId}/compliance/gaps`);
+    // 404 is acceptable if the oppId has no compliance matrix rows yet
+    expect(resp.status()).toBeLessThan(500);
+  });
+
+  test('gcpl-prop-16: /proposals/<id>/compliance/gaps — CUI banner and page structure', async ({ page }) => {
+    await page.goto(`${BASE}/proposals/${oppId}/compliance/gaps`);
+    await page.waitForLoadState('domcontentloaded');
+    const body = await page.textContent('body') ?? '';
+    if (body.includes('Not Found') || body.includes('404') || body.includes('Opportunity not found')) return;
+    expect(body).not.toContain('Internal Server Error');
+    expect(body).not.toContain('Traceback');
+    expect(body).toContain(CUI);
+    const hasGapContent = body.includes('Compliance Gap') || body.includes('compliance gap') ||
+                          body.includes('Not Addressed') || body.includes('Gap Coverage') ||
+                          body.includes('Total Requirements');
+    expect(hasGapContent, 'Expected compliance gap page content').toBe(true);
+  });
+
   // ── Proposal Genesis ───────────────────────────────────────────────────
 
   test('gcpl-prop-12: /proposal-genesis daemon page HTTP < 400, CUI banner present', async ({ page }) => {

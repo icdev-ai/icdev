@@ -229,6 +229,9 @@ _SCHEMA = [
         citations_json  TEXT,
         status          TEXT DEFAULT 'draft',
         origin          TEXT DEFAULT 'ai_generated',
+        assigned_to     TEXT,
+        reviewed_by     TEXT,
+        reviewed_at     TEXT,
         created_at      TEXT NOT NULL,
         created_by      TEXT,
         tenant_id       TEXT,
@@ -245,6 +248,9 @@ _ALTER_MIGRATIONS = [
     ("dic_versions", "assigned_to", "TEXT"),
     ("dic_versions", "review_notes", "TEXT"),
     ("dic_ssp_fragments", "assigned_to", "TEXT"),
+    ("dic_sections", "assigned_to", "TEXT"),
+    ("dic_sections", "reviewed_by", "TEXT"),
+    ("dic_sections", "reviewed_at", "TEXT"),
 ]
 
 
@@ -337,11 +343,24 @@ class IngestOutcome:
 # Embedding + vector-store upsert (mirrors ingestion_manager.ingest_source path)
 # --------------------------------------------------------------------------- #
 
-def _embed_and_store(chunks: list, tenant_id: str, errors: list[str], progress_cb=None) -> int:
+def _embed_and_store(
+    chunks: list,
+    tenant_id: str,
+    errors: list[str],
+    progress_cb=None,
+    out_id_map: dict | None = None,
+) -> int:
     """Embed new chunks and upsert into the vector store. Returns count embedded.
 
     progress_cb: optional callable(embedded: int, total: int) called after each chunk.
+    out_id_map: optional dict to fill with ``{chunk_index: final rag_chunk_id}``.
+        When a chunk is a duplicate of an existing ``rag_chunks`` row, the map
+        receives the *existing* id so DIC links stay consistent. New chunks get
+        their freshly-upserted id.
     """
+    if out_id_map is not None:
+        out_id_map.clear()
+
     try:
         from tools.llm import get_embedding_provider
         from tools.rag.vector_store_factory import VectorStoreFactory
@@ -360,19 +379,27 @@ def _embed_and_store(chunks: list, tenant_id: str, errors: list[str], progress_c
         errors.append(f"vector store unavailable: {e}")
         return 0
 
-    # Dedup against existing content hashes.
-    new_chunks = []
-    for c in chunks:
+    # Resolve each chunk to a canonical rag_chunk_id. Existing rows are reused by
+    # content_hash so the DIC link always points to a real chunk.
+    new_chunks: list[tuple[int, Any]] = []
+    for idx, c in enumerate(chunks):
+        existing = None
         try:
-            if store.get_by_content_hash(getattr(c, "content_hash", "")):
-                continue
+            existing = store.get_by_content_hash(getattr(c, "content_hash", ""))
         except Exception:
             pass
-        new_chunks.append(c)
+        if existing:
+            if out_id_map is not None:
+                out_id_map[idx] = existing.chunk_id
+            # Carry the existing embedding forward so callers can use it.
+            if getattr(existing, "embedding", None) is not None:
+                c.embedding = existing.embedding
+            continue
+        new_chunks.append((idx, c))
 
     total = len(new_chunks)
     embedded = 0
-    for c in new_chunks:
+    for idx, c in new_chunks:
         try:
             if hasattr(provider, "embed"):
                 c.embedding = provider.embed(c.content)
@@ -390,12 +417,18 @@ def _embed_and_store(chunks: list, tenant_id: str, errors: list[str], progress_c
         except Exception as e:
             errors.append(f"embed chunk failed: {e}")
 
-    embeddable = [c for c in new_chunks if getattr(c, "embedding", None) is not None]
+    embeddable = [c for _, c in new_chunks if getattr(c, "embedding", None) is not None]
     if embeddable:
         try:
             store.upsert(embeddable)
         except Exception as e:
             errors.append(f"vector upsert failed: {e}")
+        else:
+            # Record the final chunk ids for every chunk that was upserted.
+            if out_id_map is not None:
+                for idx, c in new_chunks:
+                    if getattr(c, "embedding", None) is not None:
+                        out_id_map[idx] = c.chunk_id
     return embedded
 
 
@@ -1460,10 +1493,10 @@ def ingest_file(
     tid, cls = _resolve_context(tenant_id, classification)
     errors: list[str] = []
 
-    def _emit(stage: str, detail: str, pct: int = 0) -> None:
+    def _emit(stage: str, detail: str, pct: int = 0, extra: dict | None = None) -> None:
         if progress_cb:
             try:
-                progress_cb(stage, detail, pct)
+                progress_cb(stage, detail, pct, extra or {})
             except Exception:
                 pass
 
@@ -1574,7 +1607,19 @@ def ingest_file(
                 (version_id,),
             ).fetchone()
             existing_chunks = chunk_row[0] if chunk_row else 0
-            _emit("done", f"Idempotent — duplicate of {existing_doc_id}", 100)
+            dup_error = f"Duplicate detected — this file already exists as '{existing_filename}' in this collection. No new version created (idempotent)."
+            _emit(
+                "done",
+                f"Idempotent — duplicate of {existing_doc_id}",
+                100,
+                extra={
+                    "doc_id": existing_doc_id,
+                    "chunks": existing_chunks,
+                    "chunks_embedded": existing_chunks,
+                    "kg_entities": 0,
+                    "errors": errors + [dup_error],
+                },
+            )
             return IngestOutcome(
                 doc_id=existing_doc_id,
                 version_id=version_id,
@@ -1587,7 +1632,7 @@ def ingest_file(
                 kg_relationships=0,
                 tenant_id=tid,
                 classification=cls,
-                errors=errors + [f"Duplicate detected — this file already exists as '{existing_filename}' in this collection. No new version created (idempotent)."],
+                errors=errors + [dup_error],
             )
 
         doc_id = _doc_id(collection_id, str(p))
@@ -1606,6 +1651,12 @@ def ingest_file(
             project_id=collection_id,
             classification=cls,
         )
+        # Scope the content hash to the collection so identical text uploaded to
+        # different collections gets distinct rag_chunks rows tied to each
+        # collection's project_id. This makes vector search collection-filterable
+        # and guarantees dic_chunk_links always reference retrievable chunks.
+        for c in chunks:
+            c.content_hash = _sha256(f"{collection_id}:{c.content}")
         _emit("chunking", f"{len(chunks)} chunks created", 20)
 
         # Warn when text is empty or near-empty so the UI can explain 0 chunks.
@@ -1613,6 +1664,10 @@ def ingest_file(
             errors.append("Extracted text is empty — file may be image-based (scanned PDF), corrupted, or uses an unsupported encoding. Try OCR or re-export as text.")
 
         # 3) Embed + upsert into the vector store (same path ingest_source uses).
+        # final_chunk_ids maps chunk index -> the actual rag_chunks.id that the
+        # DIC link must reference. It resolves content-hash duplicates to existing
+        # rows so search never follows a dangling link.
+        final_chunk_ids: dict[int, str] = {}
         chunks_embedded = 0
         if embed and chunks:
             total_chunks = len(chunks)
@@ -1622,8 +1677,14 @@ def ingest_file(
                 _emit("embedding", f"Embedding {done}/{total} chunks…", pct)
 
             _emit("embedding", f"Embedding 0/{total_chunks} chunks…", 20)
-            chunks_embedded = _embed_and_store(chunks, tid, errors, progress_cb=_embed_progress)
+            chunks_embedded = _embed_and_store(
+                chunks, tid, errors, progress_cb=_embed_progress, out_id_map=final_chunk_ids,
+            )
             _emit("embedding", f"Embedded {chunks_embedded}/{total_chunks} chunks", 75)
+            if not final_chunk_ids:
+                errors.append(
+                    "Vector store has no record of these chunks — search will be empty until embedding succeeds."
+                )
 
         # 4) DIC bookkeeping rows.
         now = _now()
@@ -1662,7 +1723,14 @@ def ingest_file(
         # Refresh chunk links for this version.
         cur.execute("DELETE FROM dic_chunk_links WHERE version_id = ?", (version_id,))
         for i, chunk in enumerate(chunks):
-            rag_chunk_id = getattr(chunk, "chunk_id", f"{source_id}_chunk_{i}")
+            # final_chunk_ids contains the canonical rag_chunks.id (existing or
+            # newly upserted). Fall back to the chunk's own id only when the map
+            # is missing, and avoid writing a dangling link when embedding failed.
+            rag_chunk_id = final_chunk_ids.get(i) or getattr(
+                chunk, "chunk_id", f"{source_id}_chunk_{i}"
+            )
+            if not rag_chunk_id:
+                continue
             chunk_index = getattr(chunk, "chunk_index", i)
             md = getattr(chunk, "metadata", None) or {}
             page = md.get("page")
@@ -1687,12 +1755,12 @@ def ingest_file(
         _emit("kg_bridge", "Extracting entities and relationships…", 78)
         kg_entities = 0
         kg_rels = 0
-        if bridge_kg and chunks and chunks_embedded:
+        if bridge_kg and chunks and final_chunk_ids:
             try:
                 from tools.rag.rag_to_kg_ingester import ingest_chunk
 
-                for chunk in chunks:
-                    cid = getattr(chunk, "chunk_id", None)
+                for i, chunk in enumerate(chunks):
+                    cid = final_chunk_ids.get(i) or getattr(chunk, "chunk_id", None)
                     if not cid:
                         continue
                     try:
@@ -1705,7 +1773,18 @@ def ingest_file(
             except Exception as e:
                 errors.append(f"kg bridge unavailable: {e}")
 
-        _emit("done", f"Done — {len(chunks)} chunks, {kg_entities} entities", 100)
+        _emit(
+            "done",
+            f"Done — {len(chunks)} chunks, {kg_entities} entities",
+            100,
+            extra={
+                "doc_id": doc_id,
+                "chunks": len(chunks),
+                "chunks_embedded": chunks_embedded,
+                "kg_entities": kg_entities,
+                "errors": list(errors),
+            },
+        )
         return IngestOutcome(
             doc_id=doc_id,
             version_id=version_id,

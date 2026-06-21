@@ -7,6 +7,7 @@ All endpoints require 'admin' role.
 """
 
 import sqlite3
+from datetime import datetime, timezone
 from tools.db.storage import get_connection
 
 from flask import Blueprint, jsonify, render_template, request
@@ -24,6 +25,102 @@ from tools.dashboard.auth import (
 from tools.dashboard.config import DB_PATH
 
 admin_api = Blueprint("admin_api", __name__, url_prefix="/admin")
+
+# ---------------------------------------------------------------------------
+# Admin creation anomaly detection (aiify-rm-a3344-phase-49:
+# hardcoded_threshold -> anomaly_detection).
+#
+# The external AI-ify scan flagged paperless-ngx
+# src/documents/management/commands/manage_superuser.py — a Django management
+# command that creates/updates a superuser account using hardcoded validation
+# rules (fixed username patterns, static privilege checks).  A fixed ruleset
+# is brittle: it cannot adapt to context (time of day, volume of recent
+# escalations, existing privilege density) and silently passes suspicious
+# creations that a fixed rule never anticipated.
+#
+# The ICDEV analog lands here, applied to the admin user creation endpoint.
+# Instead of a single hardcoded guard, we detect a family of contextual
+# anomaly signals on admin-role assignments:
+#
+#   admin_count_high   – total active admins already exceeds the soft cap;
+#                        legitimate orgs rarely need more than _ADMIN_MAX_TOTAL
+#                        admin-role accounts.
+#   admin_burst        – more than _ADMIN_BURST_MAX admin accounts were created
+#                        within the last _ADMIN_BURST_WINDOW_SECONDS; a rapid
+#                        burst suggests an automated escalation or insider threat.
+#   off_hours          – the creation falls outside normal operating hours
+#                        (UTC); out-of-band admin provisioning is a common
+#                        attack pattern.
+#   self_promotion     – the requesting user is granting admin to their own
+#                        email; legitimate self-promotion is rare and warrants
+#                        HITL review.
+#
+# Signals are ADVISORY ONLY — they are returned in the response as
+# `anomaly_signal` but never block the creation.  Callers (SOC dashboards,
+# audit ingesters) should treat a non-null signal as a HITL review flag.
+# ---------------------------------------------------------------------------
+
+# Configurable thresholds — never hardcoded in logic below.
+_ADMIN_MAX_TOTAL = 10          # soft cap on total active admins
+_ADMIN_BURST_WINDOW_SECONDS = 300   # look-back window for burst detection
+_ADMIN_BURST_MAX = 3           # max new admins in window before flagging
+_OFF_HOURS_START_UTC = 20      # inclusive hour (UTC) when off-hours begin
+_OFF_HOURS_END_UTC = 7         # exclusive hour (UTC) when off-hours end
+
+
+def _detect_admin_creation_anomaly(
+    new_email: str,
+    requesting_email: str | None,
+    db_path: str,
+) -> str | None:
+    """Return the first anomaly signal for a new admin-role assignment, or None.
+
+    Checks (in priority order): admin_count_high, admin_burst, off_hours,
+    self_promotion.  Returns the signal name as a string, or None when no
+    anomaly is detected.  Result is advisory — callers MUST NOT block on it.
+    """
+    try:
+        conn = get_connection(db_path=db_path)
+        try:
+            # 1. Total active admin count
+            rows = conn.execute(
+                "SELECT COUNT(*) FROM dashboard_users WHERE role = ? AND status = 'active'",
+                ("admin",),
+            ).fetchone()
+            admin_count = rows[0] if rows else 0
+            if admin_count >= _ADMIN_MAX_TOTAL:
+                return "admin_count_high"
+
+            # 2. Burst: recent admin creations in look-back window
+            now_ts = datetime.now(timezone.utc).isoformat()
+            burst_rows = conn.execute(
+                """
+                SELECT COUNT(*) FROM dashboard_users
+                WHERE role = 'admin'
+                  AND created_at >= datetime(?, ?)
+                """,
+                (now_ts, f"-{_ADMIN_BURST_WINDOW_SECONDS} seconds"),
+            ).fetchone()
+            recent_admins = burst_rows[0] if burst_rows else 0
+            if recent_admins >= _ADMIN_BURST_MAX:
+                return "admin_burst"
+
+            # 3. Off-hours: UTC hour outside normal operating window
+            utc_hour = datetime.now(timezone.utc).hour
+            if _OFF_HOURS_START_UTC <= utc_hour or utc_hour < _OFF_HOURS_END_UTC:
+                return "off_hours"
+
+        finally:
+            conn.close()
+    except Exception:
+        # Never let anomaly detection crash the creation path.
+        return None
+
+    # 4. Self-promotion: requester granting admin to themselves
+    if requesting_email and new_email.lower() == requesting_email.lower():
+        return "self_promotion"
+
+    return None
 
 
 def _get_db():
@@ -76,12 +173,25 @@ def api_create_user():
         return jsonify({"error": f"Invalid role: {role}"}), 400
 
     admin_user = getattr(g, "current_user", {})
+
+    # Anomaly detection for admin-role assignments (advisory, never blocking).
+    anomaly_signal: str | None = None
+    if role == "admin":
+        anomaly_signal = _detect_admin_creation_anomaly(
+            new_email=email,
+            requesting_email=admin_user.get("email"),
+            db_path=str(DB_PATH),
+        )
+
     try:
         user = create_user(email, display_name, role, created_by=admin_user.get("id"))
     except sqlite3.IntegrityError:
         return jsonify({"error": f"User with email {email} already exists"}), 409
 
-    return jsonify({"user": user}), 201
+    response: dict = {"user": user}
+    if anomaly_signal:
+        response["anomaly_signal"] = anomaly_signal
+    return jsonify(response), 201
 
 
 @admin_api.route("/api/users/<user_id>/keys", methods=["GET"])

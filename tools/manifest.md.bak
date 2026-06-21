@@ -1,4 +1,4 @@
-# Tools Manifest
+﻿# Tools Manifest
 
 > Master list of all tools. Check here before writing a new script.
 
@@ -597,11 +597,11 @@
 | Provenance Tracker | tools/marketplace/provenance_tracker.py | Supply chain provenance recording and verification | --record/--get/--verify/--report | Provenance chain JSON |
 | Compatibility Checker | tools/marketplace/compatibility_checker.py | IL + version + dependency compatibility checks | --asset-id, --consumer-il | Compatibility result |
 | Federation Sync | tools/marketplace/federation_sync.py | Sync tenant-local ↔ central vetted registry | --promote/--pull/--status | Sync result JSON |
-| ClawHub Connector | tools/databridge/connectors/clawhub_connector.py | DataBridge connector for ClawHub API — vector search, skill detail, zip download | --search/--get/--download/--list/--health | Skill data JSON |
+| SkillHub Connector | tools/databridge/connectors/skillhub_connector.py | DataBridge connector for SkillHub API — vector search, skill detail, zip download | --search/--get/--download/--list/--health | Skill data JSON |
 | OpenClaw ScriptGen | tools/marketplace/openclaw_scriptgen.py | Generate Python companion scripts for actionable skill steps (LLM-agnostic) | --generate/--analyze | Script + analysis JSON |
 | OpenClaw Enricher | tools/marketplace/openclaw_enricher.py | 3-engine skill enrichment (Innovation + Creative + Research) with merge discovery | --enrich/--discover-similar | Enrichment result JSON |
 | OpenClaw Compat | tools/marketplace/openclaw_compat.py | Compatibility checker & translator for OpenClaw → ICDEV™ skills | --check/--translate/--full, --output | Compat report / translated SKILL.md |
-| OpenClaw Bridge | tools/marketplace/openclaw_bridge.py | Zero-trust import/export for ClawHub (clawhub.ai) skills with 10-gate scanning, quarantine, provenance | --import/--export/--promote/--reject/--list-quarantine/--list-exports/--health/--gate | Import/export/scan JSON |
+| OpenClaw Bridge | tools/marketplace/openclaw_bridge.py | Zero-trust import/export for SkillHub (skillhub.ai) skills with 10-gate scanning, quarantine, provenance | --import/--export/--promote/--reject/--list-quarantine/--list-exports/--health/--gate | Import/export/scan JSON |
 | Marketplace MCP | tools/mcp/marketplace_server.py | MCP server (17 tools, 2 resources) for marketplace | stdio | JSON-RPC 2.0 |
 
 ## DevSecOps & Zero Trust Architecture (Phase 24-25)

@@ -1,14 +1,14 @@
-# Phase 69: OpenClaw Skill Bridge
+﻿# Phase 69: OpenClaw Skill Bridge
 
 CUI // SP-CTI
 
 ## Summary
 
-Zero-trust import/export bridge between the ClawHub (clawhub.ai) open skill ecosystem and the ICDEV™ Marketplace, with full compatibility checking, translation, and security scanning.
+Zero-trust import/export bridge between the SkillHub (skillhub.ai) open skill ecosystem and the ICDEV™ Marketplace, with full compatibility checking, translation, and security scanning.
 
 ## Problem
 
-ICDEV™'s marketplace is tenant-federated but internal. The OpenClaw/ClawHub ecosystem has 2,857+ community-authored AI skills that could accelerate capability development. However, OpenClaw and ICDEV™ have fundamentally different architectures (Node.js vs Python, flat markdown vs FORGE 6-layer, no compliance vs CUI/NIST).
+ICDEV™'s marketplace is tenant-federated but internal. The OpenClaw/SkillHub ecosystem has 2,857+ community-authored AI skills that could accelerate capability development. However, OpenClaw and ICDEV™ have fundamentally different architectures (Node.js vs Python, flat markdown vs FORGE 6-layer, no compliance vs CUI/NIST).
 
 ## Solution
 
@@ -62,7 +62,7 @@ A quarantine-first import pipeline with:
 
 ## Validated Against
 
-Real-world ClawHub skill: `pskoett/self-improving-agent` (v3.0.5, MIT-0)
+Real-world SkillHub skill: `pskoett/self-improving-agent` (v3.0.5, MIT-0)
 - Tool mapping: 4/4 successful (read_file→Read, write_file→Write, run_command→Bash, search_files→Grep)
 - Shell scripts: warned (cross-platform review)
 - JS/TS hooks: warned and stripped

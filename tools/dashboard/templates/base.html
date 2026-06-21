@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en" data-theme="{{ theme_pref or 'dark' }}">
 <head>
     <meta charset="UTF-8">
@@ -364,6 +364,7 @@
                     <li><a href="/document-intelligence/freshness">Freshness</a></li>
                     <li><a href="/document-intelligence/explorer">Explorer</a></li>
                     <li><a href="/document-intelligence/handoff">Handoff</a></li>
+                    <li><a href="/document-intelligence/notebook">📓 Notebook</a></li>
                     <li class="nav-dropdown-divider"></li>
                     {% endif %}
                     {% if govlift_enabled %}
@@ -392,7 +393,7 @@
 
             <!-- ── Intelligence ──────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/knowledge-search','/code-quality','/writeguard','/system-graph','/components-map','/ask-icdev','/research','/autoresearch','/pulse','/clawhub','/ai-observatory','/ontology'] %}active{% endif %}">Intelligence ▾</a>
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/knowledge-search','/code-quality','/writeguard','/system-graph','/components-map','/ask-icdev','/research','/autoresearch','/pulse','/skillhub','/ai-observatory','/ontology'] %}active{% endif %}">Intelligence ▾</a>
                 <ul class="nav-dropdown-menu">
                     <li class="nav-section-label">Awareness</li>
                     <li><a href="/system-graph" style="color:#42a5f5;">System Graph</a></li>
@@ -413,7 +414,7 @@
                     <li class="nav-dropdown-divider"></li>
                     <li class="nav-section-label">Publish</li>
                     <li><a href="/pulse">Pulse Blog</a></li>
-                    <li><a href="/clawhub">ClawHub Skills</a></li>
+                    <li><a href="/skillhub">SkillHub</a></li>
                     {% endif %}
                 </ul>
             </li>

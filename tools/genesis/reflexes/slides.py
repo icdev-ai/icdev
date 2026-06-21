@@ -74,18 +74,18 @@ def run(config: dict, state) -> dict:
 
 def _emit_output_event(deck_id, pptx_path: str, title: str) -> None:
     """Emit a genesis_outputs event so the dashboard shows the new deck."""
+    import uuid
     try:
         from tools.db.storage import get_connection
         conn = get_connection()
         try:
             conn.execute(
-                "INSERT INTO genesis_outputs (reflex_name, output_type, output_ref, summary, created_at) "
-                "VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP) "
-                "ON CONFLICT DO NOTHING",
-                ("slides", "pptx", pptx_path, f"Weekly deck: {title}"),
+                "INSERT INTO genesis_outputs (id, reflex_name, output_type, output_ref, summary, created_at) "
+                "VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
+                (str(uuid.uuid4()), "slides", "pptx", pptx_path, f"Weekly deck: {title}"),
             )
             conn.commit()
         finally:
             conn.close()
     except Exception:
-        pass  # genesis_outputs table may not exist yet — non-fatal
+        pass  # non-fatal if table not yet migrated on this installation

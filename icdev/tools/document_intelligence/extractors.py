@@ -1,0 +1,921 @@
+# CUI // SP-CTI
+"""DIC built-in file extractors — air-gap safe fallbacks for multimodal ingestion.
+
+Every extractor returns an :class:`Extraction` dataclass with normalized text, provider
+name, content type, and page count. Extractors are best-effort: if a required library
+is missing the extractor returns ``text=""`` and logs a warning so the orchestrator
+can report the failure rather than silently producing 0 chunks.
+
+Supported formats:
+  PDF   → pypdf (pure-Python, air-gap baseline)
+  DOCX  → python-docx (best-effort)
+  XLSX  → openpyxl (best-effort)
+  PPTX  → python-pptx (best-effort)
+  PNG   → pytesseract / easyocr (best-effort)
+  HTML  → built-in strip-html
+  TXT   → built-in read-text
+
+Layout mode:
+  Layout-aware extraction (column/table/figure region segmentation) needs the
+  optional ``paddleocr`` / ``doclayout-yolo`` libraries, which pull heavy
+  backends and download model weights over the network. We probe them at import
+  time; if they (or their weights) are unavailable the module degrades to the
+  ``flat-ocr`` baseline — sequential text extraction with no region
+  segmentation — so air-gap ingestion always has a working path. Inspect the
+  active mode via :func:`layout_mode` or the ``LAYOUT_MODE`` module constant.
+"""
+from __future__ import annotations
+
+import io
+import base64
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
+
+
+# --------------------------------------------------------------------------- #
+# Layout-detection capability probe (PaddleOCR / doclayout-yolo)
+# --------------------------------------------------------------------------- #
+# Layout-aware extraction requires optional libraries that pull heavy backends
+# (PaddlePaddle / torch) and download model weights over the network on first
+# use — neither is air-gap safe by default. We probe their importability once at
+# module-load time inside a guarded try/except: any failure (missing package,
+# broken backend, blocked network fetch during import) is logged and the module
+# falls back to the always-present 'flat-ocr' path so ingestion never breaks.
+
+LAYOUT_MODE_AWARE = "layout-aware"   # region/table/column segmentation available
+LAYOUT_MODE_FLAT = "flat-ocr"        # sequential text only — air-gap baseline
+
+_LAYOUT_LIBS = ("paddleocr", "doclayout_yolo")
+
+
+def _probe_layout_libs():
+    """Detect whether every layout-detection library imports cleanly.
+
+    Returns ``(mode, missing)``: ``mode`` is :data:`LAYOUT_MODE_AWARE` only when
+    all libraries import without error, otherwise :data:`LAYOUT_MODE_FLAT`.
+    Never raises — callers rely on this to choose a fallback, not to fail.
+    """
+    import importlib
+
+    missing: list[str] = []
+    for lib in _LAYOUT_LIBS:
+        try:
+            importlib.import_module(lib)
+        except Exception as exc:
+            missing.append(lib)
+            logger.debug("dic.extractors: layout lib %r unavailable: %s", lib, exc)
+    if missing:
+        return LAYOUT_MODE_FLAT, missing
+    return LAYOUT_MODE_AWARE, []
+
+
+try:
+    LAYOUT_MODE, _LAYOUT_MISSING = _probe_layout_libs()
+except Exception as exc:  # defensive: the probe itself must never break import
+    logger.error(
+        "dic.extractors: layout-detection probe failed (%s) — forcing 'flat-ocr' fallback",
+        exc,
+    )
+    LAYOUT_MODE, _LAYOUT_MISSING = LAYOUT_MODE_FLAT, list(_LAYOUT_LIBS)
+
+if LAYOUT_MODE == LAYOUT_MODE_FLAT:
+    logger.warning(
+        "dic.extractors: layout-detection libraries unavailable (%s) — using "
+        "'flat-ocr' fallback (no region/table/column segmentation). For "
+        "layout-aware extraction install: pip install paddleocr doclayout-yolo",
+        ", ".join(_LAYOUT_MISSING) or "none",
+    )
+
+
+def layout_mode() -> str:
+    """Return the active layout-extraction mode ('layout-aware' or 'flat-ocr')."""
+    return LAYOUT_MODE
+
+
+@dataclass
+class Extraction:
+    """Normalized output of a file extractor."""
+
+    text: str
+    provider: str
+    content_type: str
+    page_count: int = 1
+    title: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
+
+
+# --------------------------------------------------------------------------- #
+# Extractor implementations
+# --------------------------------------------------------------------------- #
+
+def _strip_html(raw: str) -> str:
+    raw = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", raw)
+    raw = re.sub(r"(?s)<[^>]+>", " ", raw)
+    raw = re.sub(r"&nbsp;", " ", raw)
+    raw = re.sub(r"[ \t]+", " ", raw)
+    raw = re.sub(r"\n{3,}", "\n\n", raw)
+    return raw.strip()
+
+
+def _extract_text(path: Path) -> Extraction:
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    return Extraction(
+        text=raw,
+        provider="builtin-text",
+        content_type="text/plain",
+        page_count=1,
+        title=path.stem,
+    )
+
+
+def _extract_html(path: Path) -> Extraction:
+    raw = path.read_text(encoding="utf-8", errors="replace")
+    text = _strip_html(raw)
+    return Extraction(
+        text=text,
+        provider="builtin-html",
+        content_type="text/html",
+        page_count=1,
+        title=path.stem,
+    )
+
+
+# ── Cached easyocr reader (avoid re-loading model per page) ─────────────────
+_EASYOCR_READER = None
+_EASYOCR_TRIED = False
+
+
+def _get_easyocr_reader():
+    global _EASYOCR_READER, _EASYOCR_TRIED
+    if _EASYOCR_TRIED:
+        return _EASYOCR_READER
+    _EASYOCR_TRIED = True
+    try:
+        import easyocr
+
+        _EASYOCR_READER = easyocr.Reader(["en"], gpu=False)
+    except Exception as exc:
+        logger.debug("dic.extractors: easyocr not available: %s", exc)
+        _EASYOCR_READER = None
+    return _EASYOCR_READER
+
+
+def _try_easyocr(img) -> str:
+    reader = _get_easyocr_reader()
+    if reader is None:
+        return ""
+    try:
+        import numpy as np
+
+        result = reader.readtext(np.array(img))
+        return "\n".join(r[1] for r in result)
+    except Exception:
+        return ""
+
+
+def _vision_ocr(img) -> str:
+    """Send a PIL image to a local vision LLM for text extraction.
+
+    Probes endpoints in priority order (env-configurable):
+      1. Ollama      — OLLAMA_BASE_URL      → /api/tags + /api/chat
+      2. vLLM        — VLLM_BASE_URL        → /v1/models + /v1/chat/completions
+      3. LM Studio   — LM_STUDIO_BASE_URL   → /v1/models + /v1/chat/completions
+      4. llama.cpp   — LLAMA_CPP_BASE_URL   → /v1/models + /v1/chat/completions
+
+    Auto-detects API style per endpoint. Falls back to next endpoint if the
+    current one has no vision-capable model or returns an error.
+    """
+    import json
+    import os
+    import urllib.request
+
+    # Convert image to base64 PNG
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    image_b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+
+    prompt_text = (
+        "Extract ALL text from this document page image. "
+        "Preserve structure, headings, and formatting. "
+        "Return only the extracted text, no commentary."
+    )
+
+    # Vision-capable model keywords (covers llava, gemma3/4, bakllava, moondream, glm-ocr, qwen-vl, etc.)
+    vision_kw = (
+        "llava", "gemma3", "gemma4", "gemma-3", "gemma-4",
+        "bakllava", "moondream", "glm-ocr", "qwen-vl", "qwen2-vl",
+        "phi4", "phi-4", "minicpm-v", "internvl", "deepseek-vl",
+    )
+
+    # Candidate endpoints from environment (same precedence as pdf_fallback.py)
+    candidates: list[tuple[str, str]] = []
+    for env_var, default in [
+        ("OLLAMA_BASE_URL", "http://localhost:11434"),
+        ("VLLM_BASE_URL", ""),
+        ("LM_STUDIO_BASE_URL", ""),
+        ("LLAMA_CPP_BASE_URL", ""),
+    ]:
+        url = os.environ.get(env_var, default)
+        if url:
+            candidates.append((url, env_var))
+
+    def _detect_api(base: str) -> str:
+        """Return 'ollama' or 'openai' based on probe endpoints."""
+        try:
+            urllib.request.urlopen(f"{base}/api/tags", timeout=2)
+            return "ollama"
+        except Exception:
+            pass
+        try:
+            urllib.request.urlopen(f"{base}/v1/models", timeout=2)
+            return "openai"
+        except Exception:
+            pass
+        return "ollama"  # default guess
+
+    for base_url, src in candidates:
+        base = base_url.rstrip("/")
+        api = _detect_api(base)
+
+        try:
+            if api == "ollama":
+                resp = urllib.request.urlopen(f"{base}/api/tags", timeout=3)
+                data = json.loads(resp.read())
+                models = [m["name"] for m in data.get("models", [])]
+                vision_models = [m for m in models if any(v in m.lower() for v in vision_kw)]
+                if not vision_models:
+                    continue
+                model = vision_models[0]
+
+                payload = json.dumps(
+                    {
+                        "model": model,
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": prompt_text,
+                                "images": [image_b64],
+                            }
+                        ],
+                        "stream": False,
+                        "options": {"num_predict": 4096},
+                    }
+                ).encode()
+                url = f"{base}/api/chat"
+            else:
+                # OpenAI-compatible (vLLM, LM Studio, llama.cpp)
+                req = urllib.request.Request(
+                    f"{base}/v1/models",
+                    headers={"Content-Type": "application/json"},
+                )
+                resp = urllib.request.urlopen(req, timeout=3)
+                data = json.loads(resp.read())
+                models = [m.get("id", "") for m in data.get("data", [])]
+                vision_models = [m for m in models if any(v in m.lower() for v in vision_kw)]
+                if not vision_models:
+                    continue
+                model = vision_models[0]
+
+                payload = json.dumps(
+                    {
+                        "model": model,
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": prompt_text},
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": f"data:image/png;base64,{image_b64}",
+                                        },
+                                    },
+                                ],
+                            }
+                        ],
+                        "max_tokens": 4096,
+                        "stream": False,
+                    }
+                ).encode()
+                url = f"{base}/v1/chat/completions"
+
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+            )
+            resp = urllib.request.urlopen(req, timeout=120)
+            data = json.loads(resp.read())
+
+            if api == "ollama":
+                text = data.get("message", {}).get("content", "").strip()
+            else:
+                choices = data.get("choices", [])
+                text = choices[0].get("message", {}).get("content", "").strip() if choices else ""
+
+            if text:
+                logger.info("dic.extractors: vision OCR via %s (%s) produced %d chars", src, model, len(text))
+                return text
+        except Exception as exc:
+            logger.debug("dic.extractors: vision OCR failed on %s (%s): %s", src, base, exc)
+            continue
+
+    return ""
+
+
+def _ocr_image(img) -> str:
+    """Run OCR on a PIL image. Tries easyocr → local vision LLM (Ollama/vLLM) → pytesseract."""
+    # 1. easyocr (pure Python, PyTorch-based, air-gap safe if models cached)
+    text = _try_easyocr(img)
+    if text.strip():
+        return text
+
+    # 2. Local vision LLM (Ollama / vLLM / LM Studio / llama.cpp)
+    try:
+        text = _vision_ocr(img)
+        if text.strip():
+            return text
+    except Exception:
+        pass
+
+    # 3. pytesseract (requires external Tesseract binary — not air-gap friendly)
+    try:
+        import pytesseract
+
+        return pytesseract.image_to_string(img)
+    except Exception:
+        pass
+
+    return ""
+
+
+def _try_pdf_ocr(path: Path, total_pages: int, max_pages: int = 50) -> str:
+    """Render PDF pages to images via pypdfium2 and OCR them. Returns aggregated text."""
+    try:
+        import pypdfium2 as pdfium
+    except Exception:
+        return ""
+
+    pages_to_process = min(total_pages, max_pages)
+    text_parts: list[str] = []
+
+    try:
+        pdf = pdfium.PdfDocument(str(path))
+        for i in range(pages_to_process):
+            try:
+                bitmap = pdf[i].render(scale=2)
+                pil_image = bitmap.to_pil()
+                page_text = _ocr_image(pil_image)
+                if page_text.strip():
+                    text_parts.append(f"\n--- Page {i + 1} ---\n{page_text.strip()}")
+            except Exception as exc:
+                logger.warning("dic.extractors: OCR failed on page %s: %s", i + 1, exc)
+    except Exception as exc:
+        logger.warning("dic.extractors: PDF OCR rendering failed: %s", exc)
+
+    return "\n".join(text_parts)
+
+
+def _try_pymupdf(path: Path) -> tuple[str, int]:
+    """Extract text via pymupdf (fitz) — best for CID-mapped fonts and complex encodings."""
+    try:
+        import fitz
+        doc = fitz.open(str(path))
+        total_pages = doc.page_count
+        parts: list[str] = []
+        for i, page in enumerate(doc):
+            try:
+                t = page.get_text("text") or ""
+                if t.strip():
+                    parts.append(f"\n--- Page {i + 1} ---\n{t.strip()}")
+            except Exception:
+                pass
+        doc.close()
+        return "\n".join(parts), total_pages
+    except Exception as exc:
+        logger.debug("dic.extractors: pymupdf failed: %s", exc)
+        return "", 0
+
+
+def _try_pdfplumber(path: Path) -> tuple[str, int]:
+    """Extract text via pdfplumber — handles unusual font encodings well."""
+    try:
+        import pdfplumber
+        parts: list[str] = []
+        total_pages = 0
+        with pdfplumber.open(str(path)) as pdf:
+            total_pages = len(pdf.pages)
+            for i, page in enumerate(pdf.pages):
+                try:
+                    t = page.extract_text() or ""
+                    if t.strip():
+                        parts.append(f"\n--- Page {i + 1} ---\n{t.strip()}")
+                except Exception:
+                    pass
+        return "\n".join(parts), total_pages
+    except Exception as exc:
+        logger.debug("dic.extractors: pdfplumber failed: %s", exc)
+        return "", 0
+
+
+def _extract_pdf(path: Path) -> Extraction:
+    """Extract text from PDF using a four-pass fallback chain.
+
+    Pass 1: pymupdf/fitz    — gold standard; handles CID-mapped fonts, complex encodings
+    Pass 2: pdfplumber      — good for non-standard font maps
+    Pass 3: pypdf           — fast baseline
+    Pass 4: OCR             — last resort for genuinely scanned/image PDFs
+    """
+    total_pages = 0
+
+    text, total_pages = _try_pymupdf(path)
+    if text.strip():
+        return Extraction(
+            text=text, provider="pymupdf", content_type="application/pdf",
+            page_count=total_pages or 1, title=path.stem,
+        )
+
+    text, pl_pages = _try_pdfplumber(path)
+    if total_pages == 0:
+        total_pages = pl_pages
+    if text.strip():
+        return Extraction(
+            text=text, provider="pdfplumber", content_type="application/pdf",
+            page_count=total_pages or 1, title=path.stem,
+        )
+
+    try:
+        from pypdf import PdfReader
+        text_parts: list[str] = []
+        reader = PdfReader(str(path))
+        if total_pages == 0:
+            total_pages = len(reader.pages)
+        for i, page in enumerate(reader.pages):
+            try:
+                page_text = page.extract_text() or ""
+                if page_text.strip():
+                    text_parts.append(f"\n--- Page {i + 1} ---\n{page_text.strip()}")
+            except Exception as exc:
+                logger.warning("dic.extractors: pypdf page %s error: %s", i + 1, exc)
+        text = "\n".join(text_parts)
+        if text.strip():
+            return Extraction(
+                text=text, provider="pypdf", content_type="application/pdf",
+                page_count=total_pages or 1, title=path.stem,
+            )
+    except Exception as exc:
+        logger.warning("dic.extractors: pypdf failed: %s", exc)
+
+    if total_pages == 0:
+        total_pages = 1
+
+    ocr_text = _try_pdf_ocr(path, total_pages)
+    if ocr_text.strip():
+        return Extraction(
+            text=ocr_text, provider="pdf+ocr", content_type="application/pdf",
+            page_count=total_pages, title=path.stem,
+            warnings=["PDF text extracted via OCR (scanned/image PDF)."],
+        )
+
+    return Extraction(
+        text="", provider="pdf-all-failed", content_type="application/pdf",
+        page_count=total_pages, title=path.stem,
+        warnings=[
+            "All PDF extraction passes failed (pymupdf, pdfplumber, pypdf, OCR). "
+            "File may be password-protected, corrupted, or a purely graphical PDF. "
+            "For scanned PDFs, install Tesseract: winget install UB-Mannheim.TesseractOCR"
+        ],
+    )
+
+
+def _extract_docx(path: Path) -> Extraction:
+    """Extract text from DOCX using python-docx."""
+    try:
+        import docx
+    except Exception:
+        return Extraction(
+            text="",
+            provider="docx-missing",
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            page_count=0,
+            title=path.stem,
+            warnings=["python-docx not installed — run: pip install python-docx"],
+        )
+
+    try:
+        document = docx.Document(str(path))
+        paragraphs = [p.text for p in document.paragraphs if p.text.strip()]
+        # Also extract text from tables
+        table_texts: list[str] = []
+        for table in document.tables:
+            for row in table.rows:
+                row_text = " | ".join(cell.text.strip() for cell in row.cells if cell.text.strip())
+                if row_text:
+                    table_texts.append(row_text)
+
+        all_text = "\n\n".join(paragraphs)
+        if table_texts:
+            all_text += "\n\n--- Tables ---\n" + "\n".join(table_texts)
+
+        return Extraction(
+            text=all_text,
+            provider="python-docx",
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            page_count=max(1, len(paragraphs) // 40),  # rough estimate
+            title=path.stem,
+            warnings=[""],
+        )
+    except Exception as exc:
+        return Extraction(
+            text="",
+            provider="docx-error",
+            content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            page_count=0,
+            title=path.stem,
+            warnings=[f"DOCX read failed: {exc}"],
+        )
+
+
+def _extract_xlsx(path: Path) -> Extraction:
+    """Extract text from XLSX using openpyxl."""
+    try:
+        import openpyxl
+    except Exception:
+        return Extraction(
+            text="",
+            provider="xlsx-missing",
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            page_count=0,
+            title=path.stem,
+            warnings=["openpyxl not installed — run: pip install openpyxl"],
+        )
+
+    try:
+        wb = openpyxl.load_workbook(str(path), data_only=True)
+        sheet_texts: list[str] = []
+        for sheet_name in wb.sheetnames:
+            sheet = wb[sheet_name]
+            rows: list[str] = []
+            for row in sheet.iter_rows(values_only=True):
+                row_vals = [str(v) for v in row if v is not None]
+                if row_vals:
+                    rows.append(" | ".join(row_vals))
+            if rows:
+                sheet_texts.append(f"--- Sheet: {sheet_name} ---\n" + "\n".join(rows))
+
+        return Extraction(
+            text="\n\n".join(sheet_texts),
+            provider="openpyxl",
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            page_count=len(wb.sheetnames),
+            title=path.stem,
+            warnings=[""],
+        )
+    except Exception as exc:
+        return Extraction(
+            text="",
+            provider="xlsx-error",
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            page_count=0,
+            title=path.stem,
+            warnings=[f"XLSX read failed: {exc}"],
+        )
+
+
+def _extract_pptx(path: Path) -> Extraction:
+    """Extract text from PPTX using python-pptx."""
+    try:
+        import pptx
+    except Exception:
+        return Extraction(
+            text="",
+            provider="pptx-missing",
+            content_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            page_count=0,
+            title=path.stem,
+            warnings=["python-pptx not installed — run: pip install python-pptx"],
+        )
+
+    try:
+        prs = pptx.Presentation(str(path))
+        slide_texts: list[str] = []
+        for i, slide in enumerate(prs.slides, start=1):
+            texts: list[str] = []
+            for shape in slide.shapes:
+                if hasattr(shape, "text") and shape.text.strip():
+                    texts.append(shape.text.strip())
+            if texts:
+                slide_texts.append(f"--- Slide {i} ---\n" + "\n".join(texts))
+
+        return Extraction(
+            text="\n\n".join(slide_texts),
+            provider="python-pptx",
+            content_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            page_count=len(prs.slides),
+            title=path.stem,
+            warnings=[""],
+        )
+    except Exception as exc:
+        return Extraction(
+            text="",
+            provider="pptx-error",
+            content_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            page_count=0,
+            title=path.stem,
+            warnings=[f"PPTX read failed: {exc}"],
+        )
+
+
+def _extract_image(path: Path) -> Extraction:
+    """Extract text from images using OCR (best-effort)."""
+    warnings: list[str] = []
+    try:
+        from PIL import Image
+    except Exception:
+        return Extraction(
+            text="",
+            provider="pillow-missing",
+            content_type="image/unknown",
+            page_count=0,
+            title=path.stem,
+            warnings=["Pillow not installed — run: pip install Pillow"],
+        )
+
+    try:
+        img = Image.open(str(path))
+        # Try pytesseract first, then easyocr, then give up gracefully
+        ocr_text = ""
+        for ocr_name, ocr_fn in [
+            ("pytesseract", _try_pytesseract),
+            ("easyocr", _try_easyocr),
+        ]:
+            try:
+                ocr_text = ocr_fn(img)
+                if ocr_text.strip():
+                    break
+            except Exception:
+                continue
+        else:
+            warnings.append("OCR not available — install pytesseract or easyocr for image text extraction")
+
+        return Extraction(
+            text=ocr_text,
+            provider="ocr",
+            content_type=f"image/{img.format.lower() if img.format else 'unknown'}",
+            page_count=1,
+            title=path.stem,
+            warnings=warnings,
+        )
+    except Exception as exc:
+        return Extraction(
+            text="",
+            provider="image-error",
+            content_type="image/unknown",
+            page_count=0,
+            title=path.stem,
+            warnings=[f"Image read failed: {exc}"],
+        )
+
+
+def _try_easyocr(img) -> str:
+    reader = _get_easyocr_reader()
+    if reader is None:
+        return ""
+    try:
+        import numpy as np
+
+        result = reader.readtext(np.array(img))
+        return "\n".join(r[1] for r in result)
+    except Exception:
+        return ""
+
+
+def _try_pytesseract(img) -> str:
+    import pytesseract
+
+    return pytesseract.image_to_string(img)
+
+
+# --------------------------------------------------------------------------- #
+# Registry
+# --------------------------------------------------------------------------- #
+
+_EXTRACTORS: dict[str, callable] = {
+    ".pdf": _extract_pdf,
+    ".docx": _extract_docx,
+    ".xlsx": _extract_xlsx,
+    ".pptx": _extract_pptx,
+    ".png": _extract_image,
+    ".jpg": _extract_image,
+    ".jpeg": _extract_image,
+    ".tiff": _extract_image,
+    ".tif": _extract_image,
+    ".bmp": _extract_image,
+    ".gif": _extract_image,
+    ".html": _extract_html,
+    ".htm": _extract_html,
+    ".txt": _extract_text,
+    ".md": _extract_text,
+    ".markdown": _extract_text,
+    ".rst": _extract_text,
+    ".log": _extract_text,
+    ".csv": _extract_text,
+    ".tsv": _extract_text,
+    ".json": _extract_text,
+    ".yaml": _extract_text,
+    ".yml": _extract_text,
+    ".xml": _extract_text,
+    ".py": _extract_text,
+    ".sql": _extract_text,
+    ".ini": _extract_text,
+    ".cfg": _extract_text,
+    ".toml": _extract_text,
+}
+
+
+def get_extractor(ext: str) -> callable | None:
+    """Return the extractor function for a given file extension (lowercased)."""
+    return _EXTRACTORS.get(ext.lower())
+
+
+# --------------------------------------------------------------------------- #
+# Web URL and YouTube extractors (non-file, dual-mode)
+# --------------------------------------------------------------------------- #
+
+def extract_url(url: str) -> Extraction:
+    """Fetch and extract text from a web URL.
+
+    Online: full HTTP fetch + HTML strip.
+    Air-gap / network failure: returns empty Extraction with a warning so the
+    caller can still create a placeholder source entry.
+    """
+    import urllib.request
+    import urllib.error
+
+    title = url
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 ICDEV/1.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = resp.read(2 * 1024 * 1024).decode("utf-8", errors="replace")  # 2 MB cap
+        content_type = resp.headers.get_content_type() or "text/html"
+
+        # Extract <title>
+        import re as _re
+        m = _re.search(r"<title[^>]*>(.*?)</title>", raw, _re.I | _re.S)
+        title = _re.sub(r"\s+", " ", m.group(1)).strip() if m else url
+
+        text = _strip_html(raw)
+        return Extraction(
+            text=text,
+            provider="builtin-url",
+            content_type=content_type,
+            page_count=1,
+            title=title,
+            metadata={"source_url": url},
+        )
+    except urllib.error.URLError as exc:
+        return Extraction(
+            text="",
+            provider="builtin-url",
+            content_type="text/html",
+            page_count=0,
+            title=title,
+            warnings=[f"URL fetch failed (network unavailable or blocked): {exc}"],
+            metadata={"source_url": url},
+        )
+    except Exception as exc:
+        return Extraction(
+            text="",
+            provider="builtin-url",
+            content_type="text/html",
+            page_count=0,
+            title=title,
+            warnings=[f"URL extraction error: {exc}"],
+            metadata={"source_url": url},
+        )
+
+
+def extract_youtube(url: str) -> Extraction:
+    """Extract transcript text from a YouTube video URL.
+
+    Online path: uses youtube-transcript-api (pip install youtube-transcript-api).
+    Air-gap / missing package: returns empty Extraction with a clear warning so
+    the caller can surface a human-paste fallback option in the UI.
+    """
+    import re as _re
+
+    # Extract video ID from various YouTube URL formats.
+    patterns = [
+        r"(?:v=|youtu\.be/|embed/)([A-Za-z0-9_-]{11})",
+        r"shorts/([A-Za-z0-9_-]{11})",
+    ]
+    video_id = None
+    for pat in patterns:
+        m = _re.search(pat, url)
+        if m:
+            video_id = m.group(1)
+            break
+
+    if not video_id:
+        return Extraction(
+            text="",
+            provider="youtube-transcript",
+            content_type="text/plain",
+            page_count=0,
+            title=url,
+            warnings=["Could not extract YouTube video ID from URL."],
+            metadata={"source_url": url},
+        )
+
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi  # type: ignore[import]
+        # v1.x: instance method; v0.x: class method get_transcript()
+        api = YouTubeTranscriptApi()
+        fetched = api.fetch(video_id)
+        text = " ".join(
+            (s.text if hasattr(s, "text") else s["text"]) for s in fetched
+        )
+        # Estimate title via oEmbed (best-effort, no API key needed).
+        title = f"YouTube: {video_id}"
+        try:
+            import json as _json
+            import urllib.request as _ur
+            oembed_url = f"https://www.youtube.com/oembed?url={url}&format=json"
+            with _ur.urlopen(oembed_url, timeout=5) as r:
+                data = _json.loads(r.read())
+                title = data.get("title", title)
+        except Exception:
+            pass
+        return Extraction(
+            text=text,
+            provider="youtube-transcript",
+            content_type="text/plain",
+            page_count=1,
+            title=title,
+            metadata={"source_url": url, "video_id": video_id},
+        )
+    except ImportError:
+        return Extraction(
+            text="",
+            provider="youtube-transcript",
+            content_type="text/plain",
+            page_count=0,
+            title=f"YouTube: {video_id}",
+            warnings=[
+                "youtube-transcript-api not installed. Install with: pip install youtube-transcript-api. "
+                "In air-gap mode, paste the transcript text manually and ingest as a .txt file."
+            ],
+            metadata={"source_url": url, "video_id": video_id},
+        )
+    except Exception as exc:
+        return Extraction(
+            text="",
+            provider="youtube-transcript",
+            content_type="text/plain",
+            page_count=0,
+            title=f"YouTube: {video_id}",
+            warnings=[f"Transcript fetch failed: {exc}. Video may have no captions or be geo-restricted."],
+            metadata={"source_url": url, "video_id": video_id},
+        )
+
+
+def extract_file(path: str | Path) -> Extraction:
+    """Route a file path to the correct extractor.
+
+    Falls back to a raw utf-8 decode with a warning if the extension is unknown.
+    """
+    p = Path(path)
+    ext = p.suffix.lower()
+    extractor = get_extractor(ext)
+    if extractor is not None:
+        result = extractor(p)
+        result.metadata.setdefault("layout_mode", LAYOUT_MODE)
+        return result
+
+    # Unknown extension — best-effort utf-8 decode
+    try:
+        raw = p.read_text(encoding="utf-8", errors="replace")
+        return Extraction(
+            text=raw,
+            provider="builtin-fallback",
+            content_type="application/octet-stream",
+            page_count=1,
+            title=p.stem,
+            warnings=[f"Unrecognized extension '{ext}' — best-effort text decode. Install a provider for {ext} files."],
+        )
+    except Exception as exc:
+        return Extraction(
+            text="",
+            provider="fallback-error",
+            content_type="application/octet-stream",
+            page_count=0,
+            title=p.stem,
+            warnings=[f"File read failed: {exc}"],
+        )

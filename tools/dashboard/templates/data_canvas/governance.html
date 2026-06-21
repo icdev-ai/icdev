@@ -148,6 +148,18 @@
   </div>
 </div>
 
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "data_mesh_governance" %}
+{% set iqe_api_route = "/data/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Governance Policies" %}
+{% set iqe_examples = [
+  {"label": "All policies", "query": "foreach p in data_mesh.governance_policies select p.name, p.policy_type, p.applies_to, p.status"},
+  {"label": "OPA policies", "query": "foreach p in data_mesh.governance_policies where p.policy_type == \"opa\" select p.name, p.applies_to, p.status"},
+  {"label": "Active policies", "query": "foreach p in data_mesh.governance_policies where p.status == \"active\" select p.name, p.policy_type, p.applies_to"},
+  {"label": "Global policies", "query": "foreach p in data_mesh.governance_policies where p.applies_to == \"all\" select p.name, p.policy_type, p.status"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+
 <script>
 function openModal() {
   document.getElementById('modal-backdrop').classList.add('open');

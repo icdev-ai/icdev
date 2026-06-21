@@ -909,6 +909,13 @@ def run_signature_scan(assessment_id: int, staged_path: Optional[str] = None, co
     return _with_conn(conn, _body)
 
 
+# SkillSpector adapter — opt-in via ICDEV_SKILLSPECTOR_ENABLED env flag.
+# Imported lazily so a missing skillspector install never breaks the import.
+def _run_skillspector_scan(assessment_id, staged_path=None, conn=None):
+    from tools.integrity.adapters.skillspector_adapter import run_skillspector_scan
+    return run_skillspector_scan(assessment_id, staged_path=staged_path, conn=conn)
+
+
 # Map a scanner key (matches integrity_config.yaml ``scanners`` toggles and
 # constants.FINDING_SCANNERS) to its adapter.
 _ADAPTERS = {
@@ -918,11 +925,12 @@ _ADAPTERS = {
     "semgrep": run_signature_scan,
     "formal": run_formal_scan,
     "container": run_container_scan,
+    "skillspector": _run_skillspector_scan,
 }
 
 # Default participation in ``scan_all`` when a toggle is absent from config. The
-# regex/SCA scanners default on; the heavier opt-in scanners (formal, container)
-# default off so they only run when explicitly enabled.
+# regex/SCA scanners default on; the heavier opt-in scanners (formal, container,
+# skillspector) default off — skillspector also requires ICDEV_SKILLSPECTOR_ENABLED.
 _DEFAULT_TOGGLES = {
     "sast": True,
     "secrets": True,
@@ -930,6 +938,7 @@ _DEFAULT_TOGGLES = {
     "semgrep": True,
     "formal": False,
     "container": False,
+    "skillspector": False,
 }
 
 

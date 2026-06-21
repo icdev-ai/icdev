@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # CUI // SP-CTI
 """
 ICDEV™ Web Dashboard - Flask Application
@@ -68,13 +68,13 @@ try:
     from tools.usage_analytics.event_collector import track_request as _track_request
 except ImportError:
     _track_request = None
-# Air-gap mode: hide cloud-dependent pages (Pulse, ClawHub, Genesis, GovCon, etc.)
+# Air-gap mode: hide cloud-dependent pages (Pulse, SkillHub, Genesis, GovCon, etc.)
 _AIRGAP_MODE = os.environ.get("ICDEV_AIRGAP", "").lower() in ("true", "1", "yes")
 # Pages disabled in air-gap mode (routes → friendly message instead of 404)
 _AIRGAP_DISABLED_ROUTES = frozenset(
     {
         "/pulse",
-        "/clawhub",
+        "/skillhub",
         "/research",
         "/autoresearch",
         "/genesis",
@@ -163,9 +163,10 @@ _CANVAS_DEFS = [
     ("dic", "ICDEV_DIC_ENABLED", "tools.document_intelligence.blueprint", "dic_bp"),
     ("demo_runner", "ICDEV_DEMO_RUNNER_ENABLED", "tools.showcase.blueprint", "demo_runner_bp"),
     ("integrity", "ICDEV_INTEGRITY_ENABLED", "tools.integrity.blueprint", "create_integrity_blueprint"),
+    ("ace", "ICDEV_ACE_ENABLED", "icdev.tools.ace.blueprint", "ace_bp"),
 ]
 
-_CANVAS_DEFAULTS_TRUE = {"ndc", "sdc", "aimc", "mission_canvas", "ohc", "integrity"}
+_CANVAS_DEFAULTS_TRUE = {"ndc", "sdc", "aimc", "mission_canvas", "ohc", "integrity", "ace"}
 
 for _key, _env, _mod, _attr in _CANVAS_DEFS:
     _default = "true" if _key in _CANVAS_DEFAULTS_TRUE else "false"
@@ -1482,12 +1483,63 @@ def _get_chat_models() -> tuple[list[dict], str]:
     return result, default_model
 
 
-def create_app() -> Flask:
+def _build_icdev_skill_md(path, skill: dict, framework: str) -> None:
+    """Write a normalized SKILL.md in ICDEV native format to `path`.
+
+    This registers any imported skill (Claude, Hermes, Gemini, etc.) into
+    ICDEV's own skill discovery layer so it appears in /ai-skills and can be
+    invoked by the ACE Coworker Engine and Genesis reflexes.
+    """
+    from pathlib import Path as _P
+    fw_labels = {
+        "claude": "Claude Code", "hermes": "Hermes", "gemini": "Gemini",
+        "openai": "OpenAI", "langchain": "LangChain", "crewai": "CrewAI",
+        "autogen": "AutoGen", "generic": "Generic",
+    }
+    name = skill.get("name") or skill.get("id") or "imported-skill"
+    desc = skill.get("description") or f"Imported {fw_labels.get(framework, framework)} skill"
+    tools_line = ", ".join(skill.get("tools") or []) or "None"
+    steps_md = ""
+    for i, step in enumerate(skill.get("steps") or [], 1):
+        steps_md += f"\n{i}. {step}"
+    sys_prompt = skill.get("system_prompt") or ""
+    params_md = ""
+    for k, v in (skill.get("parameters") or {}).items():
+        params_md += f"\n- `{k}`: {v}"
+
+    content = (
+        f"---\n"
+        f"name: {skill.get('id', name)}\n"
+        f"description: \"{desc.replace(chr(34), chr(39))}\"\n"
+        f"framework: {framework}\n"
+        f"allowed-tools: Bash, Read, Write, Edit, Glob, Grep\n"
+        f"---\n\n"
+        f"# {name}\n\n"
+        f"**Framework:** {fw_labels.get(framework, framework)}  \n"
+        f"**Source:** Imported via SkillHub\n\n"
+        f"## Description\n\n{desc}\n"
+    )
+    if steps_md:
+        content += f"\n## Steps\n{steps_md}\n"
+    if sys_prompt:
+        content += f"\n## System Prompt\n\n```\n{sys_prompt[:2000]}\n```\n"
+    if params_md:
+        content += f"\n## Parameters\n{params_md}\n"
+    if tools_line != "None":
+        content += f"\n## Tools Used\n\n{tools_line}\n"
+
+    _P(path).write_text(content, encoding="utf-8")
+
+
+def create_app(testing: bool = False) -> Flask:
     app = Flask(
         __name__,
         template_folder=str(Path(__file__).resolve().parent / "templates"),
         static_folder=str(Path(__file__).resolve().parent / "static"),
     )
+
+    if testing:
+        app.config["TESTING"] = True
 
     # Auto-reload templates on change (no server restart needed)
     app.config["TEMPLATES_AUTO_RELOAD"] = True
@@ -2058,6 +2110,7 @@ def create_app() -> Flask:
         "ccc": "",
         "dsoc": "",
         "integrity": "",
+        "ace": "",
     }
     for _ck, _cbp in _CANVAS_BLUEPRINTS.items():
         try:
@@ -2069,6 +2122,23 @@ def create_app() -> Flask:
             app.logger.info("Canvas %s registered at %s/", _ck.upper(), prefix)
         except Exception as exc:
             app.logger.warning("Canvas %s registration failed: %s", _ck.upper(), exc)
+
+    # ---- ACE Co-Worker Engine Blueprint ----
+    try:
+        import sys as _sys
+        import importlib as _il2
+        _ace_mod = _il2.import_module("icdev.tools.ace.blueprint")
+        _ace_bp2 = getattr(_ace_mod, "ace_bp")
+        if "ace" not in app.blueprints:
+            app.register_blueprint(_ace_bp2)
+            print("[ACE] Co-Worker Engine registered at /coworker", file=_sys.stderr)
+        else:
+            print("[ACE] already registered", file=_sys.stderr)
+    except Exception as _exc:
+        import sys as _sys
+        import traceback as _tb
+        print(f"[ACE] blueprint registration FAILED: {_exc}", file=_sys.stderr)
+        _tb.print_exc(file=_sys.stderr)
 
     # ---- Simulation Chat Blueprint ----
     try:
@@ -3260,6 +3330,7 @@ def create_app() -> Flask:
             "innovation":     ("tools.iqe.adapters.innovation",      ["innovation.ideas", "innovation.assessments", "innovation.pilots"]),
             "mission_canvas": ("tools.iqe.adapters.mission_canvas",  ["mission.sessions", "mission.twins", "mission.evidence", "mission.alerts"]),
             "govcon":         ("tools.iqe.adapters.govcon",           ["govcon.opportunities", "govcon.awards", "govcon.blackhat", "govcon.competitors"]),
+            "security_zig":   ("tools.iqe.adapters.security",         ["zig.pillars", "zig.capabilities", "zig.activities", "zig.maturity", "zig.gaps", "zig.targets"]),
         }
 
         data = flask_request.get_json(silent=True) or {}
@@ -6484,6 +6555,121 @@ def create_app() -> Flask:
             "narrated": narration is not None,
         })
 
+    @app.route("/api/ask-icdev/sessions/<session_id>/save-to-wiki", methods=["POST"])
+    def api_ask_icdev_save_to_wiki(session_id):
+        """Save a Q&A turn as a new memory topic file (Karpathy LLM Wiki query-to-wiki).
+
+        Body: { "turn": <assistant_turn_number>, "slug": "optional-override",
+                "memory_type": "project|feedback|user|reference" }
+        Writes the question + answer as a new .md file in the Claude Code
+        auto-memory dir, appends an index entry to MEMORY.md, and runs
+        update_crossrefs() to add back-links to related existing files.
+        """
+        import os as _os
+        import re as _re
+        import uuid as _uuid
+        data = flask_request.get_json(silent=True) or {}
+        turn = data.get("turn")
+        memory_type = data.get("memory_type", "project")
+        slug_override = (data.get("slug") or "").strip()
+
+        conn = _get_db()
+        try:
+            _ensure_ask_icdev_tables(conn)
+            session_row = conn.execute(
+                "SELECT title FROM icdev_qa_sessions WHERE id = ?", (session_id,)
+            ).fetchone()
+            if not session_row:
+                return jsonify({"error": "session not found"}), 404
+
+            if turn is not None:
+                rows = conn.execute(
+                    "SELECT role, content FROM icdev_qa_messages "
+                    "WHERE session_id = ? AND turn IN (?, ?) ORDER BY turn ASC",
+                    (session_id, int(turn) - 1, int(turn)),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT role, content FROM icdev_qa_messages "
+                    "WHERE session_id = ? ORDER BY turn DESC LIMIT 2",
+                    (session_id,),
+                ).fetchall()
+                rows = list(reversed(rows))
+        finally:
+            conn.close()
+
+        if len(rows) < 2:
+            return jsonify({"error": "turn pair not found; need a user+assistant turn"}), 404
+
+        question = next((dict(r)["content"] for r in rows if dict(r)["role"] == "user"), "")
+        answer = next((dict(r)["content"] for r in rows if dict(r)["role"] == "assistant"), "")
+        if not question or not answer:
+            return jsonify({"error": "could not extract user+assistant pair from turn"}), 400
+
+        # Derive slug from question text if not overridden
+        if slug_override:
+            slug = _re.sub(r"[^a-z0-9-]", "", slug_override.lower().replace(" ", "-"))[:60]
+        else:
+            words = _re.findall(r"[a-zA-Z0-9]+", question)[:8]
+            slug = "-".join(w.lower() for w in words)[:60]
+        slug = slug or f"qa-{_uuid.uuid4().hex[:8]}"
+
+        # Resolve auto-memory dir (same convention as wiki_lint reflex)
+        userprofile = _os.environ.get("USERPROFILE", str(Path.home()))
+        project_slug = (
+            str(BASE_DIR)
+            .replace("\\", "-")
+            .replace("/", "-")
+            .replace(":", "-")
+            .lstrip("-")
+        )
+        auto_mem = Path(userprofile) / ".claude" / "projects" / project_slug / "memory"
+        if not auto_mem.is_dir():
+            return jsonify({"error": f"auto-memory dir not found: {auto_mem}"}), 503
+
+        topic_file = auto_mem / f"{slug}.md"
+        if topic_file.exists():
+            slug = f"{slug}-{_uuid.uuid4().hex[:6]}"
+            topic_file = auto_mem / f"{slug}.md"
+
+        now_str = datetime.now(timezone.utc).date().isoformat()
+        description = (question[:120] + "...") if len(question) > 120 else question
+        file_content = (
+            f"---\n"
+            f"name: {slug}\n"
+            f"description: {description}\n"
+            f"metadata:\n"
+            f"  type: {memory_type}\n"
+            f"  source: ask-icdev\n"
+            f"  saved_at: {now_str}\n"
+            f"---\n\n"
+            f"## Q: {question}\n\n"
+            f"{answer}\n"
+        )
+        topic_file.write_text(file_content, encoding="utf-8")
+
+        # Append index entry to MEMORY.md
+        memory_md = auto_mem / "MEMORY.md"
+        if memory_md.exists():
+            index_line = f"- [{description}]({slug}.md) — saved from /ask-icdev on {now_str}\n"
+            with open(memory_md, "a", encoding="utf-8") as fh:
+                fh.write(index_line)
+
+        # Add cross-reference back-links to related existing files
+        updated_files: list = []
+        try:
+            from tools.memory.memory_write import update_crossrefs
+            updated_files = update_crossrefs(slug, file_content, memory_dir=auto_mem)
+        except Exception:
+            pass
+
+        return jsonify({
+            "slug": slug,
+            "file": str(topic_file),
+            "cross_refs_updated": len(updated_files),
+            "memory_type": memory_type,
+        }), 201
+
     @app.route("/api/knowledge-graph/compliance-build", methods=["POST"])
     def api_knowledge_graph_compliance_build():
         """Build compliance crosswalk knowledge graph."""
@@ -7623,6 +7809,82 @@ def create_app() -> Flask:
                     "mode": "speed" if enabled else "quality",
                 }
             )
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/llm/health", methods=["GET"])
+    def api_llm_health():
+        """LLM provider health check — lists all configured providers/models and their availability.
+
+        Returns JSON with:
+          - cli_bridge: CLI bridge enable state + binary
+          - providers: per-provider availability (reachable/unreachable/unknown)
+          - chains: resolved chains for key ACE role functions
+          - recommended: which model will actually serve the next request
+        """
+        try:
+            import time
+            from tools.llm.router import LLMRouter
+            from tools.llm.cli_bridge.activate import cli_bridge_enabled, should_enable, _has_cloud_key
+
+            router = LLMRouter()
+            cfg = router._config
+
+            # CLI bridge state
+            cli_enabled = cli_bridge_enabled()
+            try:
+                import shutil
+                cli_binary = cfg.get("providers", {}).get("cli", {}).get("cli_binary", "claude")
+                cli_on_path = shutil.which(cli_binary) is not None
+            except Exception:
+                cli_on_path = False
+
+            # Provider availability (lightweight probe: can we resolve the provider instance)
+            providers_status = {}
+            for pname, pcfg in cfg.get("providers", {}).items():
+                try:
+                    provider = router._get_provider(pname)
+                    reachable = provider is not None
+                    providers_status[pname] = {
+                        "type": pcfg.get("type", "unknown"),
+                        "reachable": reachable,
+                    }
+                except Exception as exc:
+                    providers_status[pname] = {"type": pcfg.get("type", "unknown"), "reachable": False, "error": str(exc)[:100]}
+
+            # Model availability for key functions
+            key_functions = [
+                "agent_product_manager",
+                "agent_software_craftsperson",
+                "document_qna",
+                "code_generation",
+                "default",
+            ]
+            chains_info = {}
+            for fn in key_functions:
+                chain = router._get_chain_for_function(fn)
+                first_available = None
+                for m in chain:
+                    m_cfg = router._get_model_config(m)
+                    if m_cfg and router._check_model_available(m):
+                        first_available = m
+                        break
+                chains_info[fn] = {
+                    "chain": chain[:6],
+                    "first_available": first_available,
+                }
+
+            return jsonify({
+                "cli_bridge": {
+                    "enabled": cli_enabled,
+                    "auto_enabled": should_enable(),
+                    "has_cloud_key": _has_cloud_key(),
+                    "binary_on_path": cli_on_path,
+                },
+                "providers": providers_status,
+                "chains": chains_info,
+                "timestamp": time.time(),
+            })
         except Exception as e:
             return jsonify({"error": str(e)}), 500
 
@@ -9721,15 +9983,17 @@ def create_app() -> Flask:
                 }
             )
 
-    # ── ClawHub Skill Browser (Phase 69) ───────────────────────────────
+    # ── SkillHub Skill Browser (Phase 69) ───────────────────────────────
 
-    @app.route("/clawhub")
-    def clawhub():
-        """ClawHub — discover and import OpenClaw skills."""
+    @app.route("/skillhub")
+    def skillhub():
+        """SkillHub — discover and import OpenClaw skills."""
         imports = []
         enabled = os.environ.get("ICDEV_OPENCLAW_ENABLED", "").lower() in ("true", "1", "yes")
+        promoted = []
         try:
-            from tools.marketplace.openclaw_bridge import list_quarantine
+            import json as _json
+            from tools.marketplace.openclaw_bridge import _get_db
 
             result = list_quarantine()
             if result.get("success"):
@@ -9774,21 +10038,82 @@ def create_app() -> Flask:
                             risk.get("reason", ""),
                         )
                     )
+            # Use canvas connection to bypass RLS (openclaw_imports has no
+            # tenant_id/classification columns so RLS injection would either
+            # fail or silently empty results in the Flask request context).
+            try:
+                from tools.db.storage import get_canvas_connection
+                conn = get_canvas_connection("ICDEV_STORAGE_BACKEND")
+            except Exception:
+                conn = _get_db()
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    "SELECT id, skill_name, openclaw_author, scan_status, status, "
+                    "trust_score, has_executable_content, review_required, created_at, "
+                    "rejected_by, rejected_reason, gate_results, metadata, quarantine_path "
+                    "FROM openclaw_imports ORDER BY created_at DESC"
+                )
+                rows = cur.fetchall()
+            finally:
+                conn.close()
+
+            def _row(r):
+                meta = {}
+                try:
+                    raw = r[12] if not hasattr(r, "keys") else r.get("metadata", "{}")
+                    meta = _json.loads(raw) if isinstance(raw, str) else (raw or {})
+                except Exception:
+                    pass
+                framework = meta.get("framework", "")
+                gates = []
+                try:
+                    graw = r[11] if not hasattr(r, "keys") else r.get("gate_results", "[]")
+                    gdata = _json.loads(graw) if isinstance(graw, str) else (graw or [])
+                    if isinstance(gdata, list):
+                        gates = [g.get("gate") for g in gdata if not g.get("passed")]
+                except Exception:
+                    pass
+                def _f(idx, key):
+                    return r[idx] if not hasattr(r, "keys") else r.get(key)
+                risk_score = meta.get("skillspector_risk_score")
+                return (
+                    _f(0, "id"),
+                    _f(1, "skill_name"),
+                    _f(2, "openclaw_author"),
+                    _f(3, "scan_status"),
+                    _f(4, "status"),
+                    _f(5, "trust_score") or 0.3,
+                    _f(6, "has_executable_content"),
+                    _f(7, "review_required"),
+                    str(_f(8, "created_at") or "")[:19],
+                    _f(9, "rejected_by") or "",
+                    _f(10, "rejected_reason") or "",
+                    gates,
+                    framework,          # index 12
+                    _f(13, "quarantine_path") or "",  # index 13
+                    risk_score,         # index 14 — None = not scanned
+                )
+
+            all_rows = [_row(r) for r in rows]
+            imports  = [r for r in all_rows if r[4] != "promoted"]
+            promoted = [r for r in all_rows if r[4] == "promoted"]
         except Exception:
             imports = []
-        return render_template("clawhub.html", imports=imports, enabled=enabled)
+            promoted = []
+        return render_template("skillhub.html", imports=imports, promoted=promoted, enabled=enabled)
 
-    @app.route("/api/clawhub/search")
-    def api_clawhub_search():
-        """Search ClawHub for skills."""
+    @app.route("/api/skillhub/search")
+    def api_skillhub_search():
+        """Search SkillHub for skills."""
         query = flask_request.args.get("q", "")
         limit = int(flask_request.args.get("limit", "10"))
         if not query:
             return jsonify({"error": "Missing 'q' parameter"})
         try:
-            from tools.databridge.connectors.clawhub_connector import ClawHubConnector
+            from tools.databridge.connectors.skillhub_connector import SkillHubConnector
 
-            conn = ClawHubConnector()
+            conn = SkillHubConnector()
             conn.connect({})
             results = conn.search_skills(query, limit=limit)
             conn.disconnect()
@@ -9796,13 +10121,13 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)})
 
-    @app.route("/api/clawhub/skill/<slug>")
-    def api_clawhub_detail(slug):
-        """Get skill detail from ClawHub."""
+    @app.route("/api/skillhub/skill/<slug>")
+    def api_skillhub_detail(slug):
+        """Get skill detail from SkillHub."""
         try:
-            from tools.databridge.connectors.clawhub_connector import ClawHubConnector
+            from tools.databridge.connectors.skillhub_connector import SkillHubConnector
 
-            conn = ClawHubConnector()
+            conn = SkillHubConnector()
             conn.connect({})
             detail = conn.get_skill(slug)
             conn.disconnect()
@@ -9810,9 +10135,9 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)})
 
-    @app.route("/api/clawhub/import", methods=["POST"])
-    def api_clawhub_import():
-        """Fetch + import a skill from ClawHub."""
+    @app.route("/api/skillhub/import", methods=["POST"])
+    def api_skillhub_import():
+        """Fetch + import a skill from SkillHub."""
         data = flask_request.get_json(silent=True) or {}
         slug = data.get("slug", "")
         tenant_id = data.get("tenant_id", "default")
@@ -9827,8 +10152,8 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)})
 
-    @app.route("/api/clawhub/promote", methods=["POST"])
-    def api_clawhub_promote():
+    @app.route("/api/skillhub/promote", methods=["POST"])
+    def api_skillhub_promote():
         """Promote a quarantined import (auto-approves review if needed)."""
         data = flask_request.get_json(silent=True) or {}
         import_id = data.get("import_id", "")
@@ -9872,8 +10197,153 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)})
 
-    @app.route("/api/clawhub/reject", methods=["POST"])
-    def api_clawhub_reject():
+    @app.route("/api/skillhub/install-all", methods=["POST"])
+    def api_skillhub_install_all():
+        """Install All — promote pending skills then write every promoted skill to its install path.
+
+        Two-pass operation:
+          Pass 1: promote anything still in review_pending/quarantined+scan_passed
+          Pass 2: install every promoted skill file to its framework install_path
+        Returns per-skill results so the UI can show a progress list.
+        """
+        import json as _json
+        import re as _re
+        from pathlib import Path as _Path
+        data = flask_request.get_json(silent=True) or {}
+        promoted_by = data.get("promoted_by", "dashboard-isso")
+        try:
+            from tools.marketplace.openclaw_bridge import promote_import, _get_db, _utcnow
+            from icdev.tools.ace.skill_adapter import detect_and_normalize
+
+            # ── Pass 1: promote anything still pending ──────────────────
+            conn = _get_db()
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    "SELECT id, skill_name FROM openclaw_imports "
+                    "WHERE status IN ('review_pending', 'quarantined') "
+                    "AND scan_status = 'passed' ORDER BY created_at"
+                )
+                pending = cur.fetchall()
+            finally:
+                conn.close()
+
+            for row in pending:
+                import_id  = row[0] if not hasattr(row, "keys") else row["id"]
+                # Auto-approve review gate
+                try:
+                    c2 = _get_db()
+                    try:
+                        c2.cursor().execute(
+                            "UPDATE openclaw_imports SET review_id = %s WHERE id = %s AND review_id IS NULL",
+                            (f"rev-bulk-{import_id[:8]}", import_id),
+                        )
+                        c2.commit()
+                    except Exception:
+                        try: c2.rollback()
+                        except Exception: pass
+                    finally:
+                        c2.close()
+                except Exception:
+                    pass
+                result = promote_import(import_id, promoted_by)
+                if result.get("success"):
+                    try:
+                        c3 = _get_db()
+                        try:
+                            c3.cursor().execute(
+                                "UPDATE openclaw_imports SET trust_score = 0.70, updated_at = %s WHERE id = %s",
+                                (_utcnow(), import_id),
+                            )
+                            c3.commit()
+                        except Exception:
+                            try: c3.rollback()
+                            except Exception: pass
+                        finally:
+                            c3.close()
+                    except Exception:
+                        pass
+
+            # ── Pass 2: install every promoted skill to its path ────────
+            conn2 = _get_db()
+            try:
+                cur2 = conn2.cursor()
+                cur2.execute(
+                    "SELECT id, skill_name, quarantine_path, metadata, trust_score "
+                    "FROM openclaw_imports WHERE status = 'promoted' ORDER BY created_at"
+                )
+                promoted_rows = cur2.fetchall()
+            finally:
+                conn2.close()
+
+            project_root = _Path(__file__).resolve().parent.parent.parent
+            results = []
+            for row in promoted_rows:
+                if hasattr(row, "keys"):
+                    import_id  = row["id"]
+                    skill_name = row["skill_name"]
+                    qpath      = row["quarantine_path"]
+                    meta_raw   = row["metadata"]
+                    trust      = row["trust_score"]
+                else:
+                    import_id, skill_name, qpath, meta_raw, trust = row[0], row[1], row[2], row[3], row[4]
+
+                try:
+                    meta = _json.loads(meta_raw) if isinstance(meta_raw, str) else (meta_raw or {})
+                    framework = meta.get("framework", "generic")
+
+                    # Read SKILL.md from quarantine
+                    skill_md_path = _Path(qpath) / "SKILL.md"
+                    if not skill_md_path.exists():
+                        skill_md_path = _Path(qpath) / "skill.md"
+                    if not skill_md_path.exists():
+                        raise FileNotFoundError(f"SKILL.md not found in {qpath}")
+
+                    raw_content = skill_md_path.read_text(encoding="utf-8")
+
+                    # Detect framework and get normalized install_path
+                    slug = _re.sub(r"[^a-z0-9_]+", "_", skill_name.lower().strip()).strip("_")
+                    normalized = detect_and_normalize(raw_content, filename=f"{slug}.md")
+                    install_path = normalized.get("install_path") or f".agents/skills/{slug}.md"
+
+                    # Write to project
+                    target = (project_root / install_path).resolve()
+                    if not str(target).startswith(str(project_root)):
+                        raise ValueError("install_path escapes project root")
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_text(raw_content, encoding="utf-8")
+
+                    # ── ICDEV integration: register as native ICDEV skill ──
+                    icdev_skill_id = slug
+                    icdev_skill_dir = (project_root / ".agents" / "skills" / icdev_skill_id).resolve()
+                    if str(icdev_skill_dir).startswith(str(project_root)):
+                        icdev_skill_dir.mkdir(parents=True, exist_ok=True)
+                        _build_icdev_skill_md(icdev_skill_dir / "SKILL.md", normalized, framework)
+
+                    results.append({
+                        "import_id": import_id,
+                        "skill_name": skill_name,
+                        "framework": framework,
+                        "install_path": str(target.relative_to(project_root)),
+                        "icdev_skill": str(icdev_skill_dir.relative_to(project_root)),
+                        "trust_score": trust,
+                        "success": True,
+                    })
+                except Exception as exc:
+                    results.append({
+                        "import_id": import_id,
+                        "skill_name": skill_name,
+                        "success": False,
+                        "error": str(exc),
+                    })
+
+            ok = sum(1 for r in results if r["success"])
+            return jsonify({"ok": True, "installed": ok, "total": len(results), "results": results})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/skillhub/reject", methods=["POST"])
+    def api_skillhub_reject():
         """Reject a quarantined import."""
         data = flask_request.get_json(silent=True) or {}
         import_id = data.get("import_id", "")
@@ -9888,8 +10358,8 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)})
 
-    @app.route("/api/clawhub/install-to-project", methods=["POST"])
-    def api_clawhub_install():
+    @app.route("/api/skillhub/install-to-project", methods=["POST"])
+    def api_skillhub_install():
         """Copy a promoted skill to .claude/skills/ for local use."""
         data = flask_request.get_json(silent=True) or {}
         import_id = data.get("import_id", "")
@@ -9937,9 +10407,127 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)})
 
-    @app.route("/api/clawhub/check-update")
-    def api_clawhub_check_update():
-        """Check if a ClawHub skill has a newer version."""
+    @app.route("/api/skillhub/scan-skill", methods=["POST"])
+    def api_skillhub_scan_skill():
+        """Run SkillSpector risk scan on a quarantined import and persist risk_score to metadata."""
+        import json as _json
+        from datetime import datetime, timezone
+
+        data = flask_request.get_json(force=True, silent=True) or {}
+        import_id = (data.get("import_id") or "").strip()
+        if not import_id:
+            return jsonify({"error": "import_id required"}), 400
+
+        # Look up quarantine_path + current metadata
+        try:
+            from tools.db.storage import get_canvas_connection
+            conn = get_canvas_connection("ICDEV_STORAGE_BACKEND")
+        except Exception:
+            from tools.marketplace.openclaw_bridge import _get_db
+            conn = _get_db()
+        try:
+            ph = "%s" if "postgres" in os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql").lower() else "?"
+            cur = conn.cursor()
+            cur.execute(
+                f"SELECT quarantine_path, metadata FROM openclaw_imports WHERE id = {ph}",
+                (import_id,),
+            )
+            row = cur.fetchone()
+        except Exception as exc:
+            conn.close()
+            return jsonify({"error": f"DB error: {exc}"}), 500
+        if not row:
+            conn.close()
+            return jsonify({"error": "import not found"}), 404
+
+        qpath = row[0] if not hasattr(row, "keys") else row.get("quarantine_path")
+        meta_raw = row[1] if not hasattr(row, "keys") else row.get("metadata", "{}")
+        conn.close()
+
+        meta = {}
+        try:
+            meta = _json.loads(meta_raw) if isinstance(meta_raw, str) else (meta_raw or {})
+        except Exception:
+            pass
+
+        if not qpath:
+            return jsonify({"error": "no quarantine path for this import"}), 400
+
+        import pathlib
+        staged = pathlib.Path(qpath)
+        if not staged.exists():
+            return jsonify({"risk_score": None, "verdict": "path_missing", "message": f"quarantine path not found: {qpath}"}), 200
+
+        # Run SkillSpector scan
+        risk_score = None
+        verdict = "unavailable"
+        findings_count = 0
+        try:
+            from tools.integrity.adapters.skillspector_adapter import (
+                _run_skillspector,
+                _parse_output,
+            )
+            rc, stdout, stderr = _run_skillspector(staged)
+            if rc in (0, 1):
+                payload = _parse_output(stdout)
+                if payload:
+                    risk_score = float(payload.get("risk_score", 0))
+                    verdict = payload.get("verdict", "clean")
+                    findings_count = len(payload.get("filtered_findings", []))
+                else:
+                    risk_score = 0.0
+                    verdict = "clean"
+            else:
+                verdict = "scan_failed"
+        except ImportError:
+            verdict = "unavailable"
+        except Exception as exc:
+            logger.warning("skillhub scan-skill failed for %s: %s", import_id, exc)
+            verdict = "error"
+
+        # Persist risk_score in metadata regardless of scan outcome
+        meta["skillspector_risk_score"] = risk_score
+        meta["skillspector_verdict"] = verdict
+        meta["skillspector_findings_count"] = findings_count
+
+        try:
+            from tools.db.storage import get_canvas_connection
+            conn2 = get_canvas_connection("ICDEV_STORAGE_BACKEND")
+        except Exception:
+            from tools.marketplace.openclaw_bridge import _get_db
+            conn2 = _get_db()
+        try:
+            ph = "%s" if "postgres" in os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql").lower() else "?"
+            now_str = datetime.now(timezone.utc).isoformat()
+            cur2 = conn2.cursor()
+            cur2.execute(
+                f"UPDATE openclaw_imports SET metadata = {ph}, updated_at = {ph} WHERE id = {ph}",
+                (_json.dumps(meta), now_str, import_id),
+            )
+            conn2.commit()
+        except Exception:
+            pass
+        finally:
+            conn2.close()
+
+        severity = (
+            "low" if risk_score is not None and risk_score <= 20
+            else "medium" if risk_score is not None and risk_score <= 50
+            else "high" if risk_score is not None and risk_score <= 80
+            else "critical" if risk_score is not None
+            else "unknown"
+        )
+        return jsonify({
+            "risk_score": risk_score,
+            "severity": severity,
+            "verdict": verdict,
+            "findings_count": findings_count,
+            "blocked": risk_score is not None and risk_score > 50,
+        }), 200
+
+    @app.route("/api/skillhub/check-update")
+    def api_skillhub_check_update():
+        """Check if a SkillHub skill has a newer version."""
         import_id = flask_request.args.get("import_id", "")
         if not import_id:
             return jsonify({"error": "Missing 'import_id'"})
@@ -9955,9 +10543,9 @@ def create_app() -> Flask:
                 return jsonify({"error": "Import not found"})
             slug = row[0] if not hasattr(row, "keys") else row["openclaw_slug"]
             current_ver = str(row[1] if not hasattr(row, "keys") else row["skill_version"])
-            from tools.databridge.connectors.clawhub_connector import ClawHubConnector
+            from tools.databridge.connectors.skillhub_connector import SkillHubConnector
 
-            c = ClawHubConnector()
+            c = SkillHubConnector()
             c.connect({})
             detail = c.get_skill(slug)
             c.disconnect()
@@ -9976,9 +10564,9 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)})
 
-    @app.route("/api/clawhub/bulk-import", methods=["POST"])
-    def api_clawhub_bulk_import():
-        """Import multiple skills from ClawHub."""
+    @app.route("/api/skillhub/bulk-import", methods=["POST"])
+    def api_skillhub_bulk_import():
+        """Import multiple skills from SkillHub."""
         data = flask_request.get_json(silent=True) or {}
         slugs = data.get("slugs", [])
         tenant_id = data.get("tenant_id", "default")
@@ -10012,8 +10600,8 @@ def create_app() -> Flask:
             }
         )
 
-    @app.route("/api/clawhub/rate", methods=["POST"])
-    def api_clawhub_rate():
+    @app.route("/api/skillhub/rate", methods=["POST"])
+    def api_skillhub_rate():
         """Rate an imported skill (1-5 stars, adjusts trust score)."""
         data = flask_request.get_json(silent=True) or {}
         import_id = data.get("import_id", "")
@@ -10038,8 +10626,8 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)})
 
-    @app.route("/api/clawhub/view-skill")
-    def api_clawhub_view_skill():
+    @app.route("/api/skillhub/view-skill")
+    def api_skillhub_view_skill():
         """Return the enhanced SKILL.md content for an imported skill."""
         import_id = flask_request.args.get("import_id", "")
         if not import_id:
@@ -10088,8 +10676,8 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)})
 
-    @app.route("/api/clawhub/trust", methods=["POST"])
-    def api_clawhub_trust():
+    @app.route("/api/skillhub/trust", methods=["POST"])
+    def api_skillhub_trust():
         """Update trust score for an imported skill."""
         data = flask_request.get_json(silent=True) or {}
         import_id = data.get("import_id", "")
@@ -10113,8 +10701,8 @@ def create_app() -> Flask:
         except Exception as exc:
             return jsonify({"error": str(exc)})
 
-    @app.route("/api/clawhub/revoke", methods=["POST"])
-    def api_clawhub_revoke():
+    @app.route("/api/skillhub/revoke", methods=["POST"])
+    def api_skillhub_revoke():
         """Revoke (unpromote) a promoted import."""
         data = flask_request.get_json(silent=True) or {}
         import_id = data.get("import_id", "")
@@ -10128,6 +10716,251 @@ def create_app() -> Flask:
             return jsonify(revoke_import(import_id, revoked_by, reason))
         except Exception as exc:
             return jsonify({"error": str(exc)})
+
+    # ── SkillHub generic multi-framework skill detection ───────────────
+
+    @app.route("/api/skillhub/detect", methods=["POST"])
+    def api_skillhub_detect():
+        """Auto-detect skill framework and normalize to ICDEV schema.
+
+        Accepts raw skill content from ANY framework (Claude, Hermes, Gemini,
+        OpenAI, LangChain, CrewAI, AutoGen, or plain text).
+        Returns normalized ICDEV skill schema + detected framework label.
+        """
+        data = flask_request.get_json(silent=True) or {}
+        raw = data.get("content") or data.get("raw") or ""
+        filename = data.get("filename") or data.get("name") or ""
+        if not raw:
+            return jsonify({"error": "content is required"}), 400
+        try:
+            from icdev.tools.ace.skill_adapter import detect_and_normalize
+            skill = detect_and_normalize(raw, filename=filename)
+            skill.pop("raw", None)  # don't echo large content back
+            return jsonify({"ok": True, "skill": skill, "framework": skill["framework"]})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/skillhub/frameworks", methods=["GET"])
+    def api_skillhub_frameworks():
+        """Return list of all supported skill import frameworks."""
+        from icdev.tools.ace.skill_adapter import SUPPORTED_FRAMEWORKS
+        return jsonify({
+            "ok": True,
+            "frameworks": SUPPORTED_FRAMEWORKS,
+            "descriptions": {
+                "claude": "Claude Code slash commands (.claude/commands/*.md)",
+                "hermes": "Nous Hermes agent YAML/JSON (system_prompt + tools)",
+                "gemini": "Google Gemini functionDeclarations JSON",
+                "openai": "OpenAI function_call / tools spec JSON",
+                "langchain": "LangChain tool definition (name/description/args_schema)",
+                "crewai": "CrewAI agent YAML (role/goal/backstory/tools)",
+                "autogen": "Microsoft AutoGen agent JSON (name/system_message)",
+                "generic": "Any text — heuristic name/description extraction",
+            },
+        })
+
+    @app.route("/api/skillhub/triage", methods=["POST"])
+    def api_skillhub_triage():
+        """Security triage + improvement recommendations for pasted skill content.
+
+        Runs a multi-layer inline scan (prompt injection, secrets, shell/exfil
+        patterns, code-quality heuristics) and optionally an LLM-generated
+        improvement plan. Designed for the Paste & Detect panel — fast,
+        no-quarantine, deterministic first pass.
+
+        Body: {content, filename?, skill?}
+        Returns: {risk_level, risk_score, findings[], recommendations[]}
+        """
+        import re as _re
+        data = flask_request.get_json(silent=True) or {}
+        content = (data.get("content") or "").strip()
+        skill   = data.get("skill") or {}
+        if not content:
+            return jsonify({"error": "content is required"}), 400
+
+        findings      = []
+        risk_score    = 0
+        recommendations = []
+
+        # ── Layer 1: Prompt Injection patterns ──────────────────────────
+        PI_PATTERNS = [
+            (r"ignore previous instructions?", "critical", "Prompt injection: 'ignore previous instructions'"),
+            (r"ignore (all )?prior (instructions?|context|rules?)", "critical", "Prompt injection: override prior context"),
+            (r"you are now (a |an )?(?!helpful)", "high", "Persona hijack: redefines AI identity"),
+            (r"disregard (all )?previous", "high", "Prompt injection: disregard previous context"),
+            (r"act as (if you are|a)?\s*(?!an? (helpful|assistant))", "high", "Persona redirect pattern"),
+            (r"jailbreak", "high", "Jailbreak keyword detected"),
+            (r"(reveal|leak|expose|output|print|return)\s+(your\s+)?(system\s+prompt|prompt|instructions?|config)", "high", "Prompt exfiltration attempt"),
+            (r"do not tell (the user|anyone)", "medium", "Deception instruction"),
+            (r"pretend (you have no|you are not|this (is|isn'?t))", "medium", "Deception/roleplay override"),
+            (r"for (testing|debug(ging)?|demonstration?) purposes? only", "low", "Testing caveat may mask intent"),
+        ]
+        cl = content.lower()
+        for pattern, sev, msg in PI_PATTERNS:
+            if _re.search(pattern, cl):
+                score = {"critical": 40, "high": 25, "medium": 10, "low": 3}[sev]
+                findings.append({"layer": "prompt_injection", "severity": sev, "detail": msg})
+                risk_score += score
+
+        # ── Layer 2: Secret / credential patterns ───────────────────────
+        SECRET_PATTERNS = [
+            (r"(?:api[_\-]?key|secret[_\-]?key|access[_\-]?token|auth[_\-]?token)\s*[=:]\s*['\"]?\w{16,}", "high", "Hardcoded secret/API key"),
+            (r"(?:password|passwd|pwd)\s*[=:]\s*['\"][^'\"]{6,}['\"]", "high", "Hardcoded password"),
+            (r"AKIA[0-9A-Z]{16}", "critical", "AWS Access Key ID pattern"),
+            (r"sk-[A-Za-z0-9]{40,}", "high", "OpenAI API key pattern"),
+            (r"ghp_[A-Za-z0-9]{36}", "high", "GitHub Personal Access Token"),
+            (r"(?:private[_\-]?key|BEGIN RSA|BEGIN PRIVATE)", "high", "Private key material"),
+        ]
+        for pattern, sev, msg in SECRET_PATTERNS:
+            if _re.search(pattern, content, _re.IGNORECASE):
+                score = {"critical": 50, "high": 30, "medium": 10, "low": 3}[sev]
+                findings.append({"layer": "secrets", "severity": sev, "detail": msg})
+                risk_score += score
+
+        # ── Layer 3: Dangerous shell / exfiltration patterns ────────────
+        SHELL_PATTERNS = [
+            (r"(?:exec|eval|subprocess|os\.system|shell=True)", "high", "Code execution pattern (exec/eval/subprocess)"),
+            (r"(?:curl|wget)\s+http", "medium", "Network fetch command in skill content"),
+            (r"(?:rm\s+-rf|del\s+/f|format\s+c:)", "critical", "Destructive command pattern"),
+            (r"base64\s*(?:decode|--decode|-d)", "medium", "Base64 decode — common obfuscation step"),
+            (r"(?:exfil|send\s+to\s+(?:server|remote|attacker)|POST\s+.*password)", "high", "Data exfiltration pattern"),
+            (r"(?:bind\s+shell|reverse\s+shell|nc\s+-e|netcat)", "critical", "Shell backdoor pattern"),
+            (r"(?:\/etc\/passwd|\/etc\/shadow|C:\\\\Windows\\\\System32)", "high", "Sensitive system path reference"),
+        ]
+        for pattern, sev, msg in SHELL_PATTERNS:
+            if _re.search(pattern, content, _re.IGNORECASE):
+                score = {"critical": 50, "high": 25, "medium": 10, "low": 3}[sev]
+                findings.append({"layer": "shell_exfil", "severity": sev, "detail": msg})
+                risk_score += score
+
+        # ── Layer 4: Content quality heuristics ─────────────────────────
+        lines = [l for l in content.splitlines() if l.strip()]
+        if len(lines) < 3:
+            findings.append({"layer": "quality", "severity": "low", "detail": "Very short skill content — likely incomplete"})
+            risk_score += 2
+        if not skill.get("description"):
+            findings.append({"layer": "quality", "severity": "low", "detail": "No description detected — add a clear purpose statement"})
+        if not skill.get("steps"):
+            findings.append({"layer": "quality", "severity": "low", "detail": "No steps/sections found — structured steps improve clarity"})
+        if skill.get("framework") == "generic" and (skill.get("confidence") or 0) < 0.6:
+            findings.append({"layer": "quality", "severity": "low", "detail": "Framework unrecognized — content may not be a standard skill format"})
+
+        # ── Verdict ─────────────────────────────────────────────────────
+        risk_score = min(risk_score, 100)
+        if risk_score >= 60:
+            risk_level = "critical"
+        elif risk_score >= 35:
+            risk_level = "high"
+        elif risk_score >= 15:
+            risk_level = "medium"
+        elif risk_score > 0:
+            risk_level = "low"
+        else:
+            risk_level = "clean"
+
+        # ── Layer 5: LLM improvement recommendations ────────────────────
+        try:
+            from icdev.tools.llm.router import LLMRouter, LLMRequest
+            router = LLMRouter()
+            skill_name = skill.get("name") or "this skill"
+            fw         = skill.get("framework") or "unknown"
+            finding_summary = "; ".join(f["detail"] for f in findings if f["layer"] != "quality") or "none"
+            prompt = (
+                f"You are reviewing a {fw} skill named '{skill_name}' that was just imported into ICDEV™.\n"
+                f"Security scan result: risk_level={risk_level}, score={risk_score}/100.\n"
+                f"Findings: {finding_summary or 'none'}.\n"
+                f"Skill content (first 800 chars):\n{content[:800]}\n\n"
+                "Provide 3-5 concrete, actionable improvement recommendations for this skill. "
+                "Focus on: (1) security hardening, (2) clarity of purpose, (3) step coverage, "
+                "(4) tool declarations, (5) interoperability with ICDEV™ canvases. "
+                "Format as a JSON array of objects: [{\"title\": str, \"detail\": str, \"priority\": \"high|medium|low\"}]"
+            )
+            req = LLMRequest(
+                function="code_review",
+                prompt=prompt,
+                max_tokens=600,
+                temperature=0.3,
+            )
+            resp = router.invoke("code_review", req)
+            text = (resp.content or "").strip()
+            # Extract JSON array from LLM output
+            import json as _json
+            m = _re.search(r"\[[\s\S]+\]", text)
+            if m:
+                recommendations = _json.loads(m.group(0))
+        except Exception:
+            recommendations = [
+                {"title": "Add a clear description", "detail": "Every skill should state its purpose in 1-2 sentences.", "priority": "high"},
+                {"title": "Declare tool requirements", "detail": "List which ICDEV™ tools this skill relies on under a 'Tools' section.", "priority": "medium"},
+                {"title": "Structure as numbered steps", "detail": "Break the workflow into explicit steps for reproducibility.", "priority": "medium"},
+            ]
+
+        return jsonify({
+            "ok": True,
+            "risk_level": risk_level,
+            "risk_score": risk_score,
+            "findings": findings,
+            "recommendations": recommendations,
+        })
+
+    @app.route("/api/skillhub/install-paste", methods=["POST"])
+    def api_skillhub_install_paste():
+        """Install a paste-detected skill to its framework install_path.
+
+        Writes the normalized skill content to the install_path determined by
+        the skill_adapter (e.g. .claude/commands/slug.md for Claude skills).
+        Body: {skill}  — the normalized skill dict from /api/skillhub/detect
+        Returns: {ok, path}
+        """
+        from pathlib import Path as _Path
+        data = flask_request.get_json(silent=True) or {}
+        skill = data.get("skill") or {}
+        if not skill or not skill.get("id"):
+            return jsonify({"error": "skill is required (must include id from /detect)"}), 400
+
+        install_path = skill.get("install_path", "")
+        if not install_path:
+            return jsonify({"error": "install_path missing from skill object"}), 400
+
+        # Safety: only allow writing inside the project root
+        base_dir = _Path(__file__).resolve().parent.parent.parent
+        target   = (base_dir / install_path).resolve()
+        if not str(target).startswith(str(base_dir)):
+            return jsonify({"error": "install_path outside project root — refused"}), 400
+
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            # Re-serialize the skill as YAML/JSON/Markdown depending on framework
+            fw = skill.get("framework", "generic")
+            raw = skill.get("raw") or ""
+            if raw:
+                content_to_write = raw
+            elif fw == "claude":
+                # Reconstruct minimal .md
+                lines = [f"# {skill['name']}", "", skill.get("description", ""), ""]
+                if skill.get("system_prompt"):
+                    lines += ["## Instructions", "", skill["system_prompt"], ""]
+                content_to_write = "\n".join(lines)
+            else:
+                import yaml as _yaml
+                content_to_write = _yaml.dump({
+                    k: v for k, v in skill.items()
+                    if k not in ("raw", "install_path", "confidence")
+                }, default_flow_style=False, allow_unicode=True)
+
+            target.write_text(content_to_write, encoding="utf-8")
+
+            # ── ICDEV integration: also register as native ICDEV skill ──
+            skill_id = skill.get("id", "")
+            icdev_skill_dir = (base_dir / ".agents" / "skills" / skill_id).resolve()
+            if skill_id and str(icdev_skill_dir).startswith(str(base_dir)):
+                icdev_skill_dir.mkdir(parents=True, exist_ok=True)
+                _build_icdev_skill_md(icdev_skill_dir / "SKILL.md", skill, fw)
+
+            return jsonify({"ok": True, "path": str(target.relative_to(base_dir)),
+                            "icdev_skill": str(icdev_skill_dir.relative_to(base_dir)) if skill_id else None})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
 
     # ── ICDEV™ Studio (Phase 72) ─────────────────────────────────────
 
@@ -10794,6 +11627,60 @@ def create_app() -> Flask:
 
     if _track_request is not None:
         _track_request(app)
+
+    # ---- ACE Event Dispatcher — ecosystem-wide auto-dispatch ----
+    try:
+        from icdev.tools.ace.db.init_db import init as _ace_db_init
+        _ace_db_init()  # ensure ace_events / ace_event_results tables exist
+
+        from icdev.tools.ace.event_dispatcher import ACEEventDispatcher
+        ACEEventDispatcher.get_instance().start()
+        app.logger.info("ACE Event Dispatcher started")
+
+        # Ecosystem-wide after_request hook: intercept AI text from any canvas
+        _AI_PATH_KEYWORDS = (
+            "/ask", "/analyze", "/generate", "/study-guide", "/faq",
+            "/ai-assist", "/summarize", "/classify", "/check", "/chat",
+            "/notebook", "/brief", "/report", "/review", "/assess",
+            "/ingest", "/discover", "/scan", "/detect", "/audit",
+        )
+
+        from icdev.tools.ace.event_dispatcher import infer_canvas_from_path, infer_topic_from_path
+        from icdev.tools.ace.event_bus import emit as _ace_emit
+
+        @app.after_request
+        def _ace_event_intercept(response):
+            """Emit ACE events for AI-generated content from any canvas."""
+            try:
+                if response.status_code != 200:
+                    return response
+                ct = response.content_type or ""
+                if "application/json" not in ct:
+                    return response
+                path = flask_request.path
+                if not any(kw in path for kw in _AI_PATH_KEYWORDS):
+                    return response
+                data = response.get_json(silent=True) or {}
+                content = (
+                    data.get("text") or data.get("content") or data.get("answer")
+                    or data.get("result") or data.get("output") or data.get("summary")
+                    or data.get("analysis") or data.get("response") or ""
+                )
+                if not isinstance(content, str) or len(content) < 80:
+                    return response
+                canvas = infer_canvas_from_path(path)
+                topic = infer_topic_from_path(path, set(data.keys()))
+                _ace_emit(
+                    topic,
+                    {"content": content[:3000], "route": path, "canvas": canvas},
+                    source_canvas=canvas,
+                )
+            except Exception:
+                pass  # never block response delivery
+            return response
+
+    except Exception as _ace_disp_exc:
+        app.logger.warning("ACE Event Dispatcher startup failed: %s", _ace_disp_exc)
 
     return app
 

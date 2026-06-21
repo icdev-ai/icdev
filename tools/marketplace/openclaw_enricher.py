@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # CUI // SP-CTI
 # Controlled by: Department of Defense
 # CUI Category: CTI
@@ -10,7 +10,7 @@ Runs Innovation (web trends), Creative (alternative approaches), and Research
 (proven patterns) engines on imported skills to produce enhanced instructions
 and supplementary context files.
 
-Also discovers similar skills on ClawHub for merge candidates.
+Also discovers similar skills on SkillHub for merge candidates.
 
 Scanner-tier only (Ollama qwen3.5, zero Claude cost). Gracefully skips if
 engines or Ollama are unavailable.
@@ -43,10 +43,10 @@ def _try_import(module_path):
 
 
 # ---------------------------------------------------------------------------
-# Similar skill discovery (ClawHub vector search)
+# Similar skill discovery (SkillHub vector search)
 # ---------------------------------------------------------------------------
 def discover_similar_skills(query, limit=5):
-    """Search ClawHub for similar skills by different authors.
+    """Search SkillHub for similar skills by different authors.
 
     Args:
         query: Skill name or description to search for.
@@ -56,9 +56,9 @@ def discover_similar_skills(query, limit=5):
         dict with similar skills found.
     """
     try:
-        from tools.databridge.connectors.clawhub_connector import ClawHubConnector
+        from tools.databridge.connectors.skillhub_connector import SkillHubConnector
 
-        conn = ClawHubConnector()
+        conn = SkillHubConnector()
         conn.connect({})
         results = conn.search_skills(query, limit=limit)
         conn.disconnect()
@@ -218,7 +218,7 @@ def enrich_skill(skill_path, skip_engines=None):
     """Run full enrichment pipeline on an imported skill.
 
     Stages:
-        1. Discover similar skills on ClawHub (merge candidates)
+        1. Discover similar skills on SkillHub (merge candidates)
         2. Innovation engine (web trends + best practices)
         3. Creative engine (alternative approaches)
         4. Research engine (proven patterns)
@@ -316,7 +316,7 @@ def enrich_skill(skill_path, skip_engines=None):
     similar_data = results.get("similar_skills", {})
     if similar_data.get("similar_skills"):
         use_cases_content = "# Similar Skills & Merge Candidates\n\n"
-        use_cases_content += f"Found {similar_data['similar_count']} similar skills on ClawHub.\n\n"
+        use_cases_content += f"Found {similar_data['similar_count']} similar skills on SkillHub.\n\n"
         for s in similar_data["similar_skills"][:5]:
             slug = s.get("slug", "")
             name = s.get("displayName", slug)
@@ -326,7 +326,7 @@ def enrich_skill(skill_path, skip_engines=None):
             use_cases_content += f"- **Slug:** {slug}\n"
             use_cases_content += f"- **Relevance:** {score:.2f}\n"
             use_cases_content += f"- **Summary:** {summary}\n"
-            use_cases_content += f"- *Adapted from @{slug} on ClawHub*\n\n"
+            use_cases_content += f"- *Adapted from @{slug} on SkillHub*\n\n"
         (context_dir / "merge_candidates.md").write_text(use_cases_content, encoding="utf-8")
         files_generated.append("context/merge_candidates.md")
 
@@ -391,9 +391,9 @@ def enrich_skill(skill_path, skip_engines=None):
         enrichment_section += "\n"
 
     if similar_data.get("similar_skills"):
-        enrichment_section += "### Related Skills on ClawHub\n\n"
+        enrichment_section += "### Related Skills on SkillHub\n\n"
         for s in similar_data["similar_skills"][:3]:
-            enrichment_section += f"- **{s.get('displayName', s.get('slug', ''))}** (relevance: {s.get('score', 0):.2f}) — *Adapted from @{s.get('slug', '')} on ClawHub*\n"
+            enrichment_section += f"- **{s.get('displayName', s.get('slug', ''))}** (relevance: {s.get('score', 0):.2f}) — *Adapted from @{s.get('slug', '')} on SkillHub*\n"
         enrichment_section += "\n"
 
     # Append enrichment to SKILL.md (before Compatibility Notes if present)
@@ -420,7 +420,7 @@ def main():
     parser = argparse.ArgumentParser(description="OpenClaw Skill Enrichment Engine")
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--enrich", metavar="PATH", help="Enrich an imported skill")
-    group.add_argument("--discover-similar", metavar="QUERY", help="Find similar skills on ClawHub")
+    group.add_argument("--discover-similar", metavar="QUERY", help="Find similar skills on SkillHub")
 
     parser.add_argument(
         "--skip", nargs="*", default=[], help="Engines to skip (innovation, creative, research, discover)"

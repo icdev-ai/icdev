@@ -60,10 +60,19 @@ def _reset_router():
 
 
 def _patch_router(monkeypatch, content=None):
+    import sys as _sys
     if content is not None:
         _Router._content = content
     # Patch the attribute on the real module object the helper imports from.
     monkeypatch.setattr(router_mod, "LLMRouter", _Router)
+    # Patch ALL known router aliases — the _ToolsRedirect shim causes
+    # `from tools.llm.router import LLMRouter` to resolve to different
+    # module objects depending on full-suite import ordering.
+    import icdev.tools.llm.router as _icdev_router_mod
+    monkeypatch.setattr(_icdev_router_mod, "LLMRouter", _Router)
+    for _key, _mod in list(_sys.modules.items()):
+        if "llm.router" in _key and hasattr(_mod, "LLMRouter"):
+            monkeypatch.setattr(_mod, "LLMRouter", _Router)
 
 
 def _json(**kw):
@@ -301,6 +310,12 @@ def test_llm_failure_returns_none(monkeypatch):
             raise RuntimeError("provider down")
 
     monkeypatch.setattr(router_mod, "LLMRouter", _Boom)
+    import sys as _sys
+    import icdev.tools.llm.router as _icdev_router_mod
+    monkeypatch.setattr(_icdev_router_mod, "LLMRouter", _Boom)
+    for _key, _mod in list(_sys.modules.items()):
+        if "llm.router" in _key and hasattr(_mod, "LLMRouter"):
+            monkeypatch.setattr(_mod, "LLMRouter", _Boom)
     assert ingest._ai_extract_identifiers(_DOC) is None
 
 
@@ -313,3 +328,53 @@ def test_ingest_outcome_surfaces_identifiers_in_metadata():
         metadata=md,
     )
     assert oc.to_dict()["metadata"]["identifiers"][0]["value"] == "ASN000457"
+
+
+# ---------------------------------------------------------------------------
+# _detect_identifier_anomaly (aiify-opp-6: hardcoded_threshold ->
+# anomaly_detection). Pins the three anomaly signals the detector surfaces.
+# ---------------------------------------------------------------------------
+
+def _item(kind="asn", value="ASN000457", confidence=0.9):
+    return {"kind": kind, "value": value, "confidence": confidence}
+
+
+def test_anomaly_none_for_normal_list():
+    items = [_item(confidence=0.85), _item("po_number", "44120", 0.92)]
+    assert ingest._detect_identifier_anomaly(items) is None
+
+
+def test_anomaly_none_for_empty():
+    assert ingest._detect_identifier_anomaly([]) is None
+
+
+def test_anomaly_cap_hit():
+    items = [_item() for _ in range(ingest._IDENTIFIER_MAX_ITEMS)]
+    assert ingest._detect_identifier_anomaly(items) == "cap_hit"
+
+
+def test_anomaly_cap_hit_takes_priority_over_uniform():
+    # All items share the same confidence AND the list is at cap — cap_hit wins.
+    items = [_item(confidence=0.9) for _ in range(ingest._IDENTIFIER_MAX_ITEMS)]
+    assert ingest._detect_identifier_anomaly(items) == "cap_hit"
+
+
+def test_anomaly_uniform_confidence():
+    items = [_item(confidence=0.9), _item("po_number", "44120", 0.9)]
+    assert ingest._detect_identifier_anomaly(items) == "uniform_confidence"
+
+
+def test_anomaly_uniform_single_item_no_signal():
+    # A single-item list cannot exhibit uniform *across* items.
+    assert ingest._detect_identifier_anomaly([_item(confidence=0.9)]) is None
+
+
+def test_anomaly_over_confidence():
+    # Values must round to distinct values to avoid triggering uniform_confidence.
+    items = [_item(confidence=0.99), _item("po_number", "44120", 1.0)]
+    assert ingest._detect_identifier_anomaly(items) == "over_confidence"
+
+
+def test_anomaly_mixed_confidence_no_signal():
+    items = [_item(confidence=0.85), _item("po_number", "44120", 0.93)]
+    assert ingest._detect_identifier_anomaly(items) is None

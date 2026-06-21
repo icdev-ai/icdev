@@ -11566,7 +11566,8 @@ CREATE TABLE public.dic_documents (
     created_at text NOT NULL,
     tenant_id text,
     classification text,
-    owner_id text
+    owner_id text,
+    summary text DEFAULT ''
 );
 
 
@@ -15425,6 +15426,42 @@ CREATE TABLE public.genesis_learned_goals (
     problem_type text,
     classification character varying(50) DEFAULT 'CUI'::character varying
 );
+
+
+--
+-- Name: genesis_outputs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.genesis_outputs (
+    id             text NOT NULL,
+    reflex_name    text NOT NULL,
+    output_type    text NOT NULL,
+    output_ref     text,
+    summary        text,
+    created_at     text NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    classification character varying(50) DEFAULT 'CUI'::character varying
+);
+
+CREATE INDEX idx_go_reflex_name ON public.genesis_outputs (reflex_name);
+CREATE INDEX idx_go_created_at  ON public.genesis_outputs (created_at);
+
+
+--
+-- Name: genesis_phase_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.genesis_phase_log (
+    id           bigserial PRIMARY KEY,
+    design_id    text NOT NULL,
+    phase        text NOT NULL,
+    status       text NOT NULL,
+    started_at   text,
+    completed_at text
+);
+
+CREATE INDEX idx_gpl_design_id    ON public.genesis_phase_log (design_id);
+CREATE INDEX idx_gpl_started_at   ON public.genesis_phase_log (started_at);
+CREATE INDEX idx_gpl_completed_at ON public.genesis_phase_log (completed_at);
 
 
 --
@@ -30598,6 +30635,87 @@ CREATE TABLE public.telegram_inbox (
     processed_at text,
     error text,
     created_at text DEFAULT now()
+);
+
+
+--
+-- Name: teams_inbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.teams_inbox (
+    message_id   text NOT NULL,
+    message_json text NOT NULL,
+    channel_id   text,
+    sender_id    text,
+    text         text,
+    processed_at text,
+    error        text,
+    created_at   text DEFAULT now()
+);
+
+
+--
+-- Name: mattermost_inbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.mattermost_inbox (
+    post_id      text NOT NULL,
+    message_json text NOT NULL,
+    channel_id   text,
+    user_id      text,
+    text         text,
+    processed_at text,
+    error        text,
+    created_at   text DEFAULT now()
+);
+
+
+--
+-- Name: github_inbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.github_inbox (
+    comment_id   integer NOT NULL,
+    message_json text NOT NULL,
+    issue_number integer,
+    user_login   text,
+    text         text,
+    processed_at text,
+    error        text,
+    created_at   text DEFAULT now()
+);
+
+
+--
+-- Name: gitlab_inbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.gitlab_inbox (
+    note_id          integer NOT NULL,
+    message_json     text NOT NULL,
+    issue_iid        integer,
+    author_username  text,
+    text             text,
+    processed_at     text,
+    error            text,
+    created_at       text DEFAULT now()
+);
+
+
+--
+-- Name: skype_inbox; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.skype_inbox (
+    activity_id     text NOT NULL,
+    message_json    text NOT NULL,
+    conversation_id text,
+    service_url     text,
+    sender_id       text,
+    text            text,
+    processed_at    text,
+    error           text,
+    created_at      text DEFAULT now()
 );
 
 
@@ -46147,6 +46265,46 @@ ALTER TABLE ONLY public.tech_radar_history
 
 ALTER TABLE ONLY public.telegram_inbox
     ADD CONSTRAINT telegram_inbox_pkey PRIMARY KEY (update_id);
+
+
+--
+-- Name: teams_inbox teams_inbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.teams_inbox
+    ADD CONSTRAINT teams_inbox_pkey PRIMARY KEY (message_id);
+
+
+--
+-- Name: mattermost_inbox mattermost_inbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.mattermost_inbox
+    ADD CONSTRAINT mattermost_inbox_pkey PRIMARY KEY (post_id);
+
+
+--
+-- Name: github_inbox github_inbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.github_inbox
+    ADD CONSTRAINT github_inbox_pkey PRIMARY KEY (comment_id);
+
+
+--
+-- Name: gitlab_inbox gitlab_inbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.gitlab_inbox
+    ADD CONSTRAINT gitlab_inbox_pkey PRIMARY KEY (note_id);
+
+
+--
+-- Name: skype_inbox skype_inbox_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.skype_inbox
+    ADD CONSTRAINT skype_inbox_pkey PRIMARY KEY (activity_id);
 
 
 --
@@ -62102,6 +62260,44 @@ ALTER TABLE ONLY public.wf_team_members
 
 ALTER TABLE ONLY public.wne_artifacts
     ADD CONSTRAINT wne_artifacts_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.wne_sessions(id);
+
+
+--
+-- Name: domain_coverage; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.domain_coverage (
+    id               BIGSERIAL PRIMARY KEY,
+    domain_key       TEXT    NOT NULL,
+    domain_name      TEXT    NOT NULL,
+    domain_type      TEXT    NOT NULL DEFAULT 'knowledge'
+                     CHECK (domain_type IN ('knowledge', 'data', 'system', 'integration', 'canvas')),
+    source_canvas    TEXT,
+    coverage_score   REAL    NOT NULL DEFAULT 0.0
+                     CHECK (coverage_score >= 0.0 AND coverage_score <= 1.0),
+    gap_count        INTEGER NOT NULL DEFAULT 0,
+    status           TEXT    NOT NULL DEFAULT 'active'
+                     CHECK (status IN ('active', 'orphaned', 'resolved', 'pending')),
+    orphan_reason    TEXT
+                     CHECK (orphan_reason IS NULL OR orphan_reason IN (
+                         'no_canvas', 'no_source', 'schema_mismatch',
+                         'stale_data', 'removed_integration'
+                     )),
+    last_checked_at  TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resolved_at      TEXT,
+    detail           TEXT    NOT NULL DEFAULT '{}',
+    tenant_id        TEXT    NOT NULL DEFAULT 'default',
+    classification   TEXT    NOT NULL DEFAULT 'CUI',
+    created_at       TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_domain_coverage_key     ON public.domain_coverage(domain_key);
+CREATE INDEX IF NOT EXISTS idx_domain_coverage_status  ON public.domain_coverage(status);
+CREATE INDEX IF NOT EXISTS idx_domain_coverage_canvas  ON public.domain_coverage(source_canvas);
+CREATE INDEX IF NOT EXISTS idx_domain_coverage_score   ON public.domain_coverage(coverage_score);
+CREATE INDEX IF NOT EXISTS idx_domain_coverage_tenant  ON public.domain_coverage(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_domain_coverage_checked ON public.domain_coverage(last_checked_at);
 
 
 --

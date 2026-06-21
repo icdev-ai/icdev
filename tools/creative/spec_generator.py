@@ -774,6 +774,14 @@ def generate_spec(feature_gap_id, db_path=None):
             acceptance_criteria=acceptance_criteria,
         )
 
+        # Append design-quality instructions (adapt-taste-03)
+        _dq_path = BASE_DIR / "hardprompts" / "creative" / "design_quality.md"
+        if _dq_path.exists():
+            _dq_template = _dq_path.read_text(encoding="utf-8")
+            spec_content = spec_content + "\n\n---\n\n" + _dq_template.replace(
+                "{spec_content}", spec_content
+            )
+
         # Store in creative_specs
         spec_id = _spec_id()
         now = now_iso()

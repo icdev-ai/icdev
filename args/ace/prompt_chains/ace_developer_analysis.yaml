@@ -1,190 +1,35 @@
-# ACE Developer Analysis Prompt Chain
-# 4-step AI Developer analysis for RICOAS intake requirements.
-#
-# Variable substitution:
-#   $INPUT    — previous step output (Step 1 receives RICOAS requirements text)
-#   $ORIGINAL — the initial requirements text (available in all steps)
-#   $STEP{step_id} — output from a specific named step
-#
-# Usage:
-#   executor = PromptChainExecutor(config_path=Path("args/ace/prompt_chains/ace_developer_analysis.yaml"))
-#   result = executor.execute_chain("ace_developer_analysis", user_input=requirements_text)
+chain_id: ace_developer_analysis
+display_name: ACE Developer Analysis Chain
+description: Prompt chain for the AI Developer role to analyze requirements and plan implementation.
+version: "1.0"
+role_id: ai_developer
 
-prompt_chains:
-  ace_developer_analysis:
-    description: "AI Developer analysis — enumerate interpretations, flag security risks, recommend approach, verify NIST 800-53 AC compliance"
-    max_iterations: 1
-    steps:
-      - step_id: enumerate_interpretations
-        agent: architect
-        prompt: |
-          You are the ICDEV™ Architect agent performing AI Developer analysis for a RICOAS requirements intake.
+steps:
+  - step_id: parse_requirements
+    prompt: |
+      You are an AI Developer analyzing a software task.
+      Task: {task_description}
+      Extract: acceptance criteria, constraints, affected modules, and test strategy.
+    output_key: parsed_requirements
 
-          Enumerate 2 to 4 distinct interpretations of the following requirement. For each interpretation:
-          - Assign a short label (e.g., "Minimal MVP", "Full Automation", "Hybrid Human-AI")
-          - Describe the key assumptions and scope boundary
-          - List the primary technical components implied
-          - Identify any ambiguities or missing information
+  - step_id: identify_dependencies
+    prompt: |
+      Given the parsed requirements:
+      {parsed_requirements}
+      List all code dependencies, existing tools to reuse, and any missing capabilities.
+    output_key: dependency_map
 
-          Return your response as a JSON object with this structure:
-          {
-            "interpretations": [
-              {
-                "label": "<short label>",
-                "assumptions": "<key assumptions>",
-                "scope": "<scope boundary>",
-                "components": ["<component1>", "<component2>"],
-                "ambiguities": ["<ambiguity1>"]
-              }
-            ]
-          }
+  - step_id: draft_implementation_plan
+    prompt: |
+      Using the requirements and dependency map:
+      Requirements: {parsed_requirements}
+      Dependencies: {dependency_map}
+      Produce a step-by-step TDD implementation plan following the ANVIL workflow.
+    output_key: implementation_plan
 
-          Requirement: $INPUT
-        timeout_s: 120
-
-      - step_id: security_flags
-        agent: security
-        prompt: |
-          You are the ICDEV™ Security agent. Review the following requirement interpretations
-          and flag security concerns for each interpretation.
-
-          For each interpretation, identify:
-          - Authentication and authorization risks (focus on NIST 800-53 AC controls)
-          - Data exposure or privilege escalation vectors
-          - Input validation and injection risks
-          - Supply chain or dependency concerns
-          - Severity rating: critical / high / medium / low
-
-          Return your response as a JSON object with this structure:
-          {
-            "security_flags": [
-              {
-                "interpretation_label": "<label from Step 1>",
-                "concerns": [
-                  {
-                    "description": "<concern description>",
-                    "severity": "critical|high|medium|low",
-                    "nist_controls_affected": ["AC-2", "AC-3"]
-                  }
-                ]
-              }
-            ]
-          }
-
-          Interpretations to review:
-          $STEP{enumerate_interpretations}
-
-          Original requirement: $ORIGINAL
-        timeout_s: 120
-
-      - step_id: recommended_approach
-        agent: architect
-        prompt: |
-          You are the ICDEV™ Architect agent. Based on the interpretations and security flags
-          below, recommend the best implementation approach for the original requirement.
-
-          Your recommendation must:
-          - Select one interpretation (or synthesize a hybrid) with explicit justification
-          - Address the highest-severity security concerns from the security review
-          - List the implementation phases (ordered by priority)
-          - Identify acceptance criteria for each phase
-          - Note any prerequisite decisions or unresolved ambiguities that must be resolved first
-
-          Return your response as a JSON object with this structure:
-          {
-            "recommended_approach": {
-              "selected_interpretation": "<label or 'Hybrid'>",
-              "justification": "<why this interpretation is recommended>",
-              "security_mitigations": ["<mitigation for each critical/high concern>"],
-              "phases": [
-                {
-                  "phase": 1,
-                  "title": "<phase title>",
-                  "deliverables": ["<deliverable>"],
-                  "acceptance_criteria": ["<criterion>"]
-                }
-              ],
-              "open_decisions": ["<decision or ambiguity to resolve>"]
-            }
-          }
-
-          Interpretations:
-          $STEP{enumerate_interpretations}
-
-          Security flags:
-          $STEP{security_flags}
-
-          Original requirement: $ORIGINAL
-        timeout_s: 150
-
-      - step_id: compliance_verification
-        agent: compliance
-        prompt: |
-          You are the ICDEV™ Compliance agent. Verify the recommended implementation approach
-          against NIST 800-53 AC (Access Control) controls.
-
-          For each applicable AC control family member, assess whether the recommended approach
-          fully satisfies, partially satisfies, or does not address the control. For gaps,
-          propose a specific remediation action.
-
-          AC control family to evaluate (minimum): AC-1, AC-2, AC-3, AC-4, AC-5, AC-6,
-          AC-7, AC-8, AC-14, AC-17, AC-18, AC-19.
-
-          Return your response as a JSON object with this structure:
-          {
-            "compliance_gaps": [
-              {
-                "control_id": "AC-2",
-                "control_name": "Account Management",
-                "status": "satisfied|partial|not_addressed",
-                "finding": "<specific gap or confirmation>",
-                "remediation": "<required action if partial or not_addressed, else null>"
-              }
-            ],
-            "overall_compliance_posture": "high|medium|low",
-            "recommended_controls_to_implement_first": ["AC-2", "AC-3"]
-          }
-
-          Recommended approach:
-          $STEP{recommended_approach}
-
-          Security flags:
-          $STEP{security_flags}
-
-          Original requirement: $ORIGINAL
-        timeout_s: 120
-
-# Schema context for gap detection rules that reference database metadata.
-# This prevents the model from hallucinating unknown schemas when evaluating
-# the orphan_db_table gap rule (and similar structural-gap rules).
-schema_context:
-  all_tables:
-    source: system_views
-    description: >
-      'all_tables' is not a user-defined table. It is derived from database
-      system catalog views (e.g., PostgreSQL 'information_schema.tables' or
-      Oracle 'ALL_TABLES'). When the orphan_db_table gap rule references
-      'all_tables', it means the set of tables enumerated by the storage
-      backend's metadata API — not a literal table named 'all_tables' in the
-      application schema. The gap detector resolves this at runtime via
-      tools/db/storage.py::list_tables(), which queries the appropriate
-      system view for the active backend (PostgreSQL or SQLite).
-    backends:
-      postgresql: "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public'"
-      sqlite: "SELECT name FROM sqlite_master WHERE type='table'"
-      oracle: "SELECT table_name FROM ALL_TABLES WHERE owner = :owner"
-  orphan_db_table_rule:
-    description: >
-      A table is flagged as 'orphan' when it appears in 'all_tables' (the
-      system catalog) but has no corresponding entry in the application's
-      table registry (tools/db/schema/ or MINIMAL_ICDEV_SCHEMA in
-      tests/conftest.py). Oracle's ALL_TABLES view is suppressed as a
-      false-positive source because it is a system view, not an application
-      table.
-
-# Default settings
-defaults:
-  timeout_s: 120
-  model_effort: high
-  record_chain: true
-  audit_trail: true
+  - step_id: risk_assessment
+    prompt: |
+      Review the implementation plan:
+      {implementation_plan}
+      Identify top risks (security, compliance, performance) and mitigation strategies.
+    output_key: risk_summary

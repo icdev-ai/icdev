@@ -44,6 +44,9 @@ def config_disabled():
     """Config with broker disabled."""
     return {
         "enabled": False,
+        # Prevent the real ICDEV_CREDENTIAL_BROKER_ENABLED env var from re-enabling
+        # the broker when it happens to be set in .env.
+        "env_override": "ICDEV_CREDENTIAL_BROKER_DISABLED_TEST_SENTINEL",
         "tokens": {"default_ttl_seconds": 3600, "max_ttl_seconds": 86400},
         "function_map": {
             "code_generation": {"provider": "ollama", "scope": "model:invoke"},
@@ -155,6 +158,7 @@ class TestFallback:
     def test_disabled_broker_no_fallback_returns_error(self, broker_db):
         config = {
             "enabled": False,
+            "env_override": "ICDEV_CREDENTIAL_BROKER_DISABLED_TEST_SENTINEL",
             "function_map": {"code_generation": {"provider": "ollama", "scope": "model:invoke"}},
             "fallback": {"allow_direct_env": False},
         }
@@ -196,6 +200,7 @@ class TestGateEvaluation:
     def test_gate_blocks_when_disabled_no_fallback(self, broker_db):
         config = {
             "enabled": False,
+            "env_override": "ICDEV_CREDENTIAL_BROKER_DISABLED_TEST_SENTINEL",
             "fallback": {"allow_direct_env": False},
         }
         b = CredentialBroker(db_path=broker_db, config=config)

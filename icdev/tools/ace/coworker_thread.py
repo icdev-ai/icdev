@@ -247,6 +247,17 @@ class CoWorkerThread(threading.Thread):
         # 1b. Defensive listen_topics guard — prune reactive topics when task.assigned present
         raw_topics: list[str] = list(role.communication.get("listen_topics") or [])
         _filter_listen_topics(raw_topics, self.spec.coworker_id)
+        # NOVA SOUL: inject identity preamble into dispatch context so
+        # $soul_preamble is available to all step argument substitutions.
+        try:
+            from icdev.tools.ace.soul_manager import build_identity_preamble
+            preamble = build_identity_preamble(self.spec.role_id)
+            if preamble:
+                self._context["soul_preamble"] = preamble
+                self._audit("soul_preamble_injected", f"role={self.spec.role_id} len={len(preamble)}")
+                logger.debug("[SOUL] preamble injected for %s (%d chars)", self.spec.role_id, len(preamble))
+        except Exception as exc:
+            logger.warning("[SOUL] preamble injection failed for %s: %s", self.spec.role_id, exc)
 
         # 2. Transition to working state
         self._set_state("working")

@@ -1,0 +1,223 @@
+<!-- CUI // SP-CTI — OSINT Intelligence Feed -->
+{% extends "base.html" %}
+{% block title %}OSINT Intelligence Feed — ICDEV{% endblock %}
+{% block content %}
+<style>
+.osint-wrap { display:flex; flex-direction:column; height:calc(100vh - 110px); overflow:hidden; }
+.osint-header { display:flex; align-items:center; gap:14px; padding:10px 20px; border-bottom:1px solid #1e3a6e; background:#0a1628; flex-shrink:0; flex-wrap:wrap; }
+.osint-title  { font-size:16px; font-weight:700; color:#eaeaea; margin:0; }
+.osint-sub    { font-size:11px; color:#5a6e8c; margin:0; }
+.osint-stats  { display:flex; gap:16px; margin-left:auto; }
+.osint-stat   { text-align:center; }
+.osint-stat-v { font-size:15px; font-weight:700; color:#4fc3f7; display:block; }
+.osint-stat-l { font-size:9px; color:#5a6e8c; text-transform:uppercase; letter-spacing:.5px; }
+.osint-actions{ display:flex; gap:8px; align-items:center; }
+.osint-btn    { padding:7px 14px; border-radius:6px; font-size:11px; font-weight:700; border:none; cursor:pointer; }
+.osint-btn-primary { background:linear-gradient(135deg,#7c4dff,#4fc3f7); color:#fff; }
+.osint-btn-geo     { background:#0f346033; color:#4fc3f7; border:1px solid #4fc3f755; }
+.osint-btn-primary:hover { opacity:.85; }
+.osint-btn-geo:hover     { background:#0f3460; }
+.osint-spinner { display:none; width:14px; height:14px; border:2px solid #1e3a6e; border-top-color:#7c4dff; border-radius:50%; animation:spin .8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.osint-spinner.active { display:inline-block; }
+
+.osint-body { display:flex; flex:1; overflow:hidden; }
+
+/* Filter sidebar */
+.osint-filters { width:180px; flex-shrink:0; border-right:1px solid #1e3a6e; padding:14px 12px; overflow-y:auto; }
+.osint-filter-title { font-size:9px; color:#5a6e8c; text-transform:uppercase; letter-spacing:.6px; margin-bottom:8px; }
+.osint-filter-list  { display:flex; flex-direction:column; gap:4px; margin-bottom:16px; }
+.osint-filter-item  { display:flex; align-items:center; justify-content:space-between; padding:5px 9px; border-radius:5px; border:1px solid #1e3a6e; background:transparent; color:#7a8cb0; cursor:pointer; font-size:11px; transition:all .15s; }
+.osint-filter-item.active,.osint-filter-item:hover { background:#0f1e36; color:#eaeaea; border-color:#4fc3f755; }
+.osint-filter-item.active { color:#4fc3f7; }
+.osint-badge { font-size:9px; background:#1e3a6e; padding:1px 5px; border-radius:8px; }
+
+/* Source chips */
+.src-cisa_kev    { color:#ef5350; }
+.src-threatfox   { color:#ff9800; }
+.src-urlhaus     { color:#ce93d8; }
+.src-feodo       { color:#4fc3f7; }
+.src-cisa_alerts { color:#66bb6a; }
+
+/* Main table */
+.osint-table-wrap { flex:1; overflow-y:auto; padding:0 }
+table.osint-table { width:100%; border-collapse:collapse; font-size:12px; }
+table.osint-table th { padding:8px 12px; text-align:left; font-size:10px; color:#5a6e8c; text-transform:uppercase; letter-spacing:.5px; border-bottom:1px solid #1e3a6e; position:sticky; top:0; background:#0a1628; z-index:10; }
+table.osint-table td { padding:9px 12px; border-bottom:1px solid #0f1e36; vertical-align:top; }
+table.osint-table tr:hover td { background:#0f1e36; }
+.sev-badge { display:inline-block; padding:2px 7px; border-radius:4px; font-size:10px; font-weight:700; }
+.sev-critical { background:#4a0e0e; color:#ef5350; }
+.sev-high     { background:#3d300033; color:#ff9800; border:1px solid #ff980033; }
+.sev-medium   { background:#0f346033; color:#4fc3f7; border:1px solid #4fc3f733; }
+.sev-low      { background:#1b5e2033; color:#66bb6a; border:1px solid #66bb6a33; }
+.src-badge    { display:inline-block; padding:1px 6px; border-radius:3px; font-size:9px; font-weight:600; background:#1e3a6e55; }
+.ioc-val      { font-family:monospace; font-size:10px; color:#7a8cb0; word-break:break-all; max-width:200px; }
+.osint-title-cell { color:#eaeaea; font-weight:500; }
+.osint-desc   { font-size:10px; color:#5a6e8c; margin-top:3px; }
+.osint-empty  { padding:40px; text-align:center; color:#5a6e8c; }
+</style>
+
+<div class="osint-wrap">
+  <div class="osint-header">
+    <div>
+      <p class="osint-title">&#128737; OSINT Intelligence Feed</p>
+      <p class="osint-sub">CISA KEV &bull; Abuse.ch ThreatFox / URLhaus / Feodo &bull; CISA Alerts &mdash; free, no API key</p>
+    </div>
+    <div class="osint-stats">
+      <div class="osint-stat"><span class="osint-stat-v" id="ostat-total">—</span><span class="osint-stat-l">IOCs</span></div>
+      <div class="osint-stat"><span class="osint-stat-v" id="ostat-critical" style="color:#ef5350">—</span><span class="osint-stat-l">Critical</span></div>
+      <div class="osint-stat"><span class="osint-stat-v" id="ostat-cve" style="color:#ff9800">—</span><span class="osint-stat-l">CVEs</span></div>
+      <div class="osint-stat"><span class="osint-stat-v" id="ostat-ioc" style="color:#4fc3f7">—</span><span class="osint-stat-l">IOCs</span></div>
+    </div>
+    <div class="osint-actions">
+      <div class="osint-spinner" id="osint-spin"></div>
+      <button class="osint-btn osint-btn-primary" onclick="doOsintIngest()">&#8635; Ingest Now</button>
+      <a href="/data/geoint" class="osint-btn osint-btn-geo">&#127757; GeoINT Map</a>
+    </div>
+  </div>
+
+  <div class="osint-body">
+    <!-- Filter Panel -->
+    <div class="osint-filters">
+      <div class="osint-filter-title">Severity</div>
+      <div class="osint-filter-list">
+        <button class="osint-filter-item active" onclick="filterSev(this,'all')">All <span class="osint-badge" id="cnt-all">—</span></button>
+        <button class="osint-filter-item" onclick="filterSev(this,'critical')">&#128308; Critical <span class="osint-badge" id="cnt-critical">—</span></button>
+        <button class="osint-filter-item" onclick="filterSev(this,'high')">&#128992; High <span class="osint-badge" id="cnt-high">—</span></button>
+        <button class="osint-filter-item" onclick="filterSev(this,'medium')">&#128994; Medium <span class="osint-badge" id="cnt-medium">—</span></button>
+        <button class="osint-filter-item" onclick="filterSev(this,'low')">&#9899; Low <span class="osint-badge" id="cnt-low">—</span></button>
+      </div>
+      <div class="osint-filter-title">Source</div>
+      <div class="osint-filter-list">
+        <button class="osint-filter-item active" onclick="filterSrc(this,'all')">All sources</button>
+        <button class="osint-filter-item src-cisa_kev" onclick="filterSrc(this,'cisa_kev')">CISA KEV</button>
+        <button class="osint-filter-item src-threatfox" onclick="filterSrc(this,'threatfox')">ThreatFox</button>
+        <button class="osint-filter-item src-urlhaus" onclick="filterSrc(this,'urlhaus')">URLhaus</button>
+        <button class="osint-filter-item src-feodo" onclick="filterSrc(this,'feodo')">Feodo C2</button>
+        <button class="osint-filter-item src-cisa_alerts" onclick="filterSrc(this,'cisa_alerts')">CISA Alerts</button>
+      </div>
+    </div>
+
+    <!-- Signal Table -->
+    <div class="osint-table-wrap">
+      <table class="osint-table">
+        <thead>
+          <tr>
+            <th style="width:80px">Severity</th>
+            <th style="width:100px">Source</th>
+            <th style="width:80px">Type</th>
+            <th>Title / Description</th>
+            <th style="width:200px">IOC Value</th>
+            <th style="width:90px">Published</th>
+          </tr>
+        </thead>
+        <tbody id="osint-tbody">
+          <tr><td colspan="6" class="osint-empty">Loading signals&hellip;</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+var _allSignals = [], _sevFilter = 'all', _srcFilter = 'all';
+
+function _sevClass(s) { return 'sev-' + (s||'medium'); }
+function _srcClass(s) { return 'src-' + s; }
+
+function applyFilters() {
+  return _allSignals.filter(function(s) {
+    var sevOk = _sevFilter === 'all' || s.severity === _sevFilter;
+    var srcOk = _srcFilter === 'all' || s.source === _srcFilter;
+    return sevOk && srcOk;
+  });
+}
+
+function renderTable(signals) {
+  var tbody = document.getElementById('osint-tbody');
+  if (!signals.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="osint-empty">No signals. Click <b>Ingest Now</b> to fetch live data.</td></tr>';
+    return;
+  }
+  var html = '';
+  signals.slice(0, 200).forEach(function(s) {
+    var tags = [];
+    try { tags = JSON.parse(s.tags || '[]'); } catch(e) {}
+    var tagStr = tags.filter(Boolean).slice(0,3).join(', ');
+    html += '<tr>'
+      + '<td><span class="sev-badge ' + _sevClass(s.severity) + '">' + (s.severity||'?').toUpperCase() + '</span></td>'
+      + '<td><span class="src-badge ' + _srcClass(s.source) + '">' + s.source + '</span></td>'
+      + '<td style="font-size:10px;color:#7a8cb0">' + (s.ioc_type||'?') + '</td>'
+      + '<td><div class="osint-title-cell">' + (s.title||'').slice(0,100) + '</div>'
+        + (tagStr ? '<div class="osint-desc">Tags: ' + tagStr + '</div>' : '')
+        + (s.description ? '<div class="osint-desc">' + (s.description).slice(0,80) + '</div>' : '')
+      + '</td>'
+      + '<td><div class="ioc-val">' + (s.ioc_value||'').slice(0,80) + '</div></td>'
+      + '<td style="font-size:10px;color:#5a6e8c">' + (s.published_at||'').slice(0,10) + '</td>'
+      + '</tr>';
+  });
+  tbody.innerHTML = html;
+}
+
+function updateStats(signals) {
+  var counts = {all:signals.length,critical:0,high:0,medium:0,low:0};
+  signals.forEach(function(s){ if(counts[s.severity]!==undefined) counts[s.severity]++; });
+  Object.keys(counts).forEach(function(k){
+    var el = document.getElementById('cnt-'+k);
+    if (el) el.textContent = counts[k];
+  });
+  var cves = signals.filter(function(s){return s.ioc_type==='cve';}).length;
+  var iocs = signals.filter(function(s){return s.ioc_type!=='cve'&&s.ioc_type!=='advisory';}).length;
+  document.getElementById('ostat-total').textContent = signals.length;
+  document.getElementById('ostat-critical').textContent = counts.critical;
+  document.getElementById('ostat-cve').textContent = cves;
+  document.getElementById('ostat-ioc').textContent = iocs;
+}
+
+function filterSev(btn, sev) {
+  document.querySelectorAll('.osint-filter-list .osint-filter-item').forEach(function(b){
+    if (['all','critical','high','medium','low'].some(function(x){return b.onclick&&b.onclick.toString().includes("'"+x+"'")}))
+      b.classList.remove('active');
+  });
+  btn.classList.add('active');
+  _sevFilter = sev;
+  renderTable(applyFilters());
+}
+
+function filterSrc(btn, src) {
+  document.querySelectorAll('.osint-filter-list .osint-filter-item').forEach(function(b){
+    if (b.getAttribute && b.onclick && b.onclick.toString().includes('filterSrc'))
+      b.classList.remove('active');
+  });
+  btn.classList.add('active');
+  _srcFilter = src;
+  renderTable(applyFilters());
+}
+
+function loadSignals() {
+  fetch('/data/api/osint/signals?limit=500')
+    .then(function(r){ return r.ok ? r.json() : {signals:[]}; })
+    .then(function(d) {
+      _allSignals = d.signals || [];
+      updateStats(_allSignals);
+      renderTable(applyFilters());
+    });
+}
+
+function doOsintIngest() {
+  var spin = document.getElementById('osint-spin');
+  spin.classList.add('active');
+  fetch('/data/api/osint/ingest', {method:'POST'})
+    .then(function(r){ return r.json(); })
+    .then(function(d){ spin.classList.remove('active'); loadSignals(); })
+    .catch(function(){ spin.classList.remove('active'); });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  loadSignals();
+  setInterval(loadSignals, 60000);
+});
+</script>
+{% endblock %}

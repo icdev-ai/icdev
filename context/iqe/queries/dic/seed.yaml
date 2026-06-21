@@ -16,3 +16,9 @@ queries:
     query: "foreach h in dic.handoff_sessions where h.status == \"open\" select h.session_id, h.title, h.departing_owner_id, h.answered_count, h.agenda_count"
   - label: Pending handoff items
     query: "foreach i in dic.handoff_items where i.status == \"pending\" select i.item_id, i.session_id, i.topic, i.item_kind"
+  - label: All generated outputs
+    query: "foreach o in dic.generated_outputs select o.id, o.output_type, o.collection_id, o.provider, o.status, o.created_at"
+  - label: Recent study guides
+    query: "foreach o in dic.generated_outputs where o.output_type == \"study_guide\" orderby o.created_at desc select o.id, o.collection_id, o.provider, o.created_at"
+  - label: Recent FAQs
+    query: "foreach o in dic.generated_outputs where o.output_type == \"faq\" orderby o.created_at desc select o.id, o.collection_id, o.provider, o.created_at"

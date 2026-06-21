@@ -52,9 +52,18 @@ def _reset_router():
 
 
 def _patch_router(monkeypatch, content=None):
+    import sys as _sys
     if content is not None:
         _Router._content = content
     monkeypatch.setattr(router_mod, "LLMRouter", _Router)
+    # Patch ALL known router aliases — the _ToolsRedirect shim causes
+    # `from tools.llm.router import LLMRouter` to resolve to different
+    # module objects depending on full-suite import ordering.
+    import icdev.tools.llm.router as _icdev_router_mod
+    monkeypatch.setattr(_icdev_router_mod, "LLMRouter", _Router)
+    for _key, _mod in list(_sys.modules.items()):
+        if "llm.router" in _key and hasattr(_mod, "LLMRouter"):
+            monkeypatch.setattr(_mod, "LLMRouter", _Router)
 
 
 def _result(i, classification="CUI", content="grounded source text"):
@@ -156,6 +165,12 @@ def test_fallback_message_used_when_llm_unavailable(monkeypatch):
             raise RuntimeError("provider down")
 
     monkeypatch.setattr(router_mod, "LLMRouter", _Boom)
+    import sys as _sys
+    import icdev.tools.llm.router as _icdev_router_mod
+    monkeypatch.setattr(_icdev_router_mod, "LLMRouter", _Boom)
+    for _key, _mod in list(_sys.modules.items()):
+        if "llm.router" in _key and hasattr(_mod, "LLMRouter"):
+            monkeypatch.setattr(_mod, "LLMRouter", _Boom)
     expl = se.DICSearchEngine().access_explanation("q", clearance="CUI")
     assert expl.llm_used is False
     assert expl.withheld_count == 2
@@ -220,7 +235,7 @@ def _patch_pipeline(monkeypatch, classifications):
     monkeypatch.setattr(storage, "get_connection", lambda *a, **k: _Conn())
     monkeypatch.setattr(
         se.DICSearchEngine, "_rag_search",
-        lambda self, query, top_k, mode: [_Raw(i) for i in range(len(classifications))],
+        lambda self, query, top_k, mode, collection_id=None: [_Raw(i) for i in range(len(classifications))],
     )
     # doc_id -> classification injected via _doc_meta; chunk meta resolves doc_id.
     monkeypatch.setattr(

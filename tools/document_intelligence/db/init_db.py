@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS dic_team_access (
     role            TEXT        NOT NULL DEFAULT 'viewer',
     granted_by      TEXT        DEFAULT '',
     tenant_id       TEXT        DEFAULT 'default',
+    classification  TEXT        DEFAULT 'CUI',
     created_at      TIMESTAMPTZ DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_dic_team_access_collection ON dic_team_access(collection_id);
@@ -139,6 +140,33 @@ CREATE TABLE IF NOT EXISTS dic_presence_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_dic_presence_sessions_doc ON dic_presence_sessions(doc_id);
 CREATE INDEX IF NOT EXISTS idx_dic_presence_sessions_last_seen ON dic_presence_sessions(last_seen);
+CREATE TABLE IF NOT EXISTS dic_generated_outputs (
+    id              TEXT        PRIMARY KEY,
+    output_type     TEXT        NOT NULL,
+    collection_id   TEXT        NOT NULL,
+    content_json    TEXT        DEFAULT '{}',
+    provider        TEXT        DEFAULT '',
+    status          TEXT        DEFAULT 'done',
+    audio_path      TEXT,
+    created_at      TIMESTAMPTZ DEFAULT NOW(),
+    tenant_id       TEXT        DEFAULT 'default',
+    classification  TEXT        DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_dic_generated_outputs_collection ON dic_generated_outputs(collection_id);
+CREATE INDEX IF NOT EXISTS idx_dic_generated_outputs_type ON dic_generated_outputs(output_type);
+
+CREATE TABLE IF NOT EXISTS dic_doc_views (
+    view_id         TEXT        PRIMARY KEY,
+    doc_id          TEXT        NOT NULL,
+    user_id         TEXT        NOT NULL DEFAULT 'anonymous',
+    collection_id   TEXT        NOT NULL DEFAULT 'default',
+    viewed_at       TIMESTAMPTZ DEFAULT NOW(),
+    tenant_id       TEXT        DEFAULT 'default',
+    classification  TEXT        DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_dic_doc_views_doc ON dic_doc_views(doc_id);
+CREATE INDEX IF NOT EXISTS idx_dic_doc_views_tenant ON dic_doc_views(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_dic_doc_views_viewed_at ON dic_doc_views(viewed_at);
 """
 
 _SCHEMA_SQLITE = """
@@ -270,6 +298,33 @@ CREATE TABLE IF NOT EXISTS dic_presence_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_dic_presence_sessions_doc ON dic_presence_sessions(doc_id);
 CREATE INDEX IF NOT EXISTS idx_dic_presence_sessions_last_seen ON dic_presence_sessions(last_seen);
+CREATE TABLE IF NOT EXISTS dic_generated_outputs (
+    id              TEXT        PRIMARY KEY,
+    output_type     TEXT        NOT NULL,
+    collection_id   TEXT        NOT NULL,
+    content_json    TEXT        DEFAULT '{}',
+    provider        TEXT        DEFAULT '',
+    status          TEXT        DEFAULT 'done',
+    audio_path      TEXT,
+    created_at      TEXT    DEFAULT (datetime('now')),
+    tenant_id       TEXT    DEFAULT 'default',
+    classification  TEXT    DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_dic_generated_outputs_collection ON dic_generated_outputs(collection_id);
+CREATE INDEX IF NOT EXISTS idx_dic_generated_outputs_type ON dic_generated_outputs(output_type);
+
+CREATE TABLE IF NOT EXISTS dic_doc_views (
+    view_id         TEXT    PRIMARY KEY,
+    doc_id          TEXT    NOT NULL,
+    user_id         TEXT    NOT NULL DEFAULT 'anonymous',
+    collection_id   TEXT    NOT NULL DEFAULT 'default',
+    viewed_at       TEXT    DEFAULT (datetime('now')),
+    tenant_id       TEXT    DEFAULT 'default',
+    classification  TEXT    DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_dic_doc_views_doc ON dic_doc_views(doc_id);
+CREATE INDEX IF NOT EXISTS idx_dic_doc_views_tenant ON dic_doc_views(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_dic_doc_views_viewed_at ON dic_doc_views(viewed_at);
 """
 
 _INIT_DONE = False

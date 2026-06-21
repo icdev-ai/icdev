@@ -157,6 +157,7 @@ def test_lineage_empty_db_returns_200():
 
     with (
         patch("tools.data_canvas.db.init_db.get_connection", return_value=mock_conn),
+        patch("tools.data_canvas.blueprint.get_connection", return_value=mock_conn),
         patch("tools.data_canvas.blueprint.render_template", side_effect=_capture_render),
     ):
         resp = client.get("/data/lineage")

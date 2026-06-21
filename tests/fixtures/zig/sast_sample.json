@@ -1,0 +1,40 @@
+{
+  "results": [
+    {
+      "test_id": "B105",
+      "test_name": "hardcoded_password_string",
+      "issue_severity": "HIGH",
+      "issue_confidence": "MEDIUM",
+      "filename": "tools/auth/session.py",
+      "line_number": 42,
+      "issue_text": "Possible hardcoded password: 'mysecretpassword'"
+    },
+    {
+      "test_id": "B502",
+      "test_name": "ssl_with_bad_version",
+      "issue_severity": "HIGH",
+      "issue_confidence": "HIGH",
+      "filename": "tools/network/tls_client.py",
+      "line_number": 17,
+      "issue_text": "Call to ssl with weak TLS protocol version (SSLv2)"
+    },
+    {
+      "test_id": "B608",
+      "test_name": "hardcoded_sql_expressions",
+      "issue_severity": "MEDIUM",
+      "issue_confidence": "LOW",
+      "filename": "tools/db/legacy_query.py",
+      "line_number": 89,
+      "issue_text": "Possible SQL injection via string-based query construction"
+    },
+    {
+      "test_id": "B101",
+      "test_name": "assert_used",
+      "issue_severity": "LOW",
+      "issue_confidence": "HIGH",
+      "filename": "tests/test_misc.py",
+      "line_number": 5,
+      "issue_text": "Use of assert detected."
+    }
+  ]
+}

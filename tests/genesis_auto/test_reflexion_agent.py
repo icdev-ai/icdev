@@ -1,342 +1,362 @@
+#!/usr/bin/env python3
 # CUI // SP-CTI
-"""Tests for tools.workflow.reflexion_agent — NOVA ECHO post-task improvement generator.
+"""Tests for NOVA ECHO — tools/workflow/reflexion_agent.py
 
-Acceptance criteria:
-  1. Import succeeds.
-  2. ICDEV_HARNESS_COLEARN=false  → generate_improvement_artifact returns skipped dict.
-  3. ICDEV_HARNESS_COLEARN=true + mocked LLMRouter → artifact written to
-     agent_improvement_artifacts table.
-  4. All tests pass.
+Validates: import, colearn-gated behaviour, _compute_score, dry_run,
+DB persistence, run_batch_reflexion discovery, get_latest_improvement.
+All tests run on the SQLite test backend.
+
+Because _COLEARN_ENABLED is a module-level constant, tests that need it
+enabled monkeypatch the module attribute directly.
 """
 
-from __future__ import annotations
-
-import os
-import sqlite3
 import sys
+import uuid
 from pathlib import Path
+from unittest.mock import patch
 
-import pytest
-
-# Ensure repo root is on path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-# Force SQLite backend
-os.environ["ICDEV_STORAGE_BACKEND"] = "sqlite"
 
 
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 # Helpers
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
 
-def _make_in_memory_conn():
-    """Return an in-memory SQLite connection with NOVA tables created."""
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    # Create NOVA tables directly (avoids touching storage.get_connection)
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS agent_execution_traces (
-            trace_id          TEXT PRIMARY KEY,
-            task_id           TEXT NOT NULL,
-            task_type         TEXT NOT NULL DEFAULT '',
-            skill_used        TEXT NOT NULL DEFAULT '',
-            outcome           TEXT NOT NULL DEFAULT 'unknown',
-            events_json       TEXT NOT NULL DEFAULT '[]',
-            lesson_pattern    TEXT NOT NULL DEFAULT '',
-            improvement_notes TEXT NOT NULL DEFAULT '',
-            started_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            completed_at      TEXT NOT NULL DEFAULT '',
-            created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE TABLE IF NOT EXISTS agent_improvement_artifacts (
-            artifact_id      TEXT PRIMARY KEY,
-            task_type        TEXT NOT NULL,
-            skill_used       TEXT NOT NULL DEFAULT '',
-            generation_n     INTEGER NOT NULL DEFAULT 1,
-            improvement_text TEXT NOT NULL,
-            composite_score  REAL NOT NULL DEFAULT 0.0,
-            baseline_score   REAL NOT NULL DEFAULT 0.0,
-            evidence_traces  TEXT NOT NULL DEFAULT '[]',
-            applied_count    INTEGER NOT NULL DEFAULT 0,
-            status           TEXT NOT NULL DEFAULT 'pending',
-            created_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            applied_at       TEXT
-        );
-        CREATE TABLE IF NOT EXISTS ace_coworker_memory (
-            id               TEXT PRIMARY KEY,
-            role_id          TEXT NOT NULL,
-            fact_type        TEXT NOT NULL DEFAULT 'observation',
-            content          TEXT NOT NULL,
-            confidence       REAL NOT NULL DEFAULT 0.8,
-            source_task_id   TEXT NOT NULL DEFAULT '',
-            created_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-        CREATE TABLE IF NOT EXISTS ace_trust_ledger (
-            id              TEXT PRIMARY KEY,
-            role_id         TEXT NOT NULL,
-            delta           REAL NOT NULL,
-            reason          TEXT NOT NULL,
-            new_score       REAL NOT NULL,
-            source_task_id  TEXT NOT NULL DEFAULT '',
-            recorded_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-    """)
-    conn.commit()
-    return conn
-
-
-def _seed_traces(conn, task_type: str, n_success: int = 3, n_failure: int = 2):
-    """Insert synthetic completed traces into agent_execution_traces."""
-    rows = []
+def _seed_traces(task_type: str, n_success: int = 3, n_failure: int = 0) -> list[str]:
+    """Insert traces directly for a given task_type and close them."""
+    from tools.workflow.trace_logger import start_trace, close_trace
+    ids = []
     for i in range(n_success):
-        rows.append((
-            f"trace-s{i}", f"task-s{i}", task_type, "icdev-build",
-            "success", "[]", "test_pattern", "looks good",
-            "2026-01-01T00:00:00", "2026-01-01T00:01:00",
-        ))
+        tid = start_trace(f"task-{uuid.uuid4().hex[:6]}", task_type, "icdev-build")
+        close_trace(tid, "success", "success_first_try")
+        ids.append(tid)
     for i in range(n_failure):
-        rows.append((
-            f"trace-f{i}", f"task-f{i}", task_type, "icdev-build",
-            "failure", "[]", "import_error", "module not found",
-            "2026-01-01T00:00:00", "2026-01-01T00:01:00",
-        ))
-    conn.executemany(
-        """
-        INSERT INTO agent_execution_traces
-            (trace_id, task_id, task_type, skill_used, outcome, events_json,
-             lesson_pattern, improvement_notes, started_at, completed_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        rows,
+        tid = start_trace(f"task-{uuid.uuid4().hex[:6]}", task_type, "icdev-build")
+        close_trace(tid, "failure", "missing_dependency", "dependency not found")
+        ids.append(tid)
+    return ids
+
+
+def _unique_type() -> str:
+    return f"nova-reflex-{uuid.uuid4().hex[:8]}"
+
+
+# ---------------------------------------------------------------------------
+# Import check
+# ---------------------------------------------------------------------------
+
+def test_reflexion_agent_imports():
+    """Module imports without error."""
+    import tools.workflow.reflexion_agent  # noqa: F401
+
+
+def test_reflexion_agent_functions_exist():
+    """All public functions are present and callable."""
+    from tools.workflow.reflexion_agent import (
+        generate_improvement_artifact,
+        get_latest_improvement,
+        run_batch_reflexion,
     )
-    conn.commit()
+    for fn in (generate_improvement_artifact, get_latest_improvement, run_batch_reflexion):
+        assert callable(fn)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Test 1 — import
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Colearn disabled (default) behaviour
+# ---------------------------------------------------------------------------
 
-def test_reflexion_agent_import():
-    """Module must be importable without errors."""
+def test_generate_returns_skipped_when_colearn_disabled():
+    """With ICDEV_HARNESS_COLEARN disabled, generate_improvement_artifact returns skipped."""
+    import tools.workflow.reflexion_agent as ra
+    orig = ra._COLEARN_ENABLED
+    ra._COLEARN_ENABLED = False
     try:
-        import tools.workflow.reflexion_agent as mod  # noqa: F401
-        assert hasattr(mod, "generate_improvement_artifact")
-        assert hasattr(mod, "get_latest_improvement")
-        assert hasattr(mod, "run_batch_reflexion")
-    except ImportError as exc:
-        pytest.fail(f"Import failed: {exc}")
+        result = ra.generate_improvement_artifact("build", dry_run=False)
+        assert result.get("skipped") is True
+        assert "ICDEV_HARNESS_COLEARN" in result.get("reason", "")
+    finally:
+        ra._COLEARN_ENABLED = orig
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Test 2 — colearn disabled → skipped result
-# ─────────────────────────────────────────────────────────────────────────────
-
-def test_generate_returns_skipped_when_colearn_disabled(monkeypatch):
-    """With ICDEV_HARNESS_COLEARN=false, generate_improvement_artifact returns skipped."""
-    monkeypatch.setenv("ICDEV_HARNESS_COLEARN", "false")
-
-    # Reload module so the module-level _COLEARN_ENABLED re-evaluates
-    import tools.workflow.reflexion_agent as mod
-    monkeypatch.setattr(mod, "_COLEARN_ENABLED", False)
-
-    result = mod.generate_improvement_artifact("build", skill_used="icdev-build")
-    assert result.get("skipped") is True
-    assert "ICDEV_HARNESS_COLEARN" in result.get("reason", "")
+def test_get_latest_improvement_empty_when_colearn_disabled():
+    """get_latest_improvement returns '' when colearn is disabled."""
+    import tools.workflow.reflexion_agent as ra
+    orig = ra._COLEARN_ENABLED
+    ra._COLEARN_ENABLED = False
+    try:
+        result = ra.get_latest_improvement("build")
+        assert result == ""
+    finally:
+        ra._COLEARN_ENABLED = orig
 
 
-def test_get_latest_improvement_returns_empty_when_colearn_disabled(monkeypatch):
-    """get_latest_improvement returns '' when co-learning is off."""
-    import tools.workflow.reflexion_agent as mod
-    monkeypatch.setattr(mod, "_COLEARN_ENABLED", False)
-
-    result = mod.get_latest_improvement("build")
-    assert result == ""
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Test 3 — colearn enabled + mocked LLM → artifact persisted
-# ─────────────────────────────────────────────────────────────────────────────
-
-def test_generate_persists_artifact_with_mocked_llm(monkeypatch):
-    """With colearn=true and mocked LLMRouter, artifact is written to DB."""
-    import tools.workflow.reflexion_agent as mod
-
-    monkeypatch.setattr(mod, "_COLEARN_ENABLED", True)
-
-    conn = _make_in_memory_conn()
-    _seed_traces(conn, "build", n_success=3, n_failure=2)
-
-    # Mock get_traces_for_task_type to return from our in-memory conn
-    def _fake_traces(task_type, limit=20):
-        rows = conn.execute(
-            "SELECT trace_id, task_id, task_type, skill_used, outcome, "
-            "lesson_pattern, improvement_notes, started_at, completed_at "
-            "FROM agent_execution_traces WHERE task_type = ? AND outcome != 'in_progress' "
-            "LIMIT ?",
-            (task_type, limit),
-        ).fetchall()
-        cols = ["trace_id", "task_id", "task_type", "skill_used", "outcome",
-                "lesson_pattern", "improvement_notes", "started_at", "completed_at"]
-        return [dict(zip(cols, row)) for row in rows]
-
-    monkeypatch.setattr(mod, "get_traces_for_task_type", _fake_traces)
-
-    # Mock _call_llm to return deterministic text
-    monkeypatch.setattr(mod, "_call_llm", lambda prompt, skill: "## Root Cause\nTest failure. ## Proposed Improvements\n1. Fix imports.")
-
-    # Mock _conn to return our in-memory connection
-    monkeypatch.setattr(mod, "_conn", lambda: conn)
-
-    # Mock _ensure_tables to no-op (tables already created)
-    monkeypatch.setattr(mod, "_ensure_tables", lambda c: None)
-
-    result = mod.generate_improvement_artifact("build", skill_used="icdev-build", dry_run=False)
-
-    assert "artifact_id" in result, f"Expected artifact_id, got: {result}"
-    assert result["task_type"] == "build"
-    assert result["traces_analyzed"] == 5
-    assert result["failures_found"] == 2
-    assert result["dry_run"] is False
-
-    # Verify the artifact was written to the DB
-    row = conn.execute(
-        "SELECT artifact_id, task_type, generation_n, status FROM agent_improvement_artifacts "
-        "WHERE task_type = 'build'"
-    ).fetchone()
-    assert row is not None, "No artifact row found in agent_improvement_artifacts"
-    assert row["task_type"] == "build"
-    assert row["status"] == "pending"
-    assert row["generation_n"] == 1
+def test_run_batch_reflexion_skipped_when_colearn_disabled():
+    """run_batch_reflexion with colearn disabled returns skipped results."""
+    import tools.workflow.reflexion_agent as ra
+    orig = ra._COLEARN_ENABLED
+    ra._COLEARN_ENABLED = False
+    try:
+        task_type = _unique_type()
+        _seed_traces(task_type, n_success=5)
+        result = ra.run_batch_reflexion([task_type])
+        assert result["task_types_processed"] == 1
+        assert result["results"][task_type].get("skipped") is True
+    finally:
+        ra._COLEARN_ENABLED = orig
 
 
-def test_generate_dry_run_does_not_write_to_db(monkeypatch):
-    """dry_run=True returns artifact dict without writing to DB."""
-    import tools.workflow.reflexion_agent as mod
-
-    monkeypatch.setattr(mod, "_COLEARN_ENABLED", True)
-
-    conn = _make_in_memory_conn()
-    _seed_traces(conn, "test", n_success=4, n_failure=1)
-
-    def _fake_traces(task_type, limit=20):
-        rows = conn.execute(
-            "SELECT trace_id, task_id, task_type, skill_used, outcome, "
-            "lesson_pattern, improvement_notes, started_at, completed_at "
-            "FROM agent_execution_traces WHERE task_type = ? AND outcome != 'in_progress' "
-            "LIMIT ?",
-            (task_type, limit),
-        ).fetchall()
-        cols = ["trace_id", "task_id", "task_type", "skill_used", "outcome",
-                "lesson_pattern", "improvement_notes", "started_at", "completed_at"]
-        return [dict(zip(cols, row)) for row in rows]
-
-    monkeypatch.setattr(mod, "get_traces_for_task_type", _fake_traces)
-    monkeypatch.setattr(mod, "_call_llm", lambda p, s: "Dry run improvement text.")
-    monkeypatch.setattr(mod, "_conn", lambda: conn)
-    monkeypatch.setattr(mod, "_ensure_tables", lambda c: None)
-
-    result = mod.generate_improvement_artifact("test", dry_run=True)
-
-    assert result.get("dry_run") is True
-    assert "artifact_id" in result
-
-    # Nothing should be in DB
-    count = conn.execute(
-        "SELECT COUNT(*) FROM agent_improvement_artifacts WHERE task_type = 'test'"
-    ).fetchone()[0]
-    assert count == 0, f"Expected 0 rows in dry_run, found {count}"
-
-
-def test_generate_skips_when_insufficient_traces(monkeypatch):
-    """generate_improvement_artifact skips when fewer than 3 traces exist."""
-    import tools.workflow.reflexion_agent as mod
-
-    monkeypatch.setattr(mod, "_COLEARN_ENABLED", True)
-
-    conn = _make_in_memory_conn()
-    _seed_traces(conn, "sparse", n_success=1, n_failure=1)  # only 2 traces
-
-    def _fake_traces(task_type, limit=20):
-        rows = conn.execute(
-            "SELECT trace_id, task_id, task_type, skill_used, outcome, "
-            "lesson_pattern, improvement_notes, started_at, completed_at "
-            "FROM agent_execution_traces WHERE task_type = ? AND outcome != 'in_progress' "
-            "LIMIT ?",
-            (task_type, limit),
-        ).fetchall()
-        cols = ["trace_id", "task_id", "task_type", "skill_used", "outcome",
-                "lesson_pattern", "improvement_notes", "started_at", "completed_at"]
-        return [dict(zip(cols, row)) for row in rows]
-
-    monkeypatch.setattr(mod, "get_traces_for_task_type", _fake_traces)
-
-    result = mod.generate_improvement_artifact("sparse")
-    assert result.get("skipped") is True
-    assert "insufficient" in result.get("reason", "")
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Test 4 — run_batch_reflexion
-# ─────────────────────────────────────────────────────────────────────────────
-
-def test_run_batch_reflexion_processes_specified_types(monkeypatch):
-    """run_batch_reflexion processes the provided task_types list."""
-    import tools.workflow.reflexion_agent as mod
-
-    monkeypatch.setattr(mod, "_COLEARN_ENABLED", True)
-
-    # Patch generate_improvement_artifact to return a predictable result
-    captured = []
-
-    def _fake_generate(task_type, skill_used="", window=20, dry_run=False):
-        captured.append(task_type)
-        return {"artifact_id": f"impr-{task_type[:8]}-abc", "task_type": task_type, "dry_run": dry_run}
-
-    monkeypatch.setattr(mod, "generate_improvement_artifact", _fake_generate)
-
-    result = mod.run_batch_reflexion(task_types=["build", "test", "review"], dry_run=True)
-
-    assert result["task_types_processed"] == 3
-    assert set(result["results"].keys()) == {"build", "test", "review"}
-    assert captured == ["build", "test", "review"]
-
-
-def test_run_batch_reflexion_empty_when_colearn_disabled(monkeypatch):
-    """run_batch_reflexion with explicit list still routes through generate,
-    which returns skipped when co-learning is off."""
-    import tools.workflow.reflexion_agent as mod
-
-    monkeypatch.setattr(mod, "_COLEARN_ENABLED", False)
-
-    result = mod.run_batch_reflexion(task_types=["build"])
-    assert result["task_types_processed"] == 1
-    assert result["results"]["build"].get("skipped") is True
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Test 5 — compute score helper
-# ─────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# _compute_score (internal, imported for direct testing)
+# ---------------------------------------------------------------------------
 
 def test_compute_score_all_success():
-    """_compute_score returns 1.0 when all traces are success."""
-    import tools.workflow.reflexion_agent as mod
-    traces = [{"outcome": "success"}] * 5
-    assert mod._compute_score(traces) == 1.0
+    """_compute_score returns 1.0 when all traces succeeded."""
+    from tools.workflow.reflexion_agent import _compute_score
+    traces = [{"outcome": "success"} for _ in range(5)]
+    assert _compute_score(traces) == 1.0
+
+
+def test_compute_score_all_failure():
+    """_compute_score returns 0.0 when all traces failed."""
+    from tools.workflow.reflexion_agent import _compute_score
+    traces = [{"outcome": "failure"} for _ in range(4)]
+    assert _compute_score(traces) == 0.0
 
 
 def test_compute_score_mixed():
     """_compute_score returns correct fraction for mixed outcomes."""
-    import tools.workflow.reflexion_agent as mod
+    from tools.workflow.reflexion_agent import _compute_score
     traces = [
         {"outcome": "success"},
         {"outcome": "success"},
         {"outcome": "failure"},
         {"outcome": "timeout"},
     ]
-    assert mod._compute_score(traces) == 0.5
+    score = _compute_score(traces)
+    assert abs(score - 0.5) < 0.001
 
 
 def test_compute_score_empty():
     """_compute_score returns 0.0 for empty trace list."""
-    import tools.workflow.reflexion_agent as mod
-    assert mod._compute_score([]) == 0.0
+    from tools.workflow.reflexion_agent import _compute_score
+    assert _compute_score([]) == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Colearn enabled — insufficient traces
+# ---------------------------------------------------------------------------
+
+def test_generate_skipped_when_insufficient_traces():
+    """generate_improvement_artifact skips when fewer than 3 traces exist."""
+    import tools.workflow.reflexion_agent as ra
+    orig = ra._COLEARN_ENABLED
+    ra._COLEARN_ENABLED = True
+    try:
+        task_type = _unique_type()
+        _seed_traces(task_type, n_success=1)  # only 1 trace
+        result = ra.generate_improvement_artifact(task_type, dry_run=True)
+        assert result.get("skipped") is True
+        assert "insufficient" in result.get("reason", "").lower()
+    finally:
+        ra._COLEARN_ENABLED = orig
+
+
+# ---------------------------------------------------------------------------
+# Colearn enabled — dry_run (no DB write)
+# ---------------------------------------------------------------------------
+
+def test_generate_dry_run_does_not_write_artifact():
+    """dry_run=True returns result dict but does not persist to DB."""
+    import tools.workflow.reflexion_agent as ra
+    from tools.db.storage import get_connection
+
+    orig = ra._COLEARN_ENABLED
+    ra._COLEARN_ENABLED = True
+    try:
+        task_type = _unique_type()
+        _seed_traces(task_type, n_success=5)
+
+        # Mock LLM to return deterministic text
+        with patch.object(ra, "_call_llm", return_value="## Root Cause\nTest cause.\n\n## Proposed Improvements\n1. Improve X.\n\n## Expected Impact\nBetter score."):
+            result = ra.generate_improvement_artifact(task_type, dry_run=True)
+
+        assert result.get("dry_run") is True
+        assert "artifact_id" in result
+        assert result["traces_analyzed"] >= 3
+
+        # No row in DB
+        conn = get_connection()
+        count = conn.execute(
+            "SELECT COUNT(*) FROM agent_improvement_artifacts WHERE task_type = ?",
+            (task_type,),
+        ).fetchone()[0]
+        conn.close()
+        assert count == 0, "dry_run should not write to DB"
+    finally:
+        ra._COLEARN_ENABLED = orig
+
+
+# ---------------------------------------------------------------------------
+# Colearn enabled — actual write
+# ---------------------------------------------------------------------------
+
+def test_generate_writes_artifact_to_db():
+    """dry_run=False with colearn enabled writes to agent_improvement_artifacts."""
+    import tools.workflow.reflexion_agent as ra
+    from tools.db.storage import get_connection
+
+    orig = ra._COLEARN_ENABLED
+    ra._COLEARN_ENABLED = True
+    try:
+        task_type = _unique_type()
+        _seed_traces(task_type, n_success=3, n_failure=2)
+
+        with patch.object(ra, "_call_llm", return_value="## Root Cause\nMissing deps.\n\n## Proposed Improvements\n1. Add dep check.\n\n## Expected Impact\nFewer failures."):
+            result = ra.generate_improvement_artifact(task_type, skill_used="icdev-build", dry_run=False)
+
+        assert "error" not in result
+        assert result.get("dry_run") is False
+
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT artifact_id, generation_n, baseline_score, status "
+            "FROM agent_improvement_artifacts WHERE task_type = ?",
+            (task_type,),
+        ).fetchone()
+        conn.close()
+
+        assert row is not None, "Artifact not written to DB"
+        if isinstance(row, dict):
+            assert row["status"] == "pending"
+            assert row["generation_n"] == 1
+        else:
+            assert row[3] == "pending"
+            assert row[1] == 1
+    finally:
+        ra._COLEARN_ENABLED = orig
+
+
+def test_generate_increments_generation_n():
+    """Each call increments generation_n for the same task_type."""
+    import tools.workflow.reflexion_agent as ra
+    from tools.db.storage import get_connection
+
+    orig = ra._COLEARN_ENABLED
+    ra._COLEARN_ENABLED = True
+    try:
+        task_type = _unique_type()
+        _seed_traces(task_type, n_success=5)
+
+        with patch.object(ra, "_call_llm", return_value="Improvement gen 1"):
+            ra.generate_improvement_artifact(task_type, dry_run=False)
+        with patch.object(ra, "_call_llm", return_value="Improvement gen 2"):
+            ra.generate_improvement_artifact(task_type, dry_run=False)
+
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT generation_n FROM agent_improvement_artifacts WHERE task_type = ? ORDER BY generation_n",
+            (task_type,),
+        ).fetchall()
+        conn.close()
+
+        gens = [r[0] if isinstance(r, (list, tuple)) else r["generation_n"] for r in rows]
+        assert gens == [1, 2], f"Expected generations [1,2], got {gens}"
+    finally:
+        ra._COLEARN_ENABLED = orig
+
+
+def test_generate_uses_deterministic_fallback_when_llm_fails():
+    """If LLM returns empty, a deterministic fallback text is used."""
+    import tools.workflow.reflexion_agent as ra
+
+    orig = ra._COLEARN_ENABLED
+    ra._COLEARN_ENABLED = True
+    try:
+        task_type = _unique_type()
+        _seed_traces(task_type, n_success=3, n_failure=1)
+
+        with patch.object(ra, "_call_llm", return_value=""):
+            result = ra.generate_improvement_artifact(task_type, dry_run=True)
+
+        assert "improvement_text" in result
+        text = result["improvement_text"]
+        assert len(text) > 0
+        assert "deterministic" in text or "Success rate" in text
+    finally:
+        ra._COLEARN_ENABLED = orig
+
+
+# ---------------------------------------------------------------------------
+# get_latest_improvement
+# ---------------------------------------------------------------------------
+
+def test_get_latest_improvement_returns_formatted_text():
+    """get_latest_improvement returns formatted artifact text for existing artifact."""
+    import tools.workflow.reflexion_agent as ra
+
+    orig = ra._COLEARN_ENABLED
+    ra._COLEARN_ENABLED = True
+    try:
+        task_type = _unique_type()
+        _seed_traces(task_type, n_success=4)
+
+        with patch.object(ra, "_call_llm", return_value="Improvement: add retry logic."):
+            ra.generate_improvement_artifact(task_type, skill_used="icdev-build", dry_run=False)
+
+        text = ra.get_latest_improvement(task_type)
+        assert text != ""
+        assert "ECHO" in text
+        assert "Gen-" in text
+    finally:
+        ra._COLEARN_ENABLED = orig
+
+
+def test_get_latest_improvement_empty_when_no_artifact():
+    """get_latest_improvement returns '' when no artifact exists for task_type."""
+    import tools.workflow.reflexion_agent as ra
+
+    orig = ra._COLEARN_ENABLED
+    ra._COLEARN_ENABLED = True
+    try:
+        result = ra.get_latest_improvement(_unique_type())
+        assert result == ""
+    finally:
+        ra._COLEARN_ENABLED = orig
+
+
+# ---------------------------------------------------------------------------
+# run_batch_reflexion
+# ---------------------------------------------------------------------------
+
+def test_run_batch_reflexion_processes_specified_types():
+    """run_batch_reflexion processes all task_types in the provided list."""
+    import tools.workflow.reflexion_agent as ra
+
+    orig = ra._COLEARN_ENABLED
+    ra._COLEARN_ENABLED = False
+    try:
+        types = [_unique_type(), _unique_type(), _unique_type()]
+        result = ra.run_batch_reflexion(types)
+        assert result["task_types_processed"] == 3
+        assert set(result["results"].keys()) == set(types)
+    finally:
+        ra._COLEARN_ENABLED = orig
+
+
+def test_run_batch_reflexion_discovers_from_traces():
+    """run_batch_reflexion with task_types=None discovers from agent_execution_traces."""
+    import tools.workflow.reflexion_agent as ra
+
+    orig = ra._COLEARN_ENABLED
+    ra._COLEARN_ENABLED = False
+    try:
+        task_type = _unique_type()
+        _seed_traces(task_type, n_success=2)
+
+        result = ra.run_batch_reflexion(task_types=None)
+        # Should have discovered at least our task_type
+        assert result["task_types_processed"] >= 1
+        assert task_type in result.get("results", {})
+    finally:
+        ra._COLEARN_ENABLED = orig

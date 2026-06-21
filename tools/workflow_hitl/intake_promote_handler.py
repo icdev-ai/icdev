@@ -40,7 +40,7 @@ def maybe_promote(instance_id: str) -> dict:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT session_id, context_id FROM hitl_intake_pending WHERE instance_id = %s",
+            "SELECT session_id, context_id FROM hitl_intake_pending WHERE instance_id = ?",
             (instance_id,),
         ).fetchone()
     except Exception as exc:
@@ -73,8 +73,8 @@ def maybe_promote(instance_id: str) -> dict:
         conn = get_connection()
         now = _now()
         conn.execute(
-            """UPDATE kanban_tasks SET status='done', completed_at=%s, updated_at=%s
-               WHERE dispatch_source=%s AND task_type='chore' AND hitl_stage='review'
+            """UPDATE kanban_tasks SET status='done', completed_at=?, updated_at=?
+               WHERE dispatch_source=? AND task_type='chore' AND hitl_stage='review'
                AND status IN ('backlog', 'in_progress')""",
             (now, now, f"chat:{context_id}"),
         )

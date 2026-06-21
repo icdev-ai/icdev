@@ -5,7 +5,7 @@ Queries the agents table in icdev.db.
 """
 
 from tools.db.storage import get_connection
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 
 from tools.dashboard.config import DB_PATH
 
@@ -52,3 +52,40 @@ def list_agents():
         )
     finally:
         conn.close()
+
+
+@agents_api.route("/discover", methods=["GET"])
+def discover_agents():
+    """Discover agents by capability (adapt-iii-02).
+
+    Query params:
+        capability (str): Capability name to filter by. Omit to list all.
+
+    Returns:
+        {capability, agents: [{name, port, capabilities, tier, base_url}], total}
+    """
+    capability = request.args.get("capability", "").strip()
+    try:
+        from tools.agents.a2a_registry import get_registry
+        registry = get_registry()
+        if capability:
+            matches = registry.discover(capability)
+        else:
+            matches = registry.all_agents()
+        return jsonify({
+            "capability": capability or None,
+            "agents": [
+                {
+                    "name": a.name,
+                    "port": a.port,
+                    "capabilities": a.capabilities,
+                    "tier": a.tier,
+                    "base_url": a.base_url(),
+                    "description": a.description,
+                }
+                for a in matches
+            ],
+            "total": len(matches),
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc), "agents": [], "total": 0}), 500

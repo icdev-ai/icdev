@@ -155,9 +155,8 @@ class ACEController:
             logger.warning("ace launch: pre-insert failed for %s: %s", instance_id, exc)
 
         self._executor.submit(
-            self._run,
-            instance_id, problem_text, trigger_source, trigger_ref, user_id, project_id,
-            role_ids,
+            self._run, instance_id, problem_text, trigger_source, trigger_ref,
+            user_id, project_id, role_ids,
         )
         return instance_id
 
@@ -222,6 +221,124 @@ class ACEController:
     # Internal
     # ------------------------------------------------------------------
 
+    # ---- Karpathy wiki integration (Items 2 & 5) -------------------------
+
+    @staticmethod
+    def _query_role_wiki(role_ids: list[str], problem_text: str) -> str:
+        """Query the memory wiki for knowledge relevant to these roles and problem.
+
+        Returns a brief wiki context string (top-3 snippets) or empty string.
+        Best-effort: never raises.
+        """
+        try:
+            import os
+            import re
+            from pathlib import Path
+
+            auto_dir = (
+                Path(os.environ.get("USERPROFILE", Path.home()))
+                / ".claude/projects/C--AI-ICDev/memory"
+            )
+            if not auto_dir.is_dir():
+                return ""
+
+            # BM25-style file search — no external DB needed
+            query = " ".join(role_ids) + " " + problem_text[:120]
+            stop = frozenset({"the", "a", "an", "in", "of", "to", "is", "it", "for", "on", "and", "or"})
+            terms = [t for t in re.findall(r"[a-z]{4,}", query.lower()) if t not in stop]
+            if not terms:
+                return ""
+
+            scored: list[tuple[float, str]] = []
+            for fpath in auto_dir.glob("*.md"):
+                if fpath.name == "MEMORY.md":
+                    continue
+                try:
+                    content = fpath.read_text(encoding="utf-8")
+                    cl = content.lower()
+                    hits = sum(cl.count(t) for t in terms)
+                    if hits > 0:
+                        score = hits / (len(content) / 400 + 1)
+                        # Pull first non-frontmatter paragraph as snippet
+                        body = re.sub(r"^---.*?---\s*", "", content, flags=re.DOTALL)
+                        snippet = body.strip()[:200]
+                        scored.append((score, snippet))
+                except Exception:
+                    continue
+
+            scored.sort(key=lambda x: x[0], reverse=True)
+            snippets = [f"- {s}" for _, s in scored[:3] if s]
+            return "\n".join(snippets)
+
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _file_session_to_wiki(
+        instance_id: str,
+        problem_text: str,
+        role_ids: list[str],
+    ) -> None:
+        """File a brief ACE session summary to the memory wiki after completion.
+
+        Enables the cross-role wiki link pass (Item 5) and builds up an
+        institutional knowledge base of past coworker sessions.
+        Best-effort: never raises.
+        """
+        try:
+            import os
+            import hashlib
+            from pathlib import Path
+            from datetime import datetime, timezone
+            from tools.memory.memory_write import update_crossrefs
+
+            auto_dir = (
+                Path(os.environ.get("USERPROFILE", Path.home()))
+                / ".claude/projects/C--AI-ICDev/memory"
+            )
+            if not auto_dir.is_dir():
+                return
+
+            slug = "ace-session-" + hashlib.sha256(
+                instance_id.encode()
+            ).hexdigest()[:10]
+            topic_file = auto_dir / f"{slug}.md"
+            if topic_file.exists():
+                return
+
+            roles_str = ", ".join(role_ids) if role_ids else "unknown"
+            date_str = datetime.now(timezone.utc).date().isoformat()
+            body = (
+                f"---\n"
+                f"name: {slug}\n"
+                f"description: ACE session {instance_id[:12]} — {roles_str}\n"
+                f"metadata:\n"
+                f"  type: project\n"
+                f"---\n\n"
+                f"**ACE session:** `{instance_id}`  \n"
+                f"**Date:** {date_str}  \n"
+                f"**Roles:** {roles_str}  \n\n"
+                f"**Problem:** {problem_text[:400]}\n"
+            )
+            topic_file.write_text(body, encoding="utf-8")
+
+            mem_index = auto_dir / "MEMORY.md"
+            if mem_index.exists():
+                existing = mem_index.read_text(encoding="utf-8")
+                entry = (
+                    f"- [ACE session {instance_id[:12]}]({slug}.md)"
+                    f" — coworker run: {roles_str}\n"
+                )
+                if slug not in existing:
+                    with open(mem_index, "a", encoding="utf-8") as fh:
+                        fh.write(entry)
+
+            # Item 5: cross-link related wiki entries
+            update_crossrefs(slug, f"{roles_str} {problem_text}", memory_dir=auto_dir)
+
+        except Exception:
+            pass
+
     def _run(
         self,
         instance_id: str,
@@ -231,14 +348,31 @@ class ACEController:
         user_id: str,
         project_id: str,
         webhook_url: str = "",
+        role_ids: list[str] | None = None,
     ) -> None:
         """Full orchestration pipeline executed in ThreadPoolExecutor."""
         self._emit_sse(instance_id, "assembling", "Classifying problem")
         try:
-            # 1. Classify
-            from icdev.tools.ace.problem_classifier import ProblemClassifierLens
+            # 0. Wiki context (Item 2): enrich problem_text with relevant wiki knowledge
+            wiki_ctx = self._query_role_wiki(role_ids or [], problem_text)
+            enriched_problem = (
+                f"{problem_text}\n\n[Wiki context]\n{wiki_ctx}"
+                if wiki_ctx
+                else problem_text
+            )
 
-            manifest = ProblemClassifierLens(problem_text).run()
+            # 1. Classify — or use explicit role_ids if provided
+            if role_ids:
+                from icdev.tools.ace.problem_classifier import TeamManifest, RoleSlot
+                manifest = TeamManifest(
+                    slots=[RoleSlot(role_id=r, count=1, priority="high") for r in role_ids]
+                )
+                logger.info(
+                    "ACE %s: using explicit roles: %s", instance_id, role_ids
+                )
+            else:
+                from icdev.tools.ace.problem_classifier import ProblemClassifierLens
+                manifest = ProblemClassifierLens(enriched_problem).run()
             logger.info("ACE %s: manifest has %d slot(s)", instance_id, len(manifest.slots))
 
             # 2. Assemble + persist
@@ -267,13 +401,49 @@ class ACEController:
             from icdev.tools.daemon.base import TrustKernelBase
 
             bus = MessageBus(instance_id=instance_id)
-            trust_kernel = TrustKernelBase(config={})
+
+            # NOVA TRUST: resolve per-role dispatch config (trust band, HITL mode,
+            # max_parallel) before spawning threads.  Probationary roles are
+            # excluded from dispatch entirely — a HITL review card is created.
+            try:
+                from icdev.tools.ace.trust_calibrator import get_dispatch_config
+                _trust_fn = get_dispatch_config
+            except Exception:
+                _trust_fn = None  # trust_calibrator unavailable; proceed without
 
             # 4. Launch CoWorkerThreads
             from icdev.tools.ace.coworker_thread import CoWorkerThread
 
             threads: list[CoWorkerThread] = []
+            skipped_probationary: list[str] = []
+            # Keyed by role_id so we can compute effective_max_parallel after the loop.
+            trust_cfgs: dict[str, dict] = {}
+
             for spec in team.specs:
+                trust_cfg: dict = {}
+                if _trust_fn:
+                    try:
+                        trust_cfg = _trust_fn(spec.role_id)
+                    except Exception as exc:
+                        logger.debug("[TRUST] get_dispatch_config failed for %s: %s", spec.role_id, exc)
+
+                # Block probationary roles (trust < 0.3); create a review card instead
+                if trust_cfg.get("max_parallel", 1) == 0:
+                    logger.warning(
+                        "[TRUST] role=%s is PROBATIONARY (score=%.3f); skipping dispatch",
+                        spec.role_id,
+                        trust_cfg.get("trust_score", 0.0),
+                    )
+                    skipped_probationary.append(spec.role_id)
+                    self._create_probationary_card(spec.role_id, trust_cfg, instance_id)
+                    continue
+
+                trust_cfgs[spec.role_id] = trust_cfg
+
+                # Build per-role trust_kernel encoding the HITL mode from trust band
+                tk_config = {"nova_trust": trust_cfg}
+                trust_kernel = TrustKernelBase(config=tk_config)
+
                 t = CoWorkerThread(
                     spec=spec,
                     instance_id=instance_id,
@@ -282,19 +452,81 @@ class ACEController:
                 )
                 threads.append(t)
 
+            if skipped_probationary:
+                logger.info(
+                    "ACE %s: %d probationary role(s) excluded: %s",
+                    instance_id, len(skipped_probationary), skipped_probationary,
+                )
+
             with self._threads_lock:
                 self._threads[instance_id] = threads
 
-            for t in threads:
-                t.start()
+            # Compute effective concurrency cap: minimum max_parallel across all
+            # non-probationary roles (conservative — team autonomy = least-trusted member).
+            #   supervised (band) → max_parallel=1 → sequential
+            #   trusted           → max_parallel=2 → parallel(2)
+            #   autonomous        → max_parallel=4 → parallel(4)
+            if trust_cfgs:
+                effective_max_parallel = min(
+                    cfg.get("max_parallel", 1) for cfg in trust_cfgs.values()
+                )
+            else:
+                effective_max_parallel = 1  # no trust data → sequential (safe default)
+            effective_max_parallel = max(1, effective_max_parallel)
 
-            # 5. Wait for all threads (non-blocking from caller's perspective since
-            #    we're already in the executor worker thread)
-            for t in threads:
-                t.join()
+            logger.info(
+                "ACE %s: dispatching %d coworker(s) with effective_max_parallel=%d "
+                "(bands: %s)",
+                instance_id,
+                len(threads),
+                effective_max_parallel,
+                {r: c.get("band", "unknown") for r, c in trust_cfgs.items()},
+            )
+
+            # Semaphore-gated dispatch enforces the parallelism limit derived from
+            # the trust band.  Each worker acquires the semaphore before starting
+            # its CoWorkerThread and releases it only after the thread finishes.
+            sem = threading.BoundedSemaphore(effective_max_parallel)
+
+            def _launch_guarded(t: CoWorkerThread) -> None:
+                with sem:
+                    t.start()
+                    t.join()
+
+            dispatch_futures = [self._executor.submit(_launch_guarded, t) for t in threads]
+            for fut in dispatch_futures:
+                try:
+                    fut.result()
+                except Exception as exc:
+                    logger.warning("ACE %s: dispatch future error: %s", instance_id, exc)
+
+            # 5. Record trust events based on each coworker's final DB state.
+            # All futures have completed so all thread states are final in the DB.
+            if _trust_fn:
+                try:
+                    from icdev.tools.db.storage import get_canvas_connection
+                    conn = get_canvas_connection(_DB_ENV)
+                    try:
+                        for t in threads:
+                            row = conn.execute(
+                                "SELECT state FROM ace_coworkers WHERE id = ?",
+                                (t.spec.coworker_id,),
+                            ).fetchone()
+                            state = (row[0] if isinstance(row, (list, tuple)) else row.get("state", "")) if row else ""
+                            event = "success" if state == "done" else "failure"
+                            self._record_trust_outcome(t.spec.role_id, event, instance_id)
+                    finally:
+                        conn.close()
+                except Exception as exc:
+                    logger.debug("[TRUST] post-dispatch trust recording failed: %s", exc)
+
+            # Items 2+5: file session to wiki + cross-link role entries
+            role_ids = [s.role_id for s in team.specs]
+            self._file_session_to_wiki(instance_id, problem_text, role_ids)
 
             self._set_instance_state(instance_id, "complete")
             self._finalize_instance(instance_id)
+            self._emit_completion_event(instance_id)
             self._emit_sse(instance_id, "complete", "All coworkers finished")
             self._emit_task_completed(instance_id)
             if webhook_url:
@@ -387,6 +619,69 @@ class ACEController:
                 conn.close()
         except Exception as exc:
             logger.debug("_set_instance_state(%s, %s) failed: %s", instance_id, state, exc)
+
+    def _create_probationary_card(self, role_id: str, trust_cfg: dict, instance_id: str) -> None:
+        """Create a HITL review card for a probationary coworker blocked from dispatch."""
+        try:
+            import uuid as _uuid
+            from icdev.tools.db.storage import get_connection
+            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            task_id = f"ace-trust-review-{_uuid.uuid4().hex[:8]}"
+            score = trust_cfg.get("trust_score", 0.0)
+            conn = get_connection()
+            conn.execute(
+                """
+                INSERT INTO kanban_tasks
+                    (id, title, description, status, priority, source, created_at, updated_at)
+                VALUES (?, ?, ?, 'backlog', 'high', 'ace_trust', ?, ?)
+                """,
+                (
+                    task_id,
+                    f"[TRUST] Probationary coworker blocked: {role_id}",
+                    (
+                        f"**NOVA TRUST: Probationary Role Blocked from Dispatch**\n\n"
+                        f"- Role: `{role_id}`\n"
+                        f"- Trust score: `{score:.3f}` (threshold: 0.300)\n"
+                        f"- Instance: `{instance_id}`\n\n"
+                        f"This coworker has insufficient trust to dispatch autonomously. "
+                        f"Review past task failures for this role, then manually record "
+                        f"positive trust events to raise the score above 0.3:\n\n"
+                        f"```python\n"
+                        f"from tools.ace.trust_calibrator import record_trust_event\n"
+                        f"record_trust_event('{role_id}', 'success')\n"
+                        f"```"
+                    ),
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+            logger.info("[TRUST] Probationary card created for %s (score=%.3f)", role_id, score)
+        except Exception as exc:
+            logger.debug("[TRUST] _create_probationary_card failed: %s", exc)
+
+    @staticmethod
+    def _record_trust_outcome(role_id: str, event_type: str, instance_id: str) -> None:
+        """Record a trust event for a completed/failed coworker dispatch (best-effort)."""
+        try:
+            from icdev.tools.ace.trust_calibrator import record_trust_event
+            record_trust_event(role_id, event_type, source_task_id=instance_id)
+        except Exception as exc:
+            logger.debug("[TRUST] _record_trust_outcome failed for %s: %s", role_id, exc)
+
+    @staticmethod
+    def _emit_completion_event(instance_id: str) -> None:
+        """Emit task.completed to ace_events so reflexion_loop reflex fires (best-effort)."""
+        try:
+            from icdev.tools.ace.event_bus import emit as ace_emit
+            ace_emit(
+                "task.completed",
+                {"trigger": "instance_complete", "instance_id": instance_id},
+                source_canvas="ace",
+                source_id=instance_id,
+            )
+        except Exception:
+            pass
 
     @staticmethod
     def _emit_sse(instance_id: str, phase: str, detail: str) -> None:

@@ -22,10 +22,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from threading import Lock
-from typing import TYPE_CHECKING, Any, Dict, List, Optional
-
-if TYPE_CHECKING:
-    from tools.llm.router import LLMRouter
+from typing import Any, Dict, List, Optional
 
 from tools.logging.icdev_logger import get_logger
 
@@ -336,7 +333,7 @@ class ProviderHealthTracker:
     def reorder_chain(
         self,
         chain: List[str],
-        router: "LLMRouter",
+        router: "LLMRouter",  # type: ignore[name-defined]  # noqa: F821  # forward ref
     ) -> List[str]:
         """Return chain with models from degraded providers moved to end.
 
@@ -378,7 +375,7 @@ class ProviderHealthTracker:
     def apply_load_sharing(
         self,
         chain: List[str],
-        router: "LLMRouter",
+        router: "LLMRouter",  # type: ignore[name-defined]  # noqa: F821
     ) -> List[str]:
         """Optionally shuffle healthy models round-robin per provider."""
         if not self.enabled:

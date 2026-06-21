@@ -73,7 +73,7 @@ def bulk_activity_status(activity_ids: list, status: str) -> int:
     return count
 
 
-def get_phase_completions(phase: str) -> dict:
+def get_phase_completions(phase: str, target_id: str = "icdev-self") -> dict:
     """Get completion summary for a ZIG phase (discovery | phase1 | phase2)."""
     conn = get_connection()
     try:
@@ -88,8 +88,9 @@ def get_phase_completions(phase: str) -> dict:
 
         placeholders = ",".join("?" * len(act_ids))
         completions = conn.execute(
-            f"SELECT status FROM zig_activity_completions WHERE activity_id IN ({placeholders})",
-            act_ids,
+            f"SELECT status FROM zig_activity_completions "
+            f"WHERE activity_id IN ({placeholders}) AND target_id=?",
+            act_ids + [target_id],
         ).fetchall()
 
         status_map = {c["status"]: 0 for c in completions}

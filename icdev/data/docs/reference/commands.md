@@ -1,4 +1,4 @@
-# ICDEV™ CLI Command Reference
+﻿# ICDEV™ CLI Command Reference
 
 Complete CLI command reference for all ICDEV™ modules. See [CLAUDE.md](../../CLAUDE.md) for behavioral instructions.
 
@@ -1971,12 +1971,12 @@ python tools/marketplace/catalog_manager.py --get --slug "tenant-abc/my-skill" -
 # Provenance
 python tools/marketplace/provenance_tracker.py --report --asset-id "asset-abc" --json
 
-# OpenClaw Bridge — Zero-trust import/export for ClawHub (clawhub.ai) skills (Phase 69)
+# OpenClaw Bridge — Zero-trust import/export for SkillHub (skillhub.ai) skills (Phase 69)
 # Import a skill from local OpenClaw directory
 python tools/marketplace/openclaw_bridge.py --import --source-path /path/to/openclaw-skill --tenant-id "tenant-abc" --imported-by "user@mil" --json
 
-# Import with ClawHub URL for provenance tracking
-python tools/marketplace/openclaw_bridge.py --import --source-path /path/to/openclaw-skill --clawhub-url "https://clawhub.ai/author/skill-name" --tenant-id "tenant-abc" --imported-by "user@mil" --json
+# Import with SkillHub URL for provenance tracking
+python tools/marketplace/openclaw_bridge.py --import --source-path /path/to/openclaw-skill --skillhub-url "https://skillhub.ai/author/skill-name" --tenant-id "tenant-abc" --imported-by "user@mil" --json
 
 # List quarantined imports
 python tools/marketplace/openclaw_bridge.py --list-quarantine --json
@@ -2000,20 +2000,20 @@ python tools/marketplace/openclaw_bridge.py --health --json
 # Revoke a promoted import (rollback)
 python tools/marketplace/openclaw_bridge.py --revoke --import-id "oci-abc123" --revoked-by "isso@dod.mil" --reason "Causing errors" --json
 
-# Discover skills on ClawHub (vector search — requires network)
+# Discover skills on SkillHub (vector search — requires network)
 python tools/marketplace/openclaw_bridge.py --discover "code review automation" --limit 10 --json
 
-# Fetch + import a skill from ClawHub by slug (download → quarantine → scan → translate)
+# Fetch + import a skill from SkillHub by slug (download → quarantine → scan → translate)
 python tools/marketplace/openclaw_bridge.py --fetch self-improving-agent --tenant-id "tenant-abc" --imported-by "user@mil" --json
 
 # Gate check (CI/CD)
 python tools/marketplace/openclaw_bridge.py --gate --json
 
-# ClawHub DataBridge Connector (standalone)
-python tools/databridge/connectors/clawhub_connector.py --search "self-improvement" --json
-python tools/databridge/connectors/clawhub_connector.py --get self-improving-agent --json
-python tools/databridge/connectors/clawhub_connector.py --download self-improving-agent --output .tmp/ --json
-python tools/databridge/connectors/clawhub_connector.py --health --json
+# SkillHub DataBridge Connector (standalone)
+python tools/databridge/connectors/skillhub_connector.py --search "self-improvement" --json
+python tools/databridge/connectors/skillhub_connector.py --get self-improving-agent --json
+python tools/databridge/connectors/skillhub_connector.py --download self-improving-agent --output .tmp/ --json
+python tools/databridge/connectors/skillhub_connector.py --health --json
 ```
 
 ---

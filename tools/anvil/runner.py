@@ -112,9 +112,41 @@ def _run_one(cmd: str, args: list[str], *, timeout: int = 600) -> dict[str, Any]
 # ---------------------------------------------------------------------------
 # Public runners
 # ---------------------------------------------------------------------------
+def _wiki_navigate_context(args: list[str]) -> dict[str, Any] | None:
+    """Run the Navigate wiki query as a pre-step before manifest grep.
+
+    Queries memory wiki for tool-relevant entries using the $ARGUMENTS as the
+    task description.  Returns a synthetic step dict so the result appears in
+    the run_command steps list.  Best-effort — never blocks the main pipeline.
+    """
+    try:
+        from tools.memory.wiki_tool_query import wiki_tool_query, _format_context_block
+
+        query = " ".join(args) if args else ""
+        if not query.strip():
+            return None
+        results = wiki_tool_query(query, top_k=5)
+        context = _format_context_block(results)
+        return {
+            "step": 0,
+            "command": f"wiki_navigate_context({query[:60]!r})",
+            "returncode": 0,
+            "stdout": context,
+            "stderr": "",
+            "wiki_hits": len(results),
+        }
+    except Exception as exc:
+        return {
+            "step": 0,
+            "command": "wiki_navigate_context",
+            "skipped": True,
+            "reason": str(exc)[:200],
+        }
+
+
 def run_command(source_rel: str, args: list[str], *,
                 dry_run: bool = False, keep_going: bool = False,
-                timeout: int = 600) -> dict[str, Any]:
+                timeout: int = 600, wiki_navigate: bool = True) -> dict[str, Any]:
     """Run an ANVIL command whose source is a .claude/commands/<name>.md file.
 
     Args:
@@ -123,6 +155,8 @@ def run_command(source_rel: str, args: list[str], *,
         dry_run: preview commands without executing
         keep_going: do not stop on first failure
         timeout: per-command wall-clock cap (seconds)
+        wiki_navigate: when True (default), run a wiki query as step 0 before
+            the manifest grep (Karpathy Navigate wiki integration, Item 3).
     """
     src_path = (BASE_DIR / source_rel).resolve()
     if not src_path.exists():
@@ -130,6 +164,14 @@ def run_command(source_rel: str, args: list[str], *,
 
     cmds = extract_commands(src_path)
     steps: list[dict] = []
+
+    # Karpathy Navigate wiki pre-step (Item 3): surface wiki knowledge before
+    # grepping the manifest so Navigate can reuse institutional know-how.
+    if wiki_navigate and not dry_run and args:
+        wiki_step = _wiki_navigate_context(args)
+        if wiki_step:
+            steps.append(wiki_step)
+
     for idx, cmd in enumerate(cmds, start=1):
         expanded = _substitute(cmd, args)
         if dry_run:

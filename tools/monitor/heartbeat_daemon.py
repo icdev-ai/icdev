@@ -42,6 +42,9 @@ sys.path.insert(0, str(BASE_DIR))
 # ---------------------------------------------------------------------------
 _shutdown_requested = False
 
+# Per-agent dead-since timestamps for A2A health tracking (reset on restart)
+_a2a_dead_since: Dict[str, str] = {}
+
 
 def _signal_handler(signum: int, frame: Any) -> None:  # noqa: ANN401
     """Handle shutdown signals gracefully."""
@@ -147,9 +150,36 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "enabled": True,
             "interval_seconds": 300,
             "stale_threshold_minutes": 5,
+        "a2a_agent_health": {
+            "enabled": True,
+            "interval_seconds": 300,
+            "dead_alert_minutes": 10,
+            "request_timeout_seconds": 5,
         },
     },
 }
+
+# Default A2A agent stubs for ports 8443-8460 (used when registry is empty)
+_A2A_DEFAULT_AGENTS: List[tuple] = [
+    ("orchestrator",   "Orchestrator",   8443),
+    ("architect",      "Architect",      8444),
+    ("builder",        "Builder",        8445),
+    ("compliance",     "Compliance",     8446),
+    ("security",       "Security",       8447),
+    ("infrastructure", "Infrastructure", 8448),
+    ("knowledge",      "Knowledge",      8449),
+    ("monitor",        "Monitor",        8450),
+    ("mbse",           "MBSE",           8451),
+    ("modernization",  "Modernization",  8452),
+    ("requirements",   "Requirements",   8453),
+    ("supply-chain",   "Supply Chain",   8454),
+    ("simulation",     "Simulation",     8455),
+    ("devsecops",      "DevSecOps",      8456),
+    ("zta",            "ZTA",            8457),
+    ("gateway",        "Gateway",        8458),
+    ("agent-8459",     "Agent-8459",     8459),
+    ("agent-8460",     "Agent-8460",     8460),
+]
 
 
 def _load_config() -> dict:
@@ -679,6 +709,208 @@ def check_kanban_stale(
 # ---------------------------------------------------------------------------
 # Check registry
 # ---------------------------------------------------------------------------
+def check_ace_instance_stale(
+    config: Optional[dict] = None,
+    db_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Detect ACE instances stuck in active state past the stale threshold."""
+    threshold_minutes = 30
+    if config and isinstance(config, dict):
+        threshold_minutes = config.get("stale_threshold_minutes", threshold_minutes)
+    try:
+        conn = _get_connection(db_path)
+        try:
+            rows = conn.execute(
+                "SELECT id, name, role_id, state, updated_at FROM ace_instances "
+                "WHERE state NOT IN ('complete','cancelled','failed') "
+                "AND updated_at < datetime('now', ? || ' minutes') "
+                "ORDER BY updated_at ASC LIMIT 50",
+                (str(-threshold_minutes),),
+            ).fetchall()
+        finally:
+            conn.close()
+        items = [dict(r) for r in rows]
+        for item in items:
+            item["result"] = "dead"
+            item["component_id"] = item.get("id", "")
+        count = len(items)
+        return {"status": "critical" if count > 0 else "ok", "count": count, "items": items[:20]}
+    except Exception as exc:
+        return {"status": "ok", "count": 0, "items": [], "note": f"ace_instances not available: {exc}"}
+
+
+def check_kanban_stale(
+    config: Optional[dict] = None,
+    db_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """Detect kanban tasks stuck in_progress past the stale threshold."""
+    threshold_hours = 4
+    if config and isinstance(config, dict):
+        threshold_hours = config.get("stale_threshold_hours", threshold_hours)
+    try:
+        conn = _get_connection(db_path)
+        try:
+            rows = conn.execute(
+                "SELECT id, title, status, updated_at FROM kanban_tasks "
+                "WHERE status = 'in_progress' "
+                "AND updated_at < datetime('now', ? || ' hours') "
+                "ORDER BY updated_at ASC LIMIT 50",
+                (str(-threshold_hours),),
+            ).fetchall()
+        finally:
+            conn.close()
+        items = [dict(r) for r in rows]
+        for item in items:
+            item["result"] = "dead"
+            item["component_id"] = item.get("id", "")
+        count = len(items)
+        return {"status": "warning" if count > 0 else "ok", "count": count, "items": items[:20]}
+    except Exception as exc:
+        return {"status": "ok", "count": 0, "items": [], "note": f"kanban_tasks not available: {exc}"}
+
+
+def _build_default_a2a_agents() -> List[dict]:
+    """Return stub entries for ports 8443-8460 when the registry returns no agents."""
+    return [
+        {"id": name, "name": display, "url": f"https://localhost:{port}"}
+        for name, display, port in _A2A_DEFAULT_AGENTS
+    ]
+
+
+def _telegram_alert_dead_agents(long_dead: List[dict]) -> None:
+    """Best-effort Telegram alert for A2A agents dead beyond the configured threshold."""
+    try:
+        from tools.notifications.adapters.telegram import send  # type: ignore[import-untyped]
+
+        names = ", ".join(a.get("name") or a.get("agent_id", "?") for a in long_dead)
+        mins = long_dead[0].get("dead_minutes", "?")
+        body = (
+            f"{len(long_dead)} agent(s) unreachable for >{mins:.0f} min: {names}\n"
+            f"URLs: {', '.join(a['url'] for a in long_dead)}"
+        )
+        send(title="A2A Agent Health Alert", body=body, severity="critical")
+    except (ImportError, Exception):
+        pass  # best-effort
+
+
+def check_a2a_agent_health(
+    config: Optional[dict] = None,
+    db_path: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """HEAD-check each registered A2A agent's /.well-known/agent.json endpoint.
+
+    Iterates over active agents from the A2A registry (falls back to default
+    ports 8443-8460 when the registry is empty). Dead agents are reported with
+    result='dead'; alive agents with result='alive'. Sends a Telegram alert
+    when any agent has been continuously dead for >= dead_alert_minutes.
+    """
+    global _a2a_dead_since
+
+    dead_alert_minutes = 10
+    request_timeout = 5
+    if config and isinstance(config, dict):
+        dead_alert_minutes = config.get("dead_alert_minutes", dead_alert_minutes)
+        request_timeout = config.get("request_timeout_seconds", request_timeout)
+
+    try:
+        from tools.a2a.agent_registry import discover_agents as _discover  # type: ignore[import-untyped]
+        agents = _discover(db_path=db_path)
+    except Exception as exc:
+        return {"status": "ok", "count": 0, "items": [], "note": f"registry unavailable: {exc}"}
+
+    if not agents:
+        agents = _build_default_a2a_agents()
+
+    now = datetime.now(timezone.utc)
+    dead_items: List[dict] = []
+    alive_count = 0
+
+    for agent in agents:
+        url = agent.get("url", "")
+        if not url:
+            continue
+        agent_id = agent.get("id") or url
+        endpoint = url.rstrip("/") + "/.well-known/agent.json"
+
+        result_str = "dead"
+        http_status = None
+        try:
+            req = urllib.request.Request(endpoint, method="HEAD")
+            # nosec B310 -- internal A2A agent endpoints only
+            with urllib.request.urlopen(req, timeout=request_timeout) as resp:  # noqa: S310
+                http_status = resp.status
+                if 200 <= http_status < 300:
+                    result_str = "alive"
+        except Exception:
+            result_str = "dead"
+
+        if result_str == "alive":
+            alive_count += 1
+            _a2a_dead_since.pop(agent_id, None)
+        else:
+            if agent_id not in _a2a_dead_since:
+                _a2a_dead_since[agent_id] = now.strftime("%Y-%m-%dT%H:%M:%S")
+            dead_items.append(
+                {
+                    "agent_id": agent_id,
+                    "name": agent.get("name", ""),
+                    "url": url,
+                    "result": "dead",
+                    "http_status": http_status,
+                    "dead_since": _a2a_dead_since[agent_id],
+                    "component_id": agent_id,
+                }
+            )
+
+    # Alert for agents dead beyond the threshold
+    long_dead: List[dict] = []
+    for item in dead_items:
+        dead_since_str = _a2a_dead_since.get(item["agent_id"], "")
+        if dead_since_str:
+            try:
+                dead_since_dt = datetime.fromisoformat(dead_since_str).replace(tzinfo=timezone.utc)
+                dead_minutes = (now - dead_since_dt).total_seconds() / 60.0
+                if dead_minutes >= dead_alert_minutes:
+                    long_dead.append({**item, "dead_minutes": round(dead_minutes, 1)})
+            except ValueError:
+                pass
+
+    if long_dead:
+        _telegram_alert_dead_agents(long_dead)
+
+    return {
+        "status": "critical" if dead_items else "ok",
+        "count": len(dead_items),
+        "items": dead_items[:20],
+        "alive_count": alive_count,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Check types that trigger auto_resolver on failure
+# ---------------------------------------------------------------------------
+_AUTO_RESOLVE_CHECKS = {"ace_instance_stale", "kanban_stale", "a2a_agent_health"}
+
+
+def _trigger_auto_resolver(check_type: str, result: dict, db_path: Optional[Path] = None) -> None:
+    """Call auto_resolver.resolve_component for each dead item in the check result."""
+    try:
+        from tools.monitor.auto_resolver import resolve_component
+    except ImportError:
+        return
+
+    for item in result.get("items", []):
+        if item.get("result") != "dead":
+            continue
+        component_id = item.get("component_id") or item.get("id") or item.get("agent_id", "")
+        if not component_id:
+            continue
+        try:
+            resolve_component(component_id, check_type, db_path)
+        except Exception:
+            pass
+
+
 CHECK_REGISTRY: Dict[str, Callable] = {
     "cato_evidence": check_cato_evidence,
     "agent_health": check_agent_health,
@@ -690,6 +922,9 @@ CHECK_REGISTRY: Dict[str, Callable] = {
     "coherence_health": check_coherence_health,
     "review_board_health": check_review_board_health,
     "kanban_stale": check_kanban_stale,
+    "ace_instance_stale": check_ace_instance_stale,
+    "kanban_stale": check_kanban_stale,
+    "a2a_agent_health": check_a2a_agent_health,
 }
 
 
@@ -772,6 +1007,10 @@ def run_single_check(
             details=result,
             db_path=db_path,
         )
+
+    # Auto-resolve for supported check types
+    if check_type in _AUTO_RESOLVE_CHECKS and result.get("status") in ("warning", "critical"):
+        _trigger_auto_resolver(check_type, result, db_path)
 
     return result
 

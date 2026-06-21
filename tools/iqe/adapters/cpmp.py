@@ -86,6 +86,7 @@ def evm_adapter(conn: Any) -> list[dict]:
     try:
         cur = c.execute(
             "SELECT id, contract_id, period_date, bcws, bcwp, acwp, "
+            "SELECT id, contract_id, period_date AS snapshot_date, bcws, bcwp, acwp, "
             "cpi, spi, eac, bac, vac, classification, created_at "
             "FROM cpmp_evm_periods ORDER BY period_date DESC LIMIT 500"
         )

@@ -46,6 +46,14 @@ def _insert_instance(instance_id: str, trigger_ref: str, coworkers: list[tuple])
 @pytest.fixture
 def ace_db():
     init_ace_db()
+    # Clear tables before each test to ensure isolation across runs
+    conn = get_canvas_connection("ICDEV_ACE_DB_URL")
+    try:
+        conn.execute("DELETE FROM ace_coworkers")
+        conn.execute("DELETE FROM ace_instances")
+        conn.commit()
+    finally:
+        conn.close()
     yield
 
 

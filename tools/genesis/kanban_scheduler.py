@@ -189,19 +189,29 @@ def main():
     except Exception as exc:
         logger.warning("Startup recovery failed: %s", str(exc).encode("ascii", errors="replace").decode("ascii"))
 
-    # Startup inbox replay — process any Telegram messages that arrived while offline.
-    try:
-        from tools.notifications.adapters.telegram_listener import replay_inbox
-
-        inbox_result = replay_inbox()
-        if inbox_result["replayed"] or inbox_result["failed"]:
-            logger.info(
-                "Startup inbox replay: replayed=%d failed=%d",
-                inbox_result["replayed"],
-                inbox_result["failed"],
-            )
-    except Exception as exc:
-        logger.warning("Startup inbox replay failed: %s", exc)
+    # Startup inbox replay — process any messages that arrived while offline.
+    _startup_replay_listeners = [
+        ("tools.notifications.adapters.telegram_listener", "Telegram"),
+        ("tools.notifications.adapters.teams_listener", "Teams"),
+        ("tools.notifications.adapters.mattermost_listener", "MatterMost"),
+        ("tools.notifications.adapters.github_listener", "GitHub"),
+        ("tools.notifications.adapters.gitlab_listener", "GitLab"),
+        ("tools.notifications.adapters.skype_listener", "Skype"),
+    ]
+    for _module_path, _platform_name in _startup_replay_listeners:
+        try:
+            import importlib as _importlib
+            _mod = _importlib.import_module(_module_path)
+            _inbox_result = _mod.replay_inbox()
+            if _inbox_result["replayed"] or _inbox_result["failed"]:
+                logger.info(
+                    "Startup inbox replay [%s]: replayed=%d failed=%d",
+                    _platform_name,
+                    _inbox_result["replayed"],
+                    _inbox_result["failed"],
+                )
+        except Exception as _exc:
+            logger.debug("Startup inbox replay [%s] skipped: %s", _platform_name, _exc)
 
     if args.once:
         logger.info("Running single kanban cycle...")

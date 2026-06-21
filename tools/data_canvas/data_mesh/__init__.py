@@ -28,15 +28,18 @@ from tools.data_canvas.db.init_db import get_connection as _gc  # noqa: E402
 
 
 def list_contracts(product_id: str | None = None) -> list:
-    with _gc() as conn:
+    try:
+        conn = _gc()
         if product_id:
             rows = conn.execute(
-                "SELECT * FROM dm_contracts WHERE product_id=? ORDER BY name",
+                "SELECT * FROM dm_contracts WHERE product_id=? ORDER BY title",
                 (product_id,),
             ).fetchall()
         else:
-            rows = conn.execute("SELECT * FROM dm_contracts ORDER BY name").fetchall()
-    return [dict(r) for r in rows]
+            rows = conn.execute("SELECT * FROM dm_contracts ORDER BY title").fetchall()
+        return [dict(r) for r in rows]
+    except Exception as exc:
+        return [{"error": str(exc)}]
 
 
 # Re-export governance sub-module surface

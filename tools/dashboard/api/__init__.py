@@ -363,13 +363,11 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
         except ImportError as exc:
             logger.debug("proposal_genesis_api skipped: %s", exc)
 
-    # AISG explain translator — /api/explain/<event_id>
-    try:
-        from tools.aisg.blueprint import bp as aisg_bp
-        _mount_inline(aisg_bp)
-        logger.info("AISG explain blueprint registered at /api/explain/<event_id>")
-    except Exception as exc:
-        logger.warning("AISG explain blueprint skipped: %s", exc)
+    # AISG blueprint is registered by the canvas loop in create_app() (_CANVAS_DEFS).
+    # Registering it here too caused Flask 3.x "already registered for this blueprint"
+    # errors — same object re-registered on the same Flask app with a different url_prefix.
+    # The /api/explain/* routes live in the AISG blueprint and are served from the canvas
+    # registration without needing a separate api/__init__.py mount.
 
     # HITL Workflow — opt-in via ICDEV_HITL_ENABLED=true
     try:

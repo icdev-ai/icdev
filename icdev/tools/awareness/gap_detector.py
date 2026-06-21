@@ -708,6 +708,20 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
         "dic_chunks", "dic_entities",                    # render_and_send_dic_document_summary
         "fedramp_ato_packages",                          # render fedramp ATO package notice
         "finetune_eval_results", "finetune_jobs", "finetune_metrics",  # render_handler_service finetune
+        # notification_service handler stubs (aiify-scanner-generated candidates,
+        # never wired to production routes; all tests mock get_connection())
+        "aiify_roadmap_items",                           # handler_service aiify progress handler
+        "canvas_designs",                                # handler_service canvas status handler
+        "cmmc_practice_gaps", "cmmc_systems",            # handler_service cmmc gap handler
+        "fedramp_controls",                              # render_handler_service fedramp notice
+        "finetune_eval_results", "finetune_jobs", "finetune_metrics",  # render_handler_service finetune
+        "gate_failures",                                 # render_handler_service gate report
+        "genesis_designs",                               # multiple notification_service files
+        # RAG tool uses a plausible SQL template string for demonstration; no real table.
+        "entitlements",                                  # tools/rag/entitlement_rag.py template
+        # CTE alias: gap_detector doesn't parse WITH ... AS (...) and flags the alias name.
+        "domain_coverage",                               # tools/govcon/gap_analyzer.py CTE
+
     }
 
     # Table names that are legitimately referenced but are DBMS-provided

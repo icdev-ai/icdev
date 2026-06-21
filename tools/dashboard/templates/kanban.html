@@ -31,6 +31,7 @@
         ("suggested", "Suggested"),
         ("backlog", "Backlog"),
         ("scheduled", "Scheduled"),
+        ("triage", "Triage"),
         ("in_progress", "In Progress"),
         ("done", "Done")
     ] %}
@@ -75,6 +76,10 @@
                 <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Description</label>
                 <textarea id="task-desc" rows="3" style="width:100%; padding:8px 12px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); resize:vertical;" placeholder="Optional details..."></textarea>
             </div>
+            <div style="margin-bottom:12px;" id="task-acceptance-section">
+                <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Acceptance Criteria <span style="font-size:10px; color:var(--text-dim);">(used by goal-mode judge)</span></label>
+                <textarea id="task-acceptance-criteria" rows="3" style="width:100%; padding:8px 12px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); resize:vertical; font-size:12px;" placeholder="• The feature does X&#10;• All tests pass&#10;• No regressions in Y"></textarea>
+            </div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
                 <div>
                     <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Type</label>
@@ -105,6 +110,7 @@
                         <option value="suggested">Suggested</option>
                         <option value="backlog">Backlog</option>
                         <option value="scheduled">Scheduled</option>
+                        <option value="triage">Triage</option>
                         <option value="in_progress">In Progress</option>
                         <option value="done">Done</option>
                     </select>
@@ -132,6 +138,18 @@
                     <option value="github_actions">&#9881;&#65039; GitHub Actions</option>
                 </select>
             </div>
+            <div style="margin-bottom:12px; display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                <div>
+                    <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Max Runtime (sec) <span style="font-size:10px; color:var(--text-dim);">override</span></label>
+                    <input type="number" id="task-max-runtime" min="60" max="7200" placeholder="e.g. 1800"
+                           style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+                </div>
+                <div>
+                    <label style="display:block; font-size:12px; color:var(--text-dim); margin-bottom:4px;">Max Retries <span style="font-size:10px; color:var(--text-dim);">circuit breaker</span></label>
+                    <input type="number" id="task-max-retries" min="1" max="20" placeholder="5"
+                           style="width:100%; padding:8px; background:var(--bg-code); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);">
+                </div>
+            </div>
         </div>
         <!-- Tags section (only shown when editing an existing task) -->
         <div id="task-tags-section" style="display:none; margin-top:4px; border-top:1px solid var(--border); padding-top:12px;">
@@ -155,6 +173,7 @@
             </div>
         </div>
         <div style="padding:16px 20px; border-top:1px solid var(--border); display:flex; gap:12px; justify-content:flex-end;">
+            <button class="btn" id="btn-specify" onclick="specifyTask()" title="LLM rewrites title+description into a structured spec">⚡ Specify</button>
             <button class="btn" onclick="closeTaskModal()">Cancel</button>
             <button class="btn btn-primary" onclick="saveTask()">Save</button>
         </div>
@@ -265,6 +284,9 @@ function openAddTaskModal() {
     document.getElementById('task-start-date').value = '';
     document.getElementById('task-target-date').value = '';
     document.getElementById('task-executor-type').value = 'claude_cli';
+    document.getElementById('task-acceptance-criteria').value = '';
+    document.getElementById('task-max-runtime').value = '';
+    document.getElementById('task-max-retries').value = '';
     document.getElementById('task-comments-section').style.display = 'none';
     document.getElementById('task-tags-section').style.display = 'none';
     document.getElementById('task-modal').style.display = 'flex';
@@ -282,6 +304,9 @@ function openEditTaskModal(task) {
     document.getElementById('task-start-date').value = task.start_date || '';
     document.getElementById('task-target-date').value = task.target_date || '';
     document.getElementById('task-executor-type').value = task.executor_type || 'claude_cli';
+    document.getElementById('task-acceptance-criteria').value = task.acceptance_criteria || '';
+    document.getElementById('task-max-runtime').value = task.max_runtime_seconds || '';
+    document.getElementById('task-max-retries').value = task.max_retries || '';
     document.getElementById('task-tags-section').style.display = 'block';
     _loadTaskTags(task.id, task.tags || []);
     document.getElementById('task-comments-section').style.display = 'block';
@@ -304,7 +329,10 @@ function saveTask() {
         scheduled_at: _localToIso(document.getElementById('task-scheduled-at').value),
         executor_type: document.getElementById('task-executor-type').value,
         start_date: document.getElementById('task-start-date').value || null,
-        target_date: document.getElementById('task-target-date').value || null
+        target_date: document.getElementById('task-target-date').value || null,
+        acceptance_criteria: document.getElementById('task-acceptance-criteria').value.trim() || null,
+        max_runtime_seconds: parseInt(document.getElementById('task-max-runtime').value) || null,
+        max_retries: parseInt(document.getElementById('task-max-retries').value) || null
     };
     if (!payload.title.trim()) { alert('Title is required'); return; }
 
@@ -315,6 +343,40 @@ function saveTask() {
         .then(function(r) { return r.json(); })
         .then(function() { closeTaskModal(); refreshKanbanTasks(); })
         .catch(function(e) { alert('Error: ' + e); });
+}
+
+var _specifyTaskId = null;
+function specifyTask() {
+    var title = document.getElementById('task-title').value.trim();
+    var desc = document.getElementById('task-desc').value.trim();
+    var tid = document.getElementById('task-edit-id').value.trim() || null;
+    if (!title) { alert('Enter a title first'); return; }
+    var btn = document.getElementById('btn-specify');
+    if (btn) { btn.disabled = true; btn.textContent = '⏳ Specifying...'; }
+    fetch('/api/kanban/tasks/specify', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({title: title, description: desc, task_id: tid})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(spec) {
+        if (spec.error) { alert('Specify error: ' + spec.error); return; }
+        if (spec.goal) {
+            var descEl = document.getElementById('task-desc');
+            var full = '';
+            if (spec.goal) full += 'Goal: ' + spec.goal + '\n\n';
+            if (spec.approach) full += 'Approach: ' + spec.approach;
+            descEl.value = full;
+        }
+        if (spec.acceptance_criteria) {
+            var acEl = document.getElementById('task-acceptance-criteria');
+            if (acEl) acEl.value = spec.acceptance_criteria;
+        }
+    })
+    .catch(function(e) { alert('Specify failed: ' + e); })
+    .finally(function() {
+        if (btn) { btn.disabled = false; btn.textContent = '⚡ Specify'; }
+    });
 }
 
 // OPT-68: optimistic move — reflect the change immediately, rollback on failure
@@ -563,7 +625,7 @@ function renderTaskKanban(tasks) {
     if (!board) return;
     _clearKvIntervals();
 
-    var columns = { suggested: [], backlog: [], scheduled: [], in_progress: [], done: [] };
+    var columns = { suggested: [], backlog: [], scheduled: [], triage: [], in_progress: [], done: [] };
     tasks.forEach(function(t) {
         var s = t.status || 'backlog';
         // 'decomposed' and 'needs_decomposition' are internal scheduler states —
@@ -571,13 +633,14 @@ function renderTaskKanban(tasks) {
         // needs_decomposition = queued for LLM decomposer next cycle.
         // Both belong in Done visually (work is handed off); never bucket as Backlog.
         if (s === 'decomposed' || s === 'needs_decomposition') s = 'done';
+        if (s === 'triage' && !columns['triage']) s = 'backlog';
         if (columns[s]) columns[s].push(t); else columns.backlog.push(t);
     });
 
     var priorityColors = { critical: '#ef4444', high: '#f97316', medium: '#3b82f6', low: '#6b7280' };
     var typeIcons = { build: '\u{1F528}', run: '\u25B6', fix: '\u{1F41B}', research: '\u{1F50D}', deploy: '\u{1F680}', test: '\u2705', chore: '\u{1F9F9}' };
-    var nextStatus = { suggested: 'backlog', backlog: 'scheduled', scheduled: 'in_progress', in_progress: 'done' };
-    var prevStatus = { backlog: 'suggested', scheduled: 'backlog', in_progress: 'scheduled', done: 'in_progress' };
+    var nextStatus = { suggested: 'backlog', backlog: 'scheduled', scheduled: 'triage', triage: 'in_progress', in_progress: 'done' };
+    var prevStatus = { backlog: 'suggested', scheduled: 'backlog', triage: 'scheduled', in_progress: 'triage', done: 'in_progress' };
     var executorLabels = {
         claude_cli:     { icon: '\uD83E\uDD16', label: 'Claude',     color: '#7c3aed' },
         ollama_local:   { icon: '\uD83D\uDCBB', label: 'Local',      color: '#0891b2' },
@@ -610,7 +673,7 @@ function renderTaskKanban(tasks) {
         }
 
         var esc = window.ICDEV && ICDEV.escapeHTML ? ICDEV.escapeHTML : function(s) { return String(s || ''); };
-        var cardsHtml = items.map(function(t) {
+        var cardsHtmlArr = items.map(function(t) {
             var icon = typeIcons[t.task_type] || '';
             var pColor = priorityColors[t.priority] || '#6b7280';
             var isSuggested = status === 'suggested';
@@ -791,7 +854,8 @@ function renderTaskKanban(tasks) {
                 + execIdLine
                 + bottomRow
                 + '</div>';
-        }).join('');
+        });
+        var cardsHtml = cardsHtmlArr.join('');
 
         if (status === 'suggested') {
             var sortOpts = [
@@ -824,6 +888,24 @@ function renderTaskKanban(tasks) {
                 + '<button class="btn btn-sm" onclick="bulkDismissSuggested()" style="font-size:11px; padding:3px 8px; background:transparent; color:#6b7280; border:1px solid var(--border); border-radius:4px; cursor:pointer;">✕ Dismiss <span data-bulk-count>0</span></button>'
                 + '</div>';
             bodyEl.innerHTML = toolbar + cardsHtml;
+        } else if (status === 'in_progress') {
+            // Group by executor type
+            var execGroups = {};
+            items.forEach(function(t, i) {
+                var et = t.executor_type || 'claude_cli';
+                if (!execGroups[et]) execGroups[et] = {cards: [], label: (executorLabels[et] || {icon:'⚙️', label: et})};
+                execGroups[et].cards.push(cardsHtmlArr[i]);
+            });
+            var groupHtml = '';
+            Object.keys(execGroups).forEach(function(et) {
+                var grp = execGroups[et];
+                groupHtml += '<div style="margin-bottom:4px;">'
+                    + '<div style="font-size:10px;color:var(--text-dim);padding:4px 0 2px;font-weight:600;border-bottom:1px solid var(--border);margin-bottom:4px;">'
+                    + grp.label.icon + ' ' + grp.label.label + ' (' + grp.cards.length + ')</div>'
+                    + grp.cards.join('')
+                    + '</div>';
+            });
+            bodyEl.innerHTML = groupHtml || '<div class="kanban-empty">No tasks</div>';
         } else {
             bodyEl.innerHTML = cardsHtml;
         }

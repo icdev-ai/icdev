@@ -1,4 +1,4 @@
-# CUI // SP-CTI
+﻿# CUI // SP-CTI
 # OpenClaw Skill Bridge Configuration (Phase 69)
 # Zero-trust import/export with 10-gate scanning
 # Feature flag: ICDEV_OPENCLAW_ENABLED (disabled by default, air-gap safe)
@@ -6,9 +6,9 @@
 openclaw:
   enabled: false  # Override with ICDEV_OPENCLAW_ENABLED env var
   quarantine_dir: ".tmp/openclaw_quarantine"
-  clawhub_base_url: "https://clawhub.ai"
-  # ClawHub API endpoint (Convex backend) — update if deployment changes
-  clawhub_api_base: "https://wry-manatee-359.convex.site/api/v1"
+  skillhub_base_url: "https://skillhub.ai"
+  # SkillHub API endpoint (Convex backend) — update if deployment changes
+  skillhub_api_base: "https://wry-manatee-359.convex.site/api/v1"
 
   import:
     # No registration or renewal required — free community assets
@@ -59,7 +59,7 @@ openclaw:
     block_yaml_anchors: true
     block_yaml_tags: true
 
-  # Genesis auto-sync reflex — periodically scan ClawHub for new skills
+  # Genesis auto-sync reflex — periodically scan SkillHub for new skills
   auto_sync:
     enabled: false  # Enable via genesis_config.yaml reflex
     interval_hours: 24

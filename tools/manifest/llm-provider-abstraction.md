@@ -6,6 +6,7 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | LLM Provider Base | tools/llm/provider.py | ABC base classes (LLMProvider, EmbeddingProvider), vendor-agnostic LLMRequest/LLMResponse, message/tool format translators | — | — |
+| Context Compressor | tools/llm/compression/context_compressor.py | Headroom-inspired reversible token-budget compression (adapt-hd-02/03). Truncates middle messages when estimated token count exceeds threshold. Configured via args/llm_config.yaml `compression:` section (enabled:false by default). Router calls `_compress_request_context()` before fallback chain. Audit log of saved tokens. Exempt functions list. | CompressorConfig, LLMRequest | LLMRequest (possibly shortened) |
 | LLM Router | tools/llm/router.py | Config-driven function→model routing with fallback chains, reads args/llm_config.yaml | function name | (provider, model_id, config) |
 | LLM Router — invoke_for_role | tools/llm/router.py | `invoke_for_role(role_key, function, request)` — walks role's fallback chain with availability check, RL reranking, outcome recording, telemetry; raises LLMUnavailableError if all fail | role_key (e.g. cot_reasoner), LLMRequest | LLMResponse |
 | LLM Router — get_models_for_category | tools/llm/router.py | `get_models_for_category(category)` — returns ordered preferred model list for a task category (coding, reasoning, writing, vision, etc.) filtered to registered models | category string | List[str] model names |
