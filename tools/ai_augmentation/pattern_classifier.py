@@ -24,7 +24,9 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import pathlib
+import re
 import subprocess
 import shutil
 from typing import Any
@@ -48,6 +50,20 @@ def _load_config() -> dict[str, Any]:
 _cfg = _load_config()
 _PATTERN_MIN_DEPTH: int = int(_cfg.get("pattern_min_depth", 3))
 _RULE_MIN_KEYS: int = int(_cfg.get("rule_min_keys", 10))
+_KEYWORD_LIST_MIN_STRINGS: int = int(_cfg.get("keyword_list_min_strings", 3))
+
+_threshold_ad_cfg: dict[str, Any] = _cfg.get("threshold_anomaly_detection", {})
+_AD_ENABLED: bool = bool(_threshold_ad_cfg.get("enabled", True))
+_AD_Z_SCORE_THRESHOLD: float = float(_threshold_ad_cfg.get("z_score_threshold", 2.0))
+_AD_IQR_MULTIPLIER: float = float(_threshold_ad_cfg.get("iqr_multiplier", 1.5))
+_AD_MIN_SAMPLE_SIZE: int = int(_threshold_ad_cfg.get("min_sample_size", 5))
+_AD_FALLBACK_TO_ALL: bool = bool(_threshold_ad_cfg.get("fallback_to_all", True))
+_AD_MIN_CONSTANT_MAGNITUDE: float = float(
+    _threshold_ad_cfg.get("min_constant_magnitude", 1.0)
+)
+_AD_Q1_PERCENTILE: float = float(_threshold_ad_cfg.get("q1_percentile", 25.0))
+_AD_Q3_PERCENTILE: float = float(_threshold_ad_cfg.get("q3_percentile", 75.0))
+_AD_PERCENTILE_SCALE: float = float(_threshold_ad_cfg.get("percentile_scale", 100.0))
 
 _semgrep_cfg: dict[str, Any] = _cfg.get("semgrep", {})
 _SEMGREP_RULES_DIR: str = _semgrep_cfg.get(
@@ -55,6 +71,35 @@ _SEMGREP_RULES_DIR: str = _semgrep_cfg.get(
 )
 _SEMGREP_TIMEOUT: int = int(_semgrep_cfg.get("timeout_seconds", 60))
 _SEMGREP_METRICS: str = str(_semgrep_cfg.get("metrics", "off"))
+
+_ml_nc_cfg: dict[str, Any] = _cfg.get("ml_nested_conditionals", {})
+# Env var ICDEV_AAC_ML_CLASSIFY takes precedence over yaml config.
+_ML_NC_ENABLED: bool = (
+    os.environ.get("ICDEV_AAC_ML_CLASSIFY", "").lower() in ("1", "true", "yes")
+    or bool(_ml_nc_cfg.get("enabled", False))
+)
+_ML_NC_MODEL: str = str(_ml_nc_cfg.get("model", "claude-haiku-4-5-20251001"))
+_ML_NC_MAX_TOKENS: int = int(_ml_nc_cfg.get("max_tokens", 256))
+_ML_NC_CONTEXT_LINES: int = int(_ml_nc_cfg.get("context_lines", 5))
+
+_ML_NC_PROMPT = """\
+You are a code analyst evaluating whether a nested conditional block is a \
+strong candidate for replacement with an ML classifier.
+
+Function  : {function_name}
+If-depth  : {depth}
+Snippet   :
+```python
+{snippet}
+```
+
+Rate the AI augmentation potential:
+- high   — encodes complex, data-driven business rules that an ML model could learn
+- medium — some potential but contains validation/structural logic that may not generalise
+- low    — guard clauses, error handling, or structural necessity
+
+Respond with JSON only (no markdown):
+{{"label": "high", "score": 0.85, "rationale": "one sentence"}}"""
 
 # ── Language detection ────────────────────────────────────────────────────────
 
@@ -197,6 +242,128 @@ _CRON_DEC_KEYWORDS: frozenset[str] = frozenset(
 )
 _THRESHOLD_OPS = (ast.Lt, ast.LtE, ast.Gt, ast.GtE)
 
+# Compiled pattern for extracting numeric literals from source lines (used by
+# C# and Java regex fallback paths to build the anomaly-detection population).
+_RE_NUMERIC_LITERAL: re.Pattern = re.compile(r'\b\d+(?:\.\d+)?\b')
+
+
+# ── Anomaly detection for hardcoded thresholds ────────────────────────────────
+
+
+def _collect_all_numeric_thresholds(tree: ast.AST) -> list[float]:
+    """Collect every numeric constant appearing in comparisons or binary ops."""
+    values: list[float] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Compare):
+            if any(isinstance(op, _THRESHOLD_OPS) for op in node.ops):
+                for c in [node.left, *node.comparators]:
+                    if isinstance(c, ast.Constant) and isinstance(c.value, (int, float)):
+                        values.append(float(c.value))
+        elif isinstance(node, ast.BinOp):
+            for side in (node.left, node.right):
+                if isinstance(side, ast.Constant) and isinstance(side.value, (int, float)):
+                    values.append(float(side.value))
+    return values
+
+
+def _compute_percentile_bounds(sorted_pop: list[float], n: int) -> tuple[float, float, float]:
+    """Return (q1, q3, iqr) using _AD_Q1_PERCENTILE and _AD_Q3_PERCENTILE.
+
+    Default 25/75 reproduces the prior hardcoded Q1/Q3 (n//4, 3n//4) exactly.
+    """
+    q1_idx = max(0, min(n - 1, int(n * _AD_Q1_PERCENTILE / _AD_PERCENTILE_SCALE)))
+    q3_idx = max(0, min(n - 1, int(n * _AD_Q3_PERCENTILE / _AD_PERCENTILE_SCALE)))
+    q1 = sorted_pop[q1_idx]
+    q3 = sorted_pop[q3_idx]
+    return q1, q3, q3 - q1
+
+
+def _is_threshold_anomalous(value: float, population: list[float]) -> bool:
+    """Return True if value is a statistical outlier in population.
+
+    Uses z-score first; falls back to IQR fence when variance is zero.
+    When the population is too small, respects _AD_FALLBACK_TO_ALL.
+    """
+    n = len(population)
+    if n < _AD_MIN_SAMPLE_SIZE:
+        return _AD_FALLBACK_TO_ALL
+
+    mean = sum(population) / n
+    variance = sum((x - mean) ** 2 for x in population) / n
+    if variance > 0:
+        z = abs(value - mean) / (variance ** 0.5)
+        if z > _AD_Z_SCORE_THRESHOLD:
+            return True
+
+    sorted_pop = sorted(population)
+    q1, q3, iqr = _compute_percentile_bounds(sorted_pop, n)
+    if iqr > 0:
+        lower = q1 - _AD_IQR_MULTIPLIER * iqr
+        upper = q3 + _AD_IQR_MULTIPLIER * iqr
+        if value < lower or value > upper:
+            return True
+
+    return False
+
+
+def _anomaly_score(value: float, population: list[float]) -> float:
+    """Return a continuous anomaly score for *value* within *population*.
+
+    0.0 = value is within the normal range.
+    1.0 = value is exactly at the anomaly threshold.
+    >1.0 = value is anomalous (corresponds to _is_threshold_anomalous → True).
+
+    Uses the same z-score / IQR logic as _is_threshold_anomalous so the two
+    functions always agree on the anomaly boundary.
+    """
+    n = len(population)
+    if n < _AD_MIN_SAMPLE_SIZE:
+        return 1.0 if _AD_FALLBACK_TO_ALL else 0.0
+
+    mean = sum(population) / n
+    variance = sum((x - mean) ** 2 for x in population) / n
+    z_score_ratio = 0.0
+    if variance > 0:
+        z = abs(value - mean) / (variance ** 0.5)
+        z_score_ratio = z / _AD_Z_SCORE_THRESHOLD
+        if z_score_ratio >= 1.0:
+            return z_score_ratio  # anomalous by z-score
+
+    # Mirror _is_threshold_anomalous: IQR fence is always checked so both
+    # functions agree when a high-variance outlier in the population inflates
+    # std to the point that z-score misses but IQR correctly catches the value.
+    sorted_pop = sorted(population)
+    q1, q3, iqr = _compute_percentile_bounds(sorted_pop, n)
+    if iqr > 0:
+        lower = q1 - _AD_IQR_MULTIPLIER * iqr
+        upper = q3 + _AD_IQR_MULTIPLIER * iqr
+        if value < lower:
+            return (lower - value) / (_AD_IQR_MULTIPLIER * iqr) + 1.0
+        if value > upper:
+            return (value - upper) / (_AD_IQR_MULTIPLIER * iqr) + 1.0
+
+    return z_score_ratio
+
+
+def _collect_numeric_from_lines(lines: list[str]) -> list[float]:
+    """Collect all numeric literals from source lines for anomaly detection.
+
+    Used by the C# and Java regex-fallback paths to build the population that
+    ``_is_threshold_anomalous`` needs to decide whether a given constant is an
+    outlier.  Comment lines are skipped so doc-strings don't skew the sample.
+    """
+    values: list[float] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith(("//", "*", "#")):
+            continue
+        for m in _RE_NUMERIC_LITERAL.finditer(line):
+            try:
+                values.append(float(m.group()))
+            except ValueError:
+                pass
+    return values
+
 
 def _build_parent_map(tree: ast.AST) -> dict[int, ast.AST]:
     parent_map: dict[int, ast.AST] = {}
@@ -311,6 +478,11 @@ def _ast_detect_file(file_path: str) -> list[dict]:
     raw.extend(_detect_keyword_list_search(file_path, tree, scope_map))
     raw.extend(_detect_large_rule_table(file_path, tree, scope_map))
 
+    # Optional ML enrichment: annotate nested_conditionals hits with a
+    # Claude Haiku classification score when ICDEV_AAC_ML_CLASSIFY is set.
+    if _ML_NC_ENABLED:
+        raw = _enrich_nested_conditionals_with_ml(raw, source_text.splitlines())
+
     # Inject language field for consistency with Semgrep output schema.
     for hit in raw:
         hit.setdefault("language", "python")
@@ -318,44 +490,117 @@ def _ast_detect_file(file_path: str) -> list[dict]:
 
 
 def _detect_via_ast_fallback(target_path: str) -> list[dict]:
-    """AST-based fallback for Python and Java files when Semgrep is unavailable."""
-    """AST-based fallback for Python/C#/TypeScript files when Semgrep is unavailable."""
-    """AST-based fallback for Python/C#/Rust files when Semgrep is unavailable."""
+    """AST-based fallback for Python/C# files when Semgrep is unavailable."""
     p = pathlib.Path(target_path)
     if p.is_file():
         suffix = p.suffix.lower()
         if suffix == ".py":
             return _ast_detect_file(target_path)
-        if suffix == ".java":
-            return _java_detect_file(target_path)
-        return []
-    results: list[dict] = []
-    for py_file in sorted(p.rglob("*.py")):
-        results.extend(_ast_detect_file(str(py_file)))
-    for java_file in sorted(p.rglob("*.java")):
-        results.extend(_java_detect_file(str(java_file)))
         if suffix == ".cs":
             return _cs_detect_file(target_path)
-        if suffix in (".ts", ".tsx", ".js", ".jsx"):
-            return _ts_detect_file(target_path)
         return []
-    # Directory: walk recursively for supported file types.
-        if suffix == ".rs":
-            return _rs_detect_file(target_path)
-        return []
-    # Directory: walk recursively for .py, .cs, and .rs files.
+    # Directory: walk recursively for .py and .cs files.
     results: list[dict] = []
     for py_file in sorted(p.rglob("*.py")):
         results.extend(_ast_detect_file(str(py_file)))
     for cs_file in sorted(p.rglob("*.cs")):
         results.extend(_cs_detect_file(str(cs_file)))
-    for ts_file in sorted(p.rglob("*.ts")):
-        results.extend(_ts_detect_file(str(ts_file)))
-    for tsx_file in sorted(p.rglob("*.tsx")):
-        results.extend(_ts_detect_file(str(tsx_file)))
-    for rs_file in sorted(p.rglob("*.rs")):
-        results.extend(_rs_detect_file(str(rs_file)))
     return results
+
+
+# ── ML classifier for nested_conditionals ────────────────────────────────────
+
+
+def _classify_nested_conditional_ml(
+    function_name: str,
+    depth: int,
+    snippet: str,
+) -> dict[str, Any]:
+    """Call LLMRouter (claude-haiku) to classify a nested conditional pattern.
+
+    Returns a dict with keys ``label``, ``score``, and ``rationale``, or an
+    empty dict if the API call fails or ML classification is disabled.
+    """
+    try:
+        from tools.llm.provider import LLMRequest  # lazy import — optional dep
+        from tools.llm.router import LLMRouter
+    except ImportError:
+        return {}
+
+    try:
+        router = LLMRouter()
+        request = LLMRequest(
+            messages=[{
+                "role": "user",
+                "content": _ML_NC_PROMPT.format(
+                    function_name=function_name or "<unknown>",
+                    depth=depth,
+                    snippet=snippet,
+                ),
+            }],
+            system_prompt=(
+                "You are a code analysis assistant. "
+                "Reply only with the JSON object specified — no prose."
+            ),
+            agent_id="nested-conditional-ml-classifier",
+            classification="CUI",
+            max_tokens=_ML_NC_MAX_TOKENS,
+            effort="low",
+            preferred_model=_ML_NC_MODEL,
+        )
+        response = router.invoke("code_generation", request)
+        raw = re.sub(r"```(?:json)?|```", "", response.content or "").strip()
+        m = re.search(r"\{.*\}", raw, re.DOTALL)
+        data: dict[str, Any] = json.loads(m.group(0)) if m else {}
+    except Exception:  # network error, parse error — degrade gracefully
+        return {}
+
+    label = str(data.get("label", "")).lower()
+    if label not in ("high", "medium", "low"):
+        label = ""
+    return {
+        "label": label,
+        "score": float(data.get("score", 0.0)),
+        "rationale": str(data.get("rationale", "")),
+    }
+
+
+def _enrich_nested_conditionals_with_ml(
+    patterns: list[dict],
+    source_lines: list[str],
+) -> list[dict]:
+    """Enrich ``nested_conditionals`` hits with ML classification metadata.
+
+    Non-nested_conditionals patterns are returned unchanged.  When ML
+    classification is disabled or fails, the original pattern dicts are returned
+    without modification.
+    """
+    if not _ML_NC_ENABLED:
+        return patterns
+
+    enriched: list[dict] = []
+    for p in patterns:
+        if p.get("pattern_type") != "nested_conditionals":
+            enriched.append(p)
+            continue
+
+        start = max(0, p["line_start"] - 1 - _ML_NC_CONTEXT_LINES)
+        end = min(len(source_lines), p["line_end"] + _ML_NC_CONTEXT_LINES)
+        snippet = "\n".join(source_lines[start:end])
+
+        ml = _classify_nested_conditional_ml(
+            function_name=p.get("function_name", "<unknown>"),
+            depth=p.get("pattern_detail", {}).get("max_depth", 0),
+            snippet=snippet,
+        )
+        if ml:
+            p = {**p, "pattern_detail": {**p["pattern_detail"], **{
+                "ml_label": ml["label"],
+                "ml_score": ml["score"],
+                "ml_rationale": ml["rationale"],
+            }}}
+        enriched.append(p)
+    return enriched
 
 
 # ── AST pattern detectors ─────────────────────────────────────────────────────
@@ -500,6 +745,13 @@ def _detect_hardcoded_threshold(
     scope_map: dict[int, str],
 ) -> list[dict]:
     results: list[dict] = []
+
+    # Pre-collect the full population of numeric constants so the anomaly
+    # detector can decide which values are true outliers vs. routine literals.
+    population: list[float] = (
+        _collect_all_numeric_thresholds(tree) if _AD_ENABLED else []
+    )
+
     for node in ast.walk(tree):
         if isinstance(node, ast.Compare):
             if not any(isinstance(op, _THRESHOLD_OPS) for op in node.ops):
@@ -510,15 +762,38 @@ def _detect_hardcoded_threshold(
                 for c in comparators
                 if isinstance(c, ast.Constant) and isinstance(c.value, (int, float))
             ]
-            if numeric_consts:
-                results.append({
-                    "pattern_type": "hardcoded_threshold",
-                    "module_path": file_path,
-                    "function_name": scope_map.get(id(node), "<module>"),
-                    "line_start": node.lineno,
-                    "line_end": node.end_lineno,
-                    "pattern_detail": {"kind": "compare", "constants": numeric_consts},
-                })
+            if not numeric_consts:
+                continue
+            # When AD is on, skip trivially small constants (zero/one boundary checks).
+            flaggable = (
+                [v for v in numeric_consts if abs(float(v)) > _AD_MIN_CONSTANT_MAGNITUDE]
+                if _AD_ENABLED else numeric_consts
+            )
+            if not flaggable:
+                continue
+            if _AD_ENABLED and not any(
+                _is_threshold_anomalous(float(v), population) for v in flaggable
+            ):
+                continue
+            scores = (
+                {str(v): round(_anomaly_score(float(v), population), 3) for v in flaggable}
+                if _AD_ENABLED else {}
+            )
+            detail: dict[str, Any] = {
+                "kind": "compare",
+                "constants": numeric_consts,
+                "anomaly_detected": _AD_ENABLED,
+            }
+            if scores:
+                detail["anomaly_scores"] = scores
+            results.append({
+                "pattern_type": "hardcoded_threshold",
+                "module_path": file_path,
+                "function_name": scope_map.get(id(node), "<module>"),
+                "line_start": node.lineno,
+                "line_end": node.end_lineno,
+                "pattern_detail": detail,
+            })
         elif isinstance(node, ast.BinOp):
             left_const = (
                 isinstance(node.left, ast.Constant)
@@ -528,20 +803,30 @@ def _detect_hardcoded_threshold(
                 isinstance(node.right, ast.Constant)
                 and isinstance(node.right.value, (int, float))
             )
-            if left_const or right_const:
-                const_val = node.left.value if left_const else node.right.value  # type: ignore[union-attr]
-                results.append({
-                    "pattern_type": "hardcoded_threshold",
-                    "module_path": file_path,
-                    "function_name": scope_map.get(id(node), "<module>"),
-                    "line_start": node.lineno,
-                    "line_end": node.end_lineno,
-                    "pattern_detail": {
-                        "kind": "binop",
-                        "op": type(node.op).__name__,
-                        "constants": [const_val],
-                    },
-                })
+            if not (left_const or right_const):
+                continue
+            const_val = node.left.value if left_const else node.right.value  # type: ignore[union-attr]
+            if _AD_ENABLED and abs(float(const_val)) <= _AD_MIN_CONSTANT_MAGNITUDE:
+                continue
+            if _AD_ENABLED and not _is_threshold_anomalous(float(const_val), population):
+                continue
+            binop_score = _anomaly_score(float(const_val), population) if _AD_ENABLED else 0.0
+            binop_detail: dict[str, Any] = {
+                "kind": "binop",
+                "op": type(node.op).__name__,
+                "constants": [const_val],
+                "anomaly_detected": _AD_ENABLED,
+            }
+            if _AD_ENABLED:
+                binop_detail["anomaly_score"] = round(binop_score, 3)
+            results.append({
+                "pattern_type": "hardcoded_threshold",
+                "module_path": file_path,
+                "function_name": scope_map.get(id(node), "<module>"),
+                "line_start": node.lineno,
+                "line_end": node.end_lineno,
+                "pattern_detail": binop_detail,
+            })
     return results
 
 
@@ -607,7 +892,7 @@ def _detect_keyword_list_search(
                     and isinstance(k, ast.Constant)
                     and isinstance(k.value, str)
                 )
-            if str_count >= 3:
+            if str_count >= _KEYWORD_LIST_MIN_STRINGS:
                 results.append({
                     "pattern_type": "keyword_list_search",
                     "module_path": file_path,
@@ -644,383 +929,88 @@ def _detect_large_rule_table(
     return results
 
 
-# ── Java AST detection (javalang) ─────────────────────────────────────────────
+# ── C# tree-sitter / regex fallback ──────────────────────────────────────────
 
-_JAVA_COMPARISON_OPS: frozenset[str] = frozenset({"<", ">", "<=", ">="})
-
-_JAVA_REGEX_METHODS: frozenset[str] = frozenset({"compile", "matches", "match", "find"})
-_JAVA_REGEX_QUALIFIERS: frozenset[str] = frozenset({"Pattern", "Matcher"})
-
-_JAVA_TEMPLATE_PAIRS: frozenset[tuple[str, str]] = frozenset({
-    ("String", "format"),
-    ("MessageFormat", "format"),
-    ("String", "formatted"),
+_CS_METHOD_NODE_TYPES: frozenset[str] = frozenset({
+    "method_declaration",
+    "constructor_declaration",
+    "local_function_statement",
+    "lambda_expression",
 })
-_JAVA_TEMPLATE_CLASSES: frozenset[str] = frozenset({
-    "VelocityEngine", "Template", "VelocityContext",
+_CS_CMP_OPS: frozenset[str] = frozenset({"<", ">", "<=", ">=", "==", "!="})
+
+_CS_REGEX_METHODS: frozenset[str] = frozenset({
+    "Match", "IsMatch", "Replace", "Split", "Matches", "Escape",
 })
-_JAVA_TEMPLATE_METHOD_NAMES: frozenset[str] = frozenset({
-    "evaluate", "merge", "getTemplate",
+_CS_CRON_BASES: frozenset[str] = frozenset({"IHostedService", "BackgroundService"})
+_CS_CRON_INVOC_OBJS: frozenset[str] = frozenset({"RecurringJob", "BackgroundJob"})
+_CS_DB_CALL_NAMES: frozenset[str] = frozenset({
+    "ToList", "ToListAsync", "FirstOrDefault", "FirstOrDefaultAsync",
+    "Where", "Select", "Find", "FindAsync", "Single", "SingleOrDefault",
+    "SingleOrDefaultAsync", "FromSqlRaw", "SaveChanges", "SaveChangesAsync",
 })
-
-_JAVA_CRON_ANNOTATIONS: frozenset[str] = frozenset({
-    "Scheduled", "Cron", "Job", "ScheduledTask", "EnableScheduling",
+_CS_RENDER_CALL_NAMES: frozenset[str] = frozenset({"View", "PartialView", "Json"})
+_CS_NOTIFY_CALL_NAMES: frozenset[str] = frozenset({
+    "Send", "SendAsync", "SendMailAsync", "Notify", "Publish",
 })
-_JAVA_CRON_CLASSES: frozenset[str] = frozenset({
-    "CronTrigger", "PeriodicTrigger", "ScheduledThreadPoolExecutor",
-})
-_JAVA_CRON_METHODS: frozenset[str] = frozenset({
-    "scheduleAtFixedRate", "scheduleWithFixedDelay",
-})
+_CS_NOTIFY_TYPE_NAMES: frozenset[str] = frozenset({"SmtpClient", "MailMessage"})
 
-_JAVA_DB_METHODS: frozenset[str] = frozenset({
-    "executeQuery", "execute", "executeUpdate", "prepareStatement", "prepareCall",
-    "createQuery", "createNamedQuery", "find", "persist", "merge", "remove",
-    "findById", "findAll", "save", "saveAll", "delete",
-})
-_JAVA_RENDER_METHODS: frozenset[str] = frozenset({
-    "evaluate", "merge", "format", "getTemplate", "render",
-})
-_JAVA_NOTIFY_METHODS: frozenset[str] = frozenset({
-    "send", "sendMail", "sendMessage", "sendEmail",
-    "publish", "dispatch", "emit", "deliver",
-})
+# Compiled regex patterns for the C# regex fallback
+_CS_RE_REGEX_CALL = re.compile(
+    r'\bRegex\s*\.\s*(Match|IsMatch|Replace|Split|Matches)\s*\('
+)
+_CS_RE_INTERP_STR = re.compile(r'\$"')
+_CS_RE_STRING_FMT = re.compile(r'\b[Ss]tring\s*\.\s*Format\s*\(')
+_CS_RE_HTML_RAW = re.compile(r'\bHtml\s*\.\s*Raw\s*\(')
+_CS_RE_CRON_BASE = re.compile(r':\s*(IHostedService|BackgroundService)\b')
+_CS_RE_CRON_CALL = re.compile(
+    r'\b(RecurringJob|BackgroundJob)\s*\.\s*(AddOrUpdate(?:Async)?|Schedule|Enqueue)\s*\('
+)
+_CS_RE_THRESHOLD = re.compile(
+    r'(?:[<>]=?)\s*(-?\d+(?:\.\d+)?)|(-?\d+(?:\.\d+)?)\s*(?:[<>]=?)'
+)
+_CS_RE_CONTAINS = re.compile(r'\.\s*Contains\s*\(')
+_CS_RE_DICT_START = re.compile(r'\bnew\s+(?:Dictionary|Hashtable)\s*(?:<[^>]*>)?\s*\{')
+_CS_RE_DICT_ENTRY = re.compile(r'^\s*\{|^\s*\[')
+_CS_RE_IF_INDENT = re.compile(r'^(\s+)if\s*\(')
 
-_JAVA_MAP_CLASSES: frozenset[str] = frozenset({
-    "HashMap", "LinkedHashMap", "TreeMap", "Hashtable", "ConcurrentHashMap",
-})
-
-
-def _java_enclosing_method(path: list) -> str:
-    try:
-        import javalang
-    except ImportError:
-        return "<unknown>"
-    for ancestor in reversed(path):
-        if isinstance(ancestor, (javalang.tree.MethodDeclaration,
-                                  javalang.tree.ConstructorDeclaration)):
-            return ancestor.name
-    return "<unknown>"
-
-
-def _java_if_subtree_depth(root_node: Any, jl: Any) -> int:
-    """Return max depth of IfStatement nesting rooted at root_node (inclusive).
-
-    node.filter() includes root_node itself (empty path) and all descendants.
-    Descendants' paths contain root_node as an ancestor, so depth equals
-    if_ancestor_count_in_path + 1 (for the descendant itself).
-    """
-    max_depth = 1  # root itself
-    for nested_path, nested_node in root_node.filter(jl.tree.IfStatement):
-        if nested_node is root_node:
-            continue
-        if_ancestors = sum(1 for a in nested_path if isinstance(a, jl.tree.IfStatement))
-        max_depth = max(max_depth, if_ancestors + 1)
-    return max_depth
+# ── Java regex fallback constants ─────────────────────────────────────────────
+_JAVA_RE_IF_INDENT      = re.compile(r'^(\s*)(?:else\s+)?if\s*\(')
+_JAVA_RE_PATTERN_ANN    = re.compile(r'@Pattern\s*\(')
+_JAVA_RE_PATTERN_COMPILE = re.compile(r'\bPattern\.compile\s*\(')
+_JAVA_RE_STRING_MATCHES = re.compile(r'\.matches\s*\(\s*"')
+# view return: any string literal return that is NOT a redirect/forward/error
+_JAVA_RE_VIEW_RETURN    = re.compile(r'\breturn\s+"(?!redirect:|forward:|error)([a-zA-Z0-9_/\-.]+)"\s*;')
+_JAVA_RE_MODEL_VIEW     = re.compile(r'\bnew\s+ModelAndView\s*\(')
+_JAVA_RE_ADD_ATTR       = re.compile(r'\bmodel\.addAttribute\s*\(|\bmodel\.put\s*\(')
+_JAVA_RE_SCHEDULED      = re.compile(r'@Scheduled\s*\(')
+_JAVA_RE_PAGEREQUEST    = re.compile(r'PageRequest\.of\s*\([^,)]+,\s*(\d+)\s*\)')
+_JAVA_RE_FINDBY_KEYWORD = re.compile(r'\b(findBy\w+(?:StartingWith|Containing|Like))\s*\(')
+_JAVA_RE_EQUALS_IC      = re.compile(r'\.equalsIgnoreCase\s*\(')
+_JAVA_RE_STREAM_FILTER  = re.compile(r'\.stream\s*\(\s*\)\s*\.\s*filter\s*\(')
+_JAVA_RE_SWITCH         = re.compile(r'\bswitch\s*\(')
+_JAVA_RE_CASE           = re.compile(r'^\s*case\s+\S')
+_JAVA_RE_MODEL_ATTR     = re.compile(r'@ModelAttribute\b')
+_JAVA_RE_REPO_FIND      = re.compile(r'\.\s*find(?:All|By\w+)\s*\(')
+_JAVA_MIN_IF_DEPTH: int = int(_cfg.get("java_min_if_depth", 2))
+_JAVA_STATIC_INT_MAX_DIGITS: int = max(1, int(_cfg.get("java_static_int_max_digits", 4)))
+_JAVA_STATIC_INT_MIN_VALUE: int = int(_cfg.get("java_static_int_min_value", 1))
+_JAVA_RE_STATIC_INT: re.Pattern = re.compile(
+    r'(?:private|protected|public)?\s+(?:static\s+)?(?:final\s+)?int\s+\w+\s*=\s*'
+    rf'(\d{{1,{_JAVA_STATIC_INT_MAX_DIGITS}}})\s*;'
+)
 
 
-def _java_detect_nested_conditionals(file_path: str, tree: Any, jl: Any) -> list[dict]:
-    results: list[dict] = []
-    for path, node in tree.filter(jl.tree.IfStatement):
-        if any(isinstance(a, jl.tree.IfStatement) for a in path):
-            continue
-        depth = _java_if_subtree_depth(node, jl)
-        if depth >= _PATTERN_MIN_DEPTH:
-            line: int = node.position.line if node.position else 0
-            results.append({
-                "pattern_type": "nested_conditionals",
-                "module_path": file_path,
-                "function_name": _java_enclosing_method(path),
-                "line_start": line,
-                "line_end": line,
-                "pattern_detail": {"max_depth": depth},
-            })
-    return results
-
-
-def _java_detect_regex_user_input(file_path: str, tree: Any, jl: Any) -> list[dict]:
-    results: list[dict] = []
-    for path, node in tree.filter(jl.tree.MethodInvocation):
-        qualifier: str = getattr(node, "qualifier", "") or ""
-        member: str = getattr(node, "member", "") or ""
-        if member not in _JAVA_REGEX_METHODS:
-            continue
-        if qualifier in _JAVA_REGEX_QUALIFIERS or member == "matches":
-            line = node.position.line if node.position else 0
-            call = f"{qualifier}.{member}" if qualifier else member
-            results.append({
-                "pattern_type": "regex_user_input",
-                "module_path": file_path,
-                "function_name": _java_enclosing_method(path),
-                "line_start": line,
-                "line_end": line,
-                "pattern_detail": {"call": call},
-            })
-    return results
-
-
-def _java_detect_string_template_rendering(file_path: str, tree: Any, jl: Any) -> list[dict]:
-    results: list[dict] = []
-    for path, node in tree.filter(jl.tree.MethodInvocation):
-        qualifier = getattr(node, "qualifier", "") or ""
-        member = getattr(node, "member", "") or ""
-        matched: str | None = None
-        if (qualifier, member) in _JAVA_TEMPLATE_PAIRS:
-            matched = f"{qualifier}.{member}"
-        elif qualifier in _JAVA_TEMPLATE_CLASSES or member in _JAVA_TEMPLATE_METHOD_NAMES:
-            matched = f"{qualifier}.{member}" if qualifier else member
-        if matched:
-            line = node.position.line if node.position else 0
-            results.append({
-                "pattern_type": "string_template_rendering",
-                "module_path": file_path,
-                "function_name": _java_enclosing_method(path),
-                "line_start": line,
-                "line_end": line,
-                "pattern_detail": {"kind": "java_template", "call": matched},
-            })
-    return results
-
-
-def _java_leaf_type_name(ref_type: Any) -> str:
-    """Return the leaf class name from a possibly-qualified ReferenceType."""
-    name = getattr(ref_type, "name", "") or ""
-    sub = getattr(ref_type, "sub_type", None)
-    while sub is not None:
-        name = getattr(sub, "name", "") or name
-        sub = getattr(sub, "sub_type", None)
-    return name
-
-
-def _java_detect_scheduled_cron(file_path: str, tree: Any, jl: Any) -> list[dict]:
-    results: list[dict] = []
-    for path, node in tree.filter(jl.tree.MethodDeclaration):
-        for ann in node.annotations or []:
-            if ann.name in _JAVA_CRON_ANNOTATIONS:
-                line = node.position.line if node.position else 0
-                results.append({
-                    "pattern_type": "scheduled_cron",
-                    "module_path": file_path,
-                    "function_name": node.name,
-                    "line_start": line,
-                    "line_end": line,
-                    "pattern_detail": {"kind": "annotation", "annotation": f"@{ann.name}"},
-                })
-    for path, node in tree.filter(jl.tree.ClassCreator):
-        type_name: str = _java_leaf_type_name(getattr(node, "type", None))
-        if type_name in _JAVA_CRON_CLASSES:
-            line = node.position.line if node.position else 0
-            results.append({
-                "pattern_type": "scheduled_cron",
-                "module_path": file_path,
-                "function_name": _java_enclosing_method(path),
-                "line_start": line,
-                "line_end": line,
-                "pattern_detail": {"kind": "class_creation", "class": type_name},
-            })
-    for path, node in tree.filter(jl.tree.MethodInvocation):
-        member = getattr(node, "member", "") or ""
-        if member in _JAVA_CRON_METHODS:
-            line = node.position.line if node.position else 0
-            results.append({
-                "pattern_type": "scheduled_cron",
-                "module_path": file_path,
-                "function_name": _java_enclosing_method(path),
-                "line_start": line,
-                "line_end": line,
-                "pattern_detail": {"kind": "call", "method": member},
-            })
-    return results
-
-
-def _java_detect_hardcoded_threshold(file_path: str, tree: Any, jl: Any) -> list[dict]:
-    results: list[dict] = []
-    for path, node in tree.filter(jl.tree.BinaryOperation):
-        if node.operator not in _JAVA_COMPARISON_OPS:
-            continue
-        literals: list[str] = []
-        if isinstance(node.operandl, jl.tree.Literal):
-            literals.append(node.operandl.value)
-        if isinstance(node.operandr, jl.tree.Literal):
-            literals.append(node.operandr.value)
-        if literals:
-            line = node.position.line if node.position else 0
-            results.append({
-                "pattern_type": "hardcoded_threshold",
-                "module_path": file_path,
-                "function_name": _java_enclosing_method(path),
-                "line_start": line,
-                "line_end": line,
-                "pattern_detail": {"kind": "compare", "operator": node.operator, "constants": literals},
-            })
-    return results
-
-
-def _java_detect_db_render_notify_chain(file_path: str, tree: Any, jl: Any) -> list[dict]:
-    results: list[dict] = []
-    for _, method_node in tree.filter(jl.tree.MethodDeclaration):
-        method_calls: set[str] = {
-            getattr(inv, "member", "") or ""
-            for _, inv in method_node.filter(jl.tree.MethodInvocation)
-        }
-        db_hits = method_calls & _JAVA_DB_METHODS
-        render_hits = method_calls & _JAVA_RENDER_METHODS
-        notify_hits = method_calls & _JAVA_NOTIFY_METHODS
-        if db_hits and render_hits and notify_hits:
-            line = method_node.position.line if method_node.position else 0
-            results.append({
-                "pattern_type": "db_render_notify_chain",
-                "module_path": file_path,
-                "function_name": method_node.name,
-                "line_start": line,
-                "line_end": line,
-                "pattern_detail": {
-                    "matched_calls": {
-                        "db": sorted(db_hits),
-                        "render": sorted(render_hits),
-                        "notify": sorted(notify_hits),
-                    }
-                },
-            })
-    return results
-
-
-def _java_detect_keyword_list_search(file_path: str, tree: Any, jl: Any) -> list[dict]:
-    results: list[dict] = []
-    for path, node in tree.filter(jl.tree.MethodInvocation):
-        member = getattr(node, "member", "") or ""
-        if member == "contains":
-            qualifier = getattr(node, "qualifier", "") or ""
-            line = node.position.line if node.position else 0
-            results.append({
-                "pattern_type": "keyword_list_search",
-                "module_path": file_path,
-                "function_name": _java_enclosing_method(path),
-                "line_start": line,
-                "line_end": line,
-                "pattern_detail": {"call": f"{qualifier}.{member}" if qualifier else member},
-            })
-    return results
-
-
-def _java_detect_large_rule_table(file_path: str, tree: Any, jl: Any) -> list[dict]:
-    results: list[dict] = []
-    for path, node in tree.filter(jl.tree.MethodInvocation):
-        qualifier = getattr(node, "qualifier", "") or ""
-        member = getattr(node, "member", "") or ""
-        args = getattr(node, "arguments", []) or []
-        if qualifier in ("Map", "ImmutableMap") and member in ("of", "ofEntries"):
-            entry_count = len(args) // 2 if member == "of" else len(args)
-            if entry_count >= _RULE_MIN_KEYS:
-                line = node.position.line if node.position else 0
-                results.append({
-                    "pattern_type": "large_rule_table",
-                    "module_path": file_path,
-                    "function_name": _java_enclosing_method(path),
-                    "line_start": line,
-                    "line_end": line,
-                    "pattern_detail": {"kind": "map_of", "entry_count": entry_count},
-                })
-    for _, method_node in tree.filter(jl.tree.MethodDeclaration):
-        has_map_init = any(
-            _java_leaf_type_name(getattr(creator, "type", None)) in _JAVA_MAP_CLASSES
-            for _, creator in method_node.filter(jl.tree.ClassCreator)
-        )
-        if not has_map_init:
-            continue
-        put_count = sum(
-            1
-            for _, inv in method_node.filter(jl.tree.MethodInvocation)
-            if getattr(inv, "member", "") == "put"
-        )
-        if put_count >= _RULE_MIN_KEYS:
-            line = method_node.position.line if method_node.position else 0
-            results.append({
-                "pattern_type": "large_rule_table",
-                "module_path": file_path,
-                "function_name": method_node.name,
-                "line_start": line,
-                "line_end": line,
-                "pattern_detail": {"kind": "map_put_sequence", "put_count": put_count},
-            })
-    return results
-
-
-def _java_detect_file(file_path: str) -> list[dict]:
-    """Run all 8 pattern detectors on a single Java file using javalang."""
-    try:
-        import javalang as jl
-    except ImportError:
-        return []
-    source_text = pathlib.Path(file_path).read_text(encoding="utf-8", errors="replace")
-    try:
-        tree = jl.parse.parse(source_text)
-    except jl.parser.JavaSyntaxError:
-        return []
-    except Exception:
-        return []
-    results: list[dict] = []
-    results.extend(_java_detect_nested_conditionals(file_path, tree, jl))
-    results.extend(_java_detect_regex_user_input(file_path, tree, jl))
-    results.extend(_java_detect_string_template_rendering(file_path, tree, jl))
-    results.extend(_java_detect_scheduled_cron(file_path, tree, jl))
-    results.extend(_java_detect_hardcoded_threshold(file_path, tree, jl))
-    results.extend(_java_detect_db_render_notify_chain(file_path, tree, jl))
-    results.extend(_java_detect_keyword_list_search(file_path, tree, jl))
-    results.extend(_java_detect_large_rule_table(file_path, tree, jl))
-    for hit in results:
-        hit.setdefault("language", "java")
-    return results
-
-
-# ── TypeScript / JavaScript tree-sitter + regex fallback ─────────────────────
-
-_TS_FUNCTION_NODE_TYPES: frozenset[str] = frozenset({
-    "function_declaration",
-    "method_definition",
-    "arrow_function",
-    "function_expression",
-    "generator_function_declaration",
-    "generator_function",
-})
-
-_TS_REGEX_CALL_METHODS: frozenset[str] = frozenset({
-    "test", "exec", "match", "matchAll", "search",
-})
-_TS_TEMPLATE_RENDER_OBJS: frozenset[str] = frozenset({
-    "Handlebars", "Mustache", "ejs", "pug", "nunjucks", "hbs",
-})
-_TS_TEMPLATE_RENDER_METHODS: frozenset[str] = frozenset({
-    "compile", "render", "renderFile", "renderToString", "renderString",
-})
-_TS_CRON_BARE_FUNCS: frozenset[str] = frozenset({"setInterval", "setTimeout"})
-_TS_CRON_SCHEDULE_OBJS: frozenset[str] = frozenset({"cron", "schedule"})
-_TS_CRON_SCHEDULE_METHODS: frozenset[str] = frozenset({"schedule"})
-_TS_CRON_DECORATOR_KEYWORDS: frozenset[str] = frozenset({"Cron", "Interval", "Timeout"})
-_TS_CMP_OPS: frozenset[str] = frozenset({"<", ">", "<=", ">=", "==", "===", "!=", "!=="})
-_TS_DB_CALL_NAMES: frozenset[str] = frozenset({
-    "find", "findOne", "findMany", "findAll", "findById", "findAndCount",
-    "query", "execute", "where", "select", "get", "fetch", "count", "save", "create",
-})
-_TS_RENDER_CALL_NAMES: frozenset[str] = frozenset({
-    "compile", "render", "renderFile", "renderToString", "renderString",
-})
-_TS_NOTIFY_CALL_NAMES: frozenset[str] = frozenset({
-    "sendMail", "send", "sendMessage", "notify", "deliver", "dispatch", "emit", "publish",
-})
-_TS_KW_SEARCH_METHODS: frozenset[str] = frozenset({"includes", "has"})
-
-
-def _ts_walk_scoped(root: Any, src: bytes):
-    """Iterative DFS yielding (node, parent_type, scope_name) for TypeScript trees."""
+def _cs_walk_scoped(root: Any, src: bytes):
+    """Iterative DFS generator yielding (node, parent_type, scope_name)."""
     stack: list[tuple[Any, str, str]] = [(root, "", "<module>")]
     while stack:
         node, parent_type, scope = stack.pop()
         new_scope = scope
-        if node.type in _TS_FUNCTION_NODE_TYPES:
-            name_node = node.child_by_field_name("name")
-            if name_node is not None:
-                new_scope = src[name_node.start_byte:name_node.end_byte].decode(
+        if node.type in _CS_METHOD_NODE_TYPES:
+            name_child = node.child_by_field_name("name")
+            if name_child is not None:
+                new_scope = src[name_child.start_byte:name_child.end_byte].decode(
                     "utf-8", errors="replace"
                 )
         yield node, parent_type, new_scope
@@ -1028,34 +1018,27 @@ def _ts_walk_scoped(root: Any, src: bytes):
             stack.append((child, node.type, new_scope))
 
 
-def _ts_get_call_info(node: Any, src: bytes) -> tuple[str, str] | None:
-    """For call_expression, return (receiver_text, method_name) or None."""
-    if node.type != "call_expression":
+def _cs_get_method_call(node: Any, src: bytes) -> tuple[str, str] | None:
+    """For invocation_expression, return (receiver_text, method_name) or None."""
+    if node.type != "invocation_expression":
         return None
-    func_node = node.child_by_field_name("function")
-    if func_node is None or func_node.type != "member_expression":
+    callee = node.children[0] if node.children else None
+    if callee is None or callee.type != "member_access_expression":
         return None
-    obj_node = func_node.child_by_field_name("object")
-    prop_node = func_node.child_by_field_name("property")
-    if obj_node is None or prop_node is None:
+    named_parts = [c for c in callee.children if c.is_named]
+    if len(named_parts) < 2:
         return None
-    obj = src[obj_node.start_byte:obj_node.end_byte].decode("utf-8", errors="replace")
-    prop = src[prop_node.start_byte:prop_node.end_byte].decode("utf-8", errors="replace")
-    return obj, prop
+    obj = src[named_parts[0].start_byte:named_parts[0].end_byte].decode(
+        "utf-8", errors="replace"
+    )
+    name = src[named_parts[-1].start_byte:named_parts[-1].end_byte].decode(
+        "utf-8", errors="replace"
+    )
+    return obj, name
 
 
-def _ts_get_call_name(node: Any, src: bytes) -> str | None:
-    """For a bare call_expression (no receiver), return the function name or None."""
-    if node.type != "call_expression":
-        return None
-    func_node = node.child_by_field_name("function")
-    if func_node is None or func_node.type != "identifier":
-        return None
-    return src[func_node.start_byte:func_node.end_byte].decode("utf-8", errors="replace")
-
-
-def _ts_if_depth(root: Any) -> int:
-    """Max nesting depth of if_statements within root's subtree (no crossing functions)."""
+def _cs_if_depth(root: Any) -> int:
+    """Max nesting depth of if_statements within root's subtree (iterative, no crossing methods)."""
     max_depth = 0
     stack: list[tuple[Any, int]] = [(root, 1)]
     while stack:
@@ -1064,21 +1047,21 @@ def _ts_if_depth(root: Any) -> int:
             if depth > max_depth:
                 max_depth = depth
         for child in node.children:
-            if child.type in _TS_FUNCTION_NODE_TYPES:
+            if child.type in _CS_METHOD_NODE_TYPES:
                 continue
             new_depth = depth + 1 if child.type == "if_statement" else depth
             stack.append((child, new_depth))
     return max_depth
 
 
-def _ts_detect_nested_conditionals_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+def _cs_detect_nested_conditionals_ts(fp: str, root: Any, src: bytes) -> list[dict]:
     results: list[dict] = []
-    for node, parent_type, scope in _ts_walk_scoped(root, src):
+    for node, parent_type, scope in _cs_walk_scoped(root, src):
         if node.type != "if_statement":
             continue
         if parent_type in ("if_statement", "else_clause"):
             continue
-        depth = _ts_if_depth(node)
+        depth = _cs_if_depth(node)
         if depth >= _PATTERN_MIN_DEPTH:
             results.append({
                 "pattern_type": "nested_conditionals",
@@ -1091,54 +1074,39 @@ def _ts_detect_nested_conditionals_ts(fp: str, root: Any, src: bytes) -> list[di
     return results
 
 
-def _ts_detect_regex_user_input_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+def _cs_detect_regex_user_input_ts(fp: str, root: Any, src: bytes) -> list[dict]:
     results: list[dict] = []
-    for node, _, scope in _ts_walk_scoped(root, src):
-        if node.type == "new_expression":
-            ctor = node.child_by_field_name("constructor")
-            if ctor is not None:
-                name = src[ctor.start_byte:ctor.end_byte].decode("utf-8", errors="replace")
-                if name == "RegExp":
-                    results.append({
-                        "pattern_type": "regex_user_input",
-                        "module_path": fp,
-                        "function_name": scope,
-                        "line_start": node.start_point[0] + 1,
-                        "line_end": node.end_point[0] + 1,
-                        "pattern_detail": {"call": "new RegExp()"},
-                    })
-        elif node.type == "call_expression":
-            call = _ts_get_call_info(node, src)
-            if call and call[1] in _TS_REGEX_CALL_METHODS:
-                results.append({
-                    "pattern_type": "regex_user_input",
-                    "module_path": fp,
-                    "function_name": scope,
-                    "line_start": node.start_point[0] + 1,
-                    "line_end": node.end_point[0] + 1,
-                    "pattern_detail": {"call": f"{call[0]}.{call[1]}"},
-                })
+    for node, _, scope in _cs_walk_scoped(root, src):
+        call = _cs_get_method_call(node, src)
+        if call and call[0] == "Regex" and call[1] in _CS_REGEX_METHODS:
+            results.append({
+                "pattern_type": "regex_user_input",
+                "module_path": fp,
+                "function_name": scope,
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "pattern_detail": {"call": f"Regex.{call[1]}"},
+            })
     return results
 
 
-def _ts_detect_string_template_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+def _cs_detect_string_template_ts(fp: str, root: Any, src: bytes) -> list[dict]:
     results: list[dict] = []
-    for node, _, scope in _ts_walk_scoped(root, src):
+    for node, _, scope in _cs_walk_scoped(root, src):
         kind: str | None = None
         detail: dict[str, Any] = {}
-        if node.type == "template_string":
-            # Only flag template literals that contain substitutions (${...})
-            if any(c.type == "template_substitution" for c in node.children):
-                kind = "template_literal"
-        elif node.type == "call_expression":
-            call = _ts_get_call_info(node, src)
-            if (
-                call
-                and call[0] in _TS_TEMPLATE_RENDER_OBJS
-                and call[1] in _TS_TEMPLATE_RENDER_METHODS
-            ):
-                kind = "template_library"
-                detail = {"call": f"{call[0]}.{call[1]}"}
+        if node.type == "interpolated_string_expression":
+            kind = "interpolated_string"
+        elif node.type == "invocation_expression":
+            call = _cs_get_method_call(node, src)
+            if call:
+                obj, method = call
+                if method == "Format" and obj.lower() == "string":
+                    kind = "string_format"
+                    detail = {"call": f"{obj}.Format"}
+                elif method == "Raw" and obj == "Html":
+                    kind = "html_raw"
+                    detail = {"call": "Html.Raw"}
         if kind:
             results.append({
                 "pattern_type": "string_template_rendering",
@@ -1151,51 +1119,74 @@ def _ts_detect_string_template_ts(fp: str, root: Any, src: bytes) -> list[dict]:
     return results
 
 
-def _ts_detect_scheduled_cron_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+def _cs_detect_scheduled_cron_ts(fp: str, root: Any, src: bytes) -> list[dict]:
     results: list[dict] = []
-    for node, _, scope in _ts_walk_scoped(root, src):
-        if node.type == "call_expression":
-            bare = _ts_get_call_name(node, src)
-            if bare in _TS_CRON_BARE_FUNCS:
+    for node, _, scope in _cs_walk_scoped(root, src):
+        if node.type == "class_declaration":
+            for child in node.children:
+                if child.type != "base_list":
+                    continue
+                for base in child.children:
+                    if not base.is_named:
+                        continue
+                    base_text = src[base.start_byte:base.end_byte].decode(
+                        "utf-8", errors="replace"
+                    )
+                    base_name = base_text.split("<")[0].strip()
+                    if base_name in _CS_CRON_BASES:
+                        name_child = node.child_by_field_name("name")
+                        class_name = (
+                            src[name_child.start_byte:name_child.end_byte].decode(
+                                "utf-8", errors="replace"
+                            )
+                            if name_child
+                            else "<unknown>"
+                        )
+                        results.append({
+                            "pattern_type": "scheduled_cron",
+                            "module_path": fp,
+                            "function_name": class_name,
+                            "line_start": node.start_point[0] + 1,
+                            "line_end": node.end_point[0] + 1,
+                            "pattern_detail": {"kind": "base_type", "base": base_name},
+                        })
+        elif node.type == "invocation_expression":
+            call = _cs_get_method_call(node, src)
+            if call and call[0] in _CS_CRON_INVOC_OBJS:
                 results.append({
                     "pattern_type": "scheduled_cron",
                     "module_path": fp,
                     "function_name": scope,
                     "line_start": node.start_point[0] + 1,
                     "line_end": node.end_point[0] + 1,
-                    "pattern_detail": {"kind": "call", "func": bare},
-                })
-            call = _ts_get_call_info(node, src)
-            if (
-                call
-                and call[0] in _TS_CRON_SCHEDULE_OBJS
-                and call[1] in _TS_CRON_SCHEDULE_METHODS
-            ):
-                results.append({
-                    "pattern_type": "scheduled_cron",
-                    "module_path": fp,
-                    "function_name": scope,
-                    "line_start": node.start_point[0] + 1,
-                    "line_end": node.end_point[0] + 1,
-                    "pattern_detail": {"kind": "call", "call": f"{call[0]}.{call[1]}"},
-                })
-        elif node.type == "decorator":
-            dec_text = src[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
-            if any(kw in dec_text for kw in _TS_CRON_DECORATOR_KEYWORDS):
-                results.append({
-                    "pattern_type": "scheduled_cron",
-                    "module_path": fp,
-                    "function_name": scope,
-                    "line_start": node.start_point[0] + 1,
-                    "line_end": node.end_point[0] + 1,
-                    "pattern_detail": {"kind": "decorator", "decorator": dec_text.strip()},
+                    "pattern_detail": {"kind": "invocation", "call": f"{call[0]}.{call[1]}"},
                 })
     return results
 
 
-def _ts_detect_hardcoded_threshold_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+def _cs_collect_all_numeric_thresholds_ts(root: Any, src: bytes) -> list[float]:
+    """Collect every numeric literal from a C# tree-sitter tree."""
+    values: list[float] = []
+    stack: list[Any] = [root]
+    while stack:
+        node = stack.pop()
+        if node.type in ("integer_literal", "real_literal"):
+            text = src[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
+            try:
+                values.append(float(text.rstrip("fFdDmMuUlL")))
+            except ValueError:
+                pass
+        for child in node.children:
+            stack.append(child)
+    return values
+
+
+def _cs_detect_hardcoded_threshold_ts(fp: str, root: Any, src: bytes) -> list[dict]:
     results: list[dict] = []
-    for node, _, scope in _ts_walk_scoped(root, src):
+    population: list[float] = (
+        _cs_collect_all_numeric_thresholds_ts(root, src) if _AD_ENABLED else []
+    )
+    for node, _, scope in _cs_walk_scoped(root, src):
         if node.type != "binary_expression":
             continue
         op_token: str | None = None
@@ -1204,7 +1195,7 @@ def _ts_detect_hardcoded_threshold_ts(fp: str, root: Any, src: bytes) -> list[di
                 text = src[child.start_byte:child.end_byte].decode(
                     "utf-8", errors="replace"
                 ).strip()
-                if text in _TS_CMP_OPS:
+                if text in _CS_CMP_OPS:
                     op_token = text
                     break
         if not op_token:
@@ -1213,51 +1204,80 @@ def _ts_detect_hardcoded_threshold_ts(fp: str, root: Any, src: bytes) -> list[di
         numeric_literals = [
             src[c.start_byte:c.end_byte].decode("utf-8", errors="replace")
             for c in named_parts
-            if c.type == "number"
+            if c.type in ("integer_literal", "real_literal")
         ]
-        if numeric_literals:
-            results.append({
-                "pattern_type": "hardcoded_threshold",
-                "module_path": fp,
-                "function_name": scope,
-                "line_start": node.start_point[0] + 1,
-                "line_end": node.end_point[0] + 1,
-                "pattern_detail": {"kind": "binary_expression", "constants": numeric_literals},
-            })
+        if not numeric_literals:
+            continue
+        cs_scores: dict[str, float] = {}
+        if _AD_ENABLED:
+            numeric_floats: list[float] = []
+            for lit in numeric_literals:
+                try:
+                    numeric_floats.append(float(lit.rstrip("fFdDmMuUlL")))
+                except ValueError:
+                    pass
+            flaggable_floats = [v for v in numeric_floats if abs(v) > _AD_MIN_CONSTANT_MAGNITUDE]
+            if not flaggable_floats or not any(
+                _is_threshold_anomalous(v, population) for v in flaggable_floats
+            ):
+                continue
+            cs_scores = {str(v): round(_anomaly_score(v, population), 3) for v in flaggable_floats}
+        cs_detail: dict[str, Any] = {
+            "kind": "binary_expression",
+            "constants": numeric_literals,
+            "anomaly_detected": _AD_ENABLED,
+        }
+        if cs_scores:
+            cs_detail["anomaly_scores"] = cs_scores
+        results.append({
+            "pattern_type": "hardcoded_threshold",
+            "module_path": fp,
+            "function_name": scope,
+            "line_start": node.start_point[0] + 1,
+            "line_end": node.end_point[0] + 1,
+            "pattern_detail": cs_detail,
+        })
     return results
 
 
-def _ts_collect_calls_in_func(func_node: Any, src: bytes) -> set[str]:
-    """Return all method/function names called within func_node's subtree."""
+def _cs_collect_calls_in_method(
+    method_node: Any, src: bytes
+) -> tuple[set[str], set[str]]:
+    """Return (method_call_names, created_type_names) within method_node's subtree."""
     call_names: set[str] = set()
-    stack: list[Any] = [func_node]
+    created_types: set[str] = set()
+    stack: list[Any] = [method_node]
     while stack:
         n = stack.pop()
-        if n is not func_node and n.type in _TS_FUNCTION_NODE_TYPES:
+        if n is not method_node and n.type in _CS_METHOD_NODE_TYPES:
             continue
-        if n.type == "call_expression":
-            call = _ts_get_call_info(n, src)
+        if n.type == "invocation_expression":
+            call = _cs_get_method_call(n, src)
             if call:
                 call_names.add(call[1])
-            else:
-                bare = _ts_get_call_name(n, src)
-                if bare:
-                    call_names.add(bare)
+        if n.type == "object_creation_expression":
+            named = [c for c in n.children if c.is_named]
+            if named:
+                type_text = src[named[0].start_byte:named[0].end_byte].decode(
+                    "utf-8", errors="replace"
+                )
+                created_types.add(type_text.split("<")[0].strip())
         for child in n.children:
             stack.append(child)
-    return call_names
+    return call_names, created_types
 
 
-def _ts_detect_db_render_notify_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+def _cs_detect_db_render_notify_ts(fp: str, root: Any, src: bytes) -> list[dict]:
     results: list[dict] = []
-    for node, _, scope in _ts_walk_scoped(root, src):
-        if node.type not in _TS_FUNCTION_NODE_TYPES:
+    for node, _, scope in _cs_walk_scoped(root, src):
+        if node.type not in ("method_declaration", "constructor_declaration"):
             continue
-        call_names = _ts_collect_calls_in_func(node, src)
-        db_hits = call_names & _TS_DB_CALL_NAMES
-        render_hits = call_names & _TS_RENDER_CALL_NAMES
-        notify_hits = call_names & _TS_NOTIFY_CALL_NAMES
-        if db_hits and render_hits and notify_hits:
+        call_names, created_types = _cs_collect_calls_in_method(node, src)
+        db_hits = call_names & _CS_DB_CALL_NAMES
+        render_hits = call_names & _CS_RENDER_CALL_NAMES
+        notify_hits = call_names & _CS_NOTIFY_CALL_NAMES
+        notify_type_hits = created_types & _CS_NOTIFY_TYPE_NAMES
+        if db_hits and render_hits and (notify_hits or notify_type_hits):
             results.append({
                 "pattern_type": "db_render_notify_chain",
                 "module_path": fp,
@@ -1268,101 +1288,86 @@ def _ts_detect_db_render_notify_ts(fp: str, root: Any, src: bytes) -> list[dict]
                     "matched_calls": {
                         "db": sorted(db_hits),
                         "render": sorted(render_hits),
-                        "notify": sorted(notify_hits),
+                        "notify": sorted(notify_hits | notify_type_hits),
                     }
                 },
             })
     return results
 
 
-def _ts_detect_keyword_list_search_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+def _cs_detect_keyword_list_search_ts(fp: str, root: Any, src: bytes) -> list[dict]:
     results: list[dict] = []
-    for node, _, scope in _ts_walk_scoped(root, src):
-        call = _ts_get_call_info(node, src)
-        if call and call[1] in _TS_KW_SEARCH_METHODS:
+    for node, _, scope in _cs_walk_scoped(root, src):
+        call = _cs_get_method_call(node, src)
+        if call and call[1] == "Contains":
             results.append({
                 "pattern_type": "keyword_list_search",
                 "module_path": fp,
                 "function_name": scope,
                 "line_start": node.start_point[0] + 1,
                 "line_end": node.end_point[0] + 1,
-                "pattern_detail": {"method": call[1], "receiver": call[0]},
+                "pattern_detail": {"method": "Contains", "receiver": call[0]},
             })
     return results
 
 
-def _ts_detect_large_rule_table_ts(fp: str, root: Any, src: bytes) -> list[dict]:
+def _cs_detect_large_rule_table_ts(fp: str, root: Any, src: bytes) -> list[dict]:
     results: list[dict] = []
-    for node, _, scope in _ts_walk_scoped(root, src):
-        if node.type != "object":
+    for node, _, scope in _cs_walk_scoped(root, src):
+        if node.type != "object_creation_expression":
             continue
-        pair_count = sum(
-            1 for c in node.children
-            if c.type in ("pair", "shorthand_property_identifier")
-        )
-        if pair_count >= _RULE_MIN_KEYS:
-            results.append({
-                "pattern_type": "large_rule_table",
-                "module_path": fp,
-                "function_name": scope,
-                "line_start": node.start_point[0] + 1,
-                "line_end": node.end_point[0] + 1,
-                "pattern_detail": {"key_count": pair_count},
-            })
+        node_text = src[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
+        if "Dictionary" not in node_text and "Hashtable" not in node_text:
+            continue
+        for child in node.children:
+            if child.type == "initializer_expression":
+                named_entries = [c for c in child.children if c.is_named]
+                if len(named_entries) >= _RULE_MIN_KEYS:
+                    results.append({
+                        "pattern_type": "large_rule_table",
+                        "module_path": fp,
+                        "function_name": scope,
+                        "line_start": node.start_point[0] + 1,
+                        "line_end": node.end_point[0] + 1,
+                        "pattern_detail": {"key_count": len(named_entries)},
+                    })
+                break
     return results
 
 
-def _ts_detect_via_tree_sitter(
-    file_path: str, tree: Any, src: bytes, lang: str = "typescript"
-) -> list[dict]:
-    """Run all 8 pattern detectors using a parsed tree-sitter TypeScript/TSX tree."""
+def _cs_detect_via_tree_sitter(file_path: str, tree: Any, src: bytes) -> list[dict]:
+    """Run all 8 pattern detectors using a parsed tree-sitter C# tree."""
     root = tree.root_node
     results: list[dict] = []
-    results.extend(_ts_detect_nested_conditionals_ts(file_path, root, src))
-    results.extend(_ts_detect_regex_user_input_ts(file_path, root, src))
-    results.extend(_ts_detect_string_template_ts(file_path, root, src))
-    results.extend(_ts_detect_scheduled_cron_ts(file_path, root, src))
-    results.extend(_ts_detect_hardcoded_threshold_ts(file_path, root, src))
-    results.extend(_ts_detect_db_render_notify_ts(file_path, root, src))
-    results.extend(_ts_detect_keyword_list_search_ts(file_path, root, src))
-    results.extend(_ts_detect_large_rule_table_ts(file_path, root, src))
+    results.extend(_cs_detect_nested_conditionals_ts(file_path, root, src))
+    results.extend(_cs_detect_regex_user_input_ts(file_path, root, src))
+    results.extend(_cs_detect_string_template_ts(file_path, root, src))
+    results.extend(_cs_detect_scheduled_cron_ts(file_path, root, src))
+    results.extend(_cs_detect_hardcoded_threshold_ts(file_path, root, src))
+    results.extend(_cs_detect_db_render_notify_ts(file_path, root, src))
+    results.extend(_cs_detect_keyword_list_search_ts(file_path, root, src))
+    results.extend(_cs_detect_large_rule_table_ts(file_path, root, src))
     for hit in results:
-        hit.setdefault("language", lang)
+        hit.setdefault("language", "csharp")
     return results
 
 
-# ── TypeScript regex fallback (when tree-sitter-languages not installed) ──────
+# ── C# regex fallback (when tree-sitter-languages not installed) ──────────────
 
-_TS_RE_NEW_REGEXP = re.compile(r"\bnew\s+RegExp\s*\(")
-_TS_RE_REGEX_METHOD = re.compile(r"\.(test|exec|match|matchAll)\s*\(")
-_TS_RE_TEMPLATE_LIB = re.compile(
-    r"\b(Handlebars\.(?:compile|template)|Mustache\.render|ejs\.render(?:File)?|"
-    r"pug\.render|nunjucks\.render(?:String)?)\s*\("
-)
-_TS_RE_CRON_SETINTERVAL = re.compile(r"\bsetInterval\s*\(")
-_TS_RE_CRON_SCHEDULE = re.compile(r"\bcron\.schedule\s*\(")
-_TS_RE_CRON_DECORATOR = re.compile(r"@(?:Cron|Interval|Timeout)\s*\(")
-_TS_RE_THRESHOLD = re.compile(
-    r"(?:[<>]=?|===?|!==?)\s*(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)"
-    r"|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s*(?:[<>]=?|===?|!==?)"
-)
-_TS_RE_KW_SEARCH = re.compile(r"\.(includes|has)\s*\(")
-_TS_RE_IF_INDENT = re.compile(r"^(\s*)if\s*[\(\s]")
-_TS_RE_OBJ_ENTRY = re.compile(r'^\s*(?:["\'][\w\s-]+["\']|[\w$]+)\s*:(?!:)')
-
-
-def _ts_regex_nested_ifs(file_path: str, lines: list[str]) -> list[dict]:
-    """Indentation-based heuristic for nested if detection (TypeScript regex fallback)."""
+def _cs_regex_nested_ifs(file_path: str, lines: list[str]) -> list[dict]:
+    """Indentation-based heuristic for nested if detection (regex fallback)."""
     results: list[dict] = []
-    if_stack: list[tuple[int, int]] = []
+    if_stack: list[tuple[int, int]] = []  # (indent_col, line_number)
     reported: set[int] = set()
+
     for i, line in enumerate(lines, 1):
         stripped = line.strip()
         if stripped.startswith("//") or stripped.startswith("*"):
             continue
-        m = _TS_RE_IF_INDENT.match(line)
+        m = _CS_RE_IF_INDENT.match(line)
         if m:
             indent = len(m.group(1).expandtabs(4))
+            # Pop entries at same or deeper indent — they're out of scope
             if_stack = [(ind, ln) for ind, ln in if_stack if ind < indent]
             if_stack.append((indent, i))
             if len(if_stack) >= _PATTERN_MIN_DEPTH:
@@ -1380,21 +1385,20 @@ def _ts_regex_nested_ifs(file_path: str, lines: list[str]) -> list[dict]:
     return results
 
 
-def _ts_regex_large_object(file_path: str, lines: list[str]) -> list[dict]:
-    """Multi-line scanner for large object literals (TypeScript regex fallback)."""
+def _cs_regex_large_dict(file_path: str, lines: list[str]) -> list[dict]:
+    """Multi-line scanner for large Dictionary initializers (regex fallback)."""
     results: list[dict] = []
     n = len(lines)
     i = 0
     while i < n:
-        line = lines[i]
-        if re.search(r"(?:=|:|\(|\[|,|=>)\s*\{", line) or line.rstrip().endswith("{"):
+        if _CS_RE_DICT_START.search(lines[i]):
             start_line = i + 1
             entry_count = 0
-            brace_depth = line.count("{") - line.count("}")
+            brace_depth = lines[i].count("{") - lines[i].count("}")
             j = i + 1
             while j < n and brace_depth > 0:
                 brace_depth += lines[j].count("{") - lines[j].count("}")
-                if brace_depth > 0 and _TS_RE_OBJ_ENTRY.match(lines[j]):
+                if brace_depth > 0 and _CS_RE_DICT_ENTRY.match(lines[j]):
                     entry_count += 1
                 j += 1
             if entry_count >= _RULE_MIN_KEYS:
@@ -1410,70 +1414,48 @@ def _ts_regex_large_object(file_path: str, lines: list[str]) -> list[dict]:
     return results
 
 
-def _ts_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
-    """Regex-based TypeScript/JavaScript pattern detection (tree-sitter unavailable)."""
+def _cs_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
+    """Regex-based C# pattern detection when tree-sitter-languages is unavailable."""
     results: list[dict] = []
     lines = source_text.splitlines()
+    population: list[float] = _collect_numeric_from_lines(lines) if _AD_ENABLED else []
 
     for i, line in enumerate(lines, 1):
         stripped = line.strip()
         if stripped.startswith("//") or stripped.startswith("*"):
             continue
 
-        # regex_user_input — new RegExp or .test/.exec/.match
-        if _TS_RE_NEW_REGEXP.search(line):
+        # regex_user_input
+        m = _CS_RE_REGEX_CALL.search(line)
+        if m:
             results.append({
                 "pattern_type": "regex_user_input",
                 "module_path": file_path,
                 "function_name": "<unknown>",
                 "line_start": i,
                 "line_end": i,
-                "pattern_detail": {"call": "new RegExp()"},
+                "pattern_detail": {"call": f"Regex.{m.group(1)}"},
             })
-        else:
-            m = _TS_RE_REGEX_METHOD.search(line)
-            if m:
+
+        # string_template_rendering (first match wins per line)
+        for pat, kind, extra in (
+            (_CS_RE_INTERP_STR, "interpolated_string", {}),
+            (_CS_RE_STRING_FMT, "string_format", {"call": "string.Format"}),
+            (_CS_RE_HTML_RAW, "html_raw", {"call": "Html.Raw"}),
+        ):
+            if pat.search(line):
                 results.append({
-                    "pattern_type": "regex_user_input",
+                    "pattern_type": "string_template_rendering",
                     "module_path": file_path,
                     "function_name": "<unknown>",
                     "line_start": i,
                     "line_end": i,
-                    "pattern_detail": {"call": f".{m.group(1)}()"},
+                    "pattern_detail": {"kind": kind, **extra},
                 })
+                break
 
-        # string_template_rendering — library calls only (template literals too noisy)
-        m = _TS_RE_TEMPLATE_LIB.search(line)
-        if m:
-            results.append({
-                "pattern_type": "string_template_rendering",
-                "module_path": file_path,
-                "function_name": "<unknown>",
-                "line_start": i,
-                "line_end": i,
-                "pattern_detail": {"kind": "template_library", "call": m.group(1)},
-            })
-
-        # scheduled_cron
-        if _TS_RE_CRON_SETINTERVAL.search(line):
-            results.append({
-                "pattern_type": "scheduled_cron",
-                "module_path": file_path,
-                "function_name": "<unknown>",
-                "line_start": i,
-                "line_end": i,
-                "pattern_detail": {"kind": "call", "func": "setInterval"},
-            })
-        elif _TS_RE_CRON_SCHEDULE.search(line):
-            results.append({
-                "pattern_type": "scheduled_cron",
-                "module_path": file_path,
-                "function_name": "<unknown>",
-                "line_start": i,
-                "line_end": i,
-                "pattern_detail": {"kind": "call", "call": "cron.schedule"},
-            })
-        m = _TS_RE_CRON_DECORATOR.search(line)
+        # scheduled_cron — base type
+        m = _CS_RE_CRON_BASE.search(line)
         if m:
             results.append({
                 "pattern_type": "scheduled_cron",
@@ -1481,454 +1463,108 @@ def _ts_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
                 "function_name": "<unknown>",
                 "line_start": i,
                 "line_end": i,
-                "pattern_detail": {"kind": "decorator", "decorator": stripped},
+                "pattern_detail": {"kind": "base_type", "base": m.group(1)},
+            })
+
+        # scheduled_cron — call site
+        m = _CS_RE_CRON_CALL.search(line)
+        if m:
+            results.append({
+                "pattern_type": "scheduled_cron",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i,
+                "line_end": i,
+                "pattern_detail": {"kind": "invocation", "call": f"{m.group(1)}.{m.group(2)}"},
             })
 
         # hardcoded_threshold
-        m = _TS_RE_THRESHOLD.search(line)
+        m = _CS_RE_THRESHOLD.search(line)
         if m:
             const = m.group(1) or m.group(2) or "?"
-            results.append({
-                "pattern_type": "hardcoded_threshold",
-                "module_path": file_path,
-                "function_name": "<unknown>",
-                "line_start": i,
-                "line_end": i,
-                "pattern_detail": {"kind": "binary_expression", "constants": [const]},
-            })
+            try:
+                const_float: float | None = float(const)
+            except ValueError:
+                const_float = None
+            cs_rx_should_flag = (
+                not _AD_ENABLED
+                or const_float is None
+                or (abs(const_float) > _AD_MIN_CONSTANT_MAGNITUDE
+                    and _is_threshold_anomalous(const_float, population))
+            )
+            if cs_rx_should_flag:
+                cs_rx_score = (
+                    _anomaly_score(const_float, population)
+                    if _AD_ENABLED and const_float is not None else 0.0
+                )
+                cs_rx_detail: dict[str, Any] = {
+                    "kind": "binary_expression",
+                    "constants": [const],
+                    "anomaly_detected": _AD_ENABLED,
+                }
+                if _AD_ENABLED and const_float is not None:
+                    cs_rx_detail["anomaly_score"] = round(cs_rx_score, 3)
+                results.append({
+                    "pattern_type": "hardcoded_threshold",
+                    "module_path": file_path,
+                    "function_name": "<unknown>",
+                    "line_start": i,
+                    "line_end": i,
+                    "pattern_detail": cs_rx_detail,
+                })
 
         # keyword_list_search
-        m = _TS_RE_KW_SEARCH.search(line)
-        if m:
+        if _CS_RE_CONTAINS.search(line):
             results.append({
                 "pattern_type": "keyword_list_search",
                 "module_path": file_path,
                 "function_name": "<unknown>",
                 "line_start": i,
                 "line_end": i,
-                "pattern_detail": {"method": m.group(1)},
+                "pattern_detail": {"method": "Contains"},
             })
 
-    results.extend(_ts_regex_nested_ifs(file_path, lines))
-    results.extend(_ts_regex_large_object(file_path, lines))
+    results.extend(_cs_regex_nested_ifs(file_path, lines))
+    results.extend(_cs_regex_large_dict(file_path, lines))
     return results
 
 
-def _ts_detect_file(file_path: str) -> list[dict]:
-    """Run TypeScript/JavaScript pattern detection on a single .ts/.tsx/.js/.jsx file.
+def _cs_detect_file(file_path: str) -> list[dict]:
+    """Run C# pattern detection on a single .cs file.
 
     Tries tree-sitter-languages first; falls back to regex when unavailable.
     """
     src = pathlib.Path(file_path).read_bytes()
-    lang = _language_from_path(file_path)
-    ts_lang = "tsx" if file_path.endswith(".tsx") else "typescript"
     try:
         from tree_sitter_languages import get_parser  # type: ignore[import]
-        parser = get_parser(ts_lang)
+        parser = get_parser("c_sharp")
         tree = parser.parse(src)
-        return _ts_detect_via_tree_sitter(file_path, tree, src, lang)
+        return _cs_detect_via_tree_sitter(file_path, tree, src)
     except Exception:  # ImportError or any tree-sitter parse error
         pass
-    results = _ts_detect_via_regex(file_path, src.decode("utf-8", errors="replace"))
+    results = _cs_detect_via_regex(file_path, src.decode("utf-8", errors="replace"))
     for hit in results:
-        hit.setdefault("language", lang)
+        hit.setdefault("language", "csharp")
     return results
 
 
-# ── Rust tree-sitter / regex fallback ────────────────────────────────────────
+# ── Java regex fallback ───────────────────────────────────────────────────────
 
-_RS_SCOPE_NODE_TYPES: frozenset[str] = frozenset({
-    "function_item",
-    "closure_expression",
-})
-
-_RS_DB_CALL_NAMES: frozenset[str] = frozenset({
-    "query", "query_as", "query_scalar", "query_as_with",
-    "fetch", "fetch_one", "fetch_optional", "fetch_all",
-    "execute", "execute_many", "prepare",
-})
-_RS_RENDER_CALL_NAMES: frozenset[str] = frozenset({
-    "render", "render_str", "render_to",
-})
-_RS_NOTIFY_CALL_NAMES: frozenset[str] = frozenset({
-    "send", "send_message", "deliver",
-})
-
-_RS_RE_REGEX_NEW = re.compile(r'\bRegex\s*::\s*new\s*\(')
-_RS_RE_FORMAT_MACRO = re.compile(r'\bformat\s*!\s*[({]')
-_RS_RE_ASKAMA = re.compile(r'#\s*\[\s*derive\s*\([^)]*\bTemplate\b')
-_RS_RE_TERA_RENDER = re.compile(r'\.render\s*\(')
-_RS_RE_CRON = re.compile(
-    r'\b(?:tokio::time::interval|tokio_cron_scheduler|clokwerk)\b'
-)
-_RS_RE_THRESHOLD = re.compile(
-    r'(?:[<>]=?|==|!=)\s*(-?\d+(?:\.\d+)?[uif\d]*)|(-?\d+(?:\.\d+)?[uif\d]*)\s*(?:[<>]=?|==|!=)'
-)
-_RS_RE_CONTAINS = re.compile(r'\.contains\s*\(')
-_RS_RE_HASHMAP_FROM = re.compile(r'\bHashMap\s*::\s*from\s*\(')
-_RS_RE_PHF_MAP = re.compile(r'\bphf_map\s*!\s*\{')
-_RS_RE_IF_INDENT = re.compile(r'^(\s+)if\b')
-
-
-def _rs_walk_scoped(root: Any, src: bytes):
-    """Iterative DFS generator yielding (node, parent_type, scope_name)."""
-    stack: list[tuple[Any, str, str]] = [(root, "", "<module>")]
-    while stack:
-        node, parent_type, scope = stack.pop()
-        new_scope = scope
-        if node.type == "function_item":
-            name_child = node.child_by_field_name("name")
-            if name_child is not None:
-                new_scope = src[name_child.start_byte:name_child.end_byte].decode(
-                    "utf-8", errors="replace"
-                )
-        yield node, parent_type, new_scope
-        for child in reversed(node.children):
-            stack.append((child, node.type, new_scope))
-
-
-def _rs_if_depth(root: Any) -> int:
-    """Max nesting depth of if_expression/match_guard within root's subtree."""
-    _COND_TYPES: frozenset[str] = frozenset({"if_expression", "match_guard"})
-    max_depth = 0
-    stack: list[tuple[Any, int]] = [(root, 1)]
-    while stack:
-        node, depth = stack.pop()
-        if node.type in _COND_TYPES:
-            if depth > max_depth:
-                max_depth = depth
-        for child in node.children:
-            if child.type in _RS_SCOPE_NODE_TYPES:
-                continue
-            new_depth = depth + 1 if child.type in _COND_TYPES else depth
-            stack.append((child, new_depth))
-    return max_depth
-
-
-def _rs_detect_nested_conditionals_ts(fp: str, root: Any, src: bytes) -> list[dict]:
-    results: list[dict] = []
-    for node, parent_type, scope in _rs_walk_scoped(root, src):
-        if node.type != "if_expression":
-            continue
-        if parent_type in ("if_expression", "else_clause"):
-            continue
-        depth = _rs_if_depth(node)
-        if depth >= _PATTERN_MIN_DEPTH:
-            results.append({
-                "pattern_type": "nested_conditionals",
-                "module_path": fp,
-                "function_name": scope,
-                "line_start": node.start_point[0] + 1,
-                "line_end": node.end_point[0] + 1,
-                "pattern_detail": {"max_depth": depth},
-            })
-    return results
-
-
-def _rs_detect_regex_user_input_ts(fp: str, root: Any, src: bytes) -> list[dict]:
-    results: list[dict] = []
-    for node, _, scope in _rs_walk_scoped(root, src):
-        if node.type != "call_expression":
-            continue
-        func = node.child_by_field_name("function")
-        if func is None:
-            continue
-        func_text = src[func.start_byte:func.end_byte].decode("utf-8", errors="replace")
-        if "Regex::new" in func_text:
-            results.append({
-                "pattern_type": "regex_user_input",
-                "module_path": fp,
-                "function_name": scope,
-                "line_start": node.start_point[0] + 1,
-                "line_end": node.end_point[0] + 1,
-                "pattern_detail": {"call": func_text},
-            })
-    return results
-
-
-def _rs_detect_string_template_ts(fp: str, root: Any, src: bytes) -> list[dict]:
-    results: list[dict] = []
-    for node, _, scope in _rs_walk_scoped(root, src):
-        kind: str | None = None
-        detail: dict[str, Any] = {}
-
-        if node.type == "macro_invocation":
-            macro_node = node.child_by_field_name("macro")
-            if macro_node is None:
-                named = [c for c in node.children if c.is_named]
-                macro_node = named[0] if named else None
-            if macro_node is not None:
-                macro_text = src[macro_node.start_byte:macro_node.end_byte].decode(
-                    "utf-8", errors="replace"
-                )
-                if macro_text == "format":
-                    kind = "format_macro"
-                    detail = {"macro": "format!"}
-
-        elif node.type == "attribute_item":
-            attr_text = src[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
-            if "derive" in attr_text and "Template" in attr_text:
-                kind = "askama_derive"
-                detail = {"attribute": attr_text.strip()[:80]}
-
-        elif node.type == "method_call_expression":
-            name_child = node.child_by_field_name("name")
-            if name_child is not None:
-                method = src[name_child.start_byte:name_child.end_byte].decode(
-                    "utf-8", errors="replace"
-                )
-                if method == "render":
-                    kind = "template_render"
-                    detail = {"method": ".render()"}
-
-        if kind:
-            results.append({
-                "pattern_type": "string_template_rendering",
-                "module_path": fp,
-                "function_name": scope,
-                "line_start": node.start_point[0] + 1,
-                "line_end": node.end_point[0] + 1,
-                "pattern_detail": {"kind": kind, **detail},
-            })
-    return results
-
-
-def _rs_detect_scheduled_cron_ts(fp: str, root: Any, src: bytes) -> list[dict]:
-    _CRON_FRAGMENTS: frozenset[str] = frozenset({
-        "tokio::time::interval", "tokio_cron_scheduler", "clokwerk",
-    })
-    results: list[dict] = []
-    for node, _, scope in _rs_walk_scoped(root, src):
-        if node.type != "call_expression":
-            continue
-        func = node.child_by_field_name("function")
-        if func is None:
-            continue
-        func_text = src[func.start_byte:func.end_byte].decode("utf-8", errors="replace")
-        if any(frag in func_text for frag in _CRON_FRAGMENTS):
-            results.append({
-                "pattern_type": "scheduled_cron",
-                "module_path": fp,
-                "function_name": scope,
-                "line_start": node.start_point[0] + 1,
-                "line_end": node.end_point[0] + 1,
-                "pattern_detail": {"kind": "call", "call": func_text},
-            })
-    return results
-
-
-def _rs_detect_hardcoded_threshold_ts(fp: str, root: Any, src: bytes) -> list[dict]:
-    _CMP_OPS: frozenset[str] = frozenset({"<", ">", "<=", ">=", "==", "!="})
-    results: list[dict] = []
-    for node, _, scope in _rs_walk_scoped(root, src):
-        if node.type != "binary_expression":
-            continue
-        op_token: str | None = None
-        for child in node.children:
-            if not child.is_named:
-                text = src[child.start_byte:child.end_byte].decode(
-                    "utf-8", errors="replace"
-                ).strip()
-                if text in _CMP_OPS:
-                    op_token = text
-                    break
-        if not op_token:
-            continue
-        named_parts = [c for c in node.children if c.is_named]
-        numeric_literals = [
-            src[c.start_byte:c.end_byte].decode("utf-8", errors="replace")
-            for c in named_parts
-            if c.type in ("integer_literal", "float_literal")
-        ]
-        if numeric_literals:
-            results.append({
-                "pattern_type": "hardcoded_threshold",
-                "module_path": fp,
-                "function_name": scope,
-                "line_start": node.start_point[0] + 1,
-                "line_end": node.end_point[0] + 1,
-                "pattern_detail": {"kind": "binary_expression", "constants": numeric_literals},
-            })
-    return results
-
-
-def _rs_collect_calls_in_fn(fn_node: Any, src: bytes) -> set[str]:
-    """Collect method and function call names within fn_node, not crossing nested functions."""
-    calls: set[str] = set()
-    stack: list[Any] = [fn_node]
-    while stack:
-        n = stack.pop()
-        if n is not fn_node and n.type == "function_item":
-            continue
-        if n.type == "method_call_expression":
-            name_child = n.child_by_field_name("name")
-            if name_child:
-                calls.add(
-                    src[name_child.start_byte:name_child.end_byte].decode(
-                        "utf-8", errors="replace"
-                    )
-                )
-        elif n.type == "call_expression":
-            func = n.child_by_field_name("function")
-            if func:
-                func_text = src[func.start_byte:func.end_byte].decode(
-                    "utf-8", errors="replace"
-                )
-                calls.add(func_text.split("::")[-1])
-        for child in n.children:
-            stack.append(child)
-    return calls
-
-
-def _rs_detect_db_render_notify_ts(fp: str, root: Any, src: bytes) -> list[dict]:
-    results: list[dict] = []
-    for node, _, scope in _rs_walk_scoped(root, src):
-        if node.type != "function_item":
-            continue
-        calls = _rs_collect_calls_in_fn(node, src)
-        db_hits = calls & _RS_DB_CALL_NAMES
-        render_hits = calls & _RS_RENDER_CALL_NAMES
-        notify_hits = calls & _RS_NOTIFY_CALL_NAMES
-        if db_hits and render_hits and notify_hits:
-            results.append({
-                "pattern_type": "db_render_notify_chain",
-                "module_path": fp,
-                "function_name": scope,
-                "line_start": node.start_point[0] + 1,
-                "line_end": node.end_point[0] + 1,
-                "pattern_detail": {
-                    "matched_calls": {
-                        "db": sorted(db_hits),
-                        "render": sorted(render_hits),
-                        "notify": sorted(notify_hits),
-                    }
-                },
-            })
-    return results
-
-
-def _rs_detect_keyword_list_search_ts(fp: str, root: Any, src: bytes) -> list[dict]:
-    results: list[dict] = []
-    for node, _, scope in _rs_walk_scoped(root, src):
-        if node.type != "method_call_expression":
-            continue
-        name_child = node.child_by_field_name("name")
-        if name_child is None:
-            continue
-        method = src[name_child.start_byte:name_child.end_byte].decode(
-            "utf-8", errors="replace"
-        )
-        if method != "contains":
-            continue
-        receiver = node.child_by_field_name("receiver")
-        receiver_text = (
-            src[receiver.start_byte:receiver.end_byte].decode("utf-8", errors="replace")[:50]
-            if receiver
-            else "<unknown>"
-        )
-        results.append({
-            "pattern_type": "keyword_list_search",
-            "module_path": fp,
-            "function_name": scope,
-            "line_start": node.start_point[0] + 1,
-            "line_end": node.end_point[0] + 1,
-            "pattern_detail": {"method": "contains", "receiver": receiver_text},
-        })
-    return results
-
-
-def _rs_detect_large_rule_table_ts(fp: str, root: Any, src: bytes) -> list[dict]:
-    results: list[dict] = []
-    for node, _, scope in _rs_walk_scoped(root, src):
-        if node.type == "call_expression":
-            func = node.child_by_field_name("function")
-            if func is None:
-                continue
-            func_text = src[func.start_byte:func.end_byte].decode("utf-8", errors="replace")
-            if "HashMap::from" not in func_text:
-                continue
-            args = node.child_by_field_name("arguments")
-            if args is None:
-                continue
-            for child in args.children:
-                if child.type == "array_expression":
-                    entries = [c for c in child.children if c.is_named]
-                    if len(entries) >= _RULE_MIN_KEYS:
-                        results.append({
-                            "pattern_type": "large_rule_table",
-                            "module_path": fp,
-                            "function_name": scope,
-                            "line_start": node.start_point[0] + 1,
-                            "line_end": node.end_point[0] + 1,
-                            "pattern_detail": {
-                                "kind": "HashMap::from",
-                                "entry_count": len(entries),
-                            },
-                        })
-                    break
-
-        elif node.type == "macro_invocation":
-            macro_node = node.child_by_field_name("macro")
-            if macro_node is None:
-                named = [c for c in node.children if c.is_named]
-                macro_node = named[0] if named else None
-            if macro_node is None:
-                continue
-            macro_text = src[macro_node.start_byte:macro_node.end_byte].decode(
-                "utf-8", errors="replace"
-            )
-            if macro_text not in ("phf_map", "phf::phf_map"):
-                continue
-            node_text = src[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
-            entry_count = node_text.count("=>")
-            if entry_count >= _RULE_MIN_KEYS:
-                results.append({
-                    "pattern_type": "large_rule_table",
-                    "module_path": fp,
-                    "function_name": scope,
-                    "line_start": node.start_point[0] + 1,
-                    "line_end": node.end_point[0] + 1,
-                    "pattern_detail": {"kind": "phf_map!", "entry_count": entry_count},
-                })
-    return results
-
-
-def _rs_detect_via_tree_sitter(file_path: str, tree: Any, src: bytes) -> list[dict]:
-    """Run all 8 pattern detectors using a parsed tree-sitter Rust tree."""
-    root = tree.root_node
-    results: list[dict] = []
-    results.extend(_rs_detect_nested_conditionals_ts(file_path, root, src))
-    results.extend(_rs_detect_regex_user_input_ts(file_path, root, src))
-    results.extend(_rs_detect_string_template_ts(file_path, root, src))
-    results.extend(_rs_detect_scheduled_cron_ts(file_path, root, src))
-    results.extend(_rs_detect_hardcoded_threshold_ts(file_path, root, src))
-    results.extend(_rs_detect_db_render_notify_ts(file_path, root, src))
-    results.extend(_rs_detect_keyword_list_search_ts(file_path, root, src))
-    results.extend(_rs_detect_large_rule_table_ts(file_path, root, src))
-    for hit in results:
-        hit.setdefault("language", "rust")
-    return results
-
-
-# ── Rust regex fallback ───────────────────────────────────────────────────────
-
-
-def _rs_regex_nested_ifs(file_path: str, lines: list[str]) -> list[dict]:
-    """Indentation-based heuristic for nested if detection (Rust regex fallback)."""
+def _java_regex_nested_ifs(file_path: str, lines: list[str]) -> list[dict]:
+    """Indentation-based nested-if detection for Java source."""
     results: list[dict] = []
     if_stack: list[tuple[int, int]] = []
     reported: set[int] = set()
-
     for i, line in enumerate(lines, 1):
         stripped = line.strip()
         if stripped.startswith("//") or stripped.startswith("*"):
             continue
-        m = _RS_RE_IF_INDENT.match(line)
+        m = _JAVA_RE_IF_INDENT.match(line)
         if m:
             indent = len(m.group(1).expandtabs(4))
             if_stack = [(ind, ln) for ind, ln in if_stack if ind < indent]
             if_stack.append((indent, i))
-            if len(if_stack) >= _PATTERN_MIN_DEPTH:
+            if len(if_stack) >= _JAVA_MIN_IF_DEPTH:
                 outer_ln = if_stack[0][1]
                 if outer_ln not in reported:
                     reported.add(outer_ln)
@@ -1943,140 +1579,275 @@ def _rs_regex_nested_ifs(file_path: str, lines: list[str]) -> list[dict]:
     return results
 
 
-def _rs_regex_large_table(file_path: str, lines: list[str]) -> list[dict]:
-    """Scanner for large HashMap::from / phf_map! initializers (Rust regex fallback)."""
+def _java_regex_switch_cases(file_path: str, lines: list[str]) -> list[dict]:
+    """Detect large switch-case blocks (≥ RULE_MIN_KEYS cases)."""
     results: list[dict] = []
     n = len(lines)
     i = 0
     while i < n:
-        line = lines[i]
-        is_hashmap = bool(_RS_RE_HASHMAP_FROM.search(line))
-        is_phf = bool(_RS_RE_PHF_MAP.search(line))
-        if is_hashmap or is_phf:
+        if _JAVA_RE_SWITCH.search(lines[i]):
             start_line = i + 1
-            open_ch, close_ch = ("{", "}") if is_phf else ("[", "]")
-            depth = line.count(open_ch) - line.count(close_ch)
-            block = line
+            brace = lines[i].count("{") - lines[i].count("}")
+            case_count = 0
             j = i + 1
-            while j < n and depth > 0:
-                depth += lines[j].count(open_ch) - lines[j].count(close_ch)
-                block += "\n" + lines[j]
+            while j < n and (brace > 0 or j == i + 1):
+                brace += lines[j].count("{") - lines[j].count("}")
+                if _JAVA_RE_CASE.match(lines[j]):
+                    case_count += 1
                 j += 1
-            if is_phf:
-                # phf_map! entries use `"key" => value` syntax
-                entry_count = block.count("=>")
-            else:
-                # HashMap::from entries are tuples: ("key", value)
-                # Count "), " separators between tuples, then +1 for last entry
-                entry_count = block.count("),") + 1
-            if entry_count >= _RULE_MIN_KEYS:
-                kind = "phf_map!" if is_phf else "HashMap::from"
+            if case_count >= _RULE_MIN_KEYS:
                 results.append({
                     "pattern_type": "large_rule_table",
                     "module_path": file_path,
                     "function_name": "<unknown>",
                     "line_start": start_line,
                     "line_end": j,
-                    "pattern_detail": {"kind": kind, "entry_count": entry_count},
+                    "pattern_detail": {"case_count": case_count, "kind": "switch"},
                 })
         i += 1
     return results
 
 
-def _rs_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
-    """Regex-based Rust pattern detection when tree-sitter-languages is unavailable."""
+def _java_detect_db_render_chain(file_path: str, lines: list[str]) -> list[dict]:
+    """Detect methods that fetch from a repository and return a view name."""
+    results: list[dict] = []
+    in_method = False
+    method_start = 0
+    brace_depth = 0
+    has_find = False
+    has_attr = False
+    has_view_return = False
+
+    for i, line in enumerate(lines, 1):
+        stripped = line.strip()
+        if stripped.startswith("//") or stripped.startswith("*"):
+            continue
+        # Simple heuristic: track brace depth to detect method boundaries
+        brace_depth += line.count("{") - line.count("}")
+        if not in_method:
+            # Look for method signature start (public/private return type methodName)
+            if re.search(r'(?:public|private|protected)\s+\w[\w<>, ]*\s+\w+\s*\(', line):
+                in_method = True
+                method_start = i
+                has_find = has_attr = has_view_return = False
+        if in_method:
+            if _JAVA_RE_REPO_FIND.search(line):
+                has_find = True
+            if _JAVA_RE_ADD_ATTR.search(line):
+                has_attr = True
+            if _JAVA_RE_VIEW_RETURN.search(line):
+                has_view_return = True
+            if brace_depth <= 0 and i > method_start:
+                # Method ended
+                if has_find and has_attr and has_view_return:
+                    results.append({
+                        "pattern_type": "db_render_notify_chain",
+                        "module_path": file_path,
+                        "function_name": "<unknown>",
+                        "line_start": method_start,
+                        "line_end": i,
+                        "pattern_detail": {"kind": "db_fetch_template_render"},
+                    })
+                in_method = False
+    return results
+
+
+def _java_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
+    """Regex-based Java pattern detection for all 8 AAC pattern types."""
     results: list[dict] = []
     lines = source_text.splitlines()
+    population: list[float] = _collect_numeric_from_lines(lines) if _AD_ENABLED else []
 
     for i, line in enumerate(lines, 1):
         stripped = line.strip()
         if stripped.startswith("//") or stripped.startswith("*"):
             continue
 
-        # regex_user_input
-        if _RS_RE_REGEX_NEW.search(line):
+        # regex_user_input — @Pattern annotation or Pattern.compile / String.matches
+        if _JAVA_RE_PATTERN_ANN.search(line):
+            m = re.search(r'regexp\s*=\s*"([^"]*)"', line)
             results.append({
                 "pattern_type": "regex_user_input",
                 "module_path": file_path,
                 "function_name": "<unknown>",
-                "line_start": i,
-                "line_end": i,
-                "pattern_detail": {"call": "Regex::new"},
+                "line_start": i, "line_end": i,
+                "pattern_detail": {"kind": "@Pattern", "regexp": m.group(1) if m else ""},
+            })
+        elif _JAVA_RE_PATTERN_COMPILE.search(line):
+            results.append({
+                "pattern_type": "regex_user_input",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i, "line_end": i,
+                "pattern_detail": {"kind": "Pattern.compile"},
+            })
+        elif _JAVA_RE_STRING_MATCHES.search(line):
+            results.append({
+                "pattern_type": "regex_user_input",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i, "line_end": i,
+                "pattern_detail": {"kind": "String.matches"},
             })
 
-        # string_template_rendering (first match wins per line)
-        for pat, kind, extra in (
-            (_RS_RE_FORMAT_MACRO, "format_macro", {"macro": "format!"}),
-            (_RS_RE_ASKAMA, "askama_derive", {}),
-            (_RS_RE_TERA_RENDER, "template_render", {"method": ".render()"}),
-        ):
-            if pat.search(line):
-                results.append({
-                    "pattern_type": "string_template_rendering",
-                    "module_path": file_path,
-                    "function_name": "<unknown>",
-                    "line_start": i,
-                    "line_end": i,
-                    "pattern_detail": {"kind": kind, **extra},
-                })
-                break
+        # string_template_rendering — view name return or ModelAndView
+        m = _JAVA_RE_VIEW_RETURN.search(line)
+        if m:
+            results.append({
+                "pattern_type": "string_template_rendering",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i, "line_end": i,
+                "pattern_detail": {"kind": "view_return", "view": m.group(1)},
+            })
+        elif _JAVA_RE_MODEL_VIEW.search(line):
+            results.append({
+                "pattern_type": "string_template_rendering",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i, "line_end": i,
+                "pattern_detail": {"kind": "ModelAndView"},
+            })
 
-        # scheduled_cron
-        if _RS_RE_CRON.search(line):
+        # scheduled_cron — @Scheduled annotation
+        if _JAVA_RE_SCHEDULED.search(line):
+            m = re.search(r'cron\s*=\s*"([^"]*)"', line)
             results.append({
                 "pattern_type": "scheduled_cron",
                 "module_path": file_path,
                 "function_name": "<unknown>",
-                "line_start": i,
-                "line_end": i,
-                "pattern_detail": {"kind": "call"},
+                "line_start": i, "line_end": i,
+                "pattern_detail": {"kind": "@Scheduled",
+                                   "cron": m.group(1) if m else ""},
             })
 
-        # hardcoded_threshold
-        m = _RS_RE_THRESHOLD.search(line)
+        # hardcoded_threshold — PageRequest literal or static int constant
+        m = _JAVA_RE_PAGEREQUEST.search(line)
         if m:
-            const = m.group(1) or m.group(2) or "?"
+            # PageRequest page-size is always a business threshold — always flag.
             results.append({
                 "pattern_type": "hardcoded_threshold",
                 "module_path": file_path,
                 "function_name": "<unknown>",
-                "line_start": i,
-                "line_end": i,
-                "pattern_detail": {"kind": "binary_expression", "constants": [const]},
+                "line_start": i, "line_end": i,
+                "pattern_detail": {"kind": "PageRequest.of", "page_size": int(m.group(1))},
             })
+        else:
+            m = _JAVA_RE_STATIC_INT.search(line)
+            if m and int(m.group(1)) >= _JAVA_STATIC_INT_MIN_VALUE:
+                val = int(m.group(1))
+                java_should_flag = (
+                    not _AD_ENABLED
+                    or (abs(float(val)) > _AD_MIN_CONSTANT_MAGNITUDE
+                        and _is_threshold_anomalous(float(val), population))
+                )
+                if java_should_flag:
+                    java_score = (
+                        _anomaly_score(float(val), population) if _AD_ENABLED else 0.0
+                    )
+                    java_detail: dict[str, Any] = {
+                        "kind": "static_int_const",
+                        "value": val,
+                        "anomaly_detected": _AD_ENABLED,
+                    }
+                    if _AD_ENABLED:
+                        java_detail["anomaly_score"] = round(java_score, 3)
+                    results.append({
+                        "pattern_type": "hardcoded_threshold",
+                        "module_path": file_path,
+                        "function_name": "<unknown>",
+                        "line_start": i, "line_end": i,
+                        "pattern_detail": java_detail,
+                    })
 
-        # keyword_list_search
-        if _RS_RE_CONTAINS.search(line):
+        # keyword_list_search — Spring Data method or manual equalsIgnoreCase loop
+        m = _JAVA_RE_FINDBY_KEYWORD.search(line)
+        if m:
             results.append({
                 "pattern_type": "keyword_list_search",
                 "module_path": file_path,
                 "function_name": "<unknown>",
-                "line_start": i,
-                "line_end": i,
-                "pattern_detail": {"method": "contains"},
+                "line_start": i, "line_end": i,
+                "pattern_detail": {"method": m.group(1), "kind": "spring_data_derived"},
+            })
+        elif _JAVA_RE_EQUALS_IC.search(line):
+            results.append({
+                "pattern_type": "keyword_list_search",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i, "line_end": i,
+                "pattern_detail": {"kind": "equalsIgnoreCase_loop"},
+            })
+        elif _JAVA_RE_STREAM_FILTER.search(line):
+            results.append({
+                "pattern_type": "keyword_list_search",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i, "line_end": i,
+                "pattern_detail": {"kind": "stream_filter"},
             })
 
-    results.extend(_rs_regex_nested_ifs(file_path, lines))
-    results.extend(_rs_regex_large_table(file_path, lines))
+        # large_rule_table — @ModelAttribute returning a repository collection
+        if _JAVA_RE_MODEL_ATTR.search(line):
+            results.append({
+                "pattern_type": "large_rule_table",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i, "line_end": i,
+                "pattern_detail": {"kind": "@ModelAttribute_lookup"},
+            })
+
+    results.extend(_java_regex_nested_ifs(file_path, lines))
+    results.extend(_java_regex_switch_cases(file_path, lines))
+    results.extend(_java_detect_db_render_chain(file_path, lines))
     return results
 
 
-def _rs_detect_file(file_path: str) -> list[dict]:
-    """Run Rust pattern detection on a single .rs file.
-
-    Tries tree-sitter-languages first; falls back to regex when unavailable.
-    """
-    src = pathlib.Path(file_path).read_bytes()
+def _java_detect_file(file_path: str) -> list[dict]:
+    """Run Java pattern detection on a single .java file."""
     try:
-        from tree_sitter_languages import get_parser  # type: ignore[import]
-        parser = get_parser("rust")
-        tree = parser.parse(src)
-        return _rs_detect_via_tree_sitter(file_path, tree, src)
-    except Exception:
-        pass
-    results = _rs_detect_via_regex(file_path, src.decode("utf-8", errors="replace"))
+        source = pathlib.Path(file_path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    results = _java_detect_via_regex(file_path, source)
     for hit in results:
-        hit.setdefault("language", "rust")
+        hit.setdefault("language", "java")
+    return results
+
+
+# ── Language-specific fallback walkers ────────────────────────────────────────
+# Registry maps language string → single-file detector callable.
+# Add a new entry here to support a new language without touching detect_patterns().
+
+_LANG_FALLBACK_REGISTRY: dict[str, Any] = {
+    "java":   _java_detect_file,
+    "csharp": _cs_detect_file,
+    # python is handled separately by _detect_via_ast_fallback (stdlib ast walker)
+}
+
+
+def _walk_files_by_language(target_path: str, language: str) -> list[str]:
+    """Return all files of the given language under target_path."""
+    ext_map = {v: k for k, v in _EXT_LANGUAGE.items()}
+    ext = ext_map.get(language)
+    if not ext:
+        return []
+    p = pathlib.Path(target_path)
+    if p.is_file() and p.suffix.lower() == ext:
+        return [str(p)]
+    return [str(f) for f in p.rglob(f"*{ext}") if f.is_file()]
+
+
+def _detect_via_language_fallbacks(target_path: str) -> list[dict]:
+    """Run all registered language fallbacks on target_path.
+
+    To add support for a new language, register its detector in
+    _LANG_FALLBACK_REGISTRY — no changes to detect_patterns() needed.
+    """
+    results: list[dict] = []
+    for language, detector in _LANG_FALLBACK_REGISTRY.items():
+        for file_path in _walk_files_by_language(target_path, language):
+            results.extend(detector(file_path))
     return results
 
 
@@ -2086,8 +1857,12 @@ def _rs_detect_file(file_path: str) -> list[dict]:
 def detect_patterns(target_path: str) -> list[dict]:
     """Detect AI-augmentable patterns in a source file or directory tree.
 
-    Tries Semgrep CLI first (multi-language, all 8 patterns via YAML rules).
-    Falls back to Python stdlib ast when Semgrep is unavailable (air-gap).
+    Primary path  — Semgrep CLI (multi-language, YAML rules).
+    Supplemental  — language-specific regex/AST fallbacks from
+                    _LANG_FALLBACK_REGISTRY, always run and merged with
+                    Semgrep results.  Semgrep wins on conflicts (same file +
+                    line + pattern_type).  To add a new language, register
+                    its detector in _LANG_FALLBACK_REGISTRY only.
 
     Args:
         target_path: Path to a source file or directory to analyze.
@@ -2098,6 +1873,27 @@ def detect_patterns(target_path: str) -> list[dict]:
         Returns [] on error or if no patterns are found.
     """
     semgrep_results = _detect_via_semgrep(target_path)
-    if semgrep_results is not None:
-        return semgrep_results
-    return _detect_via_ast_fallback(target_path)
+
+    if semgrep_results is None:
+        # Semgrep unavailable — run all fallbacks (Python AST + registry)
+        results = _detect_via_ast_fallback(target_path)
+        results.extend(_detect_via_language_fallbacks(target_path))
+        return results
+
+    # Semgrep available: supplement with language fallbacks to catch idioms
+    # that the Semgrep rules don't cover (e.g. Spring annotations, Spring Data
+    # derived query methods, ORM fetch+render chains, …).
+    supplemental = _detect_via_language_fallbacks(target_path)
+
+    # Deduplicate: prefer Semgrep result when (file, line, pattern) collides.
+    covered: set[tuple[str, int, str]] = {
+        (r["module_path"], r["line_start"], r["pattern_type"])
+        for r in semgrep_results
+    }
+    for hit in supplemental:
+        key = (hit["module_path"], hit["line_start"], hit["pattern_type"])
+        if key not in covered:
+            semgrep_results.append(hit)
+            covered.add(key)
+
+    return semgrep_results

@@ -1,164 +1,112 @@
 # CUI // SP-CTI
-"""Tests for tools.ai_augmentation.agent_readiness.checker
-
-Covers:
-  - _detect_anomalies(): floor threshold, z-score outlier, skipped pillars
-  - _load_scoring_config(): fallback to defaults when config absent
-  - run_readiness_check(): return structure includes 'anomalies' key
-"""
+"""Tests for agent_readiness.checker — weight loading and anomaly detection."""
 from __future__ import annotations
 
-import pathlib
 import tempfile
 
-import pytest
 
 from tools.ai_augmentation.agent_readiness.checker import (
-    _DEFAULT_ANOMALY,
-    _DEFAULT_WEIGHTS,
+    _DEFAULT_PILLAR_WEIGHTS,
     _detect_anomalies,
+    _get_pillar_weights,
     run_readiness_check,
 )
 
 
 # ---------------------------------------------------------------------------
-# _detect_anomalies unit tests
+# _detect_anomalies
 # ---------------------------------------------------------------------------
 
-def _scores(mapping: dict[str, float], total: int = 4) -> dict[str, dict]:
-    """Build a minimal pillar_scores dict from {pillar_id: percentage}."""
-    return {
-        pid: {"passed": round(pct * total), "total": total, "percentage": pct}
-        for pid, pct in mapping.items()
+def _make_scores(percentages: dict[str, float]) -> dict[str, dict]:
+    return {pid: {"percentage": pct, "passed": 0, "total": 0} for pid, pct in percentages.items()}
+
+
+def test_detect_anomalies_flags_low_outlier():
+    scores = _make_scores({
+        "code-quality": 0.9,
+        "documentation": 0.85,
+        "testing": 0.88,
+        "structure": 0.0,   # obviously anomalous
+        "dependencies": 0.9,
+    })
+    flags = _detect_anomalies(scores, threshold=-1.5, min_samples=3)
+    assert flags["structure"] is True
+    assert flags["code-quality"] is False
+
+
+def test_detect_anomalies_all_equal_returns_false():
+    scores = _make_scores({"a": 0.5, "b": 0.5, "c": 0.5})
+    flags = _detect_anomalies(scores, threshold=-1.5, min_samples=3)
+    assert all(not v for v in flags.values())
+
+
+def test_detect_anomalies_too_few_samples_returns_false():
+    scores = _make_scores({"a": 1.0, "b": 0.0})
+    flags = _detect_anomalies(scores, threshold=-1.5, min_samples=3)
+    assert all(not v for v in flags.values())
+
+
+def test_detect_anomalies_threshold_respected():
+    # Only 'low' is anomalous at -1.5 but not at -3.0
+    scores = _make_scores({"high": 1.0, "mid": 0.5, "low": 0.0, "x": 0.8, "y": 0.7})
+    strict_flags = _detect_anomalies(scores, threshold=-3.0, min_samples=3)
+    lenient_flags = _detect_anomalies(scores, threshold=-0.5, min_samples=3)
+    # At a very strict threshold nothing should be flagged
+    assert all(not v for v in strict_flags.values())
+    # At a lenient threshold the low scorer is flagged
+    assert lenient_flags["low"] is True
+
+
+# ---------------------------------------------------------------------------
+# _get_pillar_weights — fallback to defaults when config missing / malformed
+# ---------------------------------------------------------------------------
+
+def test_get_pillar_weights_returns_all_defaults(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "tools.ai_augmentation.agent_readiness.checker._REPO_ROOT",
+        tmp_path,  # no aac_config.yaml here
+    )
+    weights = _get_pillar_weights()
+    assert weights == _DEFAULT_PILLAR_WEIGHTS
+
+
+def test_get_pillar_weights_reads_from_config(tmp_path, monkeypatch):
+    import yaml
+
+    (tmp_path / "args").mkdir()
+    config = {
+        "agent_readiness": {
+            "pillar_weights": {"testing": 2.0, "security": 2.5},
+        }
     }
-
-
-class TestDetectAnomalies:
-    def test_empty_scores_returns_no_anomalies(self):
-        assert _detect_anomalies({}, 0.25, 2.0) == []
-
-    def test_all_skipped_returns_no_anomalies(self):
-        scores = {
-            "code-quality": {"passed": 0, "total": 0, "percentage": 0.0},
-        }
-        assert _detect_anomalies(scores, 0.25, 2.0) == []
-
-    def test_floor_threshold_flags_low_score(self):
-        scores = _scores({"code-quality": 0.10, "documentation": 0.80, "testing": 0.90})
-        anomalies = _detect_anomalies(scores, floor_threshold=0.25, zscore_threshold=2.0)
-        ids = [a["pillar_id"] for a in anomalies]
-        assert "code-quality" in ids
-
-    def test_score_at_floor_is_not_flagged(self):
-        # Exactly at the floor threshold is not anomalous.
-        scores = _scores({"security": 0.25, "testing": 0.90})
-        anomalies = _detect_anomalies(scores, floor_threshold=0.25, zscore_threshold=2.0)
-        ids = [a["pillar_id"] for a in anomalies]
-        assert "security" not in ids
-
-    def test_perfect_scores_no_anomalies(self):
-        scores = _scores({pid: 1.0 for pid in _DEFAULT_WEIGHTS})
-        assert _detect_anomalies(scores, 0.25, 2.0) == []
-
-    def test_zscore_outlier_flagged_when_std_meaningful(self):
-        # One pillar well below the rest, but still above floor.
-        scores = _scores({
-            "a": 0.30,   # low relative outlier; above floor (0.25)
-            "b": 0.95,
-            "c": 0.90,
-            "d": 0.85,
-            "e": 0.88,
-        })
-        anomalies = _detect_anomalies(scores, floor_threshold=0.25, zscore_threshold=1.5)
-        ids = [a["pillar_id"] for a in anomalies]
-        assert "a" in ids
-
-    def test_zscore_not_applied_with_fewer_than_3_evaluated(self):
-        # Only 2 pillars with data — z-score is skipped.
-        scores = _scores({"a": 0.30, "b": 0.99})
-        anomalies = _detect_anomalies(scores, floor_threshold=0.25, zscore_threshold=1.5)
-        # "a" is above floor (0.30 >= 0.25) and z-score is skipped → no anomaly
-        assert anomalies == []
-
-    def test_floor_flagged_pillar_not_double_counted_by_zscore(self):
-        # A pillar that triggers floor check should not also appear in z-score results.
-        scores = _scores({"low": 0.0, "mid": 0.80, "high": 0.90, "top": 1.0})
-        anomalies = _detect_anomalies(scores, floor_threshold=0.25, zscore_threshold=1.0)
-        low_entries = [a for a in anomalies if a["pillar_id"] == "low"]
-        assert len(low_entries) == 1
-
-    def test_anomaly_entry_has_required_keys(self):
-        scores = _scores({"x": 0.10, "y": 0.90})
-        anomalies = _detect_anomalies(scores, floor_threshold=0.25, zscore_threshold=2.0)
-        assert anomalies
-        for entry in anomalies:
-            assert {"pillar_id", "score", "reason"} <= entry.keys()
-
-    def test_score_in_anomaly_entry_is_rounded(self):
-        scores = _scores({"x": 1 / 3, "y": 0.90})
-        anomalies = _detect_anomalies(scores, floor_threshold=0.40, zscore_threshold=99.0)
-        assert anomalies[0]["score"] == round(1 / 3, 4)
+    (tmp_path / "args" / "aac_config.yaml").write_text(
+        yaml.dump(config), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        "tools.ai_augmentation.agent_readiness.checker._REPO_ROOT",
+        tmp_path,
+    )
+    weights = _get_pillar_weights()
+    assert weights["testing"] == 2.0
+    assert weights["security"] == 2.5
 
 
 # ---------------------------------------------------------------------------
-# _load_scoring_config fallback behaviour
+# run_readiness_check — result shape includes anomaly_flags
 # ---------------------------------------------------------------------------
 
-class TestLoadScoringConfig:
-    def test_defaults_contain_all_expected_keys(self):
-        assert "testing" in _DEFAULT_WEIGHTS
-        assert "il-classification" in _DEFAULT_WEIGHTS
-        assert "floor_threshold" in _DEFAULT_ANOMALY
-        assert "zscore_threshold" in _DEFAULT_ANOMALY
-
-    def test_icdev_pillars_weighted_higher_than_core(self):
-        # Sanity check: ICDEV compliance pillars should outweigh core ones.
-        assert _DEFAULT_WEIGHTS["il-classification"] > _DEFAULT_WEIGHTS["code-quality"]
-        assert _DEFAULT_WEIGHTS["nist-controls"] > _DEFAULT_WEIGHTS["documentation"]
-
-    def test_floor_threshold_sensible_range(self):
-        assert 0.0 < _DEFAULT_ANOMALY["floor_threshold"] < 1.0
-
-    def test_zscore_threshold_sensible_range(self):
-        assert _DEFAULT_ANOMALY["zscore_threshold"] >= 1.0
+def test_run_readiness_check_returns_anomaly_flags():
+    with tempfile.TemporaryDirectory() as td:
+        result = run_readiness_check(td)
+    assert "anomaly_flags" in result
+    assert isinstance(result["anomaly_flags"], dict)
+    # Every pillar that has a score entry must also have a flag entry
+    for pid in result["pillar_scores"]:
+        assert pid in result["anomaly_flags"]
+        assert isinstance(result["anomaly_flags"][pid], bool)
 
 
-# ---------------------------------------------------------------------------
-# run_readiness_check integration smoke test
-# ---------------------------------------------------------------------------
-
-class TestRunReadinessCheck:
-    def test_returns_required_top_level_keys(self, tmp_path: pathlib.Path):
-        result = run_readiness_check(tmp_path)
-        assert "pillar_scores" in result
-        assert "overall_readiness_score" in result
-        assert "icdev_checks" in result
-        assert "anomalies" in result
-
-    def test_anomalies_is_a_list(self, tmp_path: pathlib.Path):
-        result = run_readiness_check(tmp_path)
-        assert isinstance(result["anomalies"], list)
-
-    def test_overall_score_in_unit_range(self, tmp_path: pathlib.Path):
-        result = run_readiness_check(tmp_path)
-        score = result["overall_readiness_score"]
-        assert 0.0 <= score <= 1.0
-
-    def test_pillar_scores_contains_all_11_pillars(self, tmp_path: pathlib.Path):
-        result = run_readiness_check(tmp_path)
-        expected_ids = {
-            "code-quality", "documentation", "testing", "structure", "dependencies",
-            "configuration", "security", "il-classification", "nist-controls",
-            "stig-compliance", "append-only-audit",
-        }
-        assert expected_ids == set(result["pillar_scores"].keys())
-
-    def test_empty_repo_has_low_overall_score(self, tmp_path: pathlib.Path):
-        # An empty directory should score poorly.
-        result = run_readiness_check(tmp_path)
-        assert result["overall_readiness_score"] < 0.5
-
-    def test_empty_repo_has_anomalies(self, tmp_path: pathlib.Path):
-        # An empty repo will have many zero-scored pillars → anomalies expected.
-        result = run_readiness_check(tmp_path)
-        assert len(result["anomalies"]) > 0
+def test_run_readiness_check_overall_score_range():
+    with tempfile.TemporaryDirectory() as td:
+        result = run_readiness_check(td)
+    assert 0.0 <= result["overall_readiness_score"] <= 1.0

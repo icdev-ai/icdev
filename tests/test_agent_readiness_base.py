@@ -2,13 +2,14 @@
 """Tests for _base.py: load_pillar_config and Pillar.score configurable precision."""
 from __future__ import annotations
 
+import pathlib
 
 import pytest
 
 
 class TestLoadAgentReadinessConfig:
     def _mod(self):
-        import tools.aiify.agent_readiness.pillars._base as m
+        import tools.ai_augmentation.agent_readiness.pillars._base as m
         return m
 
     def test_returns_empty_when_file_absent(self, tmp_path, monkeypatch):
@@ -50,7 +51,7 @@ class TestPillarScorePrecision:
     """Pillar.score() precision is driven by score.precision in YAML (default 4)."""
 
     def _make_two_of_three_pillar(self):
-        from tools.aiify.agent_readiness.pillars._base import (
+        from tools.ai_augmentation.agent_readiness.pillars._base import (
             Criterion, CriterionResult, Pillar,
         )
         return Pillar(
@@ -63,7 +64,7 @@ class TestPillarScorePrecision:
         )
 
     def test_default_precision_is_4(self, tmp_path, monkeypatch):
-        import tools.aiify.agent_readiness.pillars._base as m
+        import tools.ai_augmentation.agent_readiness.pillars._base as m
         monkeypatch.setattr(m, "_ARGS_PATH", tmp_path / "absent.yaml")
         m._load_agent_readiness_config.cache_clear()
         pillar = self._make_two_of_three_pillar()
@@ -73,7 +74,7 @@ class TestPillarScorePrecision:
         m._load_agent_readiness_config.cache_clear()
 
     def test_configurable_precision_reads_from_yaml(self, tmp_path, monkeypatch):
-        import tools.aiify.agent_readiness.pillars._base as m
+        import tools.ai_augmentation.agent_readiness.pillars._base as m
         cfg = tmp_path / "cfg.yaml"
         cfg.write_text("score:\n  precision: 2\n", encoding="utf-8")
         monkeypatch.setattr(m, "_ARGS_PATH", cfg)
@@ -85,8 +86,8 @@ class TestPillarScorePrecision:
         m._load_agent_readiness_config.cache_clear()
 
     def test_all_pass_returns_1_0(self, tmp_path, monkeypatch):
-        import tools.aiify.agent_readiness.pillars._base as m
-        from tools.aiify.agent_readiness.pillars._base import (
+        import tools.ai_augmentation.agent_readiness.pillars._base as m
+        from tools.ai_augmentation.agent_readiness.pillars._base import (
             Criterion, CriterionResult, Pillar,
         )
         monkeypatch.setattr(m, "_ARGS_PATH", tmp_path / "absent.yaml")
@@ -102,8 +103,8 @@ class TestPillarScorePrecision:
         m._load_agent_readiness_config.cache_clear()
 
     def test_all_skipped_returns_0_0(self, tmp_path, monkeypatch):
-        import tools.aiify.agent_readiness.pillars._base as m
-        from tools.aiify.agent_readiness.pillars._base import (
+        import tools.ai_augmentation.agent_readiness.pillars._base as m
+        from tools.ai_augmentation.agent_readiness.pillars._base import (
             Criterion, CriterionResult, Pillar,
         )
         monkeypatch.setattr(m, "_ARGS_PATH", tmp_path / "absent.yaml")
@@ -119,11 +120,106 @@ class TestPillarScorePrecision:
         m._load_agent_readiness_config.cache_clear()
 
     def test_score_dict_has_required_keys(self, tmp_path, monkeypatch):
-        import tools.aiify.agent_readiness.pillars._base as m
+        import tools.ai_augmentation.agent_readiness.pillars._base as m
         monkeypatch.setattr(m, "_ARGS_PATH", tmp_path / "absent.yaml")
         m._load_agent_readiness_config.cache_clear()
         pillar = self._make_two_of_three_pillar()
         score = pillar.score(pillar.run(tmp_path))
-        assert {"pillar_id", "passed", "total", "percentage"} <= score.keys()
+        assert {"pillar_id", "passed", "total", "percentage", "anomaly", "severity"} <= score.keys()
         assert score["pillar_id"] == "test-p"
+        m._load_agent_readiness_config.cache_clear()
+
+
+class TestPillarScoreAnomalyDetection:
+    """Pillar.score() anomaly detection driven by score.min_passing_percentage / score.critical_percentage."""
+
+    def _make_pillar(self, pass_count: int, total: int):
+        from tools.ai_augmentation.agent_readiness.pillars._base import (
+            Criterion, CriterionResult, Pillar,
+        )
+        criteria = [
+            Criterion(
+                f"c{i}", f"C{i}", "d", "test-p", 1,
+                lambda r, passed=(i < pass_count): CriterionResult(f"c{i}", passed, "ok" if passed else "fail"),
+            )
+            for i in range(total)
+        ]
+        return Pillar(id="test-p", name="Test", description="Test pillar", criteria=criteria)
+
+    def test_no_anomaly_when_above_threshold(self, tmp_path, monkeypatch):
+        import tools.ai_augmentation.agent_readiness.pillars._base as m
+        cfg = tmp_path / "cfg.yaml"
+        cfg.write_text("score:\n  min_passing_percentage: 0.6\n  critical_percentage: 0.4\n", encoding="utf-8")
+        monkeypatch.setattr(m, "_ARGS_PATH", cfg)
+        m._load_agent_readiness_config.cache_clear()
+        pillar = self._make_pillar(pass_count=4, total=5)  # 80% — above 60%
+        score = pillar.score(pillar.run(tmp_path))
+        assert score["anomaly"] is False
+        assert score["severity"] == "ok"
+        m._load_agent_readiness_config.cache_clear()
+
+    def test_warning_when_between_critical_and_min(self, tmp_path, monkeypatch):
+        import tools.ai_augmentation.agent_readiness.pillars._base as m
+        cfg = tmp_path / "cfg.yaml"
+        cfg.write_text("score:\n  min_passing_percentage: 0.6\n  critical_percentage: 0.4\n", encoding="utf-8")
+        monkeypatch.setattr(m, "_ARGS_PATH", cfg)
+        m._load_agent_readiness_config.cache_clear()
+        pillar = self._make_pillar(pass_count=1, total=2)  # 50% — below 60%, above 40%
+        score = pillar.score(pillar.run(tmp_path))
+        assert score["anomaly"] is True
+        assert score["severity"] == "warning"
+        m._load_agent_readiness_config.cache_clear()
+
+    def test_critical_when_below_critical_threshold(self, tmp_path, monkeypatch):
+        import tools.ai_augmentation.agent_readiness.pillars._base as m
+        cfg = tmp_path / "cfg.yaml"
+        cfg.write_text("score:\n  min_passing_percentage: 0.6\n  critical_percentage: 0.4\n", encoding="utf-8")
+        monkeypatch.setattr(m, "_ARGS_PATH", cfg)
+        m._load_agent_readiness_config.cache_clear()
+        pillar = self._make_pillar(pass_count=1, total=5)  # 20% — below 40%
+        score = pillar.score(pillar.run(tmp_path))
+        assert score["anomaly"] is True
+        assert score["severity"] == "critical"
+        m._load_agent_readiness_config.cache_clear()
+
+    def test_no_anomaly_when_total_zero(self, tmp_path, monkeypatch):
+        import tools.ai_augmentation.agent_readiness.pillars._base as m
+        from tools.ai_augmentation.agent_readiness.pillars._base import (
+            Criterion, CriterionResult, Pillar,
+        )
+        cfg = tmp_path / "cfg.yaml"
+        cfg.write_text("score:\n  min_passing_percentage: 0.6\n  critical_percentage: 0.4\n", encoding="utf-8")
+        monkeypatch.setattr(m, "_ARGS_PATH", cfg)
+        m._load_agent_readiness_config.cache_clear()
+        pillar = Pillar(
+            id="p", name="P", description="P",
+            criteria=[Criterion("x", "X", "d", "p", 1, lambda r: CriterionResult("x", True, "ok", skipped=True))],
+        )
+        score = pillar.score(pillar.run(tmp_path))
+        assert score["anomaly"] is False
+        assert score["severity"] == "ok"
+        m._load_agent_readiness_config.cache_clear()
+
+    def test_defaults_when_yaml_absent(self, tmp_path, monkeypatch):
+        import tools.ai_augmentation.agent_readiness.pillars._base as m
+        monkeypatch.setattr(m, "_ARGS_PATH", tmp_path / "absent.yaml")
+        m._load_agent_readiness_config.cache_clear()
+        # 1/5 = 20% — below both defaults (critical=0.4, min=0.6)
+        pillar = self._make_pillar(pass_count=1, total=5)
+        score = pillar.score(pillar.run(tmp_path))
+        assert score["anomaly"] is True
+        assert score["severity"] == "critical"
+        m._load_agent_readiness_config.cache_clear()
+
+    def test_critical_clamped_to_min_when_exceeds_it(self, tmp_path, monkeypatch):
+        import tools.ai_augmentation.agent_readiness.pillars._base as m
+        cfg = tmp_path / "cfg.yaml"
+        # critical_percentage > min_passing_percentage — should be clamped to min
+        cfg.write_text("score:\n  min_passing_percentage: 0.5\n  critical_percentage: 0.9\n", encoding="utf-8")
+        monkeypatch.setattr(m, "_ARGS_PATH", cfg)
+        m._load_agent_readiness_config.cache_clear()
+        pillar = self._make_pillar(pass_count=1, total=4)  # 25% — below clamped critical (=0.5)
+        score = pillar.score(pillar.run(tmp_path))
+        assert score["anomaly"] is True
+        assert score["severity"] == "critical"
         m._load_agent_readiness_config.cache_clear()

@@ -12,7 +12,7 @@ import pytest
 
 class TestLoadPillarWeights:
     def _get_mod(self):
-        import tools.aiify.agent_readiness.checker as mod
+        import tools.ai_augmentation.agent_readiness.checker as mod
         return mod
 
     def test_returns_defaults_when_file_absent(self, tmp_path, monkeypatch):
@@ -90,39 +90,22 @@ class TestLoadPillarWeights:
         assert result["testing"] == pytest.approx(mod._MIN_WEIGHT)
         mod._load_pillar_weights.cache_clear()
 
-    def test_configurable_min_weight_from_yaml(self, tmp_path, monkeypatch):
-        """min_weight in pillar_weights overrides the hardcoded _MIN_WEIGHT fallback."""
+    def test_config_min_pillar_weight_overrides_builtin_floor(self, tmp_path, monkeypatch):
+        """anomaly_detection.min_pillar_weight in config must replace the hardcoded _MIN_WEIGHT."""
         cfg = tmp_path / "agent_readiness_config.yaml"
         cfg.write_text(
+            "anomaly_detection:\n"
+            "  min_pillar_weight: 0.5\n"
             "pillar_weights:\n"
-            "  testing: 0.0\n"
-            "  min_weight: 0.3\n",
+            "  testing: 0.0\n",
             encoding="utf-8",
         )
         mod = self._get_mod()
         monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
         mod._load_pillar_weights.cache_clear()
         result = mod._load_pillar_weights()
-        # weight 0.0 must be clamped to the configured 0.3, not the hardcoded 0.1
-        assert result["testing"] == pytest.approx(0.3)
-        # min_weight must not be stored as a pillar entry
-        assert "min_weight" not in result
-        mod._load_pillar_weights.cache_clear()
-
-    def test_min_weight_in_config_does_not_affect_weights_above_floor(self, tmp_path, monkeypatch):
-        """Weights already above min_weight must not be modified."""
-        cfg = tmp_path / "agent_readiness_config.yaml"
-        cfg.write_text(
-            "pillar_weights:\n"
-            "  testing: 1.5\n"
-            "  min_weight: 0.3\n",
-            encoding="utf-8",
-        )
-        mod = self._get_mod()
-        monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
-        mod._load_pillar_weights.cache_clear()
-        result = mod._load_pillar_weights()
-        assert result["testing"] == pytest.approx(1.5)
+        # 0.0 should be clamped to the config-supplied floor of 0.5, not the builtin 0.1
+        assert result["testing"] == pytest.approx(0.5)
         mod._load_pillar_weights.cache_clear()
 
     def test_all_default_pillar_ids_present(self, tmp_path, monkeypatch):
@@ -146,18 +129,18 @@ class TestLoadPillarWeights:
 class TestRunReadinessCheckWeights:
     def test_custom_weight_changes_overall_score(self, tmp_path, monkeypatch):
         """Boosting one pillar's weight must shift the overall score."""
-        import tools.aiify.agent_readiness.checker as mod
+        import tools.ai_augmentation.agent_readiness.checker as mod
 
         # Patch all pillars to return 100% pass rate
         all_pass_weights = {p: 1.0 for p in mod._WEIGHT_DEFAULTS}
         monkeypatch.setattr(mod, "_load_pillar_weights", lambda: all_pass_weights)
 
-        from tools.aiify.agent_readiness.pillars._base import CriterionResult
+        from tools.ai_augmentation.agent_readiness.pillars._base import CriterionResult
 
         def _all_pass_pillar(pillar):
             def run(repo_path):
                 return [CriterionResult(c.id, True, "ok") for c in pillar.criteria]
-            pillar.run = run
+            monkeypatch.setattr(pillar, "run", run)
             return pillar
 
         patched_pillars = [_all_pass_pillar(p) for p in mod._ALL_PILLARS]
@@ -168,8 +151,8 @@ class TestRunReadinessCheckWeights:
 
     def test_overall_score_reflects_failing_high_weight_pillar(self, tmp_path, monkeypatch):
         """A heavily-weighted failing pillar must reduce the overall score more than a lightly-weighted one."""
-        import tools.aiify.agent_readiness.checker as mod
-        from tools.aiify.agent_readiness.pillars._base import CriterionResult, Criterion, Pillar
+        import tools.ai_augmentation.agent_readiness.checker as mod
+        from tools.ai_augmentation.agent_readiness.pillars._base import CriterionResult, Criterion, Pillar
 
         heavy_fail = Pillar(
             id="heavy", name="Heavy", description="High-weight failing pillar",
@@ -189,8 +172,8 @@ class TestRunReadinessCheckWeights:
 
     def test_overall_score_weighted_average(self, tmp_path, monkeypatch):
         """overall = (1.0*w_pass + 0.0*w_fail) / (w_pass + w_fail)."""
-        import tools.aiify.agent_readiness.checker as mod
-        from tools.aiify.agent_readiness.pillars._base import CriterionResult, Criterion, Pillar
+        import tools.ai_augmentation.agent_readiness.checker as mod
+        from tools.ai_augmentation.agent_readiness.pillars._base import CriterionResult, Criterion, Pillar
 
         pass_pillar = Pillar(
             id="pass-p", name="Pass", description="All-pass pillar",

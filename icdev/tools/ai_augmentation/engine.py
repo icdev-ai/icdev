@@ -37,6 +37,39 @@ from tools.ai_augmentation.roadmap_generator import generate_roadmap
 
 _CONFIG_PATH = pathlib.Path(__file__).resolve().parent.parent.parent / "args" / "aac_config.yaml"
 
+
+def _load_aac_config() -> dict:
+    try:
+        with open(_CONFIG_PATH, "r", encoding="utf-8") as fh:
+            cfg = yaml.safe_load(fh)
+        return cfg if isinstance(cfg, dict) else {}
+    except Exception:
+        return {}
+
+
+_aac_cfg = _load_aac_config()
+_nlp_ref_cfg: dict = _aac_cfg.get("nlp_ref_extractor", {})
+_NLP_REF_ENABLED: bool = (
+    os.environ.get("ICDEV_AAC_NLP_REF", "").lower() in ("1", "true", "yes")
+    or bool(_nlp_ref_cfg.get("enabled", False))
+)
+_NLP_REF_MODEL: str = str(_nlp_ref_cfg.get("model", "claude-haiku-4-5-20251001"))
+_NLP_REF_MAX_TOKENS: int = int(_nlp_ref_cfg.get("max_tokens", 128))
+
+_NLP_REF_PROMPT = """\
+You are a code analysis assistant extracting metadata from a scan target reference.
+
+Input type : {input_type}
+Input ref  : {input_ref}
+
+Extract:
+- project_name       — short human-readable name (from the URL slug or directory name)
+- hosting_platform   — one of: github, gitlab, bitbucket, azure_devops, local, unknown
+- detected_languages — list of likely programming languages inferred from the ref string
+
+Respond with JSON only (no markdown):
+{{"project_name": "my-app", "hosting_platform": "github", "detected_languages": ["python"]}}"""
+
 _FALLBACK_ANOMALY_THRESHOLDS = {
     "innovation_signal_min_score": 0.60,
     "phase": {
@@ -45,6 +78,9 @@ _FALLBACK_ANOMALY_THRESHOLDS = {
         "p3_min_score": 0.30,
     },
     "priority_high_min_score": 0.70,
+    "value_feasibility_max_delta": 0.50,
+    "component_outlier_floor": 0.05,
+    "component_outlier_ceiling": 0.95,
 }
 
 
@@ -132,10 +168,20 @@ def _insert(conn: Any, sql: str, params: tuple, id_col: str = "id") -> int:
     return cur.lastrowid or 0
 
 
-def _build_summary(input_ref: str, opp_rows: list[dict]) -> str:
-    """Derive a one-sentence plain-English project summary without LLM calls."""
+def _build_summary(
+    input_ref: str,
+    opp_rows: list[dict],
+    nlp_ref_info: dict | None = None,
+) -> str:
+    """Derive a one-sentence plain-English project summary.
+
+    Uses NLP-extracted project_name from nlp_ref_info when available;
+    falls back to regex URL/path parsing otherwise.
+    """
     ref = input_ref.strip().rstrip("/")
-    if re.match(r"^(https?://|git@)", ref):
+    if nlp_ref_info and nlp_ref_info.get("project_name"):
+        name = nlp_ref_info["project_name"]
+    elif re.match(r"^(https?://|git@)", ref):
         name = ref.rstrip("/").split("/")[-1].replace(".git", "")
     else:
         name = pathlib.Path(ref).name or ref
@@ -160,6 +206,70 @@ def _build_summary(input_ref: str, opp_rows: list[dict]) -> str:
         f"'{name}' — {len(opp_rows)} augmentation opportunities: "
         f"{pattern_str}. Recommended AI: {paradigm_str}."
     )
+
+
+def _nlp_extract_ref_info(input_ref: str, input_type: str) -> dict:
+    """Use Claude Haiku NLP extraction to classify the scan target and extract project metadata.
+
+    This is an opt-in enhancement that replaces regex URL/path parsing with
+    LLM-powered extraction, yielding richer project identification metadata
+    (hosting platform, language hints, canonical project name).
+
+    Enabled by: ICDEV_AAC_NLP_REF=true env var or nlp_ref_extractor.enabled in aac_config.yaml.
+
+    Returns:
+        Dict with keys ``project_name``, ``hosting_platform``, ``detected_languages``.
+        Empty dict when disabled or on any failure — callers must handle gracefully.
+    """
+    if not _NLP_REF_ENABLED:
+        return {}
+
+    try:
+        from tools.llm.provider import LLMRequest  # lazy import — optional dep
+        from tools.llm.router import LLMRouter
+    except ImportError:
+        return {}
+
+    try:
+        router = LLMRouter()
+        request = LLMRequest(
+            messages=[{
+                "role": "user",
+                "content": _NLP_REF_PROMPT.format(
+                    input_type=input_type or "unknown",
+                    input_ref=input_ref or "",
+                ),
+            }],
+            system_prompt=(
+                "You are a code analysis assistant. "
+                "Reply only with the JSON object specified — no prose."
+            ),
+            agent_id="scan-ref-nlp-extractor",
+            classification="CUI",
+            max_tokens=_NLP_REF_MAX_TOKENS,
+            effort="low",
+            preferred_model=_NLP_REF_MODEL,
+        )
+        response = router.invoke("code_generation", request)
+        raw = re.sub(r"```(?:json)?|```", "", response.content or "").strip()
+        m = re.search(r"\{.*\}", raw, re.DOTALL)
+        if not m:
+            return {}
+        data: dict = json.loads(m.group(0))
+        if not data:
+            return {}
+    except Exception:  # network error, parse error — degrade gracefully
+        return {}
+
+    detected_languages = data.get("detected_languages", [])
+    if not isinstance(detected_languages, list):
+        detected_languages = []
+
+    return {
+        "project_name": str(data.get("project_name", "")),
+        "hosting_platform": str(data.get("hosting_platform", "")),
+        "detected_languages": [str(lang) for lang in detected_languages],
+    }
 
 
 def _register_innovation_signals(opp_rows: list[dict], score_rows: list[dict], scan_id: int) -> int:
@@ -448,6 +558,73 @@ def _promote_phase_opportunities(
     return inserted
 
 
+def detect_score_anomalies(rows: list, thresholds: dict | None = None) -> list:
+    """Detect statistical anomalies in a batch of scored opportunities.
+
+    Uses thresholds from the ``anomaly_detection`` section of aac_config.yaml
+    so that sensitivity can be tuned without touching source code.
+
+    Args:
+        rows:       List of score row dicts with ``opportunity_id``,
+                    ``value_score``, ``feasibility_score``, ``risk_score``,
+                    ``composite_score``.
+        thresholds: Optional threshold dict; defaults to the
+                    ``anomaly_detection`` section from aac_config.yaml.
+
+    Returns:
+        List of anomaly dicts; empty means no anomalies.  Each dict has:
+            ``opportunity_id``, ``anomaly_type``, ``detail``.
+    """
+    if thresholds is None:
+        thresholds = _load_anomaly_thresholds()
+
+    max_delta = float(thresholds.get("value_feasibility_max_delta", 0.50))
+    floor = float(thresholds.get("component_outlier_floor", 0.05))
+    ceiling = float(thresholds.get("component_outlier_ceiling", 0.95))
+
+    anomalies: list = []
+    for row in rows:
+        opp_id = row.get("opportunity_id")
+        value = float(row.get("value_score", 0.0))
+        feasibility = float(row.get("feasibility_score", 0.0))
+        risk = float(row.get("risk_score", 0.0))
+        composite = float(row.get("composite_score", 0.0))
+
+        delta = abs(value - feasibility)
+        if delta > max_delta:
+            anomalies.append({
+                "opportunity_id": opp_id,
+                "anomaly_type": "value_feasibility_imbalance",
+                "detail": {
+                    "value_score": value,
+                    "feasibility_score": feasibility,
+                    "delta": round(delta, 4),
+                    "threshold": max_delta,
+                },
+            })
+
+        for comp_name, comp_val in [
+            ("value_score", value),
+            ("feasibility_score", feasibility),
+            ("risk_score", risk),
+            ("composite_score", composite),
+        ]:
+            if comp_val < floor:
+                anomalies.append({
+                    "opportunity_id": opp_id,
+                    "anomaly_type": "component_outlier_low",
+                    "detail": {"component": comp_name, "value": comp_val, "floor": floor},
+                })
+            elif comp_val > ceiling:
+                anomalies.append({
+                    "opportunity_id": opp_id,
+                    "anomaly_type": "component_outlier_high",
+                    "detail": {"component": comp_name, "value": comp_val, "ceiling": ceiling},
+                })
+
+    return anomalies
+
+
 def _is_git_url(ref: str) -> bool:
     """Return True if ref looks like a git or HTTPS repository URL."""
     return bool(
@@ -531,6 +708,10 @@ def run_scan(
                 "error": str(exc),
             }
 
+        # Optional NLP extraction: classify the scan target ref for richer metadata.
+        # Falls back silently to empty dict when disabled or LLM unavailable.
+        nlp_ref_info = _nlp_extract_ref_info(input_ref, input_type)
+
         language_profile: dict = {
             "python": total_files,
             "agent_readiness_summary": {
@@ -539,6 +720,8 @@ def run_scan(
                 "icdev_checks": readiness_result["icdev_checks"],
             },
         }
+        if nlp_ref_info:
+            language_profile["nlp_ref_extraction"] = nlp_ref_info
 
         # 1b. Insert scan record
         conn = get_connection()
@@ -627,7 +810,7 @@ def run_scan(
         roadmap = generate_roadmap(scan_id, opp_rows, score_rows)
 
         # 4a. Build and store deterministic project summary
-        project_summary = _build_summary(input_ref, opp_rows)
+        project_summary = _build_summary(input_ref, opp_rows, nlp_ref_info)
         conn = get_connection()
         try:
             _exec(conn, "UPDATE aac_scans SET project_summary = ? WHERE scan_id = ?",

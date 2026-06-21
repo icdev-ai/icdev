@@ -1,0 +1,20 @@
+# CUI // SP-CTI
+# Package validation thresholds — managed here so validate_package_config.py
+# does not hard-code numeric gates that change as the project grows.
+#
+# dep_version_advisor.py reads these to scope its LLM-assisted review.
+
+validate:
+  # Minimum number of Claude bootstrap slash commands that must be present
+  # under icdev/data/claude_bootstrap/claude/commands/ before a release.
+  # Raise this number after shipping a new batch of commands.
+  min_slash_command_count: 40
+
+dep_advisor:
+  # LLM routing function used for version pin assessment.
+  llm_function: llm_generation
+  # Maximum token budget per dependency check.
+  max_tokens: 512
+  # Only report packages whose current pin is older than this many months.
+  # Set to 0 to report all packages regardless of age.
+  staleness_months: 12

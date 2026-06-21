@@ -4,39 +4,12 @@
 # for a project claiming task automation / CI readiness.
 
 # ---------------------------------------------------------------------------
-# Global glob-file helper settings — used by _base._glob_files()
-# ---------------------------------------------------------------------------
-glob_files:
-  # Directories skipped during **/* pattern expansion across all pillars.
-  # Add project-specific vendor dirs (e.g. "third_party") without touching code.
-  # Values below 1 entry are anomalously sparse for a real project repo.
-  ignore_dirs:
-    - node_modules
-    - vendor
-    - .git
-
-# ---------------------------------------------------------------------------
-# Score reporting
-# ---------------------------------------------------------------------------
-score:
-  # Decimal places for pillar percentage scores (0.0–1.0 scale).
-  # Values below 0 are treated as 0 at load time.
-  precision: 4
-
-# ---------------------------------------------------------------------------
 # Pillar weights — used by checker.py to compute the overall readiness score.
 # Weights are relative multipliers; a pillar with weight 1.5 contributes 50%
 # more than one with weight 1.0 to the weighted average.
 # Values below 0.1 are anomalously low and will be clamped to 0.1 at load time.
 # ---------------------------------------------------------------------------
 pillar_weights:
-  # Anomaly-detection floor: weights below this value are treated as anomalously
-  # low and clamped up to min_weight at load time.  Raise to enforce a stricter
-  # floor (e.g. 0.3 for environments that require all pillars to carry meaningful
-  # influence); lower toward 0.0 for nearly-disabled pillars.
-  # Default: 0.1 (matches the hardcoded fallback in checker.py).
-  min_weight: 0.1
-
   code-quality:      1.0
   documentation:     1.0
   testing:           1.2   # testing weighted slightly higher
@@ -48,39 +21,6 @@ pillar_weights:
   nist-controls:     1.5   # ICDEV: NIST compliance is high-priority
   stig-compliance:   1.3   # ICDEV: STIG compliance matters
   append-only-audit: 1.3   # ICDEV: audit integrity matters
-scoring:
-  # Pillar weights used in the weighted-average overall readiness score.
-  # Moved here from checker.py to allow tuning without code changes.
-  # ICDEV pillars (il-classification, nist-controls, etc.) are weighted higher
-  # because compliance gaps are the typical blocker for IL4/IL5 deployments.
-  pillar_weights:
-    code-quality: 1.0
-    documentation: 1.0
-    testing: 1.2          # testing slightly higher — automation depends on test coverage
-    structure: 0.8
-    dependencies: 1.0
-    configuration: 0.8
-    security: 1.2         # security slightly higher — agentic tasks must meet security gate
-    il-classification: 1.5   # ICDEV: IL compliance is high-priority
-    nist-controls: 1.5        # ICDEV: NIST compliance is high-priority
-    stig-compliance: 1.3      # ICDEV: STIG compliance matters
-    append-only-audit: 1.3    # ICDEV: audit integrity matters
-
-  anomaly_detection:
-    # Flag a pillar score as anomalously low when it falls below this threshold.
-    # A project with any fully-evaluated pillar below 25% is a readiness concern
-    # regardless of overall score — a single weak area can block agentic task execution.
-    floor_threshold: 0.25
-    # Flag a pillar as a statistical outlier when its z-score (vs all pillar scores)
-    # exceeds this value. 2.0 is roughly the bottom 2.3% of a symmetric distribution.
-    zscore_threshold: 2.0
-
-weight_anomaly_detection:
-  # Minimum pillar weight accepted from config — values below this floor are
-  # anomalously low and will be clamped at load time to prevent any single
-  # pillar from being effectively silenced and distorting the overall score.
-  # Raise to 0.5 for stricter enforcement; lower to 0.05 to allow near-zero weights.
-  min_weight: 0.1
 
 pillars:
   documentation:
@@ -103,10 +43,8 @@ pillars:
 
   nist_controls:
     nlp_extractor:
-      # Enable Claude Haiku NLP extraction as the PRIMARY detection method.
-      # When true and ANTHROPIC_API_KEY is set, NLP runs first on user-provided content;
-      # regex is used only as a fallback when NLP is unavailable.
-      # Set to false to run regex-only (no API calls, faster but misses natural-language prose).
+      # Enable Claude Haiku NLP extraction as a secondary pass when regex finds nothing.
+      # Set to false to run regex-only (no API calls, faster but less accurate for prose).
       enabled: true
       # Model used for NLP extraction. claude-haiku-4-5-20251001 balances speed and accuracy.
       model: claude-haiku-4-5-20251001
@@ -117,21 +55,6 @@ pillars:
       confidence_threshold: 0.7
       # Characters of file content sampled per NLP call to control token cost.
       text_sample_chars: 2000
-      # Maximum Python files scanned in the fast regex pass for NIST control IDs.
-      # Values below ~10 risk missing coverage; raise for very large monorepos.
-      fast_path_py_sample: 50
-      # Maximum Python files passed to the NLP enhanced pass (slower, uses API).
-      # Keep ≤ fast_path_py_sample; raising beyond 20 has diminishing returns.
-      enhanced_path_py_sample: 10
-      # Maximum doc files (*.md, *.rst) passed to the NLP enhanced pass.
-      doc_sample: 5
-      # Maximum Python files scanned when searching for crosswalk engine usage.
-      crosswalk_py_sample: 30
-      # Max Python source files checked with NLP as primary method.
-      # Increase for larger repos; keep low to limit API calls.
-      nlp_primary_scan_limit: 20
-      # Max documentation files checked with NLP as primary method.
-      nlp_primary_doc_scan_limit: 10
 
   stig_compliance:
     nlp_extractor:
@@ -147,41 +70,12 @@ pillars:
       confidence_threshold: 0.7
       # Characters of file content sampled per NLP call to control token cost.
       text_sample_chars: 2000
-      # Maximum Python files included in the STIG V-ID code scan (regex fast path).
-      # Raise for larger repos; combined with yaml_sample below to form the scan set.
-      code_scan_py_sample: 30
-      # Maximum YAML/YML files included in the STIG V-ID code scan (regex fast path).
-      code_scan_yaml_sample: 20
-      # Maximum files from the combined code-scan set passed to NLP enhanced path.
-      enhanced_path_sample: 10
-      # Maximum doc files (*.md, *.txt) passed to NLP enhanced path for STIG doc refs.
-      doc_sample: 5
-      # Maximum checklist files (.ckl, .xml, stig*.yaml, etc.) passed to NLP.
-      checklist_nlp_sample: 3
-      # Maximum compliance docs (docs/compliance/*.md) passed to NLP.
-      compliance_nlp_sample: 3
-      # Maximum Python files scanned for CAT I remediation evidence.
-      cat_remediation_py_sample: 20
-      # Maximum doc files passed to NLP for CAT I natural-language evidence.
-      cat_remediation_doc_sample: 5
 
   configuration:
     ci_pipeline:
       # Minimum GitHub Actions workflow files required to pass the ci-pipeline criterion.
       # A single stub workflow is anomalously low for a project claiming CI readiness.
       min_workflows: 1
-
-    cd_deployment:
-      # Keywords/patterns scanned in CI files and Makefiles to detect a deployment step.
-      # Values are Python regex alternations joined with | at load time.
-      # Add project-specific verbs (e.g. "ship", "publish-chart") without touching code.
-      deploy_keywords:
-        - deploy
-        - release
-        - publish
-        - "push.*image"
-        - "helm\\s+upgrade"
-        - "kubectl\\s+apply"
 
     iac:
       # Minimum IaC files (Terraform .tf, Helm Chart.yaml, K8s manifests) required to pass.
@@ -207,43 +101,10 @@ pillars:
       # A ratio below this is anomalously low for a project claiming reproducible builds.
       min_pin_ratio: 0.8
 
-  structure:
-    gitignore:
-      # Minimum number of lines a .gitignore must contain to be considered non-trivial.
-      # A .gitignore with fewer lines is anomalously sparse for a project claiming
-      # artifact/secret hygiene. Raise to 10+ for stricter gates; lower to 3 for minimal repos.
-      min_lines: 5
-
-  append_only_audit:
-    nlp_extractor:
-      # Enable Claude Haiku NLP extraction as a secondary pass when regex finds nothing.
-      # Set to false to run regex-only (no API calls, faster but misses ORM/indirect mutations).
-      enabled: true
-      # Model used for NLP extraction. claude-haiku-4-5-20251001 balances speed and accuracy.
-      model: claude-haiku-4-5-20251001
-      # Max output tokens for the JSON response; 256 is sufficient for structured extraction.
-      max_tokens: 256
-      # Minimum confidence score (0.0–1.0) required to accept an NLP-detected mutation.
-      # Lower values increase recall but risk false positives on ambiguous ORM patterns.
-      confidence_threshold: 0.7
-      # Characters of file content sampled per NLP call to control token cost.
-      text_sample_chars: 2000
-      # Maximum Python files scanned in the fast regex pass for raw SQL mutations.
-      # Values below ~10 risk missing coverage; raise for very large monorepos.
-      mutation_scan_py_sample: 50
-      # Maximum Python files passed to the NLP enhanced pass (slower, uses API).
-      # Keep ≤ mutation_scan_py_sample; raising beyond 20 has diminishing returns.
-      enhanced_path_py_sample: 10
-    audit_log_inserts:
-      # Maximum Python files scanned when searching for audit INSERT operations.
-      # Values below ~10 are anomalously low and risk missing insert coverage.
-      # Raise for very large repos; lower to trade accuracy for speed.
-      scan_sample_size: 40
-
   il_classification:
     cui_file_headers:
       # Maximum number of Python source files sampled for CUI header detection.
-      # Actual sample is adaptive: min(sample_size, max(min_adaptive_sample, total_files // adaptive_denominator)).
+      # Actual sample is adaptive: min(sample_size, max(10, total_files // 5)).
       # Raise for large repos where a fixed cap under-samples; lower to trade accuracy for speed.
       sample_size: 30
       # Minimum ratio (0.0–1.0) of sampled files that must carry CUI/classification headers
@@ -253,31 +114,3 @@ pillars:
       # "anomalously low" to a softer warning. Set equal to min_header_ratio to collapse
       # the warning zone and always emit the stronger anomaly message below min_header_ratio.
       warn_header_ratio: 0.3
-      # Floor for the adaptive sample: guarantees at least this many files are checked even
-      # in tiny repos. Values below 3 are anomalously low for a meaningful coverage sample.
-      min_adaptive_sample: 10
-      # Denominator for adaptive percentage: sample ≈ total_files // adaptive_denominator.
-      # At 5, approximately 20% of the corpus is sampled. Lower = broader coverage, higher = faster.
-      adaptive_denominator: 5
-scoring:
-  # Pillar score below this value is flagged as anomalously low (0.0–1.0).
-  # At 0.5, any pillar failing more than half its criteria is considered anomalous.
-  # Raise to 0.6–0.7 for stricter anomaly detection; lower to 0.3 for lenient mode.
-  anomaly_threshold: 0.5
-
-  # Per-pillar weight multipliers applied when computing the overall readiness score.
-  # Values >1.0 increase a pillar's influence; <1.0 decreases it.
-  # ICDEV compliance pillars (il-classification, nist-controls, stig-compliance,
-  # append-only-audit) are weighted higher to reflect their regulatory importance.
-  pillar_weights:
-    code-quality:      1.0
-    documentation:     1.0
-    testing:           1.2
-    structure:         0.8
-    dependencies:      1.0
-    configuration:     0.8
-    security:          1.2
-    il-classification: 1.5
-    nist-controls:     1.5
-    stig-compliance:   1.3
-    append-only-audit: 1.3
