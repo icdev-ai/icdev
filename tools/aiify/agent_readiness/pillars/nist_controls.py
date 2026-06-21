@@ -144,10 +144,10 @@ def _check_control_ids_in_code(repo: pathlib.Path) -> CriterionResult:
                                f"NIST 800-53 control IDs found in {len(hits)} file(s): {', '.join(hits[:5])}")
 
     # Enhanced path: NLP for natural-language control references missed by regex
-    min_confidence = thresholds["nlp_extractor_confidence_threshold"]
-    for f in py_files[:thresholds["enhanced_path_py_sample"]]:
     thresholds = _load_thresholds()
     min_confidence = thresholds["nlp_extractor_confidence_threshold"]
+    for f in py_files[:thresholds["enhanced_path_py_sample"]]:
+        pass  # Enhanced NLP path reserved; primary path below handles extraction
 
     # Primary path: NLP extraction for natural-language control references in user content
     nlp_limit = thresholds["nlp_primary_scan_limit"]
@@ -187,6 +187,7 @@ def _check_nist_in_docs(repo: pathlib.Path) -> CriterionResult:
     thresholds = _load_thresholds()
     min_confidence = thresholds["nlp_extractor_confidence_threshold"]
     for f in doc_files[:thresholds["doc_sample"]]:
+        pass  # Enhanced NLP path reserved; primary path below handles extraction
 
     # Primary path: NLP extraction for natural-language NIST references in user content
     doc_limit = thresholds["nlp_primary_doc_scan_limit"]

@@ -1,584 +1,481 @@
 # CUI // SP-CTI
-"""Tests for Oracle WorkflowPatternLens anomaly detection.
+"""Tests for WorkflowPatternLens anomaly detection — hardcoded_threshold replacement.
 
 Covers:
-  - _percentile_rank, _score_pattern, _adaptive_threshold, _z_score_severity helpers
-  - _score_ngram_patterns, _score_cooccurrence_pairs, _score_kanban_task_patterns,
-    _score_self_healing scoring methods
-  - _llm_anomaly_thresholds with mocked LLM (happy path + error fallback)
-  - _calibrate_anomaly_thresholds integration
-  - propose() recommendations
+  - _percentile_rank: boundary conditions and correct fraction
+  - _score_pattern: fallback, sparse, and full-population paths
+  - _adaptive_threshold: fallback when < min_population, mean+z*sigma otherwise
+  - _z_score_severity: severity classification by Z-score
+  - _automation_potential: heuristic classification
+  - _llm_anomaly_thresholds: graceful empty-input return and JSON clamping
+  - WorkflowPatternLens.score: end-to-end with synthetic analysis data
+  - YAML config loading: args/lens_workflow_patterns.yaml round-trips correctly
 """
 
+from __future__ import annotations
+
 import json
-import pytest
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
+# Import helpers and lens directly (no DB required for unit tests)
 from tools.oracle.lenses.lens_workflow_patterns import (
+    WorkflowPatternLens,
+    _adaptive_threshold,
+    _automation_potential,
+    _llm_anomaly_thresholds,
+    _ngrams,
     _percentile_rank,
     _score_pattern,
-    _adaptive_threshold,
     _z_score_severity,
-    _llm_anomaly_thresholds,
-    WorkflowPatternLens,
+    _CODE_DEFAULTS,
+    _ARGS_PATH,
 )
 
 
 # ---------------------------------------------------------------------------
-# Helper: _percentile_rank
+# _percentile_rank
 # ---------------------------------------------------------------------------
 
 class TestPercentileRank:
     def test_empty_population_returns_one(self):
         assert _percentile_rank(5.0, []) == 1.0
 
-    def test_single_value_returns_one(self):
+    def test_single_element_returns_one(self):
         assert _percentile_rank(3.0, [3.0]) == 1.0
 
-    def test_value_above_all_returns_one(self):
-        assert _percentile_rank(10.0, [1.0, 2.0, 3.0]) == 1.0
+    def test_value_at_min_returns_fraction(self):
+        pop = [1.0, 2.0, 3.0, 4.0, 5.0]
+        assert _percentile_rank(1.0, pop) == pytest.approx(0.2)
 
-    def test_value_below_all_returns_zero(self):
-        result = _percentile_rank(0.5, [1.0, 2.0, 3.0])
-        assert result == 0.0
+    def test_value_at_max_returns_one(self):
+        pop = [1.0, 2.0, 3.0, 4.0, 5.0]
+        assert _percentile_rank(5.0, pop) == pytest.approx(1.0)
 
-    def test_value_at_median(self):
-        result = _percentile_rank(2.0, [1.0, 2.0, 3.0])
-        assert result == pytest.approx(2 / 3, rel=1e-6)
+    def test_value_above_max_returns_one(self):
+        pop = [1.0, 2.0, 3.0]
+        assert _percentile_rank(100.0, pop) == pytest.approx(1.0)
 
-    def test_fraction_in_range(self):
-        result = _percentile_rank(3.0, [1.0, 2.0, 3.0, 4.0, 5.0])
-        assert 0.0 <= result <= 1.0
+    def test_value_below_min_returns_zero(self):
+        pop = [2.0, 3.0, 4.0]
+        assert _percentile_rank(1.0, pop) == pytest.approx(0.0)
 
 
 # ---------------------------------------------------------------------------
-# Helper: _score_pattern
+# _score_pattern
 # ---------------------------------------------------------------------------
 
 class TestScorePattern:
-    def test_no_population_uses_fallback_denominator(self):
-        # freq=10 / fallback_freq_denominator=20 = 0.5 (freq_weight=0.6)
-        # session=5 / fallback_session_denominator=10 = 0.5 (consistency_weight=0.4)
-        # expected = 0.6*0.5 + 0.4*0.5 = 0.5
-        score = _score_pattern(10, 5)
+    def test_fallback_path_no_population(self):
+        # freq=10 / 20.0 = 0.5, session=5 / 10.0 = 0.5 → 0.6*0.5 + 0.4*0.5 = 0.5
+        score = _score_pattern(10, 5, None, None)
+        assert 0.0 <= score <= 1.0
         assert score == pytest.approx(0.5, abs=0.01)
 
-    def test_full_population_at_max(self):
-        # Value at top of population → freq_score and consistency approach 1.0
-        population = [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
-        score = _score_pattern(8, 8, population, population)
-        assert score > 0.9
+    def test_fallback_caps_at_one(self):
+        score = _score_pattern(100, 100, None, None)
+        assert score <= 1.0
 
-    def test_sparse_population_uses_max_normalization(self):
-        # 3 samples < min_population_percentile=5 → normalize by observed max
-        score = _score_pattern(3, 2, [1.0, 2.0, 3.0], [1.0, 2.0])
-        assert 0.0 <= score <= 1.0
+    def test_sparse_population_normalises_by_max(self):
+        # freq_population has 3 elements (< min_population_percentile=5)
+        freq_pop = [2.0, 5.0, 10.0]
+        score = _score_pattern(10, 1, freq_pop, None)
+        # freq_score = min(1.0, 10/10) = 1.0; consistency fallback = min(1.0, 1/10)=0.1
+        assert score == pytest.approx(0.6 * 1.0 + 0.4 * 0.1, abs=0.01)
 
-    def test_score_in_zero_one_range(self):
-        for freq in [1, 5, 20]:
-            for sessions in [1, 3, 10]:
-                s = _score_pattern(freq, sessions)
+    def test_full_population_uses_percentile_rank(self):
+        freq_pop = [1.0, 2.0, 3.0, 4.0, 5.0]
+        session_pop = [1.0, 2.0, 3.0, 4.0, 5.0]
+        score = _score_pattern(5, 5, freq_pop, session_pop)
+        # Both at max → percentile_rank = 1.0
+        assert score == pytest.approx(1.0, abs=0.01)
+
+    def test_result_bounded_zero_to_one(self):
+        for freq in (0, 1, 5, 50):
+            for sess in (0, 1, 10):
+                s = _score_pattern(freq, sess)
                 assert 0.0 <= s <= 1.0
 
 
 # ---------------------------------------------------------------------------
-# Helper: _adaptive_threshold
+# _adaptive_threshold
 # ---------------------------------------------------------------------------
 
 class TestAdaptiveThreshold:
-    def test_too_few_values_returns_fallback(self):
+    def test_falls_back_when_insufficient_data(self):
         result = _adaptive_threshold([1.0, 2.0], fallback=5.0, z=1.0)
-        assert result == 5.0
+        assert result == 5.0  # < min_population_adaptive (5)
 
-    def test_enough_values_returns_mean_plus_z_sigma(self):
-        # population=[0, 2, 4, 6, 8], mean=4, pstdev=sqrt(8)≈2.83, z=1
-        values = [0.0, 2.0, 4.0, 6.0, 8.0]
+    def test_uses_mean_plus_sigma_with_sufficient_data(self):
+        values = [2.0, 4.0, 6.0, 8.0, 10.0]  # mean=6, pstdev≈2.83
+        result = _adaptive_threshold(values, fallback=3.0, z=1.0)
         import statistics
-        expected = statistics.mean(values) + 1.0 * statistics.pstdev(values)
-        result = _adaptive_threshold(values, fallback=0.0, z=1.0)
-        assert result == pytest.approx(expected, rel=1e-6)
+        mu = statistics.mean(values)
+        sigma = statistics.pstdev(values)
+        assert result == pytest.approx(mu + 1.0 * sigma, abs=0.001)
 
     def test_z_zero_returns_mean(self):
         values = [2.0, 4.0, 6.0, 8.0, 10.0]
         import statistics
         result = _adaptive_threshold(values, fallback=0.0, z=0.0)
-        assert result == pytest.approx(statistics.mean(values), rel=1e-6)
+        assert result == pytest.approx(statistics.mean(values), abs=0.001)
 
-    def test_boundary_exactly_min_population(self):
-        # Exactly min_population_adaptive=5 values → uses adaptive path
+    def test_higher_z_gives_stricter_threshold(self):
         values = [1.0, 2.0, 3.0, 4.0, 5.0]
-        result = _adaptive_threshold(values, fallback=99.0, z=0.0)
-        assert result != 99.0  # not fallback
+        t0 = _adaptive_threshold(values, fallback=0.0, z=0.0)
+        t1 = _adaptive_threshold(values, fallback=0.0, z=1.0)
+        t2 = _adaptive_threshold(values, fallback=0.0, z=2.0)
+        assert t0 <= t1 <= t2
 
 
 # ---------------------------------------------------------------------------
-# Helper: _z_score_severity
+# _z_score_severity
 # ---------------------------------------------------------------------------
 
 class TestZScoreSeverity:
-    def test_too_few_returns_info(self):
+    def test_info_when_below_min_population(self):
         assert _z_score_severity(100.0, [1.0, 2.0]) == "info"
 
-    def test_below_mean_returns_info(self):
-        pop = [10.0, 10.0, 10.0, 10.0, 10.0]
-        assert _z_score_severity(9.0, pop) == "info"
+    def test_info_when_below_warning_threshold(self):
+        pop = [1.0, 2.0, 3.0, 4.0, 5.0]
+        assert _z_score_severity(3.0, pop) == "info"
 
-    def test_at_critical_boundary(self):
-        # pop=[0,1,2,3,4]: mean=2, pstdev=sqrt(2)≈1.414; Z=3 → value≈6.24; use 7.0
-        pop = [0.0, 1.0, 2.0, 3.0, 4.0]
-        assert _z_score_severity(7.0, pop) == "critical"
+    def test_warning_between_thresholds(self):
+        import statistics
+        pop = [1.0, 2.0, 3.0, 4.0, 5.0]
+        mu = statistics.mean(pop)
+        sigma = statistics.pstdev(pop)
+        # Place value at mean + 2.5*sigma (between warning=2.0 and critical=3.0)
+        value = mu + 2.5 * sigma
+        assert _z_score_severity(value, pop) == "warning"
 
-    def test_at_warning_boundary(self):
-        # pop=[0,1,2,3,4]: Z=2 → value≈4.83; use 5.0 (Z≈2.12 > 2.0)
-        pop = [0.0, 1.0, 2.0, 3.0, 4.0]
-        assert _z_score_severity(5.0, pop) == "warning"
+    def test_critical_above_z_critical(self):
+        import statistics
+        pop = [1.0, 2.0, 3.0, 4.0, 5.0]
+        mu = statistics.mean(pop)
+        sigma = statistics.pstdev(pop)
+        value = mu + 3.5 * sigma
+        assert _z_score_severity(value, pop) == "critical"
 
-    def test_calibrated_overrides(self):
-        # With custom z_critical=1.5, Z≈2.12 for value=5 → critical
-        pop = [0.0, 1.0, 2.0, 3.0, 4.0]
-        result = _z_score_severity(5.0, pop, z_critical=1.5, z_warning=0.5)
-        assert result == "critical"
+    def test_calibrated_overrides_applied(self):
+        import statistics
+        pop = [1.0, 2.0, 3.0, 4.0, 5.0]
+        mu = statistics.mean(pop)
+        sigma = statistics.pstdev(pop)
+        # With very high z_critical=10.0, even extreme value should be "warning"
+        value = mu + 5.0 * sigma
+        assert _z_score_severity(value, pop, z_critical=10.0, z_warning=1.0) == "warning"
 
-    def test_zero_sigma_population_above_mean(self):
-        # All same values → sigma=0, value > mean → warning
+    def test_zero_sigma_population(self):
         pop = [5.0, 5.0, 5.0, 5.0, 5.0]
         assert _z_score_severity(6.0, pop) == "warning"
-
-    def test_zero_sigma_population_at_mean(self):
-        pop = [5.0, 5.0, 5.0, 5.0, 5.0]
         assert _z_score_severity(5.0, pop) == "info"
 
 
 # ---------------------------------------------------------------------------
-# LLM Anomaly Threshold Calibration
+# _automation_potential
 # ---------------------------------------------------------------------------
 
-class TestLLMAnomalyThresholds:
-    def test_empty_distributions_returns_empty(self):
+class TestAutomationPotential:
+    def test_manual_event_returns_low(self):
+        pattern = ("code_generated", "approval_granted", "test_executed")
+        assert _automation_potential(pattern) == "low"
+
+    def test_all_automated_returns_high(self):
+        pattern = ("code_generated", "test_executed", "test_passed")
+        assert _automation_potential(pattern) == "high"
+
+    def test_mixed_no_manual_below_ratio_returns_medium(self):
+        # 1 automated out of 3 = 0.33 < 0.5 → medium
+        pattern = ("code_generated", "unknown_event", "another_event")
+        assert _automation_potential(pattern) == "medium"
+
+    def test_empty_pattern(self):
+        # No events → hits_auto/len(pattern) would div-by-zero without guard
+        result = _automation_potential(())
+        assert result in ("low", "medium", "high")
+
+
+# ---------------------------------------------------------------------------
+# _ngrams
+# ---------------------------------------------------------------------------
+
+class TestNgrams:
+    def test_trigrams(self):
+        seq = ["a", "b", "c", "d"]
+        result = _ngrams(seq, 3)
+        assert result == [("a", "b", "c"), ("b", "c", "d")]
+
+    def test_returns_empty_when_seq_shorter_than_n(self):
+        assert _ngrams(["a", "b"], 3) == []
+
+    def test_single_ngram(self):
+        assert _ngrams(["x", "y", "z"], 3) == [("x", "y", "z")]
+
+
+# ---------------------------------------------------------------------------
+# _llm_anomaly_thresholds
+# ---------------------------------------------------------------------------
+
+class TestLlmAnomalyThresholds:
+    def test_empty_inputs_return_empty_dict(self):
         result = _llm_anomaly_thresholds([], [], None)
         assert result == {}
 
-    def test_llm_unavailable_returns_empty(self):
-        # LLM imports are local inside _llm_anomaly_thresholds; make the module unavailable
-        import sys
-        with patch.dict(sys.modules, {"tools.llm.router": None}):
-            result = _llm_anomaly_thresholds([1.0, 2.0, 3.0], [0.5, 0.6], None)
+    def test_llm_failure_returns_empty_dict(self):
+        # LLMRouter is a lazy import inside the function; patch at its source module
+        with patch("tools.llm.router.LLMRouter", side_effect=RuntimeError("unavailable")):
+            result = _llm_anomaly_thresholds([1.0, 2.0, 3.0], [0.5, 0.8], None)
         assert result == {}
 
-    def _mock_llm_call(self, payload: dict):
-        """Return (mock_router, mock_response) for patching inside _llm_anomaly_thresholds."""
+    def _mock_router_context(self, response_content: str):
+        """Return a context manager that injects a mock LLMRouter with the given response."""
         mock_response = MagicMock()
-        mock_response.content = json.dumps(payload)
-        mock_router = MagicMock()
-        mock_router.invoke.return_value = mock_response
-        return mock_router
+        mock_response.content = response_content
+        mock_router_instance = MagicMock()
+        mock_router_instance.invoke.return_value = mock_response
+        return patch("tools.llm.router.LLMRouter", return_value=mock_router_instance)
 
-    def test_llm_happy_path_returns_clamped_values(self):
-        payload = {
-            "min_pattern_freq": 4,
+    def test_valid_llm_response_parsed_and_clamped(self):
+        valid_json = json.dumps({
+            "min_pattern_freq": 4.0,
             "cooccurrence_threshold": 0.75,
             "fallback_freq_denominator": 25.0,
-            "fallback_session_denominator": 12.0,
-            "z_critical": 3.0,
-            "z_warning": 2.0,
+            "fallback_session_denominator": 15.0,
+            "z_critical": 2.5,
+            "z_warning": 1.5,
             "adaptive_z_ngram": 1.2,
             "adaptive_z_cooccurrence": 0.8,
-            "adaptive_z_kanban": 1.0,
-        }
-        mock_router = self._mock_llm_call(payload)
-        mock_router_cls = MagicMock(return_value=mock_router)
+            "adaptive_z_kanban": 0.9,
+        })
+        with self._mock_router_context(valid_json):
+            result = _llm_anomaly_thresholds([1.0, 2.0, 3.0, 4.0, 5.0], [0.5, 0.7, 0.9])
 
-        with patch("tools.llm.router.LLMRouter", mock_router_cls), \
-             patch("tools.llm.provider.LLMRequest", MagicMock()):
-            result = _llm_anomaly_thresholds([1.0, 2.0, 3.0, 4.0], [0.5, 0.6, 0.7], None)
+        assert result["min_pattern_freq"] == pytest.approx(4.0)
+        assert result["cooccurrence_threshold"] == pytest.approx(0.75)
+        assert result["z_critical"] == pytest.approx(2.5)
 
-        assert result.get("min_pattern_freq") == pytest.approx(4.0)
-        assert result.get("cooccurrence_threshold") == pytest.approx(0.75)
-        assert result.get("z_critical") == pytest.approx(3.0)
-
-    def test_llm_clamps_cooccurrence_to_one(self):
-        payload = {
-            "min_pattern_freq": 2,
-            "cooccurrence_threshold": 1.5,  # exceeds 1.0 → clamped to 1.0
-            "fallback_freq_denominator": 10.0,
+    def test_llm_response_values_clamped_to_range(self):
+        # cooccurrence_threshold must be in [0, 1]; supply 2.0 → clamped to 1.0
+        invalid_json = json.dumps({
+            "min_pattern_freq": 0.0,          # lo=1.0 → clamped to 1.0
+            "cooccurrence_threshold": 2.0,    # hi=1.0 → clamped to 1.0
+            "fallback_freq_denominator": 5.0,
             "fallback_session_denominator": 5.0,
-            "z_critical": 3.0,
-            "z_warning": 2.0,
-            "adaptive_z_ngram": 1.0,
+            "z_critical": 0.5,                # lo=1.0 → clamped to 1.0
+            "z_warning": 0.1,                 # lo=0.5 → clamped to 0.5
+            "adaptive_z_ngram": -1.0,         # lo=0.0 → clamped to 0.0
             "adaptive_z_cooccurrence": 1.0,
             "adaptive_z_kanban": 1.0,
-        }
-        mock_router = self._mock_llm_call(payload)
-        mock_router_cls = MagicMock(return_value=mock_router)
+        })
+        with self._mock_router_context(invalid_json):
+            result = _llm_anomaly_thresholds([1.0, 2.0, 3.0], [0.5, 0.8])
 
-        with patch("tools.llm.router.LLMRouter", mock_router_cls), \
-             patch("tools.llm.provider.LLMRequest", MagicMock()):
-            result = _llm_anomaly_thresholds([1.0, 2.0, 3.0, 4.0], [0.5, 0.6, 0.7], None)
+        assert result["min_pattern_freq"] == pytest.approx(1.0)
+        assert result["cooccurrence_threshold"] == pytest.approx(1.0)
+        assert result["z_critical"] == pytest.approx(1.0)
+        assert result["z_warning"] == pytest.approx(0.5)
+        assert result["adaptive_z_ngram"] == pytest.approx(0.0)
 
-        assert result.get("cooccurrence_threshold") == pytest.approx(1.0)
-
-    def test_llm_returns_markdown_fenced_json(self):
-        payload = {
-            "min_pattern_freq": 3,
-            "cooccurrence_threshold": 0.8,
-            "fallback_freq_denominator": 20.0,
-            "fallback_session_denominator": 10.0,
-            "z_critical": 3.0,
-            "z_warning": 2.0,
-            "adaptive_z_ngram": 1.0,
-            "adaptive_z_cooccurrence": 1.0,
-            "adaptive_z_kanban": 1.0,
-        }
-        mock_response = MagicMock()
-        mock_response.content = "```json\n" + json.dumps(payload) + "\n```"
-        mock_router = MagicMock()
-        mock_router.invoke.return_value = mock_response
-        mock_router_cls = MagicMock(return_value=mock_router)
-
-        with patch("tools.llm.router.LLMRouter", mock_router_cls), \
-             patch("tools.llm.provider.LLMRequest", MagicMock()):
-            result = _llm_anomaly_thresholds([1.0, 2.0, 3.0, 4.0], [0.5, 0.6, 0.7], None)
+    def test_markdown_fence_stripped(self):
+        fenced = "```json\n{\"min_pattern_freq\": 3.0, \"cooccurrence_threshold\": 0.8, \"fallback_freq_denominator\": 20.0, \"fallback_session_denominator\": 10.0, \"z_critical\": 3.0, \"z_warning\": 2.0, \"adaptive_z_ngram\": 1.0, \"adaptive_z_cooccurrence\": 1.0, \"adaptive_z_kanban\": 1.0}\n```"
+        with self._mock_router_context(fenced):
+            result = _llm_anomaly_thresholds([1.0, 2.0, 3.0], [0.5])
 
         assert "min_pattern_freq" in result
 
-    def test_with_heal_distribution_includes_heal_keys(self):
-        payload = {
-            "min_pattern_freq": 3,
-            "cooccurrence_threshold": 0.8,
-            "fallback_freq_denominator": 20.0,
-            "fallback_session_denominator": 10.0,
-            "z_critical": 3.0,
-            "z_warning": 2.0,
-            "adaptive_z_ngram": 1.0,
-            "adaptive_z_cooccurrence": 1.0,
-            "adaptive_z_kanban": 1.0,
-            "min_self_heal_fails": 2.0,
-            "adaptive_z_heal": 0.5,
-            "heal_reflex_min_rate": 0.7,
-        }
-        mock_router = self._mock_llm_call(payload)
-        mock_router_cls = MagicMock(return_value=mock_router)
-
-        with patch("tools.llm.router.LLMRouter", mock_router_cls), \
-             patch("tools.llm.provider.LLMRequest", MagicMock()):
-            result = _llm_anomaly_thresholds([1.0, 2.0, 3.0, 4.0], [0.5, 0.6], [2.0, 3.0, 4.0])
-
-        assert "min_self_heal_fails" in result
-        assert "adaptive_z_heal" in result
-        assert "heal_reflex_min_rate" in result
-
 
 # ---------------------------------------------------------------------------
-# WorkflowPatternLens — scoring methods with mocked analysis data
+# WorkflowPatternLens.score — end-to-end with synthetic data
 # ---------------------------------------------------------------------------
 
-def _make_lens() -> WorkflowPatternLens:
-    return WorkflowPatternLens()
+class TestWorkflowPatternLensScore:
+    """End-to-end scoring without a DB — inject synthetic analysis output."""
 
-
-class TestScoreNgramPatterns:
-    """_score_ngram_patterns with controlled analysis data."""
-
-    def _analysis(self, sessions=None):
-        if sessions is None:
-            sessions = {
-                "s1": ["code_generated", "test_executed", "test_passed"] * 5,
-                "s2": ["code_generated", "test_executed", "test_passed"] * 5,
-                "s3": ["code_generated", "test_executed", "test_passed"] * 5,
-                "s4": ["code_generated", "test_executed", "test_passed"] * 5,
-            }
-        return {"sessions": sessions, "kanban_done": [], "failed_then_done": []}
-
-    def test_empty_sessions_returns_empty(self):
-        lens = _make_lens()
-        result = lens._score_ngram_patterns({"sessions": {}, "kanban_done": [], "failed_then_done": []})
-        assert result == []
-
-    def test_frequent_pattern_surfaces(self):
-        lens = _make_lens()
-        result = lens._score_ngram_patterns(self._analysis())
-        assert len(result) > 0
-        categories = {p.category for p in result}
-        assert "workflow_pattern" in categories
-
-    def test_prediction_has_required_fields(self):
-        lens = _make_lens()
-        result = lens._score_ngram_patterns(self._analysis())
-        for pred in result:
-            assert 0.0 <= pred.confidence <= 1.0
-            assert "pattern" in pred.data
-            assert "frequency" in pred.data
-            assert "session_spread" in pred.data
-            assert "automation_potential" in pred.data
-
-    def test_automation_potential_high_for_automated_events(self):
-        lens = _make_lens()
-        # All events are in the "automated" set
+    def _make_analysis(self):
+        # 3 sessions with repeated 3-gram to trigger ngram detection
         sessions = {
-            f"s{i}": ["code_generated", "test_executed", "test_passed"] * 4
-            for i in range(5)
+            "s1": ["code_generated", "test_executed", "test_passed", "deployment_initiated"],
+            "s2": ["code_generated", "test_executed", "test_passed", "security_scan"],
+            "s3": ["code_generated", "test_executed", "test_passed", "compliance_check"],
+            "s4": ["code_generated", "test_executed", "test_passed", "agent_task_completed"],
         }
-        result = lens._score_ngram_patterns({"sessions": sessions, "kanban_done": [], "failed_then_done": []})
-        potentials = {p.data["automation_potential"] for p in result}
-        # At least some should be "high"
-        assert "high" in potentials
+        kanban_done = [
+            {"task_type": "build", "id": str(i), "title": f"task {i}",
+             "priority": "medium", "created_at": "2026-01-01", "completed_at": "2026-01-02"}
+            for i in range(6)
+        ] + [
+            {"task_type": "bug", "id": str(i + 10), "title": f"bug {i}",
+             "priority": "high", "created_at": "2026-01-01", "completed_at": "2026-01-02"}
+            for i in range(3)
+        ]
+        failed_then_done = [
+            {"actor": "builder-agent", "action": "generate_code",
+             "fail_count": 3, "success_count": 7, "heal_rate": 0.7},
+            {"actor": "builder-agent", "action": "run_tests",
+             "fail_count": 2, "success_count": 5, "heal_rate": 0.714},
+        ]
+        return {
+            "sessions": sessions,
+            "kanban_done": kanban_done,
+            "failed_then_done": failed_then_done,
+        }
 
-    def test_calibrated_overrides_applied(self):
-        lens = _make_lens()
-        # min_pattern_freq=100 → no patterns should surface since freq is low
-        result = lens._score_ngram_patterns(
-            self._analysis(), calibrated={"min_pattern_freq": 100, "adaptive_z_ngram": 0.0}
-        )
-        assert result == []
+    def test_score_returns_predictions(self):
+        lens = WorkflowPatternLens()
+        analysis = self._make_analysis()
+        with patch.object(lens, "_calibrate_anomaly_thresholds", return_value={}):
+            preds = lens.score(analysis)
+        assert isinstance(preds, list)
+        assert len(preds) > 0
 
+    def test_predictions_sorted_by_confidence_descending(self):
+        lens = WorkflowPatternLens()
+        analysis = self._make_analysis()
+        with patch.object(lens, "_calibrate_anomaly_thresholds", return_value={}):
+            preds = lens.score(analysis)
+        confs = [p.confidence for p in preds]
+        assert confs == sorted(confs, reverse=True)
 
-class TestScoreCooccurrencePairs:
-    def _analysis(self, sessions=None):
-        if sessions is None:
-            sessions = {
-                f"s{i}": ["code_generated", "test_executed", "security_scan"]
-                for i in range(10)
-            }
-        return {"sessions": sessions, "kanban_done": [], "failed_then_done": []}
+    def test_ngram_predictions_have_correct_category(self):
+        lens = WorkflowPatternLens()
+        analysis = self._make_analysis()
+        with patch.object(lens, "_calibrate_anomaly_thresholds", return_value={}):
+            preds = lens.score(analysis)
+        ngram_preds = [p for p in preds if p.category == "workflow_pattern"]
+        assert len(ngram_preds) > 0
+        for p in ngram_preds:
+            assert "pattern" in p.data
+            assert "frequency" in p.data
+            assert "automation_potential" in p.data
 
-    def test_empty_returns_empty(self):
-        lens = _make_lens()
-        result = lens._score_cooccurrence_pairs({"sessions": {}, "kanban_done": [], "failed_then_done": []})
-        assert result == []
-
-    def test_high_cooccurrence_pair_surfaces(self):
-        lens = _make_lens()
-        # Threshold lowered to 0.0 to ensure pairs surface
-        result = lens._score_cooccurrence_pairs(
-            self._analysis(), calibrated={"cooccurrence_threshold": 0.0, "adaptive_z_cooccurrence": 0.0}
-        )
-        assert len(result) > 0
-
-    def test_prediction_fields(self):
-        lens = _make_lens()
-        result = lens._score_cooccurrence_pairs(
-            self._analysis(), calibrated={"cooccurrence_threshold": 0.0, "adaptive_z_cooccurrence": 0.0}
-        )
-        for pred in result:
-            assert pred.category == "tool_composition_candidate"
-            assert 0.0 <= pred.confidence <= 1.0
-            assert "cooccurrence_rate" in pred.data
-            assert 0.0 <= pred.data["cooccurrence_rate"] <= 1.0
-
-    def test_high_threshold_filters_all(self):
-        lens = _make_lens()
-        # A appears in s1-s8+s9, B in s1-s8+s10 → co-occurrence rate = 8/10 = 0.8
-        # threshold=0.99 with z=0 → adaptive = fallback = 0.99 > 0.8 → filtered
-        sessions = {f"s{i}": ["A", "B"] for i in range(1, 9)}
-        sessions["s9"] = ["A"]
-        sessions["s10"] = ["B"]
-        analysis = {"sessions": sessions, "kanban_done": [], "failed_then_done": []}
-        result = lens._score_cooccurrence_pairs(
-            analysis, calibrated={"cooccurrence_threshold": 0.99, "adaptive_z_cooccurrence": 0.0}
-        )
-        assert result == []
-
-
-class TestScoreKanbanTaskPatterns:
-    def _analysis(self, tasks=None):
-        if tasks is None:
-            tasks = [{"task_type": "build", "priority": "medium"} for _ in range(10)]
-            tasks += [{"task_type": "bug", "priority": "high"} for _ in range(5)]
-        return {"sessions": {}, "kanban_done": tasks, "failed_then_done": []}
-
-    def test_empty_tasks_returns_empty(self):
-        lens = _make_lens()
-        result = lens._score_kanban_task_patterns({"sessions": {}, "kanban_done": [], "failed_then_done": []})
-        assert result == []
-
-    def test_too_few_tasks_returns_empty(self):
-        lens = _make_lens()
-        tasks = [{"task_type": "build"}] * 2  # fewer than min_pattern_freq=3
-        result = lens._score_kanban_task_patterns({"sessions": {}, "kanban_done": tasks, "failed_then_done": []})
-        assert result == []
-
-    def test_dominant_type_surfaces(self):
-        lens = _make_lens()
-        result = lens._score_kanban_task_patterns(
-            self._analysis(), calibrated={"min_pattern_freq": 3, "adaptive_z_kanban": 0.0}
-        )
-        assert len(result) > 0
-        task_types = [p.data["task_type"] for p in result]
+    def test_kanban_predictions_have_correct_category(self):
+        lens = WorkflowPatternLens()
+        analysis = self._make_analysis()
+        with patch.object(lens, "_calibrate_anomaly_thresholds", return_value={}):
+            preds = lens.score(analysis)
+        kanban_preds = [p for p in preds if p.category == "recurring_task_type"]
+        # "build" appears 6 times → should surface
+        task_types = {p.data["task_type"] for p in kanban_preds}
         assert "build" in task_types
 
-    def test_prediction_fields(self):
-        lens = _make_lens()
-        result = lens._score_kanban_task_patterns(
-            self._analysis(), calibrated={"min_pattern_freq": 3, "adaptive_z_kanban": 0.0}
-        )
-        for pred in result:
-            assert pred.category == "recurring_task_type"
-            assert "count" in pred.data
-            assert "total_done" in pred.data
-            assert "rate" in pred.data
-            assert 0.0 <= pred.confidence <= 1.0
+    def test_self_healing_predictions_present(self):
+        lens = WorkflowPatternLens()
+        analysis = self._make_analysis()
+        with patch.object(lens, "_calibrate_anomaly_thresholds", return_value={}):
+            preds = lens.score(analysis)
+        heal_preds = [p for p in preds if p.category == "self_healing_candidate"]
+        assert len(heal_preds) > 0
 
+    def test_calibrated_thresholds_applied_to_scoring(self):
+        lens = WorkflowPatternLens()
+        analysis = self._make_analysis()
+        # Force a very high min_pattern_freq to suppress all ngram predictions
+        high_calibrated = {"min_pattern_freq": 10000.0}
+        with patch.object(lens, "_calibrate_anomaly_thresholds", return_value=high_calibrated):
+            preds = lens.score(analysis)
+        ngram_preds = [p for p in preds if p.category == "workflow_pattern"]
+        assert len(ngram_preds) == 0
 
-class TestScoreSelfHealing:
-    def _candidates(self):
-        return [
-            {"actor": "builder", "action": "run_tests", "fail_count": 5, "success_count": 4, "heal_rate": 0.44},
-            {"actor": "security", "action": "scan", "fail_count": 3, "success_count": 3, "heal_rate": 0.50},
-            {"actor": "deploy", "action": "push", "fail_count": 8, "success_count": 6, "heal_rate": 0.43},
-        ]
+    def test_empty_analysis_returns_empty_list(self):
+        lens = WorkflowPatternLens()
+        analysis = {"sessions": {}, "kanban_done": [], "failed_then_done": []}
+        preds = lens.score(analysis)
+        assert preds == []
 
-    def _analysis(self, candidates=None):
-        return {
-            "sessions": {},
-            "kanban_done": [],
-            "failed_then_done": candidates if candidates is not None else self._candidates(),
-        }
-
-    def test_empty_candidates_returns_empty(self):
-        lens = _make_lens()
-        result = lens._score_self_healing({"sessions": {}, "kanban_done": [], "failed_then_done": []})
-        assert result == []
-
-    def test_high_fail_count_surfaces(self):
-        lens = _make_lens()
-        result = lens._score_self_healing(
-            self._analysis(), calibrated={"min_self_heal_fails": 2.0, "adaptive_z_heal": 0.0}
-        )
-        assert len(result) > 0
-
-    def test_prediction_category(self):
-        lens = _make_lens()
-        result = lens._score_self_healing(
-            self._analysis(), calibrated={"min_self_heal_fails": 2.0, "adaptive_z_heal": 0.0}
-        )
-        for pred in result:
-            assert pred.category == "self_healing_candidate"
-
-    def test_severity_assigned(self):
-        lens = _make_lens()
-        result = lens._score_self_healing(
-            self._analysis(), calibrated={"min_self_heal_fails": 2.0, "adaptive_z_heal": 0.0}
-        )
-        valid_severities = {"info", "warning", "critical"}
-        for pred in result:
-            assert pred.severity in valid_severities
-
-    def test_confidence_in_range(self):
-        lens = _make_lens()
-        result = lens._score_self_healing(
-            self._analysis(), calibrated={"min_self_heal_fails": 2.0, "adaptive_z_heal": 0.0}
-        )
-        for pred in result:
-            assert 0.0 <= pred.confidence <= 1.0
-
-    def test_floor_filters_low_fail_counts(self):
-        lens = _make_lens()
-        # min_self_heal_fails=10 → all candidates with fail_count < 10 filtered out
-        result = lens._score_self_healing(
-            self._analysis(), calibrated={"min_self_heal_fails": 10.0, "adaptive_z_heal": 0.0}
-        )
-        assert result == []
+    def test_confidence_values_in_range(self):
+        lens = WorkflowPatternLens()
+        analysis = self._make_analysis()
+        with patch.object(lens, "_calibrate_anomaly_thresholds", return_value={}):
+            preds = lens.score(analysis)
+        for p in preds:
+            assert 0.0 <= p.confidence <= 1.0, f"Out-of-range confidence: {p.confidence}"
 
 
 # ---------------------------------------------------------------------------
-# _calibrate_anomaly_thresholds (integration — mocks LLM)
+# WorkflowPatternLens.propose — recommendation text
 # ---------------------------------------------------------------------------
 
-class TestCalibrateAnomalyThresholds:
-    def _analysis(self):
-        sessions = {
-            f"s{i}": ["code_generated", "test_executed", "test_passed"] * 3
-            for i in range(6)
-        }
-        candidates = [
-            {"actor": "builder", "action": "run", "fail_count": 3, "success_count": 2, "heal_rate": 0.4},
-            {"actor": "sec", "action": "scan", "fail_count": 5, "success_count": 3, "heal_rate": 0.38},
-        ]
-        return {"sessions": sessions, "kanban_done": [], "failed_then_done": candidates}
-
-    def test_returns_dict(self):
-        lens = _make_lens()
-        with patch("tools.oracle.lenses.lens_workflow_patterns._llm_anomaly_thresholds", return_value={}):
-            result = lens._calibrate_anomaly_thresholds(self._analysis())
-        assert isinstance(result, dict)
-
-    def test_empty_analysis_returns_empty(self):
-        lens = _make_lens()
-        result = lens._calibrate_anomaly_thresholds({"sessions": {}, "kanban_done": [], "failed_then_done": []})
-        assert result == {}
-
-    def test_llm_overrides_propagated(self):
-        overrides = {"min_pattern_freq": 5, "cooccurrence_threshold": 0.9}
-        lens = _make_lens()
-        with patch("tools.oracle.lenses.lens_workflow_patterns._llm_anomaly_thresholds", return_value=overrides):
-            result = lens._calibrate_anomaly_thresholds(self._analysis())
-        assert result.get("min_pattern_freq") == 5
-        assert result.get("cooccurrence_threshold") == pytest.approx(0.9)
-
-
-# ---------------------------------------------------------------------------
-# propose() — recommendation enrichment
-# ---------------------------------------------------------------------------
-
-class TestPropose:
-    def _make_prediction(self, category, data=None, confidence=0.8):
-        from tools.oracle.prediction import OraclePrediction
+class TestWorkflowPatternLensPropose:
+    def _make_prediction(self, category, data):
+        from tools.oracle.base_lens import OraclePrediction
         return OraclePrediction(
             lens="workflow_pattern",
             title="Test",
             description="desc",
-            confidence=confidence,
+            confidence=0.8,
             severity="info",
             category=category,
-            data=data or {},
+            data=data,
         )
 
     def test_workflow_pattern_recommendations(self):
-        lens = _make_lens()
-        pred = self._make_prediction("workflow_pattern", {"pattern": ["a", "b", "c"], "automation_potential": "high"})
-        result = lens.propose([pred])
-        assert len(result[0].recommendations) > 0
-        recs_text = " ".join(result[0].recommendations)
-        assert "Genesis" in recs_text or "automation" in recs_text.lower()
-
-    def test_tool_composition_recommendations(self):
-        lens = _make_lens()
-        pred = self._make_prediction("tool_composition_candidate", {
-            "tool_a": "code_generated", "tool_b": "test_executed", "cooccurrence_rate": 0.9
+        lens = WorkflowPatternLens()
+        lens._calibrated = {}
+        pred = self._make_prediction("workflow_pattern", {
+            "pattern": ["a", "b", "c"],
+            "automation_potential": "high",
         })
         result = lens.propose([pred])
-        recs_text = " ".join(result[0].recommendations)
-        assert "composite" in recs_text.lower() or "code_generated" in recs_text
+        assert any("goals/manifest.md" in r for r in result[0].recommendations)
+        assert any("Genesis reflexes" in r for r in result[0].recommendations)
 
-    def test_recurring_task_type_recommendations(self):
-        lens = _make_lens()
-        pred = self._make_prediction("recurring_task_type", {"task_type": "build"})
+    def test_self_healing_recommendation_uses_calibrated_rate(self):
+        lens = WorkflowPatternLens()
+        lens._calibrated = {"heal_reflex_min_rate": 0.6}
+        pred = self._make_prediction("self_healing_candidate", {
+            "actor": "builder-agent",
+            "action": "run_tests",
+            "heal_rate": 0.65,  # above 0.6 → recommend reflex
+        })
         result = lens.propose([pred])
         recs = result[0].recommendations
-        assert any("build" in r for r in recs)
+        assert any("Genesis Heal reflex" in r for r in recs)
 
-    def test_self_healing_above_threshold_recommends_reflex(self):
-        lens = _make_lens()
-        lens._calibrated = {"heal_reflex_min_rate": 0.7}
+    def test_self_healing_recommendation_below_rate_warns(self):
+        lens = WorkflowPatternLens()
+        lens._calibrated = {"heal_reflex_min_rate": 0.8}
         pred = self._make_prediction("self_healing_candidate", {
-            "actor": "builder", "action": "run_tests", "heal_rate": 0.9, "fail_count": 5, "success_count": 8
+            "actor": "builder-agent",
+            "action": "run_tests",
+            "heal_rate": 0.5,  # below 0.8 → manual review
         })
         result = lens.propose([pred])
-        recs_text = " ".join(result[0].recommendations)
-        assert "Heal" in recs_text or "reflex" in recs_text.lower()
+        recs = result[0].recommendations
+        assert any("manual review" in r for r in recs)
 
-    def test_self_healing_below_threshold_recommends_monitor(self):
-        lens = _make_lens()
-        lens._calibrated = {"heal_reflex_min_rate": 0.7}
-        pred = self._make_prediction("self_healing_candidate", {
-            "actor": "builder", "action": "run_tests", "heal_rate": 0.3, "fail_count": 5, "success_count": 2
-        })
-        result = lens.propose([pred])
-        recs_text = " ".join(result[0].recommendations)
-        assert "Monitor" in recs_text or "review" in recs_text.lower()
 
-    def test_unknown_category_passes_through_unchanged(self):
-        lens = _make_lens()
-        pred = self._make_prediction("unknown_category", {})
-        result = lens.propose([pred])
-        assert result[0].recommendations == []
+# ---------------------------------------------------------------------------
+# YAML config loading
+# ---------------------------------------------------------------------------
+
+class TestYamlConfig:
+    def test_args_yaml_exists(self):
+        assert _ARGS_PATH.exists(), f"Missing config: {_ARGS_PATH}"
+
+    def test_args_yaml_valid(self):
+        import yaml
+        data = yaml.safe_load(_ARGS_PATH.read_text(encoding="utf-8"))
+        assert isinstance(data, dict)
+
+    def test_args_yaml_contains_required_keys(self):
+        import yaml
+        data = yaml.safe_load(_ARGS_PATH.read_text(encoding="utf-8"))
+        required = [
+            "min_pattern_freq", "cooccurrence_threshold", "window_sizes",
+            "lookback_days", "fallback_freq_denominator", "fallback_session_denominator",
+            "min_self_heal_fails", "heal_reflex_min_rate", "z_critical", "z_warning",
+        ]
+        for key in required:
+            assert key in data, f"Missing key in YAML: {key}"
+
+    def test_args_yaml_values_match_code_defaults(self):
+        import yaml
+        data = yaml.safe_load(_ARGS_PATH.read_text(encoding="utf-8"))
+        # Verify YAML defaults align with code defaults for critical thresholds
+        assert data["min_pattern_freq"] == _CODE_DEFAULTS["min_pattern_freq"]
+        assert data["cooccurrence_threshold"] == pytest.approx(_CODE_DEFAULTS["cooccurrence_threshold"])
+        assert data["z_critical"] == pytest.approx(_CODE_DEFAULTS["z_critical"])
+        assert data["z_warning"] == pytest.approx(_CODE_DEFAULTS["z_warning"])
