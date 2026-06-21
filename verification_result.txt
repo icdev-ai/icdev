@@ -1,8 +1,0 @@
-Verification: migrate_to_vault.py in tools/manifest.md
-=======================================================
-Command: grep -i migrate_to_vault tools/manifest.md
-
-Result (PASS):
-tools/manifest.md:672: | Migrate To Vault | tools\trading\credentials\migrate_to_vault.py | Auto-registered: credentials/migrate_to_vault.py | --json | JSON |
-
-Status: VERIFIED - migrate_to_vault.py is present in tools/manifest.md at line 672.

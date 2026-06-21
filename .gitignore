@@ -31,6 +31,7 @@ venv/
 .venv/
 *.egg-info/
 .pytest_cache/
+.mypy_cache/
 
 # Node
 node_modules/
@@ -65,6 +66,46 @@ claude-max-output.jsonl
 
 # Temp debug files
 _pdb_b64_*.txt
+
+# Security — session cookies / credentials
+cookies.txt
+*.cookie
+*.cookies
+
+# Python coverage artifacts
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Pip install artifacts (e.g. "=6.0" from pip output redirect)
+=*
+
+# Mystery / garbage files
+None
+u2715
+
+# Scratch text exports (coherence, ng, pa outputs)
+coherence_out.txt
+_ng_src.txt
+_pa_src.txt
+_*.txt
+
+# Generated output / health probes
+err.txt
+health_prober_output.txt
+verification_result.txt
+telegram_out.log
+telegram_stderr.log
+
+# SQLite databases dumped to root (should live under data/)
+network_canvas
+
+# One-off test JS
+_aadc_test.js
+
+# Root-level standalone scripts (moved to scripts/)
+signal_generator.py
 
 # Playwright output (screenshots, console logs, videos, traces)
 playwright/
