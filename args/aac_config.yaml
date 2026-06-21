@@ -42,3 +42,37 @@ semgrep:
   rules_dir: context/ai_augmentation/semgrep_rules
   timeout_seconds: 60
   metrics: "off"
+
+il_penalties:
+  # Compliance burden added per IL level when compliance_impact is not provided
+  il4: 0.0
+  il5: 0.1
+  il6: 0.2
+
+anomaly_detection:
+  # Minimum composite score for an opportunity to be registered as an innovation signal
+  innovation_signal_min_score: 0.60
+  # Composite score thresholds that determine roadmap phase labels
+  phase:
+    p1_min_score: 0.70  # "P1 — Quick Wins"
+    p2_min_score: 0.50  # "P2 — Core Modernization"
+    p3_min_score: 0.30  # "P3 — Long-Horizon Investments"
+  # Minimum composite score to assign "high" priority to a kanban task
+  priority_high_min_score: 0.70
+  # Score anomaly detection thresholds (used by detect_score_anomalies)
+  value_feasibility_max_delta: 0.50   # flag when |value - feasibility| exceeds this
+  component_outlier_floor: 0.05       # flag component below this value
+  component_outlier_ceiling: 0.95     # flag component above this value
+  # Statistical / adaptive detection (applied when batch >= min_sample_size)
+  statistical_detection_enabled: true
+  min_sample_size: 5          # minimum rows required to use z-score / IQR methods
+  z_score_threshold: 2.5      # flag component when |z| exceeds this
+  iqr_multiplier: 1.5         # IQR fence: Q1 - m*IQR  /  Q3 + m*IQR
+
+ml_nested_conditionals:
+  # ML classifier enrichment for nested_conditionals detections.
+  # Opt-in: set enabled: true here OR export ICDEV_AAC_ML_CLASSIFY=true.
+  enabled: false
+  model: claude-haiku-4-5-20251001
+  max_tokens: 256
+  context_lines: 5          # source lines of context above/below the matched block
