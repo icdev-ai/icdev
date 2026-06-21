@@ -166,6 +166,76 @@ def update_memory_md(content, section):
     return False
 
 
+def update_crossrefs(new_slug: str, new_content: str, memory_dir: Path | None = None) -> list[str]:
+    """Add [[new_slug]] back-links to existing topic files that share keywords.
+
+    Implements the Karpathy LLM Wiki "update 10-15 related pages" ingest step:
+    when a new memory file is written, scan existing files for topic overlap and
+    append a cross-reference link so the wiki graph stays connected.
+
+    Args:
+        new_slug: The slug (filename without .md) of the newly written file.
+        new_content: Full text of the new file (used to extract keywords).
+        memory_dir: Directory to scan. Defaults to the Claude Code auto-memory
+                    derived from USERPROFILE/.claude/projects/<slug>/memory.
+
+    Returns:
+        List of file paths that were updated with a back-link.
+    """
+    import os, re
+
+    if memory_dir is None:
+        userprofile = Path(os.environ.get("USERPROFILE", Path.home()))
+        project_slug = (
+            str(BASE_DIR)
+            .replace("\\", "-")
+            .replace("/", "-")
+            .replace(":", "-")
+            .lstrip("-")
+        )
+        memory_dir = userprofile / ".claude" / "projects" / project_slug / "memory"
+
+    if not memory_dir.is_dir():
+        return []
+
+    # Extract keywords: lowercase words ≥5 chars from the new file's title + body
+    _stop = {"about", "their", "which", "would", "could", "should", "there", "where",
+              "after", "before", "while", "since", "these", "those", "other", "using",
+              "added", "fixed", "built", "ships", "every", "still", "never", "always"}
+    kw_raw = re.findall(r"[a-zA-Z_]{5,}", new_content)
+    keywords = {w.lower() for w in kw_raw if w.lower() not in _stop} - _stop
+
+    if not keywords:
+        return []
+
+    link_line = f"\n[[{new_slug}]]"
+    link_pattern = re.compile(r"\[\[" + re.escape(new_slug) + r"\]\]")
+    updated: list[str] = []
+
+    for f in sorted(memory_dir.glob("*.md")):
+        if f.stem == new_slug or f.name == "MEMORY.md":
+            continue
+        try:
+            text = f.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+
+        # Skip if already cross-linked
+        if link_pattern.search(text):
+            continue
+
+        # Check keyword overlap: ≥2 shared keywords with the existing file's text
+        existing_words = {w.lower() for w in re.findall(r"[a-zA-Z_]{5,}", text)}
+        if len(keywords & existing_words) < 2:
+            continue
+
+        # Append back-link before the final newline
+        f.write_text(text.rstrip() + link_line + "\n", encoding="utf-8")
+        updated.append(str(f))
+
+    return updated
+
+
 def reset_decay(memory_id: str, conn=None) -> None:
     """Reset a memory's decay weight to 1.0 (called after retrieval strengthening)."""
     close = conn is None

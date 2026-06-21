@@ -286,12 +286,23 @@ function runChat(message) {
     .then(function(data) {
       document.getElementById('chat-thinking').style.display = 'none';
       var answer = data.answer || data.error || '(No response)';
-      var citations = data.citations && data.citations.length
-        ? '<div style="margin-top:8px;display:flex;gap:5px;flex-wrap:wrap;">' +
-          data.citations.map(function(c) {
-            return '<span style="background:#0a2040;color:#4f8ef7;font-size:10px;padding:2px 7px;border-radius:3px;border:1px solid #1a3a60;">' +
-              '📎 ' + (c.doc_title || c.doc_id || 'doc') + (c.page ? ' · p.' + c.page : '') + '</span>';
-          }).join('') + '</div>' : '';
+      var sources = (data.sources || data.citations || data.chunks || []).slice(0, 5);
+      var answerHtml = escHtml(answer);
+      sources.forEach(function(s, i) {
+        var num = s.num || (i + 1);
+        var url = s.archive_url || (s.doc_id ? '/document-intelligence/doc/' + s.doc_id : '#');
+        answerHtml = answerHtml.replace(
+          new RegExp('\\[' + num + '\\]', 'g'),
+          '<a href="' + escHtml(url) + '" target="_blank" style="color:#4f8ef7;text-decoration:none;font-weight:600;" title="' + escHtml(s.doc_title || s.doc_id || 'source') + '">[' + num + ']</a>'
+        );
+      });
+      var sourceLinks = sources.map(function(s, i) {
+        var num = s.num || (i + 1);
+        var url = s.archive_url || (s.doc_id ? '/document-intelligence/doc/' + s.doc_id : '#');
+        var page = s.page ? ' · p.' + s.page : '';
+        var label = s.doc_title || s.doc_id || 'source';
+        return '<a href="' + escHtml(url) + '" target="_blank" style="display:inline-flex;align-items:center;gap:4px;background:#0a2040;color:#4f8ef7;font-size:10px;padding:2px 7px;border-radius:3px;border:1px solid #1a3a60;text-decoration:none;margin:0 2px 4px 0;">' + num + '. ' + escHtml(label) + page + '</a>';
+      }).join('');
       var badge = data.abstained
         ? '<span style="background:#3a1a00;color:#fbbf24;font-size:10px;padding:1px 6px;border-radius:3px;margin-bottom:6px;display:inline-block;">⚠ Insufficient evidence — partial answer</span><br>'
         : data.mode === 'ai_assisted'
@@ -300,7 +311,8 @@ function runChat(message) {
 
       thread.innerHTML += '<div style="margin-bottom:14px;">' +
         '<div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:2px 8px 8px 8px;padding:12px 14px;max-width:88%;">' +
-        badge + '<span style="color:#a8c8e0;font-size:13px;line-height:1.6;">' + escHtml(answer) + '</span>' + citations +
+        badge + '<span style="color:#a8c8e0;font-size:13px;line-height:1.6;">' + answerHtml + '</span>' +
+        (sourceLinks ? '<div style="margin-top:8px;">Sources: ' + sourceLinks + '</div>' : '') +
         '</div></div>';
       thread.scrollTop = thread.scrollHeight;
       _chatHistory.push({role: 'assistant', content: answer});
@@ -317,8 +329,10 @@ function escHtml(s) {
 
 function runKG() {
   var label = document.getElementById('kg-label').value.trim();
+  var query = document.getElementById('query-input').value.trim();
   var mode = document.getElementById('kg-mode').value;
   var entityType = document.getElementById('kg-type').value;
+  var collection = document.getElementById('collection-filter').value.trim();
   var status = document.getElementById('kg-status');
   var results = document.getElementById('kg-results');
   status.textContent = 'Querying knowledge graph…';
@@ -326,7 +340,14 @@ function runKG() {
   fetch('/document-intelligence/api/kg-explore', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({mode: mode, label: label, entity_type: entityType || null, limit: 100})
+    body: JSON.stringify({
+      mode: mode,
+      label: label || null,
+      query: query || null,
+      collection_id: collection || null,
+      entity_type: entityType || null,
+      limit: 100
+    })
   }).then(function(r) { return r.json(); })
     .then(function(data) {
       if (data.error) { status.textContent = 'Error: ' + data.error; return; }

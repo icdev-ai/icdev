@@ -204,8 +204,8 @@ class TestHitlPendingMapping:
             patch("tools.workflow_hitl.engine.WorkflowEngine.advance_stage",
                   return_value={"advanced": True}),
             patch("tools.chat.requirement_intake_hook._req_count", side_effect=[0, 1]),
-            patch("tools.db.storage.get_connection",
-                  return_value=sqlite3.connect(str(tmp_db))),
+            patch("tools.chat.requirement_intake_hook.get_connection",
+                  side_effect=lambda **kw: sqlite3.connect(str(tmp_db))),
         ):
             process_message_for_intake(
                 "ctx-mapping",

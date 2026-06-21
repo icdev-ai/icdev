@@ -99,6 +99,85 @@ _SIGNALS: dict[str, tuple[str, float]] = {
         r"(?:^|\. )(?:ensure|enforce|provide|enable|allow|establish|configure)\b",
         0.55,
     ),
+    # domain: product management (govcon PM, OST, bid/no-bid, roadmap, PRD)
+    "product_mgmt_verb": (
+        r"(?:^|\. )(?:product manager|govcon|ost|opportunity solution tree|"
+        r"pre.mortem|bid.no.bid|roadmap|prd|battlecard|sprint plan|cpars|okr)\b",
+        0.75,
+    ),
+    "strategy_noun": (
+        r"\b(?:strategy|strategic|opportunity analysis|market analysis|"
+        r"stakeholder|persona|discovery|continuous discovery|sam\.gov|naics)\b",
+        0.65,
+    ),
+    # domain: software craft (spec, TDD, doubt-driven, ADR, code review)
+    "craft_verb": (
+        r"\b(?:author spec|tdd|test.driven|doubt.driven|"
+        r"code review|craftsperson|adr|anti.rationali[sz]|falsif"
+        r"|software craft|spec authoring|spec review)\b",
+        0.75,
+    ),
+    "craft_noun": (
+        r"\b(?:specification|unit test|integration test|"
+        r"refactor|pull request|software craftsmanship)\b",
+        0.55,
+    ),
+    # domain: intelligence / IC products (INTSUM, CAPCO, portion marks, derivative classification)
+    "intelligence_noun": (
+        r"\b(?:intsum|sitrep|intel(?:ligence)?|threat assessment|escalation|"
+        r"key judgment|collection|osint|humint|sigint|opsec|pmesii|capco|"
+        r"portion.?mark|derivative.?classif|security.?classification.?guide|"
+        r"scg|noforn|//nf|//rel.to|//orcon|bluf|leadership.?brief|"
+        r"intelligence.?report|intelligence.?product|ach|competing.?hypothes)\b",
+        0.80,
+    ),
+    "intelligence_verb": (
+        r"(?:^|\. )(?:research|analyze|analyse|assess|brief|synthesize|classify|"
+        r"mark|derive|ingest.?document|grade.?source)\b",
+        0.55,
+    ),
+    # domain: document analysis / research pipeline (generic — triggers intel team for any doc-processing task)
+    "doc_analysis_noun": (
+        r"\b(?:research memo|key findings|literature review|source evaluation|"
+        r"gap analysis|structured analysis|executive summary|analysis report|"
+        r"document analysis|content classification|sensitivity marking|"
+        r"subject matter expert|domain expert|vertical|content domain)\b",
+        0.70,
+    ),
+    "doc_analysis_verb": (
+        r"(?:^|\. )(?:summarize|summarise|extract|synthesize|review|evaluate|"
+        r"classify content|produce report|generate report|produce summary|"
+        r"analyze document|analyse document|process document)\b",
+        0.55,
+    ),
+    # domain: legal documents
+    "legal_noun": (
+        r"\b(?:plaintiff|defendant|statute|motion|brief|discovery|jurisdiction|"
+        r"precedent|case law|deposition|contract|litigation|counsel|attorney|"
+        r"court|ruling|verdict|appeal|irac|bluebook|privilege|work product)\b",
+        0.75,
+    ),
+    # domain: medical / clinical documents
+    "medical_noun": (
+        r"\b(?:patient|diagnosis|treatment|hipaa|phi|icd-10|cpt|clinical|"
+        r"contraindication|prescription|dosage|soap note|sbar|differential|"
+        r"symptom|prognosis|comorbidity|etiology|pathology)\b",
+        0.75,
+    ),
+    # domain: financial documents
+    "financial_noun": (
+        r"\b(?:earnings|revenue|ebitda|10-k|sec filing|material|forecast|"
+        r"balance sheet|cash flow|dcf|valuation|mnpi|regulation fd|"
+        r"investment memo|equity|debt|ipo|m&a|merger|acquisition)\b",
+        0.75,
+    ),
+    # domain: corporate / business intelligence
+    "corporate_noun": (
+        r"\b(?:market share|competitive analysis|kpi|okr|roadmap|swot|pestel|"
+        r"porter.s five|bcg matrix|tam|sam|som|go-to-market|positioning|"
+        r"value proposition|business intelligence|trade secret|nda)\b",
+        0.70,
+    ),
     # interest / desire (weaker)
     "interest":        (r"\bi(?:'?m| am) interested in\b", 0.40),
     "looking_for":     (r"\b(?:looking for|looking to|hoping to|plan to|trying to)\b", 0.40),
@@ -125,6 +204,20 @@ _DOMAIN_SIGNALS: dict[str, list[str]] = {
     "compliance":    ["compliance_verb"],
     "documentation": ["doc_verb", "doc_noun", "doc_action"],
     "interest":      ["i_want", "we_want", "interest", "looking_for", "would_like", "id_like"],
+    "build":          ["build_verb", "feature_request"],
+    "devops":         ["deploy_verb"],
+    "monitoring":     ["monitor_verb"],
+    "analytics":      ["analytics_verb"],
+    "compliance":     ["compliance_verb"],
+    "product_mgmt":   ["product_mgmt_verb", "strategy_noun"],
+    "software_craft": ["craft_verb", "craft_noun"],
+    "intelligence":   ["intelligence_noun", "intelligence_verb"],
+    "doc_analysis":   ["doc_analysis_noun", "doc_analysis_verb"],
+    "legal":          ["legal_noun"],
+    "medical":        ["medical_noun"],
+    "financial":      ["financial_noun"],
+    "corporate":      ["corporate_noun"],
+    "interest":       ["i_want", "we_want", "interest", "looking_for", "would_like", "id_like"],
 }
 
 # Domain -> preferred role_ids (matched against loaded catalog first)
@@ -137,6 +230,21 @@ _DOMAIN_ROLES: dict[str, list[str]] = {
     "compliance":   ["compliance_manager", "security_analyst", "compliance_officer"],
     "documentation": ["technical_writer", "doc_reviewer", "requirements_engineer"],
     "interest":     [],  # too weak to assign roles directly
+    "requirements":   ["requirements_engineer", "business_analyst", "product_owner"],
+    "build":          ["ai_developer", "software_engineer", "developer"],
+    "devops":         ["devops_engineer", "infrastructure_manager", "platform_engineer"],
+    "monitoring":     ["system_monitor", "devops_engineer", "qa_manager"],
+    "analytics":      ["data_analyst", "ai_developer", "analyst"],
+    "compliance":     ["compliance_manager", "security_analyst", "compliance_officer"],
+    "product_mgmt":   ["product_manager", "business_analyst", "requirements_engineer"],
+    "software_craft": ["software_craftsperson", "ai_developer", "qa_manager"],
+    "intelligence":   ["researcher", "intelligence_analyst", "writer", "editor", "derivative_classifier"],
+    "doc_analysis":   ["researcher", "intelligence_analyst", "writer", "editor", "derivative_classifier"],
+    "legal":          ["researcher", "intelligence_analyst", "writer", "editor", "derivative_classifier"],
+    "medical":        ["researcher", "intelligence_analyst", "writer", "editor", "derivative_classifier"],
+    "financial":      ["researcher", "intelligence_analyst", "writer", "editor", "derivative_classifier"],
+    "corporate":      ["researcher", "intelligence_analyst", "writer", "editor", "derivative_classifier"],
+    "interest":       [],  # too weak to assign roles directly
 }
 
 _FALLBACK_SLOTS: list[RoleSlot] = [
@@ -266,7 +374,7 @@ class ProblemClassifierLens(BaseLens):
             else:
                 severity = "info"
 
-            top = candidates[:3]
+            top = candidates[:5]
             predictions.append(
                 OraclePrediction(
                     lens=self.name,

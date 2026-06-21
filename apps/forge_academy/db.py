@@ -162,6 +162,7 @@ CREATE TABLE IF NOT EXISTS fa_leaderboard_cache (
     score INTEGER DEFAULT 0,
     rank_pos INTEGER DEFAULT 0,
     computed_at TEXT NOT NULL DEFAULT (datetime('now')),
+    tenant_id TEXT,
     UNIQUE(user_id, period)
 );
 
@@ -360,6 +361,7 @@ def migrate():
         for col_ddl in [
             "ALTER TABLE fa_missions ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",
             "ALTER TABLE fa_missions ADD COLUMN updated_at TEXT",
+            "ALTER TABLE fa_leaderboard_cache ADD COLUMN tenant_id TEXT",
         ]:
             try:
                 conn.execute(col_ddl)
@@ -836,9 +838,89 @@ def get_guild_stats(guild_id: int) -> dict:
 # Leaderboard
 # ---------------------------------------------------------------------------
 
+_LEADERBOARD_CACHE_TTL = 300  # seconds
+
+
+def _leaderboard_cache_fresh(conn, period: str) -> bool:
+    try:
+        row = conn.execute(
+            "SELECT MAX(computed_at) FROM fa_leaderboard_cache WHERE period=?", (period,)
+        ).fetchone()
+        if not row or not row[0]:
+            return False
+        cached_at = datetime.fromisoformat(row[0].replace("Z", "+00:00"))
+        age = (datetime.now(timezone.utc) - cached_at.astimezone(timezone.utc)).total_seconds()
+        return age < _LEADERBOARD_CACHE_TTL
+    except Exception:
+        return False
+
+
+def refresh_leaderboard_cache(period: str = "weekly", tenant_id: str | None = None) -> int:
+    """Recompute XP rankings and persist them into fa_leaderboard_cache. Returns row count."""
+    conn = get_connection()
+    q = "SELECT id, xp FROM fa_users WHERE role != 'unset'"
+    params: list = []
+    if tenant_id:
+        q += " AND tenant_id=?"
+        params.append(tenant_id)
+    else:
+        q += " AND (tenant_id IS NULL OR tenant_id='')"
+    q += " ORDER BY xp DESC"
+    users = conn.execute(q, params).fetchall()
+    now = datetime.now(timezone.utc).isoformat()
+    count = 0
+    for rank, u in enumerate(users, 1):
+        try:
+            conn.execute(
+                """INSERT OR REPLACE INTO fa_leaderboard_cache
+                   (user_id, period, score, rank_pos, computed_at, tenant_id)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (u["id"], period, u["xp"], rank, now, tenant_id or ""),
+            )
+            count += 1
+        except Exception:
+            pass
+    try:
+        conn.commit()
+    except Exception:
+        pass
+    return count
+
+
 def get_leaderboard(period: str = "alltime", role: str = None, limit: int = 20, tenant_id: str | None = None) -> list[dict]:
     conn = get_connection()
-    q = """SELECT u.display_name, u.role, u.level, u.xp, u.streak_days,
+    if not _leaderboard_cache_fresh(conn, period):
+        try:
+            refresh_leaderboard_cache(period=period, tenant_id=tenant_id)
+        except Exception:
+            pass
+    # Cache-backed query: returns score + rank_pos from cache
+    try:
+        q = """SELECT u.display_name, u.role, u.level, u.xp, u.streak_days,
+                      u.guild_id, g.name as guild_name,
+                      lc.score, lc.rank_pos
+               FROM fa_leaderboard_cache lc
+               JOIN fa_users u ON u.id=lc.user_id
+               LEFT JOIN fa_guilds g ON g.id=u.guild_id
+               WHERE lc.period=? AND u.role != 'unset'"""
+        params: list = [period]
+        if tenant_id:
+            q += " AND u.tenant_id=?"
+            params.append(tenant_id)
+        else:
+            q += " AND (u.tenant_id IS NULL OR u.tenant_id='')"
+        if role:
+            q += " AND u.role=?"
+            params.append(role)
+        q += " ORDER BY lc.rank_pos LIMIT ?"
+        params.append(limit)
+        rows = conn.execute(q, params).fetchall()
+        if rows:
+            return [dict(r) for r in rows]
+    except Exception:
+        pass
+    # Fallback: direct query when cache is unavailable
+    q = """SELECT u.display_name, u.role, u.level, u.xp, u.xp AS score, u.streak_days,
                   u.guild_id, g.name as guild_name
            FROM fa_users u
            LEFT JOIN fa_guilds g ON g.id=u.guild_id

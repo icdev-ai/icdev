@@ -112,6 +112,64 @@ def _load_config() -> dict:
         return {}
 
 
+def _load_safe_filesystem_modules() -> frozenset[str]:
+    """Load the known_safe_filesystem_modules allowlist from integrity_config.yaml.
+
+    Returns module paths (forward-slash, repo-relative) whose 'filesystem'
+    unauthorized_capability findings are suppressed in Mode A self-scans.
+    Only affects ICDEV's own tools/ tree; external artifacts are unaffected.
+    """
+    try:
+        data = _load_config()
+        return frozenset(data.get("known_safe_filesystem_modules") or [])
+    except Exception:
+        return frozenset()
+
+
+_SAFE_FS_MODULES: frozenset[str] = _load_safe_filesystem_modules()
+
+
+def _is_safe_filesystem_module(file_path: Optional[str]) -> bool:
+    """True when ``file_path`` matches an entry in known_safe_filesystem_modules.
+
+    Normalises separators so ``tools\\llm\\provider_health.py`` matches the
+    config's ``tools/llm/provider_health.py`` regardless of OS.
+    """
+    if not file_path:
+        return False
+    normalised = file_path.replace("\\", "/")
+    return any(normalised.endswith(m) for m in _SAFE_FS_MODULES)
+
+
+def _load_safe_process_exec_modules() -> frozenset[str]:
+    """Load the known_safe_process_exec_modules allowlist from integrity_config.yaml.
+
+    Returns module paths (forward-slash, repo-relative) whose 'process_exec'
+    unauthorized_capability findings are suppressed in Mode A self-scans.
+    Only affects ICDEV's own tools/ tree; external artifacts are unaffected.
+    """
+    try:
+        data = _load_config()
+        return frozenset(data.get("known_safe_process_exec_modules") or [])
+    except Exception:
+        return frozenset()
+
+
+_SAFE_PROCESS_EXEC_MODULES: frozenset[str] = _load_safe_process_exec_modules()
+
+
+def _is_safe_process_exec_module(file_path: Optional[str]) -> bool:
+    """True when ``file_path`` matches an entry in known_safe_process_exec_modules.
+
+    Normalises separators so ``tools\\testing\\cleanup_utils.py`` matches the
+    config's ``tools/testing/cleanup_utils.py`` regardless of OS.
+    """
+    if not file_path:
+        return False
+    normalised = file_path.replace("\\", "/")
+    return any(normalised.endswith(m) for m in _SAFE_PROCESS_EXEC_MODULES)
+
+
 # --------------------------------------------------------------------------- #
 # Severity derivation — capability inherent risk -> integrity_findings.severity
 # --------------------------------------------------------------------------- #
@@ -830,6 +888,10 @@ def _unauthorized_findings(records: list[dict], allowed: set[str]) -> list[dict]
     for rec in records:
         cap = rec.get("capability_type")
         if not cap or cap in allowed:
+            continue
+        # Skip filesystem findings for ICDEV's own first-party modules that are
+        # authorized by known_safe_filesystem_modules in integrity_config.yaml.
+        if cap == "filesystem" and _is_safe_filesystem_module(rec.get("file_path")):
             continue
         key = (rec.get("file_path"), cap)
         if key not in groups:

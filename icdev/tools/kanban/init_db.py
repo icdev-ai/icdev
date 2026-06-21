@@ -38,7 +38,17 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
     files_changed         INTEGER DEFAULT 0,
     lines_added           INTEGER DEFAULT 0,
     lines_removed         INTEGER DEFAULT 0,
-    completed_via_bypass  INTEGER DEFAULT 0
+    completed_via_bypass  INTEGER DEFAULT 0,
+    source_doc_id         TEXT,
+    source_collection_id  TEXT,
+    last_heartbeat_at     TEXT,
+    max_retries           INTEGER DEFAULT 5,
+    idempotency_key       TEXT,
+    last_run_summary      TEXT,
+    last_run_metadata     TEXT,
+    max_runtime_seconds   INTEGER,
+    acceptance_criteria   TEXT,
+    triage_prompt         TEXT
 )
 """
 
@@ -55,14 +65,16 @@ CREATE TABLE IF NOT EXISTS kanban_task_deps (
 
 _KANBAN_EXECUTIONS_DDL = """
 CREATE TABLE IF NOT EXISTS kanban_executions (
-    id          TEXT PRIMARY KEY,
-    task_id     TEXT NOT NULL,
-    status      TEXT DEFAULT 'pending',
-    started_at  TEXT,
-    finished_at TEXT,
-    output      TEXT,
-    error       TEXT,
-    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+    id           TEXT PRIMARY KEY,
+    task_id      TEXT NOT NULL,
+    status       TEXT DEFAULT 'pending',
+    started_at   TEXT,
+    finished_at  TEXT,
+    output       TEXT,
+    error        TEXT,
+    run_summary  TEXT,
+    run_metadata TEXT,
+    created_at   TEXT DEFAULT CURRENT_TIMESTAMP
 )
 """
 
@@ -110,14 +122,16 @@ CREATE TABLE IF NOT EXISTS kanban_status_transitions (
 """
 
 _KANBAN_INDEXES = [
-    "CREATE INDEX IF NOT EXISTS idx_kt_status   ON kanban_tasks(status)",
-    "CREATE INDEX IF NOT EXISTS idx_kt_priority ON kanban_tasks(priority)",
-    "CREATE INDEX IF NOT EXISTS idx_kt_updated  ON kanban_tasks(updated_at)",
-    "CREATE INDEX IF NOT EXISTS idx_ktd_dep     ON kanban_task_deps(depends_on_id)",
-    "CREATE INDEX IF NOT EXISTS idx_ke_task_id  ON kanban_executions(task_id)",
-    "CREATE INDEX IF NOT EXISTS idx_kv_task_id  ON kanban_verifications(task_id)",
-    "CREATE INDEX IF NOT EXISTS idx_kv_result   ON kanban_verifications(result)",
-    "CREATE INDEX IF NOT EXISTS idx_kst_task_id ON kanban_status_transitions(task_id)",
+    "CREATE INDEX IF NOT EXISTS idx_kt_status       ON kanban_tasks(status)",
+    "CREATE INDEX IF NOT EXISTS idx_kt_priority     ON kanban_tasks(priority)",
+    "CREATE INDEX IF NOT EXISTS idx_kt_updated      ON kanban_tasks(updated_at)",
+    "CREATE INDEX IF NOT EXISTS idx_kt_idem_key     ON kanban_tasks(idempotency_key)",
+    "CREATE INDEX IF NOT EXISTS idx_kt_heartbeat    ON kanban_tasks(last_heartbeat_at)",
+    "CREATE INDEX IF NOT EXISTS idx_ktd_dep         ON kanban_task_deps(depends_on_id)",
+    "CREATE INDEX IF NOT EXISTS idx_ke_task_id      ON kanban_executions(task_id)",
+    "CREATE INDEX IF NOT EXISTS idx_kv_task_id      ON kanban_verifications(task_id)",
+    "CREATE INDEX IF NOT EXISTS idx_kv_result       ON kanban_verifications(result)",
+    "CREATE INDEX IF NOT EXISTS idx_kst_task_id     ON kanban_status_transitions(task_id)",
 ]
 
 # Columns to add for already-created tables, as (column_name, ALTER DDL) pairs.
@@ -139,6 +153,38 @@ _KANBAN_TASKS_EXTRA_COLUMNS = [
     ("last_failure_at",      "ALTER TABLE kanban_tasks ADD COLUMN last_failure_at     TEXT"),
     ("dispatch_source",      "ALTER TABLE kanban_tasks ADD COLUMN dispatch_source     TEXT DEFAULT 'unknown'"),
     ("hitl_stage",           "ALTER TABLE kanban_tasks ADD COLUMN hitl_stage          TEXT"),
+    ("source_doc_id",        "ALTER TABLE kanban_tasks ADD COLUMN source_doc_id        TEXT"),
+    ("source_collection_id", "ALTER TABLE kanban_tasks ADD COLUMN source_collection_id TEXT"),
+    # Hermes-inspired reliability features
+    ("last_heartbeat_at",   "ALTER TABLE kanban_tasks ADD COLUMN last_heartbeat_at    TEXT"),
+    ("max_retries",         "ALTER TABLE kanban_tasks ADD COLUMN max_retries          INTEGER DEFAULT 5"),
+    ("idempotency_key",     "ALTER TABLE kanban_tasks ADD COLUMN idempotency_key      TEXT"),
+    ("last_run_summary",    "ALTER TABLE kanban_tasks ADD COLUMN last_run_summary     TEXT"),
+    ("last_run_metadata",   "ALTER TABLE kanban_tasks ADD COLUMN last_run_metadata    TEXT"),
+    # Phase 250b8557 — per-task runtime limit, acceptance criteria, triage prompt
+    ("max_runtime_seconds", "ALTER TABLE kanban_tasks ADD COLUMN max_runtime_seconds  INTEGER"),
+    ("acceptance_criteria", "ALTER TABLE kanban_tasks ADD COLUMN acceptance_criteria  TEXT"),
+    ("triage_prompt",       "ALTER TABLE kanban_tasks ADD COLUMN triage_prompt        TEXT"),
+]
+
+_KANBAN_TASK_SUBSCRIPTIONS_DDL = """
+CREATE TABLE IF NOT EXISTS kanban_task_subscriptions (
+    id          TEXT PRIMARY KEY,
+    task_id     TEXT NOT NULL,
+    channel     TEXT NOT NULL,
+    target      TEXT NOT NULL,
+    events      TEXT NOT NULL DEFAULT 'done,token_exhausted',
+    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+)
+"""
+
+_KANBAN_SUBSCRIPTIONS_INDEXES = [
+    "CREATE INDEX IF NOT EXISTS idx_ksub_task_id ON kanban_task_subscriptions(task_id)",
+]
+
+_KANBAN_EXECUTIONS_EXTRA_COLUMNS = [
+    ("run_summary",  "ALTER TABLE kanban_executions ADD COLUMN run_summary  TEXT"),
+    ("run_metadata", "ALTER TABLE kanban_executions ADD COLUMN run_metadata TEXT"),
 ]
 
 
@@ -149,7 +195,7 @@ def _existing_columns(conn, table: str) -> set:
     table itself — safe even while the table is under a write-lock storm.
     """
     try:
-        from tools.db.storage import is_pg
+        from icdev.tools.db.storage import is_pg
         pg = is_pg(conn)
     except Exception:
         pg = False
@@ -176,7 +222,7 @@ def _existing_columns(conn, table: str) -> set:
 
 def init_kanban_tables(conn=None) -> dict:
     """Create all Kanban tables.  Safe to call on any DB state."""
-    from tools.db.storage import get_connection
+    from icdev.tools.db.storage import get_connection
     _close = conn is None
     if conn is None:
         conn = get_connection()
@@ -186,7 +232,10 @@ def init_kanban_tables(conn=None) -> dict:
         conn.execute(_KANBAN_EXECUTIONS_DDL)
         conn.execute(_KANBAN_VERIFICATIONS_DDL)
         conn.execute(_KANBAN_STATUS_TRANSITIONS_DDL)
+        conn.execute(_KANBAN_TASK_SUBSCRIPTIONS_DDL)
         for idx in _KANBAN_INDEXES:
+            conn.execute(idx)
+        for idx in _KANBAN_SUBSCRIPTIONS_INDEXES:
             conn.execute(idx)
         # Backfill missing columns — only ALTER when the column is actually
         # absent, so steady-state init never requests an ACCESS EXCLUSIVE lock
@@ -199,6 +248,14 @@ def init_kanban_tables(conn=None) -> dict:
                 conn.execute(alter)
             except Exception:
                 pass  # raced with another writer; column now exists
+        existing_exec = _existing_columns(conn, "kanban_executions")
+        for col_name, alter in _KANBAN_EXECUTIONS_EXTRA_COLUMNS:
+            if col_name in existing_exec:
+                continue
+            try:
+                conn.execute(alter)
+            except Exception:
+                pass
         conn.commit()
         return {"status": "ok"}
     finally:

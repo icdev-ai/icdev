@@ -1,0 +1,133 @@
+chain_id: pm_govcon_prd
+display_name: PM GovCon PRD Chain
+description: Prompt chain for the Product Manager role to author a GovCon PRD from an opportunity brief.
+  Covers discovery, competitive analysis, PRD authoring, and risk matrix generation.
+version: "1.0"
+role_id: product_manager
+llm_function: agent_product_manager
+
+steps:
+  - step_id: parse_opportunity
+    prompt: |
+      You are a GovCon Product Manager analyzing a SAM.gov opportunity.
+      Opportunity Brief: {opportunity_brief}
+      Agency: {agency}
+      NAICS: {naics_code}
+      Solicitation Type: {solicitation_type}
+
+      Extract and return JSON:
+      {
+        "opportunity_id": "...",
+        "title": "...",
+        "agency": "...",
+        "naics": "...",
+        "set_aside": "...",
+        "period_of_performance": "...",
+        "estimated_value": "...",
+        "evaluation_factors": [],
+        "key_requirements": [],
+        "incumbent": "unknown or name if known"
+      }
+    output_key: parsed_opportunity
+
+  - step_id: swot_analysis
+    prompt: |
+      You are a GovCon Product Manager running a SWOT analysis.
+      Opportunity: {parsed_opportunity}
+      Our Capabilities: {our_capabilities}
+
+      Run a SWOT analysis and return JSON:
+      {
+        "strengths": [],
+        "weaknesses": [],
+        "opportunities": [],
+        "threats": [],
+        "win_probability": "low|medium|high",
+        "bid_recommendation": "bid|no-bid|conditional",
+        "bid_rationale": "..."
+      }
+    output_key: swot_result
+
+  - step_id: competitive_positioning
+    prompt: |
+      You are a GovCon Product Manager defining competitive positioning.
+      SWOT: {swot_result}
+      Known Competitors: {competitors}
+      Our Differentiators: {our_differentiators}
+
+      Return JSON with one battlecard per competitor:
+      {
+        "battlecards": [
+          {
+            "competitor": "...",
+            "their_strengths": [],
+            "our_win_themes": [],
+            "ghost_strategies": [],
+            "objection_rebuttals": {}
+          }
+        ],
+        "primary_win_themes": [],
+        "value_proposition": "..."
+      }
+    output_key: competitive_intel
+
+  - step_id: author_prd
+    prompt: |
+      You are a GovCon Product Manager authoring a PRD that doubles as a SOW/PWS.
+      Opportunity: {parsed_opportunity}
+      Win Themes: {competitive_intel}
+      Our Capabilities: {our_capabilities}
+
+      Author a complete PRD in JSON:
+      {
+        "title": "...",
+        "executive_summary": "...",
+        "problem_statement": "...",
+        "objectives": [],
+        "success_metrics": [],
+        "user_stories": [{"role": "...", "goal": "...", "acceptance": "..."}],
+        "technical_requirements": [],
+        "non_functional_requirements": [],
+        "out_of_scope": [],
+        "delivery_schedule": [{"cdrl": "...", "title": "...", "due_week": 0}],
+        "team_structure": []
+      }
+    output_key: prd_draft
+
+  - step_id: risk_matrix
+    prompt: |
+      You are a GovCon Product Manager building a risk matrix for Section L/M.
+      PRD: {prd_draft}
+      SWOT Threats: {swot_result}
+
+      Return JSON:
+      {
+        "risks": [
+          {
+            "id": "R-001",
+            "description": "...",
+            "category": "technical|schedule|cost|personnel|external",
+            "probability": "low|medium|high",
+            "impact": "low|medium|high",
+            "mitigation": "...",
+            "owner": "..."
+          }
+        ],
+        "overall_risk_level": "low|medium|high"
+      }
+    output_key: risk_matrix
+
+  - step_id: synthesize_deliverable
+    prompt: |
+      You are a GovCon Product Manager producing the final deliverable package.
+      PRD: {prd_draft}
+      SWOT: {swot_result}
+      Competitive Intel: {competitive_intel}
+      Risk Matrix: {risk_matrix}
+
+      Produce a concise executive summary (< 500 words) that:
+      1. States the win strategy in 2 sentences
+      2. Lists top 3 differentiators
+      3. Identifies top 3 risks with mitigations
+      4. Recommends next action (bid/no-bid/teaming)
+    output_key: executive_brief

@@ -107,11 +107,11 @@ def simulate_dm_change(
         if change_type == "domain_merge":
             src = payload.get("source_domain_id", "")
             prods = conn.execute(
-                "SELECT COUNT(*) FROM dm_products WHERE domain_id=?", (src,)
+                "SELECT COUNT(*) FROM dm_data_products WHERE domain_id=?", (src,)
             ).fetchone()[0]
             contracts = conn.execute(
                 "SELECT COUNT(*) FROM dm_contracts c "
-                "JOIN dm_products p ON c.product_id=p.id WHERE p.domain_id=?", (src,)
+                "JOIN dm_data_products p ON c.product_id=p.id WHERE p.domain_id=?", (src,)
             ).fetchone()[0]
             policies = conn.execute(
                 "SELECT COUNT(*) FROM dm_opa_policies WHERE domain_id=?", (src,)

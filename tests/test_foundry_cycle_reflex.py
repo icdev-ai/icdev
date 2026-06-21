@@ -74,6 +74,7 @@ def test_flag_falsy_values_are_noop(monkeypatch, falsy):
 # --------------------------------------------------------------------------- #
 def test_flag_on_runs_cycle_and_maps_rollup(monkeypatch):
     monkeypatch.setenv(foundry_cycle.FEATURE_FLAG, "true")
+    monkeypatch.setattr(foundry_cycle, "_in_quiet_hours", lambda *a, **kw: False)
 
     calls = {}
 
@@ -108,6 +109,7 @@ def test_flag_on_runs_cycle_and_maps_rollup(monkeypatch):
 
 def test_flag_on_dry_run_forwarded(monkeypatch):
     monkeypatch.setenv(foundry_cycle.FEATURE_FLAG, "1")
+    monkeypatch.setattr(foundry_cycle, "_in_quiet_hours", lambda *a, **kw: False)
 
     seen = {}
 
@@ -125,6 +127,7 @@ def test_flag_on_dry_run_forwarded(monkeypatch):
 
 def test_engine_error_status_is_surfaced(monkeypatch):
     monkeypatch.setenv(foundry_cycle.FEATURE_FLAG, "on")
+    monkeypatch.setattr(foundry_cycle, "_in_quiet_hours", lambda *a, **kw: False)
 
     def _fake_run_cycle(**kwargs):
         return {"harvested": 2, "concepts_proposed": 0, "tasks_emitted": 0, "status": "error"}
@@ -138,6 +141,7 @@ def test_engine_error_status_is_surfaced(monkeypatch):
 
 def test_engine_exception_does_not_crash(monkeypatch):
     monkeypatch.setenv(foundry_cycle.FEATURE_FLAG, "yes")
+    monkeypatch.setattr(foundry_cycle, "_in_quiet_hours", lambda *a, **kw: False)
 
     def _fake_run_cycle(**kwargs):
         raise RuntimeError("synthesizer blew up")

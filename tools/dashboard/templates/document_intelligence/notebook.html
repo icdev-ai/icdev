@@ -1,0 +1,1152 @@
+{% extends "base.html" %}
+{% block title %}Notebook — {{ collection_id }} — Document Intelligence — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<!-- Header -->
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;font-size:20px;">📓 Notebook — <span style="color:#7ab3f0;">{{ collection_id }}</span></h2>
+    <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">Sources · Chat · AI Outputs — works in air-gap and online modes</p>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <!-- Mode badge -->
+    <span id="mode-badge" style="padding:4px 10px;border-radius:4px;font-size:11px;font-weight:600;
+      background:{% if mode_info.mode == 'online' %}#0d2b18{% else %}#1a1a2e{% endif %};
+      color:{% if mode_info.mode == 'online' %}#4ade80{% else %}#f59e0b{% endif %};
+      border:1px solid {% if mode_info.mode == 'online' %}#1e5a38{% else %}#78350f{% endif %};">
+      {% if mode_info.mode == 'online' %}🌐 Online{% else %}🔒 Air-Gap{% endif %}
+      · {{ mode_info.provider }}
+    </span>
+    <a href="/document-intelligence/" style="background:#0f3460;color:#7ab3f0;padding:6px 14px;border-radius:5px;text-decoration:none;font-size:12px;">← DIC Home</a>
+  </div>
+</div>
+
+<!-- Capabilities row -->
+<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;">
+  {% for cap, available in mode_info.capabilities.items() %}
+  <span style="font-size:11px;padding:2px 8px;border-radius:3px;
+    background:{% if available %}#052e16{% else %}#1c1c1e{% endif %};
+    color:{% if available %}#4ade80{% else %}#6b7280{% endif %};
+    border:1px solid {% if available %}#166534{% else %}#374151{% endif %};">
+    {% if available %}✓{% else %}○{% endif %} {{ cap.replace('_', ' ') }}
+  </span>
+  {% endfor %}
+</div>
+
+<!-- 3-column layout -->
+<div style="display:grid;grid-template-columns:260px 1fr 300px;gap:14px;height:calc(100vh - 220px);min-height:500px;">
+
+  <!-- LEFT: Sources panel -->
+  <div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;overflow:hidden;display:flex;flex-direction:column;">
+    <div style="padding:10px 14px;border-bottom:1px solid #1a3560;background:#091426;">
+      <h3 style="margin:0;color:#eaeaea;font-size:13px;">📎 Sources ({{ docs|length }})</h3>
+    </div>
+
+    <!-- Add source controls -->
+    <div style="padding:10px 12px;border-bottom:1px solid #1a3560;background:#0b1a30;">
+      <!-- File upload -->
+      <div style="margin-bottom:8px;">
+        <input type="file" id="src-file" multiple accept=".pdf,.docx,.xlsx,.pptx,.png,.jpg,.txt,.md,.html" style="display:none">
+        <button onclick="document.getElementById('src-file').click()"
+          style="width:100%;background:#0f3460;color:#7ab3f0;padding:6px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:12px;">
+          + File Upload
+        </button>
+      </div>
+      <!-- URL ingest -->
+      <div style="display:flex;gap:4px;margin-bottom:6px;">
+        <input type="url" id="src-url" placeholder="https://..."
+          style="flex:1;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:5px 8px;border-radius:4px;font-size:11px;">
+        <button onclick="ingestURL()"
+          style="background:#1e3a6e;color:#7ab3f0;padding:5px 10px;border:none;border-radius:4px;cursor:pointer;font-size:11px;">URL</button>
+      </div>
+      <!-- Video ingest — YouTube, Vimeo, any site, IPTV m3u8 -->
+      <div style="display:flex;gap:4px;">
+        <input type="url" id="src-yt" placeholder="video URL (YouTube, Vimeo, IPTV…)"
+          style="flex:1;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:5px 8px;border-radius:4px;font-size:11px;">
+        <button onclick="ingestYouTube()"
+          style="background:#7f1d1d;color:#fca5a5;padding:5px 10px;border:none;border-radius:4px;cursor:pointer;font-size:11px;"
+          title="Extract captions/transcript via YouTube API or yt-dlp (works offline)">
+          ▶ Video
+        </button>
+      </div>
+      <div id="src-status" style="font-size:11px;color:#7ab3f0;margin-top:6px;min-height:14px;"></div>
+    </div>
+
+    <!-- Source list -->
+    <div style="flex:1;overflow-y:auto;padding:8px;">
+      {% if docs %}
+        {% for doc in docs %}
+        <div class="source-card" data-doc-title="{{ doc.title or doc.filename or doc.id }}" style="background:#091426;border:1px solid #1a3560;border-radius:5px;padding:8px 10px;margin-bottom:6px;cursor:pointer;"
+             onclick="loadDocContext('{{ doc.id }}')">
+          <div style="color:#b8d0e8;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="{{ doc.title or doc.filename }}">
+            {{ doc.title or doc.filename or doc.id }}
+          </div>
+          <div style="color:#5a7aa0;font-size:10px;margin-top:2px;">
+            {{ doc.source_type or 'file' }} · {{ (doc.created_at|string)[:10] if doc.created_at else '' }}
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div style="color:#5a7aa0;font-size:12px;padding:12px;text-align:center;">
+          No documents yet.<br>Add a file, URL, or YouTube link above.
+        </div>
+      {% endif %}
+      <div id="src-list-new"></div>
+    </div>
+    <!-- Co-Worker attachment — Document Team quick-launch -->
+    <div style="padding:8px 12px;border-top:1px solid #1a3560;background:#091426;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <div style="font-size:10px;color:#7ab3f0;font-weight:600;letter-spacing:.05em;">
+          DOCUMENT TEAM
+        </div>
+        <span id="detected-domain-badge" style="font-size:9px;color:#5a7aa0;background:#0a1525;border:1px solid #1a3560;border-radius:3px;padding:1px 5px;">
+          auto-detecting…
+        </span>
+      </div>
+      <!-- Role chips — rendered dynamically from detected domain -->
+      <div id="cwk-role-chips" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px;">
+        <!-- populated by renderTeamRoles() -->
+      </div>
+      <button id="launch-doc-team-btn" onclick="launchDocTeam()"
+        style="width:100%;background:#1e1b4b;color:#c7d2fe;padding:6px;border:1px solid #3730a3;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">
+        Launch Document Team →
+      </button>
+      <!-- legacy single-attach fallback -->
+      <button id="attach-cwk-btn" onclick="attachToCoWorker()"
+        style="width:100%;background:#0f172a;color:#64748b;padding:4px;border:1px solid #1e293b;border-radius:4px;cursor:pointer;font-size:10px;margin-top:4px;">
+        🤝 Attach to Co-Worker (generic)
+      </button>
+      <div id="attach-cwk-status" style="font-size:10px;color:#7ab3f0;margin-top:4px;min-height:12px;"></div>
+    </div>
+  </div>
+
+  <!-- CENTER: Chat panel -->
+  <div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;overflow:hidden;display:flex;flex-direction:column;">
+    <div style="padding:10px 14px;border-bottom:1px solid #1a3560;background:#091426;">
+      <h3 style="margin:0;color:#eaeaea;font-size:13px;">💬 Chat with Sources</h3>
+    </div>
+
+    <!-- Chat history -->
+    <div id="chat-history" style="flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:10px;">
+      <div style="background:#091426;border:1px solid #1a3560;border-radius:6px;padding:10px 12px;">
+        <div style="color:#5a7aa0;font-size:11px;">ICDEV DIC Assistant</div>
+        <div style="color:#b8d0e8;font-size:13px;margin-top:4px;">
+          Ask anything about your sources. Answers are grounded with citations.
+          {% if not mode_info.llm_available %}
+          <span style="color:#f59e0b;font-size:11px;display:block;margin-top:4px;">⚠ No LLM provider available — answers use deterministic grounded search only.</span>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Chat input -->
+    <div style="padding:10px 12px;border-top:1px solid #1a3560;background:#091426;">
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="chat-input" placeholder="Ask a question about your sources…"
+          style="flex:1;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:9px 12px;border-radius:5px;font-size:13px;"
+          onkeydown="if(event.key==='Enter')sendChat()">
+        <button onclick="sendChat()"
+          style="background:#0f3460;color:#7ab3f0;padding:9px 18px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:13px;">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: tabbed panel — AI Outputs + Knowledge Graph -->
+  <div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:8px;overflow:hidden;display:flex;flex-direction:column;">
+
+    <!-- Tab bar -->
+    <div style="display:flex;background:#091426;border-bottom:1px solid #1a3560;">
+      <button id="tab-outputs" onclick="switchTab('outputs')"
+        style="flex:1;padding:9px 6px;background:#091426;border:none;border-bottom:2px solid #4f8ef7;color:#7ab3f0;font-size:12px;cursor:pointer;font-weight:600;">
+        ✨ AI Outputs
+      </button>
+      <button id="tab-kg" onclick="switchTab('kg')"
+        style="flex:1;padding:9px 6px;background:#091426;border:none;border-bottom:2px solid transparent;color:#5a7aa0;font-size:12px;cursor:pointer;">
+        🕸 Knowledge Graph
+      </button>
+    </div>
+
+    <!-- AI Outputs tab content -->
+    <div id="panel-outputs" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
+      <!-- Generate buttons -->
+      <div style="padding:10px 12px;border-bottom:1px solid #1a3560;display:flex;flex-direction:column;gap:6px;">
+        <button onclick="generateOutput('study-guide')"
+          style="background:#0f3460;color:#7ab3f0;padding:7px 12px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;text-align:left;">
+          📚 Study Guide <span style="color:#4ade80;font-size:10px;">⚡ instant</span>
+        </button>
+        <button onclick="generateOutput('faq')"
+          style="background:#0f3460;color:#7ab3f0;padding:7px 12px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;text-align:left;">
+          ❓ FAQ (10 Q&amp;A) <span style="color:#4ade80;font-size:10px;">⚡ instant</span>
+        </button>
+        <button onclick="generateOutput('timeline')"
+          style="background:#0f3460;color:#7ab3f0;padding:7px 12px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:12px;text-align:left;">
+          📅 Timeline <span style="color:#4ade80;font-size:10px;">⚡ instant</span>
+        </button>
+        <button onclick="generateOutput('audio')"
+          style="background:#1e3a6e;color:#93c5fd;padding:7px 12px;border:1px solid #1e4a8e;border-radius:5px;cursor:pointer;font-size:12px;text-align:left;">
+          🎙 Audio Overview
+        </button>
+        <div id="gen-status" style="font-size:11px;color:#7ab3f0;min-height:14px;"></div>
+      </div>
+      <!-- Output results list -->
+      <div id="outputs-list" style="flex:1;overflow-y:auto;padding:8px;">
+        {% for out in outputs %}
+        <div style="background:#091426;border:1px solid #1a3560;border-radius:5px;padding:8px 10px;margin-bottom:6px;cursor:pointer;"
+             onclick="loadOutput('{{ out.id }}')">
+          <div style="color:#b8d0e8;font-size:12px;font-weight:600;">
+            {{ {'study_guide': '📚 Study Guide', 'faq': '❓ FAQ', 'timeline': '📅 Timeline', 'audio_overview': '🎙 Audio'}.get(out.output_type, out.output_type) }}
+          </div>
+          <div style="color:#5a7aa0;font-size:10px;margin-top:2px;">
+            {{ out.provider }} · {{ (out.created_at|string)[:10] if out.created_at else '' }}
+          </div>
+        </div>
+        {% endfor %}
+        {% if not outputs %}
+        <div style="color:#5a7aa0;font-size:12px;padding:12px;text-align:center;">
+          Generate study guides, FAQs, timelines, and audio overviews from your sources.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Knowledge Graph tab content -->
+    <div id="panel-kg" style="display:none;flex-direction:column;flex:1;overflow:hidden;">
+      <div style="padding:8px 12px;border-bottom:1px solid #1a3560;display:flex;gap:6px;align-items:center;">
+        <button onclick="loadKG()"
+          style="background:#0f3460;color:#7ab3f0;padding:5px 10px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:11px;">
+          🔄 Load Graph
+        </button>
+        <button onclick="resetKGLayout()"
+          style="background:#091426;color:#5a7aa0;padding:5px 10px;border:1px solid #1a3560;border-radius:4px;cursor:pointer;font-size:11px;">
+          ⊞ Reset Layout
+        </button>
+        <span id="kg-status" style="font-size:10px;color:#5a7aa0;margin-left:4px;"></span>
+      </div>
+      <!-- Legend -->
+      <div id="kg-legend" style="padding:4px 10px;font-size:10px;color:#5a7aa0;border-bottom:1px solid #0f1e35;display:flex;gap:8px;flex-wrap:wrap;"></div>
+      <!-- SVG canvas -->
+      <div style="flex:1;overflow:hidden;position:relative;" id="kg-viewport">
+        <svg id="kg-svg" width="100%" height="100%" style="cursor:grab;display:block;">
+          <g id="kg-edges-g"></g>
+          <g id="kg-nodes-g"></g>
+        </svg>
+        <div id="kg-tooltip" style="display:none;position:absolute;background:#091426;border:1px solid #1a3560;border-radius:4px;padding:6px 10px;font-size:11px;color:#b8d0e8;pointer-events:none;max-width:200px;z-index:10;"></div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- Output detail modal -->
+<div id="output-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;padding:40px;overflow-y:auto;">
+  <div style="background:#0d1b2e;border:1px solid #1a3560;border-radius:10px;max-width:800px;margin:0 auto;padding:24px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h3 id="modal-title" style="margin:0;color:#eaeaea;font-size:16px;"></h3>
+      <button onclick="closeModal()" style="background:none;border:none;color:#5a7aa0;font-size:20px;cursor:pointer;">×</button>
+    </div>
+    <div id="modal-content" style="color:#b8d0e8;font-size:13px;line-height:1.7;max-height:60vh;overflow-y:auto;"></div>
+    <div id="modal-audio" style="margin-top:12px;display:none;">
+      <audio id="audio-player" controls style="width:100%;"></audio>
+    </div>
+    <!-- Enhance with AI footer — shown for BM25+KG outputs when LLM is available -->
+    <div id="modal-enhance-bar" style="display:none;margin-top:14px;padding-top:12px;border-top:1px solid #1a3560;">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="color:#5a7aa0;font-size:11px;">BM25+KG · instant result</span>
+        <button id="enhance-btn" onclick="enhanceWithLLM()"
+          style="background:#1e3560;color:#93c5fd;padding:6px 14px;border:1px solid #2a4a80;border-radius:4px;cursor:pointer;font-size:12px;">
+          ✨ Enhance with AI narrative
+        </button>
+        <span id="enhance-status" style="font-size:11px;color:#7ab3f0;"></span>
+      </div>
+    </div>
+    <!-- Action bar — Export to other canvases -->
+    <div id="modal-action-bar" style="display:none;margin-top:8px;padding-top:10px;border-top:1px solid #122040;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="color:#4a6a8a;font-size:11px;">Export to:</span>
+        <button id="tasks-btn" onclick="createTasksFromOutput()"
+          style="background:#0f2a10;color:#4ade80;padding:5px 12px;border:1px solid #1a4a1a;border-radius:4px;cursor:pointer;font-size:12px;">
+          📋 Create Tasks
+        </button>
+        <button id="slides-btn" onclick="generateSlidesFromOutput()"
+          style="background:#1a1a40;color:#a78bfa;padding:5px 12px;border:1px solid #2a2a60;border-radius:4px;cursor:pointer;font-size:12px;">
+          📊 Generate Slides
+        </button>
+        <button id="roadmap-btn" onclick="addToRoadmap()"
+          style="background:#2a1a10;color:#fb923c;padding:5px 12px;border:1px solid #4a2a10;border-radius:4px;cursor:pointer;font-size:12px;display:none;">
+          🗺 Add to Roadmap
+        </button>
+        <span id="action-status" style="font-size:11px;color:#7ab3f0;"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .spinner{width:14px;height:14px;border:2px solid #1a3560;border-top-color:#4f8ef7;border-radius:50%;animation:spin .8s linear infinite;display:inline-block;vertical-align:middle;margin-right:6px;}
+</style>
+
+<script>
+const COLLECTION = "{{ collection_id }}";
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+// Tracks the last ingested doc_id so generated outputs scope to it.
+let LAST_DOC_ID = null;
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(name) {
+  ['outputs','kg'].forEach(p => {
+    const panel = document.getElementById('panel-' + p);
+    const tab = document.getElementById('tab-' + p);
+    const active = p === name;
+    panel.style.display = active ? 'flex' : 'none';
+    tab.style.borderBottomColor = active ? '#4f8ef7' : 'transparent';
+    tab.style.color = active ? '#7ab3f0' : '#5a7aa0';
+    tab.style.fontWeight = active ? '600' : 'normal';
+  });
+}
+
+// ── KG visualization ──────────────────────────────────────────────────────────
+const KG_COLORS = {
+  PERSON:'#f97316',ORG:'#8b5cf6',GPE:'#06b6d4',EVENT:'#f59e0b',DATE:'#64748b',
+  LAW:'#10b981',WORK_OF_ART:'#ec4899',PRODUCT:'#3b82f6',CONCEPT:'#4f8ef7',DEFAULT:'#5a7aa0',
+};
+let _kg_nodes=[], _kg_edges=[], _kg_drag=null;
+
+function loadKG() {
+  const st = document.getElementById('kg-status');
+  st.textContent = 'Extracting entities from ingested sources…';
+  const payload = {collection_id: COLLECTION, limit: 30};
+  if (LAST_DOC_ID) payload.doc_id = LAST_DOC_ID;
+  fetch('/document-intelligence/api/kg-from-chunks', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(payload),
+  })
+  .then(r=>r.json())
+  .then(d => {
+    if (!d.nodes || !d.nodes.length) {
+      st.textContent = d.hint || 'No entities found — ingest a source first';
+      return;
+    }
+    const srcLabel = d.source === 'kg' ? 'KG-extracted' : 'chunk-extracted';
+    _initKG(d.nodes, d.edges||[], st);
+    // Append source label after status is set
+    setTimeout(() => {
+      const cur = st.textContent;
+      st.textContent = cur + ' · ' + srcLabel;
+    }, 50);
+  })
+  .catch(e => { st.textContent = '⚠ ' + e; });
+}
+
+function _initKG(entities, edges, statusEl) {
+  const vp = document.getElementById('kg-viewport');
+  const W = vp.clientWidth || 320, H = vp.clientHeight || 300;
+  // Start from random positions so force layout converges differently each load
+  _kg_nodes = entities.map((e,i) => ({
+    id: e.id || e.entity_id || i,
+    label: (e.label || e.name || e.text || '?'),
+    type: (e.entity_type || e.type || 'DEFAULT').toUpperCase(),
+    centrality: e.centrality || 0,
+    x: W * 0.2 + Math.random() * W * 0.6,
+    y: H * 0.2 + Math.random() * H * 0.6,
+  }));
+  const byId = {};
+  _kg_nodes.forEach(n => byId[n.id] = n);
+  _kg_edges = edges
+    .filter(e => byId[e.source_id||e.source] && byId[e.target_id||e.target])
+    .map(e => ({
+      source: e.source_id||e.source, target: e.target_id||e.target,
+      label: e.relationship||e.label||'', weight: e.weight||1,
+    }));
+  _runForceLayout(W, H, 120);
+  _renderKG(W, H);
+  _buildKGLegend();
+  statusEl.textContent = `${_kg_nodes.length} nodes · ${_kg_edges.length} edges`;
+}
+
+function _runForceLayout(W, H, iterations) {
+  if (!_kg_nodes.length) return;
+  const k = Math.sqrt((W * H) / _kg_nodes.length) * 0.9;
+  let temp = W / 3;
+  const cool = temp / iterations;
+  const byId = {};
+  _kg_nodes.forEach((n,i) => byId[n.id] = i);
+
+  for (let iter = 0; iter < iterations; iter++) {
+    const dx = new Float32Array(_kg_nodes.length);
+    const dy = new Float32Array(_kg_nodes.length);
+
+    // Repulsion between every pair
+    for (let i = 0; i < _kg_nodes.length; i++) {
+      for (let j = i + 1; j < _kg_nodes.length; j++) {
+        const ddx = _kg_nodes[i].x - _kg_nodes[j].x || 0.1;
+        const ddy = _kg_nodes[i].y - _kg_nodes[j].y || 0.1;
+        const dist = Math.max(Math.sqrt(ddx*ddx + ddy*ddy), 1);
+        const f = k * k / dist;
+        dx[i] += (ddx / dist) * f;  dy[i] += (ddy / dist) * f;
+        dx[j] -= (ddx / dist) * f;  dy[j] -= (ddy / dist) * f;
+      }
+    }
+
+    // Attraction along edges
+    for (const e of _kg_edges) {
+      const si = byId[e.source], ti = byId[e.target];
+      if (si == null || ti == null) continue;
+      const ddx = _kg_nodes[si].x - _kg_nodes[ti].x;
+      const ddy = _kg_nodes[si].y - _kg_nodes[ti].y;
+      const dist = Math.max(Math.sqrt(ddx*ddx + ddy*ddy), 1);
+      const f = dist * dist / k;
+      dx[si] -= (ddx / dist) * f;  dy[si] -= (ddy / dist) * f;
+      dx[ti] += (ddx / dist) * f;  dy[ti] += (ddy / dist) * f;
+    }
+
+    // Apply with temperature clamping + boundary
+    for (let i = 0; i < _kg_nodes.length; i++) {
+      const mag = Math.max(Math.sqrt(dx[i]*dx[i] + dy[i]*dy[i]), 0.01);
+      const scale = Math.min(mag, temp) / mag;
+      _kg_nodes[i].x = Math.max(24, Math.min(W-24, _kg_nodes[i].x + dx[i]*scale));
+      _kg_nodes[i].y = Math.max(20, Math.min(H-20, _kg_nodes[i].y + dy[i]*scale));
+    }
+    temp -= cool;
+  }
+}
+
+function _renderKG(W, H) {
+  const edgesG = document.getElementById('kg-edges-g');
+  const nodesG = document.getElementById('kg-nodes-g');
+  edgesG.innerHTML = ''; nodesG.innerHTML = '';
+  const ns = 'http://www.w3.org/2000/svg';
+
+  _kg_edges.forEach(e => {
+    const s = _kg_nodes.find(n=>n.id===e.source), t = _kg_nodes.find(n=>n.id===e.target);
+    if (!s||!t) return;
+    const line = document.createElementNS(ns,'line');
+    line.setAttribute('x1',s.x); line.setAttribute('y1',s.y);
+    line.setAttribute('x2',t.x); line.setAttribute('y2',t.y);
+    line.setAttribute('stroke','rgba(255,255,255,0.18)'); line.setAttribute('stroke-width','1.5');
+    edgesG.appendChild(line);
+    if (e.label) {
+      const txt = document.createElementNS(ns,'text');
+      txt.setAttribute('x',(s.x+t.x)/2); txt.setAttribute('y',(s.y+t.y)/2-4);
+      txt.setAttribute('fill','rgba(255,255,255,0.55)'); txt.setAttribute('font-size','8');
+      txt.setAttribute('text-anchor','middle');
+      txt.textContent = e.label.slice(0,18);
+      edgesG.appendChild(txt);
+    }
+  });
+
+  const svgEl = document.getElementById('kg-svg');
+  const vp = document.getElementById('kg-viewport');
+
+  _kg_nodes.forEach(n => {
+    const g = document.createElementNS(ns,'g');
+    g.setAttribute('transform',`translate(${n.x},${n.y})`);
+    g.style.cursor = 'grab';
+    const r = 5 + (n.centrality||0)*10;
+    const color = KG_COLORS[n.type]||KG_COLORS.DEFAULT;
+
+    const circle = document.createElementNS(ns,'circle');
+    circle.setAttribute('r',r); circle.setAttribute('fill',color);
+    circle.setAttribute('fill-opacity','0.85');
+    circle.setAttribute('stroke','#0d1b2e'); circle.setAttribute('stroke-width','1.5');
+
+    const lbl = document.createElementNS(ns,'text');
+    lbl.setAttribute('y', r+9); lbl.setAttribute('fill','#b8d0e8');
+    lbl.setAttribute('font-size','9'); lbl.setAttribute('text-anchor','middle');
+    lbl.textContent = n.label.slice(0,14);
+
+    g.appendChild(circle); g.appendChild(lbl);
+
+    // Tooltip
+    g.addEventListener('mouseenter', ev => {
+      const rect = vp.getBoundingClientRect();
+      const tt = document.getElementById('kg-tooltip');
+      tt.innerHTML = `<strong>${esc(n.label)}</strong><br><span style="color:#5a7aa0">${n.type} · centrality: ${n.centrality?n.centrality.toFixed(3):'0'}</span>`;
+      tt.style.left = (ev.clientX - rect.left + 12) + 'px';
+      tt.style.top  = (ev.clientY - rect.top  - 8) + 'px';
+      tt.style.display = 'block';
+    });
+    g.addEventListener('mousemove', ev => {
+      const rect = vp.getBoundingClientRect();
+      const tt = document.getElementById('kg-tooltip');
+      tt.style.left = (ev.clientX - rect.left + 12) + 'px';
+      tt.style.top  = (ev.clientY - rect.top  - 8) + 'px';
+    });
+    g.addEventListener('mouseleave', () => { document.getElementById('kg-tooltip').style.display='none'; });
+
+    // Drag start
+    g.addEventListener('mousedown', ev => {
+      ev.preventDefault();
+      const rect = vp.getBoundingClientRect();
+      _kg_drag = {
+        node:n, g,
+        offsetX: ev.clientX - rect.left - n.x,
+        offsetY: ev.clientY - rect.top  - n.y,
+      };
+      g.style.cursor = 'grabbing';
+    });
+
+    nodesG.appendChild(g);
+    n._g = g;
+  });
+
+  svgEl.onmousemove = ev => {
+    if (!_kg_drag) return;
+    const rect = vp.getBoundingClientRect();
+    _kg_drag.node.x = ev.clientX - rect.left - _kg_drag.offsetX;
+    _kg_drag.node.y = ev.clientY - rect.top  - _kg_drag.offsetY;
+    _kg_drag.g.setAttribute('transform', `translate(${_kg_drag.node.x},${_kg_drag.node.y})`);
+    _updateKGEdges();
+  };
+  svgEl.onmouseup = () => { if (_kg_drag){ _kg_drag.g.style.cursor='grab'; _kg_drag=null; } };
+  svgEl.onmouseleave = () => { if (_kg_drag){ _kg_drag.g.style.cursor='grab'; _kg_drag=null; } };
+}
+
+function _updateKGEdges() {
+  const lines = document.getElementById('kg-edges-g').querySelectorAll('line');
+  _kg_edges.forEach((e,i) => {
+    const s = _kg_nodes.find(n=>n.id===e.source), t = _kg_nodes.find(n=>n.id===e.target);
+    if (!s||!t||!lines[i]) return;
+    lines[i].setAttribute('x1',s.x); lines[i].setAttribute('y1',s.y);
+    lines[i].setAttribute('x2',t.x); lines[i].setAttribute('y2',t.y);
+  });
+}
+
+function _buildKGLegend() {
+  const types = [...new Set(_kg_nodes.map(n=>n.type))];
+  document.getElementById('kg-legend').innerHTML = types.map(t =>
+    `<span style="color:${KG_COLORS[t]||KG_COLORS.DEFAULT}">● ${t}</span>`
+  ).join(' ');
+}
+
+function resetKGLayout() {
+  if (!_kg_nodes.length) { loadKG(); return; }
+  const vp = document.getElementById('kg-viewport');
+  const W = vp.clientWidth||320, H = vp.clientHeight||300;
+  // Randomize positions then re-run force layout
+  _kg_nodes.forEach(n => {
+    n.x = W * 0.2 + Math.random() * W * 0.6;
+    n.y = H * 0.2 + Math.random() * H * 0.6;
+  });
+  _runForceLayout(W, H, 120);
+  // Update SVG positions
+  _kg_nodes.forEach(n => {
+    if (n._g) n._g.setAttribute('transform', `translate(${n.x},${n.y})`);
+  });
+  _updateKGEdges();
+}
+
+// ── Enhance with AI ───────────────────────────────────────────────────────────
+let _CURRENT_OUTPUT = null;  // {output_id, type, collection_id, doc_id}
+
+function enhanceWithLLM() {
+  if (!_CURRENT_OUTPUT) return;
+  const btn = document.getElementById('enhance-btn');
+  const st  = document.getElementById('enhance-status');
+  btn.disabled = true;
+  btn.textContent = '⏳ Enhancing…';
+  st.textContent = 'LLM synthesis in progress (≤90s)…';
+  fetch('/document-intelligence/api/generate/enhance', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      output_id:    _CURRENT_OUTPUT.output_id,
+      output_type:  _CURRENT_OUTPUT.type,
+      collection_id: _CURRENT_OUTPUT.collection_id || COLLECTION,
+      doc_id:       _CURRENT_OUTPUT.doc_id,
+    }),
+  })
+  .then(r=>r.json())
+  .then(d => {
+    btn.disabled = false;
+    if (d.error || d.enhance_error) {
+      st.textContent = '⚠ ' + (d.error||d.enhance_error);
+      btn.textContent = '✨ Enhance with AI narrative';
+      return;
+    }
+    st.textContent = '✓ Enhanced via ' + (d.provider||'LLM');
+    btn.textContent = '✓ Enhanced';
+    btn.style.background='#1e4a30'; btn.style.color='#4ade80';
+    // Re-render modal content with enhanced data (hide bar since it's now enhanced)
+    _renderModalContent(_CURRENT_OUTPUT.type, d);
+    document.getElementById('modal-enhance-bar').style.display = 'none';
+  })
+  .catch(e => {
+    btn.disabled=false; btn.textContent='✨ Enhance with AI narrative';
+    st.textContent = '⚠ ' + e;
+  });
+}
+
+// ── Create Tasks / Generate Slides ────────────────────────────────────────────
+function createTasksFromOutput() {
+  if (!_CURRENT_OUTPUT && !LAST_DOC_ID) return;
+  const st  = document.getElementById('action-status');
+  const btn = document.getElementById('tasks-btn');
+  btn.disabled = true; btn.textContent = '⏳ Seeding tasks…';
+  st.textContent = '';
+  const oid = (_CURRENT_OUTPUT && _CURRENT_OUTPUT.output_id) ||
+              document.querySelector('[data-output-id]')?.dataset.outputId || '';
+  fetch('/document-intelligence/api/generate/tasks', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      output_id: oid,
+      collection_id: COLLECTION,
+      doc_id: LAST_DOC_ID || null,
+    }),
+  })
+  .then(r=>r.json())
+  .then(d => {
+    btn.disabled = false;
+    if (d.error) { st.textContent = '⚠ ' + d.error; btn.textContent = '📋 Create Tasks'; return; }
+    btn.textContent = `✓ ${d.count} task${d.count===1?'':'s'} created`;
+    btn.style.background='#1a4a1a'; btn.style.color='#4ade80';
+    st.textContent = d.count ? `View at /kanban` : 'No action items found';
+  })
+  .catch(e => { btn.disabled=false; btn.textContent='📋 Create Tasks'; st.textContent='⚠ '+e; });
+}
+
+function generateSlidesFromOutput() {
+  if (!_CURRENT_OUTPUT) return;
+  const st  = document.getElementById('action-status');
+  const btn = document.getElementById('slides-btn');
+  btn.disabled = true; btn.textContent = '⏳ Building deck…';
+  st.textContent = '';
+  fetch('/document-intelligence/api/generate/slides', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      output_id: _CURRENT_OUTPUT.output_id,
+      collection_id: COLLECTION,
+    }),
+  })
+  .then(r=>r.json())
+  .then(d => {
+    btn.disabled = false;
+    if (d.error) { st.textContent = '⚠ ' + d.error; btn.textContent = '📊 Generate Slides'; return; }
+    btn.textContent = `✓ ${d.slide_count} slides`;
+    btn.style.background='#1a1a50'; btn.style.color='#a78bfa';
+    st.innerHTML = `<a href="${d.url}" target="_blank" style="color:#7ab3f0;">Open deck →</a>`;
+  })
+  .catch(e => { btn.disabled=false; btn.textContent='📊 Generate Slides'; st.textContent='⚠ '+e; });
+}
+
+function addToRoadmap() {
+  if (!_CURRENT_OUTPUT || _CURRENT_OUTPUT.type !== 'timeline') return;
+  const st  = document.getElementById('action-status');
+  const btn = document.getElementById('roadmap-btn');
+  const contract_id = prompt('Enter PMO contract ID to attach milestones to:');
+  if (!contract_id) return;
+  btn.disabled = true; btn.textContent = '⏳ Creating milestones…';
+  st.textContent = '';
+  fetch('/document-intelligence/api/generate/roadmap', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      output_id: _CURRENT_OUTPUT.output_id,
+      contract_id,
+      collection_id: COLLECTION,
+    }),
+  })
+  .then(r=>r.json())
+  .then(d => {
+    btn.disabled = false;
+    if (d.error) { st.textContent = '⚠ ' + d.error; btn.textContent = '🗺 Add to Roadmap'; return; }
+    btn.textContent = `✓ ${d.milestone_count} milestone${d.milestone_count===1?'':'s'}`;
+    btn.style.background='#2a1800'; btn.style.color='#fb923c';
+    st.innerHTML = d.milestone_count
+      ? `<a href="/cpmp/contracts/${contract_id}" target="_blank" style="color:#7ab3f0;">View in PMO →</a>`
+      : 'No events found';
+  })
+  .catch(e => { btn.disabled=false; btn.textContent='🗺 Add to Roadmap'; st.textContent='⚠ '+e; });
+}
+
+// ── Document Team: domain detection + dynamic role chips ───────────────────────
+const TEAM_CONFIGS = {
+  ic_intelligence: {
+    label: 'Intel Team',
+    badgeColor: '#e94560',
+    roles: [
+      {id: 'researcher', label: 'Researcher'},
+      {id: 'intelligence_analyst', label: 'Intel Analyst'},
+      {id: 'writer', label: 'Writer'},
+      {id: 'editor', label: 'Editor'},
+      {id: 'derivative_classifier', label: 'Derivative Classifier'},
+    ],
+    problem: 'Produce an Intelligence Report (INTSUM) for collection: {collection}. Apply CAPCO portion markings per EO 13526/ICD 710. Ground all findings in the uploaded documents.',
+    context_query: 'key judgments threat assessment',
+  },
+  generic: {
+    label: 'Document Team',
+    badgeColor: '#7ab3f0',
+    roles: [
+      {id: 'researcher', label: 'Researcher'},
+      {id: 'document_classification_specialist', label: 'Doc Specialist'},
+      {id: 'writer', label: 'Writer'},
+      {id: 'editor', label: 'Editor'},
+      {id: 'document_reviewer', label: 'Reviewer'},
+    ],
+    problem: 'Analyze the uploaded documents in collection: {collection} and produce a structured summary with key findings, citations, and recommended actions. Ground all claims in the source documents.',
+    context_query: 'summarize key topics main points',
+  }
+};
+
+const DOMAIN_KEYWORDS = {
+  ic_intelligence: ['intsum','sitrep','osint','humint','sigint','capco','bluf','threat','classified','intel','intelligence','recon','spy','national security','targeting','all-source'],
+  legal: ['constitution','law','legal','statute','court','contract','brief','motion','regulation','compliance','policy','legislation','amendment','rights','jurisdiction'],
+  medical: ['patient','diagnosis','clinical','medical','healthcare','hipaa','treatment','physician','hospital','disease'],
+  financial: ['10-k','10-q','earnings','revenue','sec','financial','investment','audit','balance sheet','proxy statement'],
+  corporate: ['executive summary','strategy','market share','competitive','kpi','okr','roadmap','stakeholder','m&a','board memo'],
+  technical: ['specification','rfc','adr','architecture','api','protocol','schema','ieee','patent','sbom','test plan'],
+  academic: ['journal','literature review','peer review','thesis','dissertation','hypothesis','methodology','systematic review']
+};
+
+function detectDomain() {
+  const cards = document.querySelectorAll('.source-card, #src-list-new > div');
+  const texts = [];
+  cards.forEach(c => {
+    const t = c.getAttribute('data-doc-title') || c.textContent || '';
+    texts.push(t.toLowerCase());
+  });
+  const text = texts.join(' ');
+  if (!text.trim()) return 'generic';
+  const scores = {};
+  for (const [domain, kws] of Object.entries(DOMAIN_KEYWORDS)) {
+    scores[domain] = kws.reduce((sum, kw) => sum + (text.includes(kw) ? 1 : 0), 0);
+  }
+  const best = Object.entries(scores).sort((a, b) => b[1] - a[1])[0];
+  return (best && best[1] > 0) ? best[0] : 'generic';
+}
+
+function getTeamConfig() {
+  const domain = detectDomain();
+  // Only the ic_intelligence domain gets the specialized intel team.
+  // All other detected domains (legal, medical, financial, etc.) fall back to the generic document team.
+  return domain === 'ic_intelligence' ? TEAM_CONFIGS.ic_intelligence : TEAM_CONFIGS.generic;
+}
+
+function renderTeamRoles() {
+  const cfg = getTeamConfig();
+  const container = document.getElementById('cwk-role-chips');
+  const badge = document.getElementById('detected-domain-badge');
+  container.innerHTML = cfg.roles.map(r =>
+    `<button class="cwk-chip" data-role="${esc(r.id)}" data-active="true"
+      style="background:#3730a3;color:#fff;padding:3px 7px;border:1px solid #818cf8;border-radius:10px;cursor:pointer;font-size:10px;"
+      onclick="toggleChip(this)">${esc(r.label)}</button>`
+  ).join('');
+  if (badge) {
+    badge.textContent = cfg.label;
+    badge.style.color = cfg.badgeColor;
+    badge.style.borderColor = cfg.badgeColor;
+  }
+}
+
+function toggleChip(btn) {
+  const active = btn.getAttribute('data-active') === 'true';
+  btn.setAttribute('data-active', String(!active));
+  btn.style.background  = !active ? '#3730a3' : '#1a1a40';
+  btn.style.color       = !active ? '#fff'    : '#a5b4fc';
+  btn.style.borderColor = !active ? '#818cf8' : '#3730a3';
+}
+
+function launchDocTeam() {
+  const chips    = document.querySelectorAll('.cwk-chip');
+  const selected = [];
+  chips.forEach(c => {
+    if (c.getAttribute('data-active') === 'true') {
+      selected.push(c.getAttribute('data-role'));
+    }
+  });
+  if (selected.length === 0) {
+    document.getElementById('attach-cwk-status').textContent = 'Select at least one role.';
+    return;
+  }
+  const cfg = getTeamConfig();
+  const btn = document.getElementById('launch-doc-team-btn');
+  const st  = document.getElementById('attach-cwk-status');
+  btn.disabled = true; btn.textContent = '⏳ Launching…';
+  fetch('/api/ace/launch', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      problem_text: cfg.problem.replace('{collection}', COLLECTION),
+      role_ids: selected,
+      dic_collection_ids: [COLLECTION],
+      context_query: cfg.context_query,
+      trigger_source: 'dic_notebook',
+    }),
+  })
+  .then(r => r.json())
+  .then(d => {
+    btn.disabled = false;
+    if (d.error) { st.textContent = '⚠ ' + d.error; btn.textContent = 'Launch Document Team →'; return; }
+    btn.textContent = '✓ Launched';
+    btn.style.background = '#14532d'; btn.style.color = '#86efac';
+    const instId = d.instance_id || d.id || '';
+    if (instId) {
+      st.innerHTML = `<a href="/coworker/${instId}" style="color:#a78bfa;">Open Team Session →</a>`;
+    }
+  })
+  .catch(e => { btn.disabled=false; btn.textContent='Launch Document Team →'; st.textContent='⚠ '+e; });
+}
+
+// Render the dynamic team on page load and whenever a new source is added.
+document.addEventListener('DOMContentLoaded', renderTeamRoles);
+
+function attachToCoWorker() {
+  const btn = document.getElementById('attach-cwk-btn');
+  const st  = document.getElementById('attach-cwk-status');
+  btn.disabled = true; btn.textContent = '⏳ Attaching…';
+  fetch(`/document-intelligence/api/collections/${COLLECTION}/attach-coworker`, {
+    method:'POST', headers:{'Content-Type':'application/json'}, body:'{}',
+  })
+  .then(r=>r.json())
+  .then(d => {
+    btn.disabled = false;
+    if (d.error) { st.textContent = '⚠ ' + d.error; btn.textContent = '🤝 Attach to Co-Worker'; return; }
+    btn.textContent = '✓ Attached';
+    btn.style.background='#1a1a00'; btn.style.color='#fbbf24';
+    localStorage.setItem('dic_attached_collection', COLLECTION);
+    st.innerHTML = `<a href="${d.coworker_url}" style="color:#a78bfa;">Open Co-Worker →</a>`;
+  })
+  .catch(e => { btn.disabled=false; btn.textContent='🤝 Attach to Co-Worker'; st.textContent='⚠ '+e; });
+}
+
+// ── URL ingest ────────────────────────────────────────────────────────────────
+function ingestURL() {
+  const url = document.getElementById('src-url').value.trim();
+  if (!url) return;
+  setStatus('src-status', '<span class="spinner"></span>Fetching…');
+  fetch('/document-intelligence/api/ingest/url', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({url, collection_id: COLLECTION}),
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.error) { setStatus('src-status', '⚠ ' + d.error, '#f87171'); return; }
+    setStatus('src-status', '✓ Ingested: ' + (d.title || url).slice(0, 40), '#4ade80');
+    document.getElementById('src-url').value = '';
+    LAST_DOC_ID = d.doc_id || null;
+    addSourceCard(d.doc_id, d.title || url, 'web_url');
+  })
+  .catch(e => setStatus('src-status', '⚠ ' + e, '#f87171'));
+}
+
+// ── Video ingest (YouTube, Vimeo, IPTV, any yt-dlp-compatible URL) ────────────
+function ingestYouTube() {
+  const url = document.getElementById('src-yt').value.trim();
+  if (!url) return;
+  setStatus('src-status', '<span class="spinner"></span>Extracting transcript…');
+  fetch('/document-intelligence/api/ingest/youtube', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({url, collection_id: COLLECTION}),
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.error) { setStatus('src-status', '⚠ ' + d.error, '#f87171'); return; }
+    if (d.warning) { setStatus('src-status', '⚠ ' + (d.hint || d.warning), '#f59e0b'); return; }
+    setStatus('src-status', '✓ Transcript: ' + (d.title || url).slice(0, 40), '#4ade80');
+    document.getElementById('src-yt').value = '';
+    LAST_DOC_ID = d.doc_id || null;
+    addSourceCard(d.doc_id, d.title || url, 'video_transcript');
+  })
+  .catch(e => setStatus('src-status', '⚠ ' + e, '#f87171'));
+}
+
+// ── File upload ───────────────────────────────────────────────────────────────
+document.getElementById('src-file').addEventListener('change', function() {
+  const files = Array.from(this.files);
+  if (!files.length) return;
+  files.forEach(f => {
+    const fd = new FormData();
+    fd.append('file', f);
+    fd.append('collection_id', COLLECTION);
+    setStatus('src-status', '<span class="spinner"></span>Uploading ' + f.name + '…');
+    fetch('/document-intelligence/api/ingest', {method: 'POST', body: fd})
+      .then(r => r.json())
+      .then(d => {
+        if (d.error) { setStatus('src-status', '⚠ ' + d.error, '#f87171'); return; }
+        addSourceCard(d.job_id, f.name, 'file');
+        setStatus('src-status', '<span class="spinner"></span>Processing ' + f.name + '…');
+        // Poll result URL every 4s until doc_id appears (works with both SQLite + PG backends).
+        const pollResult = (retries) => {
+          if (!retries) { setStatus('src-status', '✓ ' + f.name, '#4ade80'); return; }
+          fetch(d.result_url || ('/document-intelligence/api/ingest/' + d.job_id + '/result'))
+            .then(r => r.json())
+            .then(res => {
+              if (res.doc_id) {
+                LAST_DOC_ID = res.doc_id;
+                setStatus('src-status', '✓ ' + f.name + ' processed', '#4ade80');
+              } else if (res.status === 'error') {
+                setStatus('src-status', '⚠ ingest error', '#f87171');
+              } else if (res.status === 'done') {
+                // Done but no doc_id (e.g. dedup returned nothing) — still usable
+                setStatus('src-status', '✓ ' + f.name, '#4ade80');
+              } else {
+                setTimeout(() => pollResult(retries - 1), 4000);
+              }
+            })
+            .catch(() => setTimeout(() => pollResult(retries - 1), 4000));
+        };
+        setTimeout(() => pollResult(25), 3000); // poll after 3s; up to 25×4s=100s max
+      });
+  });
+  this.value = '';
+});
+
+function addSourceCard(id, title, type) {
+  const icons = {web_url: '🌐', youtube_transcript: '▶', video_transcript: '▶', file: '📄'};
+  const labels = {web_url: 'url', youtube_transcript: 'video', video_transcript: 'video', file: 'file'};
+  const el = document.createElement('div');
+  el.className = 'source-card';
+  el.setAttribute('data-doc-title', title);
+  el.setAttribute('data-doc-id', id || '');
+  el.style.cssText = 'background:#091426;border:1px solid #1a3560;border-radius:5px;padding:8px 10px;margin-bottom:6px;cursor:pointer;';
+  el.onclick = function() { loadDocContext(id); };
+  el.innerHTML = `<div style="color:#b8d0e8;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(title)}">${icons[type]||'📎'} ${esc(title.slice(0,40))}</div>
+    <div style="color:#5a7aa0;font-size:10px;">${labels[type]||type} · just now</div>`;
+  document.getElementById('src-list-new').prepend(el);
+  // Re-render role chips whenever a new source is added.
+  renderTeamRoles();
+}
+
+// ── Chat ──────────────────────────────────────────────────────────────────────
+function sendChat() {
+  const input = document.getElementById('chat-input');
+  const q = input.value.trim();
+  if (!q) return;
+  input.value = '';
+  appendChat('user', q);
+  appendChat('assistant', '<span class="spinner"></span>Searching…', 'thinking');
+  fetch('/document-intelligence/api/chat', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({message: q, collection_id: COLLECTION, max_results: 5}),
+  })
+  .then(r => r.json())
+  .then(d => {
+    const el = document.getElementById('thinking');
+    if (el) el.remove();
+    if (d.error) { appendChat('assistant', '⚠ ' + d.error); return; }
+    const ans = d.answer || d.text || d.content || JSON.stringify(d);
+    const sources = (d.sources || d.citations || d.chunks || []).slice(0, 5);
+    let answerHtml = esc(ans);
+    sources.forEach((s, i) => {
+      const num = s.num || (i + 1);
+      const url = s.archive_url || (s.doc_id ? '/document-intelligence/doc/' + s.doc_id : '#');
+      answerHtml = answerHtml.replace(
+        new RegExp('\\[' + num + '\\]', 'g'),
+        `<a href="${esc(url)}" target="_blank" style="color:#4f8ef7;text-decoration:none;font-weight:600;" title="${esc(s.doc_title || s.doc_id || 'source')}">[${num}]</a>`
+      );
+    });
+    const sourceLinks = sources.map((s, i) => {
+      const num = s.num || (i + 1);
+      const url = s.archive_url || (s.doc_id ? '/document-intelligence/doc/' + s.doc_id : '#');
+      const page = s.page ? ' · p.' + s.page : '';
+      const label = s.doc_title || s.doc_id || 'source';
+      return `<a href="${esc(url)}" target="_blank" style="display:inline-flex;align-items:center;gap:4px;background:#0a2040;color:#4f8ef7;font-size:10px;padding:2px 7px;border-radius:3px;border:1px solid #1a3a60;text-decoration:none;margin:0 2px 4px 0;">${num}. ${esc(label)}${page}</a>`;
+    }).join('');
+    const modeTag = d.mode ? `<span style="color:#5a7aa0;font-size:10px;margin-left:6px;">(${d.mode})</span>` : '';
+    appendChat('assistant', answerHtml + modeTag + (sourceLinks ? '<div style="margin-top:8px;">Sources: ' + sourceLinks + '</div>' : ''));
+  })
+  .catch(e => { const el = document.getElementById('thinking'); if (el) el.remove(); appendChat('assistant', '⚠ ' + e); });
+}
+
+function appendChat(role, html, id) {
+  const div = document.createElement('div');
+  if (id) div.id = id;
+  const isUser = role === 'user';
+  div.style.cssText = `background:${isUser ? '#0f3460' : '#091426'};border:1px solid ${isUser ? '#1e3a6e' : '#1a3560'};border-radius:6px;padding:10px 12px;`;
+  div.innerHTML = `<div style="color:#5a7aa0;font-size:11px;">${isUser ? 'You' : 'DIC Assistant'}</div>
+    <div style="color:#b8d0e8;font-size:13px;margin-top:4px;">${html}</div>`;
+  const hist = document.getElementById('chat-history');
+  hist.appendChild(div);
+  hist.scrollTop = hist.scrollHeight;
+}
+
+// ── Output generation ─────────────────────────────────────────────────────────
+function generateOutput(type) {
+  setStatus('gen-status', '<span class="spinner"></span>Generating ' + type + '…');
+  // Scope to the last ingested document so FAQ/study-guide reflect the right source.
+  const payload = {collection_id: COLLECTION};
+  if (LAST_DOC_ID) payload.doc_id = LAST_DOC_ID;
+  fetch(`/document-intelligence/api/generate/${type}`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (d.error) { setStatus('gen-status', '⚠ ' + d.error, '#f87171'); return; }
+    setStatus('gen-status', '✓ ' + type + ' ready', '#4ade80');
+    addOutputCard(d.output_id, type, d.provider);
+    showOutputModal(type.replace('-','_'), d, d.output_id);
+  })
+  .catch(e => setStatus('gen-status', '⚠ ' + e, '#f87171'));
+}
+
+function addOutputCard(id, type, provider) {
+  const labels = {'study-guide': '📚 Study Guide', faq: '❓ FAQ', timeline: '📅 Timeline', audio: '🎙 Audio'};
+  const el = document.createElement('div');
+  el.style.cssText = 'background:#091426;border:1px solid #1a3560;border-radius:5px;padding:8px 10px;margin-bottom:6px;cursor:pointer;';
+  el.onclick = () => loadOutput(id);
+  el.innerHTML = `<div style="color:#b8d0e8;font-size:12px;">${labels[type]||type}</div>
+    <div style="color:#5a7aa0;font-size:10px;">${provider||''} · just now</div>`;
+  document.getElementById('outputs-list').prepend(el);
+}
+
+function loadOutput(id) {
+  fetch(`/document-intelligence/api/outputs/${id}`)
+    .then(r => r.json())
+    .then(d => {
+      const content = d.content || d;
+      content.output_id = content.output_id || d.id || id;
+      showOutputModal(d.output_type, content, id);
+    });
+}
+
+function decodeHtmlEntities(s) {
+  const el = document.createElement('textarea');
+  el.innerHTML = s;
+  return el.value;
+}
+
+// Lightweight markdown → HTML (covers what LLMs actually emit for study guides/audio).
+function md2html(text) {
+  if (!text) return '';
+  let t = text
+    // Headings h1–h4
+    .replace(/^#### (.+)$/gm, '<h4 style="color:#93c5fd;font-size:13px;margin:10px 0 4px;">$1</h4>')
+    .replace(/^### (.+)$/gm, '<h3 style="color:#93c5fd;font-size:14px;margin:12px 0 5px;">$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2 style="color:#93c5fd;font-size:15px;margin:14px 0 6px;">$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1 style="color:#60a5fa;font-size:17px;margin:0 0 10px;">$1</h1>')
+    // Horizontal rule
+    .replace(/^---+$/gm, '<hr style="border:none;border-top:1px solid #1a3560;margin:10px 0;">')
+    // Bold + italic
+    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#e2e8f0;">$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    // Bullet lists — group consecutive lines starting with - or * or •
+    .replace(/^[\-\*•] (.+)$/gm, '<li style="margin:2px 0 2px 16px;color:#b8d0e8;">$1</li>')
+    // Numbered lists
+    .replace(/^\d+\. (.+)$/gm, '<li style="margin:2px 0 2px 16px;list-style-type:decimal;color:#b8d0e8;">$1</li>')
+    // Inline code
+    .replace(/`([^`]+)`/g, '<code style="background:#0a1929;padding:1px 4px;border-radius:3px;font-size:11px;color:#93c5fd;">$1</code>')
+    // Wrap consecutive <li> in <ul>
+    .replace(/(<li[^>]*>.*?<\/li>\n?)+/gs, m => `<ul style="padding:0;margin:6px 0;list-style:none;">${m}</ul>`)
+    // Double newline → paragraph break
+    .replace(/\n{2,}/g, '</p><p style="margin:6px 0;color:#b8d0e8;">')
+    // Single newline → line break (inside paragraph)
+    .replace(/\n/g, '<br>');
+  return `<p style="margin:6px 0;color:#b8d0e8;">${t}</p>`;
+}
+
+function _renderModalContent(type, data) {
+  let html = '';
+  if (type === 'faq') {
+    const pairs = data.pairs || [];
+    if (pairs.length) {
+      html = pairs.map((p,i) =>
+        `<div style="margin-bottom:14px;"><div style="color:#93c5fd;font-weight:600;margin-bottom:4px;">Q${i+1}: ${esc(p.q)}</div><div style="color:#b8d0e8;padding-left:12px;">A: ${esc(p.a)}</div></div>`
+      ).join('');
+    } else if (data.text) { html = md2html(data.text); }
+    else { html = esc(JSON.stringify(data)); }
+  } else if (type === 'timeline') {
+    const events = data.events || [];
+    if (events.length) {
+      html = events.map(e =>
+        `<div style="margin-bottom:10px;"><span style="color:#f59e0b;font-weight:600;">[${esc(e.date)}]</span> <span style="color:#b8d0e8;">${esc(e.event)}</span>${e.context?`<div style="color:#5a7aa0;font-size:11px;padding-left:14px;">${esc(e.context)}</div>`:''}</div>`
+      ).join('');
+    } else if (data.text) { html = md2html(data.text); }
+    else { html = esc(JSON.stringify(data)); }
+  } else if (type === 'study_guide' || type === 'study-guide') {
+    if (data.text) {
+      html = md2html(data.text);
+    } else {
+      if (data.overview) html += `<div style="margin-bottom:12px;">${esc(data.overview)}</div>`;
+      if (data.key_points && data.key_points.length)
+        html += `<div style="font-weight:600;color:#93c5fd;margin-bottom:6px;">KEY POINTS</div>`
+          + data.key_points.map(p=>`<div style="padding:2px 0 2px 16px;color:#b8d0e8;">• ${esc(decodeHtmlEntities(p))}</div>`).join('');
+      if (data.key_terms && data.key_terms.length)
+        html += `<div style="margin-top:12px;font-weight:600;color:#93c5fd;">KEY TERMS</div><div style="color:#b8d0e8;">${esc(decodeHtmlEntities(data.key_terms.join(', ')))}</div>`;
+    }
+  } else if (type === 'audio_overview' || type === 'audio') {
+    html = md2html(data.script || '');
+    if (data.audio_path) {
+      document.getElementById('modal-audio').style.display = '';
+      document.getElementById('audio-player').src = '/document-intelligence/api/audio/' + encodeURIComponent(data.audio_path);
+    }
+  } else {
+    html = md2html(data.text||'') || `<pre style="color:#b8d0e8;font-size:12px;">${esc(JSON.stringify(data,null,2))}</pre>`;
+  }
+  if (data.note) html += `<div style="margin-top:14px;color:#f59e0b;font-size:11px;">[Note: ${esc(data.note)}]</div>`;
+  document.getElementById('modal-content').innerHTML = html;
+}
+
+function showOutputModal(type, data, outputId) {
+  const titles = {study_guide:'📚 Study Guide',faq:'❓ FAQ',timeline:'📅 Timeline',audio_overview:'🎙 Audio Overview','study-guide':'📚 Study Guide',audio:'🎙 Audio Overview'};
+  document.getElementById('modal-title').textContent = titles[type] || type;
+  document.getElementById('modal-audio').style.display = 'none';
+
+  _renderModalContent(type, data);
+
+  // Track current output (for both enhance and export actions)
+  const oid = outputId || data.output_id;
+  const provIsBM25 = (data.provider||'').startsWith('bm25');
+  if (oid) {
+    _CURRENT_OUTPUT = {output_id: oid, type: type.replace('-','_'), collection_id: COLLECTION, doc_id: data.doc_id || LAST_DOC_ID};
+  } else {
+    _CURRENT_OUTPUT = null;
+  }
+
+  // Enhance bar — only for BM25+KG outputs when LLM is available
+  if (oid && provIsBM25 && data.llm_available) {
+    const btn = document.getElementById('enhance-btn');
+    btn.disabled = false; btn.textContent = '✨ Enhance with AI narrative';
+    btn.style.background='#1e3560'; btn.style.color='#93c5fd';
+    document.getElementById('enhance-status').textContent = '';
+    document.getElementById('modal-enhance-bar').style.display = '';
+  } else {
+    document.getElementById('modal-enhance-bar').style.display = 'none';
+  }
+
+  // Action bar — show export buttons based on output type
+  const nt = type.replace('-','_');
+  const canTasks   = oid && (nt === 'study_guide' || nt === 'faq');
+  const canSlides  = oid && (nt === 'study_guide' || nt === 'timeline');
+  const canRoadmap = oid && nt === 'timeline';
+  document.getElementById('tasks-btn').style.display   = canTasks   ? '' : 'none';
+  document.getElementById('slides-btn').style.display  = canSlides  ? '' : 'none';
+  document.getElementById('roadmap-btn').style.display = canRoadmap ? '' : 'none';
+  document.getElementById('action-status').textContent = '';
+  document.getElementById('modal-action-bar').style.display = (canTasks || canSlides || canRoadmap) ? '' : 'none';
+
+  document.getElementById('output-modal').style.display = '';
+}
+
+function closeModal() {
+  document.getElementById('output-modal').style.display = 'none';
+  document.getElementById('modal-audio').style.display = 'none';
+}
+
+function setStatus(id, html, color) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.innerHTML = html;
+  el.style.color = color || '#7ab3f0';
+}
+
+function loadDocContext(docId) {
+  document.getElementById('chat-input').value = 'Summarize document ' + docId;
+  document.getElementById('chat-input').focus();
+}
+</script>
+{% set iqe_canvas = "dic" %}
+{% set iqe_queries = [
+  {"label": "All generated outputs", "query": "foreach o in dic.generated_outputs select o.id, o.output_type, o.collection_id, o.provider, o.created_at"},
+  {"label": "Recent study guides", "query": "foreach o in dic.generated_outputs where o.output_type == \"study_guide\" select o.id, o.collection_id, o.provider, o.created_at"},
+  {"label": "All docs in collection", "query": "foreach d in dic.documents select d.doc_id, d.collection_id, d.title, d.created_at"}
+] %}
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}

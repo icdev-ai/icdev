@@ -198,6 +198,7 @@ jobs:
       SC_STORAGE_BACKEND: sqlite
       MC_STORAGE_BACKEND: sqlite
       AIMC_STORAGE_BACKEND: sqlite
+      ICDEV_NDC_ENABLED: "false"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

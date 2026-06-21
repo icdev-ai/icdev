@@ -42,7 +42,43 @@ def _open_degradation_card_exists(reflex: str, metric: str) -> bool:
         return False
 
 
-def _create_degradation_card(alert: dict) -> str | None:
+def _get_echo_context(task_type: str) -> str:
+    """Return ECHO improvement artifact text for injection into card descriptions."""
+    try:
+        from tools.workflow.reflexion_agent import get_latest_improvement
+        return get_latest_improvement(task_type)
+    except Exception:
+        return ""
+
+
+def _build_skill_prompt(task_type: str, colearn_enabled: bool) -> str:
+    """Build a skill prompt, prepending the ECHO improvement artifact when co-learning is active.
+
+    When ICDEV_HARNESS_COLEARN is true, calls get_latest_improvement(task_type) and
+    prepends the returned artifact to the base remediation prompt so the kanban
+    executor receives Reflexion-generated context before the task description.
+    """
+    base_prompt = (
+        f"Investigate the degraded `{task_type}` harness metric and propose a "
+        "remediation plan. Apply any relevant heuristic amendments or self-healing "
+        "steps as described in the card details above."
+    )
+    if colearn_enabled:
+        try:
+            from tools.workflow.reflexion_agent import get_latest_improvement
+            artifact = get_latest_improvement(task_type)
+            if artifact:
+                return artifact + "\n\n" + base_prompt
+        except Exception:
+            pass
+    return base_prompt
+
+
+def _create_degradation_card(
+    alert: dict,
+    echo_context: str = "",
+    skill_prompt: str = "",
+) -> str | None:
     """Insert a kanban_tasks row for a degradation alert."""
     import uuid
     reflex = alert["reflex"]
@@ -61,6 +97,10 @@ def _create_degradation_card(alert: dict) -> str | None:
         f"- Severity: `{severity}`\n\n"
         f"**Recommendation:** {recommendation}"
     )
+    if echo_context:
+        body += f"\n\n{echo_context}"
+    if skill_prompt:
+        body += f"\n\n**Skill Prompt:**\n{skill_prompt}"
 
     try:
         conn = _conn()
@@ -184,6 +224,25 @@ def run(config: dict[str, Any], trust: Any) -> dict[str, Any]:
     new_cards: list[str] = []
     colearn_results: dict = {}
 
+    # NOVA ECHO: when co-learning is enabled, run batch reflexion to generate
+    # improvement artifacts for common task_types. These artifacts are prepended
+    # to degradation card descriptions so kanban executors get ECHO context.
+    echo_artifacts: dict = {}
+    if colearn_enabled:
+        try:
+            from tools.workflow.reflexion_agent import run_batch_reflexion
+            reflex_result = run_batch_reflexion(dry_run=dry_run)
+            for tt, art in reflex_result.get("results", {}).items():
+                if not art.get("skipped"):
+                    echo_artifacts[tt] = art
+            LOG.info(
+                "[harness] ECHO batch reflexion: %d task_types processed, %d artifacts",
+                reflex_result.get("task_types_processed", 0),
+                len(echo_artifacts),
+            )
+        except Exception as exc:
+            LOG.warning("[harness] ECHO batch reflexion failed: %s", exc)
+
     for alert in alerts:
         reflex = alert["reflex"]
         metric = alert["metric"]
@@ -192,8 +251,14 @@ def run(config: dict[str, Any], trust: Any) -> dict[str, Any]:
             LOG.debug("[harness] skipping %s.%s — card already open", reflex, metric)
             continue
 
+        # NOVA ECHO: inject latest improvement artifact for this reflex/task_type
+        echo_context = _get_echo_context(reflex) if colearn_enabled else ""
+        skill_prompt = _build_skill_prompt(reflex, colearn_enabled)
+
         if not dry_run:
-            card_id = _create_degradation_card(alert)
+            card_id = _create_degradation_card(
+                alert, echo_context=echo_context, skill_prompt=skill_prompt
+            )
             if card_id:
                 new_cards.append(card_id)
         else:
@@ -241,6 +306,7 @@ def run(config: dict[str, Any], trust: Any) -> dict[str, Any]:
             "metrics": metrics_summary,
             "dry_run": dry_run,
             "colearn": colearn_results,
+            "echo_artifacts_generated": len(echo_artifacts),
             "meta": meta_result,
         },
     }

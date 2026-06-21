@@ -447,7 +447,7 @@ CREATE INDEX IF NOT EXISTS idx_cat_transfer_id ON cross_agency_transfers(transfe
 CREATE INDEX IF NOT EXISTS idx_cat_occurred_at ON cross_agency_transfers(occurred_at);
 
 CREATE TABLE IF NOT EXISTS audit_trail (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id TEXT PRIMARY KEY,
     project_id TEXT,
     event_type TEXT NOT NULL,
     actor TEXT NOT NULL,
@@ -457,7 +457,7 @@ CREATE TABLE IF NOT EXISTS audit_trail (
     classification TEXT DEFAULT 'CUI',
     ip_address TEXT,
     session_id TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    recorded_at TEXT
 );
 """
 
@@ -602,7 +602,7 @@ class TestNistAu2Au9RealDb:
         # Verify dual-write to audit_trail (AU-2 completeness)
         conn = self._make_conn(real_db)
         audit_rows = conn.execute(
-            "SELECT * FROM audit_trail WHERE details LIKE ? ORDER BY created_at ASC",
+            "SELECT * FROM audit_trail WHERE details LIKE ? ORDER BY recorded_at ASC",
             ("%xfer-au2-003%",),
         ).fetchall()
         conn.close()

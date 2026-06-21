@@ -566,6 +566,36 @@ python tools/genesis/reporter.py --list --json                # List all reports
 
 ---
 
+## Loop Engineering — GEPA Optimizer & Adversarial Verify
+```bash
+# GEPA (Genetic Evolution of Prompt Architectures) optimizer
+python tools/skills/gepa_optimizer.py --dry-run              # Preview evolution cycle without writing
+python tools/skills/gepa_optimizer.py --json                 # Run full GEPA cycle, JSON output
+python tools/genesis/reflexes/gepa_optimizer.py --dry-run    # Same via genesis reflex path
+
+# Genesis daemon — GEPA reflex (24 h interval, registered in daemon.py REFLEX_NAMES)
+python tools/genesis/daemon.py --reflex gepa --json          # Run GEPA reflex immediately
+
+# Kanban task_factory — loop_type and adversarial fields
+# Create a looping task (loop_type: "fixed" | "adaptive" | "gepa")
+python -c "
+from tools.kanban.task_factory import create_tasks
+create_tasks([{
+  'id': 'loop-example-01',
+  'title': 'Example loop task',
+  'loop_type': 'adaptive',          # fixed | adaptive | gepa
+  'adversarial_enabled': True,      # spawns _run_adversarial_verify after each iteration
+  'description': '...',
+  'acceptance_criteria': '...',
+}])
+"
+
+# Adversarial verify (invoked automatically when adversarial_enabled=True on a looping task)
+# _run_adversarial_verify(task_id) in tools/kanban/task_factory.py — not a standalone CLI
+```
+
+---
+
 ## Bayesian Autoresearch Commands (Phase 67)
 ```bash
 # Experiment engine (Karpathy Loop)
@@ -795,6 +825,42 @@ python tools/harness/trace_analyzer.py --recommendations --limit 20 --json
 # Scaffold baseline harness for child apps
 python tools/harness/scaffold_harness.py --output-dir /path/to/project --json
 python tools/harness/scaffold_harness.py --output-dir /path --impact-level IL4 --json
+```
+
+---
+
+## NOVA — Autonomous Self-Learning Digital Coworker Commands
+```bash
+# DB init — creates NOVA tables in PostgreSQL (called automatically at dashboard startup)
+python -c "from tools.nova.db.init_db import init_nova_tables; print(init_nova_tables())"
+
+# ECHO — Execution Tracing
+python -c "
+from tools.workflow.trace_logger import start_trace, close_trace
+tid = start_trace('task-001', 'build', 'icdev-build')
+close_trace(tid, 'success', 'success_first_try')
+print('trace_id:', tid)
+"
+python -c "from tools.workflow.trace_logger import get_recent_traces; import json; print(json.dumps(get_recent_traces(limit=10), indent=2))"
+
+# ECHO — Reflexion (requires ICDEV_HARNESS_COLEARN=true)
+python -c "from tools.workflow.reflexion_agent import run_batch_reflexion; import json; print(json.dumps(run_batch_reflexion(['build'], dry_run=True), indent=2))"
+python -c "from tools.workflow.reflexion_agent import get_latest_improvement; print(get_latest_improvement('build'))"
+
+# SOUL — Coworker Identity
+python -c "from icdev.tools.ace.soul_manager import build_identity_preamble; print(build_identity_preamble('ai_developer'))"
+python -c "from icdev.tools.ace.soul_manager import record_learning; print(record_learning('ai_developer', 'Always use get_canvas_connection() for canvas tables.'))"
+
+# TRUST — Trust Calibration
+python -c "from tools.ace.trust_calibrator import get_trust_score, get_dispatch_config; import json; print(json.dumps(get_dispatch_config('ai_developer'), indent=2))"
+python -c "from tools.ace.trust_calibrator import record_trust_event; import json; print(json.dumps(record_trust_event('ai_developer', 'success', 'task-001'), indent=2))"
+python -c "from tools.ace.trust_calibrator import get_trust_summary; import json; print(json.dumps(get_trust_summary(), indent=2))"
+python -c "from tools.ace.trust_calibrator import run_weekly_recalibration; import json; print(json.dumps(run_weekly_recalibration(), indent=2))"
+
+# SELA — Skill Evolution (dry-run — never auto-merges)
+python -c "from tools.evolution.artifact_evolver import evolve_artifact; import json; print(json.dumps(evolve_artifact('icdev-status', 'skill', dry_run=True), indent=2))"
+python -c "from tools.evolution.artifact_evolver import evolve_all_skills; import json; print(json.dumps(evolve_all_skills(dry_run=True, limit=3), indent=2))"
+python -c "from tools.evolution.eval_builder import build_dataset; ds = build_dataset('icdev-build', '', min_examples=3); print(f'train={len(ds.train)} val={len(ds.val)}')"
 ```
 
 ---
@@ -2821,4 +2887,80 @@ ICDEV_FOUNDRY_ENABLED=true       # .env — master toggle for canvas + reflex
 # ── Tests ──
 pytest tests/foundry/ -v                                          # engine, novelty, spec, task-graph, blueprint
 pytest tests/test_foundry_cycle_reflex.py tests/test_foundry_mcp.py tests/test_foundry_harvester.py -v
+```
+
+## ANVIL Co-Worker Engine (ACE) Commands
+
+```bash
+# Launch a co-worker instance with a problem statement
+python -m icdev.tools.ace.controller --launch 'problem text' [--json]
+
+# Check the status of a running co-worker instance
+python -m icdev.tools.ace.controller --status <instance_id> [--json]
+
+# Abort a running co-worker instance
+python -m icdev.tools.ace.controller --abort <instance_id>
+
+# List available co-worker roles
+python -m icdev.tools.ace.controller --list-roles
+
+# Seed ACE-related kanban tasks (use --dry-run to preview)
+python tools/kanban/seed_ace_kanban.py [--dry-run]
+
+# Feature flag — enable /coworker/ canvas
+ICDEV_ACE_ENABLED=true        # .env — master toggle for ACE canvas + co-worker reflex
+```
+
+## Document Intelligence Canvas (DIC) — Notebook
+
+```bash
+# Notebook page (NotebookLM-style view)
+# URL: http://localhost:5050/document-intelligence/notebook
+# URL: http://localhost:5050/document-intelligence/notebook/<collection_id>
+
+# URL ingest (online mode; air-gap returns empty with warning)
+# POST /document-intelligence/api/ingest/url
+# Body: {"url": "https://...", "collection_id": "my-collection"}
+
+# YouTube transcript ingest (online mode only)
+# POST /document-intelligence/api/ingest/youtube
+# Body: {"url": "https://youtube.com/watch?v=...", "collection_id": "my-collection"}
+
+# AI output generators (dual-mode: LLM online, deterministic air-gap fallback)
+# POST /document-intelligence/api/generate/study-guide
+# POST /document-intelligence/api/generate/faq
+# POST /document-intelligence/api/generate/timeline
+# POST /document-intelligence/api/generate/audio
+# Body: {"collection_id": "my-collection"}
+
+# List outputs for a collection
+# GET /document-intelligence/api/outputs?collection_id=my-collection
+
+# Get a single output
+# GET /document-intelligence/api/outputs/<output_id>
+
+# Mode info (air-gap vs online, available capabilities)
+# GET /document-intelligence/api/mode
+
+# Python — generate outputs directly
+python -c "from tools.document_intelligence.output_generators import generate_study_guide; import json; print(json.dumps(generate_study_guide('my-collection', 'default'), indent=2))"
+python -c "from tools.document_intelligence.output_generators import generate_faq; import json; print(json.dumps(generate_faq('my-collection', 'default', n=10), indent=2))"
+python -c "from tools.document_intelligence.output_generators import generate_timeline; import json; print(json.dumps(generate_timeline('my-collection', 'default'), indent=2))"
+python -c "from tools.document_intelligence.output_generators import generate_audio_overview; import json; print(json.dumps(generate_audio_overview('my-collection', 'default'), indent=2))"
+
+# Python — ingest URL or YouTube
+python -c "from tools.document_intelligence.extractors import extract_url; e = extract_url('https://example.com/page'); print(e.text[:200])"
+python -c "from tools.document_intelligence.extractors import extract_youtube; e = extract_youtube('https://youtube.com/watch?v=dQw4w9WgXcQ'); print(e.text[:200])"
+
+# Push any canvas artifact into DIC
+python -c "from tools.document_intelligence.canvas_push import push_artifact; print(push_artifact('compliance', 'NIST Report', 'report text here', 'compliance-docs', 'CUI', 'default'))"
+
+# DIC → Research engine: scan a collection as signals
+python -c "from tools.research.source_scanners.dic_scanner import scan_dic_collection; signals = scan_dic_collection({}, {'dic_collection_id': 'my-col'}); print(len(signals), 'signals')"
+
+# DIC → Innovation engine: discover with DIC context
+python -c "from tools.innovation.innovation_manager import stage_discover; print(stage_discover(dic_collection_id='my-col'))"
+
+# Weekly DIC digest reflex (manual trigger)
+python -c "from tools.genesis.reflexes.dic_digest import run; print(run({}, None))"
 ```

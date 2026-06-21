@@ -712,6 +712,18 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
         "dic_chunks", "dic_entities",                    # render_and_send_dic_document_summary
         "fedramp_ato_packages",                          # render fedramp ATO package notice
         "finetune_eval_results", "finetune_jobs", "finetune_metrics",  # render_handler_service finetune
+        # notification_service handler stubs (aiify-scanner-generated candidates,
+        # never wired to production routes; all tests mock get_connection())
+"canvas_designs",                                # handler_service canvas status handler
+        "cmmc_practice_gaps", "cmmc_systems",            # handler_service cmmc gap handler
+        "fedramp_controls",                              # render_handler_service fedramp notice
+        "gate_failures",                                 # render_handler_service gate report
+        "genesis_designs",                               # multiple notification_service files
+        # RAG tool uses a plausible SQL template string for demonstration; no real table.
+        "entitlements",                                  # tools/rag/entitlement_rag.py template
+        # CTE alias: gap_detector doesn't parse WITH ... AS (...) and flags the alias name.
+        "domain_coverage",                               # tools/govcon/gap_analyzer.py CTE
+
     }
 
     # Table names that are legitimately referenced but are DBMS-provided
@@ -720,6 +732,12 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
     system_tables = {
         "information_schema",  # Postgres catalog namespace
         "pg_catalog",          # Postgres catalog namespace
+        # Oracle catalog view — appears in SQL documentation/examples in migration_canvas
+        "all_tables",          # tools/migration_canvas/cam_refactor_engine.py example SQL
+        # PostgreSQL schema name used schema-qualified as ``FROM cache.stats`` in
+        # cache_savings/constants.py; from_re captures ``cache`` as the table name
+        # because it stops at the dot — the real table is ``cache.stats``.
+        "cache",               # tools/cache_savings/constants.py schema-qualified ref
         # pg_catalog tables used by migration introspection
         "pg_tables", "pg_indexes", "pg_class", "pg_namespace",
         "pg_constraint",       # constraint catalog (ALTER TABLE CHECK introspection)
@@ -751,7 +769,7 @@ def _rule_orphan_db_table() -> List[Dict[str, Any]]:
     }
 
     create_re = re.compile(
-        r"CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+([a-zA-Z_][\w]*)",
+        r"CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+(?:[a-zA-Z_][\w]*\.)?([a-zA-Z_][\w]*)",
         re.IGNORECASE,
     )
     # ALTER TABLE x RENAME TO y is equivalent to "CREATE TABLE y" for the

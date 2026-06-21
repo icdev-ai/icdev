@@ -110,6 +110,7 @@ MARKETPLACE_STATUSES = ["submitted", "approved", "rejected"]
 
 # Runbook template categories
 RUNBOOK_CATEGORIES = [
+    "migration",
     "stig_remediation",
     "cloud_migration",
     "security_hardening",

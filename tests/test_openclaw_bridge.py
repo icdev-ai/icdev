@@ -1,6 +1,6 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # CUI // SP-CTI
-"""Tests for OpenClaw Skill Bridge — zero-trust import/export for ClawHub skills.
+"""Tests for OpenClaw Skill Bridge — zero-trust import/export for SkillHub skills.
 
 21 test cases covering security, compliance, and functionality.
 """

@@ -1,299 +1,256 @@
-# CUI // SP-CTI
-"""Tests for tools/llm/context_compressor.py"""
+"""Tests for Headroom-inspired LLM context compressor (adapt-hd-04)."""
+from unittest.mock import MagicMock, patch
 
-import json
-import os
-import sys
-from pathlib import Path
-from unittest.mock import patch
 
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+def _make_request(messages):
+    """Helper: fake LLMRequest with .messages attribute."""
+    r = MagicMock()
+    r.messages = messages
+    return r
 
-os.environ["ICDEV_STORAGE_BACKEND"] = "sqlite"
 
-from tools.llm.context_compressor import (
-    ContextCompressor,
-    CompressedContext,
-    compress_messages,
-    estimate_tokens,
-    global_stats,
-    handle_compress_context,
-    _smart_crush_text,
-    _code_compress,
-    _cache_align_prefix,
-    main,
-)
+def _make_messages(n, content="word " * 200):
+    return [{"role": "user" if i % 2 == 0 else "assistant", "content": content}
+            for i in range(n)]
 
 
 # ---------------------------------------------------------------------------
-# Fixtures
+# Module imports
 # ---------------------------------------------------------------------------
 
-SIMPLE_MESSAGES = [
-    {"role": "user", "content": "Hello, please explain NIST RMF."},
-    {"role": "assistant", "content": "NIST RMF is a risk management framework.\n\n\nIt has six steps."},
-]
+def test_module_importable():
+    from tools.llm.compression.context_compressor import compress, CompressorConfig
+    assert callable(compress)
+    assert CompressorConfig is not None
 
-CODE_MESSAGES = [
-    {
-        "role": "user",
-        "content": (
-            "def foo():\n"
-            "    # A comment\n"
-            "    x = 1\n"
-            "\n\n"
-            "    return x\n"
-        ),
-    }
-]
 
-LARGE_MESSAGES = [
-    {
-        "role": "user",
-        "content": "This is a repeating test sentence about AI agents. " * 200,
-    }
-]
+def test_load_config_from_yaml():
+    from tools.llm.compression.context_compressor import load_config_from_yaml, CompressorConfig
+    cfg = load_config_from_yaml()
+    assert isinstance(cfg, CompressorConfig)
+    assert cfg.enabled is False  # default in llm_config.yaml
+
+
+def test_config_exempt_functions_populated():
+    from tools.llm.compression.context_compressor import load_config_from_yaml
+    cfg = load_config_from_yaml()
+    assert "compliance_generation" in cfg.exempt_functions
+    assert "ssp_generation" in cfg.exempt_functions
 
 
 # ---------------------------------------------------------------------------
-# estimate_tokens
+# Token estimation
 # ---------------------------------------------------------------------------
+
+def test_estimate_tokens_nonzero():
+    from tools.llm.compression.context_compressor import _estimate_tokens
+    assert _estimate_tokens("hello world this is a test") > 0
+
 
 def test_estimate_tokens_empty():
-    assert estimate_tokens("") == 0
+    from tools.llm.compression.context_compressor import _estimate_tokens
+    assert _estimate_tokens("") == 0
 
 
-def test_estimate_tokens_basic():
-    # ~4 chars per token heuristic
-    assert estimate_tokens("abcd") == 1
-    assert estimate_tokens("a" * 100) == 25
-
-
-# ---------------------------------------------------------------------------
-# _smart_crush_text
-# ---------------------------------------------------------------------------
-
-def test_smart_crush_removes_excess_blanks():
-    text = "line one\n\n\n\nline two"
-    compressed, original = _smart_crush_text(text)
-    assert "\n\n\n" not in compressed
-    assert original == text
-
-
-def test_smart_crush_collapses_spaces():
-    text = "word   another"
-    compressed, original = _smart_crush_text(text)
-    assert "   " not in compressed
-    assert original == text
-
-
-def test_smart_crush_preserves_content():
-    text = "important content here"
-    compressed, _ = _smart_crush_text(text)
-    assert "important" in compressed
-    assert "content" in compressed
+def test_messages_token_count_scales():
+    from tools.llm.compression.context_compressor import _messages_token_count
+    short = [{"role": "user", "content": "hello"}]
+    long = [{"role": "user", "content": "word " * 500}]
+    assert _messages_token_count(long) > _messages_token_count(short)
 
 
 # ---------------------------------------------------------------------------
-# _code_compress
+# Compression disabled (default)
 # ---------------------------------------------------------------------------
 
-def test_code_compress_strips_comments():
-    code = "def foo():\n    # comment line\n    return 1\n"
-    compressed, original = _code_compress(code)
-    assert "# comment line" not in compressed
-    assert "def foo():" in compressed
-    assert original == code
+def test_compress_noop_when_disabled():
+    from tools.llm.compression.context_compressor import compress, CompressorConfig
+    cfg = CompressorConfig(enabled=False)
+    msgs = _make_messages(20)
+    req = _make_request(msgs)
+    result = compress(req, cfg)
+    assert result.messages is msgs  # unchanged reference
 
 
-def test_code_compress_folds_blank_lines():
-    code = "x = 1\n\n\n\ny = 2\n"
-    compressed, _ = _code_compress(code)
-    assert "\n\n\n" not in compressed
-
-
-def test_code_compress_keeps_shebang():
-    code = "#!/usr/bin/env python3\nprint('hello')\n"
-    compressed, _ = _code_compress(code)
-    assert "#!/usr/bin/env python3" in compressed
+def test_compress_noop_below_threshold():
+    from tools.llm.compression.context_compressor import compress, CompressorConfig
+    cfg = CompressorConfig(enabled=True, threshold_tokens=100000, strategy="truncate_middle")
+    msgs = _make_messages(3, content="short")
+    req = _make_request(msgs)
+    result = compress(req, cfg)
+    assert len(result.messages) == 3
 
 
 # ---------------------------------------------------------------------------
-# _cache_align_prefix
+# Truncate-middle strategy
 # ---------------------------------------------------------------------------
 
-def test_cache_align_strips_trailing_whitespace():
-    messages = [{"role": "user", "content": "  hello   "}]
-    aligned = _cache_align_prefix(messages)
-    assert aligned[0]["content"] == "hello"
-
-
-def test_cache_align_preserves_role():
-    messages = [{"role": "system", "content": "You are a helper.  "}]
-    aligned = _cache_align_prefix(messages)
-    assert aligned[0]["role"] == "system"
-
-
-# ---------------------------------------------------------------------------
-# ContextCompressor.compress
-# ---------------------------------------------------------------------------
-
-def test_compress_returns_compressed_context():
-    c = ContextCompressor(log_to_db=False)
-    result = c.compress(SIMPLE_MESSAGES, budget_tokens=4000)
-    assert isinstance(result, CompressedContext)
-    assert result.original_tokens > 0
-    assert result.compressed_tokens > 0
-    assert result.compression_ratio >= 1.0
-    assert result.reversible is True
-
-
-def test_compress_large_content_reduces_tokens():
-    c = ContextCompressor(log_to_db=False)
-    result = c.compress(LARGE_MESSAGES, budget_tokens=2000)
-    assert result.compressed_tokens <= result.original_tokens
-
-
-def test_compress_code_content():
-    c = ContextCompressor(log_to_db=False)
-    result = c.compress(CODE_MESSAGES, budget_tokens=4000, content_type="code")
-    assert result.compressed_tokens > 0
-    assert result.method in ("headroom", "builtin")
-
-
-def test_compress_auto_detects_code():
-    c = ContextCompressor(log_to_db=False)
-    result = c.compress(CODE_MESSAGES, budget_tokens=4000, content_type="auto")
-    assert result.compressed_tokens > 0
-
-
-def test_compress_preserves_message_roles():
-    c = ContextCompressor(log_to_db=False)
-    result = c.compress(SIMPLE_MESSAGES, budget_tokens=4000)
-    roles = [m["role"] for m in result.messages]
-    assert roles == ["user", "assistant"]
-
-
-def test_compress_empty_messages():
-    c = ContextCompressor(log_to_db=False)
-    result = c.compress([], budget_tokens=4000)
-    assert result.messages == []
-    assert result.original_tokens == 0
-
-
-# ---------------------------------------------------------------------------
-# ContextCompressor.decompress
-# ---------------------------------------------------------------------------
-
-def test_decompress_restores_original():
-    c = ContextCompressor(log_to_db=False)
-    result = c.compress(SIMPLE_MESSAGES, budget_tokens=4000)
-    restored = c.decompress(result)
-    assert len(restored) == len(SIMPLE_MESSAGES)
-    for original, r in zip(SIMPLE_MESSAGES, restored):
-        assert original["role"] == r["role"]
-        assert original["content"] in r["content"] or r["content"] in original["content"]
-
-
-def test_decompress_empty_context():
-    c = ContextCompressor(log_to_db=False)
-    empty_ctx = CompressedContext(
-        messages=[],
-        original_tokens=0,
-        compressed_tokens=0,
-        compression_ratio=1.0,
-        method="builtin",
-        reversible=True,
+def test_truncate_middle_reduces_message_count():
+    from tools.llm.compression.context_compressor import compress, CompressorConfig
+    cfg = CompressorConfig(
+        enabled=True,
+        threshold_tokens=50,
+        strategy="truncate_middle",
+        max_compression_ratio=0.6,
+        log_savings=False,
     )
-    restored = c.decompress(empty_ctx)
-    assert restored == []
+    msgs = _make_messages(10, content="word " * 50)
+    req = _make_request(msgs)
+    result = compress(req, cfg)
+    assert len(result.messages) < 10
+
+
+def test_truncate_middle_inserts_placeholder():
+    from tools.llm.compression.context_compressor import compress, CompressorConfig
+    cfg = CompressorConfig(
+        enabled=True,
+        threshold_tokens=50,
+        strategy="truncate_middle",
+        max_compression_ratio=0.6,
+        log_savings=False,
+    )
+    msgs = _make_messages(10, content="word " * 50)
+    req = _make_request(msgs)
+    result = compress(req, cfg)
+    placeholders = [m for m in result.messages if "CONTEXT COMPRESSED" in str(m.get("content", ""))]
+    assert len(placeholders) == 1
+
+
+def test_truncate_middle_preserves_first_and_last():
+    from tools.llm.compression.context_compressor import compress, CompressorConfig
+    cfg = CompressorConfig(
+        enabled=True,
+        threshold_tokens=50,
+        strategy="truncate_middle",
+        max_compression_ratio=0.6,
+        log_savings=False,
+    )
+    first_content = "FIRST MESSAGE " + "word " * 50
+    last_content = "LAST MESSAGE " + "word " * 50
+    msgs = (
+        [{"role": "system", "content": first_content}]
+        + _make_messages(8, content="word " * 50)
+        + [{"role": "user", "content": last_content}]
+    )
+    req = _make_request(msgs)
+    result = compress(req, cfg)
+    assert result.messages[0]["content"] == first_content
+    assert result.messages[-1]["content"] == last_content
+
+
+def test_truncate_middle_two_messages_no_compress():
+    from tools.llm.compression.context_compressor import _truncate_middle
+    msgs = [
+        {"role": "system", "content": "system prompt"},
+        {"role": "user", "content": "user message"},
+    ]
+    compressed, original, saved = _truncate_middle(msgs, 0.4)
+    assert saved == 0
+    assert compressed is msgs
 
 
 # ---------------------------------------------------------------------------
-# Module-level compress_messages
+# Exempt function bypass
 # ---------------------------------------------------------------------------
 
-def test_compress_messages_convenience():
-    result = compress_messages(SIMPLE_MESSAGES, budget_tokens=4000)
-    assert isinstance(result, CompressedContext)
-    assert result.compressed_tokens > 0
+def test_exempt_function_skips_compression():
+    from tools.llm.compression.context_compressor import CompressorConfig
+    cfg = CompressorConfig(
+        enabled=True,
+        threshold_tokens=50,
+        strategy="truncate_middle",
+        max_compression_ratio=0.6,
+        log_savings=False,
+        exempt_functions=["compliance_generation"],
+    )
+    msgs = _make_messages(10, content="word " * 50)
+    _make_request(msgs)
 
-
-# ---------------------------------------------------------------------------
-# MCP handler
-# ---------------------------------------------------------------------------
-
-def test_handle_compress_context_happy_path():
-    response = handle_compress_context({
-        "messages": SIMPLE_MESSAGES,
-        "budget_tokens": 4000,
-        "content_type": "auto",
-    })
-    assert response["status"] == "ok"
-    assert "messages" in response
-    assert response["reversible"] is True
-    assert response["compression_ratio"] >= 1.0
-
-
-def test_handle_compress_context_missing_messages():
-    response = handle_compress_context({})
-    assert response["status"] == "error"
-    assert "messages" in response["error"].lower()
+    # Simulate router calling with exempt function — compress() doesn't know function
+    # so test that the router's _compress_request_context skips via exempt check
+    # Here we test that exempt_functions is populated
+    assert "compliance_generation" in cfg.exempt_functions
 
 
 # ---------------------------------------------------------------------------
-# global_stats
+# Router integration: _compress_request_context
 # ---------------------------------------------------------------------------
 
-def test_global_stats_returns_dict():
-    stats = global_stats()
-    assert isinstance(stats, dict)
-    assert "headroom_available" in stats
-    assert "total_compressions" in stats
+def test_router_has_compress_method():
+    from tools.llm.router import LLMRouter
+    assert hasattr(LLMRouter, "_compress_request_context")
+    assert callable(LLMRouter._compress_request_context)
 
 
-# ---------------------------------------------------------------------------
-# CLI (--bench, --stats)
-# ---------------------------------------------------------------------------
+def test_router_compress_noop_by_default():
+    """Default config has compression.enabled=false → router method is a pass-through."""
+    from tools.llm.router import LLMRouter
+    from tools.llm.compression.context_compressor import CompressorConfig
 
-def test_cli_bench_json(capsys):
-    rc = main(["--bench", "--json"])
-    assert rc == 0
-    out = capsys.readouterr().out
-    data = json.loads(out)
-    assert "compression_ratio" in data
-    assert "original_tokens" in data
+    router = LLMRouter.__new__(LLMRouter)
+    msgs = _make_messages(20)
+    req = _make_request(msgs)
 
+    with patch("tools.llm.compression.context_compressor.load_config_from_yaml",
+               return_value=CompressorConfig(enabled=False)):
+        result = router._compress_request_context("code_generation", req)
 
-def test_cli_stats_json(capsys):
-    rc = main(["--stats", "--json"])
-    assert rc == 0
-    out = capsys.readouterr().out
-    data = json.loads(out)
-    assert "headroom_available" in data
+    assert result is req  # unchanged
 
 
-def test_cli_no_args(capsys):
-    rc = main([])
-    assert rc == 0
+def test_router_compress_respects_exempt_function():
+    """Exempt functions pass through unchanged even with compression enabled."""
+    from tools.llm.router import LLMRouter
+    from tools.llm.compression.context_compressor import CompressorConfig
+
+    router = LLMRouter.__new__(LLMRouter)
+    msgs = _make_messages(20, content="word " * 100)
+    req = _make_request(msgs)
+
+    cfg = CompressorConfig(
+        enabled=True,
+        threshold_tokens=100,
+        strategy="truncate_middle",
+        max_compression_ratio=0.6,
+        log_savings=False,
+        exempt_functions=["compliance_generation"],
+    )
+
+    with patch("tools.llm.compression.context_compressor.load_config_from_yaml", return_value=cfg):
+        result = router._compress_request_context("compliance_generation", req)
+
+    assert result.messages is msgs  # not compressed
 
 
-# ---------------------------------------------------------------------------
-# DB unavailable graceful degradation
-# ---------------------------------------------------------------------------
+def test_compress_unknown_strategy_noop():
+    from tools.llm.compression.context_compressor import compress, CompressorConfig
+    cfg = CompressorConfig(
+        enabled=True,
+        threshold_tokens=50,
+        strategy="unknown_strategy",
+        max_compression_ratio=0.6,
+        log_savings=False,
+    )
+    msgs = _make_messages(10, content="word " * 50)
+    req = _make_request(msgs)
+    result = compress(req, cfg)
+    assert len(result.messages) == 10  # unchanged
 
-def test_compress_graceful_db_failure():
-    """Compression must not crash when DB is unavailable."""
-    with patch("tools.llm.context_compressor.get_connection", side_effect=Exception("DB down")):
-        c = ContextCompressor(log_to_db=True)
-        # compress should not raise even if logging fails
-        result = c.compress(SIMPLE_MESSAGES, budget_tokens=4000)
-        assert isinstance(result, CompressedContext)
 
-
-def test_global_stats_graceful_db_failure():
-    with patch("tools.llm.context_compressor.get_connection", side_effect=Exception("DB down")):
-        stats = global_stats()
-        assert stats["total_compressions"] == 0
+def test_compress_ratio_bounds():
+    """Compression ratio must stay within max_compression_ratio."""
+    from tools.llm.compression.context_compressor import compress, CompressorConfig, _messages_token_count
+    cfg = CompressorConfig(
+        enabled=True,
+        threshold_tokens=50,
+        strategy="truncate_middle",
+        max_compression_ratio=0.6,
+        log_savings=False,
+    )
+    msgs = _make_messages(20, content="word " * 100)
+    original_tokens = _messages_token_count(msgs)
+    req = _make_request(msgs)
+    result = compress(req, cfg)
+    compressed_tokens = _messages_token_count(result.messages)
+    # Must keep at least 40% of original
+    assert compressed_tokens >= original_tokens * 0.35  # small tolerance

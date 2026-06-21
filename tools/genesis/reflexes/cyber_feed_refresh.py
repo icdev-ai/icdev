@@ -85,17 +85,17 @@ def _compute_adaptive_cooldown(conn) -> float:
     last_activity = activities[0]
     z_score = (last_activity - mean) / std if std > 0 else 0.0
 
-    if z_score > ANOMALY_Z_THRESHOLD:
+    if z_score >= ANOMALY_Z_THRESHOLD:
         cooldown = MIN_COOLDOWN_HOURS
         logger.info(
-            "cyber_feed_refresh: high-activity anomaly (z=%.2f > %.1f), "
+            "cyber_feed_refresh: high-activity anomaly (z=%.2f >= %.1f), "
             "shortening cooldown to %dh",
             z_score, ANOMALY_Z_THRESHOLD, cooldown,
         )
-    elif z_score < -ANOMALY_Z_THRESHOLD:
+    elif z_score <= -ANOMALY_Z_THRESHOLD:
         cooldown = MAX_COOLDOWN_HOURS
         logger.info(
-            "cyber_feed_refresh: low-activity anomaly (z=%.2f < -%.1f), "
+            "cyber_feed_refresh: low-activity anomaly (z=%.2f <= -%.1f), "
             "extending cooldown to %dh",
             z_score, ANOMALY_Z_THRESHOLD, cooldown,
         )

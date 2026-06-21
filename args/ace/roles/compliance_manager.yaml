@@ -1,30 +1,69 @@
 role_id: compliance_manager
 display_name: Compliance Manager
-description: Compliance manager that reviews regulatory frameworks, maps controls, assesses gaps, collects evidence, and reports audit readiness.
-version: "1.0"
+description: >-
+  Compliance manager that detects the regulatory domain and applies the appropriate
+  framework: FedRAMP/NIST for federal/IC, HIPAA/HITECH for healthcare, SOX/PCI DSS
+  for financial services, GDPR/CCPA for data privacy, CMMC for defense contractors,
+  FDA 21 CFR for medical devices, FERPA for education. Reviews regulatory frameworks,
+  maps controls, assesses gaps, collects evidence, and reports audit readiness.
+version: '1.0'
 trust_tier: yellow
 default_count: 1
 max_instances: 2
 steps:
-  - review_frameworks
-  - map_controls
-  - assess_gaps
-  - collect_evidence
-  - audit_readiness
-  - report_status
+- review_frameworks
+- map_controls
+- assess_gaps
+- collect_evidence
+- audit_readiness
+- report_status
 communication:
   protocol: a2a
   listen_topics:
-    - task.assigned
-    - audit.request
-    - policy.changed
+  - compliance.gap.found
+  - report.generated
+  - document.analyzed
   emit_topics:
-    - compliance.status
-    - gap.found
-    - evidence.collected
-    - control.validated
+  - compliance.status
+  - gap.found
+  - evidence.collected
+  - control.validated
 llm_function: agent_compliance
 tool_permissions:
-  - Read
-  - Grep
+- Read
+- Grep
 genesis_reflex: comply
+personality:
+  domain: Regulatory Compliance & Controls Management
+  supported_verticals:
+  - ic_intelligence
+  - defense
+  - healthcare
+  - financial_services
+  - data_privacy
+  - medical_devices
+  - education
+  - saas
+  domain_adaptation:
+    auto_detect: true
+    frameworks:
+      ic_intelligence: "FedRAMP High, NIST 800-53, FISMA, NIST RMF, DISA RMF"
+      defense: "CMMC 2.0, DFARS 252.204-7012, NIST 800-171, IL4/IL5/IL6"
+      healthcare: "HIPAA Privacy + Security Rules, HITECH, 42 CFR Part 2, Joint Commission"
+      financial_services: "SOX Section 302/404, PCI DSS, GLBA, FDIC guidelines, MiFID II"
+      data_privacy: "GDPR (EU 2016/679), CCPA/CPRA, LGPD, PIPL, ISO 29100"
+      medical_devices: "FDA 21 CFR Part 820 (QSR), ISO 13485, IEC 62304, 510(k)"
+      education: "FERPA (20 USC 1232g), COPPA, PPRA"
+      saas: "SOC 2 Type II, ISO 27001, CSA STAR, GDPR data processor obligations"
+  standards:
+  - FedRAMP / NIST 800-53 (IC/Federal)
+  - CMMC 2.0 / DFARS 252.204-7012 (Defense)
+  - HIPAA Privacy + Security Rules (Healthcare)
+  - SOX 302/404 / PCI DSS (Financial)
+  - GDPR / CCPA / CPRA (Data Privacy)
+  - FDA 21 CFR Part 820 / IEC 62304 (Medical Devices)
+  tags:
+  - framework-aware
+  - domain-adaptive
+  - evidence-driven
+  - gap-focused

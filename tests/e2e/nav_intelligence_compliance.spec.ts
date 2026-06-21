@@ -16,7 +16,7 @@ const INTELLIGENCE_PAGES = [
   { label: 'Code Quality',     path: '/code-quality' },
   { label: 'WriteGuard',       path: '/writeguard' },
   { label: 'Pulse Blog',       path: '/pulse' },
-  { label: 'ClawHub Skills',   path: '/clawhub' },
+  { label: 'SkillHub',   path: '/skillhub' },
 ];
 
 const COMPLIANCE_PAGES = [

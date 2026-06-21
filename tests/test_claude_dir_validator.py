@@ -465,7 +465,10 @@ class TestCheckSettingsDenyRules:
         assert result.status == "warn"
         assert len(result.missing) > 0
 
-    def test_handles_missing_file(self, tmp_path):
+    def test_handles_missing_file(self, tmp_path, monkeypatch):
+        # Patch _is_airgap to False so missing file is "fail" not "warn"
+        import tools.testing.claude_dir_validator as mod
+        monkeypatch.setattr(mod, "_is_airgap", lambda: False)
         result = check_settings_deny_rules(tmp_path / "missing.json")
         assert result.status == "fail"
 
@@ -531,7 +534,9 @@ class TestCheckHookSyntax:
         assert result.status == "fail"
         assert "bad.py" in result.message
 
-    def test_handles_missing_dir(self, tmp_path):
+    def test_handles_missing_dir(self, tmp_path, monkeypatch):
+        import tools.testing.claude_dir_validator as mod
+        monkeypatch.setattr(mod, "_is_airgap", lambda: False)
         result = check_hook_syntax(tmp_path / "nope")
         assert result.status == "fail"
 
@@ -592,7 +597,9 @@ class TestCheckHookReferences:
         assert result.status == "fail"
         assert "nonexistent.py" in result.missing
 
-    def test_handles_missing_settings(self, tmp_path):
+    def test_handles_missing_settings(self, tmp_path, monkeypatch):
+        import tools.testing.claude_dir_validator as mod
+        monkeypatch.setattr(mod, "_is_airgap", lambda: False)
         result = check_settings_hook_references(tmp_path / "missing.json", tmp_path / "hooks")
         assert result.status == "fail"
 

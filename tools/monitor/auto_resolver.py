@@ -722,3 +722,233 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# ---------------------------------------------------------------------------
+# Component-level resolver — heartbeat integration (acw-heal-01)
+# ---------------------------------------------------------------------------
+_BACKOFF_MINUTES = [1, 5, 15]
+
+
+def _ensure_heal_table(db_path: Optional[Path] = None) -> None:
+    """Create component_heal_log for retry/backoff tracking."""
+    conn = _get_connection(db_path)
+    try:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS component_heal_log (
+                id              TEXT PRIMARY KEY,
+                component_id    TEXT NOT NULL,
+                failure_type    TEXT NOT NULL,
+                attempt_count   INTEGER NOT NULL DEFAULT 0,
+                last_attempt_at TEXT,
+                next_retry_at   TEXT,
+                status          TEXT NOT NULL DEFAULT 'pending'
+                    CHECK(status IN ('pending','retrying','resolved','escalated','exhausted')),
+                trust_tier      TEXT,
+                created_at      TEXT DEFAULT (datetime('now'))
+            )
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _get_trust_tier_for_component(component_id: str, db_path: Optional[Path] = None) -> str:
+    """Derive trust tier for a component by querying ace_trust_ledger directly."""
+    try:
+        conn = _get_connection(db_path)
+        try:
+            role_id = component_id
+            try:
+                row = conn.execute(
+                    "SELECT role_id FROM ace_instances WHERE id = ? LIMIT 1",
+                    (component_id,),
+                ).fetchone()
+                if row:
+                    role_id = row["role_id"] if isinstance(row, dict) else row[0]
+            except Exception:
+                pass
+
+            score_row = conn.execute(
+                "SELECT new_score FROM ace_trust_ledger "
+                "WHERE role_id = ? ORDER BY recorded_at DESC LIMIT 1",
+                (role_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        if score_row:
+            score = float(score_row["new_score"] if isinstance(score_row, dict) else score_row[0])
+            from tools.ace.trust_calibrator import get_trust_band
+            return get_trust_band(score).name
+    except Exception:
+        pass
+    return "supervised"
+
+
+def _do_auto_restart(component_id: str, failure_type: str, db_path: Optional[Path] = None) -> dict:
+    """Reset state for trusted/autonomous components."""
+    conn = _get_connection(db_path)
+    try:
+        if failure_type in ("ace_instance_stale",):
+            conn.execute(
+                "UPDATE ace_instances SET state='cancelled', updated_at=datetime('now') "
+                "WHERE id=? AND state NOT IN ('complete','cancelled','failed')",
+                (component_id,),
+            )
+        elif failure_type == "kanban_stale":
+            try:
+                conn.execute(
+                    "UPDATE kanban_tasks SET status='cancelled', updated_at=datetime('now') "
+                    "WHERE id=? AND status NOT IN ('done','cancelled','dismissed')",
+                    (component_id,),
+                )
+            except Exception:
+                pass
+        conn.commit()
+    finally:
+        conn.close()
+    return {"action": "auto_restart", "failure_type": failure_type, "component_id": component_id}
+
+
+def _do_hitl_escalation(
+    component_id: str, failure_type: str, trust_tier: str, db_path: Optional[Path] = None
+) -> dict:
+    """Create HITL kanban card and send Telegram alert for supervised/probationary components."""
+    card_id = _generate_id("hitl")
+
+    try:
+        from tools.notifications.adapters.telegram import send
+        send(
+            title=f"[HITL] Component failure: {failure_type}",
+            body=(
+                f"Component {component_id} requires human review.\n"
+                f"Trust tier: {trust_tier}\nFailure: {failure_type}"
+            ),
+            severity="warning",
+        )
+    except Exception:
+        pass
+
+    try:
+        conn = _get_connection(db_path)
+        try:
+            conn.execute(
+                "INSERT OR IGNORE INTO kanban_tasks "
+                "(id, title, description, status, task_type, priority, created_at, updated_at) "
+                "VALUES (?, ?, ?, 'backlog', 'hitl', 'high', datetime('now'), datetime('now'))",
+                (
+                    card_id,
+                    f"[HITL] {failure_type}: {component_id}",
+                    (
+                        f"Component {component_id} (trust_tier={trust_tier}) "
+                        f"failed with {failure_type}. Requires human review."
+                    ),
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+    return {"action": "hitl_escalation", "card_id": card_id, "component_id": component_id, "trust_tier": trust_tier}
+
+
+def resolve_component(
+    component_id: str, failure_type: str, db_path: Optional[Path] = None
+) -> dict:
+    """Resolve a failed component detected by heartbeat.
+
+    Looks up trust tier from ace_trust_ledger, then:
+      - trusted/autonomous  → auto-restart with exponential backoff (1m, 5m, 15m)
+      - supervised/probationary → HITL kanban card + Telegram alert
+    """
+    from datetime import timedelta
+
+    _ensure_heal_table(db_path)
+
+    conn = _get_connection(db_path)
+    try:
+        row = conn.execute(
+            "SELECT id, attempt_count, next_retry_at, status FROM component_heal_log "
+            "WHERE component_id=? AND failure_type=? "
+            "ORDER BY created_at DESC LIMIT 1",
+            (component_id, failure_type),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if row:
+        attempt = row["attempt_count"] if isinstance(row, dict) else row[1]
+        next_retry = row["next_retry_at"] if isinstance(row, dict) else row[2]
+        log_id = row["id"] if isinstance(row, dict) else row[0]
+        prior_status = row["status"] if isinstance(row, dict) else row[3]
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+        # Enforce backoff regardless of prior resolution status
+        if next_retry and now_str < next_retry:
+            return {
+                "status": "backoff",
+                "component_id": component_id,
+                "next_retry_at": next_retry,
+                "attempt": attempt,
+            }
+        # If already exhausted/escalated and no new retry window, don't re-open a log entry
+        if prior_status in ("exhausted",):
+            log_id = None
+    else:
+        attempt = 0
+        log_id = None
+
+    trust_tier = _get_trust_tier_for_component(component_id, db_path)
+
+    if trust_tier in ("trusted", "autonomous"):
+        action_result = _do_auto_restart(component_id, failure_type, db_path)
+        backoff_minutes = _BACKOFF_MINUTES[min(attempt, len(_BACKOFF_MINUTES) - 1)]
+        next_retry_dt = datetime.now(timezone.utc) + timedelta(minutes=backoff_minutes)
+        next_retry_str = next_retry_dt.strftime("%Y-%m-%dT%H:%M:%S")
+        final_status = "resolved"
+
+        conn = _get_connection(db_path)
+        try:
+            if log_id:
+                conn.execute(
+                    "UPDATE component_heal_log SET attempt_count=?, last_attempt_at=datetime('now'), "
+                    "next_retry_at=?, status=?, trust_tier=? WHERE id=?",
+                    (attempt + 1, next_retry_str, final_status, trust_tier, log_id),
+                )
+            else:
+                conn.execute(
+                    "INSERT INTO component_heal_log "
+                    "(id, component_id, failure_type, attempt_count, last_attempt_at, next_retry_at, status, trust_tier) "
+                    "VALUES (?, ?, ?, ?, datetime('now'), ?, ?, ?)",
+                    (_generate_id("heal"), component_id, failure_type, 1, next_retry_str, final_status, trust_tier),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+    else:
+        action_result = _do_hitl_escalation(component_id, failure_type, trust_tier, db_path)
+        final_status = "exhausted" if attempt >= len(_BACKOFF_MINUTES) else "escalated"
+
+        conn = _get_connection(db_path)
+        try:
+            conn.execute(
+                "INSERT INTO component_heal_log "
+                "(id, component_id, failure_type, attempt_count, last_attempt_at, status, trust_tier) "
+                "VALUES (?, ?, ?, ?, datetime('now'), ?, ?)",
+                (_generate_id("heal"), component_id, failure_type, attempt + 1, final_status, trust_tier),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    return {
+        "status": final_status,
+        "component_id": component_id,
+        "failure_type": failure_type,
+        "trust_tier": trust_tier,
+        "action": action_result,
+        "attempt": attempt + 1,
+    }

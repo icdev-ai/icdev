@@ -2194,3 +2194,175 @@ def get_gepa_optimizer_handler(args: dict) -> dict:
     except Exception as exc:
         logger.warning("get_gepa_optimizer_handler: %s", exc)
         return {"applied": [], "skipped": [], "errors": [str(exc)]}
+# ── Document Intelligence Canvas (DIC) handlers ────────────────────────────
+
+def handle_dic_ingest(args: dict) -> dict:
+    """Ingest URL or text into a DIC collection via the DIC search engine."""
+    try:
+        url = (args.get("url") or "").strip()
+        text = (args.get("text") or "").strip()
+        title = (args.get("title") or "").strip() or None
+        collection_id = (args.get("collection_id") or "default").strip()
+        tenant_id = (args.get("tenant_id") or "default").strip()
+        if not url and not text:
+            return {"error": "url or text required"}
+        from tools.document_intelligence.ingest_orchestrator import IngestOrchestrator
+        orch = IngestOrchestrator(collection_id=collection_id, tenant_id=tenant_id)
+        if url:
+            result = orch.ingest_url(url, title=title)
+        else:
+            result = orch.ingest_text(text, title=title or "MCP Ingested Document")
+        return result
+    except Exception as exc:
+        logger.warning("handle_dic_ingest: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_dic_search(args: dict) -> dict:
+    """BM25+KG search over a DIC collection."""
+    try:
+        query = (args.get("query") or "").strip()
+        collection_id = (args.get("collection_id") or "default").strip()
+        tenant_id = (args.get("tenant_id") or "default").strip()
+        limit = int(args.get("limit") or 10)
+        if not query:
+            return {"error": "query required"}
+        from tools.document_intelligence.search_engine import DICSearchEngine
+        engine = DICSearchEngine(tenant_id=tenant_id)
+        results = engine.search(query, collection_id=collection_id, top_k=limit)
+        results = [r.to_dict() if hasattr(r, 'to_dict') else (r if isinstance(r, dict) else vars(r)) for r in results]
+        return {"results": results, "collection_id": collection_id, "query": query}
+    except Exception as exc:
+        logger.warning("handle_dic_search: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_dic_generate(args: dict) -> dict:
+    """Generate a structured output (study_guide, faq, timeline, audio) from a DIC collection."""
+    try:
+        output_type = (args.get("output_type") or "").strip()
+        collection_id = (args.get("collection_id") or "default").strip()
+        doc_id = (args.get("doc_id") or "").strip() or None
+        tenant_id = (args.get("tenant_id") or "default").strip()
+        valid_types = ("study_guide", "faq", "timeline", "audio")
+        if output_type not in valid_types:
+            return {"error": f"output_type must be one of {valid_types}"}
+        from tools.document_intelligence import output_generators as _og
+        fn_map = {
+            "study_guide": _og.generate_study_guide,
+            "faq": _og.generate_faq,
+            "timeline": _og.generate_timeline,
+            "audio": _og.generate_audio_overview,
+        }
+        result = fn_map[output_type](collection_id, tenant_id, doc_id=doc_id)
+        return result
+    except Exception as exc:
+        logger.warning("handle_dic_generate: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_dic_chat(args: dict) -> dict:
+    """Answer a question grounded in DIC source documents."""
+    try:
+        question = (args.get("question") or "").strip()
+        collection_id = (args.get("collection_id") or "default").strip()
+        tenant_id = (args.get("tenant_id") or "default").strip()
+        if not question:
+            return {"error": "question required"}
+        from tools.document_intelligence.search_engine import DICSearchEngine
+        engine = DICSearchEngine(tenant_id=tenant_id)
+        raw = engine.search(question, collection_id=collection_id, top_k=5)
+        results = [r.to_dict() if hasattr(r, 'to_dict') else (r if isinstance(r, dict) else vars(r)) for r in raw]
+        answer_parts = [r.get("text", "") or r.get("content", "") for r in results[:3] if r.get("text") or r.get("content")]
+        return {
+            "answer": " ".join(answer_parts)[:2000] if answer_parts else "No relevant sources found.",
+            "citations": [r.get("source", "") for r in results if r.get("source")],
+            "collection_id": collection_id,
+            "question": question,
+        }
+    except Exception as exc:
+        logger.warning("handle_dic_chat: %s", exc)
+        return {"error": str(exc)}
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# NOVA — Autonomous Self-Learning Digital Coworker (5 handlers)
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def handle_nova_get_trust_score(args: dict) -> dict:
+    """Return current trust score for an ACE coworker role."""
+    try:
+        role_id = (args.get("role_id") or "").strip()
+        if not role_id:
+            return {"error": "role_id required"}
+        from tools.ace.trust_calibrator import get_trust_score, get_trust_band
+        score = get_trust_score(role_id)
+        band = get_trust_band(score)
+        return {
+            "role_id": role_id,
+            "trust_score": score,
+            "band": band.name,
+            "hitl_mode": band.hitl_mode,
+            "max_parallel": band.max_parallel,
+            "auto_approve_routine": band.auto_approve_routine,
+        }
+    except Exception as exc:
+        logger.warning("handle_nova_get_trust_score: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_nova_record_trust_event(args: dict) -> dict:
+    """Record a trust calibration event for an ACE coworker role."""
+    try:
+        role_id = (args.get("role_id") or "").strip()
+        event_type = (args.get("event_type") or "").strip()
+        source_task_id = (args.get("source_task_id") or "").strip()
+        if not role_id or not event_type:
+            return {"error": "role_id and event_type required"}
+        from tools.ace.trust_calibrator import record_trust_event
+        result = record_trust_event(role_id, event_type, source_task_id=source_task_id)
+        return result
+    except Exception as exc:
+        logger.warning("handle_nova_record_trust_event: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_nova_get_dispatch_config(args: dict) -> dict:
+    """Return dispatch configuration for an ACE coworker role."""
+    try:
+        role_id = (args.get("role_id") or "").strip()
+        if not role_id:
+            return {"error": "role_id required"}
+        from tools.ace.trust_calibrator import get_dispatch_config
+        return get_dispatch_config(role_id)
+    except Exception as exc:
+        logger.warning("handle_nova_get_dispatch_config: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_nova_evolve_skill(args: dict) -> dict:
+    """Run a GEPA-style skill evolution pass for a task_type."""
+    try:
+        task_type = (args.get("task_type") or "").strip()
+        skill_used = (args.get("skill_used") or "").strip()
+        dry_run = bool(args.get("dry_run", True))
+        if not task_type:
+            return {"error": "task_type required"}
+        from tools.workflow.reflexion_agent import generate_improvement_artifact
+        result = generate_improvement_artifact(task_type, skill_used=skill_used, dry_run=dry_run)
+        return result
+    except Exception as exc:
+        logger.warning("handle_nova_evolve_skill: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_nova_trust_summary(args: dict) -> dict:
+    """Return trust scores and bands for all known ACE coworker roles."""
+    try:
+        from tools.ace.trust_calibrator import get_trust_summary
+        rows = get_trust_summary()
+        return {"roles": rows, "total": len(rows)}
+    except Exception as exc:
+        logger.warning("handle_nova_trust_summary: %s", exc)
+        return {"error": str(exc)}

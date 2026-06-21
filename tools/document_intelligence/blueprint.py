@@ -13,16 +13,22 @@ Routes:
   GET  /document-intelligence/templates     use-case templates page
 
   POST /document-intelligence/api/ingest                         multi-modal upload
-  POST /document-intelligence/api/search                         grounded search JSON
+  POST /document-intelligence/api/search                         grounded search JSON (opt-in: classify_intent, expand, keywords, explain_access)
   POST /document-intelligence/api/chat                           document chat JSON
   GET  /document-intelligence/api/collections                    list collections
   POST /document-intelligence/api/collections                    create collection
   GET  /document-intelligence/api/collections/<id>/team          list team members
   POST /document-intelligence/api/collections/<id>/team          add team member
+  POST /document-intelligence/api/documents/<id>/re-enrich       re-run LLM metadata extraction on ingested doc
   POST /document-intelligence/api/review/<id>/approve            approve fragment/version
   POST /document-intelligence/api/review/<id>/reject             reject fragment/version
   POST /document-intelligence/api/generate                       AI draft generation
   POST /document-intelligence/api/iqe-query                      IQE natural-language query
+
+  GET  /document-intelligence/api/suggestions                    list suggestions (dsyn-adapt-04)
+  GET  /document-intelligence/api/suggestions/<id>               suggestion detail
+  POST /document-intelligence/api/suggestions/<id>/accept        accept: apply content + history
+  POST /document-intelligence/api/suggestions/<id>/reject        reject: mark decided + note
 """
 from __future__ import annotations
 
@@ -30,8 +36,10 @@ import hashlib
 import json
 import os
 import queue as _queue
+import re
 import tempfile
 import threading
+import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -45,7 +53,14 @@ logger = get_logger(__name__)
 # ── In-memory SSE job queues ──────────────────────────────────────────────────
 # Maps job_id → queue.Queue[dict | None]  (None = sentinel / stream closed)
 _JOB_QUEUES: dict[str, _queue.Queue] = {}
+# Maps job_id → {status, doc_id, chunks, errors} — in-memory result cache so the
+# result endpoint works even when the dic_ingest_jobs DB INSERT fails (e.g. wrong
+# SQL parameter style on PostgreSQL).
+_JOB_RESULTS: dict[str, dict] = {}
 _JOB_LOCK = threading.Lock()
+
+# Override to a positive int in tests to make presence SSE streams finite.
+_STREAM_MAX_POLLS: int | None = None
 
 dic_bp = Blueprint(
     "dic",
@@ -86,6 +101,7 @@ _PAGES = [
     {"name": "Freshness", "icon": "🌡️", "href": "/document-intelligence/freshness", "desc": "Corpus staleness heatmap and remediation queue.", "ready": True, "task": "dic-freshness-01"},
     {"name": "Explorer", "icon": "🔎", "href": "/document-intelligence/explorer", "desc": "KG buried-bodies explorer — orphans, tribal knowledge, contradictions.", "ready": True, "task": "dic-explore-01"},
     {"name": "Handoff", "icon": "🤝", "href": "/document-intelligence/handoff", "desc": "Knowledge handoff — capture retiring SME knowledge into a living collection.", "ready": True, "task": "dic-handoff-01"},
+    {"name": "Notebook", "icon": "📓", "href": "/document-intelligence/notebook", "desc": "NotebookLM-style view — sources, chat, and AI outputs (study guide, FAQ, timeline, audio) in one screen.", "ready": True, "task": "dic-notebook-01"},
 ]
 
 _LOCAL_PROVIDERS = ["ollama", "llamacpp", "huggingface-local"]
@@ -175,7 +191,12 @@ def _current_user() -> str:
 
 
 def _user_role(collection_id: str, user_id: str) -> str:
-    """Look up the user's role in a collection via dic_team_access."""
+    """Look up the user's role in a collection via dic_team_access.
+
+    Falls back to 'admin' for the anonymous local-dev sentinel ('current_user')
+    so that unauthenticated single-user dashboards are not blocked by RBAC.
+    All other users without an explicit row default to 'viewer'.
+    """
     conn = _conn()
     try:
         row = conn.execute(
@@ -188,6 +209,10 @@ def _user_role(collection_id: str, user_id: str) -> str:
         pass
     finally:
         conn.close()
+    # Anonymous local-dev sentinel → full access so every DIC feature is usable
+    # without requiring a team_access row to be seeded first.
+    if user_id in ("current_user", "", None):
+        return "admin"
     return "viewer"
 
 
@@ -265,9 +290,10 @@ def index():
 
 @dic_bp.route("/collections")
 def collections():
+    tenant_id, _ = _security_context()
     conn = _conn()
     try:
-        cols = _safe_rows(conn, "SELECT * FROM dic_collections ORDER BY created_at DESC LIMIT 100")
+        cols = _safe_rows(conn, "SELECT * FROM dic_collections WHERE tenant_id = ? ORDER BY created_at DESC LIMIT 100", (tenant_id,))
         for c in cols:
             try:
                 doc_count_row = conn.execute(
@@ -321,7 +347,7 @@ def doc_detail(doc_id: str):
             sections = _safe_rows(
                 conn,
                 "SELECT section_id, heading, content, citations_json, status, origin, assigned_to "
-                "FROM dic_sections WHERE version_id = ? ORDER BY rowid",
+                "FROM dic_sections WHERE version_id = ? ORDER BY section_id",
                 (active_version_id,),
             )
             for s in sections:
@@ -341,6 +367,15 @@ def doc_detail(doc_id: str):
 
     current_user = _current_user()
     user_role = _user_role(collection_id, current_user)
+
+    try:
+        from tools.document_intelligence.analytics_engine import log_doc_view
+        tenant_id, _ = _security_context()
+        log_doc_view(doc_id, user_id=current_user or "anonymous",
+                     collection_id=collection_id, tenant_id=tenant_id or "default")
+    except Exception:
+        pass
+
     return render_template(
         "document_intelligence/doc_detail.html",
         doc=doc,
@@ -589,8 +624,11 @@ def api_ingest():
     def _run():
         outcome = None
         try:
-            def _cb(stage: str, detail: str, pct: int) -> None:
-                q.put({"stage": stage, "detail": detail, "pct": pct})
+            def _cb(stage: str, detail: str, pct: int, extra: dict | None = None) -> None:
+                event = {"stage": stage, "detail": detail, "pct": pct}
+                if extra:
+                    event.update(extra)
+                q.put(event)
                 # Update DB status.
                 try:
                     c = _conn()
@@ -618,7 +656,15 @@ def api_ingest():
                 "errors": outcome.errors,
                 "pct": 100,
             })
-            # Update DB to done.
+            # Cache result in-memory (survives DB INSERT failures on PG).
+            with _JOB_LOCK:
+                _JOB_RESULTS[job_id] = {
+                    "status": "done",
+                    "doc_id": outcome.doc_id,
+                    "chunks": outcome.chunks,
+                    "errors": outcome.errors,
+                }
+            # Best-effort DB update (may fail if INSERT never succeeded).
             try:
                 c = _conn()
                 c.execute(
@@ -634,6 +680,8 @@ def api_ingest():
         except Exception as exc:
             logger.warning("dic: ingest thread error: %s", exc)
             q.put({"stage": "error", "message": str(exc), "pct": 0})
+            with _JOB_LOCK:
+                _JOB_RESULTS[job_id] = {"status": "error", "doc_id": None, "message": str(exc)}
             try:
                 c = _conn()
                 c.execute(
@@ -692,7 +740,11 @@ def api_ingest_stream(job_id: str):
                 if event is None:
                     break
                 yield f"data: {json.dumps(event)}\n\n"
-                if event.get("stage") in ("done", "error"):
+                if event.get("stage") == "error":
+                    break
+                # Treat "done" as terminal only when it carries the outcome
+                # metadata (chunks). Progress-style done events are not final.
+                if event.get("stage") == "done" and "chunks" in event:
                     break
         finally:
             with _JOB_LOCK:
@@ -707,14 +759,25 @@ def api_ingest_stream(job_id: str):
 
 @dic_bp.route("/api/ingest/<job_id>/result", methods=["GET"])
 def api_ingest_result(job_id: str):
-    """Return final ingest job outcome."""
+    """Return final ingest job outcome.
+
+    Checks the in-memory result cache first (always populated, even when the
+    DB INSERT failed due to SQL parameter-style mismatch on PostgreSQL), then
+    falls back to the DB for results from previous server instances.
+    """
+    # Fast path: in-memory result populated by the ingest thread.
+    with _JOB_LOCK:
+        mem = _JOB_RESULTS.get(job_id)
+    if mem is not None:
+        return jsonify(mem)
+    # DB fallback (previous server instances).
     conn = _conn()
     try:
         rows = _safe_rows(conn, "SELECT * FROM dic_ingest_jobs WHERE job_id=?", (job_id,))
     finally:
         conn.close()
     if not rows:
-        return jsonify({"error": "job not found"}), 404
+        return jsonify({"status": "pending", "doc_id": None}), 202
     return jsonify(rows[0])
 
 
@@ -731,18 +794,71 @@ def api_kg_explore():
     """
     data = request.get_json(silent=True) or {}
     mode = data.get("mode", "entities")
-    label = (data.get("label") or "").strip()
+    query_text = (data.get("query") or "").strip()
+    label = (data.get("label") or query_text or "").strip()
     entity_type = data.get("entity_type")
     limit = min(int(data.get("limit", 50)), 200)
+    collection_id = (data.get("collection_id") or "").strip() or None
+    doc_id = (data.get("doc_id") or "").strip() or None
     conn = _conn()
+    # KG tables (kg_nodes/kg_edges/kg_graphs) do not carry tenant_id, so the
+    # global RLS predicate would add an UndefinedColumn clause.  Disable RLS for
+    # this read-only KG endpoint; collection/doc scoping is enforced below via
+    # dic_chunk_links / dic_documents.
+    conn.set_security_context(None)
+
+    def _collection_chunk_clause(alias: str = "n") -> tuple[str, list]:
+        """Return a predicate and params that restrict a kg_nodes alias to
+        chunks that belong to a DIC document in the requested collection."""
+        sql = (
+            f"{alias}.source_chunk_id IS NOT NULL AND "
+            f"{alias}.source_chunk_id IN ("
+            f"SELECT l.rag_chunk_id FROM dic_chunk_links l "
+            f"JOIN dic_documents d ON d.doc_id = l.doc_id "
+            f"WHERE d.collection_id = ?)"
+        )
+        return sql, [collection_id]
+
+    def _chunk_ids_for_query(query: str, coll_id: str) -> list[str]:
+        """Return chunk IDs whose text matches the query within the collection.
+
+        This is a deterministic BM25-style fallback (no embeddings / no LLM) so
+        the KG relevance path works air-gapped and does not depend on the
+        embedding provider being configured.
+        """
+        try:
+            from tools.document_intelligence.search_engine import _extract_terms
+
+            terms = _extract_terms(query)
+            if not terms or not coll_id:
+                return []
+            like = " OR ".join(["LOWER(rc.content) LIKE LOWER(?)"] * len(terms))
+            params = [coll_id] + [f"%{t}%" for t in terms]
+            cur = conn.execute(
+                "SELECT DISTINCT rc.id FROM rag_chunks rc "
+                "JOIN dic_chunk_links l ON l.rag_chunk_id = rc.id "
+                "JOIN dic_documents d ON d.doc_id = l.doc_id "
+                f"WHERE d.collection_id = ? AND ({like}) "
+                "LIMIT 50",
+                tuple(params),
+            )
+            return [row[0] for row in cur.fetchall() if row[0]]
+        except Exception as exc:
+            logger.debug("dic kg-explore chunk fallback error: %s", exc)
+            return []
+
     try:
         if mode == "entities":
             sql = (
-                "SELECT n.id, n.label, n.entity_type, n.centrality, n.source_chunk_id, "
-                "g.source_doc_id FROM kg_nodes n LEFT JOIN kg_graphs g ON g.id = n.graph_id"
+                "SELECT n.id, n.label, n.entity_type, n.centrality, n.source_chunk_id "
+                "FROM kg_nodes n"
             )
             params: list = []
             clauses = []
+            if collection_id:
+                cc_sql, cc_params = _collection_chunk_clause("n")
+                clauses.append(cc_sql)
+                params.extend(cc_params)
             if label:
                 clauses.append("LOWER(n.label) LIKE LOWER(?)")
                 params.append(f"%{label}%")
@@ -751,46 +867,135 @@ def api_kg_explore():
                 params.append(entity_type)
             if clauses:
                 sql += " WHERE " + " AND ".join(clauses)
-            sql += " ORDER BY n.centrality DESC LIMIT ?"
+            sql += " ORDER BY COALESCE(n.centrality, 0) DESC LIMIT ?"
             params.append(limit)
             rows = _safe_rows(conn, sql, tuple(params))
+            if not rows and query_text and collection_id:
+                chunk_ids = _chunk_ids_for_query(query_text, collection_id)[:50]
+                if chunk_ids:
+                    ph = ",".join("?" * len(chunk_ids))
+                    fallback_sql = (
+                        "SELECT n.id, n.label, n.entity_type, n.centrality, n.source_chunk_id "
+                        f"FROM kg_nodes n WHERE n.source_chunk_id IN ({ph}) "
+                        "ORDER BY COALESCE(n.centrality, 0) DESC LIMIT ?"
+                    )
+                    rows = _safe_rows(
+                        conn,
+                        fallback_sql,
+                        tuple(chunk_ids + [limit]),
+                    )
             return jsonify({"entities": rows, "count": len(rows)})
 
         elif mode == "relations":
             if not label:
                 return jsonify({"error": "label is required for relations mode"}), 400
+            params = [f"%{label}%", f"%{label}%"]
+            collection_clause = ""
+            if collection_id:
+                src_sql, src_params = _collection_chunk_clause("src")
+                tgt_sql, tgt_params = _collection_chunk_clause("tgt")
+                collection_clause = f" AND ({src_sql}) AND ({tgt_sql})"
+                params.extend(src_params + tgt_params)
+            params.append(limit)
             rows = _safe_rows(
                 conn,
                 "SELECT src.label AS source, tgt.label AS target, e.relationship, e.weight "
                 "FROM kg_edges e "
                 "JOIN kg_nodes src ON src.id = e.source_id "
                 "JOIN kg_nodes tgt ON tgt.id = e.target_id "
-                "WHERE LOWER(src.label) LIKE LOWER(?) OR LOWER(tgt.label) LIKE LOWER(?) "
+                "WHERE (LOWER(src.label) LIKE LOWER(?) OR LOWER(tgt.label) LIKE LOWER(?)) "
+                + collection_clause +
                 "ORDER BY e.weight DESC LIMIT ?",
-                (f"%{label}%", f"%{label}%", limit),
+                tuple(params),
             )
             return jsonify({"relationships": rows, "count": len(rows)})
+
+        elif mode == "graph":
+            graph_query = (data.get("query") or "").strip()
+            node_sql = (
+                "SELECT n.id, n.label, n.entity_type, n.centrality "
+                "FROM kg_nodes n "
+            )
+            node_params: list = []
+            clauses = []
+            if collection_id:
+                cc_sql, cc_params = _collection_chunk_clause("n")
+                clauses.append(cc_sql)
+                node_params.extend(cc_params)
+            if doc_id:
+                clauses.append(
+                    "n.source_chunk_id IN ("
+                    "SELECT l.rag_chunk_id FROM dic_chunk_links l "
+                    "WHERE l.doc_id = ?)"
+                )
+                node_params.append(doc_id)
+            if clauses:
+                node_sql += " WHERE " + " AND ".join(clauses)
+            node_sql += " ORDER BY COALESCE(n.centrality, 0) DESC LIMIT ?"
+            node_params.append(limit)
+            nodes = _safe_rows(conn, node_sql, tuple(node_params))
+            if not nodes and graph_query and collection_id and not doc_id:
+                chunk_ids = _chunk_ids_for_query(graph_query, collection_id)[:50]
+                if chunk_ids:
+                    ph = ",".join("?" * len(chunk_ids))
+                    fallback_sql = (
+                        "SELECT n.id, n.label, n.entity_type, n.centrality "
+                        f"FROM kg_nodes n WHERE n.source_chunk_id IN ({ph}) "
+                        "ORDER BY COALESCE(n.centrality, 0) DESC LIMIT ?"
+                    )
+                    nodes = _safe_rows(
+                        conn,
+                        fallback_sql,
+                        tuple(chunk_ids + [limit]),
+                    )
+            node_ids = [n["id"] for n in nodes]
+            if not node_ids:
+                return jsonify({"nodes": [], "edges": [], "count": 0})
+            ph = ",".join("?" * len(node_ids))
+            edges = _safe_rows(
+                conn,
+                f"SELECT e.source_id, e.target_id, e.relationship, e.weight "
+                f"FROM kg_edges e "
+                f"WHERE e.source_id IN ({ph}) AND e.target_id IN ({ph}) "
+                f"ORDER BY e.weight DESC LIMIT ?",
+                tuple(node_ids + node_ids + [min(limit, 80)]),
+            )
+            return jsonify({"nodes": nodes, "edges": edges, "count": len(nodes)})
 
         elif mode == "neighbors":
             if not label:
                 return jsonify({"error": "label is required for neighbors mode"}), 400
-            # Find the node id first
+            node_params = [f"%{label}%"]
+            collection_clause = ""
+            if collection_id:
+                cc_sql, cc_params = _collection_chunk_clause("kg_nodes")
+                collection_clause = " AND " + cc_sql
+                node_params.extend(cc_params)
             node_rows = _safe_rows(
                 conn,
-                "SELECT id, label, entity_type FROM kg_nodes WHERE LOWER(label) LIKE LOWER(?) LIMIT 1",
-                (f"%{label}%",),
+                "SELECT id, label, entity_type FROM kg_nodes "
+                "WHERE LOWER(label) LIKE LOWER(?)" + collection_clause + " LIMIT 1",
+                tuple(node_params),
             )
             if not node_rows:
                 return jsonify({"neighbors": [], "relationships": [], "count": 0})
             node_id = node_rows[0]["id"]
+            neighbor_params = [node_id, node_id, node_id]
+            collection_clause = ""
+            if collection_id:
+                cc_sql, cc_params = _collection_chunk_clause("n")
+                collection_clause = f" AND ({cc_sql})"
+                neighbor_params.extend(cc_params)
+            neighbor_params.append(limit)
             neighbors = _safe_rows(
                 conn,
                 "SELECT DISTINCT n.label, n.entity_type, e.relationship, e.weight "
                 "FROM kg_edges e "
                 "JOIN kg_nodes n ON (n.id = e.target_id OR n.id = e.source_id) "
                 "WHERE (e.source_id = ? OR e.target_id = ?) AND n.id != ? "
+                + collection_clause +
                 "ORDER BY e.weight DESC LIMIT ?",
-                (node_id, node_id, node_id, limit),
+                tuple(neighbor_params),
             )
             return jsonify({
                 "entity": node_rows[0],
@@ -819,12 +1024,19 @@ def api_search():
     top_k = min(int(data.get("top_k", 10)), 50)
     explain_access = bool(data.get("explain_access"))
     expand = bool(data.get("expand"))
+    classify_intent = bool(data.get("classify_intent"))
     keywords = data.get("keywords")
     tenant_id, clearance = _security_context()
 
     try:
         from tools.document_intelligence.search_engine import DICSearchEngine
         engine = DICSearchEngine(tenant_id=tenant_id)
+        # Opt-in: classify query intent (aiify-opp-28) BEFORE expansion/search so
+        # the caller can inspect the recommended strategy alongside results.
+        # Degrades gracefully — llm_used=False when model unavailable.
+        intent = None
+        if classify_intent:
+            intent = engine.classify_query_intent(query)
         # Opt-in: broaden the query with LLM-suggested synonyms for better recall.
         # Degrades to the original query when the LLM is unavailable.
         expansion = None
@@ -844,6 +1056,8 @@ def api_search():
             "count": len(results),
             "citation_quality": round(_citation_quality(results), 4),
         }
+        if intent is not None:
+            payload["intent"] = intent.to_dict()
         if expansion is not None:
             payload["expansion"] = expansion.to_dict()
         # Opt-in: embedding-based search over a literal keyword list. Semantic
@@ -940,7 +1154,9 @@ def api_provenance(chunk_id: str):
 
 # ── API: Chat ─────────────────────────────────────────────────────────────────
 
-# Synthesis keywords — LLM is warranted only for these query types.
+# Synthesis keywords — LLM is warranted for these query types.
+# Simple "what is / what are" factual lookups are answered directly when the
+# evidence contains the query terms, so they are NOT synthesis triggers.
 _SYNTHESIS_KEYWORDS = frozenset([
     "summarize", "summary", "compare", "contrast", "explain", "describe",
     "how does", "why does", "what does", "what is the difference",
@@ -948,47 +1164,274 @@ _SYNTHESIS_KEYWORDS = frozenset([
 ])
 
 
+_STOP_WORDS = frozenset({
+    "what", "is", "are", "was", "were", "be", "been", "being", "the", "a", "an",
+    "this", "that", "these", "those", "of", "in", "on", "at", "to", "for", "with",
+    "by", "from", "and", "or", "as", "it", "its", "their", "they", "them", "his",
+    "her", "he", "she", "we", "you", "i", "me", "my", "our", "us", "do", "does",
+    "did", "has", "have", "had", "can", "could", "would", "should", "will", "shall",
+    "may", "might", "must", "about", "against", "all", "any", "each", "every",
+    "some", "many", "much", "more", "most", "other", "than", "then", "now", "here",
+    "there", "where", "why", "how", "who", "which", "whom", "whose", "when", "am",
+})
+
+
+def _significant_terms(query: str) -> list[str]:
+    """Return content-bearing terms from a query, dropping stop words."""
+    terms = [t.lower() for t in re.findall(r"\b\w{3,}\b", query)]
+    return [t for t in terms if t not in _STOP_WORDS and not t.isdigit()]
+
+
+def _query_match_score(query: str, result) -> float:
+    """Lexical confidence that `result` directly answers `query`.
+
+    Rewards query-term and exact-phrase coverage inside the focused passage
+    returned by :func:`_extract_passage`, plus definition-breadth signals
+    (multi-sentence passage, repeated phrase). A chunk that only mentions the
+    query topic in passing now scores lower than a chunk whose focused passage
+    actually defines it. Air-gap safe: no LLM required.
+    """
+    terms = _significant_terms(query)
+    if not terms:
+        return 0.0
+    content = (result.content or "").lower()
+    if not content:
+        return 0.0
+
+    passage = _extract_passage(result.content or "", query, max_chars=900).lower()
+    if not passage:
+        return 0.0
+    phrase = " ".join(terms)
+
+    # Focused-passage coverage (primary signal).
+    matched_passage = [t for t in terms if t in passage]
+    coverage_passage = len(matched_passage) / len(terms)
+
+    # Exact-phrase and repetition inside the focused passage.
+    phrase_in_passage = 0.2 if phrase and phrase in passage else 0.0
+    phrase_hits = passage.count(phrase) if phrase else 0
+    phrase_repeat = min(0.45, phrase_hits * 0.15)
+
+    # Definition breadth: multi-sentence focused passages are more likely to
+    # define a concept than a single passing mention.
+    sentences = [s for s in re.split(r"[.!?]+", passage) if s.strip()]
+    breadth = min(0.45, max(0, len(sentences) - 1) * 0.15)
+
+    # Full-content coverage (secondary confirmation).
+    matched_full = [t for t in terms if t in content]
+    coverage_full = len(matched_full) / len(terms)
+
+    return min(
+        1.0,
+        coverage_passage * 0.35
+        + phrase_in_passage
+        + phrase_repeat
+        + breadth
+        + coverage_full * 0.1,
+    )
+
+
+def _extract_passage(content: str, query: str, max_chars: int = 800) -> str:
+    """Return a focused passage from content that answers the query.
+
+    Anchors on the exact phrase formed by the query's significant terms (or the
+    first matching term), then expands only enough to capture the surrounding
+    sentence(s).  This avoids dragging in unrelated paragraphs from large
+    Wikipedia-style chunks.
+    """
+    if not content:
+        return ""
+    terms = _significant_terms(query)
+    content_lower = content.lower()
+    if not terms:
+        return content[:max_chars].strip()
+
+    phrase = " ".join(terms)
+    anchor = -1
+    if phrase:
+        anchor = content_lower.find(phrase)
+    if anchor == -1:
+        positions = [content_lower.find(t) for t in terms if content_lower.find(t) != -1]
+        if positions:
+            anchor = min(positions)
+    if anchor == -1:
+        return content[:max_chars].strip()
+
+    half = max_chars // 2
+    # Start a little before the anchor but snap to a sentence/paragraph boundary.
+    start = max(0, anchor - half)
+    para_break = content.rfind("\n\n", 0, start)
+    if para_break != -1 and start - para_break < 200:
+        start = para_break + 2
+    else:
+        while start > 0 and content[start - 1] not in ".!?\n":
+            start -= 1
+
+    # End at the first sentence terminator after the anchor window so the
+    # snippet stays focused on the matching phrase.
+    min_end = min(len(content), anchor + max(40, half // 2))
+    end = min_end
+    while end < len(content) and content[end] not in ".!?\n":
+        end += 1
+    if end < len(content):
+        end += 1  # include the terminator
+
+    # Allow a second sentence only if it is short and keeps us within budget.
+    next_end = end
+    budget_left = max_chars - (end - start)
+    if budget_left > 60:
+        while next_end < len(content) and content[next_end] in " \n":
+            next_end += 1
+        sentence_end = next_end
+        while sentence_end < len(content) and content[sentence_end] not in ".!?\n":
+            sentence_end += 1
+        if sentence_end < len(content) and sentence_end - end <= budget_left:
+            end = sentence_end + 1
+
+    return content[start:end].strip()
+
+
+def _snippet_focus_score(query: str, result) -> float:
+    """Tie-breaker that rewards chunks whose focused passage *defines* the query topic.
+
+    Prefers higher query-term and exact-phrase density inside the passage
+    returned by :func:`_extract_passage` (the passage actually surrounding
+    the query terms), and boosts results that come from fully-enriched
+    documents carrying a ``doc_summary``. This lets a chunk that defines
+    "Bill of Rights" outrank a shorter chunk that only mentions it in passing.
+    """
+    content = (result.content or "").lower()
+    if not content:
+        return 0.0
+    terms = _significant_terms(query)
+    if not terms:
+        return 0.0
+
+    passage = _extract_passage(result.content or "", query, max_chars=900).lower()
+    phrase = " ".join(terms)
+    passage_len = max(1, len(passage))
+
+    # Density of query terms inside the focused passage (defines vs. mentions).
+    term_hits = sum(passage.count(t) for t in terms)
+    density = min(1.0, term_hits * 8 / passage_len)
+
+    # Exact phrase presence and repetition inside the focused passage.
+    phrase_hits = passage.count(phrase) if phrase else 0
+    phrase_anchor = 0.5 if phrase_hits else 0.0
+    phrase_repeat = min(0.3, phrase_hits * 0.15)
+
+    # Boost fully-enriched documents that produced a doc_summary at ingest time.
+    summary_boost = 0.25 if (result.doc_summary or "").strip() else 0.0
+
+    # Mild reward for a tight, focused passage over a sprawling one.
+    focus_bonus = max(0.0, 1.0 - passage_len / 1000)
+
+    # Small length preference: avoid giant Wikipedia-style dumps.
+    length_penalty = max(0.0, 1.0 - len(content) / 6000)
+
+    return density + phrase_anchor + phrase_repeat + summary_boost + focus_bonus + length_penalty
+
+
 def _needs_synthesis(query: str) -> bool:
     q = query.lower()
     return any(kw in q for kw in _SYNTHESIS_KEYWORDS)
 
 
-def _compile_grounded_answer(results: list, query: str) -> str:
-    """Build a grounded answer directly from RAG chunks — no LLM."""
+def _build_sources(results: list) -> list[dict]:
+    """Build a numbered, human-readable source list for chat citations.
+
+    Each source links to the original document detail page and includes the
+    page/classification metadata needed for a clickable citation badge.
+    """
+    sources = []
+    seen = set()
+    for r in results:
+        key = (r.doc_id, r.page)
+        if key in seen:
+            continue
+        seen.add(key)
+        title = r.doc_title or r.doc_id or "Document"
+        sources.append({
+            "num": len(sources) + 1,
+            "doc_id": r.doc_id,
+            "doc_title": title,
+            "page": r.page,
+            "section": r.section,
+            "classification": getattr(r.citation, "classification", None) or "CUI",
+            "score": round(getattr(r, "score", 0.0), 4),
+            "archive_url": f"/document-intelligence/doc/{r.doc_id}" if r.doc_id else "#",
+        })
+    return sources
+
+
+def _compile_grounded_answer(results: list, query: str) -> dict:
+    """Build a grounded answer directly from RAG chunks — no LLM.
+
+    Returns a dict with 'answer' (numbered citation markers [1], [2], …) and
+    'sources' (human-readable links to the original documents).
+    """
     if not results:
-        return "No relevant documents found."
+        return {"answer": "No relevant documents found.", "sources": []}
+    cited_results = results[:4]
+    sources = _build_sources(cited_results)
+    source_map = {(s["doc_id"], s["page"]): s["num"] for s in sources}
     lines = []
-    for r in results[:4]:
-        citation = f"[{r.doc_title or r.doc_id} · p.{r.page}]" if r.page else f"[{r.doc_title or r.doc_id}]"
-        snippet = r.content[:300].strip()
-        if snippet:
-            lines.append(f"{citation} {snippet}")
-    return "\n\n".join(lines) if lines else results[0].content[:400]
+    for r in cited_results:
+        num = source_map.get((r.doc_id, r.page))
+        citation = f"[{num}]" if num else f"[{r.doc_title or r.doc_id}]"
+        passage = _extract_passage(r.content or "", query, max_chars=900)
+        if passage:
+            lines.append(f"{citation} {passage}")
+    answer = "\n\n".join(lines) if lines else _extract_passage(results[0].content or "", query, max_chars=1200)
+    return {"answer": answer, "sources": sources}
 
 
-def _llm_synthesize(message: str, results: list, evidence: str) -> str | None:
-    """Call LLM only when synthesis is warranted. Returns None on failure."""
+def _llm_synthesize(message: str, results: list) -> str | None:
+    """Call LLM only when synthesis is warranted. Returns None on failure.
+
+    Uses LLMRouter.invoke() with a system prompt instructing the model to answer
+    only from the provided evidence — grounded, no hallucination. Cites sources
+    with [N] markers that match the sources list returned by api_chat.
+    """
+    evidence_results = results[:5]
+    sources = _build_sources(evidence_results)
+    source_map = {(s["doc_id"], s["page"]): s["num"] for s in sources}
+    evidence_lines = []
+    for r in evidence_results:
+        num = source_map.get((r.doc_id, r.page), "?")
+        passage = _extract_passage(r.content or "", message, max_chars=1000)
+        evidence_lines.append(
+            f"[{num}] {r.doc_title or r.doc_id or 'Document'} "
+            f"(p.{r.page or '?'})\n{passage}"
+        )
+    evidence = "\n\n".join(evidence_lines)
+    prompt = (
+        "You are a document assistant. Answer ONLY using the provided evidence — "
+        "do not add information beyond what is cited. "
+        "Cite supporting facts with [N] markers that match the evidence numbers. "
+        "If the evidence is insufficient, say so explicitly.\n\n"
+        f"Evidence:\n{evidence}\n\n"
+        f"Question: {message}"
+    )
     try:
         for ns in ("icdev.tools.llm.router", "tools.llm.router"):
             try:
                 import importlib
                 mod = importlib.import_module(ns)
+                LLMRequest = importlib.import_module(
+                    ns.replace("router", "provider")
+                ).LLMRequest
                 router = mod.LLMRouter()
-                prompt = (
-                    "You are a document assistant. Answer ONLY using the provided evidence — "
-                    "do not add information beyond what is cited. Cite sources inline as "
-                    "[chunk <id>]. If the evidence is insufficient, say so explicitly.\n\n"
-                    f"Evidence:\n{evidence}\n\n"
-                    f"Question: {message}\n\nAnswer:"
+                if router.is_no_llm_mode():
+                    return None
+                req = LLMRequest(
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=1024,
+                    skip_injection_scan=True,
                 )
-                for meth in ("generate", "complete", "chat", "route", "call"):
-                    fn = getattr(router, meth, None)
-                    if callable(fn):
-                        result = fn(prompt)
-                        if isinstance(result, str):
-                            return result
-                        if isinstance(result, dict):
-                            return result.get("text") or result.get("content")
+                resp = router.invoke("question_answering", req)
+                if resp and getattr(resp, "content", None):
+                    return resp.content.strip() or None
             except ImportError:
                 continue
     except Exception as exc:
@@ -1002,12 +1445,15 @@ def api_chat():
 
     Mode logic:
     1. Always retrieve from RAG+KG (grounded, air-gap safe).
-    2. If top result confidence is high (≥0.4) AND query is a direct lookup:
+    2. If top result confidence is high (≥0.7) AND query is a direct lookup:
        → return grounded answer directly, mode="grounded", NO LLM call.
     3. If query needs synthesis (summarize/compare/explain/…) AND LLM available:
        → synthesize from evidence, mode="ai_assisted", verify with CoD gate.
     4. If LLM unavailable or synthesis not needed:
        → compile grounded answer from top chunks, mode="grounded".
+
+    Every response includes a numbered 'sources' array with human-readable
+    titles and clickable archive_url links back to the original document.
     """
     data = request.get_json(silent=True) or {}
     message = (data.get("message") or "").strip()
@@ -1024,45 +1470,54 @@ def api_chat():
         if not results:
             return jsonify({
                 "answer": "No relevant documents found in this collection. Upload documents first.",
+                "sources": [],
                 "citations": [],
                 "abstained": True,
                 "mode": "grounded",
             })
 
         citations = [r.citation.to_dict() for r in results[:5]]
-        top_score = results[0].score if results else 0.0
+        # Use a lexical match score that works in air-gap mode; raw vector/BM25
+        # scores are not calibrated for a fixed threshold. Re-rank by lexical
+        # match quality + focus on the passage actually surrounding query terms.
+        scored_results = sorted(
+            results,
+            key=lambda r: (_query_match_score(message, r), _snippet_focus_score(message, r)),
+            reverse=True,
+        )
+        best_result = scored_results[0] if scored_results else None
+        top_match_score = _query_match_score(message, best_result) if best_result else 0.0
 
         # ── Path 1: High-confidence direct lookup — NO LLM ──────────────────
-        if top_score >= 0.4 and not _needs_synthesis(message):
-            answer = _compile_grounded_answer(results, message)
+        if best_result and top_match_score >= 0.7 and not _needs_synthesis(message):
+            grounded = _compile_grounded_answer([best_result], message)
             return jsonify({
-                "answer": answer,
+                "answer": grounded["answer"],
+                "sources": grounded["sources"],
                 "citations": citations,
                 "abstained": False,
                 "mode": "grounded",
             })
 
         # ── Path 2: Grounded answer from top chunks — NO LLM ────────────────
-        grounded_answer = _compile_grounded_answer(results, message)
+        grounded = _compile_grounded_answer(scored_results, message)
+        answer = grounded["answer"]
+        sources = grounded["sources"]
 
         # ── Path 3: LLM synthesis if query warrants it ───────────────────────
-        answer = grounded_answer
         mode = "grounded"
         abstained = False
 
         if _needs_synthesis(message):
-            evidence = "\n\n".join(
-                f"[chunk {r.chunk_id}] {r.content[:400]}" for r in results
-            )
-            llm_answer = _llm_synthesize(message, results, evidence)
+            llm_answer = _llm_synthesize(message, scored_results)
             if llm_answer:
                 # Verify LLM answer against evidence before returning.
                 try:
                     from tools.document_intelligence.verifier import verify
-                    vr = verify(llm_answer, [r.content for r in results])
+                    vr = verify(llm_answer, [r.content for r in scored_results])
                     if vr.abstained:
                         abstained = True
-                        answer = grounded_answer  # fall back to grounded
+                        answer = grounded["answer"]  # fall back to grounded
                     else:
                         answer = vr.verified_text or llm_answer
                         mode = "ai_assisted"
@@ -1072,13 +1527,14 @@ def api_chat():
 
         return jsonify({
             "answer": answer,
+            "sources": sources,
             "citations": citations,
             "abstained": abstained,
             "mode": mode,
         })
     except Exception as exc:
         logger.warning("dic: chat error: %s", exc)
-        return jsonify({"answer": f"Error: {exc}", "citations": [], "abstained": True, "mode": "grounded"}), 500
+        return jsonify({"answer": f"Error: {exc}", "sources": [], "citations": [], "abstained": True, "mode": "grounded"}), 500
 
 
 # ── API: Collections ──────────────────────────────────────────────────────────
@@ -1139,13 +1595,13 @@ def api_team_add(collection_id):
     if not _require_role(collection_id, "admin"):
         return _forbid("admin")
     role = data.get("role", "viewer")
-    tenant_id, _ = _security_context()
+    tenant_id, classification = _security_context()
     access_id = _hid("dic_access", collection_id, user_id, _now())
     conn = _conn()
     try:
         conn.execute(
-            "INSERT INTO dic_team_access (access_id, collection_id, user_id, role, tenant_id) VALUES (?,?,?,?,?)",
-            (access_id, collection_id, user_id, role, tenant_id),
+            "INSERT INTO dic_team_access (access_id, collection_id, user_id, role, tenant_id, classification) VALUES (?,?,?,?,?,?)",
+            (access_id, collection_id, user_id, role, tenant_id, classification or "CUI"),
         )
         conn.commit()
         return jsonify({"access_id": access_id, "user_id": user_id, "role": role})
@@ -1260,8 +1716,12 @@ def api_review_assign(item_id):
         return _forbid("editor")
     conn = _conn()
     try:
-        table = "dic_versions" if item_type == "version" else "dic_ssp_fragments"
-        pk = "version_id" if item_type == "version" else "fragment_id"
+        if item_type == "version":
+            table, pk = "dic_versions", "version_id"
+        elif item_type == "section":
+            table, pk = "dic_sections", "section_id"
+        else:
+            table, pk = "dic_ssp_fragments", "fragment_id"
         conn.execute(f"UPDATE {table} SET assigned_to = ? WHERE {pk} = ?", (assigned_to, item_id))  # nosec B608 — table/pk from ternary constants, not user input
         conn.commit()
         return jsonify({"status": "assigned", "item_id": item_id, "assigned_to": assigned_to})
@@ -1390,6 +1850,198 @@ def api_review_reject(item_id):
         conn.close()
 
 
+# ── Section Locking (pessimistic collaborative editing) ───────────────────────
+
+@dic_bp.route("/api/sections/<section_id>/lock", methods=["GET"])
+def api_section_lock_status(section_id: str):
+    from tools.document_intelligence.lock_manager import get_lock
+    lock = get_lock(section_id)
+    if lock:
+        return jsonify({"locked": True, **lock})
+    return jsonify({"locked": False, "section_id": section_id})
+
+
+@dic_bp.route("/api/sections/<section_id>/lock", methods=["POST"])
+def api_section_lock_acquire(section_id: str):
+    from tools.document_intelligence.lock_manager import acquire_lock, get_lock
+    user = _current_user()
+    _c = _conn()
+    try:
+        doc_row = _c.execute(
+            "SELECT doc_id FROM dic_sections WHERE section_id = ? LIMIT 1", (section_id,)
+        ).fetchone()
+        doc_id = doc_row["doc_id"] if doc_row else ""
+    finally:
+        _c.close()
+    lock = acquire_lock(section_id, user, doc_id=doc_id)
+    if lock is None:
+        current = get_lock(section_id) or {}
+        return jsonify({
+            "locked": True,
+            "locked_by": current.get("locked_by", "another user"),
+            "expires_at": current.get("expires_at", ""),
+            "section_id": section_id,
+        }), 409
+    return jsonify(lock), 200
+
+
+@dic_bp.route("/api/sections/<section_id>/lock", methods=["DELETE"])
+def api_section_lock_release(section_id: str):
+    from tools.document_intelligence.lock_manager import release_lock
+    user = _current_user()
+    released = release_lock(section_id, user)
+    if not released:
+        return jsonify({"error": "Lock not held by you or does not exist"}), 403
+    return jsonify({"released": True, "section_id": section_id})
+
+
+@dic_bp.route("/api/sections/<section_id>/lock/renew", methods=["PUT"])
+def api_section_lock_renew(section_id: str):
+    from tools.document_intelligence.lock_manager import renew_lock
+    user = _current_user()
+    renewed = renew_lock(section_id, user)
+    if not renewed:
+        return jsonify({"error": "Lock not held by you or does not exist"}), 403
+    return jsonify({"renewed": True, "section_id": section_id})
+
+
+# ── Section Annotations (threaded comments anchored to text / sections) ──────
+
+_ANN_CATEGORIES = {"question", "improvement", "compliance", "strength", "weakness", "risk", "editorial"}
+
+
+def _ensure_dic_annotations(conn) -> None:
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS dic_section_annotations (
+            ann_id TEXT PRIMARY KEY,
+            section_id TEXT NOT NULL,
+            doc_id TEXT NOT NULL,
+            selected_text TEXT NOT NULL DEFAULT '',
+            category TEXT NOT NULL,
+            comment TEXT NOT NULL,
+            author TEXT NOT NULL DEFAULT 'reviewer',
+            status TEXT NOT NULL DEFAULT 'open',
+            resolution_note TEXT,
+            resolved_by TEXT,
+            resolved_at TEXT,
+            classification TEXT DEFAULT 'CUI',
+            created_at TEXT NOT NULL,
+            updated_at TEXT
+        )
+    """)
+    conn.commit()
+
+
+@dic_bp.route("/api/sections/<section_id>/annotations", methods=["GET"])
+def api_section_annotations_list(section_id: str):
+    conn = _conn()
+    try:
+        _ensure_dic_annotations(conn)
+        status_filter = request.args.get("status")
+        category_filter = request.args.get("category")
+        sql = "SELECT * FROM dic_section_annotations WHERE section_id = ?"
+        params: list = [section_id]
+        if status_filter:
+            sql += " AND status = ?"
+            params.append(status_filter)
+        if category_filter:
+            sql += " AND category = ?"
+            params.append(category_filter)
+        sql += " ORDER BY created_at ASC"
+        rows = _safe_rows(conn, sql, params)
+        return jsonify({"annotations": [dict(r) for r in rows]})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+@dic_bp.route("/api/sections/<section_id>/annotations", methods=["POST"])
+def api_section_annotations_create(section_id: str):
+    data = request.get_json(silent=True) or {}
+    category = (data.get("category") or "").strip()
+    comment = (data.get("comment") or "").strip()
+    if category not in _ANN_CATEGORIES:
+        return jsonify({"error": f"category must be one of {sorted(_ANN_CATEGORIES)}"}), 400
+    if not comment:
+        return jsonify({"error": "comment is required"}), 400
+    conn = _conn()
+    try:
+        _ensure_dic_annotations(conn)
+        doc_row = conn.execute(
+            "SELECT doc_id FROM dic_sections WHERE section_id = ? LIMIT 1", (section_id,)
+        ).fetchone()
+        doc_id = doc_row[0] if doc_row else ""
+        ann_id = f"ann_{uuid.uuid4().hex[:16]}"
+        now = _now()
+        author = data.get("author") or _current_user()
+        conn.execute(
+            """INSERT INTO dic_section_annotations
+               (ann_id, section_id, doc_id, selected_text, category, comment,
+                author, status, classification, created_at, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+            (ann_id, section_id, doc_id,
+             (data.get("selected_text") or "").strip(),
+             category, comment, author, "open", "CUI", now, now),
+        )
+        conn.commit()
+        row = dict(conn.execute(
+            "SELECT * FROM dic_section_annotations WHERE ann_id = ?", (ann_id,)
+        ).fetchone())
+        return jsonify(row), 201
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+@dic_bp.route("/api/annotations/<ann_id>", methods=["PUT"])
+def api_annotation_update(ann_id: str):
+    data = request.get_json(silent=True) or {}
+    allowed = {"comment", "category", "status", "resolution_note", "resolved_by"}
+    updates = {k: v for k, v in data.items() if k in allowed}
+    if not updates:
+        return jsonify({"error": "no valid fields"}), 400
+    now = _now()
+    updates["updated_at"] = now
+    if updates.get("status") == "resolved":
+        updates["resolved_by"] = data.get("resolved_by") or data.get("author") or _current_user()
+        updates["resolved_at"] = now
+    conn = _conn()
+    try:
+        _ensure_dic_annotations(conn)
+        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        conn.execute(
+            f"UPDATE dic_section_annotations SET {set_clause} WHERE ann_id = ?",
+            [*updates.values(), ann_id],
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM dic_section_annotations WHERE ann_id = ?", (ann_id,)
+        ).fetchone()
+        if not row:
+            return jsonify({"error": "not found"}), 404
+        return jsonify(dict(row))
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+@dic_bp.route("/api/annotations/<ann_id>", methods=["DELETE"])
+def api_annotation_delete(ann_id: str):
+    conn = _conn()
+    try:
+        _ensure_dic_annotations(conn)
+        conn.execute("DELETE FROM dic_section_annotations WHERE ann_id = ?", (ann_id,))
+        conn.commit()
+        return jsonify({"deleted": ann_id})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
 # ── API: Section Review (per-section accept/reject/revise) ─────────────────
 
 @dic_bp.route("/api/sections/<section_id>/approve", methods=["POST"])
@@ -1468,21 +2120,85 @@ def api_section_revise(section_id):
 def api_section_update_content(section_id):
     data = request.get_json(silent=True) or {}
     content = data.get("content", "")
+    expected_hash = (data.get("expected_hash") or "").strip()
+    force = bool(data.get("force", False))
     cid = _collection_id_from_section(section_id) or "default"
     if not _require_role(cid, "editor"):
         return _forbid("editor")
     conn = _conn()
     try:
+        # Capture before-content for edit history + conflict detection
+        before_row = conn.execute(
+            "SELECT content FROM dic_sections WHERE section_id = ? LIMIT 1", (section_id,)
+        ).fetchone()
+        before_content = (dict(before_row).get("content") or "") if before_row else ""
+
+        # Conflict check — skip when no expected_hash supplied or force=True
+        if expected_hash and not force:
+            from tools.document_intelligence.conflict_detector import check_conflict
+            result = check_conflict(conn, section_id, expected_hash)
+            if result["conflict"]:
+                return jsonify({
+                    "conflict": True,
+                    "current_hash": result["current_hash"],
+                    "current_content": result["current_content"],
+                    "section_id": section_id,
+                }), 409
+
         conn.execute(
             "UPDATE dic_sections SET content = ?, status = ?, origin = ?, created_at = ? WHERE section_id = ?",
             (content, "draft", "human_authored", _now(), section_id),
         )
         conn.commit()
-        return jsonify({"status": "updated", "section_id": section_id})
+
+        # Append-only history record (no-op if content unchanged)
+        try:
+            from tools.document_intelligence.history_recorder import record_edit
+            record_edit(
+                section_id=section_id,
+                editor=_current_user(),
+                content_before=before_content,
+                content_after=content,
+            )
+        except Exception:
+            pass  # history failure must never block a save
+
+        from tools.document_intelligence.conflict_detector import compute_hash
+        new_hash = compute_hash(content)
+        return jsonify({"status": "updated", "section_id": section_id, "new_hash": new_hash})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
         conn.close()
+
+
+@dic_bp.route("/api/sections/<section_id>/hash", methods=["GET"])
+def api_section_content_hash(section_id: str):
+    """Return the CRC32 fingerprint of the section's current content."""
+    from tools.document_intelligence.conflict_detector import get_section_state
+    conn = _conn()
+    try:
+        state = get_section_state(conn, section_id)
+        if state is None:
+            return jsonify({"error": "section not found"}), 404
+        return jsonify({"section_id": section_id, "hash": state["hash"]})
+    finally:
+        conn.close()
+
+
+@dic_bp.route("/api/sections/<section_id>/history", methods=["GET"])
+def api_section_edit_history(section_id: str):
+    """Return edit history for a section, most-recent first.
+
+    Query params:
+      limit  — max entries to return (default 50, max 100)
+      since  — ISO 8601 timestamp; restrict to entries at or after this time
+    """
+    from tools.document_intelligence.history_recorder import get_section_history
+    limit = min(int(request.args.get("limit", 50)), 100)
+    since = request.args.get("since") or None
+    entries = get_section_history(section_id, limit=limit, since=since)
+    return jsonify({"section_id": section_id, "history": entries, "count": len(entries)})
 
 
 # ── API: Template Instantiation ─────────────────────────────────────────────
@@ -1603,11 +2319,21 @@ def api_generate():
 
 @dic_bp.route("/api/generate/section", methods=["POST"])
 def api_generate_section():
-    """Regenerate a single section with targeted evidence retrieval."""
+    """Regenerate a single section with targeted evidence retrieval.
+
+    Body fields:
+      version_id    : required
+      heading       : required
+      collection_id : optional (default 'default')
+      patch_mode    : optional bool; when true, prompt produces minimal diff with [KEEP] markers
+      change_context: optional str; canvas event payload summary prepended to evidence
+    """
     data = request.get_json(silent=True) or {}
     version_id = (data.get("version_id") or "").strip()
     heading = (data.get("heading") or "").strip()
     collection_id = data.get("collection_id", "default")
+    patch_mode = bool(data.get("patch_mode", False))
+    change_context = (data.get("change_context") or "").strip()
     if not _require_role(collection_id, "editor"):
         return _forbid("editor")
     if not version_id or not heading:
@@ -1618,6 +2344,7 @@ def api_generate_section():
         result = regenerate_section(
             version_id, heading, collection_id,
             tenant_id=tenant_id, classification=classification,
+            patch_mode=patch_mode, change_context=change_context,
         )
         return jsonify(result)
     except Exception as exc:
@@ -1633,7 +2360,7 @@ def api_version_sections(version_id):
         rows = _safe_rows(
             conn,
             "SELECT section_id, heading, content, citations_json, status, origin "
-            "FROM dic_sections WHERE version_id = ? ORDER BY rowid",
+            "FROM dic_sections WHERE version_id = ? ORDER BY section_id",
             (version_id,),
         )
         for r in rows:
@@ -1642,6 +2369,139 @@ def api_version_sections(version_id):
             except Exception:
                 r["citations"] = []
         return jsonify({"sections": rows})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+# ── API: Style Gate ───────────────────────────────────────────────────────────
+
+@dic_bp.route("/api/sections/<section_id>/style-check", methods=["POST"])
+def api_section_style_check(section_id: str):
+    """Run the style gate against a single section's current content."""
+    from tools.document_intelligence.style_engine import check_style
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT heading, content FROM dic_sections WHERE section_id = ? LIMIT 1",
+            (section_id,),
+        ).fetchone()
+        if not row:
+            return jsonify({"error": "section not found"}), 404
+        content = (row["content"] or "").strip()
+        if not content:
+            return jsonify({"score": 100.0, "passed": True, "violations": [], "stats": {}}), 200
+        result = check_style(content)
+        return jsonify(result.to_dict())
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+@dic_bp.route("/api/versions/<version_id>/style-check", methods=["POST"])
+def api_version_style_check(version_id: str):
+    """Run the style gate across all sections in a version."""
+    from tools.document_intelligence.style_engine import check_sections
+    conn = _conn()
+    try:
+        rows = _safe_rows(
+            conn,
+            "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY section_id",
+            (version_id,),
+        )
+        result = check_sections([dict(r) for r in rows])
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+
+# ── API: Version Diff ─────────────────────────────────────────────────────────
+
+@dic_bp.route("/api/versions/<version_a>/diff/<version_b>", methods=["GET"])
+def api_version_diff(version_a: str, version_b: str):
+    """Compute a line-by-line diff between two versions, section by section.
+
+    Returns JSON::
+
+        {
+          "version_a": "...", "version_b": "...",
+          "sections": [
+            {
+              "heading": "...",
+              "in_a": true, "in_b": true,
+              "lines": [
+                {"tag": "equal"|"insert"|"delete", "text": "..."},
+                ...
+              ],
+              "added": 3, "removed": 2
+            }
+          ],
+          "total_added": N, "total_removed": N
+        }
+    """
+    import difflib
+
+    conn = _conn()
+    try:
+        def _get_sections(vid):
+            rows = _safe_rows(
+                conn,
+                "SELECT heading, content FROM dic_sections WHERE version_id = ? ORDER BY section_id",
+                (vid,),
+            )
+            return {(r.get("heading") or "").strip(): (r.get("content") or "") for r in rows}
+
+        secs_a = _get_sections(version_a)
+        secs_b = _get_sections(version_b)
+        all_headings = list(dict.fromkeys(list(secs_a.keys()) + list(secs_b.keys())))
+
+        results = []
+        total_added = total_removed = 0
+
+        for heading in all_headings:
+            text_a = secs_a.get(heading, "")
+            text_b = secs_b.get(heading, "")
+            lines_a = text_a.splitlines()
+            lines_b = text_b.splitlines()
+
+            diff_lines = []
+            added = removed = 0
+            matcher = difflib.SequenceMatcher(None, lines_a, lines_b, autojunk=False)
+            for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+                if tag == "equal":
+                    for line in lines_a[i1:i2]:
+                        diff_lines.append({"tag": "equal", "text": line})
+                elif tag in ("replace", "delete"):
+                    for line in lines_a[i1:i2]:
+                        diff_lines.append({"tag": "delete", "text": line})
+                        removed += 1
+                if tag in ("replace", "insert"):
+                    for line in lines_b[j1:j2]:
+                        diff_lines.append({"tag": "insert", "text": line})
+                        added += 1
+
+            total_added += added
+            total_removed += removed
+            results.append({
+                "heading": heading,
+                "in_a": heading in secs_a,
+                "in_b": heading in secs_b,
+                "lines": diff_lines,
+                "added": added,
+                "removed": removed,
+            })
+
+        return jsonify({
+            "version_a": version_a,
+            "version_b": version_b,
+            "sections": results,
+            "total_added": total_added,
+            "total_removed": total_removed,
+        })
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
     finally:
@@ -1769,7 +2629,10 @@ def api_analytics():
     try:
         from tools.document_intelligence.analytics_engine import (
             entity_frequency, co_occurrence, detect_anomalies,
-            detect_patterns, run_full_analytics,
+            detect_ingest_anomalies, detect_patterns, run_full_analytics,
+            detect_view_anomalies, detect_ingest_job_anomalies,
+            detect_output_export_anomalies, detect_document_model_anomalies,
+            detect_bulk_edit_anomalies, detect_ingest_throughput_anomaly,
         )
         if mode == "frequency":
             return jsonify(entity_frequency(limit=int(data.get("limit", 50))))
@@ -1777,6 +2640,38 @@ def api_analytics():
             return jsonify(co_occurrence(limit=int(data.get("limit", 60))))
         elif mode == "anomalies":
             return jsonify(detect_anomalies())
+        elif mode == "ingest_anomalies":
+            return jsonify(detect_ingest_anomalies(
+                collection_id=data.get("collection_id") or None
+            ))
+        elif mode == "view_anomalies":
+            return jsonify(detect_view_anomalies(
+                collection_id=data.get("collection_id") or None,
+                window_days=int(data.get("window_days", 30)),
+            ))
+        elif mode == "job_anomalies":
+            return jsonify(detect_ingest_job_anomalies(
+                collection_id=data.get("collection_id") or None,
+                stale_minutes=int(data.get("stale_minutes", 60)),
+            ))
+        elif mode == "output_export_anomalies":
+            return jsonify(detect_output_export_anomalies(
+                collection_id=data.get("collection_id") or None,
+                stale_minutes=int(data.get("stale_minutes", 30)),
+            ))
+        elif mode == "model_anomalies":
+            return jsonify(detect_document_model_anomalies(
+                collection_id=data.get("collection_id") or None,
+            ))
+        elif mode == "bulk_edit_anomalies":
+            return jsonify(detect_bulk_edit_anomalies(
+                collection_id=data.get("collection_id") or None,
+            ))
+        elif mode == "throughput_anomaly":
+            return jsonify(detect_ingest_throughput_anomaly(
+                collection_id=data.get("collection_id") or None,
+                lookback_days=int(data.get("lookback_days", 30)),
+            ))
         elif mode == "patterns":
             return jsonify(detect_patterns())
         else:
@@ -1803,6 +2698,265 @@ def api_scenarios():
 
 # ── API: IQE ──────────────────────────────────────────────────────────────────
 
+# ── Presence Registry (rted-pres-01/02) ─────────────────────────────────────
+
+@dic_bp.route("/api/documents/<doc_id>/presence/join", methods=["POST"])
+def api_presence_join(doc_id: str):
+    from tools.document_intelligence.presence_registry import join_document
+    data = request.get_json(silent=True) or {}
+    user_id = (data.get("user_id") or _current_user()).strip() or "anonymous"
+    _, classification = _security_context()
+    tenant_id, _ = _security_context()
+    session_key = join_document(doc_id, user_id, tenant_id=tenant_id)
+    return jsonify({"session_key": session_key, "doc_id": doc_id, "user_id": user_id})
+
+
+@dic_bp.route("/api/documents/<doc_id>/presence/heartbeat", methods=["POST"])
+def api_presence_heartbeat(doc_id: str):
+    from tools.document_intelligence.presence_registry import heartbeat
+    data = request.get_json(silent=True) or {}
+    session_key = (data.get("session_key") or "").strip()
+    if not session_key:
+        return jsonify({"error": "session_key required"}), 400
+    found = heartbeat(session_key)
+    return jsonify({"ok": found, "session_key": session_key})
+
+
+@dic_bp.route("/api/documents/<doc_id>/presence/leave", methods=["DELETE"])
+def api_presence_leave(doc_id: str):
+    from tools.document_intelligence.presence_registry import leave_document
+    data = request.get_json(silent=True) or {}
+    session_key = (data.get("session_key") or "").strip()
+    if not session_key:
+        return jsonify({"error": "session_key required"}), 400
+    left = leave_document(session_key)
+    return jsonify({"left": left, "session_key": session_key})
+
+
+@dic_bp.route("/api/documents/<doc_id>/presence", methods=["GET"])
+def api_presence_list(doc_id: str):
+    from tools.document_intelligence.presence_registry import get_present_users
+    users = get_present_users(doc_id)
+    return jsonify({"doc_id": doc_id, "users": users, "count": len(users)})
+
+
+@dic_bp.route("/api/documents/<doc_id>/presence/stream", methods=["GET"])
+def api_presence_stream(doc_id: str):
+    """SSE stream — emits the current presence list every 12 s."""
+    import time as _time
+    from tools.document_intelligence.presence_registry import (
+        get_present_users,
+        _SSE_POLL_INTERVAL,
+    )
+
+    @stream_with_context
+    def _generate():
+        try:
+            for _ in range(300):  # max ~1 hr (300 × 12 s)
+                users = get_present_users(doc_id)
+                payload = json.dumps({"doc_id": doc_id, "users": users, "count": len(users)})
+                yield f"data: {payload}\n\n"
+                _time.sleep(_SSE_POLL_INTERVAL)
+        except GeneratorExit:
+            pass
+
+    return Response(
+        _generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@dic_bp.route("/api/suggestions", methods=["GET"])
+def api_suggestions_list():
+    """List suggestions, filtered by optional query params.
+
+    Query params: collection_id, canvas_source, status (default: pending)
+    """
+    from tools.document_intelligence.suggestion_store import get_pending_suggestions
+    collection_id = request.args.get("collection_id") or None
+    canvas_source = request.args.get("canvas_source") or None
+    status = request.args.get("status", "pending")
+    suggestions = get_pending_suggestions(
+        collection_id=collection_id,
+        canvas_source=canvas_source,
+        status=status,
+    )
+    return jsonify({"suggestions": suggestions, "count": len(suggestions)})
+
+
+@dic_bp.route("/api/suggestions/<suggestion_id>", methods=["GET"])
+def api_suggestion_detail(suggestion_id: str):
+    """Return full detail for a single suggestion."""
+    from tools.document_intelligence.suggestion_store import get_suggestion
+    s = get_suggestion(suggestion_id)
+    if s is None:
+        return jsonify({"error": "suggestion not found"}), 404
+    return jsonify(s)
+
+
+@dic_bp.route("/api/suggestions/<suggestion_id>/accept", methods=["POST"])
+def api_suggestion_accept(suggestion_id: str):
+    """Accept a suggestion: apply suggested_content to the section + record history."""
+    from tools.document_intelligence.suggestion_store import (
+        get_suggestion, decide_suggestion,
+    )
+    s = get_suggestion(suggestion_id)
+    if s is None:
+        return jsonify({"error": "suggestion not found"}), 404
+
+    cid = s.get("collection_id") or _collection_id_from_section(s.get("section_id", "")) or "default"
+    if not _require_role(cid, "editor"):
+        return _forbid("editor")
+
+    if s.get("status") != "pending":
+        return jsonify({"error": "suggestion already decided", "status": s["status"]}), 409
+
+    section_id = s.get("section_id", "")
+    suggested_content = s.get("suggested_content", "")
+    user = _current_user()
+
+    # Apply content to the section (reuse section update logic)
+    conn = _conn()
+    try:
+        before_row = conn.execute(
+            "SELECT content FROM dic_sections WHERE section_id = ? LIMIT 1", (section_id,)
+        ).fetchone()
+        before_content = (dict(before_row).get("content") or "") if before_row else ""
+
+        conn.execute(
+            "UPDATE dic_sections SET content = ?, status = ?, origin = ?, created_at = ? WHERE section_id = ?",
+            (suggested_content, "draft", "ai_generated", _now(), section_id),
+        )
+        conn.commit()
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        conn.close()
+
+    # Record edit history (best-effort)
+    try:
+        from tools.document_intelligence.history_recorder import record_edit
+        record_edit(
+            section_id=section_id,
+            editor=user,
+            content_before=before_content,
+            content_after=suggested_content,
+        )
+    except Exception:
+        pass
+
+    # Record the accept decision (marks suggestion as accepted)
+    data = request.get_json(silent=True) or {}
+    note = data.get("note", "")
+    _, classification = _security_context()
+    tenant_id, _ = _security_context()
+    decide_suggestion(
+        suggestion_id, "accepted", user,
+        note=note, tenant_id=tenant_id, classification=classification,
+    )
+
+    from tools.document_intelligence.conflict_detector import compute_hash
+    return jsonify({
+        "status": "accepted",
+        "suggestion_id": suggestion_id,
+        "section_id": section_id,
+        "new_hash": compute_hash(suggested_content),
+    })
+
+
+@dic_bp.route("/api/suggestions/<suggestion_id>/reject", methods=["POST"])
+def api_suggestion_reject(suggestion_id: str):
+    """Reject a suggestion with an optional note. Requires editor or reviewer role."""
+    from tools.document_intelligence.suggestion_store import (
+        get_suggestion, decide_suggestion,
+    )
+    s = get_suggestion(suggestion_id)
+    if s is None:
+        return jsonify({"error": "suggestion not found"}), 404
+
+    cid = s.get("collection_id") or _collection_id_from_section(s.get("section_id", "")) or "default"
+    if not _require_role(cid, "editor"):
+        return _forbid("editor")
+
+    if s.get("status") != "pending":
+        return jsonify({"error": "suggestion already decided", "status": s["status"]}), 409
+
+    data = request.get_json(silent=True) or {}
+    note = data.get("note", "")
+    user = _current_user()
+    tenant_id, classification = _security_context()
+
+    result = decide_suggestion(
+        suggestion_id, "rejected", user,
+        note=note, tenant_id=tenant_id, classification=classification,
+    )
+    if not result:
+        return jsonify({"error": "could not record rejection"}), 500
+
+    return jsonify({"status": "rejected", "suggestion_id": suggestion_id})
+
+
+@dic_bp.route("/api/sections/<section_id>/suggest", methods=["POST"])
+def api_section_suggest(section_id: str):
+    """dsyn-suggest-01: Any viewer-or-above user can submit a crowdsourced edit suggestion.
+
+    Body: { proposed_content: str, rationale: str }
+    Creates a dic_suggestions row with canvas_source='crowdsource'.
+    """
+    from tools.document_intelligence.suggestion_store import create_suggestion
+
+    cid = _collection_id_from_section(section_id) or "default"
+    if not _require_role(cid, "viewer"):
+        return _forbid("viewer")
+
+    data = request.get_json(silent=True) or {}
+    proposed_content = (data.get("proposed_content") or "").strip()
+    rationale = (data.get("rationale") or "").strip()
+
+    if not proposed_content:
+        return jsonify({"error": "proposed_content is required"}), 400
+
+    user = _current_user()
+    tenant_id, classification = _security_context()
+
+    # Load current section content for context.
+    current_content = ""
+    try:
+        conn = _conn()
+        cur = conn.execute(
+            "SELECT content FROM dic_sections WHERE section_id = ? LIMIT 1",
+            (section_id,),
+        )
+        row = cur.fetchone()
+        if row:
+            current_content = row[0] if isinstance(row, (list, tuple)) else row["content"]
+        conn.close()
+    except Exception:
+        pass
+
+    suggestion_id = create_suggestion(
+        section_id=section_id,
+        collection_id=cid,
+        canvas_source="crowdsource",
+        suggested_content=proposed_content,
+        current_content=current_content,
+        rationale=rationale or f"User suggestion from {user}",
+        tenant_id=tenant_id,
+        classification=classification,
+    )
+
+    return jsonify({
+        "suggestion_id": suggestion_id,
+        "section_id": section_id,
+        "canvas_source": "crowdsource",
+        "status": "pending",
+    }), 201
+
+
 @dic_bp.route("/api/iqe-query", methods=["POST"])
 def iqe_query():
     try:
@@ -1820,3 +2974,903 @@ def iqe_query():
     except Exception as exc:
         logger.warning("dic: iqe-query error: %s", exc)
         return jsonify({"error": str(exc)}), 500
+
+
+# ── API: Presence stream + ping ───────────────────────────────────────────────
+
+@dic_bp.route("/api/doc/<doc_id>/presence/stream", methods=["GET"])
+def api_doc_presence_stream(doc_id: str):
+    """SSE stream: emit 'presence' event with active user list every 10 s."""
+    from tools.document_intelligence.presence_registry import get_presence as _get_presence
+
+    def _generate():
+        polls = 0
+        while True:
+            users = _get_presence(doc_id)
+            yield f"event: presence\ndata: {json.dumps(users)}\n\n"
+            polls += 1
+            if _STREAM_MAX_POLLS is not None and polls >= _STREAM_MAX_POLLS:
+                return
+            time.sleep(10)
+
+    return Response(
+        stream_with_context(_generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@dic_bp.route("/api/doc/<doc_id>/presence/ping", methods=["POST"])
+def api_doc_presence_ping(doc_id: str):
+    """Heartbeat: update active_section_id for current user. Returns 204."""
+    from tools.document_intelligence.presence_registry import ping as _ping
+
+    body = request.get_json(silent=True) or {}
+    section_id = body.get("section_id", "")
+    user_id = _current_user()
+    _ping(doc_id, user_id, section_id)
+    return ("", 204)
+
+
+# ── Dual-mode detection ───────────────────────────────────────────────────────
+
+def _llm_mode_info() -> dict:
+    """Return current LLM mode: air-gap vs online, active provider.
+
+    Provider priority (mirrors output_generators._try_llm):
+      1. Cloud API  — ANTHROPIC_API_KEY / OPENAI_API_KEY present
+      2. Claude CLI — auto-detected when no cloud keys (``claude`` on PATH)
+      3. Ollama     — last resort
+    """
+    import os, shutil  # noqa: E401
+    try:
+        from tools.airgap import is_airgap
+        air_gap = is_airgap()
+    except Exception:
+        air_gap = os.environ.get("ICDEV_AIRGAP", "").lower() in ("true", "1", "yes")
+
+    has_cloud_keys = bool(
+        os.environ.get("ANTHROPIC_API_KEY")
+        or os.environ.get("OPENAI_API_KEY")
+        or os.environ.get("AZURE_OPENAI_API_KEY")
+    )
+    cli_binary = os.environ.get("ICDEV_CLI_BRIDGE_BINARY") or "claude"
+    cli_available = bool(shutil.which(cli_binary))
+
+    provider = "air-gap (local Ollama)"
+    llm_available = False
+    try:
+        from tools.llm.router import LLMRouter
+        router = LLMRouter()
+        llm_available = router.has_any_llm()
+
+        if has_cloud_keys and not air_gap:
+            p, m, _ = router.get_provider_for_function("document_qna")
+            p_name = getattr(p, "provider_name", None) or getattr(p, "name", None) or type(p).__name__
+            provider = f"{p_name} / {m}"
+        elif cli_available and not air_gap:
+            provider = f"claude-cli ({cli_binary})"
+            llm_available = True
+        elif llm_available:
+            p, m, _ = router.get_provider_for_function("document_qna")
+            p_name = getattr(p, "provider_name", None) or getattr(p, "name", None) or type(p).__name__
+            provider = f"{p_name} / {m} (last resort)"
+    except Exception:
+        if cli_available and not air_gap:
+            provider = f"claude-cli ({cli_binary})"
+            llm_available = True
+
+    return {
+        "mode": "air-gap" if air_gap else "online",
+        "llm_available": llm_available,
+        "provider": provider,
+        "cli_bridge_available": cli_available,
+        "cloud_keys_present": has_cloud_keys,
+        "capabilities": {
+            "url_ingest": True,
+            "video_ingest": True,  # yt-dlp works offline; YouTube transcript API is online-only
+            "study_guide": True,
+            "faq": True,
+            "timeline": True,
+            "audio_overview": True,
+            "llm_synthesis": llm_available,
+        },
+    }
+
+
+@dic_bp.route("/api/mode", methods=["GET"])
+def api_mode():
+    """GET /document-intelligence/api/mode — return LLM mode and capabilities."""
+    return jsonify(_llm_mode_info())
+
+
+# ── Notebook page (NotebookLM-style unified view) ─────────────────────────────
+
+@dic_bp.route("/notebook")
+@dic_bp.route("/notebook/<collection_id>")
+def notebook(collection_id: str = "default"):
+    """NotebookLM-style unified view: sources + chat + generated outputs."""
+    tenant_id, _ = _security_context()
+    conn = _conn()
+    try:
+        docs = _safe_rows(
+            conn,
+            "SELECT doc_id AS id, title, filename, provider AS source_type, created_at "
+            "FROM dic_documents "
+            "WHERE collection_id = ? AND tenant_id = ? ORDER BY created_at DESC LIMIT 50",
+            (collection_id, tenant_id),
+        )
+        outputs = _safe_rows(
+            conn,
+            "SELECT id, output_type, provider, status, created_at FROM dic_generated_outputs "
+            "WHERE collection_id = ? AND tenant_id = ? ORDER BY created_at DESC LIMIT 20",
+            (collection_id, tenant_id),
+        )
+    finally:
+        conn.close()
+
+    mode_info = _llm_mode_info()
+    return render_template(
+        "document_intelligence/notebook.html",
+        collection_id=collection_id,
+        docs=docs,
+        outputs=outputs,
+        mode_info=mode_info,
+    )
+
+
+# ── URL + YouTube ingest ──────────────────────────────────────────────────────
+
+@dic_bp.route("/api/ingest/url", methods=["POST"])
+def api_ingest_url():
+    """POST /document-intelligence/api/ingest/url — ingest from a web URL."""
+    body = request.get_json(silent=True) or {}
+    url = (body.get("url") or "").strip()
+    if not url:
+        return jsonify({"error": "url required"}), 400
+    if not url.startswith(("http://", "https://")):
+        return jsonify({"error": "url must start with http:// or https://"}), 400
+
+    collection_id = (body.get("collection_id") or "default").strip()
+    classification = (body.get("classification") or "CUI").strip()
+    tenant_id, _ = _security_context()
+
+    try:
+        from tools.document_intelligence.extractors import extract_url
+        extraction = extract_url(url)
+    except Exception as exc:
+        return jsonify({"error": f"extraction failed: {exc}"}), 500
+
+    if not extraction.text:
+        return jsonify({
+            "warning": "No text extracted — site may block automated access or require auth.",
+            "warnings": extraction.warnings,
+            "url": url,
+        }), 206
+
+    # Persist as a text file through the ingest orchestrator
+    try:
+        import tempfile
+        import os
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w", encoding="utf-8") as f:
+            f.write(extraction.text)
+            tmp_path = f.name
+
+        from tools.document_intelligence.ingest_orchestrator import ingest_file
+        outcome = ingest_file(
+            tmp_path, collection_id,
+            tenant_id=tenant_id, classification=classification,
+            created_by="dic_url_ingest",
+        )
+        os.unlink(tmp_path)
+        return jsonify({
+            "doc_id": outcome.doc_id,
+            "chunks": outcome.chunks,
+            "title": extraction.title,
+            "url": url,
+            "warnings": extraction.warnings + outcome.errors,
+        })
+    except Exception as exc:
+        return jsonify({"error": f"ingest failed: {exc}"}), 500
+
+
+@dic_bp.route("/api/ingest/youtube", methods=["POST"])
+def api_ingest_youtube():
+    """POST /document-intelligence/api/ingest/youtube — ingest YouTube transcript."""
+    body = request.get_json(silent=True) or {}
+    url = (body.get("url") or "").strip()
+    if not url:
+        return jsonify({"error": "url required"}), 400
+
+    collection_id = (body.get("collection_id") or "default").strip()
+    classification = (body.get("classification") or "CUI").strip()
+    tenant_id, _ = _security_context()
+
+    try:
+        from tools.document_intelligence.extractors import extract_youtube
+        extraction = extract_youtube(url)
+    except Exception as exc:
+        return jsonify({"error": f"extraction failed: {exc}"}), 500
+
+    if not extraction.text:
+        return jsonify({
+            "warning": "No transcript extracted.",
+            "warnings": extraction.warnings,
+            "url": url,
+            "hint": extraction.warnings[0] if extraction.warnings else "",
+        }), 206
+
+    try:
+        import tempfile
+        import os
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt", mode="w", encoding="utf-8") as f:
+            f.write(extraction.text)
+            tmp_path = f.name
+
+        from tools.document_intelligence.ingest_orchestrator import ingest_file
+        outcome = ingest_file(
+            tmp_path, collection_id,
+            tenant_id=tenant_id, classification=classification,
+            created_by="dic_youtube_ingest",
+        )
+        os.unlink(tmp_path)
+        return jsonify({
+            "doc_id": outcome.doc_id,
+            "chunks": outcome.chunks,
+            "title": extraction.title,
+            "url": url,
+            "warnings": extraction.warnings + outcome.errors,
+        })
+    except Exception as exc:
+        return jsonify({"error": f"ingest failed: {exc}"}), 500
+
+
+# ── Output generators ─────────────────────────────────────────────────────────
+
+def _run_generator(generator_fn, collection_id: str, tenant_id: str, **kwargs) -> tuple:
+    try:
+        result = generator_fn(collection_id, tenant_id, **kwargs)
+        if "error" in result:
+            return jsonify(result), 400
+        # Bridge study-guide key_terms into canvas_kg_nodes so the Ontology canvas
+        # can surface DIC-extracted concepts alongside design-canvas entities.
+        _maybe_bridge_to_kg(result, collection_id)
+        return jsonify(result)
+    except Exception as exc:
+        logger.warning("dic: generator error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+def _maybe_bridge_to_kg(result: dict, collection_id: str) -> None:
+    """Fire-and-forget: write key_terms/timeline events to canvas_kg_nodes."""
+    key_terms = result.get("key_terms") or []
+    events = result.get("events") or []
+    output_id = result.get("output_id") or collection_id
+    if not key_terms and not events:
+        return
+    try:
+        from tools.canvas.kg_builder import upsert_from_dic
+        entities: list[dict] = []
+        if key_terms:
+            for term in key_terms:
+                entities.append({"id": str(term).lower().replace(" ", "_"), "label": str(term), "type": "concept"})
+        if events:
+            for ev in events:
+                label = f"{ev.get('date','?')}: {ev.get('event','')}"[:100]
+                entities.append({"id": label.lower().replace(" ", "_")[:60], "label": label, "type": "event"})
+        # Co-occurrence edges: link consecutive concept pairs (shallow but deterministic)
+        relationships: list[dict] = []
+        for i in range(len(entities) - 1):
+            relationships.append({
+                "source": entities[i]["id"],
+                "target": entities[i + 1]["id"],
+                "type": "co_occurs",
+            })
+        upsert_from_dic(output_id, entities, relationships)
+    except Exception as exc:
+        logger.debug("dic: kg bridge skipped: %s", exc)
+
+
+@dic_bp.route("/api/generate/study-guide", methods=["POST"])
+def api_generate_study_guide():
+    """POST /document-intelligence/api/generate/study-guide"""
+    body = request.get_json(silent=True) or {}
+    collection_id = (body.get("collection_id") or "default").strip()
+    doc_id = (body.get("doc_id") or "").strip() or None
+    tenant_id, _ = _security_context()
+    from tools.document_intelligence.output_generators import generate_study_guide
+    return _run_generator(generate_study_guide, collection_id, tenant_id, doc_id=doc_id)
+
+
+@dic_bp.route("/api/generate/faq", methods=["POST"])
+def api_generate_faq():
+    """POST /document-intelligence/api/generate/faq"""
+    body = request.get_json(silent=True) or {}
+    collection_id = (body.get("collection_id") or "default").strip()
+    doc_id = (body.get("doc_id") or "").strip() or None
+    n = int(body.get("n", 10))
+    tenant_id, _ = _security_context()
+    from tools.document_intelligence.output_generators import generate_faq
+    return _run_generator(generate_faq, collection_id, tenant_id, n=n, doc_id=doc_id)
+
+
+@dic_bp.route("/api/generate/timeline", methods=["POST"])
+def api_generate_timeline():
+    """POST /document-intelligence/api/generate/timeline"""
+    body = request.get_json(silent=True) or {}
+    collection_id = (body.get("collection_id") or "default").strip()
+    doc_id = (body.get("doc_id") or "").strip() or None
+    tenant_id, _ = _security_context()
+    from tools.document_intelligence.output_generators import generate_timeline
+    return _run_generator(generate_timeline, collection_id, tenant_id, doc_id=doc_id)
+
+
+@dic_bp.route("/api/generate/audio", methods=["POST"])
+def api_generate_audio():
+    """POST /document-intelligence/api/generate/audio"""
+    body = request.get_json(silent=True) or {}
+    collection_id = (body.get("collection_id") or "default").strip()
+    doc_id = (body.get("doc_id") or "").strip() or None
+    tenant_id, _ = _security_context()
+    from tools.document_intelligence.output_generators import generate_audio_overview
+    return _run_generator(generate_audio_overview, collection_id, tenant_id, doc_id=doc_id)
+
+
+@dic_bp.route("/api/kg-from-chunks", methods=["POST"])
+def api_kg_from_chunks():
+    """Extract entities from ingested chunk text — always scoped to the DIC collection."""
+    import re as _re
+    import html as _html
+    import collections as _col
+    body = request.get_json(silent=True) or {}
+    collection_id = (body.get("collection_id") or "default").strip()
+    doc_id = (body.get("doc_id") or "").strip() or None
+    limit = min(int(body.get("limit", 30)), 60)
+    tenant_id, _ = _security_context()
+
+    from tools.document_intelligence.output_generators import _get_chunks, _kg_entities_for_collection
+
+    # Try KG entities first (populated by LLM extraction during enhancement)
+    kg_ents = _kg_entities_for_collection(collection_id, tenant_id, doc_id, limit=limit)
+    if kg_ents:
+        # Convert to node format with IDs
+        nodes = [{"id": i, "label": e, "entity_type": "CONCEPT", "centrality": 1 - i / len(kg_ents)}
+                 for i, e in enumerate(kg_ents)]
+        return jsonify({"nodes": nodes, "edges": [], "count": len(nodes), "source": "kg"})
+
+    # Fall back: extract entities from chunk text using proper noun regex
+    chunks = _get_chunks(collection_id, tenant_id, limit=150, doc_id=doc_id)
+    if not chunks:
+        return jsonify({"nodes": [], "edges": [], "count": 0, "source": "none",
+                        "hint": "No documents ingested yet."})
+
+    all_text = " ".join(_html.unescape(c.get("chunk_text", "")) for c in chunks)
+    noise = {
+        "The", "This", "That", "Section", "Article", "Amendment", "Such", "Any", "All",
+        "Each", "Not", "Its", "Their", "His", "Her", "United", "States", "And", "But",
+        "President", "Congress", "Senate", "House", "Court", "Constitution", "With",
+        "From", "When", "Where", "Which", "What", "How", "Who", "Was", "Were", "Has",
+        "Skip", "Navigation", "Markets", "Currencies", "Prediction",
+    }
+    freq: dict = _col.Counter()
+    for m in _re.finditer(r"\b([A-Z][a-z]{3,}(?:\s+[A-Z][a-z]{3,}){0,2})\b", all_text):
+        term = m.group(1)
+        if term not in noise:
+            freq[term] += 1
+
+    if not freq:
+        return jsonify({"nodes": [], "edges": [], "count": 0, "source": "none",
+                        "hint": "No named entities found in chunks."})
+
+    _DATE = _re.compile(r"January|February|March|April|May|June|July|August|"
+                        r"September|October|November|December|\b\d{4}\b", _re.I)
+    _ORG_ENDS = {"Act", "Association", "Committee", "Congress", "Corporation",
+                 "Department", "Foundation", "Institute", "League", "Party", "Agency"}
+    _PERSON = _re.compile(r"^[A-Z][a-z]+ [A-Z][a-z]+$")
+
+    max_f = max(freq.values())
+    top_terms = [t for t, _ in freq.most_common(limit)]
+    nodes = []
+    label_to_id: dict = {}
+    for i, term in enumerate(top_terms):
+        count = freq[term]
+        if _DATE.search(term):
+            etype = "DATE"
+        elif any(term.endswith(s) for s in _ORG_ENDS):
+            etype = "ORG"
+        elif _PERSON.match(term):
+            etype = "PERSON"
+        else:
+            etype = "CONCEPT"
+        nodes.append({
+            "id": i, "label": term, "entity_type": etype,
+            "centrality": round(count / max_f, 3), "count": count,
+        })
+        label_to_id[term.lower()] = i
+
+    # Co-occurrence edges: entities that appear together in the same chunk
+    edge_freq: dict = _col.Counter()
+    for c in chunks:
+        text = _html.unescape(c.get("chunk_text", "")).lower()
+        present = [nid for lbl, nid in label_to_id.items() if lbl in text]
+        for a in range(len(present)):
+            for b in range(a + 1, len(present)):
+                pair = (min(present[a], present[b]), max(present[a], present[b]))
+                edge_freq[pair] += 1
+
+    edges = [
+        {"source_id": a, "target_id": b, "relationship": "co-occurs", "weight": w}
+        for (a, b), w in edge_freq.most_common(60)
+        if w >= 2  # only show pairs that co-occur in ≥2 chunks
+    ]
+
+    return jsonify({"nodes": nodes, "edges": edges, "count": len(nodes), "source": "chunks"})
+
+
+@dic_bp.route("/api/generate/enhance", methods=["POST"])
+def api_generate_enhance():
+    """POST /document-intelligence/api/generate/enhance — layer LLM on a BM25+KG output.
+
+    Body: {output_id, output_type, collection_id, doc_id (opt), n (opt)}
+    Runs _try_llm with a 90s ceiling and updates the stored output in place.
+    """
+    body = request.get_json(silent=True) or {}
+    output_id = (body.get("output_id") or "").strip()
+    output_type = (body.get("output_type") or "study_guide").strip().replace("-", "_")
+    collection_id = (body.get("collection_id") or "default").strip()
+    doc_id = (body.get("doc_id") or "").strip() or None
+    n = int(body.get("n", 10))
+    tenant_id, _ = _security_context()
+    if not output_id:
+        return jsonify({"error": "output_id required"}), 400
+    from tools.document_intelligence.output_generators import enhance_with_llm
+    try:
+        result = enhance_with_llm(output_id, collection_id, tenant_id,
+                                  output_type, doc_id=doc_id, n=n)
+        if "error" in result or "enhance_error" in result:
+            return jsonify(result), 400
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@dic_bp.route("/api/outputs", methods=["GET"])
+def api_outputs_list():
+    """GET /document-intelligence/api/outputs — list generated outputs for a collection."""
+    collection_id = (request.args.get("collection_id") or "default").strip()
+    tenant_id, _ = _security_context()
+    conn = _conn()
+    try:
+        rows = _safe_rows(
+            conn,
+            "SELECT id, output_type, provider, status, created_at FROM dic_generated_outputs "
+            "WHERE collection_id = ? AND tenant_id = ? ORDER BY created_at DESC LIMIT 50",
+            (collection_id, tenant_id),
+        )
+    finally:
+        conn.close()
+    return jsonify({"outputs": rows, "collection_id": collection_id})
+
+
+@dic_bp.route("/api/outputs/<output_id>", methods=["GET"])
+def api_output_detail(output_id: str):
+    """GET /document-intelligence/api/outputs/<id> — get generated output content."""
+    tenant_id, _ = _security_context()
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT id, output_type, content_json, provider, status, created_at "
+            "FROM dic_generated_outputs WHERE id = ? AND tenant_id = ?",
+            (output_id, tenant_id),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return jsonify({"error": "output not found"}), 404
+    import json as _json
+    d = dict(row) if hasattr(row, "keys") else {
+        "id": row[0], "output_type": row[1], "content_json": row[2],
+        "provider": row[3], "status": row[4], "created_at": row[5],
+    }
+    try:
+        d["content"] = _json.loads(d.pop("content_json", "{}"))
+    except Exception:
+        d["content"] = {}
+    return jsonify(d)
+
+
+@dic_bp.route("/api/generate/tasks", methods=["POST"])
+def api_generate_tasks():
+    """POST /document-intelligence/api/generate/tasks — seed kanban tasks from a generated output.
+
+    Body: {output_id, collection_id, doc_id (opt)}
+    Extracts action items from study_guide (key_points) or faq (pairs) outputs and
+    seeds them as backlog kanban tasks linked back to the source document.
+    """
+    import uuid as _uuid
+    body = request.get_json(silent=True) or {}
+    output_id = (body.get("output_id") or "").strip()
+    collection_id = (body.get("collection_id") or "default").strip()
+    doc_id = (body.get("doc_id") or "").strip() or None
+    tenant_id, _ = _security_context()
+    if not output_id:
+        return jsonify({"error": "output_id required"}), 400
+
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT output_type, content_json FROM dic_generated_outputs "
+            "WHERE id = ? AND tenant_id = ?",
+            (output_id, tenant_id),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return jsonify({"error": "output not found"}), 404
+
+    output_type = row[0] if isinstance(row, (tuple, list)) else row["output_type"]
+    raw_json = row[1] if isinstance(row, (tuple, list)) else row["content_json"]
+    try:
+        content = json.loads(raw_json or "{}")
+    except Exception:
+        content = {}
+
+    prefix = f"dic-nb-{collection_id[:6]}"
+    tag = _uuid.uuid4().hex[:6]
+    task_specs: list[dict] = []
+
+    if output_type == "study_guide":
+        for i, point in enumerate(content.get("key_points", [])[:20]):
+            task_specs.append({
+                "id": f"{prefix}-sg-{tag}-{i:02d}",
+                "title": point[:200],
+                "description": (
+                    f"Action item extracted from DIC Study Guide (collection: {collection_id}). "
+                    f"Source output: {output_id}."
+                    + (f" Source document: {doc_id}." if doc_id else "")
+                ),
+                "task_type": "build",
+                "priority": "medium",
+                "status": "backlog",
+                "source_doc_id": doc_id,
+                "source_collection_id": collection_id,
+            })
+    elif output_type == "faq":
+        for i, pair in enumerate(content.get("pairs", [])[:20]):
+            task_specs.append({
+                "id": f"{prefix}-fq-{tag}-{i:02d}",
+                "title": str(pair.get("q", ""))[:200],
+                "description": (
+                    str(pair.get("a", ""))[:1000]
+                    + f"\n\nSource: DIC FAQ output {output_id}, collection {collection_id}."
+                    + (f" Document: {doc_id}." if doc_id else "")
+                ),
+                "task_type": "build",
+                "priority": "medium",
+                "status": "backlog",
+                "source_doc_id": doc_id,
+                "source_collection_id": collection_id,
+            })
+    else:
+        return jsonify({"error": f"task extraction not supported for output type '{output_type}'"}), 400
+
+    if not task_specs:
+        return jsonify({"task_ids": [], "count": 0, "message": "No action items found in output"})
+
+    try:
+        from tools.kanban.task_factory import create_tasks
+        created = create_tasks(task_specs)
+        return jsonify({"task_ids": created, "count": len(created),
+                        "skipped": len(task_specs) - len(created)})
+    except Exception as exc:
+        logger.warning("dic: generate/tasks failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@dic_bp.route("/api/generate/slides", methods=["POST"])
+def api_generate_slides():
+    """POST /document-intelligence/api/generate/slides — build a slide deck from a generated output.
+
+    Body: {output_id, collection_id, title (opt), theme (opt)}
+    Converts a study_guide or timeline output to slide dicts, persists to slides_decks,
+    builds the .pptx, and returns {deck_id, url}.
+    """
+    body = request.get_json(silent=True) or {}
+    output_id = (body.get("output_id") or "").strip()
+    collection_id = (body.get("collection_id") or "default").strip()
+    custom_title = (body.get("title") or "").strip() or None
+    theme = (body.get("theme") or "midnight_executive").strip()
+    tenant_id, _ = _security_context()
+    if not output_id:
+        return jsonify({"error": "output_id required"}), 400
+
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT output_type, content_json FROM dic_generated_outputs "
+            "WHERE id = ? AND tenant_id = ?",
+            (output_id, tenant_id),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return jsonify({"error": "output not found"}), 404
+
+    output_type = row[0] if isinstance(row, (tuple, list)) else row["output_type"]
+    raw_json = row[1] if isinstance(row, (tuple, list)) else row["content_json"]
+    try:
+        content = json.loads(raw_json or "{}")
+    except Exception:
+        content = {}
+
+    # Build slide dicts from DIC output
+    slide_dicts: list[dict] = []
+    deck_title = custom_title or f"DIC: {collection_id}"
+
+    if output_type == "study_guide":
+        deck_title = custom_title or f"Study Guide — {collection_id}"
+        overview = content.get("overview", "")
+        key_points = content.get("key_points", [])
+        key_terms = content.get("key_terms", [])
+        sources = content.get("sources", [])
+
+        slide_dicts.append({
+            "slide_type": "title",
+            "title": deck_title,
+            "bullets": sources[:3],
+            "speaker_notes": overview,
+        })
+        for i in range(0, len(key_points), 4):
+            chunk = key_points[i:i + 4]
+            slide_dicts.append({
+                "slide_type": "content",
+                "title": f"Key Points ({i // 4 + 1})",
+                "bullets": chunk,
+            })
+        if key_terms:
+            slide_dicts.append({
+                "slide_type": "content",
+                "title": "Key Terms",
+                "bullets": [f"• {t}" for t in key_terms[:10]],
+            })
+        slide_dicts.append({
+            "slide_type": "outro",
+            "title": "Sources",
+            "bullets": sources[:6],
+        })
+
+    elif output_type == "timeline":
+        deck_title = custom_title or f"Timeline — {collection_id}"
+        events = content.get("events", [])
+
+        slide_dicts.append({"slide_type": "title", "title": deck_title, "bullets": []})
+        for i in range(0, len(events), 5):
+            chunk = events[i:i + 5]
+            slide_dicts.append({
+                "slide_type": "content",
+                "title": f"Timeline ({i // 5 + 1})",
+                "bullets": [
+                    f"{e.get('date', '?')}: {e.get('event', '')}"[:120]
+                    for e in chunk
+                ],
+            })
+        slide_dicts.append({"slide_type": "outro", "title": "End of Timeline", "bullets": []})
+    else:
+        return jsonify({"error": f"slides not supported for output type '{output_type}'"}), 400
+
+    if not slide_dicts:
+        return jsonify({"error": "No content to build slides from"}), 400
+
+    try:
+        from tools.slides.db.init_db import get_connection as _slides_conn, init_db as _slides_init
+        from tools.slides import pptx_builder
+        from datetime import datetime as _dt, timezone as _tz
+
+        _slides_init()
+        sconn = _slides_conn()
+        try:
+            cur = sconn.execute(
+                "INSERT INTO slides_decks (title, deck_type, theme, status, source_types) "
+                "VALUES (?, ?, ?, 'running', ?) RETURNING deck_id",
+                (deck_title, "executive_overview", theme, json.dumps(["dic"])),
+            )
+            row2 = cur.fetchone()
+            sconn.commit()
+            deck_id = int(row2[0]) if row2 else None
+        except Exception:
+            sconn.rollback()
+            raise
+
+        try:
+            pptx_path = pptx_builder.build(slide_dicts, theme=theme, title=deck_title)
+            now_iso = _dt.now(_tz.utc).isoformat()
+            sconn.execute(
+                "UPDATE slides_decks SET status='completed', slide_count=?, pptx_path=?, "
+                "completed_at=? WHERE deck_id=?",
+                (len(slide_dicts), pptx_path, now_iso, deck_id),
+            )
+            for i, sd in enumerate(slide_dicts):
+                sconn.execute(
+                    "INSERT INTO slides_slides "
+                    "(deck_id, position, slide_type, title, bullets, speaker_notes) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        deck_id, i + 1,
+                        sd.get("slide_type", "content"),
+                        sd.get("title", "")[:255],
+                        json.dumps(sd.get("bullets", [])),
+                        sd.get("speaker_notes", ""),
+                    ),
+                )
+            sconn.commit()
+        except Exception as exc:
+            try:
+                sconn.execute(
+                    "UPDATE slides_decks SET status='failed', error_message=? WHERE deck_id=?",
+                    (str(exc), deck_id),
+                )
+                sconn.commit()
+            except Exception:
+                pass
+            raise
+        finally:
+            sconn.close()
+
+        return jsonify({
+            "deck_id": deck_id,
+            "url": f"/slides/{deck_id}",
+            "slide_count": len(slide_dicts),
+            "title": deck_title,
+        })
+    except Exception as exc:
+        logger.warning("dic: generate/slides failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@dic_bp.route("/api/generate/roadmap", methods=["POST"])
+def api_generate_roadmap():
+    """POST /document-intelligence/api/generate/roadmap — push timeline events to PMO milestones.
+
+    Body: {output_id, contract_id, collection_id (opt)}
+    Reads a timeline output and creates PMO milestones for each event.
+    Returns {milestone_count, contract_id, milestone_ids}.
+    """
+    body = request.get_json(silent=True) or {}
+    output_id = (body.get("output_id") or "").strip()
+    contract_id = (body.get("contract_id") or "").strip()
+    collection_id = (body.get("collection_id") or "default").strip()
+    tenant_id, _ = _security_context()
+    if not output_id:
+        return jsonify({"error": "output_id required"}), 400
+    if not contract_id:
+        return jsonify({"error": "contract_id required — specify which PMO contract to attach milestones to"}), 400
+
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT output_type, content_json FROM dic_generated_outputs "
+            "WHERE id = ? AND tenant_id = ?",
+            (output_id, tenant_id),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return jsonify({"error": "output not found"}), 404
+
+    output_type = row[0] if isinstance(row, (tuple, list)) else row["output_type"]
+    raw_json = row[1] if isinstance(row, (tuple, list)) else row["content_json"]
+    if output_type != "timeline":
+        return jsonify({"error": f"roadmap generation requires a timeline output, got '{output_type}'"}), 400
+
+    try:
+        content = json.loads(raw_json or "{}")
+    except Exception:
+        content = {}
+
+    events = content.get("events", [])
+    if not events:
+        return jsonify({"milestone_count": 0, "contract_id": contract_id, "milestone_ids": [],
+                        "message": "No events found in timeline output"})
+
+    try:
+        from tools.govcon.milestone_manager import create_milestone
+    except Exception as exc:
+        return jsonify({"error": f"PMO milestone manager unavailable: {exc}"}), 500
+
+    milestone_ids: list[str] = []
+    errors: list[str] = []
+    for ev in events[:50]:
+        date_str = str(ev.get("date") or "").strip() or None
+        title = str(ev.get("event") or "").strip()[:255]
+        if not title:
+            continue
+        result = create_milestone({
+            "contract_id": contract_id,
+            "title": title,
+            "description": f"Auto-generated from DIC timeline (collection: {collection_id}, output: {output_id}).",
+            "baseline_date": date_str,
+            "status": "pending",
+            "notes": f"Source: DIC collection {collection_id}",
+        })
+        if result.get("status") == "ok":
+            milestone_ids.append(result["milestone_id"])
+        else:
+            errors.append(result.get("message", "unknown error"))
+
+    return jsonify({
+        "milestone_count": len(milestone_ids),
+        "contract_id": contract_id,
+        "milestone_ids": milestone_ids,
+        "errors": errors[:5],
+    })
+
+
+@dic_bp.route("/api/documents/<doc_id>/re-enrich", methods=["POST"])
+def api_document_re_enrich(doc_id: str):
+    """POST /document-intelligence/api/documents/<doc_id>/re-enrich
+
+    Re-runs LLM metadata extraction on a previously ingested document without
+    requiring the original file. Reconstructs text from stored rag_chunks and
+    returns a HITL proposal dict — never silently writes to dic_documents.
+    (aiify-opp-89: signals/handlers.py → re_enrich_metadata in DIC)
+
+    Body (optional JSON): {"extract_identifiers": bool, "extract_correspondence": bool}
+    Returns: {"doc_id", "filename", "proposals": {...}} or {"error": "..."}
+    """
+    body = request.get_json(silent=True) or {}
+    extract_identifiers = bool(body.get("extract_identifiers", True))
+    extract_correspondence = bool(body.get("extract_correspondence", True))
+
+    try:
+        from tools.document_intelligence.ingest_orchestrator import re_enrich_metadata
+        result = re_enrich_metadata(
+            doc_id,
+            extract_identifiers=extract_identifiers,
+            extract_correspondence=extract_correspondence,
+        )
+    except Exception as exc:
+        logger.warning("dic: re_enrich_metadata raised: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+    if result is None:
+        return jsonify({"error": f"document {doc_id!r} not found"}), 404
+
+    return jsonify(result)
+
+
+@dic_bp.route("/api/collections/<collection_id>/attach-coworker", methods=["POST"])
+def api_attach_coworker(collection_id):
+    """POST /document-intelligence/api/collections/<id>/attach-coworker
+
+    Stores a pending DIC→ACE context link in coworker_dic_contexts.
+    Body: {} (collection_id from URL)
+    Returns {collection_id, coworker_url} so the client can redirect to /coworker.
+    """
+    tenant_id, _ = _security_context()
+    try:
+        from tools.db.storage import get_canvas_connection
+        import uuid as _uuid
+        conn = get_canvas_connection("ICDEV_ACE_DB_URL")
+        try:
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS coworker_dic_contexts (
+                    id           TEXT PRIMARY KEY,
+                    instance_id  TEXT,
+                    collection_id TEXT NOT NULL,
+                    attached_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+                )"""
+            )
+            conn.execute(
+                "INSERT INTO coworker_dic_contexts (id, instance_id, collection_id) VALUES (?, NULL, ?)",
+                (_uuid.uuid4().hex, collection_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as exc:
+        logger.warning("dic: attach-coworker DB write failed: %s", exc)
+    return jsonify({
+        "collection_id": collection_id,
+        "coworker_url": f"/coworker?dic_collection={collection_id}",
+        "message": "Collection attached. Open Co-Worker and launch with DIC context pre-loaded.",
+    })

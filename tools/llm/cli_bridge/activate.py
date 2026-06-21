@@ -106,10 +106,14 @@ CLOUD_KEY_ENV_VARS = (
     "GOOGLE_API_KEY",
     "AZURE_OPENAI_API_KEY",
     "IBM_CLOUD_API_KEY",
+    "OLLAMA_API_KEY",
+    "MISTRAL_API_KEY",
+    "MISTRAL_VLLM_API_KEY",
+    "VLLM_API_KEY",
 )
 
 # Providers probed via BYOK key resolution.
-_BYOK_PROVIDERS = ("anthropic", "openai", "google", "azure", "ibm", "bedrock")
+_BYOK_PROVIDERS = ("anthropic", "openai", "google", "azure", "ibm", "bedrock", "ollama_cloud", "mistral", "mistral_vllm", "vllm")
 
 
 def _has_cloud_key() -> bool:
@@ -158,8 +162,12 @@ def should_enable() -> bool:
 def cli_bridge_enabled() -> bool:
     """Resolve the effective enable state.
 
-    Precedence: context override (set via :func:`cli_bridge_override`) >
-    ``should_enable()`` auto-detection.
+    Precedence (highest to lowest):
+    1. Context override (set via :func:`cli_bridge_override`)
+    2. ``should_enable()`` auto-detection (air-gapped or no cloud key)
+
+    Note: The ``ICDEV_CLI_BRIDGE`` env var is intentionally NOT consulted here.
+    Use ``cli_bridge_override()`` for per-request overrides.
     """
     override = _cli_bridge_override.get()
     if override is not None:

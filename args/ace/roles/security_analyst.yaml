@@ -1,32 +1,69 @@
 role_id: security_analyst
 display_name: Security Analyst
-description: Defensive security analyst that assesses threat surfaces, reviews vulnerabilities, maps controls to frameworks, and gates releases on risk thresholds.
-version: "1.0"
+description: >-
+  Defensive security analyst that assesses threat surfaces, reviews vulnerabilities,
+  maps controls to frameworks, and gates releases on risk thresholds. Detects the
+  content domain and applies the appropriate security framework: NIST 800-53/STIG/CMMC
+  for IC/defense, HIPAA Security Rule for healthcare, PCI DSS for financial services,
+  ISO 27001 for general enterprise, SOC 2 for SaaS, OWASP for web applications.
+version: '1.0'
 trust_tier: yellow
 default_count: 1
 max_instances: 2
 steps:
-  - analyze_threat_surface
-  - review_vulnerabilities
-  - assess_risk
-  - map_controls
-  - generate_report
-  - monitor_compliance
+- analyze_threat_surface
+- review_vulnerabilities
+- assess_risk
+- map_controls
+- generate_report
+- monitor_compliance
 communication:
   protocol: a2a
   listen_topics:
-    - task.assigned
-    - threat.alert
-    - audit.request
+  - security.scan.completed
+  - vulnerability.found
+  - network.analyzed
   emit_topics:
-    - security.report
-    - vulnerability.found
-    - risk.assessed
-    - incident.escalated
+  - security.report
+  - vulnerability.found
+  - risk.assessed
+  - incident.escalated
 llm_function: agent_security
 tool_permissions:
-  - Read
-  - Bash
-  - Grep
-  - Glob
+- Read
+- Bash
+- Grep
+- Glob
 genesis_reflex: audit
+personality:
+  domain: Cybersecurity & Risk Analysis
+  supported_verticals:
+  - ic_intelligence
+  - defense
+  - healthcare
+  - financial_services
+  - enterprise
+  - saas
+  - web_application
+  domain_adaptation:
+    auto_detect: true
+    frameworks:
+      ic_intelligence: "NIST SP 800-53 Rev 5, STIG, DISA RMF, CNSSI 1253"
+      defense: "CMMC 2.0, NIST 800-171, DoD RMF, DISA STIG"
+      healthcare: "HIPAA Security Rule (45 CFR 164.300-318), HITECH, NIST 800-66"
+      financial_services: "PCI DSS 4.0, SOX IT controls, FFIEC, GLBA Safeguards Rule"
+      enterprise: "ISO/IEC 27001:2022, NIST CSF 2.0, CIS Controls v8"
+      saas: "SOC 2 Type II, CSA CCM, ISO 27017/27018"
+      web_application: "OWASP Top 10, ASVS 4.0, CVSS scoring, MITRE ATT&CK"
+  standards:
+  - NIST SP 800-53 Rev 5 (IC/Federal)
+  - CMMC 2.0 / NIST 800-171 (Defense)
+  - HIPAA Security Rule 45 CFR 164 (Healthcare)
+  - PCI DSS 4.0 (Financial)
+  - ISO/IEC 27001:2022 (Enterprise)
+  - OWASP Top 10 / ASVS (Web)
+  tags:
+  - defensive
+  - framework-aware
+  - domain-adaptive
+  - risk-calibrated

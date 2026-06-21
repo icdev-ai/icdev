@@ -76,6 +76,10 @@ def test_ingest_writes_dic_rows_with_stamps(sample_doc: Path):
         created_by="alice",
         embed=False,
         bridge_kg=False,
+        summarize=False,
+        extract_metadata=False,
+        extract_identifiers=False,
+        extract_correspondence=False,
     )
 
     assert outcome.chunks >= 1
@@ -119,12 +123,15 @@ def test_ingest_writes_dic_rows_with_stamps(sample_doc: Path):
         assert link["classification"] == "CUI"
 
 
+_NO_LLM = dict(summarize=False, extract_metadata=False, extract_identifiers=False, extract_correspondence=False)
+
+
 def test_reingest_is_idempotent(sample_doc: Path):
     first = ingest_file(
-        str(sample_doc), "test_collection2", embed=False, bridge_kg=False
+        str(sample_doc), "test_collection2", embed=False, bridge_kg=False, **_NO_LLM
     )
     second = ingest_file(
-        str(sample_doc), "test_collection2", embed=False, bridge_kg=False
+        str(sample_doc), "test_collection2", embed=False, bridge_kg=False, **_NO_LLM
     )
     assert first.doc_id == second.doc_id
     assert first.version_id == second.version_id
@@ -134,7 +141,7 @@ def test_reingest_is_idempotent(sample_doc: Path):
 
 def test_context_defaults_when_unset(sample_doc: Path):
     outcome = ingest_file(
-        str(sample_doc), "default_collection", embed=False, bridge_kg=False
+        str(sample_doc), "default_collection", embed=False, bridge_kg=False, **_NO_LLM
     )
     assert outcome.tenant_id == "default"
     assert outcome.classification == "UNCLASSIFIED"
@@ -171,6 +178,10 @@ def test_cli_json(sample_doc: Path, capsys):
             "CUI",
             "--no-embed",
             "--no-kg",
+            "--no-summarize",
+            "--no-metadata",
+            "--no-identifiers",
+            "--no-correspondence",
             "--json",
         ]
     )
@@ -184,32 +195,26 @@ def test_cli_json(sample_doc: Path, capsys):
 
 # ── PDF OCR fallback tests ──────────────────────────────────────────────────
 
-def test_pdf_text_path_returns_pypdf_provider(tmp_path: Path):
-    """A plain-text PDF should extract via pypdf without touching OCR."""
+def test_pdf_text_path_returns_first_available_provider(tmp_path: Path):
+    """A plain-text PDF should extract via the first successful provider in the chain.
+
+    The four-pass chain is pymupdf -> pdfplumber -> pypdf -> OCR. For the
+    constitution PDF, pymupdf succeeds first, so the provider reflects that.
+    """
     from tools.document_intelligence.extractors import _extract_pdf
 
-    # Create a minimal text-based PDF using pypdf
-    try:
-        from pypdf import PdfWriter
-    except ImportError:
-        pytest.skip("pypdf not installed")
-
-    writer = PdfWriter()
-    writer.add_blank_page(width=612, height=792)
-    # pypdf doesn't support adding text directly to blank pages easily,
-    # so we use a real file we know works.
     pdf_path = Path("C:/Users/schuo/Downloads/constitution.pdf")
     if not pdf_path.exists():
         pytest.skip("constitution.pdf not available")
 
     extraction = _extract_pdf(pdf_path)
-    assert extraction.provider == "pypdf"
+    assert extraction.provider in ("pymupdf", "pdfplumber", "pypdf")
     assert len(extraction.text) > 1000
     assert extraction.page_count == 19
 
 
-def test_pdf_ocr_fallback_warning_when_no_ocr_available(tmp_path: Path, monkeypatch):
-    """When pypdf returns empty text and no OCR engine is available, warn clearly."""
+def test_pdf_all_failed_warning_when_no_ocr_available(tmp_path: Path, monkeypatch):
+    """When all PDF extractors fail and no OCR engine is available, warn clearly."""
     from tools.document_intelligence.extractors import _extract_pdf
 
     # Bypass easyocr model download and vision LLM probes so the test is fast.
@@ -237,20 +242,25 @@ def test_pdf_ocr_fallback_warning_when_no_ocr_available(tmp_path: Path, monkeypa
         writer.write(f)
 
     extraction = _extract_pdf(pdf_path)
-    assert extraction.provider == "pypdf"  # falls through because OCR also fails
+    assert extraction.provider == "pdf-all-failed"
     assert extraction.text == ""
-    assert any("scanned/image PDF" in w for w in extraction.warnings)
-    assert any("easyocr" in w for w in extraction.warnings)
+    # The all-failed path warns that every pass failed and suggests Tesseract.
+    warnings_text = " ".join(extraction.warnings)
+    assert "All PDF extraction passes failed" in warnings_text
+    assert "Tesseract" in warnings_text
 
 
-def test_pypdfium2_rendering_produces_images(tmp_path: Path):
+def test_pypdfium2_rendering_produces_images(tmp_path: Path, monkeypatch):
     """pypdfium2 must render PDF pages to PIL images without error."""
     from tools.document_intelligence.extractors import _try_pdf_ocr
-    from pathlib import Path
+    from tools.document_intelligence import extractors as _ext
 
     pdf_path = Path("C:/Users/schuo/Downloads/constitution.pdf")
     if not pdf_path.exists():
         pytest.skip("constitution.pdf not available")
+
+    # Mock all OCR paths so the test only exercises pypdfium2 page rendering.
+    monkeypatch.setattr(_ext, "_ocr_image", lambda img: "")
 
     # _try_pdf_ocr returns empty string when no OCR engine is available,
     # but it should NOT raise — rendering must succeed silently.

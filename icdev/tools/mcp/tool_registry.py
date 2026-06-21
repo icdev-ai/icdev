@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # CUI // SP-CTI
 """Declarative tool registry for the Unified MCP Gateway Server (D301).
 
@@ -2690,7 +2690,7 @@ TOOL_REGISTRY = {
                 "source_path": {"type": "string", "description": "Path to OpenClaw skill directory"},
                 "tenant_id": {"type": "string"},
                 "imported_by": {"type": "string"},
-                "clawhub_url": {"type": "string", "description": "ClawHub URL for provenance"},
+                "skillhub_url": {"type": "string", "description": "SkillHub URL for provenance"},
             },
             "required": ["source_path", "tenant_id", "imported_by"],
         },

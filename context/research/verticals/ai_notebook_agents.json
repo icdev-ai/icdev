@@ -1,0 +1,134 @@
+{
+  "id": "vert-ai-notebook-agents",
+  "name": "AI Notebooks, Workflow Agents & Desktop Automation",
+  "slug": "ai-notebook-agents",
+  "description": "Emerging category of AI tools combining knowledge management (Notebook LM-style), natural language workflow automation, and local-first desktop AI agents. Key competitors: open-notebook (lfnovo/open-notebook), kuse.ai, coworker (accomplish-ai/coworker), NotebookLM, n8n, Manus. Directly relevant to ICDEV's DIC canvas (air-gap RAG), genesis_daemon orchestration (daemon stability patterns), icdev-intake (NL-to-workflow parsing), and air-gap LLM routing (provider-agnostic design).",
+  "keywords": [
+    "notebook LM",
+    "AI research notebook",
+    "knowledge management AI",
+    "self-hosted AI",
+    "local LLM",
+    "RAG notebook",
+    "open notebook",
+    "AI workflow automation",
+    "natural language automation",
+    "no-code AI agent",
+    "agentic workflow",
+    "AI coworker",
+    "desktop AI agent",
+    "air-gap AI",
+    "reusable AI skills",
+    "local-first AI",
+    "multi-model AI",
+    "provider-agnostic LLM",
+    "podcast generation from docs",
+    "vector search knowledge base",
+    "workflow YAML",
+    "NL to workflow",
+    "privacy first AI",
+    "bring your own key",
+    "Ollama integration",
+    "open source LLM tools",
+    "knowledge graph RAG",
+    "document intelligence",
+    "semantic search",
+    "self-hosted knowledge base"
+  ],
+  "regulatory_bodies": [
+    "NIST AI RMF",
+    "DoD AI Principles",
+    "CISA",
+    "NSA"
+  ],
+  "academic_categories": {
+    "arxiv": ["cs.AI", "cs.IR", "cs.CL", "cs.HC"],
+    "ieee": [
+      "knowledge management systems",
+      "intelligent agents",
+      "human-computer interaction",
+      "information retrieval"
+    ],
+    "acm": [
+      "information retrieval",
+      "intelligent user interfaces",
+      "workflow management",
+      "personal information management"
+    ]
+  },
+  "community_sources": {
+    "reddit": [
+      "r/LocalLLaMA",
+      "r/MachineLearning",
+      "r/selfhosted",
+      "r/productivity",
+      "r/Automate",
+      "r/artificial"
+    ],
+    "stackexchange": [
+      "stackoverflow.com/questions/tagged/langchain",
+      "stackoverflow.com/questions/tagged/llm"
+    ],
+    "github_discussions": [
+      "lfnovo/open-notebook",
+      "accomplish-ai/coworker",
+      "n8n-io/n8n",
+      "Mintplex-Labs/anything-llm"
+    ]
+  },
+  "review_sites": {
+    "g2": ["knowledge-management", "ai-agents", "workflow-automation", "note-taking"],
+    "capterra": ["knowledge-management-software", "workflow-management-software", "note-taking-software"],
+    "trustpilot": []
+  },
+  "saas_commercial": null,
+  "open_source": {
+    "github_topics": [
+      "notebook-lm",
+      "local-llm",
+      "self-hosted-ai",
+      "workflow-automation",
+      "ai-agent",
+      "ollama",
+      "knowledge-management",
+      "rag",
+      "knowledge-graph",
+      "desktop-agent"
+    ],
+    "awesome_lists": [
+      "awesome-local-ai",
+      "awesome-llm",
+      "awesome-selfhosted"
+    ],
+    "package_registries": {
+      "pypi": ["open-notebook", "langchain", "haystack-ai", "llama-index"],
+      "npm": ["n8n"],
+      "crates": []
+    }
+  },
+  "news_sources": [
+    "https://github.com/lfnovo/open-notebook/releases",
+    "https://www.kuse.ai/blog",
+    "https://github.com/accomplish-ai/coworker/releases",
+    "https://n8n.io/blog",
+    "https://github.com/Mintplex-Labs/anything-llm/releases"
+  ],
+  "patent_categories": [
+    "G06F 40/56",
+    "G06N 5/04",
+    "G06F 16/903"
+  ],
+  "compliance_frameworks": [
+    "NIST AI RMF",
+    "DoD AI Principles",
+    "ISO/IEC 42001"
+  ],
+  "video_sources": [
+    "youtube:open notebook LM alternative",
+    "youtube:self-hosted AI knowledge base",
+    "youtube:AI workflow automation 2026",
+    "youtube:local AI desktop agent",
+    "youtube:RAG knowledge management",
+    "youtube:air-gap AI deployment"
+  ]
+}

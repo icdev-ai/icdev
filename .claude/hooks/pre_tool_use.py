@@ -427,6 +427,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Genesis reflex run log (migration 116, NIST AU — cooldown tracking + audit)
         "genesis_reflex_log",
         # Genesis phase execution log (migration 188, NIST AU — phase completion history is immutable)
+        # Genesis output event log (migration 188, NIST AU — reflex output artifact history)
+        "genesis_outputs",
+        # Genesis phase-transition log (migration 189, NIST AU — append-only phase history)
         "genesis_phase_log",
         # NMCE — AI conversation audit trail (migration canvas, NIST AU)
         "mc_net_ai_sessions",
@@ -495,6 +498,18 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "cwk_sessions",
         # EQO Centralized Logging (eqo-log-01, migration 181) — log rows are immutable evidence (NIST AU)
         "centralized_logs",
+        # DIC Collaborative Editing — section edit history (rted-hist-01, NIST AU — each edit row is immutable)
+        "dic_edit_history",
+        # DIC Canvas Synergy — suggestion decisions (dsyn-adapt-03, NIST AU — each decision row is immutable)
+        "dic_suggestion_decisions",
+        # NOVA ECHO — execution traces (append-only audit of agent actions, NIST AU)
+        "agent_execution_traces",
+        # NOVA ECHO — improvement artifacts (append-only generational record, NIST AU)
+        "agent_improvement_artifacts",
+        # NOVA TRUST — trust ledger (append-only Bayesian event log, NIST AU)
+        "ace_trust_ledger",
+        # DIC View Log — document access events for anomaly detection (aiify-opp-105, NIST AU)
+        "dic_doc_views",
     ]
 
     if tool_name == "Bash":

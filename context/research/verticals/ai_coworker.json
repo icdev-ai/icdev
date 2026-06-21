@@ -1,0 +1,221 @@
+{
+  "id": "vert-ai-coworker",
+  "name": "AI Coworker",
+  "slug": "ai-coworker",
+  "description": "Autonomous AI agents that function as peer collaborators — executing multi-step tasks, writing and reviewing code, drafting documents, managing schedules, and coordinating across tools without constant human direction. Covers coding agents (Devin, SWE-agent, OpenDevin, GitHub Copilot Workspace, Claude Code, Cursor), orchestration frameworks (CrewAI, AutoGen, LangGraph), and enterprise copilots (Microsoft 365 Copilot, Salesforce Einstein, Notion AI). Key challenges: multi-turn session persistence, trust calibration, role-specific specialization, HITL escalation, and 24x7 always-on operation in FedRAMP/IL4 environments.",
+  "keywords": [
+    "AI coworker",
+    "autonomous coding agent",
+    "software engineering agent",
+    "Devin",
+    "SWE-agent",
+    "OpenDevin",
+    "GitHub Copilot Workspace",
+    "Claude Code",
+    "Cursor",
+    "multi-agent team",
+    "AI peer collaboration",
+    "task delegation AI",
+    "background agent execution",
+    "persistent agent memory",
+    "multi-turn agent session",
+    "trust calibration",
+    "human in the loop",
+    "HITL escalation",
+    "role specialization",
+    "coworker AI",
+    "agentic coding",
+    "CrewAI",
+    "AutoGen",
+    "LangGraph",
+    "Microsoft 365 Copilot",
+    "Salesforce Einstein",
+    "Notion AI",
+    "agent orchestration",
+    "24x7 agent",
+    "always-on AI",
+    "autonomous workflow",
+    "agent skill evolution",
+    "co-learning agent",
+    "soul-bearing agent",
+    "AI digital twin of employee",
+    "virtual team member",
+    "AI developer agent",
+    "AI compliance agent",
+    "AI security analyst agent"
+  ],
+  "regulatory_bodies": [
+    "NIST AI RMF",
+    "DISA",
+    "CISA",
+    "DoD AI Principles",
+    "FedRAMP",
+    "EU AI Act",
+    "OMB M-24-10",
+    "EO 14110 AI Safety"
+  ],
+  "academic_categories": {
+    "arxiv": [
+      "cs.AI",
+      "cs.SE",
+      "cs.MA",
+      "cs.CL",
+      "cs.LG"
+    ],
+    "ieee": [
+      "autonomous agents",
+      "software engineering agents",
+      "multi-agent systems",
+      "human-agent collaboration",
+      "AI trust"
+    ],
+    "acm": [
+      "artificial intelligence",
+      "software engineering",
+      "human-computer interaction",
+      "computer-supported cooperative work"
+    ]
+  },
+  "community_sources": {
+    "reddit": [
+      "r/MachineLearning",
+      "r/LocalLLaMA",
+      "r/ClaudeAI",
+      "r/AIAssistants",
+      "r/ChatGPT",
+      "r/artificial",
+      "r/singularity",
+      "r/ArtificialIntelligence",
+      "r/learnprogramming",
+      "r/SoftwareEngineering"
+    ],
+    "stackexchange": [
+      "stackoverflow.com/questions/tagged/llm-agent",
+      "stackoverflow.com/questions/tagged/autonomous-agent",
+      "ai.stackexchange.com",
+      "softwareengineering.stackexchange.com"
+    ],
+    "discord": [
+      "OpenDevin Discord",
+      "CrewAI Discord",
+      "LangChain Discord",
+      "Cursor Discord"
+    ],
+    "github_discussions": [
+      "OpenDevin/OpenDevin",
+      "princeton-nlp/SWE-agent",
+      "crewAIInc/crewAI",
+      "microsoft/autogen",
+      "langchain-ai/langgraph",
+      "anthropics/claude-code"
+    ]
+  },
+  "review_sites": {
+    "g2": ["ai-coding-assistants", "ai-agents", "developer-tools"],
+    "capterra": ["artificial-intelligence-software", "code-review-software"],
+    "trustpilot": []
+  },
+  "saas_commercial": [
+    "https://devin.ai",
+    "https://cursor.sh",
+    "https://github.com/features/copilot",
+    "https://www.microsoft.com/en-us/microsoft-365/copilot",
+    "https://www.salesforce.com/products/einstein"
+  ],
+  "open_source": {
+    "github_topics": [
+      "swe-agent",
+      "opendevin",
+      "ai-coding-agent",
+      "autonomous-agent",
+      "multi-agent",
+      "code-agent",
+      "llm-agent",
+      "agent-framework",
+      "crewai",
+      "autogen"
+    ],
+    "awesome_lists": [
+      "awesome-ai-agents",
+      "awesome-autonomous-agents",
+      "awesome-llm-apps"
+    ],
+    "package_registries": {
+      "pypi": [
+        "crewai",
+        "autogen",
+        "langgraph",
+        "swe-agent",
+        "open-devin"
+      ],
+      "npm": [
+        "@langchain/langgraph"
+      ],
+      "crates": []
+    }
+  },
+  "news_sources": [
+    "https://www.cognition.ai/blog",
+    "https://princeton-nlp.github.io/SWE-bench",
+    "https://www.anthropic.com/news",
+    "https://github.blog",
+    "https://towardsdatascience.com",
+    "https://www.marktechpost.com",
+    "https://venturebeat.com/category/ai"
+  ],
+  "patent_categories": [
+    "G06N 3/08",
+    "G06F 8/00",
+    "G06F 40/56",
+    "G06N 5/04",
+    "G06F 9/451"
+  ],
+  "compliance_frameworks": [
+    "NIST AI RMF",
+    "FedRAMP High",
+    "DoD IL4/IL5",
+    "EU AI Act",
+    "ISO/IEC 42001",
+    "NIST SP 800-218A",
+    "DoD AI Principles"
+  ],
+  "video_sources": [
+    "youtube:AI coworker autonomous agent",
+    "youtube:Devin AI coding agent",
+    "youtube:SWE-agent tutorial",
+    "youtube:Claude Code agent",
+    "youtube:CrewAI multi agent tutorial",
+    "youtube:AutoGen Microsoft agents"
+  ],
+  "competitive_landscape": {
+    "primary_competitors": [
+      "Devin (Cognition AI)",
+      "SWE-agent (Princeton NLP)",
+      "OpenDevin / All-Hands AI",
+      "GitHub Copilot Workspace",
+      "Cursor",
+      "Claude Code (Anthropic)",
+      "Gemini Code Assist",
+      "Amazon Q Developer",
+      "Tabnine",
+      "Codeium / Windsurf"
+    ],
+    "adjacent_competitors": [
+      "CrewAI",
+      "AutoGen (Microsoft)",
+      "LangGraph (LangChain)",
+      "Microsoft 365 Copilot",
+      "Salesforce Einstein",
+      "Notion AI",
+      "Linear AI",
+      "Jira AI"
+    ]
+  },
+  "icdev_capability_map": {
+    "ace_engine": "Multi-role coworker teams with event-driven auto-dispatch",
+    "nova_pillars": "ECHO traces, SOUL memory, TRUST ledger, SELA skill evolution",
+    "genesis_reflexes": "43 autonomous background tasks including kanban, research, audit",
+    "kanban_scheduler": "Autonomous task execution via Claude Code subprocess",
+    "hitl_gates": "0.6 trust threshold triggers human escalation"
+  }
+}

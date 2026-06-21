@@ -26,6 +26,20 @@ os.environ["DSOC_STORAGE_BACKEND"] = "sqlite"
 # test module under tests/observability/ is collected.
 _OC_ALREADY_OVERRIDDEN = os.environ.get("ICDEV_STORAGE_BACKEND") == "postgresql"
 
+# Prevent airgap detector from doing TCP probes (Ollama/LM Studio) during tests.
+# tools.dashboard.app calls create_app() at module level which triggers
+# detect_environment() → probe_local_llm_servers() → socket.create_connection().
+# This blocks for ~1 second per endpoint and has caused 8+ second timeouts.
+# Patching at the module level via monkeypatch is not available here (session
+# scope), so use unittest.mock directly on the _probe_tcp function.
+from unittest.mock import patch as _mock_patch
+
+_airgap_patch = _mock_patch(
+    "tools.airgap.detector._probe_tcp",
+    return_value=False,
+)
+_airgap_patch.start()
+
 
 MINIMAL_ICDEV_SCHEMA = """
 CREATE TABLE IF NOT EXISTS studio_workflows (
@@ -93,7 +107,11 @@ CREATE TABLE IF NOT EXISTS kanban_tasks (
     files_changed         INTEGER DEFAULT 0,
     lines_added           INTEGER DEFAULT 0,
     lines_removed         INTEGER DEFAULT 0,
-    completed_via_bypass  INTEGER DEFAULT 0
+    completed_via_bypass  INTEGER DEFAULT 0,
+    source_doc_id         TEXT,
+    source_collection_id  TEXT,
+    loop_type             TEXT DEFAULT 'deterministic',
+    adversarial_enabled   INTEGER DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS kanban_task_deps (
     task_id         TEXT NOT NULL,
@@ -795,6 +813,16 @@ CREATE TABLE IF NOT EXISTS dic_chat_memory (
 CREATE INDEX IF NOT EXISTS idx_dic_chat_memory_session    ON dic_chat_memory (session_id);
 CREATE INDEX IF NOT EXISTS idx_dic_chat_memory_collection ON dic_chat_memory (collection_id);
 CREATE INDEX IF NOT EXISTS idx_dic_chat_memory_tenant     ON dic_chat_memory (tenant_id);
+CREATE TABLE IF NOT EXISTS dic_doc_views (
+    view_id         TEXT    PRIMARY KEY,
+    doc_id          TEXT    NOT NULL,
+    user_id         TEXT    NOT NULL DEFAULT 'anonymous',
+    collection_id   TEXT    NOT NULL DEFAULT 'default',
+    viewed_at       TEXT    DEFAULT (datetime('now')),
+    tenant_id       TEXT    DEFAULT 'default',
+    classification  TEXT    DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_dic_doc_views_doc ON dic_doc_views(doc_id);
 CREATE TABLE IF NOT EXISTS dd_mapping_sessions (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL DEFAULT 'Untitled Mapping',
@@ -842,6 +870,13 @@ CREATE TABLE IF NOT EXISTS dd_mapping_transforms (
     classification  TEXT NOT NULL DEFAULT 'CUI',
     tenant_id       TEXT NOT NULL DEFAULT 'default',
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS dd_pii_scans (
+    scan_id         TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL DEFAULT '',
+    overall_risk    TEXT NOT NULL DEFAULT 'none',
+    findings_json   TEXT NOT NULL DEFAULT '[]',
+    scanned_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS zig_pillars (
@@ -1576,6 +1611,189 @@ CREATE TABLE IF NOT EXISTS ace_preflight_decisions (
 );
 CREATE INDEX IF NOT EXISTS idx_ace_preflight_instance ON ace_preflight_decisions(instance_id);
 CREATE INDEX IF NOT EXISTS idx_ace_preflight_coworker ON ace_preflight_decisions(coworker_id);
+CREATE TABLE IF NOT EXISTS coworker_dic_contexts (
+    id              TEXT PRIMARY KEY,
+    instance_id     TEXT,
+    collection_id   TEXT NOT NULL,
+    attached_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- NOVA ECHO — Execution Tracing & Reflexion Loop
+CREATE TABLE IF NOT EXISTS agent_execution_traces (
+    trace_id          TEXT PRIMARY KEY,
+    task_id           TEXT NOT NULL,
+    task_type         TEXT NOT NULL DEFAULT '',
+    skill_used        TEXT NOT NULL DEFAULT '',
+    outcome           TEXT NOT NULL DEFAULT 'unknown',
+    events_json       TEXT NOT NULL DEFAULT '[]',
+    lesson_pattern    TEXT NOT NULL DEFAULT '',
+    improvement_notes TEXT NOT NULL DEFAULT '',
+    started_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at      TEXT NOT NULL DEFAULT '',
+    created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS agent_improvement_artifacts (
+    artifact_id      TEXT PRIMARY KEY,
+    task_type        TEXT NOT NULL,
+    skill_used       TEXT NOT NULL DEFAULT '',
+    generation_n     INTEGER NOT NULL DEFAULT 1,
+    improvement_text TEXT NOT NULL,
+    composite_score  REAL NOT NULL DEFAULT 0.0,
+    baseline_score   REAL NOT NULL DEFAULT 0.0,
+    evidence_traces  TEXT NOT NULL DEFAULT '[]',
+    applied_count    INTEGER NOT NULL DEFAULT 0,
+    status           TEXT NOT NULL DEFAULT 'pending',
+    created_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    applied_at       TEXT
+);
+
+-- NOVA SOUL — Coworker Identity & Cross-Session Memory
+CREATE TABLE IF NOT EXISTS ace_coworker_memory (
+    id               TEXT PRIMARY KEY,
+    role_id          TEXT NOT NULL,
+    fact_type        TEXT NOT NULL DEFAULT 'observation',
+    content          TEXT NOT NULL,
+    confidence       REAL NOT NULL DEFAULT 0.8,
+    source_task_id   TEXT NOT NULL DEFAULT '',
+    created_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- NOVA TRUST — Trust Calibration Ledger (append-only, NIST AU)
+CREATE TABLE IF NOT EXISTS ace_trust_ledger (
+    id              TEXT PRIMARY KEY,
+    role_id         TEXT NOT NULL,
+    delta           REAL NOT NULL,
+    reason          TEXT NOT NULL,
+    new_score       REAL NOT NULL,
+    source_task_id  TEXT NOT NULL DEFAULT '',
+    recorded_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS product_intel_runs (
+    id                  TEXT PRIMARY KEY,
+    started_at          TEXT,
+    completed_at        TEXT,
+    engines_run         TEXT,
+    engines_failed      TEXT,
+    total_signals       INTEGER,
+    total_gaps          INTEGER,
+    total_dossiers      INTEGER,
+    federation_routes   INTEGER,
+    result_json         TEXT,
+    status              TEXT,
+    classification      TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS genesis_outputs (
+    id             TEXT PRIMARY KEY,
+    reflex_name    TEXT NOT NULL,
+    output_type    TEXT NOT NULL,
+    output_ref     TEXT,
+    summary        TEXT,
+    created_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE TABLE IF NOT EXISTS genesis_phase_log (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    design_id    TEXT NOT NULL,
+    phase        TEXT NOT NULL,
+    status       TEXT NOT NULL,
+    started_at   TEXT,
+    completed_at TEXT
+);
+CREATE TABLE IF NOT EXISTS teams_inbox (
+    message_id   TEXT PRIMARY KEY,
+    message_json TEXT NOT NULL,
+    channel_id   TEXT,
+    sender_id    TEXT,
+    text         TEXT,
+    processed_at TEXT,
+    error        TEXT,
+    created_at   TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS mattermost_inbox (
+    post_id      TEXT PRIMARY KEY,
+    message_json TEXT NOT NULL,
+    channel_id   TEXT,
+    user_id      TEXT,
+    text         TEXT,
+    processed_at TEXT,
+    error        TEXT,
+    created_at   TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS github_inbox (
+    comment_id   INTEGER PRIMARY KEY,
+    message_json TEXT NOT NULL,
+    issue_number INTEGER,
+    user_login   TEXT,
+    text         TEXT,
+    processed_at TEXT,
+    error        TEXT,
+    created_at   TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS gitlab_inbox (
+    note_id          INTEGER PRIMARY KEY,
+    message_json     TEXT NOT NULL,
+    issue_iid        INTEGER,
+    author_username  TEXT,
+    text             TEXT,
+    processed_at     TEXT,
+    error            TEXT,
+    created_at       TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS skype_inbox (
+    activity_id     TEXT PRIMARY KEY,
+    message_json    TEXT NOT NULL,
+    conversation_id TEXT,
+    service_url     TEXT,
+    sender_id       TEXT,
+    text            TEXT,
+    processed_at    TEXT,
+    error           TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS domain_coverage (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    domain_key      TEXT    NOT NULL,
+    domain_name     TEXT    NOT NULL,
+    domain_type     TEXT    NOT NULL DEFAULT 'knowledge',
+    source_canvas   TEXT,
+    coverage_score  REAL    NOT NULL DEFAULT 0.0,
+    gap_count       INTEGER NOT NULL DEFAULT 0,
+    status          TEXT    NOT NULL DEFAULT 'active',
+    orphan_reason   TEXT,
+    last_checked_at TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resolved_at     TEXT,
+    detail          TEXT    NOT NULL DEFAULT '{}',
+    tenant_id       TEXT    NOT NULL DEFAULT 'default',
+    classification  TEXT    NOT NULL DEFAULT 'CUI',
+    created_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS compliance_gates (
+    id              TEXT    PRIMARY KEY,
+    gate_name       TEXT    NOT NULL DEFAULT '',
+    status          TEXT    NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending', 'pass', 'fail', 'error', 'skipped')),
+    triggered_at    TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    project_id      TEXT    NOT NULL DEFAULT '',
+    notes           TEXT    NOT NULL DEFAULT '',
+    tenant_id       TEXT    NOT NULL DEFAULT 'default',
+    classification  TEXT    NOT NULL DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS gate_failures (
+    id              TEXT    PRIMARY KEY,
+    gate_id         TEXT    NOT NULL REFERENCES compliance_gates(id) ON DELETE CASCADE,
+    criterion       TEXT    NOT NULL DEFAULT '',
+    detail          TEXT    NOT NULL DEFAULT '',
+    severity        TEXT    NOT NULL DEFAULT 'warning'
+                    CHECK (severity IN ('critical', 'high', 'warning', 'info')),
+    tenant_id       TEXT    NOT NULL DEFAULT 'default',
+    classification  TEXT    NOT NULL DEFAULT 'CUI // SP-CTI',
+    created_at      TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 

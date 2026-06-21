@@ -488,3 +488,86 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   code (e.g. capability self-modification) → re-decide as **sandboxed** via
   `SandboxExecutor`; or if `dry_run` flag is accepted from an unauthenticated HTTP
   endpoint without authorization checks.
+### Gap 18 — NOVA Execution Tracing (`tools/workflow/trace_logger.py`, `tools/workflow/reflexion_agent.py`)
+- **Files:** `tools/workflow/trace_logger.py`, `tools/workflow/reflexion_agent.py`
+- **Risk:** `trace_logger` records task execution events (tool calls, LLM decisions,
+  intermediate outputs) as structured rows. `reflexion_agent` reads those rows and
+  passes a 600-char snippet to the LLM to generate an improvement artifact text.
+  The snippet is user-task-derived data (indirectly user-controlled via task descriptions).
+- **Decision:** **bypass-documented**
+- **Rationale:** Neither module `exec`s, `eval`s, or `subprocess`-runs any content.
+  Trace payloads are stored as JSON-encoded strings in `agent_execution_traces`, read
+  back as data, and passed only as LLM message content (not code). The reflexion agent
+  slices to 600 chars, preventing prompt injection via oversized payloads. Improvement
+  artifacts are written to `agent_improvement_artifacts` as TEXT and prepended to skill
+  prompts only when `ICDEV_HARNESS_COLEARN=true`. There is no execution surface.
+- **Guardrails:** HITL — reflexion output is a `suggested` kanban card before any
+  hardprompt change; `artifact_evolver.py` (SELA) never auto-merges evolved text.
+
+### Gap 19 — NOVA SOUL Memory (`icdev/tools/ace/soul_manager.py`)
+- **Files:** `icdev/tools/ace/soul_manager.py`, `tools/ace/roles/*/MEMORY.md`
+- **Risk:** Reads per-role MEMORY.md (written by reflexion_agent from task output
+  snippets) and injects it into dispatch prompts as system context. Also stores
+  LLM-extracted facts from task output when `ICDEV_HARNESS_COLEARN=true`.
+- **Decision:** **bypass-documented**
+- **Rationale:** MEMORY.md content is capped at 8 KB and 40 facts. Content is injected
+  as plain text into LLM prompts, not executed. Fact extraction is done via LLMRouter
+  (no eval/exec). No file system traversal beyond `tools/ace/roles/<role_id>/`.
+  Max 2 LLM-extracted facts per trace; `regex.search` is used to parse the JSON array,
+  not `eval`. Path is constructed from a validated role_id (DB FK, not user freeform input).
+- **Guardrails:** 8 KB size cap + 40-fact prune; trust_score gate ensures low-trust
+  roles cannot escalate via memory injection (probationary band = dispatch paused).
+
+### Gap 21 — ZIG External Ingest Adapters (`tools/security_canvas/zig_external_adapter.py`)
+
+- **Files:** `tools/security_canvas/zig_external_adapter.py`
+- **Risk:** Parses user-supplied content from 5 external scan formats: CycloneDX SBOM (JSON),
+  Bandit SAST output (JSON), security survey responses (JSON), Nmap scan results (XML),
+  and OpenAPI specifications (YAML/JSON). All content arrives from an authenticated API
+  endpoint (`POST /security/api/zig/targets/<id>/ingest`).
+- **Decision:** **bypass-documented**
+- **Rationale:** All 5 parsers use safe stdlib decoders only — `json.loads()`,
+  `xml.etree.ElementTree.fromstring()`, `yaml.safe_load()`. No `eval()`, `exec()`,
+  `subprocess`, or filesystem writes occur. Parsed data flows only to `set_activity_status()`
+  via parameterized SQL inserts. XML parsing uses stdlib `ElementTree` (no DTD expansion,
+  no external entity resolution). YAML uses `safe_load` (no custom constructors). This
+  guarantee is enforced by `tests/test_zig_ingest_adapters.py` (31 unit tests, all
+  using a DB-stub that verifies no real SQL calls reach the DB).
+- **Revisit if:** any ingest path adds `eval()`, subprocess execution of scan tools,
+  or resolves external references from within the uploaded content.
+
+### Gap 20 — NOVA SELA Skill Evolution (`tools/evolution/artifact_evolver.py`)
+- **Files:** `tools/evolution/artifact_evolver.py`, `tools/evolution/fitness.py`
+- **Risk:** Reads `.agents/skills/icdev-*` skill files, generates mutated candidates
+  via LLM, writes proposals to `oracle_predictions`. The `score_full()` path passes
+  example inputs/outputs to LLMRouter as judge.
+- **Decision:** **bypass-documented**
+- **Rationale:** Evolved skill text is **never auto-merged** — it is written to
+  `oracle_predictions` with `status='suggested'` and requires human HITL review before
+  any file is modified. The evolver validates: size ≤ 15 KB, growth ≤ +20%, must have
+  a `# heading`, non-empty. Fitness scorer uses LLMRouter.invoke() (no exec/eval).
+  Golden eval JSONL is first-party developer-authored content in `context/evolution/golden/`.
+- **Revisit if:** auto-merge of evolved artifacts is ever enabled (would require sandboxing
+  the SIPA integrity check on the candidate).
+
+### Gap 22 — CLI Bridge Manager (`tools/llm/cli_bridge_manager.py`)
+
+- **File:** `tools/llm/cli_bridge_manager.py`
+- **Risk:** Reads and writes the project's own `.env` file on disk to get/set `ICDEV_CLI_BRIDGE`
+  and to detect the presence of cloud API keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+  `GOOGLE_API_KEY`). No user-supplied content is ingested — only the developer's own `.env`.
+- **Decision:** **trusted-first-party**
+- **Rationale:** The file is a developer-facing CLI configuration utility that reads and writes
+  only the project's own `.env` file. Its entire declared purpose (stated in the module docstring)
+  is to manage `ICDEV_CLI_BRIDGE` in `.env`. No `exec()`, `eval()`, `subprocess`, dynamic import,
+  or external network call occurs. The `.env` is a first-party developer-authored file; there is
+  no external or user-controlled ingress path. The `filesystem` capability is intentional,
+  scoped, and authorized via intake requirement `REQ-TOOLS-LLM-CLI-01/02/03` in the ICDEV RTM
+  (`project_id = icdev-tools-rtm`).
+- **Guardrails:**
+  - Reads and writes only `<repo_root>/.env` (resolved from `_find_repo_root()` heuristic).
+  - No shell expansion, no path traversal, no user-supplied filename.
+  - Module is invoked explicitly via `python tools/llm/cli_bridge_manager.py --<flag>` or
+    imported by `tools/llm/router.py` for auto-detection only.
+- **Revisit if:** the manager is extended to accept a user-supplied file path, or to write
+  to any file outside `<repo_root>/.env`.

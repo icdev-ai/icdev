@@ -1738,6 +1738,49 @@ class ChatManager:
 
 
 # ---------------------------------------------------------------------------
+# ACE co-worker dispatch hook
+# ---------------------------------------------------------------------------
+
+def _check_coworker_trigger(
+    context_id: str,
+    message: str,
+    hook_context: dict,
+) -> None:
+    """Persist ACE instance link into chat_contexts.context_config when dispatch fires.
+
+    Called after the message handler detects an ACE co-worker trigger. If
+    ``hook_context`` carries a ``coworker_instance_id``, it is merged into the
+    row's ``context_config`` JSON so the chat UI can render the "View Co-Worker
+    Team" button.  No-op when the hook context is empty or has no id.
+    """
+    import json as _json
+
+    ace_id = hook_context.get("coworker_instance_id")
+    if not ace_id:
+        return
+
+    try:
+        from tools.db.storage import get_connection
+        conn = get_connection(db_path=str(DB_PATH))
+        row = conn.execute(
+            "SELECT context_config FROM chat_contexts WHERE id = ?", (context_id,)
+        ).fetchone()
+        if row is None:
+            return
+        existing_raw = row[0] if not isinstance(row, dict) else row.get("context_config")
+        cfg = _json.loads(existing_raw) if existing_raw else {}
+        cfg["coworker_instance_id"] = ace_id
+        conn.execute(
+            "UPDATE chat_contexts SET context_config = ? WHERE id = ?",
+            (_json.dumps(cfg), context_id),
+        )
+        conn.commit()
+        conn.close()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+# ---------------------------------------------------------------------------
 # Module-level singleton
 # ---------------------------------------------------------------------------
 chat_manager = ChatManager()

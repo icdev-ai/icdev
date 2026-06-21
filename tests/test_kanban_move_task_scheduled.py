@@ -90,7 +90,8 @@ def kanban_db(tmp_path, monkeypatch):
         con.row_factory = sqlite3.Row
         return con
 
-    import tools.db.storage as _storage
+    import importlib
+    _storage = importlib.import_module("tools.db.storage")
     monkeypatch.setattr(_storage, "get_connection", _fake_conn)
     import tools.genesis.reflexes.kanban as kanban_mod
     monkeypatch.setattr(kanban_mod, "get_connection", _fake_conn)

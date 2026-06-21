@@ -159,6 +159,34 @@
   .resume-session-btn:hover { background: rgba(74,144,217,.25); }
   .history-item { opacity: .78; }
   .history-item .history-tag { font-size: 10px; opacity: .7; }
+  /* ── Learning State panel ───────────────────────────────────────── */
+  .nova-panel { margin: 20px 0 8px; }
+  .nova-panel-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .nova-panel-header h2 { font-size: 14px; font-weight: 600; margin: 0; color: var(--text-secondary, #7a8cb0); text-transform: uppercase; letter-spacing: .04em; }
+  .nova-panel-header .nova-badge { font-size: 10px; padding: 2px 7px; border-radius: 10px; background: rgba(155,89,182,.15); color: #9b59b6; border: 1px solid #9b59b6; }
+  .nova-cards { display: flex; flex-wrap: wrap; gap: 12px; }
+  .nova-card {
+    background: var(--bg-card, #16213e);
+    border: 1px solid var(--border-color, #2a2a4a);
+    border-radius: 8px;
+    padding: 14px 16px;
+    min-width: 200px;
+    max-width: 320px;
+    flex: 1 1 200px;
+  }
+  .nova-card .nova-role { font-size: 13px; font-weight: 600; margin-bottom: 10px; color: var(--text-primary, #e0e0e0); }
+  .nova-card .nova-stat-row { display: flex; gap: 16px; margin-bottom: 10px; }
+  .nova-card .nova-stat { text-align: center; }
+  .nova-card .nova-stat .ns-val { font-size: 18px; font-weight: 700; color: var(--accent-color, #4a90d9); }
+  .nova-card .nova-stat .ns-lbl { font-size: 10px; color: var(--text-secondary, #7a8cb0); text-transform: uppercase; letter-spacing: .04em; }
+  .nova-trust-bar { height: 4px; border-radius: 2px; background: var(--bg-secondary, #1a1a2e); overflow: hidden; margin-bottom: 4px; }
+  .nova-trust-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, #e74c3c 0%, #f39c12 40%, #27ae60 80%); }
+  .nova-trust-label { font-size: 10px; color: var(--text-secondary, #7a8cb0); }
+  .nova-improvements { margin-top: 8px; border-top: 1px solid var(--border-color, #2a2a4a); padding-top: 8px; }
+  .nova-improvements .ni-title { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary, #555); margin-bottom: 4px; }
+  .nova-improvements .ni-item { font-size: 11px; color: var(--text-secondary, #a0a0b8); margin-bottom: 4px; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .nova-loading { color: var(--text-secondary, #555); font-size: 13px; padding: 8px 0; }
+  #nova-panel-error { color: #e74c3c; font-size: 12px; padding: 8px 0; display: none; }
 
   /* ── SSE indicator ──────────────────────────────────────────────── */
   .sse-badge {
@@ -338,6 +366,18 @@
       {% endfor %}
     </div>
   </section>
+
+  <!-- ── Learning State (NOVA soul panel) ─────────────────────── -->
+  <div class="nova-panel" id="nova-panel">
+    <div class="nova-panel-header">
+      <h2>Learning State</h2>
+      <span class="nova-badge">NOVA</span>
+    </div>
+    <div id="nova-cards" class="nova-cards">
+      <div class="nova-loading" id="nova-loading">Loading NOVA state…</div>
+    </div>
+    <div id="nova-panel-error"></div>
+  </div>
 
   <!-- ── Tabs ───────────────────────────────────────────────────── -->
   <div class="tabs" style="margin-top:8px;">
@@ -928,6 +968,72 @@
       "</div>";
     return li;
   }
+
+  // ── NOVA Learning State panel ────────────────────────────────────
+  function trustBand(score) {
+    if (score >= 0.8) return { label: "Autonomous",  color: "#27ae60" };
+    if (score >= 0.6) return { label: "Trusted",     color: "#4a90d9" };
+    if (score >= 0.3) return { label: "Supervised",  color: "#f39c12" };
+    return                  { label: "Probationary", color: "#e74c3c" };
+  }
+
+  function renderNovaCard(cw) {
+    var band = trustBand(cw.trust_score);
+    var pct  = Math.round(cw.trust_score * 100);
+    var imps = (cw.recent_improvements || []).slice(0, 3);
+    var impHtml = imps.length
+      ? imps.map(function (i) {
+          return '<div class="ni-item" title="' + escHtml(i.improvement_text || "") + '">' +
+                   escHtml((i.task_type || "improvement") + ": " + (i.improvement_text || "").slice(0, 80)) +
+                 '</div>';
+        }).join("")
+      : '<div class="ni-item" style="color:var(--text-secondary,#555);">No improvement artifacts yet.</div>';
+
+    var card = document.createElement("div");
+    card.className = "nova-card";
+    card.id = "nova-card-" + cw.role_id;
+    card.innerHTML =
+      '<div class="nova-role">' + escHtml(cw.role_id) + '</div>' +
+      '<div class="nova-stat-row">' +
+        '<div class="nova-stat"><div class="ns-val">' + pct + '%</div><div class="ns-lbl">Trust</div></div>' +
+        '<div class="nova-stat"><div class="ns-val">' + (cw.fact_count || 0) + '</div><div class="ns-lbl">Facts</div></div>' +
+      '</div>' +
+      '<div class="nova-trust-bar"><div class="nova-trust-fill" style="width:' + pct + '%;"></div></div>' +
+      '<div class="nova-trust-label" style="color:' + band.color + ';">' + escHtml(band.label) + '</div>' +
+      '<div class="nova-improvements">' +
+        '<div class="ni-title">Recent Improvements</div>' +
+        impHtml +
+      '</div>';
+    return card;
+  }
+
+  function loadNovaState() {
+    fetch("/api/ace/" + INSTANCE_ID + "/nova-state")
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+      .then(function (data) {
+        var container = document.getElementById("nova-cards");
+        var loading   = document.getElementById("nova-loading");
+        if (loading) loading.remove();
+        var coworkers = data.coworkers || [];
+        if (coworkers.length === 0) {
+          container.innerHTML = '<div class="nova-loading">No co-workers with NOVA state yet.</div>';
+          return;
+        }
+        coworkers.forEach(function (cw) {
+          var existing = document.getElementById("nova-card-" + cw.role_id);
+          if (existing) existing.remove();
+          container.appendChild(renderNovaCard(cw));
+        });
+      })
+      .catch(function () {
+        var loading = document.getElementById("nova-loading");
+        if (loading) loading.remove();
+        var errEl = document.getElementById("nova-panel-error");
+        if (errEl) { errEl.textContent = "Could not load NOVA state."; errEl.style.display = "block"; }
+      });
+  }
+
+  loadNovaState();
 
 })();
 </script>

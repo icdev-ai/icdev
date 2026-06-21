@@ -61,6 +61,7 @@ class Citation:
             "chunk_id": self.chunk_id,
             "source_uri": self.source_uri,
             "classification": self.classification,
+            "archive_url": f"/document-intelligence/doc/{self.doc_id}" if self.doc_id else "#",
         }
 
 
@@ -182,6 +183,10 @@ class DICSearchResult:
     # actually supports the query (attribution lens), reusing the verifier's
     # claim-vs-evidence overlap measure. Drives attribution-lens reranking.
     attribution_score: float = 0.0
+    # LLM-generated 1-3 sentence summary of the full document, stored at ingest
+    # time via _ai_document_summary() in ingest_orchestrator. Empty string when
+    # the document was ingested before this field was added.
+    doc_summary: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -200,6 +205,7 @@ class DICSearchResult:
             "attribution_pct": self.attribution_pct,
             "attribution_score": round(self.attribution_score, 4),
             "archive_url": f"/document-intelligence/doc/{self.doc_id}" if self.doc_id else "#",
+            "doc_summary": self.doc_summary,
         }
 
 
@@ -211,7 +217,8 @@ class DICGroundedSearch:
     a per-answer ``citation_quality`` (sufficiency) score in [0,1] — the mean
     attribution strength of the returned chunks. Results are ordered through the
     attribution lens (strongly-supporting evidence first), and every result still
-    carries its mandatory citation pack.
+    carries its mandatory citation pack. ``anomaly_report`` surfaces any
+    statistically anomalous patterns in the result attribution scores.
     """
 
     query: str = ""
@@ -219,14 +226,56 @@ class DICGroundedSearch:
     result_count: int = 0
     citation_quality: float = 0.0
     origin: str = "ai_retrieved"
+    anomaly_report: "SearchAnomalyReport | None" = None
 
     def to_dict(self) -> dict:
-        return {
+        d: dict[str, Any] = {
             "query": self.query,
             "results": [r.to_dict() for r in self.results],
             "result_count": self.result_count,
             "citation_quality": round(self.citation_quality, 4),
             "origin": self.origin,
+        }
+        if self.anomaly_report is not None:
+            d["anomaly_report"] = self.anomaly_report.to_dict()
+        return d
+
+
+@dataclass
+class SearchAnomalyReport:
+    """Statistical anomaly assessment for a DIC search result set.
+
+    Replaces the external pattern of hard-coding a single relevance cutoff
+    (e.g. ``if score < 0.3: skip_result``) with IQR-based distribution analysis.
+    The detection adapts to the actual score distribution so no manual threshold
+    needs to be maintained. Three anomaly types are detected:
+
+    * ``low_coverage``  — Q3 of attribution scores is below the noise floor,
+      meaning even the better-ranked results have near-zero support for the query.
+    * ``score_outlier`` — the top result is far above the pack (> mean + 3σ with
+      meaningful spread), suggesting only one chunk is actually relevant.
+    * ``high_variance`` — scores span a wide range (std > 0.3, IQR > 0.25),
+      indicating the result set mixes highly relevant and irrelevant chunks.
+
+    ``is_anomalous`` is False and all floats are 0.0 when the result set is too
+    small to characterize (< 2 results) or no anomaly pattern is detected.
+    """
+
+    is_anomalous: bool = False
+    anomaly_type: str = ""
+    mean_attribution: float = 0.0
+    score_std: float = 0.0
+    top_score: float = 0.0
+    detail: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "is_anomalous": self.is_anomalous,
+            "anomaly_type": self.anomaly_type,
+            "mean_attribution": round(self.mean_attribution, 4),
+            "score_std": round(self.score_std, 4),
+            "top_score": round(self.top_score, 4),
+            "detail": self.detail,
         }
 
 
@@ -265,6 +314,94 @@ class DICKeywordSearchResult:
         }
 
 
+@dataclass
+class DICFilterQuery:
+    """LLM-parsed structured filters for DIC document search.
+
+    Models the filter-query module of a fulltext search engine (aiify-opp-29:
+    fulltext_search_engine -> llm_generation, analog of paperless
+    ``src/documents/filters.py``). Converts natural language filter intent
+    (e.g., "recent PDF reports at CUI level from last 30 days") into structured
+    parameters that narrow document retrieval without requiring users to know the
+    exact field names. The LLM emits ONLY the JSON keys listed in
+    :data:`_FILTER_SYSTEM_PROMPT` — it never answers the user's query, never
+    invents proper nouns or classification levels not in the schema, and always
+    degrades gracefully (empty ``filters``) when unavailable.
+
+    ``confidence`` is a self-reported [0.0, 1.0] estimate from the model of how
+    reliably it could extract filters from the natural language. It is 0.0 when
+    ``llm_used`` is False (no model ran). ``refusal_reason`` is set when no
+    filters were extracted: ``"empty_query"`` for blank input, ``"no_filters"``
+    when the model found nothing applicable, or ``"llm_unavailable"`` on failure.
+    """
+
+    natural_query: str = ""
+    filters: dict = field(default_factory=dict)
+    confidence: float = 0.0
+    llm_used: bool = False
+    refusal_reason: str = ""
+    origin: str = "ai_generated"
+
+    def to_dict(self) -> dict:
+        return {
+            "natural_query": self.natural_query,
+            "filters": self.filters,
+            "confidence": round(self.confidence, 4),
+            "llm_used": self.llm_used,
+            "refusal_reason": self.refusal_reason,
+            "origin": self.origin,
+        }
+
+
+@dataclass
+class DICFilterCoverageAnomaly:
+    """Anomaly report for a DIC filter predicate's coverage over a candidate set.
+
+    Models the upgrade of hardcoded filter thresholds (aiify-opp-31:
+    hardcoded_threshold -> anomaly_detection, analog of paperless
+    ``src/documents/filters.py``).  Instead of fixed cutoffs that must be
+    maintained by hand (e.g. ``min_pages > 5``, ``confidence >= 0.7``), this
+    report characterises the distribution of the relevant document property via
+    IQR-based statistics and flags when the requested threshold sits outside the
+    natural range of the candidate set.
+
+    Two anomaly types are detected:
+
+    * ``over_restrictive`` — threshold is above Q3+1.5×IQR; the filter would
+      exclude the vast majority of candidates (< 10 % coverage).
+    * ``over_permissive`` — threshold is below Q1−1.5×IQR; the filter would
+      admit nearly all candidates (> 90 % coverage), adding no discriminative value.
+
+    ``is_anomalous`` is False when the candidate set is too small for reliable IQR
+    (< 4 values) or no anomaly pattern is detected.  ``suggested_threshold`` is set
+    only when an anomaly is flagged; it is the natural-distribution anchor (Q1 or
+    Q3) the caller should consider using instead.
+    """
+
+    is_anomalous: bool = False
+    anomaly_type: str = ""
+    coverage_pct: float = 0.0
+    q1: float = 0.0
+    q3: float = 0.0
+    iqr: float = 0.0
+    suggested_threshold: float | None = None
+    detail: str = ""
+
+    def to_dict(self) -> dict:
+        d: dict = {
+            "is_anomalous": self.is_anomalous,
+            "anomaly_type": self.anomaly_type,
+            "coverage_pct": round(self.coverage_pct, 4),
+            "q1": round(self.q1, 4),
+            "q3": round(self.q3, 4),
+            "iqr": round(self.iqr, 4),
+            "detail": self.detail,
+        }
+        if self.suggested_threshold is not None:
+            d["suggested_threshold"] = round(self.suggested_threshold, 4)
+        return d
+
+
 def _extract_terms(query: str) -> list[str]:
     return [t.lower() for t in re.findall(r"\b\w{3,}\b", query)]
 
@@ -292,15 +429,19 @@ def _normalize_keywords(keywords: list[str] | None) -> list[str]:
 def _doc_meta(conn, doc_id: str) -> dict[str, Any]:
     try:
         cur = conn.execute(
-            "SELECT title, classification FROM dic_documents WHERE doc_id = ?",
+            "SELECT title, classification, summary FROM dic_documents WHERE doc_id = ?",
             (doc_id,),
         )
         row = cur.fetchone()
         if row:
-            return {"title": row[0] or doc_id, "classification": row[1] or "CUI"}
+            return {
+                "title": row[0] or doc_id,
+                "classification": row[1] or "CUI",
+                "summary": row[2] or "",
+            }
     except Exception:
         pass
-    return {"title": doc_id, "classification": "CUI"}
+    return {"title": doc_id, "classification": "CUI", "summary": ""}
 
 
 def _chunk_meta(conn, chunk_id: str) -> dict[str, Any]:
@@ -411,6 +552,258 @@ def _citation_quality(results: list["DICSearchResult"]) -> float:
 
 
 # --------------------------------------------------------------------------- #
+# Search-result anomaly detection (aiify-opp-68: hardcoded_threshold ->
+# anomaly_detection). The external analogue hard-codes a single relevance
+# cutoff (``if score < constant: drop``). Instead we characterise the full
+# attribution-score *distribution* via IQR-based statistics so detection
+# adapts to each result set without requiring a hand-tuned threshold.
+# --------------------------------------------------------------------------- #
+
+
+def detect_search_anomalies(results: list["DICSearchResult"]) -> "SearchAnomalyReport":
+    """Detect statistically anomalous attribution-score patterns in a result set.
+
+    Requires attribution scores to have been populated first (call
+    :func:`_rerank_by_attribution` or :meth:`DICSearchEngine.search` beforehand).
+    Returns a :class:`SearchAnomalyReport` with ``is_anomalous=False`` when the
+    result set is too small (< 2 results) or no anomaly pattern is detected.
+    """
+    if len(results) < 2:
+        mean = results[0].attribution_score if results else 0.0
+        return SearchAnomalyReport(mean_attribution=mean)
+
+    scores = [r.attribution_score for r in results]
+    n = len(scores)
+    mean = sum(scores) / n
+    variance = sum((s - mean) ** 2 for s in scores) / n
+    std = variance ** 0.5
+    top = max(scores)
+
+    sorted_s = sorted(scores)
+    q1 = sorted_s[n // 4]
+    q3 = sorted_s[(3 * n) // 4]
+    iqr = q3 - q1
+
+    anomaly_type = ""
+    detail = ""
+
+    if q3 < 0.05:
+        # Even the upper-quartile results are near zero — query has no coverage.
+        anomaly_type = "low_coverage"
+        detail = (
+            f"Upper-quartile attribution is {q3:.3f} (below noise floor); "
+            "query may not match any indexed content."
+        )
+    elif top > q3 + 1.5 * iqr and std > 0.1:
+        # IQR-fence outlier: top result is far above the pack (using the Tukey
+        # fence q3 + 1.5*IQR instead of mean+3σ, because σ itself is inflated
+        # by the very outlier we are trying to detect).
+        anomaly_type = "score_outlier"
+        detail = (
+            f"Top score {top:.3f} exceeds IQR fence {q3 + 1.5 * iqr:.3f} "
+            f"(Q3={q3:.3f}, IQR={iqr:.3f}); only one chunk appears relevant."
+        )
+    elif std > 0.3 and iqr > 0.25:
+        # Wide spread: mix of highly relevant and irrelevant results.
+        anomaly_type = "high_variance"
+        detail = (
+            f"Attribution std={std:.3f}, IQR={iqr:.3f}; "
+            "result set mixes relevant and irrelevant chunks."
+        )
+
+    report = SearchAnomalyReport(
+        is_anomalous=bool(anomaly_type),
+        anomaly_type=anomaly_type,
+        mean_attribution=mean,
+        score_std=std,
+        top_score=top,
+        detail=detail,
+    )
+    if report.is_anomalous:
+        logger.info(
+            "DIC search anomaly [%s]: %s",
+            anomaly_type,
+            detail,
+        )
+    return report
+
+
+# --------------------------------------------------------------------------- #
+# Filter-predicate coverage anomaly detection (aiify-opp-31:
+# hardcoded_threshold -> anomaly_detection, analog of paperless
+# src/documents/filters.py).  The external pattern hard-codes filter thresholds
+# (e.g. ``min_confidence=0.7``, ``min_pages=5``) that must be tuned by hand for
+# each deployment.  This layer characterises the *distribution* of the candidate
+# document property values via IQR-based statistics and reports when the
+# requested threshold sits outside the natural range — making the predicate
+# either over-restrictive or over-permissive for the actual corpus.
+# --------------------------------------------------------------------------- #
+
+
+def detect_filter_coverage_anomaly(
+    candidate_values: list[float],
+    threshold: float,
+    direction: str = "min",
+) -> "DICFilterCoverageAnomaly":
+    """Detect anomalous filter threshold coverage over a document property distribution.
+
+    Args:
+        candidate_values: Observed values of the filtered property across the
+            candidate document set (e.g. page counts, confidence scores).
+        threshold: The filter cutoff value to evaluate.
+        direction: ``"min"`` means the filter keeps values *≥ threshold*
+            (e.g. ``min_pages``); ``"max"`` keeps values *≤ threshold*
+            (e.g. ``max_pages``).
+
+    Returns:
+        A :class:`DICFilterCoverageAnomaly` with ``is_anomalous=False`` when the
+        candidate set is too small (< 4 values) or no anomaly is detected.
+    """
+    n = len(candidate_values)
+    if n < 4:
+        return DICFilterCoverageAnomaly()
+
+    sorted_v = sorted(candidate_values)
+    q1 = sorted_v[n // 4]
+    q3 = sorted_v[(3 * n) // 4]
+    iqr = q3 - q1
+    upper_fence = q3 + 1.5 * iqr
+    lower_fence = q1 - 1.5 * iqr
+
+    if direction == "min":
+        matching = sum(1 for v in candidate_values if v >= threshold)
+    else:
+        matching = sum(1 for v in candidate_values if v <= threshold)
+    coverage_pct = matching / n
+
+    anomaly_type = ""
+    detail = ""
+    suggested: float | None = None
+
+    if direction == "min":
+        if threshold > upper_fence and coverage_pct < 0.10:
+            anomaly_type = "over_restrictive"
+            suggested = q3
+            detail = (
+                f"Filter threshold {threshold:.3f} exceeds upper IQR fence "
+                f"{upper_fence:.3f} (Q3={q3:.3f}); only {coverage_pct:.1%} of "
+                f"candidates qualify. Consider relaxing to Q3={q3:.3f}."
+            )
+        elif iqr > 0 and threshold < lower_fence and coverage_pct > 0.90:
+            anomaly_type = "over_permissive"
+            suggested = q1
+            detail = (
+                f"Filter threshold {threshold:.3f} is below lower IQR fence "
+                f"{lower_fence:.3f} (Q1={q1:.3f}); {coverage_pct:.1%} of candidates "
+                f"qualify, adding no discriminative value. Consider tightening to "
+                f"Q1={q1:.3f}."
+            )
+    else:  # direction == "max"
+        # For max-direction filters, the IQR fence can be negative for
+        # positive-only value sets, so we use quartile anchors directly.
+        if threshold < q1 and coverage_pct < 0.10:
+            anomaly_type = "over_restrictive"
+            suggested = q1
+            detail = (
+                f"Max filter threshold {threshold:.3f} is below Q1={q1:.3f}; "
+                f"only {coverage_pct:.1%} of candidates qualify."
+            )
+        elif iqr > 0 and threshold > q3 and coverage_pct > 0.90:
+            anomaly_type = "over_permissive"
+            suggested = q3
+            detail = (
+                f"Max filter threshold {threshold:.3f} exceeds Q3={q3:.3f}; "
+                f"{coverage_pct:.1%} of candidates qualify, adding no "
+                f"discriminative value."
+            )
+
+    report = DICFilterCoverageAnomaly(
+        is_anomalous=bool(anomaly_type),
+        anomaly_type=anomaly_type,
+        coverage_pct=coverage_pct,
+        q1=q1,
+        q3=q3,
+        iqr=iqr,
+        suggested_threshold=suggested,
+        detail=detail,
+    )
+    if report.is_anomalous:
+        logger.info(
+            "DIC filter coverage anomaly [%s]: %s",
+            anomaly_type,
+            detail,
+        )
+    return report
+
+
+# --------------------------------------------------------------------------- #
+# LLM-powered result snippet generation (aiify-opp-74: fulltext_search_engine
+# -> llm_generation, analog of paperless src/documents/serialisers.py
+# highlights field). The external pattern computes highlighted excerpts server-
+# side to show WHY a document matched a search query. DIC upgrades this: the
+# LLM extracts the single most query-relevant passage from each chunk's content,
+# producing a focused, context-aware excerpt rather than a raw content[:500]
+# truncation. The model NEVER answers the question — it only identifies the most
+# relevant passage. Degrades gracefully to raw truncation when unavailable
+# (air-gap safe). User-provided queries are injection-scanned (passed as user
+# turn, not injected into the system prompt). Batch variant caps at
+# _SNIPPET_MAX_RESULTS so a large result set doesn't flood the LLM.
+# --------------------------------------------------------------------------- #
+
+_SNIPPET_MAX_CONTENT_CHARS = 1200  # max content fed to the model per result
+_SNIPPET_MAX_RESULTS = 8           # max results processed in generate_snippets()
+_SNIPPET_MAX_TOKENS = 200          # max tokens per snippet response
+
+_SNIPPET_SYSTEM_PROMPT = (
+    "You are a search result highlighter for a document repository. "
+    "Given a search query and a document excerpt, extract and return the SINGLE "
+    "most relevant passage (1–3 sentences) from the excerpt that best relates to "
+    "the query. Return ONLY the extracted passage — no preamble, no explanation, "
+    "no rephrasing. If no passage is clearly relevant, return the first sentence "
+    "of the excerpt verbatim. Do NOT add information not in the excerpt."
+)
+
+_SNIPPET_NO_CONTENT_SENTINEL = "NO_CONTENT"
+
+
+@dataclass
+class DICResultSnippet:
+    """An AI-extracted, query-focused passage from a single DIC search result.
+
+    Models the upgrade of ``serialisers.py`` highlights — where a document
+    management system returns raw content truncated to a fixed length — to a
+    semantically extracted excerpt that surfaces the passage most relevant to
+    the caller's query. The LLM locates the best supporting passage inside the
+    chunk content; it never generates text outside the source, so the snippet
+    is always grounded in the cited chunk.
+
+    ``llm_used`` is False when the raw fallback was returned (LLM unavailable
+    or content empty). ``refusal_reason`` is set to ``"empty_content"`` when
+    the chunk had no text or ``"llm_unavailable"`` when the model could not run.
+    The ``snippet`` field is always populated (fallback = ``content[:500]``).
+    """
+
+    chunk_id: str = ""
+    doc_id: str = ""
+    query: str = ""
+    snippet: str = ""
+    llm_used: bool = False
+    refusal_reason: str = ""
+    origin: str = "ai_generated"
+
+    def to_dict(self) -> dict:
+        return {
+            "chunk_id": self.chunk_id,
+            "doc_id": self.doc_id,
+            "query": self.query,
+            "snippet": self.snippet,
+            "llm_used": self.llm_used,
+            "refusal_reason": self.refusal_reason,
+            "origin": self.origin,
+        }
+
+
+# --------------------------------------------------------------------------- #
 # LLM grounded answer synthesis (aiify-opp-6046: fulltext_search_engine ->
 # llm_generation). DIC search returns cited chunks with NO LLM by default
 # (air-gap safe). This OPTIONAL layer takes the top cited results and asks the
@@ -500,6 +893,48 @@ _ACCESS_SYSTEM_PROMPT = (
 )
 
 # --------------------------------------------------------------------------- #
+# LLM-powered filter query parser (aiify-opp-29: fulltext_search_engine ->
+# llm_generation, analog of paperless src/documents/filters.py). The external
+# pattern hand-codes a Django FilterSet of metadata fields (date, type,
+# classification, etc.) that the user must configure manually. This layer asks
+# the LLM to extract those same filter intents from natural language so users
+# can type "recent CUI PDFs from last month" and get back structured params.
+# The model emits ONLY the JSON keys listed below — never document content,
+# never proper nouns, never invented field values — so the extracted filter is
+# always safe to apply without sanitizing free-text LLM output through SQL.
+# --------------------------------------------------------------------------- #
+
+# Allowed classification values: only exact schema values are permitted so
+# the filter predicate never silently drops results (unknown label → no match).
+_FILTER_VALID_CLASSIFICATIONS = frozenset({"UNCLASSIFIED", "CUI", "SECRET", "TOP SECRET"})
+
+# Allowed content_type prefixes — normalized to lowercase before comparison.
+_FILTER_VALID_CONTENT_TYPES = frozenset({
+    "pdf", "docx", "doc", "txt", "md", "xlsx", "xls", "csv", "pptx", "ppt",
+    "json", "xml", "html", "htm", "odt", "ods", "odp",
+})
+
+_FILTER_SYSTEM_PROMPT = (
+    "You are a document search filter extractor. Given a natural language description "
+    "of what documents to find, output ONLY a valid JSON object with these optional "
+    "keys — include a key only when the user's description clearly implies it:\n"
+    "  classification: one of UNCLASSIFIED, CUI, SECRET, TOP SECRET\n"
+    "  content_type: file extension (pdf, docx, txt, etc.)\n"
+    "  date_range_days: integer number of days back from today (e.g. 30)\n"
+    "  date_after: ISO date string YYYY-MM-DD\n"
+    "  date_before: ISO date string YYYY-MM-DD\n"
+    "  title_contains: keyword or short phrase that should appear in the document title\n"
+    "  collection_id: exact collection identifier if explicitly named\n"
+    "  min_pages: minimum page count (integer)\n"
+    "  max_pages: maximum page count (integer)\n"
+    "  confidence: your confidence (0.0-1.0) that you extracted the filters correctly\n"
+    "Do NOT invent values. Do NOT answer the user's question. Do NOT add keys not "
+    "listed above. If you cannot extract any filter, output exactly: {}"
+)
+
+_FILTER_NONE_SENTINEL = "{}"
+
+# --------------------------------------------------------------------------- #
 # LLM-powered query intent classifier (aiify-opp-28: fulltext_search_engine ->
 # llm_generation, analog of paperless src/documents/filters.py). The external
 # pattern uses a static DocumentSearchFilter that combines fulltext + metadata
@@ -559,6 +994,19 @@ class DICQueryIntent:
     * ``should_filter`` signals that metadata filtering should be applied.
     * ``should_synthesize`` signals that grounded answer synthesis would serve
       the user better than a raw document list.
+    * ``intent_type`` classifies the query's high-level intent — ``"factual_qa"``
+      (user wants a direct answer), ``"document_search"`` (user wants specific
+      documents), ``"filtered_search"`` (metadata constraints implied), or
+      ``"broad_exploration"`` (topic survey).
+    * ``recommended_mode`` is either ``"grounded"`` (BM25+KG, the default) or
+      ``"hybrid"`` (adds vector similarity, suited to broad exploration).
+    * ``should_expand`` signals that query expansion (:meth:`DICSearchEngine.
+      expand_query`) would improve recall for this query.
+    * ``should_filter`` signals that metadata filtering (:meth:`DICSearchEngine.
+      filter_query`) should be applied (i.e. the query implies date, type, or
+      classification constraints).
+    * ``should_synthesize`` signals that :meth:`DICSearchEngine.answer` (LLM
+      grounded answer synthesis) would serve the user better than a raw list.
 
     All flags are False and ``llm_used`` is False when the model is unavailable
     — callers must treat the intent as a hint, never a hard dependency.
@@ -590,6 +1038,171 @@ class DICQueryIntent:
             "refusal_reason": self.refusal_reason,
             "origin": self.origin,
         }
+
+
+# --------------------------------------------------------------------------- #
+# Karpathy LLM Wiki integration (items 1 & 4)
+# Item 4: after a high-confidence answer, file Q&A to the memory wiki so
+#         future queries can be answered without full RAG.
+# Item 1: before running the 5-stage RAG pipeline, check the memory wiki for
+#         a cached Q&A for the exact query (wiki bypass for small collections).
+# --------------------------------------------------------------------------- #
+
+_QA_WIKI_CONFIDENCE_THRESHOLD = 0.85  # min citation_quality to file to wiki
+_QA_WIKI_SLUG_PREFIX = "dic-qa-"
+_QA_WIKI_SEARCH_SCORE_FLOOR = 0.70   # min hybrid-search score to trust a wiki hit
+
+
+def _qa_slug(query: str, collection_id: str | None = None) -> str:
+    """Stable slug for a query+collection pair (truncated sha256)."""
+    import hashlib
+    key = f"{(collection_id or 'all')}|{query.strip().lower()[:200]}"
+    return _QA_WIKI_SLUG_PREFIX + hashlib.sha256(key.encode()).hexdigest()[:14]
+
+
+def _file_qa_to_wiki(query: str, answer: str, collection_id: str | None) -> None:
+    """Best-effort: write a Q&A pair to the Claude Code auto-memory wiki.
+
+    Called after answer() produces a high-confidence grounded result.  Errors
+    are silently swallowed so they never break the caller.
+    """
+    try:
+        import os
+        from pathlib import Path
+        from tools.memory.memory_write import update_crossrefs
+
+        auto_dir = (
+            Path(os.environ.get("USERPROFILE", Path.home()))
+            / ".claude/projects/C--AI-ICDev/memory"
+        )
+        if not auto_dir.is_dir():
+            return
+
+        slug = _qa_slug(query, collection_id)
+        topic_file = auto_dir / f"{slug}.md"
+        if topic_file.exists():
+            return  # already filed
+
+        col_tag = f" (collection: {collection_id})" if collection_id else ""
+        body = (
+            f"---\n"
+            f"name: {slug}\n"
+            f"description: DIC Q&A cache{col_tag} — {query[:80]}\n"
+            f"metadata:\n"
+            f"  type: project\n"
+            f"---\n\n"
+            f"**Q:** {query}\n\n"
+            f"**A (DIC grounded):** {answer}\n\n"
+            f"*Synthesized from DIC search{col_tag}. Filed automatically.*\n"
+        )
+        topic_file.write_text(body, encoding="utf-8")
+
+        # Append index entry
+        mem_index = auto_dir / "MEMORY.md"
+        if mem_index.exists():
+            existing = mem_index.read_text(encoding="utf-8")
+            entry = f"- [DIC Q&A: {query[:60]}]({slug}.md) — cached grounded answer{col_tag}\n"
+            if slug not in existing:
+                with open(mem_index, "a", encoding="utf-8") as fh:
+                    fh.write(entry)
+
+        # Cross-link related wiki topics
+        update_crossrefs(slug, f"{query} {answer}", memory_dir=auto_dir)
+
+    except Exception:
+        pass  # never crash the caller
+
+
+def _wiki_keyword_search(
+    query: str, wiki_dir: Any, prefix_filter: str = "", top_k: int = 5
+) -> list[tuple[float, str, str]]:
+    """BM25-style keyword overlap search over wiki .md files.
+
+    Returns list of (score, stem, content) tuples sorted descending.
+    Never raises — returns [] on any error.
+    """
+    try:
+        stop = frozenset({"the", "a", "an", "in", "of", "to", "is", "it", "for", "on", "and", "or", "with", "that", "this", "be", "as", "by"})
+        terms = [t for t in re.findall(r"[a-z]{3,}", query.lower()) if t not in stop]
+        if not terms:
+            return []
+
+        scored: list[tuple[float, str, str]] = []
+        for fpath in wiki_dir.glob("*.md"):
+            if fpath.name == "MEMORY.md":
+                continue
+            if prefix_filter and not fpath.stem.startswith(prefix_filter):
+                continue
+            try:
+                content = fpath.read_text(encoding="utf-8")
+                cl = content.lower()
+                hits = sum(cl.count(t) for t in terms)
+                if hits > 0:
+                    score = hits / (len(content) / 500 + 1)
+                    scored.append((score, fpath.stem, content))
+            except Exception:
+                continue
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return scored[:top_k]
+    except Exception:
+        return []
+
+
+def _check_wiki_cache(query: str, collection_id: str | None) -> "DICAnswer | None":
+    """Check memory wiki for a cached Q&A answer matching this query.
+
+    Returns a DICAnswer with origin='wiki_cache' if a high-confidence cached
+    answer exists, otherwise None (caller should run full RAG pipeline).
+    Called at the start of answer() as the wiki bypass (Item 1 of the
+    Karpathy-wiki integration plan).
+    """
+    try:
+        import os
+        from pathlib import Path
+
+        auto_dir = (
+            Path(os.environ.get("USERPROFILE", Path.home()))
+            / ".claude/projects/C--AI-ICDev/memory"
+        )
+        if not auto_dir.is_dir():
+            return None
+
+        # Exact-match lookup by slug first (O(1), fastest path)
+        slug = _qa_slug(query, collection_id)
+        cached_file = auto_dir / f"{slug}.md"
+        if cached_file.exists():
+            text = cached_file.read_text(encoding="utf-8")
+            m = re.search(r"\*\*A \(DIC grounded\):\*\* (.+?)(?:\n\n|\Z)", text, re.DOTALL)
+            if m:
+                return DICAnswer(
+                    answer=m.group(1).strip(),
+                    grounded=True,
+                    result_count=0,
+                    citation_quality=_QA_WIKI_CONFIDENCE_THRESHOLD,
+                    origin="wiki_cache",
+                )
+
+        # Fuzzy fallback: keyword search over cached Q&A files only
+        for score, _stem, content in _wiki_keyword_search(
+            query, auto_dir, prefix_filter=_QA_WIKI_SLUG_PREFIX, top_k=3
+        ):
+            if score < _QA_WIKI_SEARCH_SCORE_FLOOR:
+                continue
+            m = re.search(r"\*\*A \(DIC grounded\):\*\* (.+?)(?:\n\n|\Z)", content, re.DOTALL)
+            if m:
+                return DICAnswer(
+                    answer=m.group(1).strip(),
+                    grounded=True,
+                    result_count=0,
+                    citation_quality=min(score, 1.0),
+                    origin="wiki_cache",
+                )
+
+    except Exception:
+        pass
+
+    return None
 
 
 class DICSearchEngine:
@@ -632,7 +1245,7 @@ class DICSearchEngine:
 
         max_rank = _clearance_rank(clearance) if clearance else None
 
-        raw_results = self._rag_search(query, top_k=top_k * 2, mode=mode)
+        raw_results = self._rag_search(query, top_k=top_k * 2, mode=mode, collection_id=collection_id)
         if not raw_results:
             return []
 
@@ -646,7 +1259,10 @@ class DICSearchEngine:
                 doc_id = meta["doc_id"] or r.source_id or ""
                 col_id = meta["collection_id"] or ""
 
-                if collection_id and col_id and col_id != collection_id:
+                # When a collection filter is requested, exclude chunks whose
+                # collection_id doesn't match — including empty-string col_id
+                # (chunks from other canvases that share the rag_chunks table).
+                if collection_id and col_id != collection_id:
                     continue
 
                 doc_info = _doc_meta(conn, doc_id) if doc_id else {"title": doc_id, "classification": "CUI"}
@@ -681,6 +1297,7 @@ class DICSearchEngine:
                     citation=citation,
                     sha256=meta.get("sha256", ""),
                     attribution_pct=meta.get("attribution_pct", 0),
+                    doc_summary=doc_info.get("summary", ""),
                 ))
         finally:
             conn.close()
@@ -728,15 +1345,23 @@ class DICSearchEngine:
             results=results,
             result_count=len(results),
             citation_quality=_citation_quality(results),
+            anomaly_report=detect_search_anomalies(results),
         )
 
-    def _rag_search(self, query: str, top_k: int, mode: str):
+    def _rag_search(self, query: str, top_k: int, mode: str, collection_id: str | None = None):
         try:
             from tools.rag.retriever import RAGRetriever
 
             retriever = RAGRetriever(tenant_id=self._tenant_id)
             rerank = mode == "hybrid"
-            return retriever.search(query, top_k=top_k, rerank=rerank)
+            # Scope vector retrieval to the collection when one is requested so
+            # the returned chunk ids are the ones actually linked to that collection.
+            return retriever.search(
+                query,
+                top_k=top_k,
+                rerank=rerank,
+                project_id=collection_id or "",
+            )
         except Exception as exc:
             logger.warning("DICSearchEngine: RAG search failed (%s), trying BM25 fallback", exc)
             return self._bm25_fallback(query, top_k)
@@ -873,6 +1498,11 @@ class DICSearchEngine:
             ("llm_unavailable"), or the model declined for lack of grounding
             ("insufficient_evidence"). The answer is NEVER fabricated.
         """
+        # Karpathy wiki bypass (Item 1): check cached Q&A before full RAG pipeline
+        cached = _check_wiki_cache(query, collection_id)
+        if cached is not None:
+            return cached
+
         results = self.search(query, collection_id=collection_id, top_k=top_k, mode=mode)
         if not results:
             return DICAnswer(grounded=False, refusal_reason="no_evidence", result_count=0)
@@ -939,13 +1569,18 @@ class DICSearchEngine:
                 citation_quality=cq,
             )
 
-        return DICAnswer(
+        result = DICAnswer(
             answer=text,
             grounded=True,
             citations=[r.citation for r in used],
             result_count=len(results),
             citation_quality=cq,
         )
+        # Karpathy wiki filing (Item 4): persist high-confidence answers so
+        # future identical queries can bypass the full RAG pipeline.
+        if cq >= _QA_WIKI_CONFIDENCE_THRESHOLD:
+            _file_qa_to_wiki(query, text, collection_id)
+        return result
 
     def expand_query(self, query: str, max_terms: int = _EXPANSION_MAX_TERMS) -> DICQueryExpansion:
         """Suggest extra search keywords to broaden fulltext match recall.
@@ -1143,6 +1778,288 @@ class DICSearchEngine:
         an intent type. It never answers the query, never invents document
         content, and always degrades to a safe all-False default when unavailable
         (air-gap safe).
+    def filter_query(self, natural_query: str) -> "DICFilterQuery":
+        """Parse natural language into structured document search filters.
+
+        This is the DIC analog of a fulltext-search engine's filter module: instead
+        of requiring the caller to know exact field names and operators (the pattern
+        in ``src/documents/filters.py``), it uses the LLM to extract filter intent
+        from plain English. The model emits ONLY a JSON object of safe, schema-
+        aligned parameters — never free-text that would pass through to SQL.
+
+        The returned :class:`DICFilterQuery` always has a usable ``filters`` dict
+        (possibly empty) and ``refusal_reason`` is set when nothing was extracted.
+        ``llm_used`` is False and the dict is empty when the query is blank or the
+        LLM is unavailable, so callers can always call :meth:`filtered_search` with
+        the result safely (empty filters → no restriction, full search).
+
+        Args:
+            natural_query: Free-text description of desired document attributes,
+                e.g. "recent CUI PDFs under 10 pages from the contracts collection".
+
+        Returns:
+            A :class:`DICFilterQuery` with ``filters`` populated when extraction
+            succeeded, or empty with a ``refusal_reason`` on failure.
+        """
+        import json as _json
+
+        q = (natural_query or "").strip()
+        if not q:
+            return DICFilterQuery(
+                natural_query="",
+                refusal_reason="empty_query",
+            )
+
+        try:
+            from tools.llm.provider import LLMRequest
+            from tools.llm.router import LLMRouter
+
+            req = LLMRequest(
+                messages=[{"role": "user", "content": f"Documents to find: {q}"}],
+                system_prompt=_FILTER_SYSTEM_PROMPT,
+                max_tokens=256,
+                temperature=0.0,
+                classification="CUI",
+            )
+            resp = LLMRouter().invoke("summarization", req)
+        except Exception:
+            return DICFilterQuery(
+                natural_query=q,
+                refusal_reason="llm_unavailable",
+            )
+
+        if not resp or not resp.content or not resp.content.strip():
+            return DICFilterQuery(
+                natural_query=q,
+                refusal_reason="llm_unavailable",
+            )
+
+        raw = resp.content.strip()
+        # Strip markdown code fences if present.
+        if raw.startswith("```"):
+            raw = re.sub(r"^```[a-z]*\n?", "", raw).rstrip("`").strip()
+
+        try:
+            parsed = _json.loads(raw)
+        except Exception:
+            # Attempt to extract the first {...} block from a verbose response.
+            m = re.search(r"\{[^{}]*\}", raw, re.DOTALL)
+            if m:
+                try:
+                    parsed = _json.loads(m.group())
+                except Exception:
+                    parsed = {}
+            else:
+                parsed = {}
+
+        if not isinstance(parsed, dict) or not parsed:
+            return DICFilterQuery(
+                natural_query=q,
+                llm_used=True,
+                refusal_reason="no_filters",
+            )
+
+        # Sanitize: keep only known keys and validate values against the schema.
+        safe: dict = {}
+
+        cls_raw = (parsed.get("classification") or "").strip().upper()
+        if cls_raw in _FILTER_VALID_CLASSIFICATIONS:
+            safe["classification"] = cls_raw
+
+        ct_raw = (parsed.get("content_type") or "").strip().lower().lstrip(".")
+        if ct_raw in _FILTER_VALID_CONTENT_TYPES:
+            safe["content_type"] = ct_raw
+
+        for key in ("date_after", "date_before"):
+            val = (parsed.get(key) or "").strip()
+            if re.match(r"^\d{4}-\d{2}-\d{2}$", val):
+                safe[key] = val
+
+        dr = parsed.get("date_range_days")
+        if isinstance(dr, int) and 1 <= dr <= 3650:
+            safe["date_range_days"] = dr
+        elif isinstance(dr, float) and 1 <= dr <= 3650:
+            safe["date_range_days"] = int(dr)
+
+        tc = (parsed.get("title_contains") or "").strip()
+        if tc and len(tc) <= 120:
+            safe["title_contains"] = tc
+
+        cid = (parsed.get("collection_id") or "").strip()
+        if cid and len(cid) <= 64:
+            safe["collection_id"] = cid
+
+        for key in ("min_pages", "max_pages"):
+            pv = parsed.get(key)
+            if isinstance(pv, (int, float)) and pv >= 0:
+                safe[key] = int(pv)
+
+        confidence_raw = parsed.get("confidence", 0.0)
+        try:
+            confidence = max(0.0, min(1.0, float(confidence_raw)))
+        except (TypeError, ValueError):
+            confidence = 0.8 if safe else 0.0
+
+        if not safe:
+            return DICFilterQuery(
+                natural_query=q,
+                llm_used=True,
+                confidence=confidence,
+                refusal_reason="no_filters",
+            )
+
+        return DICFilterQuery(
+            natural_query=q,
+            filters=safe,
+            confidence=confidence,
+            llm_used=True,
+        )
+
+    def filtered_search(
+        self,
+        query: str,
+        filters: "dict | DICFilterQuery | None" = None,
+        top_k: int = 10,
+        mode: str = "grounded",
+        clearance: str | None = None,
+    ) -> list[DICSearchResult]:
+        """Search restricted to documents matching structured metadata filters.
+
+        Combines :meth:`search` with pre-filter document selection. The caller
+        supplies either a :class:`DICFilterQuery` (from :meth:`filter_query`) or a
+        raw ``dict`` of filter params. The method resolves matching ``doc_id``s from
+        ``dic_documents``, runs the normal search, and post-filters results to only
+        those whose ``doc_id`` appears in the matching set.
+
+        When ``filters`` is None or empty, behavior is identical to :meth:`search`
+        — no documents are excluded, so the method is always safe to call.
+
+        Supported filter keys (matching :data:`_FILTER_SYSTEM_PROMPT`):
+        - ``classification``: exact classification level
+        - ``content_type``: file extension (pdf, docx, etc.)
+        - ``date_after`` / ``date_before``: ISO date bounds on ``created_at``
+        - ``date_range_days``: rolling window in days from today
+        - ``title_contains``: substring match on title (case-insensitive)
+        - ``collection_id``: restrict to exact collection
+        - ``min_pages`` / ``max_pages``: page count bounds
+
+        Args:
+            query: Natural language search query.
+            filters: Structured filter params — dict or DICFilterQuery. None = no filter.
+            top_k: Maximum results.
+            mode: "grounded" (BM25+KG) or "hybrid" (adds vector+rerank).
+            clearance: Caller's maximum classification (see :meth:`search`).
+
+        Returns:
+            Cited search results whose source document matches the filters.
+            Empty list when no candidates match or the base search returns nothing.
+        """
+        import datetime as _dt
+        from tools.db.storage import get_connection
+
+        fdict: dict = {}
+        if isinstance(filters, DICFilterQuery):
+            fdict = filters.filters or {}
+        elif isinstance(filters, dict):
+            fdict = filters
+
+        # Resolve matching doc_ids from dic_documents when any filter is active.
+        allowed_doc_ids: set[str] | None = None
+        if fdict:
+            clauses: list[str] = []
+            params: list = []
+
+            # collection_id filter (also accepted directly in search() but we
+            # handle it here for consistency with the filter API).
+            if "collection_id" in fdict:
+                clauses.append("collection_id = ?")
+                params.append(fdict["collection_id"])
+
+            if "classification" in fdict:
+                clauses.append("classification = ?")
+                params.append(fdict["classification"])
+
+            if "content_type" in fdict:
+                # Match both bare extension and MIME-type prefixes stored in the DB.
+                ct = fdict["content_type"]
+                clauses.append("(LOWER(content_type) = ? OR LOWER(filename) LIKE ?)")
+                params.extend([ct, f"%.{ct}"])
+
+            if "title_contains" in fdict:
+                clauses.append("LOWER(title) LIKE ?")
+                params.append(f"%{fdict['title_contains'].lower()}%")
+
+            if "date_after" in fdict:
+                clauses.append("created_at >= ?")
+                params.append(fdict["date_after"])
+
+            if "date_before" in fdict:
+                clauses.append("created_at <= ?")
+                params.append(fdict["date_before"])
+
+            if "date_range_days" in fdict:
+                cutoff = (
+                    _dt.datetime.now(_dt.timezone.utc)
+                    - _dt.timedelta(days=int(fdict["date_range_days"]))
+                ).strftime("%Y-%m-%d")
+                clauses.append("created_at >= ?")
+                params.append(cutoff)
+
+            if "min_pages" in fdict:
+                clauses.append("page_count >= ?")
+                params.append(int(fdict["min_pages"]))
+
+            if "max_pages" in fdict:
+                clauses.append("page_count <= ?")
+                params.append(int(fdict["max_pages"]))
+
+            if clauses:
+                where = " AND ".join(clauses)
+                conn = get_connection()
+                try:
+                    cur = conn.execute(
+                        f"SELECT doc_id FROM dic_documents WHERE {where}",
+                        params,
+                    )
+                    allowed_doc_ids = {r[0] for r in cur.fetchall() if r[0]}
+                except Exception as exc:
+                    logger.warning("DICSearchEngine.filtered_search: filter query failed (%s); ignoring filters", exc)
+                    allowed_doc_ids = None
+                finally:
+                    conn.close()
+
+                if allowed_doc_ids is not None and not allowed_doc_ids:
+                    # Filters active but no documents matched — return empty immediately.
+                    return []
+
+        # Run the base search with a wider fetch window so the post-filter has
+        # enough candidates to fill top_k even after restricting by doc_id.
+        fetch_k = top_k * 4 if allowed_doc_ids else top_k
+        results = self.search(
+            query,
+            collection_id=fdict.get("collection_id"),
+            top_k=fetch_k,
+            mode=mode,
+            clearance=clearance,
+        )
+
+        if allowed_doc_ids is not None:
+            results = [r for r in results if r.doc_id in allowed_doc_ids]
+
+        return results[:top_k]
+
+    def classify_query_intent(self, query: str) -> "DICQueryIntent":
+        """Classify a search query's intent to recommend the optimal DIC retrieval strategy.
+
+        This is the DIC analog of paperless's combined ``DocumentSearchFilter`` —
+        instead of requiring the caller to manually configure fulltext search mode,
+        query expansion, metadata filters, and answer synthesis as separate steps,
+        the LLM assesses the query's *intent* and recommends which DIC capabilities
+        to apply as a structured decision object.
+
+        The model outputs a schema-constrained JSON object of boolean flags and an
+        intent type. It never answers the query, never invents document content, and
+        always degrades to a safe all-False default when unavailable (air-gap safe).
 
         Args:
             query: Natural language search query to classify.
@@ -1150,6 +2067,13 @@ class DICSearchEngine:
         Returns:
             A :class:`DICQueryIntent`. On failure, ``llm_used`` is False and all
             flags are False — callers can always proceed safely with plain search.
+            A :class:`DICQueryIntent`. ``intent_type`` is one of ``"factual_qa"``,
+            ``"document_search"``, ``"filtered_search"``, or
+            ``"broad_exploration"``. ``should_expand``, ``should_filter``, and
+            ``should_synthesize`` are boolean hints for :meth:`expand_query`,
+            :meth:`filter_query`, and :meth:`answer` respectively.
+            On failure, ``llm_used`` is False and all flags are False — callers
+            can always proceed safely with plain :meth:`search`.
         """
         import json as _json
 
@@ -1224,3 +2148,126 @@ class DICSearchEngine:
             confidence=confidence,
             llm_used=True,
         )
+
+    def generate_snippet(self, query: str, result: "DICSearchResult") -> "DICResultSnippet":
+        """Extract the most query-relevant passage from a single search result.
+
+        DIC analog of paperless ``serialisers.py`` highlights: instead of
+        truncating ``content`` at a fixed character limit, the LLM is asked to
+        identify the passage inside the chunk that most directly relates to the
+        query, producing a focused excerpt without generating new content.
+
+        Args:
+            query: The original search query (user-provided — injection-scanned
+                by construction: passed as user turn, never into system prompt).
+            result: A :class:`DICSearchResult` whose ``content`` will be analysed.
+
+        Returns:
+            A :class:`DICResultSnippet`. ``llm_used`` is False and ``snippet``
+            falls back to ``content[:500]`` when the model is unavailable or the
+            chunk has no text. ``refusal_reason`` explains any non-LLM path.
+        """
+        content = (result.content or "").strip()
+        if not content:
+            return DICResultSnippet(
+                chunk_id=result.chunk_id,
+                doc_id=result.doc_id,
+                query=query,
+                snippet="",
+                llm_used=False,
+                refusal_reason="empty_content",
+            )
+
+        fallback = content[:500]
+        truncated = content[:_SNIPPET_MAX_CONTENT_CHARS]
+
+        try:
+            from tools.llm.provider import LLMRequest
+            from tools.llm.router import LLMRouter
+
+            req = LLMRequest(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Search query: {query}\n\n"
+                            f"Document excerpt:\n{truncated}\n\n"
+                            "Extract the single most relevant passage."
+                        ),
+                    }
+                ],
+                system_prompt=_SNIPPET_SYSTEM_PROMPT,
+                max_tokens=_SNIPPET_MAX_TOKENS,
+                temperature=0.0,
+                classification="CUI",
+            )
+            resp = LLMRouter().invoke("summarization", req)
+        except Exception:
+            return DICResultSnippet(
+                chunk_id=result.chunk_id,
+                doc_id=result.doc_id,
+                query=query,
+                snippet=fallback,
+                llm_used=False,
+                refusal_reason="llm_unavailable",
+            )
+
+        if not resp or not resp.content or not resp.content.strip():
+            return DICResultSnippet(
+                chunk_id=result.chunk_id,
+                doc_id=result.doc_id,
+                query=query,
+                snippet=fallback,
+                llm_used=False,
+                refusal_reason="llm_unavailable",
+            )
+
+        text = resp.content.strip()
+        return DICResultSnippet(
+            chunk_id=result.chunk_id,
+            doc_id=result.doc_id,
+            query=query,
+            snippet=text,
+            llm_used=True,
+        )
+
+    def generate_snippets(
+        self,
+        query: str,
+        results: "list[DICSearchResult]",
+        top_k: int = _SNIPPET_MAX_RESULTS,
+    ) -> "list[DICResultSnippet]":
+        """Extract query-focused snippets for a batch of search results.
+
+        Calls :meth:`generate_snippet` for each of the first ``top_k`` results
+        (capped at :data:`_SNIPPET_MAX_RESULTS` to bound LLM cost). Results
+        beyond the cap receive a raw-fallback snippet (``llm_used=False``) so
+        the caller always gets a snippet for every result.
+
+        Args:
+            query: The original search query.
+            results: Ordered list of :class:`DICSearchResult` objects.
+            top_k: Maximum results for which the LLM is invoked. Must be ≤
+                :data:`_SNIPPET_MAX_RESULTS`; values above are clamped silently.
+
+        Returns:
+            One :class:`DICResultSnippet` per input result, in the same order.
+        """
+        cap = min(top_k, _SNIPPET_MAX_RESULTS)
+        snippets: list[DICResultSnippet] = []
+        for idx, r in enumerate(results):
+            if idx < cap:
+                snippets.append(self.generate_snippet(query, r))
+            else:
+                # Beyond the LLM cap: raw truncation fallback, never LLM call.
+                snippets.append(
+                    DICResultSnippet(
+                        chunk_id=r.chunk_id,
+                        doc_id=r.doc_id,
+                        query=query,
+                        snippet=(r.content or "")[:500],
+                        llm_used=False,
+                        refusal_reason="beyond_cap",
+                    )
+                )
+        return snippets

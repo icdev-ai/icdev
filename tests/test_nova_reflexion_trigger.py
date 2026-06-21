@@ -1,50 +1,40 @@
 # CUI // SP-CTI
-"""Test: Wire reflexion_loop reflex to fire on ACE instance completion.
+"""Test: acw-nova-02 — reflexion_loop fires on ACE instance completion.
 
-Acceptance: completing an ACE instance creates a new agent_execution_trace row.
-Tests:
-  1. run_for_instance() directly creates a trace row.
-  2. Publishing task.completed on nova canvas fires the handler (full event bus flow).
-  3. ACEController._emit_task_completed() triggers the full chain.
+Verifies that when an ACE instance transitions to 'complete' state:
+1. A task.completed event is emitted to ace_events
+2. ACEEventDispatcher routes it to the reflexion_loop role
+3. An agent_execution_trace row is written within the dispatch cycle
+
+All assertions run synchronously (no background threads); the DB is the
+SQLite test backend forced by conftest.py.
 """
+
 from __future__ import annotations
 
-import importlib
-import sqlite3
+import os
 import sys
+import uuid
 from pathlib import Path
-from unittest.mock import patch
+
+# Repo root on path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+# Disable co-learning so reflexion_loop.run() is a fast no-op
+os.environ.setdefault("ICDEV_HARNESS_COLEARN", "false")
 
 import pytest
 
-_BASE = Path(__file__).resolve().parents[1]
-if str(_BASE) not in sys.path:
-    sys.path.insert(0, str(_BASE))
 
 # ---------------------------------------------------------------------------
-# Minimal in-memory schema — all tables used by the event bus + trace logger
+# Helpers
 # ---------------------------------------------------------------------------
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS canvas_events (
-    id            TEXT PRIMARY KEY,
-    source_canvas TEXT NOT NULL,
-    target_canvas TEXT,
-    event_type    TEXT NOT NULL,
-    payload_json  TEXT NOT NULL DEFAULT '{}',
-    created_at    TEXT NOT NULL,
-    consumed_at   TEXT
-);
-CREATE TABLE IF NOT EXISTS audit_trail (
-    id              TEXT PRIMARY KEY,
-    project_id      TEXT,
-    event_type      TEXT,
-    actor           TEXT,
-    action          TEXT NOT NULL,
-    details         TEXT,
-    affected_files  TEXT,
-    classification  TEXT DEFAULT 'CUI'
-);
+def _unique(prefix: str = "inst") -> str:
+    return f"ace-test-{prefix}-{uuid.uuid4().hex[:8]}"
+
+
+_TRACES_DDL = """
 CREATE TABLE IF NOT EXISTS agent_execution_traces (
     trace_id          TEXT PRIMARY KEY,
     task_id           TEXT NOT NULL,
@@ -57,136 +47,155 @@ CREATE TABLE IF NOT EXISTS agent_execution_traces (
     started_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     completed_at      TEXT NOT NULL DEFAULT '',
     created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+)
 """
 
 
-class _NoClose:
-    """Proxy that delegates to the real connection but ignores .close()."""
-
-    def __init__(self, conn: sqlite3.Connection) -> None:
-        self._c = conn
-
-    def execute(self, *a, **kw):
-        return self._c.execute(*a, **kw)
-
-    def executescript(self, *a, **kw):
-        return self._c.executescript(*a, **kw)
-
-    def commit(self):
-        return self._c.commit()
-
-    def close(self):
-        pass
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *args):
-        pass
-
-
-@pytest.fixture()
-def mem_db():
-    """In-memory SQLite with canvas_events, audit_trail, and agent_execution_traces."""
-    conn = sqlite3.connect(":memory:")
-    conn.row_factory = sqlite3.Row
-    conn.executescript(_SCHEMA)
+def _ensure_trace_tables(conn) -> None:
+    """Ensure agent_execution_traces table exists (idempotent)."""
+    conn.execute(_TRACES_DDL)
     conn.commit()
-    return conn
 
 
-@pytest.fixture(autouse=True)
-def _clean_listeners():
-    """Restore event_bus._LISTENERS after each test to avoid cross-test bleed."""
-    event_bus_mod = importlib.import_module("icdev.tools.canvas.event_bus")
-    saved = dict(event_bus_mod._LISTENERS)
-    yield
-    event_bus_mod._LISTENERS.clear()
-    event_bus_mod._LISTENERS.update(saved)
-
-
-# ---------------------------------------------------------------------------
-# Tests
-# ---------------------------------------------------------------------------
-
-
-def test_run_for_instance_creates_trace(mem_db):
-    """reflexion_loop.run_for_instance() inserts an agent_execution_trace row."""
-    proxy = _NoClose(mem_db)
-
-    with patch("tools.db.storage.get_connection", return_value=proxy):
-        from tools.nova.reflexion_loop import run_for_instance
-
-        trace_id = run_for_instance("ace-testinstance001")
-
-    row = mem_db.execute(
-        "SELECT trace_id, task_type, outcome FROM agent_execution_traces WHERE trace_id = ?",
-        (trace_id,),
+def _trace_count(conn, task_type_prefix: str) -> int:
+    _ensure_trace_tables(conn)
+    rows = conn.execute(
+        "SELECT COUNT(*) FROM agent_execution_traces WHERE task_type LIKE ?",
+        (f"{task_type_prefix}%",),
     ).fetchone()
-
-    assert row is not None, "Expected a trace row but found none"
-    assert row["task_type"] == "ace_instance"
-    assert row["outcome"] == "success"
+    return int(rows[0]) if rows else 0
 
 
-def test_event_bus_dispatches_to_reflexion_handler(mem_db):
-    """Publishing task.completed on nova canvas triggers a new trace row."""
-    proxy = _NoClose(mem_db)
-    event_bus_mod = importlib.import_module("icdev.tools.canvas.event_bus")
-    event_bus_mod._LISTENERS.clear()
+# ---------------------------------------------------------------------------
+# Test 1: event_bus.emit writes a task.completed row to ace_events
+# ---------------------------------------------------------------------------
 
-    with patch("icdev.tools.canvas.event_bus.get_connection", return_value=proxy), \
-         patch("tools.db.storage.get_connection", return_value=proxy):
+def test_emit_completion_event_writes_ace_event():
+    """_emit_completion_event inserts a task.completed row into ace_events."""
+    from icdev.tools.ace.controller import ACEController
+    from icdev.tools.ace.db.init_db import init as _init_ace
+    from icdev.tools.db.storage import get_canvas_connection
 
-        from tools.nova.reflexion_loop import register
-        register()
+    _init_ace()
+    instance_id = _unique("emit")
 
-        count_before = mem_db.execute(
-            "SELECT COUNT(*) FROM agent_execution_traces WHERE task_type = 'ace_instance'"
-        ).fetchone()[0]
+    # Directly call the static method under test
+    ACEController._emit_completion_event(instance_id)
 
-        event_bus_mod.publish(
-            source_canvas="ace",
-            event_type="task.completed",
-            payload_dict={"trigger": "instance_complete", "instance_id": "ace-inttest001"},
-            target_canvas="nova",
-        )
+    conn = get_canvas_connection("ICDEV_ACE_DB_URL")
+    try:
+        row = conn.execute(
+            "SELECT topic, source_canvas, source_id FROM ace_events "
+            "WHERE source_id = ? AND topic = 'task.completed' LIMIT 1",
+            (instance_id,),
+        ).fetchone()
+    finally:
+        conn.close()
 
-        count_after = mem_db.execute(
-            "SELECT COUNT(*) FROM agent_execution_traces WHERE task_type = 'ace_instance'"
-        ).fetchone()[0]
+    assert row is not None, "task.completed event not found in ace_events"
+    topic = row[0] if isinstance(row, (list, tuple)) else row["topic"]
+    canvas = row[1] if isinstance(row, (list, tuple)) else row["source_canvas"]
+    assert topic == "task.completed"
+    assert canvas == "ace"
 
-    assert count_after > count_before, (
-        f"Expected a new agent_execution_trace row after task.completed event; "
-        f"got {count_after} (was {count_before})"
+
+# ---------------------------------------------------------------------------
+# Test 2: reflexion_loop role exists and declares task.completed in listen_topics
+# ---------------------------------------------------------------------------
+
+def test_reflexion_loop_role_loaded():
+    """reflexion_loop role YAML is loadable and listens to task.completed."""
+    from icdev.tools.ace.role_loader import RoleLoader
+
+    loader = RoleLoader()
+    role = loader.get_role("reflexion_loop")
+    assert role is not None, "reflexion_loop role not found by RoleLoader"
+    topics = role.communication.get("listen_topics") or []
+    assert "task.completed" in topics, (
+        f"reflexion_loop role does not listen to task.completed; got {topics}"
+    )
+    assert role.genesis_reflex == "reflexion_loop", (
+        f"genesis_reflex should be 'reflexion_loop', got {role.genesis_reflex!r}"
     )
 
 
-def test_ace_controller_emit_task_completed_creates_trace(mem_db):
-    """ACEController._emit_task_completed() triggers the full reflexion chain."""
-    proxy = _NoClose(mem_db)
-    event_bus_mod = importlib.import_module("icdev.tools.canvas.event_bus")
-    event_bus_mod._LISTENERS.clear()
+# ---------------------------------------------------------------------------
+# Test 3: dispatcher creates an agent_execution_trace when processing the event
+# ---------------------------------------------------------------------------
 
-    with patch("icdev.tools.canvas.event_bus.get_connection", return_value=proxy), \
-         patch("tools.db.storage.get_connection", return_value=proxy):
+def test_dispatcher_creates_trace_on_task_completed():
+    """Processing a task.completed event for the reflexion_loop role creates a trace row."""
+    from icdev.tools.ace.db.init_db import init as _init_ace
+    from icdev.tools.db.storage import get_connection
+    from icdev.tools.ace.event_bus import emit as ace_emit
+    from icdev.tools.ace.event_dispatcher import ACEEventDispatcher
 
-        from tools.nova.reflexion_loop import register
-        register()
+    _init_ace()
+    trace_type_prefix = "ace.task.completed"
 
-        count_before = mem_db.execute(
-            "SELECT COUNT(*) FROM agent_execution_traces WHERE task_type = 'ace_instance'"
-        ).fetchone()[0]
+    # Baseline (fresh connection)
+    conn_pre = get_connection()
+    _ensure_trace_tables(conn_pre)
+    count_before = _trace_count(conn_pre, trace_type_prefix)
+    conn_pre.close()
 
-        from icdev.tools.ace.controller import ACEController
-        ACEController._emit_task_completed("ace-ctrl-test001")
+    instance_id = _unique("disp")
 
-        count_after = mem_db.execute(
-            "SELECT COUNT(*) FROM agent_execution_traces WHERE task_type = 'ace_instance'"
-        ).fetchone()[0]
+    # Emit the event that would be fired on ACE instance completion
+    ace_emit(
+        "task.completed",
+        {"trigger": "instance_complete", "instance_id": instance_id},
+        source_canvas="ace",
+        source_id=instance_id,
+    )
+
+    # Process synchronously (bypasses the 5s background poll)
+    dispatcher = ACEEventDispatcher()
+    dispatcher._process_pending()
+
+    # Reopen to see committed trace rows
+    conn_post = get_connection()
+    count_after = _trace_count(conn_post, trace_type_prefix)
+    conn_post.close()
 
     assert count_after > count_before, (
-        f"Expected a new trace row after ACEController._emit_task_completed(); "
-        f"got {count_after} (was {count_before})"
+        f"Expected at least one new agent_execution_trace row with task_type "
+        f"starting with '{trace_type_prefix}', but count went {count_before} → {count_after}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Test 4: full round-trip via ACEController._emit_completion_event + dispatcher
+# ---------------------------------------------------------------------------
+
+def test_full_round_trip_emit_and_dispatch():
+    """Complete flow: emit completion event → dispatch → trace created."""
+    from icdev.tools.ace.db.init_db import init as _init_ace
+    from icdev.tools.ace.controller import ACEController
+    from icdev.tools.ace.event_dispatcher import ACEEventDispatcher
+    from icdev.tools.db.storage import get_connection
+
+    _init_ace()
+
+    # Snapshot count before (fresh connection each time to avoid SQLite isolation)
+    conn_before = get_connection()
+    _ensure_trace_tables(conn_before)
+    instance_id = _unique("rt")
+    prefix = "ace.task.completed"
+    before = _trace_count(conn_before, prefix)
+    conn_before.close()
+
+    ACEController._emit_completion_event(instance_id)
+
+    dispatcher = ACEEventDispatcher()
+    dispatcher._process_pending()
+
+    # Reopen connection so we see the trace committed by _launch_genesis_reflex
+    conn_after = get_connection()
+    after = _trace_count(conn_after, prefix)
+    conn_after.close()
+
+    assert after > before, (
+        f"Round-trip: no trace created after emit+dispatch "
+        f"(before={before}, after={after})"
     )

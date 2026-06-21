@@ -467,6 +467,112 @@ boundary_canvas:
     - compliance snapshot
     - control assessment
 
+# AI Coworker domain — autonomous peer agents that execute tasks alongside humans
+ai_coworker:
+  name: "AI coworker"
+  g2_category_url: "https://www.g2.com/categories/ai-coding-assistants"
+  capterra_category_url: "https://www.capterra.com/artificial-intelligence-software/"
+  trustradius_category_url: "https://www.trustradius.com/ai-assistants"
+  producthunt_topic: "ai-agents"
+  keywords:
+    - AI coworker
+    - autonomous coding agent
+    - software engineering agent
+    - Devin
+    - SWE-agent
+    - OpenDevin
+    - GitHub Copilot Workspace
+    - multi-agent team
+    - task delegation AI
+    - background agent execution
+    - persistent agent memory
+    - multi-turn agent session
+    - trust calibration
+    - human in the loop
+    - role specialization
+    - 24x7 agent
+    - always-on AI
+    - autonomous workflow
+    - agent skill evolution
+    - co-learning agent
+    - virtual team member
+    - AI developer agent
+    - agentic coding
+    - CrewAI
+    - AutoGen
+
+# AI Digital Helper domain — proactive always-on assistants that initiate actions
+ai_digital_helper:
+  name: "AI digital helper"
+  g2_category_url: "https://www.g2.com/categories/ai-assistants"
+  capterra_category_url: "https://www.capterra.com/ai-assistant-software/"
+  trustradius_category_url: "https://www.trustradius.com/ai-assistants"
+  producthunt_topic: "productivity"
+  keywords:
+    - AI digital helper
+    - proactive AI assistant
+    - always-on AI
+    - 24x7 AI
+    - context-aware AI
+    - proactive notifications
+    - AI scheduler
+    - intelligent scheduling
+    - Reclaim.ai
+    - Motion AI
+    - Clockwise
+    - proactive automation
+    - smart assistant
+    - ambient computing
+    - persistent context
+    - background AI agent
+    - push notifications AI
+    - AI calendar management
+    - automated follow-up
+    - digital concierge
+    - event-driven AI
+    - notification engine
+    - ambient intelligence
+    - daily digest AI
+    - proactive task management
+    - AI status updates
+
+# AI Assistant domain — conversational multi-turn agents with session continuity
+ai_assistant:
+  name: "AI assistant"
+  g2_category_url: "https://www.g2.com/categories/conversational-ai-platform"
+  capterra_category_url: "https://www.capterra.com/chatbot-software/"
+  trustradius_category_url: "https://www.trustradius.com/conversational-ai-platforms"
+  producthunt_topic: "ai"
+  keywords:
+    - AI assistant
+    - conversational AI
+    - ChatGPT
+    - Claude
+    - Gemini
+    - Perplexity
+    - multi-turn conversation
+    - session continuity
+    - conversation memory
+    - persistent context
+    - persona consistency
+    - hallucination reduction
+    - grounded AI
+    - citation AI
+    - explainable AI
+    - RAG assistant
+    - domain-specific assistant
+    - enterprise chatbot
+    - AI trust
+    - AI explainability
+    - conversational UX
+    - chat history
+    - context window management
+    - AI persona
+    - multimodal assistant
+    - AI feedback loop
+    - RLHF
+    - constitutional AI
+
 # =========================================================================
 # Source Adapters
 # =========================================================================
@@ -921,6 +1027,41 @@ data_mapping:
     - data pipeline mapping
     - XSLT mapping
     - SQL transformation
+
+# =========================================================================
+# Audit & Governance
+# =========================================================================
+knowledge_management:
+  name: "AI knowledge management and research notebooks"
+  g2_category_url: "https://www.g2.com/categories/knowledge-management"
+  capterra_category_url: "https://www.capterra.com/knowledge-management-software/"
+  trustradius_category_url: "https://www.trustradius.com/knowledge-management"
+  producthunt_topic: "productivity"
+  keywords:
+    - notebook LM
+    - AI research notebook
+    - knowledge management AI
+    - self-hosted AI notes
+    - local LLM knowledge base
+    - RAG notebook
+    - open notebook
+    - private AI research
+
+ai_workflow_automation:
+  name: "AI-driven workflow and task automation platforms"
+  g2_category_url: "https://www.g2.com/categories/ai-agents"
+  capterra_category_url: "https://www.capterra.com/automation-software/"
+  trustradius_category_url: "https://www.trustradius.com/workflow-automation"
+  producthunt_topic: "automation"
+  keywords:
+    - AI workflow automation
+    - natural language task automation
+    - no-code AI agent
+    - agentic workflow
+    - AI coworker
+    - local desktop AI agent
+    - air-gap AI automation
+    - reusable AI skills
 
 # =========================================================================
 # Audit & Governance

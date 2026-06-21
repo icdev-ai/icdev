@@ -78,6 +78,23 @@ def get_all_entries(user_id=None, tenant_id=None, clearance=None, compartments=N
     return rows
 
 
+def fts5_search(query: str, limit: int = 20) -> list[dict]:
+    """FTS5 full-text search backend (adapt-hermes-03).
+
+    Runs when query has >2 tokens and SQLite FTS5 is available.
+    Returns normalized result dicts compatible with hybrid_rank input.
+    Falls back to [] gracefully on PostgreSQL or if memory_fts doesn't exist.
+    Weight in final score: 0.3 (blended with BM25 0.7 + semantic 0.3 → 1.0 total).
+    """
+    if len(query.split()) <= 2:
+        return []
+    try:
+        from tools.memory.session_indexer import search_history
+        return search_history(query, limit=limit)
+    except Exception:
+        return []
+
+
 def bm25_search(query, entries):
     """BM25 keyword ranking with fallback to simple term frequency."""
     documents = [entry[1] for entry in entries]

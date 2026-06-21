@@ -8,7 +8,8 @@ RBAC+ABAC+RLS access control.
 
 | Tool | Purpose |
 |------|---------|
-| `tools/document_intelligence/extractors.py` | Built-in air-gap-safe file extractors. Returns `Extraction(text, provider, content_type, page_count, title, metadata, warnings)`. Supports PDF (pypdf), DOCX (python-docx), XLSX (openpyxl), PPTX (python-pptx), PNG (pytesseract/easyocr), HTML (strip-html), TXT (plain read). All formats degrade gracefully — missing library yields `text=""` + warning rather than raising. Called by `ingest_orchestrator.py` before chunking. |
+| `tools/document_intelligence/extractors.py` | Built-in air-gap-safe file extractors. Returns `Extraction(text, provider, content_type, page_count, title, metadata, warnings)`. Supports PDF (pypdf), DOCX (python-docx), XLSX (openpyxl), PPTX (python-pptx), PNG (pytesseract/easyocr), HTML (strip-html), TXT (plain read). All formats degrade gracefully — missing library yields `text=""` + warning rather than raising. Called by `ingest_orchestrator.py` before chunking. MarkItDown is tried first for DOCX/PPTX/XLSX/images/audio when installed (see converter below). |
+| `tools/document_intelligence/converters/markitdown_adapter.py` | Optional enhanced extractor wrapping Microsoft MarkItDown (pip install markitdown). Converts DOCX/PPTX/XLSX/PDF/HTML/images/audio to structured Markdown with header/table preservation. Gracefully degrades to `Extraction(text="", provider="markitdown-unavailable")` when library is absent. `should_use_markitdown(ext)` guards the dispatch in `extract_file()`. `SUPPORTED_EXTENSIONS` frozenset lists all handled formats; `_PREFER_BUILTIN` excludes .txt/.md/.py (adapt-md-02/03). |
 | `tools/document_intelligence/ingest_orchestrator.py` | Route a file → provider (by extension) → extract → REUSE `icdev.tools.rag.chunker.chunk_content` + `IngestionManager.ingest_source` to chunk/embed/upsert into the vector store → bridge each chunk into the KG via `rag_to_kg_ingester.ingest_chunk_to_kg` → write `dic_documents` + initial `dic_versions(origin='human_authored', status='approved')` + `dic_chunk_links` (rag chunk → doc + page/section). Stamps `tenant_id`/`classification` from the caller's security context on every row. |
 | `python -m tools.document_intelligence` | Headless CLI: `--ingest <path> --collection <id> [--tenant ID] [--classification C] [--created-by U] [--no-embed] [--no-kg] [--json]`. |
 
@@ -71,7 +72,7 @@ CLI: `python -m tools.document_intelligence.acoic {drift|map|fragment|approve|re
 
 | Tool | Purpose |
 |------|---------|
-| `tools/document_intelligence/search_engine.py` | DIC Grounded Search Engine. Default mode: BM25 + KG traversal (NO LLM, air-gap safe). Optional hybrid mode adds vector similarity + RRF fusion + cross-encoder rerank. Every result carries a mandatory citation pack; results with no traceable source are suppressed. `DICSearchEngine.search(query, collection_id, top_k, mode)` returns `list[DICSearchResult]` each with a `Citation` (doc_id, title, version_id, page, section, chunk_id). Falls back to pure SQL BM25 (`rag_chunks`) when the vector store is unavailable. |
+| `tools/document_intelligence/search_engine.py` | DIC Grounded Search Engine. Default mode: BM25 + KG traversal (NO LLM, air-gap safe). Optional hybrid mode adds vector similarity + RRF fusion + cross-encoder rerank. Every result carries a mandatory citation pack; results with no traceable source are suppressed. `DICSearchEngine.search(query, collection_id, top_k, mode)` returns `list[DICSearchResult]` each with a `Citation` (doc_id, title, version_id, page, section, chunk_id). Falls back to pure SQL BM25 (`rag_chunks`) when the vector store is unavailable. **Karpathy wiki integration:** `DICSearchEngine.answer()` checks the memory wiki for a cached grounded Q&A before running RAG (`_check_wiki_cache`) and files high-confidence answers back to the wiki after synthesis (`_file_qa_to_wiki`); `_wiki_keyword_search()` enables fuzzy cache lookup. |
 
 ### Key API
 
@@ -137,6 +138,11 @@ print(update["content"], update["citation_count"], update["status"])
 | Tool | Purpose |
 |------|---------|
 | `tools/document_intelligence/style_engine.py` | DIC Style Engine — deterministic "one voice" gate. Checks document section text against configurable rules in `args/dic_style_rules.yaml`. No LLM required; all checks are regex + heuristic (air-gap safe). `check_style(text)` returns `StyleResult(score, passed, violations, stats)` where each `Violation` carries `rule_id`, `severity` (error/warning/info), `message`, `suggestion`, and `match`. `check_sections(sections)` accepts a list of `{heading, content}` dicts and returns an `overall_score` plus per-section results. Rule types: `forbidden_terms`/`replacement_terms` (regex term matching), `passive_ratio` (passive-voice sentence ratio), `sentence_length` (avg + per-sentence word count), `acronym_check` (undefined first-use detection). Score starts at 100 and deducts per violation (error: −15, warning: −5, info: −1); passing threshold is configurable via `meta.passing_score` in the YAML (default 70). |
+## Edit History
+
+| Tool | Purpose |
+|------|---------|
+| `tools/document_intelligence/history_recorder.py` | Append-only NIST AU audit trail for DIC section content changes. `record_edit(section_id, editor, content_before, content_after, ...)` skips no-ops (before == after), computes a `char_delta`, generates a truncated unified diff via stdlib `difflib`, and inserts into `dic_edit_history` (immutable — no UPDATE/DELETE). When `|char_delta| > 50`, best-effort calls `consistency_checker.extract_changed_concepts` + `find_related_docs` and emits `dic.consistency_flag` canvas events to related documents. `get_section_history(section_id, limit, since)` returns edit rows most-recent first. All rows carry `tenant_id`/`classification` (RLS-compatible). |
 
 ### Key API
 
@@ -158,6 +164,18 @@ print(report["overall_score"], report["passed"])
 | Tool | Purpose |
 |------|---------|
 | `tools/document_intelligence/filters.py` | DIC Adaptive Document Filters — replaces hardcoded relevance/size/age thresholds with statistically-derived bounds (IQR fence and Z-score) computed from the live corpus. `filter_by_relevance(docs, scores)`, `filter_by_size(docs)`, and `filter_by_age(docs)` return filtered lists; anomalous outliers are flagged for HITL review rather than silently dropped. `anomaly_report(docs)` returns a dict summarising which documents triggered each filter and why. Falls back to conservative constants (`_MIN_RELEVANCE`, `_MAX_DOC_SIZE_MB`, `_MAX_AGE_DAYS`) when the corpus is too small for statistical bounds (< 4 samples). No LLM calls — pure statistics (stdlib `statistics`). |
+from tools.document_intelligence.history_recorder import record_edit, get_section_history
+
+edit_id = record_edit("sec_abc123", "alice", old_content, new_content)
+# Returns new edit_id str, or None if before == after (no-op)
+
+history = get_section_history("sec_abc123", limit=20, since="2026-01-01T00:00:00+00:00")
+# Returns list of dicts: edit_id, section_id, doc_id, version_id, editor, char_delta, diff_summary, edited_at, classification
+```
+
+### Table
+
+- `dic_edit_history` — append-only audit log (edit_id, section_id, doc_id, version_id, editor, content_before, content_after, char_delta, diff_summary, edited_at, tenant_id, classification). `_ensure_table()` creates it on first use.
 
 ## Analytics & Discovery
 
@@ -165,12 +183,22 @@ print(report["overall_score"], report["passed"])
 |------|---------|
 | `tools/document_intelligence/analytics_engine.py` | DIC Analytics Engine — document-level analytics, pattern detection, anomaly detection, and scenario impact analysis over the KG and RAG layers. All queries use `get_connection()` so RLS applies. No LLM calls — pure graph and SQL analytics. |
 | `tools/document_intelligence/explorer.py` | DIC KG "Buried Bodies" Explorer. Surfaces: orphaned documents (no collection/chunks/versions), single-owner tribal knowledge, undocumented KG dependencies, contradictions between overlapping docs, and superseded versions. All queries are RLS-filtered by `tenant_id`. No LLM calls — pure graph analytics. |
+| `tools/document_intelligence/consistency_checker.py` | Cross-document concept overlap detector for propagating review flags when source content changes. `extract_changed_concepts(before, after)` returns new noun phrases (no-NLTK tokenizer, stop-word filtered, capped at 50 terms). `find_related_docs(doc_id, changed_concepts, tenant_id, limit)` walks `kg_nodes`/`kg_graphs` Python-side (avoids SQL JSON dialect issues) to find docs sharing concept nodes with the changed document. Returns `[{doc_id, doc_title, collection_id, last_updated, matching_concepts}]`. All KG reads use `get_connection()` so RLS applies. |
 
 ## Flask Blueprint
 
 | Tool | Purpose |
 |------|---------|
-| `tools/document_intelligence/blueprint.py` | Document Intelligence Canvas Flask Blueprint. Registers all UI routes (`/document-intelligence/`, `/collections`, `/search`, `/review`, `/generate`, `/acoic`, `/finetune`, `/snippets`, `/templates`) and JSON API endpoints (`/api/ingest`, `/api/search`, `/api/chat`, `/api/collections`, `/api/review/<id>/approve|reject`, `/api/generate`, `/api/iqe-query`). |
+| `tools/document_intelligence/blueprint.py` | Document Intelligence Canvas Flask Blueprint. Registers all UI routes (`/document-intelligence/`, `/collections`, `/search`, `/review`, `/generate`, `/acoic`, `/finetune`, `/snippets`, `/templates`, `/notebook`, `/notebook/<id>`) and JSON API endpoints (`/api/ingest`, `/api/ingest/url`, `/api/ingest/youtube`, `/api/search`, `/api/chat`, `/api/collections`, `/api/review/<id>/approve|reject`, `/api/generate`, `/api/generate/study-guide`, `/api/generate/faq`, `/api/generate/timeline`, `/api/generate/audio`, `/api/outputs`, `/api/outputs/<id>`, `/api/mode`, `/api/iqe-query`). |
+
+## DIC Canvas Synergy (DSYN) — Integration Config
+
+| Artifact | Purpose |
+|----------|---------|
+| `args/dic_canvas_integrations.yaml` | Maps canvas_events `event_type` values to affected DIC collection tags, doc_types, priority, rationale, and patch_mode. Covers all 8 Tier-1 canvases (NDC, Network, ZIG, Compliance, SIPA, DevSecOps, CloudForge, AI-ify) plus DIC-internal events and crowdsource. Used by `canvas_adapter.py` to resolve which collections need AI-drafted suggestions when a canvas event fires. |
+| `tools/document_intelligence/canvas_adapter.py` | Resolves canvas_events rows → affected DIC collections. Loads the integrations YAML (cached, mtime-aware), matches event_type (exact → prefix → fallback), queries dic_collections for tag overlap (Python-side intersection), returns `[{collection_id, matched_tags, doc_type, priority, rationale}]`. |
+| `tools/document_intelligence/suggestion_store.py` | DSYN suggestion lifecycle: `create_suggestion()` → `get_pending_suggestions()` → `decide_suggestion()`. Manages `dic_suggestions` (mutable) and `dic_suggestion_decisions` (append-only, NIST AU). |
+| `tools/genesis/reflexes/dic_integration.py` | Genesis reflex (15-min cadence) that polls canvas_events, calls canvas_adapter, drafts targeted patch suggestions via the DIC generation route, and queues them in dic_suggestions for HITL review. Idempotent — re-run never creates duplicates. |
 
 ## Knowledge Handoff
 
@@ -184,3 +212,48 @@ print(report["overall_score"], report["passed"])
 |------|---------|
 | `tools/document_intelligence/conflict_detector.py` | DIC Section Conflict Detector — optimistic-concurrency check on content saves. `compute_hash(content)` returns a CRC32 hex fingerprint (zlib, not cryptographic — avoids SIPA `_CRYPTO_HASHLIB` false positive). `get_section_state(conn, section_id)` fetches the live content + hash for a `dic_sections` row. `check_conflict(conn, section_id, expected_hash)` compares the client's fingerprint against the DB state and returns `{conflict, current_hash, current_content}` — callers return HTTP 409 with `current_content` so the client can show a merge-resolution modal. Uses the caller's existing connection; opens no new DB connection. |
 | `tools/document_intelligence/lock_manager.py` | DIC Section Lock Manager — pessimistic locking for collaborative editing. Prevents two editors from clobbering the same section simultaneously via a `dic_section_locks` DB table with TTL-based expiry (default 300 s). `acquire_lock(section_id, user_id, ttl_seconds, doc_id)` returns the lock dict on success, None if already locked by another user, or renews the TTL if the caller already holds it. `release_lock(section_id, user_id)` deletes the row if the caller owns it. `renew_lock(section_id, user_id, ttl_seconds)` extends the TTL in-place. `get_lock(section_id)` returns the active lock dict (auto-purging expired rows) or None. `purge_expired_locks()` sweeps stale rows and returns the count removed. All writes use `get_connection()` (RLS-aware); no WebSocket dependency — clients renew via periodic PUT. |
+## Notebook — NotebookLM-Style View (dic-notebook-01)
+
+Air-gap-first, dual-mode implementation porting open-notebook/NotebookLM essentials natively into DIC.
+
+| Tool | Purpose |
+|------|---------|
+| `tools/document_intelligence/extractors.py::extract_url` | Fetch and extract text from any web URL. Online: full HTTP fetch + HTML strip. Air-gap: returns empty Extraction with warning. Called from `POST /api/ingest/url`. |
+| `tools/document_intelligence/extractors.py::extract_youtube` | Extract transcript text from a YouTube video URL via `youtube-transcript-api`. Air-gap: returns empty with prompt to paste manually. Called from `POST /api/ingest/youtube`. |
+| `tools/document_intelligence/output_generators.py` | Four AI output generators (study guide, FAQ, timeline, audio overview). Dual-mode: LLM route via `LLMRouter` when online; deterministic fallback (key sentences, regex date/definition extraction, pyttsx3 TTS) in air-gap. Persists to `dic_generated_outputs`. |
+| `tools/dashboard/templates/document_intelligence/notebook.html` | NotebookLM-style three-panel UI: sources (left) + grounded chat (center) + AI outputs/generators (right). Mode badge shows Air-gap vs Online. IQE widget wired to `dic.generated_outputs`. |
+
+### Tables
+
+| Table | Description |
+|-------|-------------|
+| `dic_generated_outputs` | Stores all generated outputs (study guide, FAQ, timeline, audio). Columns: `id`, `output_type`, `collection_id`, `content_json`, `provider`, `status`, `audio_path`, `created_at`, `tenant_id`, `classification`. |
+
+### Key API routes (added to `tools/document_intelligence/blueprint.py`)
+
+| Route | Purpose |
+|-------|---------|
+| `GET /notebook`, `GET /notebook/<id>` | Renders the Notebook page for a collection |
+| `GET /api/mode` | Returns mode info: `{mode, llm_available, provider, capabilities}` |
+| `POST /api/ingest/url` | Ingest web URL into a collection |
+| `POST /api/ingest/youtube` | Ingest YouTube transcript into a collection |
+| `POST /api/generate/study-guide` | Generate study guide from collection chunks |
+| `POST /api/generate/faq` | Generate FAQ (n Q&A pairs) from collection chunks |
+| `POST /api/generate/timeline` | Generate timeline of events from collection chunks |
+| `POST /api/generate/audio` | Generate audio overview (script + pyttsx3 TTS) from collection |
+| `GET /api/outputs` | List all generated outputs for a collection |
+| `GET /api/outputs/<id>` | Get a single output's parsed content |
+| `POST /api/generate/tasks` | Extract action items from study_guide/faq output → seed kanban tasks via task_factory. Returns {task_ids, count}. |
+| `POST /api/generate/slides` | Convert study_guide or timeline output → slide deck (pptx_builder). Returns {deck_id, url}. |
+| `POST /api/generate/roadmap` | Push timeline events to PMO milestones via milestone_manager. Body: {output_id, contract_id}. |
+| `POST /api/generate/enhance` | Layer LLM narrative on a BM25+KG output. Returns enhanced content_json. |
+| `POST /api/collections/<id>/attach-coworker` | Register DIC collection as ACE co-worker context; returns {coworker_url}. |
+
+## Ecosystem Integration Tools
+
+| Tool | Purpose |
+|------|---------|
+| `tools/document_intelligence/canvas_push.py::push_artifact` | Any canvas calls this to ingest its artifacts (PDF/HTML/text) into DIC collections. |
+| `tools/genesis/reflexes/dic_digest.py::run` | Weekly reflex: new-doc summary + freshness alerts → notification_log. Registered in daemon.py REFLEX_NAMES. |
+| `tools/research/source_scanners/dic_scanner.py::scan_dic_collection` | Research engine scanner: queries rag_chunks from a DIC collection, maps to research_signals format. Key: "dic_collection". |
+| `tools/canvas/kg_builder.py::upsert_from_dic` | Post-generation KG bridge: writes DIC entities/relationships to canvas_kg_nodes/edges with canvas='dic'. |

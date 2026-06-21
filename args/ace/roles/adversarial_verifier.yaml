@@ -1,30 +1,38 @@
+# CUI // SP-CTI
+# ACE Co-Worker Role: Adversarial Verifier
+# Spawned after a builder completes to independently verify the implementation.
+# Uses a different LLM perspective from the builder to catch gaps the builder missed.
 role_id: adversarial_verifier
 display_name: Adversarial Verifier
 description: >
-  Skeptical peer-reviewer that tries to refute claims, findings, or draft outputs
-  before they are promoted.  Triggered by task.draft_complete events; emits a
-  cw_verify_result message indicating refuted=true/false plus a rationale.
-version: "1.0"
-trust_tier: yellow
+  Adversarial review role for the non-deterministic loop. After a builder
+  completes a task, the verifier independently checks that the implementation
+  satisfies the stated acceptance criteria. Emits task.approved or task.rejected.
+  If rejected, the feedback is injected into the next builder iteration so the
+  loop converges on correct output.
+version: '1.0'
+trust_tier: green
 default_count: 1
-max_instances: 2
+max_instances: 4
+
 steps:
-  - receive_draft
-  - enumerate_weaknesses
-  - attempt_refutation
-  - score_confidence
+  - read_task_acceptance_criteria
+  - inspect_implementation
   - emit_verdict
+
 communication:
   protocol: a2a
   listen_topics:
     - task.draft_complete
-    - cw_verify_request
   emit_topics:
-    - cw_verify_result
-    - task.verification_done
-llm_function: adversarial_review
+    - task.approved
+    - task.rejected
+
+# Short review budget — verifier is checking, not building
+max_turns: 10
+timeout_seconds: 180
+
 tool_permissions:
   - Read
+  - Bash
   - Grep
-  - Glob
-genesis_reflex: kanban

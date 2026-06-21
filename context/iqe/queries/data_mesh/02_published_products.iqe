@@ -1,0 +1,5 @@
+-- CUI // SP-CTI
+-- Data Mesh: List published data products with SLA tier and discoverability score
+foreach p in data_mesh.products
+where p.status == "published"
+select p.name, p.domain_id, p.sla_tier, p.output_port_type, p.discoverability_score

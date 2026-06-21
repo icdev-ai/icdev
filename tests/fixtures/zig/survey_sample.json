@@ -1,0 +1,8 @@
+{
+  "mfa": true,
+  "mfa_admin": true,
+  "rbac": true,
+  "pam": false,
+  "least_priv": false,
+  "lifecycle": true
+}

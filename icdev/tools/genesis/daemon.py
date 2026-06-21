@@ -84,6 +84,8 @@ REFLEX_NAMES = [
     "e2e_runner",
     "log_triage",
     "aidp_monitor",
+    "dic_integration",     # dsyn-reflex-02: DIC Canvas Synergy — 15-min cadence
+    "dic_review_cadence",  # dsyn-suggest-02: nightly collection review overdue check
 ]
 
 # Backward-compat aliases for module-level access used by other code

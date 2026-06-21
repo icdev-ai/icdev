@@ -2476,10 +2476,15 @@ def create_security_blueprint():
 
     @bp.route("/api/zig/assess", methods=["POST"])
     def zig_api_assess():
-        """POST /security/api/zig/assess — run full ZIG assessment."""
+        """POST /security/api/zig/assess — run full ZIG assessment.
+
+        Optional JSON body: {"target_id": "my-app"} (default: "icdev-self")
+        """
         from tools.security_canvas.zig_assessor import run_zig_assessment
+        data = request.get_json(force=True, silent=True) or {}
+        target_id = (data.get("target_id") or "icdev-self").strip() or "icdev-self"
         try:
-            result = run_zig_assessment()
+            result = run_zig_assessment(target_id=target_id)
             return jsonify({"ok": True, **result})
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
@@ -2514,6 +2519,228 @@ def create_security_blueprint():
                 mimetype="text/markdown",
                 headers={"Content-Disposition": "attachment; filename=zig_assessment_report.md"},
             )
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    # ── ZIG External Targets ──────────────────────────────────────────────────
+
+    @bp.route("/api/zig/targets", methods=["GET"])
+    def zig_api_targets_list():
+        """GET /security/api/zig/targets — list all active ZIG targets."""
+        from tools.security_canvas.db.init_db import get_connection
+        try:
+            conn = get_connection()
+            rows = conn.execute(
+                "SELECT id, name, description, system_type, classification, status, created_at "
+                "FROM zig_targets ORDER BY name"
+            ).fetchall()
+            conn.close()
+            return jsonify({"ok": True, "targets": [dict(r) for r in rows]})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @bp.route("/api/zig/targets", methods=["POST"])
+    def zig_api_targets_create():
+        """POST /security/api/zig/targets — create a new ZIG target."""
+        from tools.security_canvas.db.init_db import get_connection
+        from datetime import datetime, timezone
+        data = request.get_json(force=True, silent=True) or {}
+        target_id = data.get("id", "").strip()
+        name = data.get("name", "").strip()
+        if not target_id or not name:
+            return jsonify({"ok": False, "error": "id and name are required"}), 400
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            conn = get_connection()
+            conn.execute(
+                "INSERT INTO zig_targets (id, name, description, system_type, classification, status, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?)",
+                (target_id, name,
+                 data.get("description", ""),
+                 data.get("system_type", "general"),
+                 data.get("classification", "CUI"),
+                 data.get("status", "active"),
+                 now, now),
+            )
+            conn.commit()
+            conn.close()
+            return jsonify({"ok": True, "id": target_id}), 201
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @bp.route("/api/zig/targets/<target_id>", methods=["GET"])
+    def zig_api_target_get(target_id):
+        """GET /security/api/zig/targets/<id> — get single ZIG target."""
+        from tools.security_canvas.db.init_db import get_connection
+        try:
+            conn = get_connection()
+            row = conn.execute(
+                "SELECT * FROM zig_targets WHERE id=?", (target_id,)
+            ).fetchone()
+            conn.close()
+            if not row:
+                return jsonify({"ok": False, "error": "target not found"}), 404
+            return jsonify({"ok": True, "target": dict(row)})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @bp.route("/api/zig/targets/<target_id>/assess", methods=["POST"])
+    def zig_api_target_assess(target_id):
+        """POST /security/api/zig/targets/<id>/assess — run ZIG assessment for a target."""
+        from tools.security_canvas.zig_portfolio import get_target_assessment
+        try:
+            result = get_target_assessment(target_id)
+            return jsonify({"ok": True, **result})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @bp.route("/api/zig/targets/<target_id>/activities/<activity_id>", methods=["PATCH"])
+    def zig_api_target_activity_update(target_id, activity_id):
+        """PATCH /security/api/zig/targets/<id>/activities/<act_id> — update activity status."""
+        from tools.security_canvas.zig_activity_tracker import set_activity_status
+        data = request.get_json(force=True, silent=True) or {}
+        status = data.get("status", "in_progress")
+        try:
+            result = set_activity_status(
+                activity_id, status,
+                target_id=target_id,
+                evidence_note=data.get("evidence_note"),
+                completed_by=data.get("completed_by", "api"),
+            )
+            return jsonify({"ok": True, **result})
+        except ValueError as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @bp.route("/api/zig/targets/<target_id>/ingest", methods=["POST"])
+    def zig_api_target_ingest(target_id):
+        """POST /security/api/zig/targets/<id>/ingest — ingest scan results for a target.
+
+        Body: {"source_type": "sbom|sast|survey|nmap|openapi", "payload": <string or object>}
+        """
+        from tools.security_canvas.zig_external_adapter import (
+            ingest_sbom, ingest_sast, ingest_survey, ingest_nmap, ingest_openapi,
+        )
+        data = request.get_json(force=True, silent=True) or {}
+        source_type = data.get("source_type", "").lower()
+        payload = data.get("payload")
+        if not source_type or payload is None:
+            return jsonify({"ok": False, "error": "source_type and payload are required"}), 400
+
+        dispatch = {
+            "sbom": ingest_sbom,
+            "sast": ingest_sast,
+            "survey": ingest_survey,
+            "nmap": ingest_nmap,
+            "openapi": ingest_openapi,
+        }
+        if source_type not in dispatch:
+            return jsonify({"ok": False,
+                            "error": f"unknown source_type; valid: {list(dispatch)}"}), 400
+
+        try:
+            # Accept payload as string or already-parsed dict/list
+            if not isinstance(payload, str):
+                import json
+                payload = json.dumps(payload)
+            result = dispatch[source_type](target_id, payload)
+            return jsonify({"ok": True, **result})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    # ── ZIG Portfolio ─────────────────────────────────────────────────────────
+
+    @bp.route("/zig/portfolio")
+    def zig_portfolio_page():
+        """GET /security/zig/portfolio — multi-target portfolio dashboard."""
+        from tools.security_canvas.zig_pillar_scorer import score_all_pillars, aggregate_zig_score
+        from types import SimpleNamespace
+
+        try:
+            pillar_scores = score_all_pillars(target_id="icdev-self")
+        except Exception:
+            pillar_scores = []
+
+        # Build template-compatible 'targets' list (one entry per ZIG pillar)
+        targets = []
+        for ps in pillar_scores:
+            targets.append(SimpleNamespace(
+                slug=ps.get("slug", ""),
+                name=ps.get("name", ps.get("slug", "")),
+                full_name=ps.get("full_name", ps.get("name", "")),
+                color=ps.get("color", "#6366f1"),
+                overall_score=ps.get("score", 0.0),
+                maturity_level=ps.get("maturity_level", "preparation"),
+                capability_count=ps.get("capability_count", 0),
+                implemented_capabilities=ps.get("implemented_capabilities", 0),
+                activity_count=ps.get("activity_count", 0),
+                complete_activities=ps.get("complete_activities", 0),
+                in_progress_activities=ps.get("in_progress_activities", 0),
+            ))
+
+        # Aggregate health
+        agg = aggregate_zig_score(pillar_scores) if pillar_scores else {"score": 0.0}
+        avg_score = agg.get("score", 0.0)
+        maturity_dist_raw = {}
+        for ps in pillar_scores:
+            ml = ps.get("maturity_level", "preparation")
+            maturity_dist_raw[ml] = maturity_dist_raw.get(ml, 0) + 1
+
+        portfolio = SimpleNamespace(
+            total_targets=len(targets),
+            avg_score=avg_score,
+            attention_count=sum(1 for t in targets if t.overall_score < 0.4),
+            advanced_count=sum(1 for t in targets if t.maturity_level == "advanced"),
+            maturity_dist=SimpleNamespace(
+                preparation=maturity_dist_raw.get("preparation", 0),
+                basic=maturity_dist_raw.get("basic", 0),
+                intermediate=maturity_dist_raw.get("intermediate", 0),
+                advanced=maturity_dist_raw.get("advanced", 0),
+            ),
+        )
+
+        pillar_names = [t.name for t in targets]
+        radar_datasets = [{
+            "name": t.name,
+            "color": t.color,
+            "scores_by_pillar": [t.overall_score],
+        } for t in targets]
+        # Radar shows a single 'ICDEV Platform' ring across all pillars
+        radar_datasets = [{
+            "name": "ICDEV Platform",
+            "color": "#6366f1",
+            "scores_by_pillar": [t.overall_score for t in targets],
+        }]
+
+        return render_template(
+            "security_canvas/zig/portfolio.html",
+            portfolio=portfolio,
+            targets=targets,
+            pillar_names=pillar_names,
+            radar_datasets=radar_datasets,
+            classification="CUI // SP-CTI",
+        )
+
+    @bp.route("/api/zig/portfolio/health")
+    def zig_api_portfolio_health():
+        """GET /security/api/zig/portfolio/health — portfolio health JSON."""
+        from tools.security_canvas.zig_portfolio import get_portfolio_health
+        try:
+            return jsonify({"ok": True, **get_portfolio_health()})
+        except Exception as exc:
+            return jsonify({"ok": False, "error": str(exc)}), 500
+
+    @bp.route("/api/zig/portfolio/compare")
+    def zig_api_portfolio_compare():
+        """GET /security/api/zig/portfolio/compare?targets=id1,id2 — radar comparison."""
+        from tools.security_canvas.zig_portfolio import compare_targets
+        target_param = request.args.get("targets", "")
+        target_ids = [t.strip() for t in target_param.split(",") if t.strip()]
+        if len(target_ids) < 2:
+            return jsonify({"ok": False, "error": "provide at least 2 target IDs in ?targets="}), 400
+        try:
+            return jsonify({"ok": True, **compare_targets(target_ids)})
         except Exception as exc:
             return jsonify({"ok": False, "error": str(exc)}), 500
 

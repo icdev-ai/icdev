@@ -45,6 +45,7 @@
 - *(None recorded yet)*
 
 ## Lessons Learned
+- [Standard Planning Workflow](feedback_planning_workflow.md) — plan→decompose→dependency-order→kanban→harmonize→V&V for all implementation tasks.
 
 - [Standard Planning Workflow](feedback_planning_workflow.md) — plan→decompose→dependency-order→kanban→harmonize→V&V for all implementation tasks.
 

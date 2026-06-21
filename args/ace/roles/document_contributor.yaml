@@ -1,0 +1,90 @@
+role_id: document_contributor
+display_name: Document Contributor
+description: Writes new document sections by synthesizing evidence from DIC collections,
+  network topology data, and knowledge graph sources. Produces structured, citation-backed
+  content sections for inclusion in network architecture, compliance, or operational
+  runbooks. Hands off to Document Reviewer for quality gate.
+version: '1.0'
+trust_tier: yellow
+default_count: 2
+max_instances: 4
+canvas: document_intelligence
+steps:
+- name: receive_section_assignment
+  tool: event_bus.subscribe
+  params:
+    topic: doc.section.assigned
+- name: retrieve_source_material
+  tool: search_engine.search
+  params:
+    query: "$section_topic"
+    collection_id: "$collection_id"
+    max_results: 10
+- name: extract_network_context
+  tool: drift_detector.run_drift_check
+  params:
+    topology_id: "$topology_id"
+  condition: "$topology_id != null"
+- name: draft_section
+  tool: doc_generator.generate_document
+  params:
+    document_id: "$document_id"
+    section: "$section_name"
+    sources: "$retrieve_source_material.chunks"
+- name: verify_claims
+  tool: verifier.verify
+  params:
+    content: "$draft_section.content"
+    citations: "$draft_section.citations"
+- name: submit_for_review
+  tool: event_bus.emit
+  params:
+    topic: doc.section.drafted
+    payload:
+      document_id: "$document_id"
+      section: "$section_name"
+      content: "$draft_section.content"
+      citations: "$draft_section.citations"
+      verified: "$verify_claims.verified"
+communication:
+  protocol: a2a
+  listen_topics:
+  - doc.section.assigned
+  - network.drift.detected
+  - research.memo.produced
+  emit_topics:
+  - doc.section.drafted
+  - doc.claim.flagged
+  - status.updated
+llm_function: code_generation
+tool_permissions:
+- Read
+- Grep
+- Glob
+genesis_reflex: build
+personality:
+  domain: Technical Documentation Writing
+  supported_verticals:
+  - technical
+  - corporate
+  - ic_intelligence
+  domain_adaptation:
+    auto_detect: true
+    detection_signals:
+      technical: [architecture, topology, config, protocol, RFC, IEEE, schema, interface]
+      corporate: [executive summary, stakeholder, roadmap, KPI, strategy]
+      ic_intelligence: [BLUF, INTSUM, SITREP, threat assessment, CAPCO]
+    vertical_writing_style:
+      technical: "IEEE format, precise terminology, numbered findings, config excerpts as code blocks"
+      corporate: "Pyramid principle, executive register, visual-first (tables/bullets)"
+      ic_intelligence: "BLUF first, analytic standards, portion markings, key judgments"
+  standards:
+  - IEEE Technical Writing Guidelines
+  - NIST SP 800-12 (Introduction to Computer Security)
+  - Chicago Manual of Style 17th Ed
+  - DITA (Darwin Information Typing Architecture)
+  tags:
+  - source-driven
+  - citation-first
+  - anti-hallucination
+  - hitl-respects

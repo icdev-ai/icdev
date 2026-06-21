@@ -25,6 +25,7 @@ class RoleStep:
     Supports both plain string steps (name only) and structured steps with a
     tool, params, and an optional condition expression.
     """
+    """A single step in a role definition — supports both plain names and structured dicts."""
 
     name: str
     tool: str = ""
@@ -45,6 +46,22 @@ class RoleStep:
             params=dict(raw.get("params") or {}),
             condition=raw.get("condition") or None,
         )
+    condition: str | None = None
+
+    @classmethod
+    def from_raw(cls, raw: "str | dict[str, Any]") -> "RoleStep":
+        if isinstance(raw, str):
+            return cls(name=raw)
+        if isinstance(raw, dict):
+            if "name" not in raw:
+                raise ValueError(f"Structured step missing 'name' field: {raw!r}")
+            return cls(
+                name=raw["name"],
+                tool=raw.get("tool", ""),
+                params=dict(raw.get("params") or {}),
+                condition=raw.get("condition"),
+            )
+        raise TypeError(f"Expected str or dict for step, got {type(raw)!r}")
 
 
 @dataclass
@@ -61,6 +78,17 @@ class RoleTemplate:
     llm_function: str
     tool_permissions: list[str]
     genesis_reflex: str
+    # Extended fields (optional — absent in legacy role YAMLs)
+    canvas: str = ""
+    personality: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # Expose listen_topics at top level for dispatcher hot-path
+        if not hasattr(self, "_listen_topics_cache"):
+            object.__setattr__(
+                self, "_listen_topics_cache",
+                list(self.communication.get("listen_topics") or [])
+            )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "RoleTemplate":
@@ -81,6 +109,8 @@ class RoleTemplate:
             llm_function=data.get("llm_function", ""),
             tool_permissions=list(data["tool_permissions"]),
             genesis_reflex=data.get("genesis_reflex", ""),
+            canvas=data.get("canvas", ""),
+            personality=dict(data.get("personality") or {}),
         )
 
 

@@ -66,6 +66,9 @@ def _db():
 
 def _q(conn, sql: str) -> str:
     """Translate ``?`` placeholders to ``%s`` for the PostgreSQL backend."""
+    import sqlite3 as _sqlite3
+    if isinstance(conn, _sqlite3.Connection):
+        return sql  # raw sqlite3 connections use ? already
     declared = getattr(conn, "_backend", None)
     if declared:
         is_pg = str(declared).lower().startswith(("postgre", "pg"))
@@ -300,6 +303,30 @@ def trust_leaderboard():
     except Exception as exc:  # noqa: BLE001
         logger.info("coworker/trust.html unavailable (%s); JSON fallback", exc)
         return jsonify({"rows": rows, "stats": stats})
+@ace_bp.route("/profiles/new")
+def profiles_new():
+    """Profile creation page — AI Assist-powered."""
+    try:
+        return render_template("coworker/profile_new.html")
+    except Exception as exc:
+        logger.info("coworker/profile_new.html unavailable (%s); JSON fallback", exc)
+        return jsonify({"page": "profile_new"})
+
+
+@ace_bp.route("/trust")
+def trust_leaderboard():
+    """NOVA TRUST — Role trust leaderboard (score + band + last event)."""
+    rows: list[dict] = []
+    try:
+        from icdev.tools.ace.trust_calibrator import get_trust_summary
+        rows = get_trust_summary()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace trust_leaderboard: get_trust_summary failed: %s", exc)
+    try:
+        return render_template("ace/trust.html", rows=rows)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("ace/trust.html unavailable (%s); JSON fallback", exc)
+        return jsonify({"rows": rows, "count": len(rows)})
 
 
 @ace_bp.route("/<instance_id>")
@@ -467,7 +494,15 @@ def instance_resume(instance_id: str):
 # --------------------------------------------------------------------------- #
 @ace_api_bp.route("/launch", methods=["POST"])
 def api_launch():
-    """Launch an ACE run (non-blocking).  Returns the new ``instance_id``."""
+    """Launch an ACE run (non-blocking).  Returns the new ``instance_id``.
+
+    Optional: include ``dic_collection_ids: ["col-id"]`` to prepend BM25 context
+    from DIC into the problem_text before the team is assembled.
+
+    Optional: ``role_ids`` bypasses the problem classifier and uses the requested
+    team. ``context_query`` overrides the DIC search query (defaults to the
+    problem_text) for better retrieval of relevant document snippets.
+    """
     data = request.get_json(silent=True) or {}
     problem_text = (data.get("problem_text") or data.get("question") or data.get("text") or "").strip()
     if not problem_text:
@@ -476,6 +511,41 @@ def api_launch():
     explicit_roles = data.get("role_ids") or None
     if isinstance(explicit_roles, list):
         explicit_roles = [str(r).strip() for r in explicit_roles if r] or None
+
+    # Explicit role override — bypasses problem classifier
+    explicit_roles: list[str] | None = data.get("role_ids") or None
+    if isinstance(explicit_roles, list):
+        explicit_roles = [str(r).strip() for r in explicit_roles if r] or None
+
+    # DIC context injection — prepend BM25 results from attached collections.
+    # Use an explicit context_query if the caller provided one; this avoids
+    # searching with a report-generation prompt and instead searches with a
+    # document-focused query, yielding more relevant snippets.
+    dic_collection_ids = data.get("dic_collection_ids") or []
+    if isinstance(dic_collection_ids, str):
+        dic_collection_ids = [dic_collection_ids]
+    context_query = (data.get("context_query") or "").strip()
+    if dic_collection_ids:
+        context_blocks: list[str] = []
+        for col_id in dic_collection_ids[:3]:
+            try:
+                from icdev.tools.document_intelligence.search_engine import DICSearchEngine
+                engine = DICSearchEngine(tenant_id="default")
+                search_query = context_query or problem_text[:500]
+                results = engine.search(search_query, collection_id=col_id, top_k=5)
+                if results:
+                    snippets = "\n".join(
+                        f"- {r.to_dict().get('content', '')[:300]}"
+                        if hasattr(r, "to_dict")
+                        else f"- {str(r)[:300]}"
+                        for r in results
+                    )
+                    context_blocks.append(f"[DIC:{col_id}]\n{snippets}")
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("ace launch: DIC context fetch failed for %s: %s", col_id, exc)
+        if context_blocks:
+            dic_context = "\n\n".join(context_blocks)
+            problem_text = f"Context from document collections:\n{dic_context}\n\n---\n\n{problem_text}"
 
     try:
         instance_id = ACEController.get_instance().launch(
@@ -489,6 +559,23 @@ def api_launch():
     except Exception as exc:  # noqa: BLE001
         logger.warning("ace launch failed: %s", exc)
         return jsonify({"error": str(exc)}), 500
+
+    # Persist the DIC context link if collections were attached
+    if dic_collection_ids and instance_id:
+        try:
+            import uuid as _uuid
+            conn = _db()
+            for col_id in dic_collection_ids[:3]:
+                conn.execute(
+                    _q(conn,
+                       "INSERT INTO coworker_dic_contexts (id, instance_id, collection_id) "
+                       "VALUES (?, ?, ?)"),
+                    (_uuid.uuid4().hex, instance_id, col_id),
+                )
+            conn.commit()
+            conn.close()
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ace launch: failed to persist DIC context links: %s", exc)
 
     return jsonify({"instance_id": instance_id}), 202
 
@@ -707,6 +794,409 @@ def api_presets():
         return jsonify({"error": str(exc)}), 500
 
 
+@ace_api_bp.route("/<instance_id>/nova-state", methods=["GET"])
+def api_nova_state(instance_id: str):
+    """NOVA soul state for all coworkers in this instance.
+
+    Returns trust_score, learned fact count, and recent improvement artifacts
+    per coworker role so the UI can render a 'Learning State' panel.
+
+    Response shape::
+
+        {
+          "instance_id": "<id>",
+          "coworkers": [
+            {
+              "role_id": "...",
+              "trust_score": 0.5,
+              "fact_count": 3,
+              "recent_improvements": [
+                {"artifact_id": "...", "task_type": "...", "improvement_text": "...",
+                 "composite_score": 0.0, "status": "pending", "created_at": "..."}
+              ]
+            }
+          ]
+        }
+    """
+    # --- 1. Coworker role_ids from canvas DB ---
+    role_ids: list[str] = []
+    conn = None
+    try:
+        conn = _db()
+        rows = _rows(
+            conn.execute(
+                _q(conn, "SELECT DISTINCT role_id FROM ace_coworkers WHERE instance_id = ?"),
+                (instance_id,),
+            )
+        )
+        role_ids = [r["role_id"] for r in rows if r.get("role_id")]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("api_nova_state: canvas read failed for %s: %s", instance_id, exc)
+    finally:
+        if conn is not None:
+            conn.close()
+
+    # --- 2. Enrich each role from main DB (NOVA tables) ---
+    result: list[dict] = []
+    mconn = None
+    try:
+        from icdev.tools.db.storage import get_connection
+        mconn = get_connection()
+        # Ensure NOVA tables exist (idempotent)
+        try:
+            from tools.nova.db.init_db import init_nova_tables
+            init_nova_tables(mconn)
+        except Exception:  # noqa: BLE001
+            pass
+
+        # Recent improvement artifacts are global (not per-role), fetch once
+        recent_improvements: list[dict] = []
+        try:
+            rows_aia = mconn.execute(
+                "SELECT artifact_id, task_type, improvement_text, composite_score, status, created_at "
+                "FROM agent_improvement_artifacts ORDER BY created_at DESC LIMIT 3",
+                (),
+            ).fetchall()
+            for r in rows_aia:
+                if isinstance(r, dict):
+                    recent_improvements.append({
+                        "artifact_id": r.get("artifact_id"),
+                        "task_type": r.get("task_type"),
+                        "improvement_text": (r.get("improvement_text") or "")[:200],
+                        "composite_score": r.get("composite_score"),
+                        "status": r.get("status"),
+                        "created_at": r.get("created_at"),
+                    })
+                else:
+                    recent_improvements.append({
+                        "artifact_id": r[0],
+                        "task_type": r[1],
+                        "improvement_text": (r[2] or "")[:200],
+                        "composite_score": r[3],
+                        "status": r[4],
+                        "created_at": r[5],
+                    })
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("api_nova_state: improvements query failed: %s", exc)
+
+        for role_id in role_ids:
+            # Trust score — latest ledger entry
+            trust_score = 0.5
+            try:
+                row = mconn.execute(
+                    "SELECT new_score FROM ace_trust_ledger "
+                    "WHERE role_id = ? ORDER BY recorded_at DESC LIMIT 1",
+                    (role_id,),
+                ).fetchone()
+                if row is not None:
+                    trust_score = float(
+                        row["new_score"] if isinstance(row, dict) else row[0]
+                    )
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("api_nova_state: trust query failed for %s: %s", role_id, exc)
+
+            # Fact count — ace_coworker_memory
+            fact_count = 0
+            try:
+                row = mconn.execute(
+                    "SELECT COUNT(*) FROM ace_coworker_memory WHERE role_id = ?",
+                    (role_id,),
+                ).fetchone()
+                if row is not None:
+                    fact_count = int(row[0] if not isinstance(row, dict) else next(iter(row.values())))
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("api_nova_state: fact count failed for %s: %s", role_id, exc)
+
+            result.append({
+                "role_id": role_id,
+                "trust_score": trust_score,
+                "fact_count": fact_count,
+                "recent_improvements": recent_improvements,
+            })
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("api_nova_state: main DB read failed for %s: %s", instance_id, exc)
+    finally:
+        if mconn is not None:
+            mconn.close()
+
+    return jsonify({"instance_id": instance_id, "coworkers": result})
+
+
+@ace_api_bp.route("/profiles", methods=["GET"])
+def api_profiles_list():
+    """List all coworker profiles (both built-in and generated)."""
+    try:
+        from icdev.tools.ace.profile_generator import list_profiles
+        return jsonify({"profiles": list_profiles()})
+    except Exception as exc:
+        logger.warning("ace profiles list failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@ace_api_bp.route("/profiles/suggest-name", methods=["POST"])
+def api_profiles_suggest_name():
+    """AI Assist: given an informal description, suggest official DoD/IC role names.
+
+    Body: {description}
+    Returns [{title, basis, rationale}] ranked best-first.
+    """
+    data = request.get_json(silent=True) or {}
+    description = (data.get("description") or "").strip()
+    if not description:
+        return jsonify({"error": "description is required"}), 400
+    try:
+        from icdev.tools.ace.profile_generator import suggest_profile_names
+        suggestions = suggest_profile_names(description)
+        return jsonify({"ok": True, "suggestions": suggestions})
+    except Exception as exc:
+        logger.warning("ace profiles suggest-name failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@ace_api_bp.route("/profiles/preview", methods=["POST"])
+def api_profiles_preview():
+    """AI-assist: enrich a sparse name+description into a full profile spec.
+
+    Body: {name, description?}
+    Returns the enriched spec without writing any files — lets the user
+    review and edit before committing.
+    """
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    description = (data.get("description") or "").strip()
+    try:
+        from icdev.tools.ace.profile_generator import preview_profile
+        spec = preview_profile(name, description)
+        return jsonify({"ok": True, "spec": spec})
+    except Exception as exc:
+        logger.warning("ace profiles preview failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@ace_api_bp.route("/profiles/generate", methods=["POST"])
+def api_profiles_generate():
+    """Create and persist a new coworker profile.
+
+    Body: {name, description?, spec?}
+    If spec is provided (from a prior /preview call) it is used as-is,
+    skipping a second LLM call.  Returns {role_id, files_written}.
+    """
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "name is required"}), 400
+    description = (data.get("description") or "").strip()
+    spec_override = data.get("spec") or None
+    try:
+        from icdev.tools.ace.profile_generator import generate_profile
+        result = generate_profile(name, description, spec_override=spec_override)
+        return jsonify({"ok": True, **result}), 201
+    except Exception as exc:
+        logger.warning("ace profiles generate failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+@ace_api_bp.route("/profiles/<role_id>", methods=["DELETE"])
+def api_profiles_delete(role_id: str):
+    """Delete a generated profile (built-in profiles are protected)."""
+    try:
+        from icdev.tools.ace.profile_generator import delete_profile
+        result = delete_profile(role_id)
+        if "error" in result:
+            return jsonify(result), 400
+        return jsonify({"ok": True, **result})
+    except Exception as exc:
+        logger.warning("ace profiles delete failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Chat — multi-turn conversational interface
+# ---------------------------------------------------------------------------
+
+_CHAT_POLL_TIMEOUT = int(os.environ.get("ACE_CHAT_POLL_TIMEOUT", "10"))
+_CHAT_SYSTEM_PROMPT = (
+    "You are an ICDEV AI assistant powered by the ACE (Autonomous Collaborative Engine). "
+    "Provide concise, helpful responses. When continuing a conversation, always reference "
+    "and build upon prior messages in the thread."
+)
+
+
+def _utcnow() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _build_chat_messages(history: list[dict]) -> list[dict]:
+    """Return OpenAI-style message list from session history (all turns)."""
+    return [
+        {"role": t.get("role", "user"), "content": t.get("content", "")}
+        for t in history
+        if t.get("content")
+    ]
+
+
+def _write_ace_message(conn, instance_id: str, role: str, content: str) -> str:
+    """Insert a row into ace_messages and return its generated id."""
+    import uuid as _uuid
+    msg_id = f"msg-{_uuid.uuid4().hex[:12]}"
+    now = _utcnow()
+    try:
+        conn.execute(
+            _q(conn,
+               "INSERT INTO ace_messages (id, instance_id, role, content, message_type, created_at) "
+               "VALUES (?, ?, ?, ?, 'info', ?)"),
+            (msg_id, instance_id, role, content, now),
+        )
+        conn.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace chat: failed to write ace_message: %s", exc)
+    return msg_id
+
+
+def _ensure_ace_session_instance(instance_id: str | None, session_id: str, problem_text: str) -> str:
+    """Return instance_id, launching a background ACE instance on first turn."""
+    if instance_id:
+        return instance_id
+    try:
+        ctrl = ACEController.get_instance()
+        return ctrl.launch(
+            problem_text=problem_text,
+            trigger_source="ace_chat",
+            trigger_ref=session_id,
+            user_id="chat",
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace chat: background ACE launch failed: %s", exc)
+        import uuid as _uuid
+        return f"ace-chat-{_uuid.uuid4().hex[:12]}"
+
+
+@ace_api_bp.route("/chat", methods=["POST"])
+def api_ace_chat():
+    """Multi-turn conversational endpoint.
+
+    Request body: ``{session_id, user_message, instance_id?}``
+    Response:     ``{session_id, assistant_message, turn_count}``
+
+    Workflow
+    --------
+    1. Load (or create) the ``ace_sessions`` row for ``session_id``.
+    2. Append the user message to the stored history.
+    3. Invoke the LLM with the full history as context (synchronous).
+    4. Write both messages to ``ace_messages`` for traceability.
+    5. Persist updated history + turn_count back to ``ace_sessions``.
+    """
+    try:
+        body = request.get_json(silent=True) or {}
+        session_id = (body.get("session_id") or "").strip()
+        user_message = (body.get("user_message") or "").strip()
+        provided_instance_id = (body.get("instance_id") or "").strip() or None
+
+        if not session_id:
+            return jsonify({"error": "session_id is required"}), 400
+        if not user_message:
+            return jsonify({"error": "user_message is required"}), 400
+
+        now = _utcnow()
+        conn = _db()
+        try:
+            # 1. Load or create session
+            cur = conn.execute(
+                _q(conn, "SELECT session_id, instance_id, history_json, turn_count "
+                         "FROM ace_sessions WHERE session_id = ?"),
+                (session_id,),
+            )
+            session_row = _one(cur)
+
+            if session_row is None:
+                history: list[dict] = []
+                turn_count = 0
+                instance_id = provided_instance_id
+                conn.execute(
+                    _q(conn,
+                       "INSERT INTO ace_sessions (session_id, instance_id, history_json, "
+                       "turn_count, created_at, updated_at) VALUES (?, ?, '[]', 0, ?, ?)"),
+                    (session_id, instance_id, now, now),
+                )
+                conn.commit()
+            else:
+                raw = session_row.get("history_json") or "[]"
+                try:
+                    history = json.loads(raw) if isinstance(raw, str) else raw
+                    if not isinstance(history, list):
+                        history = []
+                except (TypeError, ValueError):
+                    history = []
+                turn_count = int(session_row.get("turn_count") or 0)
+                instance_id = provided_instance_id or session_row.get("instance_id") or None
+
+            # 2. Append user message to history
+            history.append({"role": "user", "content": user_message})
+
+            # 3. Invoke LLM with full history as context
+            assistant_message = _invoke_chat_llm(history)
+
+            # 4. Append assistant message to history
+            history.append({"role": "assistant", "content": assistant_message})
+            turn_count += 1
+
+            # Lazily associate an ACE instance for traceability (best-effort, async)
+            if instance_id is None:
+                instance_id = _ensure_ace_session_instance(
+                    None, session_id, problem_text=user_message
+                )
+
+            # Write both turns to ace_messages for traceability
+            _write_ace_message(conn, instance_id, "user", user_message)
+            _write_ace_message(conn, instance_id, "assistant", assistant_message)
+
+            # 5. Update session
+            conn.execute(
+                _q(conn,
+                   "UPDATE ace_sessions SET instance_id = ?, history_json = ?, "
+                   "turn_count = ?, updated_at = ? WHERE session_id = ?"),
+                (instance_id, json.dumps(history), turn_count, now, session_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        return jsonify({
+            "session_id": session_id,
+            "assistant_message": assistant_message,
+            "turn_count": turn_count,
+        })
+
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("api_ace_chat error")
+        return jsonify({"error": str(exc)}), 500
+
+
+def _invoke_chat_llm(history: list[dict]) -> str:
+    """Call LLMRouter with the full conversation history and return the response text."""
+    try:
+        from icdev.tools.llm.router import LLMRequest, LLMRouter
+        messages = _build_chat_messages(history)
+        req = LLMRequest(
+            messages=messages,
+            system_prompt=_CHAT_SYSTEM_PROMPT,
+            max_tokens=1024,
+        )
+        resp = LLMRouter().invoke("ace_chat", req)
+        return (resp.content or "").strip() or "I'm processing your request."
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace chat LLM invoke failed: %s", exc)
+        # Fallback: acknowledge the context from prior turns
+        prior = [t for t in history[:-1] if t.get("role") == "user"]
+        if prior:
+            topics = "; ".join(t["content"][:60] for t in prior[-2:])
+            return f"Continuing from our earlier discussion ({topics}): I'll address your latest request."
+        return "I'm ready to help. Please continue."
+
+
 @ace_api_bp.route("/iqe-query", methods=["POST"])
 def api_iqe_query():
     """Plain-English → IQE → rows over the ace_* collections.
@@ -748,3 +1238,60 @@ def api_iqe_query():
     except Exception as exc:  # noqa: BLE001
         logger.warning("ace iqe-query error: %s", exc)
         return jsonify({"error": str(exc), "canvas": "ace", "iqe": iqe_str}), 500
+
+
+# ---------------------------------------------------------------------------
+# Event Bus API — auto-dispatch feed
+# ---------------------------------------------------------------------------
+
+
+@ace_api_bp.route("/events", methods=["GET"])
+def api_ace_events():
+    """Recent auto-dispatch event results for the event feed UI."""
+    try:
+        from icdev.tools.ace.event_bus import get_recent_results, pending_count
+        limit = min(int(request.args.get("limit", 50)), 200)
+        return jsonify({
+            "ok": True,
+            "pending": pending_count(),
+            "results": get_recent_results(limit=limit),
+        })
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@ace_api_bp.route("/events/emit", methods=["POST"])
+def api_ace_events_emit():
+    """Manually emit an ACE event (for testing / canvas integration)."""
+    try:
+        from icdev.tools.ace.event_bus import emit, DISPATCH_TOPICS
+        body = request.get_json(silent=True) or {}
+        topic = body.get("topic", "")
+        if topic not in DISPATCH_TOPICS:
+            return jsonify({"error": f"Unknown topic. Valid: {sorted(DISPATCH_TOPICS)}"}), 400
+        event_id = emit(
+            topic=topic,
+            payload=body.get("payload", {}),
+            source_canvas=body.get("source_canvas", "manual"),
+            source_id=body.get("source_id", ""),
+        )
+        return jsonify({"ok": True, "event_id": event_id})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
+@ace_api_bp.route("/events/topics", methods=["GET"])
+def api_ace_event_topics():
+    """Return all dispatch topics and which roles listen to each."""
+    try:
+        from icdev.tools.ace.role_loader import RoleLoader
+        from icdev.tools.ace.event_bus import DISPATCH_TOPICS
+        roles = RoleLoader().list_roles()
+        topic_map: dict[str, list[str]] = {t: [] for t in sorted(DISPATCH_TOPICS)}
+        for role in roles:
+            for topic in (role.communication.get("listen_topics") or []):
+                if topic in topic_map:
+                    topic_map[topic].append(role.role_id)
+        return jsonify({"ok": True, "topics": topic_map})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500

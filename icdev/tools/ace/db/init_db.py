@@ -147,6 +147,45 @@ CREATE TABLE IF NOT EXISTS ace_preflight_decisions (
 );
 CREATE INDEX IF NOT EXISTS idx_ace_preflight_instance ON ace_preflight_decisions(instance_id);
 CREATE INDEX IF NOT EXISTS idx_ace_preflight_coworker ON ace_preflight_decisions(coworker_id);
+CREATE TABLE IF NOT EXISTS coworker_dic_contexts (
+    id              TEXT PRIMARY KEY,
+    instance_id     TEXT,
+    collection_id   TEXT NOT NULL,
+    attached_at     TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_cwk_dic_instance ON coworker_dic_contexts(instance_id);
+
+CREATE TABLE IF NOT EXISTS ace_events (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    topic           TEXT NOT NULL,
+    source_canvas   TEXT NOT NULL DEFAULT '',
+    source_id       TEXT NOT NULL DEFAULT '',
+    payload_json    TEXT NOT NULL DEFAULT '{{}}',
+    processed       INTEGER NOT NULL DEFAULT 0,
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ace_events_processed ON ace_events(processed);
+CREATE INDEX IF NOT EXISTS idx_ace_events_topic ON ace_events(topic);
+
+CREATE TABLE IF NOT EXISTS ace_event_results (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id        INTEGER REFERENCES ace_events(id),
+    role_id         TEXT NOT NULL,
+    instance_id     TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'dispatched',
+    created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ace_event_results_event ON ace_event_results(event_id);
+
+CREATE TABLE IF NOT EXISTS ace_sessions (
+    session_id   TEXT PRIMARY KEY,
+    instance_id  TEXT,
+    history_json TEXT NOT NULL DEFAULT '[]',
+    turn_count   INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at   TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ace_sessions_instance ON ace_sessions(instance_id);
 """
 
 # ---------------------------------------------------------------------------

@@ -113,6 +113,19 @@ canvases:
     default_roles: []
     description: "AI-driven tabletop exercise and threat simulation."
 
+  # ── Document Intelligence ────────────────────────────────────────────────────
+  - name: document_intelligence
+    display_name: "Document Intelligence Canvas"
+    min_il: IL4
+    default_roles: [researcher, intelligence_analyst, writer, editor, derivative_classifier, document_classification_specialist]
+    description: "RAG+KG document intelligence: ingest, search, generate, classify, handoff."
+
+  - name: notebook
+    display_name: "DIC Notebook"
+    min_il: IL4
+    default_roles: [researcher, intelligence_analyst, writer, editor, derivative_classifier]
+    description: "NotebookLM-style unified view within DIC — sources, chat, AI outputs."
+
   # ── Research & Innovation ────────────────────────────────────────────────────
   - name: research
     display_name: "Research Canvas"

@@ -72,7 +72,16 @@
   <button class="btn-primary" onclick="openModal()">+ New Domain</button>
 </div>
 
-<!-- IQE query widget -->
+<!-- IQE Query Widget -->
+{% set iqe_canvas = "data_mesh_domains" %}
+{% set iqe_api_route = "/data/api/iqe-query" %}
+{% set iqe_title = "IQE Query — Data Domains" %}
+{% set iqe_examples = [
+  {"label": "All domains", "query": "foreach d in data_mesh.domains select d.name, d.owner_team, d.maturity_level, d.status"},
+  {"label": "Active domains", "query": "foreach d in data_mesh.domains where d.status == \"active\" select d.name, d.owner_team, d.maturity_level"},
+  {"label": "CUI domains", "query": "foreach d in data_mesh.domains where d.classification == \"CUI\" select d.name, d.owner_team, d.status"},
+  {"label": "Managed+ maturity", "query": "foreach d in data_mesh.domains where d.maturity_level >= 2 select d.name, d.maturity_level, d.owner_team"}
+] %}
 {% include "includes/iqe_query_widget.html" %}
 
 <!-- Domain grid -->

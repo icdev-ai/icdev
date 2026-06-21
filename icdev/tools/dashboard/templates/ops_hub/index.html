@@ -33,11 +33,13 @@
 </style>
 {% endblock %}
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner(classification) }}
 <div class="ohc-header">
   <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
     <div>
       <h1>⚙️ Ops Hub</h1>
-      <p>Unified LLMOps · MLOps · AIOps — {{ classification }}</p>
+      <p>Unified LLMOps · MLOps · AIOps</p>
     </div>
     <div class="score-ring">
       {% set score = overview.health_score|default(0) %}

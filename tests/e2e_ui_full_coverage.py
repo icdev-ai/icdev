@@ -1,4 +1,4 @@
-"""
+﻿"""
 E2E Full Coverage — every menu, submenu, tab, and key button.
 
 Covers:
@@ -217,7 +217,7 @@ NAV_STRUCTURE = {
         ],
         "Publish": [
             ("Pulse Blog",       "/pulse"),
-            ("ClawHub Skills",   "/clawhub"),
+            ("SkillHub",   "/skillhub"),
         ],
     },
     "Compliance ▾": {

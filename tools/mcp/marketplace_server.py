@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # CUI // SP-CTI
 """Marketplace MCP server exposing FORGE asset registry tools.
 
@@ -300,7 +300,7 @@ def handle_openclaw_import(args: dict) -> dict:
             source_path=args["source_path"],
             tenant_id=args["tenant_id"],
             imported_by=args["imported_by"],
-            clawhub_url=args.get("clawhub_url"),
+            skillhub_url=args.get("skillhub_url"),
         )
     except ImportError as exc:
         return {"error": f"OpenClaw bridge not available: {exc}"}

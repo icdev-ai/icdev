@@ -68,6 +68,14 @@
   var status = document.getElementById('upload-status');
   var results = document.getElementById('upload-results');
   var progress = document.getElementById('upload-progress');
+  var collectionInput = document.getElementById('collection-input');
+
+  // Pre-fill collection ID when arriving from the Collections page upload link.
+  var params = new URLSearchParams(window.location.search);
+  var prefillCollection = params.get('collection');
+  if (prefillCollection && collectionInput) {
+    collectionInput.value = prefillCollection;
+  }
 
   dropZone.addEventListener('dragover', function(e) { e.preventDefault(); dropZone.style.borderColor = '#4f8ef7'; });
   dropZone.addEventListener('dragleave', function() { dropZone.style.borderColor = '#1e3a6e'; });
@@ -122,6 +130,7 @@
     }
 
     processNext();
+    fileInput.value = '';  // allow re-uploading the same file
   }
 
   function openStream(jobId, filename, onDone) {

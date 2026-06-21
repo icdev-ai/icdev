@@ -32,10 +32,9 @@ def get_connection():
     """
     if _DDC_BACKEND == "postgresql":
         try:
-            from tools.db.storage import get_connection as _icdev_conn
+            from tools.db.storage import get_canvas_connection as _icdev_canvas_conn
 
-            conn = _icdev_conn(db_path=os.environ.get("DDC_PG_DATABASE", "data_canvas"))
-            return conn
+            return _icdev_canvas_conn()
         except ImportError:
             pass  # Fall through to SQLite
     # SQLite (default)
@@ -686,6 +685,21 @@ CREATE TRIGGER IF NOT EXISTS dd_mapping_transforms_no_update
 CREATE TRIGGER IF NOT EXISTS dd_mapping_transforms_no_delete
     BEFORE DELETE ON dd_mapping_transforms
     BEGIN SELECT RAISE(ABORT,'dd_mapping_transforms is append-only — NIST AU-9'); END;
+
+-- ── PII Scanner results ───────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS dd_pii_scans (
+    scan_id         TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL DEFAULT '',
+    overall_risk    TEXT NOT NULL DEFAULT 'none'
+                    CHECK (overall_risk IN ('none','low','medium','high','critical')),
+    findings_json   TEXT NOT NULL DEFAULT '[]',
+    scanned_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dd_pii_scans_design   ON dd_pii_scans(design_id);
+CREATE INDEX IF NOT EXISTS idx_dd_pii_scans_risk      ON dd_pii_scans(overall_risk);
+CREATE INDEX IF NOT EXISTS idx_dd_pii_scans_scanned   ON dd_pii_scans(scanned_at DESC);
 """
 
 

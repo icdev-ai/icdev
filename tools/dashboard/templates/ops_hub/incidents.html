@@ -27,10 +27,12 @@
 </style>
 {% endblock %}
 {% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner(classification) }}
 <a class="back-link" href="/ops">← Ops Hub</a>
 <div class="ohc-page-header mt-2">
   <h1>🚨 Incidents</h1>
-  <p>Incident Command · MTTR · Severity Tracking — {{ classification }}</p>
+  <p>Incident Command · MTTR · Severity Tracking</p>
 </div>
 
 {% set incidents = data.incidents %}

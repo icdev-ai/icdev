@@ -21,6 +21,7 @@
 | IQE Adapter | `tools/iqe/adapters/slides.py` | slides.decks + slides.slides collections |
 | Genesis Reflex | `tools/genesis/reflexes/slides.py` | Weekly Friday 17:00 auto-deck |
 | DB Init | `tools/slides/db/init_db.py` | PG-first canvas DB (slides_decks, slides_slides, slides_audit) |
+| Curated: Innovation Lab | `tools/slides/curated_decks/innovation_lab_business_case.py` | Executive investment brief — 12-slide narrative deck with Excel-derived differentiators and editable ROI placeholders |
 
 ## Configuration
 

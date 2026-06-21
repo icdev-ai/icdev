@@ -793,6 +793,23 @@ class LLMRouter:
         except ImportError:
             return None
 
+    def _compress_request_context(self, function: str, request: LLMRequest) -> LLMRequest:
+        """Apply Headroom-style context compression before the fallback chain (adapt-hd-03).
+
+        Only compresses when compression.enabled=true in llm_config.yaml and
+        function is not in compression.exempt_functions. No-op by default.
+        """
+        try:
+            from tools.llm.compression.context_compressor import compress, load_config_from_yaml
+            cfg = load_config_from_yaml()
+            if not cfg.enabled:
+                return request
+            if function in cfg.exempt_functions:
+                return request
+            return compress(request, cfg)
+        except Exception:
+            return request  # Never block the LLM call on compressor failure
+
     def _pre_invoke_redaction(self, function: str, request: LLMRequest) -> Optional[str]:
         """Sanitize PII in request messages before sending to any LLM.
 
@@ -1677,6 +1694,9 @@ class LLMRouter:
             cached = self._cache_lookup(function, request, model_id_for_key)
             if cached is not None:
                 return cached
+
+        # adapt-hd-03: Context compression — apply before fallback chain
+        request = self._compress_request_context(function, request)
 
         # Two-tier routing: qwen3 worker → Claude planner/reviewer
         two_tier_result = self._maybe_invoke_two_tier(function, request)

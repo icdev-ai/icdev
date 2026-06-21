@@ -113,11 +113,26 @@ def chunk_content(
         return []
 
     cfg = chunk_config or _load_chunk_config()
-    chunk_size  = cfg.get("chunk_size_tokens", _DEFAULT_CHUNK_SIZE)
     overlap_pct = cfg.get("overlap_pct", _DEFAULT_OVERLAP_PCT)
 
     content = content.strip()
     est_tokens = _estimate_tokens(content)
+
+    # Adaptive chunk size: always compute a content-length-aware size and use
+    # min(configured, adaptive) so we never produce fewer than ~30 chunks on
+    # documents that are actually small/medium.  This avoids the 8-chunk
+    # constitution problem where each chunk is 8 KB, BM25 scores collapse, and
+    # amendment text gets buried in noise.
+    #
+    # Formula: target ~70 retrievable chunks per document.
+    # Clamp to [150, 2000] so we never produce single-sentence slivers
+    # (bad for semantic coherence) or oversized bricks (bad for retrieval).
+    # When the doc is large enough that 2000-token chunks still yields ≥70
+    # chunks, the configured value wins — no change for already-large docs.
+    configured_chunk_size = cfg.get("chunk_size_tokens", _DEFAULT_CHUNK_SIZE)
+    target_chunks = 70
+    adaptive = max(150, min(2000, est_tokens // target_chunks))
+    chunk_size = min(configured_chunk_size, adaptive)
 
     # Short content: store as single chunk
     if est_tokens <= chunk_size:

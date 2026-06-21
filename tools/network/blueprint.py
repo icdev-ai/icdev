@@ -1759,6 +1759,18 @@ def create_network_blueprint():
             )
         except Exception:
             pass
+        # DIC Canvas Synergy — emit topology change event (dsyn-emit-01)
+        try:
+            from tools.ndc.event_emitter import emit_topology_change
+            emit_topology_change(
+                topology_id=topo_id,
+                change_summary=f"Topology {topo_id} updated",
+                affected_segments=list(data.get("graph_json", {}).get("nodes", []))[:5]
+                    if isinstance(data.get("graph_json"), dict) else [],
+            )
+        except Exception:
+            pass  # event emission never blocks topology save
+
         resp = {"ok": True}
         if sdc_assessment is not None:
             resp["sdc_assessment"] = sdc_assessment
@@ -13017,6 +13029,30 @@ Planning rules:
                     "topo_id": topo_id,
                     "classification": classification or phase.get("classification", "CUI"),
                 })
+                # DIC Canvas Synergy — emit migration phase complete event (dsyn-emit-02)
+                try:
+                    from tools.network.event_emitter import emit_migration_phase_complete
+                    emit_migration_phase_complete(
+                        phase_id=phase_id,
+                        migration_id=topo_id,
+                        phase_name=phase.get("phase_name", ""),
+                        classification=classification or phase.get("classification", "CUI"),
+                    )
+                except Exception:
+                    pass  # event emission never blocks phase status update
+
+            # DIC Canvas Synergy — emit anomaly event on rollback (dsyn-emit-02)
+            if new_status == "rolled_back":
+                try:
+                    from tools.network.event_emitter import emit_anomaly_detected
+                    emit_anomaly_detected(
+                        migration_id=topo_id,
+                        anomaly_type="phase_rollback",
+                        severity="high",
+                        change_summary=f"Migration phase '{phase.get('phase_name', phase_id)}' was rolled back",
+                    )
+                except Exception:
+                    pass  # event emission never blocks phase status update
 
             conn.commit()
             return jsonify({"status": "ok", "snapshot_id": snapshot_id}), 200

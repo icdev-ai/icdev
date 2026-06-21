@@ -2581,6 +2581,8 @@ def _ensure_annotations_table(conn):
             author TEXT DEFAULT 'reviewer',
             status TEXT DEFAULT 'open' CHECK(status IN ('open','resolved')),
             resolution_note TEXT,
+            resolved_by TEXT,
+            resolved_at TEXT,
             classification TEXT DEFAULT 'CUI',
             created_at TEXT NOT NULL,
             updated_at TEXT
@@ -2686,6 +2688,11 @@ def update_annotation(ann_id):
         return jsonify({"error": "No updatable fields provided"}), 400
 
     updates["updated_at"] = now_iso()
+    ts = now_iso()
+    updates["updated_at"] = ts
+    if updates.get("status") == "resolved":
+        updates["resolved_by"] = body.get("resolved_by") or body.get("author", "reviewer")
+        updates["resolved_at"] = ts
     set_clause = ", ".join(f"{k} = ?" for k in updates)
     conn = _get_db()
     try:

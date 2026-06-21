@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # CUI // SP-CTI
 """Declarative tool registry for the Unified MCP Gateway Server (D301).
 
@@ -43,8 +43,9 @@ Categories:
     system_graph (3)
     intelligence (3)
     integrity (2)
+    nova (5)
 
-Total: 269 tools, 6 resources
+Total: 275 tools, 6 resources
 """
 
 TOOL_REGISTRY = {
@@ -2691,7 +2692,7 @@ TOOL_REGISTRY = {
                 "source_path": {"type": "string", "description": "Path to OpenClaw skill directory"},
                 "tenant_id": {"type": "string"},
                 "imported_by": {"type": "string"},
-                "clawhub_url": {"type": "string", "description": "ClawHub URL for provenance"},
+                "skillhub_url": {"type": "string", "description": "SkillHub URL for provenance"},
             },
             "required": ["source_path", "tenant_id", "imported_by"],
         },
@@ -3204,7 +3205,7 @@ TOOL_REGISTRY = {
         },
     },
     # ============================================================
-    # RESEARCH (10 tools)
+    # RESEARCH (11 tools)
     # ============================================================
     "research_create_session": {
         "category": "research",
@@ -3342,6 +3343,39 @@ TOOL_REGISTRY = {
             "type": "object",
             "properties": {"dossier_id": {"type": "string", "description": "Approved dossier ID"}},
             "required": ["dossier_id"],
+        },
+    },
+    "last30days__parallel_multi_source_social": {
+        "category": "research",
+        "module": "tools.research.source_scanners.social_trend_scanner",
+        "handler": "scan_social_trends",
+        "description": (
+            "Research engine source adapter: parallel multi-source social trend scanner. "
+            "Aggregates trending signals from Reddit, Hacker News, and GitHub Topics over the last 30 days. "
+            "Performs entity disambiguation (handle→subreddit→repo), cross-source content-hash deduplication, "
+            "and graceful degradation on rate-limits. Returns normalized signal dicts suitable for "
+            "downstream research pipeline stages (COMMUNITY, SYNTHESIZE). "
+            "Scanner key: 'social_trends'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "keywords": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Search keywords (up to 5 used per source). Falls back to research_config.yaml defaults.",
+                },
+                "subreddits": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Extra subreddits to include (e.g. ['r/MachineLearning']). Optional.",
+                },
+                "max_per_source": {
+                    "type": "integer",
+                    "description": "Maximum signals per platform (Reddit, HN, GitHub). Default: 30.",
+                    "default": 30,
+                },
+            },
         },
     },
     # ============================================================
@@ -6501,6 +6535,15 @@ TOOL_REGISTRY = {
             "Reduces token usage 60-95% via SmartCrusher (text) or CodeCompressor (code). "
             "Uses headroom library when installed; falls back to deterministic built-in compressor. "
             "All compression is reversible — original messages preserved via decompression_map."
+    # ── Document Intelligence Canvas (DIC) ──────────────────────────────────
+    "dic_ingest": {
+        "category": "dic",
+        "module": "tools.document_intelligence.gap_handlers",
+        "handler": "handle_dic_ingest",
+        "description": (
+            "Ingest a URL or plain text into a DIC collection for BM25+KG search and "
+            "AI output generation (study guide, FAQ, timeline, audio). "
+            "Returns {job_id, doc_id, collection_id, status}."
         ),
         "input_schema": {
             "type": "object",
@@ -6528,6 +6571,168 @@ TOOL_REGISTRY = {
             },
             "required": ["messages"],
         },
+    },
+                "url": {"type": "string", "description": "URL to ingest (mutually exclusive with text)"},
+                "text": {"type": "string", "description": "Plain text content to ingest"},
+                "title": {"type": "string", "description": "Document title (optional)"},
+                "collection_id": {"type": "string", "description": "Target collection (default: 'default')"},
+                "tenant_id": {"type": "string", "description": "Tenant scope (default: 'default')"},
+            },
+            "required": [],
+        },
+    },
+    "dic_search": {
+        "category": "dic",
+        "module": "tools.document_intelligence.gap_handlers",
+        "handler": "handle_dic_search",
+        "description": (
+            "BM25+KG full-text search over a DIC collection. Returns ranked chunks with "
+            "source citations, entity co-occurrences, and relevance scores."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query"},
+                "collection_id": {"type": "string", "description": "Collection to search (default: 'default')"},
+                "limit": {"type": "integer", "description": "Max results (default: 10)"},
+                "tenant_id": {"type": "string", "description": "Tenant scope (default: 'default')"},
+            },
+            "required": ["query"],
+        },
+    },
+    "dic_generate": {
+        "category": "dic",
+        "module": "tools.document_intelligence.gap_handlers",
+        "handler": "handle_dic_generate",
+        "description": (
+            "Generate a structured AI output from a DIC collection: study_guide, faq, timeline, or audio. "
+            "BM25+KG instant results; LLM enhancement available on demand. "
+            "Returns {output_id, output_type, content, provider}."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "output_type": {
+                    "type": "string",
+                    "enum": ["study_guide", "faq", "timeline", "audio"],
+                    "description": "Type of output to generate",
+                },
+                "collection_id": {"type": "string", "description": "Source collection (default: 'default')"},
+                "doc_id": {"type": "string", "description": "Scope to a specific document (optional)"},
+                "tenant_id": {"type": "string", "description": "Tenant scope (default: 'default')"},
+            },
+            "required": ["output_type"],
+        },
+    },
+    "dic_chat": {
+        "category": "dic",
+        "module": "tools.document_intelligence.gap_handlers",
+        "handler": "handle_dic_chat",
+        "description": (
+            "Chat with DIC source documents. Retrieves grounded context via BM25 search, "
+            "then synthesizes a cited answer. Returns {answer, citations, collection_id}."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "User question to answer from sources"},
+                "collection_id": {"type": "string", "description": "Collection to ground answer in (default: 'default')"},
+                "tenant_id": {"type": "string", "description": "Tenant scope (default: 'default')"},
+            },
+            "required": ["question"],
+        },
+    },
+    # ============================================================
+    # NOVA — Autonomous Self-Learning Digital Coworker (5 tools)
+    # ============================================================
+    "nova_get_trust_score": {
+        "category": "nova",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_nova_get_trust_score",
+        "description": (
+            "Return the current trust score and dispatch configuration for an ACE coworker role. "
+            "Includes trust_score, band (probationary/supervised/trusted/autonomous), "
+            "hitl_mode, max_parallel, and auto_approve_routine."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "role_id": {"type": "string", "description": "ACE coworker role ID (e.g. ai_developer, architect)"},
+            },
+            "required": ["role_id"],
+        },
+    },
+    "nova_record_trust_event": {
+        "category": "nova",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_nova_record_trust_event",
+        "description": (
+            "Record a trust calibration event for an ACE coworker role. "
+            "event_type: success (+0.05), failure (-0.10), hitl_escalation (-0.03), "
+            "timeout (-0.05), phantom_completion (-0.08). "
+            "Append-only ledger — never modifies prior records."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "role_id": {"type": "string", "description": "ACE coworker role ID"},
+                "event_type": {
+                    "type": "string",
+                    "enum": ["success", "failure", "hitl_escalation", "timeout", "phantom_completion"],
+                    "description": "Trust event type",
+                },
+                "source_task_id": {"type": "string", "description": "Kanban task or ACE instance ID (for audit trail)"},
+            },
+            "required": ["role_id", "event_type"],
+        },
+    },
+    "nova_get_dispatch_config": {
+        "category": "nova",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_nova_get_dispatch_config",
+        "description": (
+            "Return the full dispatch configuration for an ACE coworker role based on its trust band. "
+            "Used by orchestrators to determine HITL gate mode and parallelism level before dispatch."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "role_id": {"type": "string", "description": "ACE coworker role ID"},
+            },
+            "required": ["role_id"],
+        },
+    },
+    "nova_evolve_skill": {
+        "category": "nova",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_nova_evolve_skill",
+        "description": (
+            "Run a GEPA-style skill evolution pass for a given task_type. "
+            "Analyzes recent execution traces, generates improvement candidates via LLM, "
+            "scores them on eval dataset, applies constraint gates (coherence/SIPA/size), "
+            "and proposes winners as kanban suggested cards (NEVER auto-merges). "
+            "dry_run=true runs the full analysis without writing artifacts or cards."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task_type": {"type": "string", "description": "Kanban task_type to evolve skill for (e.g. build, test, secure)"},
+                "skill_used": {"type": "string", "description": "Skill file name (e.g. icdev-build)", "default": ""},
+                "dry_run": {"type": "boolean", "description": "If true, analyze without writing artifacts", "default": True},
+            },
+            "required": ["task_type"],
+        },
+    },
+    "nova_trust_summary": {
+        "category": "nova",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_nova_trust_summary",
+        "description": (
+            "Return trust scores and bands for all known ACE coworker roles. "
+            "Shows role_id, trust_score, band, and last event timestamp. "
+            "Read-only — use nova_record_trust_event to update scores."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
     },
 }
 

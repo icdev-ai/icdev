@@ -65,7 +65,8 @@ def recovery_ctx(tmp_path, monkeypatch):
         con.row_factory = sqlite3.Row
         return con
 
-    import tools.db.storage as _storage
+    import importlib
+    _storage = importlib.import_module("tools.db.storage")
     monkeypatch.setattr(_storage, "get_connection", _fake_conn)
 
     # Capture Telegram + self_debug side-effects. Replace the modules in

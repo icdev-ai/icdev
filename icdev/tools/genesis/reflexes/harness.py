@@ -42,7 +42,33 @@ def _open_degradation_card_exists(reflex: str, metric: str) -> bool:
         return False
 
 
-def _create_degradation_card(alert: dict) -> str | None:
+def _build_skill_prompt(task_type: str, colearn_enabled: bool) -> str:
+    """Build a skill prompt, prepending the ECHO improvement artifact when co-learning is active.
+
+    When ICDEV_HARNESS_COLEARN is true, calls get_latest_improvement(task_type) and
+    prepends the returned artifact to the base remediation prompt so the kanban
+    executor receives Reflexion-generated context before the task description.
+    """
+    base_prompt = (
+        f"Investigate the degraded `{task_type}` harness metric and propose a "
+        "remediation plan. Apply any relevant heuristic amendments or self-healing "
+        "steps as described in the card details above."
+    )
+    if colearn_enabled:
+        try:
+            from tools.workflow.reflexion_agent import get_latest_improvement
+            artifact = get_latest_improvement(task_type)
+            if artifact:
+                return artifact + "\n\n" + base_prompt
+        except Exception:
+            pass
+    return base_prompt
+
+
+def _create_degradation_card(
+    alert: dict,
+    skill_prompt: str = "",
+) -> str | None:
     """Insert a kanban_tasks row for a degradation alert."""
     import uuid
     reflex = alert["reflex"]
@@ -61,6 +87,8 @@ def _create_degradation_card(alert: dict) -> str | None:
         f"- Severity: `{severity}`\n\n"
         f"**Recommendation:** {recommendation}"
     )
+    if skill_prompt:
+        body += f"\n\n**Skill Prompt:**\n{skill_prompt}"
 
     try:
         conn = _conn()
@@ -192,8 +220,11 @@ def run(config: dict[str, Any], trust: Any) -> dict[str, Any]:
             LOG.debug("[harness] skipping %s.%s — card already open", reflex, metric)
             continue
 
+        # NOVA ECHO: build skill_prompt with improvement artifact prepended when co-learning active
+        skill_prompt = _build_skill_prompt(reflex, colearn_enabled)
+
         if not dry_run:
-            card_id = _create_degradation_card(alert)
+            card_id = _create_degradation_card(alert, skill_prompt=skill_prompt)
             if card_id:
                 new_cards.append(card_id)
         else:

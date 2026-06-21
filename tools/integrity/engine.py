@@ -412,6 +412,33 @@ def assess(
         findings_count, capabilities_count, resolved_mode,
         " (reconciled)" if reconciled else "",
     )
+
+    # DIC Canvas Synergy — emit SIPA events (dsyn-emit-05)
+    if score_result["risk_score"] >= 70 and findings_count > 0:
+        try:
+            from tools.integrity.event_emitter import emit_vulnerability_found
+            emit_vulnerability_found(
+                file_path=source,
+                finding_type=score_result.get("verdict", "high_risk"),
+                severity="high" if score_result["risk_score"] >= 70 else "critical",
+                assessment_id=str(assessment_id),
+                project_id=project_id or "",
+            )
+        except Exception:
+            pass  # event emission never blocks assessment result
+
+    if status == "quarantine":
+        try:
+            from tools.integrity.event_emitter import emit_quarantine_triggered
+            emit_quarantine_triggered(
+                file_path=source,
+                assessment_id=str(assessment_id),
+                reason=score_result.get("verdict", "quarantined"),
+                project_id=project_id or "",
+            )
+        except Exception:
+            pass
+
     return {
         "assessment_id": assessment_id,
         "verdict": score_result["verdict"],

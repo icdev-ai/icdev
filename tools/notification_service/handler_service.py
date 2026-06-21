@@ -14,6 +14,8 @@ unavailable. See ``_ai_handler_narrative``.
 
 from __future__ import annotations
 
+import json
+
 from tools.db.storage import get_connection
 from .event_service import (
     render_template, render_to_string,
@@ -393,11 +395,22 @@ def handle_aiify_opportunity_handler(
             "SELECT composite_score, value_score, feasibility_score, risk_score "
             "FROM aiify_scores WHERE opportunity_id = ?", (opportunity_id,)
         ).fetchone()
-        roadmap = conn.execute(
-            "SELECT roadmap_id, phase FROM aiify_roadmaps r "
-            "JOIN aiify_roadmap_items ri ON ri.roadmap_id = r.roadmap_id "
-            f"WHERE ri.opportunity_id = ? LIMIT {_ROADMAP_HANDLER_LIMIT}", (opportunity_id,)
+        _rm_row = conn.execute(
+            "SELECT roadmap_id, phases FROM aiify_roadmaps WHERE scan_id = ?",
+            (int(scan_id),),
         ).fetchone()
+        roadmap = None
+        if _rm_row:
+            _phases = _rm_row.get("phases") or []
+            if isinstance(_phases, str):
+                _phases = json.loads(_phases)
+            for _p in _phases:
+                if any(
+                    o.get("opportunity_id") == opportunity_id
+                    for o in _p.get("opportunities", [])
+                ):
+                    roadmap = {"roadmap_id": _rm_row.get("roadmap_id"), "phase": _p.get("label", "")}
+                    break
         rendered = render_template(
             "handlers/aiify_opportunity.html",
             opportunity=opportunity, scores=scores, roadmap=roadmap
@@ -501,24 +514,38 @@ def handle_aiify_roadmap_handler(
     conn = get_connection()
     try:
         roadmap = conn.execute(
-            "SELECT roadmap_id, title, total_effort_days, generated_at "
+            "SELECT roadmap_id, title, total_effort_days, phases, created_at "
             "FROM aiify_roadmaps WHERE roadmap_id = ?", (roadmap_id,)
         ).fetchone()
-        phase_summary = conn.execute(
-            "SELECT ri.phase, COUNT(*) as opp_count, "
-            "AVG(s.composite_score) as avg_score "
-            "FROM aiify_roadmap_items ri "
-            "LEFT JOIN aiify_scores s ON s.opportunity_id = ri.opportunity_id "
-            "WHERE ri.roadmap_id = ? GROUP BY ri.phase", (roadmap_id,)
-        ).fetchall()
-        top_opps = conn.execute(
-            "SELECT o.opportunity_id, o.function_name, o.pattern_type, s.composite_score "
-            "FROM aiify_roadmap_items ri "
-            "JOIN aiify_opportunities o ON o.opportunity_id = ri.opportunity_id "
-            "LEFT JOIN aiify_scores s ON s.opportunity_id = ri.opportunity_id "
-            "WHERE ri.roadmap_id = ? AND ri.phase LIKE '%Quick Win%' "
-            f"ORDER BY s.composite_score DESC LIMIT {_ROADMAP_TOP_OPPS_LIMIT}", (roadmap_id,)
-        ).fetchall()
+        _phases = (roadmap or {}).get("phases") or []
+        if isinstance(_phases, str):
+            _phases = json.loads(_phases)
+        phase_summary = [
+            {
+                "phase": p.get("label", ""),
+                "opp_count": p.get("count", 0),
+                "avg_score": (
+                    sum(o.get("composite_score", 0.0) for o in p.get("opportunities", []))
+                    / max(len(p.get("opportunities", [])), 1)
+                ),
+            }
+            for p in _phases
+        ]
+        top_opps = [
+            {
+                "opportunity_id": o.get("opportunity_id"),
+                "function_name": o.get("function_name"),
+                "pattern_type": o.get("pattern_type"),
+                "composite_score": o.get("composite_score"),
+            }
+            for p in _phases
+            if "Quick Win" in p.get("label", "")
+            for o in sorted(
+                p.get("opportunities", []),
+                key=lambda x: x.get("composite_score", 0.0),
+                reverse=True,
+            )
+        ][:_ROADMAP_TOP_OPPS_LIMIT]
         scan = conn.execute(
             "SELECT total_files, overall_verdict, overall_ai_readiness "
             "FROM aiify_scans WHERE scan_id = ?", (scan_id,)

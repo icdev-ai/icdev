@@ -29,8 +29,26 @@
 .radar-container{background:#1a1a2e;border-radius:10px;padding:20px;border:1px solid #2a2a4a;margin-bottom:24px;}
 </style>
 {% endblock %}
+{% block head_extra %}
+<style>
+.zig-tabs{display:flex;gap:0;border-bottom:2px solid #2a2a4a;margin-bottom:24px;overflow-x:auto;}
+.zig-tab{padding:10px 18px;color:#aaa;font-size:0.85rem;font-weight:600;text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-2px;white-space:nowrap;transition:color .2s,border-color .2s;}
+.zig-tab:hover{color:#fff;}
+.zig-tab.active{color:#e94560;border-bottom-color:#e94560;}
+</style>
+{% endblock %}
 {% block content %}
 <div style="padding:24px;max-width:1400px;margin:0 auto;">
+
+  <!-- Nav Tabs -->
+  <nav class="zig-tabs">
+    <a class="zig-tab active" href="/security/zig/">Dashboard</a>
+    <a class="zig-tab" href="/security/zig/pillar/usr">Pillars</a>
+    <a class="zig-tab" href="/security/zig/phase">Phases</a>
+    <a class="zig-tab" href="/security/zig/assessment">Assessment</a>
+    <a class="zig-tab" href="/security/zig/roadmap">Roadmap</a>
+    <a class="zig-tab" href="/security/zig/portfolio/">Portfolio</a>
+  </nav>
 
   <!-- Hero Banner -->
   <div class="zig-hero">
