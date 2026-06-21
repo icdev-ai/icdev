@@ -72,6 +72,8 @@ _WEIGHT_DEFAULTS: dict[str, Any] = {
     "append-only-audit": 1.3,
 }
 # Fallback floor — overridden by weight_anomaly_detection.min_weight in args config.
+# Fallback minimum weight — used when min_weight is absent from the YAML config.
+# Configure via args/agent_readiness_config.yaml: pillar_weights.min_weight
 _MIN_WEIGHT = 0.1
 
 
@@ -84,6 +86,10 @@ def _load_pillar_weights() -> dict[str, float]:
     from the same config so operators can tune it without touching code.
     Values below that floor are clamped to prevent near-zero weights from
     silencing a pillar and distorting the overall score.
+    The anomaly-detection floor (min_weight) is read from the config's
+    pillar_weights.min_weight key; if absent, _MIN_WEIGHT is used.
+    Values below the floor are clamped to prevent anomalously low weights
+    from distorting the overall score.
     """
     try:
         import yaml  # optional dep — present in all ICDEV environments
@@ -94,6 +100,8 @@ def _load_pillar_weights() -> dict[str, float]:
         cfg = data.get("pillar_weights", {})
         if not cfg:
             return dict(_WEIGHT_DEFAULTS)
+        # Pop min_weight before iterating so it is not treated as a pillar ID.
+        min_weight = max(0.0, float(cfg.pop("min_weight", _MIN_WEIGHT)))
         merged = dict(_WEIGHT_DEFAULTS)
         for pillar_id, raw_weight in cfg.items():
             weight = float(raw_weight)

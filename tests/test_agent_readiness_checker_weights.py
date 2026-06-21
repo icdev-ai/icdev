@@ -90,6 +90,41 @@ class TestLoadPillarWeights:
         assert result["testing"] == pytest.approx(mod._MIN_WEIGHT)
         mod._load_pillar_weights.cache_clear()
 
+    def test_configurable_min_weight_from_yaml(self, tmp_path, monkeypatch):
+        """min_weight in pillar_weights overrides the hardcoded _MIN_WEIGHT fallback."""
+        cfg = tmp_path / "agent_readiness_config.yaml"
+        cfg.write_text(
+            "pillar_weights:\n"
+            "  testing: 0.0\n"
+            "  min_weight: 0.3\n",
+            encoding="utf-8",
+        )
+        mod = self._get_mod()
+        monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
+        mod._load_pillar_weights.cache_clear()
+        result = mod._load_pillar_weights()
+        # weight 0.0 must be clamped to the configured 0.3, not the hardcoded 0.1
+        assert result["testing"] == pytest.approx(0.3)
+        # min_weight must not be stored as a pillar entry
+        assert "min_weight" not in result
+        mod._load_pillar_weights.cache_clear()
+
+    def test_min_weight_in_config_does_not_affect_weights_above_floor(self, tmp_path, monkeypatch):
+        """Weights already above min_weight must not be modified."""
+        cfg = tmp_path / "agent_readiness_config.yaml"
+        cfg.write_text(
+            "pillar_weights:\n"
+            "  testing: 1.5\n"
+            "  min_weight: 0.3\n",
+            encoding="utf-8",
+        )
+        mod = self._get_mod()
+        monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
+        mod._load_pillar_weights.cache_clear()
+        result = mod._load_pillar_weights()
+        assert result["testing"] == pytest.approx(1.5)
+        mod._load_pillar_weights.cache_clear()
+
     def test_all_default_pillar_ids_present(self, tmp_path, monkeypatch):
         mod = self._get_mod()
         monkeypatch.setattr(mod, "_ARGS_PATH", tmp_path / "absent.yaml")
