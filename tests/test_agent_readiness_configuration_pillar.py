@@ -50,6 +50,13 @@ class TestLoadThresholds:
         )
         import tools.aiify.agent_readiness.pillars.configuration as mod
         monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
+    def test_returns_yaml_values_when_config_present(self, monkeypatch):
+        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        monkeypatch.setattr(mod, "load_pillar_config", lambda _: {
+            "task_runner": {"min_makefile_targets": 7, "min_npm_scripts": 5},
+            "ci_pipeline": {"min_workflows": 2},
+            "iac": {"min_files": 3},
+        })
         mod._load_thresholds.cache_clear()
         result = mod._load_thresholds()
         assert result["min_makefile_targets"] == 7
@@ -61,6 +68,10 @@ class TestLoadThresholds:
     def test_falls_back_to_defaults_when_file_absent(self, tmp_path, monkeypatch):
         import tools.aiify.agent_readiness.pillars.configuration as mod
         monkeypatch.setattr(mod, "_ARGS_PATH", tmp_path / "nonexistent.yaml")
+    def test_falls_back_to_defaults_when_file_absent(self, monkeypatch):
+        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        # Simulate absent/unreadable config — load_pillar_config returns {} on error.
+        monkeypatch.setattr(mod, "load_pillar_config", lambda _: {})
         mod._load_thresholds.cache_clear()
         result = mod._load_thresholds()
         assert result["min_makefile_targets"] == 3
@@ -77,6 +88,11 @@ class TestLoadThresholds:
         )
         import tools.aiify.agent_readiness.pillars.configuration as mod
         monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
+    def test_partial_config_merges_with_defaults(self, monkeypatch):
+        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        monkeypatch.setattr(mod, "load_pillar_config", lambda _: {
+            "ci_pipeline": {"min_workflows": 4},
+        })
         mod._load_thresholds.cache_clear()
         result = mod._load_thresholds()
         assert result["min_ci_workflows"] == 4
@@ -88,6 +104,10 @@ class TestLoadThresholds:
         cfg.write_text(":\tbad: yaml: [", encoding="utf-8")
         import tools.aiify.agent_readiness.pillars.configuration as mod
         monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
+    def test_falls_back_on_malformed_yaml(self, monkeypatch):
+        import tools.ai_augmentation.agent_readiness.pillars.configuration as mod
+        # load_pillar_config returns {} when YAML is malformed — thresholds use _DEFAULTS.
+        monkeypatch.setattr(mod, "load_pillar_config", lambda _: {})
         mod._load_thresholds.cache_clear()
         result = mod._load_thresholds()
         assert result["min_makefile_targets"] == 3
