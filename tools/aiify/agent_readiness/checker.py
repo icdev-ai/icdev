@@ -71,7 +71,7 @@ _WEIGHT_DEFAULTS: dict[str, Any] = {
     "stig-compliance":   1.3,
     "append-only-audit": 1.3,
 }
-# Minimum weight accepted from config — values below this are anomalously low.
+# Fallback floor — overridden by weight_anomaly_detection.min_weight in args config.
 _MIN_WEIGHT = 0.1
 
 
@@ -80,20 +80,24 @@ def _load_pillar_weights() -> dict[str, float]:
     """Load pillar weights from args/agent_readiness_config.yaml.
 
     Falls back to built-in defaults if the file is absent or malformed.
-    Values below _MIN_WEIGHT are clamped to prevent anomalously low weights
-    from distorting the overall score.
+    The anomaly-detection floor (weight_anomaly_detection.min_weight) is read
+    from the same config so operators can tune it without touching code.
+    Values below that floor are clamped to prevent near-zero weights from
+    silencing a pillar and distorting the overall score.
     """
     try:
         import yaml  # optional dep — present in all ICDEV environments
         raw = _ARGS_PATH.read_text(encoding="utf-8")
         data = yaml.safe_load(raw) or {}
+        anomaly_cfg = data.get("weight_anomaly_detection") or {}
+        min_weight = float(anomaly_cfg.get("min_weight", _MIN_WEIGHT))
         cfg = data.get("pillar_weights", {})
         if not cfg:
             return dict(_WEIGHT_DEFAULTS)
         merged = dict(_WEIGHT_DEFAULTS)
         for pillar_id, raw_weight in cfg.items():
             weight = float(raw_weight)
-            merged[pillar_id] = max(_MIN_WEIGHT, weight)
+            merged[pillar_id] = max(min_weight, weight)
         return merged
     except Exception:  # noqa: BLE001
         return dict(_WEIGHT_DEFAULTS)
