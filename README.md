@@ -1,12 +1,12 @@
 <p align="center">
   <img src="https://img.shields.io/badge/license-Apache--2.0-blue" alt="License">
   <img src="https://img.shields.io/badge/python-3.9%2B-brightgreen" alt="Python 3.9+">
-  <img src="https://img.shields.io/badge/version-1.2.29-blue" alt="Version">
+  <img src="https://img.shields.io/badge/version-1.2.30-blue" alt="Version">
   <img src="https://img.shields.io/badge/compliance%20frameworks-42-orange" alt="Compliance Frameworks">
-  <img src="https://img.shields.io/badge/tools-530%2B-blueviolet" alt="Tools">
-  <img src="https://img.shields.io/badge/agents-15-red" alt="Agents">
+  <img src="https://img.shields.io/badge/tools-560%2B-blueviolet" alt="Tools">
+  <img src="https://img.shields.io/badge/agents-16-red" alt="Agents">
   <img src="https://img.shields.io/badge/languages-6-green" alt="Languages">
-  <img src="https://img.shields.io/badge/canvases-12-00acc1" alt="Design Canvases">
+  <img src="https://img.shields.io/badge/canvases-13-00acc1" alt="Design Canvases">
   <img src="https://img.shields.io/badge/solution%20packs-7-ff6b35" alt="Solution Packs">
   <img src="https://img.shields.io/badge/PyPI-icdev-informational" alt="PyPI">
 </p>
@@ -14,6 +14,19 @@
 # ICDEV™ — Intelligent Certified Development Platform
 
 **A system that builds systems.**
+
+## What's New in 1.2.30 — ACE Co-Worker Hardening, AAC Agent Readiness & Kanban PR Flow
+
+- **ACE Co-Worker Engine — 14 New Roles** — 14 production roles added across 4 domains: monitoring/observability (performance_monitor, reliability_engineer, incident_responder, log_analyst, alert_manager), GovCon (govcon_specialist, capture_manager, proposal_coordinator), CPMP (contract_manager, program_analyst, deliverable_tracker), and FathomDesk (support_engineer, knowledge_curator, escalation_manager). Co-worker intent now classified via LLM + catalog constraint for automatic role assembly.
+- **ACE Hardening & Traceability** — Activity timeline, trust leaderboard, and audit API shipped at `/coworker/<id>/timeline`. Step executor hardened with type safety and error surfacing. Pre-insert pending row on launch eliminates 404 race condition. `listen_topics` guard prevents circular deadlocks. Coherence gate added: `canvas_placeholder_style` detects SQLite `?` vs PG `%s` placeholders.
+- **AI Augmentation Canvas (AAC) — 11-Pillar Agent Readiness Checker** — New assessment suite at `/ai-augmentation/` evaluating AI agents across: structure, configuration, dependencies, documentation, IL classification, NIST 800-53 controls (NLP-extracted), STIG compliance, append-only audit, code quality, security hardening, and test coverage. Adaptive anomaly detection via per-pillar threshold learning. Opportunity scorer ranks findings by impact × feasibility.
+- **Kanban Scheduler PR Flow** — Tasks now follow the same workflow as Claude CLI: push `kanban/<id>` branch → `gh pr create` → store PR URL in `executor_url` — visible on the kanban board. `pr_watcher` daemon (OPT-70) polls CI and auto-merges with `--squash --delete-branch` when green. Enable via `ICDEV_KANBAN_PR_FLOW=true`.
+- **Proposal Inline Annotations** — Section-level annotations with category tagging and margin notes at `/proposals/<id>/sections/<sid>`. Annotators can tag by category (compliance, risk, strength, gap) and attach margin notes that surface in the WriteGuard V&V pipeline.
+- **ACE Preflight Decisions** — `ace_preflight_decisions` table gates co-worker launches with structured go/no-go decisions. Pre-launch validation surfaces blockers before thread pool execution begins.
+- **ClaWhub Risk-Score Blocking** — Dependency imports with risk score > 50 are now blocked at the ClaWhub gate; cached risk scores and severity displayed per import in the UI.
+- **Centralized Logging** — `icdev_logger.get_logger()` now used in all 36 remaining tools that had raw `logging.getLogger()` calls; consistent structured log output across the platform.
+
+---
 
 ## What's New in 1.2.29 — AI-ify Posture Engine, DIC Intelligence Hub & Proposals V&V
 
