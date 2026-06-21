@@ -1,0 +1,33 @@
+# Oracle Triage Reflex — runtime configuration
+# Loaded once per process by oracle_triage._load_triage_config().
+# Change values here without editing Python source.
+
+version: 1
+
+# ── Orphan DB table verifier ─────────────────────────────────────────────────
+# Minimum code-reference count to treat an orphan table as a real gap.
+# Tables with fewer references than this are dismissed as dead references.
+orphan_min_refs: 1
+
+# ── Anomaly detection — confidence-weighted thresholds ───────────────────────
+# Oracle predictions arrive with a confidence score in [0, 1].
+# Low-confidence predictions are treated as potentially anomalous and require
+# stronger evidence before being promoted.
+anomaly_detection:
+  # Predictions with confidence < low_confidence_threshold are considered
+  # anomalous: the orphan verifier applies a higher min_refs requirement
+  # (orphan_min_refs_low_confidence) before promoting.
+  low_confidence_threshold: 0.3
+
+  # Min refs applied to low-confidence orphan_db_table predictions.
+  # Higher than orphan_min_refs to reduce false positives from noisy predictions.
+  orphan_min_refs_low_confidence: 3
+
+  # Predictions with confidence >= high_confidence_threshold bypass the orphan
+  # refs check and are promoted directly (Oracle is trusted at this level).
+  high_confidence_threshold: 0.85
+
+  # Minimum number of historical confidence scores required to activate adaptive
+  # threshold computation (mean ± 1 std, clamped to static bounds above).
+  # Falls back to static thresholds when fewer samples are available.
+  min_history_for_adaptive: 10

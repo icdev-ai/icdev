@@ -20,7 +20,7 @@ DB_PATH = _ICDEV_ROOT / "data" / "boundary_canvas.db"
 
 # Backend detection — BDC_STORAGE_BACKEND only (NOT inherited from ICDEV_STORAGE_BACKEND)
 # BDC has its own DB (boundary_canvas.db). Set BDC_STORAGE_BACKEND=postgresql to use PG.
-_BDC_BACKEND = os.environ.get("BDC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", "sqlite")).lower()
+_BDC_BACKEND = os.environ.get("BDC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql"))).lower()
 
 
 def get_connection():

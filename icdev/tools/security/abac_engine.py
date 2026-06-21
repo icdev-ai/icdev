@@ -211,23 +211,12 @@ class PDP:
                     reason=f"Matched policy '{policy.get('name', 'unknown')}'",
                 )
                 self._cache[cache_key] = (decision, now)
-                self._write_audit(decision, subject, resource, action)
                 return decision
 
         # Default deny
         decision = DENY
         self._cache[cache_key] = (decision, now)
-        self._write_audit(decision, subject, resource, action)
         return decision
-
-    def _write_audit(self, decision: "Decision", subject: dict, resource: dict, action: str) -> None:
-        """Best-effort audit write to abac_audit — never raises."""
-        try:
-            from tools.db.storage import get_connection
-            with get_connection() as conn:
-                log_abac_audit(conn, decision, subject, resource, action)
-        except Exception:
-            pass
 
     def clear_cache(self) -> None:
         self._cache.clear()
@@ -353,42 +342,6 @@ def log_abac_decision(
         conn.commit()
     except Exception as exc:
         logger.debug("Could not log ABAC decision: %s", exc)
-
-
-def log_abac_audit(
-    conn,
-    decision: Decision,
-    subject: dict,
-    resource: dict,
-    action: str,
-) -> None:
-    """Write detailed per-decision record to ``abac_audit`` (G-05, NIST AU-2/AU-12)."""
-    try:
-        import uuid as _uuid
-        from datetime import datetime, timezone
-        conn.execute(
-            """
-            INSERT INTO abac_audit
-            (id, user_id, role, tenant_id, resource, action,
-             policy_matched, decision, reason, evaluated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                str(_uuid.uuid4()),
-                subject.get("user_id", ""),
-                subject.get("role", ""),
-                subject.get("tenant_id", ""),
-                json.dumps(resource, default=str),
-                action,
-                decision.policy_name,
-                "permit" if decision.permit else "deny",
-                decision.reason,
-                datetime.now(timezone.utc).isoformat(),
-            ),
-        )
-        conn.commit()
-    except Exception as exc:
-        logger.debug("Could not write abac_audit record: %s", exc)
 
 
 # ---------------------------------------------------------------------------

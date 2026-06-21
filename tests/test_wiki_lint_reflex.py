@@ -1,12 +1,9 @@
 # CUI // SP-CTI
 """Tests for the wiki_lint Genesis reflex and memory cross-reference update."""
 
-import json
-import re
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 
 # ---------------------------------------------------------------------------

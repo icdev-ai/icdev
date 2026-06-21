@@ -43,7 +43,7 @@ def scan_models(project_id: str) -> dict:
     """Load ML model inventory from DB; fall back to defaults if absent."""
     inv = dict(_DEFAULT_INVENTORY)
     try:
-        from icdev.tools.aimc.db.init_db import init_db as _init_aimc_db
+        from tools.aimc.db.init_db import init_db as _init_aimc_db
         _init_aimc_db()
     except Exception:
         pass

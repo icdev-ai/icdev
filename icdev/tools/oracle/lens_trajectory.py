@@ -6,12 +6,14 @@ when files will breach complexity or maintainability thresholds, detect
 converging hotspots, and score predictions by urgency and blast radius.
 
 Three-phase pipeline: analyze → score → propose
-Scanner-tier only (zero Claude tokens).
+Thresholds are loaded from args/oracle_trajectory_config.yaml; hardcoded
+values below serve as in-code fallbacks when the config file is absent.
 """
 
 from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
+import json
 import subprocess
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -26,35 +28,53 @@ from tools.oracle.base_lens import BaseLens, OraclePrediction
 logger = get_logger(__name__)
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[2]
-
 _TRAJECTORY_CONFIG_PATH = _ICDEV_ROOT / "args" / "oracle_trajectory_config.yaml"
 
 
 def _load_trajectory_config() -> dict:
+    """Load threshold config from args/oracle_trajectory_config.yaml; return {} on failure."""
     try:
         with open(_TRAJECTORY_CONFIG_PATH, encoding="utf-8") as fh:
-            return yaml.safe_load(fh) or {}
-    except FileNotFoundError:
-        logger.warning("oracle_trajectory_config.yaml not found; using defaults")
-        return {}
+            raw = yaml.safe_load(fh)
+        return (raw or {}).get("trajectory_forecast", {})
     except Exception as exc:
-        logger.warning("Failed to load oracle_trajectory_config.yaml: %s", exc)
+        logger.warning("Trajectory: failed to load config, using built-in defaults: %s", exc)
         return {}
 
 
-_TRAJECTORY_CONFIG = _load_trajectory_config()
+_CFG = _load_trajectory_config()
+_FB = _CFG.get("fallbacks", {})
+_AN = _CFG.get("anomaly", {})
+_VEL = _CFG.get("velocity", {})
+_HS = _CFG.get("hotspot", {})
+_URG = _CFG.get("urgency", {})
+_CON = _CFG.get("confidence", {})
 
-# Thresholds
-CC_THRESHOLD: int = int(
-    (_TRAJECTORY_CONFIG.get("anomaly") or {})
-    .get("detection", {})
-    .get("threshold", 15)
-)          # cyclomatic complexity ceiling (configurable via args/oracle_trajectory_config.yaml)
-MAINTAINABILITY_FLOOR: float = 0.5  # maintainability score floor
-MIN_SNAPSHOTS: int = 3          # minimum data points for regression
-HOTSPOT_MIN_FILES: int = 2      # files in same dir trending up = hotspot
-DAYS_URGENT: int = 30           # < 30 days → critical
-DAYS_WARNING: int = 90          # 30–90 days → warning
+# Fallback thresholds — used when the config file is absent
+CC_THRESHOLD: int = int(_FB.get("cc_threshold", 15))
+MAINTAINABILITY_FLOOR: float = float(_FB.get("maintainability_floor", 0.5))
+MIN_SNAPSHOTS: int = int(_FB.get("min_snapshots", 3))
+FORECAST_HORIZON_DAYS: int = int(_FB.get("forecast_horizon_days", 365))
+HOTSPOT_MIN_FILES: int = int(_HS.get("min_files", 2))
+HOTSPOT_CRITICAL_CUTOFF: int = int(_HS.get("critical_fallback", 4))
+DAYS_URGENT: int = int(_URG.get("days_critical", 30))
+DAYS_WARNING: int = int(_URG.get("days_warning", 90))
+
+# Velocity anomaly thresholds
+VELOCITY_FALLBACK_SLOPE: float = float(_VEL.get("fallback_slope_cutoff", 1.0))
+VELOCITY_FALLBACK_RECENT_AVG: float = float(_VEL.get("fallback_recent_avg_cutoff", 5.0))
+
+# Confidence scoring parameters
+CC_BREACH_CONF_MAX: float = float(_CON.get("cc_breach_max", 0.92))
+CC_BREACH_CONF_BASE: float = float(_CON.get("cc_breach_base", 0.55))
+CC_BREACH_CONF_SCALE: float = float(_CON.get("cc_breach_scale", 0.40))
+MAINT_DECLINE_CONF_MAX: float = float(_CON.get("maint_decline_max", 0.90))
+MAINT_DECLINE_CONF_BASE: float = float(_CON.get("maint_decline_base", 0.55))
+MAINT_DECLINE_CONF_SCALE: float = float(_CON.get("maint_decline_scale", 0.38))
+HOTSPOT_CONF_MAX: float = float(_CON.get("hotspot_max", 0.88))
+HOTSPOT_CONF_BASE: float = float(_CON.get("hotspot_base", 0.55))
+HOTSPOT_CONF_PER_FILE: float = float(_CON.get("hotspot_per_file", 0.06))
+VELOCITY_CONF_FIXED: float = float(_CON.get("velocity_fixed", 0.70))
 
 
 def _utcnow() -> str:
@@ -239,13 +259,16 @@ class TrajectoryLens(BaseLens):
             # CC threshold breach forecast
             if cc_slope > 0 and current_cc < CC_THRESHOLD:
                 days = _days_to_threshold(current_cc, cc_slope, CC_THRESHOLD)
-                if days is not None and days < 365:
+                if days is not None and days < FORECAST_HORIZON_DAYS:
                     severity = (
                         "critical" if days < DAYS_URGENT
                         else "warning" if days < DAYS_WARNING
                         else "info"
                     )
-                    confidence = min(0.92, 0.55 + (1.0 - days / 365.0) * 0.40)
+                    confidence = min(
+                        CC_BREACH_CONF_MAX,
+                        CC_BREACH_CONF_BASE + (1.0 - days / FORECAST_HORIZON_DAYS) * CC_BREACH_CONF_SCALE,
+                    )
                     predictions.append(
                         OraclePrediction(
                             lens=self.name,
@@ -273,13 +296,16 @@ class TrajectoryLens(BaseLens):
             # Maintainability floor breach forecast
             if maint_slope < 0 and current_maint > MAINTAINABILITY_FLOOR:
                 days = _days_to_threshold(current_maint, maint_slope, MAINTAINABILITY_FLOOR)
-                if days is not None and days < 365:
+                if days is not None and days < FORECAST_HORIZON_DAYS:
                     severity = (
                         "critical" if days < DAYS_URGENT
                         else "warning" if days < DAYS_WARNING
                         else "info"
                     )
-                    confidence = min(0.90, 0.55 + (1.0 - days / 365.0) * 0.38)
+                    confidence = min(
+                        MAINT_DECLINE_CONF_MAX,
+                        MAINT_DECLINE_CONF_BASE + (1.0 - days / FORECAST_HORIZON_DAYS) * MAINT_DECLINE_CONF_SCALE,
+                    )
                     predictions.append(
                         OraclePrediction(
                             lens=self.name,
@@ -314,8 +340,8 @@ class TrajectoryLens(BaseLens):
             total_blast = sum(dependents.get(fp, 0) for fp, _ in trending_up)
             top_files = sorted(trending_up, key=lambda x: -x[1])[:5]
 
-            confidence = min(0.88, 0.55 + len(trending_up) * 0.06)
-            severity = "critical" if len(trending_up) >= 4 else "warning"
+            confidence = min(HOTSPOT_CONF_MAX, HOTSPOT_CONF_BASE + len(trending_up) * HOTSPOT_CONF_PER_FILE)
+            severity = "critical" if len(trending_up) >= HOTSPOT_CRITICAL_CUTOFF else "warning"
 
             predictions.append(
                 OraclePrediction(
@@ -343,14 +369,14 @@ class TrajectoryLens(BaseLens):
 
         # High commit-velocity directories
         for dir_path, week_counts in dir_activity.items():
-            if len(week_counts) < 3:
+            if len(week_counts) < MIN_SNAPSHOTS:
                 continue
             sorted_weeks = sorted(week_counts.items())
             xs = list(range(len(sorted_weeks)))
             ys = [count for _, count in sorted_weeks]
             slope, _ = _linear_regression(xs, ys)
-            recent_avg = sum(ys[-3:]) / 3
-            if slope > 1.0 and recent_avg > 5:
+            recent_avg = sum(ys[-MIN_SNAPSHOTS:]) / MIN_SNAPSHOTS
+            if slope > VELOCITY_FALLBACK_SLOPE and recent_avg > VELOCITY_FALLBACK_RECENT_AVG:
                 predictions.append(
                     OraclePrediction(
                         lens=self.name,
@@ -360,7 +386,7 @@ class TrajectoryLens(BaseLens):
                             f"(slope: +{slope:.1f} commits/week, recent avg: {recent_avg:.1f}/week). "
                             "High-churn areas are prone to integration conflicts and quality drift."
                         ),
-                        confidence=0.70,
+                        confidence=VELOCITY_CONF_FIXED,
                         severity="info",
                         category="trajectory_forecast",
                         data={
@@ -409,7 +435,6 @@ class TrajectoryLens(BaseLens):
                 ]
 
             elif "trending_file_count" in pred.data:
-                # hotspot prediction
                 dp = pred.data.get("directory", "")
                 pred.recommendations = [
                     f"Audit all rising files in '{dp}': ruff check {dp}/",
@@ -420,7 +445,6 @@ class TrajectoryLens(BaseLens):
                 ]
 
             elif "commit_slope_per_week" in pred.data:
-                # high velocity prediction
                 dp = pred.data.get("directory", "")
                 pred.recommendations = [
                     f"Enable mandatory code review for all PRs touching '{dp}'",
@@ -434,8 +458,6 @@ class TrajectoryLens(BaseLens):
 # ── CLI ────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    import json
-
     lens = TrajectoryLens()
     predictions = lens.run()
     print(json.dumps([p.to_dict() for p in predictions], indent=2, default=str))

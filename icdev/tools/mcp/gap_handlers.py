@@ -1394,6 +1394,51 @@ def handle_redaction_scan_db(args: dict) -> dict:
     return _run_cli("tools/redaction/db_scanner.py", cli_args)
 
 
+# ── GovCon Proposals Security — Aggregation Guard (prop-sec-04 through prop-sec-08) ──
+
+
+def handle_guard_result(args: dict) -> dict:
+    """Run mosaic aggregation guard on a result set (prop-sec-06)."""
+    try:
+        from tools.security.aggregation_guard import guard_result
+
+        result_set = args.get("result_set", [])
+        surface = str(args.get("surface", ""))
+        ctx = {
+            "user_id": args.get("user_id"),
+            "clearance_level": args.get("clearance_level"),
+            "surface_ceiling": args.get("surface_ceiling"),
+        }
+        result = guard_result(result_set, ctx, surface)
+        if args.get("gate") and result.get("action") == "block":
+            return {"error": "aggregation_guard: block — derived classification exceeds surface ceiling", **result}
+        return result
+    except ImportError:
+        return _run_cli(
+            "tools/security/aggregation_guard.py",
+            ["--guard", "--surface", str(args.get("surface", "")), "--json"],
+        )
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
+def handle_evaluate_aggregation_rules(args: dict) -> dict:
+    """Evaluate SCG aggregation rules and return fired rules + derived classification (prop-sec-03)."""
+    try:
+        from tools.security.aggregation_guard import evaluate_rules
+
+        result_set = args.get("result_set", [])
+        fired = evaluate_rules(result_set)
+        return {"fired_rules": fired, "count": len(fired)}
+    except ImportError:
+        cli_args = ["--evaluate-rules", "--json"]
+        if args.get("rules_file"):
+            cli_args.extend(["--rules-file", str(args["rules_file"])])
+        return _run_cli("tools/security/aggregation_guard.py", cli_args)
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 # ── Oracle Anticipatory Agent ─────────────────────────────────────────────
 
 
@@ -1601,6 +1646,25 @@ def handle_cot_invoke(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+def handle_reasoned_codegen_advise(args: dict) -> dict:
+    """Advise whether reasoned codegen pays off for a task (enable + mode)."""
+    try:
+        from tools.llm.reasoned_codegen_advisor import recommend
+
+        return recommend(
+            args.get("function", "code_generation"),
+            args.get("spec", ""),
+            context={
+                "file_count": int(args.get("file_count", 0) or 0),
+                "past_failures": int(args.get("past_failures", 0) or 0),
+            },
+            use_llm=bool(args.get("use_llm", False)),
+        )
+    except Exception as exc:
+        logger.warning("handle_reasoned_codegen_advise: %s", exc)
+        return {"error": str(exc), "recommended": False, "mode": "off"}
+
+
 # ---------------------------------------------------------------------------
 # NOC CANVAS (NOCC)
 # ---------------------------------------------------------------------------
@@ -1733,13 +1797,22 @@ def ccc_circuit_ingest(args: dict) -> dict:
             "utilization_pct": float(args.get("utilization_pct", 0)),
             "mrr_usd": float(args.get("mrr_usd", 0)),
         }
-        cols = ", ".join(fields.keys())
+        values = tuple(fields.values())
         try:
-            placeholders = ", ".join("?" * len(fields))
-            conn.execute(f"INSERT OR REPLACE INTO ccc_circuits ({cols}) VALUES ({placeholders})", tuple(fields.values()))
+            conn.execute(
+                "INSERT OR REPLACE INTO ccc_circuits"
+                " (circuit_id, circuit_type, carrier, bandwidth_gbps, utilization_pct, mrr_usd)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                values,
+            )
         except Exception:
-            placeholders = ", ".join("%s" * len(fields))
-            conn.execute(f"INSERT INTO ccc_circuits ({cols}) VALUES ({placeholders}) ON CONFLICT (circuit_id) DO UPDATE SET circuit_type=EXCLUDED.circuit_type", tuple(fields.values()))
+            conn.execute(
+                "INSERT INTO ccc_circuits"
+                " (circuit_id, circuit_type, carrier, bandwidth_gbps, utilization_pct, mrr_usd)"
+                " VALUES (%s, %s, %s, %s, %s, %s)"
+                " ON CONFLICT (circuit_id) DO UPDATE SET circuit_type=EXCLUDED.circuit_type",
+                values,
+            )
         conn.commit()
         conn.close()
         return {"status": "ok", "circuit_id": circuit_id}
@@ -1882,6 +1955,56 @@ def dsoc_overview(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+# ============================================================
+# ANVIL CO-WORKER ENGINE (ACE)
+# ============================================================
+
+
+def handle_ace_launch(args: dict) -> dict:
+    """Launch an ACE co-worker session via ACEController.launch()."""
+    problem_text = args.get("problem_text", "")
+    trigger_source = args.get("trigger_source", "api")
+    trigger_ref = args.get("trigger_ref", "")
+    if not problem_text:
+        return {"error": "problem_text is required"}
+    try:
+        from icdev.tools.ace.controller import ACEController
+
+        controller = ACEController.get_instance()
+        instance_id = controller.launch(problem_text, trigger_source, trigger_ref)
+        return {"instance_id": instance_id, "state": "assembling"}
+    except ImportError:
+        return {
+            "error": "ACEController not yet available (ace-runtime not shipped)",
+            "instance_id": None,
+            "state": "unavailable",
+        }
+    except Exception as exc:
+        logger.warning("handle_ace_launch: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_ace_status(args: dict) -> dict:
+    """Return full status of an ACE co-worker instance including co-worker states."""
+    instance_id = args.get("instance_id", "")
+    if not instance_id:
+        return {"error": "instance_id is required"}
+    try:
+        from icdev.tools.ace.controller import ACEController
+
+        controller = ACEController.get_instance()
+        return controller.status(instance_id)
+    except ImportError:
+        return {
+            "error": "ACEController not yet available (ace-runtime not shipped)",
+            "instance_id": instance_id,
+            "state": "unavailable",
+        }
+    except Exception as exc:
+        logger.warning("handle_ace_status: %s", exc)
+        return {"error": str(exc)}
+
+
 def handle_cod_invoke(args: dict) -> dict:
     """Invoke Chain of Debate via ChainOrchestrator."""
     try:
@@ -1916,41 +2039,121 @@ def handle_cod_invoke(args: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# SIPA — Software Integrity & Provenance Assessor (sipa-mcp-01)
+# ---------------------------------------------------------------------------
+
+
+def handle_integrity_assess(args: dict) -> dict:
+    """Run a static SIPA integrity assessment of a source artifact.
+
+    Pattern A (direct import) wrapper around tools.integrity.engine.assess.
+    Deterministic, JSON in/out, never executes the target (static-only:
+    quarantine copy/clone, isolated scanner subprocesses, AST parsing).
+    """
+    source = args.get("source")
+    if not source:
+        return {"error": "integrity_assess: 'source' is required"}
+    try:
+        from tools.integrity import engine
+
+        return engine.assess(
+            str(source),
+            mode=str(args.get("mode", "auto")),
+            project_id=args.get("project_id"),
+            session_id=args.get("session_id"),
+            declared_purpose=args.get("declared_purpose"),
+        )
+    except Exception as exc:
+        logger.warning("handle_integrity_assess: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_integrity_list_assessments(args: dict) -> dict:
+    """List SIPA assessments (id, source, mode, status, verdict, risk_score).
+
+    Read-only RLS-aware query against integrity_assessments with optional
+    status / verdict filters (mirrors the dashboard list view).
+    """
+    status = args.get("status")
+    verdict = args.get("verdict")
+    try:
+        limit = int(args.get("limit", 50))
+    except (TypeError, ValueError):
+        limit = 50
+    try:
+        conn = get_connection()
+        try:
+            sql = (
+                "SELECT id, source_type, source_ref, mode, project_id, session_id, "
+                "status, verdict, risk_score, created_at, updated_at "
+                "FROM integrity_assessments"
+            )
+            where, params = [], []
+            if status:
+                where.append("status = ?")
+                params.append(status)
+            if verdict:
+                where.append("verdict = ?")
+                params.append(verdict)
+            if where:
+                sql += " WHERE " + " AND ".join(where)
+            sql += " ORDER BY id DESC LIMIT ?"
+            params.append(limit)
+            rows = conn.execute(sql, tuple(params)).fetchall()
+        finally:
+            conn.close()
+        cols = (
+            "id", "source_type", "source_ref", "mode", "project_id", "session_id",
+            "status", "verdict", "risk_score", "created_at", "updated_at",
+        )
+        assessments = []
+        for r in rows:
+            try:
+                assessments.append({c: r[c] for c in cols})
+            except (TypeError, KeyError, IndexError):
+                assessments.append({c: r[i] for i, c in enumerate(cols)})
+        return {"assessments": assessments, "count": len(assessments)}
+    except Exception as exc:
+        logger.warning("handle_integrity_list_assessments: %s", exc)
+        return {"error": str(exc), "assessments": []}
+
+
+# ---------------------------------------------------------------------------
 # ACF — Autonomous Capability Foundry (acf-mcp-01)
 # ---------------------------------------------------------------------------
 
 
 def handle_foundry_run(args: dict) -> dict:
-    """Run one ACF cycle (harvest -> synth -> novelty -> score -> CoD -> emit).
+    """Trigger one ACF foundry cycle (harvest -> synth -> novelty -> score -> CoD -> emit).
 
-    Pattern A (direct import) wrapper around ``tools.foundry.engine.run_cycle``.
-    Reuses the engine's own rate-limit / stage-degradation handling — MCP just
-    forwards the JSON-serialisable roll-up. ``dry_run=True`` exercises the full
-    pipeline without seeding kanban; this is the path the reflex mirrors and the
-    recommended entry point for ad-hoc smoke tests.
+    Pattern A (direct import) wrapper around tools.foundry.engine.run_cycle.
+    Deterministic, JSON in/out, no shell. Rate limits from
+    args/foundry_config.yaml are enforced inside run_cycle. With dry_run=True the
+    full pipeline runs but the seeder does NOT write to kanban_tasks.
+
+    Returns the engine roll-up: run_id, harvested, concepts_proposed,
+    concepts_approved, tasks_emitted, active_projects, status, dry_run.
     """
     try:
         from tools.foundry import engine
 
-        dry_run = bool(args.get("dry_run", False))
         max_concepts = args.get("max_concepts")
-        if max_concepts is not None:
-            try:
-                max_concepts = int(max_concepts)
-            except (TypeError, ValueError):
-                max_concepts = None
-        return engine.run_cycle(dry_run=dry_run, max_concepts=max_concepts)
+        result = engine.run_cycle(
+            dry_run=bool(args.get("dry_run", False)),
+            max_concepts=int(max_concepts) if max_concepts is not None else None,
+        )
+        return result
     except Exception as exc:
         logger.warning("handle_foundry_run: %s", exc)
         return {"error": str(exc)}
 
 
 def handle_foundry_status(args: dict) -> dict:
-    """Return ACF engine status: recent runs, active projects, pipeline counts.
+    """Return ACF pipeline status: recent runs, active projects, concept counts.
 
-    Pattern A (direct import) wrapper around ``tools.foundry.engine.status``.
-    Read-only; no DB writes. Mirrors the ``python tools/foundry/engine.py
-    --status`` CLI surface so MCP clients get the same JSON shape.
+    Pattern A (direct import) wrapper around tools.foundry.engine.status.
+    Read-only, RLS-aware, JSON in/out, no shell. Returns recent_runs,
+    active_projects, pipeline (concept counts by status), and rate_limits.
     """
     try:
         from tools.foundry import engine
@@ -1962,4 +2165,204 @@ def handle_foundry_status(args: dict) -> dict:
         return engine.status(limit=limit)
     except Exception as exc:
         logger.warning("handle_foundry_status: %s", exc)
+        return {"error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
+# GEPA Optimizer (gepa-mcp-01)
+# ---------------------------------------------------------------------------
+
+
+def get_gepa_optimizer_handler(args: dict) -> dict:
+    """Run the GEPA optimization pass via tools.skills.gepa_optimizer.run().
+
+    Scans the capability genome registry for low-fitness entries and applies
+    pruning / promotion passes.  With dry_run=True the full scan runs but no
+    DB writes are committed.
+
+    Returns:
+        dict with keys:
+            applied  – list of optimization actions actually applied.
+            skipped  – list of candidates skipped (dry_run or low confidence).
+            errors   – list of error messages encountered during the pass.
+    """
+    try:
+        from tools.skills.gepa_optimizer import run
+
+        dry_run = bool(args.get("dry_run", False))
+        return run(dry_run=dry_run)
+    except Exception as exc:
+        logger.warning("get_gepa_optimizer_handler: %s", exc)
+        return {"applied": [], "skipped": [], "errors": [str(exc)]}
+# ── Document Intelligence Canvas (DIC) handlers ────────────────────────────
+
+def handle_dic_ingest(args: dict) -> dict:
+    """Ingest URL or text into a DIC collection via the DIC search engine."""
+    try:
+        url = (args.get("url") or "").strip()
+        text = (args.get("text") or "").strip()
+        title = (args.get("title") or "").strip() or None
+        collection_id = (args.get("collection_id") or "default").strip()
+        tenant_id = (args.get("tenant_id") or "default").strip()
+        if not url and not text:
+            return {"error": "url or text required"}
+        from tools.document_intelligence.ingest_orchestrator import IngestOrchestrator
+        orch = IngestOrchestrator(collection_id=collection_id, tenant_id=tenant_id)
+        if url:
+            result = orch.ingest_url(url, title=title)
+        else:
+            result = orch.ingest_text(text, title=title or "MCP Ingested Document")
+        return result
+    except Exception as exc:
+        logger.warning("handle_dic_ingest: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_dic_search(args: dict) -> dict:
+    """BM25+KG search over a DIC collection."""
+    try:
+        query = (args.get("query") or "").strip()
+        collection_id = (args.get("collection_id") or "default").strip()
+        tenant_id = (args.get("tenant_id") or "default").strip()
+        limit = int(args.get("limit") or 10)
+        if not query:
+            return {"error": "query required"}
+        from tools.document_intelligence.search_engine import DICSearchEngine
+        engine = DICSearchEngine(tenant_id=tenant_id)
+        results = engine.search(query, collection_id=collection_id, top_k=limit)
+        results = [r.to_dict() if hasattr(r, 'to_dict') else (r if isinstance(r, dict) else vars(r)) for r in results]
+        return {"results": results, "collection_id": collection_id, "query": query}
+    except Exception as exc:
+        logger.warning("handle_dic_search: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_dic_generate(args: dict) -> dict:
+    """Generate a structured output (study_guide, faq, timeline, audio) from a DIC collection."""
+    try:
+        output_type = (args.get("output_type") or "").strip()
+        collection_id = (args.get("collection_id") or "default").strip()
+        doc_id = (args.get("doc_id") or "").strip() or None
+        tenant_id = (args.get("tenant_id") or "default").strip()
+        valid_types = ("study_guide", "faq", "timeline", "audio")
+        if output_type not in valid_types:
+            return {"error": f"output_type must be one of {valid_types}"}
+        from tools.document_intelligence import output_generators as _og
+        fn_map = {
+            "study_guide": _og.generate_study_guide,
+            "faq": _og.generate_faq,
+            "timeline": _og.generate_timeline,
+            "audio": _og.generate_audio_overview,
+        }
+        result = fn_map[output_type](collection_id, tenant_id, doc_id=doc_id)
+        return result
+    except Exception as exc:
+        logger.warning("handle_dic_generate: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_dic_chat(args: dict) -> dict:
+    """Answer a question grounded in DIC source documents."""
+    try:
+        question = (args.get("question") or "").strip()
+        collection_id = (args.get("collection_id") or "default").strip()
+        tenant_id = (args.get("tenant_id") or "default").strip()
+        if not question:
+            return {"error": "question required"}
+        from tools.document_intelligence.search_engine import DICSearchEngine
+        engine = DICSearchEngine(tenant_id=tenant_id)
+        raw = engine.search(question, collection_id=collection_id, top_k=5)
+        results = [r.to_dict() if hasattr(r, 'to_dict') else (r if isinstance(r, dict) else vars(r)) for r in raw]
+        answer_parts = [r.get("text", "") or r.get("content", "") for r in results[:3] if r.get("text") or r.get("content")]
+        return {
+            "answer": " ".join(answer_parts)[:2000] if answer_parts else "No relevant sources found.",
+            "citations": [r.get("source", "") for r in results if r.get("source")],
+            "collection_id": collection_id,
+            "question": question,
+        }
+    except Exception as exc:
+        logger.warning("handle_dic_chat: %s", exc)
+        return {"error": str(exc)}
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# NOVA — Autonomous Self-Learning Digital Coworker (5 handlers)
+# ────────────────────────────────────────────────────────────────────────────
+
+
+def handle_nova_get_trust_score(args: dict) -> dict:
+    """Return current trust score for an ACE coworker role."""
+    try:
+        role_id = (args.get("role_id") or "").strip()
+        if not role_id:
+            return {"error": "role_id required"}
+        from tools.ace.trust_calibrator import get_trust_score, get_trust_band
+        score = get_trust_score(role_id)
+        band = get_trust_band(score)
+        return {
+            "role_id": role_id,
+            "trust_score": score,
+            "band": band.name,
+            "hitl_mode": band.hitl_mode,
+            "max_parallel": band.max_parallel,
+            "auto_approve_routine": band.auto_approve_routine,
+        }
+    except Exception as exc:
+        logger.warning("handle_nova_get_trust_score: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_nova_record_trust_event(args: dict) -> dict:
+    """Record a trust calibration event for an ACE coworker role."""
+    try:
+        role_id = (args.get("role_id") or "").strip()
+        event_type = (args.get("event_type") or "").strip()
+        source_task_id = (args.get("source_task_id") or "").strip()
+        if not role_id or not event_type:
+            return {"error": "role_id and event_type required"}
+        from tools.ace.trust_calibrator import record_trust_event
+        result = record_trust_event(role_id, event_type, source_task_id=source_task_id)
+        return result
+    except Exception as exc:
+        logger.warning("handle_nova_record_trust_event: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_nova_get_dispatch_config(args: dict) -> dict:
+    """Return dispatch configuration for an ACE coworker role."""
+    try:
+        role_id = (args.get("role_id") or "").strip()
+        if not role_id:
+            return {"error": "role_id required"}
+        from tools.ace.trust_calibrator import get_dispatch_config
+        return get_dispatch_config(role_id)
+    except Exception as exc:
+        logger.warning("handle_nova_get_dispatch_config: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_nova_evolve_skill(args: dict) -> dict:
+    """Run a GEPA-style skill evolution pass for a task_type."""
+    try:
+        task_type = (args.get("task_type") or "").strip()
+        skill_used = (args.get("skill_used") or "").strip()
+        dry_run = bool(args.get("dry_run", True))
+        if not task_type:
+            return {"error": "task_type required"}
+        from tools.workflow.reflexion_agent import generate_improvement_artifact
+        result = generate_improvement_artifact(task_type, skill_used=skill_used, dry_run=dry_run)
+        return result
+    except Exception as exc:
+        logger.warning("handle_nova_evolve_skill: %s", exc)
+        return {"error": str(exc)}
+
+
+def handle_nova_trust_summary(args: dict) -> dict:
+    """Return trust scores and bands for all known ACE coworker roles."""
+    try:
+        from tools.ace.trust_calibrator import get_trust_summary
+        rows = get_trust_summary()
+        return {"roles": rows, "total": len(rows)}
+    except Exception as exc:
+        logger.warning("handle_nova_trust_summary: %s", exc)
         return {"error": str(exc)}

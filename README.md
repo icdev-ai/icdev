@@ -873,7 +873,7 @@ icdev/
 │   ├── autonomous_coder/ # Autonomous Coder — multi-agent code generation
 │   ├── strategos/        # Strategos — multi-domain operations COP
 │   ├── geosigint/        # GeoSIGINT — geographic intelligence dashboard
-│   └── alphadesk/        # FathomDesk — multi-agent trading intelligence
+│   └── fathomdesk/       # FathomDesk — market intelligence terminal (read-only)
 ├── args/                 # 30+ YAML/JSON configuration files
 ├── context/              # 42 compliance catalogs, language profiles
 ├── hardprompts/          # Reusable LLM instruction templates

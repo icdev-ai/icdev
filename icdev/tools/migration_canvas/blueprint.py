@@ -77,6 +77,11 @@ def create_migration_blueprint():
     def mdc_login_required(f):
         @wraps(f)
         def decorated(*args, **kwargs):
+            # E2E / CI bypass — consistent with tools/dashboard/auth.py, which
+            # injects a synthetic admin (g.current_user) but not session['user_id'].
+            import os as _os
+            if _os.environ.get("ICDEV_AUTH_BYPASS", "").lower() in ("1", "true", "yes"):
+                return f(*args, **kwargs)
             if not session.get("user_id"):
                 if (
                     request.is_json

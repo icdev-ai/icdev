@@ -38,7 +38,35 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 logger = get_logger(__name__)
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
+_FALLBACK_BASE_DIR = Path(__file__).resolve().parent.parent.parent
+
+
+def _find_main_worktree() -> Path:
+    """Return the main git worktree path (first entry in `git worktree list`).
+
+    When validated_commit is imported from inside a kanban worktree, __file__
+    resolves to the worktree directory, not the main repo.  That causes
+    BASE_DIR == cwd, which short-circuits the baseline comparison in
+    _run_coherence_gate() and produces false "coherence broken by cwd changes"
+    failures.  Using `git worktree list` always returns the main working tree
+    first, regardless of where the module was loaded from.
+    """
+    try:
+        result = subprocess.run(
+            ["git", "worktree", "list", "--porcelain"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=str(_FALLBACK_BASE_DIR), timeout=10,
+        )
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                if line.startswith("worktree "):
+                    return Path(line[len("worktree "):].strip())
+    except Exception:
+        pass
+    return _FALLBACK_BASE_DIR
+
+
+BASE_DIR = _find_main_worktree()
 
 
 def _list_modified_files(cwd: str) -> List[str]:

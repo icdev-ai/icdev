@@ -16,7 +16,6 @@ from tools.logging.icdev_logger import get_logger
 import os
 
 from flask import Blueprint, jsonify, render_template, request
-from tools.security.canvas_access import check_access as _canvas_check_access
 
 log = get_logger(__name__)
 
@@ -29,26 +28,6 @@ def create_info_ops_blueprint() -> Blueprint | None:
         return None
 
     bp = Blueprint("info_ops", __name__, template_folder="../../tools/dashboard/templates")
-
-    @bp.before_request
-    def _check_canvas_access():
-        """G-02: DENY-ALL canvas access gate. Requires explicit grant in canvas_access_grants."""
-        try:
-            from flask import g, abort, request as _req
-            # Skip health/status utility endpoints
-            if _req.path.endswith(("/health", "/status", "/ping")):
-                return
-            user = getattr(g, "current_user", None) or {}
-            user_id = str(user.get("id", "") or user.get("user_id", "") or "")
-            tenant_id = str(getattr(g, "tenant_id", None) or user.get("tenant_id", "") or "")
-            if not user_id or not tenant_id:
-                abort(403)
-            if not _canvas_check_access(user_id, tenant_id, "info_ops"):
-                abort(403)
-        except Exception as exc:
-            log.debug("canvas_access check error: %s", exc)
-            abort(403)
-
 
     # ── Pages ─────────────────────────────────────────────────────────────────
 

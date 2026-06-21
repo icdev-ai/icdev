@@ -1,0 +1,3 @@
+foreach d in slides.decks
+  where d.status == "auto"
+  select d.deck_id, d.title, d.slide_count, d.created_at

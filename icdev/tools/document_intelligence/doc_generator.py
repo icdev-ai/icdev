@@ -130,6 +130,17 @@ def _llm_generate(
     try:
         try:
             from icdev.tools.llm.router import LLMRouter
+        except ImportError:
+            from tools.llm.router import LLMRouter
+        router = LLMRouter()
+        for meth in ("generate", "complete", "chat", "route", "call"):
+            fn = getattr(router, meth, None)
+            if callable(fn):
+                result = fn(prompt)
+                if isinstance(result, str):
+                    return result
+                if isinstance(result, dict):
+                    return result.get("text") or result.get("content") or str(result)
             from icdev.tools.llm.provider import LLMRequest
         except Exception:
             from tools.llm.router import LLMRouter  # type: ignore[import]

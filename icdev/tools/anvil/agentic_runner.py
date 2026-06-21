@@ -85,13 +85,61 @@ def _dispatch_tool(name: str, args: dict) -> str:
 
 # ── LLM call ─────────────────────────────────────────────────────────────────
 
-def _llm_call(router, messages: list[dict]) -> str:
+def _llm_call(router, messages: list[dict], mode: str = "off") -> str:
+    """One agentic reasoning turn, routed through reasoned_codegen.
+
+    ``mode`` ("off"|"cot"|"cod") is resolved once per run by ``_resolve_reasoned_mode``
+    (the --reasoned option + advisor). No per-turn verifier/critique is attached:
+    the artifact here is a tool-call decision, and the loop self-validates with
+    ruff/pytest via ``run_command``. When mode is "off" the wrapper is a
+    byte-identical passthrough to ``router.invoke("code_generation", ...)``.
+    """
     from tools.llm.provider import LLMRequest
-    resp = router.invoke("code_generation", LLMRequest(
-        messages=messages,
-        system_prompt=_SYSTEM_PROMPT,
-    ))
-    return resp.content if resp else ""
+    from tools.llm.reasoned_codegen import generate_reasoned_code
+
+    request = LLMRequest(messages=messages, system_prompt=_SYSTEM_PROMPT)
+    result = generate_reasoned_code(
+        function="code_generation", request=request, router=router, mode=mode,
+    )
+    return result.code if result else ""
+
+
+def _resolve_reasoned_mode(router, reasoned: str, task_type: str, task_desc: str) -> str:
+    """Resolve the per-run reasoning mode from the --reasoned option.
+
+    - "off"  → off (force).
+    - "on"   → enable; advisor picks cot/cod (never off — user forced on).
+    - "auto" → advisor decides (may be off).
+
+    The section-level kill-switch (reasoned_codegen.enabled:false) always wins.
+    """
+    from tools.llm.reasoned_codegen import MODE_OFF, MODE_COT, section_enabled
+
+    if not section_enabled(router):
+        print("[agentic_runner] reasoned codegen disabled by config kill-switch", flush=True)
+        return MODE_OFF
+    if reasoned == "off":
+        return MODE_OFF
+    if reasoned not in ("on", "auto"):
+        return MODE_OFF
+
+    try:
+        from tools.llm.reasoned_codegen_advisor import recommend
+
+        rec = recommend(
+            "code_generation", task_desc,
+            context={"task_type": task_type}, router=router,
+        )
+        mode = rec.get("mode", MODE_OFF)
+        if reasoned == "on" and mode == MODE_OFF:
+            mode = MODE_COT  # user explicitly forced enable
+        print(f"[agentic_runner] reasoned={reasoned} → mode={mode} "
+              f"(advisor: {rec.get('rationale', '')})", flush=True)
+        return mode
+    except Exception as e:
+        # Advisor failure must not break codegen; fall back per option.
+        print(f"[agentic_runner] advisor unavailable ({e})", flush=True)
+        return MODE_COT if reasoned == "on" else MODE_OFF
 
 
 _SYSTEM_PROMPT = textwrap.dedent("""\
@@ -119,14 +167,21 @@ _SYSTEM_PROMPT = textwrap.dedent("""\
 
 # ── agentic loop ──────────────────────────────────────────────────────────────
 
-def run_agentic_loop(task_id: str, task_desc: str, task_type: str, max_turns: int = 6) -> list[str]:
-    """Run the agentic loop. Returns list of changed file paths."""
+def run_agentic_loop(task_id: str, task_desc: str, task_type: str, max_turns: int = 6,
+                     reasoned: str = "auto") -> list[str]:
+    """Run the agentic loop. Returns list of changed file paths.
+
+    ``reasoned`` ("auto"|"on"|"off") controls reasoned codegen: ``auto`` (default)
+    asks the advisor whether CoT/CoD pays off for this task; ``on``/``off`` force it.
+    """
     try:
         from tools.llm.router import LLMRouter
         router = LLMRouter()
     except Exception as e:
         print(f"[agentic_runner] LLMRouter unavailable: {e}", flush=True)
         sys.exit(1)
+
+    reasoned_mode = _resolve_reasoned_mode(router, reasoned, task_type, task_desc)
 
     messages: list[dict] = [
         {
@@ -144,7 +199,7 @@ def run_agentic_loop(task_id: str, task_desc: str, task_type: str, max_turns: in
     for turn in range(max_turns):
         print(f"\n[agentic_runner] turn {turn + 1}/{max_turns}", flush=True)
 
-        raw = _llm_call(router, messages)
+        raw = _llm_call(router, messages, mode=reasoned_mode)
         if not raw:
             print("[agentic_runner] empty LLM response — stopping", flush=True)
             break
@@ -198,6 +253,11 @@ def main():
     parser.add_argument("--task-desc", required=True)
     parser.add_argument("--task-type", default="fix")
     parser.add_argument("--max-turns", type=int, default=6)
+    parser.add_argument(
+        "--reasoned", choices=["auto", "on", "off"], default="auto",
+        help="Reasoned codegen (CoT/CoD): auto=advisor decides, on/off=force. "
+             "Section kill-switch in args/llm_config.yaml always wins.",
+    )
     parser.add_argument("--json", action="store_true", help="Emit JSON summary")
     args = parser.parse_args()
 
@@ -206,6 +266,7 @@ def main():
         task_desc=args.task_desc,
         task_type=args.task_type,
         max_turns=args.max_turns,
+        reasoned=args.reasoned,
     )
 
     if args.json:

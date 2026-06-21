@@ -50,12 +50,35 @@ SUGGESTED_GOALS_DIR = BASE_DIR / "data" / "genesis" / "suggested_goals"
 DEFAULT_NOVELTY_THRESHOLD = 0.6
 MAX_GOALS_PER_RUN = 3
 
-# Quality scoring weights
+# Quality scoring weights — overridable via args/genesis_config.yaml
+# reflexes.goal_learner.quality_weights
 QUALITY_WEIGHTS = {
     "novelty_score": 0.40,
     "evidence_count": 0.25,   # Number of audit events supporting this goal
     "domain_clarity": 0.20,   # How well-defined the domain is
     "tool_coverage": 0.15,    # How many tools the goal references
+}
+
+# Fallback defaults — used when genesis_config.yaml is absent or a key is missing.
+# All of these are overridable from args/genesis_config.yaml reflexes.goal_learner.*
+_REFLEX_DEFAULTS: Dict[str, Any] = {
+    "novelty_threshold": DEFAULT_NOVELTY_THRESHOLD,
+    "max_goals_per_run": MAX_GOALS_PER_RUN,
+    "min_evidence_count": 2,            # Min audit/kanban events a domain must have to qualify
+    "lookback_days": 7,
+    "write_files": True,
+    "top_terms_count": 60,
+    "max_keywords_per_domain": 30,
+    "max_audit_events": 500,
+    "max_kanban_completions": 200,
+    "evidence_count_normalizer": 4.0,   # N events → 1.0; (count-1)/N
+    "domain_clarity_divisor": 10.0,     # avg keyword length / N → [0,1]
+    "tool_coverage_placeholder": 0.5,   # static until tool-analysis is implemented
+    "quality_weights": QUALITY_WEIGHTS,
+    "anomaly_detection": {
+        "min_samples": 5,
+        "z_score": 2.0,
+    },
 }
 
 # Goal status values
@@ -99,6 +122,61 @@ def _tokenize(text: str) -> List[str]:
     """Lower-case alpha tokens, removing stopwords."""
     tokens = re.findall(r"[a-z]{3,}", text.lower())
     return [t for t in tokens if t not in _STOPWORDS]
+
+
+class _NLPExtractor:
+    """LLM-backed semantic keyword extractor with regex fallback.
+
+    Uses Claude Haiku for richer concept/entity extraction when an LLM is
+    available; silently falls back to _tokenize() in air-gap or no-LLM
+    environments so the module remains pure-stdlib safe.
+    """
+
+    _SYSTEM = (
+        "Extract semantically meaningful technical keywords from the supplied text. "
+        "Return ONLY a JSON array of lowercase strings — no explanation, no markdown. "
+        "Include technical terms, domain nouns, action verbs, and software concepts. "
+        "Exclude stopwords, articles, prepositions, and common filler words. At most 20 keywords."
+    )
+    _FUNCTION = "goal_learner_nlp_extract"
+    _cache: Dict[str, set] = {}
+
+    @classmethod
+    def extract(cls, text: str) -> List[str]:
+        """Return keyword list. Uses LLM when available, else regex fallback."""
+        if not text:
+            return []
+        key = _sha256(text[:500])[:16]
+        if key in cls._cache:
+            return list(cls._cache[key])
+        keywords = cls._llm_extract(text)
+        if keywords is None:
+            keywords = set(_tokenize(text))
+        cls._cache[key] = keywords
+        return list(keywords)
+
+    @classmethod
+    def _llm_extract(cls, text: str) -> Optional[set]:
+        """Attempt LLM extraction. Returns keyword set or None on any failure."""
+        try:
+            from icdev.tools.llm.router import LLMRequest, LLMRouter  # noqa: PLC0415
+
+            router = LLMRouter()
+            if router.is_no_llm_mode() or not router.has_any_llm():
+                return None
+            resp = router.invoke(
+                cls._FUNCTION,
+                LLMRequest(
+                    messages=[{"role": "user", "content": text[:2000]}],
+                    system_prompt=cls._SYSTEM,
+                ),
+            )
+            keywords = json.loads(resp.content.strip())
+            if isinstance(keywords, list):
+                return {str(k).lower() for k in keywords if k} - _STOPWORDS
+        except Exception:
+            return None
+        return None
 
 
 def _log_audit(event_type: str, goal_id: str = None, details: Dict = None) -> None:
@@ -168,11 +246,101 @@ def _novelty_score(domain_keywords: List[str], all_goal_keywords: List[str]) -> 
 
 
 # ---------------------------------------------------------------------------
+# Configuration loading (FORGE args layer)
+# ---------------------------------------------------------------------------
+
+
+def _load_reflex_config() -> Dict[str, Any]:
+    """Load goal_learner knobs from args/genesis_config.yaml.
+
+    Merges reflexes.goal_learner with convergence.anomaly_detection params,
+    falling back to _REFLEX_DEFAULTS on any parse or import error.
+    """
+    try:
+        import yaml  # noqa: PLC0415
+
+        config_path = BASE_DIR / "args" / "genesis_config.yaml"
+        if not config_path.exists():
+            return dict(_REFLEX_DEFAULTS)
+        with config_path.open(encoding="utf-8") as f:
+            raw = yaml.safe_load(f) or {}
+
+        merged: Dict[str, Any] = dict(_REFLEX_DEFAULTS)
+        reflex_cfg = raw.get("reflexes", {}).get("goal_learner", {})
+        merged.update({k: v for k, v in reflex_cfg.items() if v is not None})
+
+        # quality_weights: merge sub-keys so partial overrides work
+        if isinstance(reflex_cfg.get("quality_weights"), dict):
+            merged["quality_weights"] = {**QUALITY_WEIGHTS, **reflex_cfg["quality_weights"]}
+
+        # Inherit convergence.anomaly_detection params when not overridden locally
+        ad_global = raw.get("convergence", {}).get("anomaly_detection", {})
+        ad_local = reflex_cfg.get("anomaly_detection", {})
+        if ad_global or ad_local:
+            merged["anomaly_detection"] = {
+                **merged["anomaly_detection"],
+                **ad_global,
+                **ad_local,
+            }
+        return merged
+    except Exception:
+        return dict(_REFLEX_DEFAULTS)
+
+
+class _AdaptiveThreshold:
+    """Adaptive novelty threshold via z-score anomaly detection.
+
+    Uses the same pattern as convergence.anomaly_detection in genesis_config.yaml:
+      threshold = mean(historical_novelty_scores) + z_score × std
+
+    Falls back to the configured static threshold when fewer than min_samples
+    records exist so early-phase behavior stays stable while data builds up.
+    """
+
+    @staticmethod
+    def compute(
+        static_threshold: float = DEFAULT_NOVELTY_THRESHOLD,
+        min_samples: int = 5,
+        z_score: float = 2.0,
+    ) -> float:
+        """Return adaptive novelty threshold clamped to [0.0, 1.0]."""
+        try:
+            import statistics  # noqa: PLC0415
+
+            conn = get_connection()
+            try:
+                rows = conn.execute(
+                    """
+                    SELECT novelty_score FROM genesis_generated_goals
+                    WHERE status != 'rejected'
+                    ORDER BY created_at DESC
+                    LIMIT 100
+                    """
+                ).fetchall()
+            finally:
+                conn.close()
+
+            scores = [
+                float(r["novelty_score"] if isinstance(r, dict) else r[0])
+                for r in rows
+                if r is not None
+            ]
+            if len(scores) < min_samples:
+                return static_threshold
+
+            mean = statistics.mean(scores)
+            std = statistics.stdev(scores) if len(scores) > 1 else 0.0
+            return min(1.0, max(0.0, mean + z_score * std))
+        except Exception:
+            return static_threshold
+
+
+# ---------------------------------------------------------------------------
 # Evidence collection — scan audit and kanban tables
 # ---------------------------------------------------------------------------
 
 
-def _collect_novel_events(lookback_days: int = 7) -> List[Dict[str, Any]]:
+def _collect_novel_events(lookback_days: int = 7, max_events: int = 500) -> List[Dict[str, Any]]:
     """Scan genesis_audit for problem-solving events in the look-back window."""
     conn = get_connection()
     try:
@@ -191,9 +359,9 @@ def _collect_novel_events(lookback_days: int = 7) -> List[Dict[str, Any]]:
               AND success IS NOT 0
               AND event_type NOT LIKE 'genesis.promoter.%'
             ORDER BY created_at DESC
-            LIMIT 500
+            LIMIT ?
             """,
-            (cutoff,),
+            (cutoff, max_events),
         ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
@@ -202,7 +370,7 @@ def _collect_novel_events(lookback_days: int = 7) -> List[Dict[str, Any]]:
         conn.close()
 
 
-def _collect_kanban_completions(lookback_days: int = 7) -> List[Dict[str, Any]]:
+def _collect_kanban_completions(lookback_days: int = 7, max_completions: int = 200) -> List[Dict[str, Any]]:
     """Collect recently completed kanban tasks as evidence of novel problem-solving."""
     conn = get_connection()
     try:
@@ -220,9 +388,9 @@ def _collect_kanban_completions(lookback_days: int = 7) -> List[Dict[str, Any]]:
               AND completed_at IS NOT NULL
               AND completed_at >= ?
             ORDER BY completed_at DESC
-            LIMIT 200
+            LIMIT ?
             """,
-            (cutoff,),
+            (cutoff, max_completions),
         ).fetchall()
         return [dict(r) for r in rows]
     except Exception:
@@ -241,6 +409,10 @@ def _cluster_into_domains(
     kanban_completions: List[Dict],
     all_goal_keywords: List[str],
     novelty_threshold: float = DEFAULT_NOVELTY_THRESHOLD,
+    *,
+    top_terms_count: int = 60,
+    max_keywords_per_domain: int = 30,
+    min_evidence_count: int = 2,
 ) -> List[Dict[str, Any]]:
     """Group audit events + kanban completions into candidate domains.
 
@@ -267,10 +439,11 @@ def _cluster_into_domains(
         texts.append((combined, "kanban", task))
 
     # Count keyword frequencies across all evidence
+    # Use NLP extractor for richer semantic coverage; falls back to regex in air-gap mode.
     all_tokens: List[str] = []
     evidence_tokens: List[List[str]] = []
     for (text, _src, _item) in texts:
-        tokens = _tokenize(text)
+        tokens = _NLPExtractor.extract(text)
         evidence_tokens.append(tokens)
         all_tokens.extend(tokens)
 
@@ -279,7 +452,7 @@ def _cluster_into_domains(
 
     token_freq = Counter(all_tokens)
     # Top N most frequent terms form candidate domain labels
-    top_terms = [tok for tok, _cnt in token_freq.most_common(60)]
+    top_terms = [tok for tok, _cnt in token_freq.most_common(top_terms_count)]
 
     # Greedy grouping: cluster evidence by shared top-term
     seen_domains: Dict[str, Dict] = {}
@@ -320,8 +493,8 @@ def _cluster_into_domains(
         kws = list(set(dom["keywords"]))
         n_score = _novelty_score(kws, all_goal_keywords)
         dom["novelty_score"] = round(n_score, 3)
-        dom["keywords"] = kws[:30]  # Cap for storage
-        if n_score >= novelty_threshold:
+        dom["keywords"] = kws[:max_keywords_per_domain]
+        if n_score >= novelty_threshold and dom["evidence_count"] >= min_evidence_count:
             domains.append(dom)
 
     domains.sort(key=lambda d: d["novelty_score"], reverse=True)
@@ -473,26 +646,36 @@ def _compute_quality_score(
     novelty_score: float,
     evidence_count: int,
     keywords: List[str],
+    *,
+    quality_weights: Optional[Dict[str, float]] = None,
+    evidence_count_normalizer: float = 4.0,
+    domain_clarity_divisor: float = 10.0,
+    tool_coverage_placeholder: float = 0.5,
 ) -> Tuple[float, float, float, float]:
-    """Return (overall, evidence_norm, domain_clarity, tool_coverage) scores."""
-    # Normalize evidence count: 1 event = 0.3, 5+ = 1.0
-    evidence_norm = min(1.0, max(0.0, (evidence_count - 1) / 4.0))
+    """Return (overall, evidence_norm, domain_clarity, tool_coverage) scores.
 
-    # Domain clarity: how specific are the keywords (longer, more distinct = higher)
+    All numeric knobs are configurable via args/genesis_config.yaml
+    reflexes.goal_learner.* — falling back to the documented defaults.
+    """
+    weights = quality_weights if quality_weights is not None else QUALITY_WEIGHTS
+
+    # Normalize evidence count: 1 event → ~0, (normalizer+1) events → 1.0
+    evidence_norm = min(1.0, max(0.0, (evidence_count - 1) / evidence_count_normalizer))
+
+    # Domain clarity: specificity of keywords (longer, more distinct = higher)
     if not keywords:
         domain_clarity = 0.0
     else:
         avg_len = sum(len(k) for k in keywords) / len(keywords)
-        domain_clarity = min(1.0, avg_len / 10.0)
+        domain_clarity = min(1.0, avg_len / domain_clarity_divisor)
 
-    # Tool coverage placeholder (0.5 — no tool analysis in this version)
-    tool_coverage = 0.5
+    tool_coverage = tool_coverage_placeholder
 
     overall = (
-        QUALITY_WEIGHTS["novelty_score"] * novelty_score
-        + QUALITY_WEIGHTS["evidence_count"] * evidence_norm
-        + QUALITY_WEIGHTS["domain_clarity"] * domain_clarity
-        + QUALITY_WEIGHTS["tool_coverage"] * tool_coverage
+        weights.get("novelty_score", 0.40) * novelty_score
+        + weights.get("evidence_count", 0.25) * evidence_norm
+        + weights.get("domain_clarity", 0.20) * domain_clarity
+        + weights.get("tool_coverage", 0.15) * tool_coverage
     )
     return round(overall, 3), round(evidence_norm, 3), round(domain_clarity, 3), round(tool_coverage, 3)
 
@@ -502,6 +685,11 @@ def _render_goal_markdown(
     goal_id: str,
     lookback_days: int,
     novelty_threshold: float,
+    *,
+    quality_weights: Optional[Dict[str, float]] = None,
+    evidence_count_normalizer: float = 4.0,
+    domain_clarity_divisor: float = 10.0,
+    tool_coverage_placeholder: float = 0.5,
 ) -> Tuple[str, str, float]:
     """Render goal markdown for a domain.  Returns (markdown, title, quality_score)."""
     keywords = domain.get("keywords", [])
@@ -513,7 +701,13 @@ def _render_goal_markdown(
 
     title = _domain_to_title(domain_label, keywords)
     overall, evidence_norm, domain_clarity, tool_coverage = _compute_quality_score(
-        novelty_score, evidence_count, keywords
+        novelty_score,
+        evidence_count,
+        keywords,
+        quality_weights=quality_weights,
+        evidence_count_normalizer=evidence_count_normalizer,
+        domain_clarity_divisor=domain_clarity_divisor,
+        tool_coverage_placeholder=tool_coverage_placeholder,
     )
 
     description = (
@@ -675,23 +869,56 @@ def scan_and_generate(
     novelty_threshold: float = DEFAULT_NOVELTY_THRESHOLD,
     max_goals: int = MAX_GOALS_PER_RUN,
     write_files: bool = False,
+    *,
+    reflex_config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Main entry: detect novel domains, generate goals.
 
     Returns result dict with 'goals_generated', 'goals', and 'skipped'.
+
+    Knobs are loaded from args/genesis_config.yaml (FORGE args layer) when
+    reflex_config is not supplied.  The novelty_threshold is further refined
+    by _AdaptiveThreshold when enough historical data exists.
     """
     _ensure_table()
+
+    cfg = reflex_config if reflex_config is not None else _load_reflex_config()
+
+    # Adaptive novelty threshold — uses z-score over historical novelty scores
+    # when enough samples exist; falls back to the static configured value.
+    ad_cfg = cfg.get("anomaly_detection", {})
+    effective_threshold = _AdaptiveThreshold.compute(
+        static_threshold=novelty_threshold,
+        min_samples=int(ad_cfg.get("min_samples", 5)),
+        z_score=float(ad_cfg.get("z_score", 2.0)),
+    )
+
+    top_terms_count = int(cfg.get("top_terms_count", 60))
+    max_keywords_per_domain = int(cfg.get("max_keywords_per_domain", 30))
+    min_evidence_count = int(cfg.get("min_evidence_count", 2))
+    max_audit_events = int(cfg.get("max_audit_events", 500))
+    max_kanban_completions = int(cfg.get("max_kanban_completions", 200))
+    quality_weights = cfg.get("quality_weights", QUALITY_WEIGHTS)
+    evidence_count_normalizer = float(cfg.get("evidence_count_normalizer", 4.0))
+    domain_clarity_divisor = float(cfg.get("domain_clarity_divisor", 10.0))
+    tool_coverage_placeholder = float(cfg.get("tool_coverage_placeholder", 0.5))
 
     # 1. Load existing goal coverage
     all_goal_keywords, goal_keyword_map = _load_goal_coverage()
 
     # 2. Collect evidence
-    audit_events = _collect_novel_events(lookback_days)
-    kanban_tasks = _collect_kanban_completions(lookback_days)
+    audit_events = _collect_novel_events(lookback_days, max_events=max_audit_events)
+    kanban_tasks = _collect_kanban_completions(lookback_days, max_completions=max_kanban_completions)
 
     # 3. Cluster into candidate domains
     domains = _cluster_into_domains(
-        audit_events, kanban_tasks, all_goal_keywords, novelty_threshold
+        audit_events,
+        kanban_tasks,
+        all_goal_keywords,
+        effective_threshold,
+        top_terms_count=top_terms_count,
+        max_keywords_per_domain=max_keywords_per_domain,
+        min_evidence_count=min_evidence_count,
     )
 
     generated: List[Dict[str, Any]] = []
@@ -711,7 +938,14 @@ def scan_and_generate(
         # Generate goal
         goal_id = _generate_id("gl")
         markdown, title, quality_score = _render_goal_markdown(
-            domain, goal_id, lookback_days, novelty_threshold
+            domain,
+            goal_id,
+            lookback_days,
+            effective_threshold,
+            quality_weights=quality_weights,
+            evidence_count_normalizer=evidence_count_normalizer,
+            domain_clarity_divisor=domain_clarity_divisor,
+            tool_coverage_placeholder=tool_coverage_placeholder,
         )
         slug = _domain_to_slug(title)
 
@@ -765,6 +999,9 @@ def scan_and_generate(
         "scanned_at": _utcnow_iso(),
         "lookback_days": lookback_days,
         "novelty_threshold": novelty_threshold,
+        "effective_novelty_threshold": round(effective_threshold, 4),
+        "adaptive_threshold_active": effective_threshold != novelty_threshold,
+        "min_evidence_count": min_evidence_count,
         "audit_events_scanned": len(audit_events),
         "kanban_tasks_scanned": len(kanban_tasks),
         "candidate_domains": len(domains),
@@ -1019,16 +1256,23 @@ def run(config: Dict[str, Any], state: Any) -> Dict[str, Any]:
     Returns:
         Dict with metric_name and metric_value for daemon tracking.
     """
-    novelty_threshold = config.get("novelty_threshold", DEFAULT_NOVELTY_THRESHOLD)
-    max_goals = config.get("max_goals_per_run", MAX_GOALS_PER_RUN)
-    lookback_days = config.get("lookback_days", 7)
-    write_files = config.get("write_files", True)
+    # Merge daemon-supplied config block with YAML defaults so all knobs
+    # (quality_weights, top_terms_count, anomaly_detection params, etc.)
+    # flow through without requiring the daemon to enumerate them.
+    base_cfg = _load_reflex_config()
+    base_cfg.update({k: v for k, v in config.items() if v is not None})
+
+    novelty_threshold = float(base_cfg.get("novelty_threshold", DEFAULT_NOVELTY_THRESHOLD))
+    max_goals = int(base_cfg.get("max_goals_per_run", MAX_GOALS_PER_RUN))
+    lookback_days = int(base_cfg.get("lookback_days", 7))
+    write_files = bool(base_cfg.get("write_files", True))
 
     result = scan_and_generate(
         lookback_days=lookback_days,
         novelty_threshold=novelty_threshold,
         max_goals=max_goals,
         write_files=write_files,
+        reflex_config=base_cfg,
     )
 
     return {

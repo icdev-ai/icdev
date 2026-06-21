@@ -57,6 +57,9 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
         except Exception as exc:
             logger.warning("Failed to mount legacy alias %s for %s: %s", alias, bp.name, exc)
 
+    import sys as _di_sys
+    def _dbg_bp(msg): print(f"[BP-REG] {msg}", file=_di_sys.stderr, flush=True)
+
     def _mount_inline(bp) -> None:
         """Register a blueprint whose routes are hardcoded with /api/… paths."""
         try:
@@ -68,6 +71,7 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     #  Meta blueprint (OpenAPI spec + Swagger UI) \u2014 P1.2 / B4             #
     #  No /api/ legacy alias: this is a v1-only surface.                  #
     # ------------------------------------------------------------------ #
+    _dbg_bp("meta_api")
     try:
         from tools.dashboard.api.meta import meta_api
         app.register_blueprint(meta_api, url_prefix="/api/v1")
@@ -75,11 +79,7 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     except Exception as exc:
         logger.warning("Failed to mount meta_api: %s", exc)
 
-    # ------------------------------------------------------------------ #
-    #  Auth blueprint (JWT token issuance) — P1.3 / C2                    #
-    #  /api/v1/auth/token + /api/v1/auth/refresh. v1-only, no alias.      #
-    #  @require_jwt lives here; C4 sweeps it onto other blueprints.       #
-    # ------------------------------------------------------------------ #
+    _dbg_bp("auth_api")
     try:
         from tools.dashboard.api.auth import (
             auth_api,
@@ -96,60 +96,78 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     except Exception as exc:
         logger.warning("Failed to mount auth_api: %s", exc)
 
-    # ------------------------------------------------------------------ #
-    #  Core blueprints (explicit url_prefix)                              #
-    # ------------------------------------------------------------------ #
+    _dbg_bp("core blueprints")
+    _dbg_bp("projects_api")
     from tools.dashboard.api.projects import projects_api
     _mount(projects_api, v1_prefix="/api/v1/projects")
 
+    _dbg_bp("kanban_api")
     from tools.dashboard.api.kanban import kanban_api
     _mount(kanban_api, v1_prefix="/api/v1/kanban")
 
+    _dbg_bp("kanban_plan_api")
     from tools.dashboard.api.kanban_plan import kanban_plan_api
     _mount_inline(kanban_plan_api)   # inline routes: /api/kanban/plans
 
+    _dbg_bp("agents_api")
     from tools.dashboard.api.agents import agents_api
     _mount(agents_api, v1_prefix="/api/v1/agents")
 
+    _dbg_bp("compliance_api")
     from tools.dashboard.api.compliance import compliance_api
     _mount(compliance_api, v1_prefix="/api/v1/compliance")
 
+    _dbg_bp("poam_api")
     from tools.dashboard.api.poam import poam_api
     _mount(poam_api, v1_prefix="/api/v1/poam")
 
+    _dbg_bp("audit_api")
     from tools.dashboard.api.audit import audit_api
     _mount(audit_api, v1_prefix="/api/v1/audit")
 
+    _dbg_bp("metrics_api")
     from tools.dashboard.api.metrics import metrics_api
     _mount(metrics_api, v1_prefix="/api/v1/metrics")
 
+    _dbg_bp("events_bp")
     from tools.dashboard.api.events import events_bp
-    _mount_inline(events_bp)   # inline routes: /api/events/*
+    _mount_inline(events_bp)
 
+    _dbg_bp("nlq_bp")
     from tools.dashboard.api.nlq import nlq_bp
-    _mount_inline(nlq_bp)   # inline routes: /api/nlq/*
+    _mount_inline(nlq_bp)
 
+    _dbg_bp("batch_api")
     from tools.dashboard.api.batch import batch_api
     _mount(batch_api, v1_prefix="/api/v1/batch")
 
+    _dbg_bp("diagrams_api")
     from tools.dashboard.api.diagrams import diagrams_api
     _mount(diagrams_api, v1_prefix="/api/v1/diagrams")
 
+    _dbg_bp("cicd_api")
     from tools.dashboard.api.cicd import cicd_api
-    _mount_inline(cicd_api)   # inline routes: /api/cicd/*
+    _mount_inline(cicd_api)
 
+    _dbg_bp("intake_api: import")
     from tools.dashboard.api.intake import intake_api
-    _mount_inline(intake_api)   # inline routes: /api/intake/*
+    _dbg_bp("intake_api: mount")
+    _mount_inline(intake_api)
+    _dbg_bp("intake_api: done")
 
+    _dbg_bp("admin_api")
     from tools.dashboard.api.admin import admin_api
     _mount(admin_api, v1_prefix="/api/v1/admin", legacy_prefix="/admin")
 
+    _dbg_bp("activity_api")
     from tools.dashboard.api.activity import activity_api
     _mount(activity_api, v1_prefix="/api/v1/activity")
 
+    _dbg_bp("usage_api")
     from tools.dashboard.api.usage import usage_api
     _mount(usage_api, v1_prefix="/api/v1/usage")
 
+    _dbg_bp("traces_api")
     from tools.dashboard.api.traces import traces_api, provenance_api, xai_api
     _mount(traces_api, v1_prefix="/api/v1/traces")
     _mount(provenance_api, v1_prefix="/api/v1/provenance")
@@ -169,6 +187,7 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     from tools.dashboard.api.prod_audit import prod_audit_api
     _mount(prod_audit_api, v1_prefix="/api/v1/prod-audit")
 
+    _dbg_bp("ai_transparency_api")
     from tools.dashboard.api.ai_transparency import ai_transparency_api
     _mount(ai_transparency_api, v1_prefix="/api/v1/ai-transparency")
 
@@ -345,9 +364,10 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
             logger.debug("proposal_genesis_api skipped: %s", exc)
 
     # AISG blueprint is registered by the canvas loop in create_app() (_CANVAS_DEFS).
-    # Registering it here too caused Flask 3.x "already registered" errors (same object,
-    # re-registered with different url_prefix). The /api/explain/* routes live in the AISG
-    # blueprint and are served from the canvas registration.
+    # Registering it here too caused Flask 3.x "already registered for this blueprint"
+    # errors — same object re-registered on the same Flask app with a different url_prefix.
+    # The /api/explain/* routes live in the AISG blueprint and are served from the canvas
+    # registration without needing a separate api/__init__.py mount.
 
     # HITL Workflow — opt-in via ICDEV_HITL_ENABLED=true
     try:
@@ -382,6 +402,7 @@ def register_api_blueprints(app: "Flask") -> None:  # noqa: C901
     except Exception as exc:
         logger.warning("cross_agency_transfer_api skipped: %s", exc)
 
+    _dbg_bp("ALL BLUEPRINTS MOUNTED")
     logger.info("register_api_blueprints: all API blueprints mounted.")
 
     # km-autoclose: sweep decomposed parents stuck before the auto-close hook

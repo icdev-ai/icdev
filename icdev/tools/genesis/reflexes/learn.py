@@ -40,7 +40,12 @@ def _count_existing_pairs() -> int:
         conn.close()
 
 
-def _generate_pairs_from_source(source_table: str, limit: int = 20) -> List[Dict]:
+def _generate_pairs_from_source(
+    source_table: str,
+    limit: int = 20,
+    min_pass_rate: float = 0.2,
+    max_pass_rate: float = 0.8,
+) -> List[Dict]:
     """Generate training pairs from a source table using pair_generator."""
     try:
         result = subprocess.run(
@@ -55,9 +60,9 @@ def _generate_pairs_from_source(source_table: str, limit: int = 20) -> List[Dict
                 "--num-attempts",
                 str(limit),
                 "--min-pass-rate",
-                "0.2",
+                str(min_pass_rate),
                 "--max-pass-rate",
-                "0.8",
+                str(max_pass_rate),
                 "--json",
             ],
             capture_output=True,
@@ -118,17 +123,72 @@ def _get_training_stats() -> Dict[str, Any]:
         conn.close()
 
 
+def _compute_fine_tune_threshold(anomaly_cfg: Dict[str, Any]) -> float:
+    """Compute adaptive fine-tune readiness threshold from historical pair accumulation.
+
+    Uses population variance (mean + sigma·σ) of observed pair totals across
+    prior cycles to surface a data-driven minimum rather than a hardcoded constant.
+    Falls back to the configured static value when history is insufficient.
+
+    All tuning constants are drawn from anomaly_cfg (learn.anomaly_detection in
+    genesis_config.yaml) so they can be adjusted without code changes.
+    """
+    if not anomaly_cfg.get("enabled", True):
+        return float(anomaly_cfg.get("fallback_min_pairs", 100))
+
+    sigma_multiplier = anomaly_cfg.get("sigma_multiplier", 1.0)
+    min_samples = anomaly_cfg.get("min_samples", 5)
+    fallback = float(anomaly_cfg.get("fallback_min_pairs", 100))
+    bounds = anomaly_cfg.get("adaptive_bounds", {})
+    floor = float(bounds.get("min_pairs_floor", 20))
+
+    try:
+        conn = get_connection()
+        try:
+            rows = conn.execute("""
+                SELECT metric_value FROM genesis_reflex_runs
+                WHERE reflex_name = 'learn' AND success = 1
+                ORDER BY ran_at DESC LIMIT 50
+            """).fetchall()
+            totals = [float(r["metric_value"] if isinstance(r, dict) else r[0]) for r in rows if (r["metric_value"] if isinstance(r, dict) else r[0]) is not None]
+        finally:
+            conn.close()
+    except Exception:
+        totals = []
+
+    if len(totals) < min_samples:
+        print(f"  Learn: anomaly threshold — insufficient history ({len(totals)}/{min_samples}), using static fallback {fallback}")
+        return fallback
+
+    n = len(totals)
+    mean = sum(totals) / n
+    variance = sum((x - mean) ** 2 for x in totals) / n
+    std = variance ** 0.5
+    adaptive = mean + sigma_multiplier * std
+    threshold = max(floor, adaptive)
+    print(f"  Learn: anomaly threshold from {n} samples — mean={mean:.1f}, std={std:.1f}, threshold={threshold:.1f}")
+    return threshold
+
+
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     """Execute the Learn Reflex."""
     pair_config = config.get("pair_generation", {})
     source_tables = pair_config.get("source_tables", ["research_signals", "pulse_posts"])
+    pairs_per_table = int(pair_config.get("pairs_per_table", 20))
+    min_pass_rate = float(pair_config.get("min_pass_rate", 0.2))
+    max_pass_rate = float(pair_config.get("max_pass_rate", 0.8))
 
     total_new_pairs = 0
     source_results = []
 
     for table in source_tables:
         print(f"  Learn: generating pairs from {table}")
-        pairs = _generate_pairs_from_source(table, limit=20)
+        pairs = _generate_pairs_from_source(
+            table,
+            limit=pairs_per_table,
+            min_pass_rate=min_pass_rate,
+            max_pass_rate=max_pass_rate,
+        )
         total_new_pairs += len(pairs)
         source_results.append(
             {
@@ -140,8 +200,9 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     # Get overall stats
     stats = _get_training_stats()
 
-    # Check if we have enough pairs for fine-tuning
-    fine_tune_threshold = 100  # Minimum pairs before attempting fine-tune
+    # Compute fine-tune readiness threshold via anomaly detection (adaptive)
+    anomaly_cfg = config.get("anomaly_detection", {})
+    fine_tune_threshold = _compute_fine_tune_threshold(anomaly_cfg)
     fine_tune_ready = stats.get("total", 0) >= fine_tune_threshold
     fine_tune_result = None
 

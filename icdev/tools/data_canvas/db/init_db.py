@@ -18,7 +18,7 @@ _ICDEV_ROOT = Path(__file__).resolve().parents[3]  # tools/data_canvas/db -> ICD
 DB_PATH = _ICDEV_ROOT / "data" / "data_canvas.db"
 
 # Backend detection
-_DDC_BACKEND = os.environ.get("DDC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", "sqlite")).lower()
+_DDC_BACKEND = os.environ.get("DDC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql"))).lower()
 
 
 def get_connection():
@@ -685,6 +685,21 @@ CREATE TRIGGER IF NOT EXISTS dd_mapping_transforms_no_update
 CREATE TRIGGER IF NOT EXISTS dd_mapping_transforms_no_delete
     BEFORE DELETE ON dd_mapping_transforms
     BEGIN SELECT RAISE(ABORT,'dd_mapping_transforms is append-only — NIST AU-9'); END;
+
+-- ── PII Scanner results ───────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS dd_pii_scans (
+    scan_id         TEXT PRIMARY KEY,
+    design_id       TEXT NOT NULL DEFAULT '',
+    overall_risk    TEXT NOT NULL DEFAULT 'none'
+                    CHECK (overall_risk IN ('none','low','medium','high','critical')),
+    findings_json   TEXT NOT NULL DEFAULT '[]',
+    scanned_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_dd_pii_scans_design   ON dd_pii_scans(design_id);
+CREATE INDEX IF NOT EXISTS idx_dd_pii_scans_risk      ON dd_pii_scans(overall_risk);
+CREATE INDEX IF NOT EXISTS idx_dd_pii_scans_scanned   ON dd_pii_scans(scanned_at DESC);
 """
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pathlib
+import re
 from functools import lru_cache
 from typing import Any
 
@@ -19,18 +20,23 @@ from tools.ai_augmentation.agent_readiness.pillars._base import (
 # ---------------------------------------------------------------------------
 # Anomaly-detection threshold loader
 # ---------------------------------------------------------------------------
-_ARGS_PATH = pathlib.Path(__file__).parents[5] / "args" / "agent_readiness_config.yaml"
+_ARGS_PATH = pathlib.Path(__file__).parents[4] / "args" / "agent_readiness_config.yaml"
 _DEFAULTS: dict[str, Any] = {
     "min_makefile_targets": 3,
     "min_npm_scripts": 3,
     # Values below these are anomalously low for a repo claiming CI/IaC readiness.
     "min_ci_workflows": 1,
     "min_iac_files": 1,
+    # Deployment keyword patterns for CD detection — configurable via agent_readiness_config.yaml.
+    "deploy_keywords": [
+        "deploy", "release", "publish",
+        r"push.*image", r"helm\s+upgrade", r"kubectl\s+apply",
+    ],
 }
 
 
 @lru_cache(maxsize=1)
-def _load_thresholds() -> dict[str, int]:
+def _load_thresholds() -> dict[str, Any]:
     """Load all configuration-pillar anomaly-detection thresholds from args/agent_readiness_config.yaml.
 
     Falls back to hard-coded defaults if the config file is absent or malformed,
@@ -44,11 +50,15 @@ def _load_thresholds() -> dict[str, int]:
         tr = cfg.get("task_runner", {})
         ci = cfg.get("ci_pipeline", {})
         iac = cfg.get("iac", {})
+        cd = cfg.get("cd_deployment", {})
+        raw_keywords = cd.get("deploy_keywords", _DEFAULTS["deploy_keywords"])
+        deploy_keywords = [str(k) for k in raw_keywords] if raw_keywords else list(_DEFAULTS["deploy_keywords"])
         return {
             "min_makefile_targets": int(tr.get("min_makefile_targets", _DEFAULTS["min_makefile_targets"])),
             "min_npm_scripts": int(tr.get("min_npm_scripts", _DEFAULTS["min_npm_scripts"])),
             "min_ci_workflows": int(ci.get("min_workflows", _DEFAULTS["min_ci_workflows"])),
             "min_iac_files": int(iac.get("min_files", _DEFAULTS["min_iac_files"])),
+            "deploy_keywords": deploy_keywords,
         }
     except Exception:  # noqa: BLE001
         return dict(_DEFAULTS)
@@ -83,20 +93,23 @@ def _check_ci_pipeline(repo: pathlib.Path) -> CriterionResult:
 
 def _check_cd_deployment(repo: pathlib.Path) -> CriterionResult:
     cid = "cd-deployment"
+    thresholds = _load_thresholds()
+    keywords = thresholds.get("deploy_keywords", _DEFAULTS["deploy_keywords"])
+    deploy_patterns = r"\b(?:" + "|".join(keywords) + r")\b"
     # Look for deployment steps in CI
     ci_files = (
         _glob_files(repo, ".github/workflows/*.yml")
         + _glob_files(repo, ".github/workflows/*.yaml")
         + ([repo / ".gitlab-ci.yml"] if (repo / ".gitlab-ci.yml").exists() else [])
     )
-    deploy_patterns = r"\bdeploy\b|\brelease\b|\bpublish\b|\bpush.*image\b|\bhelm\s+upgrade\b|\bkubectl\s+apply\b"
     for f in ci_files:
         content = pathlib.Path(f).read_text(encoding="utf-8", errors="replace")
         if _search(content, deploy_patterns):
             return CriterionResult(cid, True, f"Deployment step found in CI: {pathlib.Path(f).name}")
     if _exists(repo, "Makefile"):
         mk = _read(repo, "Makefile") or ""
-        if _search(mk, r"^deploy\b|^release\b", flags=0):
+        makefile_pattern = r"^(?:" + "|".join(re.escape(k) if not any(c in k for c in r".*+?[](){}^$|\\") else k for k in keywords) + r")\b"
+        if _search(mk, makefile_pattern, flags=re.MULTILINE):
             return CriterionResult(cid, True, "Deploy target found in Makefile")
     return CriterionResult(cid, False, "No CD deployment step found.",
                            "Add a deployment step to your CI pipeline for automated releases.")
@@ -163,11 +176,17 @@ def _check_makefile_or_taskfile(repo: pathlib.Path) -> CriterionResult:
     thresholds = _load_thresholds()
     min_makefile = thresholds["min_makefile_targets"]
     min_scripts = thresholds["min_npm_scripts"]
+    makefile_anomaly: str | None = None
+    npm_anomaly: str | None = None
     if _exists(repo, "Makefile", "makefile"):
         mk = _read(repo, "Makefile") or _read(repo, "makefile") or ""
         targets = sum(1 for l in mk.splitlines() if l and not l.startswith("\t") and ":" in l and not l.startswith("#"))
         if targets >= min_makefile:
             return CriterionResult(cid, True, f"Makefile with {targets} targets found")
+        makefile_anomaly = (
+            f"Makefile found but only {targets} target(s) (min {min_makefile}) — "
+            "anomalously low for a project claiming task automation readiness."
+        )
     if _exists(repo, "Taskfile.yml", "Taskfile.yaml", "Taskfile.dist.yml"):
         return CriterionResult(cid, True, "Taskfile task runner found")
     pkg = _read(repo, "package.json")
@@ -177,8 +196,25 @@ def _check_makefile_or_taskfile(repo: pathlib.Path) -> CriterionResult:
             scripts = json.loads(pkg).get("scripts", {})
             if len(scripts) >= min_scripts:
                 return CriterionResult(cid, True, f"npm scripts ({len(scripts)} tasks) in package.json")
+            if scripts:
+                npm_anomaly = (
+                    f"package.json has only {len(scripts)} npm script(s) (min {min_scripts}) — "
+                    "anomalously low for a project claiming task automation readiness."
+                )
         except Exception:
             pass
+    if makefile_anomaly:
+        return CriterionResult(
+            cid, False, makefile_anomaly,
+            f"Add more Makefile targets to reach the anomaly-detection minimum ({min_makefile}), "
+            "or add a Taskfile/npm scripts as an alternative task runner.",
+        )
+    if npm_anomaly:
+        return CriterionResult(
+            cid, False, npm_anomaly,
+            f"Add more npm scripts to reach the anomaly-detection minimum ({min_scripts}), "
+            "or add a Makefile or Taskfile as an alternative task runner.",
+        )
     return CriterionResult(cid, False, "No task runner found.",
                            "Add a Makefile, Taskfile, or npm scripts for common dev tasks.")
 

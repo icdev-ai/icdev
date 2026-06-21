@@ -22,7 +22,6 @@ Usage (standalone check):
 from __future__ import annotations
 
 import json
-import logging
 from tools.logging.icdev_logger import get_logger
 from dataclasses import dataclass, field
 from typing import Any

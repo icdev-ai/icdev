@@ -26,7 +26,6 @@ proposal.updated       Proposal content changed
 from __future__ import annotations
 
 import json
-import logging
 from tools.logging.icdev_logger import get_logger
 from typing import Any
 

@@ -11,7 +11,6 @@ enforced inside gepa_optimizer.run()).
 """
 from __future__ import annotations
 
-import logging
 from tools.logging.icdev_logger import get_logger
 from typing import Any, Dict
 

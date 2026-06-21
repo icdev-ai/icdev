@@ -14,7 +14,6 @@ import json
 import sqlite3
 import types
 import uuid
-from pathlib import Path
 
 import pytest
 

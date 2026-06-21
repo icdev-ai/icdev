@@ -11,9 +11,31 @@ the junction table is authoritative for blocking logic.
 from tools.db.storage import get_connection
 
 
+def _table_exists(conn, table: str) -> bool:
+    """True if ``table`` exists (backend-agnostic). ``kanban_tasks`` is created at
+    app runtime by tools/kanban/init_db.py, so a migrate-only fresh DB (CI E2E
+    PostgreSQL job) legitimately lacks it — and a FK to a non-existent table would
+    abort the chain. Skip rather than fail, matching the fa_*/ttx_* migrations."""
+    if getattr(conn, "_backend", "sqlite") == "postgresql":
+        row = conn.execute(
+            "SELECT 1 FROM information_schema.tables "
+            "WHERE table_schema='public' AND table_name=?",
+            (table,),
+        ).fetchone()
+        return row is not None
+    row = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+        (table,),
+    ).fetchone()
+    return row is not None
+
+
 def up(conn=None):
     conn = get_connection()
     try:
+        if not _table_exists(conn, "kanban_tasks"):
+            print("Migration 041 up: kanban_tasks absent — skipping (created at runtime).")
+            return
         conn.execute("""
             CREATE TABLE IF NOT EXISTS kanban_task_deps (
                 task_id         TEXT NOT NULL,

@@ -12,8 +12,12 @@ from tools.security_canvas.constants import ZIG_PILLARS, ZIG_MATURITY_LEVELS
 
 
 def _maturity_level_for_score(score: float) -> str:
-    for level in ZIG_MATURITY_LEVELS:
-        if level["score_min"] <= score <= level["score_max"]:
+    # Pick the highest band whose floor the score clears. Using only score_min
+    # (sorted descending) avoids gaps between adjacent bands' max/min boundaries
+    # (e.g. intermediate max 0.74 vs advanced min 0.75 would otherwise drop a
+    # score of 0.745 through to the default).
+    for level in sorted(ZIG_MATURITY_LEVELS, key=lambda lvl: lvl["score_min"], reverse=True):
+        if score >= level["score_min"]:
             return level["slug"]
     return "preparation"
 
@@ -66,7 +70,6 @@ def score_pillar(pillar_slug: str) -> dict:
             in_progress_acts = sum(1 for c in completions if c["status"] == "in_progress")
 
         # Score calculation
-        activity_rate = complete_acts / act_count if act_count > 0 else 0.0
         # Partial credit for in_progress
         activity_rate_partial = (complete_acts + 0.5 * in_progress_acts) / act_count if act_count > 0 else 0.0
         cap_rate = (implemented_caps + 0.5 * in_progress_caps) / cap_count if cap_count > 0 else 0.0

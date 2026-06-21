@@ -29,41 +29,18 @@ Routes:
 from __future__ import annotations
 
 from flask import Blueprint, jsonify, render_template, request
-from tools.security.canvas_access import check_access as _canvas_check_access
-from tools.logging.icdev_logger import get_logger
-
-_logger = get_logger(__name__)
 
 
 def create_ops_hub_blueprint() -> Blueprint:
     bp = Blueprint("ohc", __name__, url_prefix="")
-
-    @bp.before_request
-    def _check_canvas_access():
-        """G-02: DENY-ALL canvas access gate. Requires explicit grant in canvas_access_grants."""
-        try:
-            from flask import g, abort, request as _req
-            # Skip health/status utility endpoints
-            if _req.path.endswith(("/health", "/status", "/ping")):
-                return
-            user = getattr(g, "current_user", None) or {}
-            user_id = str(user.get("id", "") or user.get("user_id", "") or "")
-            tenant_id = str(getattr(g, "tenant_id", None) or user.get("tenant_id", "") or "")
-            if not user_id or not tenant_id:
-                abort(403)
-            if not _canvas_check_access(user_id, tenant_id, "ops_hub"):
-                abort(403)
-        except Exception as exc:
-            _logger.debug("canvas_access check error: %s", exc)
-            abort(403)
-
 
     # Init OHC canvas DB on first import so all route handlers find required tables
     try:
         from tools.ops_hub.db.init_db import init_db
         init_db()
     except Exception as exc:  # pragma: no cover
-        _logger.warning("OHC DB init failed: %s", exc)
+        from tools.logging.icdev_logger import get_logger as _get_logger
+        _get_logger("ops_hub.blueprint").warning("OHC DB init failed: %s", exc)
 
     # ── Page Routes ──────────────────────────────────────────────────────────
 
@@ -214,6 +191,29 @@ def create_ops_hub_blueprint() -> Blueprint:
             "traces": get_langfuse_traces(limit=10),
         })
 
+    @bp.route("/api/ops/reasoned-codegen")
+    def api_ops_reasoned_codegen():
+        from tools.ops_hub.llmops_engine import (
+            get_reasoned_codegen_config, get_recent_chain_runs,
+        )
+        fn = request.args.get("function", "")
+        return jsonify({
+            "config": get_reasoned_codegen_config(),
+            "recent_runs": get_recent_chain_runs(limit=25, function=fn),
+        })
+
+    @bp.route("/api/ops/reasoned-codegen/advise", methods=["POST"])
+    def api_ops_reasoned_codegen_advise():
+        from tools.ops_hub.llmops_engine import run_reasoned_codegen_advisor
+        body = request.get_json(force=True, silent=True) or {}
+        return jsonify(run_reasoned_codegen_advisor(
+            function=body.get("function", "code_generation"),
+            spec=body.get("spec", ""),
+            file_count=body.get("file_count", 0),
+            past_failures=body.get("past_failures", 0),
+            use_llm=bool(body.get("use_llm", False)),
+        ))
+
     @bp.route("/api/ops/models")
     def api_ops_models():
         from tools.ops_hub.mlops_engine import (
@@ -265,42 +265,38 @@ def create_ops_hub_blueprint() -> Blueprint:
         )
         return jsonify(result)
 
-    @bp.route("/api/ops/slos")
+    @bp.route("/api/ops/slos", methods=["GET", "POST"])
     def api_ops_slos():
+        if request.method == "POST":
+            from tools.ops_hub.aiops_engine import define_slo
+            body = request.get_json(force=True, silent=True) or {}
+            result = define_slo(
+                service=body.get("service", ""),
+                slo_type=body.get("slo_type", "availability"),
+                target=float(body.get("target", 99.9)),
+                window_days=int(body.get("window_days", 30)),
+            )
+            return jsonify(result), 201
         from tools.ops_hub.aiops_engine import get_slo_dashboard
         return jsonify(get_slo_dashboard())
 
-    @bp.route("/api/ops/slos", methods=["POST"])
-    def api_ops_define_slo():
-        from tools.ops_hub.aiops_engine import define_slo
-        body = request.get_json(force=True, silent=True) or {}
-        result = define_slo(
-            service=body.get("service", ""),
-            slo_type=body.get("slo_type", "availability"),
-            target=float(body.get("target", 99.9)),
-            window_days=int(body.get("window_days", 30)),
-        )
-        return jsonify(result), 201
-
-    @bp.route("/api/ops/incidents")
+    @bp.route("/api/ops/incidents", methods=["GET", "POST"])
     def api_ops_incidents():
+        if request.method == "POST":
+            from tools.ops_hub.aiops_engine import create_incident
+            body = request.get_json(force=True, silent=True) or {}
+            result = create_incident(
+                title=body.get("title", ""),
+                severity=body.get("severity", "sev3"),
+                description=body.get("description", ""),
+            )
+            return jsonify(result), 201
         from tools.ops_hub.aiops_engine import get_incidents, get_incident_dashboard
         status_filter = request.args.get("status", "")
         return jsonify({
             "dashboard": get_incident_dashboard(),
             "incidents": get_incidents(status=status_filter, limit=50),
         })
-
-    @bp.route("/api/ops/incidents", methods=["POST"])
-    def api_ops_create_incident():
-        from tools.ops_hub.aiops_engine import create_incident
-        body = request.get_json(force=True, silent=True) or {}
-        result = create_incident(
-            title=body.get("title", ""),
-            severity=body.get("severity", "sev3"),
-            description=body.get("description", ""),
-        )
-        return jsonify(result), 201
 
     @bp.route("/api/ops/runbooks")
     def api_ops_runbooks():

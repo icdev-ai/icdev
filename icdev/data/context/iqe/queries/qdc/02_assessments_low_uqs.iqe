@@ -1,0 +1,7 @@
+# IQE-QDC-002: Designs with low Unified Quality Score (UQS < 0.6)
+# Surfaces quality debt — designs that need gate remediation.
+
+foreach a in qdc.assessments
+where a.uqs_score < 0.6
+select a.design_id, a.design_name, a.uqs_score, a.score, a.created_at
+orderby a.uqs_score asc

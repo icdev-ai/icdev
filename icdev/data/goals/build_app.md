@@ -248,6 +248,32 @@ This order prevents building UI for data structures that don't exist.
 - Keep components small and focused
 - Document any non-obvious logic
 
+### Reasoned Generation (Optional, opt-in)
+
+When code is generated through the LLM-backed agentic runner
+(`tools/anvil/agentic_runner.py`), generation can route through **reasoned
+codegen** — Chain-of-Thought / Chain-of-Debate reasoning per turn. This is the
+`code_generation` function in `args/llm_config.yaml` → `reasoned_codegen`.
+
+Control it with the `--reasoned` option:
+
+```bash
+python tools/anvil/agentic_runner.py --task-id ... --task-desc "..." \
+    --reasoned auto    # advisor decides if CoT/CoD pays off (default)
+    # --reasoned on    # force enable (advisor picks cot vs cod)
+    # --reasoned off   # plain single-shot generation
+```
+
+`auto` consults `tools/llm/reasoned_codegen_advisor.py`, which scores the task
+(complexity, security/compliance signals, file count, prior failures) and
+recommends off / cot / cod with a logged rationale — heuristic-only in air-gap /
+no-LLM mode, optionally LLM-refined otherwise. The section-level kill-switch
+`reasoned_codegen.enabled: false` always wins, regardless of the option.
+
+Defaults to **OFF** for `code_generation` (per-function config) so cost is opt-in;
+translation defaults ON. Final-artifact adversarial review remains the **C —
+Critique** phase below (the per-turn loop self-validates with ruff/pytest).
+
 ### Output
 
 Working application with:

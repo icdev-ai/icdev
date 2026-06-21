@@ -1,0 +1,75 @@
+# CUI // SP-CTI
+# Oracle Trajectory Lens — anomaly detection threshold configuration
+# Loaded at startup by tools/oracle/lens_trajectory.py::_load_trajectory_config().
+# All values have in-code fallbacks; editing here overrides them without code changes.
+
+trajectory_forecast:
+
+  # ── Fallback thresholds ────────────────────────────────────────────────────
+  # Used when the fleet has too few files for percentile-based adaptive thresholds.
+  fallbacks:
+    cc_threshold: 15                # cyclomatic complexity ceiling before flagging
+    maintainability_floor: 0.5      # minimum maintainability score before flagging
+    min_snapshots: 3                # minimum weekly snapshots needed to compute a trend
+    forecast_horizon_days: 365      # maximum days ahead to forecast threshold breaches
+
+  # ── Hotspot detection ──────────────────────────────────────────────────────
+  hotspot:
+    min_files: 2                    # minimum files trending up to form a hotspot
+    critical_fallback: 4            # trending-file count that escalates hotspot to critical
+                                    # (used when fleet is too small for percentile cutoff)
+
+  # ── Urgency bands ─────────────────────────────────────────────────────────
+  urgency:
+    days_critical: 30               # days-to-threshold below which severity is "critical"
+    days_warning: 90                # days-to-threshold below which severity is "warning"
+
+  # ── Adaptive anomaly detection ────────────────────────────────────────────
+  # When the fleet is large enough, thresholds are derived from these percentiles
+  # of the observed distribution instead of the fallback constants above.
+  anomaly:
+    adaptive_min_files: 10          # minimum files needed to switch to adaptive thresholds
+    cc_percentile: 90.0             # fleet CC percentile used as the adaptive CC ceiling
+    maintainability_percentile: 10.0  # fleet maintainability percentile used as adaptive floor
+    velocity_percentile: 75.0       # fleet velocity percentile used for hotspot critical cutoff
+
+  # ── Velocity anomaly detection ────────────────────────────────────────────
+  velocity:
+    fallback_slope_cutoff: 1.0      # minimum commit-slope/week to flag a high-velocity dir
+    fallback_recent_avg_cutoff: 5.0 # minimum recent weekly commit average to flag
+
+  # ── LLM threshold calibration ─────────────────────────────────────────────
+  # Invoked when the fleet is too sparse for percentile-based thresholds.
+  llm_calibration:
+    function_name: oracle_anomaly_detection
+    max_tokens: 200
+    temperature: 0.0
+
+    # Percentiles used when building the fleet statistics summary sent to the LLM.
+    # These control which distribution landmarks are visible to the model.
+    stats_percentiles:
+      cc_p1: 50.0       # first CC percentile in summary (median)
+      cc_p2: 90.0       # second CC percentile in summary (upper-bound)
+      maint_p1: 10.0    # first maintainability percentile in summary (floor)
+      maint_p2: 50.0    # second maintainability percentile in summary (median)
+      velocity_p1: 75.0 # commit-slope/avg percentile in summary
+
+    # Lower bounds for LLM-suggested values — reject anything below these floors.
+    validation:
+      cc_threshold_min: 1.0
+      maintainability_floor_min: 0.0
+      slope_cutoff_min: 0.01
+      recent_avg_cutoff_min: 0.01
+
+  # ── Confidence scoring ────────────────────────────────────────────────────
+  confidence:
+    cc_breach_max: 0.92             # maximum confidence for CC-breach predictions
+    cc_breach_base: 0.55            # base confidence before time-proximity scaling
+    cc_breach_scale: 0.40           # scale factor applied to (1 - days/horizon)
+    maint_decline_max: 0.90
+    maint_decline_base: 0.55
+    maint_decline_scale: 0.38
+    hotspot_max: 0.88
+    hotspot_base: 0.55
+    hotspot_per_file: 0.06          # confidence added per additional trending file
+    velocity_fixed: 0.70            # fixed confidence for high-velocity directory alerts

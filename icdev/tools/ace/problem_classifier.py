@@ -78,22 +78,6 @@ _SIGNALS: dict[str, tuple[str, float]] = {
         r"(?:^|\. )(?:analyze|analyse|process|correlate|aggregate|ingest|expose)\b",
         0.60,
     ),
-    # domain: documentation / writing
-    "doc_verb":        (
-        r"\b(?:document|review|audit|update|regenerate|rewrite|draft|summarize|"
-        r"report|write up|produce a report|produce a written)\b",
-        0.72,
-    ),
-    "doc_noun":        (
-        r"\b(?:documentation|docs?|runbook|readme|manifest|changelog|report|"
-        r"commands\.md|reference|guide|manual|specification)\b",
-        0.68,
-    ),
-    "doc_action":      (
-        r"\b(?:gap[s]? found|changes made|missing commands?|missing cli|"
-        r"out.of.date|stale docs?|outdated)\b",
-        0.65,
-    ),
     # domain: compliance / security
     "compliance_verb": (
         r"(?:^|\. )(?:ensure|enforce|provide|enable|allow|establish|configure)\b",
@@ -122,62 +106,6 @@ _SIGNALS: dict[str, tuple[str, float]] = {
         r"refactor|pull request|software craftsmanship)\b",
         0.55,
     ),
-    # domain: intelligence / IC products (INTSUM, CAPCO, portion marks, derivative classification)
-    "intelligence_noun": (
-        r"\b(?:intsum|sitrep|intel(?:ligence)?|threat assessment|escalation|"
-        r"key judgment|collection|osint|humint|sigint|opsec|pmesii|capco|"
-        r"portion.?mark|derivative.?classif|security.?classification.?guide|"
-        r"scg|noforn|//nf|//rel.to|//orcon|bluf|leadership.?brief|"
-        r"intelligence.?report|intelligence.?product|ach|competing.?hypothes)\b",
-        0.80,
-    ),
-    "intelligence_verb": (
-        r"(?:^|\. )(?:research|analyze|analyse|assess|brief|synthesize|classify|"
-        r"mark|derive|ingest.?document|grade.?source)\b",
-        0.55,
-    ),
-    # domain: document analysis / research pipeline (generic — triggers intel team for any doc-processing task)
-    "doc_analysis_noun": (
-        r"\b(?:research memo|key findings|literature review|source evaluation|"
-        r"gap analysis|structured analysis|executive summary|analysis report|"
-        r"document analysis|content classification|sensitivity marking|"
-        r"subject matter expert|domain expert|vertical|content domain)\b",
-        0.70,
-    ),
-    "doc_analysis_verb": (
-        r"(?:^|\. )(?:summarize|summarise|extract|synthesize|review|evaluate|"
-        r"classify content|produce report|generate report|produce summary|"
-        r"analyze document|analyse document|process document)\b",
-        0.55,
-    ),
-    # domain: legal documents
-    "legal_noun": (
-        r"\b(?:plaintiff|defendant|statute|motion|brief|discovery|jurisdiction|"
-        r"precedent|case law|deposition|contract|litigation|counsel|attorney|"
-        r"court|ruling|verdict|appeal|irac|bluebook|privilege|work product)\b",
-        0.75,
-    ),
-    # domain: medical / clinical documents
-    "medical_noun": (
-        r"\b(?:patient|diagnosis|treatment|hipaa|phi|icd-10|cpt|clinical|"
-        r"contraindication|prescription|dosage|soap note|sbar|differential|"
-        r"symptom|prognosis|comorbidity|etiology|pathology)\b",
-        0.75,
-    ),
-    # domain: financial documents
-    "financial_noun": (
-        r"\b(?:earnings|revenue|ebitda|10-k|sec filing|material|forecast|"
-        r"balance sheet|cash flow|dcf|valuation|mnpi|regulation fd|"
-        r"investment memo|equity|debt|ipo|m&a|merger|acquisition)\b",
-        0.75,
-    ),
-    # domain: corporate / business intelligence
-    "corporate_noun": (
-        r"\b(?:market share|competitive analysis|kpi|okr|roadmap|swot|pestel|"
-        r"porter.s five|bcg matrix|tam|sam|som|go-to-market|positioning|"
-        r"value proposition|business intelligence|trade secret|nda)\b",
-        0.70,
-    ),
     # interest / desire (weaker)
     "interest":        (r"\bi(?:'?m| am) interested in\b", 0.40),
     "looking_for":     (r"\b(?:looking for|looking to|hoping to|plan to|trying to)\b", 0.40),
@@ -197,13 +125,6 @@ _DOMAIN_SIGNALS: dict[str, list[str]] = {
         "user_story", "bdd", "acceptance", "functional_req", "system_shall",
         "as_a_i_want", "capability",
     ],
-    "build":         ["build_verb", "feature_request"],
-    "devops":        ["deploy_verb"],
-    "monitoring":    ["monitor_verb"],
-    "analytics":     ["analytics_verb"],
-    "compliance":    ["compliance_verb"],
-    "documentation": ["doc_verb", "doc_noun", "doc_action"],
-    "interest":      ["i_want", "we_want", "interest", "looking_for", "would_like", "id_like"],
     "build":          ["build_verb", "feature_request"],
     "devops":         ["deploy_verb"],
     "monitoring":     ["monitor_verb"],
@@ -211,25 +132,11 @@ _DOMAIN_SIGNALS: dict[str, list[str]] = {
     "compliance":     ["compliance_verb"],
     "product_mgmt":   ["product_mgmt_verb", "strategy_noun"],
     "software_craft": ["craft_verb", "craft_noun"],
-    "intelligence":   ["intelligence_noun", "intelligence_verb"],
-    "doc_analysis":   ["doc_analysis_noun", "doc_analysis_verb"],
-    "legal":          ["legal_noun"],
-    "medical":        ["medical_noun"],
-    "financial":      ["financial_noun"],
-    "corporate":      ["corporate_noun"],
     "interest":       ["i_want", "we_want", "interest", "looking_for", "would_like", "id_like"],
 }
 
 # Domain -> preferred role_ids (matched against loaded catalog first)
 _DOMAIN_ROLES: dict[str, list[str]] = {
-    "requirements": ["requirements_engineer", "business_analyst", "product_owner"],
-    "build":        ["ai_developer", "software_engineer", "developer"],
-    "devops":       ["devops_engineer", "infrastructure_manager", "platform_engineer"],
-    "monitoring":   ["system_monitor", "devops_engineer", "qa_manager"],
-    "analytics":    ["data_analyst", "ai_developer", "analyst"],
-    "compliance":   ["compliance_manager", "security_analyst", "compliance_officer"],
-    "documentation": ["technical_writer", "doc_reviewer", "requirements_engineer"],
-    "interest":     [],  # too weak to assign roles directly
     "requirements":   ["requirements_engineer", "business_analyst", "product_owner"],
     "build":          ["ai_developer", "software_engineer", "developer"],
     "devops":         ["devops_engineer", "infrastructure_manager", "platform_engineer"],
@@ -238,12 +145,6 @@ _DOMAIN_ROLES: dict[str, list[str]] = {
     "compliance":     ["compliance_manager", "security_analyst", "compliance_officer"],
     "product_mgmt":   ["product_manager", "business_analyst", "requirements_engineer"],
     "software_craft": ["software_craftsperson", "ai_developer", "qa_manager"],
-    "intelligence":   ["researcher", "intelligence_analyst", "writer", "editor", "derivative_classifier"],
-    "doc_analysis":   ["researcher", "intelligence_analyst", "writer", "editor", "derivative_classifier"],
-    "legal":          ["researcher", "intelligence_analyst", "writer", "editor", "derivative_classifier"],
-    "medical":        ["researcher", "intelligence_analyst", "writer", "editor", "derivative_classifier"],
-    "financial":      ["researcher", "intelligence_analyst", "writer", "editor", "derivative_classifier"],
-    "corporate":      ["researcher", "intelligence_analyst", "writer", "editor", "derivative_classifier"],
     "interest":       [],  # too weak to assign roles directly
 }
 
@@ -374,7 +275,7 @@ class ProblemClassifierLens(BaseLens):
             else:
                 severity = "info"
 
-            top = candidates[:5]
+            top = candidates[:3]
             predictions.append(
                 OraclePrediction(
                     lens=self.name,
@@ -401,11 +302,9 @@ class ProblemClassifierLens(BaseLens):
     def propose(self, predictions: list[OraclePrediction]) -> TeamManifest:  # type: ignore[override]
         """Convert ranked predictions to a TeamManifest.
 
-        Two-tier classification:
-          1. Fast path  — if any regex domain scores ≥ 0.65, use that directly.
-          2. Intent path — otherwise, call LLM with the full problem text and the
-             loaded role catalog so it can classify intent and pick catalog-valid roles.
-          3. Fallback    — [ai_developer, qa_manager] if LLM is also unavailable.
+        When max confidence < 0.5, calls LLMRouter.invoke('task_decomposition')
+        for role suggestions. Falls back to [ai_developer, qa_manager] if LLM
+        is also unavailable.
 
         Args:
             predictions: Sorted list produced by score().
@@ -415,22 +314,20 @@ class ProblemClassifierLens(BaseLens):
         """
         max_confidence = max((p.confidence for p in predictions), default=0.0)
 
-        # Fast path: high-signal regex match — trust the pattern directly.
-        if max_confidence >= 0.65:
-            seen: dict[str, RoleSlot] = {}
-            for pred in predictions:
-                if pred.confidence < 0.1:
-                    continue
-                priority = "high" if pred.confidence >= 0.6 else "medium"
-                for role_id in pred.data.get("preferred_roles", []):
-                    if role_id not in seen:
-                        seen[role_id] = RoleSlot(role_id=role_id, count=1, priority=priority)
-            if seen:
-                return TeamManifest(slots=list(seen.values()))
+        if max_confidence < 0.5:
+            llm_slots = self._llm_suggest_roles()
+            return TeamManifest(slots=llm_slots or list(_FALLBACK_SLOTS))
 
-        # Intent path: send problem text + catalog to LLM for free-form classification.
-        llm_slots = self._llm_classify_intent()
-        return TeamManifest(slots=llm_slots or list(_FALLBACK_SLOTS))
+        seen: dict[str, RoleSlot] = {}
+        for pred in predictions:
+            if pred.confidence < 0.1:
+                continue
+            priority = "high" if pred.confidence >= 0.6 else "medium"
+            for role_id in pred.data.get("preferred_roles", []):
+                if role_id not in seen:
+                    seen[role_id] = RoleSlot(role_id=role_id, count=1, priority=priority)
+
+        return TeamManifest(slots=list(seen.values()) or list(_FALLBACK_SLOTS))
 
     # ------------------------------------------------------------------
     # run() override — returns TeamManifest instead of list[OraclePrediction]
@@ -443,15 +340,13 @@ class ProblemClassifierLens(BaseLens):
         return self.propose(predictions)
 
     # ------------------------------------------------------------------
-    # LLM intent classifier
+    # LLM helper
     # ------------------------------------------------------------------
 
-    def _llm_classify_intent(self) -> list[RoleSlot]:
-        """Classify problem intent via LLM using the loaded role catalog as a constraint.
+    def _llm_suggest_roles(self) -> list[RoleSlot]:
+        """Call LLMRouter for role suggestions when pattern confidence is low.
 
-        Passes the exact role_ids available in args/ace/roles/ so the LLM cannot
-        hallucinate IDs that don't exist. Returns empty list on any failure so the
-        caller falls back to the hardcoded default.
+        Returns empty list if LLM is unavailable so the caller uses the fallback.
         """
         try:
             from icdev.tools.llm.router import LLMRouter
@@ -459,70 +354,44 @@ class ProblemClassifierLens(BaseLens):
         except ImportError:
             return []
 
-        # Build the catalog constraint from loaded roles.
-        try:
-            roles = self._role_loader.list_roles()
-            catalog_ids = [r.role_id for r in roles]
-        except Exception:
-            catalog_ids = list({
-                rid
-                for domain_roles in _DOMAIN_ROLES.values()
-                for rid in domain_roles
-            })
-
-        catalog_json = json.dumps(catalog_ids)
-
-        system_prompt = (
-            "You are an AI team composition advisor for ICDEV, a defense/govcon software platform. "
-            "Your job is to read a problem description and select the best team of AI co-workers "
-            "from the available role catalog to solve it. "
-            "You MUST only use role_id values from the provided catalog — never invent new ones. "
-            "Return ONLY a JSON object with this exact shape (no prose, no markdown):\n"
-            '{"domain": "<one word domain>", "roles": [{"role_id": "<id>", "priority": "high|medium|low"}, ...]}\n'
-            "Select 2-4 roles. First role should be primary (high priority)."
-        )
-
-        user_prompt = (
-            f"Available role catalog:\n{catalog_json}\n\n"
-            f"Problem description:\n{self._problem_text}\n\n"
-            "Select the best roles from the catalog above."
-        )
-
         try:
             router = LLMRouter()
             request = LLMRequest(
-                messages=[{"role": "user", "content": user_prompt}],
-                system_prompt=system_prompt,
-                max_tokens=512,
-                temperature=0.1,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            "Given the following problem description, list the top 3 most "
+                            "appropriate AI team roles using snake_case IDs (e.g. ai_developer, "
+                            "qa_manager, devops_engineer, compliance_manager, data_analyst). "
+                            "Return ONLY a JSON array of strings.\n\n"
+                            f"Problem: {self._problem_text}"
+                        ),
+                    }
+                ],
+                system_prompt=(
+                    "You are an AI team composition advisor. "
+                    "Return only valid JSON — a JSON array of role_id strings."
+                ),
+                max_tokens=256,
+                temperature=0.2,
                 skip_injection_scan=True,
             )
             response = router.invoke("task_decomposition", request)
-            content = (response.content if hasattr(response, "content") else str(response)).strip()
-
-            # Extract the JSON object from the response.
-            start = content.find("{")
-            end = content.rfind("}") + 1
-            if start < 0 or end <= start:
-                return []
-
-            parsed = json.loads(content[start:end])
-            raw_roles = parsed.get("roles", [])
-            valid_ids = set(catalog_ids)
-
-            slots: list[RoleSlot] = []
-            for entry in raw_roles[:4]:
-                if not isinstance(entry, dict):
-                    continue
-                rid = str(entry.get("role_id", "")).strip()
-                if not rid or rid not in valid_ids:
-                    continue
-                priority = str(entry.get("priority", "medium")).lower()
-                if priority not in ("high", "medium", "low"):
-                    priority = "medium"
-                slots.append(RoleSlot(role_id=rid, count=1, priority=priority))
-
-            return slots
-
-        except Exception:  # noqa: BLE001
-            return []
+            content = response.content.strip()
+            start = content.find("[")
+            end = content.rfind("]") + 1
+            if start >= 0 and end > start:
+                role_ids: list = json.loads(content[start:end])
+                return [
+                    RoleSlot(
+                        role_id=str(r),
+                        count=1,
+                        priority="high" if i == 0 else "medium",
+                    )
+                    for i, r in enumerate(role_ids[:3])
+                    if isinstance(r, str) and r
+                ]
+        except Exception:  # noqa: BLE001 — LLMUnavailableError, network, parse errors
+            pass
+        return []

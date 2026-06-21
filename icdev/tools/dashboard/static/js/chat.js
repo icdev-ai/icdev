@@ -158,7 +158,8 @@
             title: options.title || '',
             project_id: options.project_id || '',
             agent_model: options.agent_model || 'sonnet',
-            system_prompt: options.system_prompt || ''
+            system_prompt: options.system_prompt || '',
+            reasoning_mode: options.reasoning_mode || 'off'
         }).then(function (ctx) {
             if (ctx.error) {
                 var msg = ctx.active_count !== undefined
@@ -219,6 +220,13 @@
             var statusEl = document.getElementById('chat-status');
             statusEl.textContent = ctx.status;
             statusEl.className = 'badge badge-' + (ctx.status === 'active' ? 'success' : 'warning');
+
+            // Sync reasoned-codegen toggle to this context's mode
+            var rBtn = document.getElementById('btn-reasoning-toggle');
+            var rBadge = document.getElementById('reasoning-mode-badge');
+            var rMode = ctx.reasoning_mode || 'off';
+            if (rBtn) rBtn.setAttribute('data-mode', rMode);
+            if (rBadge) rBadge.textContent = rMode.toUpperCase();
 
             var inp = document.getElementById('message-input');
             var btn = document.getElementById('btn-send');
@@ -1941,7 +1949,8 @@
                 title: title,
                 project_id: '',
                 agent_model: options.agent_model || 'kimi-cloud',
-                system_prompt: 'RICOAS intake session: ' + intakeSessionId
+                system_prompt: 'RICOAS intake session: ' + intakeSessionId,
+                reasoning_mode: options.reasoning_mode || 'off'
             }).then(function (ctx) {
                 if (ctx.error) {
                     var msg = ctx.active_count !== undefined
@@ -2027,16 +2036,38 @@
             var model = document.getElementById('new-ctx-model').value;
             var prompt = document.getElementById('new-ctx-prompt').value.trim();
             var isIntake = document.getElementById('new-ctx-intake').checked;
+            var reasoningEl = document.getElementById('new-ctx-reasoning');
+            var reasoning = reasoningEl ? reasoningEl.value : 'off';
 
             if (isIntake) {
-                createIntakeContext({ title: title, agent_model: model });
+                createIntakeContext({ title: title, agent_model: model, reasoning_mode: reasoning });
             } else {
-                createContext({ title: title, agent_model: model, system_prompt: prompt });
+                createContext({ title: title, agent_model: model, system_prompt: prompt, reasoning_mode: reasoning });
             }
             if (modal) modal.classList.remove('chat-modal-overlay--visible');
             document.getElementById('new-ctx-title').value = '';
             document.getElementById('new-ctx-prompt').value = '';
             document.getElementById('new-ctx-intake').checked = false;
+        });
+
+        // Reasoned-codegen mode toggle (cycles off -> auto -> on for the active context)
+        var btnReason = document.getElementById('btn-reasoning-toggle');
+        var reasonBadge = document.getElementById('reasoning-mode-badge');
+        var _reasonCycle = ['off', 'auto', 'on'];
+        if (btnReason) btnReason.addEventListener('click', function () {
+            if (!_activeContextId) {
+                if (ns.notify) ns.notify('Open a chat context first', 'warn');
+                return;
+            }
+            var cur = btnReason.getAttribute('data-mode') || 'off';
+            var next = _reasonCycle[(_reasonCycle.indexOf(cur) + 1) % _reasonCycle.length];
+            chatApi('PATCH', '/contexts/' + encodeURIComponent(_activeContextId) + '/reasoning',
+                    { reasoning_mode: next }).then(function (r) {
+                if (r && !r.error) {
+                    btnReason.setAttribute('data-mode', next);
+                    if (reasonBadge) reasonBadge.textContent = next.toUpperCase();
+                }
+            });
         });
 
         // Send message

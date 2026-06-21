@@ -1,0 +1,53 @@
+# Oracle Quality Lens configuration
+# Loaded at module import — changes take effect on next process restart.
+# All threshold values are overridable here; Python module falls back to
+# the same defaults if this file is absent.
+#
+# Adaptive anomaly detection: z-score thresholds scale with the coefficient
+# of variation (CV = std/mean) of the input series so that stable metrics
+# trigger on tighter deviations and volatile metrics require wider deviations
+# before alarming.  Set z_warn_low == z_warn_high (and crit equivalents) to
+# disable adaptivity and revert to fixed z-scores.
+
+anomaly_bounds:
+  min_samples: 3
+  # Fixed fallback z-scores (used when CV cannot be computed)
+  z_warn: 1.5
+  z_crit: 2.5
+  # Adaptive range: CV=0 -> low end, CV>=1 -> high end (linear interpolation)
+  z_warn_low: 1.2
+  z_warn_high: 2.0
+  z_crit_low: 2.0
+  z_crit_high: 3.0
+
+uqs:
+  z_warn_multiplier: 1.0
+  z_crit_multiplier: 2.0
+  warn_delta_floor: 2.0
+  crit_delta_floor: 5.0
+  conf_base: 0.5
+  conf_sigma_denom: 4.0
+  conf_cap: 0.95
+
+gate_failure:
+  rate_warn_fallback: 0.45
+  rate_crit_fallback: 0.75
+  rate_floor: 0.35
+  min_failure_count: 2
+  conf_base: 0.4
+  conf_rate_scale: 0.5
+  conf_cap: 0.90
+
+findings_spike:
+  spike_fallback_multiplier: 1.5
+  min_abs_floor: 5.0
+  min_abs_mean_ratio: 0.5
+  mean_fallback: 10.0
+  conf_base: 0.5
+  confidence_z_slope: 0.08
+  conf_cap: 0.95
+
+critical_trends:
+  base_confidence: 0.70
+  confidence_per_critical: 0.05
+  conf_cap: 0.95

@@ -1,0 +1,47 @@
+# ACE QA Manager Role Template
+# Validates build outputs via CodeLens, coherence checks, E2E runs, and negotiates fixes.
+
+role_id: qa_manager
+trust_tier: yellow
+default_count: 1
+max_instances: 1
+
+llm_function: code_review
+
+communication:
+  can_delegate: false
+  can_verify: true
+  can_negotiate: true
+
+tool_permissions:
+  - analysis.code_lens
+  - workflow.coherence_checker
+  - testing.e2e_runner
+  - ace.message_bus
+
+steps:
+  - id: codelens_scan
+    tool: CodeLens.analyze_file
+    input: build_result.primary_file
+
+  - id: coherence_check
+    tool: CoherenceChecker.run_all
+    args:
+      gate: true
+
+  - id: e2e_run
+    tool: e2e_runner.run_all
+
+  - id: autofix
+    tool: MessageBus.negotiate
+    message_type: cw_negotiate_propose
+    target: ai_developer
+    condition: "e2e_result.failed_count > 0"
+    max_rounds: 3
+
+  - id: verify_response
+    tool: MessageBus.send
+    message_type: cw_verify_response
+    target: ai_developer
+    payload:
+      passed: "e2e_result.failed_count == 0"

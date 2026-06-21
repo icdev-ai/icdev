@@ -380,6 +380,14 @@ def _detect_and_store_correction(context_id: str, content: str, turn_number: int
         )
         conn.commit()
         logger.debug("[RICOAS] Stored correction for context %s", context_id)
+        # ── LESSONS LEARNED: chat correction ─────────────────────────────────
+        try:
+            from tools.workflow.lesson_learned import write_chat_correction_lesson
+            entry_id = write_chat_correction_lesson(context_id, turn_number, content)
+            if entry_id:
+                logger.debug("[LESSON] Chat correction logged as %s", entry_id)
+        except Exception as _ll_exc:
+            logger.warning("[LESSON] Could not log chat correction: %s", _ll_exc)
     except Exception as exc:
         logger.debug("[RICOAS] Could not store correction: %s", exc)
 
@@ -659,6 +667,49 @@ def _check_context_pressure(session_id: str) -> Optional[dict]:
 # ---------------------------------------------------------------------------
 
 
+_CODE_REQUEST_RE = _re.compile(
+    r"\b(write|create|implement|generate|build|refactor|fix|patch|migrate|translate)\b"
+    r"[^.?!]{0,60}\b(code|function|method|class|module|script|endpoint|route|api|"
+    r"query|sql|test|component|service|handler|parser|migration)\b"
+    r"|```",
+    _re.IGNORECASE,
+)
+
+
+def _is_code_request(message: str) -> bool:
+    """Heuristic: is the user asking for code generation/implementation?
+
+    Conservative — fires only on explicit code-action phrasing or a fenced block.
+    """
+    return bool(_CODE_REQUEST_RE.search(message or ""))
+
+
+def _resolve_chat_reasoning_mode(reasoning_mode: str, user_content: str, router) -> str:
+    """Resolve the effective CoT/CoD mode for a chat turn.
+
+    off → off; on → advisor picks (never off, code requests only);
+    auto → advisor decides, code requests only. Section kill-switch wins.
+    """
+    if reasoning_mode not in ("on", "auto"):
+        return "off"
+    if not _is_code_request(user_content):
+        return "off"
+    try:
+        from tools.llm.reasoned_codegen import section_enabled, MODE_OFF, MODE_COT
+
+        if not section_enabled(router):
+            return MODE_OFF
+        from tools.llm.reasoned_codegen_advisor import recommend
+
+        rec = recommend("code_generation", user_content, router=router)
+        mode = rec.get("mode", MODE_OFF)
+        if reasoning_mode == "on" and mode == MODE_OFF:
+            mode = MODE_COT
+        return mode
+    except Exception:
+        return "cot" if reasoning_mode == "on" else "off"
+
+
 class ChatContext:
     """Represents a single chat stream with its own message queue and thread."""
 
@@ -671,6 +722,7 @@ class ChatContext:
         project_id: str = "",
         agent_model: str = "sonnet",
         system_prompt: str = "",
+        reasoning_mode: str = "off",
     ):
         self.context_id = context_id
         self.user_id = user_id
@@ -679,6 +731,9 @@ class ChatContext:
         self.project_id = project_id
         self.agent_model = agent_model
         self.system_prompt = system_prompt
+        # Reasoned codegen for code requests: off | auto | on
+        # (auto → advisor decides; on → force CoT/CoD; respects section kill-switch)
+        self.reasoning_mode = reasoning_mode if reasoning_mode in ("off", "auto", "on") else "off"
 
         self.status = "active"  # active, paused, completed, error, archived
         self.message_queue: deque = deque()
@@ -738,6 +793,7 @@ class ChatContext:
             "title": self.title,
             "project_id": self.project_id,
             "agent_model": self.agent_model,
+            "reasoning_mode": self.reasoning_mode,
             "status": self.status,
             "message_count": self.turn_number,
             "dirty_version": self.dirty_version,
@@ -777,12 +833,16 @@ class ChatManager:
         agent_model: str = "sonnet",
         system_prompt: str = "",
         ricoas_axis: str = "",
+        reasoning_mode: str = "off",
     ) -> dict:
         """Create a new chat context. Returns context dict.
 
         Args:
             ricoas_axis: Optional RICOAS dimension focus (R/I/C/O/A/S).
                          Injects axis-specific instructions and restricts scope.
+            reasoning_mode: Reasoned codegen for code requests — off | auto | on.
+                         auto = advisor decides; on = force CoT/CoD. The
+                         args/llm_config.yaml reasoned_codegen kill-switch wins.
         """
         with self._lock:
             # Check concurrent limit per user
@@ -808,6 +868,7 @@ class ChatManager:
             project_id=project_id,
             agent_model=agent_model,
             system_prompt=system_prompt,
+            reasoning_mode=reasoning_mode,
         )
         ctx.ricoas_axis = ricoas_axis.upper()[:1] if ricoas_axis else ""
 
@@ -865,14 +926,20 @@ class ChatManager:
             conn = self._get_db()
             row = conn.execute(
                 "SELECT id, user_id, tenant_id, title, status, project_id, "
-                "agent_model, system_prompt, dirty_version, message_count, "
-                "classification, created_at, updated_at "
+                "agent_model, system_prompt, context_config, dirty_version, "
+                "message_count, classification, created_at, updated_at "
                 "FROM chat_contexts WHERE id = ?",
                 (context_id,),
             ).fetchone()
             conn.close()
             if not row:
                 return None
+            reasoning_mode = "off"
+            try:
+                cfg = json.loads(row["context_config"]) if row["context_config"] else {}
+                reasoning_mode = cfg.get("reasoning_mode", "off")
+            except Exception:
+                pass
             return {
                 "context_id": row["id"],
                 "user_id": row["user_id"] or "",
@@ -880,6 +947,7 @@ class ChatManager:
                 "title": row["title"] or "",
                 "project_id": row["project_id"] or "",
                 "agent_model": row["agent_model"] or "sonnet",
+                "reasoning_mode": reasoning_mode,
                 "status": row["status"] or "active",
                 "message_count": row["message_count"] or 0,
                 "dirty_version": row["dirty_version"] or 0,
@@ -888,6 +956,31 @@ class ChatManager:
             }
         except Exception:
             return None
+
+    def set_reasoning_mode(self, context_id: str, reasoning_mode: str) -> dict:
+        """Update a session's reasoned-codegen mode mid-conversation (off|auto|on)."""
+        mode = reasoning_mode if reasoning_mode in ("off", "auto", "on") else "off"
+        with self._lock:
+            ctx = self._contexts.get(context_id)
+        if ctx is None:
+            return {"error": "context not found", "context_id": context_id}
+        ctx.reasoning_mode = mode
+        try:
+            conn = self._get_db()
+            conn.execute(
+                "UPDATE chat_contexts SET context_config = ?, updated_at = ? WHERE id = ?",
+                (
+                    json.dumps({"reasoning_mode": mode}),
+                    datetime.now(timezone.utc).isoformat(),
+                    context_id,
+                ),
+            )
+            conn.commit()
+            conn.close()
+        except sqlite3.OperationalError as exc:
+            logger.debug("reasoning_mode persist skipped: %s", exc)
+        _mark_dirty(context_id, "reasoning_mode_changed", {"reasoning_mode": mode})
+        return {"context_id": context_id, "reasoning_mode": mode}
 
     def close_context(self, context_id: str) -> dict:
         """Close/archive a chat context."""
@@ -1119,6 +1212,14 @@ class ChatManager:
                 # Process message through LLM
                 response = self._process_message(ctx, msg)
 
+                # CLI bridge deferred this turn to a background job. The PENDING
+                # placeholder is already persisted by _process_message; finish
+                # the task and let the worker post the real answer later, rather
+                # than blocking or double-inserting an assistant message.
+                if isinstance(response, dict) and response.get("status") == "pending":
+                    self._db_complete_task(task_id, response.get("message", ""))
+                    continue
+
                 # Intervention check point 3: after LLM response
                 intervention = ctx.check_intervention()
                 if intervention:
@@ -1214,7 +1315,22 @@ class ChatManager:
         6. Track RAG sources in metadata
 
         Falls back to echo response if LLM is unavailable.
+
+        When the CLI bridge is active and a request outruns the soft-wait, the
+        router raises ``CLIJobDeferred``. We catch it specifically, persist a
+        PENDING assistant placeholder carrying the ``job_id``, and return a
+        ``{"status": "pending", ...}`` dict so the caller switches to background
+        mode instead of blocking. The echo fallback is reserved for the case
+        where the bridge is disabled / no LLM is reachable.
         """
+        # Resolve CLIJobDeferred lazily; if the bridge isn't installed the name
+        # becomes an empty tuple so the ``except`` clauses below never match and
+        # the existing echo fallback handles unavailability unchanged.
+        try:
+            from tools.llm.cli_bridge.cli_provider import CLIJobDeferred
+        except Exception:  # bridge not installed/disabled
+            CLIJobDeferred = ()
+
         try:
             from tools.llm.router import LLMRouter
 
@@ -1290,8 +1406,36 @@ class ChatManager:
                 messages=conversation,
                 model=ctx.agent_model,
             )
-            response = router.invoke("chat_response", request)
-            result = response.content if response.content else str(response)
+            # Reasoned codegen: for code requests, when the session opted in
+            # (reasoning_mode auto|on) and the section kill-switch is on, route
+            # generation through CoT/CoD instead of a plain chat response.
+            reasoning_mode = _resolve_chat_reasoning_mode(
+                getattr(ctx, "reasoning_mode", "off"), user_content, router,
+            )
+            if reasoning_mode != "off":
+                try:
+                    from tools.llm.reasoned_codegen import generate_reasoned_code
+
+                    rc = generate_reasoned_code(
+                        function="code_generation",
+                        request=request,
+                        router=router,
+                        mode=reasoning_mode,
+                        project_id=ctx.project_id,
+                    )
+                    result = rc.code if rc and rc.code else ""
+                    if not result:
+                        response = router.invoke("chat_response", request)
+                        result = response.content if response.content else str(response)
+                except CLIJobDeferred:
+                    raise  # let the outer handler switch to background mode
+                except Exception as exc:
+                    logger.debug("reasoned codegen failed (%s) — plain chat", exc)
+                    response = router.invoke("chat_response", request)
+                    result = response.content if response.content else str(response)
+            else:
+                response = router.invoke("chat_response", request)
+                result = response.content if response.content else str(response)
 
             # Store RAG sources in metadata for attribution display
             if rag_results:
@@ -1299,10 +1443,60 @@ class ChatManager:
 
             return result
 
+        except CLIJobDeferred as exc:
+            # CLI bridge accepted the request but it outran the soft-wait. Post a
+            # PENDING placeholder (carrying job_id) and hand control back so the
+            # request doesn't block; the backend worker posts the real answer.
+            logger.info(
+                "CLI job %s deferred to background for context %s",
+                getattr(exc, "job_id", ""),
+                ctx.context_id,
+            )
+            return self._persist_pending_placeholder(ctx, getattr(exc, "job_id", ""))
+
         except (ImportError, Exception) as exc:
             logger.debug("LLM unavailable for chat: %s — using echo fallback", exc)
             content = msg.get("content", "")
             return f"[Agent {ctx.agent_model}] Acknowledged: {content[:500]}"
+
+    _PENDING_PLACEHOLDER_TEXT = (
+        "Working… running in background; I'll post the result here."
+    )
+
+    def _persist_pending_placeholder(self, ctx: "ChatContext", job_id: str) -> dict:
+        """Persist a PENDING assistant placeholder for a deferred CLI job.
+
+        Writes an assistant message (``content_type="pending"``) carrying the
+        ``job_id`` in metadata so the UI can render a "still working" bubble and
+        a worker can later overwrite/append the real answer. Returns the pending
+        descriptor the agent loop / caller surfaces instead of blocking.
+        """
+        ctx.turn_number += 1
+        self._db_insert_message(
+            ctx.context_id,
+            ctx.turn_number,
+            "assistant",
+            self._PENDING_PLACEHOLDER_TEXT,
+            content_type="pending",
+            metadata={"status": "pending", "job_id": job_id},
+        )
+        _mark_dirty(
+            ctx.context_id,
+            "new_message",
+            {
+                "turn_number": ctx.turn_number,
+                "role": "assistant",
+                "content": self._PENDING_PLACEHOLDER_TEXT,
+                "content_type": "pending",
+                "status": "pending",
+                "job_id": job_id,
+            },
+        )
+        return {
+            "status": "pending",
+            "job_id": job_id,
+            "message": self._PENDING_PLACEHOLDER_TEXT,
+        }
 
     # ------------------------------------------------------------------
     # Generic advisory injection
@@ -1365,6 +1559,11 @@ class ChatManager:
             },
         )
 
+        # If the CLI bridge deferred to a background job, the PENDING placeholder
+        # is already persisted — nothing more to record here.
+        if isinstance(response, dict) and response.get("status") == "pending":
+            return
+
         # Record intervention response
         ctx.turn_number += 1
         self._db_insert_message(
@@ -1398,9 +1597,9 @@ class ChatManager:
             conn.execute(
                 """INSERT INTO chat_contexts
                    (id, user_id, tenant_id, title, status, project_id,
-                    agent_model, system_prompt, dirty_version, message_count,
-                    classification, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    agent_model, system_prompt, context_config, dirty_version,
+                    message_count, classification, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     ctx.context_id,
                     ctx.user_id,
@@ -1410,6 +1609,7 @@ class ChatManager:
                     ctx.project_id,
                     ctx.agent_model,
                     ctx.system_prompt,
+                    json.dumps({"reasoning_mode": ctx.reasoning_mode}),
                     0,
                     0,
                     DEFAULT_CLASSIFICATION,

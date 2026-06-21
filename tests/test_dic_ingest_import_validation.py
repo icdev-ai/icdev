@@ -10,10 +10,7 @@ management command analog in DIC. Validates that:
 from __future__ import annotations
 
 import importlib
-import os
-from pathlib import Path
 
-import pytest
 
 orch = importlib.import_module("tools.document_intelligence.ingest_orchestrator")
 _detect = orch._detect_file_size_anomalies

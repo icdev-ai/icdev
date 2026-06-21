@@ -309,7 +309,6 @@ class TestCase4BadToolPath:
 
     def test_attribute_error_returns_error_dict(self):
         """Callable attribute not found on a real module."""
-        import os as _os
 
         spec = _spec(tool_permissions=["os.__nonexistent_fn__"])
         step = {"id": "atrerr", "tool": "os.__nonexistent_fn__", "args": {}}

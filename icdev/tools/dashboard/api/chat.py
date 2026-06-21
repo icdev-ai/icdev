@@ -62,7 +62,8 @@ def _require_chat():
 def create_context():
     """Create a new chat context.
 
-    Body: {user_id, tenant_id?, title?, project_id?, agent_model?, system_prompt?}
+    Body: {user_id, tenant_id?, title?, project_id?, agent_model?, system_prompt?,
+           reasoning_mode?: "off"|"auto"|"on"}
     """
     err = _require_chat()
     if err:
@@ -80,11 +81,30 @@ def create_context():
         project_id=data.get("project_id", ""),
         agent_model=data.get("agent_model", "sonnet"),
         system_prompt=data.get("system_prompt", ""),
+        reasoning_mode=data.get("reasoning_mode", "off"),
     )
 
     if "error" in result:
         return jsonify(result), 429  # Rate limit / max concurrent
     return jsonify(result), 201
+
+
+@chat_api.route("/contexts/<context_id>/reasoning", methods=["PATCH", "POST"])
+def set_reasoning_mode(context_id):
+    """Update a session's reasoned-codegen mode mid-conversation.
+
+    Body: {reasoning_mode: "off"|"auto"|"on"}
+    """
+    err = _require_chat()
+    if err:
+        return err
+
+    data = request.get_json(force=True, silent=True) or {}
+    mode = data.get("reasoning_mode", "off")
+    result = chat_manager.set_reasoning_mode(context_id, mode)
+    if "error" in result:
+        return jsonify(result), 404
+    return jsonify(result), 200
 
 
 @chat_api.route("/contexts", methods=["GET"])

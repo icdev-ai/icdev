@@ -2,7 +2,6 @@
 """Tests for _base.py: load_pillar_config and Pillar.score configurable precision."""
 from __future__ import annotations
 
-import pathlib
 
 import pytest
 

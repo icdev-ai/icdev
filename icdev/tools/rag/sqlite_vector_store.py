@@ -11,6 +11,7 @@ Always available — no optional dependencies. Air-gap safe.
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 import struct
 from pathlib import Path
@@ -25,6 +26,106 @@ from tools.rag.vector_store_provider import (
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_DB_PATH = BASE_DIR / "data" / "rag" / "rag_vectors.db"
+
+
+# ---------------------------------------------------------------------------
+# Module-level fallback constants — all overridable from args/rag_config.yaml
+# under sqlite_vector_store.anomaly_detection.  Change config, not code.
+# ---------------------------------------------------------------------------
+_DEFAULT_TOP_K = 50      # default number of nearest-neighbour results returned
+_BUSY_TIMEOUT_MS = 5000  # SQLite busy_timeout (ms) for WAL contention
+
+# Anomaly-detection relevance floor — a vector search whose best (top-1) cosine
+# similarity falls below this is flagged as a low-confidence retrieval (nothing
+# in the corpus is strongly similar to the query).  When enough history exists
+# the floor is recomputed adaptively as (mean − k·stddev) of past vector-search
+# top scores; otherwise this module-level floor is used.
+_VECTOR_SCORE_FLOOR = 0.30  # top similarity score below this is flagged
+_ANOMALY_STDDEV_K = 2.0     # flag searches below mean − k·stddev of history
+
+
+def _load_vector_anomaly_config(config: "dict | None" = None) -> dict:
+    """Load sqlite_vector_store.anomaly_detection settings from rag_config.yaml.
+
+    A caller-supplied ``config`` may carry the block directly under an
+    ``anomaly_detection`` key; otherwise fall back to the top-level
+    ``sqlite_vector_store.anomaly_detection`` block in args/rag_config.yaml.
+    Returns an empty dict when nothing is configured.
+    """
+    cfg = config or {}
+    if "anomaly_detection" in cfg:
+        return cfg["anomaly_detection"] or {}
+    config_path = BASE_DIR / "args" / "rag_config.yaml"
+    if not config_path.exists():
+        return {}
+    try:
+        import yaml
+
+        with open(config_path, encoding="utf-8") as fh:
+            raw = yaml.safe_load(fh) or {}
+        return raw.get("sqlite_vector_store", {}).get("anomaly_detection", {})
+    except Exception:
+        return {}
+
+
+def _compute_vector_anomaly_thresholds(anomaly_cfg: "dict | None" = None) -> dict:
+    """Compute an adaptive relevance floor from historical vector searches.
+
+    Reads ``top_score`` from ``rag_retrieval_log`` for runs whose
+    ``retrieval_mode = 'vector'`` and derives a statistical lower bound
+    (mean − k·stddev), so the definition of a "low-confidence" search tracks the
+    corpus instead of a frozen magic number.
+
+    Falls back to the module-level floor when fewer than ``min_samples`` rows
+    exist or anomaly detection is disabled.
+    """
+    cfg = anomaly_cfg or {}
+    defaults = {
+        "score_floor": cfg.get("fallback_score_floor", _VECTOR_SCORE_FLOOR),
+        "computed": False,
+    }
+    if not cfg.get("enabled", True):
+        return defaults
+
+    min_samples = cfg.get("min_samples", 30)
+    stddev_k = float(cfg.get("stddev_k", _ANOMALY_STDDEV_K))
+    bounds = cfg.get("adaptive_bounds", {})
+    floor_min = float(bounds.get("floor_min", 0.05))
+    floor_max = float(bounds.get("floor_max", 0.80))
+
+    conn = None
+    try:
+        conn = get_connection()
+        # Population mean / stddev via E[x²] − E[x]² (SQLite has no STDDEV()).
+        row = conn.execute(
+            "SELECT "
+            "AVG(top_score) AS mean, AVG(top_score * top_score) AS sq, "
+            "COUNT(*) AS n "
+            "FROM rag_retrieval_log "
+            "WHERE retrieval_mode = 'vector' AND top_score IS NOT NULL"
+        ).fetchone()
+        if row:
+            n = row["n"] if isinstance(row, dict) else row[2]
+            if n and n >= min_samples:
+                mean = float((row["mean"] if isinstance(row, dict) else row[0]) or 0.0)
+                sq = float((row["sq"] if isinstance(row, dict) else row[1]) or 0.0)
+                std = math.sqrt(max(0.0, sq - mean * mean))
+                score_floor = max(floor_min, min(floor_max, mean - stddev_k * std))
+                return {
+                    "score_floor": round(score_floor, 3),
+                    "computed": True,
+                    "n_samples": n,
+                    "mean": round(mean, 3),
+                }
+    except Exception:
+        pass
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    return defaults
 
 
 def _cosine_similarity(a: List[float], b: List[float]) -> float:
@@ -62,9 +163,21 @@ class SQLiteVectorStore(VectorStoreProvider):
     Thread-safe via per-call connection (SQLite handles locking).
     """
 
-    def __init__(self, db_path: str | Path | None = None, tenant_id: str = ""):
+    # Adaptive anomaly-detection state (lazily configured; see
+    # configure_anomaly_detection / flag_anomaly).
+    _anomaly_cfg: Optional[dict] = None
+    _anomaly_thresholds: Optional[dict] = None
+
+    def __init__(
+        self,
+        db_path: str | Path | None = None,
+        tenant_id: str = "",
+        config: Optional[dict] = None,
+    ):
+        cfg = config or {}
         self._db_path = Path(db_path) if db_path else DEFAULT_DB_PATH
         self._tenant_id = tenant_id
+        self._busy_timeout = int(cfg.get("busy_timeout_ms", _BUSY_TIMEOUT_MS))
         if tenant_id:
             tenant_dir = BASE_DIR / "data" / "tenants"
             tenant_dir.mkdir(parents=True, exist_ok=True)
@@ -75,8 +188,34 @@ class SQLiteVectorStore(VectorStoreProvider):
     def _get_conn(self) -> sqlite3.Connection:
         conn = get_connection(db_path=str(self._db_path))
         conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute(f"PRAGMA busy_timeout={self._busy_timeout}")
         return conn
+
+    def configure_anomaly_detection(self, config: Optional[dict] = None) -> None:
+        """Load anomaly config and compute the adaptive relevance floor."""
+        self._anomaly_cfg = _load_vector_anomaly_config(config)
+        self._anomaly_thresholds = _compute_vector_anomaly_thresholds(self._anomaly_cfg)
+
+    def flag_anomaly(self, results: List[SearchResult]) -> dict:
+        """Flag a vector search as a low-confidence (anomalous) retrieval.
+
+        ``results`` is the output of :meth:`search` — ``SearchResult`` items
+        sorted by similarity descending.  The search is flagged when the best
+        score falls below the (adaptive) relevance floor, i.e. nothing in the
+        corpus is strongly similar to the query.
+
+        Returns ``{"anomalous": bool, "reasons": [...], "score_floor": float}``;
+        clean (and reason-free) for an empty result set.
+        """
+        if self._anomaly_thresholds is None:
+            self.configure_anomaly_detection(None)
+        floor = self._anomaly_thresholds["score_floor"]
+        reasons: List[str] = []
+        if results:
+            top_score = results[0].score
+            if top_score < floor:
+                reasons.append(f"top similarity {round(top_score, 3)} < floor {floor}")
+        return {"anomalous": bool(reasons), "reasons": reasons, "score_floor": floor}
 
     def _init_schema(self):
         """Create rag_chunks table if not exists."""
@@ -177,7 +316,7 @@ class SQLiteVectorStore(VectorStoreProvider):
     def search(
         self,
         query_embedding: List[float],
-        top_k: int = 50,
+        top_k: int = _DEFAULT_TOP_K,
         filters: Optional[Dict[str, Any]] = None,
     ) -> List[SearchResult]:
         """Brute-force cosine similarity search on all chunks."""

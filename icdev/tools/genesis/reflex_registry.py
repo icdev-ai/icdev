@@ -42,6 +42,8 @@ REGISTRY: List[ReflexEntry] = [
     ReflexEntry("evolve",            CORE,      12.0, "Propose and apply system improvements"),
     ReflexEntry("awareness",         CORE,      3.0,  "Internal Awareness Engine — 5-phase self-model"),
     ReflexEntry("canvas_indexer",    CORE,      3.0,  "Re-index canvas components into awareness graph"),
+    ReflexEntry("self_monitor",      CORE,      0.5,  "Project internal health snapshots into operator alerts + failure_log (/monitoring)"),
+    ReflexEntry("integrity_monitor", CORE,      6.0,  "SIPA self-assessment of ICDEV tools/ — open a card per NEW unauthorized capability vs baseline"),
 
     # ── STRATEGOS ─────────────────────────────────────────────────────────────
     ReflexEntry("strategos.osint_harvester", STRATEGOS, 4.0,
@@ -56,7 +58,7 @@ REGISTRY: List[ReflexEntry] = [
 
     # ── DOMAIN ────────────────────────────────────────────────────────────────
     ReflexEntry("market",                     DOMAIN, 1.0,  "Market data refresh and signal detection"),
-    ReflexEntry("alphadesk_trap_scenarios",   DOMAIN, 4.0,  "AlphaDesk trap scenario analysis"),
+    ReflexEntry("fathomdesk_trap_scenarios",   DOMAIN, 4.0,  "FathomDesk trap scenario analysis"),
     ReflexEntry("fathomdesk_trap_sweep",          DOMAIN, 4.0,  "FathomDesk trap detection sweep"),
     ReflexEntry("fathomdesk_openbb_refresh",      DOMAIN, 6.0,  "Refresh OpenBB market data cache"),
     ReflexEntry("fathomdesk_fundamentals_sweep",  DOMAIN, 23.0, "Daily PE/P/B/ROE fundamentals refresh from yfinance"),
@@ -65,6 +67,10 @@ REGISTRY: List[ReflexEntry] = [
     ReflexEntry("socmint",                    DOMAIN, 6.0,  "SOCMINT harvester — Telegram milblog → sg_socmint_signals"),
     ReflexEntry("aadc_compliance",            DOMAIN, 4.0,  "AADC compliance scoring — NIST/OWASP/ATLAS node coverage",
                 on_demand=True),
+    ReflexEntry("foundry_cycle",              DOMAIN, 12.0,
+                "ACF: run one Autonomous Capability Foundry cycle (harvest→synth→novelty-gate→"
+                "score→CoD→SIPA→seed); clean no-op when ICDEV_FOUNDRY_ENABLED is off"),
+    ReflexEntry("mcip_dti_scorer",            DOMAIN, 6.0,  "MCIP DAT — compute and persist Diplomatic Tension Index every 6 h"),
 
     # ── SUPPORT ───────────────────────────────────────────────────────────────
     ReflexEntry("audit",       SUPPORT, 6.0,  "Compliance and security audit sweep"),
@@ -75,13 +81,14 @@ REGISTRY: List[ReflexEntry] = [
     ReflexEntry("docs",        SUPPORT, 12.0, "Update auto-generated documentation"),
     ReflexEntry("experiment",  SUPPORT, 24.0, "Run experimental hypothesis checks"),
     ReflexEntry("synthesize",  SUPPORT, 6.0,  "Cross-domain signal synthesis"),
-    ReflexEntry("kanban",      SUPPORT, 0.25, "Kanban scheduler — advance ready tasks"),
-    ReflexEntry("quality",     SUPPORT, 6.0,  "Code and artifact quality gate"),
+    ReflexEntry("kanban",          SUPPORT, 0.25, "Kanban scheduler — advance ready tasks"),
+    ReflexEntry("quality",         SUPPORT, 6.0,  "Code and artifact quality gate"),
+    ReflexEntry("gepa_optimizer",  SUPPORT, 24.0, "GEPA: patch skill files from reflexion artifacts — self-improvement flywheel"),
     ReflexEntry("goal_learner",       SUPPORT, 12.0, "Learn from goal execution outcomes"),
     ReflexEntry("remediation_lens",   SUPPORT, 4.0,  "Surface remediation opportunities"),
     ReflexEntry("failure_triage",     SUPPORT, 2.0,  "Triage and route failure events"),
-    ReflexEntry("alphadesk_news_patterns", SUPPORT, 4.0, "AlphaDesk news pattern detection"),
-    ReflexEntry("alphadesk_correlation_monitor", SUPPORT, 4.0, "AlphaDesk cross-asset correlation"),
+    ReflexEntry("fathomdesk_news_patterns", SUPPORT, 4.0, "FathomDesk news pattern detection"),
+    ReflexEntry("fathomdesk_correlation_monitor", SUPPORT, 4.0, "FathomDesk cross-asset correlation"),
     ReflexEntry("bdc_isa_expiry",     SUPPORT, 24.0, "BDC ISA expiry tracking"),
     ReflexEntry("cato_monitor",       SUPPORT, 6.0,  "cATO compliance monitoring"),
     ReflexEntry("cato_twin",               SUPPORT, 6.0,  "cATO digital twin sync"),
@@ -111,6 +118,14 @@ REGISTRY: List[ReflexEntry] = [
                 "Network: warn on peering agreements expiring within 90 days"),
     ReflexEntry("xc_order_poller",           DOMAIN, 1.0,
                 "CCC: Poll in-flight cross-connect orders; alarm on delayed deliveries"),
+    # ACE — ANVIL Co-Worker Engine reflexes
+    ReflexEntry("ace_team_monitor",          SUPPORT, 6.0,
+                "ACE: detect and escalate stale co-worker instances"),
+    # PMA — Program Management Analysis reflexes
+    ReflexEntry("pma_credential_monitor",    DOMAIN, 24.0,
+                "PMA: nightly credential expiry scan and SPOF dependency detection"),
+    ReflexEntry("pma_int_gap_monitor",       DOMAIN, 168.0,
+                "PMA: weekly INT gap persistence scan; seeds collection requirements and compliance risks"),
 ]
 
 # Quick lookup: name → entry
@@ -125,3 +140,8 @@ def get(name: str) -> ReflexEntry:
 def by_tier(tier: str) -> List[ReflexEntry]:
     """Return all registered reflexes for a given tier."""
     return [e for e in REGISTRY if e.tier == tier]
+
+
+def list_reflexes() -> List[ReflexEntry]:
+    """Return all registered reflexes."""
+    return list(REGISTRY)

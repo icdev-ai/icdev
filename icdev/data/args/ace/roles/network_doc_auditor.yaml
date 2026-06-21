@@ -1,0 +1,78 @@
+role_id: network_doc_auditor
+display_name: Network Document Auditor
+description: Monitors network topology changes and configuration drift, audits affected
+  documentation for staleness, triggers DIC document regeneration via ACOIC, and
+  publishes approved network architecture documents. Operates continuously as a
+  change-detection and documentation-currency sentinel. Only publishes after human
+  review is complete (HITL gate enforced).
+version: '1.0'
+trust_tier: yellow
+default_count: 1
+max_instances: 1
+canvas: network
+steps:
+- name: scan_network_drift
+  tool: drift_detector.run_drift_check
+  params:
+    topology_id: "$topology_id"
+    document_id: "$document_id"
+- name: audit_doc_freshness
+  tool: freshness_engine.scan_collection
+  params:
+    collection_id: "network-architecture"
+  condition: "$scan_network_drift.report.drift_count > 0"
+- name: record_drift_events
+  tool: acoic.record_drift_event
+  params:
+    source: "network"
+    severity: "$scan_network_drift.report.overall_severity"
+  condition: "$scan_network_drift.report.drift_count > 0"
+- name: enqueue_doc_regen
+  tool: acoic.enqueue_regen
+  params:
+    document_id: "$document_id"
+    severity: "$scan_network_drift.report.overall_severity"
+  condition: "$scan_network_drift.report.drift_count > 0"
+- name: notify_contributors
+  tool: event_bus.emit
+  params:
+    topic: network.drift.detected
+    payload: "$scan_network_drift.report"
+  condition: "$scan_network_drift.report.drift_count > 0"
+- name: publish_approved_doc
+  tool: acoic.approve_fragment
+  params:
+    fragment_id: "$approved_fragment_id"
+  condition: "$hitl_approval_received == true"
+communication:
+  protocol: a2a
+  listen_topics:
+  - network.topology.changed
+  - network.config.updated
+  - network.snapshot.created
+  - hitl.approval.completed
+  emit_topics:
+  - network.drift.detected
+  - doc.regen.queued
+  - doc.published
+  - status.updated
+llm_function: agent_knowledge
+tool_permissions:
+- Read
+- Grep
+- Bash
+genesis_reflex: audit
+personality:
+  domain: Network Architecture Documentation
+  standards:
+  - NIST SP 800-128 (Configuration Management)
+  - IEEE 802.1Q (VLANs)
+  - RFC 5101 (IP Flow Accounting)
+  - TOGAF 9.2 Architecture Documentation
+  - DoD Architecture Framework (DoDAF) v2.02
+  tags:
+  - vigilant
+  - compliance-aware
+  - change-driven
+  - hitl-gated
+  - deterministic-first

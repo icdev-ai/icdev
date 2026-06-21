@@ -39,6 +39,11 @@ adapters:
     method: POST
     headers: {}
 
+# LLM narrative generation parameters — used by _ai_digest_narrative and siblings
+narrative_llm:
+  max_tokens: 512
+  temperature: 0.3
+
 # Event routing — which adapters receive which event types
 routing:
   security_gate_failure: [slack, telegram, email]

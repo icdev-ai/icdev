@@ -20,11 +20,20 @@ from tools.rag.vector_store_provider import SearchResult
 
 logger = get_logger("icdev.rag.reranker")
 
+# ---------------------------------------------------------------------------
+# Module-level fallback constants — overridable from args/rag_config.yaml
+# under rag.rerank.  Change config, not code.
+# ---------------------------------------------------------------------------
+_RERANKER_DEFAULT_TOP_K    = 5      # default results to return after re-ranking
+_RERANKER_DEFAULT_WEIGHT   = 0.60   # blend weight: rerank_score vs original score
+_TEACHING_BOOST_WEIGHT     = 0.15   # Bayesian teaching diversity boost weight
+_MIN_WORD_LENGTH           = 3      # minimum word length for diversity word set
+
 
 def rerank_results(
     query: str,
     results: List[SearchResult],
-    top_k: int = 5,
+    top_k: int = _RERANKER_DEFAULT_TOP_K,
     config: Optional[dict] = None,
 ) -> List[SearchResult]:
     """Re-rank results using best available backend (D-RAG-20).
@@ -47,7 +56,7 @@ def rerank_results(
         return results
 
     cfg = config or {}
-    rerank_weight = cfg.get("rerank_weight", 0.6)
+    rerank_weight = cfg.get("rerank_weight", _RERANKER_DEFAULT_WEIGHT)
 
     try:
         from tools.rag.reranker_provider import get_reranker_provider
@@ -98,7 +107,7 @@ def rerank_results(
 
 def _apply_teaching_diversity(
     results: List[SearchResult],
-    boost_weight: float = 0.15,
+    boost_weight: float = _TEACHING_BOOST_WEIGHT,
 ) -> List[SearchResult]:
     """Apply Bayesian Teaching diversity boost (D-BT-6).
 
@@ -112,7 +121,7 @@ def _apply_teaching_diversity(
         return results
 
     def _word_set(text: str) -> set:
-        return {w.lower().strip(".,;:!?()[]{}\"'") for w in (text or "").split() if len(w) > 3}
+        return {w.lower().strip(".,;:!?()[]{}\"'") for w in (text or "").split() if len(w) > _MIN_WORD_LENGTH}
 
     selected_words: list = []
     for result in results:

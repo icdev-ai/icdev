@@ -110,7 +110,6 @@ def _find_related(conn, doc_id: str, changed_concepts: list[str],
             "SELECT id, label, graph_id FROM kg_nodes LIMIT 5000"
         ).fetchall()
         for nr in node_rows:
-            node_id = _r(nr, "id", 0)
             label = (_r(nr, "label", 1) or "").lower()
             graph_id = _r(nr, "graph_id", 2) or ""
             if graph_id in source_graphs:

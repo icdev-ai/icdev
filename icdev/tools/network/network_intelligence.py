@@ -765,6 +765,15 @@ def manage_configs(topology_id: str, action: str, targets: list[str] | None = No
             if not graph:
                 return {"error": "Topology not found"}
             inventory = to_ansible_inventory(graph)
+            # DIC Canvas Synergy — emit config push event (dsyn-emit-01)
+            try:
+                from tools.ndc.event_emitter import emit_config_push
+                emit_config_push(
+                    topology_id=topology_id,
+                    change_summary=f"Config push prepared for topology {topology_id}",
+                )
+            except Exception:
+                pass
             return {
                 "action": "push",
                 "inventory_generated": True,
@@ -798,8 +807,22 @@ def manage_configs(topology_id: str, action: str, targets: list[str] | None = No
             else:
                 drifted.append({"device_id": dev_id, "status": "no_running_config"})
 
-        return {"action": "diff", "total_devices": len(gen_map),
-                "drifted_count": len(drifted), "drifted_devices": drifted}
+        diff_result = {"action": "diff", "total_devices": len(gen_map),
+                       "drifted_count": len(drifted), "drifted_devices": drifted}
+
+        # DIC Canvas Synergy — emit baseline deviation event when drift found (dsyn-emit-01)
+        if drifted:
+            try:
+                from tools.ndc.event_emitter import emit_baseline_deviation
+                emit_baseline_deviation(
+                    topology_id=topology_id,
+                    drifted_devices=drifted,
+                    drifted_count=len(drifted),
+                )
+            except Exception:
+                pass
+
+        return diff_result
 
     return {"error": f"Unknown action: {action}. Valid: generate, diff, push"}
 

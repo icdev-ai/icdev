@@ -10,6 +10,7 @@ Pure stdlib (collections, itertools) — air-gap safe, zero LLM cost.
 Usage:
     python tools/genesis/pattern_detector.py --json
     python tools/genesis/pattern_detector.py --lookback-days 14 --min-frequency 5 --json
+    python tools/genesis/pattern_detector.py --adaptive --sensitivity 1.0 --json
 """
 
 import argparse
@@ -18,13 +19,57 @@ import sys
 from collections import Counter, defaultdict
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+
+# ---------------------------------------------------------------------------
+# Config defaults — used when YAML is unavailable or a key is absent
+# ---------------------------------------------------------------------------
+
+_DEFAULTS: Dict[str, Any] = {
+    "min_pattern_frequency": 3,
+    "min_chain_length": 3,
+    "min_chain_flush_length": 2,
+    "lookback_days": 7,
+    "max_gap_seconds": 300,
+    "top_k": 20,
+    "session_ids_cap": 10,
+    "anomaly_detection": {
+        "enabled": True,
+        "min_samples": 4,
+        "sensitivity": 1.0,
+        "fallback_to_static": True,
+        "frequency_floor": 2,
+    },
+}
+
+
+def _load_synthesize_config() -> Dict[str, Any]:
+    """Load synthesize reflex config from args/genesis_config.yaml.
+
+    Returns _DEFAULTS merged with the YAML values so callers always get
+    a complete config even when the file is absent or malformed.
+    """
+    config_path = BASE_DIR / "args" / "genesis_config.yaml"
+    try:
+        import yaml  # type: ignore
+
+        with open(config_path, encoding="utf-8") as fh:
+            raw = yaml.safe_load(fh)
+        synth = (raw or {}).get("reflexes", {}).get("synthesize", {})
+    except Exception:
+        synth = {}
+
+    merged = dict(_DEFAULTS)
+    merged.update({k: v for k, v in synth.items() if v is not None})
+    ad_override = synth.get("anomaly_detection", {})
+    merged["anomaly_detection"] = {**_DEFAULTS["anomaly_detection"], **ad_override}
+    return merged
 
 
 def _utcnow_iso() -> str:
@@ -39,11 +84,15 @@ def _utcnow_iso() -> str:
 def _extract_session_tool_chains(
     lookback_days: int = 7,
     max_gap_seconds: int = 300,
+    min_flush_length: int = 2,
 ) -> Dict[str, List[List[str]]]:
     """Extract ordered tool-call chains per session from hook_events.
 
     Groups consecutive tool calls within a session, splitting chains when
     the gap between calls exceeds max_gap_seconds.
+
+    min_flush_length: minimum chain size to keep when flushing; sourced from
+      min_chain_flush_length in genesis_config.yaml (default 2).
 
     Returns:
         Dict mapping session_id → list of tool chains (each chain is a list
@@ -89,7 +138,7 @@ def _extract_session_tool_chains(
 
             # New session → flush previous chain
             if sid != current_session:
-                if current_chain and len(current_chain) >= 2:
+                if current_chain and len(current_chain) >= min_flush_length:
                     sessions[current_session].append(current_chain)
                 current_session = sid
                 current_chain = [tool]
@@ -101,7 +150,7 @@ def _extract_session_tool_chains(
                 gap = (ts - prev_ts).total_seconds()
                 if gap > max_gap_seconds:
                     # Gap too large → start new chain
-                    if len(current_chain) >= 2:
+                    if len(current_chain) >= min_flush_length:
                         sessions[sid].append(current_chain)
                     current_chain = [tool]
                     prev_ts = ts
@@ -111,7 +160,7 @@ def _extract_session_tool_chains(
             prev_ts = ts
 
         # Flush last chain
-        if current_chain and len(current_chain) >= 2 and current_session:
+        if current_chain and len(current_chain) >= min_flush_length and current_session:
             sessions[current_session].append(current_chain)
 
         return dict(sessions)
@@ -119,6 +168,87 @@ def _extract_session_tool_chains(
         return {"_error": [[str(exc)]]}
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Adaptive frequency threshold (anomaly detection)
+# ---------------------------------------------------------------------------
+
+
+def _compute_adaptive_frequency_threshold(
+    ngram_counts: Counter,
+    sensitivity: float = 1.0,
+    fallback: int = 2,
+    min_samples: int = 4,
+) -> Tuple[int, Dict[str, Any]]:
+    """Compute a data-driven minimum frequency threshold via IQR anomaly detection.
+
+    Replaces the fixed min_frequency constant with a threshold derived from
+    the observed distribution of n-gram frequencies.
+
+    Formula: threshold = max(fallback, int(Q1 + sensitivity * IQR))
+      sensitivity=0.5 → between Q1 and Q3 (lenient, more patterns pass)
+      sensitivity=1.0 → at Q3 / 75th percentile (balanced default)
+      sensitivity=1.5 → Q3 + 0.5*IQR (strict, only clear outliers)
+      sensitivity=2.0 → Q3 + 1.0*IQR (classical IQR upper fence)
+
+    min_samples: minimum distinct n-grams required before adaptive mode activates;
+      sourced from anomaly_detection.min_samples in genesis_config.yaml.
+
+    Returns:
+        (threshold, stats_dict) where stats_dict has distribution metadata.
+    """
+    if not ngram_counts:
+        return fallback, {"method": "fallback", "reason": "empty_counts"}
+
+    freqs = sorted(ngram_counts.values())
+    n = len(freqs)
+
+    if n < min_samples:
+        return fallback, {"method": "fallback", "reason": "too_few_ngrams", "n": n, "min_samples": min_samples}
+
+    q1_idx = n // 4
+    q3_idx = (3 * n) // 4
+    q1 = freqs[q1_idx]
+    q3 = freqs[q3_idx]
+    median = freqs[n // 2]
+    iqr = q3 - q1
+
+    raw = q1 + sensitivity * iqr
+    threshold = max(fallback, int(raw))
+
+    stats = {
+        "method": "iqr",
+        "n_ngrams": n,
+        "q1": q1,
+        "median": median,
+        "q3": q3,
+        "iqr": iqr,
+        "sensitivity": sensitivity,
+        "raw_threshold": round(raw, 3),
+        "threshold": threshold,
+    }
+    return threshold, stats
+
+
+def compute_adaptive_frequency_threshold(
+    ngram_counts: Counter,
+    sensitivity: float = 1.0,
+    fallback: int = 2,
+    min_samples: int = 4,
+) -> Dict[str, Any]:
+    """Public API: compute IQR-based adaptive frequency threshold.
+
+    Returns a dict with 'threshold' (int) guaranteed, plus distribution metadata.
+    See _compute_adaptive_frequency_threshold for the full formula.
+
+    min_samples: minimum distinct n-grams required before adaptive mode activates;
+      default matches anomaly_detection.min_samples in genesis_config.yaml.
+    """
+    threshold, stats = _compute_adaptive_frequency_threshold(
+        ngram_counts, sensitivity=sensitivity, fallback=fallback, min_samples=min_samples
+    )
+    return {"threshold": threshold, **stats}
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +280,7 @@ def _score_pattern(
     ngram: tuple,
     count: int,
     chains: Dict[str, List[List[str]]],
+    session_ids_cap: int = 10,
 ) -> Dict[str, Any]:
     """Score a tool-chain pattern on frequency, caller diversity, and length.
 
@@ -158,6 +289,9 @@ def _score_pattern(
       - caller_diversity: number of distinct sessions containing this pattern
       - chain_length: longer chains = more complex workflows captured
       - uniqueness: 1 - overlap with shorter sub-patterns (penalize redundancy)
+
+    session_ids_cap: max session IDs stored per pattern for readability;
+      sourced from synthesize.session_ids_cap in genesis_config.yaml.
 
     Returns dict with scores and metadata.
     """
@@ -186,7 +320,7 @@ def _score_pattern(
         "chain_length": len(ngram),
         "length_bonus": round(length_bonus, 3),
         "composite_score": round(composite, 3),
-        "session_ids": sorted(session_ids)[:10],  # Cap for readability
+        "session_ids": sorted(session_ids)[:session_ids_cap],
     }
 
 
@@ -196,34 +330,55 @@ def _score_pattern(
 
 
 def detect_tool_patterns(
-    min_frequency: int = 3,
-    min_chain_length: int = 3,
-    lookback_days: int = 7,
-    max_gap_seconds: int = 300,
-    top_k: int = 20,
+    min_frequency: Optional[int] = None,
+    min_chain_length: Optional[int] = None,
+    lookback_days: Optional[int] = None,
+    max_gap_seconds: Optional[int] = None,
+    top_k: Optional[int] = None,
+    adaptive: Optional[bool] = None,
+    sensitivity: Optional[float] = None,
 ) -> Dict[str, Any]:
     """Run the full pattern detection pipeline.
 
+    All thresholds default to args/genesis_config.yaml (reflexes.synthesize).
+    When adaptive=True (the config default), min_frequency is replaced by an
+    IQR-based anomaly detection threshold computed from the n-gram distribution.
+
     1. Extract session tool chains from hook_events
     2. Mine n-grams of length >= min_chain_length
-    3. Filter by min_frequency
-    4. Score and rank
+    3. Compute adaptive IQR threshold (or use static min_frequency)
+    4. Filter, score, and rank
     5. Deduplicate (remove sub-patterns of higher-scoring super-patterns)
 
     Returns:
-        Dict with patterns list, metadata, and statistics.
+        Dict with patterns list, metadata, threshold_info, and statistics.
     """
+    cfg = _load_synthesize_config()
+    ad_cfg = cfg["anomaly_detection"]
+
+    _min_frequency = min_frequency if min_frequency is not None else cfg["min_pattern_frequency"]
+    _min_chain_length = min_chain_length if min_chain_length is not None else cfg["min_chain_length"]
+    _min_chain_flush = cfg.get("min_chain_flush_length", _DEFAULTS["min_chain_flush_length"])
+    _lookback_days = lookback_days if lookback_days is not None else cfg["lookback_days"]
+    _max_gap_seconds = max_gap_seconds if max_gap_seconds is not None else cfg["max_gap_seconds"]
+    _top_k = top_k if top_k is not None else cfg["top_k"]
+    _adaptive = adaptive if adaptive is not None else ad_cfg.get("enabled", True)
+    _sensitivity = sensitivity if sensitivity is not None else ad_cfg.get("sensitivity", 1.0)
+
     result: Dict[str, Any] = {
         "detected_at": _utcnow_iso(),
-        "lookback_days": lookback_days,
-        "min_frequency": min_frequency,
-        "min_chain_length": min_chain_length,
+        "lookback_days": _lookback_days,
+        "min_frequency": _min_frequency,
+        "min_chain_length": _min_chain_length,
+        "adaptive": _adaptive,
+        "config_source": "args/genesis_config.yaml",
     }
 
     # Step 1: Extract chains
     chains = _extract_session_tool_chains(
-        lookback_days=lookback_days,
-        max_gap_seconds=max_gap_seconds,
+        lookback_days=_lookback_days,
+        max_gap_seconds=_max_gap_seconds,
+        min_flush_length=_min_chain_flush,
     )
     if "_error" in chains:
         result["error"] = chains["_error"][0][0] if chains["_error"] else "unknown"
@@ -241,20 +396,38 @@ def detect_tool_patterns(
         return result
 
     # Step 2: Extract n-grams
-    ngram_counts = _extract_ngrams(chains, min_length=min_chain_length)
+    ngram_counts = _extract_ngrams(chains, min_length=_min_chain_length)
 
-    # Step 3: Filter by frequency
-    frequent = {ng: cnt for ng, cnt in ngram_counts.items() if cnt >= min_frequency}
+    _min_samples = ad_cfg.get("min_samples", _DEFAULTS["anomaly_detection"]["min_samples"])
+    _session_ids_cap = cfg.get("session_ids_cap", _DEFAULTS["session_ids_cap"])
 
-    # Step 4: Score
+    # Step 3: Determine frequency threshold (adaptive IQR or static)
+    if _adaptive:
+        effective_threshold, threshold_stats = _compute_adaptive_frequency_threshold(
+            ngram_counts,
+            sensitivity=_sensitivity,
+            fallback=_min_frequency,
+            min_samples=_min_samples,
+        )
+        result["threshold_info"] = threshold_stats
+        result["effective_min_frequency"] = effective_threshold
+    else:
+        effective_threshold = _min_frequency
+        result["threshold_info"] = {"method": "static", "threshold": _min_frequency}
+        result["effective_min_frequency"] = _min_frequency
+
+    # Step 4: Filter by threshold
+    frequent = {ng: cnt for ng, cnt in ngram_counts.items() if cnt >= effective_threshold}
+
+    # Step 5: Score
     scored = []
     for ngram, count in frequent.items():
-        scored.append(_score_pattern(ngram, count, chains))
+        scored.append(_score_pattern(ngram, count, chains, session_ids_cap=_session_ids_cap))
 
-    # Step 5: Sort by composite score descending
+    # Step 6: Sort by composite score descending
     scored.sort(key=lambda x: x["composite_score"], reverse=True)
 
-    # Step 6: Deduplicate — remove sub-patterns if a super-pattern scores higher
+    # Step 7: Deduplicate — remove sub-patterns if a super-pattern scores higher
     deduplicated = []
     seen_supersets = []
     for pattern in scored:
@@ -271,10 +444,10 @@ def detect_tool_patterns(
             deduplicated.append(pattern)
             seen_supersets.append(p_tuple)
 
-    result["patterns"] = deduplicated[:top_k]
+    result["patterns"] = deduplicated[:_top_k]
     result["total_ngrams"] = len(ngram_counts)
     result["frequent_ngrams"] = len(frequent)
-    result["deduplicated_patterns"] = len(deduplicated[:top_k])
+    result["deduplicated_patterns"] = len(deduplicated[:_top_k])
 
     return result
 
@@ -362,11 +535,19 @@ def store_patterns(patterns: List[Dict], db_path: Optional[str] = None) -> int:
 
 
 def main():
+    cfg = _load_synthesize_config()
+    ad_cfg = cfg["anomaly_detection"]
     parser = argparse.ArgumentParser(description="Genesis Pattern Detector — mine recurring tool chains")
-    parser.add_argument("--lookback-days", type=int, default=7)
-    parser.add_argument("--min-frequency", type=int, default=3)
-    parser.add_argument("--min-chain-length", type=int, default=3)
-    parser.add_argument("--top-k", type=int, default=20)
+    parser.add_argument("--lookback-days", type=int, default=cfg["lookback_days"])
+    parser.add_argument("--min-frequency", type=int, default=cfg["min_pattern_frequency"])
+    parser.add_argument("--min-chain-length", type=int, default=cfg["min_chain_length"])
+    parser.add_argument("--top-k", type=int, default=cfg["top_k"])
+    parser.add_argument("--adaptive", action="store_true", default=ad_cfg.get("enabled", True),
+                        help="Use IQR-based adaptive frequency threshold (default: from config)")
+    parser.add_argument("--no-adaptive", dest="adaptive", action="store_false",
+                        help="Use static min-frequency threshold")
+    parser.add_argument("--sensitivity", type=float, default=ad_cfg.get("sensitivity", 1.0),
+                        help="IQR sensitivity for adaptive threshold (1.0 = Q3)")
     parser.add_argument("--store", action="store_true", help="Store detected patterns in DB")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
@@ -376,6 +557,8 @@ def main():
         min_chain_length=args.min_chain_length,
         lookback_days=args.lookback_days,
         top_k=args.top_k,
+        adaptive=args.adaptive,
+        sensitivity=args.sensitivity,
     )
 
     if args.store and result.get("patterns"):

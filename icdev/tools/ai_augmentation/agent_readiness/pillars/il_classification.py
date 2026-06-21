@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import pathlib
+from functools import lru_cache
+from typing import Any
 
 from tools.ai_augmentation.agent_readiness.pillars._base import (
     Criterion,
@@ -13,6 +15,38 @@ from tools.ai_augmentation.agent_readiness.pillars._base import (
     _search,
 )
 
+# ---------------------------------------------------------------------------
+# Anomaly-detection threshold loader
+# ---------------------------------------------------------------------------
+_ARGS_PATH = pathlib.Path(__file__).parents[5] / "args" / "agent_readiness_config.yaml"
+_DEFAULTS: dict[str, Any] = {
+    "cui_header_sample_size": 30,
+    "cui_header_min_marked_ratio": 0.5,
+}
+
+
+@lru_cache(maxsize=1)
+def _load_thresholds() -> dict[str, Any]:
+    """Load il-classification-pillar anomaly-detection thresholds from args/agent_readiness_config.yaml.
+
+    Falls back to hard-coded defaults if the config file is absent or malformed.
+    """
+    try:
+        import yaml  # optional dep — present in all ICDEV environments
+        raw = _ARGS_PATH.read_text(encoding="utf-8")
+        data = yaml.safe_load(raw) or {}
+        cfg = data.get("pillars", {}).get("il_classification", {}).get("cui_file_headers", {})
+        return {
+            "cui_header_sample_size": int(
+                cfg.get("sample_size", _DEFAULTS["cui_header_sample_size"])
+            ),
+            "cui_header_min_marked_ratio": float(
+                cfg.get("min_marked_ratio", _DEFAULTS["cui_header_min_marked_ratio"])
+            ),
+        }
+    except Exception:  # noqa: BLE001
+        return dict(_DEFAULTS)
+
 # Recognized classification banner patterns
 _CUI_PATTERNS = r"CUI\s*//|CONTROLLED\s+UNCLASSIFIED|CUI\s+BASIC|CUI\s+SPECIFIED"
 _CLASS_HEADER = r"#\s*CUI|#\s*CONTROLLED\s+UNCLASSIFIED|#\s*SECRET|#\s*TOP\s+SECRET"
@@ -21,10 +55,13 @@ _IL_PATTERN = r"\bIL[4-6]\b|\bimpact\s+level\s+[4-6]\b"
 
 def _check_cui_file_headers(repo: pathlib.Path) -> CriterionResult:
     cid = "cui-file-headers"
+    thresholds = _load_thresholds()
+    sample_size = thresholds["cui_header_sample_size"]
+    min_ratio = thresholds["cui_header_min_marked_ratio"]
     py_files = _glob_files(repo, "**/*.py")
     if not py_files:
         return CriterionResult(cid, True, "No Python source files; CUI header check skipped.", skipped=True)
-    sample = py_files[:30]
+    sample = py_files[:sample_size]
     marked = []
     for f in sample:
         content = f.read_text(encoding="utf-8", errors="replace")
@@ -32,10 +69,10 @@ def _check_cui_file_headers(repo: pathlib.Path) -> CriterionResult:
         if _search(first_lines, _CLASS_HEADER) or _search(first_lines, _CUI_PATTERNS):
             marked.append(f.name)
     ratio = len(marked) / len(sample)
-    if ratio >= 0.5:
+    if ratio >= min_ratio:
         return CriterionResult(cid, True, f"CUI/classification headers found in {len(marked)}/{len(sample)} sampled files")
     if marked:
-        return CriterionResult(cid, False, f"Only {len(marked)}/{len(sample)} sampled files have CUI headers.",
+        return CriterionResult(cid, False, f"Only {len(marked)}/{len(sample)} sampled files have CUI headers (min ratio {min_ratio:.0%}).",
                                "Add '# CUI // SP-CTI' or equivalent classification header to all source files.")
     return CriterionResult(cid, False, "No CUI classification headers found in sampled source files.",
                            "Add classification markings to all source files per NIST SP 800-171 requirements.")

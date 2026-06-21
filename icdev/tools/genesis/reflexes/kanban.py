@@ -123,6 +123,14 @@ MAX_AUTO_PROMOTE = _int_env("KANBAN_MAX_AUTO_PROMOTE", 3)
 # Max in-progress tasks at any time (prevents pile-up).
 # Override via KANBAN_MAX_IN_PROGRESS env var.
 MAX_IN_PROGRESS = _int_env("KANBAN_MAX_IN_PROGRESS", 3)
+# Bounded auto-revive of failure-quarantined ('suggested', fc>=5/HITL) tasks.
+# A quarantined task whose dependency is satisfied and that has been parked
+# longer than the cooldown is auto-revived to backlog (failure_count reset),
+# up to MAX_AUTO_REVIVE times. After the cap it is held for HITL review with a
+# one-time Telegram alert. Prevents tasks (and their dependency chains) from
+# rotting in 'suggested' forever after repeated failures.
+MAX_AUTO_REVIVE = _int_env("KANBAN_MAX_AUTO_REVIVE", 2)
+QUARANTINE_REVIVE_COOLDOWN_MIN = _int_env("KANBAN_REVIVE_COOLDOWN_MIN", 30)
 # Max seconds a Claude CLI subprocess can run before being killed.
 # Override via KANBAN_MAX_EXECUTION_SECONDS / _SCAN / _PYTEST env vars.
 MAX_EXECUTION_SECONDS = _int_env("KANBAN_MAX_EXECUTION_SECONDS", 900)
@@ -136,6 +144,18 @@ SELF_DEBUG_MIN_BUDGET_SECONDS = _int_env("KANBAN_SELF_DEBUG_MIN_BUDGET_SECONDS",
 # Hard-quarantine a task after this many identical timeouts.
 # Override via KANBAN_MAX_TIMEOUT_RETRIES env var.
 MAX_TIMEOUT_RETRIES = _int_env("KANBAN_MAX_TIMEOUT_RETRIES", 3)
+# Failures before a task is flagged for decomposition.
+# Override via KANBAN_MAX_FAILURES_BEFORE_DECOMPOSITION env var.
+_MAX_FAILURES_BEFORE_DECOMPOSITION_DEFAULT = _int_env("KANBAN_MAX_FAILURES_BEFORE_DECOMPOSITION", 1)
+# Minimum claude output length (chars) to be considered non-trivial.
+# Override via KANBAN_MIN_OUTPUT_LENGTH env var.
+MIN_OUTPUT_LENGTH = _int_env("KANBAN_MIN_OUTPUT_LENGTH", 200)
+# Phantom-completion ratio — fraction of claimed paths that may be missing.
+# Override via KANBAN_PHANTOM_RATIO_THRESHOLD env var.
+PHANTOM_RATIO_THRESHOLD = _float_env("KANBAN_PHANTOM_RATIO_THRESHOLD", 0.5)
+# Scan-only task minimum run duration before accepting as successful.
+# Override via KANBAN_SCAN_MIN_RUN_SECONDS env var.
+SCAN_MIN_RUN_SECONDS = _int_env("KANBAN_SCAN_MIN_RUN_SECONDS", 60)
 
 # Task ID patterns that get extended timeouts (regex, case-insensitive).
 # Order matters: first match wins.
@@ -155,20 +175,31 @@ def _detect_execution_anomalies(task_type: Optional[str] = None, window: int = 2
     Uses interquartile range (IQR) to identify statistical outliers without
     requiring external ML dependencies.
 
-    Returns a dict with recommended_max_execution_seconds (adaptive cap, 300–7200)
-    and recommended_max_failures (1–10).  Non-fatal: returns {} on DB error.
+    Args:
+        task_type: Optional filter to restrict analysis to a specific task type.
+        window: Number of recent completed tasks to sample (default 200).
+
+    Returns a dict with:
+        - exec_seconds_p50: median execution time (seconds)
+        - exec_seconds_upper_fence: IQR upper fence — tasks above this are anomalous
+        - failure_rate_mean: mean failure_count across completed tasks
+        - failure_rate_upper_fence: IQR upper fence for failure counts
+        - sample_size: number of tasks analysed
+        - recommended_max_execution_seconds: adaptive cap (clamped 300–7200)
+        - recommended_max_failures: adaptive decomposition threshold (clamped 1–10)
+
+    Non-fatal: any DB or arithmetic error returns an empty dict so callers can
+    fall back to the static configured constants.
     """
     try:
         conn = get_connection()
         try:
             query = (
-                "SELECT "
-                "  CAST((julianday(COALESCE(completed_at, updated_at)) - "
-                "        julianday(created_at)) * 86400 AS INTEGER) AS execution_seconds, "
-                "  failure_count "
+                "SELECT execution_seconds, failure_count "
                 "FROM kanban_tasks "
                 "WHERE status IN ('done', 'verified') "
-                "  AND created_at IS NOT NULL "
+                "  AND execution_seconds IS NOT NULL "
+                "  AND execution_seconds > 0 "
             )
             params: list = []
             if task_type:
@@ -185,13 +216,8 @@ def _detect_execution_anomalies(task_type: Optional[str] = None, window: int = 2
     if not rows:
         return {}
 
-    exec_times = sorted(
-        float(dict(r).get("execution_seconds") or 0) for r in rows
-        if (dict(r).get("execution_seconds") or 0) > 0
-    )
+    exec_times = sorted(float(dict(r).get("execution_seconds") or 0) for r in rows)
     fail_counts = sorted(float(dict(r).get("failure_count") or 0) for r in rows)
-    if not exec_times:
-        return {}
     n = len(exec_times)
 
     def _iqr_fence(values: list) -> tuple:
@@ -206,6 +232,8 @@ def _detect_execution_anomalies(task_type: Optional[str] = None, window: int = 2
     _, exec_upper = _iqr_fence(exec_times)
     fail_mean = sum(fail_counts) / n if n else 0.0
     _, fail_upper = _iqr_fence(fail_counts)
+
+    # Clamp to sensible operational ranges.
     adaptive_exec = int(min(7200, max(300, exec_upper)))
     adaptive_fails = int(min(10, max(1, round(fail_upper))))
 
@@ -220,6 +248,125 @@ def _detect_execution_anomalies(task_type: Optional[str] = None, window: int = 2
     }
 
 
+def _nlp_extract_timeout_hint(desc: str) -> Optional[int]:
+    """Use LLM (Haiku) to extract a timeout in seconds from natural language.
+
+    Augments the structured ``timeout_hint:NNN`` regex so human-written phrases
+    like "allow 25 minutes" or "needs about 1 hour" are also understood.
+
+    Returns seconds (clamped 60–3600) or None.  Never raises — any failure
+    falls through silently so existing heuristics remain in control.
+    """
+    if not desc or len(desc) < 20:
+        return None
+    try:
+        import json as _json
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        req = LLMRequest(
+            system_prompt=(
+                "Extract a timeout duration from the task description. "
+                "If the text states a specific time budget (e.g. '25 minutes', "
+                "'allow 30 min', 'needs 1 hour', 'takes about 20 minutes'), "
+                "return JSON: {\"timeout_seconds\": <integer>}. "
+                "If no timeout intent is found, return JSON: {\"timeout_seconds\": null}. "
+                "Return ONLY the JSON object, nothing else."
+            ),
+            messages=[{"role": "user", "content": desc[:500]}],
+            model="claude-haiku-4-5-20251001",
+            max_tokens=32,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("timeout_extraction", req)
+        if resp and resp.content:
+            raw = resp.content.strip()
+            # Strip markdown fences if present
+            import re as _re2
+            raw = _re2.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=_re2.MULTILINE).strip()
+            data = _json.loads(raw)
+            secs = data.get("timeout_seconds")
+            if secs is not None:
+                return min(3600, max(60, int(secs)))
+    except Exception:
+        pass
+    return None
+
+
+def _nlp_extract_gap_subject(title: str, description: str, gap_type: str) -> Optional[str]:
+    """Use LLM (Haiku) to extract a gap entity from natural language task text.
+
+    Augments regex patterns in _pre_dispatch_check that require specific
+    formatting (e.g. "tool_not_in_manifest: tools/foo.py") so natural language
+    variants ("register tools/foo.py in the manifest") are also understood.
+
+    gap_type must be one of: "tool_not_in_manifest", "route_not_listed".
+    Returns the extracted entity string or None. Never raises.
+    """
+    if not title and not description:
+        return None
+
+    _PROMPTS = {
+        "tool_not_in_manifest": (
+            "Extract the Python tool file path (e.g. 'tools/foo/bar.py') that "
+            "needs to be registered in the manifest. "
+            "Return JSON: {\"subject\": \"<path>\"} or {\"subject\": null} if not found."
+        ),
+        "route_not_listed": (
+            "Extract the URL route path (e.g. '/dashboard/foo') that needs to be "
+            "listed in the Pages configuration. "
+            "Return JSON: {\"subject\": \"<route>\"} or {\"subject\": null} if not found."
+        ),
+        "orphan_db_table": (
+            "Extract the database table name from a task about an orphaned DB table. "
+            "Look for patterns like 'orphan_db_table gap: <name>', 'orphan_db_table on <name>', "
+            "'Subject: <name>', or 'table: <name>'. "
+            "Return JSON: {\"subject\": \"<table_name>\"} or {\"subject\": null} if not found."
+        ),
+        "db_table": (
+            "Extract the database table name that needs to be created. "
+            "Look for phrases like 'CREATE TABLE <name>', 'add table <name>', "
+            "'add DB table <name>', or 'add schema <name>'. "
+            "Return JSON: {\"subject\": \"<table_name>\"} or {\"subject\": null} if not found."
+        ),
+    }
+
+    system_prompt = _PROMPTS.get(gap_type)
+    if not system_prompt:
+        return None
+
+    combined = f"Title: {title}\n\nDescription: {description[:400]}"
+    try:
+        import json as _json
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+        import re as _re2
+
+        req = LLMRequest(
+            system_prompt=system_prompt + " Return ONLY the JSON object, nothing else.",
+            messages=[{"role": "user", "content": combined}],
+            model="claude-haiku-4-5-20251001",
+            max_tokens=48,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("gap_subject_extraction", req)
+        if resp and resp.content:
+            raw = _re2.sub(
+                r"^```(?:json)?\s*|\s*```$", "", resp.content.strip(), flags=_re2.MULTILINE
+            ).strip()
+            data = _json.loads(raw)
+            subject = data.get("subject")
+            if subject and isinstance(subject, str):
+                return subject.strip()
+    except Exception:
+        pass
+    return None
+
+
 def _get_task_timeout(task_id: str) -> int:
     """Return per-task timeout budget in seconds.
 
@@ -228,10 +375,11 @@ def _get_task_timeout(task_id: str) -> int:
     configured static constants when data is sparse or the DB is unreachable.
 
     Priority order (highest first):
-      1. Pattern match on task_id (pytest / scan) — ceiling is still adaptive
+      1. Pattern match on task_id (pytest / scan) — but ceiling is still adaptive
       2. timeout_hint:NNNs directive in description — hard override, no adaptation
-      3. Description / task_type keyword match — adaptive ceiling
-      4. Default — adaptive ceiling or MAX_EXECUTION_SECONDS
+      3. NLP-extracted timeout from description — hard override, no adaptation
+      4. Description / task_type keyword match — adaptive ceiling
+      5. Default — adaptive ceiling or MAX_EXECUTION_SECONDS
     """
     task_id_lower = task_id.lower()
     for pattern, static_timeout in _EXTENDED_TIMEOUT_PATTERNS:
@@ -244,19 +392,26 @@ def _get_task_timeout(task_id: str) -> int:
 
     # Check task description + task_type for TIMEOUT_HINT or heavy-tool heuristics
     try:
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT description, task_type FROM kanban_tasks WHERE id = ?",
-            (task_id,),
-        ).fetchone()
-        conn.close()
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT description, task_type, max_runtime_seconds FROM kanban_tasks WHERE id = ?",
+                (task_id,),
+            ).fetchone()
         d = dict(row) if row else {}
         desc = (d.get("description") or "").lower()
         task_type = (d.get("task_type") or "").lower()
-        # Explicit override always wins — no anomaly adaptation
+        # Per-task explicit cap wins over all heuristics
+        max_rt = d.get("max_runtime_seconds")
+        if max_rt:
+            return int(min(7200, max(60, max_rt)))
+        # Explicit structured override always wins — no anomaly adaptation
         m = re.search(r"timeout_hint:\s*(\d+)", desc, re.IGNORECASE)
         if m:
             return min(3600, int(m.group(1)))  # cap at 1 hour
+        # NLP fallback: understand natural language timeout hints
+        nlp_secs = _nlp_extract_timeout_hint(desc)
+        if nlp_secs is not None:
+            return nlp_secs
         # PYTEST-level: try adaptive ceiling first, then fall back to static
         _pytest_kw = ("pytest", "regression", "full test", "test suite",
                       "e2e suite", "e2e test", "test_orchestrator")
@@ -300,9 +455,10 @@ TOKEN_EXHAUSTION_PATTERNS = [
     r"max.*turns.*reached",
     r"conversation.*limit",
     r"please\s*try\s*again\s*(?:later|in\s*\d+)",
-    r"reset(?:s)?\s*(?:at|in)?\s*\d+\s*(?:am|pm)",
+    r"reset(?:s)?\s*(?:at|in)?\s*\d{1,2}:\d{2}\s*(?:am|pm)",
     r"hit\s*your\s*limit",
     r"you'?ve\s*hit\s*your\s*limit",
+    r"session\s+limit",
 ]
 _TOKEN_RE = re.compile("|".join(TOKEN_EXHAUSTION_PATTERNS), re.IGNORECASE)
 
@@ -326,8 +482,8 @@ def _detect_token_exhaustion(exit_code: int, output: str) -> Tuple[bool, Optiona
     if _TOKEN_RE.search(tail):
         # Try to extract a reset time hint
         reset_match = re.search(
-            r"(?:reset|try again|available)\s*(?:at|in)\s*"
-            r"(\d[\d:hm \-]+)",
+            r"(?:reset|resets|try again|available)\s*(?:at|in)?\s*"
+            r"(\d[\d:hmap. \-]+)",
             tail,
             re.IGNORECASE,
         )
@@ -339,6 +495,53 @@ def _detect_token_exhaustion(exit_code: int, output: str) -> Tuple[bool, Optiona
     return False, None
 
 
+def _nlp_extract_resume_at(reset_hint: str, now: datetime) -> Optional[datetime]:
+    """Use LLM (Haiku) to parse a reset time hint into a UTC datetime.
+
+    Augments the structured regex in _parse_resume_at for natural language
+    expressions like "in about twenty minutes", "at noon", "try again tomorrow".
+
+    Returns a UTC datetime or None. Never raises.
+    """
+    if not reset_hint or len(reset_hint) < 2:
+        return None
+    try:
+        import json as _json
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+        import re as _re2
+
+        now_str = now.strftime("%Y-%m-%d %H:%M:%S UTC")
+        req = LLMRequest(
+            system_prompt=(
+                f"Current time is {now_str}. "
+                "Parse the rate-limit reset hint and return how many seconds from now "
+                "to wait before retrying. "
+                "Return JSON: {\"wait_seconds\": <integer>} or "
+                "{\"wait_seconds\": null} if the hint is unparseable. "
+                "Clamp to [60, 21600]. Return ONLY the JSON object, nothing else."
+            ),
+            messages=[{"role": "user", "content": reset_hint[:200]}],
+            model="claude-haiku-4-5-20251001",
+            max_tokens=32,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("resume_at_extraction", req)
+        if resp and resp.content:
+            raw = _re2.sub(
+                r"^```(?:json)?\s*|\s*```$", "", resp.content.strip(), flags=_re2.MULTILINE
+            ).strip()
+            data = _json.loads(raw)
+            secs = data.get("wait_seconds")
+            if secs is not None:
+                return now + timedelta(seconds=min(21600, max(60, int(secs))))
+    except Exception:
+        pass
+    return None
+
+
 def _parse_resume_at(reset_hint: Optional[str]) -> datetime:
     """Parse a reset hint into an absolute UTC datetime for resume.
 
@@ -347,6 +550,7 @@ def _parse_resume_at(reset_hint: Optional[str]) -> datetime:
       - "1 hour" / "2h" / "1 hr"            → now + N hours
       - "300 seconds" / "300s"               → now + N seconds
       - "2:00 AM" / "2:00 pm" / "14:00"     → next occurrence of that wall-clock time (local TZ)
+      - Natural language (e.g. "twenty minutes", "at noon") → NLP extraction via Haiku
       - None / unparseable                   → now + TOKEN_RETRY_DELAY_SECONDS (5 min fallback)
     """
     now = datetime.now(timezone.utc)
@@ -394,6 +598,11 @@ def _parse_resume_at(reset_hint: Optional[str]) -> datetime:
             return target.astimezone(timezone.utc)
         except (ValueError, OverflowError):
             pass
+
+    # NLP fallback: understand natural language hints the regex couldn't parse
+    nlp_dt = _nlp_extract_resume_at(hint, now)
+    if nlp_dt is not None:
+        return nlp_dt
 
     return fallback
 
@@ -608,13 +817,34 @@ def _create_worktree(task_id: str) -> Optional[str]:
             )
             _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
                     capture_output=True, text=True, timeout=10)
-            _sp.run(["git", "branch", "-D", branch_name], cwd=str(BASE_DIR),
+            _del = _sp.run(["git", "branch", "-D", branch_name], cwd=str(BASE_DIR),
                     capture_output=True, text=True, timeout=10)
+            if _del.returncode != 0:
+                # On Windows a branch checked out in a (now-pruned) worktree may
+                # resist `git branch -D`. Force-delete via the low-level ref path.
+                _sp.run(
+                    ["git", "update-ref", "-d", f"refs/heads/{branch_name}"],
+                    cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+                )
+                logger.info("Stale branch %s deleted via update-ref fallback", branch_name)
+
+    # Determine the best base commit for the new worktree:
+    # prefer origin/main so tasks build on the latest pushed state even when
+    # the local main branch hasn't been updated (e.g. after a detached-
+    # worktree merge).  Falls back to the local default branch.
+    base_check = _sp.run(
+        ["git", "rev-parse", "--verify", f"origin/{_default_branch()}"],
+        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=5,
+    )
+    if base_check.returncode == 0:
+        base = f"origin/{_default_branch()}"
+    else:
+        base = _default_branch()
 
     try:
-        # Create a new branch from HEAD for this task
+        # Create a new branch from the chosen base for this task
         result = _sp.run(
-            ["git", "worktree", "add", "-b", branch_name, str(worktree_path)],
+            ["git", "worktree", "add", "-b", branch_name, str(worktree_path), base],
             cwd=str(BASE_DIR),
             capture_output=True,
             text=True,
@@ -625,44 +855,13 @@ def _create_worktree(task_id: str) -> Optional[str]:
                 "git worktree add failed for %s (rc=%d): %s",
                 task_id, result.returncode, result.stderr.strip(),
             )
-            # Retry: branch delete may have failed silently — retry delete then recreate.
-            _sp.run(
-                ["git", "branch", "-D", branch_name],
-                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
-            )
-            retry = _sp.run(
-                ["git", "worktree", "add", "-b", branch_name, str(worktree_path)],
-                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
-            )
-            if retry.returncode != 0:
-                # Both -b attempts failed — branch ref is locked on Windows.
-                # Force-reset the existing branch ref to current HEAD via
-                # `git branch -f` (moves the pointer without touching the lock),
-                # then use `git worktree add` without -b to check out that branch.
-                _sp.run(
-                    ["git", "branch", "-f", branch_name, "HEAD"],
-                    cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
-                )
-                fallback = _sp.run(
-                    ["git", "worktree", "add", str(worktree_path), branch_name],
-                    cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
-                )
-                if fallback.returncode != 0:
-                    logger.warning(
-                        "git worktree add all attempts failed for %s: %s",
-                        task_id, fallback.stderr.strip(),
-                    )
-                    # Directory may have been created as an empty shell — prune it so
-                    # the next dispatch starts clean rather than hitting the orphan path.
-                    import shutil as _shutil
-                    _shutil.rmtree(worktree_path, ignore_errors=True)
-                    _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
-                            capture_output=True, text=True, timeout=10)
-                    return None
-                else:
-                    logger.info(
-                        "Recreated worktree for %s via branch-force fallback", task_id
-                    )
+            # Directory may have been created as an empty shell — prune it so
+            # the next dispatch starts clean rather than hitting the orphan path.
+            import shutil as _shutil
+            _shutil.rmtree(worktree_path, ignore_errors=True)
+            _sp.run(["git", "worktree", "prune"], cwd=str(BASE_DIR),
+                    capture_output=True, text=True, timeout=10)
+            return None
         # Verify the worktree was actually registered: git populates a .git
         # *file* (not a directory) in the worktree root on success.
         if not (worktree_path / ".git").exists():
@@ -729,16 +928,20 @@ def _create_worktree(task_id: str) -> Optional[str]:
 
 
 def _merge_worktree_to_main(task_id: str) -> bool:
-    """Merge the kanban task branch into the parent branch before cleanup
-    so dependent tasks see each other's commits.
+    """Merge the kanban task branch into the parent branch using a temporary
+    git worktree.  The main repository working tree is NEVER touched — no stash,
+    no checkout, no branch switch.  This lets the scheduler dispatch tasks while
+    a human is actively editing files in the main repo.
 
     Strategy (in order):
-      1. Fast-forward merge (``--ff-only``) — cheapest, no merge commit.
-      2. If ff fails because main diverged, rebase the branch onto main
-         and retry ff.  This handles the common case where the scheduler
-         or another session committed to main while the task was running.
-      3. If the working tree is dirty (uncommitted edits on main), stash
-         before checkout and pop after merge so dirty files never block.
+      1. Create a detached worktree at the current parent-branch commit.
+      2. Inside the detached worktree create a temporary branch and attempt a
+         fast-forward merge (``--ff-only``).
+      3. If ff fails because main diverged, rebase the task branch onto main
+         inside the detached worktree and retry ff.
+      4. Push from the detached worktree using ``HEAD:{branch}`` so the merge
+         reaches origin without needing a local branch named ``main``.
+      5. Always clean up the temporary worktree.
 
     Returns True if merge succeeded (or branch had no commits to merge),
     False on unrecoverable conflict.  On failure the branch is PRESERVED
@@ -747,196 +950,120 @@ def _merge_worktree_to_main(task_id: str) -> bool:
     import subprocess as _sp
 
     branch_name = f"kanban/{task_id}"
+    default_branch = _default_branch()
 
     # 1) Is there anything to merge?
     try:
         result = _sp.run(
-            ["git", "log", _default_branch() + ".." + branch_name, "--oneline"],
+            ["git", "log", f"{default_branch}..{branch_name}", "--oneline"],
             cwd=str(BASE_DIR),
             capture_output=True,
             text=True,
             timeout=10,
         )
-        if result.returncode != 0:
-            return True
-        if not result.stdout.strip():
+        if result.returncode != 0 or not result.stdout.strip():
             return True  # Nothing to merge
     except Exception as exc:
         logger.warning("Pre-merge commit check failed for %s: %s", task_id, exc)
         return False
 
-    # 2) Determine current branch on main worktree so we can restore it
-    try:
-        cur_branch_proc = _sp.run(
-            ["git", "symbolic-ref", "--short", "HEAD"],
-            cwd=str(BASE_DIR),
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        cur_branch = (cur_branch_proc.stdout or _default_branch()).strip() or _default_branch()
-    except Exception:
-        cur_branch = _default_branch()
+    # 2) Resolve the parent-branch commit hash for a detached worktree.
+    #    Using a commit hash avoids the "branch already used by worktree" error.
+    main_commit_proc = _sp.run(
+        ["git", "rev-parse", default_branch],
+        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=5,
+    )
+    if main_commit_proc.returncode != 0:
+        logger.warning("Could not resolve %s for merge of %s", default_branch, task_id)
+        return False
+    main_commit = main_commit_proc.stdout.strip()
 
-    # 3) Stash dirty working tree if needed
-    stashed = False
+    # 3) Create a detached worktree for the merge
+    merge_wt = WORKTREE_BASE / f".merge-{task_id}"
     try:
-        dirty = _sp.run(
-            ["git", "status", "--porcelain"],
-            cwd=str(BASE_DIR),
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        if dirty.stdout.strip():
-            stash = _sp.run(
-                ["git", "stash", "push", "-m", f"kanban-merge-{task_id}"],
-                cwd=str(BASE_DIR),
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            if stash.returncode == 0 and "No local changes" not in stash.stdout:
-                stashed = True
-                logger.info("Stashed dirty working tree for merge of %s", task_id)
-    except Exception:
-        pass  # Best-effort — proceed anyway
-
-    def _restore():
-        """Restore original branch and pop stash."""
-        if cur_branch != _default_branch():
+        if merge_wt.exists():
             _sp.run(
-                ["git", "checkout", cur_branch],
-                cwd=str(BASE_DIR),
-                capture_output=True,
-                text=True,
-                timeout=10,
+                ["git", "worktree", "remove", str(merge_wt), "--force"],
+                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
             )
-        if stashed:
             _sp.run(
-                ["git", "stash", "pop"],
-                cwd=str(BASE_DIR),
-                capture_output=True,
-                text=True,
-                timeout=10,
+                ["git", "worktree", "prune"],
+                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
             )
 
-    def _push_main():
-        """Push merged main to origin. Called only after full validation passed.
-
-        The stop hook no longer pushes kanban branches — this is the ONLY
-        point where validated work reaches origin/main.
-        """
-        try:
-            push = _sp.run(
-                ["git", "push", "origin", _default_branch()],
-                cwd=str(BASE_DIR),
-                capture_output=True,
-                text=True,
-                timeout=30,
+        add = _sp.run(
+            ["git", "worktree", "add", str(merge_wt), main_commit],
+            cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+        )
+        if add.returncode != 0:
+            logger.warning(
+                "Temp merge worktree creation failed for %s: %s",
+                task_id, add.stderr[:200],
             )
-            if push.returncode == 0:
-                logger.info("Pushed main to origin after merging %s", task_id)
-            else:
-                logger.warning(
-                    "Push main failed after merging %s: %s",
-                    task_id, push.stderr[:200],
-                )
-        except Exception as exc:
-            logger.warning("Push main error for %s: %s", task_id, exc)
+            return False
 
-    # 4) Checkout default branch and attempt fast-forward merge
-    try:
+        # 4) Create a temporary branch inside the detached worktree so we have
+        #    a named branch to push from.
+        temp_branch = f"temp-merge-{task_id}"
         co = _sp.run(
-            ["git", "checkout", _default_branch()],
-            cwd=str(BASE_DIR),
-            capture_output=True,
-            text=True,
-            timeout=30,
+            ["git", "checkout", "-b", temp_branch],
+            cwd=str(merge_wt), capture_output=True, text=True, timeout=10,
         )
         if co.returncode != 0:
             logger.warning(
-                "Could not checkout main for merge of %s: %s",
-                task_id,
-                co.stderr[:200],
+                "Checkout temp branch failed for %s: %s", task_id, co.stderr[:200]
             )
-            _restore()
             return False
 
+        # 5) Fast-forward merge inside the detached worktree
         merge = _sp.run(
             ["git", "merge", "--ff-only", branch_name],
-            cwd=str(BASE_DIR),
-            capture_output=True,
-            text=True,
-            timeout=30,
+            cwd=str(merge_wt), capture_output=True, text=True, timeout=30,
         )
         if merge.returncode == 0:
             logger.info(
-                "Merged kanban/%s to main (fast-forward, %d commits)",
+                "Merged kanban/%s to %s (fast-forward, %d commits)",
                 task_id,
+                default_branch,
                 len(result.stdout.strip().splitlines()),
             )
-            _push_main()
-            _restore()
+            _push_main(cwd=str(merge_wt))
             return True
 
-        # 5) FF failed — try rebase-then-ff
+        # 6) FF failed — rebase branch onto default_branch inside detached worktree
         logger.info(
-            "FF merge failed for %s, attempting rebase onto %s", task_id, _default_branch()
+            "FF merge failed for %s, attempting rebase onto %s", task_id, default_branch
         )
         rebase = _sp.run(
-            ["git", "rebase", _default_branch(), branch_name],
-            cwd=str(BASE_DIR),
-            capture_output=True,
-            text=True,
-            timeout=60,
+            ["git", "rebase", default_branch, branch_name],
+            cwd=str(merge_wt), capture_output=True, text=True, timeout=60,
         )
         if rebase.returncode != 0:
-            # Rebase conflict — abort and preserve branch
             _sp.run(
                 ["git", "rebase", "--abort"],
-                cwd=str(BASE_DIR),
-                capture_output=True,
-                text=True,
-                timeout=10,
+                cwd=str(merge_wt), capture_output=True, text=True, timeout=10,
             )
             logger.warning(
                 "Rebase conflict for %s: %s — branch preserved",
                 task_id,
                 rebase.stderr[:200],
             )
-            # Rebase leaves us on the branch — go back to default branch
-            _sp.run(
-                ["git", "checkout", _default_branch()],
-                cwd=str(BASE_DIR),
-                capture_output=True,
-                text=True,
-                timeout=10,
-            )
-            _restore()
             return False
 
-        # Rebase succeeded — now on the rebased branch, switch to default branch and ff
+        # Rebase succeeded — re-checkout our temp branch and ff-merge
         _sp.run(
-            ["git", "checkout", _default_branch()],
-            cwd=str(BASE_DIR),
-            capture_output=True,
-            text=True,
-            timeout=10,
+            ["git", "checkout", temp_branch],
+            cwd=str(merge_wt), capture_output=True, text=True, timeout=10,
         )
         merge2 = _sp.run(
             ["git", "merge", "--ff-only", branch_name],
-            cwd=str(BASE_DIR),
-            capture_output=True,
-            text=True,
-            timeout=30,
+            cwd=str(merge_wt), capture_output=True, text=True, timeout=30,
         )
         if merge2.returncode == 0:
             logger.info(
-                "Merged kanban/%s to main (rebase + fast-forward)", task_id
+                "Merged kanban/%s to %s (rebase + fast-forward)", task_id, default_branch
             )
-            _push_main()
-            _restore()
+            _push_main(cwd=str(merge_wt))
             return True
 
         logger.warning(
@@ -944,19 +1071,66 @@ def _merge_worktree_to_main(task_id: str) -> bool:
             task_id,
             merge2.stderr[:200],
         )
-        _restore()
         return False
     except Exception as exc:
         logger.warning("Merge to main failed for %s: %s", task_id, exc)
-        _restore()
         return False
+    finally:
+        # Always clean up the temporary merge worktree and the temp branch ref
+        try:
+            if merge_wt.exists():
+                _sp.run(
+                    ["git", "worktree", "remove", str(merge_wt), "--force"],
+                    cwd=str(BASE_DIR), capture_output=True, text=True, timeout=30,
+                )
+        except Exception as exc:
+            logger.debug("Temp merge worktree cleanup failed for %s: %s", task_id, exc)
+        try:
+            _sp.run(
+                ["git", "branch", "-D", f"temp-merge-{task_id}"],
+                cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+            )
+        except Exception:
+            pass
+
+
+def _push_main(cwd: str) -> None:
+    """Push the merged commit to origin/{default_branch}.
+
+    Uses ``HEAD:{branch}`` so the push works from any detached/temp branch
+    inside a temporary worktree — the local branch name does not matter.
+
+    The stop hook no longer pushes kanban branches — this is the ONLY
+    point where validated work reaches origin/main.
+    """
+    import subprocess as _sp
+    default_branch = _default_branch()
+    try:
+        push = _sp.run(
+            ["git", "push", "origin", f"HEAD:{default_branch}"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        if push.returncode == 0:
+            logger.info("Pushed HEAD:%s to origin after merge", default_branch)
+        else:
+            logger.warning(
+                "Push HEAD:%s to origin failed: %s",
+                default_branch,
+                push.stderr[:200],
+            )
+    except Exception as exc:
+        logger.warning("Push HEAD:%s to origin error: %s", default_branch, exc)
 
 
 # Batch 4 worktree age sweep threshold — worktrees whose owning task is NOT
 # currently in_progress and whose marker/dir mtime is older than this are
 # force-cleaned. Disk hygiene for the failure-train class (many failed tasks
 # leaving 500 MB worktrees each).
-_WORKTREE_STALE_AGE_DAYS = 7
+# Override via KANBAN_WORKTREE_STALE_AGE_DAYS env var.
+_WORKTREE_STALE_AGE_DAYS = _int_env("KANBAN_WORKTREE_STALE_AGE_DAYS", 7)
 
 
 def _sweep_old_worktrees(max_age_days: int = _WORKTREE_STALE_AGE_DAYS) -> list[str]:
@@ -1165,12 +1339,79 @@ def _post_merge_route_smoke(task_id: str, commit_summary: str) -> None:
         logger.warning("Failed to create smoke-fail bug task for %s: %s", task_id, exc)
 
 
+def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
+    """Push the kanban branch to origin and open a GitHub PR.
+
+    Returns the PR URL on success, None on failure.
+    The branch is NOT merged here — pr_watcher.py (OPT-70) polls CI and
+    auto-merges when green, so the kanban board shows a real PR URL in
+    executor_url just like Claude CLI does.
+    """
+    import subprocess as _sp
+
+    branch_name = f"kanban/{task_id}"
+    default_branch = _default_branch()
+
+    # Nothing to push?
+    check = _sp.run(
+        ["git", "log", f"{default_branch}..{branch_name}", "--oneline"],
+        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=10,
+    )
+    if check.returncode != 0 or not check.stdout.strip():
+        logger.info("PR flow: no commits to push for %s — skipping PR", task_id)
+        return None
+
+    # Push branch (--force-with-lease is safe: only overwrites if nobody else pushed)
+    push = _sp.run(
+        ["git", "push", "origin", branch_name, "--force-with-lease"],
+        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=60,
+    )
+    if push.returncode != 0:
+        logger.warning("PR flow: branch push failed for %s: %s", task_id, push.stderr.strip())
+        return None
+
+    # Fetch task title for a human-readable PR title
+    pr_title = f"kanban: {task_id}"
+    try:
+        with get_connection() as _tc:
+            _row = _tc.execute(
+                "SELECT title FROM kanban_tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            if _row and _row[0]:
+                pr_title = _row[0][:72]
+    except Exception:
+        pass
+
+    pr_body = (
+        f"Autonomous kanban task: **{task_id}**\n\n"
+        f"{commit_summary or '_no commit summary_'}\n\n"
+        "---\n🤖 Generated by ICDEV Kanban Scheduler\n"
+        "Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>"
+    )
+    create = _sp.run(
+        ["gh", "pr", "create",
+         "--title", pr_title,
+         "--body", pr_body,
+         "--head", branch_name,
+         "--base", default_branch],
+        cwd=str(BASE_DIR), capture_output=True, text=True, timeout=60,
+    )
+    if create.returncode != 0:
+        logger.warning("PR flow: gh pr create failed for %s: %s", task_id, create.stderr.strip())
+        return None
+
+    pr_url = create.stdout.strip()
+    logger.info("PR flow: opened PR %s for task %s", pr_url, task_id)
+    return pr_url
+
+
 def _cleanup_worktree(task_id: str):
     """Merge the kanban task branch to main (fast-forward) then remove
     the worktree. If merge fails, the branch is preserved for manual
     review and the worktree is still cleaned up (disk hygiene).
     """
     import subprocess as _sp
+    import os as _os
 
     branch_name = f"kanban/{task_id}"
     worktree_path = WORKTREE_BASE / task_id
@@ -1207,36 +1448,60 @@ def _cleanup_worktree(task_id: str):
     except Exception:
         pass
 
-    merged_ok = _merge_worktree_to_main(task_id)
+    # PR flow: push branch + open PR instead of direct-merging to main.
+    # pr_watcher.py (OPT-70) polls the PR, monitors CI, and auto-merges when green.
+    _pr_flow = _os.environ.get("ICDEV_KANBAN_PR_FLOW", "").lower() in ("1", "true", "yes")
+    _pr_url: str | None = None
+    if _pr_flow:
+        _pr_url = _push_branch_and_open_pr(task_id, _commit_summary)
+        merged_ok = _pr_url is not None  # "submitted" means PR is open
+    else:
+        merged_ok = _merge_worktree_to_main(task_id)
 
-    # Post-merge route smoke — catches runtime failures that static checks miss.
-    # Only runs when merge succeeded and the dashboard is up.
-    if merged_ok:
+    # Post-merge route smoke — only in direct-merge mode (code not on main yet in PR flow).
+    if merged_ok and not _pr_flow:
         _post_merge_route_smoke(task_id, _commit_summary)
 
     # Persist change metrics + branch info to kanban_tasks (best-effort)
     try:
-        _ds_conn = get_connection()
-        _ds_conn.execute(
-            "UPDATE kanban_tasks SET "
-            "files_changed = ?, lines_added = ?, lines_removed = ?, "
-            "branch_name = ?, commit_summary = ? "
-            "WHERE id = ?",
-            (
-                diff_stats["files_changed"], diff_stats["lines_added"], diff_stats["lines_removed"],
-                f"kanban/{task_id}", _commit_summary or None,
-                task_id,
-            ),
-        )
-        _ds_conn.commit()
-        _ds_conn.close()
+        with get_connection() as _ds_conn:
+            if _pr_flow and _pr_url:
+                _ds_conn.execute(
+                    "UPDATE kanban_tasks SET "
+                    "files_changed = ?, lines_added = ?, lines_removed = ?, "
+                    "branch_name = ?, commit_summary = ?, executor_url = ? "
+                    "WHERE id = ?",
+                    (
+                        diff_stats["files_changed"], diff_stats["lines_added"], diff_stats["lines_removed"],
+                        f"kanban/{task_id}", _commit_summary or None,
+                        _pr_url,
+                        task_id,
+                    ),
+                )
+            else:
+                _ds_conn.execute(
+                    "UPDATE kanban_tasks SET "
+                    "files_changed = ?, lines_added = ?, lines_removed = ?, "
+                    "branch_name = ?, commit_summary = ? "
+                    "WHERE id = ?",
+                    (
+                        diff_stats["files_changed"], diff_stats["lines_added"], diff_stats["lines_removed"],
+                        f"kanban/{task_id}", _commit_summary or None,
+                        task_id,
+                    ),
+                )
     except Exception as _ds_exc:
         logger.warning("diff_stats write failed for %s: %s", task_id, _ds_exc)
 
     try:
-        # Only delete the branch if merge succeeded; otherwise PRESERVE
-        # it so the user doesn't lose commits.
-        if merged_ok:
+        if _pr_flow and merged_ok:
+            # Branch stays on origin — pr_watcher will delete it after auto-merge.
+            logger.info(
+                "PR flow: branch kanban/%s pushed; PR %s open for task %s",
+                task_id, _pr_url, task_id,
+            )
+        elif merged_ok:
+            # Direct-merge: clean up local branch after successful push to main.
             _sp.run(
                 ["git", "branch", "-D", branch_name],
                 cwd=str(BASE_DIR),
@@ -1634,6 +1899,13 @@ def _decompose_batch_tasks(tasks: list, conn: Any) -> list:
                 f"  Kanban: decomposed batch {task['id']} into "
                 f"{len(created_children)} children ({rule or 'unknown'} rule)"
             )
+            # ── LESSONS LEARNED: auto-decomposed batch ────────────────
+            try:
+                from tools.workflow.lesson_learned import analyze_task, write_lesson
+                lesson = analyze_task(task["id"], outcome="auto_decomposed")
+                write_lesson(lesson)
+            except Exception:
+                pass
         except Exception as exc:
             print(f"  Kanban: failed to mark batch decomposed: {exc}")
 
@@ -1754,6 +2026,13 @@ def _decompose_phase_exit_gates(tasks: list, conn: Any) -> list:
                     f"  Kanban: auto-decomposed phase-exit gate {task_id} into "
                     f"5 sequential sub-tasks (parent marked done)"
                 )
+                # ── LESSONS LEARNED: auto-decomposed phase gate ───────────
+                try:
+                    from tools.workflow.lesson_learned import analyze_task, write_lesson
+                    lesson = analyze_task(task_id, outcome="auto_decomposed")
+                    write_lesson(lesson)
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
             except Exception as exc:
                 print(f"  Kanban: failed to mark gate {task_id} done: {exc}")
         else:
@@ -1763,7 +2042,7 @@ def _decompose_phase_exit_gates(tasks: list, conn: Any) -> list:
     return result
 
 
-MAX_FAILURES_BEFORE_DECOMPOSITION = 1
+MAX_FAILURES_BEFORE_DECOMPOSITION = _MAX_FAILURES_BEFORE_DECOMPOSITION_DEFAULT
 
 
 def _record_failure_and_maybe_flag(task_id: str, reason: str) -> str:
@@ -1905,36 +2184,33 @@ def _parent_is_done(task_id: str) -> tuple[bool, str | None]:
     (the E-gate orphan-done incident, 2026-04-15).
     """
     try:
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT t.depends_on_task_id, p.status AS parent_status "
-            "FROM kanban_tasks t "
-            "LEFT JOIN kanban_tasks p ON p.id = t.depends_on_task_id "
-            "WHERE t.id = ?",
-            (task_id,),
-        ).fetchone()
-        if not row:
-            conn.close()
-            return True, None
-        row = dict(row)
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT t.depends_on_task_id, p.status AS parent_status "
+                "FROM kanban_tasks t "
+                "LEFT JOIN kanban_tasks p ON p.id = t.depends_on_task_id "
+                "WHERE t.id = ?",
+                (task_id,),
+            ).fetchone()
+            if not row:
+                return True, None
+            row = dict(row)
 
-        # Check scalar dep
-        parent_id = row.get("depends_on_task_id")
-        if parent_id:
-            parent_status = row.get("parent_status")
-            if parent_status not in ("done", "decomposed"):
-                conn.close()
-                return False, f"parent {parent_id} status={parent_status!r}"
+            # Check scalar dep
+            parent_id = row.get("depends_on_task_id")
+            if parent_id:
+                parent_status = row.get("parent_status")
+                if parent_status not in ("done", "decomposed"):
+                    return False, f"parent {parent_id} status={parent_status!r}"
 
-        # Check junction deps — any undone junction parent blocks
-        unmet = conn.execute(
-            "SELECT d.depends_on_id, p.status "
-            "FROM kanban_task_deps d "
-            "JOIN kanban_tasks p ON p.id = d.depends_on_id "
-            "WHERE d.task_id = ? AND p.status NOT IN ('done', 'decomposed')",
-            (task_id,),
-        ).fetchone()
-        conn.close()
+            # Check junction deps — any undone junction parent blocks
+            unmet = conn.execute(
+                "SELECT d.depends_on_id, p.status "
+                "FROM kanban_task_deps d "
+                "JOIN kanban_tasks p ON p.id = d.depends_on_id "
+                "WHERE d.task_id = ? AND p.status NOT IN ('done', 'decomposed')",
+                (task_id,),
+            ).fetchone()
         if unmet:
             unmet = dict(unmet)
             return False, (
@@ -1955,31 +2231,29 @@ def _close_orphaned_rca_children(parent_task_id: str, actor: str = "scheduler") 
     (the two types self_debug uses for RCA cards).
     """
     try:
-        conn = get_connection()
-        now = _utcnow_iso()
-        prefix = f"diag-{parent_task_id}"
-        open_statuses = ("suggested", "backlog", "scheduled", "in_progress")
-        placeholders = ",".join("?" * len(open_statuses))
-        rows = conn.execute(
-            f"SELECT id FROM kanban_tasks "  # nosec B608
-            f"WHERE (id LIKE ? OR (title LIKE ? AND task_type IN ('chore','research','fix'))) "
-            f"  AND status IN ({placeholders})",
-            (f"{prefix}%", f"%{parent_task_id}%", *open_statuses),
-        ).fetchall()
-        orphan_ids = [dict(r)["id"] for r in rows]
-        if orphan_ids:
-            ph = ",".join("?" * len(orphan_ids))
-            conn.execute(
-                f"UPDATE kanban_tasks SET status='done', completed_at=?, updated_at=?, "  # nosec B608
-                f"last_failure_reason=? WHERE id IN ({ph})",
-                (now, now, f"auto-closed: parent {parent_task_id} resolved", *orphan_ids),
-            )
-            conn.commit()
-            logger.info(
-                "_close_orphaned_rca_children: closed %d orphan(s) of %s: %s",
-                len(orphan_ids), parent_task_id, orphan_ids,
-            )
-        conn.close()
+        with get_connection() as conn:
+            now = _utcnow_iso()
+            prefix = f"diag-{parent_task_id}"
+            open_statuses = ("suggested", "backlog", "scheduled", "in_progress")
+            placeholders = ",".join("?" * len(open_statuses))
+            rows = conn.execute(
+                f"SELECT id FROM kanban_tasks "  # nosec B608
+                f"WHERE (id LIKE ? OR (title LIKE ? AND task_type IN ('chore','research','fix'))) "
+                f"  AND status IN ({placeholders})",
+                (f"{prefix}%", f"%{parent_task_id}%", *open_statuses),
+            ).fetchall()
+            orphan_ids = [dict(r)["id"] for r in rows]
+            if orphan_ids:
+                ph = ",".join("?" * len(orphan_ids))
+                conn.execute(
+                    f"UPDATE kanban_tasks SET status='done', completed_at=?, updated_at=?, "  # nosec B608
+                    f"last_failure_reason=? WHERE id IN ({ph})",
+                    (now, now, f"auto-closed: parent {parent_task_id} resolved", *orphan_ids),
+                )
+                logger.info(
+                    "_close_orphaned_rca_children: closed %d orphan(s) of %s: %s",
+                    len(orphan_ids), parent_task_id, orphan_ids,
+                )
     except Exception as exc:
         logger.warning("_close_orphaned_rca_children failed for %s: %s", parent_task_id, exc)
 
@@ -2238,6 +2512,13 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
         conn.close()
 
     _record_status_transition(task_id, prior_status, new_status, actor=actor, reason=reason)
+    # Fire webhook subscriptions on terminal transitions
+    _SUBSCRIPTION_EVENTS = {"done", "token_exhausted", "decomposed"}
+    if new_status in _SUBSCRIPTION_EVENTS:
+        try:
+            _fire_task_subscriptions(task_id, new_status)
+        except Exception as _sub_exc:
+            logger.debug("subscription fire failed for %s: %s", task_id, _sub_exc)
     if prior_status == "done" and new_status != "done" and rolled_back:
         for dep_id in rolled_back:
             _record_status_transition(
@@ -2436,6 +2717,105 @@ Execute this task as described above. When complete:
     return str(prompt_path)
 
 
+def _run_adversarial_verify(task_id: str, work_dir: str) -> tuple:
+    """Adversarial verifier gate — spawn a short Claude CLI review of completed work.
+
+    Only fires when adversarial_enabled=1 on the task (loop_type='non_deterministic').
+    Uses a separate Claude CLI session with a review-only prompt and --max-turns 10
+    so the verifier cannot make changes, only judge.
+
+    Returns (passed: bool, feedback: str). Fails open on any error so the
+    adversarial gate never permanently blocks a task.
+    """
+    try:
+        with get_connection() as _c:
+            row = _c.execute(
+                "SELECT adversarial_enabled, title, description "
+                "FROM kanban_tasks WHERE id = %s",
+                (task_id,),
+            ).fetchone()
+        if not row or not dict(row).get("adversarial_enabled"):
+            return True, ""
+        task_title = dict(row).get("title", task_id)
+        task_desc = (dict(row).get("description") or "")[:1200]
+    except Exception as exc:
+        logger.warning("adversarial_verify: DB read failed for %s: %s", task_id, exc)
+        return True, ""
+
+    claude_cli = _resolve_claude_cli()
+    if not claude_cli:
+        logger.warning("adversarial_verify: claude CLI not found — skipping for %s", task_id)
+        return True, ""
+
+    review_prompt = (
+        "You are an adversarial code reviewer. "
+        "Review the changes made in this worktree for the task below.\n\n"
+        f"Task: {task_title}\n\n"
+        f"Acceptance criteria:\n{task_desc}\n\n"
+        "Run `git diff main...HEAD` to inspect what changed. "
+        "Check new/modified files against the acceptance criteria.\n\n"
+        "Respond with EXACTLY one of these two formats and nothing else:\n"
+        "APPROVED: <one sentence reason>\n"
+        "REJECTED: <specific actionable feedback on what is missing or wrong>\n\n"
+        "Be strict. Missing tests, unfulfilled criteria, or obvious bugs = REJECTED."
+    )
+
+    import tempfile as _tempfile2
+    import os as _os2
+
+    try:
+        _tmp = _tempfile2.NamedTemporaryFile(
+            mode="w", suffix="_adv_review.txt", delete=False,
+            dir=str(BASE_DIR / ".tmp"), encoding="utf-8",
+        )
+        _tmp.write(review_prompt)
+        _tmp.close()
+
+        _stdin_fh = open(_tmp.name, "r", encoding="utf-8")
+        result = subprocess.run(
+            [claude_cli, "--dangerously-skip-permissions",
+             "--max-turns", "10", "--output-format", "text"],
+            cwd=work_dir,
+            stdin=_stdin_fh,
+            capture_output=True,
+            text=True,
+            timeout=180,
+        )
+        _stdin_fh.close()
+        try:
+            _os2.unlink(_tmp.name)
+        except Exception:
+            pass
+
+        output = (result.stdout or "").strip()
+        if not output:
+            logger.warning("adversarial_verify: empty output for %s — passing", task_id)
+            return True, ""
+
+        for line in reversed(output.splitlines()):
+            line = line.strip()
+            if line.upper().startswith("APPROVED"):
+                feedback = line[len("APPROVED"):].lstrip(": ").strip()
+                logger.info("adversarial_verify: APPROVED %s — %s", task_id, feedback[:80])
+                return True, feedback
+            if line.upper().startswith("REJECTED"):
+                feedback = line[len("REJECTED"):].lstrip(": ").strip()
+                logger.warning(
+                    "adversarial_verify: REJECTED %s — %s", task_id, feedback[:200]
+                )
+                return False, feedback
+
+        logger.warning("adversarial_verify: no verdict found for %s — passing", task_id)
+        return True, ""
+
+    except subprocess.TimeoutExpired:
+        logger.warning("adversarial_verify: timeout for %s — passing", task_id)
+        return True, ""
+    except Exception as exc:
+        logger.warning("adversarial_verify: error for %s: %s", task_id, exc)
+        return True, ""
+
+
 def _fetch_verification_details(task_id: str) -> Dict[str, Any]:
     """Load the most recent kanban_verifications row for a task.
 
@@ -2492,25 +2872,23 @@ def _queue_alert_locally(
     body = f"Task returned to backlog. Reason: {reason}"
     for attempt in range(max_retries):
         try:
-            conn = get_connection()
-            conn.execute(
-                "INSERT INTO kanban_alert_queue "
-                "(task_id, event, severity, title, body, reason, actor, created_at, retry_count) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    task_id,
-                    event,
-                    severity,
-                    title,
-                    body,
-                    reason,
-                    "stale-cleanup",
-                    datetime.now(timezone.utc).isoformat(),
-                    attempt,
-                ),
-            )
-            conn.commit()
-            conn.close()
+            with get_connection() as conn:
+                conn.execute(
+                    "INSERT INTO kanban_alert_queue "
+                    "(task_id, event, severity, title, body, reason, actor, created_at, retry_count) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        task_id,
+                        event,
+                        severity,
+                        title,
+                        body,
+                        reason,
+                        "stale-cleanup",
+                        datetime.now(timezone.utc).isoformat(),
+                        attempt,
+                    ),
+                )
             logger.info("Queued alert locally for %s (attempt %d)", task_id, attempt)
             return True
         except Exception as exc:
@@ -2633,6 +3011,30 @@ def _poll_telegram():
         return poll_updates()
     except Exception:
         return []
+
+
+def _poll_all_channels():
+    """Poll all configured channels (Telegram + Teams + MatterMost + GitHub + GitLab + Skype)."""
+    results = list(_poll_telegram())
+
+    _channel_listeners = [
+        ("tools.notifications.adapters.teams_listener", "Teams"),
+        ("tools.notifications.adapters.mattermost_listener", "MatterMost"),
+        ("tools.notifications.adapters.github_listener", "GitHub"),
+        ("tools.notifications.adapters.gitlab_listener", "GitLab"),
+        ("tools.notifications.adapters.skype_listener", "Skype"),
+    ]
+    for module_path, name in _channel_listeners:
+        try:
+            import importlib
+            mod = importlib.import_module(module_path)
+            channel_results = mod.poll_updates()
+            if channel_results:
+                results.extend(channel_results)
+        except Exception:
+            pass
+
+    return results
 
 
 # ---------------------------------------------------------------------------
@@ -2865,22 +3267,63 @@ def _get_retry_coaching(task_id: str) -> str:
     return preamble
 
 
+def _get_parent_handoff(task_id: str) -> Optional[str]:
+    """Return the parent task's last_run_summary and last_run_metadata as a
+    formatted context block, or None if no parent or no handoff data exists.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT kt.depends_on_task_id, "
+            "       p.last_run_summary, p.last_run_metadata, p.title "
+            "FROM kanban_tasks kt "
+            "LEFT JOIN kanban_tasks p ON p.id = kt.depends_on_task_id "
+            "WHERE kt.id = ?",
+            (task_id,),
+        ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        if not d.get("depends_on_task_id"):
+            return None
+        summary = (d.get("last_run_summary") or "").strip()
+        metadata_raw = (d.get("last_run_metadata") or "").strip()
+        if not summary and not metadata_raw:
+            return None
+        lines = [f"## Parent task output: {d.get('title', d['depends_on_task_id'])}"]
+        if summary:
+            lines.append(f"Summary: {summary}")
+        if metadata_raw:
+            lines.append(f"Metadata (JSON): {metadata_raw}")
+        return "\n".join(lines) + "\n\n"
+    except Exception:
+        return None
+    finally:
+        if conn:
+            conn.close()
+
+
 def _build_instruction(task_id: str, title: str, prompt_text: str, prompt_path: str) -> str:
     """Compose the full instruction text used by both executors.
 
-    Injects retry coaching if the task has prior failures (guard-22), so the
-    agent knows what went wrong last time and how to avoid repeating it.
+    Injects retry coaching if the task has prior failures (guard-22), and
+    parent handoff context when the task has a dependency whose executor
+    submitted a structured summary/metadata via POST /api/kanban/tasks/<id>/handoff.
     """
     coaching = _get_retry_coaching(task_id)
+    parent_context = _get_parent_handoff(task_id) or ""
     return (
-        f"{coaching}{prompt_text}\n\n"
+        f"{coaching}{parent_context}{prompt_text}\n\n"
         f"When complete:\n"
-        f"1. Move to done: POST http://localhost:5050/api/kanban/"
+        f"1. (Optional) Submit handoff: POST http://localhost:5050/api/kanban/"
+        f'tasks/{task_id}/handoff with {{"summary": "...", "metadata": {{...}}}}\n'
+        f"2. Move to done: POST http://localhost:5050/api/kanban/"
         f'tasks/{task_id}/move with {{"status": "done"}}\n'
-        f'2. Notify: python -c "from tools.notifications.adapters.'
+        f'3. Notify: python -c "from tools.notifications.adapters.'
         f"telegram import send; send('Task Completed', "
         f"'{title} — done', severity='success')\"\n"
-        f"3. Delete prompt file: {prompt_path}\n"
+        f"4. Delete prompt file: {prompt_path}\n"
     )
 
 
@@ -2973,8 +3416,15 @@ def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
     task_id = task["id"]
 
     def _runner():
-        from tools.llm.router import LLMRouter
-        from tools.llm.provider import LLMRequest
+        # Use `import … as` form so the attribute-access chain goes through
+        # _ToolsRedirect.__getattr__ → icdev.tools.llm.router, the same
+        # module object that tests monkeypatch via `import tools.llm.router`.
+        # `from tools.llm.router import LLMRouter` hits sys.modules["tools.llm.router"]
+        # which is the PHYSICAL tools/llm/router.py — a different object.
+        import tools.llm.router as _llm_router_mod
+        LLMRouter = _llm_router_mod.LLMRouter
+        import tools.llm.provider as _llm_provider_mod
+        LLMRequest = _llm_provider_mod.LLMRequest
         from tools.airgap import hook_compat
 
         # OPT-62: cap the mid-run message-injection loop so a stuck queue
@@ -3019,8 +3469,8 @@ def _dispatch_via_llm_router(task: dict, prompt_path: str, instruction: str,
                 )
                 try:
                     fh.flush()
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
 
                 # OPT-62: drain the user message queue. If nothing was
                 # injected mid-run, the task is done — exit the loop.
@@ -3106,12 +3556,11 @@ def _dispatch_gitlab(task_id: str, task_desc: str, task_type: str) -> bool:
         pipeline_id = str(resp.json().get("id", ""))
         pipeline_web_url = resp.json().get("web_url", "")
         try:
-            conn = get_connection()
-            conn.execute(
-                "UPDATE kanban_tasks SET execution_id = ?, executor_url = ?, updated_at = ? WHERE id = ?",
-                (pipeline_id, pipeline_web_url, datetime.now(timezone.utc).isoformat(), task_id),
-            )
-            conn.commit()
+            with get_connection() as conn:
+                conn.execute(
+                    "UPDATE kanban_tasks SET execution_id = ?, executor_url = ?, updated_at = ? WHERE id = ?",
+                    (pipeline_id, pipeline_web_url, datetime.now(timezone.utc).isoformat(), task_id),
+                )
         except Exception as _db_exc:
             logger.warning("kanban: failed to store pipeline_id for %s: %s", task_id, _db_exc)
         logger.info("kanban: GitLab pipeline %s triggered for task %s", pipeline_id, task_id)
@@ -3187,12 +3636,11 @@ def _dispatch_github_actions(task_id: str, task_desc: str, task_type: str) -> bo
         except Exception as _poll_exc:
             logger.warning("kanban: could not capture run_id for %s: %s", task_id, _poll_exc)
         try:
-            conn = get_connection()
-            conn.execute(
-                "UPDATE kanban_tasks SET execution_id = ?, executor_url = ?, updated_at = ? WHERE id = ?",
-                (run_id, run_url, datetime.now(timezone.utc).isoformat(), task_id),
-            )
-            conn.commit()
+            with get_connection() as conn:
+                conn.execute(
+                    "UPDATE kanban_tasks SET execution_id = ?, executor_url = ?, updated_at = ? WHERE id = ?",
+                    (run_id, run_url, datetime.now(timezone.utc).isoformat(), task_id),
+                )
         except Exception as _db_exc:
             logger.warning("kanban: failed to store execution_id for %s: %s", task_id, _db_exc)
         logger.info("kanban: GitHub Actions workflow triggered for task %s (run_id=%s)", task_id, run_id)
@@ -3537,34 +3985,47 @@ def _pre_dispatch_check(task: dict) -> Tuple[bool, str]:
     tool_match = re.search(r"tool_not_in_manifest[^:]*:\s*(tools/[A-Za-z0-9_/\-]+\.py)", title)
     if not tool_match:
         tool_match = re.search(r"(tools/[A-Za-z0-9_/\-]+\.py)", description)
-    if tool_match and ("tool_not_in_manifest" in title or "tool_not_in_manifest" in description):
-        tool_path = tool_match.group(1)
-        try:
-            manifest_text = (BASE_DIR / "tools" / "manifest.md").read_text(encoding="utf-8")
-            if tool_path in manifest_text:
-                return True, (
-                    f"Pre-dispatch check: {tool_path} is already in tools/manifest.md "
-                    f"(false-positive gap)"
-                )
-            # Also search shard files under tools/manifest/
-            manifest_dir = BASE_DIR / "tools" / "manifest"
-            if manifest_dir.is_dir():
-                for shard in manifest_dir.glob("*.md"):
-                    try:
-                        if tool_path in shard.read_text(encoding="utf-8"):
-                            return True, (
-                                f"Pre-dispatch check: {tool_path} is already in "
-                                f"tools/manifest/{shard.name} (false-positive gap)"
-                            )
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+    if ("tool_not_in_manifest" in title or "tool_not_in_manifest" in description):
+        tool_path = (
+            tool_match.group(1) if tool_match
+            else _nlp_extract_gap_subject(title, description, "tool_not_in_manifest")
+        )
+        if tool_path:
+            try:
+                manifest_text = (BASE_DIR / "tools" / "manifest.md").read_text(encoding="utf-8")
+                if tool_path in manifest_text:
+                    return True, (
+                        f"Pre-dispatch check: {tool_path} is already in tools/manifest.md "
+                        f"(false-positive gap)"
+                    )
+                # Also search shard files under tools/manifest/
+                manifest_dir = BASE_DIR / "tools" / "manifest"
+                if manifest_dir.is_dir():
+                    for shard in manifest_dir.glob("*.md"):
+                        try:
+                            if tool_path in shard.read_text(encoding="utf-8"):
+                                return True, (
+                                    f"Pre-dispatch check: {tool_path} is already in "
+                                    f"tools/manifest/{shard.name} (false-positive gap)"
+                                )
+                        except Exception:
+                            pass
+            except Exception:
+                pass
 
     # route_not_listed gap: is the route already in start.md Pages line?
     route_match = re.search(r"route_not_listed[^:]*:\s*(/[A-Za-z0-9_<>/\-]+)", title)
-    if route_match:
+    if not route_match and "route_not_listed" in (title + description).lower():
+        nlp_route = _nlp_extract_gap_subject(title, description, "route_not_listed")
+        if nlp_route:
+            route = nlp_route
+        else:
+            route = None
+    elif route_match:
         route = route_match.group(1)
+    else:
+        route = None
+    if route:
         # API routes don't belong in Pages list — treat as resolved
         if route.startswith("/api/"):
             return True, f"Pre-dispatch check: {route} is an API route (N/A for Pages list)"
@@ -3584,13 +4045,11 @@ def _pre_dispatch_check(task: dict) -> Tuple[bool, str]:
 def _set_executor_type(task_id: str, executor_type: str) -> None:
     """Stamp executor_type on the task row so the UI badge is accurate."""
     try:
-        conn = get_connection()
-        conn.execute(
-            "UPDATE kanban_tasks SET executor_type = ? WHERE id = ?",
-            (executor_type, task_id),
-        )
-        conn.commit()
-        conn.close()
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE kanban_tasks SET executor_type = ? WHERE id = ?",
+                (executor_type, task_id),
+            )
     except Exception as exc:
         logger.debug("kanban: failed to set executor_type for %s: %s", task_id, exc)
 
@@ -3598,12 +4057,11 @@ def _set_executor_type(task_id: str, executor_type: str) -> None:
 def _get_executor_type(task_id: str) -> str | None:
     """Read executor_type from the task row."""
     try:
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT executor_type FROM kanban_tasks WHERE id = ?",
-            (task_id,),
-        ).fetchone()
-        conn.close()
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT executor_type FROM kanban_tasks WHERE id = ?",
+                (task_id,),
+            ).fetchone()
         return row[0] if row else None
     except Exception:
         return None
@@ -3626,6 +4084,49 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
     """
     task_id = task["id"]
     title = task.get("title", "Untitled")
+
+    # ── Respawn guard 1: recent success ───────────────────────────────────────
+    # Don't re-dispatch a task that completed successfully within the last 30 min.
+    # Catches stale DB reads where the executor loops and picks up an already-done task.
+    if _had_recent_success(task_id, within_minutes=30):
+        logger.info("Respawn guard: %s completed recently — skipping dispatch", task_id)
+        return
+
+    # ── Respawn guard 2: open PR exists ──────────────────────────────────────
+    # Don't re-dispatch if an open PR for kanban/<task_id> already exists.
+    # The executor's merge logic handles the PR — re-dispatch would create
+    # a second competing implementation on a new commit.
+    if _has_open_pr(task_id):
+        logger.info("Respawn guard: open PR found for %s — skipping dispatch", task_id)
+        return
+
+    # ── Per-task circuit breaker ──────────────────────────────────────────────
+    # Auto-block if failure_count has reached max_retries for this task.
+    # Overrides the global decomposition threshold for tasks that explicitly
+    # set a different cap.
+    _task_max_retries = int(task.get("max_retries") or 5)
+    _task_failures = int(task.get("failure_count") or 0)
+    if _task_failures >= _task_max_retries:
+        logger.warning(
+            "Circuit breaker: %s hit max_retries=%d (failure_count=%d) — blocking",
+            task_id, _task_max_retries, _task_failures,
+        )
+        try:
+            conn = get_connection()
+            conn.execute(
+                "UPDATE kanban_tasks SET status = 'token_exhausted', "
+                "last_failure_reason = ?, updated_at = ? WHERE id = ?",
+                (
+                    f"Circuit breaker: failure_count {_task_failures} >= max_retries {_task_max_retries}",
+                    _utcnow_iso(),
+                    task_id,
+                ),
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+        return
 
     # Fast-path: auto-complete false-positive gaps without dispatching.
     already_resolved, resolution_reason = _pre_dispatch_check(task)
@@ -3738,14 +4239,12 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
                 "gitlab=unreachable, ollama=unreachable"
             )
             try:
-                _conn = get_connection()
-                _conn.execute(
-                    "UPDATE kanban_tasks SET last_failure_reason = ?, "
-                    "updated_at = ? WHERE id = ?",
-                    (_no_exec_reason, _utcnow_iso(), task_id),
-                )
-                _conn.commit()
-                _conn.close()
+                with get_connection() as _conn:
+                    _conn.execute(
+                        "UPDATE kanban_tasks SET last_failure_reason = ?, "
+                        "updated_at = ? WHERE id = ?",
+                        (_no_exec_reason, _utcnow_iso(), task_id),
+                    )
             except Exception as _lfr_exc:
                 logger.warning(
                     "kanban: failed to set last_failure_reason for %s: %s",
@@ -3845,12 +4344,11 @@ def _is_dangerous_task(task_id: str) -> bool:
     runs. Lookup uses task_type + description keyword scan.
     """
     try:
-        _c = get_connection()
-        row = _c.execute(
-            "SELECT task_type, description FROM kanban_tasks WHERE id = ?",
-            (task_id,),
-        ).fetchone()
-        _c.close()
+        with get_connection() as _c:
+            row = _c.execute(
+                "SELECT task_type, description FROM kanban_tasks WHERE id = ?",
+                (task_id,),
+            ).fetchone()
     except Exception:
         return False
     if not row:
@@ -4020,19 +4518,18 @@ def _run_verify_checks(task_id, claude_output):
         "regression", "report pass/fail",
     ]
     try:
-        _c0b = get_connection()
-        _r0b = _c0b.execute(
-            "SELECT description, task_type FROM kanban_tasks WHERE id = ?",
-            (task_id,),
-        ).fetchone()
-        _c0b.close()
+        with get_connection() as _c0b:
+            _r0b = _c0b.execute(
+                "SELECT description, task_type FROM kanban_tasks WHERE id = ?",
+                (task_id,),
+            ).fetchone()
         _desc0b = ((_r0b["description"] or "").lower() if _r0b else "")
         _type0b = ((_r0b["task_type"] or "").lower() if _r0b else "")
     except Exception:
         _desc0b = ""
         _type0b = ""
     _is_scan_task = _type0b == "test" and any(kw in _desc0b for kw in _SCAN_ONLY_KEYWORDS)
-    if _is_scan_task and (not claude_output or len(claude_output) < 200):
+    if _is_scan_task and (not claude_output or len(claude_output) < MIN_OUTPUT_LENGTH):
         # Scan task with empty/short output — check process exit code
         _proc = _running.get(task_id)
         _exit_ok = (_proc is not None and hasattr(_proc, 'returncode')
@@ -4040,7 +4537,7 @@ def _run_verify_checks(task_id, claude_output):
         _dispatch_t = _dispatch_times.get(task_id)
         _ran_long = (
             _dispatch_t is not None
-            and (datetime.now(timezone.utc) - _dispatch_t).total_seconds() > 60
+            and (datetime.now(timezone.utc) - _dispatch_t).total_seconds() > SCAN_MIN_RUN_SECONDS
         )
         if _exit_ok:
             return True, (
@@ -4068,25 +4565,26 @@ def _run_verify_checks(task_id, claude_output):
     # no-commits check entirely.
     try:
         _c0c = get_connection()
-        # Primary signal: metadata flag on the task row — cheapest check.
-        _bypass_meta = _c0c.execute(
-            "SELECT completed_via_bypass FROM kanban_tasks WHERE id = ?",
-            (task_id,),
-        ).fetchone()
-        if _bypass_meta and _bypass_meta["completed_via_bypass"]:
+        try:
+            # Primary signal: metadata flag on the task row — cheapest check.
+            _bypass_meta = _c0c.execute(
+                "SELECT completed_via_bypass FROM kanban_tasks WHERE id = ?",
+                (task_id,),
+            ).fetchone()
+            if _bypass_meta and _bypass_meta["completed_via_bypass"]:
+                return True, (
+                    "Verified (bypass): completed_via_bypass flag set on task — "
+                    "no git commits expected (pre-existing correct state)"
+                )
+            # Secondary signal: verification row written by the move-to-done API.
+            _brow = _c0c.execute(
+                "SELECT reason FROM kanban_verifications "
+                "WHERE task_id = ? AND result = 'bypassed' "
+                "ORDER BY verified_at DESC LIMIT 1",
+                (task_id,),
+            ).fetchone()
+        finally:
             _c0c.close()
-            return True, (
-                "Verified (bypass): completed_via_bypass flag set on task — "
-                "no git commits expected (pre-existing correct state)"
-            )
-        # Secondary signal: verification row written by the move-to-done API.
-        _brow = _c0c.execute(
-            "SELECT reason FROM kanban_verifications "
-            "WHERE task_id = ? AND result = 'bypassed' "
-            "ORDER BY verified_at DESC LIMIT 1",
-            (task_id,),
-        ).fetchone()
-        _c0c.close()
         if _brow is not None:
             _bypass_reason_txt = (_brow["reason"] or "pre-existing correct state")[:80]
             return True, (
@@ -4097,7 +4595,7 @@ def _run_verify_checks(task_id, claude_output):
         pass
 
     # Check 1: Claude output must be substantial
-    if not claude_output or len(claude_output) < 200:
+    if not claude_output or len(claude_output) < MIN_OUTPUT_LENGTH:
         return False, "Output too short — likely no work done"
 
     # Check 2: Look for failure indicators (scan first 1000 chars — the
@@ -4192,11 +4690,10 @@ def _run_verify_checks(task_id, claude_output):
         # output (e.g. codelens scan, pytest run, dependency check) with
         # no file mutations. Per V&V policy these are fail-open.
         try:
-            _c3 = get_connection()
-            _r3 = _c3.execute(
-                "SELECT task_type FROM kanban_tasks WHERE id = ?", (task_id,)
-            ).fetchone()
-            _c3.close()
+            with get_connection() as _c3:
+                _r3 = _c3.execute(
+                    "SELECT task_type FROM kanban_tasks WHERE id = ?", (task_id,)
+                ).fetchone()
             _tt = (_r3["task_type"] or "").lower() if _r3 else ""
         except Exception:
             _tt = ""
@@ -4219,11 +4716,10 @@ def _run_verify_checks(task_id, claude_output):
     # Only apply zero-path guard to task types that imply file creation.
     if not claimed_paths and not has_nochange_signal:
         try:
-            _c = get_connection()
-            _row = _c.execute(
-                "SELECT description, task_type FROM kanban_tasks WHERE id = ?", (task_id,)
-            ).fetchone()
-            _c.close()
+            with get_connection() as _c:
+                _row = _c.execute(
+                    "SELECT description, task_type FROM kanban_tasks WHERE id = ?", (task_id,)
+                ).fetchone()
             task_desc = (_row["description"] or "").lower() if _row else ""
             task_type = (_row["task_type"] or "").lower() if _row else ""
         except Exception:
@@ -4252,14 +4748,14 @@ def _run_verify_checks(task_id, claude_output):
                 f"but NONE exist on disk (missing: {missing_preview}). "
                 f"Output was likely hallucinated — see agent log."
             )
-        # If 50%+ of claimed paths are missing, treat as phantom completion.
+        # If PHANTOM_RATIO_THRESHOLD+ of claimed paths are missing, treat as phantom.
         phantom_ratio = (claimed - existing) / claimed
-        if phantom_ratio >= 0.5:
+        if phantom_ratio >= PHANTOM_RATIO_THRESHOLD:
             missing_preview = ", ".join(missing[:3])
             return False, (
                 f"PHANTOM COMPLETION: {claimed - existing}/{claimed} claimed paths "
                 f"missing ({missing_preview}). "
-                f"Ratio {phantom_ratio:.0%} >= 50% threshold — failing."
+                f"Ratio {phantom_ratio:.0%} >= {PHANTOM_RATIO_THRESHOLD:.0%} threshold — failing."
             )
 
     # Check 5: Git commit check on the WORKTREE branch (not main).
@@ -4416,11 +4912,10 @@ def _run_verify_checks(task_id, claude_output):
         ]
         _scan_desc = ""
         try:
-            _c_sd = get_connection()
-            _r_sd = _c_sd.execute(
-                "SELECT description FROM kanban_tasks WHERE id = ?", (task_id,)
-            ).fetchone()
-            _c_sd.close()
+            with get_connection() as _c_sd:
+                _r_sd = _c_sd.execute(
+                    "SELECT description FROM kanban_tasks WHERE id = ?", (task_id,)
+                ).fetchone()
             _scan_desc = ((_r_sd["description"] or "").lower() if _r_sd else "")
         except Exception:
             pass
@@ -4503,32 +4998,30 @@ def _write_verification_log(task_id: str, verified: bool, reason: str) -> None:
     # Also write to kanban_verifications table (guard-5) for dashboard visibility
     try:
         import uuid as _uuid
-        conn = get_connection()
-        verification_id = f"kv-{_uuid.uuid4().hex[:10]}"
-        result_enum = "passed" if verified else "failed"
-        if "PHANTOM" in (reason or "").upper():
-            result_enum = "phantom"
+        with get_connection() as conn:
+            verification_id = f"kv-{_uuid.uuid4().hex[:10]}"
+            result_enum = "passed" if verified else "failed"
+            if "PHANTOM" in (reason or "").upper():
+                result_enum = "phantom"
 
-        # guard-23: read dispatch_source from task row (set at dispatch time)
-        source_row = conn.execute(
-            "SELECT dispatch_source FROM kanban_tasks WHERE id = ?", (task_id,)
-        ).fetchone()
-        dispatch_source = (
-            dict(source_row).get("dispatch_source") if source_row else None
-        ) or "genesis_scheduler"  # scheduler-invoked verifications are scheduler by default
+            # guard-23: read dispatch_source from task row (set at dispatch time)
+            source_row = conn.execute(
+                "SELECT dispatch_source FROM kanban_tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+            dispatch_source = (
+                dict(source_row).get("dispatch_source") if source_row else None
+            ) or "genesis_scheduler"  # scheduler-invoked verifications are scheduler by default
 
-        conn.execute(
-            "INSERT INTO kanban_verifications "
-            "(id, task_id, verified_at, result, reason, dispatch_source) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
-            (
-                verification_id, task_id,
-                datetime.now(timezone.utc).isoformat(),
-                result_enum, reason, dispatch_source,
-            ),
-        )
-        conn.commit()
-        conn.close()
+            conn.execute(
+                "INSERT INTO kanban_verifications "
+                "(id, task_id, verified_at, result, reason, dispatch_source) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    verification_id, task_id,
+                    datetime.now(timezone.utc).isoformat(),
+                    result_enum, reason, dispatch_source,
+                ),
+            )
     except Exception as exc:
         # Don't fail verification just because audit log is missing
         logger.debug("kanban: kanban_verifications write skipped: %s", exc)
@@ -4588,12 +5081,11 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
     Returns (False, reason) if a targeted check fails.
     """
     try:
-        conn = get_connection()
-        row = conn.execute(
-            "SELECT title, description FROM kanban_tasks WHERE id = ?",
-            (task_id,),
-        ).fetchone()
-        conn.close()
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT title, description FROM kanban_tasks WHERE id = ?",
+                (task_id,),
+            ).fetchone()
         if not row:
             return True, "Task row not found — skipping specific checks"
     except Exception as exc:
@@ -4662,8 +5154,8 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
                             if sr.returncode == 0:
                                 chunks.append(sr.stdout)
                         manifest_text = "\n".join(chunks)
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
                 if not manifest_text or tool_path not in manifest_text:
                     # Fallback to working-tree shards when the kanban branch
                     # either has no manifest files or is missing the specific
@@ -4709,6 +5201,9 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
             route_match = re.search(r"gap: (/[A-Za-z0-9_<>/\-]+)", title)
         if route_match:
             route = route_match.group(1)
+        else:
+            route = _nlp_extract_gap_subject(title, description, "route_not_listed")
+        if route:
             # API routes don't need to be in Pages list
             if not route.startswith("/api/"):
                 try:
@@ -4742,6 +5237,8 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
         )
         if m:
             table_name = m.group(1)
+        else:
+            table_name = _nlp_extract_gap_subject(title, description, "orphan_db_table")
         # Skip pg_*, sqlite_*, information_schema.* — system catalogs are
         # never "orphan" tables to create.
         if table_name and re.match(r"^(pg_|sqlite_|information_schema)", table_name, re.IGNORECASE):
@@ -4777,6 +5274,11 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
             }
             if table_name and table_name.lower() in _PROSE_WORDS:
                 table_name = None
+        # Only invoke LLM when the task text contains DB-related keywords;
+        # avoids unnecessary LLM calls for completely unrelated tasks.
+        _DB_HINTS = {"table", "schema", "migration", "create", "db_table", "init_db"}
+        if not table_name and any(h in desc_lower for h in _DB_HINTS):
+            table_name = _nlp_extract_gap_subject(title, description, "db_table")
     if table_name:
         # For orphan_db_table fixes, the agent commits a new migration
         # file with CREATE TABLE <name>, but that migration has not been
@@ -4816,8 +5318,8 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
                         cwd=str(BASE_DIR), timeout=15,
                     )
                     found = r.returncode == 0 and bool(r.stdout.strip())
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
             if not found:
                 # Python-based fallback: search worktree directory directly.
                 # git grep may fail when the branch is checked out in a
@@ -4864,20 +5366,19 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
             )
         # Non-orphan_db_table path: verify table exists in live DB
         try:
-            conn = get_connection()
-            _pg = getattr(conn, "_backend", "sqlite") == "postgresql"
-            if _pg:
-                check = conn.execute(
-                    "SELECT 1 FROM information_schema.tables "
-                    "WHERE table_schema = 'public' AND table_name = ?",
-                    (table_name,),
-                ).fetchone()
-            else:
-                check = conn.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-                    (table_name,),
-                ).fetchone()
-            conn.close()
+            with get_connection() as conn:
+                _pg = getattr(conn, "_backend", "sqlite") == "postgresql"
+                if _pg:
+                    check = conn.execute(
+                        "SELECT 1 FROM information_schema.tables "
+                        "WHERE table_schema = 'public' AND table_name = ?",
+                        (table_name,),
+                    ).fetchone()
+                else:
+                    check = conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                        (table_name,),
+                    ).fetchone()
             if not check:
                 return False, (
                     f"SPECIFIC CHECK FAILED: task says create table '{table_name}' "
@@ -4962,29 +5463,27 @@ def _run_post_task_validation(task_id: str) -> Tuple[bool, str, Dict[str, Any]]:
 def _update_verification_metrics(task_id: str, metrics: Dict[str, Any]) -> None:
     """Update the latest kanban_verifications row for this task with post-task metrics."""
     try:
-        conn = get_connection()
-        conn.execute(
-            "UPDATE kanban_verifications SET "
-            "codelens_passed = ?, ruff_issues = ?, bandit_issues = ?, "
-            "pytest_passed = ?, coherence_passed = ?, "
-            "e2e_ran = ?, e2e_passed = ?, companion_synced = ? "
-            "WHERE task_id = ? AND id = ("
-            "  SELECT id FROM kanban_verifications WHERE task_id = ? "
-            "  ORDER BY verified_at DESC LIMIT 1)",
-            (
-                1 if metrics.get("codelens_passed") else 0 if metrics.get("codelens_passed") is False else None,
-                metrics.get("ruff_issues", 0),
-                metrics.get("bandit_issues", 0),
-                1 if metrics.get("pytest_passed") else 0 if metrics.get("pytest_passed") is False else None,
-                1 if metrics.get("coherence_passed") else 0 if metrics.get("coherence_passed") is False else None,
-                1 if metrics.get("e2e_ran") else 0,
-                1 if metrics.get("e2e_passed") else 0 if metrics.get("e2e_passed") is False else None,
-                1 if metrics.get("companion_synced") else 0,
-                task_id, task_id,
-            ),
-        )
-        conn.commit()
-        conn.close()
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE kanban_verifications SET "
+                "codelens_passed = ?, ruff_issues = ?, bandit_issues = ?, "
+                "pytest_passed = ?, coherence_passed = ?, "
+                "e2e_ran = ?, e2e_passed = ?, companion_synced = ? "
+                "WHERE task_id = ? AND id = ("
+                "  SELECT id FROM kanban_verifications WHERE task_id = ? "
+                "  ORDER BY verified_at DESC LIMIT 1)",
+                (
+                    1 if metrics.get("codelens_passed") else 0 if metrics.get("codelens_passed") is False else None,
+                    metrics.get("ruff_issues", 0),
+                    metrics.get("bandit_issues", 0),
+                    1 if metrics.get("pytest_passed") else 0 if metrics.get("pytest_passed") is False else None,
+                    1 if metrics.get("coherence_passed") else 0 if metrics.get("coherence_passed") is False else None,
+                    1 if metrics.get("e2e_ran") else 0,
+                    1 if metrics.get("e2e_passed") else 0 if metrics.get("e2e_passed") is False else None,
+                    1 if metrics.get("companion_synced") else 0,
+                    task_id, task_id,
+                ),
+            )
     except Exception as exc:
         logger.debug("guard-7: metrics update skipped: %s", exc)
 
@@ -5134,8 +5633,16 @@ _dispatch_times: Dict[str, datetime] = {}
 # Current executor tier — updated once per scheduler cycle
 _current_exec_tier: Optional[str] = None
 
-_SILENT_DISPATCH_THRESHOLD = 1 * 60  # 1 min — no log file content yet = never dispatched
-_ABSOLUTE_MAX_IN_PROGRESS_SECONDS = 24 * 60 * 60  # 24 h hard ceiling — force-reap even if in _running
+# Override via KANBAN_SILENT_DISPATCH_THRESHOLD_SECONDS / KANBAN_ABSOLUTE_MAX_IN_PROGRESS_SECONDS env vars.
+_SILENT_DISPATCH_THRESHOLD = _int_env("KANBAN_SILENT_DISPATCH_THRESHOLD_SECONDS", 1 * 60)
+_ABSOLUTE_MAX_IN_PROGRESS_SECONDS = _int_env("KANBAN_ABSOLUTE_MAX_IN_PROGRESS_SECONDS", 24 * 60 * 60)
+
+# Anomaly detection parameters for _detect_execution_anomaly.
+# Override via env vars to tune sensitivity without code changes.
+_ANOMALY_HISTORY_LIMIT = _int_env("KANBAN_ANOMALY_HISTORY_LIMIT", 50)
+_ANOMALY_MIN_SAMPLES = _int_env("KANBAN_ANOMALY_MIN_SAMPLES", 10)
+_ANOMALY_MIN_STD_SECONDS = _float_env("KANBAN_ANOMALY_MIN_STD_SECONDS", 1.0)
+_ANOMALY_Z_THRESHOLD = _float_env("KANBAN_ANOMALY_Z_THRESHOLD", 2.0)
 
 
 def _task_log_is_empty(tid: str) -> bool:
@@ -5145,6 +5652,54 @@ def _task_log_is_empty(tid: str) -> bool:
         return not log_path.exists() or log_path.stat().st_size == 0
     except Exception:
         return False
+
+
+def _detect_execution_anomaly(age_seconds: float) -> Tuple[bool, str]:
+    """Detect if age_seconds is anomalously long vs historical task durations.
+
+    Queries the last _ANOMALY_HISTORY_LIMIT completed tasks and applies the
+    z-score method (mean + _ANOMALY_Z_THRESHOLD × σ). Returns
+    (is_anomaly, description). Falls back to (False, "") on insufficient data
+    or any error. All parameters are configurable via env vars:
+      KANBAN_ANOMALY_HISTORY_LIMIT, KANBAN_ANOMALY_MIN_SAMPLES,
+      KANBAN_ANOMALY_MIN_STD_SECONDS, KANBAN_ANOMALY_Z_THRESHOLD.
+    """
+    try:
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                f"""
+                SELECT (julianday(completed_at) - julianday(created_at)) * 86400.0 AS dur
+                FROM kanban_tasks
+                WHERE status = 'done'
+                  AND completed_at IS NOT NULL
+                  AND created_at IS NOT NULL
+                ORDER BY completed_at DESC
+                LIMIT {_ANOMALY_HISTORY_LIMIT}
+                """
+            ).fetchall()
+        finally:
+            conn.close()
+
+        durations = [dict(r)["dur"] for r in rows if (dict(r).get("dur") or 0) > 0]
+        if len(durations) < _ANOMALY_MIN_SAMPLES:
+            return False, ""
+
+        mean = sum(durations) / len(durations)
+        variance = sum((d - mean) ** 2 for d in durations) / len(durations)
+        std = variance ** 0.5
+        if std < _ANOMALY_MIN_STD_SECONDS:
+            return False, ""
+
+        z = (age_seconds - mean) / std
+        if z > _ANOMALY_Z_THRESHOLD:
+            return True, (
+                f"anomaly_detection: {age_seconds / 60:.0f} min is {z:.1f}σ above "
+                f"historical mean {mean / 60:.0f} min (σ={std / 60:.0f} min, n={len(durations)})"
+            )
+    except Exception:
+        pass
+    return False, ""
 
 
 _SUGGESTED_DECAY_HOURS = _int_env("KANBAN_SUGGESTED_DECAY_HOURS", 48)
@@ -5161,39 +5716,525 @@ def _promote_stale_suggested() -> None:
     hard-quarantine reason) still require human review.
     """
     try:
-        conn = get_connection()
-        cutoff = (
-            datetime.now(timezone.utc) - timedelta(hours=_SUGGESTED_DECAY_HOURS)
-        ).isoformat()
-        rows = conn.execute(
-            "SELECT id, failure_count, last_failure_reason FROM kanban_tasks "
-            "WHERE status = 'suggested' AND updated_at < ?",
-            (cutoff,),
-        ).fetchall()
-        promoted = []
-        now_iso = datetime.now(timezone.utc).isoformat()
-        for r in rows:
-            d = dict(r)
-            fc = d.get("failure_count") or 0
-            reason = (d.get("last_failure_reason") or "").lower()
-            if fc >= 5 or "hard-quarantine" in reason or "hitl" in reason:
-                continue  # genuinely quarantined — leave for human review
-            conn.execute(
-                "UPDATE kanban_tasks SET status='scheduled', scheduled_at=?, "
-                "updated_at=?, failure_count=0, "
-                "last_failure_reason='decay-promoted: re-queued after 48 h in suggested' "
-                "WHERE id=?",
-                (now_iso, now_iso, d["id"]),
-            )
-            promoted.append(d["id"])
-        if promoted:
-            conn.commit()
-            logger.info("suggested-decay: re-queued %d task(s): %s", len(promoted), promoted)
-            for tid in promoted:
-                print(f"  Kanban: suggested-decay promoted {tid} -> scheduled")
-        conn.close()
+        with get_connection() as conn:
+            cutoff = (
+                datetime.now(timezone.utc) - timedelta(hours=_SUGGESTED_DECAY_HOURS)
+            ).isoformat()
+            rows = conn.execute(
+                "SELECT id, failure_count, last_failure_reason FROM kanban_tasks "
+                "WHERE status = 'suggested' AND updated_at < ?",
+                (cutoff,),
+            ).fetchall()
+            promoted = []
+            now_iso = datetime.now(timezone.utc).isoformat()
+            for r in rows:
+                d = dict(r)
+                fc = d.get("failure_count") or 0
+                reason = (d.get("last_failure_reason") or "").lower()
+                if fc >= 5 or "hard-quarantine" in reason or "hitl" in reason:
+                    continue  # genuinely quarantined — leave for human review
+                conn.execute(
+                    "UPDATE kanban_tasks SET status='scheduled', scheduled_at=?, "
+                    "updated_at=?, failure_count=0, "
+                    "last_failure_reason='decay-promoted: re-queued after 48 h in suggested' "
+                    "WHERE id=?",
+                    (now_iso, now_iso, d["id"]),
+                )
+                promoted.append(d["id"])
+            if promoted:
+                logger.info("suggested-decay: re-queued %d task(s): %s", len(promoted), promoted)
+                for tid in promoted:
+                    print(f"  Kanban: suggested-decay promoted {tid} -> scheduled")
+
+            # ── BOUNDED AUTO-REVIVE of failure-quarantined tasks ──────────
+            # The decay pass above deliberately skips fc>=5 / HITL-quarantined
+            # tasks. Without this pass they (and their dependency chains) rot
+            # in 'suggested' forever. Here we revive them to backlog when their
+            # dependency is satisfied and they've cooled down — capped at
+            # MAX_AUTO_REVIVE per task (tracked in kanban_task_revivals so the
+            # cap survives re-quarantine), then held for HITL with one alert.
+            _revive_quarantined_suggested(conn)
+            # Critical-path unblock: revive low-fc 'suggested' tasks that are
+            # directly blocking 'backlog' children (executor-transient failures).
+            _unblock_dep_chain(conn)
     except Exception as exc:
         logger.warning("suggested-decay sweep failed: %s", exc)
+
+
+def _revive_quarantined_suggested(conn: Any) -> None:
+    """Auto-revive failure-quarantined 'suggested' tasks, bounded by a cap.
+
+    A task qualifies as failure-quarantined when failure_count >= 5 OR its
+    last_failure_reason mentions 'hitl' / 'hard-quarantine' (genuine AI
+    prediction cards have fc=0 and no failure reason, so they never match).
+    Such a task is revived to 'backlog' (failure_count reset) when:
+      - its dependency is satisfied (no dep, or parent done/decomposed), and
+      - it has been parked longer than QUARANTINE_REVIVE_COOLDOWN_MIN, and
+      - it has been auto-revived fewer than MAX_AUTO_REVIVE times.
+    After the cap it stays quarantined and fires a one-time HITL Telegram alert.
+    """
+    # Self-healing: create the side table if the migration hasn't run yet.
+    try:
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS kanban_task_revivals ("
+            "  task_id TEXT PRIMARY KEY,"
+            "  revive_count INTEGER NOT NULL DEFAULT 0,"
+            "  last_revived_at TEXT,"
+            "  hitl_alerted INTEGER NOT NULL DEFAULT 0,"
+            "  updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP))"
+        )
+        conn.commit()
+    except Exception as exc:
+        logger.warning("auto-revive: could not ensure kanban_task_revivals table: %s", exc)
+        return
+
+    now = datetime.now(timezone.utc)
+    cooldown_cutoff = (now - timedelta(minutes=QUARANTINE_REVIVE_COOLDOWN_MIN)).isoformat()
+    now_iso = now.isoformat()
+
+    rows = conn.execute(
+        "SELECT id, failure_count, last_failure_reason, depends_on_task_id "
+        "FROM kanban_tasks "
+        "WHERE status = 'suggested' AND updated_at < ?",
+        (cooldown_cutoff,),
+    ).fetchall()
+
+    revived: list[str] = []
+    held: list[str] = []
+    for r in rows:
+        d = dict(r)
+        tid = d["id"]
+        fc = d.get("failure_count") or 0
+        reason = (d.get("last_failure_reason") or "").lower()
+        # Only act on failure-quarantined tasks (skip genuine prediction cards).
+        is_quarantined = fc >= 5 or "hard-quarantine" in reason or "hitl" in reason
+        if not is_quarantined:
+            continue
+
+        # Dependency must be satisfied (no dep, or parent done/decomposed).
+        dep = d.get("depends_on_task_id")
+        if dep:
+            prow = conn.execute(
+                "SELECT status FROM kanban_tasks WHERE id = ?", (dep,)
+            ).fetchone()
+            if not prow or dict(prow).get("status") not in ("done", "decomposed"):
+                continue  # still blocked — leave quarantined
+
+        # How many times have we already auto-revived this task?
+        rc_row = conn.execute(
+            "SELECT revive_count, hitl_alerted FROM kanban_task_revivals WHERE task_id = ?",
+            (tid,),
+        ).fetchone()
+        revive_count = (dict(rc_row).get("revive_count") if rc_row else 0) or 0
+        hitl_alerted = (dict(rc_row).get("hitl_alerted") if rc_row else 0) or 0
+
+        if revive_count >= MAX_AUTO_REVIVE:
+            # Cap reached — hold for human review, alert once.
+            if not hitl_alerted:
+                held.append(tid)
+                conn.execute(
+                    "UPDATE kanban_task_revivals SET hitl_alerted = 1, updated_at = ? "
+                    "WHERE task_id = ?",
+                    (now_iso, tid),
+                )
+            continue
+
+        # Revive to backlog with a fresh failure budget.
+        new_rc = revive_count + 1
+        conn.execute(
+            "UPDATE kanban_tasks SET status = 'backlog', failure_count = 0, "
+            "last_failure_reason = ?, updated_at = ? "
+            "WHERE id = ? AND status = 'suggested'",
+            (
+                f"auto-revive {new_rc}/{MAX_AUTO_REVIVE}: deps satisfied + cooled down, "
+                "re-queued to backlog for another attempt.",
+                now_iso,
+                tid,
+            ),
+        )
+        # Upsert the revival counter (works on both SQLite and PostgreSQL).
+        if rc_row:
+            conn.execute(
+                "UPDATE kanban_task_revivals SET revive_count = ?, last_revived_at = ?, "
+                "updated_at = ? WHERE task_id = ?",
+                (new_rc, now_iso, now_iso, tid),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO kanban_task_revivals "
+                "(task_id, revive_count, last_revived_at, hitl_alerted, updated_at) "
+                "VALUES (?, ?, ?, 0, ?)",
+                (tid, new_rc, now_iso, now_iso),
+            )
+        revived.append(tid)
+
+    if revived or held:
+        conn.commit()
+    for tid in revived:
+        print(f"  Kanban: auto-revive quarantined {tid} -> backlog")
+    if revived:
+        logger.info("auto-revive: re-queued %d quarantined task(s): %s", len(revived), revived)
+    if held:
+        logger.warning(
+            "auto-revive: %d task(s) hit revive cap (%d) — holding for HITL: %s",
+            len(held), MAX_AUTO_REVIVE, held,
+        )
+        import os as _os
+        if not (_os.environ.get("PYTEST_CURRENT_TEST")
+                or _os.environ.get("ICDEV_SUPPRESS_NOTIFICATIONS") == "1"):
+            for tid in held:
+                try:
+                    from tools.notifications.adapters.telegram import send as tg_send
+                    tg_send(
+                        f"HITL REVIEW NEEDED: {tid[:32]}",
+                        (
+                            f"Task '{tid}' has been auto-revived {MAX_AUTO_REVIVE} times and "
+                            "still fails. It is now held in 'suggested' for human review — "
+                            "the task likely needs to be split, fixed, or closed."
+                        ),
+                        severity="warning",
+                    )
+                except Exception:
+                    pass
+
+
+def _unblock_dep_chain(conn: Any) -> None:
+    """Revive 'suggested' tasks that are blocking 'backlog' children.
+
+    When an executor is transiently unavailable (e.g., claude_cli not on PATH
+    during a previous scheduler run), tasks are moved to 'suggested' with
+    reason "no executor available". The standard _revive_quarantined_suggested
+    only targets fc>=5 tasks, leaving these low-fc transient failures stuck.
+
+    This function finds any 'suggested' task that is the direct dependency of a
+    'backlog' task and revives it to 'backlog' unconditionally — because a child
+    waiting in backlog proves the parent is on the critical path.
+    """
+    try:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        # Find suggested tasks that are blocking at least one backlog child
+        rows = conn.execute(
+            "SELECT DISTINCT p.id, p.failure_count, p.last_failure_reason "
+            "FROM kanban_tasks p "
+            "JOIN kanban_tasks c ON c.depends_on_task_id = p.id "
+            "WHERE p.status = 'suggested' AND c.status = 'backlog'"
+        ).fetchall()
+        unblocked: list[str] = []
+        for r in rows:
+            d = dict(r)
+            tid = d["id"]
+            fc = d.get("failure_count") or 0
+            reason = (d.get("last_failure_reason") or "").lower()
+            # Only auto-revive transient failures (no executor / low fc).
+            # Hard-quarantined (fc>=5 without "no executor" reason) or HITL tasks
+            # are left for _revive_quarantined_suggested which has the revive cap.
+            is_hard_quarantine = fc >= 5 and "no executor" not in reason
+            is_hitl = "hitl" in reason or "hard-quarantine" in reason
+            if is_hard_quarantine or is_hitl:
+                continue
+            conn.execute(
+                "UPDATE kanban_tasks SET status = 'backlog', failure_count = 0, "
+                "last_failure_reason = ?, updated_at = ? "
+                "WHERE id = ? AND status = 'suggested'",
+                (
+                    f"dep-chain-unblock: child waiting in backlog, revived from suggested (fc was {fc})",
+                    now_iso,
+                    tid,
+                ),
+            )
+            unblocked.append(tid)
+        if unblocked:
+            conn.commit()
+            for tid in unblocked:
+                print(f"  Kanban: dep-chain-unblock {tid} -> backlog (was blocking child)")
+            logger.info(
+                "dep-chain-unblock: revived %d critical-path task(s): %s",
+                len(unblocked), unblocked,
+            )
+    except Exception as exc:
+        logger.warning("dep-chain-unblock: failed: %s", exc)
+def _check_acceptance_criteria(task_id: str, output_text: str) -> tuple:
+    """Judge whether task output satisfies its acceptance_criteria.
+
+    Returns (passed: bool, reasoning: str). Passes when no criteria are set
+    or when the LLM judge votes pass. Non-fatal — any failure returns pass
+    so the verification gate degrades gracefully.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT acceptance_criteria FROM kanban_tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+        if not row:
+            return True, "task not found"
+        criteria = (dict(row).get("acceptance_criteria") or "").strip()
+        if not criteria:
+            return True, "no criteria"
+    except Exception:
+        return True, "db error"
+    finally:
+        if conn:
+            conn.close()
+
+    try:
+        import json as _json
+        import re as _re2
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        prompt = (
+            f"Does this task output meet the acceptance criteria?\n\n"
+            f"ACCEPTANCE CRITERIA:\n{criteria}\n\n"
+            f"TASK OUTPUT (last 3000 chars):\n{output_text[-3000:] if output_text else '(no output)'}\n\n"
+            'Return ONLY valid JSON: {"passed": true/false, "reasoning": "one sentence"}'
+        )
+        req = LLMRequest(
+            system_prompt="You are a quality acceptance evaluator. Return valid JSON only.",
+            messages=[{"role": "user", "content": prompt}],
+            model="claude-haiku-4-5-20251001",
+            max_tokens=200,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("acceptance_judge", req)
+        if not resp or not resp.content:
+            return True, "judge unavailable"
+        raw = _re2.sub(
+            r"^```(?:json)?\s*|\s*```$", "", resp.content.strip(), flags=_re2.MULTILINE
+        ).strip()
+        data = _json.loads(raw)
+        return bool(data.get("passed", True)), str(data.get("reasoning", ""))
+    except Exception as exc:
+        return True, f"judge error: {exc}"
+
+
+def _fire_task_subscriptions(task_id: str, event: str) -> None:
+    """Fire webhook notifications for all subscriptions matching this event.
+
+    Non-fatal: any individual webhook failure is logged but does not block
+    the caller. Uses a 5-second connect timeout per target.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT id, channel, target, events FROM kanban_task_subscriptions "
+            "WHERE task_id = ?",
+            (task_id,),
+        ).fetchall()
+    except Exception:
+        return
+    finally:
+        if conn:
+            conn.close()
+
+    import urllib.request as _urllib_req
+    import json as _json
+
+    for row in rows:
+        d = dict(row)
+        subscribed_events = [e.strip() for e in (d.get("events") or "").split(",")]
+        if event not in subscribed_events:
+            continue
+        target = d.get("target", "")
+        if not target:
+            continue
+        payload = _json.dumps({
+            "task_id": task_id,
+            "event": event,
+            "subscription_id": d.get("id"),
+            "channel": d.get("channel"),
+        }).encode("utf-8")
+        try:
+            req = _urllib_req.Request(
+                target,
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with _urllib_req.urlopen(req, timeout=5):
+                pass
+            logger.info("Subscription fired: %s → %s (%s)", task_id, target, event)
+        except Exception as exc:
+            logger.warning("Subscription webhook failed: %s → %s: %s", task_id, target, exc)
+
+
+def _decompose_triage_task(task: dict) -> bool:
+    """Decompose a triage task into typed child tasks using LLM.
+
+    Creates 3-7 child tasks in backlog. Moves parent to 'decomposed' on success.
+    Returns True on success, False on failure (leaves task in triage for retry).
+    """
+    task_id = task["id"]
+    title = task.get("title", "")
+    description = (task.get("description") or "").strip()
+    custom_prompt = (task.get("triage_prompt") or "").strip()
+
+    base_context = custom_prompt or (
+        f"Title: {title}\nDescription: {description or '(none)'}"
+    )
+
+    try:
+        import json as _json
+        import re as _re2
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+        from tools.kanban.task_factory import create_tasks
+
+        prompt = (
+            f"Decompose this task into 3-7 concrete, independently-executable subtasks.\n\n"
+            f"{base_context}\n\n"
+            "Return ONLY a JSON array of subtasks:\n"
+            '[{"title": "...", "description": "...", "task_type": "build|fix|test|research|deploy|chore", "priority": "critical|high|medium|low"}, ...]'
+        )
+        req = LLMRequest(
+            system_prompt="You are a software task decomposer. Return valid JSON array only.",
+            messages=[{"role": "user", "content": prompt}],
+            model="claude-haiku-4-5-20251001",
+            max_tokens=2000,
+            temperature=0.3,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("triage_decomposition", req)
+        if not resp or not resp.content:
+            logger.warning("Triage decompose: LLM returned no content for %s", task_id)
+            return False
+
+        raw = _re2.sub(
+            r"^```(?:json)?\s*|\s*```$", "", resp.content.strip(), flags=_re2.MULTILINE
+        ).strip()
+        subtasks = _json.loads(raw)
+        if not isinstance(subtasks, list) or not subtasks:
+            logger.warning("Triage decompose: empty subtask list for %s", task_id)
+            return False
+
+        child_specs = []
+        for i, sub in enumerate(subtasks[:7]):
+            child_id = f"{task_id}-d{i + 1:02d}"
+            child_specs.append({
+                "id": child_id,
+                "title": str(sub.get("title", "Subtask"))[:255],
+                "description": str(sub.get("description", "")),
+                "task_type": sub.get("task_type", "build"),
+                "priority": sub.get("priority", "medium"),
+                "status": "backlog",
+                "depends_on_task_id": None,
+                "dispatch_source": f"triage:{task_id}",
+            })
+        create_tasks(child_specs)
+        logger.info("Triage decompose: created %d child tasks for %s", len(child_specs), task_id)
+
+        _move_task(task_id, "decomposed", reason=f"triage: decomposed into {len(child_specs)} subtasks")
+        return True
+    except Exception as exc:
+        logger.warning("Triage decompose failed for %s: %s", task_id, exc)
+        return False
+
+
+def _reclaim_zombie_tasks() -> None:
+    """Hermes-style zombie reclaim: demote in_progress tasks whose heartbeat
+    has gone silent for longer than KANBAN_ZOMBIE_SILENCE_HOURS (default 2h).
+
+    Only applies to tasks that have sent at least one heartbeat — tasks that
+    pre-date heartbeat support have last_heartbeat_at = NULL and are handled
+    by the existing stale-in_progress reaper (0d).
+    """
+    silence_hours = _int_env("KANBAN_ZOMBIE_SILENCE_HOURS", 2)
+    conn = None
+    try:
+        conn = get_connection()
+        rows = conn.execute(
+            "SELECT id, title, failure_count "
+            "FROM kanban_tasks "
+            "WHERE status = 'in_progress' "
+            "  AND last_heartbeat_at IS NOT NULL "
+            "  AND last_heartbeat_at < datetime('now', ? || ' hours')",
+            (f"-{silence_hours}",),
+        ).fetchall()
+        if not rows:
+            return
+        for row in rows:
+            d = dict(row)
+            task_id = d["id"]
+            if task_id in _running:
+                continue  # still tracked locally — reaper handles it
+            logger.warning(
+                "Zombie reclaim: %s went silent >%dh — demoting to token_exhausted",
+                task_id, silence_hours,
+            )
+            try:
+                _move_task(task_id, "token_exhausted")
+                conn.execute(
+                    "UPDATE kanban_tasks "
+                    "SET failure_count = failure_count + 1, "
+                    "    last_failure_reason = ?, "
+                    "    last_failure_at = ?, "
+                    "    updated_at = ? "
+                    "WHERE id = ?",
+                    (
+                        f"Zombie reclaim: no heartbeat for >{silence_hours}h",
+                        _utcnow_iso(),
+                        _utcnow_iso(),
+                        task_id,
+                    ),
+                )
+                conn.commit()
+            except Exception as exc:
+                logger.warning("Zombie reclaim move failed for %s: %s", task_id, exc)
+    except Exception as exc:
+        logger.warning("_reclaim_zombie_tasks error: %s", exc)
+    finally:
+        if conn:
+            conn.close()
+
+
+def _has_open_pr(task_id: str) -> bool:
+    """Respawn guard: return True if an open PR already exists for kanban/<task_id>.
+
+    Uses the gh CLI; returns False on any error so dispatch proceeds normally
+    when gh is unavailable (air-gap environments).
+    """
+    branch_name = f"kanban/{task_id}"
+    try:
+        import subprocess as _sp
+        import json as _json
+        result = _sp.run(
+            ["gh", "pr", "list", "--head", branch_name, "--state", "open", "--json", "number"],
+            capture_output=True, text=True, timeout=10, cwd=str(BASE_DIR),
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            prs = _json.loads(result.stdout)
+            return len(prs) > 0
+    except Exception:
+        pass
+    return False
+
+
+def _had_recent_success(task_id: str, within_minutes: int = 30) -> bool:
+    """Respawn guard: return True if this task completed successfully very recently.
+
+    Catches auth-failure loops where a task completes but the executor
+    immediately re-dispatches it due to a stale DB read.
+    """
+    conn = None
+    try:
+        conn = get_connection()
+        row = conn.execute(
+            "SELECT id FROM kanban_status_transitions "
+            "WHERE task_id = ? AND to_status = 'done' "
+            "  AND recorded_at > datetime('now', ? || ' minutes')",
+            (task_id, f"-{within_minutes}"),
+        ).fetchone()
+        return row is not None
+    except Exception:
+        return False
+    finally:
+        if conn:
+            conn.close()
 
 
 def _reap_stale_in_progress() -> None:
@@ -5212,6 +6253,7 @@ def _reap_stale_in_progress() -> None:
     Silent-dispatch threshold: 5 min (log empty + not in _running).
     Only resets tasks NOT currently in _running to avoid killing live agents.
     """
+    conn = None
     try:
         conn = get_connection()
         rows = conn.execute(
@@ -5219,7 +6261,6 @@ def _reap_stale_in_progress() -> None:
             "WHERE status = 'in_progress'"
         ).fetchall()
         if not rows:
-            conn.close()
             return
 
         now = datetime.now(timezone.utc)
@@ -5293,9 +6334,11 @@ def _reap_stale_in_progress() -> None:
             ).fetchone()
             new_fc = (fc_row[0] if fc_row else 0) + 1
             next_status = "suggested" if new_fc >= 5 else "backlog"
+            _is_anomaly, _anomaly_detail = _detect_execution_anomaly(age_seconds)
+            _anomaly_suffix = f" [{_anomaly_detail}]" if _is_anomaly else ""
             reason = (
                 f"stale-reaper: task was in_progress for {age_seconds / 60:.0f} min "
-                f"with {reap_label} (threshold={threshold / 60:.0f} min). "
+                f"with {reap_label} (threshold={threshold / 60:.0f} min){_anomaly_suffix}. "
                 + (
                     f"fc={new_fc}>=5 - escalated to suggested for HITL review."
                     if next_status == "suggested"
@@ -5312,7 +6355,7 @@ def _reap_stale_in_progress() -> None:
                 "WHERE id = ? AND status = 'in_progress'",
                 (next_status, reason, now_iso, now_iso, tid),
             )
-            reaped.append(tid)
+            reaped.append((tid, next_status, reason))
             print(
                 f"  Kanban: stale-reaper reset {tid} "
                 f"(in_progress {age_seconds / 60:.0f} min, {reap_label}) -> {next_status}"
@@ -5320,10 +6363,24 @@ def _reap_stale_in_progress() -> None:
 
         if reaped:
             conn.commit()
-            logger.info("stale-reaper: reset %d orphaned in_progress task(s): %s", len(reaped), reaped)
-        conn.close()
+            reaped_ids = [r[0] for r in reaped]
+            logger.info("stale-reaper: reset %d orphaned in_progress task(s): %s", len(reaped_ids), reaped_ids)
+            # Guard: emit audit-log transitions for every reaped task.
+            # The direct SQL UPDATE above bypasses _move_task, so we must
+            # call _record_status_transition here to keep the forensic trail
+            # intact — especially for 'suggested' escalations which previously
+            # had no audit entry (the /quality-scores stale-cleanup incident).
+            for _tid, _nst, _rsn in reaped:
+                _record_status_transition(
+                    _tid, "in_progress", _nst,
+                    actor="stale-reaper",
+                    reason=_rsn,
+                )
     except Exception as exc:
         logger.warning("stale-reaper sweep error: %s", exc)
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 # Startup-recovery flag: True after the first cycle's stale-in_progress sweep runs.
@@ -5340,13 +6397,13 @@ def _startup_recover_stale_in_progress() -> None:
     if _startup_recovery_done:
         return
     _startup_recovery_done = True
+    conn = None
     try:
         conn = get_connection()
         rows = conn.execute(
             "SELECT id, title, executor_type FROM kanban_tasks WHERE status = 'in_progress'"
         ).fetchall()
         if not rows:
-            conn.close()
             return
         now_iso = datetime.now(timezone.utc).isoformat()
         reason = (
@@ -5367,9 +6424,11 @@ def _startup_recover_stale_in_progress() -> None:
             )
             print(f"  Kanban: startup-recovery reset {tid} in_progress -> backlog")
         conn.commit()
-        conn.close()
     except Exception as exc:
         logger.warning("startup-recovery sweep failed: %s", exc)
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def _check_completed():
@@ -5397,8 +6456,8 @@ def _check_completed():
                 try:
                     proc.kill()
                     proc.wait(timeout=10)
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
 
                 # ── SCAN-ONLY TIMEOUT ACCEPTANCE ─────────────────────
                 # Scan tasks (pytest, codelens, coherence, companion) are
@@ -5408,14 +6467,13 @@ def _check_completed():
                 # command almost certainly completed — Claude was just
                 # formatting the response when killed.  Accept as done.
                 _SCAN_KW_TIMEOUT = ["pytest", "codelens", "coherence",
-                                    "companion", "report pass/fail"]
+                                    "companion", "report pass/fail", "behave"]
                 try:
-                    _stc = get_connection()
-                    _str = _stc.execute(
-                        "SELECT description, task_type FROM kanban_tasks WHERE id = ?",
-                        (task_id,),
-                    ).fetchone()
-                    _stc.close()
+                    with get_connection() as _stc:
+                        _str = _stc.execute(
+                            "SELECT description, task_type FROM kanban_tasks WHERE id = ?",
+                            (task_id,),
+                        ).fetchone()
                     _stdesc = ((_str["description"] or "").lower() if _str else "")
                     _sttype = ((_str["task_type"] or "").lower() if _str else "")
                 except Exception:
@@ -5454,19 +6512,38 @@ def _check_completed():
                     f"TIMEOUT after {int(elapsed)}s "
                     f"(max {task_budget}s) — task exceeded dispatch budget"
                 )
+                # Skip demotion if a task was already marked done externally
+                # (e.g., operator or another agent completed it while this zombie ran).
+                try:
+                    with get_connection() as _done_chk:
+                        _done_row = _done_chk.execute(
+                            "SELECT status FROM kanban_tasks WHERE id = ?", (task_id,),
+                        ).fetchone()
+                    if _done_row and dict(_done_row)["status"] == "done":
+                        logger.info(
+                            "timeout handler: %s is already done — skipping demotion",
+                            task_id,
+                        )
+                        del _running[task_id]
+                        _dispatch_times.pop(task_id, None)
+                        if task_id in _worktrees:
+                            _cleanup_worktree(task_id)
+                            del _worktrees[task_id]
+                        completed.append(task_id)
+                        continue
+                except Exception as _dc_exc:
+                    logger.warning("done-check in timeout handler failed for %s: %s", task_id, _dc_exc)
                 # Increment failure_count so the task health signal is accurate
                 try:
-                    _fc_conn = get_connection()
                     _fc_now = datetime.now(timezone.utc).isoformat()
-                    _fc_conn.execute(
-                        "UPDATE kanban_tasks SET "
-                        "failure_count = COALESCE(failure_count, 0) + 1, "
-                        "last_failure_reason = ?, last_failure_at = ? "
-                        "WHERE id = ?",
-                        (_timeout_reason, _fc_now, task_id),
-                    )
-                    _fc_conn.commit()
-                    _fc_conn.close()
+                    with get_connection() as _fc_conn:
+                        _fc_conn.execute(
+                            "UPDATE kanban_tasks SET "
+                            "failure_count = COALESCE(failure_count, 0) + 1, "
+                            "last_failure_reason = ?, last_failure_at = ? "
+                            "WHERE id = ? AND status != 'done'",
+                            (_timeout_reason, _fc_now, task_id),
+                        )
                 except Exception as _fc_exc:
                     logger.warning("failure_count update failed for %s: %s", task_id, _fc_exc)
                 if _tout_count >= MAX_TIMEOUT_RETRIES:
@@ -5493,13 +6570,11 @@ def _check_completed():
                     _backoff_seconds = _tout_count * 5 * 60
                     _backoff_at = (datetime.now(timezone.utc) + timedelta(seconds=_backoff_seconds)).isoformat()
                     try:
-                        _bo_conn = get_connection()
-                        _bo_conn.execute(
-                            "UPDATE kanban_tasks SET scheduled_at = ? WHERE id = ?",
-                            (_backoff_at, task_id),
-                        )
-                        _bo_conn.commit()
-                        _bo_conn.close()
+                        with get_connection() as _bo_conn:
+                            _bo_conn.execute(
+                                "UPDATE kanban_tasks SET scheduled_at = ? WHERE id = ?",
+                                (_backoff_at, task_id),
+                            )
                     except Exception as _bo_exc:
                         logger.warning("backoff scheduled_at update failed for %s: %s", task_id, _bo_exc)
                     print(
@@ -5509,16 +6584,15 @@ def _check_completed():
                 # Build task dict for notification
                 task_dict = {"id": task_id, "title": task_id}
                 try:
-                    task_conn = get_connection()
-                    row = task_conn.execute(
-                        "SELECT title FROM kanban_tasks WHERE id = ?",
-                        (task_id,),
-                    ).fetchone()
-                    task_conn.close()
+                    with get_connection() as task_conn:
+                        row = task_conn.execute(
+                            "SELECT title FROM kanban_tasks WHERE id = ?",
+                            (task_id,),
+                        ).fetchone()
                     if row:
                         task_dict["title"] = row["title"]
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
                 _send_notification(task_dict, event="failed")
                 try:
                     from tools.notifications.adapters.telegram import (
@@ -5531,8 +6605,8 @@ def _check_completed():
                         f"(timeout {_tout_count}/{MAX_TIMEOUT_RETRIES})",
                         severity="warning",
                     )
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
                 # self-debug reflex: timeouts are their own recurrence class
                 try:
                     from tools.workflow.self_debug import check_and_diagnose
@@ -5567,12 +6641,11 @@ def _check_completed():
             # Build task dict with title from DB or fallback
             task_dict = {"id": task_id, "title": task_id}
             try:
-                task_conn = get_connection()
-                row = task_conn.execute(
-                    "SELECT title, task_type, priority FROM kanban_tasks WHERE id = ?",
-                    (task_id,),
-                ).fetchone()
-                task_conn.close()
+                with get_connection() as task_conn:
+                    row = task_conn.execute(
+                        "SELECT title, task_type, priority FROM kanban_tasks WHERE id = ?",
+                        (task_id,),
+                    ).fetchone()
                 if row:
                     task_dict = {
                         "id": task_id,
@@ -5727,6 +6800,42 @@ def _check_completed():
                 verified, reason = _verify_task_completed(task_id, claude_output)
 
                 if verified:
+                    # ── ADVERSARIAL VERIFY GATE ────────────────────────────
+                    # For non_deterministic tasks with adversarial_enabled=1,
+                    # spawn a second Claude CLI review session. If the verifier
+                    # rejects, return to backlog with feedback injected so the
+                    # next dispatch incorporates the verifier's critique.
+                    _adv_work_dir = _worktrees.get(task_id, str(BASE_DIR))
+                    _adv_passed, _adv_feedback = _run_adversarial_verify(
+                        task_id, _adv_work_dir
+                    )
+                    if not _adv_passed:
+                        _adv_reason = (
+                            f"adversarial_verify: REJECTED — {_adv_feedback[:300]}"
+                        )
+                        logger.warning(
+                            "adversarial gate blocked done for %s: %s",
+                            task_id, _adv_feedback[:100],
+                        )
+                        print(
+                            f"  Kanban: {task_id} ADVERSARIAL REJECTED "
+                            f"— returning to backlog"
+                        )
+                        try:
+                            _move_task(
+                                task_id, "backlog",
+                                actor="adversarial_verifier",
+                                reason=_adv_reason,
+                            )
+                        except Exception as _adv_mt_exc:
+                            logger.error(
+                                "adversarial _move_task(backlog) failed for %s: %s",
+                                task_id, _adv_mt_exc,
+                            )
+                        del _running[task_id]
+                        _dispatch_times.pop(task_id, None)
+                        continue
+
                     try:
                         _move_task(task_id, "done",
                                    actor="scheduler",
@@ -5742,6 +6851,14 @@ def _check_completed():
                     _clear_retry_count(task_id)
                     _clear_resume_at(task_id)
                     _clear_timeout_count(task_id)
+                    # ── LESSONS LEARNED: success ───────────────────────────────
+                    try:
+                        from tools.workflow.lesson_learned import analyze_task, write_lesson, maybe_create_remediation_card
+                        lesson = analyze_task(task_id, outcome="success")
+                        write_lesson(lesson)
+                        maybe_create_remediation_card(lesson)
+                    except Exception:
+                        pass
                 else:
                     print(f"  Kanban: {task_id} UNVERIFIED: {reason}")
                     # Permission-blocked: agent cannot self-resolve a write
@@ -5784,6 +6901,14 @@ def _check_completed():
                                 "_move_task(%s) failed for %s: %s",
                                 new_status, task_id, _mt_exc,
                             )
+                        # ── LESSONS LEARNED: failure ──────────────────────────────
+                        try:
+                            from tools.workflow.lesson_learned import analyze_task, write_lesson, maybe_create_remediation_card
+                            lesson = analyze_task(task_id, outcome="failure")
+                            write_lesson(lesson)
+                            maybe_create_remediation_card(lesson)
+                        except Exception:
+                            pass
 
                 if verified:
                     _send_notification(task_dict, event="done")
@@ -5846,8 +6971,8 @@ def _check_completed():
                     if claude_output:
                         lines = claude_output.split("\n")
                         error_tail = "\n".join(lines[-5:])
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
                 print(f"  Kanban: {task_id} failed (exit {ret}){': ' + error_tail[:200] if error_tail else ''}")
                 # Preserve worktree for debugging/retry — do NOT clean up
                 if task_id in _worktrees:
@@ -5855,8 +6980,8 @@ def _check_completed():
                 try:
                     _move_task(task_id, "backlog")
                     _send_notification(task_dict, event="failed")
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
             del _running[task_id]
     return completed
 
@@ -5921,7 +7046,25 @@ def _check_token_exhausted_tasks() -> list:
                 )
                 continue
 
-            # 4. Check retry count — give up after TOKEN_MAX_RETRY_COUNT
+            # 4a. Per-task circuit breaker — if failure_count has already hit
+            #     max_retries the dispatch function would immediately re-park this
+            #     task as token_exhausted (refreshing updated_at), causing an
+            #     infinite spin loop.  Catch it here instead and send to
+            #     'suggested' for HITL review so the board stays clean.
+            _task_max_retries = int(task.get("max_retries") or 5)
+            _task_failures = int(task.get("failure_count") or 0)
+            if _task_failures >= _task_max_retries:
+                logger.warning(
+                    "Task %s circuit-broken (fc=%d >= max=%d) — parking in 'suggested' for HITL",
+                    task_id, _task_failures, _task_max_retries,
+                )
+                _move_task(task_id, "suggested")
+                _clear_retry_count(task_id)
+                _clear_resume_at(task_id)
+                _send_notification(task, event="circuit_broken")
+                continue
+
+            # 4b. Check token-exhaustion retry count — give up after TOKEN_MAX_RETRY_COUNT
             retry_count = _get_retry_count(task_id)
             if retry_count >= TOKEN_MAX_RETRY_COUNT:
                 logger.info(
@@ -6056,7 +7199,7 @@ def _auto_decompose_stalled_tasks() -> list:
                 processed.append(tid)
                 continue
 
-            _decompose_one_task(task)
+            _decompose_one_task(task, ai_narrative=True)
             processed.append(tid)
         except Exception as exc:
             logger.warning("auto_decompose: LLM failed for %s: %s — falling back to backlog reset", tid, exc)
@@ -6172,8 +7315,87 @@ def _complexity_score(task: dict) -> int:
     return score
 
 
-def _decompose_one_task(task: dict) -> None:
-    """Call LLM to decompose a single needs_decomposition task into subtasks."""
+# ---------------------------------------------------------------------------
+# AI-ification (aiify-opp-5304): optional LLM-synthesized decomposition
+# narrative (metadata_extraction → llm_generation).
+#
+# _decompose_one_task already uses an LLM to decide *how* to split a task.
+# This companion helper synthesises a short, grounded narrative that explains
+# *what* was decided — useful for Telegram notifications, audit trails, and
+# operator dashboards. Any failure degrades silently so the deterministic
+# decomposition always completes.
+# ---------------------------------------------------------------------------
+
+_DECOMPOSE_NARRATIVE_SYSTEM_PROMPT = (
+    "You are a DoD/IC engineering lead writing a brief decomposition note for "
+    "a kanban task. Write a concise narrative (2-4 sentences) that: "
+    "(1) states what the original task was and why it needed splitting, "
+    "(2) describes the resulting subtasks and their execution order, and "
+    "(3) highlights the single most important risk or dependency to watch. "
+    "Use only the facts provided — never invent task IDs, titles, or counts. "
+    "Output only the narrative prose; no headers, no markdown, no preamble."
+)
+
+
+def _ai_decompose_narrative(task_id: str, facts: dict) -> str | None:
+    """Synthesize an optional LLM narrative for a completed task decomposition.
+
+    Args:
+        task_id: The parent task ID being decomposed. Used for log context only;
+            the model receives it through ``facts``.
+        facts: Grounding facts already derived from the deterministic
+            decomposition (task title, subtask count, subtask titles, failure
+            reason if any). Passed verbatim so the narrative cannot drift from
+            the authoritative result.
+
+    Returns:
+        A short narrative string, or ``None`` if generation is unavailable or
+        fails for any reason. Callers MUST treat ``None`` as "no narrative"
+        and proceed with the deterministic decomposition unchanged.
+    """
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        fact_lines = "\n".join(f"- {k}: {v}" for k, v in sorted(facts.items()))
+        req = LLMRequest(
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Task decomposition: {task_id}\n"
+                        f"Facts:\n{fact_lines}\n\n"
+                        "Write the decomposition narrative."
+                    ),
+                }
+            ],
+            system_prompt=_DECOMPOSE_NARRATIVE_SYSTEM_PROMPT,
+            max_tokens=512,
+            temperature=0.3,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("narrative_generation", req)
+        if resp and resp.content:
+            return resp.content.strip()
+    except Exception:
+        pass
+    return None
+
+
+def _decompose_one_task(task: dict, ai_narrative: bool = False) -> dict:
+    """Call LLM to decompose a single needs_decomposition task into subtasks.
+
+    Args:
+        task: Kanban task row dict containing at minimum ``id``.
+        ai_narrative: When ``True``, an optional LLM narrative is synthesized
+            from the decomposition facts and returned under the ``narrative``
+            key. Defaults to ``False`` for backward compatibility.
+
+    Returns:
+        Dict with keys ``subtasks`` (list of inserted child IDs) and
+        ``narrative`` (str or None).
+    """
     from tools.llm.router import LLMRouter, LLMRequest
 
     tid = task["id"]
@@ -6237,12 +7459,18 @@ def _decompose_one_task(task: dict) -> None:
             messages=[{"role": "user", "content": user_prompt}],
             max_tokens=1200,
         )
-        with _cf.ThreadPoolExecutor(max_workers=1) as _pool:
-            _future = _pool.submit(router.invoke, "kanban_decompose", req)
-            try:
-                raw = _future.result(timeout=45)
-            except _cf.TimeoutError:
-                raise RuntimeError("LLM invoke timed out after 45s") from None
+        _pool = _cf.ThreadPoolExecutor(max_workers=1)
+        _future = _pool.submit(router.invoke, "kanban_decompose", req)
+        try:
+            raw = _future.result(timeout=45)
+        except _cf.TimeoutError:
+            # shutdown(wait=False) releases the thread without blocking — the
+            # context-manager form calls shutdown(wait=True) which blocks
+            # forever if the underlying LLM network call never returns.
+            _pool.shutdown(wait=False)
+            raise RuntimeError("LLM invoke timed out after 45s") from None
+        finally:
+            _pool.shutdown(wait=False)
         if isinstance(raw, str):
             response_text = raw
         elif hasattr(raw, "content"):
@@ -6313,16 +7541,37 @@ def _decompose_one_task(task: dict) -> None:
             + ", ".join(inserted)
         )
 
+        # Optional LLM narrative (aiify-opp-5304: metadata_extraction → llm_generation)
+        narrative: str | None = None
+        if ai_narrative:
+            sub_titles = [
+                str(subtasks[i].get("title") or f"{title} — part {i+1}")[:80]
+                for i in range(len(subtasks[:5]))
+            ]
+            narrative = _ai_decompose_narrative(tid, {
+                "task_id": tid,
+                "task_title": title,
+                "subtask_count": len(inserted),
+                "subtask_ids": ", ".join(inserted),
+                "subtask_titles": "; ".join(sub_titles),
+                "failure_reason": failure_reason if not is_upfront else "none (upfront decomposition)",
+            })
+
         # Telegram notification
         try:
             import os as _os
             if not (_os.environ.get("PYTEST_CURRENT_TEST") or
                     _os.environ.get("ICDEV_SUPPRESS_NOTIFICATIONS") == "1"):
                 from tools.notifications.adapters.telegram import send as tg_send
+                body = (
+                    f"Task {tid} was split into {len(inserted)} subtasks: "
+                    + ", ".join(inserted)
+                )
+                if narrative:
+                    body = f"{narrative}\n\nSubtasks: " + ", ".join(inserted)
                 tg_send(
                     f"AUTO-DECOMPOSED: {title[:50]}",
-                    f"Task {tid} was split into {len(inserted)} subtasks: "
-                    + ", ".join(inserted),
+                    body,
                     severity="info",
                 )
         except Exception:
@@ -6330,6 +7579,8 @@ def _decompose_one_task(task: dict) -> None:
 
     finally:
         conn.close()
+
+    return {"subtasks": inserted, "narrative": narrative}
 
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
@@ -6410,13 +7661,42 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     except Exception as _pss_exc:
         logger.warning("suggested-decay sweep failed: %s", _pss_exc)
 
+    # 0g. Zombie reclaim — demote in_progress tasks that sent heartbeats but
+    # have gone silent for >KANBAN_ZOMBIE_SILENCE_HOURS hours (default 2).
+    # Only fires for tasks that have registered at least one heartbeat — tasks
+    # dispatched before heartbeat support was added are left to the existing
+    # stale-in_progress reaper (0d).
+    try:
+        _reclaim_zombie_tasks()
+    except Exception as _zr_exc:
+        logger.warning("zombie reclaim sweep failed: %s", _zr_exc)
+
+    # 0h. Triage sweep — decompose any tasks in 'triage' status via LLM.
+    # Runs every cycle (triage tasks are rare and decomposition is quick).
+    try:
+        conn = get_connection()
+        try:
+            triage_rows = conn.execute(
+                "SELECT id, title, description, triage_prompt FROM kanban_tasks "
+                "WHERE status = 'triage' LIMIT 3"
+            ).fetchall()
+        finally:
+            conn.close()
+        for trow in triage_rows:
+            try:
+                _decompose_triage_task(dict(trow))
+            except Exception as _td_exc:
+                logger.warning("triage decompose failed for %s: %s", dict(trow).get("id"), _td_exc)
+    except Exception as _ts_exc:
+        logger.warning("triage sweep failed: %s", _ts_exc)
+
     # 1. Check for completed claude subprocesses
     completed = _check_completed()
 
-    # 2. Poll Telegram for new commands
-    tg_results = _poll_telegram()
+    # 2. Poll all channels for new commands
+    tg_results = _poll_all_channels()
     if tg_results:
-        print(f"  Kanban: {len(tg_results)} Telegram commands")
+        print(f"  Kanban: {len(tg_results)} channel commands")
 
     # 3. Don't promote new tasks if claude is already running
     #    BUT first clean up stale entries — if the task was marked done/backlog
@@ -6436,11 +7716,10 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         stale_info: list[tuple[str, str]] = []
         for tid, proc in list(_running.items()):
             try:
-                task_conn = get_connection()
-                row = task_conn.execute(
-                    "SELECT status FROM kanban_tasks WHERE id = ?", (tid,),
-                ).fetchone()
-                task_conn.close()
+                with get_connection() as task_conn:
+                    row = task_conn.execute(
+                        "SELECT status FROM kanban_tasks WHERE id = ?", (tid,),
+                    ).fetchone()
                 if row and dict(row)["status"] not in ("in_progress", "scheduled"):
                     # Task was completed/moved externally — clean up. The
                     # cause is most often: agent subprocess died before
@@ -6460,8 +7739,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             if proc:
                 try:
                     proc.kill()
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
             if tid in _worktrees:
                 _cleanup_worktree(tid)
                 del _worktrees[tid]
@@ -6498,32 +7777,37 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 # failure_triage's recency window picks it up.
                 try:
                     now_iso = datetime.now(timezone.utc).isoformat()
-                    _fc_conn = get_connection()
-                    _fc_conn.execute(
-                        "UPDATE kanban_tasks SET "
-                        "  last_failure_reason = ?, "
-                        "  last_failure_at = ?, "
-                        "  updated_at = ? "
-                        "WHERE id = ?",
-                        (reason, now_iso, now_iso, tid),
-                    )
-                    _fc_conn.commit()
-                    _fc_conn.close()
+                    with get_connection() as _fc_conn:
+                        _fc_conn.execute(
+                            "UPDATE kanban_tasks SET "
+                            "  last_failure_reason = ?, "
+                            "  last_failure_at = ?, "
+                            "  updated_at = ? "
+                            "WHERE id = ?",
+                            (reason, now_iso, now_iso, tid),
+                        )
                 except Exception as _fc_exc:
                     logger.warning(
                         "stale-cleanup failure-write failed for %s: %s",
                         tid, _fc_exc,
                     )
+                # ── LESSONS LEARNED: stale cleanup ──────────────────────────
+                try:
+                    from tools.workflow.lesson_learned import analyze_task, write_lesson, maybe_create_remediation_card
+                    lesson = analyze_task(tid, outcome="stale_cleanup")
+                    write_lesson(lesson)
+                    maybe_create_remediation_card(lesson)
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
 
                 # Build a task dict for the local alert queue.
                 task_dict = {"id": tid, "title": tid}
                 try:
-                    _tc = get_connection()
-                    _tr = _tc.execute(
-                        "SELECT title, task_type, priority FROM kanban_tasks "
-                        "WHERE id = ?", (tid,),
-                    ).fetchone()
-                    _tc.close()
+                    with get_connection() as _tc:
+                        _tr = _tc.execute(
+                            "SELECT title, task_type, priority FROM kanban_tasks "
+                            "WHERE id = ?", (tid,),
+                        ).fetchone()
                     if _tr:
                         _tr_d = dict(_tr)
                         task_dict = {
@@ -6532,8 +7816,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                             "task_type": _tr_d.get("task_type"),
                             "priority": _tr_d.get("priority"),
                         }
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
 
                 # Queue the alert locally instead of calling fragile external
                 # notification adapters. The local queue is drained by the
@@ -6545,8 +7829,8 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                         "stale-cleanup local alert queue failed for %s: %s",
                         tid, _qa_exc,
                     )
-                except Exception:
-                    pass
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
 
         # Stale cleanup happened — defer promotion to the next cycle so the
         # quarantine state written by check_and_diagnose has time to settle
@@ -6565,8 +7849,13 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 },
             }
 
-    if _running:
-        print(f"  Kanban: {len(_running)} task(s) executing in claude, waiting...")
+    # 3b. Concurrency gate — only block when we are at MAX_IN_PROGRESS.
+    # With worktree isolation, multiple Claude CLI subprocesses can run
+    # concurrently (each in its own directory).  The stale-cleanup sweep
+    # above already removed any entries whose DB status changed, so
+    # _running only contains genuinely live tasks.
+    if len(_running) >= MAX_IN_PROGRESS:
+        print(f"  Kanban: {len(_running)} task(s) executing (max {MAX_IN_PROGRESS}), waiting...")
         return {
             "success": True,
             "metric_value": len(completed),
@@ -6578,10 +7867,12 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             },
         }
 
-    # 3b. Check for token-exhausted tasks ready for retry
+    # 3c. Check for token-exhausted tasks ready for retry.
+    # We retry ONE task here, but we do NOT return — the function continues
+    # to normal promotion so remaining slots can be filled in the same cycle.
+    token_retry_dispatched = False
     token_retry_tasks = _check_token_exhausted_tasks()
     if token_retry_tasks:
-        # Re-dispatch the highest-priority token-exhausted task
         task = token_retry_tasks[0]
         retry_count = _get_retry_count(task["id"])
         print(
@@ -6599,27 +7890,38 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             if task["id"] in _running:
                 _move_task(task["id"], "in_progress")
                 _send_notification(task, event="in_progress")
-                return {
-                    "success": True,
-                    "metric_value": 1,
-                    "details": {
-                        "status": "token_retry",
-                        "task_id": task["id"],
-                        "retry_count": retry_count,
-                        "completed_this_cycle": completed,
-                        "telegram_commands": len(tg_results),
-                    },
-                }
+                token_retry_dispatched = True
             else:
                 print(f"  Kanban: token retry dispatch failed for {task['id']}")
         except Exception as e:
             print(f"  Kanban: token retry error for {task['id']}: {e}")
+
+    # If a token retry consumed the last available slot, skip normal promotion.
+    if len(_running) >= MAX_IN_PROGRESS:
+        return {
+            "success": True,
+            "metric_value": (1 if token_retry_dispatched else 0) + len(completed),
+            "details": {
+                "status": "token_retry" if token_retry_dispatched else "executing",
+                "running": list(_running.keys()),
+                "completed_this_cycle": completed,
+                "telegram_commands": len(tg_results),
+            },
+        }
 
     # 3c. Auto-decompose tasks stuck at needs_decomposition
     try:
         decomposed = _auto_decompose_stalled_tasks()
         if decomposed:
             print(f"  Kanban: auto-decomposed {len(decomposed)} stalled task(s): {decomposed}")
+            # ── LESSONS LEARNED: stalled auto-decompose ─────────────────
+            for _tid in decomposed:
+                try:
+                    from tools.workflow.lesson_learned import analyze_task, write_lesson
+                    lesson = analyze_task(_tid, outcome="auto_decomposed")
+                    write_lesson(lesson)
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
     except Exception as _ad_exc:
         logger.warning("auto_decompose sweep failed: %s", _ad_exc)
 
@@ -6664,7 +7966,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 f"(score={_cscore}) — decomposing upfront to avoid wasted token run"
             )
             try:
-                _decompose_one_task(task)
+                _decompose_one_task(task, ai_narrative=True)
             except Exception as _pd_exc:
                 logger.warning(
                     "pre-dispatch decompose failed for %s (%s) — dispatching anyway",
@@ -6674,6 +7976,13 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 # Decomposed successfully — skip dispatch for this task;
                 # children will be picked up next cycle. Continue to next task.
                 decomposed_this_cycle.append(task["id"])
+                # ── LESSONS LEARNED: pre-dispatch complexity decompose ────
+                try:
+                    from tools.workflow.lesson_learned import analyze_task, write_lesson
+                    lesson = analyze_task(task["id"], outcome="auto_decomposed")
+                    write_lesson(lesson)
+                except Exception as _ll_exc:
+                    logger.warning("lesson_learned hook failed: %s", _ll_exc)
                 continue
 
         try:

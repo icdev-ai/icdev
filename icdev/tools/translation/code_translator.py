@@ -150,18 +150,30 @@ def _build_prompt(
 
 
 def _invoke_llm(prompt, config, function_name="code_translation"):
-    """Invoke LLM via the router. Returns translated code string."""
+    """Invoke the LLM for one translation candidate and return the code string.
+
+    Routes through ``reasoned_codegen`` so that, when enabled in
+    ``args/llm_config.yaml`` (``reasoned_codegen.per_function.code_translation``,
+    default mode ``cot``), generation uses Chain-of-Thought; otherwise the
+    wrapper is a byte-identical passthrough to ``router.invoke``. Project-level
+    verification + compiler-feedback repair remain in Phase 5
+    (``translation_validator``); this is generation only (no per-unit verifier).
+
+    Returns the translated code, or ``None`` on failure — the caller then falls
+    back to the next pass@k candidate and, ultimately, mock-and-continue (D256).
+    """
     try:
         from tools.llm.router import LLMRouter
         from tools.llm.provider import LLMRequest
+        from tools.llm.reasoned_codegen import generate_reasoned_code
 
         router = LLMRouter()
         request = LLMRequest(
             messages=[{"role": "user", "content": prompt}],
             temperature=config.get("translation", {}).get("temperature", 0.2),
         )
-        response = router.invoke(function_name, request)
-        return response.content if response and response.content else None
+        result = generate_reasoned_code(function=function_name, request=request, router=router)
+        return result.code if result and result.code else None
     except ImportError:
         return None
     except Exception:

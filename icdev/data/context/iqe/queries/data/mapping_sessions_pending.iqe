@@ -1,0 +1,8 @@
+# Intent: List AI mapping sessions still in progress (pending or ingested state).
+#         Incomplete sessions indicate schema mapping work that is blocking downstream
+#         data integration pipelines.
+# Expected shape: rows from data.mapping_sessions where status is pending or ingested.
+
+foreach s in data.mapping_sessions
+  where s.status == "pending" or s.status == "ingested"
+  select s.id, s.name, s.source_format, s.target_format, s.status, s.created_at

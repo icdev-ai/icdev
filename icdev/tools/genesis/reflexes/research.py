@@ -32,6 +32,55 @@ IMPLEMENTATION_STATUS = "full"
 
 logger = get_logger(__name__)
 
+# --- NLP Scraper config (html_scrape feed type) ---
+_nlp_scraper_cfg: Dict[str, Any] = {}
+try:
+    import yaml as _yaml
+
+    _nlp_scraper_yaml = BASE_DIR / "args" / "aiify_config.yaml"
+    if _nlp_scraper_yaml.exists():
+        with open(_nlp_scraper_yaml, "r", encoding="utf-8") as _f:
+            _nlp_scraper_cfg = (_yaml.safe_load(_f) or {}).get("research_nlp_scraper", {})
+except Exception:
+    pass
+
+_RESEARCH_NLP_ENABLED: bool = (
+    os.environ.get("ICDEV_RESEARCH_NLP_SCRAPER", "").lower() in ("1", "true", "yes")
+    or bool(_nlp_scraper_cfg.get("enabled", False))
+)
+_RESEARCH_NLP_MODEL: str = str(_nlp_scraper_cfg.get("model", "claude-haiku-4-5-20251001"))
+_RESEARCH_NLP_MAX_TOKENS: int = int(_nlp_scraper_cfg.get("max_tokens", 256))
+
+_NLP_SCRAPER_SYSTEM = (
+    "You are a link extractor for a security intelligence feed scraper. "
+    "Given an HTML snippet and an optional topic pattern, extract relevant hyperlink URLs. "
+    "Return one URL per line — no bullets, no labels, no explanation. "
+    "If a topic pattern is provided, only include links whose path or anchor text matches it. "
+    "If no topic is provided, return all non-navigation hrefs. "
+    "Return at most 20 URLs."
+)
+
+_NLP_LINK_CACHE: Dict[str, List[str]] = {}
+
+# --- Research reflex configurable thresholds (aiify_config.yaml: research_reflex) ---
+_research_reflex_cfg: Dict[str, Any] = {}
+try:
+    import yaml as _yaml_rf
+
+    _research_reflex_yaml = BASE_DIR / "args" / "aiify_config.yaml"
+    if _research_reflex_yaml.exists():
+        with open(_research_reflex_yaml, "r", encoding="utf-8") as _rf:
+            _research_reflex_cfg = (_yaml_rf.safe_load(_rf) or {}).get("research_reflex", {})
+except Exception:
+    pass
+
+_MAX_ENTRIES_PER_FEED: int = int(_research_reflex_cfg.get("max_entries_per_feed", 10))
+_MAX_JSON_ITEMS: int = int(_research_reflex_cfg.get("max_json_items", 20))
+_MAX_KEV_VULNS: int = int(_research_reflex_cfg.get("max_kev_vulns", 20))
+_SIGNAL_CONFIDENCE: float = float(_research_reflex_cfg.get("signal_confidence", 0.7))
+_SIGNAL_BASE_SCORE: int = int(_research_reflex_cfg.get("signal_base_score", 50))
+_HTML_SNIPPET_LIMIT: int = int(_research_reflex_cfg.get("html_snippet_limit", 4000))
+
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -115,7 +164,7 @@ def _parse_json_feed(json_text: str) -> List[Dict[str, str]]:
         data = json.loads(json_text)
         # CISA KEV format
         if "vulnerabilities" in data:
-            for vuln in data["vulnerabilities"][:20]:
+            for vuln in data["vulnerabilities"][:_MAX_KEV_VULNS]:
                 entries.append(
                     {
                         "title": f"KEV: {vuln.get('cveID', 'Unknown')} — {vuln.get('vendorProject', '')} {vuln.get('product', '')}",  # noqa: E501
@@ -126,7 +175,7 @@ def _parse_json_feed(json_text: str) -> List[Dict[str, str]]:
                 )
         # Generic JSON array
         elif isinstance(data, list):
-            for item in data[:20]:
+            for item in data[:_MAX_JSON_ITEMS]:
                 if isinstance(item, dict) and "title" in item:
                     entries.append(
                         {
@@ -169,9 +218,9 @@ def _export_signal(feed_name: str, entry: Dict[str, str]) -> Optional[str]:
                 "source": f"genesis_research:{feed_name}",
                 "url": entry.get("link", ""),
                 "published": entry.get("published", ""),
-                "score": 50,
+                "score": _SIGNAL_BASE_SCORE,
             },
-            confidence=0.7,
+            confidence=_SIGNAL_CONFIDENCE,
             evidence={"feed": feed_name, "fetched_at": _utcnow_iso()},
         )
         if result.get("status") == "exported":
@@ -179,6 +228,52 @@ def _export_signal(feed_name: str, entry: Dict[str, str]) -> Optional[str]:
     except Exception as e:
         print(f"  WARN: Failed to export signal: {e}")
     return None
+
+
+def _extract_links_nlp(html_content: str, feed_config: Dict[str, Any]) -> Optional[List[str]]:
+    """Extract links from HTML using an LLM NLP extractor.
+
+    Returns a list of href strings, or None if NLP is disabled/unavailable.
+    Falls back to None so the caller can apply the regex path.
+    """
+    if not _RESEARCH_NLP_ENABLED:
+        return None
+
+    cache_key = _sha256(html_content[:2000] + feed_config.get("scrape_pattern", ""))
+    if cache_key in _NLP_LINK_CACHE:
+        return _NLP_LINK_CACHE[cache_key]
+
+    try:
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+    except ImportError:
+        return None
+
+    try:
+        html_snippet = html_content[:_HTML_SNIPPET_LIMIT]
+        pattern_hint = feed_config.get("scrape_pattern", "")
+        user_content = f"HTML:\n{html_snippet}"
+        if pattern_hint:
+            user_content = f"Topic pattern: {pattern_hint}\n\n{user_content}"
+
+        router = LLMRouter()
+        request = LLMRequest(
+            messages=[{"role": "user", "content": user_content}],
+            system_prompt=_NLP_SCRAPER_SYSTEM,
+            model=_RESEARCH_NLP_MODEL,
+            max_tokens=_RESEARCH_NLP_MAX_TOKENS,
+            temperature=0.0,
+            skip_injection_scan=True,
+        )
+        response = router.invoke("research_nlp_scraper", request)
+        if not (response and response.content):
+            return None
+
+        links = [line.strip() for line in response.content.strip().splitlines() if line.strip()]
+        _NLP_LINK_CACHE[cache_key] = links
+        return links
+    except Exception:
+        return None
 
 
 def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
@@ -236,12 +331,19 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             if not content:
                 feed_results.append({"feed": feed_name, "status": "fetch_failed"})
                 continue
-            import re as _re
-            pattern = feed.get("scrape_pattern", "")
-            # Extract all hrefs from anchor tags
-            hrefs = _re.findall(r'href=["\']([^"\']+)["\']', content)
-            if pattern:
-                hrefs = [h for h in hrefs if _re.search(pattern, h, _re.IGNORECASE)]
+
+            # NLP extractor (preferred): topic-aware link extraction via LLM.
+            # Falls back to regex when NLP is disabled or the LLM is unavailable.
+            nlp_hrefs = _extract_links_nlp(content, feed)
+            if nlp_hrefs is not None:
+                hrefs = nlp_hrefs
+            else:
+                import re as _re
+                pattern = feed.get("scrape_pattern", "")
+                hrefs = _re.findall(r'href=["\']([^"\']+)["\']', content)
+                if pattern:
+                    hrefs = [h for h in hrefs if _re.search(pattern, h, _re.IGNORECASE)]
+
             # Deduplicate and build entries
             seen: set = set()
             entries = []
@@ -295,7 +397,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             entries = _parse_rss(content)
 
         new_count = 0
-        for entry in entries[:10]:  # Cap at 10 per feed per cycle
+        for entry in entries[:_MAX_ENTRIES_PER_FEED]:
             content_hash = _sha256(f"{entry['title']}:{entry.get('description', '')}")
             if _is_duplicate(content_hash):
                 total_dupes += 1

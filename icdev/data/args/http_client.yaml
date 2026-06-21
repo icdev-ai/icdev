@@ -5,3 +5,15 @@ timeout:
 max_retries: 3
 backoff_factor: 0.5
 max_redirects: 10
+content_chunk_size: 10240   # bytes per chunk when iterating response content (requests CONTENT_CHUNK_SIZE)
+iter_chunk_size: 512        # default chunk size passed to Response.iter_content()
+
+# Default well-known ports (mirrors requests.utils.DEFAULT_PORTS but configurable)
+default_ports:
+  http: 80
+  https: 443
+
+# IPv4 CIDR subnet mask valid range — used by is_valid_cidr() equivalent
+cidr_mask_bits:
+  min: 1
+  max: 32

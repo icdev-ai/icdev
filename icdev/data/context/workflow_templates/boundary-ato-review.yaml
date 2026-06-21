@@ -1,0 +1,40 @@
+name: Authorization Boundary ATO Review
+description: Full ATO boundary review — ISA validation, interconnection risk scoring, and AO approval gate.
+category: compliance
+tags: [ato, boundary, isa, interconnection, bdc]
+author: builtin
+steps:
+  - id: boundary_scan
+    name: Boundary Inventory Scan
+    tool: tools/boundary_canvas/boundary_scanner.py
+    node_type: tool
+    required: true
+    timeout: 300
+  - id: isa_validate
+    name: ISA Lifecycle Validation
+    tool: tools/boundary_canvas/isa_validator.py
+    node_type: tool
+    required: true
+    timeout: 180
+    depends_on: [boundary_scan]
+  - id: risk_score
+    name: Interconnection Risk Scoring
+    tool: tools/boundary_canvas/risk_scorer.py
+    node_type: tool
+    required: true
+    timeout: 180
+    depends_on: [isa_validate]
+  - id: isso_review
+    name: ISSO Boundary Review
+    tool: ""
+    node_type: human
+    role: isso
+    required: true
+    depends_on: [risk_score]
+  - id: ao_approval
+    name: AO Boundary Approval
+    tool: ""
+    node_type: approval
+    role: authorizing_official
+    approval_policy: any
+    depends_on: [isso_review]

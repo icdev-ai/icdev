@@ -21,6 +21,10 @@
     style="background:none;color:#5a7aa0;padding:6px 16px;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
     Document Versions <span style="background:#1e293b;color:#94a3b8;border-radius:9px;padding:1px 6px;font-size:10px;margin-left:4px;">{{ pending_versions|length }}</span>
   </button>
+  <button id="tab-docs" onclick="setTab('documents')"
+    style="background:none;color:#5a7aa0;padding:6px 16px;border:none;border-radius:4px;cursor:pointer;font-size:12px;">
+    Documents <span style="background:#1e293b;color:#94a3b8;border-radius:9px;padding:1px 6px;font-size:10px;margin-left:4px;">{{ pending_docs|length }}</span>
+  </button>
 </div>
 
 <!-- SSP Fragments Panel -->
@@ -30,11 +34,24 @@
   <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;">
     <div>
       <span style="color:#eaeaea;font-size:14px;font-weight:600;">{{ f.control_id }}</span>
+      {% if f.status == 'needs_revision' %}
+      <span style="background:#2e1a05;color:#fbbf24;font-size:10px;padding:2px 7px;border-radius:3px;margin-left:8px;">✏️ Needs Revision</span>
+      {% else %}
       <span style="background:#052e16;color:#4ade80;font-size:10px;padding:2px 7px;border-radius:3px;margin-left:8px;">AI-generated · pending review</span>
+      {% endif %}
+      <span style="background:#1a2e52;color:#7ab3f0;font-size:10px;padding:2px 7px;border-radius:3px;margin-left:4px;">{{ role_badge(f.user_role) }}</span>
     </div>
     <span style="color:#7a8cb0;font-size:11px;">{{ f.created_at }}</span>
   </div>
   <div style="color:#7a8cb0;font-size:11px;margin-bottom:6px;">Document: {{ f.document_id }}</div>
+  {% if f.assigned_to %}
+  <div style="color:#94a3b8;font-size:11px;margin-bottom:6px;">Assigned to: <strong>{{ f.assigned_to }}</strong></div>
+  {% endif %}
+  {% if f.latest_note %}
+  <div style="background:#0a1a2e;border:1px solid #1a3a5e;border-radius:4px;padding:6px 10px;margin-bottom:8px;font-size:11px;color:#7ab3f0;">
+    📝 Latest note: {{ f.latest_note[:200] }}{% if f.latest_note|length > 200 %}…{% endif %}
+  </div>
+  {% endif %}
   {% if f.fragment_text %}
   <div style="background:#050d1f;border-left:3px solid #1e3a6e;padding:10px 14px;border-radius:0 4px 4px 0;color:#a8c8e0;font-size:12px;line-height:1.7;margin-bottom:10px;max-height:160px;overflow-y:auto;">
     {{ f.fragment_text[:800] }}{% if f.fragment_text|length > 800 %}…{% endif %}
@@ -45,17 +62,30 @@
     CoD Verdict: {{ f.cod_verdict }}
   </div>
   {% endif %}
-  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
     <button onclick="reviewFragment('{{ f.fragment_id }}', 'approve')"
-      style="background:#052e16;color:#4ade80;padding:7px 16px;border:1px solid #1a5a30;border-radius:5px;cursor:pointer;font-size:12px;">
+      style="background:#052e16;color:#4ade80;padding:7px 16px;border:1px solid #1a5a30;border-radius:5px;cursor:pointer;font-size:12px;"
+      {% if role_levels.get(f.user_role,0) < 2 %}disabled title="Reviewer or Admin required"{% endif %}>
       ✓ Approve
     </button>
     <button onclick="reviewFragment('{{ f.fragment_id }}', 'reject')"
-      style="background:#2e0505;color:#f87171;padding:7px 16px;border:1px solid #5a1a1a;border-radius:5px;cursor:pointer;font-size:12px;">
+      style="background:#2e0505;color:#f87171;padding:7px 16px;border:1px solid #5a1a1a;border-radius:5px;cursor:pointer;font-size:12px;"
+      {% if role_levels.get(f.user_role,0) < 2 %}disabled title="Reviewer or Admin required"{% endif %}>
       ✕ Reject
+    </button>
+    <button onclick="reviewFragment('{{ f.fragment_id }}', 'revise')"
+      style="background:#2e1a05;color:#fbbf24;padding:7px 16px;border:1px solid #5a3a1a;border-radius:5px;cursor:pointer;font-size:12px;"
+      {% if role_levels.get(f.user_role,0) < 2 %}disabled title="Reviewer or Admin required"{% endif %}>
+      ✏️ Revise
     </button>
     <input type="text" id="note-{{ f.fragment_id }}" placeholder="Review note (optional)"
       style="flex:1;min-width:200px;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:6px 10px;border-radius:5px;font-size:12px;">
+    <select id="assign-{{ f.fragment_id }}" onchange="assignItem('{{ f.fragment_id }}', 'fragment', this.value)"
+      style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:6px 8px;border-radius:5px;font-size:12px;"
+      {% if role_levels.get(f.user_role,0) < 1 %}disabled title="Editor or higher required"{% endif %}>
+      <option value="">Assign to…</option>
+      <option value="{{ current_user }}">{{ current_user }} (me)</option>
+    </select>
   </div>
 </div>
 {% else %}
@@ -73,20 +103,56 @@
     <div>
       <span style="color:#eaeaea;font-size:14px;font-weight:600;">{{ v.doc_title or v.doc_id }}</span>
       <span style="background:#1a2e52;color:#7ab3f0;font-size:10px;padding:2px 7px;border-radius:3px;margin-left:8px;">v{{ v.version_no }}</span>
+      {% if v.status == 'needs_revision' %}
+      <span style="background:#2e1a05;color:#fbbf24;font-size:10px;padding:2px 7px;border-radius:3px;margin-left:4px;">✏️ Needs Revision</span>
+      {% else %}
       <span style="background:#052e16;color:#4ade80;font-size:10px;padding:2px 7px;border-radius:3px;margin-left:4px;">{{ v.origin }}</span>
+      {% endif %}
+      <span style="background:#1a2e52;color:#7ab3f0;font-size:10px;padding:2px 7px;border-radius:3px;margin-left:4px;">{{ role_badge(v.user_role) }}</span>
     </div>
     <span style="color:#7a8cb0;font-size:11px;">{{ v.created_at }}</span>
   </div>
   <div style="color:#7a8cb0;font-size:11px;margin-bottom:10px;">Created by: {{ v.created_by or '—' }}</div>
-  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+  {% if v.assigned_to %}
+  <div style="color:#94a3b8;font-size:11px;margin-bottom:8px;">Assigned to: <strong>{{ v.assigned_to }}</strong></div>
+  {% endif %}
+  {% if v.latest_note %}
+  <div style="background:#0a1a2e;border:1px solid #1a3a5e;border-radius:4px;padding:6px 10px;margin-bottom:8px;font-size:11px;color:#7ab3f0;">
+    📝 Latest note: {{ v.latest_note[:200] }}{% if v.latest_note|length > 200 %}…{% endif %}
+  </div>
+  {% endif %}
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
     <button onclick="reviewVersion('{{ v.version_id }}', 'approve')"
-      style="background:#052e16;color:#4ade80;padding:7px 16px;border:1px solid #1a5a30;border-radius:5px;cursor:pointer;font-size:12px;">
+      style="background:#052e16;color:#4ade80;padding:7px 16px;border:1px solid #1a5a30;border-radius:5px;cursor:pointer;font-size:12px;"
+      {% if role_levels.get(v.user_role,0) < 2 %}disabled title="Reviewer or Admin required"{% endif %}>
       ✓ Approve &amp; Publish
     </button>
     <button onclick="reviewVersion('{{ v.version_id }}', 'reject')"
-      style="background:#2e0505;color:#f87171;padding:7px 16px;border:1px solid #5a1a1a;border-radius:5px;cursor:pointer;font-size:12px;">
+      style="background:#2e0505;color:#f87171;padding:7px 16px;border:1px solid #5a1a1a;border-radius:5px;cursor:pointer;font-size:12px;"
+      {% if role_levels.get(v.user_role,0) < 2 %}disabled title="Reviewer or Admin required"{% endif %}>
       ✕ Reject
     </button>
+    <button onclick="reviewVersion('{{ v.version_id }}', 'revise')"
+      style="background:#2e1a05;color:#fbbf24;padding:7px 16px;border:1px solid #5a3a1a;border-radius:5px;cursor:pointer;font-size:12px;"
+      {% if role_levels.get(v.user_role,0) < 2 %}disabled title="Reviewer or Admin required"{% endif %}>
+      ✏️ Revise
+    </button>
+    <select id="assign-ver-{{ v.version_id }}" onchange="assignItem('{{ v.version_id }}', 'version', this.value)"
+      style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:6px 8px;border-radius:5px;font-size:12px;"
+      {% if role_levels.get(v.user_role,0) < 1 %}disabled title="Editor or higher required"{% endif %}>
+      <option value="">Assign to…</option>
+      <option value="{{ current_user }}">{{ current_user }} (me)</option>
+      {% set cid = v.collection_id or 'default' %}
+      {% for m in team_map.get(cid, []) %}
+      <option value="{{ m.user_id }}">{{ m.user_id }} ({{ m.role }})</option>
+      {% endfor %}
+    </select>
+  </div>
+  <!-- Sections toggle -->
+  <div style="margin-top:10px;">
+    <button onclick="toggleSections('{{ v.version_id }}')"
+      style="background:#0a1a2e;color:#7ab3f0;padding:5px 12px;border:1px solid #1a3a5e;border-radius:4px;cursor:pointer;font-size:11px;">📄 View / Regenerate Sections</button>
+    <div id="sec-panel-{{ v.version_id }}" style="display:none;margin-top:10px;"></div>
   </div>
 </div>
 {% else %}
@@ -96,20 +162,167 @@
 {% endfor %}
 </div>
 
+<!-- Documents Panel -->
+<div id="panel-documents" style="display:none;">
+{% for pd in pending_docs %}
+<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:16px;margin-bottom:14px;" id="doc-{{ pd.doc_id }}">
+  <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;">
+    <div>
+      <span style="color:#eaeaea;font-size:14px;font-weight:600;">{{ pd.title or pd.filename or pd.doc_id }}</span>
+      <span style="background:#1a2e52;color:#7ab3f0;font-size:10px;padding:2px 7px;border-radius:3px;margin-left:8px;">{{ pd.pending_section_count }} pending section{{ 's' if pd.pending_section_count != 1 else '' }}</span>
+      <span style="background:#1a2e52;color:#7ab3f0;font-size:10px;padding:2px 7px;border-radius:3px;margin-left:4px;">{{ role_badge(pd.user_role) }}</span>
+    </div>
+    <span style="color:#7a8cb0;font-size:11px;">{{ pd.classification or 'CUI' }}</span>
+  </div>
+  <div style="color:#7a8cb0;font-size:11px;margin-bottom:10px;">Collection: {{ pd.collection_id }} · <a href="/document-intelligence/doc/{{ pd.doc_id }}" style="color:#7ab3f0;">Open document →</a></div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+    <button onclick="reviewDoc('{{ pd.doc_id }}', 'approve')"
+      style="background:#052e16;color:#4ade80;padding:7px 16px;border:1px solid #1a5a30;border-radius:5px;cursor:pointer;font-size:12px;"
+      {% if role_levels.get(pd.user_role,0) < 2 %}disabled title="Reviewer or Admin required"{% endif %}>
+      ✓ Approve All
+    </button>
+    <button onclick="reviewDoc('{{ pd.doc_id }}', 'reject')"
+      style="background:#2e0505;color:#f87171;padding:7px 16px;border:1px solid #5a1a1a;border-radius:5px;cursor:pointer;font-size:12px;"
+      {% if role_levels.get(pd.user_role,0) < 2 %}disabled title="Reviewer or Admin required"{% endif %}>
+      ✕ Reject All
+    </button>
+    <button onclick="reviewDoc('{{ pd.doc_id }}', 'revise')"
+      style="background:#2e1a05;color:#fbbf24;padding:7px 16px;border:1px solid #5a3a1a;border-radius:5px;cursor:pointer;font-size:12px;"
+      {% if role_levels.get(pd.user_role,0) < 2 %}disabled title="Reviewer or Admin required"{% endif %}>
+      ✏️ Revise All
+    </button>
+  </div>
+</div>
+{% else %}
+<div style="background:#0b1726;border:1px solid #1a3560;border-radius:8px;padding:24px;text-align:center;color:#3a6080;">
+  No documents with pending sections.
+</div>
+{% endfor %}
+</div>
+
 <script>
 function setTab(tab) {
   var isFrag = tab === 'fragments';
+  var isVers = tab === 'versions';
+  var isDocs = tab === 'documents';
   document.getElementById('tab-frags').style.background = isFrag ? '#0f3460' : 'none';
   document.getElementById('tab-frags').style.color = isFrag ? '#7ab3f0' : '#5a7aa0';
-  document.getElementById('tab-vers').style.background = isFrag ? 'none' : '#0f3460';
-  document.getElementById('tab-vers').style.color = isFrag ? '#5a7aa0' : '#7ab3f0';
+  document.getElementById('tab-vers').style.background = isVers ? '#0f3460' : 'none';
+  document.getElementById('tab-vers').style.color = isVers ? '#7ab3f0' : '#5a7aa0';
+  document.getElementById('tab-docs').style.background = isDocs ? '#0f3460' : 'none';
+  document.getElementById('tab-docs').style.color = isDocs ? '#7ab3f0' : '#5a7aa0';
   document.getElementById('panel-fragments').style.display = isFrag ? 'block' : 'none';
-  document.getElementById('panel-versions').style.display = isFrag ? 'none' : 'block';
+  document.getElementById('panel-versions').style.display = isVers ? 'block' : 'none';
+  document.getElementById('panel-documents').style.display = isDocs ? 'block' : 'none';
+}
+
+function reviewDoc(docId, action) {
+  var note = prompt('Bulk review note (optional):') || '';
+  fetch('/document-intelligence/api/review/' + docId + '/' + action, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({type: 'version', reviewer: 'current_user', note: note})
+  }).then(function(r) { return r.json(); })
+    .then(function(data) {
+      var el = document.getElementById('doc-' + docId);
+      if (el) {
+        el.style.opacity = '.4';
+        var label = action === 'approve' ? '✓ Approved' : action === 'reject' ? '✕ Rejected' : '✏️ Revision Requested';
+        var color = action === 'approve' ? '#4ade80' : action === 'reject' ? '#f87171' : '#fbbf24';
+        el.innerHTML += '<div style="color:' + color + ';font-size:12px;margin-top:8px;">' + label + '</div>';
+        el.querySelectorAll('button').forEach(function(b) { b.disabled = true; });
+      }
+    })
+    .catch(function() { alert('Action failed.'); });
+}
+
+function toggleSections(versionId) {
+  var panel = document.getElementById('sec-panel-' + versionId);
+  if (!panel) return;
+  if (panel.style.display === 'none') {
+    panel.style.display = 'block';
+    loadSections(versionId);
+  } else {
+    panel.style.display = 'none';
+  }
+}
+
+function loadSections(versionId) {
+  var panel = document.getElementById('sec-panel-' + versionId);
+  if (!panel) return;
+  panel.innerHTML = '<div style="color:#5a7aa0;font-size:11px;">Loading sections…</div>';
+  fetch('/document-intelligence/api/versions/' + versionId + '/sections')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error || !data.sections) {
+        panel.innerHTML = '<div style="color:#f87171;font-size:11px;">Failed to load sections.</div>';
+        return;
+      }
+      var html = data.sections.map(function(s) {
+        var badge = s.status === 'approved'
+          ? '<span style="background:#052e16;color:#4ade80;font-size:10px;padding:1px 6px;border-radius:3px;margin-left:6px;">✓ Approved</span>'
+          : s.status === 'rejected'
+            ? '<span style="background:#2e0505;color:#f87171;font-size:10px;padding:1px 6px;border-radius:3px;margin-left:6px;">✕ Rejected</span>'
+            : '<span style="background:#1e293b;color:#94a3b8;font-size:10px;padding:1px 6px;border-radius:3px;margin-left:6px;">Pending</span>';
+        return '<div style="background:#050d1f;border:1px solid #1a3560;border-radius:4px;padding:10px;margin-bottom:8px;">' +
+          '<div style="font-size:12px;color:#9bb8d8;font-weight:600;">' + escHtml(s.heading || '') + badge + '</div>' +
+          '<div style="font-size:11px;color:#a8c8e0;line-height:1.6;margin-top:6px;">' + escHtml((s.content || '').slice(0, 400)) + '</div>' +
+          '<button onclick="regenSection(\'' + escJs(versionId) + '\', \'' + escJs(s.heading || '') + '\')" ' +
+          'style="margin-top:6px;background:#1a2e52;color:#7ab3f0;padding:4px 10px;border:1px solid #1e3a6e;border-radius:3px;cursor:pointer;font-size:10px;">' +
+          '↻ Regenerate Section</button>' +
+          '</div>';
+      }).join('');
+      panel.innerHTML = html || '<div style="color:#5a7aa0;font-size:11px;">No sections found.</div>';
+    })
+    .catch(function() {
+      panel.innerHTML = '<div style="color:#f87171;font-size:11px;">Failed to load sections.</div>';
+    });
+}
+
+function regenSection(versionId, heading) {
+  if (!confirm('Regenerate section "' + heading + '" with targeted retrieval?')) return;
+  fetch('/document-intelligence/api/generate/section', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({version_id: versionId, heading: heading, collection_id: 'default'})
+  }).then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.error) { alert('Regeneration failed: ' + data.error); return; }
+      alert('Section regenerated. Reloading…');
+      loadSections(versionId);
+    })
+    .catch(function() { alert('Regeneration failed.'); });
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+}
+
+function escJs(s) {
+  return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'\\"').replace(/\n/g,'\\n');
+}
+
+function assignItem(id, type, assignedTo) {
+  if (!assignedTo) return;
+  fetch('/document-intelligence/api/review/' + id + '/assign', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({type: type, assigned_to: assignedTo})
+  }).then(function(r) { return r.json(); })
+    .then(function(data) {
+      if (data.status === 'assigned') {
+        location.reload();
+      } else {
+        alert('Assign failed: ' + (data.error || 'unknown'));
+      }
+    })
+    .catch(function() { alert('Assign failed.'); });
 }
 
 function reviewFragment(id, action) {
   var note = (document.getElementById('note-' + id) || {}).value || '';
-  fetch('/document-intelligence/api/review/' + id + '/' + action, {
+  var url = '/document-intelligence/api/review/' + id + '/' + (action === 'revise' ? 'revise' : action);
+  fetch(url, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({note: note, reviewer: 'current_user'})
@@ -118,8 +331,9 @@ function reviewFragment(id, action) {
       var el = document.getElementById('frag-' + id);
       if (el) {
         el.style.opacity = '.4';
-        el.innerHTML += '<div style="color:' + (action==='approve'?'#4ade80':'#f87171') + ';font-size:12px;margin-top:8px;">' +
-          (action==='approve' ? '✓ Approved' : '✕ Rejected') + '</div>';
+        var label = action === 'approve' ? '✓ Approved' : action === 'reject' ? '✕ Rejected' : '✏️ Revision Requested';
+        var color = action === 'approve' ? '#4ade80' : action === 'reject' ? '#f87171' : '#fbbf24';
+        el.innerHTML += '<div style="color:' + color + ';font-size:12px;margin-top:8px;">' + label + '</div>';
         el.querySelectorAll('button').forEach(function(b) { b.disabled = true; });
       }
     })
@@ -127,7 +341,8 @@ function reviewFragment(id, action) {
 }
 
 function reviewVersion(id, action) {
-  fetch('/document-intelligence/api/review/' + id + '/' + action, {
+  var url = '/document-intelligence/api/review/' + id + '/' + (action === 'revise' ? 'revise' : action);
+  fetch(url, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({type: 'version', reviewer: 'current_user'})
@@ -136,8 +351,9 @@ function reviewVersion(id, action) {
       var el = document.getElementById('ver-' + id);
       if (el) {
         el.style.opacity = '.4';
-        el.innerHTML += '<div style="color:' + (action==='approve'?'#4ade80':'#f87171') + ';font-size:12px;margin-top:8px;">' +
-          (action==='approve' ? '✓ Approved & Published' : '✕ Rejected') + '</div>';
+        var label = action === 'approve' ? '✓ Approved & Published' : action === 'reject' ? '✕ Rejected' : '✏️ Revision Requested';
+        var color = action === 'approve' ? '#4ade80' : action === 'reject' ? '#f87171' : '#fbbf24';
+        el.innerHTML += '<div style="color:' + color + ';font-size:12px;margin-top:8px;">' + label + '</div>';
         el.querySelectorAll('button').forEach(function(b) { b.disabled = true; });
       }
     })

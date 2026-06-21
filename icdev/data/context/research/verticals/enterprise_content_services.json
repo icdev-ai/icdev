@@ -1,0 +1,177 @@
+{
+  "id": "vert-enterprise-content-services",
+  "name": "Enterprise Content Services & Document Intelligence",
+  "slug": "enterprise_content_services",
+  "description": "Enterprise document management (DMS/ECM), content services platforms, document lifecycle automation, knowledge retention and handoff, compliance/records management, intelligent document processing (IDP), grounded document Q&A, and AI-assisted document generation with provenance and anti-hallucination controls for regulated and air-gapped environments.",
+  "keywords": [
+    "document management system",
+    "enterprise content management",
+    "ECM",
+    "content services platform",
+    "CSP",
+    "document lifecycle",
+    "records management",
+    "knowledge management",
+    "knowledge retention",
+    "knowledge handoff",
+    "intelligent document processing",
+    "IDP",
+    "document AI",
+    "document generation",
+    "retrieval augmented generation",
+    "grounded question answering",
+    "document provenance",
+    "citation grounding",
+    "compliance documentation",
+    "policy management",
+    "SOP management",
+    "contract lifecycle management",
+    "runbook automation",
+    "document versioning",
+    "document workflow approval",
+    "OCR",
+    "document classification",
+    "information governance",
+    "document freshness",
+    "stale document detection",
+    "air-gap document AI"
+  ],
+  "regulatory_bodies": [
+    "NIST",
+    "NARA",
+    "CISA",
+    "ISO",
+    "DoD"
+  ],
+  "academic_categories": {
+    "arxiv": [
+      "cs.IR",
+      "cs.CL",
+      "cs.AI",
+      "cs.DL",
+      "cs.HC"
+    ],
+    "ieee": [
+      "document management",
+      "information retrieval",
+      "intelligent document processing",
+      "knowledge management",
+      "natural language processing"
+    ],
+    "acm": [
+      "information retrieval",
+      "digital libraries",
+      "document engineering",
+      "knowledge management"
+    ]
+  },
+  "community_sources": {
+    "reddit": [
+      "r/sysadmin",
+      "r/knowledgemanagement",
+      "r/sharepoint",
+      "r/LocalLLaMA",
+      "r/Rag",
+      "r/datacurator",
+      "r/ECM"
+    ],
+    "stackexchange": [
+      "stackoverflow.com/questions/tagged/sharepoint",
+      "stackoverflow.com/questions/tagged/document-management",
+      "softwarerecs.stackexchange.com"
+    ],
+    "discord": [],
+    "forums": []
+  },
+  "review_sites": {
+    "g2": [
+      "document-management",
+      "enterprise-content-management-ecm",
+      "knowledge-management",
+      "contract-management",
+      "enterprise-search-software"
+    ],
+    "capterra": [
+      "document-management-software",
+      "knowledge-management-software",
+      "contract-management-software",
+      "records-management-software"
+    ],
+    "trustpilot": []
+  },
+  "open_source": {
+    "github_topics": [
+      "document-management",
+      "dms",
+      "ecm",
+      "knowledge-management",
+      "rag",
+      "document-ai",
+      "intelligent-document-processing",
+      "ocr",
+      "enterprise-search",
+      "records-management"
+    ],
+    "awesome_lists": [
+      "awesome-document-understanding",
+      "awesome-knowledge-management",
+      "awesome-rag",
+      "awesome-selfhosted"
+    ],
+    "package_registries": {
+      "pypi": [
+        "python-docx",
+        "openpyxl",
+        "python-pptx",
+        "pytesseract",
+        "html2text",
+        "unstructured",
+        "pypdf"
+      ],
+      "npm": [],
+      "crates": []
+    }
+  },
+  "news_sources": {
+    "rss_feeds": [],
+    "keywords": [
+      "enterprise document management AI",
+      "content services platform",
+      "intelligent document processing",
+      "document generation grounding",
+      "knowledge retention enterprise",
+      "air-gap document AI"
+    ]
+  },
+  "patent_categories": {
+    "cpc_classes": [
+      "G06F16/93",
+      "G06F16/35",
+      "G06F40/30",
+      "G06V30/41"
+    ],
+    "keywords": [
+      "document management system",
+      "automated document generation",
+      "document classification",
+      "content lifecycle management"
+    ]
+  },
+  "compliance_frameworks": [
+    "NIST_800_53",
+    "FedRAMP",
+    "CMMC",
+    "ISO_27001"
+  ],
+  "video_sources": {
+    "youtube_channels": [],
+    "youtube_search_queries": [
+      "enterprise document management AI",
+      "RAG document Q&A enterprise",
+      "intelligent document processing",
+      "knowledge management system demo",
+      "air-gap document AI"
+    ],
+    "manual_urls": []
+  }
+}

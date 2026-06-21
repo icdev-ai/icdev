@@ -75,6 +75,12 @@ python tools/awareness/suggested_card_writer.py --write --json   # Promote predi
 python -c "from tools.genesis.reflexes.awareness import run; run({}, None)"  # Full 5-phase cycle
 # UI: http://localhost:5050/components-map (visual map) + /ask-icdev (Q&A chat)
 # Config: args/awareness_config.yaml — 3h cadence, 7 gap rules, 0.7 threshold
+
+# GEPA Optimizer — Genome Evolution Pressure Analyzer (MCP tool: gepa_optimizer)
+python tools/skills/gepa_optimizer.py --json           # Run optimization pass (prune low-fitness genome entries)
+python tools/skills/gepa_optimizer.py --dry-run --json # Scan without writing changes
+# MCP tool: gepa_optimizer  params: dry_run (bool, default false)
+#   Returns: {applied: [...], skipped: [...], errors: [...]}
 ```
 
 ### Python Dependencies
@@ -117,13 +123,14 @@ AI orchestrates; deterministic tools execute.
 5. **Launch** — refactor, security scan, compliance map, merge
 
 ### Multi-Agent System
-15 agents across 3 tiers communicate via A2A protocol (JSON-RPC 2.0 over mutual TLS).
+16 agents across 4 tiers communicate via A2A protocol (JSON-RPC 2.0 over mutual TLS).
 
 | Tier | Agents | Port Range |
 |------|--------|------------|
 | Core | Orchestrator, Architect | 8443–8444 |
 | Domain | Builder, Compliance, Security, Infrastructure, MBSE, Modernization, Requirements, Supply Chain, Simulation, DevSecOps & ZTA, Gateway | 8445–8458 |
 | Support | Knowledge, Monitor | 8449–8450 |
+| Application | ACE Co-Worker Engine | 8460 |
 
 Claude Code interacts with agents through MCP servers using stdio transport.
 
@@ -281,6 +288,7 @@ python tools/workflow/coherence_checker.py --all --gate                # coheren
 ## Guardrails
 
 ### Development Rules
+- **Runtime SQL is authored for PostgreSQL; `translate_sql` is a thin SQLite init-fallback ONLY, never load-bearing.** PostgreSQL is the primary backend. Do NOT write SQLite-dialect JSON SQL (`json_extract`, `json_array_length`, `json_each`) in runtime call sites and rely on `tools/db/storage.py::translate_sql` to rewrite it for PG. Instead either (a) **compute in Python** — read the raw JSON column and parse with `json.loads()` (preferred for filters, grouping, existence checks, NOT-IN subqueries; see `tools/cloud/csp_monitor.py::get_status`, `tools/creative/creative_engine.py`, `tools/research/trend_detector.py`, `tools/dashboard/app.py::api_chat_sources`), or (b) **author PG-native `jsonb`** behind an explicit `is_pg` branch with a SQLite fallback alongside (see `tools/network/network_ingester.py` node-id lookup and `tools/dashboard/app.py::components_map_page`). `translate_sql` JSON rules exist solely so init/seed/migrate paths still work when PG is unreachable at startup. The `pg_portability_linter` (pgp-tx-03) gates this — runtime modules (excluding init/seed/migrate/tests) must report zero high-severity JSON findings.
 - **Canvas DB connections MUST use `get_canvas_connection()`** — Canvas-specific tables (e.g. `aac_*`, `dsoc_*`, `ccc_*`) have no `classification`/`tenant_id` columns. Using `get_connection()` directly in a canvas `db/init_db.py` attaches the global RLS predicate and raises `UndefinedColumn` on every query. Always use `from tools.db.storage import get_canvas_connection` in canvas init files. See `tools/ai_augmentation/db/init_db.py` for the canonical pattern.
 - Always grep `tools/manifest/` shards before writing a new script
 - Verify tool output format before chaining into another tool
@@ -319,6 +327,39 @@ python tools/workflow/coherence_checker.py --all --gate                # coheren
   6. `tests/conftest.py` — add new table schemas to MINIMAL_ICDEV_SCHEMA
   7. `python tools/dx/companion.py --sync --write --json` — sync to all AI platforms
   8. `python tools/workflow/coherence_checker.py --all --fix --gate` — coherence validation
+
+### RLS Bypass Annotations for cwd-Sensitive Hook Logic
+
+`.claude/hooks/pre_tool_use.py` runs before every tool call and contains path-sensitive checks (e.g. resolving `args/file_access_tiers.yaml` and repo-root-relative exemption lists). When Claude Code is invoked from a git worktree or from a directory other than the canonical repo root, `os.getcwd()` can point at the worktree root, so path-sensitive logic may fail or apply the wrong rules. The hook already resolves the repo root via `__file__` (`_get_repo_root()`), but any future line that intentionally bypasses a path/cwd-dependent safety check must be annotated:
+
+```python
+# rls-bypass: <reason> — required for task-3bc9eb0918 because cwd changes in worktrees
+```
+
+This annotation documents why the bypass is safe and lets `tools/workflow/coherence_checker.py::check_security_context_wiring` distinguish intentional exceptions from accidental wiring gaps. The file involved is `.claude/hooks/pre_tool_use.py`.
+
+#### Notes for agents working from worktrees or non-root directories
+
+1. **Do not rely on `os.getcwd()` for repo-root-relative paths.** In git worktrees the current working directory is the worktree root, while CI runners and test harnesses may change directory into a subdirectory. Always resolve the repository root from a known file location (`__file__`, `pathlib.Path(__file__).resolve()`, or a `REPO_ROOT` constant) rather than from `os.getcwd()`.
+
+2. **Tests started from the wrong directory break RLS/coherence validation.** Running `pytest` from inside `tests/`, `tools/`, or a worktree subdirectory can cause coherence checks to compute relative paths against a non-canonical root, which in turn makes RLS predicates, changed-file scans, and exemption lists fail. Always run the test command from the canonical repo root with an absolute `PYTHONPATH`:
+
+   ```bash
+   # Correct (absolute PYTHONPATH, root working directory)
+   $env:PYTHONPATH="C:\AI\ICDev"  # Windows
+   export PYTHONPATH=/opt/icdev    # Unix
+   pytest tests/ -v --tb=short
+   ```
+
+3. **GitHub Actions must set the working directory and PYTHONPATH explicitly.** The CI workflow `.github/workflows/icdev-ci.yml` uses a workflow-level `defaults.run.working-directory` and absolute `PYTHONPATH: ${{ github.workspace }}` so that all steps, including coherence/RLS checks, operate against the canonical checkout root rather than whatever directory the runner happens to start in. If you add a new job or reusable workflow, preserve this path isolation.
+
+4. **When a path/cwd check is intentionally bypassed, annotate it.** If you write a line in `pre_tool_use.py` (or any other security hook) that deliberately ignores `os.getcwd()` or otherwise bypasses path-sensitive logic, add the `# rls-bypass:` comment on the same line or immediately above it. Include:
+   - The concrete reason the bypass is safe (e.g. repo root resolved via `__file__`, not cwd).
+   - The task ID that introduced the bypass, so future `check_security_context_wiring` runs can correlate it with a known change.
+
+5. **If coherence checker reports a security-context wiring gap, check cwd first.** Many "unexpected bypass" findings are actually false positives caused by running the checker from a non-root directory. Re-run from the repo root with `PYTHONPATH` set before concluding that the hook logic is wrong.
+
+6. **Keep the canonical/legacy import namespace distinction in mind.** Tests that patch `tools.xxx` via string form may hit a different object than imports of `icdev.tools.xxx`. This interacts with cwd because the `tools/` shim resolution also depends on `sys.path` order, which is sensitive to how the process was launched. Patch via `importlib.import_module("tools.x")` and `setattr`, and launch tests from a single canonical root.
 
 ### Compliance & Security Rules
 - All artifacts MUST include classification markings (CUI for IL4/IL5, SECRET for IL6)

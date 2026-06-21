@@ -6,7 +6,6 @@ Acceptance: stale ACE instance detected by heartbeat → resolve_component()
 """
 import sqlite3
 import tempfile
-import os
 from pathlib import Path
 from unittest.mock import patch
 

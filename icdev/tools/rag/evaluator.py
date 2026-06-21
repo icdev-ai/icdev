@@ -34,6 +34,96 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 
 # ---------------------------------------------------------------------------
+# Module-level fallback constants — all overridable from args/rag_config.yaml
+# under evaluator.anomaly_detection.  Change config, not code.
+# ---------------------------------------------------------------------------
+_DEFAULT_K          = 5      # default NDCG@k / top_k retrieval cutoff
+_LLM_MAX_TOKENS     = 256    # max tokens for LLM-as-judge calls
+_LLM_TEMPERATURE    = 0.0    # temperature for deterministic LLM judging
+_LLM_CHUNK_CHARS    = 300    # per-chunk chars sent to context_precision judge
+_LLM_CONTEXT_CHARS  = 2000   # context chars sent to faithfulness judge
+_LLM_ANSWER_CHARS   = 1000   # answer chars sent to faithfulness/relevancy judges
+_SCORE_PRECISION    = 4      # decimal places for rounded metric scores
+
+# Anomaly-detection quality floors — a retrieval run scoring below these is
+# flagged as a regression.  When enough history exists they are recomputed
+# adaptively as (mean − k·stddev) of past runs; otherwise these are used.
+_NDCG_ANOMALY_FLOOR = 0.30   # NDCG@k below this floor is flagged as anomalous
+_MRR_ANOMALY_FLOOR  = 0.30   # MRR below this floor is flagged as anomalous
+_ANOMALY_STDDEV_K   = 2.0    # flag runs below mean − k·stddev of history
+
+
+def _compute_eval_anomaly_thresholds(anomaly_cfg: "dict | None" = None) -> dict:
+    """Compute adaptive retrieval-quality floors from historical evaluation data.
+
+    Reads ragas_ndcg / ragas_mrr from rag_evaluation_results and derives a
+    statistical lower bound (mean − k·stddev) for each metric, so the definition
+    of "low quality" tracks the corpus instead of a frozen magic number.
+
+    Falls back to module-level floors when fewer than ``min_samples`` rows exist
+    or anomaly detection is disabled.
+    """
+    cfg = anomaly_cfg or {}
+    defaults = {
+        "ndcg_floor": cfg.get("fallback_ndcg_floor", _NDCG_ANOMALY_FLOOR),
+        "mrr_floor": cfg.get("fallback_mrr_floor", _MRR_ANOMALY_FLOOR),
+        "computed": False,
+    }
+    if not cfg.get("enabled", True):
+        return defaults
+
+    min_samples = cfg.get("min_samples", 30)
+    stddev_k    = float(cfg.get("stddev_k", _ANOMALY_STDDEV_K))
+    bounds      = cfg.get("adaptive_bounds", {})
+    floor_min   = float(bounds.get("floor_min", 0.05))
+    floor_max   = float(bounds.get("floor_max", 0.80))
+
+    conn = None
+    try:
+        from tools.db.storage import get_connection
+
+        conn = get_connection()
+        # Population mean / stddev via E[x²] − E[x]² (SQLite has no STDDEV()).
+        row = conn.execute(
+            "SELECT "
+            "AVG(ragas_ndcg) AS ndcg_mean, AVG(ragas_ndcg * ragas_ndcg) AS ndcg_sq, "
+            "AVG(ragas_mrr) AS mrr_mean,  AVG(ragas_mrr * ragas_mrr) AS mrr_sq, "
+            "COUNT(*) AS n "
+            "FROM rag_evaluation_results "
+            "WHERE ragas_ndcg IS NOT NULL AND ragas_mrr IS NOT NULL"
+        ).fetchone()
+        if row:
+            n = row["n"] if isinstance(row, dict) else row[4]
+            if n and n >= min_samples:
+                def _get(key, idx):
+                    return float((row[key] if isinstance(row, dict) else row[idx]) or 0.0)
+
+                ndcg_mean, ndcg_sq = _get("ndcg_mean", 0), _get("ndcg_sq", 1)
+                mrr_mean, mrr_sq   = _get("mrr_mean", 2), _get("mrr_sq", 3)
+                ndcg_std = math.sqrt(max(0.0, ndcg_sq - ndcg_mean * ndcg_mean))
+                mrr_std  = math.sqrt(max(0.0, mrr_sq - mrr_mean * mrr_mean))
+                ndcg_floor = max(floor_min, min(floor_max, ndcg_mean - stddev_k * ndcg_std))
+                mrr_floor  = max(floor_min, min(floor_max, mrr_mean - stddev_k * mrr_std))
+                return {
+                    "ndcg_floor": round(ndcg_floor, 3),
+                    "mrr_floor": round(mrr_floor, 3),
+                    "computed": True,
+                    "n_samples": n,
+                    "ndcg_mean": round(ndcg_mean, 3),
+                    "mrr_mean": round(mrr_mean, 3),
+                }
+    except Exception:
+        pass
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+    return defaults
+
+
+# ---------------------------------------------------------------------------
 # Deterministic metrics (air-gap safe, no LLM needed)
 # ---------------------------------------------------------------------------
 
@@ -41,7 +131,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 def ndcg_at_k(
     retrieved_ids: List[str],
     relevant_ids: List[str],
-    k: int = 5,
+    k: int = _DEFAULT_K,
 ) -> float:
     """Normalized Discounted Cumulative Gain at k.
 
@@ -106,8 +196,8 @@ def _llm_judge(prompt: str, system: str = "") -> str:
         request = LLMRequest(
             messages=[{"role": "user", "content": prompt}],
             system_prompt=system,
-            max_tokens=256,
-            temperature=0.0,
+            max_tokens=_LLM_MAX_TOKENS,
+            temperature=_LLM_TEMPERATURE,
             classification="CUI",
         )
         response = router.invoke("rag_evaluate", request)
@@ -181,7 +271,7 @@ def context_precision(
         "You are a relevance evaluator. For each numbered chunk, output 1 if relevant "
         "to the query or 0 if not. Return ONLY a JSON array of 0/1 values."
     )
-    chunks_text = "\n".join(f"[{i}] {c[:300]}" for i, c in enumerate(retrieved_chunks))
+    chunks_text = "\n".join(f"[{i}] {c[:_LLM_CHUNK_CHARS]}" for i, c in enumerate(retrieved_chunks))
     prompt = f"Query: {query}\n\nChunks:\n{chunks_text}\n\nReturn JSON array of 0/1:"
 
     result = _llm_judge(prompt, system)
@@ -207,7 +297,10 @@ def faithfulness(
         "You are a faithfulness evaluator. Score how well the answer is grounded "
         'in the provided context. Return ONLY a JSON object: {"score": 0.0-1.0, "reason": "..."}'
     )
-    prompt = f"Query: {query}\n\nContext:\n{context[:2000]}\n\nAnswer:\n{answer[:1000]}\n\nEvaluate faithfulness:"
+    prompt = (
+        f"Query: {query}\n\nContext:\n{context[:_LLM_CONTEXT_CHARS]}\n\n"
+        f"Answer:\n{answer[:_LLM_ANSWER_CHARS]}\n\nEvaluate faithfulness:"
+    )
 
     result = _llm_judge(prompt, system)
     parsed = _safe_extract_json(result, "{")
@@ -231,7 +324,7 @@ def answer_relevancy(
         "You are a relevancy evaluator. Score how well the answer addresses the query. "
         'Return ONLY a JSON object: {"score": 0.0-1.0, "reason": "..."}'
     )
-    prompt = f"Query: {query}\n\nAnswer:\n{answer[:1000]}\n\nEvaluate relevancy:"
+    prompt = f"Query: {query}\n\nAnswer:\n{answer[:_LLM_ANSWER_CHARS]}\n\nEvaluate relevancy:"
 
     result = _llm_judge(prompt, system)
     parsed = _safe_extract_json(result, "{")
@@ -250,13 +343,48 @@ class RAGEvaluator:
 
     def __init__(self, config: Optional[dict] = None):
         self._config = config or {}
+        self._anomaly_cfg = self._load_anomaly_config()
+        self._anomaly_thresholds = _compute_eval_anomaly_thresholds(self._anomaly_cfg)
+
+    def _load_anomaly_config(self) -> dict:
+        """Load evaluator.anomaly_detection settings from rag_config.yaml."""
+        if "anomaly_detection" in self._config:
+            return self._config["anomaly_detection"] or {}
+        config_path = BASE_DIR / "args" / "rag_config.yaml"
+        if not config_path.exists():
+            return {}
+        try:
+            import yaml
+
+            with open(config_path, encoding="utf-8") as fh:
+                raw = yaml.safe_load(fh) or {}
+            return raw.get("evaluator", {}).get("anomaly_detection", {})
+        except Exception as exc:
+            logger.debug("Failed to load rag_config.yaml: %s", exc)
+            return {}
+
+    def flag_anomalies(self, metrics: Dict[str, Any]) -> Dict[str, Any]:
+        """Flag a metric result as a quality anomaly against adaptive floors.
+
+        Returns ``{"anomalous": bool, "reasons": [...]}`` — empty/clean when the
+        relevant deterministic metrics meet or exceed the (adaptive) floors.
+        """
+        th = self._anomaly_thresholds
+        reasons: List[str] = []
+        ndcg = metrics.get("ndcg_at_k")
+        mrr_score = metrics.get("mrr")
+        if ndcg is not None and ndcg < th["ndcg_floor"]:
+            reasons.append(f"ndcg_at_k {ndcg} < floor {th['ndcg_floor']}")
+        if mrr_score is not None and mrr_score < th["mrr_floor"]:
+            reasons.append(f"mrr {mrr_score} < floor {th['mrr_floor']}")
+        return {"anomalous": bool(reasons), "reasons": reasons}
 
     def evaluate_retrieval(
         self,
         query: str,
         results: List[SearchResult],
         ground_truth_ids: Optional[List[str]] = None,
-        k: int = 5,
+        k: int = _DEFAULT_K,
     ) -> Dict[str, Any]:
         """Evaluate retrieval quality (deterministic + optional LLM metrics).
 
@@ -277,13 +405,17 @@ class RAGEvaluator:
 
         # Deterministic metrics (always available)
         if ground_truth_ids:
-            metrics["ndcg_at_k"] = round(ndcg_at_k(retrieved_ids, ground_truth_ids, k=k), 4)
-            metrics["mrr"] = round(mrr(retrieved_ids, ground_truth_ids), 4)
+            metrics["ndcg_at_k"] = round(ndcg_at_k(retrieved_ids, ground_truth_ids, k=k), _SCORE_PRECISION)
+            metrics["mrr"] = round(mrr(retrieved_ids, ground_truth_ids), _SCORE_PRECISION)
+            # Anomaly detection: flag retrieval-quality regressions vs adaptive floors
+            anomaly = self.flag_anomalies(metrics)
+            if anomaly["anomalous"]:
+                metrics["anomaly"] = anomaly
 
         # LLM metrics (optional, require qwen3)
         chunks = [r.content for r in results]
         try:
-            metrics["context_precision"] = round(context_precision(query, chunks), 4)
+            metrics["context_precision"] = round(context_precision(query, chunks), _SCORE_PRECISION)
         except Exception:
             pass
 
@@ -313,12 +445,12 @@ class RAGEvaluator:
 
         if scoring_mode in ("ragas", "both"):
             try:
-                metrics["faithfulness"] = round(faithfulness(query, context, answer), 4)
+                metrics["faithfulness"] = round(faithfulness(query, context, answer), _SCORE_PRECISION)
             except Exception:
                 pass
 
             try:
-                metrics["answer_relevancy"] = round(answer_relevancy(query, answer), 4)
+                metrics["answer_relevancy"] = round(answer_relevancy(query, answer), _SCORE_PRECISION)
             except Exception:
                 pass
 
@@ -380,6 +512,7 @@ class RAGEvaluator:
         agg_ndcg = []
         agg_mrr = []
         agg_precision = []
+        anomaly_count = 0
 
         for tc in test_cases:
             query = tc.get("query", "")
@@ -387,7 +520,7 @@ class RAGEvaluator:
             if not query:
                 continue
 
-            search_results = retriever.search(query=query, top_k=5)
+            search_results = retriever.search(query=query, top_k=_DEFAULT_K)
             eval_result = self.evaluate_retrieval(
                 query=query,
                 results=search_results,
@@ -401,16 +534,26 @@ class RAGEvaluator:
                 agg_mrr.append(eval_result["mrr"])
             if "context_precision" in eval_result:
                 agg_precision.append(eval_result["context_precision"])
+            if eval_result.get("anomaly", {}).get("anomalous"):
+                anomaly_count += 1
 
         return {
             "classification": "CUI // SP-CTI",
             "test_cases": len(results_list),
             "aggregate": {
-                "avg_ndcg_at_5": round(sum(agg_ndcg) / max(len(agg_ndcg), 1), 4) if agg_ndcg else None,
-                "avg_mrr": round(sum(agg_mrr) / max(len(agg_mrr), 1), 4) if agg_mrr else None,
-                "avg_context_precision": round(sum(agg_precision) / max(len(agg_precision), 1), 4)
+                "avg_ndcg_at_5": round(sum(agg_ndcg) / max(len(agg_ndcg), 1), _SCORE_PRECISION)
+                if agg_ndcg
+                else None,
+                "avg_mrr": round(sum(agg_mrr) / max(len(agg_mrr), 1), _SCORE_PRECISION) if agg_mrr else None,
+                "avg_context_precision": round(
+                    sum(agg_precision) / max(len(agg_precision), 1), _SCORE_PRECISION
+                )
                 if agg_precision
                 else None,
+            },
+            "anomaly_detection": {
+                "thresholds": self._anomaly_thresholds,
+                "anomalous_cases": anomaly_count,
             },
             "results": results_list,
         }

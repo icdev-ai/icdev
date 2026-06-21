@@ -238,6 +238,8 @@
     paper.scaleContentToFit({ padding: 40 });
 
     // ── Async label enrichment via design API ─────────────────────────────────
+    // Fetch graph_json for each design to get human-readable node labels.
+    // Done async so the graph renders immediately; labels update once fetched.
     (function enrichNodeLabels() {
       var designIds = [{% for d in designs %}"{{ d.id }}"{% if not loop.last %},{% endif %}{% endfor %}];
       var labelMap = {};
@@ -266,7 +268,7 @@
             }
           })
           .catch(function () {})
-          .then(function () {
+          .then(function () { // finally-equivalent
             remaining--;
             if (remaining === 0) applyLabels();
           });

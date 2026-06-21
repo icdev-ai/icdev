@@ -170,6 +170,32 @@ def _auto_commit_and_push():
         cmd, cwd=cwd, capture_output=True, text=True, timeout=60
     )
 
+    # Branch-safety guard: never auto-commit onto a protected/shared branch from
+    # an interactive session. Committing+pushing straight onto main/irad/feature
+    # dumps work onto the working branch and bypasses the branch→V&V→MR flow.
+    # Kanban worktrees (kanban/* branches) are exempt — the scheduler owns their
+    # lifecycle and merges after its own validation. Override with
+    # ICDEV_AUTO_COMMIT_ALLOW_PROTECTED=true.
+    if not is_kanban:
+        _branch = _current_branch(run)
+        _protected = {
+            b.strip() for b in os.environ.get(
+                "ICDEV_PROTECTED_BRANCHES", "main,master,irad/feature"
+            ).split(",") if b.strip()
+        }
+        _allow = os.environ.get(
+            "ICDEV_AUTO_COMMIT_ALLOW_PROTECTED", ""
+        ).lower() in ("1", "true", "yes")
+        if _branch and _branch in _protected and not _allow:
+            print(
+                f"[stop-hook] Auto-commit skipped: HEAD is protected branch "
+                f"'{_branch}'. Create a feature branch (or set "
+                f"ICDEV_AUTO_COMMIT_ALLOW_PROTECTED=true) so work goes through "
+                f"branch->V&V->MR instead of landing on {_branch}.",
+                file=sys.stderr,
+            )
+            return
+
     # Check if there are changes to commit
     status = run(["git", "status", "--porcelain"])
     if not status.stdout.strip():

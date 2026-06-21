@@ -143,7 +143,7 @@ def get_self_healing_log(limit: int = 30) -> list[dict]:
     try:
         from tools.db.storage import get_connection
         conn = get_connection()
-        conn.set_security_context(None)  # auto_resolution_log lacks tenant_id/classification
+        conn.set_security_context(None)  # rls-bypass: auto_resolution_log lacks tenant_id/classification
         rows = conn.execute("""
             SELECT * FROM auto_resolution_log
             ORDER BY created_at DESC

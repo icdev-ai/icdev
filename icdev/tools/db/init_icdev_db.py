@@ -65,7 +65,9 @@ CREATE TABLE IF NOT EXISTS agents (
     status TEXT NOT NULL DEFAULT 'inactive' CHECK(status IN ('active', 'inactive', 'error')),
     capabilities TEXT,
     last_heartbeat TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    classification TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id TEXT
 );
 
 -- ============================================================
@@ -197,7 +199,8 @@ CREATE TABLE IF NOT EXISTS audit_trail (
         'auto_resolution_failed', 'auto_resolution_escalated',
         'critique_session_created', 'critique_completed',
         'critique_revision_requested',
-        'pir_alert_generated'
+        'pir_alert_generated',
+        'integrity_promoted', 'integrity_rejected'
     )),
     actor TEXT NOT NULL,
     action TEXT NOT NULL,
@@ -353,7 +356,7 @@ CREATE TABLE IF NOT EXISTS poam_items (
 
 -- Canvas-finding approval state (one row per unique finding across all canvas DBs).
 -- Findings live in their source canvas DBs (security_canvas.db, data_canvas.db, etc.)
--- and are re-generated each scan; this table persists the human approval decision
+-- and are re-generated each scan. This table persists the human approval decision
 -- keyed by a stable SHA-256 hash of (canvas, rule_id, title, affected_entity).
 -- Mutable: a finding can move pending -> approved -> remediated. Each transition
 -- is also logged to audit_trail (append-only) for compliance.
@@ -1443,6 +1446,7 @@ CREATE TABLE IF NOT EXISTS alerts (
     resolved_at TIMESTAMP,
     auto_healed BOOLEAN DEFAULT FALSE,
     healing_event_id INTEGER REFERENCES self_healing_events(id),
+    watchcon_tier INTEGER DEFAULT 4 CHECK(watchcon_tier IN (2,3,4)),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -3363,6 +3367,9 @@ CREATE TABLE IF NOT EXISTS dashboard_users (
         CHECK(status IN ('active', 'suspended')),
     created_by TEXT,
     tenant_id TEXT,
+    -- Bell-LaPadula MAC subject attributes (prop-sec-02)
+    clearance_level TEXT NOT NULL DEFAULT 'CUI',
+    compartments TEXT NOT NULL DEFAULT '[]',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
@@ -5442,6 +5449,7 @@ CREATE TABLE IF NOT EXISTS proposal_opportunities (
         'devsecops', 'ai_ml', 'ato_rmf', 'cloud', 'security',
         'compliance', 'agile', 'data', 'management', 'general')),
     classification TEXT DEFAULT 'CUI',
+    compartments TEXT NOT NULL DEFAULT '[]',
     created_by TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
@@ -5614,6 +5622,27 @@ CREATE TABLE IF NOT EXISTS proposal_status_history (
 );
 CREATE INDEX IF NOT EXISTS idx_prop_hist_entity ON proposal_status_history(entity_type, entity_id);
 CREATE INDEX IF NOT EXISTS idx_prop_hist_created ON proposal_status_history(created_at);
+
+-- HITL reviewer assignment + hand-off table (prop-rev-09)
+-- Tracks assignment lifecycle: assign → accept/reject → in_progress → complete/reassign
+CREATE TABLE IF NOT EXISTS proposal_reviewer_assignments (
+    id TEXT PRIMARY KEY,
+    review_id TEXT NOT NULL REFERENCES proposal_reviews(id),
+    reviewer TEXT NOT NULL,
+    assigned_by TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN (
+        'pending', 'accepted', 'rejected', 'in_progress', 'completed', 'reassigned')),
+    notes TEXT,
+    assigned_at TEXT DEFAULT (datetime('now')),
+    accepted_at TEXT,
+    rejected_at TEXT,
+    rejection_reason TEXT,
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_prop_asgn_review ON proposal_reviewer_assignments(review_id);
+CREATE INDEX IF NOT EXISTS idx_prop_asgn_reviewer ON proposal_reviewer_assignments(reviewer);
+CREATE INDEX IF NOT EXISTS idx_prop_asgn_status ON proposal_reviewer_assignments(status);
 
 -- =========================================================================
 -- GovCon Intelligence (Phase 59, D361-D373)
@@ -5911,7 +5940,8 @@ CREATE TABLE IF NOT EXISTS cpmp_contracts (
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now')),
     created_by TEXT,
-    classification TEXT DEFAULT 'CUI'
+    classification TEXT DEFAULT 'CUI',
+    compartments TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS idx_cpmp_contract_number ON cpmp_contracts(contract_number);
 CREATE INDEX IF NOT EXISTS idx_cpmp_contract_agency ON cpmp_contracts(agency);
@@ -6284,6 +6314,51 @@ CREATE INDEX IF NOT EXISTS idx_cpmp_cor_user ON cpmp_cor_access_log(user_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_cor_contract ON cpmp_cor_access_log(contract_id);
 CREATE INDEX IF NOT EXISTS idx_cpmp_cor_action ON cpmp_cor_access_log(action);
 CREATE INDEX IF NOT EXISTS idx_cpmp_cor_created ON cpmp_cor_access_log(created_at);
+
+-- ── Phase D: Integrated Master Schedule (IMS, prop-pm-01) ──────────────
+
+-- Milestones linked to WBS elements and EVM periods for schedule-to-EVM traceability
+CREATE TABLE IF NOT EXISTS cpmp_milestones (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL REFERENCES cpmp_contracts(id),
+    wbs_id TEXT REFERENCES cpmp_wbs(id),
+    title TEXT NOT NULL,
+    description TEXT,
+    baseline_date TEXT,
+    forecast_date TEXT,
+    actual_date TEXT,
+    status TEXT DEFAULT 'pending' CHECK(status IN (
+        'pending', 'in_progress', 'complete', 'missed', 'on_hold')),
+    evm_period_id TEXT REFERENCES cpmp_evm_periods(id),
+    responsible_person TEXT,
+    notes TEXT,
+    metadata TEXT DEFAULT '{}',
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_cpmp_ms_contract ON cpmp_milestones(contract_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_ms_wbs ON cpmp_milestones(wbs_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_ms_status ON cpmp_milestones(status);
+CREATE INDEX IF NOT EXISTS idx_cpmp_ms_baseline ON cpmp_milestones(baseline_date);
+
+-- Milestone dependency graph (FS/SS/FF/SF) for critical path visualization
+CREATE TABLE IF NOT EXISTS cpmp_milestone_deps (
+    id TEXT PRIMARY KEY,
+    contract_id TEXT NOT NULL REFERENCES cpmp_contracts(id),
+    predecessor_id TEXT NOT NULL REFERENCES cpmp_milestones(id),
+    successor_id TEXT NOT NULL REFERENCES cpmp_milestones(id),
+    lag_days INTEGER DEFAULT 0,
+    dep_type TEXT DEFAULT 'finish_to_start' CHECK(dep_type IN (
+        'finish_to_start', 'start_to_start', 'finish_to_finish', 'start_to_finish')),
+    notes TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    classification TEXT DEFAULT 'CUI',
+    UNIQUE(predecessor_id, successor_id)
+);
+CREATE INDEX IF NOT EXISTS idx_cpmp_msdep_contract ON cpmp_milestone_deps(contract_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_msdep_pred ON cpmp_milestone_deps(predecessor_id);
+CREATE INDEX IF NOT EXISTS idx_cpmp_msdep_succ ON cpmp_milestone_deps(successor_id);
 
 -- Contract modification request/approval workflow (prop-ctr-01)
 CREATE TABLE IF NOT EXISTS cpmp_contract_mods (
@@ -7089,7 +7164,11 @@ CREATE INDEX IF NOT EXISTS idx_wg_style_guides_scope
 -- 2. Style guide locks — ISSO-lockable dimensions (D-WG-3)
 CREATE TABLE IF NOT EXISTS wg_style_guide_locks (
     id TEXT PRIMARY KEY,
-    guide_id TEXT NOT NULL REFERENCES wg_style_guides(id),
+    -- guide_id references a style guide by id only; wg_style_guides has a
+    -- composite PK (id, version), so id alone is not unique and a SQL FK is
+    -- invalid on PostgreSQL ("no unique constraint matching given keys").
+    -- A lock applies to a guide id across all its versions, so no per-row FK.
+    guide_id TEXT NOT NULL,
     dimension_path TEXT NOT NULL,
     lock_owner_role TEXT NOT NULL CHECK(lock_owner_role IN ('isso','architect','pm','admin')),
     locked_by TEXT NOT NULL,
@@ -7209,7 +7288,7 @@ CREATE TABLE IF NOT EXISTS wg_glossary (
     id TEXT PRIMARY KEY,
     term TEXT NOT NULL,
     term_type TEXT NOT NULL CHECK(term_type IN (
-        'acronym','preferred','deprecated','banned','custom_spell'
+        'acronym','preferred','deprecated','banned','custom_spell','required'
     )),
     expansion TEXT NOT NULL DEFAULT '',      -- full form for acronyms
     replacement TEXT NOT NULL DEFAULT '',    -- what to use instead (deprecated/banned)
@@ -7235,6 +7314,21 @@ CREATE INDEX IF NOT EXISTS idx_wg_glossary_type   ON wg_glossary(term_type);
 CREATE INDEX IF NOT EXISTS idx_wg_glossary_scope  ON wg_glossary(scope, scope_id);
 CREATE INDEX IF NOT EXISTS idx_wg_glossary_domain ON wg_glossary(domain);
 CREATE INDEX IF NOT EXISTS idx_wg_glossary_active ON wg_glossary(is_active);
+
+-- 7a. Proposal taxonomy — customer-specific topic trees (D-WG-14)
+CREATE TABLE IF NOT EXISTS proposal_taxonomy (
+    id TEXT PRIMARY KEY,
+    opportunity_id TEXT NOT NULL REFERENCES proposal_opportunities(id),
+    parent_id TEXT REFERENCES proposal_taxonomy(id),
+    label TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    weight REAL NOT NULL DEFAULT 1.0,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    classification TEXT NOT NULL DEFAULT 'CUI'
+);
+CREATE INDEX IF NOT EXISTS idx_prop_tax_opp ON proposal_taxonomy(opportunity_id);
+CREATE INDEX IF NOT EXISTS idx_prop_tax_parent ON proposal_taxonomy(parent_id);
 
 -- 8. Style profiles — per-user/project writing style snapshots (D-WG-10b)
 CREATE TABLE IF NOT EXISTS wg_style_profiles (
@@ -8770,6 +8864,7 @@ CREATE TABLE IF NOT EXISTS pg_capture_plans (
     teaming_strategy TEXT,
     price_strategy  TEXT,
     gate_reviews    TEXT,
+    current_phase   TEXT DEFAULT 'qualify' CHECK(current_phase IN ('qualify','pursue','capture','bid','proposal')),
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
 );
@@ -8787,6 +8882,22 @@ CREATE TABLE IF NOT EXISTS pg_capture_activities (
     created_at      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_pg_capture_act_plan ON pg_capture_activities(capture_plan_id);
+
+-- Phase-gate audit trail (append-only — NIST AU, prop-cap-11)
+CREATE TABLE IF NOT EXISTS pg_capture_gate_decisions (
+    id TEXT PRIMARY KEY,
+    capture_plan_id TEXT NOT NULL,
+    opportunity_id TEXT,
+    from_phase TEXT NOT NULL CHECK(from_phase IN ('qualify','pursue','capture','bid','proposal')),
+    to_phase TEXT NOT NULL CHECK(to_phase IN ('pursue','capture','bid','proposal','no_bid')),
+    decision TEXT NOT NULL CHECK(decision IN ('advance','hold','no_bid','return')),
+    rationale TEXT,
+    decided_by TEXT,
+    gate_criteria_met TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_pg_cap_gates_plan ON pg_capture_gate_decisions(capture_plan_id);
+CREATE INDEX IF NOT EXISTS idx_pg_cap_gates_created ON pg_capture_gate_decisions(created_at);
 
 -- Teaming partners (R3 Shape — Phase D, D-PG-6)
 CREATE TABLE IF NOT EXISTS pg_teaming_partners (
@@ -10570,6 +10681,134 @@ CREATE INDEX IF NOT EXISTS idx_requirements_status   ON requirements (status);
 CREATE INDEX IF NOT EXISTS idx_requirements_priority ON requirements (priority);
 CREATE INDEX IF NOT EXISTS idx_requirements_created  ON requirements (created_at);
 
+-- ============================================================
+-- SIPA — Software Integrity & Provenance Assessor (sipa-db-03)
+-- Sensitive findings tables (RLS-aware: tenant_id + classification on every
+-- table). Canonical DDL lives in tools/integrity/db/init_db.py; mirrored here
+-- (SQLite-flavored) so a fresh icdev.db carries the schema. CHECK values are
+-- derived from tools/integrity/constants.py — keep the two in lock-step.
+-- integrity_assessments is the mutable root row (HITL updates status/verdict);
+-- its child tables are protected (see APPEND_ONLY_TABLES in pre_tool_use.py).
+-- ============================================================
+CREATE TABLE IF NOT EXISTS integrity_assessments (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    source_type     TEXT NOT NULL CHECK(source_type IN ('local', 'git', 'unc', 'uri')),
+    source_ref      TEXT NOT NULL,
+    mode            TEXT NOT NULL CHECK(mode IN ('provenance_aware', 'provenance_blind', 'auto')),
+    project_id      TEXT,
+    session_id      TEXT,
+    dir_digest      TEXT,
+    status          TEXT NOT NULL DEFAULT 'quarantine'
+                        CHECK(status IN ('quarantine', 'assessed', 'approved', 'rejected')),
+    verdict         TEXT CHECK(verdict IN ('allow', 'review', 'quarantine') OR verdict IS NULL),
+    risk_score      REAL DEFAULT 0,
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    created_by      TEXT NOT NULL DEFAULT 'system',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_integrity_assessments_tenant  ON integrity_assessments(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_integrity_assessments_project ON integrity_assessments(project_id);
+
+-- append-only (NIST AU): findings/capability rows are evidence, never mutated.
+CREATE TABLE IF NOT EXISTS integrity_capabilities (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    assessment_id   INTEGER NOT NULL REFERENCES integrity_assessments(id) ON DELETE CASCADE,
+    file_path       TEXT NOT NULL,
+    function_name   TEXT,
+    capability_type TEXT NOT NULL CHECK(capability_type IN (
+                        'network_egress', 'filesystem', 'process_exec', 'dynamic_code',
+                        'crypto', 'env_secret', 'serialization', 'obfuscation')),
+    evidence        TEXT,
+    line_start      INTEGER,
+    line_end        INTEGER,
+    risk_weight     REAL DEFAULT 0,
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_integrity_capabilities_assessment ON integrity_capabilities(assessment_id);
+CREATE INDEX IF NOT EXISTS idx_integrity_capabilities_tenant     ON integrity_capabilities(tenant_id);
+
+-- append-only (NIST AU): scanner findings are immutable evidence.
+CREATE TABLE IF NOT EXISTS integrity_findings (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    assessment_id   INTEGER NOT NULL REFERENCES integrity_assessments(id) ON DELETE CASCADE,
+    source_scanner  TEXT NOT NULL CHECK(source_scanner IN (
+                        'sast', 'secrets', 'deps', 'formal', 'container', 'semgrep',
+                        'capability', 'reconciliation', 'tamper')),
+    finding_type    TEXT NOT NULL CHECK(finding_type IN (
+                        'dangerous_api', 'secret', 'vuln_dependency', 'unauthorized_capability',
+                        'undisclosed_capability', 'tamper_mismatch', 'known_bad_signature')),
+    severity        TEXT NOT NULL CHECK(severity IN ('critical', 'high', 'medium', 'low', 'info')),
+    file_path       TEXT,
+    line            INTEGER,
+    detail          TEXT,
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_integrity_findings_assessment ON integrity_findings(assessment_id);
+CREATE INDEX IF NOT EXISTS idx_integrity_findings_tenant     ON integrity_findings(tenant_id);
+
+-- append-only (NIST AU): each verdict is a permanent decision record.
+CREATE TABLE IF NOT EXISTS integrity_verdicts (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    assessment_id   INTEGER NOT NULL REFERENCES integrity_assessments(id) ON DELETE CASCADE,
+    verdict         TEXT NOT NULL CHECK(verdict IN ('allow', 'review', 'quarantine')),
+    risk_score      REAL DEFAULT 0,
+    rationale       TEXT,
+    decided_by      TEXT NOT NULL DEFAULT 'system',
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_integrity_verdicts_assessment ON integrity_verdicts(assessment_id);
+CREATE INDEX IF NOT EXISTS idx_integrity_verdicts_tenant     ON integrity_verdicts(tenant_id);
+
+-- append-only (NIST AU): HITL authorization decisions are immutable evidence.
+CREATE TABLE IF NOT EXISTS integrity_authorizations (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    assessment_id   INTEGER NOT NULL REFERENCES integrity_assessments(id) ON DELETE CASCADE,
+    capability_id   INTEGER REFERENCES integrity_capabilities(id) ON DELETE CASCADE,
+    requirement_id  TEXT,
+    claim_ref       TEXT,
+    authorized      INTEGER NOT NULL DEFAULT 0,
+    reason          TEXT,
+    reviewed_by     TEXT,
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_integrity_authorizations_assessment ON integrity_authorizations(assessment_id);
+CREATE INDEX IF NOT EXISTS idx_integrity_authorizations_tenant     ON integrity_authorizations(tenant_id);
+
+-- ============================================================
+-- EQO — Centralized logging (eqo-log-01)
+-- Global append-only log sink (NOT a canvas table): carries tenant_id +
+-- classification so the RLS-aware get_connection() applies the standard
+-- row-level predicate. Append-only (NIST AU) — log rows are immutable evidence;
+-- retention is enforced by bulk time-window pruning, never row mutation.
+-- Registered in APPEND_ONLY_TABLES in .claude/hooks/pre_tool_use.py.
+-- Mirror of migration 181_centralized_logs — keep the two in lock-step.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS centralized_logs (
+    id              TEXT PRIMARY KEY,
+    ts              TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    component       TEXT NOT NULL,
+    level           TEXT NOT NULL DEFAULT 'INFO',
+    message         TEXT NOT NULL DEFAULT '',
+    trace_id        TEXT,
+    session_id      TEXT,
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    tenant_id       TEXT NOT NULL DEFAULT 'default',
+    extra_json      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_centralized_logs_component ON centralized_logs(component);
+CREATE INDEX IF NOT EXISTS idx_centralized_logs_ts        ON centralized_logs(ts);
+CREATE INDEX IF NOT EXISTS idx_centralized_logs_level     ON centralized_logs(level);
+
 """
 
 
@@ -10772,6 +11011,16 @@ def init_db(db_path=None):
             "instead: `python -m icdev.tools.db.migrate --up` (or "
             "`python tools/db/migrate.py --up` from a checkout)."
         )
+        # G-06: Apply PostgreSQL column-level GRANTs after schema is up
+        try:
+            from tools.security.column_security import apply_column_grants
+            grant_result = apply_column_grants()
+            print(
+                f"Column GRANTs: {grant_result['grants_applied']} applied, "
+                f"{grant_result['grants_skipped']} skipped."
+            )
+        except Exception as _cg_exc:
+            print(f"Warning: column grant application failed: {_cg_exc}")
         return []
 
     path = Path(db_path) if db_path and not isinstance(db_path, Path) else (db_path or DB_PATH)
@@ -10928,6 +11177,53 @@ def init_db(db_path=None):
             conn.execute(sql)
         except sqlite3.OperationalError:
             pass
+
+    # D-WG-14: Migrate wg_glossary CHECK constraint to include 'required'
+    try:
+        _cur = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='wg_glossary'")
+        _row = _cur.fetchone()
+        if _row and _row[0] and "'required'" not in _row[0]:
+            conn.execute("BEGIN TRANSACTION")
+            conn.execute("""
+                CREATE TABLE wg_glossary_new (
+                    id TEXT PRIMARY KEY,
+                    term TEXT NOT NULL,
+                    term_type TEXT NOT NULL CHECK(term_type IN (
+                        'acronym','preferred','deprecated','banned','custom_spell','required'
+                    )),
+                    expansion TEXT NOT NULL DEFAULT '',
+                    replacement TEXT NOT NULL DEFAULT '',
+                    definition TEXT NOT NULL DEFAULT '',
+                    domain TEXT NOT NULL DEFAULT 'general'
+                        CHECK(domain IN ('general','far','nist','cyber','project')),
+                    scope TEXT NOT NULL DEFAULT 'platform'
+                        CHECK(scope IN ('platform','tenant','program','project','user')),
+                    scope_id TEXT NOT NULL DEFAULT '',
+                    case_sensitive INTEGER NOT NULL DEFAULT 1,
+                    enforcement TEXT NOT NULL DEFAULT 'suggest'
+                        CHECK(enforcement IN ('suggest','warn','block')),
+                    source TEXT NOT NULL DEFAULT 'admin'
+                        CHECK(source IN ('builtin','admin','user','import:far','import:nist','import:cui')),
+                    approved_by TEXT NOT NULL DEFAULT '',
+                    created_by TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    classification TEXT NOT NULL DEFAULT 'CUI'
+                )
+            """)
+            conn.execute("INSERT INTO wg_glossary_new SELECT * FROM wg_glossary")
+            conn.execute("DROP TABLE wg_glossary")
+            conn.execute("ALTER TABLE wg_glossary_new RENAME TO wg_glossary")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_wg_glossary_term ON wg_glossary(term)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_wg_glossary_type ON wg_glossary(term_type)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_wg_glossary_scope ON wg_glossary(scope, scope_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_wg_glossary_domain ON wg_glossary(domain)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_wg_glossary_active ON wg_glossary(is_active)")
+            conn.execute("COMMIT")
+    except Exception as _wg_exc:
+        # If migration fails (e.g., foreign keys), continue — schema still valid for new installs
+        print(f"Note: wg_glossary migration skipped ({_wg_exc})")
+
     conn.commit()
     conn.close()
     print(f"ICDEV™ database initialized at {path}")
@@ -10938,6 +11234,27 @@ def init_db(db_path=None):
         _seed_wf(verbose=True)
     except Exception as _exc:
         print(f"Warning: workflow template seed skipped — {_exc}")
+
+    # Seed E2E demo session (ME conflict intelligence) — idempotent INSERT OR IGNORE
+    try:
+        _seed_conn = sqlite3.connect(str(path))
+        _seed_conn.execute(
+            "INSERT OR IGNORE INTO intake_sessions "
+            "(id, customer_name, customer_org, session_status, classification, context_summary) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                "sess-9cc6891cb548",
+                "E2E Test User",
+                "ICDEV CI",
+                "active",
+                "CUI",
+                "{}",
+            ),
+        )
+        _seed_conn.commit()
+        _seed_conn.close()
+    except Exception as _exc:
+        print(f"Warning: demo session seed skipped — {_exc}")
 
     # Verify tables
     conn = sqlite3.connect(str(path))

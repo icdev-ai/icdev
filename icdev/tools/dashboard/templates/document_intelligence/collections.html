@@ -33,8 +33,10 @@
     </thead>
     <tbody>
     {% for c in collections %}
-      <tr style="border-top:1px solid #0d1e30;color:#a8c8e0;" onclick="showTeam('{{ c.collection_id }}', '{{ c.name }}')" style="cursor:pointer;">
-        <td style="padding:7px 12px;font-weight:600;cursor:pointer;" onclick="showTeam('{{ c.collection_id }}', '{{ c.name }}')">{{ c.name }}</td>
+      <tr style="border-top:1px solid #0d1e30;color:#a8c8e0;">
+        <td style="padding:7px 12px;font-weight:600;">
+          <span style="cursor:pointer;" onclick="toggleDocs('{{ c.collection_id }}')">{{ c.name }} <span style="color:#5a7aa0;font-size:10px;">▼</span></span>
+        </td>
         <td style="padding:7px 12px;">{{ c.doc_count }}</td>
         <td style="padding:7px 12px;"><span style="background:#1e293b;color:#e94560;padding:1px 6px;border-radius:3px;font-size:10px;">{{ c.classification }}</span></td>
         <td style="padding:7px 12px;color:#7a8cb0;">{{ c.owner_id or '—' }}</td>
@@ -44,6 +46,14 @@
           <a href="/document-intelligence/search?collection={{ c.collection_id }}" style="color:#4f8ef7;font-size:11px;text-decoration:none;margin-right:8px;">Search</a>
           <a href="/document-intelligence/?collection={{ c.collection_id }}" style="color:#7fd8a0;font-size:11px;text-decoration:none;margin-right:8px;">Upload</a>
           <a href="#" onclick="showTeam('{{ c.collection_id }}', '{{ c.name }}');return false;" style="color:#7ab3f0;font-size:11px;text-decoration:none;">Team</a>
+        </td>
+      </tr>
+      <!-- Document list sub-row -->
+      <tr id="docs-row-{{ c.collection_id }}" style="display:none;background:#050d1f;">
+        <td colspan="7" style="padding:0;">
+          <div id="docs-list-{{ c.collection_id }}" style="padding:10px 16px;">
+            <span style="color:#5a7aa0;font-size:11px;">Loading documents…</span>
+          </div>
         </td>
       </tr>
     {% else %}
@@ -110,6 +120,49 @@
 
 <script>
 var _activeCollectionId = null;
+
+function toggleDocs(colId) {
+  var row = document.getElementById('docs-row-' + colId);
+  if (row.style.display === 'none') {
+    row.style.display = 'table-row';
+    loadCollectionDocs(colId);
+  } else {
+    row.style.display = 'none';
+  }
+}
+
+function loadCollectionDocs(colId) {
+  var container = document.getElementById('docs-list-' + colId);
+  fetch('/document-intelligence/api/collections/' + colId + '/documents')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var docs = data.documents || [];
+      if (!docs.length) {
+        container.innerHTML = '<span style="color:#5a7aa0;font-size:11px;">No documents yet — upload files to this collection.</span>';
+        return;
+      }
+      container.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px;">' +
+        docs.map(function(d) {
+          var statusColor = d.latest_status === 'approved' ? '#4ade80' : d.latest_status === 'pending_review' ? '#7ab3f0' : d.latest_status === 'rejected' ? '#f87171' : '#94a3b8';
+          var chunkBadge = d.chunk_count > 0
+            ? '<span style="background:#0a1a2e;color:#7ab3f0;padding:1px 5px;border-radius:2px;font-size:10px;margin-left:4px;">' + d.chunk_count + ' chunks</span>'
+            : '<span style="background:#2e1a05;color:#fbbf24;padding:1px 5px;border-radius:2px;font-size:10px;margin-left:4px;">0 chunks</span>';
+          return '<a href="/document-intelligence/doc/' + d.doc_id + '" style="text-decoration:none;">' +
+            '<div style="background:#0b1726;border:1px solid #1a3560;border-radius:5px;padding:8px 10px;">' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+            '<span style="color:#eaeaea;font-size:12px;font-weight:600;">' + (d.title || d.filename || 'Untitled') + '</span>' +
+            chunkBadge +
+            '</div>' +
+            '<div style="color:#7a8cb0;font-size:10px;margin-top:3px;">' + (d.provider || '—') + ' · v' + (d.version_count || 1) + ' · <span style="color:' + statusColor + ';">' + (d.latest_status || '—') + '</span></div>' +
+            '</div>' +
+            '</a>';
+        }).join('') +
+        '</div>';
+    })
+    .catch(function() {
+      container.innerHTML = '<span style="color:#f87171;font-size:11px;">Failed to load documents.</span>';
+    });
+}
 
 function showTeam(colId, colName) {
   _activeCollectionId = colId;

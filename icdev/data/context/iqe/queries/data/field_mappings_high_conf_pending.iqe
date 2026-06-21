@@ -1,0 +1,9 @@
+# Intent: Detect high-confidence (>= 0.80) field pairs that are still pending human
+#         confirmation. These are strong AI suggestions with an unactioned HITL step —
+#         a backlog that could be quickly cleared to unblock artifact generation.
+# Expected shape: pending field pairs with confidence >= 0.80.
+
+foreach m in data.field_mappings
+  where m.status == "pending"
+  where m.confidence >= 0.8
+  select m.id, m.session_name, m.source_field, m.target_field, m.confidence, m.match_method

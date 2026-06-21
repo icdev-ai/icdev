@@ -735,6 +735,38 @@ GAP_HANDLER_TOOLS = {
             "required": ["query"],
         },
     },
+    # ---- Foundry (ACF — Autonomous Capability Foundry) ----
+    "foundry_run": {
+        "category": "foundry",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_foundry_run",
+        "description": (
+            "Trigger one ACF (Autonomous Capability Foundry) cycle: harvest -> synthesize -> "
+            "novelty-gate -> score -> CoD go/no-go -> spec -> task-graph -> seed. Rate limits are "
+            "enforced from args/foundry_config.yaml. With dry_run=true the full pipeline runs but no "
+            "kanban tasks are written."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "dry_run": {"type": "boolean", "default": False},
+                "max_concepts": {"type": "integer"},
+            },
+        },
+    },
+    "foundry_status": {
+        "category": "foundry",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_foundry_status",
+        "description": (
+            "Get ACF pipeline status (read-only): recent foundry runs, active ACF project count, "
+            "concept pipeline counts by status, and configured rate limits."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {"limit": {"type": "integer", "default": 10}},
+        },
+    },
 }
 
 

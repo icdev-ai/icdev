@@ -266,7 +266,7 @@ TASKS: list[dict] = [
         "id": "fdt-magent-05",
         "title": "Create tools/fathomdesk/agents/macro_agent.py",
         "description": (
-            "Concrete analyst agent: reads macro regime signals (existing alphadesk "
+            "Concrete analyst agent: reads macro regime signals (existing fathomdesk"
             "regime detector / liquidity trap flags from ad_trap_events) and prompts "
             "self._llm for macro context. "
             "Reuse: get_connection() to query ad_trap_events, BaseAnalystAgent. "
@@ -315,7 +315,7 @@ TASKS: list[dict] = [
         "id": "fdt-magent-08",
         "title": "Wire analyst panel into existing Trading Oracle — replace heuristic lens outputs",
         "description": (
-            "Locate the Trading Oracle lens scoring code (tools/trading/ or alphadesk). "
+            "Locate the Trading Oracle lens scoring code (tools/trading/ or fathomdesk). "
             "Replace the 4 heuristic lens computations with calls to debate_engine.py: "
             "invoke DebateEngine(ticker, as_of_date).run() and map its output to the "
             "existing lens field names so downstream Oracle consumers are unchanged. "
@@ -484,7 +484,7 @@ TASKS: list[dict] = [
         "id": "fdt-newssig-01",
         "title": "Add sentiment_weight field to Oracle lens output schema",
         "description": (
-            "Locate the Trading Oracle lens output dict (tools/trading/ or alphadesk). "
+            "Locate the Trading Oracle lens output dict (tools/trading/ or fathomdesk). "
             "Add sentiment_weight: float (0.0–1.0) to the existing lens output schema "
             "in the appropriate constants or dataclass. "
             "Default: 0.5 (neutral) so existing callers are unaffected. "

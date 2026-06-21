@@ -1,0 +1,40 @@
+name: ZTA Maturity Assessment — NIST SP 800-207
+description: Assess Zero Trust Architecture maturity across 7 DoD pillars, score evidence, and produce CISO gate report.
+category: compliance
+tags: [zta, zero-trust, nist, dod, maturity]
+author: builtin
+steps:
+  - id: evidence_collect
+    name: ZTA Evidence Collection
+    tool: tools/devsecops/zta_maturity_scorer.py
+    node_type: tool
+    required: true
+    timeout: 300
+  - id: pillar_score
+    name: 7-Pillar Scoring (Identity/Device/Network/App/Data/Visibility/Automation)
+    tool: tools/devsecops/zta_maturity_scorer.py
+    node_type: tool
+    required: true
+    timeout: 180
+    depends_on: [evidence_collect]
+  - id: gap_analysis
+    name: Gap Analysis vs Target Level
+    tool: tools/devsecops/zta_gap_analyzer.py
+    node_type: tool
+    required: true
+    timeout: 120
+    depends_on: [pillar_score]
+  - id: ciso_review
+    name: CISO Review
+    tool: ""
+    node_type: human
+    role: ciso
+    required: true
+    depends_on: [gap_analysis]
+  - id: report
+    name: CISO Gate Report Export
+    tool: tools/devsecops/zta_reporter.py
+    node_type: tool
+    required: false
+    timeout: 120
+    depends_on: [ciso_review]

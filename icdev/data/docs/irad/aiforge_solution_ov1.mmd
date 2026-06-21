@@ -1,0 +1,39 @@
+graph TB
+    subgraph L1["Layer 1 — Signal"]
+        API["AI-ify /api/scan API"]
+        QUEUE["Priority Queue\n(composite score)"]
+        DEDUP["SHA-256 Dedup\n(file+pattern+line)"]
+        API --> DEDUP --> QUEUE
+    end
+
+    subgraph L2["Layer 2 — Synthesis"]
+        ROUTER["IL-Aware Model Router"]
+        TMPL["8 Pattern Templates\n(Jinja2)"]
+        LLM_IL4["Bedrock LLM\n(IL4/IL5)"]
+        LLM_AIRGAP["Ollama LLM\n(IL5/IL6 air-gap)"]
+        CAND["Candidate Code +\nUnit Test Skeleton"]
+        QUEUE --> ROUTER
+        ROUTER -->|IL4/5| LLM_IL4
+        ROUTER -->|IL5/6| LLM_AIRGAP
+        TMPL --> LLM_IL4
+        TMPL --> LLM_AIRGAP
+        LLM_IL4 & LLM_AIRGAP --> CAND
+    end
+
+    subgraph L3["Layer 3 — Validation"]
+        SUITE["Existing Test Suite\n+ Generated Tests"]
+        DELTA["Coverage Delta\nCompute"]
+        PASS{Pass?}
+        ROLLBACK["Auto-Rollback\n→ re-queue"]
+        CAND --> SUITE --> DELTA --> PASS
+        PASS -->|No| ROLLBACK --> QUEUE
+    end
+
+    subgraph L4["Layer 4 — Integration"]
+        HITL["HITL Diff Review\n(accept / edit / reject)"]
+        PR["Git PR\n(CUI-marked diff)"]
+        KAN["Kanban Tasks\n(4 atomic: Design/Impl/Test/Review)"]
+        ATO["ATO Evidence Package\n(NIST AI RMF MANAGE-1)"]
+        PASS -->|Yes| HITL
+        HITL -->|approved| PR & KAN & ATO
+    end

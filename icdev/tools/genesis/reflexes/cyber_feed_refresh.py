@@ -1,4 +1,6 @@
 # CUI // SP-CTI
+from __future__ import annotations
+
 """Cyber Feed Refresh Reflex — daily NVD delta + CISA KEV refresh.
 
 Fires on Genesis 24-hour cadence. Runs CISA KEV sync (which also upserts
@@ -6,11 +8,10 @@ new CVE rows into sg_cve_feed) and reports row counts back as reflex output.
 NVD delta ingest is handled by the same CISA KEV merge path: every KEV entry
 that is not yet in sg_cve_feed is inserted as a new row (is_kev=1).
 
-COOLDOWN_HOURS = 24 prevents double-firing within a calendar day.
+Cooldown is adaptive: anomaly detection on historical run activity (z-score)
+dynamically adjusts between MIN_COOLDOWN_HOURS and MAX_COOLDOWN_HOURS.
 """
 IMPLEMENTATION_STATUS = "full"
-
-from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 import json
@@ -29,7 +30,79 @@ from tools.db.storage import get_connection  # noqa: E402
 logger = get_logger(__name__)
 
 REFLEX_NAME = "cyber_feed_refresh"
-COOLDOWN_HOURS = 24
+
+# Adaptive cooldown bounds (hours)
+DEFAULT_COOLDOWN_HOURS = 24
+MIN_COOLDOWN_HOURS = 6   # Used when high-activity anomaly detected
+MAX_COOLDOWN_HOURS = 48  # Used when low-activity anomaly detected
+
+# Anomaly detection parameters
+ANOMALY_WINDOW = 7       # Historical runs to establish baseline
+ANOMALY_Z_THRESHOLD = 2.0  # Z-score magnitude to flag anomaly
+
+
+def _compute_adaptive_cooldown(conn) -> float:
+    """Return adaptive cooldown hours using z-score anomaly detection.
+
+    Inspects the last ANOMALY_WINDOW actual (non-skipped) runs.  If the most
+    recent run's total CVE activity (nvd_upserted + kev_flagged) deviates by
+    more than ANOMALY_Z_THRESHOLD standard deviations from the historical mean,
+    the cooldown is shortened (high activity) or extended (low activity).
+    Falls back to DEFAULT_COOLDOWN_HOURS when history is insufficient.
+    """
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            "SELECT result_json FROM genesis_reflex_log "
+            "WHERE reflex_name = %s AND result_json IS NOT NULL "
+            "ORDER BY ran_at DESC LIMIT %s",
+            (REFLEX_NAME, ANOMALY_WINDOW),
+        )
+        rows = cur.fetchall()
+    except Exception as exc:
+        logger.warning("cyber_feed_refresh: anomaly detection query failed: %s", exc)
+        return DEFAULT_COOLDOWN_HOURS
+
+    activities: list[float] = []
+    for row in rows:
+        try:
+            result = json.loads(row[0])
+            if result.get("skipped_cooldown"):
+                continue
+            activities.append(
+                float(result.get("nvd_upserted", 0) + result.get("kev_flagged", 0))
+            )
+        except (json.JSONDecodeError, TypeError, KeyError):
+            continue
+
+    if len(activities) < 3:
+        return DEFAULT_COOLDOWN_HOURS
+
+    mean = sum(activities) / len(activities)
+    variance = sum((x - mean) ** 2 for x in activities) / len(activities)
+    std = variance ** 0.5
+
+    last_activity = activities[0]
+    z_score = (last_activity - mean) / std if std > 0 else 0.0
+
+    if z_score >= ANOMALY_Z_THRESHOLD:
+        cooldown = MIN_COOLDOWN_HOURS
+        logger.info(
+            "cyber_feed_refresh: high-activity anomaly (z=%.2f >= %.1f), "
+            "shortening cooldown to %dh",
+            z_score, ANOMALY_Z_THRESHOLD, cooldown,
+        )
+    elif z_score <= -ANOMALY_Z_THRESHOLD:
+        cooldown = MAX_COOLDOWN_HOURS
+        logger.info(
+            "cyber_feed_refresh: low-activity anomaly (z=%.2f <= -%.1f), "
+            "extending cooldown to %dh",
+            z_score, ANOMALY_Z_THRESHOLD, cooldown,
+        )
+    else:
+        cooldown = DEFAULT_COOLDOWN_HOURS
+
+    return cooldown
 
 
 def _last_run_hours_ago(conn) -> float:
@@ -82,17 +155,22 @@ def run(context: dict, session) -> dict:  # noqa: ANN001
     """
     conn = get_connection()
     try:
+        adaptive_cooldown = _compute_adaptive_cooldown(conn)
         hours_ago = _last_run_hours_ago(conn)
-        if hours_ago < COOLDOWN_HOURS:
+        if hours_ago < adaptive_cooldown:
             result = {
                 "ok": True,
                 "skipped_cooldown": True,
                 "hours_since_last": round(hours_ago, 1),
+                "cooldown_hours": adaptive_cooldown,
                 "nvd_upserted": 0,
                 "kev_flagged": 0,
                 "ran_at": datetime.now(timezone.utc).isoformat(),
             }
-            logger.info("cyber_feed_refresh: cooldown active (%.1fh < %dh)", hours_ago, COOLDOWN_HOURS)
+            logger.info(
+                "cyber_feed_refresh: cooldown active (%.1fh < %.1fh adaptive)",
+                hours_ago, adaptive_cooldown,
+            )
             return result
 
         from tools.strategos.cisa_kev_importer import run as kev_run  # noqa: PLC0415
@@ -102,6 +180,7 @@ def run(context: dict, session) -> dict:  # noqa: ANN001
         result = {
             "ok": kev_result.get("ok", False),
             "skipped_cooldown": False,
+            "cooldown_hours": adaptive_cooldown,
             "nvd_upserted": kev_result.get("new_inserted", 0),
             "kev_flagged": kev_result.get("kev_flagged", 0),
             "ran_at": datetime.now(timezone.utc).isoformat(),

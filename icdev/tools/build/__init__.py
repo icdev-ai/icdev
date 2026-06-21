@@ -1,2 +1,2 @@
 # CUI // SP-CTI
-"""ICDEV™ build tools — canonical namespace (icdev.tools.build)."""
+"""ICDEV™ build tools — configurable build-time analysis and advisors."""

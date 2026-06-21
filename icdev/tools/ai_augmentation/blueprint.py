@@ -18,10 +18,7 @@ from flask import Blueprint, jsonify, render_template, request
 import re
 
 from tools.ai_augmentation.db.init_db import get_connection, init_db
-from tools.ai_augmentation.engine import run_scan
-
-# NLP extractor model for regex_user_input → nlp_extractor upgrade (claude-haiku-4-5-20251001)
-_NLP_INPUT_MODEL: str = "claude-haiku-4-5-20251001"
+from tools.ai_augmentation.engine import run_scan, _load_anomaly_thresholds
 
 logger = get_logger(__name__)
 
@@ -317,66 +314,6 @@ def _build_prd(
     return "\n".join(lines)
 
 
-def _nlp_extract_scan_input(input_ref: str, input_type: str) -> tuple:
-    """NLP extractor that classifies user-provided scan input more robustly than regex.
-
-    Handles edge cases regex misses: bare github.com paths, user/repo shorthand,
-    SSH variants without git@, and typo/variation in protocol strings.
-
-    Returns (normalized_input_ref, resolved_input_type).
-    Fast-paths known patterns via regex; LLM handles ambiguous cases.
-    Falls back to original regex behavior when LLM is unavailable.
-    """
-    # Fast-path: unambiguous prefixes — no LLM cost for the common case
-    if re.match(r"^(https?://|git@)", input_ref):
-        return input_ref, "git_url"
-    if input_type != "local_path":
-        return input_ref, input_type
-
-    # LLM path: classify ambiguous user input with Claude Haiku
-    try:
-        from tools.llm.provider import LLMRequest
-        from tools.llm.router import LLMRouter
-
-        prompt = (
-            "Classify this repository reference and respond with JSON only (no prose).\n\n"
-            f"Input: {json.dumps(input_ref)}\n\n"
-            'Return: {"input_type": "git_url" | "local_path", '
-            '"normalized_ref": "<cleaned value>", "confidence": 0.0-1.0}\n\n'
-            "Rules:\n"
-            "- git_url: HTTPS/SSH URLs, github.com/user/repo (with or without protocol), "
-            "user/repo shorthand (expand to https://github.com/user/repo)\n"
-            "- local_path: file system paths, Windows/Unix paths, relative paths\n"
-            "- normalized_ref: full canonical URL for git_url, unchanged for local_path\n"
-            "- confidence: how certain you are (0.9+ for unambiguous, 0.6-0.9 for inferred)"
-        )
-        router = LLMRouter()
-        req = LLMRequest(
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=128,
-            effort="low",
-            preferred_model=_NLP_INPUT_MODEL,
-        )
-        response = router.invoke("code_generation", req)
-        raw = re.sub(r"```(?:json)?|```", "", response.content or "").strip()
-        m = re.search(r"\{.*\}", raw, re.DOTALL)
-        if m:
-            parsed = json.loads(m.group(0))
-            confidence = float(parsed.get("confidence", 0.0))
-            if confidence >= 0.7:
-                resolved_type = parsed.get("input_type", input_type) or input_type
-                resolved_ref  = parsed.get("normalized_ref", input_ref) or input_ref
-                logger.debug(
-                    "nlp_extract_scan_input: %r → type=%s ref=%r (confidence=%.2f)",
-                    input_ref, resolved_type, resolved_ref, confidence,
-                )
-                return resolved_ref, resolved_type
-    except Exception as exc:
-        logger.debug("nlp_extract_scan_input: LLM unavailable, using regex fallback: %s", exc)
-
-    return input_ref, input_type
-
-
 @aac_bp.route("/api/scan", methods=["POST"])
 def api_scan():
     data = request.get_json(force=True, silent=True) or {}
@@ -387,8 +324,9 @@ def api_scan():
     if not input_ref:
         return jsonify({"error": "input_ref is required"}), 400
 
-    # NLP extractor: classify user-provided input_ref (replaces bare regex check)
-    input_ref, input_type = _nlp_extract_scan_input(input_ref, input_type)
+    # Auto-detect git URLs if input_type wasn't explicitly set
+    if input_type == "local_path" and re.match(r"^(https?://|git@)", input_ref):
+        input_type = "git_url"
 
     try:
         result = run_scan(input_type, input_ref, {"il_level": il_level})
@@ -486,7 +424,7 @@ def api_send_to_kanban():
         conn = _conn()
         try:
             placeholders = ",".join("?" * len(all_opp_ids))
-            rows = conn.execute(
+            rows = conn.execute(  # nosec B608 — placeholders are "?,?,?" not user input
                 f"SELECT opportunity_id, composite_score, value_score, feasibility_score, risk_score "
                 f"FROM aac_scores WHERE opportunity_id IN ({placeholders})",
                 tuple(all_opp_ids),
@@ -498,6 +436,9 @@ def api_send_to_kanban():
 
     _PHASE_PRIORITY = {"P1": "high", "P2": "medium", "P3": "low"}
     short_id = roadmap_id[:8]
+
+    _thresholds = _load_anomaly_thresholds()
+    _priority_high_min = float(_thresholds.get("priority_high_min_score", 0.70))
 
     from tools.db.storage import get_connection as _icdev_conn
     created = skipped = epics = 0
@@ -548,7 +489,7 @@ def api_send_to_kanban():
                 model    = opp.get("il_recommended_model", "")
                 scores   = score_map.get(opp_id, {})
                 composite = float(scores.get("composite_score", 0.0))
-                child_priority = "high" if composite >= 0.7 else priority
+                child_priority = "high" if composite >= _priority_high_min else priority
                 criterion = _PATTERN_CRITERIA.get(pattern, f"Replace {pattern} with {paradigm}")
 
                 base_id  = f"aac-{short_id}-{ph_key.lower()}-{opp_id}"
@@ -655,7 +596,7 @@ def api_generate_prd():
         conn = _conn()
         try:
             placeholders = ",".join("?" * len(opp_ids))
-            rows = conn.execute(
+            rows = conn.execute(  # nosec B608 — placeholders are "?,?,?" not user input
                 f"SELECT opportunity_id, composite_score, value_score, feasibility_score, risk_score "
                 f"FROM aac_scores WHERE opportunity_id IN ({placeholders})",
                 tuple(opp_ids),

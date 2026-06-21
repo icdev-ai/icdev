@@ -10,7 +10,7 @@ Checks all STE/STN readiness conditions required before IL6/SIPR deployment:
   5. MFA enforced (ICDEV_MFA_REQUIRED=true)
   6. Strict revocation enabled (ICDEV_PKI_STRICT_REVOCATION=true)
   7. FIPS mode enabled (ICDEV_FIPS_MODE=true)
-  8. Canvas access gate enforced (ICDEV_CANVAS_ACCESS_GATE=true)
+  8. Canvas access gate enforced (ICDEV_CANVAS_ACCESS_ENFORCE=true)
   9. No cloud DB backend (ICDEV_STORAGE_BACKEND != 'postgresql' unless intra-env)
  10. Continuous auth enabled (ICDEV_CONTINUOUS_AUTH_ENABLED=true)
 
@@ -104,8 +104,7 @@ def _check_ollama_reachable() -> STECheck:
         return STECheck(
             name="ollama_reachable",
             passed=False,
-            detail=f"OLLAMA_BASE_URL has invalid scheme: {ollama_url!r}",
-            required=False,
+            detail=f"Invalid OLLAMA_BASE_URL scheme: {ollama_url!r}",
         )
     try:
         with urllib.request.urlopen(f"{ollama_url}/api/tags", timeout=5) as resp:  # nosec B310
@@ -188,7 +187,7 @@ def validate() -> dict[str, Any]:
         _check_env_flag("mfa_required", "ICDEV_MFA_REQUIRED"),
         _check_env_flag("strict_revocation", "ICDEV_PKI_STRICT_REVOCATION"),
         _check_env_flag("fips_mode", "ICDEV_FIPS_MODE"),
-        _check_env_flag("canvas_access_gate", "ICDEV_CANVAS_ACCESS_GATE"),
+        _check_env_flag("canvas_access_enforce", "ICDEV_CANVAS_ACCESS_ENFORCE"),
         _check_env_flag("continuous_auth", "ICDEV_CONTINUOUS_AUTH_ENABLED"),
         _check_storage_backend(),
     ]

@@ -17,4 +17,5 @@
 | anvil maintain | tools/anvil/maintain.py | Headless wrapper — delegates to skill `icdev-maintain` | ibid | ibid |
 | anvil secure | tools/anvil/secure.py | Headless wrapper — delegates to skill `icdev-secure` | ibid | ibid |
 | anvil deploy | tools/anvil/deploy.py | Headless wrapper — delegates to skill `icdev-deploy` | ibid | ibid |
+| anvil agentic_runner | tools/anvil/agentic_runner.py | LLM-backed agentic executor for GA workflows — runs a tool-loop (read_file/write_file/run_command/done) via LLMRouter to diagnose and fix CI failures; replaces static ANVIL wrappers when an LLM key is present | `--task-id STR --task-desc STR [--task-type fix] [--max-turns 6] [--json]` | changed file list (stdout + optional JSON) |
 

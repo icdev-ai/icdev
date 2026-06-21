@@ -1,0 +1,5 @@
+-- CUI // SP-CTI
+-- Data Mesh: List all active domains ordered by maturity level
+foreach d in data_mesh.domains
+where d.status == "active"
+select d.name, d.owner_team, d.maturity_level, d.classification

@@ -15,24 +15,18 @@ Air-gap safe:
 from __future__ import annotations
 
 import json
-import logging
 import re
 import uuid
 from datetime import datetime, timezone
-from typing import Any
 
 from tools.data_canvas.constants import (
     MAPPING_ARTIFACT_TYPES,
     MAPPING_CONF_AUTO_CONFIRM,
     MAPPING_CONF_SUGGEST,
-    MAPPING_FIELD_STATUSES,
-    MAPPING_MATCH_METHODS,
-    MAPPING_SESSION_STATUSES,
-    MAPPING_SOURCE_FORMATS,
-    MAPPING_TARGET_FORMATS,
 )
+from tools.logging.icdev_logger import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _MAX_SCHEMA_BYTES = 512_000  # 500 KB guard
 

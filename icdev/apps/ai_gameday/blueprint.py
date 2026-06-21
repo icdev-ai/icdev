@@ -638,6 +638,7 @@ def api_save_scenario():
     # Also add scenario-level ontology
     scenario_ontology = resolve_scenario_ontology(slug)
     ontology_tags["scenario_classes"] = scenario_ontology.get("classes", [])
+    json.dumps(ontology_tags)
 
     conn = get_connection()
     conn.execute(

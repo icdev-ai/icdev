@@ -94,12 +94,12 @@ def init_security(
         tenant_id = getattr(g, "tenant_id", None)
         user_role = getattr(g, "user_role", None) or user.get("role", "")
         user_id = getattr(g, "user_id", None) or user.get("id", "") or user.get("user_id", "")
-        compartments = set(user.get("compartments", []))
+        compartments = set(user.get("compartments") or [])
         extra = getattr(g, "compartments", None)
         if isinstance(extra, (list, tuple, set)):
             compartments |= set(extra)
 
-        user_classification = user.get("classification", classification)
+        user_classification = user.get("classification", classification) or "CUI"
         try:
             from tools.compliance.classification_manager import get_clearance_order
             clearance = get_clearance_order(user_classification)

@@ -928,9 +928,9 @@ reflexes:
       operator: eq  # 0 canvas-level errors means clean cycle
     canvases: [pdc, bdc, ddc, odc, idc]  # NDC and SDC use other pipelines
 
-  # ── AlphaDesk Trap Scenarios (Phase 7.10 integration-01) ─────────────────────
+  # ── FathomDesk Trap Scenarios (Phase 7.10 integration-01) ─────────────────────
 
-  alphadesk_trap_scenarios:
+  fathomdesk_trap_scenarios:
     enabled: true
     risk_tier: green
     schedule: "every 1h"

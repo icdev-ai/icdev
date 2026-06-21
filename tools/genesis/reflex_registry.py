@@ -58,7 +58,7 @@ REGISTRY: List[ReflexEntry] = [
 
     # ── DOMAIN ────────────────────────────────────────────────────────────────
     ReflexEntry("market",                     DOMAIN, 1.0,  "Market data refresh and signal detection"),
-    ReflexEntry("alphadesk_trap_scenarios",   DOMAIN, 4.0,  "AlphaDesk trap scenario analysis"),
+    ReflexEntry("fathomdesk_trap_scenarios",   DOMAIN, 4.0,  "FathomDesk trap scenario analysis"),
     ReflexEntry("fathomdesk_trap_sweep",          DOMAIN, 4.0,  "FathomDesk trap detection sweep"),
     ReflexEntry("fathomdesk_openbb_refresh",      DOMAIN, 6.0,  "Refresh OpenBB market data cache"),
     ReflexEntry("fathomdesk_fundamentals_sweep",  DOMAIN, 23.0, "Daily PE/P/B/ROE fundamentals refresh from yfinance"),
@@ -87,8 +87,8 @@ REGISTRY: List[ReflexEntry] = [
     ReflexEntry("goal_learner",       SUPPORT, 12.0, "Learn from goal execution outcomes"),
     ReflexEntry("remediation_lens",   SUPPORT, 4.0,  "Surface remediation opportunities"),
     ReflexEntry("failure_triage",     SUPPORT, 2.0,  "Triage and route failure events"),
-    ReflexEntry("alphadesk_news_patterns", SUPPORT, 4.0, "AlphaDesk news pattern detection"),
-    ReflexEntry("alphadesk_correlation_monitor", SUPPORT, 4.0, "AlphaDesk cross-asset correlation"),
+    ReflexEntry("fathomdesk_news_patterns", SUPPORT, 4.0, "FathomDesk news pattern detection"),
+    ReflexEntry("fathomdesk_correlation_monitor", SUPPORT, 4.0, "FathomDesk cross-asset correlation"),
     ReflexEntry("bdc_isa_expiry",     SUPPORT, 24.0, "BDC ISA expiry tracking"),
     ReflexEntry("cato_monitor",       SUPPORT, 6.0,  "cATO compliance monitoring"),
     ReflexEntry("cato_twin",               SUPPORT, 6.0,  "cATO digital twin sync"),

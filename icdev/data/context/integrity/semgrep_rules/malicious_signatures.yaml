@@ -1,0 +1,128 @@
+# CUI // SP-CTI
+# SIPA — Software Integrity & Provenance Assessor — malicious-signature rules.
+#
+# Each rule flags a known-bad code signature: an idiom that is almost never
+# present in benign software and is a hallmark of unauthorized / malicious code
+# (reverse shells, decode-then-exec packers, credential exfil, attacker-controlled
+# dynamic imports, persistence). Matches are folded into integrity_findings as
+# finding_type='known_bad_signature' (source_scanner='semgrep') by
+# tools/integrity/scanners.py::run_signature_scan.
+#
+# Convention: metadata.sipa_signature names the signature CATEGORY (one of the
+# keys in scanners._SIGNATURE_CATEGORIES). The rule `id` is recorded verbatim on
+# the finding so a reviewer can trace the exact rule that fired.
+#
+# SIPA is STATIC-ONLY: these rules read the quarantined bytes; nothing here (or in
+# the scanner) ever executes the target.
+
+rules:
+  # ── reverse shell / C2 callback ────────────────────────────────────────────
+  - id: sipa-reverse-shell-py
+    patterns:
+      - pattern-either:
+          - pattern: os.dup2($S.fileno(), $FD)
+          - pattern: pty.spawn("/bin/sh")
+          - pattern: pty.spawn("/bin/bash")
+          - pattern: subprocess.call(["/bin/sh", "-i"], ...)
+          - pattern: subprocess.Popen(["/bin/sh", "-i"], ...)
+          - pattern: subprocess.call(["/bin/bash", "-i"], ...)
+          - pattern: subprocess.Popen(["/bin/bash", "-i"], ...)
+    message: >-
+      Reverse shell / interactive shell bound to a socket (C2 callback). This
+      duplicates a socket onto stdio or spawns an interactive shell — a hallmark
+      of remote-access malware.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      sipa_signature: reverse_shell
+      cwe: "CWE-78: OS Command Injection"
+      references:
+        - https://attack.mitre.org/techniques/T1059/
+
+  - id: sipa-reverse-shell-generic
+    # Catch-all for shells/scripts and obfuscated one-liners across languages.
+    patterns:
+      - pattern-regex: (?:/bin/(?:ba)?sh\s+-i|bash\s+-i\s+>&\s*/dev/tcp/|0<&\d+;exec\s+\d+<>/dev/tcp/|nc\s+-e\s+/bin/)
+    message: Reverse shell idiom (/dev/tcp redirect or nc -e) — C2 callback.
+    languages: [generic]
+    severity: ERROR
+    metadata:
+      sipa_signature: reverse_shell
+
+  # ── base64 / hex decode-then-exec (packer / obfuscation) ───────────────────
+  - id: sipa-decode-then-exec-py
+    patterns:
+      - pattern-either:
+          - pattern: exec(base64.b64decode(...))
+          - pattern: eval(base64.b64decode(...))
+          - pattern: exec(base64.b64decode(...).decode(...))
+          - pattern: eval(base64.b64decode(...).decode(...))
+          - pattern: exec(codecs.decode(...))
+          - pattern: exec(bytes.fromhex(...))
+          - pattern: exec(binascii.unhexlify(...))
+          - pattern: exec(zlib.decompress(...))
+          - pattern: exec(__import__("base64").b64decode(...))
+          - pattern: eval(__import__("base64").b64decode(...))
+    message: >-
+      Obfuscated code execution: a base64/hex/zlib blob is decoded and handed
+      straight to exec()/eval(). Legitimate code rarely executes decoded bytes;
+      this is the canonical Python packer / dropper signature.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      sipa_signature: decode_then_exec
+      cwe: "CWE-95: Eval Injection"
+
+  # ── credential exfiltration to an external host ────────────────────────────
+  - id: sipa-credential-exfil-py
+    patterns:
+      - pattern-either:
+          - pattern: requests.post($URL, ..., data=os.environ, ...)
+          - pattern: requests.post($URL, ..., json=os.environ, ...)
+          - pattern: requests.post($URL, ..., data=dict(os.environ), ...)
+          - pattern: requests.post($URL, ..., json=dict(os.environ), ...)
+          - pattern: requests.post($URL, data=os.environ)
+          - pattern: requests.post($URL, json=dict(os.environ))
+          - pattern: requests.get($URL, ..., params=os.environ, ...)
+          - pattern: urllib.request.urlopen($URL, urllib.parse.urlencode(os.environ).encode(...))
+          - pattern: urllib.request.urlopen($URL, urllib.parse.urlencode(dict(os.environ)).encode(...))
+    message: >-
+      Possible credential exfiltration: process environment / secret material is
+      serialized into an outbound HTTP request. Benign code does not POST the full
+      environment to a remote host.
+    languages: [python]
+    severity: ERROR
+    metadata:
+      sipa_signature: credential_exfil
+      cwe: "CWE-200: Exposure of Sensitive Information"
+
+  # ── dynamic import of an attacker-controlled (non-literal) module name ──────
+  - id: sipa-dynamic-import-py
+    patterns:
+      - pattern-either:
+          - pattern: importlib.import_module($X)
+          - pattern: __import__($X)
+      - pattern-not: importlib.import_module("...")
+      - pattern-not: __import__("...")
+    message: >-
+      Dynamic import of a non-literal module name. When the imported name is
+      derived from input/network/decoded data, this is a code-from-data loader
+      that defeats static review of what actually gets imported.
+    languages: [python]
+    severity: WARNING
+    metadata:
+      sipa_signature: dynamic_import
+      cwe: "CWE-470: Unsafe Reflection"
+
+  # ── persistence / startup-survival mechanisms ──────────────────────────────
+  - id: sipa-persistence-generic
+    patterns:
+      - pattern-regex: (?:crontab\s+-[lrei]|/etc/cron\.(?:d|daily|hourly|weekly)|/etc/rc\.local|/Library/LaunchAgents|/Library/LaunchDaemons|Software\\+Microsoft\\+Windows\\+CurrentVersion\\+Run|systemctl\s+enable\s)
+    message: >-
+      Suspicious persistence mechanism (cron / rc.local / LaunchAgents / Windows
+      Run key / systemd enable). Malicious code installs itself to survive reboot.
+    languages: [generic]
+    severity: WARNING
+    metadata:
+      sipa_signature: persistence
+      cwe: "CWE-506: Embedded Malicious Code"

@@ -1,0 +1,252 @@
+<!-- CUI // SP-CTI — GeoINT Situational Awareness -->
+{% extends "base.html" %}
+{% block title %}GeoINT Situational Awareness — ICDEV{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<style>
+.gi-wrap { display:flex; flex-direction:column; height:calc(100vh - 110px); overflow:hidden; }
+.gi-header { display:flex; align-items:center; gap:14px; padding:10px 20px; border-bottom:1px solid #1e3a6e; background:#0a1628; flex-shrink:0; flex-wrap:wrap; }
+.gi-title  { font-size:16px; font-weight:700; color:#eaeaea; margin:0; }
+.gi-subtitle { font-size:11px; color:#5a6e8c; margin:0; }
+.gi-stats  { display:flex; gap:14px; margin-left:auto; flex-wrap:wrap; }
+.gi-stat   { text-align:center; }
+.gi-stat-v { font-size:15px; font-weight:700; color:#4fc3f7; display:block; }
+.gi-stat-l { font-size:9px; color:#5a6e8c; text-transform:uppercase; letter-spacing:.5px; }
+.gi-actions{ display:flex; gap:8px; }
+.gi-btn    { padding:7px 14px; border-radius:6px; font-size:11px; font-weight:700; border:none; cursor:pointer; }
+.gi-btn-primary { background:linear-gradient(135deg,#0f3460,#4fc3f7); color:#fff; }
+.gi-btn-osint   { background:#7c4dff22; color:#ce93d8; border:1px solid #7c4dff55; }
+.gi-btn-primary:hover { opacity:.85; }
+.gi-btn-osint:hover   { background:#7c4dff44; }
+
+.gi-body { display:flex; flex:1; overflow:hidden; }
+.gi-map-wrap { flex:1; position:relative; }
+#gi-map { width:100%; height:100%; background:#0a1628; }
+
+/* Leaflet dark override */
+.leaflet-tile { filter:brightness(.7) contrast(1.1) saturate(.8); }
+.leaflet-control-attribution { background:rgba(10,22,40,.8)!important; color:#3a4e6e!important; }
+.leaflet-control-attribution a { color:#4fc3f7!important; }
+.leaflet-popup-content-wrapper { background:#16213e; border:1px solid #1e3a6e; color:#eaeaea; border-radius:8px; }
+.leaflet-popup-tip { background:#16213e; }
+.leaflet-popup-content { margin:10px 14px; font-size:12px; line-height:1.6; }
+.leaflet-popup-content strong { color:#ff9800; }
+
+/* Source legend */
+.gi-legend { position:absolute; bottom:20px; left:10px; z-index:400; background:#0d1b2a; border:1px solid #1e3a6e; border-radius:8px; padding:10px 14px; font-size:11px; }
+.gi-legend-item { display:flex; align-items:center; gap:8px; margin-bottom:4px; color:#7a8cb0; }
+.gi-legend-dot  { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+
+/* Sidebar */
+.gi-sidebar { width:300px; flex-shrink:0; display:flex; flex-direction:column; overflow:hidden; border-left:1px solid #1e3a6e; }
+.gi-sidebar-head { padding:10px 14px; border-bottom:1px solid #1e3a6e; font-size:10px; color:#5a6e8c; text-transform:uppercase; letter-spacing:.6px; display:flex; justify-content:space-between; align-items:center; }
+.gi-filter-row { display:flex; gap:6px; padding:8px 10px; border-bottom:1px solid #0f1e36; flex-wrap:wrap; }
+.gi-filter-btn { padding:3px 8px; border-radius:4px; font-size:10px; font-weight:600; border:1px solid #1e3a6e; background:transparent; color:#7a8cb0; cursor:pointer; transition:all .15s; }
+.gi-filter-btn.active,.gi-filter-btn:hover { background:#0f3460; color:#4fc3f7; border-color:#4fc3f755; }
+.gi-event-list { flex:1; overflow-y:auto; }
+.gi-event-item { padding:10px 14px; border-bottom:1px solid #0f1e36; cursor:pointer; transition:background .15s; }
+.gi-event-item:hover { background:#0f1e36; }
+.gi-event-title { font-size:11px; font-weight:600; color:#eaeaea; margin-bottom:3px; line-height:1.3; }
+.gi-event-meta  { display:flex; gap:8px; font-size:10px; color:#5a6e8c; }
+.gi-sev-badge   { display:inline-block; padding:1px 6px; border-radius:3px; font-size:9px; font-weight:700; }
+.gi-sev-critical{ background:#4a0e0e; color:#ef5350; }
+.gi-sev-high    { background:#3d300033; color:#ff9800; }
+.gi-sev-medium  { background:#0f346033; color:#4fc3f7; }
+.gi-sev-low     { background:#1b5e2033; color:#66bb6a; }
+.gi-loading { padding:20px; text-align:center; color:#5a6e8c; font-size:12px; }
+.gi-empty   { padding:20px; text-align:center; color:#5a6e8c; font-size:12px; }
+
+/* Ingest spinner */
+.gi-spinner { display:none; width:14px; height:14px; border:2px solid #1e3a6e; border-top-color:#4fc3f7; border-radius:50%; animation:spin .8s linear infinite; }
+@keyframes spin { to { transform:rotate(360deg); } }
+.gi-spinner.active { display:inline-block; }
+</style>
+
+<div class="gi-wrap">
+  <div class="gi-header">
+    <div>
+      <p class="gi-title">&#127757; GeoINT Situational Awareness</p>
+      <p class="gi-subtitle">USGS &bull; GDACS &bull; ReliefWeb &bull; OpenSky &mdash; live, no API key</p>
+    </div>
+    <div class="gi-stats">
+      <div class="gi-stat"><span class="gi-stat-v" id="stat-total">—</span><span class="gi-stat-l">Events</span></div>
+      <div class="gi-stat"><span class="gi-stat-v" id="stat-critical" style="color:#ef5350">—</span><span class="gi-stat-l">Critical</span></div>
+      <div class="gi-stat"><span class="gi-stat-v" id="stat-eq" style="color:#ff9800">—</span><span class="gi-stat-l">Earthquakes</span></div>
+      <div class="gi-stat"><span class="gi-stat-v" id="stat-disaster" style="color:#ce93d8">—</span><span class="gi-stat-l">Disasters</span></div>
+    </div>
+    <div class="gi-actions">
+      <div class="gi-spinner" id="gi-spin"></div>
+      <button class="gi-btn gi-btn-primary" onclick="doIngest()">&#8635; Ingest Now</button>
+      <a href="/data/osint" class="gi-btn gi-btn-osint">&#128737; OSINT Feed</a>
+    </div>
+  </div>
+
+  <div class="gi-body">
+    <div class="gi-map-wrap">
+      <div id="gi-map"></div>
+      <div class="gi-legend">
+        <div class="gi-legend-item"><div class="gi-legend-dot" style="background:#ef5350"></div>Critical / M7+</div>
+        <div class="gi-legend-item"><div class="gi-legend-dot" style="background:#ff9800"></div>High / M5-7</div>
+        <div class="gi-legend-item"><div class="gi-legend-dot" style="background:#4fc3f7"></div>Medium / M2.5-5</div>
+        <div class="gi-legend-item"><div class="gi-legend-dot" style="background:#66bb6a"></div>Low</div>
+        <div class="gi-legend-item"><div class="gi-legend-dot" style="background:#ce93d8;border-radius:2px"></div>Disaster</div>
+        <div class="gi-legend-item"><div class="gi-legend-dot" style="background:#80deea;clip-path:polygon(50% 0,100% 100%,0 100%)"></div>Aircraft</div>
+      </div>
+    </div>
+
+    <div class="gi-sidebar">
+      <div class="gi-sidebar-head">
+        <span>Events</span>
+        <span id="sidebar-count" style="color:#4fc3f7">—</span>
+      </div>
+      <div class="gi-filter-row">
+        <button class="gi-filter-btn active" data-type="all" onclick="filterType(this,'all')">All</button>
+        <button class="gi-filter-btn" data-type="earthquake" onclick="filterType(this,'earthquake')">Earthquake</button>
+        <button class="gi-filter-btn" data-type="disaster" onclick="filterType(this,'disaster')">Disaster</button>
+        <button class="gi-filter-btn" data-type="aircraft" onclick="filterType(this,'aircraft')">Aircraft</button>
+      </div>
+      <div class="gi-event-list" id="gi-event-list">
+        <div class="gi-loading">Loading events&hellip;</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+{% block scripts %}
+<script>
+var _map, _markers = [], _allEvents = [], _activeType = 'all';
+
+var _SEV_COLOR = {critical:'#ef5350',high:'#ff9800',medium:'#4fc3f7',low:'#66bb6a'};
+var _TYPE_ICON = {earthquake:'&#127755;',flood:'&#127754;',storm:'&#129744;',
+                  fire:'&#128293;',aircraft:'&#9992;&#65039;',disaster:'&#9888;'};
+
+function _sevColor(sev) { return _SEV_COLOR[sev] || '#4fc3f7'; }
+function _typeIcon(t)   { return _TYPE_ICON[t] || '&#127988;'; }
+
+function initMap() {
+  _map = L.map('gi-map', {zoomControl:true}).setView([20, 0], 2);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 18
+  }).addTo(_map);
+}
+
+function makeMarker(e) {
+  var color = _sevColor(e.severity);
+  var isAircraft = e.event_type === 'aircraft';
+  var isDisaster = !['earthquake','aircraft'].includes(e.event_type);
+  var radius = isAircraft ? 4 :
+    (e.magnitude ? Math.max(5, Math.min(22, e.magnitude * 3)) : 10);
+
+  var markerOpts = isDisaster
+    ? { color: color, fillColor: color, fillOpacity: .7, weight: 2, radius: 10 }
+    : { color: color, fillColor: color, fillOpacity: .6, weight: 1.5, radius: radius };
+
+  var marker = L.circleMarker([e.lat, e.lon], markerOpts);
+  var magStr = e.magnitude ? '<br><b>Magnitude:</b> ' + e.magnitude.toFixed(1) : '';
+  var pop = '<strong>' + e.title + '</strong>'
+    + magStr
+    + '<br><b>Source:</b> ' + e.source
+    + '<br><b>Severity:</b> ' + e.severity
+    + (e.country ? '<br><b>Country:</b> ' + e.country : '')
+    + '<br><small style="color:#5a6e8c">' + (e.occurred_at || '').slice(0,19) + ' UTC</small>'
+    + '<br><small style="color:#5a6e8c">' + (e.description || '').slice(0,120) + '</small>';
+  marker.bindPopup(pop);
+  return marker;
+}
+
+function renderMap(events) {
+  _markers.forEach(function(m){ _map.removeLayer(m); });
+  _markers = [];
+  events.forEach(function(e) {
+    if (e.lat == null || e.lon == null) return;
+    var m = makeMarker(e);
+    m.addTo(_map);
+    _markers.push(m);
+  });
+}
+
+function renderList(events) {
+  var list = document.getElementById('gi-event-list');
+  document.getElementById('sidebar-count').textContent = events.length;
+  if (!events.length) {
+    list.innerHTML = '<div class="gi-empty">No events. Click <b>Ingest Now</b>.</div>';
+    return;
+  }
+  var html = '';
+  events.slice(0, 80).forEach(function(e) {
+    var ic = _typeIcon(e.event_type);
+    var sc = 'gi-sev-' + (e.severity || 'medium');
+    var ts = (e.occurred_at || '').slice(0,10);
+    html += '<div class="gi-event-item" onclick="focusEvent(' + e.lat + ',' + e.lon + ')">'
+      + '<div class="gi-event-title">' + ic + ' ' + e.title + '</div>'
+      + '<div class="gi-event-meta">'
+      + '<span class="gi-sev-badge ' + sc + '">' + (e.severity||'?').toUpperCase() + '</span>'
+      + '<span>' + e.source + '</span>'
+      + '<span>' + ts + '</span>'
+      + '</div></div>';
+  });
+  list.innerHTML = html;
+}
+
+function filterType(btn, type) {
+  document.querySelectorAll('.gi-filter-btn').forEach(function(b){ b.classList.remove('active'); });
+  btn.classList.add('active');
+  _activeType = type;
+  var filtered = type === 'all' ? _allEvents
+    : _allEvents.filter(function(e){ return e.event_type === type || (type==='disaster' && !['earthquake','aircraft'].includes(e.event_type)); });
+  renderMap(filtered);
+  renderList(filtered);
+}
+
+function focusEvent(lat, lon) {
+  if (lat != null && lon != null) _map.setView([lat, lon], 6);
+}
+
+function updateStats(events) {
+  var critical = events.filter(function(e){ return e.severity==='critical'; }).length;
+  var eq = events.filter(function(e){ return e.event_type==='earthquake'; }).length;
+  var dis = events.filter(function(e){ return !['earthquake','aircraft'].includes(e.event_type); }).length;
+  document.getElementById('stat-total').textContent = events.length;
+  document.getElementById('stat-critical').textContent = critical;
+  document.getElementById('stat-eq').textContent = eq;
+  document.getElementById('stat-disaster').textContent = dis;
+}
+
+function loadEvents() {
+  fetch('/data/api/geoint/events?limit=500')
+    .then(function(r){ return r.ok ? r.json() : {events:[]}; })
+    .then(function(d) {
+      _allEvents = d.events || [];
+      var filtered = _activeType === 'all' ? _allEvents
+        : _allEvents.filter(function(e){ return e.event_type === _activeType; });
+      renderMap(filtered);
+      renderList(filtered);
+      updateStats(_allEvents);
+    })
+    .catch(function(){
+      document.getElementById('gi-event-list').innerHTML = '<div class="gi-empty">Failed to load events.</div>';
+    });
+}
+
+function doIngest() {
+  var spin = document.getElementById('gi-spin');
+  spin.classList.add('active');
+  fetch('/data/api/geoint/ingest', {method:'POST'})
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      spin.classList.remove('active');
+      loadEvents();
+    })
+    .catch(function(){ spin.classList.remove('active'); });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  initMap();
+  loadEvents();
+  setInterval(loadEvents, 60000);
+});
+</script>
+{% endblock %}

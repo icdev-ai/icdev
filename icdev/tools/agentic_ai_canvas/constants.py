@@ -376,6 +376,53 @@ AADC_OBJECTS["categories"]["safety"].extend(_P4_SAFETY_NODES)
 AADC_OBJECTS["categories"]["tools_mcp"].extend(_P4_TOOL_NODES)
 
 # ---------------------------------------------------------------------------
+# Memory Layer compliance checks — vector-db / research pipeline rules
+# ---------------------------------------------------------------------------
+
+MEMORY_LAYER_CHECKS: list[dict] = [
+    {
+        "id": "mem-1",
+        "function": "MAP",
+        "category": "MAP-3",
+        "title": "Vector DB requires embedding model",
+        "description": "A vector-db node must be paired with an embedding-model node "
+                       "(documents must be vectorized before storage).",
+        "check": "vector_db_has_embedding_model",
+        "weight": 15,
+    },
+    {
+        "id": "mem-2",
+        "function": "MAP",
+        "category": "MAP-4",
+        "title": "Vector DB requires chunker upstream",
+        "description": "A vector-db node must be preceded by a chunker node "
+                       "(raw documents must be chunked before embedding/indexing).",
+        "check": "vector_db_has_chunker",
+        "weight": 12,
+    },
+    {
+        "id": "mem-3",
+        "function": "GOVERN",
+        "category": "GOV-5",
+        "title": "Persistent memory must be audited",
+        "description": "long-term-mem and vector-db nodes must have an audit-logger "
+                       "downstream to maintain an immutable retrieval audit trail.",
+        "check": "persistent_memory_has_audit",
+        "weight": 15,
+    },
+    {
+        "id": "mem-4",
+        "function": "MEASURE",
+        "category": "MEA-5",
+        "title": "Vector DB ingestion requires data validation",
+        "description": "A data-validator node must be upstream of any vector-db to prevent "
+                       "RAG poisoning (MITRE ATLAS AML.T0020).",
+        "check": "vector_db_has_data_validator",
+        "weight": 12,
+    },
+]
+
+# ---------------------------------------------------------------------------
 # Compliance rule display labels
 # ---------------------------------------------------------------------------
 

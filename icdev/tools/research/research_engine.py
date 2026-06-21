@@ -444,6 +444,13 @@ def run_pipeline(session_id=None, vertical=None, name=None, description=None, fo
     if not session_id:
         if not vertical:
             return {"error": "Provide --session-id or --vertical to create a new session"}
+        # Pre-load verticals from JSON so new configs are visible before session creation
+        load_verticals = _try_import("tools.research.vertical_loader", "load_verticals_to_db")
+        if load_verticals:
+            try:
+                load_verticals(db_path=db_path)
+            except Exception:
+                pass
         create = _try_import("tools.research.session_manager", "create_session")
         if create:
             try:

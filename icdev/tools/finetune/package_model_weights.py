@@ -52,7 +52,7 @@ def _download_model(model_id: str, cache_dir: Path) -> Path:
 
     print(f"Downloading {model_id} to {cache_dir}...")
     local_dir = cache_dir / _sanitize_name(model_id)
-    snapshot_download(
+    snapshot_download(  # nosec B615 — model_id validated against approved repo list before call
         repo_id=model_id,
         local_dir=str(local_dir),
         ignore_patterns=["*.bin"],  # prefer safetensors

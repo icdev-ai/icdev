@@ -1711,13 +1711,18 @@ def _now_iso() -> str:
 
 def list_workflows(*, shared_only: bool = False) -> list[dict]:
     """List all studio workflows."""
+    import sqlite3 as _sqlite3
     conn = get_connection()
     try:
         sql = "SELECT * FROM studio_workflows"
         if shared_only:
             sql += " WHERE shared = 1"
         sql += " ORDER BY updated_at DESC"
-        rows = conn.execute(sql).fetchall()
+        try:
+            rows = conn.execute(sql).fetchall()
+        except _sqlite3.OperationalError:
+            # Table not yet initialized; return empty list gracefully
+            return []
         return [dict(r) for r in rows]
     finally:
         conn.close()
@@ -1866,13 +1871,17 @@ def update_workflow(
 def delete_workflow(workflow_id: str) -> dict:
     conn = get_connection()
     try:
-        cur = conn.execute(
+        row = conn.execute(
+            "SELECT workflow_id FROM studio_workflows WHERE workflow_id = ?",
+            (workflow_id,),
+        ).fetchone()
+        if not row:
+            return {"status": "error", "error": "Workflow not found"}
+        conn.execute(
             "DELETE FROM studio_workflows WHERE workflow_id = ?",
             (workflow_id,),
         )
         conn.commit()
-        if cur.rowcount == 0:
-            return {"status": "error", "error": "Workflow not found"}
         return {"status": "ok", "deleted": workflow_id}
     finally:
         conn.close()

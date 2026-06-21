@@ -45,6 +45,7 @@ All canvases share: separate SQLite DB, Flask Blueprint, YAML config in `args/`,
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | NDC Auto-Layout | tools/network/layout.py | Auto-layout for imported topology graphs (PDF/VSDX/config-derived). Re-flows graph nodes into a clean professional layout using hierarchical, force-directed, or circular algorithms so imported diagrams render correctly in the canvas. | `layout_graph(graph, algorithm)` | Graph dict with updated node coordinates |
+| NDC Event Emitter | tools/ndc/event_emitter.py | Fire-and-forget canvas event publisher for NDC → DIC integration. Inserts rows into `canvas_events` (PG-primary) on topology/config changes. Public API: `emit_topology_change`, `emit_config_push`, `emit_baseline_deviation`. All functions are non-blocking (swallow exceptions so NDC ops are never blocked). | library module | bool (True on success) |
 
 ## DDC Sub-Tools
 | Tool | File | Description | Input | Output |

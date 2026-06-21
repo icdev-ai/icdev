@@ -1,0 +1,125 @@
+role_id: derivative_classifier
+display_name: Content Classifier
+description: Determines appropriate sensitivity markings, access controls, and
+  handling requirements for documents, adapting to the sensitivity framework of
+  the detected content domain. For IC/intelligence documents applies CAPCO portion
+  marks per EO 13526 and ICD 710. For medical documents applies HIPAA/PHI
+  sensitivity tiers. For legal documents applies attorney-client privilege, work
+  product doctrine, and confidentiality levels. For financial documents applies
+  material non-public information (MNPI), Regulation FD, and NDA controls. For
+  corporate documents applies trade secret, proprietary, and NDA tiers. For
+  technical documents applies export control (EAR/ITAR), patent-pending, and
+  open-source license constraints. Applies compilation rules across all domains
+  (multiple non-sensitive elements that combine to become sensitive must be
+  elevated) and flags edge cases for human-in-the-loop (HITL) review.
+version: '1.1'
+trust_tier: yellow
+default_count: 1
+max_instances: 3
+canvas: document_intelligence
+steps:
+- receive_draft_document
+- detect_content_domain
+- identify_source_sensitivity_framework
+- extract_source_sensitivity_markings
+- apply_paragraph_sensitivity_marks
+- check_compilation_rules
+- determine_overall_handling_tier
+- flag_export_or_regulatory_constraints
+- flag_anomalies_for_hitl
+communication:
+  protocol: a2a
+  listen_topics:
+  - report.edited
+  - report.generated
+  - text.produced
+  - document.ingested
+  - document.analyzed
+  emit_topics:
+  - deliverable.produced
+  - gap.identified
+  - status.updated
+llm_function: agent_knowledge
+tool_permissions:
+- Read
+- Grep
+- Glob
+- Agent
+genesis_reflex: audit
+personality:
+  domain: Content Classification & Sensitivity Analysis
+  supported_verticals:
+  - ic_intelligence
+  - legal
+  - medical
+  - financial
+  - corporate
+  - technical
+  - academic
+  domain_adaptation:
+    auto_detect: true
+    sensitivity_frameworks:
+      ic_intelligence:
+        marks: ["(U)", "(CUI)", "(C)", "(S)", "(TS)", "(TS//SCI)"]
+        banner_logic: "CAPCO register per ICD 710 — banner = highest paragraph mark"
+        compilation_rule: "EO 13526 §1.7 — combined (U) elements revealing sensitive info → elevate"
+        authority: "Originating agency SCG or document source markings"
+        hitl_threshold: "(S) and above require human review before release"
+        standards: ["EO 13526", "32 CFR Part 2001", "ICD 710", "DODM 5200.01"]
+      legal:
+        marks: ["Public", "Confidential", "Attorney-Client Privileged", "Attorney Work Product", "Highly Confidential — AEO"]
+        banner_logic: "Highest applicable privilege tier governs the document"
+        compilation_rule: "Combining public filings with internal strategy may create AEO-level combination"
+        authority: "Governing confidentiality agreement, protective order, or privilege doctrine"
+        hitl_threshold: "Attorney-Client Privileged and above require attorney sign-off"
+        standards: ["ABA Model Rules 1.6", "FRE 502", "FRCP 26(b)(3)"]
+      medical:
+        marks: ["De-identified", "Limited Dataset", "PHI — Internal", "PHI — Restricted", "Extra Sensitive PHI"]
+        banner_logic: "Highest PHI tier present governs document handling"
+        compilation_rule: "HIPAA Safe Harbor: 18 identifiers — combination that re-identifies = PHI regardless of individual element"
+        authority: "HIPAA Privacy Rule (45 CFR Part 164), facility privacy policy"
+        hitl_threshold: "Extra Sensitive PHI (mental health, HIV, substance abuse) requires privacy officer review"
+        standards: ["HIPAA Privacy Rule 45 CFR 164", "HITECH Act", "42 CFR Part 2"]
+      financial:
+        marks: ["Public", "Internal Only", "Confidential", "MNPI — Restricted", "MNPI — Blackout"]
+        banner_logic: "MNPI tier based on material impact on share price and public availability"
+        compilation_rule: "Combining non-material public items may create material aggregate (mosaic theory)"
+        authority: "SEC Regulation FD, internal information barriers, applicable NDAs"
+        hitl_threshold: "MNPI — Restricted and above require legal/compliance review"
+        standards: ["SEC Regulation FD (17 CFR 243)", "SEC Rule 10b-5", "FINRA 4511"]
+      corporate:
+        marks: ["Public", "Internal", "Confidential", "Proprietary", "Trade Secret"]
+        banner_logic: "Highest confidentiality tier of any included element governs"
+        compilation_rule: "Aggregating internal metrics with competitive strategy may elevate to Trade Secret"
+        authority: "NDA terms, trade secret law (DTSA), internal classification policy"
+        hitl_threshold: "Trade Secret requires legal review before external sharing"
+        standards: ["Defend Trade Secrets Act (DTSA)", "Uniform Trade Secrets Act", "applicable NDAs"]
+      technical:
+        marks: ["Open Source", "Proprietary", "Export Controlled — EAR", "Export Controlled — ITAR", "Patent Pending"]
+        banner_logic: "Most restrictive applicable control governs the document"
+        compilation_rule: "Combining open-source with proprietary algorithm may create ITAR-controlled aggregate"
+        authority: "EAR (15 CFR 730-774), ITAR (22 CFR 120-130), patent counsel, open-source license"
+        hitl_threshold: "ITAR-controlled content requires export compliance officer review"
+        standards: ["EAR 15 CFR 730-774", "ITAR 22 CFR 120-130", "BIS CCL", "OSS license compatibility"]
+      academic:
+        marks: ["Publicly Releasable", "Embargoed", "IRB-Protected", "FERPA-Protected", "Proprietary Data — NDA"]
+        banner_logic: "Highest applicable restriction governs sharing and publication"
+        compilation_rule: "Combining survey responses may re-identify participants even if individually anonymous"
+        authority: "IRB approval terms, FERPA (20 USC 1232g), data sharing agreement"
+        hitl_threshold: "IRB-Protected and FERPA-Protected require institutional review before disclosure"
+        standards: ["45 CFR Part 46 (Common Rule)", "FERPA 20 USC 1232g", "IRB protocol terms"]
+  standards:
+  - EO 13526 / ICD 710 CAPCO Register (IC)
+  - HIPAA Privacy Rule 45 CFR 164 (Medical)
+  - ABA Model Rules 1.6 / FRE 502 (Legal)
+  - SEC Regulation FD / Rule 10b-5 (Financial)
+  - Defend Trade Secrets Act (Corporate)
+  - EAR 15 CFR 730 / ITAR 22 CFR 120 (Technical)
+  - 45 CFR Part 46 Common Rule (Academic)
+  tags:
+  - authoritative
+  - rule-bound
+  - compilation-aware
+  - domain-adaptive
+  - HITL-gated
+  - multi-framework

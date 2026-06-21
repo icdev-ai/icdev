@@ -48,6 +48,11 @@ from tools.daemon.base import (  # noqa: E402
 from tools.db.storage import get_connection  # noqa: E402
 from tools.genesis.constants import TRUST_MODES  # noqa: E402
 
+try:
+    from tools.a2a.agent_client import A2AAgentClient  # noqa: E402
+except Exception:  # ImportError or requests not installed
+    A2AAgentClient = None  # type: ignore[assignment,misc]
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -55,6 +60,12 @@ DAEMON_VERSION = "2.0.0-alpha"
 CONFIG_PATH = BASE_DIR / "args" / "genesis_config.yaml"
 PID_FILE = BASE_DIR / ".tmp" / "genesis" / "daemon.pid"
 STATE_FILE = BASE_DIR / ".tmp" / "genesis" / "state.json"
+
+# Last-resort fallback timeout (seconds) — only used when genesis_config.yaml
+# is unavailable AND no per-reflex timeout_seconds is set.  In normal operation
+# the value is read from config.defaults.reflex_timeout_seconds so it can be
+# tuned without code changes.
+DEFAULT_REFLEX_TIMEOUT_SECONDS = 300
 
 REFLEX_NAMES = [
     "research",
@@ -78,14 +89,30 @@ REFLEX_NAMES = [
     "remediation_lens",
     "awareness",
     "canvas_indexer",
-    "alphadesk_trap_scenarios",
+    "self_monitor",
+    "fathomdesk_trap_scenarios",
     "migration_canvas",
     "academy_reflex",
     "e2e_runner",
     "log_triage",
+    "inspect_adapt",
+    "cpmp_monitor",
+    "pmo_option_tracker",
+    "pmo_weekly_report",
+    "slides",
     "aidp_monitor",
+    "integrity_monitor",
+    "foundry_cycle",
+    "ace_team_monitor",
+    "pma_credential_monitor",
+    "pma_int_gap_monitor",
+    "skill_security_monitor",
     "dic_integration",     # dsyn-reflex-02: DIC Canvas Synergy — 15-min cadence
     "dic_review_cadence",  # dsyn-suggest-02: nightly collection review overdue check
+    "dic_digest",          # dic-syn-gn: weekly digest of new docs + freshness alerts
+    "reflexion_loop",      # nova-echo: weekly batch Reflexion pass → improvement artifacts
+    "evolution",           # nova-sela: weekly GEPA-style skill text mutation + promotion
+    "wiki_lint",           # karpathy-wiki: nightly health checks on memory wiki (orphans/stale/overflow)
 ]
 
 # Backward-compat aliases for module-level access used by other code
@@ -136,6 +163,12 @@ class GenesisDaemon(DaemonBase):
         super().__init__(config)
         raw = config.get("trust_mode", "full")
         self.trust_mode: str = raw if raw in TRUST_MODES else "full"
+        _defaults = config.get("defaults", {})
+        self._default_reflex_timeout: float = float(
+            _defaults.get("reflex_timeout_seconds", DEFAULT_REFLEX_TIMEOUT_SECONDS)
+        )
+        self._stub_loc_min: int = int(_defaults.get("stub_loc_min", 10))
+        self._stub_loc_full: int = int(_defaults.get("stub_loc_full", 15))
 
     def ensure_tables(self) -> None:
         """Create genesis tables if they do not exist."""
@@ -171,6 +204,21 @@ class GenesisDaemon(DaemonBase):
                     last_metric_value   REAL,
                     last_error          TEXT,
                     updated_at          TEXT NOT NULL
+                );
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS agent_a2a_tasks (
+                    id              TEXT PRIMARY KEY,
+                    reflex_name     TEXT NOT NULL,
+                    skill_id        TEXT NOT NULL,
+                    agent_url       TEXT NOT NULL,
+                    task_id         TEXT NOT NULL,
+                    status          TEXT NOT NULL DEFAULT 'submitted',
+                    input_data      TEXT,
+                    result          TEXT,
+                    error           TEXT,
+                    submitted_at    TEXT NOT NULL,
+                    updated_at      TEXT NOT NULL
                 );
             """)
             conn.execute("""
@@ -273,9 +321,9 @@ class GenesisDaemon(DaemonBase):
                     source = inspect.getsource(module.run)
                     status["loc"] = len(source.splitlines())
                     # Heuristic: if run() contains "stub" in return or is very short, mark stub
-                    if impl == "stub" or ("stub" in source.lower() and status["loc"] < 10):
+                    if impl == "stub" or ("stub" in source.lower() and status["loc"] < self._stub_loc_min):
                         status["is_stub"] = True
-                    elif impl in ("full", "partial") or status["loc"] > 15:
+                    elif impl in ("full", "partial") or status["loc"] > self._stub_loc_full:
                         status["is_stub"] = False
                 except Exception:
                     pass
@@ -310,12 +358,126 @@ class GenesisDaemon(DaemonBase):
             return {"success": False, "error": str(exc), "_observed": {"duration_ms": elapsed_ms, "timestamp": utcnow_iso()}}
 
     def run_reflex_impl(self, name: str, config: Dict[str, Any], trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
-        """Execute a single reflex via tools/genesis/reflexes/<name>.py."""
+        """Execute a reflex under a watchdog so a hung reflex can't wedge the daemon.
+
+        The daemon runs reflexes sequentially (base.run_due_reflexes), so a single
+        reflex that blocks forever — e.g. a network fetch with no socket timeout —
+        freezes EVERY reflex behind it. This has caused multi-day stalls where the
+        whole loop hung on an unresponsive HTTPS endpoint.
+
+        We run the real implementation in a daemon thread and join with a timeout.
+        On timeout we abandon the (leaked) thread and return a failure tuple; the
+        base records it as a failure, so a persistently-hanging reflex trips its
+        circuit breaker after `max_consecutive_failures` and stops being attempted.
+
+        Timeout is per-reflex via `reflexes.<name>.timeout_seconds`, falling back
+        to `defaults.reflex_timeout_seconds` in genesis_config.yaml.
+        """
+        import threading
+
+        timeout = float(config.get("timeout_seconds", self._default_reflex_timeout))
+        box: Dict[str, Any] = {}
+
+        def _target() -> None:
+            try:
+                box["result"] = self._run_reflex_impl_inner(name, config, trust)
+            except Exception as exc:  # noqa: BLE001 — surface to caller below
+                box["error"] = exc
+
+        worker = threading.Thread(target=_target, name=f"reflex-{name}", daemon=True)
+        worker.start()
+        worker.join(timeout)
+
+        if worker.is_alive():
+            logger.error(
+                "Reflex '%s' exceeded %.0fs watchdog timeout — abandoning (thread leaked) "
+                "so the daemon loop can continue. Repeated timeouts will trip its circuit breaker.",
+                name, timeout,
+            )
+            return False, 0.0, {"error": f"watchdog_timeout_{int(timeout)}s", "timeout": True}
+
+        if "error" in box:
+            return False, 0.0, {"error": str(box["error"]), "stage": "reflex_execution"}
+        return box.get("result", (False, 0.0, {"error": "no result from reflex thread"}))
+
+    def _record_a2a_task(
+        self,
+        reflex_name: str,
+        agent_url: str,
+        task_id: str,
+        input_data: Dict,
+        status: str = "submitted",
+        error: str = None,
+    ) -> None:
+        """Persist an A2A task submission row to agent_a2a_tasks."""
+        record_id = generate_id("a2a")
+        now = utcnow_iso()
+        conn = get_connection()
+        try:
+            conn.execute(
+                """
+                INSERT INTO agent_a2a_tasks
+                    (id, reflex_name, skill_id, agent_url, task_id, status,
+                     input_data, error, submitted_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record_id,
+                    reflex_name,
+                    reflex_name,
+                    agent_url,
+                    task_id,
+                    status,
+                    json.dumps(input_data),
+                    error,
+                    now,
+                    now,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def _submit_reflex_a2a(self, name: str, config: Dict[str, Any]) -> Tuple[bool, float, Dict]:
+        """Dispatch an a2a_eligible reflex to the configured A2A agent endpoint."""
+        if A2AAgentClient is None:
+            return False, 0.0, {"error": "A2AAgentClient unavailable (requests not installed)", "stage": "a2a_dispatch"}
+
+        a2a_cfg = self.config.get("a2a", {})
+        agent_url = a2a_cfg.get("gateway_url") or os.environ.get(
+            "ICDEV_A2A_GATEWAY_URL", "https://localhost:8443"
+        )
+
+        session_ctx: Dict[str, Any] = {
+            "reflex_name": name,
+            "reflex_config": config,
+            "daemon_version": self.daemon_version,
+        }
+
+        try:
+            client = A2AAgentClient(verify_ssl=False)
+            result = client.submit_task(skill_id=name, input_data=session_ctx, agent_url=agent_url)
+            task_id = result.get("id") or result.get("task_id", "")
+            self._record_a2a_task(name, agent_url, task_id, session_ctx, status="submitted")
+            logger.info("[GENESIS] Reflex '%s' dispatched via A2A: task_id=%s", name, task_id)
+            return True, 0.0, {"status": "a2a_submitted", "task_id": task_id, "agent_url": agent_url}
+        except Exception as exc:
+            logger.error("[GENESIS] A2A dispatch failed for reflex '%s': %s", name, exc)
+            self._record_a2a_task(name, agent_url, "", session_ctx, status="error", error=str(exc))
+            return False, 0.0, {"error": str(exc), "stage": "a2a_dispatch"}
+
+    def _run_reflex_impl_inner(self, name: str, config: Dict[str, Any], trust: TrustKernelBase) -> Tuple[bool, float, Dict]:
+        """Actual reflex dispatch (wrapped by the watchdog in run_reflex_impl)."""
         risk_tier = config.get("risk_tier", RISK_GREEN)
 
         # ORANGE tier — log that human review is needed
         if trust.requires_human_approval(risk_tier):
             return True, 0.0, {"status": "awaiting_human_approval", "risk_tier": risk_tier}
+
+        # A2A fan-out: dispatch to agent network when reflex is eligible
+        a2a_cfg = self.config.get("a2a", {})
+        if a2a_cfg.get("enabled", False) and config.get("a2a_eligible", False):
+            return self._submit_reflex_a2a(name, config)
 
         try:
             module = importlib.import_module(f"tools.genesis.reflexes.{name}")

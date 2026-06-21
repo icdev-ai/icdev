@@ -238,11 +238,59 @@ _SCHEMA_STATEMENTS = [
         workload_type   TEXT DEFAULT 'web_app',
         author          TEXT DEFAULT '',
         steps_json      TEXT DEFAULT '[]',
+        estimated_min   INTEGER DEFAULT 0,
         created_at      TEXT DEFAULT (datetime('now'))
     )""",
 
     "CREATE INDEX IF NOT EXISTS idx_govlift_rbt_category ON govlift_runbook_templates(category)",
     "CREATE INDEX IF NOT EXISTS idx_govlift_rbt_author ON govlift_runbook_templates(author)",
+
+    # ── Runbook Instances ────────────────────────────────────────────────────
+    """CREATE TABLE IF NOT EXISTS govlift_runbooks (
+        id              TEXT PRIMARY KEY,
+        template_id     TEXT NOT NULL
+                            REFERENCES govlift_runbook_templates(id),
+        name            TEXT NOT NULL,
+        status          TEXT DEFAULT 'draft'
+                            CHECK (status IN ('draft','running','completed','failed','rolled_back')),
+        step_count      INTEGER DEFAULT 0,
+        failed_step     INTEGER,
+        created_at      TEXT DEFAULT (datetime('now')),
+        updated_at      TEXT DEFAULT (datetime('now'))
+    )""",
+
+    "CREATE INDEX IF NOT EXISTS idx_govlift_rb_status ON govlift_runbooks(status)",
+    "CREATE INDEX IF NOT EXISTS idx_govlift_rb_template ON govlift_runbooks(template_id)",
+
+    # ── Runbook Executions ───────────────────────────────────────────────────
+    """CREATE TABLE IF NOT EXISTS govlift_runbook_executions (
+        id              TEXT PRIMARY KEY,
+        runbook_id      TEXT NOT NULL
+                            REFERENCES govlift_runbooks(id),
+        status          TEXT DEFAULT 'running',
+        started_at      TEXT,
+        completed_at    TEXT,
+        created_at      TEXT DEFAULT (datetime('now'))
+    )""",
+
+    "CREATE INDEX IF NOT EXISTS idx_govlift_rbe_runbook ON govlift_runbook_executions(runbook_id)",
+
+    # ── Runbook Step Results ─────────────────────────────────────────────────
+    """CREATE TABLE IF NOT EXISTS govlift_runbook_step_results (
+        id              TEXT PRIMARY KEY,
+        execution_id    TEXT NOT NULL
+                            REFERENCES govlift_runbook_executions(id),
+        runbook_id      TEXT NOT NULL,
+        step_num        INTEGER NOT NULL,
+        step_name       TEXT DEFAULT '',
+        status          TEXT DEFAULT 'pending',
+        output          TEXT DEFAULT '',
+        started_at      TEXT,
+        completed_at    TEXT
+    )""",
+
+    "CREATE INDEX IF NOT EXISTS idx_govlift_rbs_exec ON govlift_runbook_step_results(execution_id)",
+    "CREATE INDEX IF NOT EXISTS idx_govlift_rbs_runbook ON govlift_runbook_step_results(runbook_id)",
 
     # ── Marketplace Items ────────────────────────────────────────────────────
     f"""CREATE TABLE IF NOT EXISTS govlift_marketplace_items (

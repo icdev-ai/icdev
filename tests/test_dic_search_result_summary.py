@@ -16,9 +16,8 @@ Guarantees tested:
 from __future__ import annotations
 
 import importlib
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
 
 se = importlib.import_module("tools.document_intelligence.search_engine")
 DICSearchResult = se.DICSearchResult

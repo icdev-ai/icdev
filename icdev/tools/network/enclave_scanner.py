@@ -427,7 +427,7 @@ def read_routing_table() -> list[dict[str, Any]]:
                 if len(parts) >= 5:
                     dest = parts[0]
                     gw = parts[2] if len(parts) > 2 else ""
-                    if dest == "0.0.0.0":
+                    if dest == "0.0.0.0":  # nosec B104 — route table comparison, not a bind address
                         gateway_is_private = _is_rfc1918(gw)
                         routes.append({
                             "destination": "0.0.0.0/0",
@@ -491,7 +491,7 @@ def read_routing_table() -> list[dict[str, Any]]:
                 )
                 for line in out2.stdout.splitlines():
                     parts = line.split()
-                    if len(parts) >= 2 and parts[0] in ("default", "0.0.0.0"):
+                    if len(parts) >= 2 and parts[0] in ("default", "0.0.0.0"):  # nosec B104 — route table comparison, not a bind address
                         gw = parts[1]
                         routes.append({
                             "destination": "0.0.0.0/0",

@@ -156,20 +156,23 @@ def fetch_signals(db_path: Path, days: int = 30, csp: Optional[str] = None) -> L
         return []
 
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-    query = "SELECT * FROM innovation_signals WHERE source = 'csp_monitor' AND discovered_at >= ? "
-    params = [cutoff]
-
-    if csp:
-        query += "AND json_extract(metadata, '$.csp') = ? "
-        params.append(csp)
-
-    query += "ORDER BY discovered_at DESC LIMIT 500"
-    rows = conn.execute(query, params).fetchall()
+    # Portable: filter on metadata.csp in Python (JSON in column) rather than
+    # json_extract() — runtime SQL is authored for PG; the translator is only a
+    # SQLite init-fallback. See PGP / pgp-tx-02.
+    query = (
+        "SELECT * FROM innovation_signals WHERE source = 'csp_monitor' "
+        "AND discovered_at >= ? ORDER BY discovered_at DESC"
+    )
+    rows = conn.execute(query, [cutoff]).fetchall()
     conn.close()
 
     entries = []
     for row in rows:
         metadata = json.loads(row["metadata"] or "{}")
+        if csp and metadata.get("csp") != csp:
+            continue
+        if len(entries) >= 500:
+            break
         entries.append(
             {
                 "id": row["id"],

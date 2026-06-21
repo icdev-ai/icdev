@@ -241,7 +241,7 @@ def _simulate_role(role_id: str, steps: list[dict], llm_function: str,
 
 def _simulate_handoff(dry_run: bool, verbose: bool) -> dict:
     if verbose:
-        print(f"\n  >> [A2A handoff] PM -> prd.authored -> Craftsperson spec.approved", flush=True)
+        print("\n  >> [A2A handoff] PM -> prd.authored -> Craftsperson spec.approved", flush=True)
 
     pm_result = _invoke_llm("agent_product_manager", _HANDOFF_STEP["pm_payload_prompt"], dry_run=dry_run)
     craft_result = _invoke_llm("agent_software_craftsperson", _HANDOFF_STEP["craft_response_prompt"], dry_run=dry_run)
@@ -299,7 +299,7 @@ def main() -> int:
     # PM simulation
     if args.role in ("pm", "both"):
         if verbose:
-            print(f"\n[Product Manager] 2 representative steps")
+            print("\n[Product Manager] 2 representative steps")
         pm_report = _simulate_role(
             role_id="product_manager",
             steps=_PM_STEPS,
@@ -312,7 +312,7 @@ def main() -> int:
     # Craftsperson simulation
     if args.role in ("craft", "both"):
         if verbose:
-            print(f"\n[Software Craftsperson] 2 representative steps")
+            print("\n[Software Craftsperson] 2 representative steps")
         craft_report = _simulate_role(
             role_id="software_craftsperson",
             steps=_CRAFT_STEPS,
@@ -325,7 +325,7 @@ def main() -> int:
     # A2A handoff simulation
     if args.role == "both":
         if verbose:
-            print(f"\n[A2A Handoff] PM prd.authored -> Craftsperson spec.approved")
+            print("\n[A2A Handoff] PM prd.authored -> Craftsperson spec.approved")
         report["handoff"] = _simulate_handoff(dry_run=args.dry_run, verbose=verbose)
 
     # Summary

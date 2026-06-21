@@ -1,0 +1,7 @@
+# IQE-EXT-001: Registered DataBridge connector inventory
+# Returns all connectors currently registered in the DataBridge registry.
+# Use: baseline audit, integration health check, capability discovery.
+# No credentials required — registry listing is always available.
+
+foreach c in ext.databridge.connectors
+select c.connector_name, c.class_name, c.status

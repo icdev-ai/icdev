@@ -1,0 +1,4 @@
+-- CUI // SP-CTI
+-- Data Mesh: List all governance policies by type and scope
+foreach p in data_mesh.governance_policies
+select p.name, p.policy_type, p.applies_to, p.status, p.created_at

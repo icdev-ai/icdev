@@ -7,7 +7,6 @@ import threading
 import time
 
 from flask import Blueprint, jsonify, render_template, request
-from tools.security.canvas_access import check_access as _canvas_check_access
 
 from .constants import NODE_TYPES, EDGE_TYPES
 from .graph_builder import build_graph, build_search_fallback, get_node_detail
@@ -16,42 +15,83 @@ logger = get_logger(__name__)
 
 bp = Blueprint("system_graph", __name__)
 
-@bp.before_request
-def _check_canvas_access():
-    """G-02: DENY-ALL canvas access gate. Requires explicit grant in canvas_access_grants."""
-    try:
-        from flask import g, abort, request as _req
-        # Skip health/status utility endpoints
-        if _req.path.endswith(("/health", "/status", "/ping")):
-            return
-        user = getattr(g, "current_user", None) or {}
-        user_id = str(user.get("id", "") or user.get("user_id", "") or "")
-        tenant_id = str(getattr(g, "tenant_id", None) or user.get("tenant_id", "") or "")
-        if not user_id or not tenant_id:
-            abort(403)
-        if not _canvas_check_access(user_id, tenant_id, "system_graph"):
-            abort(403)
-    except Exception as exc:
-        logger.debug("canvas_access check error: %s", exc)
-        abort(403)
-
-
-# Simple in-process cache for the full (unfiltered) graph payload — 5 min TTL
+# In-process cache for the full (unfiltered) graph payload.
+# Strategy: stale-while-revalidate — serve stale data instantly, rebuild in background.
 _cache_lock = threading.Lock()
 _cache: dict = {}
-_CACHE_TTL = 300  # seconds
+_rebuilding: set = set()
+_CACHE_TTL = 900        # serve fresh for 15 min
+_STALE_TTL = 3600       # serve stale (while rebuilding) for up to 1 h
+
+
+def _rebuild_in_background(cache_key: str, kwargs: dict) -> None:
+    """Spawn a daemon thread to rebuild the graph without blocking the request."""
+    with _cache_lock:
+        if cache_key in _rebuilding:
+            return  # already in progress
+        _rebuilding.add(cache_key)
+
+    def _worker():
+        try:
+            data = build_graph(**kwargs)
+            with _cache_lock:
+                _cache[cache_key] = {"data": data, "ts": time.time()}
+            logger.info("system-graph cache refreshed (key=%s)", cache_key[:20])
+        except Exception as exc:
+            logger.warning("system-graph background rebuild failed: %s", exc)
+        finally:
+            with _cache_lock:
+                _rebuilding.discard(cache_key)
+
+    t = threading.Thread(target=_worker, daemon=True, name="sys-graph-rebuild")
+    t.start()
 
 
 def _get_cached_graph(**kwargs) -> dict:
+    """Return graph data; uses stale-while-revalidate so the caller never blocks."""
     cache_key = str(sorted(kwargs.items()))
+
     with _cache_lock:
         entry = _cache.get(cache_key)
-        if entry and (time.time() - entry["ts"]) < _CACHE_TTL:
-            return entry["data"]
+
+    if entry:
+        age = time.time() - entry["ts"]
+        if age < _CACHE_TTL:
+            return entry["data"]                  # fresh — serve immediately
+        if age < _STALE_TTL:
+            _rebuild_in_background(cache_key, kwargs)
+            return entry["data"]                  # stale but usable — serve immediately, rebuild async
+
+    # No cache at all: build synchronously (only on very first load or after _STALE_TTL)
     data = build_graph(**kwargs)
     with _cache_lock:
         _cache[cache_key] = {"data": data, "ts": time.time()}
     return data
+
+
+def _prewarm_cache() -> None:
+    """Build the default graph in a background thread at startup."""
+    def _worker():
+        try:
+            logger.info("system-graph: pre-warming cache…")
+            data = build_graph()
+            key = str(sorted({}.items()))
+            with _cache_lock:
+                _cache[key] = {"data": data, "ts": time.time()}
+            logger.info(
+                "system-graph: cache ready — %d nodes, %d edges",
+                len(data.get("nodes", [])),
+                len(data.get("edges", [])),
+            )
+        except Exception as exc:
+            logger.warning("system-graph: pre-warm failed: %s", exc)
+
+    t = threading.Thread(target=_worker, daemon=True, name="sys-graph-prewarm")
+    t.start()
+
+
+# Pre-warm immediately when this module is imported (i.e. at dashboard startup)
+_prewarm_cache()
 
 
 @bp.route("/system-graph")

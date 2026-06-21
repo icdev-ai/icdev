@@ -6,7 +6,7 @@ estimated completion dates, and progress toward FY2027 (Target) and
 FY2032 (Advanced) compliance deadlines.
 """
 
-from tools.security_canvas.constants import ZIG_PILLARS, ZIG_PHASES, ZIG_FY2027_DEADLINE, ZIG_FY2032_DEADLINE
+from tools.security_canvas.constants import ZIG_PILLARS, ZIG_FY2027_DEADLINE, ZIG_FY2032_DEADLINE
 from tools.security_canvas.db.init_db import get_connection
 from tools.security_canvas.zig_phase_tracker import get_all_phases_status
 

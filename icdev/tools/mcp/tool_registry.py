@@ -32,7 +32,7 @@ Categories:
     dx (5)
     cloud (5)
     registry (9)
-    security_agentic (9)
+    security_agentic (11)
     testing (6)
     installer (4)
     misc (8)
@@ -42,8 +42,10 @@ Categories:
     canvas (8)
     system_graph (3)
     intelligence (3)
+    integrity (2)
+    nova (5)
 
-Total: 265 tools, 6 resources
+Total: 275 tools, 6 resources
 """
 
 TOOL_REGISTRY = {
@@ -3203,7 +3205,7 @@ TOOL_REGISTRY = {
         },
     },
     # ============================================================
-    # RESEARCH (10 tools)
+    # RESEARCH (11 tools)
     # ============================================================
     "research_create_session": {
         "category": "research",
@@ -3341,6 +3343,39 @@ TOOL_REGISTRY = {
             "type": "object",
             "properties": {"dossier_id": {"type": "string", "description": "Approved dossier ID"}},
             "required": ["dossier_id"],
+        },
+    },
+    "last30days__parallel_multi_source_social": {
+        "category": "research",
+        "module": "tools.research.source_scanners.social_trend_scanner",
+        "handler": "scan_social_trends",
+        "description": (
+            "Research engine source adapter: parallel multi-source social trend scanner. "
+            "Aggregates trending signals from Reddit, Hacker News, and GitHub Topics over the last 30 days. "
+            "Performs entity disambiguation (handle→subreddit→repo), cross-source content-hash deduplication, "
+            "and graceful degradation on rate-limits. Returns normalized signal dicts suitable for "
+            "downstream research pipeline stages (COMMUNITY, SYNTHESIZE). "
+            "Scanner key: 'social_trends'."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "keywords": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Search keywords (up to 5 used per source). Falls back to research_config.yaml defaults.",
+                },
+                "subreddits": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Extra subreddits to include (e.g. ['r/MachineLearning']). Optional.",
+                },
+                "max_per_source": {
+                    "type": "integer",
+                    "description": "Maximum signals per platform (Reddit, HN, GitHub). Default: 30.",
+                    "default": 30,
+                },
+            },
         },
     },
     # ============================================================
@@ -3906,7 +3941,7 @@ TOOL_REGISTRY = {
         },
     },
     # ============================================================
-    # SECURITY_AGENTIC (9 + 4 tools)
+    # SECURITY_AGENTIC (9 + 4 + 2 tools)
     # ============================================================
     "scan_code_patterns": {
         "category": "security_agentic",
@@ -4078,6 +4113,62 @@ TOOL_REGISTRY = {
                 "role": {"type": "string", "description": "Agent role (e.g., builder, security, compliance)"}
             },
             "required": ["role"],
+        },
+    },
+    # Aggregation Guard (prop-sec-04 through prop-sec-08)
+    "guard_result": {
+        "category": "security_agentic",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_guard_result",
+        "description": "Run the GovCon mosaic aggregation guard on a result set. Computes derived classification from SCG rules (args/classification_aggregation.yaml), compares against the surface ceiling and user clearance, and returns action='derive'|'warn'|'block' with throttle status. Writes append-only events to aggregation_events.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "result_set": {
+                    "type": "array",
+                    "description": "List of row dicts from proposals/govcon query (each with classification and field values)",
+                    "items": {"type": "object"},
+                },
+                "surface": {
+                    "type": "string",
+                    "description": "Surface/route identifier for ceiling lookup (e.g. 'proposals/list', 'proposals/export')",
+                },
+                "user_id": {"type": "string", "description": "User ID for clearance + throttle checks"},
+                "clearance_level": {
+                    "type": "string",
+                    "description": "User clearance level (PUBLIC, CUI, SECRET, TS, TS//SCI)",
+                    "enum": ["PUBLIC", "CUI", "SECRET", "TS", "TS//SCI"],
+                },
+                "surface_ceiling": {
+                    "type": "string",
+                    "description": "Maximum classification this surface is authorized to display",
+                    "enum": ["PUBLIC", "CUI", "SECRET", "TS", "TS//SCI"],
+                },
+                "gate": {"type": "boolean", "description": "Exit non-zero if action is block", "default": False},
+            },
+            "required": ["result_set", "surface"],
+        },
+    },
+    "evaluate_aggregation_rules": {
+        "category": "security_agentic",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_evaluate_aggregation_rules",
+        "description": "Evaluate SCG aggregation rules from args/classification_aggregation.yaml against a result set or query context, returning which rules fired and the computed derived classification. Pure evaluation — no events written.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "result_set": {
+                    "type": "array",
+                    "description": "List of row dicts to evaluate against SCG rules",
+                    "items": {"type": "object"},
+                },
+                "rules_file": {
+                    "type": "string",
+                    "description": "Path to SCG rules YAML (defaults to args/classification_aggregation.yaml)",
+                },
+                "json": {"type": "boolean", "default": True},
+            },
+            "required": ["result_set"],
         },
     },
     # ============================================================
@@ -6295,6 +6386,354 @@ TOOL_REGISTRY = {
             "required": ["src_topology_id"],
         },
     },
+    # ============================================================
+    # INTEGRITY — SIPA Software Integrity & Provenance Assessor (2 tools)
+    # ============================================================
+    "integrity_assess": {
+        "category": "integrity",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_integrity_assess",
+        "description": (
+            "Run a static SIPA integrity assessment of a source artifact (local path, UNC share, "
+            "file:// URI, or allowlisted git clone URL). Detects unauthorized/malicious capabilities "
+            "vs claimed purpose (Mode B) or RTM-authorized requirements (Mode A). Static-only — never "
+            "executes the target. Returns assessment_id, verdict (allow/review/quarantine), risk_score, "
+            "findings_count, capabilities_count, status."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "source": {
+                    "type": "string",
+                    "description": "Local path, UNC share, file:// URI, or allowlisted git clone URL",
+                },
+                "mode": {
+                    "type": "string",
+                    "description": "Assessment mode (auto resolves to provenance_aware when project_id/session_id supplied)",
+                    "enum": ["auto", "provenance_aware", "provenance_blind"],
+                    "default": "auto",
+                },
+                "project_id": {"type": "string", "description": "Provenance handle (selects Mode A under auto)"},
+                "session_id": {"type": "string", "description": "Provenance handle (selects Mode A under auto)"},
+                "declared_purpose": {
+                    "type": "string",
+                    "description": "Optional free-text purpose claim folded into the Mode B claimed-capability set",
+                },
+            },
+            "required": ["source"],
+        },
+    },
+    "integrity_list_assessments": {
+        "category": "integrity",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_integrity_list_assessments",
+        "description": (
+            "List SIPA integrity assessments (read-only, RLS-aware) with optional status / verdict "
+            "filters. Returns id, source, mode, status, verdict, and risk_score per assessment."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "status": {
+                    "type": "string",
+                    "description": "Filter by assessment status",
+                    "enum": ["quarantine", "assessed", "approved", "rejected"],
+                },
+                "verdict": {
+                    "type": "string",
+                    "description": "Filter by verdict",
+                    "enum": ["allow", "review", "quarantine"],
+                },
+                "limit": {"type": "integer", "description": "Max rows to return", "default": 50},
+            },
+        },
+    },
+    # ============================================================
+    # FOUNDRY — ACF Autonomous Capability Foundry (2 tools)
+    # ============================================================
+    "foundry_run": {
+        "category": "foundry",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_foundry_run",
+        "description": (
+            "Trigger one ACF (Autonomous Capability Foundry) cycle: harvest -> synthesize -> "
+            "novelty-gate -> score -> CoD go/no-go -> spec -> task-graph -> seed. Rate limits "
+            "(max_concepts_per_cycle, max_active_projects) from args/foundry_config.yaml are enforced. "
+            "With dry_run=true the full pipeline runs but no kanban tasks are written. Returns run_id, "
+            "harvested, concepts_proposed, concepts_approved, tasks_emitted, active_projects, status."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "dry_run": {
+                    "type": "boolean",
+                    "description": "Run the full pipeline but do not seed kanban tasks",
+                    "default": False,
+                },
+                "max_concepts": {
+                    "type": "integer",
+                    "description": "Per-cycle approved-concept cap override (defaults to rate_limits.max_concepts_per_cycle)",
+                },
+            },
+        },
+    },
+    "foundry_status": {
+        "category": "foundry",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_foundry_status",
+        "description": (
+            "Get ACF pipeline status (read-only, RLS-aware): recent foundry runs, count of active "
+            "ACF-owned projects, concept pipeline counts by status, and configured rate limits."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "description": "Max recent runs to return", "default": 10},
+            },
+        },
+    },
+    # ============================================================
+    # ANVIL CO-WORKER ENGINE (ACE) — 2 tools
+    # ============================================================
+    "ace_launch": {
+        "category": "ace",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ace_launch",
+        "description": "Launch an ACE co-worker session for a given problem. Returns instance_id and initial state.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "problem_text": {"type": "string", "description": "Problem or requirements text to solve"},
+                "trigger_source": {"type": "string", "default": "api", "description": "Source of the trigger (api, chat, cli)"},
+                "trigger_ref": {"type": "string", "default": "", "description": "Originating reference (task id, chat id, etc.)"},
+            },
+            "required": ["problem_text"],
+        },
+    },
+    "ace_status": {
+        "category": "ace",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ace_status",
+        "description": "Return full status of an ACE co-worker instance including per-co-worker states.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "instance_id": {"type": "string", "description": "ACE instance ID returned by ace_launch"},
+            },
+            "required": ["instance_id"],
+        },
+    },
+    # ============================================================
+    # CONTEXT COMPRESSION (Innovation Sig-84ab — Headroom)
+    # ============================================================
+    "compress_context": {
+        "category": "llmops",
+        "module": "tools.llm.context_compressor",
+        "handler": "handle_compress_context",
+        "description": (
+            "Reversible context compression middleware for AI agent workflows. "
+            "Reduces token usage 60-95% via SmartCrusher (text) or CodeCompressor (code). "
+            "Uses headroom library when installed; falls back to deterministic built-in compressor. "
+            "All compression is reversible — original messages preserved via decompression_map."
+    # ── Document Intelligence Canvas (DIC) ──────────────────────────────────
+    "dic_ingest": {
+        "category": "dic",
+        "module": "tools.document_intelligence.gap_handlers",
+        "handler": "handle_dic_ingest",
+        "description": (
+            "Ingest a URL or plain text into a DIC collection for BM25+KG search and "
+            "AI output generation (study guide, FAQ, timeline, audio). "
+            "Returns {job_id, doc_id, collection_id, status}."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "messages": {
+                    "type": "array",
+                    "description": "List of role/content message dicts (OpenAI message format)",
+                    "items": {"type": "object"},
+                },
+                "budget_tokens": {
+                    "type": "integer",
+                    "description": "Target token budget after compression (default: 8000)",
+                    "default": 8000,
+                },
+                "content_type": {
+                    "type": "string",
+                    "description": "Compression strategy: auto (detect per-message), text, or code",
+                    "enum": ["auto", "text", "code"],
+                    "default": "auto",
+                },
+                "session_id": {
+                    "type": "string",
+                    "description": "Optional session ID for compression log correlation",
+                },
+            },
+            "required": ["messages"],
+        },
+    },
+                "url": {"type": "string", "description": "URL to ingest (mutually exclusive with text)"},
+                "text": {"type": "string", "description": "Plain text content to ingest"},
+                "title": {"type": "string", "description": "Document title (optional)"},
+                "collection_id": {"type": "string", "description": "Target collection (default: 'default')"},
+                "tenant_id": {"type": "string", "description": "Tenant scope (default: 'default')"},
+            },
+            "required": [],
+        },
+    },
+    "dic_search": {
+        "category": "dic",
+        "module": "tools.document_intelligence.gap_handlers",
+        "handler": "handle_dic_search",
+        "description": (
+            "BM25+KG full-text search over a DIC collection. Returns ranked chunks with "
+            "source citations, entity co-occurrences, and relevance scores."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query"},
+                "collection_id": {"type": "string", "description": "Collection to search (default: 'default')"},
+                "limit": {"type": "integer", "description": "Max results (default: 10)"},
+                "tenant_id": {"type": "string", "description": "Tenant scope (default: 'default')"},
+            },
+            "required": ["query"],
+        },
+    },
+    "dic_generate": {
+        "category": "dic",
+        "module": "tools.document_intelligence.gap_handlers",
+        "handler": "handle_dic_generate",
+        "description": (
+            "Generate a structured AI output from a DIC collection: study_guide, faq, timeline, or audio. "
+            "BM25+KG instant results; LLM enhancement available on demand. "
+            "Returns {output_id, output_type, content, provider}."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "output_type": {
+                    "type": "string",
+                    "enum": ["study_guide", "faq", "timeline", "audio"],
+                    "description": "Type of output to generate",
+                },
+                "collection_id": {"type": "string", "description": "Source collection (default: 'default')"},
+                "doc_id": {"type": "string", "description": "Scope to a specific document (optional)"},
+                "tenant_id": {"type": "string", "description": "Tenant scope (default: 'default')"},
+            },
+            "required": ["output_type"],
+        },
+    },
+    "dic_chat": {
+        "category": "dic",
+        "module": "tools.document_intelligence.gap_handlers",
+        "handler": "handle_dic_chat",
+        "description": (
+            "Chat with DIC source documents. Retrieves grounded context via BM25 search, "
+            "then synthesizes a cited answer. Returns {answer, citations, collection_id}."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string", "description": "User question to answer from sources"},
+                "collection_id": {"type": "string", "description": "Collection to ground answer in (default: 'default')"},
+                "tenant_id": {"type": "string", "description": "Tenant scope (default: 'default')"},
+            },
+            "required": ["question"],
+        },
+    },
+    # ============================================================
+    # NOVA — Autonomous Self-Learning Digital Coworker (5 tools)
+    # ============================================================
+    "nova_get_trust_score": {
+        "category": "nova",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_nova_get_trust_score",
+        "description": (
+            "Return the current trust score and dispatch configuration for an ACE coworker role. "
+            "Includes trust_score, band (probationary/supervised/trusted/autonomous), "
+            "hitl_mode, max_parallel, and auto_approve_routine."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "role_id": {"type": "string", "description": "ACE coworker role ID (e.g. ai_developer, architect)"},
+            },
+            "required": ["role_id"],
+        },
+    },
+    "nova_record_trust_event": {
+        "category": "nova",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_nova_record_trust_event",
+        "description": (
+            "Record a trust calibration event for an ACE coworker role. "
+            "event_type: success (+0.05), failure (-0.10), hitl_escalation (-0.03), "
+            "timeout (-0.05), phantom_completion (-0.08). "
+            "Append-only ledger — never modifies prior records."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "role_id": {"type": "string", "description": "ACE coworker role ID"},
+                "event_type": {
+                    "type": "string",
+                    "enum": ["success", "failure", "hitl_escalation", "timeout", "phantom_completion"],
+                    "description": "Trust event type",
+                },
+                "source_task_id": {"type": "string", "description": "Kanban task or ACE instance ID (for audit trail)"},
+            },
+            "required": ["role_id", "event_type"],
+        },
+    },
+    "nova_get_dispatch_config": {
+        "category": "nova",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_nova_get_dispatch_config",
+        "description": (
+            "Return the full dispatch configuration for an ACE coworker role based on its trust band. "
+            "Used by orchestrators to determine HITL gate mode and parallelism level before dispatch."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "role_id": {"type": "string", "description": "ACE coworker role ID"},
+            },
+            "required": ["role_id"],
+        },
+    },
+    "nova_evolve_skill": {
+        "category": "nova",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_nova_evolve_skill",
+        "description": (
+            "Run a GEPA-style skill evolution pass for a given task_type. "
+            "Analyzes recent execution traces, generates improvement candidates via LLM, "
+            "scores them on eval dataset, applies constraint gates (coherence/SIPA/size), "
+            "and proposes winners as kanban suggested cards (NEVER auto-merges). "
+            "dry_run=true runs the full analysis without writing artifacts or cards."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task_type": {"type": "string", "description": "Kanban task_type to evolve skill for (e.g. build, test, secure)"},
+                "skill_used": {"type": "string", "description": "Skill file name (e.g. icdev-build)", "default": ""},
+                "dry_run": {"type": "boolean", "description": "If true, analyze without writing artifacts", "default": True},
+            },
+            "required": ["task_type"],
+        },
+    },
+    "nova_trust_summary": {
+        "category": "nova",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_nova_trust_summary",
+        "description": (
+            "Return trust scores and bands for all known ACE coworker roles. "
+            "Shows role_id, trust_score, band, and last event timestamp. "
+            "Read-only — use nova_record_trust_event to update scores."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
 }
 
 
@@ -6606,6 +7045,23 @@ RESOURCE_REGISTRY = {
             },
         },
     },
+    "reasoned_codegen_advise": {
+        "category": "llmops",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_reasoned_codegen_advise",
+        "description": "Advise whether reasoned codegen (CoT/CoD + critique) is worth it for a task, and which mode.",
+        "input_schema": {
+            "type": "object",
+            "required": ["spec"],
+            "properties": {
+                "function": {"type": "string", "default": "code_generation", "description": "ICDEV function key"},
+                "spec": {"type": "string", "description": "Task spec / requirement text to assess"},
+                "file_count": {"type": "integer", "default": 0, "description": "Files in scope"},
+                "past_failures": {"type": "integer", "default": 0, "description": "Prior failures on this task"},
+                "use_llm": {"type": "boolean", "default": False, "description": "Allow optional cheap-tier LLM refine (heuristic if false)"},
+            },
+        },
+    },
     "cot_stats": {
         "category": "llmops",
         "module": "tools.llm.chain_orchestrator",
@@ -6619,8 +7075,7 @@ RESOURCE_REGISTRY = {
     # ============================================================
     # INTELLIGENCE (3 tools) — JISE Portal Data Feed
     # NIST 800-53: SA-11, CM-3, AC-3, AU-2
-    # ============================================================
-    "jise_get_portal_data": {
+    # =====================================================    "jise_get_portal_data": {
         "category": "intelligence",
         "module": "tools.intelligence.jise_portal",
         "handler": "get_jise_portal_data",
@@ -6644,6 +7099,24 @@ RESOURCE_REGISTRY = {
                     "default": 200,
                     "minimum": 1,
                     "maximum": 1000,
+=======
+    # CONFLICT MESH (3 tools)
+    # ============================================================
+    "conflict_mesh_etl": {
+        "category": "conflict_mesh",
+        "module": "tools.conflict_mesh.etl_pipeline",
+        "handler": "main",
+        "description": "Run ETL pipeline: pull conflict events from federated providers (ACLED, GDELT, ReliefWeb), normalize, and upsert into sg_conflict_events",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "since_date": {"type": "string", "description": "Fetch events on or after this date (YYYY-MM-DD)"},
+                "limit": {"type": "integer", "default": 100, "description": "Max events per provider"},
+                "dry_run": {"type": "boolean", "default": False, "description": "Validate without writing to DB"},
+                "providers": {
+                    "type": "array",
+                    "items": {"type": "string", "enum": ["acled", "gdelt", "reliefweb"]},
+                    "description": "Providers to enable (default: all three)",
                 },
             },
         },
@@ -6680,8 +7153,7 @@ RESOURCE_REGISTRY = {
             "properties": {},
         },
     },
-    # ============================================================
-    # NOC CANVAS — NOCC (4 tools)
+    # =====================================================    # NOC CANVAS — NOCC (4 tools)
     # ============================================================
     "noc_alarm_ingest": {
         "category": "nocc",
@@ -6890,55 +7362,87 @@ RESOURCE_REGISTRY = {
         },
     },
     # ============================================================
-    # FOUNDRY — ACF Autonomous Capability Foundry (2 tools)
+    # PLATFORM CONNECTORS (3 tools)
     # ============================================================
-    "foundry_run": {
-        "category": "foundry",
-        "module": "tools.mcp.gap_handlers",
-        "handler": "handle_foundry_run",
-        "description": (
-            "Run one ACF cycle end-to-end (harvest -> synth -> novelty gate -> score -> "
-            "Chain-of-Debate go/no-go -> spec_generator -> task_graph -> seeder.emit). Respects "
-            "rate_limits.max_concepts_per_cycle and rate_limits.max_active_projects from "
-            "args/foundry_config.yaml. dry_run=true runs the full pipeline without seeding "
-            "kanban_tasks — recommended for smoke tests. Returns a JSON roll-up (run_id, "
-            "harvested, concepts_proposed, concepts_approved, tasks_emitted, active_projects, "
-            "status, dry_run, detail)."
-        ),
+    "platform_connector_fetch": {
+        "category": "intelligence",
+        "module": "tools.platform_connectors.connector_cli",
+        "handler": "cmd_fetch",
+        "description": "Fetch items from a single internet platform (github, hackernews, stackoverflow, reddit, youtube) using the unified adapter registry with multi-backend routing and fallbacks.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "dry_run": {
-                    "type": "boolean",
-                    "description": "Run the full pipeline but do not seed kanban tasks",
-                    "default": False,
+                "platform": {
+                    "type": "string",
+                    "description": "Platform name",
+                    "enum": ["github", "hackernews", "stackoverflow", "reddit", "youtube"],
                 },
-                "max_concepts": {
-                    "type": "integer",
-                    "description": "Per-cycle approved-concept cap override (defaults to rate_limits.max_concepts_per_cycle)",
-                },
+                "query": {"type": "string", "description": "Search query or topic"},
+                "max_results": {"type": "integer", "description": "Max items to return", "default": 20},
+                "since_days": {"type": "integer", "description": "Look back N days", "default": 7},
+            },
+            "required": ["platform", "query"],
+        },
+    },
+    "platform_connector_fetch_all": {
+        "category": "intelligence",
+        "module": "tools.platform_connectors.connector_cli",
+        "handler": "cmd_fetch_all",
+        "description": "Fetch from all registered internet platforms simultaneously and aggregate results. Useful for broad signal discovery across GitHub, HN, SO, Reddit, and YouTube.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query or topic"},
+                "max_results": {"type": "integer", "description": "Max items per platform", "default": 10},
+                "since_days": {"type": "integer", "description": "Look back N days", "default": 7},
+            },
+            "required": ["query"],
+        },
+    },
+    "platform_connector_doctor": {
+        "category": "intelligence",
+        "module": "tools.platform_connectors.connector_cli",
+        "handler": "cmd_doctor",
+        "description": "Run health probes on all registered platform adapter backends. Returns status, latency, and auth state for each adapter (ok/degraded/unreachable/auth_error).",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+=======
+    "conflict_mesh_predict": {
+        "category": "conflict_mesh",
+        "module": "tools.conflict_mesh.escalation_predictor",
+        "handler": "main",
+        "description": "Score conflict events for escalation risk using ML pattern engine; store predictions in conflict_predictions",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "event_id": {"type": "string", "description": "Score a single event from DB by id"},
+                "batch_since": {"type": "string", "description": "Score all events since date (YYYY-MM-DD)"},
+                "threshold": {"type": "number", "default": 0.7, "description": "High-risk threshold (0–1)"},
+                "limit": {"type": "integer", "default": 20, "description": "Max results"},
             },
         },
     },
-    "foundry_status": {
-        "category": "foundry",
-        "module": "tools.mcp.gap_handlers",
-        "handler": "handle_foundry_status",
-        "description": (
-            "Return ACF engine status: recent runs (id, cycle_at, harvested, concepts_proposed, "
-            "concepts_approved, tasks_emitted, status), active ACF-owned project count, pipeline "
-            "counts by concept status, and effective rate_limits. Read-only; mirrors "
-            "python tools/foundry/engine.py --status."
-        ),
+    "conflict_mesh_high_risk": {
+        "category": "conflict_mesh",
+        "module": "tools.conflict_mesh.escalation_predictor",
+        "handler": "main",
+        "description": "Return stored conflict predictions with escalation_risk >= threshold, ordered by risk descending",
         "input_schema": {
             "type": "object",
             "properties": {
-                "limit": {
-                    "type": "integer",
-                    "description": "Max recent runs to return",
-                    "default": 10,
-                },
+                "threshold": {"type": "number", "default": 0.7, "description": "Minimum risk score (0–1)"},
+                "limit": {"type": "integer", "default": 20, "description": "Max results to return"},
             },
         },
     },
 }
+
+
+def list_tools() -> list:
+    """Return all registered MCP tool names from both registries."""
+    names = list(TOOL_REGISTRY.keys())
+    for key, entry in RESOURCE_REGISTRY.items():
+        if "input_schema" in entry and key not in names:
+            names.append(key)
+    return names

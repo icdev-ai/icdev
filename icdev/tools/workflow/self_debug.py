@@ -83,6 +83,37 @@ def _task_is_done(task_id: str) -> bool:
     return False
 
 
+def _task_exists(task_id: str) -> bool:
+    """Return True if a row for ``task_id`` exists in the kanban DB.
+
+    Guards the reflex against synthetic / test-fixture task ids that drive
+    ``_verify_task_completed`` directly without ever being seeded on the board
+    — most notably the ``task-real`` fixture in
+    tests/genesis/test_kanban_phantom_guard.py. That test exercises the real
+    verification path on its "no git commits" branch, which calls this reflex
+    with a fixture id and a pytest ``tmp_path`` cwd. Because the signature
+    history lives under the real repo ``.tmp/kanban/`` (this module's BASE_DIR,
+    not the test's monkeypatched one), it accumulates across test-suite runs
+    and, on the 3rd run, spawns a phantom Oracle RCA card for a task that does
+    not exist — a loop that has produced dozens of dead ``diag-*`` cards.
+
+    A recurring *real* task loop cannot exist for a task that is not on the
+    board, so a missing row means the failure is a false positive: skip it.
+    On a DB error we fail open (return True) so a transient blip never
+    suppresses diagnosis of a genuine task.
+    """
+    try:
+        from tools.db.storage import get_connection
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM kanban_tasks WHERE id = ?", (task_id,)
+            ).fetchone()
+        return row is not None
+    except Exception as exc:
+        logger.warning("self_debug: DB existence check failed for %s: %s", task_id, exc)
+        return True  # fail open — never suppress real diagnosis on a DB blip
+
+
 # ---------------------------------------------------------------------------
 # Signature history (file-backed)
 # ---------------------------------------------------------------------------
@@ -604,6 +635,20 @@ def check_and_diagnose(task_id: str, reason: str, cwd: str,
     Returns the diagnosis dict if triggered (and side-effects fired),
     or None if below threshold.
     """
+    # Guard: synthetic / test-fixture ids (e.g. the ``task-real`` fixture) reach
+    # this reflex through _verify_task_completed but are never seeded on the
+    # board. Diagnosing them spawns phantom Oracle RCA cards in an endless loop
+    # (root cause of diag-9312c5edb5). If there is no kanban_tasks row, there is
+    # no real loop to break — skip before recording a signature so no history is
+    # written to .tmp/kanban/ either.
+    if not _task_exists(task_id):
+        logger.info(
+            "self_debug: %s has no kanban_tasks row — skipping diagnosis "
+            "(synthetic/test id, not a real board task)",
+            task_id,
+        )
+        return None
+
     # Guard: if the task already self-reported done, the worktree was cleaned up
     # by the completion path and any subsequent coherence/verification failure is
     # a false positive.  Never quarantine or create diagnostic cards for a done task.

@@ -870,9 +870,6 @@ def api_kg_explore():
             sql += " ORDER BY COALESCE(n.centrality, 0) DESC LIMIT ?"
             params.append(limit)
             rows = _safe_rows(conn, sql, tuple(params))
-            # If a natural-language query found no matching entity labels, fall
-            # back to entities extracted from the top-ranking chunks so the KG
-            # Explorer still surfaces semantically relevant nodes.
             if not rows and query_text and collection_id:
                 chunk_ids = _chunk_ids_for_query(query_text, collection_id)[:50]
                 if chunk_ids:
@@ -937,8 +934,6 @@ def api_kg_explore():
             node_sql += " ORDER BY COALESCE(n.centrality, 0) DESC LIMIT ?"
             node_params.append(limit)
             nodes = _safe_rows(conn, node_sql, tuple(node_params))
-            # Fall back to semantically relevant chunks when no nodes match a
-            # natural-language query.
             if not nodes and graph_query and collection_id and not doc_id:
                 chunk_ids = _chunk_ids_for_query(graph_query, collection_id)[:50]
                 if chunk_ids:

@@ -195,7 +195,7 @@ def _existing_columns(conn, table: str) -> set:
     table itself — safe even while the table is under a write-lock storm.
     """
     try:
-        from icdev.tools.db.storage import is_pg
+        from tools.db.storage import is_pg
         pg = is_pg(conn)
     except Exception:
         pg = False
@@ -222,7 +222,7 @@ def _existing_columns(conn, table: str) -> set:
 
 def init_kanban_tables(conn=None) -> dict:
     """Create all Kanban tables.  Safe to call on any DB state."""
-    from icdev.tools.db.storage import get_connection
+    from tools.db.storage import get_connection
     _close = conn is None
     if conn is None:
         conn = get_connection()

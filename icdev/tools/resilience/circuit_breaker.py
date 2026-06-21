@@ -191,7 +191,6 @@ class InMemoryCircuitBreaker(CircuitBreakerBackend):
     def record_failure(self):
         with self._lock:
             self._failure_count += 1
-            self._last_failure_time = time.time()
 
             if self._state == CircuitState.HALF_OPEN:
                 # Any failure in half-open trips back to open
@@ -199,6 +198,10 @@ class InMemoryCircuitBreaker(CircuitBreakerBackend):
             elif self._state == CircuitState.CLOSED:
                 if self._failure_count >= self.failure_threshold:
                     self._transition_to(CircuitState.OPEN)
+
+            # Set after transition so recovery timeout is measured from the
+            # moment the OPEN state is fully committed (avoids log I/O skew).
+            self._last_failure_time = time.time()
 
     def get_state(self) -> CircuitState:
         with self._lock:

@@ -1,0 +1,40 @@
+name: Data Quality Assessment — Profile + Rules + Remediation
+description: Profile datasets, run quality rules (completeness, uniqueness, range, pattern), and generate remediation plan.
+category: data
+tags: [data-quality, profiling, ddc, odcs]
+author: builtin
+steps:
+  - id: profile
+    name: Dataset Profiling
+    tool: tools/data_canvas/data_profiler.py
+    node_type: tool
+    required: true
+    timeout: 300
+  - id: quality_rules
+    name: Quality Rules Execution
+    tool: tools/data_canvas/quality_engine.py
+    node_type: tool
+    required: true
+    timeout: 300
+    depends_on: [profile]
+  - id: lineage_check
+    name: Data Lineage Validation
+    tool: tools/data_canvas/data_mesh/lineage_emitter.py
+    node_type: tool
+    required: false
+    timeout: 180
+    depends_on: [profile]
+  - id: data_steward
+    name: Data Steward Review
+    tool: ""
+    node_type: human
+    role: reviewer
+    required: true
+    depends_on: [quality_rules, lineage_check]
+  - id: remediation
+    name: Remediation Report Export
+    tool: tools/data_canvas/quality_engine.py
+    node_type: tool
+    required: false
+    timeout: 120
+    depends_on: [data_steward]

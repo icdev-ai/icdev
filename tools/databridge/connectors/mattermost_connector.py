@@ -49,7 +49,6 @@ try:
     from tools.logging.icdev_logger import get_logger
     logger = get_logger("databridge.mattermost")
 except Exception:
-    import logging
     logger = get_logger("databridge.mattermost")
 
 _OFFSET_FILE = BASE_DIR / ".tmp" / "mattermost_offset.txt"

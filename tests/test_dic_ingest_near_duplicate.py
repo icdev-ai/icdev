@@ -20,7 +20,6 @@ import sqlite3
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 ingest = importlib.import_module("tools.document_intelligence.ingest_orchestrator")
 _detect = ingest._detect_near_duplicate_titles

@@ -37,7 +37,6 @@ def create_supply_chain_blueprint() -> Blueprint:
         "supply_chain",
         __name__,
         template_folder=str(_TMPL_DIR),
-
     )
 
     def _db():
@@ -241,26 +240,5 @@ def create_supply_chain_blueprint() -> Blueprint:
         except Exception as exc:
             logger.warning("sc_iqe_query error: %s", exc)
             return jsonify({"error": str(exc), "iqe": iqe_str}), 500
-
-
-
-    @bp.before_request
-    def _check_canvas_access():
-        """G-02: DENY-ALL canvas access gate."""
-        try:
-            from flask import g, abort, request as _req
-            if _req.path.endswith(('/health', '/status', '/ping')):
-                return
-            user = getattr(g, 'current_user', None) or {}
-            user_id = str(user.get('id', '') or user.get('user_id', '') or '')
-            tenant_id = str(getattr(g, 'tenant_id', None) or user.get('tenant_id', '') or '')
-            if not user_id or not tenant_id:
-                abort(403)
-            from tools.security.canvas_access import check_access
-            if not check_access(user_id, tenant_id, 'supply_chain'):
-                abort(403)
-        except Exception as exc:
-            logger.debug('canvas_access check error: %s', exc)
-            abort(403)
 
     return bp

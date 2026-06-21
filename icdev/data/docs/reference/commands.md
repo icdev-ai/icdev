@@ -1,4 +1,4 @@
-﻿# ICDEV™ CLI Command Reference
+# ICDEV™ CLI Command Reference
 
 Complete CLI command reference for all ICDEV™ modules. See [CLAUDE.md](../../CLAUDE.md) for behavioral instructions.
 
@@ -35,6 +35,14 @@ python -c "from tools.llm.router import LLMRouter; r = LLMRouter(); print(r.get_
 # Config: args/llm_config.yaml — providers, models, routing, embeddings
 # Set OLLAMA_BASE_URL=http://localhost:11434/v1 for local model support
 # Set prefer_local: true in llm_config.yaml for air-gapped environments
+
+# Reasoned Codegen (CoT/CoD + adversary critique + verify/repair)
+# Library: tools/llm/reasoned_codegen.py — generate_reasoned_code(function=, request=, verifier=, mode=)
+#   Config: args/llm_config.yaml -> reasoned_codegen (section kill-switch + per_function mode/critique)
+#   Wired: translation (default ON); ANVIL agentic_runner --reasoned auto|on|off; chat per-session reasoning_mode
+python tools/llm/reasoned_codegen_advisor.py --function code_generation --spec "..." --file-count 5 --json  # advise enable/mode
+python tools/anvil/agentic_runner.py --task-id X --task-desc "..." --reasoned auto   # auto|on|off
+# Dashboard panel: /ops/llm (config view + advisor runner + recent chain runs)
 ```
 
 ---
@@ -137,6 +145,11 @@ python tools/security/encryption_at_rest.py --rotate --classification TS --json
 python tools/security/mtls_integration.py --verify --json
 python tools/security/security_middleware.py --init-app --json
 python tools/security/audit_posture.py --json
+
+# SIPA Software Integrity PR gate (eqo-sipa) — assess only the *.py files changed on a branch
+python tools/integrity/pr_gates.py --base origin/main --json            # preview verdict over branch diff
+python tools/integrity/pr_gates.py --cached --json                      # assess the staged index (pre-commit)
+python tools/integrity/pr_gates.py --base origin/main --gate            # CI gate: exit 1 on a blocking (QUARANTINE) verdict
 ```
 
 ---
@@ -179,6 +192,26 @@ python tools/security/agent_trust_scorer.py --all --json
 
 ---
 
+## Aggregation Guard (prop-sec-03 through prop-sec-08)
+```bash
+# Evaluate SCG aggregation rules against a result set (dry-run, no events written)
+python tools/security/aggregation_guard.py --evaluate-rules --json
+
+# Run full guard check for a surface (writes aggregation_events on match)
+python tools/security/aggregation_guard.py --guard --surface "proposals/list" --json
+
+# Gate mode — exits non-zero if action=block
+python tools/security/aggregation_guard.py --guard --surface "proposals/export" --gate --json
+
+# Show recent aggregation events (audit trail)
+python tools/security/aggregation_guard.py --events --limit 50 --json
+
+# Check guard health (rule count, events table row count)
+python tools/security/aggregation_guard.py --health --json
+```
+
+---
+
 ## Requirements Intake (RICOAS) Commands
 ```bash
 python tools/requirements/intake_engine.py --project-id "sparkpilot" --customer-name "Name" --customer-org "Org" --impact-level IL4 --json
@@ -214,6 +247,17 @@ python tools/observability/shap/agent_shap.py --project-id "sparkpilot" --last-n
 python tools/observability/provenance/prov_query.py --entity-id "<id>" --direction backward --json
 python tools/observability/provenance/prov_export.py --project-id "sparkpilot" --json
 python tools/compliance/xai_assessor.py --project-id "sparkpilot" --json
+```
+
+---
+
+## EQO Centralized Logging Commands (eqo-log)
+```bash
+# Query the append-only centralized_logs sink (RLS-aware, newest first)
+python tools/logging/log_query.py --component genesis --level ERROR --json
+python tools/logging/log_query.py --contains timeout --since 2026-06-06 --limit 50
+# Dashboard: /logs  |  JSON API: GET /api/logs?component=&level=&since=&contains=&limit=
+# IQE: POST /logs/api/iqe-query {question}  (collection logs.entries)
 ```
 
 ---
@@ -522,6 +566,36 @@ python tools/genesis/reporter.py --list --json                # List all reports
 
 ---
 
+## Loop Engineering — GEPA Optimizer & Adversarial Verify
+```bash
+# GEPA (Genetic Evolution of Prompt Architectures) optimizer
+python tools/skills/gepa_optimizer.py --dry-run              # Preview evolution cycle without writing
+python tools/skills/gepa_optimizer.py --json                 # Run full GEPA cycle, JSON output
+python tools/genesis/reflexes/gepa_optimizer.py --dry-run    # Same via genesis reflex path
+
+# Genesis daemon — GEPA reflex (24 h interval, registered in daemon.py REFLEX_NAMES)
+python tools/genesis/daemon.py --reflex gepa --json          # Run GEPA reflex immediately
+
+# Kanban task_factory — loop_type and adversarial fields
+# Create a looping task (loop_type: "fixed" | "adaptive" | "gepa")
+python -c "
+from tools.kanban.task_factory import create_tasks
+create_tasks([{
+  'id': 'loop-example-01',
+  'title': 'Example loop task',
+  'loop_type': 'adaptive',          # fixed | adaptive | gepa
+  'adversarial_enabled': True,      # spawns _run_adversarial_verify after each iteration
+  'description': '...',
+  'acceptance_criteria': '...',
+}])
+"
+
+# Adversarial verify (invoked automatically when adversarial_enabled=True on a looping task)
+# _run_adversarial_verify(task_id) in tools/kanban/task_factory.py — not a standalone CLI
+```
+
+---
+
 ## Bayesian Autoresearch Commands (Phase 67)
 ```bash
 # Experiment engine (Karpathy Loop)
@@ -687,6 +761,11 @@ python tools/workflow/coherence_checker.py --all --fix --json                   
 python tools/workflow/coherence_checker.py --all --gate                                             # Gate evaluation (exit 0=pass, 1=fail)
 python tools/workflow/coherence_checker.py --check schema_code --json                               # Single check
 python tools/workflow/coherence_checker.py --changed-files "tools/foo.py,tests/test_foo.py" --json  # Scope to changed files
+
+# Completion Auditor — per-canvas 8-component completeness scorecard (TCH)
+python tools/quality/completion_auditor.py                                                           # Human table to stdout
+python tools/quality/completion_auditor.py --json                                                   # Machine-readable scorecard
+python tools/quality/completion_auditor.py --md                                                      # Write docs/quality/completion-scorecard.md (sorted least->most complete)
 ```
 
 ---
@@ -746,6 +825,42 @@ python tools/harness/trace_analyzer.py --recommendations --limit 20 --json
 # Scaffold baseline harness for child apps
 python tools/harness/scaffold_harness.py --output-dir /path/to/project --json
 python tools/harness/scaffold_harness.py --output-dir /path --impact-level IL4 --json
+```
+
+---
+
+## NOVA — Autonomous Self-Learning Digital Coworker Commands
+```bash
+# DB init — creates NOVA tables in PostgreSQL (called automatically at dashboard startup)
+python -c "from tools.nova.db.init_db import init_nova_tables; print(init_nova_tables())"
+
+# ECHO — Execution Tracing
+python -c "
+from tools.workflow.trace_logger import start_trace, close_trace
+tid = start_trace('task-001', 'build', 'icdev-build')
+close_trace(tid, 'success', 'success_first_try')
+print('trace_id:', tid)
+"
+python -c "from tools.workflow.trace_logger import get_recent_traces; import json; print(json.dumps(get_recent_traces(limit=10), indent=2))"
+
+# ECHO — Reflexion (requires ICDEV_HARNESS_COLEARN=true)
+python -c "from tools.workflow.reflexion_agent import run_batch_reflexion; import json; print(json.dumps(run_batch_reflexion(['build'], dry_run=True), indent=2))"
+python -c "from tools.workflow.reflexion_agent import get_latest_improvement; print(get_latest_improvement('build'))"
+
+# SOUL — Coworker Identity
+python -c "from icdev.tools.ace.soul_manager import build_identity_preamble; print(build_identity_preamble('ai_developer'))"
+python -c "from icdev.tools.ace.soul_manager import record_learning; print(record_learning('ai_developer', 'Always use get_canvas_connection() for canvas tables.'))"
+
+# TRUST — Trust Calibration
+python -c "from tools.ace.trust_calibrator import get_trust_score, get_dispatch_config; import json; print(json.dumps(get_dispatch_config('ai_developer'), indent=2))"
+python -c "from tools.ace.trust_calibrator import record_trust_event; import json; print(json.dumps(record_trust_event('ai_developer', 'success', 'task-001'), indent=2))"
+python -c "from tools.ace.trust_calibrator import get_trust_summary; import json; print(json.dumps(get_trust_summary(), indent=2))"
+python -c "from tools.ace.trust_calibrator import run_weekly_recalibration; import json; print(json.dumps(run_weekly_recalibration(), indent=2))"
+
+# SELA — Skill Evolution (dry-run — never auto-merges)
+python -c "from tools.evolution.artifact_evolver import evolve_artifact; import json; print(json.dumps(evolve_artifact('icdev-status', 'skill', dry_run=True), indent=2))"
+python -c "from tools.evolution.artifact_evolver import evolve_all_skills; import json; print(json.dumps(evolve_all_skills(dry_run=True, limit=3), indent=2))"
+python -c "from tools.evolution.eval_builder import build_dataset; ds = build_dataset('icdev-build', '', min_examples=3); print(f'train={len(ds.train)} val={len(ds.val)}')"
 ```
 
 ---
@@ -1328,6 +1443,10 @@ python tools/builder/profile_detector.py --repo-path /path/to/repo --json       
 python tools/builder/profile_detector.py --text "We use Go, snake_case, 120-char lines" --json  # Detect from text
 python tools/builder/profile_md_generator.py --scope project --scope-id "proj-123" --json     # Generate PROFILE.md
 python tools/builder/profile_md_generator.py --scope project --scope-id "proj-123" --output /path/PROFILE.md --store  # Generate + store in DB
+python tools/builder/cursor_profile_generator.py --scope project --scope-id "proj-123" --format cursorrules                    # Export to .cursorrules
+python tools/builder/cursor_profile_generator.py --scope project --scope-id "proj-123" --format mdc --output .cursor/rules/icdev.mdc  # Export to .mdc
+python tools/builder/cursor_profile_importer.py --scan .cursor/rules/ --json                                              # Scan Cursor rules
+python tools/builder/cursor_profile_importer.py --scan .cursor/rules/ --create --scope platform --scope-id cursor-default --json   # Seed profile from Cursor
 
 # Universal AI Coding Companion (D194-D198)
 python tools/dx/companion.py --setup --write                              # Auto-detect tools + generate all configs
@@ -1421,6 +1540,89 @@ python tools/registry/evolution_daemon.py --reflex absorb --json         # Repor
 python tools/registry/evolution_daemon.py --enable discover              # Enable a reflex
 python tools/registry/evolution_daemon.py --disable absorb               # Disable a reflex
 python tools/registry/evolution_daemon.py --reset test --json            # Reset circuit breaker
+
+# Loop Engineering — GEPA Optimizer & Genesis Daemon Trigger
+# GEPA Optimizer — Genome Evolution Pressure Analyzer (gepa-mcp-01)
+python tools/skills/gepa_optimizer.py --json                             # Run optimization pass (prune low-fitness genome entries)
+python tools/skills/gepa_optimizer.py --dry-run --json                   # Scan without applying writes
+# MCP tool: gepa_optimizer
+#   Parameters: dry_run (bool, default false) — when true, scan runs but no DB writes are committed.
+#   Returns:    {applied: [{capability_id, action, fitness, dry_run}],
+#                skipped: [{capability_id, reason, fitness}],
+#                errors:  [str]}
+#   Handler:    tools/mcp/gap_handlers.py::get_gepa_optimizer_handler
+#   Skill:      tools/skills/gepa_optimizer.py::run()
+# Genesis daemon 24h trigger — GEPA reflex fires daily via the genesis daemon loop:
+#   Config:     args/genesis_config.yaml — add a "gepa_optimizer" entry with interval_seconds: 86400
+#   Interval:   86400 s (24 h); controlled by interval_seconds / interval_hours in genesis_config.yaml
+#   Enable:     python tools/genesis/daemon.py --enable gepa_optimizer
+#   Disable:    python tools/genesis/daemon.py --disable gepa_optimizer
+#   Run once:   python tools/genesis/daemon.py --reflex gepa_optimizer --json
+#   Thresholds: args/security_gates.yaml → loop_engineering.gepa_min_composite_score (0.60)
+#                                           loop_engineering.gepa_min_score_delta (0.05)
+
+# adversarial_verify — Multi-agent adversarial verification for loop-generated outputs
+# Spawns N independent skeptic agents, each prompted to REFUTE a finding; result survives
+# only when ≥majority agents fail to refute (default threshold: 2 of 3).
+# MCP tool: adversarial_verify
+#   Parameters: claim (str) — the finding or output to verify
+#               agents (int, default 3) — number of skeptic agents to spawn
+#               threshold (int, default 2) — minimum non-refuting votes to pass
+#               context (str, optional) — supporting context injected into each skeptic prompt
+#   Returns:    {survives: bool, votes: int, refuted: int, rationale: str}
+#   Handler:    tools/mcp/gap_handlers.py::get_adversarial_verify_handler
+# CLI usage (single finding):
+python tools/skills/adversarial_verify.py --claim "Finding text here" --agents 3 --json
+python tools/skills/adversarial_verify.py --claim "Finding text here" --threshold 2 --json
+python tools/skills/adversarial_verify.py --dry-run --json                              # Preview skeptic prompts without spawning agents
+# Batch verify (read findings from a JSONL file, one claim per line):
+python tools/skills/adversarial_verify.py --batch .tmp/findings.jsonl --json
+# Integration: call from workflow scripts via agent() inside pipeline()/parallel() stages
+#   const votes = await parallel(Array.from({length: 3}, () => () =>
+#     agent(`Try to refute: ${claim}`, {schema: VERDICT})))
+#   const survives = votes.filter(Boolean).filter(v => !v.refuted).length >= 2
+
+# --- Loop Engineering Parameters ---
+#
+# loop_type — Classifies the intent of a workflow loop; gates which required processes
+#             the process verifier enforces for that loop (see args/workflow_loop_config.yaml).
+#   Column:   workflow_loops.loop_type  (TEXT, DEFAULT 'build')
+#   CLI arg:  --loop-type <value>  (tools/workflow/loop_engine.py --create)
+#   Valid values:
+#     'build'      — Standard feature/implementation loop (default). Enforces security scan,
+#                    tests, CUI marking, and compliance check.
+#     'compliance' — Compliance-only loop (policy updates, ATO artifacts). Enforces compliance
+#                    check and CUI marking; security scan is advisory.
+#     'deploy'     — Deployment and release loop. Enforces health check and smoke tests.
+#     'fix'        — Bug-fix / hotfix loop. Enforces tests and security scan.
+#     'research'   — Research / discovery loop (no deploy gate). No process enforcement;
+#                    outputs are informational only.
+#     'custom'     — User-defined loop. Required processes are caller-specified via
+#                    --boundaries; process verifier skips default enforcement.
+#   Example:
+python tools/workflow/loop_engine.py --create --project-id "proj-123" --phase "integrate" --loop-type fix --json
+python tools/workflow/process_verifier.py --check --project-id "proj-123" --loop-type build --json
+#
+# adversarial_enabled — Per-task flag that opts a kanban task into the adversarial gate.
+#   Column:   kanban_tasks.adversarial_enabled  (INTEGER, DEFAULT 0; 0=off, 1=on)
+#   Scope:    Applies only to kanban task dispatch, not to generic workflow loops.
+#   Behavior: When adversarial_enabled=1, the kanban scheduler spawns a second Claude CLI
+#             subprocess in review-only mode (--max-turns 10) inside a git worktree. The
+#             subprocess reads the task title and description (truncated to 1 200 chars) and
+#             must emit 'APPROVED:' or 'REJECTED:' on its last non-empty line. Any failure
+#             (timeout after 180 s, non-zero exit, unrecognised output) is treated as APPROVED
+#             so the gate is never permanently blocking.
+#   Pairing:  Conventionally used together with loop_type='non_deterministic' tasks — those
+#             whose outputs are non-reproducible and therefore benefit from an independent
+#             adversarial review before the result is persisted.
+#   Security: The reviewer subprocess is NOT granted --dangerously-allow-filesystem write
+#             access or network egress. Re-scope to sandboxed executor if either is added.
+#   Set via task_factory (preferred) or kanban CLI:
+#     # task_factory: pass adversarial_enabled=True (and loop_type) when seeding tasks
+#     from tools.kanban.task_factory import create_tasks
+#     create_tasks([{"title": "...", "loop_type": "non_deterministic", "adversarial_enabled": True}])
+#     # CLI fallback:
+#     python tools/kanban/cli.py --set-field <task-id> adversarial_enabled 1
 
 # Cloud-Agnostic Architecture (Phase 38)
 # Cloud Mode Manager (D232)
@@ -1971,12 +2173,12 @@ python tools/marketplace/catalog_manager.py --get --slug "tenant-abc/my-skill" -
 # Provenance
 python tools/marketplace/provenance_tracker.py --report --asset-id "asset-abc" --json
 
-# OpenClaw Bridge — Zero-trust import/export for SkillHub (skillhub.ai) skills (Phase 69)
+# OpenClaw Bridge — Zero-trust import/export for ClawHub (clawhub.ai) skills (Phase 69)
 # Import a skill from local OpenClaw directory
 python tools/marketplace/openclaw_bridge.py --import --source-path /path/to/openclaw-skill --tenant-id "tenant-abc" --imported-by "user@mil" --json
 
-# Import with SkillHub URL for provenance tracking
-python tools/marketplace/openclaw_bridge.py --import --source-path /path/to/openclaw-skill --skillhub-url "https://skillhub.ai/author/skill-name" --tenant-id "tenant-abc" --imported-by "user@mil" --json
+# Import with ClawHub URL for provenance tracking
+python tools/marketplace/openclaw_bridge.py --import --source-path /path/to/openclaw-skill --clawhub-url "https://clawhub.ai/author/skill-name" --tenant-id "tenant-abc" --imported-by "user@mil" --json
 
 # List quarantined imports
 python tools/marketplace/openclaw_bridge.py --list-quarantine --json
@@ -2000,20 +2202,20 @@ python tools/marketplace/openclaw_bridge.py --health --json
 # Revoke a promoted import (rollback)
 python tools/marketplace/openclaw_bridge.py --revoke --import-id "oci-abc123" --revoked-by "isso@dod.mil" --reason "Causing errors" --json
 
-# Discover skills on SkillHub (vector search — requires network)
+# Discover skills on ClawHub (vector search — requires network)
 python tools/marketplace/openclaw_bridge.py --discover "code review automation" --limit 10 --json
 
-# Fetch + import a skill from SkillHub by slug (download → quarantine → scan → translate)
+# Fetch + import a skill from ClawHub by slug (download → quarantine → scan → translate)
 python tools/marketplace/openclaw_bridge.py --fetch self-improving-agent --tenant-id "tenant-abc" --imported-by "user@mil" --json
 
 # Gate check (CI/CD)
 python tools/marketplace/openclaw_bridge.py --gate --json
 
-# SkillHub DataBridge Connector (standalone)
-python tools/databridge/connectors/skillhub_connector.py --search "self-improvement" --json
-python tools/databridge/connectors/skillhub_connector.py --get self-improving-agent --json
-python tools/databridge/connectors/skillhub_connector.py --download self-improving-agent --output .tmp/ --json
-python tools/databridge/connectors/skillhub_connector.py --health --json
+# ClawHub DataBridge Connector (standalone)
+python tools/databridge/connectors/clawhub_connector.py --search "self-improvement" --json
+python tools/databridge/connectors/clawhub_connector.py --get self-improving-agent --json
+python tools/databridge/connectors/clawhub_connector.py --download self-improving-agent --output .tmp/ --json
+python tools/databridge/connectors/clawhub_connector.py --health --json
 ```
 
 ---
@@ -2365,6 +2567,23 @@ python -c "from tools.system_graph.graph_builder import get_node_detail; print(g
 #   system_graph_stats       — source counts + timing
 ```
 
+## Conflict Mesh Commands
+```bash
+# ETL — pull from all providers, normalize, and load into sg_conflict_events
+python tools/conflict_mesh/etl_pipeline.py --since 2024-01-01 --dry-run --json
+python tools/conflict_mesh/etl_pipeline.py --since 2024-01-01 --limit 50 --json
+python tools/conflict_mesh/etl_pipeline.py --providers acled gdelt --since 2024-01-01 --json
+
+# Escalation Predictor — score events and surface high-risk predictions
+python tools/conflict_mesh/escalation_predictor.py --batch-since 2024-01-01 --threshold 0.7 --json
+python tools/conflict_mesh/escalation_predictor.py --event-id acled-12345 --json
+python tools/conflict_mesh/escalation_predictor.py --threshold 0.8 --limit 10 --json
+
+# Python API
+python -c "from tools.conflict_mesh.mesh_coordinator import MeshCoordinator; from tools.conflict_mesh.providers.acled_provider import ACLEDProvider; c = MeshCoordinator([ACLEDProvider()]); print(len(c.fetch_all()))"
+python -c "from tools.conflict_mesh.ml_pattern_engine import MLPatternEngine; e = MLPatternEngine(); print(e.extract_signals('Artillery bombardment kills soldiers', {}))"
+```
+
 ## STRATEGOS Commands
 ```bash
 # Adversarial Data Validation Pipeline (bias / deepfake / manipulation detection)
@@ -2611,4 +2830,154 @@ python tools/pmc_canvas/transit_pricing_benchmark.py --roi --json
 #   GET  /api/pmc/transit/benchmark?region=na&speed_gbps=10 — Market benchmark
 #   POST /api/pmc/transit/roi — Peering-vs-transit NPV analysis
 #   GET  /pmc/transit         — Transit pricing dashboard page
+```
+
+## ANVIL Co-Worker Engine (ACE) Commands
+```bash
+# Launch a new ACE problem-solving instance
+python -m icdev.tools.ace.controller --launch 'problem text' [--json]
+
+# Check status of a running ACE instance
+python -m icdev.tools.ace.controller --status <instance_id> [--json]
+
+# Abort a running ACE instance
+python -m icdev.tools.ace.controller --abort <instance_id>
+
+# List available ACE roles
+python -m icdev.tools.ace.controller --list-roles
+
+# Seed ACE kanban tasks (dry-run preview)
+python tools/kanban/seed_ace_kanban.py [--dry-run]
+
+# Environment variable to enable /coworker/ canvas
+ICDEV_ACE_ENABLED=true
+```
+
+## Autonomous Capability Foundry (ACF) Commands
+```bash
+# ── Engine — run one harvest→synth→novelty→score→CoD→spec→task-graph→seed cycle ──
+python tools/foundry/engine.py --run --json              # full cycle (seeds kanban)
+python tools/foundry/engine.py --run --dry-run --json    # full pipeline, seeds NOTHING
+python tools/foundry/engine.py --run --max-concepts 3 --json   # override per-cycle cap
+python tools/foundry/engine.py --status --json           # recent runs + pipeline + rate_limits
+
+# ── Pipeline stages (standalone, for debugging one stage) ──
+python tools/foundry/harvester.py --run-id <id> --json                  # Stage 1 — collect signals
+python tools/foundry/novelty_gate.py --concept-json '{...}' --json      # Stage 3 — dedup verdict
+python tools/foundry/novelty_gate.py --catalog --json                   #   rebuild dedup catalog
+python tools/foundry/spec_generator.py --concept-id <id> --json         # Stage 6 — spec + contract
+python tools/foundry/spec_generator.py --concept-json '{...}' --no-persist --json
+python tools/foundry/task_graph.py --contract-json '{...}' --json        # Stage 7 — epic skeleton
+
+# ── Schema ──
+python -c "from tools.foundry.db.init_db import init_db; init_db()"     # 6 append-only foundry_* tables
+
+# ── Genesis reflex (12h continuous-autonomy loop) ──
+python tools/genesis/reflexes/foundry_cycle.py            # run one cycle (no-op if flag off)
+python tools/genesis/reflexes/foundry_cycle.py --dry-run  # compute cycle, no persistence
+python -c "from tools.genesis.reflexes.foundry_cycle import run; print(run({'dry_run': True}, None))"
+
+# ── Dashboard (web UI) ──
+#   GET  /foundry                — cycle roll-up + concept pipeline board
+#   GET  /foundry/<concept_id>   — concept detail: scores, spec, emitted tasks, outcomes
+
+# ── REST API ──
+#   GET  /api/foundry/runs           — recent foundry_runs (JSON)
+#   GET  /api/foundry/concepts       — concept list (filter: status, run_id)
+#   GET  /api/foundry/concept/<id>   — single concept + spec + tasks + outcomes
+#   POST /api/foundry/run            — trigger one cycle ({"dry_run": true} to skip seeding)
+#   POST /foundry/api/iqe-query      — plain-English → IQE → rows
+
+# ── IQE collections (read-only, via /foundry widget or /ask-icdev) ──
+#   foundry.concepts | foundry.signals | foundry.runs | foundry.outcomes
+#   Seed queries: context/iqe/queries/foundry/01-05
+
+# ── MCP gateway (unified) ──
+#   foundry_run    {dry_run, max_concepts}  — trigger one cycle
+#   foundry_status {limit}                  — read-only pipeline snapshot
+
+# ── Config + feature flag ──
+#   args/foundry_config.yaml     — sources, synthesis, novelty, scoring, rate_limits,
+#                                  circuit breaker, self_vet, deliberation (CoD), foundry_cycle
+ICDEV_FOUNDRY_ENABLED=true       # .env — master toggle for canvas + reflex
+
+# ── Tests ──
+pytest tests/foundry/ -v                                          # engine, novelty, spec, task-graph, blueprint
+pytest tests/test_foundry_cycle_reflex.py tests/test_foundry_mcp.py tests/test_foundry_harvester.py -v
+```
+
+## ANVIL Co-Worker Engine (ACE) Commands
+
+```bash
+# Launch a co-worker instance with a problem statement
+python -m icdev.tools.ace.controller --launch 'problem text' [--json]
+
+# Check the status of a running co-worker instance
+python -m icdev.tools.ace.controller --status <instance_id> [--json]
+
+# Abort a running co-worker instance
+python -m icdev.tools.ace.controller --abort <instance_id>
+
+# List available co-worker roles
+python -m icdev.tools.ace.controller --list-roles
+
+# Seed ACE-related kanban tasks (use --dry-run to preview)
+python tools/kanban/seed_ace_kanban.py [--dry-run]
+
+# Feature flag — enable /coworker/ canvas
+ICDEV_ACE_ENABLED=true        # .env — master toggle for ACE canvas + co-worker reflex
+```
+
+## Document Intelligence Canvas (DIC) — Notebook
+
+```bash
+# Notebook page (NotebookLM-style view)
+# URL: http://localhost:5050/document-intelligence/notebook
+# URL: http://localhost:5050/document-intelligence/notebook/<collection_id>
+
+# URL ingest (online mode; air-gap returns empty with warning)
+# POST /document-intelligence/api/ingest/url
+# Body: {"url": "https://...", "collection_id": "my-collection"}
+
+# YouTube transcript ingest (online mode only)
+# POST /document-intelligence/api/ingest/youtube
+# Body: {"url": "https://youtube.com/watch?v=...", "collection_id": "my-collection"}
+
+# AI output generators (dual-mode: LLM online, deterministic air-gap fallback)
+# POST /document-intelligence/api/generate/study-guide
+# POST /document-intelligence/api/generate/faq
+# POST /document-intelligence/api/generate/timeline
+# POST /document-intelligence/api/generate/audio
+# Body: {"collection_id": "my-collection"}
+
+# List outputs for a collection
+# GET /document-intelligence/api/outputs?collection_id=my-collection
+
+# Get a single output
+# GET /document-intelligence/api/outputs/<output_id>
+
+# Mode info (air-gap vs online, available capabilities)
+# GET /document-intelligence/api/mode
+
+# Python — generate outputs directly
+python -c "from tools.document_intelligence.output_generators import generate_study_guide; import json; print(json.dumps(generate_study_guide('my-collection', 'default'), indent=2))"
+python -c "from tools.document_intelligence.output_generators import generate_faq; import json; print(json.dumps(generate_faq('my-collection', 'default', n=10), indent=2))"
+python -c "from tools.document_intelligence.output_generators import generate_timeline; import json; print(json.dumps(generate_timeline('my-collection', 'default'), indent=2))"
+python -c "from tools.document_intelligence.output_generators import generate_audio_overview; import json; print(json.dumps(generate_audio_overview('my-collection', 'default'), indent=2))"
+
+# Python — ingest URL or YouTube
+python -c "from tools.document_intelligence.extractors import extract_url; e = extract_url('https://example.com/page'); print(e.text[:200])"
+python -c "from tools.document_intelligence.extractors import extract_youtube; e = extract_youtube('https://youtube.com/watch?v=dQw4w9WgXcQ'); print(e.text[:200])"
+
+# Push any canvas artifact into DIC
+python -c "from tools.document_intelligence.canvas_push import push_artifact; print(push_artifact('compliance', 'NIST Report', 'report text here', 'compliance-docs', 'CUI', 'default'))"
+
+# DIC → Research engine: scan a collection as signals
+python -c "from tools.research.source_scanners.dic_scanner import scan_dic_collection; signals = scan_dic_collection({}, {'dic_collection_id': 'my-col'}); print(len(signals), 'signals')"
+
+# DIC → Innovation engine: discover with DIC context
+python -c "from tools.innovation.innovation_manager import stage_discover; print(stage_discover(dic_collection_id='my-col'))"
+
+# Weekly DIC digest reflex (manual trigger)
+python -c "from tools.genesis.reflexes.dic_digest import run; print(run({}, None))"
 ```

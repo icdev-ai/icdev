@@ -229,3 +229,79 @@ register_collection("ext.tenable.assets",              tenable_assets_adapter)
 register_collection("ext.tenable.vulnerabilities",     tenable_vulnerabilities_adapter)
 
 register_collection("ext.gdelt.events",                gdelt_events_adapter)
+
+
+# ---------------------------------------------------------------------------
+# Messaging channel adapters (Teams, MatterMost, GitHub, GitLab, Skype)
+# ---------------------------------------------------------------------------
+
+def teams_messages_adapter(conn: Any) -> list[dict]:  # noqa: ARG001
+    """Return Teams messages via DataBridge connector."""
+    return _safe_fetch("teams", "messages")
+
+
+def teams_channels_adapter(conn: Any) -> list[dict]:  # noqa: ARG001
+    """Return Teams channels via DataBridge connector."""
+    return _safe_fetch("teams", "channels")
+
+
+def mattermost_posts_adapter(conn: Any) -> list[dict]:  # noqa: ARG001
+    """Return MatterMost posts via DataBridge connector."""
+    return _safe_fetch("mattermost", "posts")
+
+
+def mattermost_channels_adapter(conn: Any) -> list[dict]:  # noqa: ARG001
+    """Return MatterMost channels via DataBridge connector."""
+    return _safe_fetch("mattermost", "channels")
+
+
+def github_issues_adapter(conn: Any) -> list[dict]:  # noqa: ARG001
+    """Return GitHub issue comments (with !icdev flag) via DataBridge connector."""
+    return _safe_fetch("github", "issues")
+
+
+def github_pull_requests_adapter(conn: Any) -> list[dict]:  # noqa: ARG001
+    """Return GitHub PR comments via DataBridge connector."""
+    return _safe_fetch("github", "pull_requests")
+
+
+def github_commits_adapter(conn: Any) -> list[dict]:  # noqa: ARG001
+    """Return GitHub commits via DataBridge connector."""
+    return _safe_fetch("github", "commits")
+
+
+def gitlab_issues_adapter(conn: Any) -> list[dict]:  # noqa: ARG001
+    """Return GitLab issue notes via DataBridge connector."""
+    return _safe_fetch("gitlab", "issues")
+
+
+def gitlab_merge_requests_adapter(conn: Any) -> list[dict]:  # noqa: ARG001
+    """Return GitLab MR notes via DataBridge connector."""
+    return _safe_fetch("gitlab", "merge_requests")
+
+
+def gitlab_pipelines_adapter(conn: Any) -> list[dict]:  # noqa: ARG001
+    """Return GitLab pipeline records via DataBridge connector."""
+    return _safe_fetch("gitlab", "pipelines")
+
+
+def skype_messages_adapter(conn: Any) -> list[dict]:  # noqa: ARG001
+    """Return Skype messages from local skype_inbox DB table."""
+    return _safe_fetch("skype", "messages")
+
+
+register_collection("ext.teams.messages",             teams_messages_adapter)
+register_collection("ext.teams.channels",             teams_channels_adapter)
+
+register_collection("ext.mattermost.posts",           mattermost_posts_adapter)
+register_collection("ext.mattermost.channels",        mattermost_channels_adapter)
+
+register_collection("ext.github.issues",              github_issues_adapter)
+register_collection("ext.github.pull_requests",       github_pull_requests_adapter)
+register_collection("ext.github.commits",             github_commits_adapter)
+
+register_collection("ext.gitlab.issues",              gitlab_issues_adapter)
+register_collection("ext.gitlab.merge_requests",      gitlab_merge_requests_adapter)
+register_collection("ext.gitlab.pipelines",           gitlab_pipelines_adapter)
+
+register_collection("ext.skype.messages",             skype_messages_adapter)

@@ -1,0 +1,47 @@
+name: FedRAMP Evidence Collection — Continuous ATO
+description: Collect continuous ATO evidence across NIST 800-53 controls, crosswalk to FedRAMP/CMMC, and submit to assessor package.
+category: compliance
+tags: [fedramp, cato, nist, cmmc, evidence]
+author: builtin
+steps:
+  - id: evidence_scan
+    name: Control Evidence Scan
+    tool: tools/compliance/evidence_collector.py
+    node_type: tool
+    required: true
+    timeout: 300
+  - id: crosswalk
+    name: FedRAMP / CMMC Crosswalk
+    tool: tools/compliance/crosswalk_engine.py
+    node_type: tool
+    required: true
+    timeout: 180
+    depends_on: [evidence_scan]
+  - id: gap_check
+    name: Control Gap Analysis
+    tool: tools/compliance/gap_analyzer.py
+    node_type: tool
+    required: true
+    timeout: 180
+    depends_on: [crosswalk]
+  - id: isso_review
+    name: ISSO Review & Sign-off
+    tool: ""
+    node_type: human
+    role: isso
+    required: true
+    depends_on: [gap_check]
+  - id: package
+    name: Assessor Package Assembly
+    tool: tools/compliance/package_assembler.py
+    node_type: tool
+    required: true
+    timeout: 180
+    depends_on: [isso_review]
+  - id: ao_approval
+    name: AO Final Approval
+    tool: ""
+    node_type: approval
+    role: authorizing_official
+    approval_policy: any
+    depends_on: [package]

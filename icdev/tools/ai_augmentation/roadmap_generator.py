@@ -3,10 +3,10 @@
 
 generate_roadmap(scan_id, opportunities, scores) → dict
 
-Phase bands:
-  P1 — composite_score ≥ 0.7  (Quick Wins)
-  P2 — composite_score ≥ 0.5  (Core Modernization)
-  P3 — composite_score ≥ 0.3  (Long-Horizon Investments)
+Phase bands (computed adaptively from score distribution; see _adaptive_thresholds):
+  P1 — composite_score ≥ adaptive_p1  (Quick Wins)
+  P2 — composite_score ≥ adaptive_p2  (Core Modernization)
+  P3 — composite_score ≥ adaptive_p3  (Long-Horizon Investments)
 
 effort_days = midpoint of pattern_catalog effort_days_min/max.
 Persists result to aac_roadmaps via get_connection().
@@ -24,15 +24,50 @@ from tools.ai_augmentation.db.init_db import get_connection
 _ICDEV_ROOT = Path(__file__).resolve().parents[2]
 _CATALOG_PATH = _ICDEV_ROOT / "context" / "ai_augmentation" / "pattern_catalog.json"
 
-_P1 = 0.7
-_P2 = 0.5
-_P3 = 0.3
+# Static fallback thresholds — used when the sample is too small for percentile
+# estimation.  Replaced at runtime by _adaptive_thresholds() (AAC opp-560).
+_DEFAULT_P1 = 0.7
+_DEFAULT_P2 = 0.5
+_DEFAULT_P3 = 0.3
+_MIN_ADAPTIVE_SAMPLES = 5  # minimum scored opportunities needed for adaptive mode
 
-_PHASE_DEFS = [
-    ("P1", "Phase 1 — Quick Wins", _P1, None),
-    ("P2", "Phase 2 — Core Modernization", _P2, _P1),
-    ("P3", "Phase 3 — Long-Horizon Investments", _P3, _P2),
-]
+
+def _percentile(sorted_values: list[float], pct: float) -> float:
+    """Return the pct-th percentile of a pre-sorted list (linear interpolation)."""
+    if not sorted_values:
+        return 0.0
+    n = len(sorted_values)
+    k = (n - 1) * pct / 100.0
+    lo = int(k)
+    hi = min(lo + 1, n - 1)
+    return sorted_values[lo] + (k - lo) * (sorted_values[hi] - sorted_values[lo])
+
+
+def _adaptive_thresholds(composite_scores: list[float]) -> tuple[float, float, float]:
+    """Compute phase boundary thresholds from the actual score distribution.
+
+    Uses percentile-based anomaly detection to detect natural breakpoints
+    rather than hardcoded literal comparisons (AAC opportunity 560).
+    Falls back to static defaults when fewer than _MIN_ADAPTIVE_SAMPLES
+    valid scores are present.
+
+    Returns:
+        (p1, p2, p3) where p1 > p2 > p3 — the lower bound of each phase tier.
+    """
+    valid = [s for s in composite_scores if 0.0 <= s <= 1.0]
+    if len(valid) < _MIN_ADAPTIVE_SAMPLES:
+        return _DEFAULT_P1, _DEFAULT_P2, _DEFAULT_P3
+
+    sorted_scores = sorted(valid)
+    p1 = max(round(_percentile(sorted_scores, 66.7), 2), _DEFAULT_P3 + 0.1)
+    p2 = max(round(_percentile(sorted_scores, 33.3), 2), _DEFAULT_P3)
+
+    # Enforce strict ordering with a minimum 0.05 gap between tiers
+    if p2 >= p1:
+        p2 = round(p1 - 0.05, 2)
+    p3 = _DEFAULT_P3  # P3 qualifying floor is kept fixed
+
+    return p1, p2, p3
 
 
 def _load_catalog() -> dict[str, dict]:
@@ -130,8 +165,18 @@ def generate_roadmap(scan_id: str, opportunities: list[dict], scores: list[dict]
 
     enriched.sort(key=lambda x: x["composite_score"], reverse=True)
 
+    # Derive phase boundaries from the actual score distribution (adaptive anomaly
+    # detection) rather than fixed literal thresholds.
+    all_composite = [o["composite_score"] for o in enriched]
+    p1, p2, p3 = _adaptive_thresholds(all_composite)
+    phase_defs = [
+        ("P1", "Phase 1 — Quick Wins", p1, None),
+        ("P2", "Phase 2 — Core Modernization", p2, p1),
+        ("P3", "Phase 3 — Long-Horizon Investments", p3, p2),
+    ]
+
     phases: list[dict] = []
-    for phase_id, label, lo, hi in _PHASE_DEFS:
+    for phase_id, label, lo, hi in phase_defs:
         if hi is None:
             bucket = [o for o in enriched if o["composite_score"] >= lo]
         else:

@@ -49,158 +49,14 @@ def _load_config() -> dict[str, Any]:
 _cfg = _load_config()
 _PATTERN_MIN_DEPTH: int = int(_cfg.get("pattern_min_depth", 3))
 _RULE_MIN_KEYS: int = int(_cfg.get("rule_min_keys", 10))
+_KEYWORD_LIST_MIN_STRINGS: int = int(_cfg.get("keyword_list_min_strings", 3))
 
-_anomaly_cfg: dict[str, Any] = _cfg.get("anomaly_detection", {})
-_AI_THRESHOLD_FILTER: bool = bool(_anomaly_cfg.get("ai_threshold_filter", True))
-_AI_THRESHOLD_MIN_SCORE: float = float(_anomaly_cfg.get("ai_threshold_min_score", 0.5))
-
-# ── AI anomaly detection for hardcoded thresholds ────────────────────────────
-
-_THRESHOLD_ANOMALY_PROMPT = """\
-You are a code quality analyst specializing in identifying hardcoded business logic thresholds.
-
-Given a list of numeric constants found in comparisons within a source file, classify each one.
-
-A "true anomaly" is a hardcoded business rule threshold that should be configurable:
-examples — confidence scores (0.7, 0.55), page sizes (20, 100), timeouts (30, 60),
-retry counts (3, 5), rate limits (100, 1000), score cutoffs (0.5, 0.9), batch sizes (50),
-iteration limits that embed domain policy.
-
-A "benign" constant does not represent configurable business logic:
-examples — comparisons to 0 or 1 for null/empty/truthy checks, loop indices (i < n),
-mathematical identity values, simple boundary guards (>= 0, != 0).
-
-Source file: {file_path}
-
-Candidates (JSON array, each with index, line_start, constants, kind):
-{candidates_json}
-
-Respond ONLY with a JSON array — same order as input, no markdown, no prose:
-[
-  {{"index": 0, "is_anomaly": true, "anomaly_score": 0.85, "reason": "one sentence"}},
-  ...
-]
-"""
-
-
-def _llm_filter_threshold_anomalies(
-    candidates: list[dict],
-    source_path: str,
-) -> list[dict]:
-    """Use Claude Haiku to filter hardcoded_threshold candidates.
-
-    Enriches each candidate's pattern_detail with anomaly_score, is_anomaly,
-    and reason.  Returns only candidates classified as true anomalies
-    (anomaly_score >= _AI_THRESHOLD_MIN_SCORE).  Falls back to returning all
-    candidates unchanged if the LLM is unavailable or classification fails.
-    """
-    if not candidates:
-        return candidates
-
-    try:
-        from icdev.tools.llm.provider import LLMRequest
-        from icdev.tools.llm.router import LLMRouter
-    except ImportError:
-        try:
-            from tools.llm.provider import LLMRequest
-            from tools.llm.router import LLMRouter
-        except ImportError:
-            return candidates
-
-    batch = [
-        {
-            "index": i,
-            "line_start": c["line_start"],
-            "constants": c["pattern_detail"].get("constants", []),
-            "kind": c["pattern_detail"].get("kind", "compare"),
-        }
-        for i, c in enumerate(candidates)
-    ]
-
-    try:
-        router = LLMRouter()
-        request = LLMRequest(
-            messages=[
-                {
-                    "role": "user",
-                    "content": _THRESHOLD_ANOMALY_PROMPT.format(
-                        file_path=source_path,
-                        candidates_json=json.dumps(batch, indent=2),
-                    ),
-                }
-            ],
-            system_prompt=(
-                "You are a code quality analyst. "
-                "Reply only with a JSON array as specified — no prose."
-            ),
-            agent_id="threshold-anomaly-detector",
-            classification="CUI",
-            max_tokens=1024,
-            effort="low",
-        )
-        response = router.invoke("anomaly_detection", request)
-        raw = response.content or ""
-    except Exception:
-        return candidates
-
-    # Parse LLM response
-    text = re.sub(r"```(?:json)?|```", "", raw).strip()
-    try:
-        classifications = json.loads(text)
-        if not isinstance(classifications, list):
-            raise ValueError("expected array")
-    except (json.JSONDecodeError, ValueError):
-        m = re.search(r"\[.*\]", text, re.DOTALL)
-        if m:
-            try:
-                classifications = json.loads(m.group(0))
-            except (json.JSONDecodeError, ValueError):
-                return candidates
-        else:
-            return candidates
-
-    # Build index lookup
-    by_index: dict[int, dict] = {}
-    for item in classifications:
-        if isinstance(item, dict) and "index" in item:
-            by_index[int(item["index"])] = item
-
-    enriched: list[dict] = []
-    for i, candidate in enumerate(candidates):
-        cls = by_index.get(i, {})
-        anomaly_score: float = float(cls.get("anomaly_score", 0.5))
-        is_anomaly: bool = bool(cls.get("is_anomaly", True))
-        reason: str = str(cls.get("reason", ""))
-
-        candidate["pattern_detail"]["anomaly_score"] = anomaly_score
-        candidate["pattern_detail"]["is_anomaly"] = is_anomaly
-        if reason:
-            candidate["pattern_detail"]["anomaly_reason"] = reason
-
-        if is_anomaly and anomaly_score >= _AI_THRESHOLD_MIN_SCORE:
-            enriched.append(candidate)
-
-    return enriched
-
-
-def _apply_threshold_anomaly_filter(results: list[dict], source_path: str) -> list[dict]:
-    """Post-process detect results: apply AI anomaly filter to hardcoded_threshold hits.
-
-    Non-threshold patterns pass through unchanged.  If AI filtering is
-    disabled or unavailable, all threshold candidates are preserved.
-    """
-    if not _AI_THRESHOLD_FILTER:
-        return results
-
-    threshold_hits = [r for r in results if r["pattern_type"] == "hardcoded_threshold"]
-    other_hits = [r for r in results if r["pattern_type"] != "hardcoded_threshold"]
-
-    if not threshold_hits:
-        return results
-
-    filtered = _llm_filter_threshold_anomalies(threshold_hits, source_path)
-    return other_hits + filtered
-
+_threshold_ad_cfg: dict[str, Any] = _cfg.get("threshold_anomaly_detection", {})
+_AD_ENABLED: bool = bool(_threshold_ad_cfg.get("enabled", True))
+_AD_Z_SCORE_THRESHOLD: float = float(_threshold_ad_cfg.get("z_score_threshold", 2.0))
+_AD_IQR_MULTIPLIER: float = float(_threshold_ad_cfg.get("iqr_multiplier", 1.5))
+_AD_MIN_SAMPLE_SIZE: int = int(_threshold_ad_cfg.get("min_sample_size", 5))
+_AD_FALLBACK_TO_ALL: bool = bool(_threshold_ad_cfg.get("fallback_to_all", True))
 
 _semgrep_cfg: dict[str, Any] = _cfg.get("semgrep", {})
 _SEMGREP_RULES_DIR: str = _semgrep_cfg.get(
@@ -351,6 +207,55 @@ _CRON_DEC_KEYWORDS: frozenset[str] = frozenset(
 _THRESHOLD_OPS = (ast.Lt, ast.LtE, ast.Gt, ast.GtE)
 
 
+# ── Anomaly detection for hardcoded thresholds ────────────────────────────────
+
+
+def _collect_all_numeric_thresholds(tree: ast.AST) -> list[float]:
+    """Collect every numeric constant appearing in comparisons or binary ops."""
+    values: list[float] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Compare):
+            if any(isinstance(op, _THRESHOLD_OPS) for op in node.ops):
+                for c in [node.left, *node.comparators]:
+                    if isinstance(c, ast.Constant) and isinstance(c.value, (int, float)):
+                        values.append(float(c.value))
+        elif isinstance(node, ast.BinOp):
+            for side in (node.left, node.right):
+                if isinstance(side, ast.Constant) and isinstance(side.value, (int, float)):
+                    values.append(float(side.value))
+    return values
+
+
+def _is_threshold_anomalous(value: float, population: list[float]) -> bool:
+    """Return True if value is a statistical outlier in population.
+
+    Uses z-score first; falls back to IQR fence when variance is zero.
+    When the population is too small, respects _AD_FALLBACK_TO_ALL.
+    """
+    n = len(population)
+    if n < _AD_MIN_SAMPLE_SIZE:
+        return _AD_FALLBACK_TO_ALL
+
+    mean = sum(population) / n
+    variance = sum((x - mean) ** 2 for x in population) / n
+    if variance > 0:
+        z = abs(value - mean) / (variance ** 0.5)
+        if z > _AD_Z_SCORE_THRESHOLD:
+            return True
+
+    sorted_pop = sorted(population)
+    q1 = sorted_pop[n // 4]
+    q3 = sorted_pop[(3 * n) // 4]
+    iqr = q3 - q1
+    if iqr > 0:
+        lower = q1 - _AD_IQR_MULTIPLIER * iqr
+        upper = q3 + _AD_IQR_MULTIPLIER * iqr
+        if value < lower or value > upper:
+            return True
+
+    return False
+
+
 def _build_parent_map(tree: ast.AST) -> dict[int, ast.AST]:
     parent_map: dict[int, ast.AST] = {}
     for node in ast.walk(tree):
@@ -450,13 +355,14 @@ def _ast_detect_file(file_path: str) -> list[dict]:
     except SyntaxError:
         return []
 
+    source_lines = source_text.splitlines()
     parent_map = _build_parent_map(tree)
     scope_map = _build_scope_map(tree)
     re_aliases, re_funcs = _collect_re_names(tree)
 
     raw: list[dict] = []
     raw.extend(_detect_nested_conditionals(file_path, tree, parent_map, scope_map))
-    raw.extend(_detect_regex_user_input(file_path, tree, scope_map, re_aliases, re_funcs))
+    raw.extend(_nlp_extract_regex_user_input(file_path, tree, scope_map, re_aliases, re_funcs, source_lines))
     raw.extend(_detect_string_template_rendering(file_path, tree, scope_map))
     raw.extend(_detect_scheduled_cron(file_path, tree, scope_map))
     raw.extend(_detect_hardcoded_threshold(file_path, tree, scope_map))
@@ -467,8 +373,7 @@ def _ast_detect_file(file_path: str) -> list[dict]:
     # Inject language field for consistency with Semgrep output schema.
     for hit in raw:
         hit.setdefault("language", "python")
-
-    return _apply_threshold_anomaly_filter(raw, file_path)
+    return raw
 
 
 def _detect_via_ast_fallback(target_path: str) -> list[dict]:
@@ -547,6 +452,151 @@ def _detect_regex_user_input(
                 "pattern_detail": {"call": matched},
             })
     return results
+
+
+# ── NLP extractor for regex_user_input ───────────────────────────────────────
+
+_NLP_REGEX_SYSTEM = (
+    "You are a security-focused code analyst. "
+    "Determine whether each Python regex call operates on user-controlled input. "
+    "Respond ONLY with a compact JSON array — no prose, no markdown fences."
+)
+
+_NLP_REGEX_PROMPT = """\
+File: {module_path}
+
+Regex call(s) detected (one object per call):
+{calls_json}
+
+Source context (lines {ctx_start}–{ctx_end}):
+```python
+{source_context}
+```
+
+For EACH call (same order), reply with a JSON array of objects:
+[
+  {{
+    "index": <int>,
+    "user_input_detected": <true|false>,
+    "confidence": <0.0-1.0>,
+    "input_source": "<one of: request_param, form_field, env_var, config, hardcoded, unknown>",
+    "risk_note": "<one sentence or empty string>"
+  }}
+]"""
+
+_NLP_CTX_WINDOW: int = 30  # lines of source context around each hit
+
+
+def _source_window(source_lines: list[str], line_start: int, line_end: int) -> tuple[str, int, int]:
+    """Return (context_text, ctx_start, ctx_end) for NLP prompt construction."""
+    n = len(source_lines)
+    lo = max(0, line_start - 1 - _NLP_CTX_WINDOW)
+    hi = min(n, line_end + _NLP_CTX_WINDOW)
+    snippet = "\n".join(source_lines[lo:hi])
+    return snippet, lo + 1, hi
+
+
+def _nlp_enrich_hits(hits: list[dict], source_lines: list[str], file_path: str) -> list[dict]:
+    """Send all candidates to Claude Haiku and enrich pattern_detail in place."""
+    from tools.llm.provider import LLMRequest
+    from tools.llm.router import LLMRouter, LLMUnavailableError
+
+    # Build a single context window covering all hits
+    if not hits:
+        return hits
+    lo = min(h["line_start"] for h in hits)
+    hi = max(h["line_end"] for h in hits)
+    ctx_text, ctx_start, ctx_end = _source_window(source_lines, lo, hi)
+
+    calls_payload = [
+        {"index": i, "call": h["pattern_detail"].get("call", ""), "line": h["line_start"]}
+        for i, h in enumerate(hits)
+    ]
+
+    prompt = _NLP_REGEX_PROMPT.format(
+        module_path=file_path,
+        calls_json=json.dumps(calls_payload, separators=(",", ":")),
+        ctx_start=ctx_start,
+        ctx_end=ctx_end,
+        source_context=ctx_text,
+    )
+
+    try:
+        router = LLMRouter()
+        response = router.invoke(
+            "pattern_extraction",
+            LLMRequest(
+                messages=[{"role": "user", "content": prompt}],
+                system_prompt=_NLP_REGEX_SYSTEM,
+                model="claude-haiku-4-5-20251001",
+                max_tokens=1024,
+                temperature=0.0,
+                effort="low",
+                agent_id="pattern-classifier-nlp",
+                classification="CUI",
+                skip_injection_scan=True,
+            ),
+        )
+    except (LLMUnavailableError, Exception):
+        return hits  # graceful fallback — return AST results unchanged
+
+    raw = (response.content or "").strip()
+    # Strip optional markdown fences
+    raw = re.sub(r"```(?:json)?|```", "", raw).strip()
+    try:
+        items: list[dict] = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        m = re.search(r"\[.*\]", raw, re.DOTALL)
+        if m:
+            try:
+                items = json.loads(m.group(0))
+            except (json.JSONDecodeError, ValueError):
+                items = []
+        else:
+            items = []
+
+    by_index: dict[int, dict] = {}
+    for item in items:
+        if isinstance(item, dict) and isinstance(item.get("index"), int):
+            by_index[item["index"]] = item
+
+    enriched: list[dict] = []
+    for i, hit in enumerate(hits):
+        nlp = by_index.get(i, {})
+        detail = dict(hit["pattern_detail"])
+        detail["nlp_user_input_detected"] = bool(nlp.get("user_input_detected", True))
+        detail["nlp_confidence"] = float(nlp.get("confidence", 0.5))
+        detail["nlp_input_source"] = str(nlp.get("input_source", "unknown"))
+        detail["nlp_risk_note"] = str(nlp.get("risk_note", ""))
+        enriched.append({**hit, "pattern_detail": detail})
+
+    return enriched
+
+
+def _nlp_extract_regex_user_input(
+    file_path: str,
+    tree: ast.AST,
+    scope_map: dict[int, str],
+    re_module_aliases: set[str],
+    re_func_names: set[str],
+    source_lines: list[str],
+) -> list[dict]:
+    """NLP-enhanced regex user-input pattern extractor.
+
+    Phase 1 — AST scan: find every re.* call in the file.
+    Phase 2 — LLM enrichment: send candidates to Claude Haiku to determine
+               whether the matched string is user-controlled, adding
+               nlp_user_input_detected / nlp_confidence / nlp_input_source /
+               nlp_risk_note fields to pattern_detail.
+
+    Falls back silently to Phase-1 AST results if the LLM is unavailable.
+    """
+    candidates = _detect_regex_user_input(
+        file_path, tree, scope_map, re_module_aliases, re_func_names
+    )
+    if not candidates:
+        return []
+    return _nlp_enrich_hits(candidates, source_lines, file_path)
 
 
 def _detect_string_template_rendering(
@@ -632,6 +682,13 @@ def _detect_hardcoded_threshold(
     scope_map: dict[int, str],
 ) -> list[dict]:
     results: list[dict] = []
+
+    # Pre-collect the full population of numeric constants so the anomaly
+    # detector can decide which values are true outliers vs. routine literals.
+    population: list[float] = (
+        _collect_all_numeric_thresholds(tree) if _AD_ENABLED else []
+    )
+
     for node in ast.walk(tree):
         if isinstance(node, ast.Compare):
             if not any(isinstance(op, _THRESHOLD_OPS) for op in node.ops):
@@ -642,15 +699,24 @@ def _detect_hardcoded_threshold(
                 for c in comparators
                 if isinstance(c, ast.Constant) and isinstance(c.value, (int, float))
             ]
-            if numeric_consts:
-                results.append({
-                    "pattern_type": "hardcoded_threshold",
-                    "module_path": file_path,
-                    "function_name": scope_map.get(id(node), "<module>"),
-                    "line_start": node.lineno,
-                    "line_end": node.end_lineno,
-                    "pattern_detail": {"kind": "compare", "constants": numeric_consts},
-                })
+            if not numeric_consts:
+                continue
+            if _AD_ENABLED and not any(
+                _is_threshold_anomalous(float(v), population) for v in numeric_consts
+            ):
+                continue
+            results.append({
+                "pattern_type": "hardcoded_threshold",
+                "module_path": file_path,
+                "function_name": scope_map.get(id(node), "<module>"),
+                "line_start": node.lineno,
+                "line_end": node.end_lineno,
+                "pattern_detail": {
+                    "kind": "compare",
+                    "constants": numeric_consts,
+                    "anomaly_detected": _AD_ENABLED,
+                },
+            })
         elif isinstance(node, ast.BinOp):
             left_const = (
                 isinstance(node.left, ast.Constant)
@@ -660,20 +726,24 @@ def _detect_hardcoded_threshold(
                 isinstance(node.right, ast.Constant)
                 and isinstance(node.right.value, (int, float))
             )
-            if left_const or right_const:
-                const_val = node.left.value if left_const else node.right.value  # type: ignore[union-attr]
-                results.append({
-                    "pattern_type": "hardcoded_threshold",
-                    "module_path": file_path,
-                    "function_name": scope_map.get(id(node), "<module>"),
-                    "line_start": node.lineno,
-                    "line_end": node.end_lineno,
-                    "pattern_detail": {
-                        "kind": "binop",
-                        "op": type(node.op).__name__,
-                        "constants": [const_val],
-                    },
-                })
+            if not (left_const or right_const):
+                continue
+            const_val = node.left.value if left_const else node.right.value  # type: ignore[union-attr]
+            if _AD_ENABLED and not _is_threshold_anomalous(float(const_val), population):
+                continue
+            results.append({
+                "pattern_type": "hardcoded_threshold",
+                "module_path": file_path,
+                "function_name": scope_map.get(id(node), "<module>"),
+                "line_start": node.lineno,
+                "line_end": node.end_lineno,
+                "pattern_detail": {
+                    "kind": "binop",
+                    "op": type(node.op).__name__,
+                    "constants": [const_val],
+                    "anomaly_detected": _AD_ENABLED,
+                },
+            })
     return results
 
 
@@ -739,7 +809,7 @@ def _detect_keyword_list_search(
                     and isinstance(k, ast.Constant)
                     and isinstance(k.value, str)
                 )
-            if str_count >= 3:
+            if str_count >= _KEYWORD_LIST_MIN_STRINGS:
                 results.append({
                     "pattern_type": "keyword_list_search",
                     "module_path": file_path,
@@ -839,7 +909,7 @@ _JAVA_RE_SWITCH         = re.compile(r'\bswitch\s*\(')
 _JAVA_RE_CASE           = re.compile(r'^\s*case\s+\S')
 _JAVA_RE_MODEL_ATTR     = re.compile(r'@ModelAttribute\b')
 _JAVA_RE_REPO_FIND      = re.compile(r'\.\s*find(?:All|By\w+)\s*\(')
-_JAVA_MIN_IF_DEPTH: int = 2  # Spring controllers rarely nest ≥3; 2 is enough signal
+_JAVA_MIN_IF_DEPTH: int = int(_cfg.get("java_min_if_depth", 2))
 
 
 def _cs_walk_scoped(root: Any, src: bytes):
@@ -1149,8 +1219,7 @@ def _cs_detect_via_tree_sitter(file_path: str, tree: Any, src: bytes) -> list[di
     results.extend(_cs_detect_large_rule_table_ts(file_path, root, src))
     for hit in results:
         hit.setdefault("language", "csharp")
-
-    return _apply_threshold_anomaly_filter(results, file_path)
+    return results
 
 
 # ── C# regex fallback (when tree-sitter-languages not installed) ──────────────
@@ -1304,7 +1373,7 @@ def _cs_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
 
     results.extend(_cs_regex_nested_ifs(file_path, lines))
     results.extend(_cs_regex_large_dict(file_path, lines))
-    return _apply_threshold_anomaly_filter(results, file_path)
+    return results
 
 
 def _cs_detect_file(file_path: str) -> list[dict]:
@@ -1559,7 +1628,7 @@ def _java_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
     results.extend(_java_regex_nested_ifs(file_path, lines))
     results.extend(_java_regex_switch_cases(file_path, lines))
     results.extend(_java_detect_db_render_chain(file_path, lines))
-    return _apply_threshold_anomaly_filter(results, file_path)
+    return results
 
 
 def _java_detect_file(file_path: str) -> list[dict]:

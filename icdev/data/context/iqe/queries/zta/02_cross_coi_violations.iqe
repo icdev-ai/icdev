@@ -1,0 +1,8 @@
+# Intent: Count access simulations that resulted in cross-COI compartmentalization violations.
+# Scenario: SCENARIO_CROSS_COI_VIOLATION — principal from COI_BRAVO denied COI_ALPHA resource.
+# Expected violation shape: rows where decision == "DENY" and scenario contains "CROSS_COI"
+#   indicate compartmentalization breaches that require ZTA policy enforcement review.
+
+foreach r in lac.audit_trail
+  where r.decision == "DENY"
+  select r.scenario_name, r.decision, r.deny_reasons, r.principal_cois, r.resource_id, r.created_at

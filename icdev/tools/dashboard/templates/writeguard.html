@@ -35,7 +35,38 @@
     outline: none;
     transition: border-color 0.2s;
   }
-  .wg-textarea:focus { border-color: var(--accent-blue, #4a9eff); }
+  .wg-tab-btn.active { background: var(--accent-blue, #4a9eff) !important; color: #fff !important; border-color: var(--accent-blue, #4a9eff) !important; }
+  .wg-tab-btn:hover:not(.active) { background: rgba(255,255,255,0.05); }
+
+  /* Markdown preview pane */
+  #wg-preview, #wg-rewrite-preview {
+    width: 100%;
+    min-height: 280px;
+    background: var(--bg-primary, #12121c);
+    color: var(--text-primary, #e0e0e0);
+    border: 1px solid var(--border-color, #333);
+    border-radius: 6px;
+    padding: 0.75rem;
+    font-family: inherit;
+    font-size: 0.9rem;
+    box-sizing: border-box;
+    line-height: 1.7;
+    overflow-y: auto;
+  }
+  #wg-preview h1, #wg-rewrite-preview h1 { font-size: 1.35rem; font-weight: 700; margin: 0.75rem 0 0.5rem; color: var(--text-primary); }
+  #wg-preview h2, #wg-rewrite-preview h2 { font-size: 1.15rem; font-weight: 700; margin: 0.65rem 0 0.45rem; color: var(--text-primary); }
+  #wg-preview h3, #wg-rewrite-preview h3 { font-size: 1.02rem; font-weight: 700; margin: 0.55rem 0 0.35rem; color: var(--text-primary); }
+  #wg-preview p, #wg-rewrite-preview p { margin: 0 0 0.6rem; }
+  #wg-preview ul, #wg-preview ol, #wg-rewrite-preview ul, #wg-rewrite-preview ol { padding-left: 1.4rem; margin: 0 0 0.6rem; }
+  #wg-preview li, #wg-rewrite-preview li { margin-bottom: 0.25rem; }
+  #wg-preview strong, #wg-rewrite-preview strong { font-weight: 700; color: var(--text-primary); }
+  #wg-preview em, #wg-rewrite-preview em { font-style: italic; }
+  #wg-preview code, #wg-rewrite-preview code { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 3px; padding: 1px 4px; font-size: 0.85em; }
+  #wg-preview pre, #wg-rewrite-preview pre { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 4px; padding: 0.6rem; overflow-x: auto; }
+  #wg-preview blockquote, #wg-rewrite-preview blockquote { border-left: 3px solid var(--accent-blue); padding: 4px 12px; margin: 8px 0; color: var(--text-secondary); }
+  #wg-preview table, #wg-rewrite-preview table { border-collapse: collapse; width: 100%; margin-bottom: 0.75rem; }
+  #wg-preview th, #wg-preview td, #wg-rewrite-preview th, #wg-rewrite-preview td { border: 1px solid var(--border-color); padding: 6px 10px; text-align: left; }
+  #wg-preview th, #wg-rewrite-preview th { background: var(--bg-card); font-weight: 600; }
 
   .wg-file-drop {
     border: 2px dashed var(--border-color, #333);
@@ -557,11 +588,55 @@
 
     <!-- ── Input panel ──────────────────────────────────────────────── -->
     <div class="wg-input-card">
-      <h2 style="margin:0 0 1rem;font-size:1rem;font-weight:700;">Input Text</h2>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:8px;">
+        <h2 style="margin:0;font-size:1rem;font-weight:700;">Input Text</h2>
+        {% if preload_title %}
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="font-size:0.75rem;color:var(--text-secondary);">Loaded from proposal:</span>
+          <span style="font-size:0.75rem;font-weight:600;color:var(--accent-blue-light,#6db3f8);">{{ preload_title[:60] }}{% if preload_title|length > 60 %}…{% endif %}</span>
+          {% if preload_sections | length > 1 %}
+          <select id="wg-section-selector" onchange="loadSection(this.value)" style="font-size:0.75rem;padding:2px 6px;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-input);color:var(--text-primary);">
+            <option value="">— All sections combined —</option>
+            {% for s in preload_sections %}
+            <option value="{{ loop.index0 }}">{{ s.title }}</option>
+            {% endfor %}
+          </select>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
 
       <!-- Textarea -->
+      <div id="wg-input-tabs" style="display:flex;gap:0.5rem;margin-bottom:0.5rem;">
+        <button type="button" id="wg-tab-source" class="wg-tab-btn active" onclick="setInputTab('source')"
+                style="background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:4px;padding:0.25rem 0.6rem;font-size:0.78rem;cursor:pointer;">Source</button>
+        <button type="button" id="wg-tab-preview" class="wg-tab-btn" onclick="setInputTab('preview')"
+                style="background:var(--bg-primary);color:var(--text-muted);border:1px solid var(--border-color);border-radius:4px;padding:0.25rem 0.6rem;font-size:0.78rem;cursor:pointer;">Preview</button>
+      </div>
       <textarea id="wg-text" class="wg-textarea"
-        placeholder="Paste your content here — article, document, or any text to analyze..."></textarea>
+        placeholder="Paste your content here — article, document, or any text to analyze...">{% if preload_sections %}{% for s in preload_sections %}{{ s.content }}{% if not loop.last %}
+
+---
+
+{% endif %}{% endfor %}{% endif %}</textarea>
+      <div id="wg-preview" class="wg-textarea" style="display:none;overflow:auto;white-space:normal;"></div>
+
+      {# Preloaded section data for JS picker #}
+      {% if preload_sections %}
+      <script id="wg-preload-data" type="application/json">{{ preload_sections | tojson }}</script>
+      <script>
+      var _wgSections = JSON.parse(document.getElementById('wg-preload-data').textContent);
+      function loadSection(idx) {
+          var ta = document.getElementById('wg-text');
+          if (idx === '') {
+              ta.value = _wgSections.map(function(s){ return s.content; }).join('\n\n---\n\n');
+          } else {
+              ta.value = _wgSections[parseInt(idx)].content;
+          }
+          ta.dispatchEvent(new Event('input'));
+      }
+      </script>
+      {% endif %}
 
       <!-- File upload -->
       <div class="wg-file-drop" id="wg-drop-zone" title="Click to browse or drag and drop a file">
@@ -684,7 +759,14 @@
           <span id="wg-rewrite-delta" style="font-size:0.78rem;font-weight:600;"></span>
         </div>
         <div style="font-size:0.75rem;color:#888;margin-bottom:0.4rem;" id="wg-rewrite-changes"></div>
+        <div style="display:flex;gap:0.5rem;margin-bottom:0.5rem;">
+          <button type="button" id="wg-rewrite-tab-source" class="wg-tab-btn active" onclick="setRewriteTab('source')"
+                  style="background:var(--bg-primary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:4px;padding:0.25rem 0.6rem;font-size:0.78rem;cursor:pointer;">Source</button>
+          <button type="button" id="wg-rewrite-tab-preview" class="wg-tab-btn" onclick="setRewriteTab('preview')"
+                  style="background:var(--bg-primary);color:var(--text-muted);border:1px solid var(--border-color);border-radius:4px;padding:0.25rem 0.6rem;font-size:0.78rem;cursor:pointer;">Preview</button>
+        </div>
         <textarea id="wg-rewrite-output" class="wg-textarea" style="min-height:200px;" readonly></textarea>
+        <div id="wg-rewrite-preview" style="display:none;min-height:200px;"></div>
         <button class="wg-btn-analyze" onclick="acceptRewrite()" style="background:#00c864;margin-top:0.5rem;font-size:0.82rem;">
           Accept Rewrite
         </button>
@@ -865,6 +947,88 @@
   const btn        = document.getElementById('wg-btn');
   const btnText    = document.getElementById('wg-btn-text');
   const spinner    = document.getElementById('wg-spinner');
+
+  // ── Markdown renderer (uses marked if loaded, else inline fallback) ─
+  function renderMarkdown(text) {
+    if (typeof marked !== 'undefined' && marked.parse) {
+      try { return marked.parse(text, { breaks: true, gfm: true }); } catch (e) {}
+    }
+    // Inline fallback for common markdown
+    return text
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
+      .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+      .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+      .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+      .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/`(.+?)`/g, '<code>$1</code>')
+      .replace(/^- (.+)$/gm, '<li>$1</li>')
+      .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
+      .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
+      .replace(/^\> (.+)$/gm, '<blockquote>$1</blockquote>')
+      .replace(/\n\n/g, '</p><p>')
+      .replace(/\n/g, '<br>');
+  }
+
+  // ── Input tab toggle (source / preview) ──────────────────────────────
+  window.setInputTab = function(mode) {
+    const sourceEl = document.getElementById('wg-text');
+    const previewEl = document.getElementById('wg-preview');
+    const sourceTab = document.getElementById('wg-tab-source');
+    const previewTab = document.getElementById('wg-tab-preview');
+    if (!sourceEl || !previewEl) return;
+    if (mode === 'preview') {
+      sourceEl.style.display = 'none';
+      previewEl.style.display = 'block';
+      previewEl.innerHTML = renderMarkdown(sourceEl.value);
+      sourceTab.classList.remove('active');
+      previewTab.classList.add('active');
+      previewTab.style.color = '#fff';
+      sourceTab.style.color = 'var(--text-muted)';
+    } else {
+      sourceEl.style.display = 'block';
+      previewEl.style.display = 'none';
+      sourceTab.classList.add('active');
+      previewTab.classList.remove('active');
+      sourceTab.style.color = '#fff';
+      previewTab.style.color = 'var(--text-muted)';
+    }
+  };
+
+  // Update preview live while typing if preview is visible
+  textarea.addEventListener('input', function() {
+    const previewEl = document.getElementById('wg-preview');
+    if (previewEl && previewEl.style.display === 'block') {
+      previewEl.innerHTML = renderMarkdown(textarea.value);
+    }
+  });
+
+  // ── Rewrite tab toggle (source / preview) ────────────────────────────
+  window.setRewriteTab = function(mode) {
+    const sourceEl = document.getElementById('wg-rewrite-output');
+    const previewEl = document.getElementById('wg-rewrite-preview');
+    const sourceTab = document.getElementById('wg-rewrite-tab-source');
+    const previewTab = document.getElementById('wg-rewrite-tab-preview');
+    if (!sourceEl || !previewEl) return;
+    if (mode === 'preview') {
+      sourceEl.style.display = 'none';
+      previewEl.style.display = 'block';
+      previewEl.innerHTML = renderMarkdown(sourceEl.value);
+      sourceTab.classList.remove('active');
+      previewTab.classList.add('active');
+      previewTab.style.color = '#fff';
+      sourceTab.style.color = 'var(--text-muted)';
+    } else {
+      sourceEl.style.display = 'block';
+      previewEl.style.display = 'none';
+      sourceTab.classList.add('active');
+      previewTab.classList.remove('active');
+      sourceTab.style.color = '#fff';
+      previewTab.style.color = 'var(--text-muted)';
+    }
+  };
 
   // ── Live word/char count ───────────────────────────────────────────
   textarea.addEventListener('input', updateMeta);
@@ -1797,6 +1961,11 @@
 
       outputEl.value = data.rewritten_text;
       resultEl.style.display = 'block';
+      // Update preview if visible
+      const previewEl = document.getElementById('wg-rewrite-preview');
+      if (previewEl && previewEl.style.display === 'block') {
+        previewEl.innerHTML = renderMarkdown(data.rewritten_text);
+      }
 
       const delta = data.score_improvement || 0;
       const deltaColor = delta > 0 ? '#00c864' : (delta < 0 ? '#e53e3e' : '#888');

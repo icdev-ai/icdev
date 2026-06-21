@@ -1,0 +1,37 @@
+# CUI // SP-CTI
+# Context Compressor Configuration (Innovation Sig-84ab — Headroom)
+# Override any key via ICDEV_CTX_COMPRESS_* environment variables.
+
+context_compressor:
+  # Default token budget for compression passes
+  default_budget_tokens: 8000
+
+  # Strategy: "auto", "text", "code"
+  default_content_type: auto
+
+  # Enable KV-cache alignment prefix normalization
+  cache_align: true
+
+  # Log compression events to DB (llm_context_compression_log table)
+  log_to_db: true
+
+  # Headroom library settings (only used when pip install headroom is available)
+  headroom:
+    # SmartCrusher aggressiveness: 0.0 (conservative) – 1.0 (aggressive)
+    crush_level: 0.7
+    # Enable CodeCompressor for code blocks
+    code_compressor: true
+    # Enable cross-agent memory deduplication
+    dedup_cross_agent: false
+
+  # Built-in fallback settings (used when headroom is not installed)
+  builtin:
+    # Max consecutive blank lines to preserve
+    max_blank_lines: 2
+    # Strip trailing whitespace per line
+    strip_trailing_whitespace: true
+    # Strip pure-comment lines in code blocks
+    strip_code_comments: true
+
+  # Gate: warn if compression ratio drops below this threshold
+  min_ratio_warn: 1.1

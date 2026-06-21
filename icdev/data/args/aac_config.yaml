@@ -44,6 +44,7 @@ threshold_anomaly_detection:
   iqr_multiplier: 1.5     # IQR fence: Q1 - m*IQR to Q3 + m*IQR
   min_sample_size: 5      # minimum distinct constants before z-score is applied
   fallback_to_all: true   # when sample < min_sample_size, flag all constants
+  java_static_int_min_value: 0  # Java static int constants must exceed this to be flagged
 
 semgrep:
   rules_dir: context/ai_augmentation/semgrep_rules
@@ -70,10 +71,3 @@ anomaly_detection:
   value_feasibility_max_delta: 0.50   # flag when |value - feasibility| exceeds this
   component_outlier_floor: 0.05       # flag component below this value
   component_outlier_ceiling: 0.95     # flag component above this value
-  # Hardcoded-threshold pattern detector parameters (ai_paradigm: anomaly_detection)
-  hardcoded_threshold_detector:
-    enabled: true
-    z_score_threshold: 2.0  # flag constants with |z| above this
-    iqr_multiplier: 1.5     # IQR fence: Q1 - m*IQR to Q3 + m*IQR
-    min_sample_size: 5      # minimum distinct constants before z-score is applied
-    fallback_to_all: true   # when sample < min_sample_size, flag all constants

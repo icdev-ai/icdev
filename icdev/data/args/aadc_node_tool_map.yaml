@@ -55,6 +55,14 @@ node_tool_map:
     docs_link: m-sre-ai-01-llm-observability
 
   # ── Safety / Guardrails ─────────────────────────────────────────────────────
+  confidence-threshold:
+    tool_path: tools/agentic_ai_canvas/confidence_gate.py
+    cli_command: "python -c \"from tools.agentic_ai_canvas.confidence_gate import evaluate; print(evaluate('<design_id>', '<text>', 0.85))\""
+    config_key: confidence_gate
+    description: Confidence Gate — blocks LLM output below the minimum score threshold and routes low-confidence results to HITL. Implements NIST AI RMF MEA-1 (hallucination bounding) for the Agentic Research Pipeline.
+    task_title: "Wire confidence-threshold node → confidence_gate.py"
+    docs_link: m-sre-ai-02-drift-detection
+
   guardrail:
     tool_path: tools/security/ai_telemetry_logger.py
     cli_command: "python -c \"from tools.security.ai_telemetry_logger import log_security_event; ...\""

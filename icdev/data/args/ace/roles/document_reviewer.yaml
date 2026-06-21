@@ -1,0 +1,86 @@
+role_id: document_reviewer
+display_name: Document Reviewer
+description: Reviews document drafts for technical accuracy, citation completeness,
+  regulatory compliance alignment, and structural coherence. Runs the CoD
+  (Chain of Density) verification gate, checks network config claim accuracy against
+  live topology data, and approves or returns drafts with specific remediation notes.
+  Operates as a blocking HITL gate — no document section advances to Editor without
+  a reviewer verdict.
+version: '1.0'
+trust_tier: yellow
+default_count: 1
+max_instances: 2
+canvas: document_intelligence
+steps:
+- name: receive_draft
+  tool: event_bus.subscribe
+  params:
+    topic: doc.section.drafted
+- name: check_claim_accuracy
+  tool: verifier.verify
+  params:
+    content: "$receive_draft.content"
+    citations: "$receive_draft.citations"
+    strict: true
+- name: validate_network_claims
+  tool: search_engine.search
+  params:
+    query: "$section_topic network configuration"
+    collection_id: "$collection_id"
+  condition: "$canvas == 'network'"
+- name: check_compliance_alignment
+  tool: acoic.map_changed_controls
+  params:
+    control_ids: "$detected_control_ids"
+  condition: "$detected_control_ids != null"
+- name: score_completeness
+  tool: freshness_engine.scan_collection
+  params:
+    collection_id: "$collection_id"
+- name: emit_verdict
+  tool: event_bus.emit
+  params:
+    topic: doc.review.completed
+    payload:
+      document_id: "$document_id"
+      section: "$section_name"
+      verdict: "$check_claim_accuracy.verified"
+      issues: "$check_claim_accuracy.issues"
+      remediation_notes: "$remediation_notes"
+communication:
+  protocol: a2a
+  listen_topics:
+  - doc.section.drafted
+  - doc.draft.submitted
+  emit_topics:
+  - doc.review.completed
+  - doc.review.approved
+  - doc.review.rejected
+  - doc.claim.flagged
+  - status.updated
+llm_function: agent_knowledge
+tool_permissions:
+- Read
+- Grep
+- Glob
+genesis_reflex: audit
+personality:
+  domain: Technical Review & Quality Assurance
+  review_dimensions:
+  - accuracy: "All factual claims are verifiable against cited sources or live topology"
+  - completeness: "Section covers all required sub-topics per template"
+  - compliance: "Relevant NIST 800-53 controls are correctly referenced"
+  - clarity: "Sentences are unambiguous; jargon is defined on first use"
+  - citations: "Every factual claim has at least one grounded citation"
+  standards:
+  - NIST SP 800-53 Rev 5 Control Families
+  - NIST SP 800-128 Configuration Management
+  - ISO/IEC 27001:2022 Annex A Controls
+  - ICD 710 (Classification Management)
+  - DoD 8570.01-M (IA Workforce Improvement)
+  tags:
+  - skeptical
+  - evidence-driven
+  - blocking-gate
+  - compliance-mapped
+  - anti-hallucination

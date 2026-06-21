@@ -1,0 +1,158 @@
+# CUI // SP-CTI
+"""Pillar 8 — IL Classification (ICDEV): CUI markings, classification headers, IL metadata."""
+from __future__ import annotations
+
+import pathlib
+from functools import lru_cache
+from typing import Any
+
+from tools.aiify.agent_readiness.pillars._base import (
+    Criterion,
+    CriterionResult,
+    Pillar,
+    _glob_files,
+    _read,
+    _search,
+)
+
+# Recognized classification banner patterns
+_CUI_PATTERNS = r"CUI\s*//|CONTROLLED\s+UNCLASSIFIED|CUI\s+BASIC|CUI\s+SPECIFIED"
+_CLASS_HEADER = r"#\s*CUI|#\s*CONTROLLED\s+UNCLASSIFIED|#\s*SECRET|#\s*TOP\s+SECRET"
+_IL_PATTERN = r"\bIL[4-6]\b|\bimpact\s+level\s+[4-6]\b"
+
+# ---------------------------------------------------------------------------
+# Anomaly-detection threshold loader
+# ---------------------------------------------------------------------------
+_ARGS_PATH = pathlib.Path(__file__).parents[4] / "args" / "agent_readiness_config.yaml"
+_DEFAULTS: dict[str, Any] = {
+    # Values below these are anomalously low for an IL4+ project.
+    "sample_size": 30,
+    "min_header_ratio": 0.5,
+    "warn_header_ratio": 0.3,
+    "min_adaptive_sample": 10,
+    "adaptive_denominator": 5,
+}
+
+
+@lru_cache(maxsize=1)
+def _load_thresholds() -> dict[str, Any]:
+    """Load il_classification anomaly-detection thresholds from args/agent_readiness_config.yaml.
+
+    Falls back to built-in defaults when the config file is absent or malformed,
+    so the pillar degrades gracefully in air-gap or stripped environments.
+    """
+    try:
+        import yaml  # optional dep — present in all ICDEV environments
+        raw = _ARGS_PATH.read_text(encoding="utf-8")
+        data = yaml.safe_load(raw) or {}
+        cfg = data.get("pillars", {}).get("il_classification", {}).get("cui_file_headers", {})
+        return {
+            "sample_size": int(cfg.get("sample_size", _DEFAULTS["sample_size"])),
+            "min_header_ratio": float(cfg.get("min_header_ratio", _DEFAULTS["min_header_ratio"])),
+            "warn_header_ratio": float(cfg.get("warn_header_ratio", _DEFAULTS["warn_header_ratio"])),
+            "min_adaptive_sample": int(cfg.get("min_adaptive_sample", _DEFAULTS["min_adaptive_sample"])),
+            "adaptive_denominator": int(cfg.get("adaptive_denominator", _DEFAULTS["adaptive_denominator"])),
+        }
+    except Exception:  # noqa: BLE001
+        return dict(_DEFAULTS)
+
+
+def _check_cui_file_headers(repo: pathlib.Path) -> CriterionResult:
+    cid = "cui-file-headers"
+    py_files = _glob_files(repo, "**/*.py")
+    if not py_files:
+        return CriterionResult(cid, True, "No Python source files; CUI header check skipped.", skipped=True)
+
+    thresholds = _load_thresholds()
+    # Adaptive sample size: ~(1/adaptive_denominator) of corpus, clamped to
+    # [min_adaptive_sample, sample_size]. Avoids over-sampling tiny repos and
+    # under-sampling large ones without touching code.
+    total = len(py_files)
+    adaptive = max(
+        thresholds["min_adaptive_sample"],
+        min(thresholds["sample_size"], total // thresholds["adaptive_denominator"] + 1),
+    )
+    sample = py_files[:adaptive]
+
+    marked = [
+        f.name
+        for f in sample
+        if _search("\n".join(f.read_text(encoding="utf-8", errors="replace").splitlines()[:5]),
+                   _CLASS_HEADER)
+        or _search("\n".join(f.read_text(encoding="utf-8", errors="replace").splitlines()[:5]),
+                   _CUI_PATTERNS)
+    ]
+
+    ratio = len(marked) / len(sample)
+    min_ratio: float = thresholds["min_header_ratio"]
+    warn_ratio: float = thresholds["warn_header_ratio"]
+
+    if ratio >= min_ratio:
+        return CriterionResult(cid, True,
+                               f"CUI/classification headers found in {len(marked)}/{len(sample)} sampled files")
+    if ratio >= warn_ratio:
+        return CriterionResult(
+            cid, False,
+            f"Only {len(marked)}/{len(sample)} sampled files have CUI headers "
+            f"(ratio {ratio:.0%} < required {min_ratio:.0%}).",
+            "Add '# CUI // SP-CTI' or equivalent classification header to all source files.",
+        )
+    return CriterionResult(
+        cid, False,
+        f"CUI header coverage anomalously low: {len(marked)}/{len(sample)} files "
+        f"({ratio:.0%} vs. configured threshold {min_ratio:.0%}).",
+        "Add classification markings to all source files per NIST SP 800-171 requirements.",
+    )
+
+
+def _check_claude_md_classification(repo: pathlib.Path) -> CriterionResult:
+    cid = "claude-md-classification"
+    claude_md = _read(repo, "CLAUDE.md")
+    if not claude_md:
+        return CriterionResult(cid, True, "No CLAUDE.md present; check skipped.", skipped=True)
+    if _search(claude_md, _CUI_PATTERNS) or _search(claude_md, r"IL[4-6]|FedRAMP|CMMC"):
+        return CriterionResult(cid, True, "CLAUDE.md contains classification/compliance context")
+    return CriterionResult(cid, False, "CLAUDE.md lacks IL/classification context.",
+                           "Add IL level, FedRAMP/CMMC applicability, and CUI handling guidance to CLAUDE.md.")
+
+
+def _check_il_env_variable(repo: pathlib.Path) -> CriterionResult:
+    cid = "il-env-variable"
+    for fn in [".env", ".env.example", ".env.template", ".env.sample"]:
+        content = _read(repo, fn)
+        if content and _search(content, r"IL_LEVEL|IMPACT_LEVEL|ICDEV_IL|FedRAMP_IL"):
+            return CriterionResult(cid, True, f"IL level env variable found in {fn}")
+    # Check any config yaml for il_level
+    for cfg in _glob_files(repo, "args/*.yaml") + _glob_files(repo, "args/*.yml"):
+        content = cfg.read_text(encoding="utf-8", errors="replace")
+        if _search(content, r"il_level|impact_level"):
+            return CriterionResult(cid, True, f"IL level configured in {cfg.name}")
+    return CriterionResult(cid, False, "No IL level environment variable or config found.",
+                           "Set ICDEV_IL_LEVEL (il4/il5/il6) in .env.example to document the deployment IL.")
+
+
+def _check_classification_manager_usage(repo: pathlib.Path) -> CriterionResult:
+    cid = "classification-manager-usage"
+    py_files = _glob_files(repo, "**/*.py")
+    for f in py_files:
+        content = f.read_text(encoding="utf-8", errors="replace")
+        if _search(content, r"classification_manager|ClassificationManager"):
+            return CriterionResult(cid, True, f"classification_manager used in {f.name}")
+    # Check if the classification_manager tool exists
+    if _glob_files(repo, "**/classification_manager.py"):
+        return CriterionResult(cid, True, "classification_manager.py tool present in repo")
+    return CriterionResult(cid, False, "No classification_manager usage detected.",
+                           "Use tools.classification_manager for CUI markings instead of hardcoding banners.")
+
+
+PILLAR = Pillar(
+    id="il-classification",
+    name="IL Classification",
+    description="CUI markings, classification headers, IL metadata, and classification manager usage.",
+    criteria=[
+        Criterion("cui-file-headers", "CUI file headers", "Source files carry CUI/classification headers.", "il-classification", 3, _check_cui_file_headers),
+        Criterion("claude-md-classification", "CLAUDE.md classification", "CLAUDE.md contains IL/classification context.", "il-classification", 2, _check_claude_md_classification),
+        Criterion("il-env-variable", "IL env variable", "IL level is documented in .env or config YAML.", "il-classification", 2, _check_il_env_variable),
+        Criterion("classification-manager-usage", "Classification manager", "classification_manager is used for CUI markings.", "il-classification", 3, _check_classification_manager_usage),
+    ],
+)

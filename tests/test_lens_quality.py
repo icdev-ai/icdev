@@ -1,10 +1,8 @@
 # CUI // SP-CTI
 """Tests for Oracle Quality Lens adaptive anomaly detection."""
-import pytest
 
 from tools.oracle.lenses.lens_quality import (
     QualityLens,
-    _MIN_SAMPLES,
     _Z_CRIT,
     _Z_CRIT_HIGH,
     _Z_CRIT_LOW,

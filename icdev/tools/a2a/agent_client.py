@@ -232,6 +232,27 @@ class A2AAgentClient:
 
         raise TimeoutError(f"Task {task_id} did not complete within {timeout} seconds. Last status: {status}")
 
+    def submit_task(
+        self,
+        skill_id: str,
+        input_data: Dict[str, Any],
+        agent_url: Optional[str] = None,
+    ) -> dict:
+        """Submit a task to the configured A2A gateway (convenience wrapper).
+
+        Args:
+            skill_id: The skill/reflex name to invoke on the remote agent.
+            input_data: Context data forwarded as the task's input_data.
+            agent_url: Agent base URL.  Falls back to ICDEV_A2A_GATEWAY_URL
+                env var, then ``https://localhost:8443``.
+
+        Returns:
+            Task submission result from send_task.
+        """
+        import os as _os
+        url = agent_url or _os.environ.get("ICDEV_A2A_GATEWAY_URL", "https://localhost:8443")
+        return self.send_task(agent_url=url, skill_id=skill_id, input_data=input_data)
+
     def send_tasks_parallel(
         self,
         tasks: List[Dict[str, Any]],

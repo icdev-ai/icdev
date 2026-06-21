@@ -1,0 +1,7 @@
+# IQE-EXT-011: External fetch lineage provenance log
+# Returns all DDC lineage edges recorded for IQE external fetches.
+# Use: data provenance audit, fetch activity monitoring, compliance evidence.
+# Requires: data_canvas.db accessible (no external credentials needed).
+
+foreach r in ext.databridge.connectors
+select r.connector_name, r.class_name, r.status

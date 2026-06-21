@@ -414,7 +414,7 @@ class TestLiveLifecycle:
             str(artifact.get("content_json", ""))
         )
         marks = _portion_marks_in(body)
-        highest = _highest_mark(marks)
+        _highest = _highest_mark(marks)
         # The overall banner must be at least as high as the highest paragraph mark
         # We check this deterministically — any (S) paragraph requires ≥ (S) banner
         if "S" in marks:

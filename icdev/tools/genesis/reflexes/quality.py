@@ -16,8 +16,10 @@ from __future__ import annotations
 from tools.logging.icdev_logger import get_logger
 
 import json
+import math
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Dict
 
 from tools.db.storage import get_connection
 
@@ -25,6 +27,21 @@ logger = get_logger(__name__)
 
 ICDEV_ROOT = Path(__file__).resolve().parents[3]
 GENESIS_DB = ICDEV_ROOT / "data" / "genesis_quality.db"
+
+
+def _load_reflex_config() -> Dict[str, Any]:
+    """Load quality reflex config from genesis_config.yaml."""
+    config_path = ICDEV_ROOT / "args" / "genesis_config.yaml"
+    if not config_path.exists():
+        return {}
+    try:
+        import yaml
+
+        with open(config_path, encoding="utf-8") as f:
+            config = yaml.safe_load(f) or {}
+        return config.get("reflexes", {}).get("quality", {})
+    except Exception:
+        return {}
 
 
 def _utcnow() -> str:
@@ -69,6 +86,126 @@ def _get_db():
         );
     """)
     return conn
+
+
+def _compute_adaptive_thresholds(conn) -> dict:
+    """Compute regression thresholds from historical quality_snapshots using Z-score anomaly detection.
+
+    Returns adaptive values when anomaly_detection is enabled and enough snapshots
+    exist (>= min_samples + 1 needed to produce deltas).  Falls back to the static
+    config values otherwise.
+    """
+    cfg = _load_reflex_config()
+    ad_cfg = cfg.get("anomaly_detection", {})
+    bounds = ad_cfg.get("adaptive_bounds", {})
+
+    static = {
+        "uqs_regression_threshold": float(cfg.get("uqs_regression_threshold", -5.0)),
+        "uqs_critical_threshold": float(cfg.get("uqs_critical_threshold", -15.0)),
+        "findings_increase_threshold": int(cfg.get("findings_increase_threshold", 5)),
+        "adaptive": False,
+    }
+
+    if not ad_cfg.get("enabled", False):
+        return static
+
+    min_samples = int(ad_cfg.get("min_samples", 5))
+    sigma = float(ad_cfg.get("sigma_multiplier", 1.0))
+    crit_sigma_mult = float(ad_cfg.get("critical_sigma_multiplier", 2.0))
+    crit_floor_mult = float(ad_cfg.get("critical_floor_multiplier", 2.0))
+    fetch_buffer = int(ad_cfg.get("fetch_buffer", 10))
+
+    rows = conn.execute(
+        "SELECT uqs_score, total_findings FROM quality_snapshots ORDER BY snapshot_at DESC LIMIT ?",
+        (min_samples + fetch_buffer,),
+    ).fetchall()
+
+    if len(rows) < min_samples + 1:
+        return static
+
+    uqs_vals = [r["uqs_score"] for r in rows]
+    findings_vals = [r["total_findings"] for r in rows]
+    uqs_deltas = [uqs_vals[i] - uqs_vals[i + 1] for i in range(len(uqs_vals) - 1)]
+    findings_deltas = [findings_vals[i] - findings_vals[i + 1] for i in range(len(findings_vals) - 1)]
+
+    def _mean_std(vals: list) -> tuple:
+        n = len(vals)
+        mean = sum(vals) / n
+        std = math.sqrt(sum((v - mean) ** 2 for v in vals) / n)
+        return mean, std
+
+    uqs_mean, uqs_std = _mean_std(uqs_deltas)
+    f_mean, f_std = _mean_std(findings_deltas)
+
+    uqs_reg = uqs_mean - sigma * uqs_std
+    uqs_crit = uqs_mean - crit_sigma_mult * sigma * uqs_std
+    f_inc = round(f_mean + sigma * f_std)
+
+    # Apply adaptive bounds
+    uqs_floor = float(bounds.get("uqs_regression_floor", -20.0))
+    f_floor = int(bounds.get("findings_increase_floor", 1))
+    uqs_reg = max(uqs_reg, uqs_floor)
+    uqs_crit = max(uqs_crit, uqs_floor * crit_floor_mult)
+    f_inc = max(f_floor, f_inc)
+
+    return {
+        "uqs_regression_threshold": uqs_reg,
+        "uqs_critical_threshold": uqs_crit,
+        "findings_increase_threshold": f_inc,
+        "adaptive": True,
+        "_n": len(uqs_deltas),
+        "_uqs_delta_mean": round(uqs_mean, 3),
+        "_uqs_delta_std": round(uqs_std, 3),
+    }
+
+
+def _compute_adaptive_gate_score_threshold(conn) -> float:
+    """Compute an adaptive gate score threshold from historical gate scores.
+
+    Parses the gate_results JSON blobs in quality_snapshots to build a
+    population of historical scores.  Returns mean - sigma*std clamped to
+    gate_score_floor when enough data exists; falls back to the static
+    gate_score_threshold config value otherwise.
+    """
+    cfg = _load_reflex_config()
+    ad_cfg = cfg.get("anomaly_detection", {})
+    bounds = ad_cfg.get("adaptive_bounds", {})
+
+    static_threshold = float(cfg.get("gate_score_threshold", 80.0))
+
+    if not ad_cfg.get("enabled", False):
+        return static_threshold
+
+    min_samples = int(ad_cfg.get("min_samples", 5))
+    sigma = float(ad_cfg.get("sigma_multiplier", 1.0))
+    fetch_buffer = int(ad_cfg.get("fetch_buffer", 10))
+    gate_floor = float(bounds.get("gate_score_floor", 50.0))
+
+    rows = conn.execute(
+        "SELECT gate_results FROM quality_snapshots ORDER BY snapshot_at DESC LIMIT ?",
+        (min_samples + fetch_buffer,),
+    ).fetchall()
+
+    if len(rows) < min_samples:
+        return static_threshold
+
+    all_scores: list = []
+    for row in rows:
+        try:
+            for g in json.loads(row["gate_results"] or "[]"):
+                score = g.get("score")
+                if score is not None:
+                    all_scores.append(float(score))
+        except Exception:
+            continue
+
+    if len(all_scores) < min_samples:
+        return static_threshold
+
+    n = len(all_scores)
+    mean = sum(all_scores) / n
+    std = math.sqrt(sum((s - mean) ** 2 for s in all_scores) / n)
+    return max(gate_floor, mean - sigma * std)
 
 
 def run_quality_scan() -> dict:
@@ -130,11 +267,30 @@ def run_quality_scan() -> dict:
 
 
 def detect_regressions() -> list[dict]:
-    """Compare last two snapshots to detect quality regressions."""
+    """Detect quality regressions using anomaly-detection-derived thresholds.
+
+    Thresholds are adaptive (z-score over historical UQS/findings deltas) when
+    anomaly_detection is enabled and enough snapshots exist; otherwise falls back
+    to static config values.  Always compares the two most recent snapshots so
+    the delta signal stays fresh while the threshold adapts to the population.
+    """
     import uuid
 
     conn = _get_db()
     try:
+        thresholds = _compute_adaptive_thresholds(conn)
+        uqs_regression_threshold = thresholds["uqs_regression_threshold"]
+        uqs_critical_threshold = thresholds["uqs_critical_threshold"]
+        findings_increase_threshold = thresholds["findings_increase_threshold"]
+        adaptive = thresholds.get("adaptive", False)
+        if adaptive:
+            logger.debug(
+                "quality: adaptive thresholds active (n=%d, uqs_mean=%.3f, uqs_std=%.3f)",
+                thresholds.get("_n", 0),
+                thresholds.get("_uqs_delta_mean", 0.0),
+                thresholds.get("_uqs_delta_std", 0.0),
+            )
+
         rows = conn.execute("SELECT * FROM quality_snapshots ORDER BY snapshot_at DESC LIMIT 2").fetchall()
         if len(rows) < 2:
             return []
@@ -142,38 +298,34 @@ def detect_regressions() -> list[dict]:
         current = dict(rows[0])
         previous = dict(rows[1])
         regressions = []
+        mode_tag = f"adaptive n={thresholds.get('_n', '?')}" if adaptive else "static"
 
-        # UQS regression
         uqs_delta = current["uqs_score"] - previous["uqs_score"]
-        if uqs_delta < -5.0:
+        if uqs_delta < uqs_regression_threshold:
             reg = {
                 "id": f"qt-{uuid.uuid4().hex[:10]}",
                 "detected_at": _utcnow(),
                 "trend_type": "uqs_regression",
                 "dimension": "overall",
                 "direction": "declining",
-                "severity": "warning" if uqs_delta > -15 else "critical",
-                "detail": f"UQS dropped {abs(uqs_delta):.1f} points ({previous['uqs_score']:.1f} → {current['uqs_score']:.1f})",
+                "severity": "warning" if uqs_delta > uqs_critical_threshold else "critical",
+                "detail": (
+                    f"UQS dropped {abs(uqs_delta):.1f} points "
+                    f"({previous['uqs_score']:.1f} → {current['uqs_score']:.1f}) "
+                    f"[threshold={uqs_regression_threshold:.1f}, {mode_tag}]"
+                ),
                 "resolved": 0,
             }
             regressions.append(reg)
             conn.execute(
                 "INSERT INTO quality_trends (id, detected_at, trend_type, dimension, direction, severity, detail) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    reg["id"],
-                    reg["detected_at"],
-                    reg["trend_type"],
-                    reg["dimension"],
-                    reg["direction"],
-                    reg["severity"],
-                    reg["detail"],
-                ),
+                (reg["id"], reg["detected_at"], reg["trend_type"], reg["dimension"],
+                 reg["direction"], reg["severity"], reg["detail"]),
             )
 
-        # Findings increase
         findings_delta = current["total_findings"] - previous["total_findings"]
-        if findings_delta > 5:
+        if findings_delta > findings_increase_threshold:
             reg = {
                 "id": f"qt-{uuid.uuid4().hex[:10]}",
                 "detected_at": _utcnow(),
@@ -181,22 +333,19 @@ def detect_regressions() -> list[dict]:
                 "dimension": "overall",
                 "direction": "increasing",
                 "severity": "warning",
-                "detail": f"Total findings increased by {findings_delta} ({previous['total_findings']} → {current['total_findings']})",
+                "detail": (
+                    f"Total findings increased by {findings_delta} "
+                    f"({previous['total_findings']} → {current['total_findings']}) "
+                    f"[threshold={findings_increase_threshold}, {mode_tag}]"
+                ),
                 "resolved": 0,
             }
             regressions.append(reg)
             conn.execute(
                 "INSERT INTO quality_trends (id, detected_at, trend_type, dimension, direction, severity, detail) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    reg["id"],
-                    reg["detected_at"],
-                    reg["trend_type"],
-                    reg["dimension"],
-                    reg["direction"],
-                    reg["severity"],
-                    reg["detail"],
-                ),
+                (reg["id"], reg["detected_at"], reg["trend_type"], reg["dimension"],
+                 reg["direction"], reg["severity"], reg["detail"]),
             )
 
         conn.commit()
@@ -252,8 +401,11 @@ def generate_improvement_gkp() -> dict | None:
         results = json.loads(latest.get("gate_results", "[]"))
 
         # Find worst-performing gates
-        worst_gates = sorted(results, key=lambda r: r.get("score", 100))[:3]
-        if not worst_gates or worst_gates[0].get("score", 100) >= 80:
+        cfg = _load_reflex_config()
+        worst_gates_count = int(cfg.get("worst_gates_count", 3))
+        gate_score_threshold = _compute_adaptive_gate_score_threshold(conn)
+        worst_gates = sorted(results, key=lambda r: r.get("score", 100))[:worst_gates_count]
+        if not worst_gates or worst_gates[0].get("score", 100) >= gate_score_threshold:
             return None  # No improvement needed
 
         gate = worst_gates[0]

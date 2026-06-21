@@ -48,6 +48,44 @@ Jinja2 prompt templates for each role.
 
 ---
 
+## Reasoned Codegen (`tools/llm/reasoned_codegen.py`)
+
+Opt-in **Generate → Critique → Verify → Repair** wrapper that composes the CoT/CoD
+engine above with `anvil_critique` and a *pluggable verifier* into one cost-bounded
+loop for code-generation pipelines. Drop-in upgrade for a single `router.invoke(fn, req)`
+call; byte-identical passthrough when its config resolves to `mode:off` + `critique:false`.
+
+| Function | Signature |
+|----------|-----------|
+| `generate_reasoned_code(*, function, request, verifier=None, verifier_context=None, project_id=None, mode=None, critique=None, max_repair_rounds=None, router=None)` | Returns `ReasonedCodegenResult(code, passed, mode, rounds_used, critique_consensus, verification, total_cost_usd, total_tokens, stop_reason, history, ...)` |
+| `resolve_config(function, router)` | Merge global + per_function `reasoned_codegen` config |
+| `section_enabled(router)` | Section-level kill-switch (`reasoned_codegen.enabled`) |
+| `VerificationResult(passed, score, findings, gate_result, detail)` | Injected-verifier return type; `Verifier = Callable[[str, dict], VerificationResult]` |
+
+Config: `args/llm_config.yaml` → `reasoned_codegen` (global defaults + per_function;
+all generation OFF except `code_translation`). Cost scaling + kill-switch documented inline there.
+
+### Reasoned Codegen Advisor (`tools/llm/reasoned_codegen_advisor.py`)
+
+Decides whether reasoned codegen pays off for a task (AI-assisted enable decision).
+Hybrid deterministic-first: heuristic signals (complexity, security/compliance keywords,
+file count, prior failures) give a zero-cost baseline; an optional cheap-tier LLM call
+refines it. No-LLM mode → heuristics only.
+
+| Function | Signature |
+|----------|-----------|
+| `recommend(function, spec, context=None, router=None, use_llm=True)` | `{recommended, mode, critique, confidence, rationale, signals, source}` |
+| CLI | `python tools/llm/reasoned_codegen_advisor.py --function <fn> --spec "..." [--file-count N] [--no-llm] --json` |
+| MCP | `reasoned_codegen_advise` tool (`tools/mcp/gap_handlers.py::handle_reasoned_codegen_advise`, registered in `tool_registry.py`) |
+| Routing | `reasoned_codegen_advisor` cheap-tier chain in `args/llm_config.yaml` (LLM-refine; heuristic baseline needs no LLM) |
+
+**Wired pipelines:** translation (`code_translator._invoke_llm`, default ON) and the ANVIL
+agentic runner (`tools/anvil/agentic_runner.py --reasoned auto|on|off`, default OFF, advisor-gated).
+Bypass (no LLM generation call): child-app generator, deprecated builder `code_generator.py`,
+migration generator, AI-ify — see `docs/security/sandbox-coverage.md`.
+
+---
+
 ## Integration Points
 
 | System | Integration |

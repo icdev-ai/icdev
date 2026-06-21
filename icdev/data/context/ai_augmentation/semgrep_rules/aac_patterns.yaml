@@ -136,12 +136,18 @@ rules:
 
   # ── Pattern 5: hardcoded_threshold ───────────────────────────────────────────
   - id: aac-hardcoded-threshold-py
-    pattern-either:
-      - pattern: $X > $LITERAL
-      - pattern: $X < $LITERAL
-      - pattern: $X >= $LITERAL
-      - pattern: $X <= $LITERAL
-    pattern-where-python: "isinstance($LITERAL, (int, float)) and $LITERAL not in (0, 1)"
+    patterns:
+      - pattern-either:
+          - pattern: $X > $LITERAL
+          - pattern: $X < $LITERAL
+          - pattern: $X >= $LITERAL
+          - pattern: $X <= $LITERAL
+      - metavariable-regex:
+          metavariable: $LITERAL
+          # Match numeric literals only (not variable names).
+          # Excludes 0 and 1 (boundary / sentinel guards).
+          # Includes: floats (1.5, 2.0, 0.5), integers ≥ 2, negatives.
+          regex: '^-?(\d+\.\d+|[2-9]|[1-9]\d+)$'
     message: "Hardcoded numeric threshold — replace with ML anomaly detection"
     languages: [python]
     severity: INFO

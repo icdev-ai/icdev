@@ -1,0 +1,42 @@
+# CUI // SP-CTI
+# Lessons Learned Engine configuration (D331)
+# SaFe Inspect & Adapt automation for kanban task outcomes.
+
+enabled: true
+
+# Recurrence detection thresholds
+recurrence_threshold: 0.30   # min score to flag as recurring
+systemic_threshold: 0.50   # min score to auto-create remediation card
+
+# LLM-powered root-cause analysis (optional, for novel / high-recurrence patterns)
+llm_analysis:
+  enabled: false
+  model: claude-sonnet-4-6
+  max_tokens: 2048
+
+# Categories that ALWAYS trigger a remediation suggested card
+always_remediate:
+  - token_exhaustion
+  - phantom_completion
+  - permission_blocked
+
+# Categories that NEVER trigger remediation cards (noise)
+never_remediate:
+  - success_first_try
+  - success_after_retry
+  - success_after_decomposition
+  - success_after_remediation
+
+# Batch retrospective reflex settings
+retrospective:
+  cadence_days: 7
+  min_lessons_for_report: 3
+  trending_threshold: 2      # min count in window to be "trending" (anomaly floor)
+  # Anomaly detection — adaptively raise the trending cutoff when a window has a
+  # spread of pattern counts, so only statistical outliers trend. The fixed
+  # trending_threshold above acts as the floor (cutoff never drops below it).
+  anomaly_detection:
+    enabled: true
+    sigma_multiplier: 1.0        # cutoff = ceil(mean + this * std_dev) of pattern counts
+    min_distinct_patterns: 3     # need >= this many distinct patterns to model spread
+    max_threshold: 50            # ceiling so a noisy window can't suppress all trends

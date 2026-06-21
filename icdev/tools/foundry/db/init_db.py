@@ -181,7 +181,7 @@ def _ensure_content_hash(conn: Any) -> None:
         cur.execute("ALTER TABLE foundry_signals ADD COLUMN content_hash TEXT")
         conn.commit()
     except Exception:
-        pass
+        pass  # already exists or unsupported syntax
     try:
         cur.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_foundry_signals_hash ON foundry_signals(content_hash)"

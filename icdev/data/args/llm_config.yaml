@@ -417,6 +417,10 @@ routing:
     chain: [qwen3-local, claude-sonnet, gpt-4o-mini, gemini-2.5-flash, llama-local]
     effort: medium
 
+  agent_readiness_anomaly:
+    chain: [claude-haiku, qwen3-local, gpt-4o-mini, gemini-2.0-flash, llama-local]
+    effort: low
+
   agent_monitor:
     chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
     effort: low
