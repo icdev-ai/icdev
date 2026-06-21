@@ -85,6 +85,44 @@ def _fire_intake_hook(context_id: str, content: str) -> None:
     threading.Thread(target=_run, daemon=True).start()
 
 
+def _check_coworker_trigger(context_id: str, content: str, context: dict) -> None:
+    """Store coworker_instance_id in context_config if the extension hook set one.
+
+    Reads context.get('coworker_instance_id') — populated by ACE launch extension
+    hooks — and persists it in chat_contexts.context_config JSON so the chat UI
+    can render a 'View Co-Worker Team' button.  No-ops silently if not set.
+    """
+    coworker_instance_id = context.get("coworker_instance_id")
+    if not coworker_instance_id:
+        return
+    try:
+        conn = get_connection(db_path=str(DB_PATH))
+        row = conn.execute(
+            "SELECT context_config FROM chat_contexts WHERE id = ?",
+            (context_id,),
+        ).fetchone()
+        config: dict = {}
+        if row:
+            raw = row[0]  # index access works for both tuple and sqlite3.Row
+            if raw:
+                try:
+                    config = json.loads(raw)
+                except Exception:
+                    pass
+        config["coworker_instance_id"] = str(coworker_instance_id)
+        conn.execute(
+            "UPDATE chat_contexts SET context_config = ?, updated_at = ? WHERE id = ?",
+            (json.dumps(config), datetime.now(timezone.utc).isoformat(), context_id),
+        )
+        conn.commit()
+        conn.close()
+        logger.debug(
+            "Linked coworker instance %s to context %s", coworker_instance_id, context_id
+        )
+    except Exception as exc:
+        logger.debug("coworker trigger link skipped for context %s: %s", context_id, exc)
+
+
 def _mark_dirty(context_id: str, change_type: str, data: Optional[dict] = None):
     """Mark context dirty on state tracker if available (Feature 4)."""
     try:
@@ -914,6 +952,7 @@ class ChatManager:
 
         if role == "user":
             _fire_intake_hook(context_id, content)
+            _check_coworker_trigger(context_id, content, hook_ctx)
             # RICOAS Adaptation 3: detect and persist corrections
             _detect_and_store_correction(context_id, content, turn_number=turn)
             # RICOAS: if user confirms inception interpretation, mark complete

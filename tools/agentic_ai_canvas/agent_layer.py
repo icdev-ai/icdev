@@ -1,299 +1,354 @@
 # CUI // SP-CTI
-"""Agentic Research Pipeline — Agent Layer.
+"""Agentic AI Design Canvas — Agent Layer.
 
-Implements the Research Agent node (researcher-agent type) from the
-'Agentic Research Pipeline' AADC template.
+Converts canvas design nodes into agent configurations and manages the
+agent execution lifecycle for the Agentic Research Pipeline pattern.
 
-The ResearchAgent orchestrates two upstream nodes:
-  web-search  →  WebSearcher  (retrieves raw documents for the query)
-  chunker     →  TextChunker  (splits raw docs into model-ready chunks)
+Supported agent types:
+  researcher-agent   → ResearchAgent (wraps research pipeline stages)
+  analyst-agent      → AnalystAgent  (synthesizes findings)
+  writer-agent       → WriterAgent   (produces artifacts)
+  reviewer-agent     → ReviewerAgent (validates output quality)
+  orchestrator       → OrchestratorAgent (coordinates sub-agents)
+  autonomous-agent   → AutonomousAgent
+  semi-auto-agent    → SemiAutoAgent
 
-Public API:
-    from tools.agentic_ai_canvas.agent_layer import ResearchAgent
-    agent = ResearchAgent()
-    result = agent.search("What is FedRAMP AC-2?")
-    # result.chunks  → list[str] ready for AgenticResearchPipeline.run()
+All agents are deterministic configuration objects; LLM calls are deferred
+to the execution engine and governed by the Governance Layer.
 """
 
 from __future__ import annotations
 
-import time
 import uuid
 from dataclasses import dataclass, field
-from typing import List, Optional
+from datetime import datetime, timezone
+from typing import Any
 
-from tools.logging.icdev_logger import get_logger
-
-logger = get_logger("icdev.aadc.agent_layer")
-
+from tools.agentic_ai_canvas.constants import AGENT_NODES
 
 # ---------------------------------------------------------------------------
-# Result types
+# Research Pipeline Stage definitions
 # ---------------------------------------------------------------------------
+
+RESEARCH_STAGES = [
+    "SCOPE",
+    "LANDSCAPE",
+    "REGULATE",
+    "COMMUNITY",
+    "ACADEMIC",
+    "BUILD_BUY",
+    "SYNTHESIZE",
+    "DOSSIER",
+]
+
+# Tool bindings available to researcher-agent nodes
+RESEARCHER_DEFAULT_TOOLS = [
+    "web-search",
+    "mcp-server",
+    "external-api",
+    "doc-store",
+    "knowledge-graph",
+]
+
+# ---------------------------------------------------------------------------
+# Agent Configuration
+# ---------------------------------------------------------------------------
+
 
 @dataclass
-class SearchHit:
-    title: str
-    url: str
-    snippet: str
-    score: float = 1.0
+class AgentConfig:
+    """Executable configuration derived from a canvas agent node."""
+
+    agent_id: str
+    node_id: str
+    node_type: str
+    label: str
+    role: str
+    tools: list[str] = field(default_factory=list)
+    memory_policy: str = "short-term"
+    streaming: bool = False
+    constraints: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_node(cls, node: dict) -> "AgentConfig":
+        """Build an AgentConfig from a canvas node dict."""
+        node_type = node.get("type", "")
+        props = node.get("props", {}) or {}
+        return cls(
+            agent_id=str(uuid.uuid4()),
+            node_id=node.get("id", str(uuid.uuid4())),
+            node_type=node_type,
+            label=node.get("label", node_type),
+            role=_infer_role(node_type),
+            tools=_infer_tools(node_type, props),
+            memory_policy=props.get("memory_policy", _default_memory_policy(node_type)),
+            streaming=bool(node.get("streaming", props.get("streaming", False))),
+            constraints=_extract_constraints(props),
+            metadata={
+                "kanban_task_id": node.get("metadata", {}).get("kanban_task_id"),
+                "classification": node.get("metadata", {}).get("classification", "CUI"),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            },
+        )
 
 
-@dataclass
-class ResearchResult:
-    query: str
-    chunks: List[str] = field(default_factory=list)
-    sources: List[SearchHit] = field(default_factory=list)
-    duration_ms: float = 0.0
-    error: str = ""
+def _infer_role(node_type: str) -> str:
+    roles = {
+        "researcher-agent": "Conduct structured multi-stage research and produce findings",
+        "analyst-agent": "Analyze data and synthesize insights from multiple sources",
+        "writer-agent": "Produce structured artifacts from research findings",
+        "reviewer-agent": "Validate output quality, accuracy, and compliance",
+        "orchestrator": "Coordinate sub-agents and manage pipeline execution",
+        "autonomous-agent": "Execute tasks autonomously within defined constraints",
+        "semi-auto-agent": "Execute tasks with human-in-the-loop checkpoints",
+        "sub-agent": "Execute delegated subtasks from an orchestrator",
+        "swarm-agent": "Participate in parallel swarm execution",
+        "fan-out-coordinator": "Distribute tasks across parallel agent instances",
+        "fan-in-aggregator": "Merge and deduplicate results from parallel agents",
+    }
+    return roles.get(node_type, f"Execute {node_type} tasks")
+
+
+def _infer_tools(node_type: str, props: dict) -> list[str]:
+    if node_type == "researcher-agent":
+        prop_tools = props.get("tools", [])
+        return prop_tools if prop_tools else list(RESEARCHER_DEFAULT_TOOLS)
+    tool_map = {
+        "analyst-agent": ["doc-store", "knowledge-graph", "vector-db"],
+        "writer-agent": ["doc-store", "output-validator"],
+        "reviewer-agent": ["output-validator", "audit-logger"],
+        "orchestrator": ["mcp-gateway", "tool-chain"],
+        "autonomous-agent": ["tool-chain", "code-executor", "web-search"],
+        "semi-auto-agent": ["tool-chain", "hitl-gate"],
+    }
+    return list(tool_map.get(node_type, []))
+
+
+def _default_memory_policy(node_type: str) -> str:
+    long_term = {"researcher-agent", "analyst-agent", "orchestrator"}
+    return "long-term" if node_type in long_term else "short-term"
+
+
+def _extract_constraints(props: dict) -> dict[str, Any]:
+    keys = ("max_iterations", "timeout_seconds", "confidence_threshold",
+            "rate_limit_rpm", "budget_tokens")
+    return {k: props[k] for k in keys if k in props}
 
 
 # ---------------------------------------------------------------------------
-# WebSearcher — web-search node
+# Base Agent
 # ---------------------------------------------------------------------------
 
-class WebSearcher:
-    """Retrieves raw search results for a query.
 
-    Resolution order:
-      1. Tavily API (TAVILY_API_KEY in env) — recommended, structured JSON
-      2. SerpAPI  (SERP_API_KEY in env)     — alternative commercial API
-      3. DuckDuckGo Lite HTML scrape         — no-key fallback, air-gap unsafe
-      4. Empty list                           — graceful offline degradation
+class BaseAgent:
+    """Base class for all AADC agent types."""
 
-    All network failures are caught; callers receive SearchHit[] or [].
+    def __init__(self, config: AgentConfig) -> None:
+        self.config = config
+
+    def describe(self) -> dict:
+        return {
+            "agent_id": self.config.agent_id,
+            "node_id": self.config.node_id,
+            "type": self.config.node_type,
+            "label": self.config.label,
+            "role": self.config.role,
+            "tools": self.config.tools,
+            "memory_policy": self.config.memory_policy,
+            "streaming": self.config.streaming,
+            "constraints": self.config.constraints,
+        }
+
+    def plan(self) -> list[str]:
+        """Return execution steps for this agent (no LLM calls)."""
+        return [f"[{self.config.label}] Execute {self.config.node_type} task"]
+
+
+# ---------------------------------------------------------------------------
+# Research Agent — Agentic Research Pipeline
+# ---------------------------------------------------------------------------
+
+
+class ResearchAgent(BaseAgent):
+    """Agent implementing the Agentic Research Pipeline pattern.
+
+    Maps to the `researcher-agent` canvas node type. Decomposes work into
+    the 8-stage research pipeline: SCOPE → LANDSCAPE → … → DOSSIER.
     """
 
-    def __init__(self, max_results: int = 10) -> None:
-        self.max_results = max_results
+    def __init__(self, config: AgentConfig, topic: str = "", vertical: str = "") -> None:
+        super().__init__(config)
+        self.topic = topic or config.label
+        self.vertical = vertical or "general"
+        self._stages_completed: list[str] = []
+        self._findings: dict[str, Any] = {}
 
-    def search(self, query: str) -> List[SearchHit]:
-        """Return up to self.max_results SearchHit objects for the query."""
-        hits = self._try_tavily(query)
-        if hits is not None:
-            return hits[: self.max_results]
+    def plan(self) -> list[str]:
+        return [f"[{self.config.label}] Stage {s}" for s in RESEARCH_STAGES]
 
-        hits = self._try_serpapi(query)
-        if hits is not None:
-            return hits[: self.max_results]
+    def get_pipeline_stages(self) -> list[str]:
+        return list(RESEARCH_STAGES)
 
-        hits = self._try_duckduckgo(query)
-        if hits is not None:
-            return hits[: self.max_results]
+    def record_stage(self, stage: str, findings: dict) -> None:
+        """Record findings for a completed pipeline stage."""
+        if stage not in RESEARCH_STAGES:
+            raise ValueError(f"Unknown stage '{stage}'. Valid: {RESEARCH_STAGES}")
+        self._stages_completed.append(stage)
+        self._findings[stage] = {
+            "stage": stage,
+            "findings": findings,
+            "recorded_at": datetime.now(timezone.utc).isoformat(),
+        }
 
-        logger.warning("WebSearcher: all search backends unavailable — returning empty")
-        return []
+    def get_findings(self) -> dict[str, Any]:
+        return dict(self._findings)
 
-    # ------------------------------------------------------------------
-    # Backend implementations
-    # ------------------------------------------------------------------
+    def is_complete(self) -> bool:
+        return set(RESEARCH_STAGES).issubset(set(self._stages_completed))
 
-    def _try_tavily(self, query: str) -> Optional[List[SearchHit]]:
-        import os
-        api_key = os.environ.get("TAVILY_API_KEY", "")
-        if not api_key:
-            return None
-        try:
-            import requests
-            resp = requests.post(
-                "https://api.tavily.com/search",
-                json={"api_key": api_key, "query": query, "max_results": self.max_results},
-                timeout=10,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return [
-                SearchHit(
-                    title=r.get("title", ""),
-                    url=r.get("url", ""),
-                    snippet=r.get("content", ""),
-                    score=float(r.get("score", 1.0)),
-                )
-                for r in data.get("results", [])
-            ]
-        except Exception as exc:
-            logger.debug("WebSearcher._try_tavily error: %s", exc)
-            return None
-
-    def _try_serpapi(self, query: str) -> Optional[List[SearchHit]]:
-        import os
-        api_key = os.environ.get("SERP_API_KEY", "")
-        if not api_key:
-            return None
-        try:
-            import requests
-            resp = requests.get(
-                "https://serpapi.com/search",
-                params={"q": query, "api_key": api_key, "num": self.max_results},
-                timeout=10,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return [
-                SearchHit(
-                    title=r.get("title", ""),
-                    url=r.get("link", ""),
-                    snippet=r.get("snippet", ""),
-                )
-                for r in data.get("organic_results", [])
-            ]
-        except Exception as exc:
-            logger.debug("WebSearcher._try_serpapi error: %s", exc)
-            return None
-
-    def _try_duckduckgo(self, query: str) -> Optional[List[SearchHit]]:
-        try:
-            import requests
-            from urllib.parse import quote_plus
-            url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
-            headers = {"User-Agent": "Mozilla/5.0 (compatible; ICDEVResearchAgent/1.0)"}
-            resp = requests.get(url, headers=headers, timeout=10)
-            resp.raise_for_status()
-
-            # Minimal HTML parse — extract result snippets without lxml dependency
-            import re
-            snippets = re.findall(
-                r'class="result__snippet"[^>]*>(.*?)</a>', resp.text, re.DOTALL
-            )
-            titles = re.findall(
-                r'class="result__a"[^>]*>(.*?)</a>', resp.text, re.DOTALL
-            )
-            urls = re.findall(
-                r'href="(https?://[^"]+)"', resp.text
-            )
-
-            hits: List[SearchHit] = []
-            for i, snippet in enumerate(snippets[: self.max_results]):
-                clean = re.sub(r"<[^>]+>", " ", snippet).strip()
-                hits.append(SearchHit(
-                    title=re.sub(r"<[^>]+>", " ", titles[i]).strip() if i < len(titles) else "",
-                    url=urls[i] if i < len(urls) else "",
-                    snippet=clean,
-                ))
-            return hits if hits else None
-        except Exception as exc:
-            logger.debug("WebSearcher._try_duckduckgo error: %s", exc)
-            return None
+    def describe(self) -> dict:
+        base = super().describe()
+        base.update({
+            "topic": self.topic,
+            "vertical": self.vertical,
+            "pipeline_stages": RESEARCH_STAGES,
+            "stages_completed": list(self._stages_completed),
+            "is_complete": self.is_complete(),
+        })
+        return base
 
 
 # ---------------------------------------------------------------------------
-# TextChunker — chunker node
+# Specialised agents
 # ---------------------------------------------------------------------------
 
-class TextChunker:
-    """Splits raw text hits into model-ready chunks.
 
-    Wraps tools.rag.chunker.chunk_content (D-RAG-4) when available.
-    Falls back to a simple sentence-boundary splitter otherwise.
-    """
+class AnalystAgent(BaseAgent):
+    """Synthesizes findings from one or more ResearchAgents."""
 
-    def __init__(self, max_chunk_size: int = 1500, overlap: int = 150) -> None:
-        self.max_chunk_size = max_chunk_size
-        self.overlap = overlap
-
-    def chunk(self, hits: List[SearchHit]) -> List[str]:
-        """Convert a list of SearchHits into plain-text chunks."""
-        raw_texts = [
-            f"{h.title}\n{h.snippet}".strip()
-            for h in hits
-            if h.snippet.strip()
+    def plan(self) -> list[str]:
+        return [
+            f"[{self.config.label}] Collect findings from upstream agents",
+            f"[{self.config.label}] Identify patterns and contradictions",
+            f"[{self.config.label}] Produce synthesis report",
         ]
-        if not raw_texts:
-            return []
 
-        chunks: List[str] = []
-        for text in raw_texts:
-            chunks.extend(self._chunk_one(text))
-        return [c for c in chunks if c.strip()]
 
-    def _chunk_one(self, text: str) -> List[str]:
-        try:
-            from tools.rag.chunker import chunk_content
-            result = chunk_content(
-                content=text,
-                source_type="web_search",
-                source_id=f"ws-{uuid.uuid4().hex[:8]}",
-                classification="CUI",
-            )
-            return [c.content for c in result if c.content.strip()]
-        except Exception:
-            return self._simple_chunk(text)
+class WriterAgent(BaseAgent):
+    """Produces structured artifacts (reports, briefs) from agent outputs."""
 
-    def _simple_chunk(self, text: str) -> List[str]:
-        """Paragraph-boundary chunker with sliding overlap."""
-        paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
-        chunks: List[str] = []
-        current = ""
-        for para in paragraphs:
-            if len(current) + len(para) + 1 > self.max_chunk_size and current:
-                chunks.append(current.strip())
-                # carry overlap forward
-                current = current[-self.overlap:] + "\n" + para
-            else:
-                current = (current + "\n" + para).strip()
-        if current.strip():
-            chunks.append(current.strip())
-        return chunks
+    def plan(self) -> list[str]:
+        return [
+            f"[{self.config.label}] Gather synthesized findings",
+            f"[{self.config.label}] Apply template and style rules",
+            f"[{self.config.label}] Produce output artifact",
+            f"[{self.config.label}] Validate against output schema",
+        ]
+
+
+class ReviewerAgent(BaseAgent):
+    """Validates quality, accuracy, and compliance of agent outputs."""
+
+    def plan(self) -> list[str]:
+        return [
+            f"[{self.config.label}] Receive artifact for review",
+            f"[{self.config.label}] Check factual accuracy",
+            f"[{self.config.label}] Verify compliance markings",
+            f"[{self.config.label}] Approve or return for revision",
+        ]
+
+
+class OrchestratorAgent(BaseAgent):
+    """Coordinates sub-agent execution in the Agentic Research Pipeline."""
+
+    def __init__(self, config: AgentConfig, sub_agents: list[BaseAgent] | None = None) -> None:
+        super().__init__(config)
+        self.sub_agents: list[BaseAgent] = sub_agents or []
+
+    def register_sub_agent(self, agent: BaseAgent) -> None:
+        self.sub_agents.append(agent)
+
+    def plan(self) -> list[str]:
+        steps = [f"[{self.config.label}] Initialize pipeline"]
+        for sa in self.sub_agents:
+            steps.extend(sa.plan())
+        steps.append(f"[{self.config.label}] Aggregate results")
+        return steps
+
+    def describe(self) -> dict:
+        base = super().describe()
+        base["sub_agents"] = [sa.describe() for sa in self.sub_agents]
+        return base
 
 
 # ---------------------------------------------------------------------------
-# ResearchAgent — orchestrates web-search + chunker nodes
+# Agent Layer — factory that converts a design graph into agents
 # ---------------------------------------------------------------------------
 
-class ResearchAgent:
-    """Research Agent — the researcher-agent node in the Agentic Research Pipeline.
+_AGENT_CLASS_MAP: dict[str, type[BaseAgent]] = {
+    "researcher-agent": ResearchAgent,
+    "analyst-agent": AnalystAgent,
+    "writer-agent": WriterAgent,
+    "reviewer-agent": ReviewerAgent,
+    "orchestrator": OrchestratorAgent,
+}
 
-    Orchestrates the web-search and chunker nodes upstream of the Model Layer.
-    Complies with NIST AI RMF MAP-1 (system boundary defined), autonomy level
-    L3 (Human-Initiated): executes autonomously when given a query but requires
-    a circuit-breaker + confidence-threshold downstream (Safety Layer).
 
-    Args:
-        max_results: Maximum web search hits to retrieve.
-        max_chunk_size: Maximum characters per text chunk.
-        overlap: Character overlap between adjacent chunks.
+class AgentLayer:
+    """Converts an AADC design graph into instantiated agents.
+
+    Usage:
+        layer = AgentLayer(design_graph)
+        agents = layer.build_agents()
+        plan = layer.build_pipeline_plan()
     """
 
-    def __init__(
-        self,
-        max_results: int = 10,
-        max_chunk_size: int = 1500,
-        overlap: int = 150,
-    ) -> None:
-        self.searcher = WebSearcher(max_results=max_results)
-        self.chunker = TextChunker(max_chunk_size=max_chunk_size, overlap=overlap)
+    def __init__(self, design_graph: dict) -> None:
+        self.nodes: list[dict] = design_graph.get("nodes", [])
+        self.edges: list[dict] = design_graph.get("edges", [])
+        self._agents: list[BaseAgent] = []
 
-    def search(self, query: str) -> ResearchResult:
-        """Execute the research agent pipeline for a query.
+    def _agent_nodes(self) -> list[dict]:
+        return [n for n in self.nodes if n.get("type") in AGENT_NODES]
 
-        Args:
-            query: Research question or keyword string.
+    def build_agents(self) -> list[BaseAgent]:
+        """Instantiate agents for every agent-type node in the design."""
+        self._agents = []
+        for node in self._agent_nodes():
+            config = AgentConfig.from_node(node)
+            node_type = node.get("type", "")
+            cls = _AGENT_CLASS_MAP.get(node_type, BaseAgent)
+            agent = cls(config)
+            self._agents.append(agent)
+        return list(self._agents)
 
-        Returns:
-            ResearchResult with .chunks (ready for AgenticResearchPipeline.run())
-            and .sources (for citation / provenance).  Never raises — all errors
-            are captured in ResearchResult.error and degrade to empty chunks.
-        """
-        t0 = time.monotonic()
-        try:
-            hits = self.searcher.search(query)
-            chunks = self.chunker.chunk(hits)
-            duration = (time.monotonic() - t0) * 1000
-            logger.info(
-                "ResearchAgent: query=%r → %d hits, %d chunks in %.0fms",
-                query[:80], len(hits), len(chunks), duration,
-            )
-            return ResearchResult(
-                query=query,
-                chunks=chunks,
-                sources=hits,
-                duration_ms=round(duration, 1),
-            )
-        except Exception as exc:
-            duration = (time.monotonic() - t0) * 1000
-            logger.warning("ResearchAgent.search failed: %s", exc)
-            return ResearchResult(
-                query=query,
-                duration_ms=round(duration, 1),
-                error=str(exc),
-            )
+    def get_research_agents(self) -> list[ResearchAgent]:
+        return [a for a in self._agents if isinstance(a, ResearchAgent)]
+
+    def build_pipeline_plan(self) -> list[str]:
+        """Return an ordered list of execution steps across all agents."""
+        if not self._agents:
+            self.build_agents()
+        steps: list[str] = []
+        for agent in self._agents:
+            steps.extend(agent.plan())
+        return steps
+
+    def describe(self) -> dict:
+        if not self._agents:
+            self.build_agents()
+        return {
+            "total_agents": len(self._agents),
+            "agent_types": [a.config.node_type for a in self._agents],
+            "agents": [a.describe() for a in self._agents],
+            "pipeline_steps": self.build_pipeline_plan(),
+        }
+
+    @staticmethod
+    def from_design_json(design_json: str | dict) -> "AgentLayer":
+        import json as _json
+        if isinstance(design_json, str):
+            design_json = _json.loads(design_json)
+        graph = design_json.get("graph", design_json)
+        return AgentLayer(graph)

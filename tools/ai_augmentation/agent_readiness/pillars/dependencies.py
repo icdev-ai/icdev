@@ -20,12 +20,12 @@ from tools.ai_augmentation.agent_readiness.pillars._base import (
 # ---------------------------------------------------------------------------
 # Anomaly-detection threshold loader
 # ---------------------------------------------------------------------------
-_ARGS_PATH = pathlib.Path(__file__).parents[5] / "args" / "agent_readiness_config.yaml"
+_ARGS_PATH = pathlib.Path(__file__).parents[4] / "args" / "agent_readiness_config.yaml"
 _DEFAULTS: dict[str, Any] = {
-    # A lock file older than this many months is anomalously stale.
+    # Lock file older than this many months is anomalously stale.
     "max_age_months": 6,
-    # Minimum fraction of requirements.txt lines that must use == pinning.
-    "min_pinned_ratio": 0.8,
+    # requirements.txt pin ratio below this is anomalously low for reproducible builds.
+    "min_pin_ratio": 0.8,
 }
 
 
@@ -33,8 +33,7 @@ _DEFAULTS: dict[str, Any] = {
 def _load_thresholds() -> dict[str, Any]:
     """Load dependencies-pillar anomaly-detection thresholds from args/agent_readiness_config.yaml.
 
-    Falls back to hard-coded defaults if the config file is absent or malformed,
-    so the pillar degrades gracefully in air-gap or stripped environments.
+    Falls back to hard-coded defaults if the config file is absent or malformed.
     """
     try:
         import yaml  # optional dep — present in all ICDEV environments
@@ -45,7 +44,7 @@ def _load_thresholds() -> dict[str, Any]:
         pinned = cfg.get("pinned_versions", {})
         return {
             "max_age_months": int(freshness.get("max_age_months", _DEFAULTS["max_age_months"])),
-            "min_pinned_ratio": float(pinned.get("min_pinned_ratio", _DEFAULTS["min_pinned_ratio"])),
+            "min_pin_ratio": float(pinned.get("min_pin_ratio", _DEFAULTS["min_pin_ratio"])),
         }
     except Exception:  # noqa: BLE001
         return dict(_DEFAULTS)
@@ -85,7 +84,7 @@ def _check_lock_file_freshness(repo: pathlib.Path) -> CriterionResult:
             months = int(age / (30 * 86400))
             return CriterionResult(
                 cid, False,
-                f"{fn} last modified ~{months} month(s) ago (max {max_age_months}).",
+                f"{fn} last modified ~{months} month(s) ago — anomalously stale (max {max_age_months} month(s)).",
                 "Run dependency updates to keep lock file fresh and avoid vulnerabilities.",
             )
     return CriterionResult(cid, True, "No lock file found; freshness check skipped.", skipped=True)
@@ -94,7 +93,7 @@ def _check_lock_file_freshness(repo: pathlib.Path) -> CriterionResult:
 def _check_pinned_versions(repo: pathlib.Path) -> CriterionResult:
     cid = "pinned-versions"
     thresholds = _load_thresholds()
-    min_ratio = thresholds["min_pinned_ratio"]
+    min_ratio = thresholds["min_pin_ratio"]
     req = _read(repo, "requirements.txt")
     if req:
         lines = [l.strip() for l in req.splitlines() if l.strip() and not l.startswith("#")]
@@ -106,7 +105,8 @@ def _check_pinned_versions(repo: pathlib.Path) -> CriterionResult:
             return CriterionResult(cid, True, f"{pinned}/{len(lines)} requirements pinned with ==")
         return CriterionResult(
             cid, False,
-            f"Only {pinned}/{len(lines)} requirements pinned ({ratio:.0%}); min {min_ratio:.0%} required.",
+            f"Only {pinned}/{len(lines)} requirements pinned ({ratio:.0%}) — "
+            f"anomalously low (min {min_ratio:.0%}).",
             "Pin all dependencies with == in requirements.txt for reproducibility.",
         )
     # For other ecosystems, having a lock file is the proxy for pinning

@@ -1,20 +1,16 @@
 # CUI // SP-CTI
-"""Base HTTP client — loads configurable thresholds from args/http_client.yaml."""
+"""Base HTTP client — loads timeout and retry thresholds from args/http_client.yaml."""
 
 from __future__ import annotations
 
-import pathlib
-from typing import Any
+from pathlib import Path
+from typing import Tuple, Union
 
-try:
-    import yaml
-    _YAML_AVAILABLE = True
-except ImportError:
-    _YAML_AVAILABLE = False
+import yaml
 
-_CONFIG_PATH = pathlib.Path(__file__).parents[2] / "args" / "http_client.yaml"
+_ARGS_DIR = Path(__file__).resolve().parents[2] / "args"
 
-_DEFAULTS: dict[str, Any] = {
+_DEFAULTS: dict = {
     "timeout": {"connect": 10, "read": 30},
     "max_retries": 3,
     "backoff_factor": 0.5,
@@ -22,27 +18,35 @@ _DEFAULTS: dict[str, Any] = {
 }
 
 
-def _load_config() -> dict[str, Any]:
-    if _YAML_AVAILABLE and _CONFIG_PATH.exists():
-        try:
-            data = yaml.safe_load(_CONFIG_PATH.read_text(encoding="utf-8")) or {}
-            return {**_DEFAULTS, **data}
-        except Exception:
-            pass
-    return dict(_DEFAULTS)
+def _load_config() -> dict:
+    config_path = _ARGS_DIR / "http_client.yaml"
+    if config_path.exists():
+        with config_path.open("r", encoding="utf-8") as fh:
+            return yaml.safe_load(fh) or {}
+    return _DEFAULTS
+
+
+_CFG = _load_config()
 
 
 class BaseHTTPClient:
-    """Mixin that injects configurable timeout and retry thresholds."""
+    """Shared base for REST API clients.
 
-    def __init__(self, timeout: tuple[int, int] | int | None = None) -> None:
-        config = _load_config()
+    Reads connect/read timeout from args/http_client.yaml unless the caller
+    passes an explicit *timeout* override.
+    """
+
+    def __init__(
+        self,
+        timeout: Union[Tuple[int, int], int, None] = None,
+    ) -> None:
         if timeout is None:
-            t = config.get("timeout", _DEFAULTS["timeout"])
-            if isinstance(t, dict):
-                timeout = (int(t.get("connect", 10)), int(t.get("read", 30)))
-            else:
-                timeout = int(t)
-        self.timeout: tuple[int, int] | int = timeout
-        self.max_retries: int = int(config.get("max_retries", _DEFAULTS["max_retries"]))
-        self.max_redirects: int = int(config.get("max_redirects", _DEFAULTS["max_redirects"]))
+            t = _CFG.get("timeout", _DEFAULTS["timeout"])
+            connect = int(t.get("connect", 10))
+            read = int(t.get("read", 30))
+            self.timeout: Union[Tuple[int, int], int] = (connect, read)
+        else:
+            self.timeout = timeout
+
+        self.max_retries: int = int(_CFG.get("max_retries", _DEFAULTS["max_retries"]))
+        self.max_redirects: int = int(_CFG.get("max_redirects", _DEFAULTS["max_redirects"]))

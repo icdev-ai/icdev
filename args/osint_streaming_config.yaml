@@ -18,6 +18,8 @@ osint_stream:
   poll_interval_s: 300
   # Max tweets per fetch (10–100)
   max_results: 100
+  # HTTP request timeout in seconds
+  timeout_s: 10
 
 satellite_stream:
   enabled: true
@@ -33,6 +35,8 @@ satellite_stream:
   max_results: 50
   # Optional WKT geometry / bounding-box filter
   region: null
+  # HTTP request timeout in seconds
+  timeout_s: 15
 
 news_stream:
   enabled: true
@@ -49,6 +53,8 @@ news_stream:
   poll_interval_s: 600
   # Max articles per fetch (NewsAPI cap: 100)
   max_results: 100
+  # HTTP request timeout in seconds
+  timeout_s: 10
 
 buffer:
   # Staging directory for timestamped JSON batch files

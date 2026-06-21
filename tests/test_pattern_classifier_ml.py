@@ -202,8 +202,6 @@ class TestAstDetectFileIntegration:
         f = tmp_path / "sample.py"
         f.write_text(self._DEEP_NESTED_PY, encoding="utf-8")
 
-        object()
-
         def fake_enrich(patterns, lines):
             return patterns  # pass-through but trackable
 
@@ -215,137 +213,198 @@ class TestAstDetectFileIntegration:
         assert any(p["pattern_type"] == "nested_conditionals" for p in call_patterns)
 
 
-# ── _apply_ml_enrichment ──────────────────────────────────────────────────────
+# ── _classify_hardcoded_threshold_ml ─────────────────────────────────────────
 
-class TestApplyMlEnrichment:
-    """Tests for the cross-language ML enrichment applied in detect_patterns()."""
+class TestClassifyHardcodedThresholdMl:
+    def test_returns_parsed_label_and_score(self):
+        mock_router = MagicMock()
+        mock_router.invoke.return_value = MagicMock(
+            content='{"label": "business_rule", "score": 0.9, "rationale": "rate limit"}'
+        )
+        with patch.dict("sys.modules", {
+            "tools.llm.provider": MagicMock(LLMRequest=MagicMock()),
+            "tools.llm.router": MagicMock(LLMRouter=MagicMock(return_value=mock_router)),
+        }):
+            result = pc._classify_hardcoded_threshold_ml(
+                "check_rate", [1000], {"1000": 2.5}, "if requests > 1000:"
+            )
+        assert result["label"] == "business_rule"
+        assert result["score"] == 0.9
+        assert result["rationale"] == "rate limit"
 
-    def _nc_pattern(self, path: str = "foo.cs", func: str = "<unknown>") -> dict:
-        return {
+    def test_strips_markdown_fences(self):
+        mock_router = MagicMock()
+        mock_router.invoke.return_value = MagicMock(
+            content='```json\n{"label": "data_driven", "score": 0.7, "rationale": "learned"}\n```'
+        )
+        with patch.dict("sys.modules", {
+            "tools.llm.provider": MagicMock(LLMRequest=MagicMock()),
+            "tools.llm.router": MagicMock(LLMRouter=MagicMock(return_value=mock_router)),
+        }):
+            result = pc._classify_hardcoded_threshold_ml("f", [50], {}, "if x > 50:")
+        assert result["label"] == "data_driven"
+        assert result["score"] == 0.7
+
+    def test_structural_label_accepted(self):
+        mock_router = MagicMock()
+        mock_router.invoke.return_value = MagicMock(
+            content='{"label": "structural", "score": 0.85, "rationale": "loop bound"}'
+        )
+        with patch.dict("sys.modules", {
+            "tools.llm.provider": MagicMock(LLMRequest=MagicMock()),
+            "tools.llm.router": MagicMock(LLMRouter=MagicMock(return_value=mock_router)),
+        }):
+            result = pc._classify_hardcoded_threshold_ml("f", [0], {}, "if i < 0:")
+        assert result["label"] == "structural"
+
+    def test_unknown_label_normalised_to_empty_string(self):
+        mock_router = MagicMock()
+        mock_router.invoke.return_value = MagicMock(
+            content='{"label": "CRITICAL", "score": 0.99, "rationale": "bad"}'
+        )
+        with patch.dict("sys.modules", {
+            "tools.llm.provider": MagicMock(LLMRequest=MagicMock()),
+            "tools.llm.router": MagicMock(LLMRouter=MagicMock(return_value=mock_router)),
+        }):
+            result = pc._classify_hardcoded_threshold_ml("f", [42], {}, "if x > 42:")
+        assert result["label"] == ""
+
+    def test_returns_empty_dict_on_import_error(self, monkeypatch):
+        monkeypatch.setitem(sys.modules, "tools.llm.provider", None)  # type: ignore[arg-type]
+        monkeypatch.setitem(sys.modules, "tools.llm.router", None)  # type: ignore[arg-type]
+        result = pc._classify_hardcoded_threshold_ml("f", [42], {}, "if x > 42:")
+        assert result == {}
+
+    def test_returns_empty_dict_on_network_error(self):
+        mock_router = MagicMock()
+        mock_router.invoke.side_effect = RuntimeError("connection refused")
+        with patch.dict("sys.modules", {
+            "tools.llm.provider": MagicMock(LLMRequest=MagicMock()),
+            "tools.llm.router": MagicMock(LLMRouter=MagicMock(return_value=mock_router)),
+        }):
+            result = pc._classify_hardcoded_threshold_ml("f", [100], {}, "if n > 100:")
+        assert result == {}
+
+
+# ── _enrich_hardcoded_thresholds_with_ml ─────────────────────────────────────
+
+def _threshold_pattern(constants: list | None = None, func: str = "check") -> dict:
+    return {
+        "pattern_type": "hardcoded_threshold",
+        "module_path": "foo.py",
+        "function_name": func,
+        "line_start": 5,
+        "line_end": 5,
+        "language": "python",
+        "pattern_detail": {
+            "kind": "compare",
+            "constants": constants or [1000],
+            "anomaly_detected": True,
+            "anomaly_scores": {"1000": 2.5},
+        },
+    }
+
+
+class TestEnrichHardcodedThresholdsWithMl:
+    def test_disabled_returns_patterns_unchanged(self, monkeypatch):
+        monkeypatch.setattr(pc, "_ML_HT_ENABLED", False)
+        pattern = _threshold_pattern()
+        result = pc._enrich_hardcoded_thresholds_with_ml([pattern], SOURCE_LINES)
+        assert result == [pattern]
+
+    def test_non_threshold_pattern_passes_through(self, monkeypatch):
+        monkeypatch.setattr(pc, "_ML_HT_ENABLED", True)
+        other = {
             "pattern_type": "nested_conditionals",
-            "module_path": path,
-            "function_name": func,
+            "module_path": "x.py",
+            "function_name": "g",
             "line_start": 1,
             "line_end": 10,
-            "language": "csharp",
             "pattern_detail": {"max_depth": 4},
         }
-
-    def _rui_pattern(self, path: str = "foo.cs") -> dict:
-        return {
-            "pattern_type": "regex_user_input",
-            "module_path": path,
-            "function_name": "<unknown>",
-            "line_start": 5,
-            "line_end": 5,
-            "language": "csharp",
-            "pattern_detail": {"call": "Regex.Match"},
-        }
-
-    def test_both_disabled_returns_results_unchanged(self, monkeypatch):
-        monkeypatch.setattr(pc, "_ML_NC_ENABLED", False)
-        monkeypatch.setattr(pc, "_ML_RUI_ENABLED", False)
-        patterns = [self._nc_pattern(), self._rui_pattern()]
-        result = pc._apply_ml_enrichment(patterns)
-        assert result == patterns
-
-    def test_skips_already_enriched_nc_pattern(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(pc, "_ML_NC_ENABLED", True)
-        monkeypatch.setattr(pc, "_ML_RUI_ENABLED", False)
-        f = tmp_path / "foo.cs"
-        f.write_text("if (x) { if (y) { if (z) {} } }", encoding="utf-8")
-        p = self._nc_pattern(str(f))
-        p["pattern_detail"]["ml_label"] = "high"  # already enriched
-        with patch.object(pc, "_classify_nested_conditional_ml") as mock_cls:
-            result = pc._apply_ml_enrichment([p])
-        mock_cls.assert_not_called()
-        assert result[0]["pattern_detail"]["ml_label"] == "high"
-
-    def test_enriches_unenriched_nc_pattern_from_file(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(pc, "_ML_NC_ENABLED", True)
-        monkeypatch.setattr(pc, "_ML_RUI_ENABLED", False)
-        monkeypatch.setattr(pc, "_ML_NC_FILTER_LOW", False)
-        f = tmp_path / "bar.cs"
-        f.write_text("\n".join(["line"] * 15), encoding="utf-8")
-        p = self._nc_pattern(str(f))
-        ml_result = {"label": "high", "score": 0.9, "rationale": "complex"}
-        with patch.object(pc, "_classify_nested_conditional_ml", return_value=ml_result):
-            result = pc._apply_ml_enrichment([p])
-        assert result[0]["pattern_detail"]["ml_label"] == "high"
-        assert result[0]["pattern_detail"]["ml_score"] == 0.9
-
-    def test_filter_low_confidence_drops_pattern(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(pc, "_ML_NC_ENABLED", True)
-        monkeypatch.setattr(pc, "_ML_RUI_ENABLED", False)
-        monkeypatch.setattr(pc, "_ML_NC_FILTER_LOW", True)
-        monkeypatch.setattr(pc, "_ML_NC_MIN_SCORE", 0.5)
-        f = tmp_path / "baz.cs"
-        f.write_text("\n".join(["x"] * 15), encoding="utf-8")
-        p = self._nc_pattern(str(f))
-        with patch.object(pc, "_classify_nested_conditional_ml",
-                          return_value={"label": "low", "score": 0.2, "rationale": "guard"}):
-            result = pc._apply_ml_enrichment([p])
-        assert result == []  # dropped
-
-    def test_filter_low_confidence_keeps_high_score(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(pc, "_ML_NC_ENABLED", True)
-        monkeypatch.setattr(pc, "_ML_RUI_ENABLED", False)
-        monkeypatch.setattr(pc, "_ML_NC_FILTER_LOW", True)
-        monkeypatch.setattr(pc, "_ML_NC_MIN_SCORE", 0.5)
-        f = tmp_path / "keep.cs"
-        f.write_text("\n".join(["x"] * 15), encoding="utf-8")
-        p = self._nc_pattern(str(f))
-        with patch.object(pc, "_classify_nested_conditional_ml",
-                          return_value={"label": "high", "score": 0.8, "rationale": "data-driven"}):
-            result = pc._apply_ml_enrichment([p])
-        assert len(result) == 1
-        assert result[0]["pattern_detail"]["ml_score"] == 0.8
-
-    def test_unreadable_file_leaves_pattern_without_ml(self, monkeypatch):
-        monkeypatch.setattr(pc, "_ML_NC_ENABLED", True)
-        monkeypatch.setattr(pc, "_ML_RUI_ENABLED", False)
-        p = self._nc_pattern("/nonexistent/path/foo.cs")
-        with patch.object(pc, "_classify_nested_conditional_ml") as mock_cls:
-            result = pc._apply_ml_enrichment([p])
-        mock_cls.assert_not_called()
-        assert result == [p]  # pattern retained without ml metadata
-
-    def test_non_nc_non_rui_patterns_pass_through(self, monkeypatch):
-        monkeypatch.setattr(pc, "_ML_NC_ENABLED", True)
-        monkeypatch.setattr(pc, "_ML_RUI_ENABLED", True)
-        other = {
-            "pattern_type": "hardcoded_threshold",
-            "module_path": "x.cs",
-            "function_name": "<unknown>",
-            "line_start": 1, "line_end": 1,
-            "pattern_detail": {"kind": "binary_expression"},
-        }
-        result = pc._apply_ml_enrichment([other])
+        with patch.object(pc, "_classify_hardcoded_threshold_ml", return_value={}):
+            result = pc._enrich_hardcoded_thresholds_with_ml([other], SOURCE_LINES)
         assert result == [other]
 
-    def test_enriches_rui_pattern_from_file(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(pc, "_ML_NC_ENABLED", False)
-        monkeypatch.setattr(pc, "_ML_RUI_ENABLED", True)
-        monkeypatch.setattr(pc, "_ML_RUI_FILTER_LOW", False)
-        f = tmp_path / "rui.cs"
-        f.write_text("\n".join(["line"] * 10), encoding="utf-8")
-        p = self._rui_pattern(str(f))
-        nlp_result = {"intent": "validation", "nlp_candidate": "email", "score": 0.75, "rationale": "ok"}
-        with patch.object(pc, "_classify_regex_nlp", return_value=nlp_result):
-            result = pc._apply_ml_enrichment([p])
-        assert result[0]["pattern_detail"]["nlp_intent"] == "validation"
-        assert result[0]["pattern_detail"]["nlp_score"] == 0.75
+    def test_enriches_threshold_pattern_with_ml_keys(self, monkeypatch):
+        monkeypatch.setattr(pc, "_ML_HT_ENABLED", True)
+        pattern = _threshold_pattern()
+        ml_result = {"label": "business_rule", "score": 0.88, "rationale": "rate cap"}
 
-    def test_rui_filter_low_confidence_drops_pattern(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(pc, "_ML_NC_ENABLED", False)
-        monkeypatch.setattr(pc, "_ML_RUI_ENABLED", True)
-        monkeypatch.setattr(pc, "_ML_RUI_FILTER_LOW", True)
-        monkeypatch.setattr(pc, "_ML_RUI_MIN_SCORE", 0.6)
-        f = tmp_path / "rui2.cs"
-        f.write_text("\n".join(["x"] * 10), encoding="utf-8")
-        p = self._rui_pattern(str(f))
-        with patch.object(pc, "_classify_regex_nlp",
-                          return_value={"intent": "unknown", "nlp_candidate": "none",
-                                        "score": 0.3, "rationale": "poor"}):
-            result = pc._apply_ml_enrichment([p])
-        assert result == []
+        with patch.object(pc, "_classify_hardcoded_threshold_ml", return_value=ml_result):
+            result = pc._enrich_hardcoded_thresholds_with_ml([pattern], SOURCE_LINES)
+
+        assert len(result) == 1
+        detail = result[0]["pattern_detail"]
+        assert detail["ml_label"] == "business_rule"
+        assert detail["ml_score"] == 0.88
+        assert detail["ml_rationale"] == "rate cap"
+        assert detail["constants"] == [1000]  # original key preserved
+
+    def test_failed_ml_call_leaves_pattern_unchanged(self, monkeypatch):
+        monkeypatch.setattr(pc, "_ML_HT_ENABLED", True)
+        pattern = _threshold_pattern()
+        with patch.object(pc, "_classify_hardcoded_threshold_ml", return_value={}):
+            result = pc._enrich_hardcoded_thresholds_with_ml([pattern], SOURCE_LINES)
+        assert "ml_label" not in result[0]["pattern_detail"]
+
+    def test_original_pattern_dict_not_mutated(self, monkeypatch):
+        monkeypatch.setattr(pc, "_ML_HT_ENABLED", True)
+        pattern = _threshold_pattern()
+        original_detail = dict(pattern["pattern_detail"])
+        ml_result = {"label": "structural", "score": 0.2, "rationale": "loop bound"}
+        with patch.object(pc, "_classify_hardcoded_threshold_ml", return_value=ml_result):
+            pc._enrich_hardcoded_thresholds_with_ml([pattern], SOURCE_LINES)
+        assert pattern["pattern_detail"] == original_detail
+
+    def test_mixed_patterns_only_enriches_thresholds(self, monkeypatch):
+        monkeypatch.setattr(pc, "_ML_HT_ENABLED", True)
+        ht = _threshold_pattern()
+        other = {"pattern_type": "regex_user_input", "module_path": "y.py",
+                 "function_name": "h", "line_start": 5, "line_end": 5,
+                 "pattern_detail": {"call": "re.match"}}
+        ml_result = {"label": "data_driven", "score": 0.6, "rationale": "historical data"}
+        with patch.object(pc, "_classify_hardcoded_threshold_ml", return_value=ml_result):
+            result = pc._enrich_hardcoded_thresholds_with_ml([ht, other], SOURCE_LINES)
+        assert "ml_label" in result[0]["pattern_detail"]
+        assert "ml_label" not in result[1]["pattern_detail"]
+
+
+# ── Integration: _ast_detect_file calls hardcoded_threshold enrichment ────────
+
+class TestAstDetectFileHtIntegration:
+    _THRESHOLD_PY = textwrap.dedent("""\
+        def check_rate(requests_per_sec):
+            if requests_per_sec > 1000:
+                return False
+            if requests_per_sec < 5:
+                return False
+            return True
+    """)
+
+    def test_ht_enrichment_not_called_when_disabled(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(pc, "_ML_HT_ENABLED", False)
+        f = tmp_path / "rate.py"
+        f.write_text(self._THRESHOLD_PY, encoding="utf-8")
+
+        with patch.object(pc, "_enrich_hardcoded_thresholds_with_ml") as mock_enrich:
+            results = pc._ast_detect_file(str(f))
+
+        mock_enrich.assert_not_called()
+        ht = [r for r in results if r["pattern_type"] == "hardcoded_threshold"]
+        assert ht  # detection still works
+
+    def test_ht_enrichment_called_when_enabled(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(pc, "_ML_HT_ENABLED", True)
+        f = tmp_path / "rate.py"
+        f.write_text(self._THRESHOLD_PY, encoding="utf-8")
+
+        def fake_enrich(patterns, lines):
+            return patterns
+
+        with patch.object(pc, "_enrich_hardcoded_thresholds_with_ml", side_effect=fake_enrich) as mock_enrich:
+            pc._ast_detect_file(str(f))
+
+        mock_enrich.assert_called_once()
+        call_patterns = mock_enrich.call_args[0][0]
+        assert any(p["pattern_type"] == "hardcoded_threshold" for p in call_patterns)

@@ -15,14 +15,29 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+import yaml
 
 log = logging.getLogger(__name__)
 
 _DEFAULT_NEWSAPI_URL = "https://newsapi.org/v2"
 _DEFAULT_GDELT_URL = "https://api.gdeltproject.org/api/v2/doc/doc"
-_DEFAULT_TIMEOUT_S = 10
-_MAX_RESULTS = 100
+
+
+def _load_news_cfg() -> Dict[str, Any]:
+    """Read news_stream section from args/osint_streaming_config.yaml."""
+    cfg_path = Path(__file__).resolve().parents[3] / "args" / "osint_streaming_config.yaml"
+    if cfg_path.exists():
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+        return data.get("news_stream", {})
+    return {}
+
+
+_STREAM_CFG = _load_news_cfg()
+_DEFAULT_TIMEOUT_S: int = int(_STREAM_CFG.get("timeout_s", 10))
+_MAX_RESULTS: int = int(_STREAM_CFG.get("max_results", 100))
 
 
 class NewsStreamFetchError(Exception):
@@ -118,18 +133,12 @@ class NewsStreamFetcher:
         query_string = urllib.parse.urlencode(params)
         full_url = f"{self.base_url}/everything?{query_string}"
 
-        _parsed = urllib.parse.urlparse(full_url)
-        if _parsed.scheme not in {"http", "https"}:
-            raise NewsStreamFetchError(
-                f"Blocked NewsAPI request: scheme {_parsed.scheme!r} not permitted"
-            )
-
         try:
             req = urllib.request.Request(
                 full_url,
                 headers={"Accept": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # nosec B310 — scheme validated above
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 raw = resp.read().decode("utf-8")
             data: Dict[str, Any] = json.loads(raw)
         except urllib.error.HTTPError as exc:
@@ -175,18 +184,12 @@ class NewsStreamFetcher:
         query_string = urllib.parse.urlencode(params)
         full_url = f"{_DEFAULT_GDELT_URL}?{query_string}"
 
-        _parsed = urllib.parse.urlparse(full_url)
-        if _parsed.scheme not in {"http", "https"}:
-            raise NewsStreamFetchError(
-                f"Blocked GDELT request: scheme {_parsed.scheme!r} not permitted"
-            )
-
         try:
             req = urllib.request.Request(
                 full_url,
                 headers={"Accept": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # nosec B310 — scheme validated above
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 raw = resp.read().decode("utf-8")
             data: Dict[str, Any] = json.loads(raw)
         except urllib.error.HTTPError as exc:

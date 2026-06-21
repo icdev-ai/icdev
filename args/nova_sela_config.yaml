@@ -1,34 +1,35 @@
-# NOVA SELA — Skill & Goal Self-Evolution Config
 # CUI // SP-CTI
-# Separate from args/evolution_config.yaml (Phase 36 Evolution Daemon)
+# NOVA SELA (Skill Evolution via Lamarckian Acquisition) configuration
+# Controls the weekly skill mutation loop that surfaces low-performing skills
+# and generates candidate improvements via LLM.
 
-# ── Mutation ────────────────────────────────────────────────────────────────
-mutation_count: 4           # Number of candidate mutations per skill per run
-skill_limit: 10             # Max skills to evolve per reflex run
+sela:
+  # Number of candidate mutations to generate per under-performing skill
+  mutation_count: 4
 
-# ── Constraint gates (all-or-nothing — any failure rejects the candidate) ──
-max_skill_bytes: 15360      # 15 KB ceiling per skill file
-max_growth_ratio: 0.20      # Candidate may not grow more than +20% vs. baseline
-min_improvement_delta: 0.05 # Composite score must improve ≥5% to promote
+  # Maximum number of skills to process per run
+  skill_limit: 10
 
-# ── Eval dataset ────────────────────────────────────────────────────────────
-min_examples: 6             # Minimum eval examples required before evolution runs
-max_synthetic: 10           # Max synthetic examples generated (cold-start fallback)
-train_ratio: 0.60
-val_ratio: 0.20
+  # Look-back window (days) for sampling execution traces
+  trace_window_days: 7
 
-# ── Fitness scoring ─────────────────────────────────────────────────────────
-# Composite = 0.5*correctness + 0.3*procedure + 0.2*conciseness
-weight_correctness: 0.50
-weight_procedure: 0.30
-weight_conciseness: 0.20
+  # Skills with success_rate below this threshold are targeted for mutation
+  success_rate_threshold: 0.75
 
-# ── Promotion ───────────────────────────────────────────────────────────────
-# NEVER auto-merge evolved skill files.
-# Promotions create oracle_predictions rows → kanban suggested cards.
-auto_merge: false
+  # Minimum composite score required to insert an artifact (status=pending)
+  artifact_min_score: 0.75
 
-# ── Schedule ────────────────────────────────────────────────────────────────
-schedule: "weekly"
-day_of_week: "saturday"
-hour_utc: 3
+  # Fitness function weights (must sum to 1.0)
+  fitness:
+    correctness: 0.5
+    procedure: 0.3
+    conciseness: 0.2
+
+  # When true the top mutation is auto-applied rather than held as pending
+  auto_merge: false
+
+  # LLM function key used for mutation generation
+  mutation_function: skill_mutation
+
+  # Minimum number of traces required before a skill is evaluated
+  min_trace_count: 3

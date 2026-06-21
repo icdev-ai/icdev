@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Central HTTP client with mTLS, CA bundle, and proxy support.
+"""Central HTTP client with mTLS, CA bundle, proxy, retry, and redirect support.
 
 All outbound HTTPS calls (LLM providers, SAM.gov, Ollama, marketplace, etc.)
 should go through `get_session()` or `request()` so operators can harden the
@@ -24,7 +24,7 @@ Env vars (all optional, override yaml where noted):
 
 Usage:
 
-    from tools.http.client import get_session, request
+    from icdev.tools.http.client import get_session, request
 
     # Option 1 — one-shot
     r = request("GET", "https://api.example.gov/v1/opps", timeout=10)
@@ -61,7 +61,8 @@ except ImportError:
 # ── YAML config loading ───────────────────────────────────────────────────────
 
 _HTTP_CONFIG: dict | None = None
-_ARGS_FILE = pathlib.Path(__file__).resolve().parents[2] / "args" / "http_client.yaml"
+# icdev/tools/http/client.py → parents[3] = project root
+_ARGS_FILE = pathlib.Path(__file__).resolve().parents[3] / "args" / "http_client.yaml"
 
 
 def _load_config() -> dict:
@@ -78,7 +79,9 @@ def _load_config() -> dict:
 def _cfg(section: str, key: str, default: float) -> float:
     cfg = _load_config()
     try:
-        return float(cfg.get(section, {}).get(key, default))
+        if section:
+            return float(cfg.get(section, {}).get(key, default))
+        return float(cfg.get(key, default))
     except (TypeError, ValueError):
         return default
 
@@ -112,7 +115,52 @@ def _max_redirects() -> int:
     return int(_cfg("", "max_redirects", 10))
 
 
+def _content_chunk_size() -> int:
+    return int(_cfg("", "content_chunk_size", 10240))
+
+
+def _iter_chunk_size() -> int:
+    return int(_cfg("", "iter_chunk_size", 512))
+
+
+def _default_ports() -> dict[str, int]:
+    cfg = _load_config()
+    raw = cfg.get("default_ports", {})
+    try:
+        return {k: int(v) for k, v in raw.items()}
+    except (TypeError, ValueError, AttributeError):
+        return {"http": 80, "https": 443}
+
+
+def _cidr_mask_min() -> int:
+    return int(_cfg("cidr_mask_bits", "min", 1))
+
+
+def _cidr_mask_max() -> int:
+    return int(_cfg("cidr_mask_bits", "max", 32))
+
+
 # ── Public API ─────────────────────────────────────────────────────────────────
+
+
+def default_ports() -> dict[str, int]:
+    """Return well-known port mapping sourced from args/http_client.yaml."""
+    return _default_ports()
+
+
+def cidr_mask_range() -> tuple[int, int]:
+    """Return (min_bits, max_bits) for IPv4 CIDR validation sourced from args/http_client.yaml."""
+    return (_cidr_mask_min(), _cidr_mask_max())
+
+def content_chunk_size() -> int:
+    """Bytes per chunk when iterating response content (mirrors requests CONTENT_CHUNK_SIZE)."""
+    return _content_chunk_size()
+
+
+def iter_chunk_size() -> int:
+    """Default chunk size for Response.iter_content(); sourced from args/http_client.yaml."""
+    return _iter_chunk_size()
+
 
 def default_timeout() -> tuple[float, float]:
     """Return (connect_timeout, read_timeout) sourced from args/http_client.yaml."""

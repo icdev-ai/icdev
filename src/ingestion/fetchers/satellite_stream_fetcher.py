@@ -14,13 +14,28 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+import yaml
 
 log = logging.getLogger(__name__)
 
 _DEFAULT_BASE_URL = "https://catalogue.dataspace.copernicus.eu/odata/v1"
-_DEFAULT_TIMEOUT_S = 15
-_MAX_RESULTS = 50
+
+
+def _load_satellite_cfg() -> Dict[str, Any]:
+    """Read satellite_stream section from args/osint_streaming_config.yaml."""
+    cfg_path = Path(__file__).resolve().parents[3] / "args" / "osint_streaming_config.yaml"
+    if cfg_path.exists():
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+        return data.get("satellite_stream", {})
+    return {}
+
+
+_STREAM_CFG = _load_satellite_cfg()
+_DEFAULT_TIMEOUT_S: int = int(_STREAM_CFG.get("timeout_s", 15))
+_MAX_RESULTS: int = int(_STREAM_CFG.get("max_results", 50))
 
 
 class SatelliteStreamFetchError(Exception):

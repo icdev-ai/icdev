@@ -15,31 +15,21 @@ from tools.ai_augmentation.agent_readiness.pillars._base import (
     _search,
 )
 
-# Recognized classification banner patterns
-_CUI_PATTERNS = r"CUI\s*//|CONTROLLED\s+UNCLASSIFIED|CUI\s+BASIC|CUI\s+SPECIFIED"
-_CLASS_HEADER = r"#\s*CUI|#\s*CONTROLLED\s+UNCLASSIFIED|#\s*SECRET|#\s*TOP\s+SECRET"
-_IL_PATTERN = r"\bIL[4-6]\b|\bimpact\s+level\s+[4-6]\b"
-
 # ---------------------------------------------------------------------------
 # Anomaly-detection threshold loader
 # ---------------------------------------------------------------------------
-_ARGS_PATH = pathlib.Path(__file__).parents[4] / "args" / "agent_readiness_config.yaml"
+_ARGS_PATH = pathlib.Path(__file__).parents[5] / "args" / "agent_readiness_config.yaml"
 _DEFAULTS: dict[str, Any] = {
-    # Values below these are anomalously low for an IL4+ project.
-    "sample_size": 30,
-    "min_adaptive_sample": 10,
-    "adaptive_divisor": 5,
-    "min_header_ratio": 0.5,
-    "warn_header_ratio": 0.3,
+    "cui_header_sample_size": 30,
+    "cui_header_min_marked_ratio": 0.5,
 }
 
 
 @lru_cache(maxsize=1)
 def _load_thresholds() -> dict[str, Any]:
-    """Load il_classification anomaly-detection thresholds from args/agent_readiness_config.yaml.
+    """Load il-classification-pillar anomaly-detection thresholds from args/agent_readiness_config.yaml.
 
-    Falls back to built-in defaults when the config file is absent or malformed,
-    so the pillar degrades gracefully in air-gap or stripped environments.
+    Falls back to hard-coded defaults if the config file is absent or malformed.
     """
     try:
         import yaml  # optional dep — present in all ICDEV environments
@@ -47,61 +37,45 @@ def _load_thresholds() -> dict[str, Any]:
         data = yaml.safe_load(raw) or {}
         cfg = data.get("pillars", {}).get("il_classification", {}).get("cui_file_headers", {})
         return {
-            "sample_size": int(cfg.get("sample_size", _DEFAULTS["sample_size"])),
-            "min_adaptive_sample": int(cfg.get("min_adaptive_sample", _DEFAULTS["min_adaptive_sample"])),
-            "adaptive_divisor": int(cfg.get("adaptive_divisor", _DEFAULTS["adaptive_divisor"])),
-            "min_header_ratio": float(cfg.get("min_header_ratio", _DEFAULTS["min_header_ratio"])),
-            "warn_header_ratio": float(cfg.get("warn_header_ratio", _DEFAULTS["warn_header_ratio"])),
+            "cui_header_sample_size": int(
+                cfg.get("sample_size", _DEFAULTS["cui_header_sample_size"])
+            ),
+            "cui_header_min_marked_ratio": float(
+                cfg.get("min_marked_ratio", _DEFAULTS["cui_header_min_marked_ratio"])
+            ),
         }
     except Exception:  # noqa: BLE001
         return dict(_DEFAULTS)
 
+# Recognized classification banner patterns
+_CUI_PATTERNS = r"CUI\s*//|CONTROLLED\s+UNCLASSIFIED|CUI\s+BASIC|CUI\s+SPECIFIED"
+_CLASS_HEADER = r"#\s*CUI|#\s*CONTROLLED\s+UNCLASSIFIED|#\s*SECRET|#\s*TOP\s+SECRET"
+_IL_PATTERN = r"\bIL[4-6]\b|\bimpact\s+level\s+[4-6]\b"
+
 
 def _check_cui_file_headers(repo: pathlib.Path) -> CriterionResult:
     cid = "cui-file-headers"
+    thresholds = _load_thresholds()
+    sample_size = thresholds["cui_header_sample_size"]
+    min_ratio = thresholds["cui_header_min_marked_ratio"]
     py_files = _glob_files(repo, "**/*.py")
     if not py_files:
         return CriterionResult(cid, True, "No Python source files; CUI header check skipped.", skipped=True)
-
-    thresholds = _load_thresholds()
-    # Adaptive sample size: ~(1/adaptive_divisor) of corpus, clamped to [min_adaptive_sample, sample_size].
-    # This avoids over-sampling tiny repos and under-sampling large ones.
-    total = len(py_files)
-    adaptive = max(
-        thresholds["min_adaptive_sample"],
-        min(thresholds["sample_size"], total // thresholds["adaptive_divisor"] + 1),
-    )
-    sample = py_files[:adaptive]
-
-    marked = [
-        f.name
-        for f in sample
-        if _search("\n".join(f.read_text(encoding="utf-8", errors="replace").splitlines()[:5]),
-                   _CLASS_HEADER)
-        or _search("\n".join(f.read_text(encoding="utf-8", errors="replace").splitlines()[:5]),
-                   _CUI_PATTERNS)
-    ]
-
+    sample = py_files[:sample_size]
+    marked = []
+    for f in sample:
+        content = f.read_text(encoding="utf-8", errors="replace")
+        first_lines = "\n".join(content.splitlines()[:5])
+        if _search(first_lines, _CLASS_HEADER) or _search(first_lines, _CUI_PATTERNS):
+            marked.append(f.name)
     ratio = len(marked) / len(sample)
-    min_ratio: float = thresholds["min_header_ratio"]
-    warn_ratio: float = thresholds["warn_header_ratio"]
-
     if ratio >= min_ratio:
-        return CriterionResult(cid, True,
-                               f"CUI/classification headers found in {len(marked)}/{len(sample)} sampled files")
-    if ratio >= warn_ratio:
-        return CriterionResult(
-            cid, False,
-            f"Only {len(marked)}/{len(sample)} sampled files have CUI headers "
-            f"(ratio {ratio:.0%} < required {min_ratio:.0%}).",
-            "Add '# CUI // SP-CTI' or equivalent classification header to all source files.",
-        )
-    return CriterionResult(
-        cid, False,
-        f"CUI header coverage anomalously low: {len(marked)}/{len(sample)} files "
-        f"({ratio:.0%} vs. configured threshold {min_ratio:.0%}).",
-        "Add classification markings to all source files per NIST SP 800-171 requirements.",
-    )
+        return CriterionResult(cid, True, f"CUI/classification headers found in {len(marked)}/{len(sample)} sampled files")
+    if marked:
+        return CriterionResult(cid, False, f"Only {len(marked)}/{len(sample)} sampled files have CUI headers (min ratio {min_ratio:.0%}).",
+                               "Add '# CUI // SP-CTI' or equivalent classification header to all source files.")
+    return CriterionResult(cid, False, "No CUI classification headers found in sampled source files.",
+                           "Add classification markings to all source files per NIST SP 800-171 requirements.")
 
 
 def _check_claude_md_classification(repo: pathlib.Path) -> CriterionResult:

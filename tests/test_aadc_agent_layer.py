@@ -1,295 +1,404 @@
 # CUI // SP-CTI
-"""Tests for AADC agent_layer — WebSearcher, TextChunker, ResearchAgent,
-and the /run-agent blueprint route.
+"""Tests for agentic_ai_canvas.agent_layer — Agent Layer (Agentic Research Pipeline)."""
 
-All network and RAG calls are mocked so the suite runs offline.
-"""
+from __future__ import annotations
 
-import json
-import sys
-import unittest
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-ROOT = Path(__file__).resolve().parent.parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+import pytest
 
 from tools.agentic_ai_canvas.agent_layer import (
+    RESEARCH_STAGES,
+    RESEARCHER_DEFAULT_TOOLS,
+    AgentConfig,
+    AgentLayer,
+    AnalystAgent,
+    BaseAgent,
+    OrchestratorAgent,
     ResearchAgent,
-    ResearchResult,
-    SearchHit,
-    TextChunker,
-    WebSearcher,
+    ReviewerAgent,
+    WriterAgent,
+    _infer_role,
+    _infer_tools,
 )
 
-
 # ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _hit(title="Title", url="https://example.com", snippet="Some text.", score=0.9):
-    return SearchHit(title=title, url=url, snippet=snippet, score=score)
-
-
-# ---------------------------------------------------------------------------
-# WebSearcher tests
+# Fixtures
 # ---------------------------------------------------------------------------
 
-class TestWebSearcher(unittest.TestCase):
+RESEARCHER_NODE = {
+    "id": "node-ra-1",
+    "type": "researcher-agent",
+    "label": "Market Research Agent",
+    "props": {"memory_policy": "long-term", "max_iterations": 5},
+    "metadata": {"classification": "CUI"},
+}
 
-    def test_tavily_success(self):
-        fake_resp = MagicMock()
-        fake_resp.json.return_value = {
-            "results": [
-                {"title": "Doc A", "url": "https://a.com", "content": "FedRAMP details", "score": 0.95},
-                {"title": "Doc B", "url": "https://b.com", "content": "AC-2 overview",  "score": 0.80},
-            ]
-        }
-        fake_resp.raise_for_status = MagicMock()
+ANALYST_NODE = {
+    "id": "node-an-1",
+    "type": "analyst-agent",
+    "label": "Synthesis Analyst",
+    "props": {},
+}
 
-        with patch.dict("os.environ", {"TAVILY_API_KEY": "test-key"}):
-            with patch("requests.post", return_value=fake_resp):
-                ws = WebSearcher(max_results=5)
-                hits = ws.search("FedRAMP AC-2")
+WRITER_NODE = {
+    "id": "node-wr-1",
+    "type": "writer-agent",
+    "label": "Report Writer",
+    "props": {"streaming": True},
+}
 
-        self.assertEqual(len(hits), 2)
-        self.assertEqual(hits[0].title, "Doc A")
-        self.assertAlmostEqual(hits[0].score, 0.95)
+REVIEWER_NODE = {
+    "id": "node-rv-1",
+    "type": "reviewer-agent",
+    "label": "Quality Reviewer",
+    "props": {},
+}
 
-    def test_tavily_not_called_without_key(self):
-        with patch.dict("os.environ", {}, clear=True):
-            with patch("requests.post") as mock_post:
-                ws = WebSearcher()
-                ws._try_tavily("query")
-        mock_post.assert_not_called()
+ORCHESTRATOR_NODE = {
+    "id": "node-oc-1",
+    "type": "orchestrator",
+    "label": "Pipeline Orchestrator",
+    "props": {},
+}
 
-    def test_serpapi_success(self):
-        fake_resp = MagicMock()
-        fake_resp.json.return_value = {
-            "organic_results": [
-                {"title": "Result 1", "link": "https://r1.com", "snippet": "Snippet 1"},
-            ]
-        }
-        fake_resp.raise_for_status = MagicMock()
+MINIMAL_GRAPH = {
+    "nodes": [RESEARCHER_NODE],
+    "edges": [],
+}
 
-        with patch.dict("os.environ", {"SERP_API_KEY": "serp-key", "TAVILY_API_KEY": ""}):
-            with patch("requests.get", return_value=fake_resp):
-                ws = WebSearcher()
-                hits = ws._try_serpapi("CMMC level 2")
-
-        self.assertEqual(len(hits), 1)
-        self.assertEqual(hits[0].url, "https://r1.com")
-
-    def test_search_degrades_when_all_backends_fail(self):
-        ws = WebSearcher()
-        ws._try_tavily = MagicMock(return_value=None)
-        ws._try_serpapi = MagicMock(return_value=None)
-        ws._try_duckduckgo = MagicMock(return_value=None)
-        hits = ws.search("anything")
-        self.assertEqual(hits, [])
-
-    def test_search_respects_max_results(self):
-        many_hits = [_hit(title=f"H{i}") for i in range(20)]
-        ws = WebSearcher(max_results=3)
-        ws._try_tavily = MagicMock(return_value=many_hits)
-        hits = ws.search("query")
-        self.assertEqual(len(hits), 3)
-
-    def test_tavily_network_error_returns_none(self):
-        with patch.dict("os.environ", {"TAVILY_API_KEY": "key"}):
-            with patch("requests.post", side_effect=ConnectionError("offline")):
-                ws = WebSearcher()
-                result = ws._try_tavily("query")
-        self.assertIsNone(result)
+FULL_PIPELINE_GRAPH = {
+    "nodes": [
+        ORCHESTRATOR_NODE,
+        RESEARCHER_NODE,
+        ANALYST_NODE,
+        WRITER_NODE,
+        REVIEWER_NODE,
+    ],
+    "edges": [
+        {"source": "node-oc-1", "target": "node-ra-1"},
+        {"source": "node-ra-1", "target": "node-an-1"},
+        {"source": "node-an-1", "target": "node-wr-1"},
+        {"source": "node-wr-1", "target": "node-rv-1"},
+    ],
+}
 
 
 # ---------------------------------------------------------------------------
-# TextChunker tests
+# AgentConfig tests
 # ---------------------------------------------------------------------------
 
-class TestTextChunker(unittest.TestCase):
 
-    def test_chunk_uses_rag_chunker(self):
-        fake_chunk = MagicMock()
-        fake_chunk.content = "RAG chunk content"
-        with patch("tools.rag.chunker.chunk_content", return_value=[fake_chunk]):
-            tc = TextChunker()
-            chunks = tc.chunk([_hit(snippet="Some text here")])
-        self.assertIn("RAG chunk content", chunks)
-
-    def test_chunk_fallback_on_import_error(self):
-        with patch("tools.rag.chunker.chunk_content", side_effect=ImportError("no rag")):
-            tc = TextChunker(max_chunk_size=50, overlap=5)
-            chunks = tc.chunk([_hit(snippet="Line one.\nLine two.\nLine three.")])
-        self.assertGreater(len(chunks), 0)
-        self.assertTrue(all(isinstance(c, str) for c in chunks))
-
-    def test_chunk_empty_hits(self):
-        tc = TextChunker()
-        self.assertEqual(tc.chunk([]), [])
-
-    def test_chunk_strips_empty_snippets(self):
-        tc = TextChunker()
-        with patch("tools.rag.chunker.chunk_content", side_effect=ImportError):
-            result = tc.chunk([_hit(snippet="   "), _hit(snippet="real content")])
-        self.assertTrue(all(c.strip() for c in result))
-
-    def test_simple_chunk_overlap(self):
-        tc = TextChunker(max_chunk_size=6, overlap=2)
-        # Each word is 5 chars; combined they exceed max_chunk_size forcing splits
-        text = "AAAAA\nBBBBB\nCCCCC\nDDDDD"
-        chunks = tc._simple_chunk(text)
-        self.assertGreater(len(chunks), 1)
+def test_agent_config_from_researcher_node():
+    cfg = AgentConfig.from_node(RESEARCHER_NODE)
+    assert cfg.node_id == "node-ra-1"
+    assert cfg.node_type == "researcher-agent"
+    assert cfg.label == "Market Research Agent"
+    assert cfg.memory_policy == "long-term"
+    assert cfg.constraints == {"max_iterations": 5}
+    assert cfg.metadata["classification"] == "CUI"
 
 
-# ---------------------------------------------------------------------------
-# ResearchAgent tests
-# ---------------------------------------------------------------------------
+def test_agent_config_default_memory_policy():
+    node = {"id": "x", "type": "writer-agent", "label": "W", "props": {}}
+    cfg = AgentConfig.from_node(node)
+    assert cfg.memory_policy == "short-term"
 
-class TestResearchAgent(unittest.TestCase):
 
-    def _mock_agent(self, hits=None, chunks=None):
-        agent = ResearchAgent(max_results=5)
-        agent.searcher.search = MagicMock(
-            return_value=hits if hits is not None else [_hit()]
-        )
-        agent.chunker.chunk = MagicMock(
-            return_value=chunks if chunks is not None else ["chunk one", "chunk two"]
-        )
-        return agent
+def test_agent_config_researcher_gets_long_term_memory_default():
+    node = {"id": "x", "type": "researcher-agent", "label": "R", "props": {}}
+    cfg = AgentConfig.from_node(node)
+    assert cfg.memory_policy == "long-term"
 
-    def test_search_success(self):
-        agent = self._mock_agent()
-        result = agent.search("What is NIST RMF?")
-        self.assertIsInstance(result, ResearchResult)
-        self.assertEqual(result.query, "What is NIST RMF?")
-        self.assertEqual(result.chunks, ["chunk one", "chunk two"])
-        self.assertEqual(len(result.sources), 1)
-        self.assertEqual(result.error, "")
-        self.assertGreaterEqual(result.duration_ms, 0)
 
-    def test_search_empty_hits(self):
-        agent = self._mock_agent(hits=[], chunks=[])
-        result = agent.search("obscure query")
-        self.assertEqual(result.chunks, [])
-        self.assertEqual(result.sources, [])
-        self.assertEqual(result.error, "")
+def test_agent_config_streaming_from_node():
+    node = {"id": "x", "type": "writer-agent", "label": "W",
+            "streaming": True, "props": {}}
+    cfg = AgentConfig.from_node(node)
+    assert cfg.streaming is True
 
-    def test_search_degrades_on_exception(self):
-        agent = ResearchAgent()
-        agent.searcher.search = MagicMock(side_effect=RuntimeError("network error"))
-        result = agent.search("query")
-        self.assertEqual(result.chunks, [])
-        self.assertIn("network error", result.error)
 
-    def test_searcher_called_with_query(self):
-        agent = self._mock_agent()
-        agent.search("test query")
-        agent.searcher.search.assert_called_once_with("test query")
+def test_agent_config_streaming_from_props():
+    node = {"id": "x", "type": "writer-agent", "label": "W",
+            "props": {"streaming": True}}
+    cfg = AgentConfig.from_node(node)
+    assert cfg.streaming is True
 
-    def test_chunker_called_with_hits(self):
-        hits = [_hit(title="H1"), _hit(title="H2")]
-        agent = self._mock_agent(hits=hits)
-        agent.search("test")
-        agent.chunker.chunk.assert_called_once_with(hits)
+
+def test_agent_config_tools_from_props():
+    node = {"id": "x", "type": "researcher-agent", "label": "R",
+            "props": {"tools": ["custom-tool", "web-search"]}}
+    cfg = AgentConfig.from_node(node)
+    assert "custom-tool" in cfg.tools
+    assert "web-search" in cfg.tools
+
+
+def test_agent_config_unknown_type():
+    node = {"id": "x", "type": "unknown-agent", "label": "U", "props": {}}
+    cfg = AgentConfig.from_node(node)
+    assert cfg.node_type == "unknown-agent"
+    assert cfg.tools == []
+
+
+def test_agent_config_assigns_unique_agent_id():
+    cfg1 = AgentConfig.from_node(RESEARCHER_NODE)
+    cfg2 = AgentConfig.from_node(RESEARCHER_NODE)
+    assert cfg1.agent_id != cfg2.agent_id
 
 
 # ---------------------------------------------------------------------------
-# Blueprint /run-agent route tests
+# _infer_role and _infer_tools
 # ---------------------------------------------------------------------------
 
-class TestRunAgentRoute(unittest.TestCase):
 
-    def setUp(self):
-        import flask
-        self.app = flask.Flask(__name__)
-        from tools.agentic_ai_canvas.blueprint import aadc_bp
-        self.app.register_blueprint(aadc_bp)
-        self.client = self.app.test_client()
-
-        # Mock DB lookup
-        self._conn_patch = patch("tools.agentic_ai_canvas.blueprint._conn")
-        self._mock_conn = self._conn_patch.start()
-        mock_conn = MagicMock()
-        mock_conn.close = MagicMock()
-        mock_conn.execute.return_value.fetchone.return_value = {"id": "d1", "name": "Research Pipeline"}
-        self._mock_conn.return_value = mock_conn
-
-        self._init_patch = patch("tools.agentic_ai_canvas.blueprint._ensure_init")
-        self._init_patch.start()
-
-    def tearDown(self):
-        self._conn_patch.stop()
-        self._init_patch.stop()
-
-    def _fake_research_result(self):
-        return ResearchResult(
-            query="What is FedRAMP?",
-            chunks=["FedRAMP overview chunk", "Authorization process chunk"],
-            sources=[_hit(title="FedRAMP Docs", url="https://fedramp.gov", snippet="FedRAMP overview")],
-            duration_ms=123.4,
-        )
-
-    def _fake_pipeline_result(self):
-        from tools.agentic_ai_canvas.model_layer import PipelineResult, RankedChunk
-        return PipelineResult(
-            query="What is FedRAMP?",
-            answer="FedRAMP is a government-wide program.",
-            chunks_used=2,
-            model="claude-sonnet-4-6",
-            confidence=0.88,
-            embed_model="nomic-embed-text",
-            top_chunks=[RankedChunk(content="FedRAMP overview chunk", score=0.9)],
-            error="",
-        )
-
-    def test_run_agent_success(self):
-        with patch("tools.agentic_ai_canvas.agent_layer.ResearchAgent.search",
-                   return_value=self._fake_research_result()):
-            with patch("tools.agentic_ai_canvas.model_layer.AgenticResearchPipeline.run",
-                       return_value=self._fake_pipeline_result()):
-                resp = self.client.post(
-                    "/agentic-ai/api/designs/d1/run-agent",
-                    json={"query": "What is FedRAMP?"},
-                )
-        self.assertEqual(resp.status_code, 200)
-        body = json.loads(resp.data)
-        self.assertEqual(body["query"], "What is FedRAMP?")
-        self.assertIn("answer", body)
-        self.assertIn("sources", body)
-        self.assertIn("agent_duration_ms", body)
-        self.assertEqual(body["design_id"], "d1")
-
-    def test_run_agent_missing_query(self):
-        resp = self.client.post(
-            "/agentic-ai/api/designs/d1/run-agent",
-            json={},
-        )
-        self.assertEqual(resp.status_code, 400)
-        self.assertIn("error", json.loads(resp.data))
-
-    def test_run_agent_design_not_found(self):
-        self._mock_conn.return_value.execute.return_value.fetchone.return_value = None
-        resp = self.client.post(
-            "/agentic-ai/api/designs/missing/run-agent",
-            json={"query": "test"},
-        )
-        self.assertEqual(resp.status_code, 404)
-
-    def test_run_agent_sources_in_response(self):
-        with patch("tools.agentic_ai_canvas.agent_layer.ResearchAgent.search",
-                   return_value=self._fake_research_result()):
-            with patch("tools.agentic_ai_canvas.model_layer.AgenticResearchPipeline.run",
-                       return_value=self._fake_pipeline_result()):
-                resp = self.client.post(
-                    "/agentic-ai/api/designs/d1/run-agent",
-                    json={"query": "What is FedRAMP?"},
-                )
-        body = json.loads(resp.data)
-        self.assertEqual(len(body["sources"]), 1)
-        self.assertEqual(body["sources"][0]["title"], "FedRAMP Docs")
+def test_infer_role_researcher():
+    role = _infer_role("researcher-agent")
+    assert "research" in role.lower()
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_infer_role_analyst():
+    role = _infer_role("analyst-agent")
+    assert "analy" in role.lower() or "synthe" in role.lower()
+
+
+def test_infer_role_unknown():
+    role = _infer_role("exotic-agent")
+    assert "exotic-agent" in role
+
+
+def test_infer_tools_researcher_defaults():
+    tools = _infer_tools("researcher-agent", {})
+    assert set(tools) == set(RESEARCHER_DEFAULT_TOOLS)
+
+
+def test_infer_tools_reviewer():
+    tools = _infer_tools("reviewer-agent", {})
+    assert "output-validator" in tools
+    assert "audit-logger" in tools
+
+
+# ---------------------------------------------------------------------------
+# ResearchAgent
+# ---------------------------------------------------------------------------
+
+
+def test_research_agent_pipeline_stages():
+    cfg = AgentConfig.from_node(RESEARCHER_NODE)
+    agent = ResearchAgent(cfg, topic="AI Trends", vertical="defense")
+    assert agent.get_pipeline_stages() == RESEARCH_STAGES
+
+
+def test_research_agent_plan_contains_all_stages():
+    cfg = AgentConfig.from_node(RESEARCHER_NODE)
+    agent = ResearchAgent(cfg)
+    plan = agent.plan()
+    assert len(plan) == len(RESEARCH_STAGES)
+    for stage in RESEARCH_STAGES:
+        assert any(stage in step for step in plan)
+
+
+def test_research_agent_record_stage():
+    cfg = AgentConfig.from_node(RESEARCHER_NODE)
+    agent = ResearchAgent(cfg)
+    agent.record_stage("SCOPE", {"query": "AI trends", "sources": 5})
+    findings = agent.get_findings()
+    assert "SCOPE" in findings
+    assert findings["SCOPE"]["findings"]["query"] == "AI trends"
+
+
+def test_research_agent_invalid_stage_raises():
+    cfg = AgentConfig.from_node(RESEARCHER_NODE)
+    agent = ResearchAgent(cfg)
+    with pytest.raises(ValueError, match="Unknown stage"):
+        agent.record_stage("INVALID_STAGE", {})
+
+
+def test_research_agent_is_complete_false_initially():
+    cfg = AgentConfig.from_node(RESEARCHER_NODE)
+    agent = ResearchAgent(cfg)
+    assert agent.is_complete() is False
+
+
+def test_research_agent_is_complete_after_all_stages():
+    cfg = AgentConfig.from_node(RESEARCHER_NODE)
+    agent = ResearchAgent(cfg)
+    for stage in RESEARCH_STAGES:
+        agent.record_stage(stage, {"data": stage})
+    assert agent.is_complete() is True
+
+
+def test_research_agent_describe_includes_pipeline_info():
+    cfg = AgentConfig.from_node(RESEARCHER_NODE)
+    agent = ResearchAgent(cfg, topic="Defense AI", vertical="dod")
+    desc = agent.describe()
+    assert desc["topic"] == "Defense AI"
+    assert desc["vertical"] == "dod"
+    assert desc["pipeline_stages"] == RESEARCH_STAGES
+    assert desc["is_complete"] is False
+
+
+def test_research_agent_topic_defaults_to_label():
+    cfg = AgentConfig.from_node(RESEARCHER_NODE)
+    agent = ResearchAgent(cfg)
+    assert agent.topic == cfg.label
+
+
+# ---------------------------------------------------------------------------
+# Specialised agents
+# ---------------------------------------------------------------------------
+
+
+def test_analyst_agent_plan():
+    cfg = AgentConfig.from_node(ANALYST_NODE)
+    agent = AnalystAgent(cfg)
+    plan = agent.plan()
+    assert len(plan) >= 2
+    assert any("synthe" in s.lower() or "pattern" in s.lower() for s in plan)
+
+
+def test_writer_agent_plan():
+    cfg = AgentConfig.from_node(WRITER_NODE)
+    agent = WriterAgent(cfg)
+    plan = agent.plan()
+    assert len(plan) >= 3
+    assert any("artifact" in s.lower() or "template" in s.lower() for s in plan)
+
+
+def test_reviewer_agent_plan():
+    cfg = AgentConfig.from_node(REVIEWER_NODE)
+    agent = ReviewerAgent(cfg)
+    plan = agent.plan()
+    assert any("review" in s.lower() or "accur" in s.lower() for s in plan)
+
+
+def test_orchestrator_coordinates_sub_agents():
+    oc_cfg = AgentConfig.from_node(ORCHESTRATOR_NODE)
+    ra_cfg = AgentConfig.from_node(RESEARCHER_NODE)
+    orchestrator = OrchestratorAgent(oc_cfg)
+    researcher = ResearchAgent(ra_cfg)
+    orchestrator.register_sub_agent(researcher)
+    plan = orchestrator.plan()
+    assert any("SCOPE" in step for step in plan)
+    assert any("Pipeline" in step or "Orchestrat" in step for step in plan)
+
+
+def test_orchestrator_describe_lists_sub_agents():
+    oc_cfg = AgentConfig.from_node(ORCHESTRATOR_NODE)
+    ra_cfg = AgentConfig.from_node(RESEARCHER_NODE)
+    orchestrator = OrchestratorAgent(oc_cfg, sub_agents=[ResearchAgent(ra_cfg)])
+    desc = orchestrator.describe()
+    assert len(desc["sub_agents"]) == 1
+    assert desc["sub_agents"][0]["type"] == "researcher-agent"
+
+
+# ---------------------------------------------------------------------------
+# AgentLayer
+# ---------------------------------------------------------------------------
+
+
+def test_agent_layer_builds_agents_from_graph():
+    layer = AgentLayer(MINIMAL_GRAPH)
+    agents = layer.build_agents()
+    assert len(agents) == 1
+    assert isinstance(agents[0], ResearchAgent)
+
+
+def test_agent_layer_full_pipeline():
+    layer = AgentLayer(FULL_PIPELINE_GRAPH)
+    agents = layer.build_agents()
+    types = {a.config.node_type for a in agents}
+    assert "researcher-agent" in types
+    assert "analyst-agent" in types
+    assert "writer-agent" in types
+    assert "reviewer-agent" in types
+    assert "orchestrator" in types
+
+
+def test_agent_layer_get_research_agents():
+    layer = AgentLayer(FULL_PIPELINE_GRAPH)
+    layer.build_agents()
+    researchers = layer.get_research_agents()
+    assert len(researchers) == 1
+    assert researchers[0].config.label == "Market Research Agent"
+
+
+def test_agent_layer_build_pipeline_plan():
+    layer = AgentLayer(MINIMAL_GRAPH)
+    plan = layer.build_pipeline_plan()
+    assert len(plan) == len(RESEARCH_STAGES)
+
+
+def test_agent_layer_describe():
+    layer = AgentLayer(MINIMAL_GRAPH)
+    desc = layer.describe()
+    assert desc["total_agents"] == 1
+    assert "researcher-agent" in desc["agent_types"]
+    assert len(desc["pipeline_steps"]) > 0
+
+
+def test_agent_layer_empty_graph():
+    layer = AgentLayer({"nodes": [], "edges": []})
+    agents = layer.build_agents()
+    assert agents == []
+    assert layer.build_pipeline_plan() == []
+
+
+def test_agent_layer_skips_non_agent_nodes():
+    graph = {
+        "nodes": [
+            {"id": "llm-1", "type": "llm", "label": "Claude"},
+            {"id": "ra-1", "type": "researcher-agent", "label": "R"},
+            {"id": "mem-1", "type": "vector-db", "label": "VDB"},
+        ],
+        "edges": [],
+    }
+    layer = AgentLayer(graph)
+    agents = layer.build_agents()
+    assert len(agents) == 1
+    assert agents[0].config.node_type == "researcher-agent"
+
+
+def test_agent_layer_from_design_json():
+    import json
+    design = {"graph": MINIMAL_GRAPH}
+    layer = AgentLayer.from_design_json(json.dumps(design))
+    agents = layer.build_agents()
+    assert len(agents) == 1
+
+
+def test_agent_layer_from_design_json_dict():
+    design = {"graph": MINIMAL_GRAPH}
+    layer = AgentLayer.from_design_json(design)
+    agents = layer.build_agents()
+    assert len(agents) == 1
+
+
+def test_agent_layer_from_flat_graph():
+    layer = AgentLayer.from_design_json(MINIMAL_GRAPH)
+    agents = layer.build_agents()
+    assert len(agents) == 1
+
+
+def test_base_agent_describe():
+    node = {"id": "x", "type": "sub-agent", "label": "SubA", "props": {}}
+    cfg = AgentConfig.from_node(node)
+    agent = BaseAgent(cfg)
+    desc = agent.describe()
+    assert desc["type"] == "sub-agent"
+    assert desc["label"] == "SubA"
+
+
+def test_base_agent_plan():
+    node = {"id": "x", "type": "sub-agent", "label": "SubA", "props": {}}
+    cfg = AgentConfig.from_node(node)
+    agent = BaseAgent(cfg)
+    plan = agent.plan()
+    assert len(plan) == 1
+
+
+def test_research_agent_multiple_stage_recordings():
+    cfg = AgentConfig.from_node(RESEARCHER_NODE)
+    agent = ResearchAgent(cfg)
+    agent.record_stage("SCOPE", {"q": "test"})
+    agent.record_stage("LANDSCAPE", {"competitors": 12})
+    findings = agent.get_findings()
+    assert len(findings) == 2
+    assert findings["LANDSCAPE"]["findings"]["competitors"] == 12

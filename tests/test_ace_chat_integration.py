@@ -1,144 +1,199 @@
 # CUI // SP-CTI
-"""Integration tests: ACE co-worker link storage via ChatManager.
+"""Integration tests for ACE chat trigger pipeline.
 
-Covers:
-  * test_chat_manager_stores_coworker_link — _check_coworker_trigger persists
-    coworker_instance_id in chat_contexts.context_config when the dispatch hook
-    returns one, so the chat UI can render a "View Co-Worker Team" button.
-  * test_no_link_when_hook_context_empty — no-op path when hook carries no id.
-  * test_link_merges_into_existing_config — existing context_config keys survive.
-
-The get_coworker_instances() function (tools/chat/cli_bridge.py) is the
-read-side counterpart; its contract is verified in test_chat_cli_bridge_coworker.py.
-This file focuses on the write-side (storage) path only.
+Tests five key scenarios:
+1. Explicit @team trigger fires ACEController.launch()
+2. Implicit trigger from 200+ char messages with 4+ RICOAS signals
+3. Short casual messages do NOT trigger ACE
+4. Chat manager stores coworker_instance_id in context_config
+5. CLI bridge get_coworker_instances() returns instances for a context_id
 """
 from __future__ import annotations
 
-import importlib
 import json
 import sqlite3
+from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Import the module object so we can monkeypatch DB_PATH and then call
-# _check_coworker_trigger — which reads DB_PATH from its module globals at
-# call time (not import time), making the monkeypatch effective.
-_cm = importlib.import_module("tools.dashboard.chat_manager")
-_check_coworker_trigger = _cm._check_coworker_trigger
+# ---------------------------------------------------------------------------
+# Shared test data
+# ---------------------------------------------------------------------------
 
-_CHAT_CONTEXTS_DDL = """
-CREATE TABLE IF NOT EXISTS chat_contexts (
-    id               TEXT PRIMARY KEY,
-    user_id          TEXT NOT NULL,
-    tenant_id        TEXT,
-    title            TEXT DEFAULT '',
-    status           TEXT NOT NULL DEFAULT 'active',
-    project_id       TEXT,
-    agent_model      TEXT DEFAULT 'sonnet',
-    system_prompt    TEXT,
-    context_config   TEXT,
-    dirty_version    INTEGER DEFAULT 0,
-    message_count    INTEGER DEFAULT 0,
-    classification   TEXT DEFAULT 'CUI',
-    created_at       TEXT DEFAULT (datetime('now')),
-    updated_at       TEXT DEFAULT (datetime('now'))
+_LONG_REQ_TEXT = (
+    "The system shall support user authentication via SSO. "
+    "The application must implement role-based access control. "
+    "We need to build a REST API that should handle at minimum 1000 requests "
+    "per second. The platform needs to integrate with existing LDAP directories. "
+    "Requirement: all data must be encrypted at rest and in transit."
 )
-"""
+assert len(_LONG_REQ_TEXT) >= 200, "Sanity check: test message must be 200+ chars"
+
+_SHORT_CASUAL = "hey there"
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# 1. Explicit trigger: '@team ...' fires ACEController.launch()
 # ---------------------------------------------------------------------------
 
+def test_explicit_trigger_fires_ace():
+    """'@team build REST API' calls ACEController.launch() with trigger_source='chat'."""
+    from icdev.tools.ace.chat_trigger import maybe_launch_ace
 
-def _seed_context(db_path, context_id: str, config: dict | None = None) -> None:
-    conn = sqlite3.connect(str(db_path))
-    conn.execute(
-        "INSERT INTO chat_contexts (id, user_id, status, context_config) "
-        "VALUES (?, 'test-user', 'active', ?)",
-        (context_id, json.dumps(config) if config else None),
-    )
-    conn.commit()
-    conn.close()
+    mock_ctrl = MagicMock()
+    mock_ctrl.launch.return_value = "ace-abc123def456"
 
+    with patch("icdev.tools.ace.controller.ACEController") as mock_cls:
+        mock_cls.get_instance.return_value = mock_ctrl
 
-def _read_config(db_path, context_id: str) -> dict:
-    conn = sqlite3.connect(str(db_path))
-    row = conn.execute(
-        "SELECT context_config FROM chat_contexts WHERE id = ?", (context_id,)
-    ).fetchone()
-    conn.close()
-    if row and row[0]:
-        return json.loads(row[0])
-    return {}
+        result = maybe_launch_ace(
+            context_id="ctx-001",
+            content="@team build REST API for user management",
+            user_id="user-1",
+        )
+
+    assert result == "ace-abc123def456"
+    mock_ctrl.launch.assert_called_once()
+
+    args, kwargs = mock_ctrl.launch.call_args
+    problem_text = kwargs.get("problem_text") or (args[0] if args else "")
+    trigger_source = kwargs.get("trigger_source") or (args[1] if len(args) > 1 else "")
+    trigger_ref = kwargs.get("trigger_ref") or (args[2] if len(args) > 2 else "")
+
+    # @team prefix must be stripped from problem_text
+    assert "@team" not in problem_text.lower()
+    assert "build REST API" in problem_text
+
+    assert trigger_source == "chat"
+    assert trigger_ref == "ctx-001"
 
 
 # ---------------------------------------------------------------------------
-# Fixture
+# 2. Implicit trigger: 200+ chars with 4+ RICOAS signals fires ACE
 # ---------------------------------------------------------------------------
 
+def test_implicit_trigger_long_requirements():
+    """200+ char message with 4+ RICOAS signals fires ACEController.launch()."""
+    from icdev.tools.ace.chat_trigger import maybe_launch_ace, count_ricoas_signals
 
-@pytest.fixture
-def chat_db(tmp_path, monkeypatch):
-    """Fresh temp SQLite DB with chat_contexts; DB_PATH and backend patched."""
+    # Confirm the test message actually has 4+ signals
+    signal_count = count_ricoas_signals(_LONG_REQ_TEXT)
+    assert signal_count >= 4, f"Test message only has {signal_count} RICOAS signals; need 4+"
+
+    mock_ctrl = MagicMock()
+    mock_ctrl.launch.return_value = "ace-implicit001"
+
+    with patch("icdev.tools.ace.controller.ACEController") as mock_cls:
+        mock_cls.get_instance.return_value = mock_ctrl
+
+        result = maybe_launch_ace(
+            context_id="ctx-002",
+            content=_LONG_REQ_TEXT,
+            user_id="user-2",
+        )
+
+    assert result == "ace-implicit001"
+    mock_ctrl.launch.assert_called_once()
+
+    args, kwargs = mock_ctrl.launch.call_args
+    trigger_source = kwargs.get("trigger_source") or (args[1] if len(args) > 1 else "")
+    assert trigger_source == "chat"
+
+
+# ---------------------------------------------------------------------------
+# 3. No trigger: short casual message does NOT call launch()
+# ---------------------------------------------------------------------------
+
+def test_no_trigger_short_message():
+    """Short casual message does NOT call ACEController.launch()."""
+    from icdev.tools.ace.chat_trigger import maybe_launch_ace
+
+    mock_ctrl = MagicMock()
+
+    with patch("icdev.tools.ace.controller.ACEController") as mock_cls:
+        mock_cls.get_instance.return_value = mock_ctrl
+
+        result = maybe_launch_ace(
+            context_id="ctx-003",
+            content=_SHORT_CASUAL,
+            user_id="user-3",
+        )
+
+    assert result is None
+    mock_ctrl.launch.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# 4. Chat manager persists coworker_instance_id in context_config
+# ---------------------------------------------------------------------------
+
+def test_chat_manager_stores_coworker_link(tmp_path):
+    """_check_coworker_trigger() persists coworker_instance_id to chat_contexts."""
     db_path = tmp_path / "chat_test.db"
     conn = sqlite3.connect(str(db_path))
-    conn.executescript(_CHAT_CONTEXTS_DDL)
+    conn.execute(
+        """CREATE TABLE chat_contexts (
+            id TEXT PRIMARY KEY,
+            user_id TEXT,
+            title TEXT,
+            context_config TEXT,
+            created_at TEXT,
+            updated_at TEXT
+        )"""
+    )
+    conn.execute(
+        "INSERT INTO chat_contexts (id, user_id, title, context_config, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?)",
+        ("ctx-004", "user-4", "Test Context", None, "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z"),
+    )
     conn.commit()
     conn.close()
-    # Force SQLite backend so get_connection(db_path=...) hits the custom file,
-    # not the PostgreSQL primary (or its SQLite fallback at data/icdev.db).
-    monkeypatch.setenv("ICDEV_STORAGE_BACKEND", "sqlite")
-    # Patch the module-level DB_PATH so get_connection(db_path=str(DB_PATH))
-    # inside _check_coworker_trigger hits our temp DB.
-    monkeypatch.setattr(_cm, "DB_PATH", db_path)
-    return db_path
+
+    # Use canonical icdev module (shim redirects tools.* -> icdev.tools.*)
+    import icdev.tools.dashboard.chat_manager as cm_mod
+
+    def _fake_get_conn(db_path=None, **_kwargs):
+        c = sqlite3.connect(str(db_path) if db_path else ":memory:")
+        return c
+
+    with patch.object(cm_mod, "DB_PATH", db_path), \
+         patch.object(cm_mod, "get_connection", side_effect=_fake_get_conn):
+        cm_mod._check_coworker_trigger(
+            "ctx-004",
+            "@team build a pipeline",
+            {"coworker_instance_id": "ace-link999"},
+        )
+
+    conn2 = sqlite3.connect(str(db_path))
+    row = conn2.execute(
+        "SELECT context_config FROM chat_contexts WHERE id = ?", ("ctx-004",)
+    ).fetchone()
+    conn2.close()
+
+    assert row is not None, "Row must exist in chat_contexts"
+    assert row[0] is not None, "context_config must have been written by _check_coworker_trigger"
+    config = json.loads(row[0])
+    assert config.get("coworker_instance_id") == "ace-link999"
 
 
 # ---------------------------------------------------------------------------
-# Tests — write-side (storage)
+# 5. CLI bridge get_coworker_instances() returns instances for context_id
 # ---------------------------------------------------------------------------
 
+def test_cli_bridge_get_coworker_instances():
+    """get_coworker_instances() returns instance list from dashboard API."""
+    import tools.chat.cli_bridge as bridge_mod
 
-def test_chat_manager_stores_coworker_link(chat_db):
-    """After trigger, context_config contains the ACE instance id."""
-    context_id = "ctx-ace-link-01"
-    ace_instance_id = "ace-inst-abc123"
+    mock_response = {
+        "instances": [
+            {"instance_id": "ace-bridge001", "state": "complete"},
+        ]
+    }
 
-    _seed_context(chat_db, context_id)
+    with patch.object(bridge_mod, "_http", return_value=mock_response) as mock_http:
+        result = bridge_mod.get_coworker_instances("ctx-005")
 
-    _check_coworker_trigger(
-        context_id,
-        "build a data pipeline with four RICOAS signals",
-        {"coworker_instance_id": ace_instance_id},
-    )
-
-    config = _read_config(chat_db, context_id)
-    assert config.get("coworker_instance_id") == ace_instance_id
-
-
-def test_no_link_when_hook_context_empty(chat_db):
-    """_check_coworker_trigger is a no-op when hook context has no coworker_instance_id."""
-    context_id = "ctx-ace-noop-02"
-    _seed_context(chat_db, context_id)
-
-    _check_coworker_trigger(context_id, "just a quick hello", {})
-
-    config = _read_config(chat_db, context_id)
-    assert "coworker_instance_id" not in config
-
-
-def test_link_merges_into_existing_config(chat_db):
-    """coworker_instance_id is merged into existing context_config; other keys survive."""
-    context_id = "ctx-ace-merge-03"
-    _seed_context(chat_db, context_id, config={"reasoning_mode": "auto"})
-
-    _check_coworker_trigger(
-        context_id,
-        "assemble a compliance team",
-        {"coworker_instance_id": "ace-inst-xyz"},
-    )
-
-    config = _read_config(chat_db, context_id)
-    assert config.get("coworker_instance_id") == "ace-inst-xyz"
-    assert config.get("reasoning_mode") == "auto"
+    mock_http.assert_called_once_with("GET", "/api/chat/ctx-005/coworker-instances")
+    assert len(result) == 1
+    assert result[0]["instance_id"] == "ace-bridge001"
+    assert result[0]["state"] == "complete"

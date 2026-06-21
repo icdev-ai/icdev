@@ -1,37 +1,24 @@
-# CUI // SP-CTI
-"""ACE StepExecutor — dynamic tool invocation with trust enforcement.
+"""ACE step executor — dynamic tool invocation with trust-kernel gating."""
 
-Usage::
-
-    from icdev.tools.ace.step_executor import StepExecutor
-    from icdev.tools.ace.team_assembler import CoWorkerSpec
-    from icdev.tools.daemon.base import TrustKernelBase
-
-    executor = StepExecutor()
-    result = executor.run(step, context, spec, trust_kernel)
-"""
 from __future__ import annotations
 
 import importlib
-import json
-import logging
-import os
 import re
-from datetime import datetime, timezone
+import time
+from dataclasses import dataclass, field
 from typing import Any
 
-from icdev.tools.ace.team_assembler import CoWorkerSpec
 from icdev.tools.daemon.base import TrustKernelBase
+from icdev.tools.db.storage import get_connection
 
-logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Errors
+# Exceptions
 # ---------------------------------------------------------------------------
 
 
 class ToolPermissionDeniedError(PermissionError):
-    """Raised when step['tool'] is not in spec.tool_permissions."""
+    """Raised when a step's tool is not in spec.tool_permissions."""
 
 
 class TrustKernelDeniedError(PermissionError):
@@ -39,97 +26,151 @@ class TrustKernelDeniedError(PermissionError):
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# CoWorkerSpec
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CoWorkerSpec:
+    """Declarative description of what an ACE co-worker is allowed to do.
+
+    Attributes:
+        tool_permissions: Dotted import paths the co-worker may invoke
+            (e.g. ``["icdev.tools.rag.retriever.retrieve"]``).
+        trust_tier: Risk tier key passed to the trust kernel
+            (e.g. ``"green"``, ``"yellow"``, ``"orange"``).
+        name: Human-readable co-worker name (informational only).
+    """
+
+    tool_permissions: list[str] = field(default_factory=list)
+    trust_tier: str = "green"
+    name: str = "ace-coworker"
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers
 # ---------------------------------------------------------------------------
 
 _VAR_RE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)")
 
-_SAFE_BUILTINS = {
-    "True": True,
-    "False": False,
-    "None": None,
-    "len": len,
-    "int": int,
-    "float": float,
-    "str": str,
-    "bool": bool,
-}
+_AUDIT_TABLE_CREATED: set[str] = set()
 
-# PG is the primary runtime backend. SQLite placeholder used only in the
-# best-effort audit path when ICDEV_STORAGE_BACKEND is not postgresql.
-_PG_PLACEHOLDER = "%s"
-_SQLITE_PLACEHOLDER = "?"
-
-
-def _is_pg() -> bool:
-    return os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower() == "postgresql"
+_AUDIT_DDL = """
+CREATE TABLE IF NOT EXISTS ace_audit_log (
+    id          TEXT    PRIMARY KEY,
+    step_id     TEXT    NOT NULL,
+    tool        TEXT    NOT NULL,
+    trust_tier  TEXT    NOT NULL,
+    success     INTEGER NOT NULL,
+    skipped     INTEGER NOT NULL DEFAULT 0,
+    error       TEXT,
+    duration_ms REAL,
+    created_at  TEXT    NOT NULL
+)
+"""
 
 
-def normalise_step(raw: Any) -> dict[str, Any]:
-    """Convert any step representation to a canonical step dict.
-
-    Accepts:
-    - dict         — returned as-is (no copy)
-    - RoleStep-like object with ``name``/``tool``/``params``/``condition`` attrs
-    - str          — expanded to a minimal LLM-invoke step dict
-
-    This allows callers to pass raw YAML values (strings or dicts) or
-    typed dataclass instances without an extra conversion layer.
-    """
-    if isinstance(raw, dict):
-        return raw
-
-    # RoleStep dataclass: duck-type to avoid a circular import from role_loader.
-    # type: ignore[attr-defined] — intentional duck-typing for RoleStep compat
-    if hasattr(raw, "name") and hasattr(raw, "tool") and hasattr(raw, "params"):
-        step: dict[str, Any] = {
-            "id": raw.name,
-            # Empty tool string means "delegate to LLM step" — consistent with
-            # CoWorkerThread._normalise_step() behaviour for bare string steps.
-            "tool": raw.tool or "icdev.tools.ace.llm_step.invoke",
-            "args": dict(raw.params) if raw.params else {},
-        }
-        if getattr(raw, "condition", None):
-            step["condition"] = raw.condition
-        return step
-
-    # Plain string step name — same expansion used by CoWorkerThread._normalise_step().
-    step_name = str(raw)
-    return {
-        "id": step_name,
-        "tool": "icdev.tools.ace.llm_step.invoke",
-        "args": {"step_name": step_name},
-        "output_var": f"{step_name}_result",
-    }
+def _ensure_audit_table(conn: Any) -> None:
+    if "ace_audit_log" in _AUDIT_TABLE_CREATED:
+        return
+    conn.execute(_AUDIT_DDL)
+    conn.commit()
+    _AUDIT_TABLE_CREATED.add("ace_audit_log")
 
 
-def _substitute(value: Any, context: dict[str, Any]) -> Any:
-    """Replace $variable references in string values with context values."""
-    if not isinstance(value, str):
-        return value
-    # Whole-value substitution: "$varname" → context[varname] (preserves type)
-    m = re.fullmatch(r"\$([A-Za-z_][A-Za-z0-9_]*)", value)
-    if m:
-        return context.get(m.group(1), value)
-    # Inline substitution: "prefix_$var_suffix" → string replacement
-    return _VAR_RE.sub(lambda mo: str(context.get(mo.group(1), mo.group(0))), value)
+def _emit_audit(
+    *,
+    step_id: str,
+    tool: str,
+    trust_tier: str,
+    success: bool,
+    skipped: bool,
+    error: str | None,
+    duration_ms: float,
+) -> None:
+    import uuid
+    from datetime import datetime, timezone
 
-
-def _eval_condition(condition: str, context: dict[str, Any]) -> bool:
-    """Evaluate a condition string against context. Returns False on error."""
+    row_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
     try:
-        return bool(eval(condition, {"__builtins__": _SAFE_BUILTINS}, dict(context)))  # noqa: S307
+        conn = get_connection()
+        _ensure_audit_table(conn)
+        conn.execute(
+            """
+            INSERT INTO ace_audit_log
+                (id, step_id, tool, trust_tier, success, skipped, error, duration_ms, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                row_id,
+                step_id,
+                tool,
+                trust_tier,
+                int(success),
+                int(skipped),
+                error,
+                duration_ms,
+                now,
+            ),
+        )
+        conn.commit()
+    except Exception:
+        pass  # audit must never crash the caller
+
+
+def _substitute_vars(value: Any, context: dict) -> Any:
+    """Recursively replace $var references with context values."""
+    if isinstance(value, str):
+        def _replace(m: re.Match) -> str:
+            return str(context.get(m.group(1), m.group(0)))
+
+        return _VAR_RE.sub(_replace, value)
+    if isinstance(value, dict):
+        return {k: _substitute_vars(v, context) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_substitute_vars(item, context) for item in value]
+    return value
+
+
+def _resolve_tool(dotted: str) -> Any:
+    """Import a callable from a dotted path (``module.submod.func``)."""
+    parts = dotted.rsplit(".", 1)
+    if len(parts) != 2:
+        raise ImportError(f"Cannot resolve tool path: {dotted!r}")
+    module_path, attr = parts
+    mod = importlib.import_module(module_path)
+    obj = getattr(mod, attr)
+    if not callable(obj):
+        raise TypeError(f"{dotted!r} is not callable")
+    return obj
+
+
+def _eval_condition(condition: str, context: dict) -> bool:
+    """Evaluate a condition expression against the execution context.
+
+    Substitutes $var references first, then evaluates the resulting
+    expression with a restricted namespace (only context locals +
+    safe builtins).
+    """
+    if not condition:
+        return True
+    substituted = _substitute_vars(condition, context)
+    safe_builtins = {
+        "True": True,
+        "False": False,
+        "None": None,
+        "len": len,
+        "str": str,
+        "int": int,
+        "float": float,
+        "bool": bool,
+    }
+    try:
+        result = eval(substituted, {"__builtins__": safe_builtins}, dict(context))  # noqa: S307  # nosec B307 — builtins restricted to safe subset; no user-controlled code path
+        return bool(result)
     except Exception:
         return False
-
-
-def _resolve_tool(tool_path: str):
-    """Import and return the callable at a dotted module path."""
-    module_path, _, func_name = tool_path.rpartition(".")
-    if not module_path or not func_name:
-        raise ImportError(f"'{tool_path}' is not a valid dotted function path")
-    module = importlib.import_module(module_path)
-    return getattr(module, func_name)
 
 
 # ---------------------------------------------------------------------------
@@ -138,151 +179,125 @@ def _resolve_tool(tool_path: str):
 
 
 class StepExecutor:
-    """Executes a single workflow step with trust enforcement and audit logging.
+    """Execute a single ACE workflow step with trust-kernel gating.
 
-    Step dict keys:
-        id (str):           Unique step identifier.
-        tool (str):         Dotted function path, e.g. 'icdev.tools.foo.bar'.
-        args (dict):        Keyword args; string values may contain $var refs.
-        output_var (str):   Context key for storing the result (optional).
-        condition (str):    Python expression; step is skipped when falsy (optional).
-        instance_id (str):  ACE instance ID for audit row (optional).
+    Expected step schema::
+
+        {
+            "id":         str,         # unique step identifier
+            "tool":       str,         # dotted import path to callable
+            "args":       dict,        # keyword arguments; values may use $var
+            "condition":  str | None,  # skip if evaluates to False
+            "output_var": str | None,  # store result under this context key
+        }
     """
 
     def run(
         self,
-        step: Any,
-        context: dict[str, Any],
+        step: dict,
+        context: dict,
         spec: CoWorkerSpec,
         trust_kernel: TrustKernelBase,
     ) -> Any:
-        """Execute one workflow step.
+        """Execute *step* and return its result (or ``None`` if skipped).
 
-        ``step`` is normalised via :func:`normalise_step` so callers may pass a
-        plain dict, a RoleStep dataclass, or a bare string step name.
-
-        Returns:
-            Result of the tool call, or None if the step was skipped, or an
-            error dict ``{"error": "import_error", "message": ..., "tool": ...}``
-            when the tool path cannot be resolved — providing a structured failure
-            signal to the caller instead of an uncontextualised exception.
+        Side effects:
+        - Mutates *context* by storing the result under ``step['output_var']``
+          if that key is present and the step was not skipped.
+        - Appends one row to ``ace_audit_log`` after each call (including
+          skipped and failed steps).
 
         Raises:
-            ToolPermissionDeniedError: Tool not in spec.tool_permissions.
-            TrustKernelDeniedError:    trust_kernel.can_execute() returned False.
-            Exception:                 Runtime errors from the tool itself (logged
-                                       at ERROR before propagation so they always
-                                       appear in log aggregation).
+            ToolPermissionDeniedError: tool not in ``spec.tool_permissions``.
+            TrustKernelDeniedError: trust kernel rejected the step.
         """
-        step = normalise_step(step)
-        step_id = step.get("id", "<unknown>")
-        tool_path = step.get("tool", "")
+        step_id: str = step.get("id", "unknown")
+        tool_path: str = step.get("tool", "")
+        raw_args: dict = step.get("args") or {}
+        condition: str | None = step.get("condition")
+        output_var: str | None = step.get("output_var")
 
-        # 1. Handle condition — skip the entire step if it evaluates False
-        condition = step.get("condition")
+        start = time.monotonic()
+
+        # 1. Check condition — skip early (no audit penalty for condition skip)
         if condition is not None and not _eval_condition(condition, context):
-            self._audit(step, spec, "step_skipped", f"condition={condition!r} evaluated False")
+            _emit_audit(
+                step_id=step_id,
+                tool=tool_path,
+                trust_tier=spec.trust_tier,
+                success=True,
+                skipped=True,
+                error=None,
+                duration_ms=0.0,
+            )
             return None
 
-        # 2. Check tool_permissions — raise before touching importlib
+        # 2. Verify tool is whitelisted in spec
         if tool_path not in spec.tool_permissions:
-            self._audit(
-                step, spec, "tool_permission_denied",
-                f"tool={tool_path!r} not in spec.tool_permissions",
+            err = f"Tool '{tool_path}' not in spec.tool_permissions for '{spec.name}'"
+            _emit_audit(
+                step_id=step_id,
+                tool=tool_path,
+                trust_tier=spec.trust_tier,
+                success=False,
+                skipped=False,
+                error=err,
+                duration_ms=(time.monotonic() - start) * 1000,
             )
-            raise ToolPermissionDeniedError(
-                f"Tool '{tool_path}' is not permitted for coworker '{spec.coworker_id}'"
-            )
+            raise ToolPermissionDeniedError(err)
 
-        # 3. Resolve tool via importlib.
-        #    ImportError/AttributeError are caught here and returned as a structured
-        #    error dict rather than propagated — the caller receives a clear signal
-        #    ("error": "import_error") instead of an uncontextualised bare exception
-        #    that would leave the coworker silently blocked on an unresolvable step.
-        try:
-            tool_fn = _resolve_tool(tool_path)
-        except (ImportError, AttributeError) as exc:
-            error_msg = f"Cannot resolve tool '{tool_path}': {exc}"
-            logger.error(
-                "step_executor: %s (step=%s, coworker=%s)",
-                error_msg, step_id, spec.coworker_id,
-            )
-            self._audit(step, spec, "tool_resolve_error", error_msg)
-            return {"error": "import_error", "message": error_msg, "tool": tool_path}
-
-        # 4. Substitute $variable references in args
-        raw_args: dict[str, Any] = step.get("args") or {}
-        resolved_args = {k: _substitute(v, context) for k, v in raw_args.items()}
-
-        # 5. Trust kernel check
+        # 3. Trust kernel gate
         allowed, reason = trust_kernel.can_execute(spec.trust_tier, step_id)
         if not allowed:
-            self._audit(step, spec, "trust_kernel_denied", reason)
-            raise TrustKernelDeniedError(
-                f"TrustKernel denied step '{step_id}' for tier '{spec.trust_tier}': {reason}"
+            err = f"Trust kernel denied step '{step_id}': {reason}"
+            _emit_audit(
+                step_id=step_id,
+                tool=tool_path,
+                trust_tier=spec.trust_tier,
+                success=False,
+                skipped=False,
+                error=err,
+                duration_ms=(time.monotonic() - start) * 1000,
             )
+            raise TrustKernelDeniedError(err)
 
-        # 6. Execute tool — log at ERROR so critical failures are always visible
-        #    in log aggregation even when the caller swallows exceptions.
+        # 4. Resolve the callable
+        fn = _resolve_tool(tool_path)
+
+        # 5. Substitute $variable references in args
+        resolved_args = _substitute_vars(raw_args, context)
+
+        # 6. Execute
         try:
-            result = tool_fn(**resolved_args)
+            result = fn(**resolved_args)
         except Exception as exc:
-            error_msg = f"Tool execution failed: {exc}"
-            logger.error(
-                "step_executor: %s (step=%s, tool=%s, coworker=%s)",
-                error_msg, step_id, tool_path, spec.coworker_id,
+            err = f"{type(exc).__name__}: {exc}"
+            _emit_audit(
+                step_id=step_id,
+                tool=tool_path,
+                trust_tier=spec.trust_tier,
+                success=False,
+                skipped=False,
+                error=err,
+                duration_ms=(time.monotonic() - start) * 1000,
             )
-            self._audit(step, spec, "step_execution_error", error_msg)
             raise
 
-        # 7. Store result in context
-        output_var = step.get("output_var")
+        duration_ms = (time.monotonic() - start) * 1000
+
+        # 7. Store output in context
         if output_var:
             context[output_var] = result
 
-        # 8. Emit audit log
-        self._audit(
-            step, spec, "step_executed",
-            json.dumps({"output_var": output_var, "result_type": type(result).__name__}),
+        # 8. Audit log
+        _emit_audit(
+            step_id=step_id,
+            tool=tool_path,
+            trust_tier=spec.trust_tier,
+            success=True,
+            skipped=False,
+            error=None,
+            duration_ms=duration_ms,
         )
 
         return result
-
-    # ------------------------------------------------------------------
-    # Private
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _audit(
-        step: dict[str, Any],
-        spec: CoWorkerSpec,
-        action: str,
-        detail: str = "",
-    ) -> None:
-        """Write one row to ace_audit_log (append-only, best-effort).
-
-        Uses %s placeholders (PG primary). Falls back to ? for SQLite when
-        ICDEV_STORAGE_BACKEND is not 'postgresql'. Failures are logged at DEBUG
-        so audit gaps surface in log aggregation without crashing the executor.
-        """
-        try:
-            from icdev.tools.db.storage import get_canvas_connection
-
-            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-            instance_id = step.get("instance_id") or ""
-            ph = _PG_PLACEHOLDER if _is_pg() else _SQLITE_PLACEHOLDER
-            conn = get_canvas_connection("ICDEV_ACE_DB_URL")
-            try:
-                conn.execute(
-                    "INSERT INTO ace_audit_log "
-                    "(instance_id, coworker_id, action, detail, actor, created_at) "
-                    f"VALUES ({ph}, {ph}, {ph}, {ph}, {ph}, {ph})",
-                    (instance_id, spec.coworker_id, action, detail, "step_executor", now),
-                )
-                conn.commit()
-            finally:
-                conn.close()
-        except Exception as exc:
-            # Audit is best-effort — never crash the executor; surface at DEBUG
-            # so log aggregation can track audit gaps without triggering alerts.
-            logger.debug("step_executor: audit write failed (%s): %s", action, exc)

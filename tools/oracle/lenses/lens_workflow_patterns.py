@@ -52,23 +52,10 @@ _CODE_DEFAULTS: dict[str, object] = {
     "max_kanban_done": 500,
     # Fraction of automated events in a pattern to classify automation potential as "high"
     "automation_high_ratio": 0.5,
-    # Event type classification for automation potential
-    "automated_event_types": [
-        "code_generated", "test_executed", "test_passed",
-        "security_scan", "compliance_check", "deployment_initiated",
-        "agent_task_completed",
-    ],
-    "manual_event_types": [
-        "approval_granted", "approval_denied", "decision_made",
-    ],
-    # Max tokens for the LLM anomaly-threshold calibration call
-    "llm_max_tokens": 384,
     # Anomaly-detection population minimums
     "min_population_percentile": 5,
     "min_population_adaptive": 5,
     "min_population_zscore": 3,
-    # Minimum population size for _percentile_rank to return a meaningful result
-    "min_percentile_rank_population": 2,
     # Adaptive Z multipliers (mean + z*σ threshold derivation)
     "adaptive_z_ngram": 1.0,
     "adaptive_z_cooccurrence": 1.0,
@@ -149,16 +136,6 @@ _ADAPTIVE_Z_HEAL: float = float(_cfg.get("adaptive_z_heal", _CODE_DEFAULTS["adap
 # Kanban query cap and automation-potential ratio
 _MAX_KANBAN_DONE: int = int(_cfg.get("max_kanban_done", _CODE_DEFAULTS["max_kanban_done"]))
 _AUTOMATION_HIGH_RATIO: float = float(_cfg.get("automation_high_ratio", _CODE_DEFAULTS["automation_high_ratio"]))
-_AUTOMATED_EVENT_TYPES: frozenset[str] = frozenset(
-    _cfg.get("automated_event_types", _CODE_DEFAULTS["automated_event_types"])  # type: ignore[arg-type]
-)
-_MANUAL_EVENT_TYPES: frozenset[str] = frozenset(
-    _cfg.get("manual_event_types", _CODE_DEFAULTS["manual_event_types"])  # type: ignore[arg-type]
-)
-_LLM_MAX_TOKENS: int = int(_cfg.get("llm_max_tokens", _CODE_DEFAULTS["llm_max_tokens"]))
-_MIN_PERCENTILE_RANK_POPULATION: int = int(
-    _cfg.get("min_percentile_rank_population", _CODE_DEFAULTS["min_percentile_rank_population"])
-)
 
 
 def _utcnow() -> str:
@@ -181,7 +158,7 @@ def _ngrams(seq: list[str], n: int) -> list[tuple[str, ...]]:
 
 def _percentile_rank(value: float, population: list[float]) -> float:
     """Return [0, 1] fraction of population values ≤ value (anomaly detection)."""
-    if len(population) < _MIN_PERCENTILE_RANK_POPULATION:
+    if len(population) < 2:
         return 1.0
     return sum(1 for v in population if v <= value) / len(population)
 
@@ -255,8 +232,14 @@ def _z_score_severity(
 
 def _automation_potential(pattern: tuple[str, ...]) -> str:
     """Heuristic: rate automation potential based on event types present."""
-    hits_auto = sum(1 for e in pattern if e in _AUTOMATED_EVENT_TYPES)
-    hits_manual = sum(1 for e in pattern if e in _MANUAL_EVENT_TYPES)
+    automated = {
+        "code_generated", "test_executed", "test_passed",
+        "security_scan", "compliance_check", "deployment_initiated",
+        "agent_task_completed",
+    }
+    manual = {"approval_granted", "approval_denied", "decision_made"}
+    hits_auto = sum(1 for e in pattern if e in automated)
+    hits_manual = sum(1 for e in pattern if e in manual)
     if hits_manual:
         return "low"
     if len(pattern) > 0 and (hits_auto / len(pattern)) >= _AUTOMATION_HIGH_RATIO:
@@ -375,7 +358,7 @@ def _llm_anomaly_thresholds(
                 "Return a single valid JSON object with the required threshold keys. "
                 "All values must be positive numbers within their stated ranges."
             ),
-            max_tokens=_LLM_MAX_TOKENS,
+            max_tokens=384,
             temperature=0.0,
             skip_injection_scan=True,
         )

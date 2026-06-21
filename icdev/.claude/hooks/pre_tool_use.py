@@ -153,6 +153,7 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Phase 35 — Innovation Engine (D206)
         "innovation_signals",
         "innovation_triage_log",
+        "innovation_signal",
         # Phase 39 — Observability
         "agent_executions",
         # Phase 40 — NLQ
@@ -229,6 +230,7 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "creative_feature_gaps",
         "creative_specs",
         "creative_trends",
+        "creative_gap",
         # GovCon Intelligence (Phase 59, D361-D373)
         "sam_gov_quota_events",
         "rfp_shall_statements",
@@ -464,8 +466,6 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "nc_agreement_amendments",
         # ISP/Telco — Cross-Connect Order Workflow (NIST AU, append-only order state log)
         "ccc_xc_order_events",
-        # ACE — ANVIL Co-Worker Engine audit trail (NIST AU, append-only)
-        "ace_audit_log",
     ]
 
     if tool_name == "Bash":

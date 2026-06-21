@@ -16,7 +16,6 @@ Returns:
 from __future__ import annotations
 
 import pathlib
-import statistics
 from functools import lru_cache
 from typing import Any, Union
 
@@ -33,7 +32,7 @@ from tools.ai_augmentation.agent_readiness.pillars import (
     structure,
     testing,
 )
-from tools.ai_augmentation.agent_readiness.pillars._base import Pillar
+from tools.ai_augmentation.agent_readiness.pillars._base import Pillar, detect_score_anomalies
 
 # All 11 pillars in evaluation order.
 # Pillars 1–7 are ported from kodustech/agent-readiness.
@@ -72,56 +71,8 @@ _WEIGHT_DEFAULTS: dict[str, Any] = {
     "stig-compliance":   1.3,
     "append-only-audit": 1.3,
 }
-# Anomaly detection defaults — used when args/agent_readiness_config.yaml has no
-# anomaly_detection section.  fallback_floor is the hard minimum applied when the
-# weight distribution is too small or degenerate to compute a statistical floor.
-_ANOMALY_DEFAULTS: dict[str, Any] = {
-    "method": "iqr",       # "iqr" (interquartile range) or "z_score"
-    "sensitivity": 1.5,    # IQR multiplier / standard-deviation count
-    "fallback_floor": 0.1, # last-resort minimum when distribution is degenerate
-}
-
-
-def _compute_weight_floor(weights: list[float], cfg: dict[str, Any]) -> float:
-    """Return a dynamic anomaly-detection floor for pillar weights.
-
-    Computes the lower bound below which a weight is considered anomalously low,
-    using either IQR (Q1 - sensitivity*IQR) or z-score (mean - sensitivity*std).
-    Falls back to cfg["fallback_floor"] when the sample is too small (<3 values)
-    or the distribution is degenerate (IQR == 0 / stdev == 0).
-    """
-    fallback = float(cfg.get("fallback_floor", _ANOMALY_DEFAULTS["fallback_floor"]))
-    if len(weights) < 3:
-        return fallback
-
-    method = str(cfg.get("method", _ANOMALY_DEFAULTS["method"]))
-    sensitivity = float(cfg.get("sensitivity", _ANOMALY_DEFAULTS["sensitivity"]))
-
-    if method == "z_score":
-        mean = statistics.mean(weights)
-        try:
-            std = statistics.stdev(weights)
-        except statistics.StatisticsError:
-            return fallback
-        if std == 0:
-            return fallback
-        floor = mean - sensitivity * std
-    else:  # default: iqr
-        sorted_w = sorted(weights)
-        n = len(sorted_w)
-        lower_half = sorted_w[: n // 2]
-        upper_half = sorted_w[(n + 1) // 2 :]
-        if not lower_half or not upper_half:
-            return fallback
-        q1 = statistics.median(lower_half)
-        q3 = statistics.median(upper_half)
-        iqr = q3 - q1
-        if iqr == 0:
-            return fallback
-        floor = q1 - sensitivity * iqr
-
-    # Never let the computed floor drop below the hard fallback_floor.
-    return max(floor, fallback)
+# Minimum weight accepted from config — values below this are anomalously low.
+_MIN_WEIGHT = 0.1
 
 
 @lru_cache(maxsize=1)
@@ -129,22 +80,21 @@ def _load_pillar_weights() -> dict[str, float]:
     """Load pillar weights from args/agent_readiness_config.yaml.
 
     Falls back to built-in defaults if the file is absent or malformed.
-    Anomalously low weights (detected via IQR or z-score) are clamped to the
-    computed floor so they cannot distort the overall readiness score.
+    Values below _MIN_WEIGHT are clamped to prevent anomalously low weights
+    from distorting the overall score.
     """
     try:
         import yaml  # optional dep — present in all ICDEV environments
         raw = _ARGS_PATH.read_text(encoding="utf-8")
         data = yaml.safe_load(raw) or {}
         cfg = data.get("pillar_weights", {})
-        anomaly_cfg: dict[str, Any] = data.get("anomaly_detection", _ANOMALY_DEFAULTS)
         if not cfg:
             return dict(_WEIGHT_DEFAULTS)
         merged = dict(_WEIGHT_DEFAULTS)
         for pillar_id, raw_weight in cfg.items():
-            merged[pillar_id] = float(raw_weight)
-        floor = _compute_weight_floor(list(merged.values()), anomaly_cfg)
-        return {pid: max(floor, w) for pid, w in merged.items()}
+            weight = float(raw_weight)
+            merged[pillar_id] = max(_MIN_WEIGHT, weight)
+        return merged
     except Exception:  # noqa: BLE001
         return dict(_WEIGHT_DEFAULTS)
 
@@ -194,8 +144,24 @@ def run_readiness_check(repo_path: Union[str, pathlib.Path]) -> dict:
     total_weight = sum(w for _, _, w in all_results)
     overall = sum(pct * w for _, pct, w in all_results) / total_weight if total_weight > 0 else 0.0
 
+    # Detect anomalously low pillar scores; optionally enrich with Claude Haiku.
+    anomaly_reports = detect_score_anomalies(pillar_scores, icdev_checks)
+    score_anomalies = [
+        {
+            "pillar_id": r.pillar_id,
+            "score_pct": r.score_pct,
+            "threshold": r.threshold,
+            "is_anomalous": r.is_anomalous,
+            "reason": r.reason,
+            "ai_reasoning": r.ai_reasoning,
+        }
+        for r in anomaly_reports
+        if r.is_anomalous
+    ]
+
     return {
         "pillar_scores": pillar_scores,
         "overall_readiness_score": round(overall, 4),
         "icdev_checks": icdev_checks,
+        "score_anomalies": score_anomalies,
     }

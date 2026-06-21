@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import ast
 import json
-import os
 import pathlib
 import re
 import subprocess
@@ -58,12 +57,6 @@ _AD_Z_SCORE_THRESHOLD: float = float(_threshold_ad_cfg.get("z_score_threshold", 
 _AD_IQR_MULTIPLIER: float = float(_threshold_ad_cfg.get("iqr_multiplier", 1.5))
 _AD_MIN_SAMPLE_SIZE: int = int(_threshold_ad_cfg.get("min_sample_size", 5))
 _AD_FALLBACK_TO_ALL: bool = bool(_threshold_ad_cfg.get("fallback_to_all", True))
-_AD_MIN_CONSTANT_MAGNITUDE: float = float(
-    _threshold_ad_cfg.get("min_constant_magnitude", 1.0)
-)
-_AD_Q1_PERCENTILE: float = float(_threshold_ad_cfg.get("q1_percentile", 25.0))
-_AD_Q3_PERCENTILE: float = float(_threshold_ad_cfg.get("q3_percentile", 75.0))
-_AD_PERCENTILE_SCALE: float = float(_threshold_ad_cfg.get("percentile_scale", 100.0))
 
 _semgrep_cfg: dict[str, Any] = _cfg.get("semgrep", {})
 _SEMGREP_RULES_DIR: str = _semgrep_cfg.get(
@@ -71,35 +64,6 @@ _SEMGREP_RULES_DIR: str = _semgrep_cfg.get(
 )
 _SEMGREP_TIMEOUT: int = int(_semgrep_cfg.get("timeout_seconds", 60))
 _SEMGREP_METRICS: str = str(_semgrep_cfg.get("metrics", "off"))
-
-_ml_nc_cfg: dict[str, Any] = _cfg.get("ml_nested_conditionals", {})
-# Env var ICDEV_AAC_ML_CLASSIFY takes precedence over yaml config.
-_ML_NC_ENABLED: bool = (
-    os.environ.get("ICDEV_AAC_ML_CLASSIFY", "").lower() in ("1", "true", "yes")
-    or bool(_ml_nc_cfg.get("enabled", False))
-)
-_ML_NC_MODEL: str = str(_ml_nc_cfg.get("model", "claude-haiku-4-5-20251001"))
-_ML_NC_MAX_TOKENS: int = int(_ml_nc_cfg.get("max_tokens", 256))
-_ML_NC_CONTEXT_LINES: int = int(_ml_nc_cfg.get("context_lines", 5))
-
-_ML_NC_PROMPT = """\
-You are a code analyst evaluating whether a nested conditional block is a \
-strong candidate for replacement with an ML classifier.
-
-Function  : {function_name}
-If-depth  : {depth}
-Snippet   :
-```python
-{snippet}
-```
-
-Rate the AI augmentation potential:
-- high   — encodes complex, data-driven business rules that an ML model could learn
-- medium — some potential but contains validation/structural logic that may not generalise
-- low    — guard clauses, error handling, or structural necessity
-
-Respond with JSON only (no markdown):
-{{"label": "high", "score": 0.85, "rationale": "one sentence"}}"""
 
 # ── Language detection ────────────────────────────────────────────────────────
 
@@ -242,10 +206,6 @@ _CRON_DEC_KEYWORDS: frozenset[str] = frozenset(
 )
 _THRESHOLD_OPS = (ast.Lt, ast.LtE, ast.Gt, ast.GtE)
 
-# Compiled pattern for extracting numeric literals from source lines (used by
-# C# and Java regex fallback paths to build the anomaly-detection population).
-_RE_NUMERIC_LITERAL: re.Pattern = re.compile(r'\b\d+(?:\.\d+)?\b')
-
 
 # ── Anomaly detection for hardcoded thresholds ────────────────────────────────
 
@@ -266,18 +226,6 @@ def _collect_all_numeric_thresholds(tree: ast.AST) -> list[float]:
     return values
 
 
-def _compute_percentile_bounds(sorted_pop: list[float], n: int) -> tuple[float, float, float]:
-    """Return (q1, q3, iqr) using _AD_Q1_PERCENTILE and _AD_Q3_PERCENTILE.
-
-    Default 25/75 reproduces the prior hardcoded Q1/Q3 (n//4, 3n//4) exactly.
-    """
-    q1_idx = max(0, min(n - 1, int(n * _AD_Q1_PERCENTILE / _AD_PERCENTILE_SCALE)))
-    q3_idx = max(0, min(n - 1, int(n * _AD_Q3_PERCENTILE / _AD_PERCENTILE_SCALE)))
-    q1 = sorted_pop[q1_idx]
-    q3 = sorted_pop[q3_idx]
-    return q1, q3, q3 - q1
-
-
 def _is_threshold_anomalous(value: float, population: list[float]) -> bool:
     """Return True if value is a statistical outlier in population.
 
@@ -296,7 +244,9 @@ def _is_threshold_anomalous(value: float, population: list[float]) -> bool:
             return True
 
     sorted_pop = sorted(population)
-    q1, q3, iqr = _compute_percentile_bounds(sorted_pop, n)
+    q1 = sorted_pop[n // 4]
+    q3 = sorted_pop[(3 * n) // 4]
+    iqr = q3 - q1
     if iqr > 0:
         lower = q1 - _AD_IQR_MULTIPLIER * iqr
         upper = q3 + _AD_IQR_MULTIPLIER * iqr
@@ -304,65 +254,6 @@ def _is_threshold_anomalous(value: float, population: list[float]) -> bool:
             return True
 
     return False
-
-
-def _anomaly_score(value: float, population: list[float]) -> float:
-    """Return a continuous anomaly score for *value* within *population*.
-
-    0.0 = value is within the normal range.
-    1.0 = value is exactly at the anomaly threshold.
-    >1.0 = value is anomalous (corresponds to _is_threshold_anomalous → True).
-
-    Uses the same z-score / IQR logic as _is_threshold_anomalous so the two
-    functions always agree on the anomaly boundary.
-    """
-    n = len(population)
-    if n < _AD_MIN_SAMPLE_SIZE:
-        return 1.0 if _AD_FALLBACK_TO_ALL else 0.0
-
-    mean = sum(population) / n
-    variance = sum((x - mean) ** 2 for x in population) / n
-    z_score_ratio = 0.0
-    if variance > 0:
-        z = abs(value - mean) / (variance ** 0.5)
-        z_score_ratio = z / _AD_Z_SCORE_THRESHOLD
-        if z_score_ratio >= 1.0:
-            return z_score_ratio  # anomalous by z-score
-
-    # Mirror _is_threshold_anomalous: IQR fence is always checked so both
-    # functions agree when a high-variance outlier in the population inflates
-    # std to the point that z-score misses but IQR correctly catches the value.
-    sorted_pop = sorted(population)
-    q1, q3, iqr = _compute_percentile_bounds(sorted_pop, n)
-    if iqr > 0:
-        lower = q1 - _AD_IQR_MULTIPLIER * iqr
-        upper = q3 + _AD_IQR_MULTIPLIER * iqr
-        if value < lower:
-            return (lower - value) / (_AD_IQR_MULTIPLIER * iqr) + 1.0
-        if value > upper:
-            return (value - upper) / (_AD_IQR_MULTIPLIER * iqr) + 1.0
-
-    return z_score_ratio
-
-
-def _collect_numeric_from_lines(lines: list[str]) -> list[float]:
-    """Collect all numeric literals from source lines for anomaly detection.
-
-    Used by the C# and Java regex-fallback paths to build the population that
-    ``_is_threshold_anomalous`` needs to decide whether a given constant is an
-    outlier.  Comment lines are skipped so doc-strings don't skew the sample.
-    """
-    values: list[float] = []
-    for line in lines:
-        stripped = line.strip()
-        if stripped.startswith(("//", "*", "#")):
-            continue
-        for m in _RE_NUMERIC_LITERAL.finditer(line):
-            try:
-                values.append(float(m.group()))
-            except ValueError:
-                pass
-    return values
 
 
 def _build_parent_map(tree: ast.AST) -> dict[int, ast.AST]:
@@ -464,24 +355,20 @@ def _ast_detect_file(file_path: str) -> list[dict]:
     except SyntaxError:
         return []
 
+    source_lines = source_text.splitlines()
     parent_map = _build_parent_map(tree)
     scope_map = _build_scope_map(tree)
     re_aliases, re_funcs = _collect_re_names(tree)
 
     raw: list[dict] = []
     raw.extend(_detect_nested_conditionals(file_path, tree, parent_map, scope_map))
-    raw.extend(_detect_regex_user_input(file_path, tree, scope_map, re_aliases, re_funcs))
+    raw.extend(_nlp_extract_regex_user_input(file_path, tree, scope_map, re_aliases, re_funcs, source_lines))
     raw.extend(_detect_string_template_rendering(file_path, tree, scope_map))
     raw.extend(_detect_scheduled_cron(file_path, tree, scope_map))
     raw.extend(_detect_hardcoded_threshold(file_path, tree, scope_map))
     raw.extend(_detect_db_render_notify_chain(file_path, tree, scope_map))
     raw.extend(_detect_keyword_list_search(file_path, tree, scope_map))
     raw.extend(_detect_large_rule_table(file_path, tree, scope_map))
-
-    # Optional ML enrichment: annotate nested_conditionals hits with a
-    # Claude Haiku classification score when ICDEV_AAC_ML_CLASSIFY is set.
-    if _ML_NC_ENABLED:
-        raw = _enrich_nested_conditionals_with_ml(raw, source_text.splitlines())
 
     # Inject language field for consistency with Semgrep output schema.
     for hit in raw:
@@ -506,101 +393,6 @@ def _detect_via_ast_fallback(target_path: str) -> list[dict]:
     for cs_file in sorted(p.rglob("*.cs")):
         results.extend(_cs_detect_file(str(cs_file)))
     return results
-
-
-# ── ML classifier for nested_conditionals ────────────────────────────────────
-
-
-def _classify_nested_conditional_ml(
-    function_name: str,
-    depth: int,
-    snippet: str,
-) -> dict[str, Any]:
-    """Call LLMRouter (claude-haiku) to classify a nested conditional pattern.
-
-    Returns a dict with keys ``label``, ``score``, and ``rationale``, or an
-    empty dict if the API call fails or ML classification is disabled.
-    """
-    try:
-        from tools.llm.provider import LLMRequest  # lazy import — optional dep
-        from tools.llm.router import LLMRouter
-    except ImportError:
-        return {}
-
-    try:
-        router = LLMRouter()
-        request = LLMRequest(
-            messages=[{
-                "role": "user",
-                "content": _ML_NC_PROMPT.format(
-                    function_name=function_name or "<unknown>",
-                    depth=depth,
-                    snippet=snippet,
-                ),
-            }],
-            system_prompt=(
-                "You are a code analysis assistant. "
-                "Reply only with the JSON object specified — no prose."
-            ),
-            agent_id="nested-conditional-ml-classifier",
-            classification="CUI",
-            max_tokens=_ML_NC_MAX_TOKENS,
-            effort="low",
-            preferred_model=_ML_NC_MODEL,
-        )
-        response = router.invoke("code_generation", request)
-        raw = re.sub(r"```(?:json)?|```", "", response.content or "").strip()
-        m = re.search(r"\{.*\}", raw, re.DOTALL)
-        data: dict[str, Any] = json.loads(m.group(0)) if m else {}
-    except Exception:  # network error, parse error — degrade gracefully
-        return {}
-
-    label = str(data.get("label", "")).lower()
-    if label not in ("high", "medium", "low"):
-        label = ""
-    return {
-        "label": label,
-        "score": float(data.get("score", 0.0)),
-        "rationale": str(data.get("rationale", "")),
-    }
-
-
-def _enrich_nested_conditionals_with_ml(
-    patterns: list[dict],
-    source_lines: list[str],
-) -> list[dict]:
-    """Enrich ``nested_conditionals`` hits with ML classification metadata.
-
-    Non-nested_conditionals patterns are returned unchanged.  When ML
-    classification is disabled or fails, the original pattern dicts are returned
-    without modification.
-    """
-    if not _ML_NC_ENABLED:
-        return patterns
-
-    enriched: list[dict] = []
-    for p in patterns:
-        if p.get("pattern_type") != "nested_conditionals":
-            enriched.append(p)
-            continue
-
-        start = max(0, p["line_start"] - 1 - _ML_NC_CONTEXT_LINES)
-        end = min(len(source_lines), p["line_end"] + _ML_NC_CONTEXT_LINES)
-        snippet = "\n".join(source_lines[start:end])
-
-        ml = _classify_nested_conditional_ml(
-            function_name=p.get("function_name", "<unknown>"),
-            depth=p.get("pattern_detail", {}).get("max_depth", 0),
-            snippet=snippet,
-        )
-        if ml:
-            p = {**p, "pattern_detail": {**p["pattern_detail"], **{
-                "ml_label": ml["label"],
-                "ml_score": ml["score"],
-                "ml_rationale": ml["rationale"],
-            }}}
-        enriched.append(p)
-    return enriched
 
 
 # ── AST pattern detectors ─────────────────────────────────────────────────────
@@ -660,6 +452,151 @@ def _detect_regex_user_input(
                 "pattern_detail": {"call": matched},
             })
     return results
+
+
+# ── NLP extractor for regex_user_input ───────────────────────────────────────
+
+_NLP_REGEX_SYSTEM = (
+    "You are a security-focused code analyst. "
+    "Determine whether each Python regex call operates on user-controlled input. "
+    "Respond ONLY with a compact JSON array — no prose, no markdown fences."
+)
+
+_NLP_REGEX_PROMPT = """\
+File: {module_path}
+
+Regex call(s) detected (one object per call):
+{calls_json}
+
+Source context (lines {ctx_start}–{ctx_end}):
+```python
+{source_context}
+```
+
+For EACH call (same order), reply with a JSON array of objects:
+[
+  {{
+    "index": <int>,
+    "user_input_detected": <true|false>,
+    "confidence": <0.0-1.0>,
+    "input_source": "<one of: request_param, form_field, env_var, config, hardcoded, unknown>",
+    "risk_note": "<one sentence or empty string>"
+  }}
+]"""
+
+_NLP_CTX_WINDOW: int = 30  # lines of source context around each hit
+
+
+def _source_window(source_lines: list[str], line_start: int, line_end: int) -> tuple[str, int, int]:
+    """Return (context_text, ctx_start, ctx_end) for NLP prompt construction."""
+    n = len(source_lines)
+    lo = max(0, line_start - 1 - _NLP_CTX_WINDOW)
+    hi = min(n, line_end + _NLP_CTX_WINDOW)
+    snippet = "\n".join(source_lines[lo:hi])
+    return snippet, lo + 1, hi
+
+
+def _nlp_enrich_hits(hits: list[dict], source_lines: list[str], file_path: str) -> list[dict]:
+    """Send all candidates to Claude Haiku and enrich pattern_detail in place."""
+    from tools.llm.provider import LLMRequest
+    from tools.llm.router import LLMRouter, LLMUnavailableError
+
+    # Build a single context window covering all hits
+    if not hits:
+        return hits
+    lo = min(h["line_start"] for h in hits)
+    hi = max(h["line_end"] for h in hits)
+    ctx_text, ctx_start, ctx_end = _source_window(source_lines, lo, hi)
+
+    calls_payload = [
+        {"index": i, "call": h["pattern_detail"].get("call", ""), "line": h["line_start"]}
+        for i, h in enumerate(hits)
+    ]
+
+    prompt = _NLP_REGEX_PROMPT.format(
+        module_path=file_path,
+        calls_json=json.dumps(calls_payload, separators=(",", ":")),
+        ctx_start=ctx_start,
+        ctx_end=ctx_end,
+        source_context=ctx_text,
+    )
+
+    try:
+        router = LLMRouter()
+        response = router.invoke(
+            "pattern_extraction",
+            LLMRequest(
+                messages=[{"role": "user", "content": prompt}],
+                system_prompt=_NLP_REGEX_SYSTEM,
+                model="claude-haiku-4-5-20251001",
+                max_tokens=1024,
+                temperature=0.0,
+                effort="low",
+                agent_id="pattern-classifier-nlp",
+                classification="CUI",
+                skip_injection_scan=True,
+            ),
+        )
+    except (LLMUnavailableError, Exception):
+        return hits  # graceful fallback — return AST results unchanged
+
+    raw = (response.content or "").strip()
+    # Strip optional markdown fences
+    raw = re.sub(r"```(?:json)?|```", "", raw).strip()
+    try:
+        items: list[dict] = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        m = re.search(r"\[.*\]", raw, re.DOTALL)
+        if m:
+            try:
+                items = json.loads(m.group(0))
+            except (json.JSONDecodeError, ValueError):
+                items = []
+        else:
+            items = []
+
+    by_index: dict[int, dict] = {}
+    for item in items:
+        if isinstance(item, dict) and isinstance(item.get("index"), int):
+            by_index[item["index"]] = item
+
+    enriched: list[dict] = []
+    for i, hit in enumerate(hits):
+        nlp = by_index.get(i, {})
+        detail = dict(hit["pattern_detail"])
+        detail["nlp_user_input_detected"] = bool(nlp.get("user_input_detected", True))
+        detail["nlp_confidence"] = float(nlp.get("confidence", 0.5))
+        detail["nlp_input_source"] = str(nlp.get("input_source", "unknown"))
+        detail["nlp_risk_note"] = str(nlp.get("risk_note", ""))
+        enriched.append({**hit, "pattern_detail": detail})
+
+    return enriched
+
+
+def _nlp_extract_regex_user_input(
+    file_path: str,
+    tree: ast.AST,
+    scope_map: dict[int, str],
+    re_module_aliases: set[str],
+    re_func_names: set[str],
+    source_lines: list[str],
+) -> list[dict]:
+    """NLP-enhanced regex user-input pattern extractor.
+
+    Phase 1 — AST scan: find every re.* call in the file.
+    Phase 2 — LLM enrichment: send candidates to Claude Haiku to determine
+               whether the matched string is user-controlled, adding
+               nlp_user_input_detected / nlp_confidence / nlp_input_source /
+               nlp_risk_note fields to pattern_detail.
+
+    Falls back silently to Phase-1 AST results if the LLM is unavailable.
+    """
+    candidates = _detect_regex_user_input(
+        file_path, tree, scope_map, re_module_aliases, re_func_names
+    )
+    if not candidates:
+        return []
+    return _nlp_enrich_hits(candidates, source_lines, file_path)
 
 
 def _detect_string_template_rendering(
@@ -764,35 +701,21 @@ def _detect_hardcoded_threshold(
             ]
             if not numeric_consts:
                 continue
-            # When AD is on, skip trivially small constants (zero/one boundary checks).
-            flaggable = (
-                [v for v in numeric_consts if abs(float(v)) > _AD_MIN_CONSTANT_MAGNITUDE]
-                if _AD_ENABLED else numeric_consts
-            )
-            if not flaggable:
-                continue
             if _AD_ENABLED and not any(
-                _is_threshold_anomalous(float(v), population) for v in flaggable
+                _is_threshold_anomalous(float(v), population) for v in numeric_consts
             ):
                 continue
-            scores = (
-                {str(v): round(_anomaly_score(float(v), population), 3) for v in flaggable}
-                if _AD_ENABLED else {}
-            )
-            detail: dict[str, Any] = {
-                "kind": "compare",
-                "constants": numeric_consts,
-                "anomaly_detected": _AD_ENABLED,
-            }
-            if scores:
-                detail["anomaly_scores"] = scores
             results.append({
                 "pattern_type": "hardcoded_threshold",
                 "module_path": file_path,
                 "function_name": scope_map.get(id(node), "<module>"),
                 "line_start": node.lineno,
                 "line_end": node.end_lineno,
-                "pattern_detail": detail,
+                "pattern_detail": {
+                    "kind": "compare",
+                    "constants": numeric_consts,
+                    "anomaly_detected": _AD_ENABLED,
+                },
             })
         elif isinstance(node, ast.BinOp):
             left_const = (
@@ -806,26 +729,20 @@ def _detect_hardcoded_threshold(
             if not (left_const or right_const):
                 continue
             const_val = node.left.value if left_const else node.right.value  # type: ignore[union-attr]
-            if _AD_ENABLED and abs(float(const_val)) <= _AD_MIN_CONSTANT_MAGNITUDE:
-                continue
             if _AD_ENABLED and not _is_threshold_anomalous(float(const_val), population):
                 continue
-            binop_score = _anomaly_score(float(const_val), population) if _AD_ENABLED else 0.0
-            binop_detail: dict[str, Any] = {
-                "kind": "binop",
-                "op": type(node.op).__name__,
-                "constants": [const_val],
-                "anomaly_detected": _AD_ENABLED,
-            }
-            if _AD_ENABLED:
-                binop_detail["anomaly_score"] = round(binop_score, 3)
             results.append({
                 "pattern_type": "hardcoded_threshold",
                 "module_path": file_path,
                 "function_name": scope_map.get(id(node), "<module>"),
                 "line_start": node.lineno,
                 "line_end": node.end_lineno,
-                "pattern_detail": binop_detail,
+                "pattern_detail": {
+                    "kind": "binop",
+                    "op": type(node.op).__name__,
+                    "constants": [const_val],
+                    "anomaly_detected": _AD_ENABLED,
+                },
             })
     return results
 
@@ -937,7 +854,6 @@ _CS_METHOD_NODE_TYPES: frozenset[str] = frozenset({
     "local_function_statement",
     "lambda_expression",
 })
-_CS_CMP_OPS: frozenset[str] = frozenset({"<", ">", "<=", ">=", "==", "!="})
 
 _CS_REGEX_METHODS: frozenset[str] = frozenset({
     "Match", "IsMatch", "Replace", "Split", "Matches", "Escape",
@@ -985,6 +901,7 @@ _JAVA_RE_MODEL_VIEW     = re.compile(r'\bnew\s+ModelAndView\s*\(')
 _JAVA_RE_ADD_ATTR       = re.compile(r'\bmodel\.addAttribute\s*\(|\bmodel\.put\s*\(')
 _JAVA_RE_SCHEDULED      = re.compile(r'@Scheduled\s*\(')
 _JAVA_RE_PAGEREQUEST    = re.compile(r'PageRequest\.of\s*\([^,)]+,\s*(\d+)\s*\)')
+_JAVA_RE_STATIC_INT     = re.compile(r'(?:private|protected|public)?\s+(?:static\s+)?(?:final\s+)?int\s+\w+\s*=\s*(\d{1,4})\s*;')
 _JAVA_RE_FINDBY_KEYWORD = re.compile(r'\b(findBy\w+(?:StartingWith|Containing|Like))\s*\(')
 _JAVA_RE_EQUALS_IC      = re.compile(r'\.equalsIgnoreCase\s*\(')
 _JAVA_RE_STREAM_FILTER  = re.compile(r'\.stream\s*\(\s*\)\s*\.\s*filter\s*\(')
@@ -993,12 +910,6 @@ _JAVA_RE_CASE           = re.compile(r'^\s*case\s+\S')
 _JAVA_RE_MODEL_ATTR     = re.compile(r'@ModelAttribute\b')
 _JAVA_RE_REPO_FIND      = re.compile(r'\.\s*find(?:All|By\w+)\s*\(')
 _JAVA_MIN_IF_DEPTH: int = int(_cfg.get("java_min_if_depth", 2))
-_JAVA_STATIC_INT_MAX_DIGITS: int = max(1, int(_cfg.get("java_static_int_max_digits", 4)))
-_JAVA_STATIC_INT_MIN_VALUE: int = int(_cfg.get("java_static_int_min_value", 1))
-_JAVA_RE_STATIC_INT: re.Pattern = re.compile(
-    r'(?:private|protected|public)?\s+(?:static\s+)?(?:final\s+)?int\s+\w+\s*=\s*'
-    rf'(\d{{1,{_JAVA_STATIC_INT_MAX_DIGITS}}})\s*;'
-)
 
 
 def _cs_walk_scoped(root: Any, src: bytes):
@@ -1164,28 +1075,9 @@ def _cs_detect_scheduled_cron_ts(fp: str, root: Any, src: bytes) -> list[dict]:
     return results
 
 
-def _cs_collect_all_numeric_thresholds_ts(root: Any, src: bytes) -> list[float]:
-    """Collect every numeric literal from a C# tree-sitter tree."""
-    values: list[float] = []
-    stack: list[Any] = [root]
-    while stack:
-        node = stack.pop()
-        if node.type in ("integer_literal", "real_literal"):
-            text = src[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
-            try:
-                values.append(float(text.rstrip("fFdDmMuUlL")))
-            except ValueError:
-                pass
-        for child in node.children:
-            stack.append(child)
-    return values
-
-
 def _cs_detect_hardcoded_threshold_ts(fp: str, root: Any, src: bytes) -> list[dict]:
     results: list[dict] = []
-    population: list[float] = (
-        _cs_collect_all_numeric_thresholds_ts(root, src) if _AD_ENABLED else []
-    )
+    _CMP_OPS: frozenset[str] = frozenset({"<", ">", "<=", ">=", "==", "!="})
     for node, _, scope in _cs_walk_scoped(root, src):
         if node.type != "binary_expression":
             continue
@@ -1195,7 +1087,7 @@ def _cs_detect_hardcoded_threshold_ts(fp: str, root: Any, src: bytes) -> list[di
                 text = src[child.start_byte:child.end_byte].decode(
                     "utf-8", errors="replace"
                 ).strip()
-                if text in _CS_CMP_OPS:
+                if text in _CMP_OPS:
                     op_token = text
                     break
         if not op_token:
@@ -1206,37 +1098,15 @@ def _cs_detect_hardcoded_threshold_ts(fp: str, root: Any, src: bytes) -> list[di
             for c in named_parts
             if c.type in ("integer_literal", "real_literal")
         ]
-        if not numeric_literals:
-            continue
-        cs_scores: dict[str, float] = {}
-        if _AD_ENABLED:
-            numeric_floats: list[float] = []
-            for lit in numeric_literals:
-                try:
-                    numeric_floats.append(float(lit.rstrip("fFdDmMuUlL")))
-                except ValueError:
-                    pass
-            flaggable_floats = [v for v in numeric_floats if abs(v) > _AD_MIN_CONSTANT_MAGNITUDE]
-            if not flaggable_floats or not any(
-                _is_threshold_anomalous(v, population) for v in flaggable_floats
-            ):
-                continue
-            cs_scores = {str(v): round(_anomaly_score(v, population), 3) for v in flaggable_floats}
-        cs_detail: dict[str, Any] = {
-            "kind": "binary_expression",
-            "constants": numeric_literals,
-            "anomaly_detected": _AD_ENABLED,
-        }
-        if cs_scores:
-            cs_detail["anomaly_scores"] = cs_scores
-        results.append({
-            "pattern_type": "hardcoded_threshold",
-            "module_path": fp,
-            "function_name": scope,
-            "line_start": node.start_point[0] + 1,
-            "line_end": node.end_point[0] + 1,
-            "pattern_detail": cs_detail,
-        })
+        if numeric_literals:
+            results.append({
+                "pattern_type": "hardcoded_threshold",
+                "module_path": fp,
+                "function_name": scope,
+                "line_start": node.start_point[0] + 1,
+                "line_end": node.end_point[0] + 1,
+                "pattern_detail": {"kind": "binary_expression", "constants": numeric_literals},
+            })
     return results
 
 
@@ -1418,7 +1288,6 @@ def _cs_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
     """Regex-based C# pattern detection when tree-sitter-languages is unavailable."""
     results: list[dict] = []
     lines = source_text.splitlines()
-    population: list[float] = _collect_numeric_from_lines(lines) if _AD_ENABLED else []
 
     for i, line in enumerate(lines, 1):
         stripped = line.strip()
@@ -1482,36 +1351,14 @@ def _cs_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
         m = _CS_RE_THRESHOLD.search(line)
         if m:
             const = m.group(1) or m.group(2) or "?"
-            try:
-                const_float: float | None = float(const)
-            except ValueError:
-                const_float = None
-            cs_rx_should_flag = (
-                not _AD_ENABLED
-                or const_float is None
-                or (abs(const_float) > _AD_MIN_CONSTANT_MAGNITUDE
-                    and _is_threshold_anomalous(const_float, population))
-            )
-            if cs_rx_should_flag:
-                cs_rx_score = (
-                    _anomaly_score(const_float, population)
-                    if _AD_ENABLED and const_float is not None else 0.0
-                )
-                cs_rx_detail: dict[str, Any] = {
-                    "kind": "binary_expression",
-                    "constants": [const],
-                    "anomaly_detected": _AD_ENABLED,
-                }
-                if _AD_ENABLED and const_float is not None:
-                    cs_rx_detail["anomaly_score"] = round(cs_rx_score, 3)
-                results.append({
-                    "pattern_type": "hardcoded_threshold",
-                    "module_path": file_path,
-                    "function_name": "<unknown>",
-                    "line_start": i,
-                    "line_end": i,
-                    "pattern_detail": cs_rx_detail,
-                })
+            results.append({
+                "pattern_type": "hardcoded_threshold",
+                "module_path": file_path,
+                "function_name": "<unknown>",
+                "line_start": i,
+                "line_end": i,
+                "pattern_detail": {"kind": "binary_expression", "constants": [const]},
+            })
 
         # keyword_list_search
         if _CS_RE_CONTAINS.search(line):
@@ -1656,7 +1503,6 @@ def _java_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
     """Regex-based Java pattern detection for all 8 AAC pattern types."""
     results: list[dict] = []
     lines = source_text.splitlines()
-    population: list[float] = _collect_numeric_from_lines(lines) if _AD_ENABLED else []
 
     for i, line in enumerate(lines, 1):
         stripped = line.strip()
@@ -1724,7 +1570,6 @@ def _java_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
         # hardcoded_threshold — PageRequest literal or static int constant
         m = _JAVA_RE_PAGEREQUEST.search(line)
         if m:
-            # PageRequest page-size is always a business threshold — always flag.
             results.append({
                 "pattern_type": "hardcoded_threshold",
                 "module_path": file_path,
@@ -1734,31 +1579,14 @@ def _java_detect_via_regex(file_path: str, source_text: str) -> list[dict]:
             })
         else:
             m = _JAVA_RE_STATIC_INT.search(line)
-            if m and int(m.group(1)) >= _JAVA_STATIC_INT_MIN_VALUE:
-                val = int(m.group(1))
-                java_should_flag = (
-                    not _AD_ENABLED
-                    or (abs(float(val)) > _AD_MIN_CONSTANT_MAGNITUDE
-                        and _is_threshold_anomalous(float(val), population))
-                )
-                if java_should_flag:
-                    java_score = (
-                        _anomaly_score(float(val), population) if _AD_ENABLED else 0.0
-                    )
-                    java_detail: dict[str, Any] = {
-                        "kind": "static_int_const",
-                        "value": val,
-                        "anomaly_detected": _AD_ENABLED,
-                    }
-                    if _AD_ENABLED:
-                        java_detail["anomaly_score"] = round(java_score, 3)
-                    results.append({
-                        "pattern_type": "hardcoded_threshold",
-                        "module_path": file_path,
-                        "function_name": "<unknown>",
-                        "line_start": i, "line_end": i,
-                        "pattern_detail": java_detail,
-                    })
+            if m and int(m.group(1)) > 0:
+                results.append({
+                    "pattern_type": "hardcoded_threshold",
+                    "module_path": file_path,
+                    "function_name": "<unknown>",
+                    "line_start": i, "line_end": i,
+                    "pattern_detail": {"kind": "static_int_const", "value": int(m.group(1))},
+                })
 
         # keyword_list_search — Spring Data method or manual equalsIgnoreCase loop
         m = _JAVA_RE_FINDBY_KEYWORD.search(line)

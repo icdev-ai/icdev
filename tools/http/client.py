@@ -112,7 +112,25 @@ def _max_redirects() -> int:
     return int(_cfg("", "max_redirects", 10))
 
 
+def _content_chunk_size() -> int:
+    return int(_cfg("", "content_chunk_size", 10240))
+
+
+def _iter_chunk_size() -> int:
+    return int(_cfg("", "iter_chunk_size", 512))
+
+
 # ── Public API ─────────────────────────────────────────────────────────────────
+
+def content_chunk_size() -> int:
+    """Bytes per chunk when iterating response content (mirrors requests CONTENT_CHUNK_SIZE)."""
+    return _content_chunk_size()
+
+
+def iter_chunk_size() -> int:
+    """Default chunk size for Response.iter_content(); sourced from args/http_client.yaml."""
+    return _iter_chunk_size()
+
 
 def default_timeout() -> tuple[float, float]:
     """Return (connect_timeout, read_timeout) sourced from args/http_client.yaml."""
