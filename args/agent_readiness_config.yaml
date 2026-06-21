@@ -68,6 +68,13 @@ scoring:
     # exceeds this value. 2.0 is roughly the bottom 2.3% of a symmetric distribution.
     zscore_threshold: 2.0
 
+weight_anomaly_detection:
+  # Minimum pillar weight accepted from config — values below this floor are
+  # anomalously low and will be clamped at load time to prevent any single
+  # pillar from being effectively silenced and distorting the overall score.
+  # Raise to 0.5 for stricter enforcement; lower to 0.05 to allow near-zero weights.
+  min_weight: 0.1
+
 pillars:
   documentation:
     readme:

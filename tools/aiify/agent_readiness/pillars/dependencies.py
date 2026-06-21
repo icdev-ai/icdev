@@ -15,6 +15,7 @@ from tools.aiify.agent_readiness.pillars._base import (
     _glob_files,
     _read,
     _search,
+    get_anomaly_detector,
 )
 
 # ---------------------------------------------------------------------------
@@ -69,7 +70,6 @@ def _check_lock_file_freshness(repo: pathlib.Path) -> CriterionResult:
     cid = "lock-file-freshness"
     thresholds = _load_thresholds()
     max_age_months = thresholds["max_age_months"]
-    max_age_sec = max_age_months * 30 * 24 * 60 * 60
     lock_files = [
         "poetry.lock", "Pipfile.lock", "package-lock.json", "yarn.lock",
         "pnpm-lock.yaml", "go.sum", "Cargo.lock", "Gemfile.lock",
@@ -77,11 +77,18 @@ def _check_lock_file_freshness(repo: pathlib.Path) -> CriterionResult:
     for fn in lock_files:
         p = repo / fn
         if p.exists():
-            age = time.time() - p.stat().st_mtime
-            days = int(age / 86400)
-            if age < max_age_sec:
+            age_sec = time.time() - p.stat().st_mtime
+            age_months = age_sec / (30 * 24 * 60 * 60)
+            detector = get_anomaly_detector()
+            # Observe age in months; detector learns the typical freshness distribution.
+            detector.observe("dependencies.lock_file_age_months", age_months)
+            # For upper-bound freshness: use static config threshold (adaptive upper bounds
+            # are deferred — detector currently handles lower-bound ratios).
+            max_age_sec = max_age_months * 30 * 24 * 60 * 60
+            days = int(age_sec / 86400)
+            if age_sec < max_age_sec:
                 return CriterionResult(cid, True, f"{fn} updated {days} day(s) ago")
-            months = int(age / (30 * 86400))
+            months = int(age_months)
             return CriterionResult(
                 cid, False,
                 f"{fn} last modified ~{months} month(s) ago — anomalously stale (max {max_age_months} month(s)).",
@@ -101,12 +108,17 @@ def _check_pinned_versions(repo: pathlib.Path) -> CriterionResult:
             return CriterionResult(cid, True, "requirements.txt is empty; check skipped.", skipped=True)
         pinned = sum(1 for l in lines if "==" in l)
         ratio = pinned / len(lines)
-        if ratio >= min_ratio:
+        detector = get_anomaly_detector()
+        # Record observation so the detector can learn typical pin ratios over time.
+        detector.observe("dependencies.pin_ratio", ratio)
+        # Use adaptive threshold when enough history exists; otherwise use static config value.
+        effective_min = detector.suggest_threshold("dependencies.pin_ratio", min_ratio)
+        if ratio >= effective_min:
             return CriterionResult(cid, True, f"{pinned}/{len(lines)} requirements pinned with ==")
         return CriterionResult(
             cid, False,
             f"Only {pinned}/{len(lines)} requirements pinned ({ratio:.0%}) — "
-            f"anomalously low (min {min_ratio:.0%}).",
+            f"anomalously low (min {effective_min:.0%}).",
             "Pin all dependencies with == in requirements.txt for reproducibility.",
         )
     # For other ecosystems, having a lock file is the proxy for pinning
