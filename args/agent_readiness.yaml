@@ -1,0 +1,44 @@
+# CUI // SP-CTI
+# Agent Readiness assessment configuration.
+# All numeric thresholds are externalized here so behavior can be tuned without code changes.
+# The anomaly_detection section governs adaptive threshold logic in _base.AnomalyDetector.
+
+pillar_weights:
+  code-quality: 1.0
+  documentation: 1.0
+  testing: 1.2       # testing weighted slightly higher
+  structure: 0.8
+  dependencies: 1.0
+  configuration: 0.8
+  security: 1.2      # security weighted slightly higher
+  il-classification: 1.5   # ICDEV: IL classification is high-priority
+  nist-controls: 1.5        # ICDEV: NIST compliance is high-priority
+  stig-compliance: 1.3      # ICDEV: STIG compliance matters
+  append-only-audit: 1.3    # ICDEV: audit integrity matters
+
+thresholds:
+  # dependencies.py
+  pinned_versions_ratio: 0.8      # Minimum ratio of == pinned lines in requirements.txt
+  lock_file_freshness_days: 180   # Max age (days) before lock file is considered stale
+
+  # il_classification.py
+  cui_header_ratio: 0.5           # Minimum ratio of sampled files that must carry CUI headers
+
+  # structure.py
+  gitignore_min_lines: 5          # Minimum non-empty lines required in .gitignore
+
+  # configuration.py
+  makefile_min_targets: 3         # Minimum Makefile targets for the task-runner check
+  npm_scripts_min_count: 3        # Minimum npm scripts for the task-runner check
+
+  # documentation.py
+  jsdoc_min_files: 2              # Minimum JS/TS files with JSDoc comments in the sample
+  docstring_sample_denominator: 3 # At least 1/N sampled Python files must have docstrings
+
+anomaly_detection:
+  enabled: true
+  method: zscore              # zscore | iqr | percentile
+  zscore_threshold: 2.5       # Absolute z-score above which a score is flagged as anomalous
+  iqr_multiplier: 1.5         # Tukey fence multiplier used when method=iqr
+  min_samples: 5              # Minimum history depth before anomaly detection activates
+  window_size: 20             # Rolling window length for per-pillar score history

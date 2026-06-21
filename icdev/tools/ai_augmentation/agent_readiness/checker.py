@@ -33,7 +33,7 @@ from tools.ai_augmentation.agent_readiness.pillars import (
     structure,
     testing,
 )
-from tools.ai_augmentation.agent_readiness.pillars._base import Pillar
+from tools.ai_augmentation.agent_readiness.pillars._base import Pillar, get_pillar_weights
 
 # All 11 pillars in evaluation order.
 # Pillars 1–7 are ported from kodustech/agent-readiness.
@@ -52,6 +52,10 @@ _ALL_PILLARS: list[Pillar] = [
     append_only_audit.PILLAR,  # 11 — Append-Only Audit Tables (ICDEV)
 ]
 
+<<<<<<< HEAD:icdev/tools/ai_augmentation/agent_readiness/checker.py
+=======
+# Fallback weights used when args/agent_readiness.yaml is absent or incomplete.
+>>>>>>> kanban/aac-opp-498:tools/ai_augmentation/agent_readiness/checker.py
 _DEFAULT_PILLAR_WEIGHTS: dict[str, float] = {
     "code-quality":      1.0,
     "documentation":     1.0,
@@ -66,6 +70,9 @@ _DEFAULT_PILLAR_WEIGHTS: dict[str, float] = {
     "append-only-audit": 1.3,
 }
 _DEFAULT_ANOMALY_THRESHOLD = 0.5
+
+# Merge config weights over defaults so partial overrides work correctly.
+_PILLAR_WEIGHTS: dict[str, float] = {**_DEFAULT_PILLAR_WEIGHTS, **get_pillar_weights()}
 
 _ICDEV_PILLAR_IDS = {"il-classification", "nist-controls", "stig-compliance", "append-only-audit"}
 

@@ -2,11 +2,133 @@
 """Shared types for the agent-readiness pillar system."""
 from __future__ import annotations
 
+import math
 import pathlib
 import re
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
+# ---------------------------------------------------------------------------
+# Configuration loading
+# ---------------------------------------------------------------------------
+
+_CONFIG_PATH = pathlib.Path(__file__).parents[4] / "args" / "agent_readiness.yaml"
+_config_cache: Optional[dict] = None
+
+
+def _load_config() -> dict:
+    global _config_cache
+    if _config_cache is not None:
+        return _config_cache
+    try:
+        import yaml  # type: ignore[import]
+        with open(_CONFIG_PATH, encoding="utf-8") as fh:
+            _config_cache = yaml.safe_load(fh) or {}
+    except Exception:
+        _config_cache = {}
+    return _config_cache
+
+
+def get_threshold(key: str, default):
+    """Return the configured numeric threshold for *key*, falling back to *default*."""
+    return _load_config().get("thresholds", {}).get(key, default)
+
+
+def get_pillar_weights() -> dict[str, float]:
+    """Return the configured pillar weight mapping (falls back to empty dict)."""
+    return _load_config().get("pillar_weights", {})
+
+
+# ---------------------------------------------------------------------------
+# Anomaly detection — adaptive threshold engine
+# ---------------------------------------------------------------------------
+
+class AnomalyDetector:
+    """Statistical anomaly detector for pillar score histories.
+
+    Flags score values that deviate significantly from recent history using
+    z-score or IQR fencing.  Falls back to the static threshold when the
+    history is too short to be meaningful.
+    """
+
+    def __init__(self, static_threshold: float = 0.5) -> None:
+        cfg = _load_config().get("anomaly_detection", {})
+        self.enabled: bool = cfg.get("enabled", True)
+        self.method: str = cfg.get("method", "zscore")
+        self.zscore_threshold: float = float(cfg.get("zscore_threshold", 2.5))
+        self.iqr_multiplier: float = float(cfg.get("iqr_multiplier", 1.5))
+        self.min_samples: int = int(cfg.get("min_samples", 5))
+        self.window_size: int = int(cfg.get("window_size", 20))
+        self.static_threshold: float = static_threshold
+        self._history: list[float] = []
+
+    # ------------------------------------------------------------------
+    def record(self, score: float) -> None:
+        """Append *score* to the rolling history window."""
+        self._history.append(score)
+        if len(self._history) > self.window_size:
+            self._history.pop(0)
+
+    # ------------------------------------------------------------------
+    def is_anomalous(self, score: float) -> bool:
+        """Return True when *score* is a statistical outlier relative to history."""
+        if not self.enabled or len(self._history) < self.min_samples:
+            return False
+        if self.method == "iqr":
+            return self._iqr_flag(score)
+        return self._zscore_flag(score)
+
+    def adaptive_threshold(self) -> float:
+        """Return an adaptive lower-bound threshold based on history, or the static fallback."""
+        if not self.enabled or len(self._history) < self.min_samples:
+            return self.static_threshold
+        if self.method == "iqr":
+            q1, _ = self._quartiles()
+            iqr = self._iqr()
+            return max(0.0, q1 - self.iqr_multiplier * iqr)
+        # zscore: mean minus N*std gives a lower fence
+        mean = sum(self._history) / len(self._history)
+        std = self._std()
+        return max(0.0, mean - self.zscore_threshold * std)
+
+    # ------------------------------------------------------------------
+    def _std(self) -> float:
+        n = len(self._history)
+        if n < 2:
+            return 0.0
+        mean = sum(self._history) / n
+        variance = sum((x - mean) ** 2 for x in self._history) / (n - 1)
+        return math.sqrt(variance)
+
+    def _zscore_flag(self, score: float) -> bool:
+        mean = sum(self._history) / len(self._history)
+        std = self._std()
+        if std == 0:
+            return False
+        return abs((score - mean) / std) > self.zscore_threshold
+
+    def _quartiles(self) -> tuple[float, float]:
+        s = sorted(self._history)
+        n = len(s)
+        mid = n // 2
+        q1 = sorted(s[:mid])[len(s[:mid]) // 2]
+        q3 = sorted(s[mid + (n % 2):])[len(s[mid + (n % 2):]) // 2]
+        return float(q1), float(q3)
+
+    def _iqr(self) -> float:
+        q1, q3 = self._quartiles()
+        return q3 - q1
+
+    def _iqr_flag(self, score: float) -> bool:
+        q1, _ = self._quartiles()
+        iqr = self._iqr()
+        lower_fence = q1 - self.iqr_multiplier * iqr
+        return score < lower_fence
+
+
+# ---------------------------------------------------------------------------
+# Core pillar data types
+# ---------------------------------------------------------------------------
 
 @dataclass
 class CriterionResult:
