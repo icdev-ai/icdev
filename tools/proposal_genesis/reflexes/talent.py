@@ -11,17 +11,32 @@ Scanner-tier only (zero Claude tokens — fully deterministic).
 """
 
 import json
-import statistics
+import math
 import sys
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
+
+# ---------------------------------------------------------------------------
+# Module-level fallback constants — Talent Reflex (R20) surge detection.
+# AI-ify opp 5448, hardcoded_threshold -> anomaly_detection. The legacy static
+# "count >= 5 postings = surge" rule is replaced by adaptive z-score outlier
+# detection: a "surge" is a competitor whose hiring volume is a statistical
+# anomaly vs the competitor population (> Nσ above the mean), not a fixed count.
+# The static count survives only as a small-sample / zero-variance fallback.
+# Overridable from proposal_genesis_config.yaml under reflexes.talent
+# (velocity_threshold_zscore). Change config, not code.
+# ---------------------------------------------------------------------------
+_SURGE_COUNT_THRESHOLD = 5      # Static fallback: >= N postings = surge (legacy / small sample)
+_DEFAULT_ZSCORE        = 2.0    # Hiring spikes > Nσ above the mean = anomaly
+_MIN_SURGE_SAMPLES     = 3      # Need >= N competitors before a distribution is meaningful
+_LOOKBACK_DAYS         = 30     # Default talent-signal lookback window (days)
 
 
 def _utcnow_iso() -> str:
@@ -100,54 +115,59 @@ def _compute_velocity(signals: List[Dict]) -> Dict[str, Any]:
     }
 
 
-def _compute_surge_threshold(
-    counts: List[int], multiplier: float = 1.5, floor: int = 2
-) -> float:
-    """Dynamically derive an anomaly threshold from the posting-volume
-    distribution.
-
-    A hiring "surge" is volume that is statistically unusual relative to the
-    cohort, computed as ``mean + multiplier * population_stdev``. This adapts
-    to the size and spread of the current signal set instead of relying on a
-    fixed magic number. ``floor`` guards against flagging trivially small
-    samples when the spread is near zero.
-    """
-    if not counts:
-        return float(floor)
-    mean = statistics.mean(counts)
-    spread = statistics.pstdev(counts) if len(counts) > 1 else 0.0
-    dynamic = mean + multiplier * spread
-    return max(float(floor), dynamic)
-
-
 def _detect_surges(
     signals: List[Dict],
-    threshold: Optional[float] = None,
-    multiplier: float = 1.5,
+    threshold: int = _SURGE_COUNT_THRESHOLD,
+    zscore_threshold: float = _DEFAULT_ZSCORE,
 ) -> List[Dict]:
-    """Detect hiring surges — competitors with unusually high posting volume.
+    """Detect hiring surges via z-score anomaly detection.
 
-    When ``threshold`` is ``None`` the cutoff is derived dynamically from the
-    distribution of competitor posting volumes (see
-    :func:`_compute_surge_threshold`).
+    A competitor's posting volume is flagged as a "surge" when it is a
+    statistical outlier relative to the competitor population — i.e. its
+    z-score ``(count - mean) / stddev`` meets or exceeds ``zscore_threshold``
+    (default 2σ). This adapts to the actual data instead of relying on a
+    single static count, so a surge means "anomalously high vs peers" rather
+    than "above an arbitrary number".
+
+    Falls back to the static ``threshold`` count when the sample is too small
+    (< ``_MIN_SURGE_SAMPLES`` competitors) or has zero spread (every
+    competitor posted the same amount → no anomaly possible), so small or
+    uniform datasets still behave sensibly.
+
+    Deterministic / zero-token (GREEN tier) — pure statistics, no LLM.
     """
     competitor_counts: Dict[str, int] = {}
     for sig in signals:
         name = sig.get("competitor_name", "unknown")
         competitor_counts[name] = competitor_counts.get(name, 0) + 1
 
-    if threshold is None:
-        threshold = _compute_surge_threshold(
-            list(competitor_counts.values()), multiplier=multiplier
-        )
+    if not competitor_counts:
+        return []
+
+    counts = list(competitor_counts.values())
+    n = len(counts)
+    mean = sum(counts) / n
+    # Population standard deviation across the competitor cohort.
+    stddev = math.sqrt(sum((c - mean) ** 2 for c in counts) / n)
+
+    use_zscore = n >= _MIN_SURGE_SAMPLES and stddev > 0.0
 
     surges = []
     for name, count in competitor_counts.items():
-        if count >= threshold:
+        if use_zscore:
+            zscore = (count - mean) / stddev
+            is_surge = zscore >= zscore_threshold
+        else:
+            zscore = 0.0
+            is_surge = count >= threshold
+
+        if is_surge:
             surges.append(
                 {
                     "competitor": name,
                     "postings": count,
+                    "zscore": round(zscore, 2),
+                    "method": "zscore" if use_zscore else "static",
                     "signal": "hiring_surge",
                 }
             )
@@ -171,17 +191,14 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
 
     Returns standard reflex result dict.
     """
-    lookback_days = config.get("talent_lookback_days", 30)
-    # Threshold defaults to a dynamic, distribution-derived cutoff. An explicit
-    # override may be supplied via config; the multiplier tunes sensitivity of
-    # the dynamic calculation.
-    surge_threshold = config.get("talent_surge_threshold")
-    surge_multiplier = config.get("talent_surge_multiplier", 1.5)
+    lookback_days = config.get("talent_lookback_days", _LOOKBACK_DAYS)
+    surge_threshold = config.get("talent_surge_threshold", _SURGE_COUNT_THRESHOLD)
+    zscore_threshold = config.get("velocity_threshold_zscore", _DEFAULT_ZSCORE)
 
     signals = _get_recent_signals(days=lookback_days)
     velocity = _compute_velocity(signals)
     surges = _detect_surges(
-        signals, threshold=surge_threshold, multiplier=surge_multiplier
+        signals, threshold=surge_threshold, zscore_threshold=zscore_threshold
     )
 
     # Audit
@@ -201,6 +218,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                         "signals_analyzed": len(signals),
                         "surges_detected": len(surges),
                         "lookback_days": lookback_days,
+                        "zscore_threshold": zscore_threshold,
                     }
                 ),
                 1,
@@ -219,6 +237,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         "details": {
             "signals_analyzed": len(signals),
             "lookback_days": lookback_days,
+            "zscore_threshold": zscore_threshold,
             "top_competitors": velocity.get("competitors", {}),
             "top_skills": velocity.get("top_skills", {}),
             "clearance_heavy_hiring": velocity.get("clearance_heavy", {}),

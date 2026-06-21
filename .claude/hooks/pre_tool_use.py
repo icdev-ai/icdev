@@ -20,7 +20,6 @@ Exit codes:
 import json
 import os
 import re
-import subprocess
 import sys
 from fnmatch import fnmatch
 from pathlib import Path
@@ -154,6 +153,7 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Phase 35 — Innovation Engine (D206)
         "innovation_signals",
         "innovation_triage_log",
+        "innovation_signal",
         # Phase 39 — Observability
         "agent_executions",
         # Phase 40 — NLQ
@@ -230,6 +230,7 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "creative_feature_gaps",
         "creative_specs",
         "creative_trends",
+        "creative_gap",
         # GovCon Intelligence (Phase 59, D361-D373)
         "sam_gov_quota_events",
         "rfp_shall_statements",
@@ -325,6 +326,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # CloudForge (D-CF-10, D-CF-15, D-CF-20, D-CF-21 — all append-only)
         "cf_provision_log",
         "cf_siem_events",
+        # Agentic AI safety_layer SIEM forwarder sink (append-only security events)
+        "siem_events",
         "cf_runbook_executions",
         "cf_runbook_task_log",
         # Phase 67 — Engineering Review Board (D-RB-2, D-RB-10 — audit + findings + remediation append-only)
@@ -426,11 +429,6 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "wne_artifacts",
         # Genesis reflex run log (migration 116, NIST AU — cooldown tracking + audit)
         "genesis_reflex_log",
-        # Genesis phase execution log (migration 188, NIST AU — phase completion history is immutable)
-        # Genesis output event log (migration 188, NIST AU — reflex output artifact history)
-        "genesis_outputs",
-        # Genesis phase-transition log (migration 189, NIST AU — append-only phase history)
-        "genesis_phase_log",
         # NMCE — AI conversation audit trail (migration canvas, NIST AU)
         "mc_net_ai_sessions",
         # STRATEGOS — war readiness event log (migration 118, NIST AU — append-only I&W audit)
@@ -488,32 +486,18 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "integrity_findings",
         "integrity_verdicts",
         "integrity_authorizations",
-        # ACF Autonomous Capability Foundry (acf-, append-only signal/concept/spec/ledger)
+        # EQO Centralized Logging (eqo-log-01, NIST AU — log rows are immutable
+        # evidence; retention via bulk time-window pruning, never row mutation)
+        "centralized_logs",
+        # ACF — Autonomous Capability Foundry (acf-db-, NIST AU — cycle/signal/spec/
+        # emission/outcome history is immutable evidence of autonomous decisions.
+        # foundry_concepts is intentionally EXCLUDED: it allows UPDATE for status
+        # transitions, matching creative_competitors / research_sessions.)
         "foundry_runs",
         "foundry_signals",
         "foundry_specs",
         "foundry_tasks_emitted",
         "foundry_outcomes",
-        # Co-Workers canvas — session links are immutable evidence (NIST AU)
-        "cwk_sessions",
-        # EQO Centralized Logging (eqo-log-01, migration 181) — log rows are immutable evidence (NIST AU)
-        "centralized_logs",
-        # DIC Collaborative Editing — section edit history (rted-hist-01, NIST AU — each edit row is immutable)
-        "dic_edit_history",
-        # DIC Canvas Synergy — suggestion decisions (dsyn-adapt-03, NIST AU — each decision row is immutable)
-        "dic_suggestion_decisions",
-        # NOVA ECHO — execution traces (append-only audit of agent actions, NIST AU)
-        "agent_execution_traces",
-        # NOVA ECHO — improvement artifacts (append-only generational record, NIST AU)
-        "agent_improvement_artifacts",
-        # NOVA TRUST — trust ledger (append-only Bayesian event log, NIST AU)
-        "ace_trust_ledger",
-        # DIC View Log — document access events for anomaly detection (aiify-opp-105, NIST AU)
-        "dic_doc_views",
-        # MCIP DAT — DTI score snapshots (NIST AU-2, SI-4 — append-only scoring audit trail)
-        "mcip_dti_scores",
-        # Conflict Mesh — ML escalation predictions (migration 158, NIST AU-2, AU-12 — append-only)
-        "conflict_predictions",
     ]
 
     if tool_name == "Bash":
@@ -532,23 +516,13 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
     return False
 
 
-def _get_repo_root() -> Path:
-    """Return the repository root as an absolute path, independent of cwd.
-
-    This hook lives at .claude/hooks/pre_tool_use.py, so the root is
-    three levels up.  Using __file__ (not os.getcwd()) means the hook
-    works correctly regardless of which directory Claude or CI invokes it from.
-    """
-    return Path(__file__).resolve().parent.parent.parent
-
-
 def _load_file_access_tiers():
     """Load file access tier config from args/file_access_tiers.yaml."""
     try:
         import yaml
     except ImportError:
         return None
-    config_path = _get_repo_root() / "args" / "file_access_tiers.yaml"
+    config_path = Path(__file__).resolve().parent.parent.parent / "args" / "file_access_tiers.yaml"
     if not config_path.exists():
         return None
     try:
@@ -586,7 +560,7 @@ def _matches_tier(file_path: str, patterns: list) -> bool:
     return False
 
 
-def check_file_access_tiers(tool_name: str, tool_input: dict) -> str | None:
+def check_file_access_tiers(tool_name: str, tool_input: dict) -> str:
     """Check file access tiers. Returns error message if blocked, None if allowed.
 
     Decision D-ORCH-8: Tiered file access control.
@@ -704,61 +678,6 @@ def is_direct_sqlite_usage(tool_name: str, tool_input: dict) -> bool:
     return False
 
 
-def run_review_loop_precommit(tool_name: str, tool_input: dict) -> None:
-    """Self-green staged changes with review_loop before a `git commit`.
-
-    Fires only on Bash `git commit` calls. Runs the fast, staged, ruff-only
-    review loop (coherence/SIPA are too slow for a commit gate — they run in the
-    pre-PR preflight + CI), applies deterministic ruff autofixes to the staged
-    `.py` files, and re-stages them so the commit lands lint-clean.
-
-    Warn-only by default (the commit proceeds). Set ICDEV_REVIEW_LOOP_BLOCK=1 to
-    hard-block a non-green commit, or ICDEV_REVIEW_LOOP_PRECOMMIT=0 to disable.
-    Best-effort: any error is swallowed so it can never break a commit.
-    """
-    if tool_name != "Bash":
-        return
-    command = tool_input.get("command", "")
-    if "git commit" not in command:
-        return
-    if os.environ.get("ICDEV_REVIEW_LOOP_PRECOMMIT", "1").strip().lower() in ("0", "false", "no", "off"):
-        return
-
-    try:
-        repo_root = Path(__file__).resolve().parents[2]
-        if str(repo_root) not in sys.path:
-            sys.path.insert(0, str(repo_root))
-        from tools.quality.review_loop import preflight
-
-        report = preflight(
-            base=None, autofix=True, staged=True,
-            only_gates=["ruff"], coherence_scope="changed",
-            audit=False, max_iterations=1, repo_root=repo_root,
-        )
-        # Re-stage whatever ruff --fix rewrote so the fixes are committed.
-        if report.changed_files:
-            subprocess.run(
-                ["git", "add", *report.changed_files],
-                cwd=str(repo_root), capture_output=True, text=True, timeout=30,
-            )
-        if not report.green:
-            n = len(report.fix_brief)
-            msg = (
-                f"review_loop (pre-commit): {n} unfixable lint finding(s) remain "
-                f"in staged files — {report.reason}"
-            )
-            if os.environ.get("ICDEV_REVIEW_LOOP_BLOCK", "").strip().lower() in ("1", "true", "yes", "on"):
-                print(f"BLOCKED: {msg}", file=sys.stderr)
-                sys.exit(2)
-            print(f"WARNING: {msg} (commit proceeding; set ICDEV_REVIEW_LOOP_BLOCK=1 to block)", file=sys.stderr)
-        elif report.changed_files:
-            print("review_loop (pre-commit): applied ruff autofixes to staged files", file=sys.stderr)
-    except SystemExit:
-        raise
-    except Exception:
-        return  # never break a commit
-
-
 def main():
     try:
         input_data = json.load(sys.stdin)
@@ -797,9 +716,6 @@ def main():
         if tier_error:
             print(tier_error, file=sys.stderr)
             sys.exit(2)
-
-        # Self-green staged changes before a git commit (warn-only by default)
-        run_review_loop_precommit(tool_name, tool_input)
 
         sys.exit(0)
 

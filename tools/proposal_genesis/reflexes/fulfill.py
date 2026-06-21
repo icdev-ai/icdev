@@ -31,14 +31,14 @@ from tools.db.storage import get_connection  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Module-level constants — Fulfill Reflex (R11) thresholds & limits.
-# Extracted from inline magic numbers (AI-ify opp 5404, hardcoded_threshold
+# Extracted from inline magic numbers (AI-ify opp 5404/5405, hardcoded_threshold
 # → anomaly_detection).  Overridable from proposal_genesis_config.yaml under
 # reflexes.fulfill.  Change config, not code.
 # ---------------------------------------------------------------------------
 _DEFAULT_DAYS_AHEAD           = 14   # deliverables-due lookahead window (config: days_ahead)
 _DEFAULT_MAX_GENERATIONS      = 10   # CDRL generations dispatched per run (config: max_generations_per_run)
 _DEFAULT_STALE_THRESHOLD_DAYS = 90   # age (days) after which compliance docs are flagged stale (config: stale_threshold_days)
-_GOVEVAL_GATE_THRESHOLD       = 0.5  # GovEval composite below which a CDRL is flagged needs_review (anomaly)
+_GOVEVAL_GATE_THRESHOLD       = 0.5  # GovEval composite below which a CDRL is flagged needs_review (anomaly; config: goveval_gate_threshold)
 _CDRL_GEN_TIMEOUT_SECS        = 300  # per-CDRL subprocess generation timeout
 
 
@@ -287,9 +287,9 @@ def _generate_cdrl(
     """Generate a CDRL by dispatching to the mapped ICDEV™ tool.
 
     ``goveval_gate_threshold`` is the GovEval composite below which a generated
-    compliance CDRL is flagged ``needs_review`` (anomaly).  It defaults to the
-    module constant but ``run()`` injects the config value so the anomaly gate
-    is tunable without code changes (config: reflexes.fulfill.goveval_gate_threshold).
+    CDRL is flagged ``needs_review`` (the anomaly gate).  It defaults to the
+    module constant but is injectable so ``run()`` can override it from
+    proposal_genesis_config.yaml (reflexes.fulfill.goveval_gate_threshold).
 
     Returns (success, result_dict).
     """

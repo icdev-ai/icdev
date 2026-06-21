@@ -3584,6 +3584,26 @@ CREATE TABLE IF NOT EXISTS innovation_feedback (
 CREATE INDEX IF NOT EXISTS idx_innovation_feedback_signal ON innovation_feedback(signal_id);
 CREATE INDEX IF NOT EXISTS idx_innovation_feedback_type ON innovation_feedback(feedback_type);
 
+-- Innovation signal — normalized innovation engine outputs for ACF consumption (append-only)
+CREATE TABLE IF NOT EXISTS innovation_signal (
+    id TEXT PRIMARY KEY,
+    concept_id TEXT,
+    signal_type TEXT DEFAULT 'opportunity'
+        CHECK(signal_type IN ('opportunity', 'trend', 'threat', 'technology', 'regulatory', 'other')),
+    source_ref TEXT,
+    score REAL DEFAULT 0.0,
+    rank INTEGER,
+    content_hash TEXT NOT NULL,
+    metadata TEXT DEFAULT '{}',
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_innovation_signal_concept ON innovation_signal(concept_id);
+CREATE INDEX IF NOT EXISTS idx_innovation_signal_score ON innovation_signal(score);
+CREATE INDEX IF NOT EXISTS idx_innovation_signal_hash ON innovation_signal(content_hash);
+CREATE INDEX IF NOT EXISTS idx_innovation_signal_created ON innovation_signal(created_at);
+
 -- ============================================================
 -- PHASE 37: AI SECURITY (MITRE ATLAS, OWASP LLM, NIST AI RMF, ISO 42001)
 -- ============================================================
@@ -5096,6 +5116,27 @@ CREATE TABLE IF NOT EXISTS creative_trends (
 CREATE INDEX IF NOT EXISTS idx_ctrend_status ON creative_trends(status);
 CREATE INDEX IF NOT EXISTS idx_ctrend_velocity ON creative_trends(velocity);
 
+-- Creative gap — normalized creative engine inputs for ACF consumption (append-only)
+CREATE TABLE IF NOT EXISTS creative_gap (
+    id TEXT PRIMARY KEY,
+    concept_id TEXT,
+    source_ref TEXT,
+    gap_type TEXT DEFAULT 'feature_gap'
+        CHECK(gap_type IN ('feature_gap', 'ux_gap', 'integration_gap', 'performance_gap',
+                           'security_gap', 'compliance_gap', 'documentation_gap', 'other')),
+    score REAL DEFAULT 0.0,
+    rank INTEGER,
+    content_hash TEXT NOT NULL,
+    metadata TEXT DEFAULT '{}',
+    classification TEXT DEFAULT 'CUI',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_creative_gap_concept ON creative_gap(concept_id);
+CREATE INDEX IF NOT EXISTS idx_creative_gap_score ON creative_gap(score);
+CREATE INDEX IF NOT EXISTS idx_creative_gap_hash ON creative_gap(content_hash);
+CREATE INDEX IF NOT EXISTS idx_creative_gap_created ON creative_gap(created_at);
+
 -- ============================================================
 -- INDUSTRY RESEARCH ENGINE (Phase 63 — D-RES-1 through D-RES-13)
 -- ============================================================
@@ -5490,7 +5531,6 @@ CREATE TABLE IF NOT EXISTS proposal_section_dependencies (
     dependency_type TEXT DEFAULT 'content' CHECK(dependency_type IN (
         'content', 'data', 'approval', 'pricing')),
     required_status TEXT DEFAULT 'drafting',
-    classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_prop_dep_section ON proposal_section_dependencies(section_id);
@@ -5578,7 +5618,6 @@ CREATE TABLE IF NOT EXISTS proposal_status_history (
     new_status TEXT NOT NULL,
     changed_by TEXT,
     reason TEXT,
-    classification TEXT DEFAULT 'CUI',
     created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_prop_hist_entity ON proposal_status_history(entity_type, entity_id);

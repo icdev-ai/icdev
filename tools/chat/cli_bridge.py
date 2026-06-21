@@ -170,6 +170,16 @@ def close_context(context_id: str) -> dict:
     return _http("POST", f"/api/chat/{context_id}/close", {})
 
 
+def get_coworker_instances(context_id: str) -> list:
+    """Return ACE co-worker instance records linked to a chat context.
+
+    Calls GET /api/chat/{context_id}/coworker-instances and returns the
+    'instances' list from the response.
+    """
+    result = _http("GET", f"/api/chat/{context_id}/coworker-instances")
+    return result.get("instances", [])
+
+
 def link_intake_session(context_id: str, intake_session_id: str) -> dict:
     """Link an intake session to a chat context so extension hooks activate."""
     return _http("PATCH", f"/api/chat/{context_id}/link-intake", {

@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS foundry_signals (
     theme              TEXT,
     raw_score          REAL    DEFAULT 0.0,
     keywords           TEXT    DEFAULT '[]',
+    content_hash       TEXT,
     tenant_id          TEXT    NOT NULL DEFAULT 'default',
     classification     TEXT    NOT NULL DEFAULT 'CUI',
     created_at         TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -79,6 +80,7 @@ CREATE INDEX IF NOT EXISTS idx_foundry_signals_run ON foundry_signals(run_id);
 CREATE INDEX IF NOT EXISTS idx_foundry_signals_engine ON foundry_signals(source_engine);
 CREATE INDEX IF NOT EXISTS idx_foundry_signals_score ON foundry_signals(raw_score);
 CREATE INDEX IF NOT EXISTS idx_foundry_signals_tenant ON foundry_signals(tenant_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_foundry_signals_hash ON foundry_signals(content_hash);
 
 CREATE TABLE IF NOT EXISTS foundry_concepts (
     id                 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -165,11 +167,28 @@ _SCHEMA_PG = _to_pg(_SCHEMA_SQLITE)
 
 
 def _is_pg() -> bool:
-    return os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql").lower() in (
+    return os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower() in (
         "postgresql",
         "postgres",
         "pg",
     )
+
+
+def _ensure_content_hash(conn: Any) -> None:
+    """Back-fill ``content_hash`` column + unique index for pre-existing tables."""
+    cur = conn.cursor()
+    try:
+        cur.execute("ALTER TABLE foundry_signals ADD COLUMN content_hash TEXT")
+        conn.commit()
+    except Exception:
+        pass  # already exists or unsupported syntax
+    try:
+        cur.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_foundry_signals_hash ON foundry_signals(content_hash)"
+        )
+        conn.commit()
+    except Exception:
+        pass
 
 
 def init_db(force: bool = False) -> bool:
@@ -193,6 +212,7 @@ def init_db(force: bool = False) -> bool:
                 if stmt:
                     cur.execute(stmt)
             conn.commit()
+            _ensure_content_hash(conn)
         finally:
             conn.close()
         _INIT_DONE = True

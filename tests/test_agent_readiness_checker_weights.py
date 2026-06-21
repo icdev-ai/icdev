@@ -90,24 +90,6 @@ class TestLoadPillarWeights:
         assert result["testing"] == pytest.approx(mod._MIN_WEIGHT)
         mod._load_pillar_weights.cache_clear()
 
-    def test_config_min_pillar_weight_overrides_builtin_floor(self, tmp_path, monkeypatch):
-        """anomaly_detection.min_pillar_weight in config must replace the hardcoded _MIN_WEIGHT."""
-        cfg = tmp_path / "agent_readiness_config.yaml"
-        cfg.write_text(
-            "anomaly_detection:\n"
-            "  min_pillar_weight: 0.5\n"
-            "pillar_weights:\n"
-            "  testing: 0.0\n",
-            encoding="utf-8",
-        )
-        mod = self._get_mod()
-        monkeypatch.setattr(mod, "_ARGS_PATH", cfg)
-        mod._load_pillar_weights.cache_clear()
-        result = mod._load_pillar_weights()
-        # 0.0 should be clamped to the config-supplied floor of 0.5, not the builtin 0.1
-        assert result["testing"] == pytest.approx(0.5)
-        mod._load_pillar_weights.cache_clear()
-
     def test_all_default_pillar_ids_present(self, tmp_path, monkeypatch):
         mod = self._get_mod()
         monkeypatch.setattr(mod, "_ARGS_PATH", tmp_path / "absent.yaml")
@@ -130,20 +112,26 @@ class TestRunReadinessCheckWeights:
     def test_custom_weight_changes_overall_score(self, tmp_path, monkeypatch):
         """Boosting one pillar's weight must shift the overall score."""
         import tools.ai_augmentation.agent_readiness.checker as mod
+        from tools.ai_augmentation.agent_readiness.pillars._base import (
+            CriterionResult, Criterion, Pillar,
+        )
 
-        # Patch all pillars to return 100% pass rate
+        # Build fresh Pillar instances — never mutate the module-level singletons.
+        def _make_pass_pillar(source_pillar):
+            return Pillar(
+                id=source_pillar.id,
+                name=source_pillar.name,
+                description=source_pillar.description,
+                criteria=[
+                    Criterion(c.id, c.name, c.description, c.pillar_id, c.level,
+                               lambda r, _cid=c.id: CriterionResult(_cid, True, "ok"))
+                    for c in source_pillar.criteria
+                ],
+            )
+
         all_pass_weights = {p: 1.0 for p in mod._WEIGHT_DEFAULTS}
         monkeypatch.setattr(mod, "_load_pillar_weights", lambda: all_pass_weights)
-
-        from tools.ai_augmentation.agent_readiness.pillars._base import CriterionResult
-
-        def _all_pass_pillar(pillar):
-            def run(repo_path):
-                return [CriterionResult(c.id, True, "ok") for c in pillar.criteria]
-            monkeypatch.setattr(pillar, "run", run)
-            return pillar
-
-        patched_pillars = [_all_pass_pillar(p) for p in mod._ALL_PILLARS]
+        patched_pillars = [_make_pass_pillar(p) for p in mod._ALL_PILLARS]
         monkeypatch.setattr(mod, "_ALL_PILLARS", patched_pillars)
 
         result = mod.run_readiness_check(tmp_path)

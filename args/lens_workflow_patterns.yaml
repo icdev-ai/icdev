@@ -1,97 +1,74 @@
 # CUI // SP-CTI
-# Anomaly-detection thresholds for WorkflowPatternLens.
-# All values here override _CODE_DEFAULTS in lens_workflow_patterns.py.
-# Remove a key to fall back to the code default.
-# The LLM calibration step (_llm_anomaly_thresholds) may further override
-# these at run-time when enough distribution data is available.
+# Threshold configuration for tools/oracle/lenses/lens_workflow_patterns.py
+# All values are code-level defaults — override here to tune without changing source.
+# LLM-calibrated overrides (via oracle_anomaly_detection) take precedence at run-time
+# when sufficient data exists; this file serves as the static fallback layer.
 
-# ── Pattern mining ─────────────────────────────────────────────────────────────
-# Minimum occurrences for an N-gram to be reported
+# --- Pattern Mining ---
+# Minimum number of times a sequence must appear to be reported
 min_pattern_freq: 3
-# N-gram window sizes (audit event sequences)
+# Window sizes for N-gram mining (3, 4, 5-step sequences)
 window_sizes: [3, 4, 5]
 # Days of audit history to consider
 lookback_days: 30
-# Top-N caps (anomaly candidates beyond these ranks are treated as noise)
+# Top-N caps for reported items (noise reduction)
 max_ngrams_reported: 50
 max_pairs_reported: 100
 max_task_types_reported: 10
+# Max completed kanban tasks to scan
 max_kanban_done: 500
 
-# ── Co-occurrence ──────────────────────────────────────────────────────────────
-# Minimum co-occurrence rate to flag a pair as a composition candidate
+# --- Co-occurrence ---
+# Fraction of shared sessions required to flag a pair as a composition candidate
 cooccurrence_threshold: 0.80
 
-# ── Self-healing ───────────────────────────────────────────────────────────────
-# Minimum fail count for a self-healing candidate to surface
+# --- Self-Healing ---
+# Minimum number of failures before an actor+action pair surfaces as a candidate
 min_self_heal_fails: 2.0
-# Heal-rate floor for Genesis Heal reflex recommendation
-heal_reflex_min_rate: 0.70
+# Minimum heal rate to recommend Genesis Heal reflex registration
+heal_reflex_min_rate: 0.7
 
-# ── Sparse-population fallback denominators ────────────────────────────────────
-# Used in _score_pattern when no population distribution exists yet
-fallback_freq_denominator: 20.0
-fallback_session_denominator: 10.0
-
-# ── Adaptive threshold Z multipliers (mean + z*sigma) ─────────────────────────
-# Higher values = stricter filter (fewer candidates surfaced)
+# --- Adaptive Threshold Z Multipliers ---
+# Each scoring path derives: threshold = mean + z * sigma
+# Higher z = stricter filter (fewer, higher-signal predictions)
 adaptive_z_ngram: 1.0
 adaptive_z_cooccurrence: 1.0
 adaptive_z_kanban: 1.0
 adaptive_z_heal: 0.0
 
-# ── Z-score severity boundaries ────────────────────────────────────────────────
+# --- Anomaly Population Minimums ---
+# Minimum samples required before switching from fixed-denominator to percentile/adaptive scoring
+min_population_percentile: 5
+min_population_adaptive: 5
+min_population_zscore: 3
+
+# --- Z-Score Severity Boundaries ---
+# Z-scores above these thresholds set prediction severity (relative to population mean)
 z_critical: 3.0
 z_warning: 2.0
 
-# ── Population minimums (anomaly detection) ────────────────────────────────────
-# Minimum samples before percentile-rank scoring activates
-min_population_percentile: 5
-# Minimum samples before adaptive threshold activates
-min_population_adaptive: 5
-# Minimum samples for Z-score severity (below = "info")
-min_population_zscore: 3
+# --- Sparse-Population Fallback Denominators ---
+# Used in _score_pattern when no observed distribution exists
+fallback_freq_denominator: 20.0
+fallback_session_denominator: 10.0
 
-# ── Confidence formula weights ─────────────────────────────────────────────────
+# --- Automation Potential ---
+# Fraction of automated event types in a pattern to classify automation potential as "high"
+automation_high_ratio: 0.5
+
+# --- Confidence Formula Weights ---
 # N-gram pattern confidence: freq_weight * freq_score + consistency_weight * consistency
 pattern_conf_freq_weight: 0.6
 pattern_conf_consistency_weight: 0.4
-# Co-occurrence confidence: base + percentile_rank * scale, capped at cap
+# Co-occurrence confidence: base + percentile_rank * scale  (capped at cap)
 cooccurrence_conf_cap: 0.95
 cooccurrence_conf_base: 0.50
 cooccurrence_conf_scale: 0.45
-# Kanban task-type confidence
+# Kanban task-type confidence: base + percentile_rank * scale  (capped at cap)
 task_conf_cap: 0.90
 task_conf_base: 0.40
 task_conf_scale: 0.60
-# Self-healing confidence
+# Self-healing confidence: base + percentile_rank * scale  (capped at cap)
 heal_conf_cap: 0.90
 heal_conf_base: 0.40
 heal_conf_scale: 0.50
-
-# ── Population minimums (percentile rank) ─────────────────────────────────────
-# Minimum population size for _percentile_rank to return a meaningful result;
-# populations smaller than this return 1.0 (conservative default).
-min_percentile_rank_population: 2
-
-# ── Automation-potential heuristic ─────────────────────────────────────────────
-# Fraction of automated events in a pattern to classify potential as "high"
-automation_high_ratio: 0.50
-# Event types treated as fully-automated (no human in the loop)
-automated_event_types:
-  - code_generated
-  - test_executed
-  - test_passed
-  - security_scan
-  - compliance_check
-  - deployment_initiated
-  - agent_task_completed
-# Event types that require human decisions (force "low" automation potential)
-manual_event_types:
-  - approval_granted
-  - approval_denied
-  - decision_made
-
-# ── LLM calibration ────────────────────────────────────────────────────────────
-# Max tokens for the anomaly-threshold calibration LLM call (oracle_anomaly_detection)
-llm_max_tokens: 384

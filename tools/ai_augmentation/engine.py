@@ -17,6 +17,7 @@ Orchestrates the full AAC pipeline:
 """
 from __future__ import annotations
 
+import functools
 import json
 import os
 import pathlib
@@ -45,9 +46,6 @@ _FALLBACK_ANOMALY_THRESHOLDS = {
         "p3_min_score": 0.30,
     },
     "priority_high_min_score": 0.70,
-    "value_feasibility_max_delta": 0.50,
-    "component_outlier_floor": 0.05,
-    "component_outlier_ceiling": 0.95,
 }
 
 
@@ -61,62 +59,6 @@ def _load_anomaly_thresholds() -> dict:
     except Exception:
         pass
     return dict(_FALLBACK_ANOMALY_THRESHOLDS)
-
-
-def detect_score_anomalies(rows: list, thresholds: dict | None = None) -> list:
-    """Detect scoring anomalies across a list of opportunity score rows.
-
-    All threshold comparisons use values loaded from args/aac_config.yaml
-    ``anomaly_detection`` section rather than hardcoded constants.
-
-    Args:
-        rows:       List of score dicts (opportunity_id, value_score,
-                    feasibility_score, risk_score, composite_score).
-        thresholds: Optional explicit thresholds dict; falls back to
-                    _load_anomaly_thresholds() when omitted.
-
-    Returns:
-        List of anomaly dicts with keys: anomaly_type, opportunity_id, detail.
-    """
-    if thresholds is None:
-        thresholds = _load_anomaly_thresholds()
-
-    max_delta = float(thresholds.get("value_feasibility_max_delta", 0.50))
-    floor = float(thresholds.get("component_outlier_floor", 0.05))
-    ceiling = float(thresholds.get("component_outlier_ceiling", 0.95))
-
-    score_fields = ("value_score", "feasibility_score", "risk_score", "composite_score")
-    anomalies: list[dict] = []
-
-    for row in rows:
-        opp_id = row.get("opportunity_id")
-        value = float(row.get("value_score", 0.0))
-        feasibility = float(row.get("feasibility_score", 0.0))
-
-        delta = abs(value - feasibility)
-        if delta > max_delta:
-            anomalies.append({
-                "anomaly_type": "value_feasibility_imbalance",
-                "opportunity_id": opp_id,
-                "detail": {"delta": round(delta, 4), "value": value, "feasibility": feasibility},
-            })
-
-        for field in score_fields:
-            val = float(row.get(field, 0.0))
-            if val < floor:
-                anomalies.append({
-                    "anomaly_type": "component_outlier_low",
-                    "opportunity_id": opp_id,
-                    "detail": {"component": field, "value": val, "floor": floor},
-                })
-            elif val > ceiling:
-                anomalies.append({
-                    "anomaly_type": "component_outlier_high",
-                    "opportunity_id": opp_id,
-                    "detail": {"component": field, "value": val, "ceiling": ceiling},
-                })
-
-    return anomalies
 
 
 # Maps each pattern type to a valid AI paradigm (constants.AI_PARADIGMS)
@@ -140,6 +82,50 @@ _PARADIGM_TO_MODEL: dict[str, str] = {
     "embedding_search": "claude-haiku-4-5-20251001",
     "decision_agent": "claude-opus-4-7",
 }
+
+
+@functools.lru_cache(maxsize=128)
+def _nlp_classify_ref(ref: str) -> tuple[bool, str]:
+    """NLP extractor: classify a user-provided input reference string.
+
+    Uses Claude (nlp_extractor model) to determine whether the ref is a git URL
+    and to extract a short project name.  Falls back to regex when the Anthropic
+    API is unavailable so callers always get a valid result.
+
+    Returns:
+        (is_git_url, project_name)
+    """
+    try:
+        import anthropic  # optional dependency
+        api_key = os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("CLAUDE_API_KEY")
+        if not api_key:
+            raise ValueError("no Anthropic API key configured")
+        client = anthropic.Anthropic(api_key=api_key)
+        model = _PARADIGM_TO_MODEL.get("nlp_extractor", "claude-haiku-4-5-20251001")
+        message = client.messages.create(
+            model=model,
+            max_tokens=128,
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Classify this input reference: {ref!r}\n"
+                    "Return JSON only — no explanation:\n"
+                    '{"is_git_url": <bool>, "project_name": "<short name>"}\n'
+                    "is_git_url is true for https://, git@, or .git URLs. "
+                    "project_name is the short repository or directory name."
+                ),
+            }],
+        )
+        result = json.loads(message.content[0].text.strip())
+        return bool(result.get("is_git_url", False)), str(result.get("project_name", "") or ref.split("/")[-1])
+    except Exception:
+        # Regex fallback — identical logic to the original implementation
+        is_git = bool(re.match(r"^(https?://|git@)", ref) or ref.endswith(".git"))
+        if is_git:
+            name = ref.rstrip("/").split("/")[-1].replace(".git", "")
+        else:
+            name = pathlib.Path(ref).name or ref
+        return is_git, name
 
 
 def _now() -> str:
@@ -192,12 +178,9 @@ def _insert(conn: Any, sql: str, params: tuple, id_col: str = "id") -> int:
 
 
 def _build_summary(input_ref: str, opp_rows: list[dict]) -> str:
-    """Derive a one-sentence plain-English project summary without LLM calls."""
+    """Derive a one-sentence plain-English project summary."""
     ref = input_ref.strip().rstrip("/")
-    if re.match(r"^(https?://|git@)", ref):
-        name = ref.rstrip("/").split("/")[-1].replace(".git", "")
-    else:
-        name = pathlib.Path(ref).name or ref
+    _, name = _nlp_classify_ref(ref)
 
     if not opp_rows:
         return f"'{name}' — no AI-augmentable patterns detected."
@@ -509,10 +492,7 @@ def _promote_phase_opportunities(
 
 def _is_git_url(ref: str) -> bool:
     """Return True if ref looks like a git or HTTPS repository URL."""
-    return bool(
-        re.match(r"^(https?://|git@)", ref)
-        or ref.endswith(".git")
-    )
+    return _nlp_classify_ref(ref.strip().rstrip("/"))[0]
 
 
 def _clone_git_url(url: str) -> str:

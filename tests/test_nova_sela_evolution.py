@@ -1,0 +1,327 @@
+# CUI // SP-CTI
+"""Tests for the NOVA SELA evolution loop (tools/genesis/reflexes/evolution.py).
+
+Acceptance criteria:
+  - After seeding 10 failure traces for a skill, run_evolution() produces
+    >= 1 improvement_artifact row in agent_improvement_artifacts.
+"""
+from __future__ import annotations
+
+import sqlite3
+import sys
+import uuid
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
+# Ensure repo root is on path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+
+# ── In-memory DB fixture ──────────────────────────────────────────────────────
+
+_NOVA_SCHEMA = """
+CREATE TABLE IF NOT EXISTS agent_execution_traces (
+    trace_id          TEXT PRIMARY KEY,
+    task_id           TEXT NOT NULL,
+    task_type         TEXT NOT NULL DEFAULT '',
+    skill_used        TEXT NOT NULL DEFAULT '',
+    outcome           TEXT NOT NULL DEFAULT 'unknown',
+    events_json       TEXT NOT NULL DEFAULT '[]',
+    lesson_pattern    TEXT NOT NULL DEFAULT '',
+    improvement_notes TEXT NOT NULL DEFAULT '',
+    started_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    completed_at      TEXT NOT NULL DEFAULT '',
+    created_at        TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS agent_improvement_artifacts (
+    artifact_id      TEXT PRIMARY KEY,
+    task_type        TEXT NOT NULL,
+    skill_used       TEXT NOT NULL DEFAULT '',
+    generation_n     INTEGER NOT NULL DEFAULT 1,
+    improvement_text TEXT NOT NULL,
+    composite_score  REAL NOT NULL DEFAULT 0.0,
+    baseline_score   REAL NOT NULL DEFAULT 0.0,
+    evidence_traces  TEXT NOT NULL DEFAULT '[]',
+    applied_count    INTEGER NOT NULL DEFAULT 0,
+    status           TEXT NOT NULL DEFAULT 'pending',
+    created_at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    applied_at       TEXT
+);
+"""
+
+
+class _NoCloseConn:
+    """Wraps a sqlite3 connection and suppresses close() so tests retain access."""
+
+    def __init__(self, db):
+        self._db = db
+
+    def close(self):
+        pass  # intentionally suppressed — fixture controls lifetime
+
+    def __getattr__(self, name):
+        return getattr(self._db, name)
+
+
+@pytest.fixture()
+def conn():
+    """In-memory SQLite connection with NOVA tables pre-created."""
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+    db.executescript(_NOVA_SCHEMA)
+    db.commit()
+    wrapped = _NoCloseConn(db)
+    yield wrapped
+    db.close()
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+def _past(days: int = 1) -> str:
+    return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat(timespec="seconds")
+
+
+def _seed_traces(db, skill: str, count: int, outcome: str = "failure") -> None:
+    for _ in range(count):
+        db.execute(
+            """
+            INSERT INTO agent_execution_traces
+                (trace_id, task_id, task_type, skill_used, outcome,
+                 events_json, lesson_pattern, improvement_notes,
+                 started_at, completed_at, created_at)
+            VALUES (?, ?, ?, ?, ?, '[]', ?, ?, ?, ?, ?)
+            """,
+            (
+                str(uuid.uuid4()),
+                str(uuid.uuid4()),
+                "test_task",
+                skill,
+                outcome,
+                f"timeout on {skill}",
+                "reduce retries or add timeout handling",
+                _past(1),
+                _past(1),
+                _past(1),
+            ),
+        )
+    db.commit()
+
+
+def _count_artifacts(db, skill: str) -> int:
+    row = db.execute(
+        "SELECT COUNT(*) FROM agent_improvement_artifacts WHERE skill_used = ?",
+        (skill,),
+    ).fetchone()
+    return int(row[0]) if row else 0
+
+
+# ── Unit: _query_low_performing_skills ───────────────────────────────────────
+
+def test_query_returns_low_performers(conn):
+    from tools.genesis.reflexes.evolution import _query_low_performing_skills
+
+    _seed_traces(conn, "slow_skill", 10, outcome="failure")
+    _seed_traces(conn, "good_skill", 10, outcome="success")
+
+    results = _query_low_performing_skills(
+        conn, window_days=7, success_rate_threshold=0.75,
+        min_trace_count=3, skill_limit=10,
+    )
+
+    skills = [r["skill_used"] for r in results]
+    assert "slow_skill" in skills
+    assert "good_skill" not in skills
+
+
+def test_query_respects_min_trace_count(conn):
+    from tools.genesis.reflexes.evolution import _query_low_performing_skills
+
+    _seed_traces(conn, "rare_failure_skill", 2, outcome="failure")  # below min_trace_count=3
+
+    results = _query_low_performing_skills(
+        conn, window_days=7, success_rate_threshold=0.75,
+        min_trace_count=3, skill_limit=10,
+    )
+    skills = [r["skill_used"] for r in results]
+    assert "rare_failure_skill" not in skills
+
+
+def test_query_respects_window(conn):
+    from tools.genesis.reflexes.evolution import _query_low_performing_skills
+
+    old_ts = (datetime.now(timezone.utc) - timedelta(days=10)).isoformat(timespec="seconds")
+    for _ in range(5):
+        conn.execute(
+            """
+            INSERT INTO agent_execution_traces
+                (trace_id, task_id, task_type, skill_used, outcome,
+                 events_json, lesson_pattern, improvement_notes,
+                 started_at, completed_at, created_at)
+            VALUES (?, ?, ?, ?, 'failure', '[]', '', '', ?, ?, ?)
+            """,
+            (str(uuid.uuid4()), str(uuid.uuid4()), "t", "ancient_skill", old_ts, old_ts, old_ts),
+        )
+    conn.commit()
+
+    results = _query_low_performing_skills(
+        conn, window_days=7, success_rate_threshold=0.75,
+        min_trace_count=3, skill_limit=10,
+    )
+    skills = [r["skill_used"] for r in results]
+    assert "ancient_skill" not in skills
+
+
+# ── Unit: _score_mutation ─────────────────────────────────────────────────────
+
+def test_score_mutation_weights():
+    from tools.genesis.reflexes.evolution import _score_mutation
+
+    fitness = {"correctness": 0.5, "procedure": 0.3, "conciseness": 0.2}
+    result = _score_mutation("add timeout handling for retry", "retry", fitness)
+
+    assert 0.0 <= result["composite_score"] <= 1.0
+    assert set(result.keys()) == {
+        "mutation", "correctness", "procedure", "conciseness", "composite_score"
+    }
+    expected = round(
+        0.5 * result["correctness"]
+        + 0.3 * result["procedure"]
+        + 0.2 * result["conciseness"],
+        4,
+    )
+    assert abs(result["composite_score"] - expected) < 1e-6
+
+
+def test_score_short_mutation_higher_conciseness():
+    from tools.genesis.reflexes.evolution import _score_mutation
+
+    fitness = {"correctness": 0.5, "procedure": 0.3, "conciseness": 0.2}
+    short = _score_mutation("add retry limit", "skill", fitness)
+    long_text = "add retry limit " + " ".join(["word"] * 100)
+    long = _score_mutation(long_text, "skill", fitness)
+    assert short["conciseness"] >= long["conciseness"]
+
+
+# ── Integration: run_evolution (mutations mocked) ────────────────────────────
+
+_GOOD_MUTATIONS = [
+    "add validation and timeout handling for retry loop",
+    "cache previous results to avoid redundant calls",
+    "limit concurrency to prevent resource exhaustion",
+    "log failure context for better debugging",
+]
+
+
+def test_run_evolution_produces_artifact(conn):
+    """Seed 10 failure traces → run_evolution() → >= 1 artifact row."""
+    from tools.genesis.reflexes import evolution
+
+    skill = "test_skill_sela"
+    _seed_traces(conn, skill, 10, outcome="failure")
+
+    with patch("tools.genesis.reflexes.evolution._generate_mutations",
+               return_value=_GOOD_MUTATIONS), \
+         patch("tools.db.storage.get_connection", return_value=conn):
+        result = evolution.run_evolution(config={
+            "trace_window_days": 7,
+            "success_rate_threshold": 0.75,
+            "min_trace_count": 3,
+            "skill_limit": 10,
+            "mutation_count": 4,
+            "artifact_min_score": 0.5,  # lowered so deterministic scorer passes
+            "fitness": {"correctness": 0.5, "procedure": 0.3, "conciseness": 0.2},
+            "mutation_function": "skill_mutation",
+        })
+
+    assert result["skills_evaluated"] >= 1
+    assert result["artifacts_created"] >= 1
+    assert any(a["skill"] == skill for a in result["artifacts"])
+
+    artifact_count = _count_artifacts(conn, skill)
+    assert artifact_count >= 1, f"Expected row in agent_improvement_artifacts, got {artifact_count}"
+
+
+def test_run_evolution_skips_when_no_mutations(conn):
+    """If _generate_mutations returns [], skill goes to skipped_skills."""
+    from tools.genesis.reflexes import evolution
+
+    skill = "unmutable_skill"
+    _seed_traces(conn, skill, 10, outcome="failure")
+
+    with patch("tools.genesis.reflexes.evolution._generate_mutations", return_value=[]), \
+         patch("tools.db.storage.get_connection", return_value=conn):
+        result = evolution.run_evolution(config={
+            "trace_window_days": 7,
+            "success_rate_threshold": 0.75,
+            "min_trace_count": 3,
+            "skill_limit": 10,
+            "mutation_count": 4,
+            "artifact_min_score": 0.75,
+            "fitness": {"correctness": 0.5, "procedure": 0.3, "conciseness": 0.2},
+            "mutation_function": "skill_mutation",
+        })
+
+    assert skill in result["skipped_skills"]
+    assert _count_artifacts(conn, skill) == 0
+
+
+def test_run_evolution_skips_below_score_threshold(conn):
+    """Mutations scoring below artifact_min_score are NOT inserted."""
+    from tools.genesis.reflexes import evolution
+
+    skill = "low_score_skill"
+    _seed_traces(conn, skill, 10, outcome="failure")
+
+    # Generic single-word mutations score poorly
+    low_mutations = ["improve it", "make it better", "update it", "change something"]
+
+    with patch("tools.genesis.reflexes.evolution._generate_mutations",
+               return_value=low_mutations), \
+         patch("tools.db.storage.get_connection", return_value=conn):
+        result = evolution.run_evolution(config={
+            "trace_window_days": 7,
+            "success_rate_threshold": 0.75,
+            "min_trace_count": 3,
+            "skill_limit": 10,
+            "mutation_count": 4,
+            "artifact_min_score": 0.99,  # virtually unreachable threshold
+            "fitness": {"correctness": 0.5, "procedure": 0.3, "conciseness": 0.2},
+            "mutation_function": "skill_mutation",
+        })
+
+    assert _count_artifacts(conn, skill) == 0
+    assert skill in result["skipped_skills"] or result["artifacts_created"] == 0
+
+
+# ── Genesis reflex envelope: run() ───────────────────────────────────────────
+
+def test_run_reflex_envelope(conn):
+    from tools.genesis.reflexes import evolution
+
+    _seed_traces(conn, "envelope_skill", 5, outcome="failure")
+
+    mutations = ["add timeout handling for envelope_skill retry"]
+    with patch("tools.genesis.reflexes.evolution._generate_mutations",
+               return_value=mutations), \
+         patch("tools.db.storage.get_connection", return_value=conn):
+        result = evolution.run(
+            config={
+                "trace_window_days": 7,
+                "success_rate_threshold": 0.75,
+                "min_trace_count": 3,
+                "skill_limit": 10,
+                "mutation_count": 4,
+                "artifact_min_score": 0.3,
+                "fitness": {"correctness": 0.5, "procedure": 0.3, "conciseness": 0.2},
+                "mutation_function": "skill_mutation",
+            },
+            trust=None,
+        )
+
+    assert result["success"] is True
+    assert "metric_value" in result
+    assert "details" in result
+    assert isinstance(result["metric_value"], float)

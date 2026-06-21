@@ -2,10 +2,7 @@
 """Pillar 2 — Documentation: README, CHANGELOG, inline docs, contributing guide."""
 from __future__ import annotations
 
-import json
-import os
 import pathlib
-import re
 from functools import lru_cache
 from typing import Any
 
@@ -22,17 +19,12 @@ from tools.ai_augmentation.agent_readiness.pillars._base import (
 # ---------------------------------------------------------------------------
 # Anomaly-detection threshold loader
 # ---------------------------------------------------------------------------
-_ARGS_PATH = pathlib.Path(__file__).parents[4] / "args" / "agent_readiness_config.yaml"
+_ARGS_PATH = pathlib.Path(__file__).parents[5] / "args" / "agent_readiness_config.yaml"
 _DEFAULTS: dict[str, Any] = {
-    "readme_min_content_length": 80,
-    "inline_docs_sample_size": 20,
-    "min_jsdoc_files": 2,
-    "docstring_ratio_denominator": 3,
-    "nlp_analyzer_enabled": True,
-    "nlp_analyzer_model": "claude-haiku-4-5-20251001",
-    "nlp_analyzer_max_tokens": 256,
-    "nlp_analyzer_confidence_threshold": 0.7,
-    "nlp_analyzer_text_sample_chars": 2000,
+    "min_readme_length": 80,
+    "docstring_sample_size": 20,
+    "min_jsdoc_count": 2,
+    "min_docstring_fraction": 0.333,
 }
 
 
@@ -48,109 +40,25 @@ def _load_thresholds() -> dict[str, Any]:
         data = yaml.safe_load(raw) or {}
         cfg = data.get("pillars", {}).get("documentation", {})
         readme = cfg.get("readme", {})
-        inline = cfg.get("inline_docs", {})
-        nlp = cfg.get("nlp_analyzer", {})
+        ds = cfg.get("docstrings", {})
         return {
-            "readme_min_content_length": int(
-                readme.get("min_content_length", _DEFAULTS["readme_min_content_length"])
-            ),
-            "inline_docs_sample_size": int(
-                inline.get("sample_size", _DEFAULTS["inline_docs_sample_size"])
-            ),
-            "min_jsdoc_files": int(
-                inline.get("min_jsdoc_files", _DEFAULTS["min_jsdoc_files"])
-            ),
-            "docstring_ratio_denominator": int(
-                inline.get("docstring_ratio_denominator", _DEFAULTS["docstring_ratio_denominator"])
-            ),
-            "nlp_analyzer_enabled": bool(nlp.get("enabled", _DEFAULTS["nlp_analyzer_enabled"])),
-            "nlp_analyzer_model": str(nlp.get("model", _DEFAULTS["nlp_analyzer_model"])),
-            "nlp_analyzer_max_tokens": int(nlp.get("max_tokens", _DEFAULTS["nlp_analyzer_max_tokens"])),
-            "nlp_analyzer_confidence_threshold": float(
-                nlp.get("confidence_threshold", _DEFAULTS["nlp_analyzer_confidence_threshold"])
-            ),
-            "nlp_analyzer_text_sample_chars": int(
-                nlp.get("text_sample_chars", _DEFAULTS["nlp_analyzer_text_sample_chars"])
-            ),
+            "min_readme_length": int(readme.get("min_content_length", _DEFAULTS["min_readme_length"])),
+            "docstring_sample_size": int(ds.get("sample_size", _DEFAULTS["docstring_sample_size"])),
+            "min_jsdoc_count": int(ds.get("min_jsdoc_count", _DEFAULTS["min_jsdoc_count"])),
+            "min_docstring_fraction": float(ds.get("min_coverage_fraction", _DEFAULTS["min_docstring_fraction"])),
         }
     except Exception:  # noqa: BLE001
         return dict(_DEFAULTS)
 
 
-# ---------------------------------------------------------------------------
-# NLP anomaly analyzer — Claude Haiku for documentation quality assessment
-# ---------------------------------------------------------------------------
-
-
-def _nlp_analyze_doc_quality(text: str, task: str) -> "dict | None":
-    """Assess documentation quality anomalies using Claude Haiku NLP.
-
-    Returns dict with keys: anomaly (bool), assessment (str), confidence (float).
-    Returns None when LLM is unavailable so callers fall back to static thresholds.
-    """
-    thresholds = _load_thresholds()
-    if not thresholds["nlp_analyzer_enabled"]:
-        return None
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
-    if not api_key:
-        return None
-    try:
-        from tools.llm.anthropic_provider import AnthropicLLMProvider
-        from tools.llm.provider import LLMRequest
-    except ImportError:
-        return None
-
-    sample = text[:thresholds["nlp_analyzer_text_sample_chars"]]
-    prompt = (
-        f"You are a documentation quality analyst. {task}\n\n"
-        f"Text:\n{sample}\n\n"
-        "Respond ONLY with valid JSON in this exact format: "
-        '{"anomaly": false, "assessment": "brief reason", "confidence": 0.85}\n'
-        'Set anomaly to true when documentation quality is anomalously low (placeholder text, '
-        'missing critical sections, or content that does not actually explain the project). '
-        'Set anomaly to false when documentation is adequate or better.'
-    )
-    try:
-        provider = AnthropicLLMProvider(api_key=api_key)
-        request = LLMRequest(
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=thresholds["nlp_analyzer_max_tokens"],
-        )
-        model_id = thresholds["nlp_analyzer_model"]
-        model_cfg = {"max_output_tokens": thresholds["nlp_analyzer_max_tokens"]}
-        response = provider.invoke(request, model_id, model_cfg)
-        result_text = response.content.strip()
-        json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
-        if json_match:
-            return json.loads(json_match.group())
-    except Exception:  # noqa: BLE001
-        pass
-    return None
-
-
 def _check_readme(repo: pathlib.Path) -> CriterionResult:
     cid = "readme-present"
     thresholds = _load_thresholds()
-    min_length = thresholds["readme_min_content_length"]
-    min_confidence = thresholds["nlp_analyzer_confidence_threshold"]
+    min_length = thresholds["min_readme_length"]
     found = _exists(repo, "README.md", "README.rst", "README.txt", "README")
     if found:
         content = _read(repo, found) or ""
         if len(content) > min_length:
-            # NLP secondary pass: detect anomalously low quality despite passing length threshold
-            result = _nlp_analyze_doc_quality(
-                content,
-                "Assess whether this README has anomalously low quality — e.g., placeholder text, "
-                "template scaffolding with no real content, or a title/badge-only README that "
-                "provides no actual installation or usage guidance.",
-            )
-            if result and result.get("anomaly") and result.get("confidence", 0) >= min_confidence:
-                assessment = result.get("assessment", "low-quality content detected")
-                return CriterionResult(
-                    cid, False,
-                    f"README exists but NLP anomaly detected: {assessment}",
-                    "Expand README with installation, usage, and contribution sections.",
-                )
             return CriterionResult(cid, True, f"README found with content: {found}")
         return CriterionResult(cid, False, f"README found but very short ({len(content)} chars, min {min_length}).",
                                "Expand README with installation, usage, and contribution sections.")
@@ -194,10 +102,9 @@ def _check_api_docs(repo: pathlib.Path) -> CriterionResult:
 def _check_inline_docstrings(repo: pathlib.Path) -> CriterionResult:
     cid = "inline-docstrings"
     thresholds = _load_thresholds()
-    sample_size = thresholds["inline_docs_sample_size"]
-    min_jsdoc = thresholds["min_jsdoc_files"]
-    ratio_denom = thresholds["docstring_ratio_denominator"]
-    min_confidence = thresholds["nlp_analyzer_confidence_threshold"]
+    sample_size = thresholds["docstring_sample_size"]
+    min_jsdoc = thresholds["min_jsdoc_count"]
+    min_fraction = thresholds["min_docstring_fraction"]
     py_files = _glob_files(repo, "**/*.py")
     if not py_files:
         ts_files = _glob_files(repo, "**/*.ts") + _glob_files(repo, "**/*.js")
@@ -208,50 +115,18 @@ def _check_inline_docstrings(repo: pathlib.Path) -> CriterionResult:
         jsdoc_count = sum(1 for f in sample if _search(f.read_text(encoding="utf-8", errors="replace"), r"/\*\*"))
         if jsdoc_count >= min_jsdoc:
             return CriterionResult(cid, True, f"JSDoc comments found in {jsdoc_count}/{len(sample)} sampled files")
-        # NLP secondary pass: assess whether the lack of JSDoc is an anomaly for this project type
-        for f in sample[:3]:
-            content = f.read_text(encoding="utf-8", errors="replace")
-            result = _nlp_analyze_doc_quality(
-                content,
-                "Assess whether the absence of JSDoc comments in this TypeScript/JavaScript file "
-                "is anomalously low for a project of this complexity — i.e., whether public APIs, "
-                "classes, or functions exported here clearly need documentation.",
-            )
-            if result and result.get("anomaly") and result.get("confidence", 0) >= min_confidence:
-                assessment = result.get("assessment", "undocumented public API detected")
-                return CriterionResult(
-                    cid, False,
-                    f"JSDoc anomaly detected via NLP in {f.name}: {assessment}",
-                    "Add JSDoc to public functions and classes.",
-                )
         return CriterionResult(cid, False, f"Few JSDoc comments detected ({jsdoc_count}/{len(sample)} sampled files, min {min_jsdoc}).",
                                "Add JSDoc to public functions and classes.")
     sample = py_files[:sample_size]
-    file_contents = [(f, f.read_text(encoding="utf-8", errors="replace")) for f in sample]
     docstring_count = sum(
-        1 for _, content in file_contents
-        if _search(content, r'""".*?"""', flags=0) or _search(content, r"'''.*?'''", flags=0)
+        1 for f in sample
+        if _search(f.read_text(encoding="utf-8", errors="replace"), r'""".*?"""', flags=0)
+        or _search(f.read_text(encoding="utf-8", errors="replace"), r"'''.*?'''", flags=0)
     )
-    if docstring_count >= max(1, len(sample) // ratio_denom):
+    min_count = max(1, int(len(sample) * min_fraction))
+    if docstring_count >= min_count:
         return CriterionResult(cid, True, f"Docstrings found in {docstring_count}/{len(sample)} sampled Python files")
-    # NLP secondary pass: check whether undocumented files contain complex public APIs
-    for f, content in file_contents[:3]:
-        if _search(content, r'""".*?"""', flags=0) or _search(content, r"'''.*?'''", flags=0):
-            continue  # already has docstrings
-        result = _nlp_analyze_doc_quality(
-            content,
-            "Assess whether the absence of docstrings in this Python file is anomalously low — "
-            "i.e., whether it defines public functions, classes, or module-level logic that "
-            "clearly require documentation for maintainability.",
-        )
-        if result and result.get("anomaly") and result.get("confidence", 0) >= min_confidence:
-            assessment = result.get("assessment", "undocumented public API detected")
-            return CriterionResult(
-                cid, False,
-                f"Docstring anomaly detected via NLP in {f.name}: {assessment}",
-                "Add module and function docstrings to improve maintainability.",
-            )
-    return CriterionResult(cid, False, f"Low docstring coverage ({docstring_count}/{len(sample)} sampled files).",
+    return CriterionResult(cid, False, f"Low docstring coverage ({docstring_count}/{len(sample)} sampled files, min {min_count}).",
                            "Add module and function docstrings to improve maintainability.")
 
 

@@ -18,10 +18,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
+import yaml
+
+# Worktree root is parents[3]; project root with args/ is parents[3] for the worktree.
+_worktree_root = Path(__file__).resolve().parents[3]
+
 # Ensure project root on path so canonical imports work when run standalone
-_repo_root = Path(__file__).resolve().parents[4]
-if str(_repo_root) not in sys.path:
-    sys.path.insert(0, str(_repo_root))
+if str(_worktree_root) not in sys.path:
+    sys.path.insert(0, str(_worktree_root))
 
 from src.ingestion.fetchers.osint_stream_fetcher import OSINTStreamFetcher, OSINTStreamFetchError
 from src.ingestion.fetchers.satellite_stream_fetcher import SatelliteStreamFetcher, SatelliteStreamFetchError
@@ -29,8 +33,18 @@ from src.ingestion.fetchers.news_stream_fetcher import NewsStreamFetcher, NewsSt
 
 log = logging.getLogger(__name__)
 
-_DEFAULT_BUFFER_DIR = _repo_root / "data" / "osint_stream_buffer"
-_MAX_SIGNALS_PER_BATCH = 500
+
+def _load_buffer_cfg() -> Dict[str, Any]:
+    cfg_path = _worktree_root / "args" / "osint_streaming_config.yaml"
+    if cfg_path.exists():
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+        return data.get("buffer", {})
+    return {}
+
+
+_BUFFER_CFG = _load_buffer_cfg()
+_DEFAULT_BUFFER_DIR = _worktree_root / _BUFFER_CFG.get("directory", "data/osint_stream_buffer")
+_MAX_SIGNALS_PER_BATCH: int = int(_BUFFER_CFG.get("max_signals_per_batch", 500))
 
 
 def _sha256(text: str) -> str:

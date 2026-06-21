@@ -16,79 +16,6 @@ from .event_service import (
     render_template, render_to_string, send, sendmail, notify, emit, publish, dispatch, _now_iso,
 )
 
-# ---------------------------------------------------------------------------
-# Module-level fallback constants — all overridable from args/notification_config.yaml
-# under report_service.anomaly_detection.  Change config, not code.
-# ---------------------------------------------------------------------------
-_NARRATIVE_CONTEXT_CHARS      = 1500   # context chars forwarded to LLM for narrative
-_NARRATIVE_MAX_TOKENS         = 512    # max LLM tokens for narrative generation
-_NARRATIVE_TEMPERATURE        = 0.3    # LLM temperature for narrative generation
-_GATE_ROWS_LIMIT              = 5      # max gate result rows fetched per assessment
-_TOP_OPPS_ROADMAP_LIMIT       = 10     # max top opportunities in roadmap reports
-_TOP_OPPS_SCAN_LIMIT          = 5      # max top opportunities in scan reports
-_MODULE_ROWS_LIMIT            = 10     # max module rows in scan reports
-_SUMMARISE_FINDINGS_COUNT     = 3      # max findings included in summary text
-_REGRESSION_SIGNIFICANCE_PTS  = 2.0   # delta (pts) below which change is noise, not regression
-
-
-def _load_anomaly_cfg() -> dict:
-    """Load anomaly detection config from args/notification_config.yaml (best-effort)."""
-    try:
-        import yaml
-        from pathlib import Path as _P
-        cfg_path = _P(__file__).resolve().parents[2] / "args" / "notification_config.yaml"
-        with open(cfg_path, encoding="utf-8") as f:
-            data = yaml.safe_load(f) or {}
-        return data.get("report_service", {}).get("anomaly_detection", {})
-    except Exception:
-        return {}
-
-
-def _compute_regression_threshold(anomaly_cfg: "dict | None" = None) -> float:
-    """Compute the minimum score delta that constitutes a meaningful regression.
-
-    Uses std_dev of historical canvas_assessment score changes: changes smaller
-    than 0.5 * std_dev are considered noise. Falls back to _REGRESSION_SIGNIFICANCE_PTS
-    when fewer than min_samples rows are available or anomaly detection is disabled.
-    """
-    cfg = anomaly_cfg or {}
-    if not cfg.get("enabled", True):
-        return float(cfg.get("fallback_regression_pts", _REGRESSION_SIGNIFICANCE_PTS))
-
-    min_samples   = cfg.get("min_samples", 20)
-    sigma_fraction = cfg.get("sigma_fraction", 0.5)  # threshold = sigma_fraction * std_dev
-    fallback       = float(cfg.get("fallback_regression_pts", _REGRESSION_SIGNIFICANCE_PTS))
-    bounds         = cfg.get("adaptive_bounds", {})
-    pts_floor      = float(bounds.get("regression_floor", 0.5))
-    pts_ceil       = float(bounds.get("regression_ceil", 10.0))
-
-    import math
-    conn = None
-    try:
-        conn = get_connection()
-        # Compute std_dev of canvas assessment scores to determine noise level
-        row = conn.execute(
-            "SELECT AVG(score) AS mean_s, "
-            "AVG(score * score) - AVG(score) * AVG(score) AS var_s, "
-            "COUNT(*) AS n FROM canvas_assessments WHERE score IS NOT NULL"
-        ).fetchone()
-        if row:
-            n = row["n"] if isinstance(row, dict) else row[2]
-            if n and n >= min_samples:
-                var_s = max(0.0, float(row["var_s"] if isinstance(row, dict) else row[1]))
-                std_s = math.sqrt(var_s)
-                threshold = max(pts_floor, min(pts_ceil, sigma_fraction * std_s))
-                return round(threshold, 2)
-    except Exception:
-        pass
-    finally:
-        if conn is not None:
-            try:
-                conn.close()
-            except Exception:
-                pass
-    return fallback
-
 CANVAS_REPORT_TEMPLATES = {
     "assessment_complete": (
         "Canvas **$canvas_name** assessment complete.\n"
@@ -123,7 +50,7 @@ ASSESSMENT_SUMMARY_TEMPLATES = {
 }
 
 # ---------------------------------------------------------------------------
-# AI-ification (aiify-opp-5539, aiify-opp-5922): optional LLM-synthesized executive summary.
+# AI-ification (aiify-opp-5539): optional LLM-synthesized executive summary.
 #
 # The db → render → notify chains below produce deterministic, template-based
 # report text that remains the AUTHORITATIVE payload — stakeholders must never
@@ -183,8 +110,8 @@ def _ai_report_narrative(report_kind: str, facts: dict) -> str | None:
                 }
             ],
             system_prompt=_NARRATIVE_SYSTEM_PROMPT,
-            max_tokens=_NARRATIVE_MAX_TOKENS,
-            temperature=_NARRATIVE_TEMPERATURE,
+            max_tokens=512,
+            temperature=0.3,
             skip_injection_scan=True,  # trusted first-party fact dict, not user input
             classification="CUI",
         )
@@ -232,7 +159,7 @@ def deliver_canvas_report(
         ).fetchone()
         gate_rows = conn.execute(
             "SELECT gate_id, status, finding_count FROM canvas_gate_results "
-            f"WHERE assessment_id = ? ORDER BY finding_count DESC LIMIT {_GATE_ROWS_LIMIT}",
+            "WHERE assessment_id = ? ORDER BY finding_count DESC LIMIT 5",
             (assessment_id,),
         ).fetchall()
 
@@ -262,14 +189,7 @@ def deliver_canvas_report(
             "gate_id": (gate_rows[0]["gate_id"] if gate_rows else ""),
         }
 
-        # Use significance threshold — statistical from history when ≥min_samples, else config fallback.
-        sig = _compute_regression_threshold(_load_anomaly_cfg())
-        if delta < -sig:
-            delta_sign = "neg"
-        elif delta > sig:
-            delta_sign = "pos"
-        else:
-            delta_sign = "zero"
+        delta_sign = "neg" if str(delta).startswith("-") else ("pos" if delta else "zero")
         tmpl_key = {"neg": "score_regression", "pos": "score_improvement"}.get(delta_sign, "assessment_complete")
 
         # --- Render ---
@@ -406,6 +326,12 @@ def deliver_assessment_summary(
         # --- Render ---
         tmpl_str = ASSESSMENT_SUMMARY_TEMPLATES.get(framework, "Assessment: $framework ($project_id)")
         rendered = Template(tmpl_str).safe_substitute(vars_)
+        render_template(
+            f"reports/{framework}_summary.html",
+            framework=framework,
+            project_id=project_id,
+            **vars_,
+        )
 
         # --- AI (optional): synthesize executive summary; None if unavailable ---
         narrative = _ai_report_narrative(
@@ -574,7 +500,6 @@ def deliver_aiify_roadmap_report(
     """
     conn = get_connection()
     try:
-        # --- DB: fetch roadmap + top opportunities + scan readiness ---
         roadmap_row = conn.execute(
             "SELECT roadmap_id, scan_id, phases_json, created_at "
             "FROM aiify_roadmaps WHERE roadmap_id = ?",
@@ -591,7 +516,7 @@ def deliver_aiify_roadmap_report(
             "s.composite_score, s.value_score, s.feasibility_score "
             "FROM aiify_opportunities o "
             "JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id "
-            f"WHERE o.roadmap_id = ? ORDER BY s.composite_score DESC LIMIT {_TOP_OPPS_ROADMAP_LIMIT}",
+            "WHERE o.roadmap_id = ? ORDER BY s.composite_score DESC LIMIT 10",
             (roadmap_id,),
         ).fetchall()
         scan_row = conn.execute(
@@ -703,7 +628,6 @@ def deliver_aiify_scan_report(
     """
     conn = get_connection()
     try:
-        # --- DB: fetch scan metadata ---
         scan_row = conn.execute(
             "SELECT scan_id, overall_ai_readiness, status, input_ref, created_at "
             "FROM aiify_scans WHERE scan_id = ?",
@@ -714,7 +638,6 @@ def deliver_aiify_scan_report(
             rendered = f"AI-ify scan {scan_id} not found. Run icdev-secure to generate."
             return {"status": "no_data", "rendered": rendered}
 
-        # --- DB: opportunity pattern breakdown ---
         pattern_rows = conn.execute(
             "SELECT o.pattern_type, COUNT(*) as opp_count, "
             "AVG(s.composite_score) as avg_score "
@@ -724,21 +647,19 @@ def deliver_aiify_scan_report(
             (scan_id,),
         ).fetchall()
 
-        # --- DB: top modules by opportunity density ---
         module_rows = conn.execute(
             "SELECT o.module_path, COUNT(*) as opp_count "
             "FROM aiify_opportunities o "
             "WHERE o.scan_id = ? GROUP BY o.module_path "
-            f"ORDER BY opp_count DESC LIMIT {_MODULE_ROWS_LIMIT}",
+            "ORDER BY opp_count DESC LIMIT 10",
             (scan_id,),
         ).fetchall()
 
-        # --- DB: highest-value opportunities ---
         top_opps = conn.execute(
             "SELECT o.function_name, o.pattern_type, o.module_path, s.composite_score "
             "FROM aiify_opportunities o "
             "JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id "
-            f"WHERE o.scan_id = ? ORDER BY s.composite_score DESC LIMIT {_TOP_OPPS_SCAN_LIMIT}",
+            "WHERE o.scan_id = ? ORDER BY s.composite_score DESC LIMIT 5",
             (scan_id,),
         ).fetchall()
 
@@ -826,150 +747,12 @@ def deliver_aiify_scan_report(
         conn.close()
 
 
-def deliver_aiify_opportunity_report(
-    opportunity_id: int,
-    recipients: Iterable[str],
-    channels: Iterable[str],
-    ai_narrative: bool = False,
-) -> dict:
-    """Query a single AI-ify opportunity, render a report, and deliver to stakeholders.
-
-    Fetches the opportunity record, its score breakdown, and the parent scan's
-    readiness baseline; renders a structured single-opportunity report; and
-    delivers via all requested channels.
-
-    When ``ai_narrative`` is True, additionally synthesizes a short LLM
-    executive summary of the opportunity's value and recommended next step
-    (returned under ``narrative``). The deterministic templated report remains
-    the authoritative payload; the summary is best-effort and is ``None`` when
-    the LLM is unavailable (air-gap, no credentials, network failure).
-    """
-    conn = get_connection()
-    try:
-        # --- DB: fetch opportunity + score ---
-        opp_row = conn.execute(
-            "SELECT o.opportunity_id, o.scan_id, o.roadmap_id, o.function_name, "
-            "o.module_path, o.pattern_type, o.ai_paradigm, o.phase, o.status, o.created_at "
-            "FROM aiify_opportunities o WHERE o.opportunity_id = ?",
-            (opportunity_id,),
-        ).fetchone()
-
-        if not opp_row:
-            rendered = f"AI-ify opportunity {opportunity_id} not found. Run icdev-secure to generate."
-            return {"status": "no_data", "rendered": rendered}
-
-        score_row = conn.execute(
-            "SELECT composite_score, value_score, feasibility_score, risk_score "
-            "FROM aiify_scores WHERE opportunity_id = ?",
-            (opportunity_id,),
-        ).fetchone()
-
-        scan_row = conn.execute(
-            "SELECT overall_ai_readiness, status FROM aiify_scans WHERE scan_id = ?",
-            (opp_row["scan_id"],),
-        ).fetchone()
-
-        composite = round(float((score_row or {}).get("composite_score", 0) or 0), 4)
-        value = round(float((score_row or {}).get("value_score", 0) or 0), 4)
-        feasibility = round(float((score_row or {}).get("feasibility_score", 0) or 0), 4)
-        risk = round(float((score_row or {}).get("risk_score", 0) or 0), 4)
-        readiness = round(float((scan_row or {}).get("overall_ai_readiness", 0) or 0), 1)
-
-        vars_ = {
-            "opportunity_id": opportunity_id,
-            "scan_id": opp_row["scan_id"],
-            "roadmap_id": opp_row["roadmap_id"] or "",
-            "function_name": opp_row["function_name"] or "<unknown>",
-            "module_path": opp_row["module_path"] or "",
-            "pattern_type": opp_row["pattern_type"] or "",
-            "ai_paradigm": opp_row["ai_paradigm"] or "",
-            "phase": opp_row["phase"] or "",
-            "status": opp_row["status"] or "open",
-            "composite_score": composite,
-            "value_score": value,
-            "feasibility_score": feasibility,
-            "risk_score": risk,
-            "overall_readiness": readiness,
-            "created_at": opp_row["created_at"] or _now_iso(),
-        }
-
-        rendered = (
-            f"AI-ify Opportunity Report: opp-{opportunity_id}\n"
-            f"Function: {vars_['function_name']} | Module: {vars_['module_path']}\n"
-            f"Pattern: {vars_['pattern_type']} | Paradigm: {vars_['ai_paradigm']}\n"
-            f"Phase: {vars_['phase']} | Status: {vars_['status']}\n"
-            f"Composite: {composite} | Value: {value} | Feasibility: {feasibility} | Risk: {risk}\n"
-            f"Scan readiness: {readiness}/100 | Roadmap: {vars_['roadmap_id']}"
-        )
-        rendered_html = render_template(
-            "reports/aiify_opportunity.html",
-            opportunity=opp_row,
-            scores=score_row,
-            scan=scan_row,
-            **vars_,
-        )
-
-        # --- AI (optional): synthesize executive summary; None if unavailable ---
-        narrative = _ai_report_narrative(
-            "AI-ify opportunity readiness report", vars_
-        ) if ai_narrative else None
-
-        # --- Deliver ---
-        receipts = {}
-        for recipient in recipients:
-            sendmail(
-                to=recipient,
-                subject=(
-                    f"[ICDEV] AI-ify Opportunity Report — opp-{opportunity_id} "
-                    f"({vars_['pattern_type']}, score: {composite})"
-                ),
-                html=rendered_html,
-            )
-            receipts[f"email:{recipient}"] = "sent"
-
-        for ch in channels:
-            if ch == "audit":
-                conn.execute(
-                    "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
-                    "VALUES ('aiify_opportunity_report', ?, 'report_delivered', 'system', ?)",
-                    (str(opportunity_id), rendered),
-                )
-                conn.commit()
-                receipts["audit"] = "inserted"
-            elif ch in ("slack", "teams", "webhook"):
-                payload = {
-                    "opportunity_id": opportunity_id,
-                    "pattern_type": vars_["pattern_type"],
-                    "composite_score": composite,
-                    "status": vars_["status"],
-                }
-                if narrative:
-                    payload["narrative"] = narrative
-                publish(ch, payload)
-                receipts[ch] = "published"
-            else:
-                notify(ch, rendered)
-                receipts[ch] = "notified"
-
-        return {
-            "status": "delivered",
-            "opportunity_id": opportunity_id,
-            "pattern_type": vars_["pattern_type"],
-            "composite_score": composite,
-            "rendered": rendered,
-            "narrative": narrative,
-            "receipts": receipts,
-        }
-    finally:
-        conn.close()
-
-
 def _summarise_findings(findings_json: str | None) -> str:
     if not findings_json:
         return "none"
     try:
         findings = json.loads(findings_json)
-        top = [f.get("title", "finding") for f in (findings[:_SUMMARISE_FINDINGS_COUNT] if isinstance(findings, list) else [])]
+        top = [f.get("title", "finding") for f in (findings[:3] if isinstance(findings, list) else [])]
         return "; ".join(top) or "none"
     except Exception:
         return "parse error"

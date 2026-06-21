@@ -16,13 +16,28 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+import yaml
 
 log = logging.getLogger(__name__)
 
 _DEFAULT_BASE_URL = "https://api.twitter.com/2"
-_DEFAULT_TIMEOUT_S = 10
-_MAX_RESULTS = 100
+
+
+def _load_osint_cfg() -> Dict[str, Any]:
+    """Read osint_stream section from args/osint_streaming_config.yaml."""
+    cfg_path = Path(__file__).resolve().parents[3] / "args" / "osint_streaming_config.yaml"
+    if cfg_path.exists():
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+        return data.get("osint_stream", {})
+    return {}
+
+
+_STREAM_CFG = _load_osint_cfg()
+_DEFAULT_TIMEOUT_S: int = int(_STREAM_CFG.get("timeout_s", 10))
+_MAX_RESULTS: int = int(_STREAM_CFG.get("max_results", 100))
 
 
 class OSINTStreamFetchError(Exception):

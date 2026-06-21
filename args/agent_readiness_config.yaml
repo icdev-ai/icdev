@@ -77,6 +77,18 @@ pillars:
       # A single stub workflow is anomalously low for a project claiming CI readiness.
       min_workflows: 1
 
+    cd_deployment:
+      # Keywords/patterns scanned in CI files and Makefiles to detect a deployment step.
+      # Values are Python regex alternations joined with | at load time.
+      # Add project-specific verbs (e.g. "ship", "publish-chart") without touching code.
+      deploy_keywords:
+        - deploy
+        - release
+        - publish
+        - "push.*image"
+        - "helm\\s+upgrade"
+        - "kubectl\\s+apply"
+
     iac:
       # Minimum IaC files (Terraform .tf, Helm Chart.yaml, K8s manifests) required to pass.
       # A single file is the floor; raise to 2+ for projects with complex multi-environment infra.
@@ -100,6 +112,34 @@ pillars:
       # Minimum ratio (0.0–1.0) of requirements.txt entries that must use == pinning.
       # A ratio below this is anomalously low for a project claiming reproducible builds.
       min_pin_ratio: 0.8
+
+  structure:
+    gitignore:
+      # Minimum number of lines a .gitignore must contain to be considered non-trivial.
+      # A .gitignore with fewer lines is anomalously sparse for a project claiming
+      # artifact/secret hygiene. Raise to 10+ for stricter gates; lower to 3 for minimal repos.
+      min_lines: 5
+
+  append_only_audit:
+    audit_log_inserts:
+      # Maximum Python files scanned when searching for audit INSERT operations.
+      # Values below ~10 are anomalously low and risk missing insert coverage.
+      # Raise for very large repos; lower to trade accuracy for speed.
+      scan_sample_size: 40
+
+    nlp_extractor:
+      # Enable Claude Haiku NLP extraction as a secondary pass when regex finds nothing.
+      # Set to false to run regex-only (no API calls, faster but less accurate for dynamic SQL).
+      enabled: true
+      # Model used for NLP extraction. claude-haiku-4-5-20251001 balances speed and accuracy.
+      model: claude-haiku-4-5-20251001
+      # Max output tokens for the JSON response; 256 is sufficient for structured extraction.
+      max_tokens: 256
+      # Minimum confidence score (0.0–1.0) required to accept an NLP-detected reference.
+      # Lower values increase recall but risk false positives on ambiguous code patterns.
+      confidence_threshold: 0.7
+      # Characters of file content sampled per NLP call to control token cost.
+      text_sample_chars: 2000
 
   il_classification:
     cui_file_headers:

@@ -31,6 +31,7 @@ from tools.agentic_ai_canvas.constants import (
 from tools.agentic_ai_canvas.observability_nodes import check_observability_coverage
 from tools.agentic_ai_canvas.a2a_sandbox import check_a2a_sandbox
 from tools.agentic_ai_canvas.safety_extensions import check_safety_extensions
+from tools.agentic_ai_canvas.memory_layer import check_memory_layer
 
 
 def _now() -> str:
@@ -415,6 +416,7 @@ def assess_design(design_id: str, graph_json: str | dict,
     obs_findings, obs_score = check_observability_coverage(nodes, edges)
     a2a_findings, a2a_score = check_a2a_sandbox(nodes, edges)
     safety_ext_findings, safety_ext_score = check_safety_extensions(nodes, edges)
+    mem_findings, mem_score = check_memory_layer(nodes, edges)
 
     # Phase 4 execution check (bonus — not penalised if no agents)
     p4_exec_findings = _check_execution_nodes(nodes, edges)
@@ -440,7 +442,8 @@ def assess_design(design_id: str, graph_json: str | dict,
 
     all_findings = (rmf_findings + owasp_findings + hitl_findings
                     + obs_findings + a2a_findings + safety_ext_findings
-                    + p4_exec_findings + il_compat_findings + bridge_sec_findings)
+                    + mem_findings + p4_exec_findings
+                    + il_compat_findings + bridge_sec_findings)
 
     # L5 (unconstrained) agent is always a CRITICAL finding
     # L3+ (Human-Initiated) without a HITL gate is a CAT1 finding
@@ -474,8 +477,9 @@ def assess_design(design_id: str, graph_json: str | dict,
 
     # Aggregate score:
     #   Core: 40% NIST RMF + 40% OWASP  = 80%
-    #   Phase 4 (optional bonus when applicable): up to 20% from obs/a2a/safety-ext
-    p4_scores = [s for s in (obs_score, a2a_score, safety_ext_score) if s is not None]
+    #   Phase 4 (optional bonus when applicable): up to 20% from obs/a2a/safety-ext/mem
+    p4_scores = [s for s in (obs_score, a2a_score, safety_ext_score, mem_score)
+                 if s is not None]
     if p4_scores:
         p4_avg = sum(p4_scores) / len(p4_scores)
         score = round((rmf_score * 0.40) + (owasp_score * 0.40) + (p4_avg * 0.20), 1)
@@ -491,6 +495,7 @@ def assess_design(design_id: str, graph_json: str | dict,
         "obs_score": obs_score,
         "a2a_score": a2a_score,
         "safety_ext_score": safety_ext_score,
+        "mem_score": mem_score,
         "omb_compliant": omb_compliant,
         "autonomy_max": autonomy_max,
         "safety_impacting": int(safety_impacting),

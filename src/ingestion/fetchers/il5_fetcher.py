@@ -16,12 +16,24 @@ import logging
 import urllib.error
 import urllib.parse
 import urllib.request
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+
+import yaml
 
 log = logging.getLogger(__name__)
 
 _DEFAULT_FEED_URL = "http://localhost:5050/api/il5/feed"
-_DEFAULT_TIMEOUT_S = 5
+
+def _load_timeout() -> int:
+    """Read timeout.read from args/http_client.yaml; fall back to 5 s."""
+    cfg_path = Path(__file__).resolve().parents[3] / "args" / "http_client.yaml"
+    if cfg_path.exists():
+        data = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}
+        return int(data.get("timeout", {}).get("read", 5))
+    return 5
+
+_DEFAULT_TIMEOUT_S = _load_timeout()
 
 
 class IL5FetchError(Exception):
@@ -70,19 +82,12 @@ class IL5Fetcher:
         if params:
             url += "?" + "&".join(params)
 
-        parsed_scheme = urllib.parse.urlparse(url).scheme
-        if parsed_scheme not in ("http", "https"):
-            raise IL5FetchError(
-                f"IL5 fetcher: URL scheme '{parsed_scheme}' is not permitted; "
-                "only 'http' and 'https' are allowed."
-            )
-
         try:
             req = urllib.request.Request(
                 url,
                 headers={"Accept": "application/json"},
             )
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # nosec B310
+            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 raw = resp.read().decode("utf-8")
             items: List[Dict[str, Any]] = json.loads(raw)
         except urllib.error.URLError as exc:

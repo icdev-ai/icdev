@@ -417,6 +417,10 @@ routing:
     chain: [qwen3-local, claude-sonnet, gpt-4o-mini, gemini-2.5-flash, llama-local]
     effort: medium
 
+  agent_readiness_anomaly:
+    chain: [claude-haiku, qwen3-local, gpt-4o-mini, gemini-2.0-flash, llama-local]
+    effort: low
+
   agent_monitor:
     chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
     effort: low
@@ -468,11 +472,6 @@ routing:
 
   nlq_sql:
     chain: [qwen3-local, gpt-4o-mini, gemini-2.0-flash, claude-haiku, llama-local]
-    effort: low
-
-  # AAC NLP extractor — classifies user-provided input_ref as git_url/local_path
-  nlp_extractor:
-    chain: [claude-haiku, qwen3-local, gpt-4o-mini, gemini-2.0-flash, llama-local]
     effort: low
 
   code_generation:
@@ -837,7 +836,6 @@ two_tier:
     - rag_rerank
     - rag_evaluate
     - ft_pair_generation
-    - nlp_extractor        # AAC: classifies user input_ref as git_url/local_path
     - pulse_draft          # Drafting uses gemma3 (no thinking mode issues)
     - pulse_rewrite        # Rewriting uses qwen3.5 (think:false via provider)
     - codebase_query       # Phase 69: codebase assistant widget (D-CA-5)

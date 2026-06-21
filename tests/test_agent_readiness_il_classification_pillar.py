@@ -26,10 +26,10 @@ def _write(tmp_path: pathlib.Path, rel: str, content: str) -> pathlib.Path:
 def _patch_thresholds(monkeypatch, **overrides):
     defaults = {
         "sample_size": 30,
-        "min_adaptive_sample": 10,
-        "adaptive_divisor": 5,
         "min_header_ratio": 0.5,
         "warn_header_ratio": 0.3,
+        "adaptive_min_floor": 10,
+        "adaptive_corpus_divisor": 5,
     }
     defaults.update(overrides)
     import tools.ai_augmentation.agent_readiness.pillars.il_classification as mod
