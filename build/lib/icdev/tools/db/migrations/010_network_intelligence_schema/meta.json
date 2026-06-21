@@ -1,7 +1,0 @@
-{
-  "id": "010",
-  "name": "network_intelligence_schema",
-  "description": "Register network intelligence tables (topologies, ni_analyses, ni_state_snapshots) in icdev.db. Fixes orphan_db_table gap detected against tools/network/network_intelligence.py. Primary schema lives in tools/network/db/init_db.py (network_canvas.db); this migration ensures the gap detector can resolve the table definitions.",
-  "created_at": "2026-04-11",
-  "phase": "Gap Fix — kanban/task-e73a49df72"
-}

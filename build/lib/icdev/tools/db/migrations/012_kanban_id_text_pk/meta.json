@@ -1,7 +1,0 @@
-{
-  "id": "012",
-  "name": "kanban_id_text_pk",
-  "description": "Convert kanban_tasks.id from INTEGER PRIMARY KEY AUTOINCREMENT to TEXT PRIMARY KEY. The canonical schema (conftest.py, dashboard API, kanban_executions.task_id FK) expects TEXT ids of the form task-{uuid}, but the prod DB drifted to INTEGER, breaking the dashboard kanban API insert path.",
-  "created_at": "2026-04-09",
-  "phase": "Phase 67"
-}

@@ -1,4 +1,0 @@
-delta_target: 0.0       # target delta for delta-neutral portfolio
-delta_tolerance: 0.10   # acceptable delta deviation
-vega_max_per_10k: 0.05  # max vega exposure per $10k portfolio value
-theta_floor: -0.02      # minimum acceptable theta decay

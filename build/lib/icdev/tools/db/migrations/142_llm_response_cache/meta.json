@@ -1,7 +1,0 @@
-{
-  "id": "142",
-  "name": "llm_response_cache",
-  "description": "Add llm_response_cache table for deterministic LLM response caching. PostgreSQL-native UNLOGGED (runtime-detected) with JSONB/BRIN; SQLite fallback with TEXT/B-tree.",
-  "author": "icdev",
-  "date": "2026-05-14"
-}

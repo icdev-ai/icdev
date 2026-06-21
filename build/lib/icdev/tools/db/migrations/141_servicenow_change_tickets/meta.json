@@ -1,7 +1,0 @@
-{
-  "id": 141,
-  "name": "servicenow_change_tickets",
-  "description": "Add servicenow_change_tickets table for ServiceNow change management integration",
-  "author": "icdev",
-  "created_at": "2026-05-12T00:00:00Z"
-}

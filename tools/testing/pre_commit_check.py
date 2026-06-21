@@ -40,6 +40,9 @@ def _get_staged_files() -> list[str]:
 
 def _is_dashboard_change(files: list[str]) -> bool:
     for f in files:
+        # Exclude generated build artifacts — they are never live routes
+        if f.replace("\\", "/").startswith("build/"):
+            continue
         for pat in DASHBOARD_PATTERNS:
             if pat in f.replace("\\", "/"):
                 return True
@@ -81,10 +84,12 @@ def _run_route_smoke(changed_files: list[str]) -> bool:
     the dashboard is not running.
     """
     print("[pre-commit] Running route smoke test...")
-    # Only pass dashboard-relevant files to avoid Windows cmd-line length limit
+    # Only pass dashboard-relevant files to avoid Windows cmd-line length limit.
+    # Exclude build/ artifacts — they are generated output, not live routes.
     dashboard_files = [
         f for f in changed_files
-        if any(pat in f.replace("\\", "/") for pat in DASHBOARD_PATTERNS)
+        if not f.replace("\\", "/").startswith("build/")
+        and any(pat in f.replace("\\", "/") for pat in DASHBOARD_PATTERNS)
     ]
     changed_arg = ",".join(dashboard_files)
 
