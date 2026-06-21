@@ -11,11 +11,33 @@ ships unchanged when the LLM is unavailable. See ``_ai_digest_narrative``.
 
 from __future__ import annotations
 
+import pathlib
+
+import yaml
+
 from tools.db.storage import get_connection
 from .event_service import (
     render_template, render_to_string,
     send, sendmail, notify, emit, publish, dispatch, _now_iso,
 )
+
+_NOTIFICATION_CONFIG_PATH = (
+    pathlib.Path(__file__).parent.parent.parent / "args" / "notification_config.yaml"
+)
+
+
+def _load_narrative_config() -> dict:
+    """Load narrative_llm section from notification_config.yaml; return {} on failure."""
+    try:
+        with open(_NOTIFICATION_CONFIG_PATH, encoding="utf-8") as fh:
+            return (yaml.safe_load(fh) or {}).get("narrative_llm", {})
+    except Exception:
+        return {}
+
+
+_NARR_CFG = _load_narrative_config()
+_NARRATIVE_MAX_TOKENS: int = int(_NARR_CFG.get("max_tokens", 512))
+_NARRATIVE_TEMPERATURE: float = float(_NARR_CFG.get("temperature", 0.3))
 
 # ---------------------------------------------------------------------------
 # AI-ification (aiify-opp-5556): optional LLM-synthesized digest narrative.
@@ -80,8 +102,8 @@ def _ai_digest_narrative(digest_kind: str, facts: dict) -> str | None:
                 }
             ],
             system_prompt=_DIGEST_NARRATIVE_SYSTEM_PROMPT,
-            max_tokens=512,
-            temperature=0.3,
+            max_tokens=_NARRATIVE_MAX_TOKENS,
+            temperature=_NARRATIVE_TEMPERATURE,
             skip_injection_scan=True,  # trusted first-party fact dict, not user input
             classification="CUI",
         )

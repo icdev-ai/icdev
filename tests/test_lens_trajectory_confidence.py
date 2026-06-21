@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -43,6 +45,56 @@ class TestConfidenceConstantsDefaults:
 
     def test_velocity_fixed(self):
         assert lt.VELOCITY_CONF_FIXED == pytest.approx(0.70)
+
+
+class TestFallbackConstantsDefaults:
+    """Verify fallback threshold constants match YAML defaults."""
+
+    def test_cc_threshold(self):
+        assert lt.CC_THRESHOLD == 15
+
+    def test_maintainability_floor(self):
+        assert lt.MAINTAINABILITY_FLOOR == pytest.approx(0.5)
+
+    def test_min_snapshots(self):
+        assert lt.MIN_SNAPSHOTS == 3
+
+    def test_forecast_horizon_days(self):
+        assert lt.FORECAST_HORIZON_DAYS == 365
+
+    def test_hotspot_min_files(self):
+        assert lt.HOTSPOT_MIN_FILES == 2
+
+    def test_hotspot_critical_fallback(self):
+        assert lt.HOTSPOT_CRITICAL_FALLBACK == 4
+
+    def test_days_urgent(self):
+        assert lt.DAYS_URGENT == 30
+
+    def test_days_warning(self):
+        assert lt.DAYS_WARNING == 90
+
+
+class TestAnomalyConstantsDefaults:
+    """Verify anomaly detection constants match YAML defaults."""
+
+    def test_adaptive_min_files(self):
+        assert lt.ADAPTIVE_MIN_FILES == 10
+
+    def test_cc_anomaly_percentile(self):
+        assert lt.CC_ANOMALY_PERCENTILE == pytest.approx(90.0)
+
+    def test_maint_anomaly_percentile(self):
+        assert lt.MAINT_ANOMALY_PERCENTILE == pytest.approx(10.0)
+
+    def test_velocity_anomaly_percentile(self):
+        assert lt.VELOCITY_ANOMALY_PERCENTILE == pytest.approx(75.0)
+
+    def test_velocity_fallback_slope(self):
+        assert lt.VELOCITY_FALLBACK_SLOPE == pytest.approx(1.0)
+
+    def test_velocity_fallback_recent_avg(self):
+        assert lt.VELOCITY_FALLBACK_RECENT_AVG == pytest.approx(5.0)
 
 
 class TestLLMCalibrationConstantsDefaults:
@@ -179,6 +231,69 @@ class TestVelocityConfidence:
 
     def test_velocity_fixed_at_most_one(self):
         assert lt.VELOCITY_CONF_FIXED <= 1.0
+
+
+# ── adaptive threshold computation ───────────────────────────────────────────
+
+class TestComputeAdaptiveThresholds:
+    """_compute_adaptive_thresholds uses fleet percentiles when data is sufficient."""
+
+    def _make_trends(self, n, cc_val=5.0, maint_val=0.8):
+        return {
+            f"file_{i}.py": [{"week": "2024-01", "cc": cc_val, "maintainability": maint_val}]
+            for i in range(n)
+        }
+
+    def test_falls_back_when_too_few_files(self):
+        trends = self._make_trends(5)  # < ADAPTIVE_MIN_FILES (10)
+        result = lt._compute_adaptive_thresholds(trends)
+        assert result["adaptive"] is False
+        assert result["cc_threshold"] == pytest.approx(lt.CC_THRESHOLD)
+        assert result["maintainability_floor"] == pytest.approx(lt.MAINTAINABILITY_FLOOR)
+
+    def test_adaptive_when_sufficient_files(self):
+        trends = self._make_trends(15, cc_val=10.0, maint_val=0.6)
+        result = lt._compute_adaptive_thresholds(trends)
+        assert result["adaptive"] is True
+        # All CC values identical → p90 == 10.0
+        assert result["cc_threshold"] == pytest.approx(10.0)
+
+    def test_uses_most_recent_snapshot(self):
+        trends = {
+            "f.py": [
+                {"week": "2024-01", "cc": 100.0, "maintainability": 0.1},
+                {"week": "2024-02", "cc": 5.0, "maintainability": 0.9},
+            ]
+        }
+        # Only 1 file — falls back; but latest snapshot logic is exercised
+        result = lt._compute_adaptive_thresholds(trends)
+        assert result["adaptive"] is False  # < 10 files
+
+
+class TestComputeVelocityThresholds:
+    """_compute_velocity_thresholds uses fleet percentiles when data is sufficient."""
+
+    def _make_dir_activity(self, n, slope_weeks=None):
+        activity = {}
+        for i in range(n):
+            if slope_weeks is None:
+                counts = {"2024-01": 3, "2024-02": 4, "2024-03": 5}
+            else:
+                counts = {f"2024-{w:02d}": slope_weeks[w % len(slope_weeks)] for w in range(1, 4)}
+            activity[f"dir_{i}"] = counts
+        return activity
+
+    def test_falls_back_when_too_few_dirs(self):
+        activity = self._make_dir_activity(5)  # < ADAPTIVE_MIN_FILES (10)
+        result = lt._compute_velocity_thresholds(activity)
+        assert result["adaptive"] is False
+        assert result["slope_cutoff"] == pytest.approx(lt.VELOCITY_FALLBACK_SLOPE)
+
+    def test_adaptive_when_sufficient_dirs(self):
+        activity = self._make_dir_activity(15)
+        result = lt._compute_velocity_thresholds(activity)
+        assert result["adaptive"] is True
+        assert result["slope_cutoff"] > 0
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────

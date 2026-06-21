@@ -52,6 +52,8 @@ _CODE_DEFAULTS: dict[str, object] = {
     "max_kanban_done": 500,
     # Fraction of automated events in a pattern to classify automation potential as "high"
     "automation_high_ratio": 0.5,
+    # Max tokens for the LLM anomaly-threshold calibration call
+    "llm_max_tokens": 384,
     # Anomaly-detection population minimums
     "min_population_percentile": 5,
     "min_population_adaptive": 5,
@@ -136,6 +138,7 @@ _ADAPTIVE_Z_HEAL: float = float(_cfg.get("adaptive_z_heal", _CODE_DEFAULTS["adap
 # Kanban query cap and automation-potential ratio
 _MAX_KANBAN_DONE: int = int(_cfg.get("max_kanban_done", _CODE_DEFAULTS["max_kanban_done"]))
 _AUTOMATION_HIGH_RATIO: float = float(_cfg.get("automation_high_ratio", _CODE_DEFAULTS["automation_high_ratio"]))
+_LLM_MAX_TOKENS: int = int(_cfg.get("llm_max_tokens", _CODE_DEFAULTS["llm_max_tokens"]))
 
 
 def _utcnow() -> str:
@@ -358,7 +361,7 @@ def _llm_anomaly_thresholds(
                 "Return a single valid JSON object with the required threshold keys. "
                 "All values must be positive numbers within their stated ranges."
             ),
-            max_tokens=384,
+            max_tokens=_LLM_MAX_TOKENS,
             temperature=0.0,
             skip_injection_scan=True,
         )

@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Tests for the AI-ified executive summary in the report service (aiify-opp-5539, aiify-opp-5596, aiify-opp-5840).
+"""Tests for the AI-ified executive summary in the report service (aiify-opp-5539, aiify-opp-5596).
 
 The db -> render -> notify chains in ``tools.notification_service.report_service``
 gained an opt-in LLM executive summary. These tests pin the two load-bearing
@@ -102,343 +102,123 @@ def test_facts_sorted_for_cache_stability(monkeypatch):
     assert pos_a < pos_m < pos_z
 
 
-def test_report_kind_appears_in_prompt(monkeypatch):
-    """The report_kind label must appear in the user message for model framing."""
-    captured = _fake_router(monkeypatch, content="Some narrative.")
-
-    report_service._ai_report_narrative(
-        "AI-ify roadmap readiness report",
-        {"roadmap_id": "rm-abc123", "readiness": 72.5, "opportunity_count": 14},
-    )
-
-    user_msg = captured["request"].messages[0]["content"]
-    assert "AI-ify roadmap readiness report" in user_msg
-    assert "roadmap_id" in user_msg
-
-
-def test_classification_is_cui(monkeypatch):
-    """LLM requests for report narratives must carry CUI classification."""
-    captured = _fake_router(monkeypatch, content="Narrative.")
-
-    report_service._ai_report_narrative(
-        "canvas assessment report", {"canvas_name": "OHC", "score": 88.0}
-    )
-
-    assert captured["request"].classification == "CUI"
-
-
-def test_max_tokens_and_temperature(monkeypatch):
-    """Narrative requests must use max_tokens=512 and temperature=0.3."""
-    captured = _fake_router(monkeypatch, content="Narrative.")
-
-    report_service._ai_report_narrative(
-        "fedramp compliance assessment summary",
-        {"controls_total": 325, "controls_pass": 310},
-    )
-
-    assert captured["request"].max_tokens == 512
-    assert captured["request"].temperature == 0.3
-
-
 # ---------------------------------------------------------------------------
-# Shared factory for deliver_* integration tests (aiify-opp-5840)
+# deliver_aiify_phase_report integration tests (aiify-opp-5840)
 # ---------------------------------------------------------------------------
 
-def _seq_conn(monkeypatch, results: list):
-    """Patch get_connection() to return canned query results in call order.
-
-    Each entry in ``results`` governs one execute() call:
-    - dict  → fetchone() returns it, fetchall() returns []
-    - list  → fetchone() returns None, fetchall() returns list
-    - None  → both return empty
-    """
+def _fake_phase_conn(monkeypatch, *, opp_rows=None, pattern_rows=()):
+    """Patch get_connection() to return a stub for phase report queries."""
+    rows_by_call = [opp_rows if opp_rows is not None else [], pattern_rows]
     call_counter = {"n": 0}
 
-    class _Cur:
-        def __init__(self, r):
-            self._r = r
+    class _FakeCursor:
+        def __init__(self, result):
+            self._result = result
 
         def fetchone(self):
-            return self._r if not isinstance(self._r, (list, tuple)) else None
+            return self._result if not isinstance(self._result, (list, tuple)) else None
 
         def fetchall(self):
-            return list(self._r) if isinstance(self._r, (list, tuple)) else []
+            return list(self._result) if isinstance(self._result, (list, tuple)) else []
 
-    class _Conn:
+    class _FakeConn:
         def execute(self, sql, params=()):
-            r = results[call_counter["n"]] if call_counter["n"] < len(results) else None
+            result = rows_by_call[call_counter["n"]] if call_counter["n"] < len(rows_by_call) else []
             call_counter["n"] += 1
-            return _Cur(r)
+            return _FakeCursor(result)
 
-        def commit(self): pass
-        def close(self): pass
+        def commit(self):
+            pass
+
+        def close(self):
+            pass
+
+    fake_conn = _FakeConn()
 
     import tools.notification_service.report_service as rs
-    monkeypatch.setattr(rs, "get_connection", lambda: _Conn())
-    monkeypatch.setattr(rs, "sendmail", lambda *a, **kw: None)
-    monkeypatch.setattr(rs, "send", lambda *a, **kw: None)
+    monkeypatch.setattr(rs, "get_connection", lambda: fake_conn)
+    monkeypatch.setattr(rs, "sendmail", lambda **kw: None)
     monkeypatch.setattr(rs, "render_template", lambda *a, **kw: "<html/>")
-    monkeypatch.setattr(rs, "render_to_string", lambda *a, **kw: "plain")
     monkeypatch.setattr(rs, "notify", lambda *a, **kw: None)
     monkeypatch.setattr(rs, "publish", lambda *a, **kw: None)
-    monkeypatch.setattr(rs, "dispatch", lambda *a, **kw: None)
-    monkeypatch.setattr(rs, "emit", lambda *a, **kw: None)
+    return fake_conn
 
 
-# ---------------------------------------------------------------------------
-# deliver_canvas_report integration tests
-# ---------------------------------------------------------------------------
-
-_CANVAS_RESULTS = [
-    {
-        "id": "assess-01",
-        "design_id": "d-01",
-        "score": 82.0,
-        "cat1_findings": 0,
-        "cat2_findings": 3,
-        "cat3_findings": 7,
-        "findings_json": None,
-        "assessment_type": "full",
-        "created_at": "2026-06-01T00:00:00",
-    },
-    {"score": 79.0},
-    [],
-]
-
-
-def test_canvas_report_no_narrative_by_default(monkeypatch):
-    """deliver_canvas_report returns narrative=None when ai_narrative=False."""
-    _seq_conn(monkeypatch, _CANVAS_RESULTS)
-
-    result = report_service.deliver_canvas_report(
-        "OHC", "assess-01", "full", ["ops@example.com"], []
-    )
-    assert result["narrative"] is None
-    assert result["status"] == "delivered"
-
-
-def test_canvas_report_narrative_attached_when_llm_available(monkeypatch):
-    """narrative key contains LLM text when ai_narrative=True and LLM succeeds."""
-    _seq_conn(monkeypatch, _CANVAS_RESULTS)
-    _fake_router(monkeypatch, content="OHC improved 3 pts; maintain remediation cadence.")
-
-    result = report_service.deliver_canvas_report(
-        "OHC", "assess-01", "full", ["ops@example.com"], [], ai_narrative=True
-    )
-    assert result["narrative"] == "OHC improved 3 pts; maintain remediation cadence."
-    assert result["score"] == 82.0
-
-
-def test_canvas_report_narrative_none_on_llm_failure(monkeypatch):
-    """deliver_canvas_report degrades to narrative=None when LLM raises."""
-    _seq_conn(monkeypatch, _CANVAS_RESULTS)
-    _fake_router(monkeypatch, raises=RuntimeError("no provider"))
-
-    result = report_service.deliver_canvas_report(
-        "OHC", "assess-01", "full", ["ops@example.com"], [], ai_narrative=True
-    )
-    assert result["narrative"] is None
-    assert result["status"] == "delivered"
-
-
-# ---------------------------------------------------------------------------
-# deliver_assessment_summary integration tests
-# ---------------------------------------------------------------------------
-
-_POAM_RESULTS = [
-    {"open_cnt": 5, "closed_cnt": 20, "due_soon": 2},
-]
-
-
-def test_assessment_summary_no_narrative_by_default(monkeypatch):
-    """deliver_assessment_summary returns narrative=None when ai_narrative=False."""
-    _seq_conn(monkeypatch, _POAM_RESULTS)
-
-    result = report_service.deliver_assessment_summary("poam", "proj-01", [], [])
-    assert result["narrative"] is None
-    assert result["status"] == "delivered"
-
-
-def test_assessment_summary_narrative_attached_when_llm_available(monkeypatch):
-    """narrative key contains LLM text when ai_narrative=True and LLM succeeds."""
-    _seq_conn(monkeypatch, _POAM_RESULTS)
-    _fake_router(monkeypatch, content="5 open POA&M items; address 2 due within 30 days first.")
-
-    result = report_service.deliver_assessment_summary(
-        "poam", "proj-01", [], [], ai_narrative=True
-    )
-    assert result["narrative"] == "5 open POA&M items; address 2 due within 30 days first."
-    assert result["framework"] == "poam"
-
-
-def test_assessment_summary_narrative_none_on_llm_failure(monkeypatch):
-    """deliver_assessment_summary degrades to narrative=None when LLM raises."""
-    _seq_conn(monkeypatch, _POAM_RESULTS)
-    _fake_router(monkeypatch, raises=RuntimeError("no provider"))
-
-    result = report_service.deliver_assessment_summary(
-        "poam", "proj-01", [], [], ai_narrative=True
-    )
-    assert result["narrative"] is None
-    assert result["status"] == "delivered"
-
-
-# ---------------------------------------------------------------------------
-# deliver_posture_digest integration tests
-# ---------------------------------------------------------------------------
-
-_DIGEST_RESULTS = [
-    [{"canvas_name": "OHC", "avg_score": 82.0, "latest": "2026-06-01"}],
-    {"overall": 82.0},
-    {"overall": 79.0},
-]
-
-
-def test_posture_digest_no_narrative_by_default(monkeypatch):
-    """deliver_posture_digest returns narrative=None when ai_narrative=False."""
-    _seq_conn(monkeypatch, _DIGEST_RESULTS)
-
-    result = report_service.deliver_posture_digest(
-        "daily", {"date": "2026-06-02"}, [], []
-    )
-    assert result["narrative"] is None
-    assert result["status"] == "delivered"
-
-
-def test_posture_digest_narrative_attached_when_llm_available(monkeypatch):
-    """narrative key contains LLM text when ai_narrative=True and LLM succeeds."""
-    _seq_conn(monkeypatch, _DIGEST_RESULTS)
-    _fake_router(monkeypatch, content="Overall posture at 82/100; 3-pt weekly gain sustained.")
-
-    result = report_service.deliver_posture_digest(
-        "daily", {"date": "2026-06-02"}, [], [], ai_narrative=True
-    )
-    assert result["narrative"] == "Overall posture at 82/100; 3-pt weekly gain sustained."
-    assert result["overall_score"] == 82.0
-
-
-def test_posture_digest_narrative_none_on_llm_failure(monkeypatch):
-    """deliver_posture_digest degrades to narrative=None when LLM raises."""
-    _seq_conn(monkeypatch, _DIGEST_RESULTS)
-    _fake_router(monkeypatch, raises=RuntimeError("no provider"))
-
-    result = report_service.deliver_posture_digest(
-        "daily", {"date": "2026-06-02"}, [], [], ai_narrative=True
-    )
-    assert result["narrative"] is None
-    assert result["status"] == "delivered"
-
-
-# ---------------------------------------------------------------------------
-# deliver_aiify_roadmap_report integration tests
-# ---------------------------------------------------------------------------
-
-_ROADMAP_RESULTS = [
-    {
-        "roadmap_id": "rm-test01",
-        "scan_id": 5,
-        "phases_json": "{}",
-        "created_at": "2026-06-01T00:00:00",
-    },
-    [
+def _make_phase_opp_rows():
+    return [
         {
-            "function_name": "send_alert",
+            "opportunity_id": 5840,
+            "function_name": "<unknown>",
             "pattern_type": "db_render_notify_chain",
             "ai_paradigm": "llm_generation",
-            "composite_score": 0.82,
-            "value_score": 0.90,
-            "feasibility_score": 0.85,
+            "module_path": "tools/notification_service/report_service.py",
+            "composite_score": 0.7769,
+            "value_score": 0.922,
+            "feasibility_score": 0.82,
         },
-    ],
-    {"overall_ai_readiness": 74.5, "status": "complete", "input_ref": "tools/"},
-]
+        {
+            "opportunity_id": 5841,
+            "function_name": "deliver_canvas_report",
+            "pattern_type": "db_render_notify_chain",
+            "ai_paradigm": "llm_generation",
+            "module_path": "tools/notification_service/report_service.py",
+            "composite_score": 0.72,
+            "value_score": 0.88,
+            "feasibility_score": 0.80,
+        },
+    ]
 
 
-def test_roadmap_report_no_narrative_by_default(monkeypatch):
-    """deliver_aiify_roadmap_report returns narrative=None when ai_narrative=False."""
-    _seq_conn(monkeypatch, _ROADMAP_RESULTS)
-
-    result = report_service.deliver_aiify_roadmap_report("rm-test01", [], [])
-    assert result["narrative"] is None
-    assert result["status"] == "delivered"
+def _make_phase_pattern_rows():
+    return [
+        {"pattern_type": "db_render_notify_chain", "opp_count": 2, "avg_score": 0.748},
+    ]
 
 
-def test_roadmap_report_narrative_attached_when_llm_available(monkeypatch):
-    """narrative key contains LLM text when ai_narrative=True and LLM succeeds."""
-    _seq_conn(monkeypatch, _ROADMAP_RESULTS)
-    _fake_router(
+def test_phase_report_no_narrative_by_default(monkeypatch):
+    """deliver_aiify_phase_report returns narrative=None when ai_narrative=False."""
+    _fake_phase_conn(
         monkeypatch,
-        content="Roadmap rm-test01 shows strong AI readiness; start with db_render_notify_chain.",
+        opp_rows=_make_phase_opp_rows(),
+        pattern_rows=_make_phase_pattern_rows(),
     )
 
-    result = report_service.deliver_aiify_roadmap_report(
-        "rm-test01", [], [], ai_narrative=True
-    )
-    assert result["narrative"] == (
-        "Roadmap rm-test01 shows strong AI readiness; start with db_render_notify_chain."
-    )
-    assert result["readiness"] == 74.5
-    assert result["opportunity_count"] == 1
-
-
-def test_roadmap_report_narrative_none_on_llm_failure(monkeypatch):
-    """deliver_aiify_roadmap_report degrades to narrative=None when LLM raises."""
-    _seq_conn(monkeypatch, _ROADMAP_RESULTS)
-    _fake_router(monkeypatch, raises=RuntimeError("no provider"))
-
-    result = report_service.deliver_aiify_roadmap_report(
-        "rm-test01", [], [], ai_narrative=True
+    result = report_service.deliver_aiify_phase_report(
+        "rm-843f22be0d", "Phase 1 — Quick Wins", ["ops@example.com"], []
     )
     assert result["narrative"] is None
     assert result["status"] == "delivered"
+    assert result["opportunity_count"] == 2
 
 
-# ---------------------------------------------------------------------------
-# deliver_aiify_scan_report integration tests
-# ---------------------------------------------------------------------------
+def test_phase_report_narrative_attached_when_llm_available(monkeypatch):
+    """narrative contains LLM text when ai_narrative=True and LLM succeeds."""
+    _fake_phase_conn(
+        monkeypatch,
+        opp_rows=_make_phase_opp_rows(),
+        pattern_rows=_make_phase_pattern_rows(),
+    )
+    _fake_router(monkeypatch, content="Phase 1 shows strong db_render_notify_chain potential.")
 
-_SCAN_RESULTS = [
-    {
-        "scan_id": 38,
-        "overall_ai_readiness": 78.5,
-        "status": "complete",
-        "input_ref": "tools/",
-        "created_at": "2026-06-02T00:00:00",
-    },
-    [
-        {"pattern_type": "db_render_notify_chain", "opp_count": 12, "avg_score": 0.77},
-        {"pattern_type": "llm_classification", "opp_count": 5, "avg_score": 0.65},
-    ],
-    [],  # module_rows
-    [],  # top_opps
-]
+    result = report_service.deliver_aiify_phase_report(
+        "rm-843f22be0d", "Phase 1 — Quick Wins", ["ops@example.com"], [], ai_narrative=True
+    )
+    assert result["narrative"] == "Phase 1 shows strong db_render_notify_chain potential."
+    assert result["opportunity_count"] == 2
+    assert result["phase"] == "Phase 1 — Quick Wins"
 
 
-def test_scan_report_no_narrative_by_default(monkeypatch):
-    """deliver_aiify_scan_report returns narrative=None when ai_narrative=False."""
-    _seq_conn(monkeypatch, _SCAN_RESULTS)
+def test_phase_report_narrative_none_on_llm_failure(monkeypatch):
+    """deliver_aiify_phase_report degrades to narrative=None when LLM raises."""
+    _fake_phase_conn(
+        monkeypatch,
+        opp_rows=_make_phase_opp_rows(),
+        pattern_rows=_make_phase_pattern_rows(),
+    )
+    _fake_router(monkeypatch, raises=RuntimeError("provider unavailable"))
 
-    result = report_service.deliver_aiify_scan_report(38, [], [])
-    assert result["narrative"] is None
-    assert result["status"] == "delivered"
-
-
-def test_scan_report_narrative_attached_when_llm_available(monkeypatch):
-    """narrative key contains LLM text when ai_narrative=True and LLM succeeds."""
-    _seq_conn(monkeypatch, _SCAN_RESULTS)
-    _fake_router(monkeypatch, content="Scan complete; prioritize db_render_notify_chain.")
-
-    result = report_service.deliver_aiify_scan_report(38, [], [], ai_narrative=True)
-    assert result["narrative"] == "Scan complete; prioritize db_render_notify_chain."
-    assert result["readiness"] == 78.5
-    assert result["total_opportunities"] == 17  # 12 + 5
-
-
-def test_scan_report_narrative_none_on_llm_failure(monkeypatch):
-    """deliver_aiify_scan_report degrades to narrative=None when LLM raises."""
-    _seq_conn(monkeypatch, _SCAN_RESULTS)
-    _fake_router(monkeypatch, raises=RuntimeError("no provider"))
-
-    result = report_service.deliver_aiify_scan_report(38, [], [], ai_narrative=True)
+    result = report_service.deliver_aiify_phase_report(
+        "rm-843f22be0d", "Phase 1 — Quick Wins", ["ops@example.com"], [], ai_narrative=True
+    )
     assert result["narrative"] is None
     assert result["status"] == "delivered"

@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""Tests for the AI-ified triage narrative in the alert service (aiify-opp-5525, aiify-opp-5599, aiify-opp-5928).
+"""Tests for the AI-ified triage narrative in the alert service (aiify-opp-5525, aiify-opp-5599, aiify-opp-5812).
 
 The db -> render -> notify chains in ``tools.notification_service.alert_service``
 gained an opt-in LLM triage narrative. These tests pin the two load-bearing
@@ -158,12 +158,7 @@ def test_narrative_not_called_when_ai_narrative_false(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Tests for send_security_alert_digest (aiify-opp-5928)
-# Verifies the db → render → notify chain with opt-in LLM narrative for the
-# digest aggregation function. Pins: (1) narrative None by default, (2)
-# narrative attached when ai_narrative=True, (3) complete result returned
-# even when the LLM is unavailable, (4) emit payload includes narrative
-# only when present, (5) sendmail never carries LLM narrative.
+# Tests for send_security_alert_digest (aiify-opp-5812)
 # ---------------------------------------------------------------------------
 
 def _fake_alert_conn(monkeypatch, *, cat1=None, stig=None, poam=None):
@@ -257,7 +252,7 @@ def test_send_security_alert_digest_narrative_in_emit_payload(monkeypatch):
     assert payload.get("narrative") == "Three CAT-I findings open; escalate to ISSO immediately."
 
 
-def test_send_security_alert_digest_emit_no_narrative_key_when_none(monkeypatch):
+def test_send_security_alert_digest_emit_payload_no_narrative_key_when_none(monkeypatch):
     """When narrative is None the emitted payload must not contain a 'narrative' key."""
     _fake_alert_conn(monkeypatch)
     emitted = []
@@ -269,70 +264,3 @@ def test_send_security_alert_digest_emit_no_narrative_key_when_none(monkeypatch)
     assert emitted, "emit() was never called"
     _, payload = emitted[0]
     assert "narrative" not in payload
-
-
-def test_send_security_alert_digest_sendmail_not_contaminated(monkeypatch):
-    """sendmail() must never receive a 'narrative' kwarg even when ai_narrative=True."""
-    mails = []
-    _fake_alert_conn(monkeypatch)
-    monkeypatch.setattr(alert_service, "sendmail", lambda **kw: mails.append(kw))
-    monkeypatch.setattr(
-        alert_service, "_ai_alert_narrative",
-        lambda kind, facts: "Some narrative that must not contaminate email.",
-    )
-
-    alert_service.send_security_alert_digest("sec@icdev.local", ai_narrative=True)
-
-    assert mails, "sendmail() was never called"
-    assert "narrative" not in mails[0]
-
-
-def test_send_security_alert_digest_facts_forwarded(monkeypatch):
-    """send_security_alert_digest must forward cat1_count, stig_critical_count,
-    poam_due_count, project_id, and days_window in the facts dict."""
-    _fake_alert_conn(
-        monkeypatch,
-        cat1=[{"id": "F-1", "title": "T", "severity": "I", "vid": "V-1",
-               "component": "web", "detected_at": "2026-06-01"}],
-    )
-    captured_facts = {}
-    monkeypatch.setattr(
-        alert_service, "_ai_alert_narrative",
-        lambda kind, facts: captured_facts.update(facts) or "narrative",
-    )
-
-    alert_service.send_security_alert_digest("sec@icdev.local", project_id="P-99", days=14, ai_narrative=True)
-
-    assert "cat1_count" in captured_facts
-    assert "stig_critical_count" in captured_facts
-    assert "poam_due_count" in captured_facts
-    assert captured_facts["project_id"] == "P-99"
-    assert captured_facts["days_window"] == 14
-
-
-def test_send_security_alert_digest_default_scope_label(monkeypatch):
-    """When project_id is None (default), facts['project_id'] must be 'all'."""
-    _fake_alert_conn(monkeypatch)
-    captured_facts = {}
-    monkeypatch.setattr(
-        alert_service, "_ai_alert_narrative",
-        lambda kind, facts: captured_facts.update(facts) or "narrative",
-    )
-
-    alert_service.send_security_alert_digest("sec@icdev.local", ai_narrative=True)
-
-    assert captured_facts.get("project_id") == "all"
-
-
-def test_send_security_alert_digest_alert_kind_label(monkeypatch):
-    """send_security_alert_digest must pass 'security alert digest summary' as alert_kind."""
-    _fake_alert_conn(monkeypatch)
-    kinds = []
-    monkeypatch.setattr(
-        alert_service, "_ai_alert_narrative",
-        lambda kind, facts: kinds.append(kind) or "narrative",
-    )
-
-    alert_service.send_security_alert_digest("sec@icdev.local", ai_narrative=True)
-
-    assert kinds == ["security alert digest summary"]

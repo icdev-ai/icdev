@@ -13,7 +13,8 @@ from typing import Iterable
 
 from tools.db.storage import get_connection
 from .event_service import (
-    render_template, render_to_string, send, sendmail, notify, emit, publish, dispatch, _now_iso,
+    render_template, render_to_string, render_string,
+    send, sendmail, notify, emit, publish, dispatch, _now_iso,
 )
 
 CANVAS_REPORT_TEMPLATES = {
@@ -326,7 +327,7 @@ def deliver_assessment_summary(
         # --- Render ---
         tmpl_str = ASSESSMENT_SUMMARY_TEMPLATES.get(framework, "Assessment: $framework ($project_id)")
         rendered = Template(tmpl_str).safe_substitute(vars_)
-        render_template(
+        rendered_html = render_template(
             f"reports/{framework}_summary.html",
             framework=framework,
             project_id=project_id,
@@ -480,86 +481,92 @@ def deliver_posture_digest(
         conn.close()
 
 
-def deliver_aiify_roadmap_report(
+def deliver_aiify_phase_report(
     roadmap_id: str,
+    phase: str,
     recipients: Iterable[str],
     channels: Iterable[str],
     ai_narrative: bool = False,
 ) -> dict:
-    """Query AI-ify roadmap data, render report, and deliver to stakeholders.
+    """Query AI-ify phase opportunities, render phase report, and deliver.
 
-    Fetches the roadmap, its top-scoring opportunities (by composite score),
-    and the parent scan's overall AI readiness score; renders a structured
-    report; and delivers via all requested channels.
+    Fetches all opportunities for a specific roadmap phase, aggregates stats
+    by pattern type, ranks top opportunities by composite score, and renders
+    a structured phase report; delivers via all requested channels.
 
     When ``ai_narrative`` is True, additionally synthesizes a short LLM
-    executive summary of the AI readiness posture and recommended next steps
+    executive summary of the phase's AI transformation opportunities
     (returned under ``narrative``). The deterministic templated report remains
     the authoritative payload; the summary is best-effort and is ``None`` when
     the LLM is unavailable (air-gap, no credentials, network failure).
     """
     conn = get_connection()
     try:
-        roadmap_row = conn.execute(
-            "SELECT roadmap_id, scan_id, phases_json, created_at "
-            "FROM aiify_roadmaps WHERE roadmap_id = ?",
-            (roadmap_id,),
-        ).fetchone()
-
-        if not roadmap_row:
-            rendered = f"AI-ify roadmap {roadmap_id} not found. Run icdev-secure to generate."
-            return {"status": "no_data", "rendered": rendered}
-
-        scan_id = roadmap_row["scan_id"]
-        top_opps = conn.execute(
-            "SELECT o.function_name, o.pattern_type, o.ai_paradigm, "
-            "s.composite_score, s.value_score, s.feasibility_score "
+        # --- DB: fetch all opportunities in this roadmap phase ---
+        opp_rows = conn.execute(
+            "SELECT o.opportunity_id, o.function_name, o.pattern_type, o.ai_paradigm, "
+            "o.module_path, s.composite_score, s.value_score, s.feasibility_score "
             "FROM aiify_opportunities o "
             "JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id "
-            "WHERE o.roadmap_id = ? ORDER BY s.composite_score DESC LIMIT 10",
-            (roadmap_id,),
+            "WHERE o.roadmap_id = ? AND o.phase = ? "
+            "ORDER BY s.composite_score DESC",
+            (roadmap_id, phase),
         ).fetchall()
-        scan_row = conn.execute(
-            "SELECT overall_ai_readiness, status, input_ref FROM aiify_scans "
-            "WHERE scan_id = ?",
-            (scan_id,),
-        ).fetchone()
 
-        opp_count = len(top_opps)
-        readiness = round(float((scan_row or {}).get("overall_ai_readiness", 0) or 0), 1)
-        top_pattern = top_opps[0]["pattern_type"] if top_opps else "none"
+        # --- DB: pattern breakdown for this phase ---
+        pattern_rows = conn.execute(
+            "SELECT o.pattern_type, COUNT(*) as opp_count, AVG(s.composite_score) as avg_score "
+            "FROM aiify_opportunities o "
+            "JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id "
+            "WHERE o.roadmap_id = ? AND o.phase = ? "
+            "GROUP BY o.pattern_type ORDER BY opp_count DESC",
+            (roadmap_id, phase),
+        ).fetchall()
+
+        if not opp_rows:
+            rendered = (
+                f"AI-ify phase report: {phase} (roadmap {roadmap_id}) — no opportunities found."
+            )
+            return {"status": "no_data", "rendered": rendered}
+
+        opp_count = len(opp_rows)
+        top_opps = opp_rows[:5]
         avg_composite = round(
-            sum(float(o["composite_score"] or 0) for o in top_opps) / max(opp_count, 1), 3
+            sum(float(o["composite_score"] or 0) for o in opp_rows) / max(opp_count, 1), 3
         )
+        top_pattern = pattern_rows[0]["pattern_type"] if pattern_rows else "none"
+        top_fn = (top_opps[0]["function_name"] or top_opps[0]["module_path"]) if top_opps else "none"
 
         vars_ = {
             "roadmap_id": roadmap_id,
-            "readiness": readiness,
+            "phase": phase,
             "opportunity_count": opp_count,
+            "pattern_count": len(pattern_rows),
             "top_pattern": top_pattern,
             "avg_composite_score": avg_composite,
-            "scan_status": (scan_row or {}).get("status", "unknown"),
-            "input_ref": (scan_row or {}).get("input_ref", ""),
-            "created_at": roadmap_row["created_at"] or _now_iso(),
+            "top_opportunity": top_fn,
+            "top_composite_score": round(float(top_opps[0]["composite_score"] or 0), 3) if top_opps else 0,
         }
 
         rendered = (
-            f"AI-ify Roadmap Report: {roadmap_id}\n"
-            f"AI Readiness: {readiness}/100 | Opportunities: {opp_count}\n"
+            f"AI-ify Phase Report: {phase}\n"
+            f"Roadmap: {roadmap_id} | Opportunities: {opp_count}\n"
             f"Top pattern: {top_pattern} | Avg composite score: {avg_composite}\n"
-            f"Scan status: {vars_['scan_status']} | Input: {vars_['input_ref']}"
+            f"Top opportunity: {top_fn} (score: {vars_['top_composite_score']})"
         )
         rendered_html = render_template(
-            "reports/aiify_roadmap.html",
-            roadmap=roadmap_row,
-            opportunities=top_opps,
-            scan=scan_row,
-            readiness=readiness,
+            "reports/aiify_phase.html",
+            roadmap_id=roadmap_id,
+            phase=phase,
+            opportunities=opp_rows,
+            patterns=pattern_rows,
+            top_opps=top_opps,
+            avg_composite=avg_composite,
         )
 
         # --- AI (optional): synthesize executive summary; None if unavailable ---
         narrative = _ai_report_narrative(
-            "AI-ify roadmap readiness report", vars_
+            "AI-ify phase transformation report", vars_
         ) if ai_narrative else None
 
         # --- Deliver ---
@@ -567,7 +574,7 @@ def deliver_aiify_roadmap_report(
         for recipient in recipients:
             sendmail(
                 to=recipient,
-                subject=f"[ICDEV] AI-ify Roadmap Report — {roadmap_id} ({readiness}/100 readiness)",
+                subject=f"[ICDEV] AI-ify Phase Report — {phase} ({roadmap_id})",
                 html=rendered_html,
             )
             receipts[f"email:{recipient}"] = "sent"
@@ -576,7 +583,7 @@ def deliver_aiify_roadmap_report(
             if ch == "audit":
                 conn.execute(
                     "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
-                    "VALUES ('aiify_report', ?, 'report_delivered', 'system', ?)",
+                    "VALUES ('aiify_phase_report', ?, 'report_delivered', 'system', ?)",
                     (roadmap_id, rendered),
                 )
                 conn.commit()
@@ -584,8 +591,9 @@ def deliver_aiify_roadmap_report(
             elif ch in ("slack", "teams", "webhook"):
                 payload = {
                     "roadmap_id": roadmap_id,
-                    "readiness": readiness,
-                    "opportunities": opp_count,
+                    "phase": phase,
+                    "opportunity_count": opp_count,
+                    "avg_composite_score": avg_composite,
                 }
                 if narrative:
                     payload["narrative"] = narrative
@@ -598,147 +606,9 @@ def deliver_aiify_roadmap_report(
         return {
             "status": "delivered",
             "roadmap_id": roadmap_id,
-            "readiness": readiness,
+            "phase": phase,
             "opportunity_count": opp_count,
-            "rendered": rendered,
-            "narrative": narrative,
-            "receipts": receipts,
-        }
-    finally:
-        conn.close()
-
-
-def deliver_aiify_scan_report(
-    scan_id: int,
-    recipients: Iterable[str],
-    channels: Iterable[str],
-    ai_narrative: bool = False,
-) -> dict:
-    """Query AI-ify scan findings, render report, and deliver to stakeholders.
-
-    Fetches the scan record, aggregates opportunity stats by pattern type and
-    module, and renders a structured scan findings report; delivers via all
-    requested channels.
-
-    When ``ai_narrative`` is True, additionally synthesizes a short LLM
-    executive summary of the scan findings and recommended next steps
-    (returned under ``narrative``). The deterministic templated report remains
-    the authoritative payload; the summary is best-effort and is ``None`` when
-    the LLM is unavailable (air-gap, no credentials, network failure).
-    """
-    conn = get_connection()
-    try:
-        scan_row = conn.execute(
-            "SELECT scan_id, overall_ai_readiness, status, input_ref, created_at "
-            "FROM aiify_scans WHERE scan_id = ?",
-            (scan_id,),
-        ).fetchone()
-
-        if not scan_row:
-            rendered = f"AI-ify scan {scan_id} not found. Run icdev-secure to generate."
-            return {"status": "no_data", "rendered": rendered}
-
-        pattern_rows = conn.execute(
-            "SELECT o.pattern_type, COUNT(*) as opp_count, "
-            "AVG(s.composite_score) as avg_score "
-            "FROM aiify_opportunities o "
-            "JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id "
-            "WHERE o.scan_id = ? GROUP BY o.pattern_type ORDER BY opp_count DESC",
-            (scan_id,),
-        ).fetchall()
-
-        module_rows = conn.execute(
-            "SELECT o.module_path, COUNT(*) as opp_count "
-            "FROM aiify_opportunities o "
-            "WHERE o.scan_id = ? GROUP BY o.module_path "
-            "ORDER BY opp_count DESC LIMIT 10",
-            (scan_id,),
-        ).fetchall()
-
-        top_opps = conn.execute(
-            "SELECT o.function_name, o.pattern_type, o.module_path, s.composite_score "
-            "FROM aiify_opportunities o "
-            "JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id "
-            "WHERE o.scan_id = ? ORDER BY s.composite_score DESC LIMIT 5",
-            (scan_id,),
-        ).fetchall()
-
-        readiness = round(float(scan_row["overall_ai_readiness"] or 0), 1)
-        total_opps = sum(int(p["opp_count"]) for p in pattern_rows)
-        avg_composite = round(
-            sum(float(p["avg_score"] or 0) for p in pattern_rows) / max(len(pattern_rows), 1), 3
-        )
-
-        vars_ = {
-            "scan_id": scan_id,
-            "readiness": readiness,
-            "total_opportunities": total_opps,
-            "pattern_count": len(pattern_rows),
-            "top_pattern": pattern_rows[0]["pattern_type"] if pattern_rows else "none",
             "avg_composite_score": avg_composite,
-            "scan_status": scan_row["status"] or "unknown",
-            "input_ref": scan_row["input_ref"] or "",
-            "created_at": scan_row["created_at"] or _now_iso(),
-        }
-
-        rendered = (
-            f"AI-ify Scan Report: scan-{scan_id}\n"
-            f"AI Readiness: {readiness}/100 | Opportunities: {total_opps}\n"
-            f"Patterns: {len(pattern_rows)} | Top: {vars_['top_pattern']} | Avg score: {avg_composite}\n"
-            f"Input: {vars_['input_ref']} | Status: {vars_['scan_status']}"
-        )
-        rendered_html = render_template(
-            "reports/aiify_scan.html",
-            scan=scan_row,
-            patterns=pattern_rows,
-            modules=module_rows,
-            top_opps=top_opps,
-            readiness=readiness,
-        )
-
-        # --- AI (optional): synthesize executive summary; None if unavailable ---
-        narrative = _ai_report_narrative(
-            "AI-ify scan findings report", vars_
-        ) if ai_narrative else None
-
-        # --- Deliver ---
-        receipts = {}
-        for recipient in recipients:
-            sendmail(
-                to=recipient,
-                subject=f"[ICDEV] AI-ify Scan Report — scan-{scan_id} ({readiness}/100 readiness)",
-                html=rendered_html,
-            )
-            receipts[f"email:{recipient}"] = "sent"
-
-        for ch in channels:
-            if ch == "audit":
-                conn.execute(
-                    "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
-                    "VALUES ('aiify_scan_report', ?, 'report_delivered', 'system', ?)",
-                    (str(scan_id), rendered),
-                )
-                conn.commit()
-                receipts["audit"] = "inserted"
-            elif ch in ("slack", "teams", "webhook"):
-                payload = {
-                    "scan_id": scan_id,
-                    "readiness": readiness,
-                    "total_opportunities": total_opps,
-                }
-                if narrative:
-                    payload["narrative"] = narrative
-                publish(ch, payload)
-                receipts[ch] = "published"
-            else:
-                notify(ch, rendered)
-                receipts[ch] = "notified"
-
-        return {
-            "status": "delivered",
-            "scan_id": scan_id,
-            "readiness": readiness,
-            "total_opportunities": total_opps,
             "rendered": rendered,
             "narrative": narrative,
             "receipts": receipts,

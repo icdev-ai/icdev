@@ -141,3 +141,37 @@ def _glob_files(repo: pathlib.Path, pattern: str, ignore_dirs: Optional[tuple] =
 
 def _search(text: str, pattern: str, flags: int = re.IGNORECASE) -> bool:
     return bool(re.search(pattern, text, flags))
+
+
+# ---------------------------------------------------------------------------
+# Lightweight adaptive anomaly detector — per-process singleton.
+# Falls back to the static config default when < MIN_SAMPLES observations
+# have been recorded.  Pillars call observe() then suggest_threshold().
+# ---------------------------------------------------------------------------
+class _SimpleAnomalyDetector:
+    MIN_SAMPLES = 5
+
+    def __init__(self) -> None:
+        self._store: dict[str, list[float]] = {}
+
+    def observe(self, key: str, value: float) -> None:
+        self._store.setdefault(key, []).append(float(value))
+
+    def suggest_threshold(self, key: str, default: float, z: float = 2.0) -> float:
+        import statistics
+        history = self._store.get(key, [])
+        if len(history) < self.MIN_SAMPLES:
+            return default
+        mean = statistics.mean(history)
+        stdev = statistics.stdev(history) if len(history) > 1 else 0.0
+        return mean + z * stdev
+
+
+_detector_instance: "_SimpleAnomalyDetector | None" = None
+
+
+def get_anomaly_detector() -> _SimpleAnomalyDetector:
+    global _detector_instance
+    if _detector_instance is None:
+        _detector_instance = _SimpleAnomalyDetector()
+    return _detector_instance

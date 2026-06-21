@@ -10,7 +10,6 @@ import json
 import os
 import sqlite3
 import sys
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -772,7 +771,7 @@ class TestScoutReflex:
         mock_leaders.return_value = []
         mock_overlaps.return_value = []
         mock_match.return_value = {"outcomes_recorded": 0, "win_loss_created": 0}
-        mock_store.return_value = os.path.join(tempfile.gettempdir(), "brief.md")
+        mock_store.return_value = "/tmp/brief.md"
 
         with patch.dict(os.environ, {"ICDEV_AIR_GAPPED": "true"}):
             result = run({}, None)
@@ -793,7 +792,7 @@ class TestScoutReflex:
         mock_leaders.return_value = [{"rank": 1, "vendor": "X", "awards": 5}]
         mock_overlaps.return_value = []
         mock_match.return_value = {"outcomes_recorded": 2, "win_loss_created": 2}
-        mock_store.return_value = os.path.join(tempfile.gettempdir(), "brief.md")
+        mock_store.return_value = "/tmp/brief.md"
 
         with patch.dict(os.environ, {}, clear=False):
             os.environ.pop("ICDEV_AIR_GAPPED", None)
@@ -2944,3 +2943,49 @@ class TestProposalGenesisPhaseF_API:
             assert data["win_loss_records"] == 1
             assert data["win_loss_lessons"] == 1
             assert data["training_pairs"] == 1
+
+
+# ── Trace Reflex Tests ────────────────────────────────────────────────────────
+
+
+class TestTraceReflex:
+    """Tests for reflexes/trace.py (R22).
+
+    Covers the AI-ify opp 5451 modernization: inline magic-number thresholds were
+    extracted into named module-level constants (hardcoded_threshold ->
+    anomaly_detection). These tests lock the constants and verify run() still
+    produces a well-formed result when there are no opportunities to trace.
+    """
+
+    def test_threshold_constants_extracted(self):
+        from tools.proposal_genesis.reflexes import trace
+
+        # Magic numbers are now named constants, not inline literals.
+        assert trace._OPPS_WITH_MATRICES_LIMIT == 20
+        assert trace._SECTION_IDS_LIMIT == 10
+        assert trace._STALE_AMENDMENTS_LIMIT == 10
+        assert trace._CHANGE_SUMMARY_CHARS == 100
+
+    def test_query_uses_limit_constant(self):
+        # The opportunities query interpolates the named constant, not a literal.
+        from tools.proposal_genesis.reflexes import trace
+
+        with patch("tools.proposal_genesis.reflexes.trace.get_connection") as mock_conn:
+            mock_db = MagicMock()
+            mock_db.execute.return_value.fetchall.return_value = []
+            mock_conn.return_value = mock_db
+            trace._get_opportunities_with_matrices()
+            sql = mock_db.execute.call_args[0][0]
+            assert f"LIMIT {trace._OPPS_WITH_MATRICES_LIMIT}" in sql
+
+    @patch("tools.proposal_genesis.reflexes.trace.get_connection")
+    def test_run_no_opportunities(self, mock_conn):
+        from tools.proposal_genesis.reflexes.trace import run
+
+        mock_db = MagicMock()
+        mock_db.execute.return_value.fetchall.return_value = []
+        mock_conn.return_value = mock_db
+        result = run({}, None)
+        assert result["success"] is True
+        assert result["metric_value"] == 0.0
+        assert result["details"]["opportunities_traced"] == 0

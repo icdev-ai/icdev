@@ -19,17 +19,6 @@ anomaly_bounds:
   z_warn_high: 2.0
   z_crit_low: 2.0
   z_crit_high: 3.0
-  # IQR (Tukey fence) anomaly parameters
-  # Standard inner fence: Q3 + 1.5*IQR (warn), Q1 - 1.5*IQR (lower warn)
-  # Standard outer fence: Q3 + 3.0*IQR (crit), Q1 - 3.0*IQR (lower crit)
-  iqr_warn_multiplier: 1.5
-  iqr_crit_multiplier: 3.0
-  # Pseudo-IQR coefficient: used when true IQR is near-zero (degenerate series).
-  # Estimated as max(1e-6, |mean| * iqr_pseudo_cv).
-  iqr_pseudo_cv: 0.1
-  # IQR-to-sigma conversion: under a normal distribution σ ≈ IQR / 1.35.
-  # Increase (e.g. 1.1) for heavier-tailed series to avoid over-tightening bounds.
-  iqr_to_sigma: 1.35
 
 uqs:
   z_warn_multiplier: 1.0
@@ -39,9 +28,6 @@ uqs:
   conf_base: 0.5
   conf_sigma_denom: 4.0
   conf_cap: 0.95
-  # UQS trajectory window sizes (must satisfy recent_window < score_window)
-  score_window: 5     # how many of the most-recent UQS scores to consider
-  recent_window: 3    # how many of those define the "recent" average; remainder = "older"
 
 gate_failure:
   rate_warn_fallback: 0.45
@@ -65,31 +51,3 @@ critical_trends:
   base_confidence: 0.70
   confidence_per_critical: 0.05
   conf_cap: 0.95
-
-# EWMA smoothing applied to UQS history before trend detection.
-# Reduces false-positive alerts caused by single noisy readings.
-# alpha=1.0 disables smoothing; alpha=0.3 weights recent points heavily.
-ewma:
-  enabled: true
-  alpha: 0.3
-
-# MAD-based robust std estimator (Median Absolute Deviation × 1.4826).
-# Used instead of the old hardcoded 5.0 fallback when sample std ≈ 0.
-mad:
-  enabled: true
-  fallback_std: 5.0
-
-# LLM calibration — optional claude-haiku call to derive data-driven thresholds
-# from observed quality distributions. Falls back to static config values on any error.
-llm_calibration:
-  enabled: true
-  function_name: oracle_quality_anomaly_detection
-  max_tokens: 256
-  temperature: 0.0
-  validation:
-    uqs_warn_delta_min: 0.5
-    uqs_crit_delta_min: 1.0
-    gate_rate_warn_min: 0.10
-    gate_rate_crit_min: 0.20
-    spike_multiplier_min: 1.1
-    spike_multiplier_max: 10.0

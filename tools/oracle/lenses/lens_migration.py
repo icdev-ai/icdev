@@ -38,30 +38,12 @@ def _load_oracle_lens_config() -> dict[str, Any]:
 
 _LENS_CFG = _load_oracle_lens_config()
 
-# Python-level defaults that mirror args/migration_intelligence_config.yaml oracle_lens section.
-# Single source of truth for fallback values when YAML is absent or a key is missing.
-_ANOMALY_DEFAULTS: dict[str, float] = {
-    "min_samples": 5.0,
-    "iqr_multiplier": 1.5,
-    "fallback_score": 60.0,
-    "fallback_readiness": 60.0,
-    "fallback_source_count": 5.0,
-    "fallback_orphan_count": 3.0,
-    # confidence per category
-    "confidence.compliance_gap": 0.92,
-    "confidence.assessment_risk": 0.88,
-    "confidence.readiness_gap": 0.85,
-    "confidence.unassessed": 0.80,
-    "confidence.planning_gap": 0.82,
-    "confidence.design_quality": 0.75,
-}
-
 
 class _MigrationAnomalyThresholds:
     """IQR-based anomaly thresholds derived from observed migration portfolio data.
 
     Replaces hardcoded cutoffs with statistical outlier detection: values outside
-    Q1 - 1.5*IQR (low) or Q3 + 1.5*IQR (high) are flagged as anomalies.
+    Q1 - k*IQR (low) or Q3 + k*IQR (high) are flagged as anomalies.
     Falls back to config-driven baselines (args/migration_intelligence_config.yaml
     oracle_lens section) when the sample is too small for reliable IQR.
     """
@@ -75,12 +57,12 @@ class _MigrationAnomalyThresholds:
         cfg: dict[str, Any] | None = None,
     ) -> None:
         _cfg = cfg if cfg is not None else _LENS_CFG
-        self._min_samples: int = int(_cfg.get("min_samples", _ANOMALY_DEFAULTS["min_samples"]))
-        self._iqr_multiplier: float = float(_cfg.get("iqr_multiplier", _ANOMALY_DEFAULTS["iqr_multiplier"]))
-        self._fallback_score: float = float(_cfg.get("fallback_score", _ANOMALY_DEFAULTS["fallback_score"]))
-        self._fallback_readiness: float = float(_cfg.get("fallback_readiness", _ANOMALY_DEFAULTS["fallback_readiness"]))
-        self._fallback_source_count: float = float(_cfg.get("fallback_source_count", _ANOMALY_DEFAULTS["fallback_source_count"]))
-        self._fallback_orphan_count: float = float(_cfg.get("fallback_orphan_count", _ANOMALY_DEFAULTS["fallback_orphan_count"]))
+        self._min_samples: int = int(_cfg.get("min_samples", 5))
+        self._iqr_multiplier: float = float(_cfg.get("iqr_multiplier", 1.5))
+        self._fallback_score: float = float(_cfg.get("fallback_score", 60.0))
+        self._fallback_readiness: float = float(_cfg.get("fallback_readiness", 60.0))
+        self._fallback_source_count: float = float(_cfg.get("fallback_source_count", 5.0))
+        self._fallback_orphan_count: float = float(_cfg.get("fallback_orphan_count", 3.0))
 
         self._scores = scores
         self._readiness = readiness
@@ -99,7 +81,7 @@ class _MigrationAnomalyThresholds:
         return sv[lo] + (sv[hi] - sv[lo]) * (idx - lo)
 
     def _low_boundary(self, values: list[float], fallback: float) -> float:
-        """Lower fence: Q1 - iqr_multiplier*IQR; values below this are anomalously low."""
+        """Lower fence: Q1 - k*IQR; values below this are anomalously low."""
         if len(values) < self._min_samples:
             return fallback
         q1 = self._percentile(values, 0.25)
@@ -107,7 +89,7 @@ class _MigrationAnomalyThresholds:
         return q1 - self._iqr_multiplier * (q3 - q1)
 
     def _high_boundary(self, values: list[float], fallback: float) -> float:
-        """Upper fence: Q3 + iqr_multiplier*IQR; values at/above this are anomalously high."""
+        """Upper fence: Q3 + k*IQR; values at/above this are anomalously high."""
         if len(values) < self._min_samples:
             return fallback
         q1 = self._percentile(values, 0.25)
@@ -147,14 +129,18 @@ class MigrationLens(BaseLens):
         if not conn:
             return {"designs": [], "assessments": [], "waves": []}
 
+        designs_limit = int(_LENS_CFG.get("designs_limit", 20))
+        assessments_limit = int(_LENS_CFG.get("assessments_limit", 50))
+
         try:
             designs = [dict(r) for r in conn.execute(
-                "SELECT id, name, graph_json, updated_at FROM migration_designs ORDER BY updated_at DESC LIMIT 20"
+                "SELECT id, name, graph_json, updated_at FROM migration_designs "
+                f"ORDER BY updated_at DESC LIMIT {designs_limit}"
             ).fetchall()]
 
             assessments = [dict(r) for r in conn.execute(
                 "SELECT design_id, score, grade, cat1_findings, cat2_findings, cat3_findings, "
-                "readiness_score, created_at FROM mc_assessments ORDER BY created_at DESC LIMIT 50"
+                f"readiness_score, created_at FROM mc_assessments ORDER BY created_at DESC LIMIT {assessments_limit}"
             ).fetchall()]
 
             waves = [dict(r) for r in conn.execute(
@@ -177,15 +163,14 @@ class MigrationLens(BaseLens):
                    from the full portfolio; falls back to config baselines
                    when the sample is too small (min_samples in oracle_lens config).
         """
-        _conf_cfg = _LENS_CFG.get("confidence", {})
-        _conf = {
-            k: float(_conf_cfg.get(k, _ANOMALY_DEFAULTS[f"confidence.{k}"]))
-            for k in ("compliance_gap", "assessment_risk", "readiness_gap",
-                      "unassessed", "planning_gap", "design_quality")
-        }
         predictions = []
         designs = analysis.get("designs", [])
         assessments = analysis.get("assessments", [])
+
+        confidence_cfg = _LENS_CFG.get("confidence", {})
+
+        def _conf(category: str, default: float) -> float:
+            return float(confidence_cfg.get(category, default))
 
         # Build assessment index: design_id -> latest assessment
         latest_assess: dict[str, dict] = {}
@@ -258,7 +243,7 @@ class MigrationLens(BaseLens):
                     title=f"No compliance controls in '{name}'",
                     description=f"Design '{name}' has {len(sources)} source systems but no compliance gates, "
                                 "rollback points, or security scans.",
-                    confidence=_conf["compliance_gap"],
+                    confidence=_conf("compliance_gap", 0.92),
                     severity="critical",
                     category="compliance_gap",
                     data={"design_id": did, "sources": len(sources)},
@@ -274,7 +259,7 @@ class MigrationLens(BaseLens):
                         description=f"Design '{name}' scored {score_val} ({assess.get('grade', '?')}). "
                                     f"CAT1: {assess.get('cat1_findings', 0)}, "
                                     f"CAT2: {assess.get('cat2_findings', 0)}.",
-                        confidence=_conf["assessment_risk"],
+                        confidence=_conf("assessment_risk", 0.88),
                         severity="warning",
                         category="assessment_risk",
                         data={"design_id": did, "score": score_val, "grade": assess.get("grade", "?")},
@@ -287,7 +272,7 @@ class MigrationLens(BaseLens):
                         title=f"Low readiness for '{name}'",
                         description=f"Migration readiness at {readiness_val}% — "
                                     "significant gaps in completeness, compliance, or risk controls.",
-                        confidence=_conf["readiness_gap"],
+                        confidence=_conf("readiness_gap", 0.85),
                         severity="warning",
                         category="readiness_gap",
                         data={"design_id": did, "readiness": readiness_val},
@@ -298,7 +283,7 @@ class MigrationLens(BaseLens):
                     title=f"Unassessed migration design: '{name}'",
                     description=f"Design '{name}' has {len(sources)} sources and {len(targets)} targets "
                                 "but has never been assessed. Risks are unknown.",
-                    confidence=_conf["unassessed"],
+                    confidence=_conf("unassessed", 0.80),
                     severity="warning",
                     category="unassessed",
                     data={"design_id": did},
@@ -313,7 +298,7 @@ class MigrationLens(BaseLens):
                         title=f"Large migration without wave planning: '{name}'",
                         description=f"Design '{name}' has {len(sources)} source systems but no wave groups. "
                                     "Migrations of this size typically need phased execution.",
-                        confidence=_conf["planning_gap"],
+                        confidence=_conf("planning_gap", 0.82),
                         severity="warning",
                         category="planning_gap",
                         data={"design_id": did, "source_count": len(sources)},
@@ -326,7 +311,7 @@ class MigrationLens(BaseLens):
                     title=f"{len(orphans)} disconnected nodes in '{name}'",
                     description=f"Design '{name}' has {len(orphans)} nodes not connected to the migration flow. "
                                 "These may be forgotten components or incomplete mappings.",
-                    confidence=_conf["design_quality"],
+                    confidence=_conf("design_quality", 0.75),
                     severity="info",
                     category="design_quality",
                     data={"design_id": did, "orphan_count": len(orphans)},

@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from tools.db.storage import get_connection
 from tools.oracle.base_lens import BaseLens, OraclePrediction
 
@@ -25,8 +27,29 @@ logger = get_logger(__name__)
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[2]
 
+_TRAJECTORY_CONFIG_PATH = _ICDEV_ROOT / "args" / "oracle_trajectory_config.yaml"
+
+
+def _load_trajectory_config() -> dict:
+    try:
+        with open(_TRAJECTORY_CONFIG_PATH, encoding="utf-8") as fh:
+            return yaml.safe_load(fh) or {}
+    except FileNotFoundError:
+        logger.warning("oracle_trajectory_config.yaml not found; using defaults")
+        return {}
+    except Exception as exc:
+        logger.warning("Failed to load oracle_trajectory_config.yaml: %s", exc)
+        return {}
+
+
+_TRAJECTORY_CONFIG = _load_trajectory_config()
+
 # Thresholds
-CC_THRESHOLD: int = 15          # cyclomatic complexity ceiling
+CC_THRESHOLD: int = int(
+    (_TRAJECTORY_CONFIG.get("anomaly") or {})
+    .get("detection", {})
+    .get("threshold", 15)
+)          # cyclomatic complexity ceiling (configurable via args/oracle_trajectory_config.yaml)
 MAINTAINABILITY_FLOOR: float = 0.5  # maintainability score floor
 MIN_SNAPSHOTS: int = 3          # minimum data points for regression
 HOTSPOT_MIN_FILES: int = 2      # files in same dir trending up = hotspot

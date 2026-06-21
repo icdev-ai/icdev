@@ -26,6 +26,29 @@ logger = get_logger("icdev.rag.auto_indexer")
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
+# ---------------------------------------------------------------------------
+# Classification hierarchy (lowest to highest). These are deterministic NIST /
+# CUI boundary levels used by the CUI-boundary enforcement check below — they
+# are SECURITY comparison constants, NOT tunable numeric thresholds.
+#
+# AI-ify opportunities 5458 (line ~345) and 5459 (line ~348) flagged the bare
+# numerics `< 2` / `<= 1` here as "hardcoded_threshold -> anomaly_detection".
+# Classification/audit (NIST AU) controls must remain deterministic and
+# auditable, so a probabilistic ML anomaly model is the wrong tool. The genuine
+# code smell — magic numbers — is removed instead by deriving named boundary
+# constants from the hierarchy below. Change the hierarchy, not the comparisons.
+# ---------------------------------------------------------------------------
+_CLASSIFICATION_LEVELS = {
+    "UNCLASSIFIED": 0,
+    "CUI": 1,
+    "SECRET": 2,
+    "TOP SECRET": 3,
+    "TS": 3,
+}
+_DEFAULT_CLASSIFICATION_LEVEL = _CLASSIFICATION_LEVELS["CUI"]
+_CUI_LEVEL = _CLASSIFICATION_LEVELS["CUI"]        # at/below CUI -> enforce CUI-tier blocks
+_SECRET_LEVEL = _CLASSIFICATION_LEVELS["SECRET"]  # below SECRET -> block SECRET markings
+
 
 def _load_config() -> dict:
     """Load auto_indexer config from rag_config.yaml."""
@@ -330,9 +353,10 @@ class AutoIndexer:
         if path.suffix.lower() in (".pdf",):
             return False  # Can't scan binary files — allow, classify on extract
 
-        # Classification markers and their levels (higher = more restricted)
-        LEVELS = {"UNCLASSIFIED": 0, "CUI": 1, "SECRET": 2, "TOP SECRET": 3, "TS": 3}
-        project_level = LEVELS.get(proj_class, 1)
+        # Classification markers and their levels (higher = more restricted).
+        # Levels come from the module-level _CLASSIFICATION_LEVELS hierarchy so
+        # the comparisons below read as named boundaries, not magic numbers.
+        project_level = _CLASSIFICATION_LEVELS.get(proj_class, _DEFAULT_CLASSIFICATION_LEVEL)
 
         try:
             with open(path, "r", encoding="utf-8", errors="replace") as f:
@@ -342,10 +366,10 @@ class AutoIndexer:
             # Check for explicit classification markers above project level
             if "// TOP SECRET" in upper or "//TS//" in upper or "//TS " in upper:
                 return True
-            if project_level < 2 and ("// SECRET" in upper or "//SECRET" in upper):
+            if project_level < _SECRET_LEVEL and ("// SECRET" in upper or "//SECRET" in upper):
                 return True
-            # SEC: Also block NOFORN, SAP, SCI markings at CUI level
-            if project_level <= 1:
+            # SEC: Also block NOFORN, SAP, SCI markings at or below the CUI boundary
+            if project_level <= _CUI_LEVEL:
                 for marker in ("//NOFORN", "//SAP", "//SCI", "//HCS", "//SI", "//TK"):
                     if marker in upper:
                         return True

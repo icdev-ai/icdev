@@ -30,21 +30,16 @@ from tools.db.storage import get_connection  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Module-level constants — Team Reflex (R23) thresholds & limits.
-# Extracted from inline magic numbers (AI-ify opp 5450, hardcoded_threshold ->
-# anomaly_detection). Overridable from proposal_genesis_config.yaml under
-# reflexes.team. Change config, not code.
+# Extracted from inline magic numbers (AI-ify opp 5449, hardcoded_threshold).
+# Overridable from proposal_genesis_config.yaml under reflexes.team.
+# Change config, not code.
 # ---------------------------------------------------------------------------
-_OPPS_WITH_TEAMS_LIMIT     = 20     # opportunities-with-partners scanned per run
-
-# Teaming-agreement (TA) expiration anomaly windows, in days.
-_TA_EXPIRED_DAYS           = 0      # days_until below this -> TA already expired (critical)
-_TA_EXPIRATION_WARN_DAYS   = 30     # days_until below this -> TA expiring soon (warning)
-
-_FULL_WORKSHARE_PCT        = 100.0  # target total workshare allocation; gap = target - actual
-
-# Caps on per-opportunity detail slices surfaced in the result payload.
-_TA_DETAILS_LIMIT          = 5      # TA issues surfaced per opportunity
-_OCI_DETAILS_LIMIT         = 5      # OCI risks surfaced per opportunity
+_OPPS_WITH_TEAMS_LIMIT      = 20    # opportunities with teaming partners scanned per run
+_TA_EXPIRED_DAYS            = 0     # days-until-expiration at/below which a TA is already expired
+_TA_EXPIRATION_WARNING_DAYS = 30   # days-until-expiration below which a TA is flagged "expiring soon"
+_FULL_WORKSHARE_PCT         = 100.0  # total workshare allocation that closes the gap (100%)
+_TA_DETAILS_LIMIT           = 5     # TA issues surfaced per opportunity in the details payload
+_OCI_DETAILS_LIMIT          = 5     # OCI risks surfaced per opportunity in the details payload
 
 
 def _utcnow_iso() -> str:
@@ -115,7 +110,7 @@ def _check_ta_expiration(opp_id: str) -> List[Dict]:
                         "issue": f"TA expired {abs(days_until)} days ago",
                     }
                 )
-            elif days_until < _TA_EXPIRATION_WARN_DAYS:
+            elif days_until < _TA_EXPIRATION_WARNING_DAYS:
                 issues.append(
                     {
                         "partner": row["partner_name"],

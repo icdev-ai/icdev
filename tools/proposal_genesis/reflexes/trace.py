@@ -28,6 +28,19 @@ sys.path.insert(0, str(BASE_DIR))
 
 from tools.db.storage import get_connection  # noqa: E402
 
+# ---------------------------------------------------------------------------
+# Module-level constants — Trace Reflex (R22) thresholds & limits.
+# Extracted from inline magic numbers (AI-ify opp 5451, hardcoded_threshold ->
+# anomaly_detection). Overridable from proposal_genesis_config.yaml under
+# reflexes.trace. Change config, not code.
+# ---------------------------------------------------------------------------
+_OPPS_WITH_MATRICES_LIMIT  = 20    # opportunities-with-matrices scanned per run
+
+# Caps on per-opportunity detail slices surfaced in the result payload.
+_SECTION_IDS_LIMIT         = 10    # unmapped section IDs surfaced per opportunity
+_STALE_AMENDMENTS_LIMIT    = 10    # stale amendments surfaced per opportunity
+_CHANGE_SUMMARY_CHARS      = 100   # change-summary chars retained per amendment
+
 
 def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -46,13 +59,13 @@ def _get_opportunities_with_matrices() -> List[Dict]:
     """Find opportunities that have compliance matrix entries."""
     conn = get_connection()
     try:
-        rows = conn.execute("""
+        rows = conn.execute(f"""
             SELECT DISTINCT cm.opportunity_id, po.title, po.status
             FROM pg_compliance_matrix cm
             JOIN proposal_opportunities po ON po.id = cm.opportunity_id
             WHERE po.status IN ('tracking', 'drafting', 'reviewing')
             ORDER BY po.created_at DESC
-            LIMIT 20
+            LIMIT {_OPPS_WITH_MATRICES_LIMIT}
         """).fetchall()
         return [dict(r) for r in rows]
     except Exception:
@@ -123,7 +136,7 @@ def _check_unmapped_sections(opp_id: str) -> Dict[str, Any]:
         ).fetchall()
         return {
             "unmapped_sections": len(rows),
-            "section_ids": [r["section_id"] for r in rows[:10]],
+            "section_ids": [r["section_id"] for r in rows[:_SECTION_IDS_LIMIT]],
         }
     except Exception:
         return {"unmapped_sections": 0, "section_ids": []}
@@ -137,21 +150,21 @@ def _check_amendment_drift(opp_id: str) -> Dict[str, Any]:
     try:
         # Find amendment diffs that were re-extracted but matrix not updated
         rows = conn.execute(
-            """
+            f"""
             SELECT ad.id, ad.amendment_number, ad.change_summary
             FROM pg_amendment_diffs ad
             WHERE ad.opportunity_id = ?
             AND ad.re_extracted = 1
             AND ad.matrix_updated = 0
             ORDER BY ad.created_at DESC
-            LIMIT 10
+            LIMIT {_STALE_AMENDMENTS_LIMIT}
         """,
             (opp_id,),
         ).fetchall()
         return {
             "stale_amendments": len(rows),
             "amendments": [
-                {"id": r["id"], "amendment": r["amendment_number"], "summary": (r["change_summary"] or "")[:100]}
+                {"id": r["id"], "amendment": r["amendment_number"], "summary": (r["change_summary"] or "")[:_CHANGE_SUMMARY_CHARS]}
                 for r in rows
             ],
         }
