@@ -18,3 +18,5 @@ Integrates MBSE into the ICDEV™ SDLC workflow:
 7. **Create PI snapshots** — version model state per SAFe Program Increment
 
 All operations produce CUI-marked output and record audit trail entries.
+
+See [REFERENCE.md](REFERENCE.md) for step-by-step commands (Steps 1–10).

@@ -849,6 +849,20 @@ def validate_canvas_completeness(
                 template_path = root / _cand
                 page_present = True
                 break
+        # Last resort: any .html in the template dir (e.g. trust.html for ace)
+        if not page_present:
+            for _leaf in (_module_leaf, key):
+                _tmpl_dir = root / "tools" / "dashboard" / "templates" / _leaf
+                if _tmpl_dir.is_dir():
+                    _html_files = sorted(
+                        f for f in _tmpl_dir.glob("*.html")
+                        if f.name not in ("base.html", "login.html", "error.html")
+                    )
+                    if _html_files:
+                        template_path = _html_files[0]
+                        template_path_str = str(template_path.relative_to(root)).replace("\\", "/")
+                        page_present = True
+                        break
 
     # Point 2: icdev mirror — only required if a main template was found.
     # Existing canvases without a web template don't need the icdev mirror.
