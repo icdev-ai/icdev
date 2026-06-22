@@ -1,0 +1,20 @@
+# CLAUDE.md — {{ display_name }}
+
+This file provides guidance to Claude Code when working with {{ display_name }}.
+
+## Architecture
+
+This is a generated ICDEV™ child application following the FORGE framework:
+
+- **Goals** — `goals/`
+- **Orchestration** — Claude Code + parent ICDEV™ callback
+- **Tools** — `tools/`
+- **Args** — `args/`
+- **Context** — `context/`
+- **Hard Prompts** — `hardprompts/`
+
+## Guardrails
+
+- This app cannot generate child applications.
+- Use `get_connection()` from `tools.db.storage` for database access.
+- Keep secrets in `.env`.

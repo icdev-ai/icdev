@@ -16,8 +16,17 @@ if str(BASE_DIR) not in sys.path:
 from tools.builder.template_engine import load_manifest, render_tree, _resolve_variables
 
 
+# Child-app generator helpers (overlay/refactor tests)
+from tools.builder.child_app_generator import (
+    _build_template_variables,
+    _overlay_template,
+    _resolve_template_dir,
+)
+
+
 MINIMAL_TEMPLATE = BASE_DIR / "data" / "templates" / "canvases" / "minimal"
 INFO_OPS_TEMPLATE = BASE_DIR / "data" / "templates" / "canvases" / "info_ops"
+CHILD_APP_FLAVORS = BASE_DIR / "data" / "templates" / "child_apps"
 
 
 class TestLoadManifest:
@@ -208,3 +217,109 @@ class TestChildAppTemplate:
 
         # Ensure syntactically valid Python.
         ast.parse(blueprint_text)
+
+
+class TestChildAppFlavors:
+    """Validate built-in child-app flavor templates render FORGE-compliant skeletons."""
+
+    @pytest.mark.parametrize("flavor", ["minimal", "compliance", "ai-lab", "govcon"])
+    def test_flavor_renders_and_passes_forge(self, tmp_path, flavor):
+        template = CHILD_APP_FLAVORS / flavor
+        out = tmp_path / flavor
+        result = render_tree(
+            template,
+            out,
+            {"key": f"{flavor}_demo", "display_name": f"{flavor} Demo"},
+        )
+
+        assert result["success"], f"{flavor} render errors: {result.get('errors')}"
+        assert not result["validation_failures"], f"{flavor} validation failures: {result.get('validation_failures')}"
+
+        from tools.builder.forge_validator import CHECK_REGISTRY, validate
+
+        checks = [c for c in CHECK_REGISTRY if c != "coherence"]
+        report = validate(out, checks=checks)
+
+        assert report.score >= 0.92, (
+            f"{flavor} FORGE score too low: {report.score}"
+        )
+        # All three flavors share the same expected warning: no explicit agent
+        # cards, only the template-generated CLAUDE.md.
+        failed = [c.to_dict() for c in report.checks if c.status == "fail"]
+        assert not failed, f"{flavor} has unexpected FORGE failures: {failed}"
+
+
+class TestChildAppGeneratorOverlay:
+    """Unit tests for the template-based composition added to child_app_generator."""
+
+    def test_resolve_template_dir_builtin_flavor(self):
+        resolved = _resolve_template_dir(None, "compliance", BASE_DIR)
+        assert resolved == BASE_DIR / "data" / "templates" / "child_apps" / "compliance"
+
+    def test_resolve_template_dir_explicit_path(self, tmp_path):
+        custom = tmp_path / "custom_template"
+        custom.mkdir()
+        resolved = _resolve_template_dir(str(custom), None, BASE_DIR)
+        assert resolved == custom
+
+    def test_resolve_template_dir_missing_flavor_raises(self):
+        with pytest.raises(FileNotFoundError):
+            _resolve_template_dir(None, "not_a_flavor", BASE_DIR)
+
+    def test_build_template_variables(self):
+        blueprint = {
+            "classification": "CUI",
+            "impact_level": "IL5",
+            "display_name": "My Demo App",
+        }
+        vars_ = _build_template_variables(blueprint, "my-demo-app")
+
+        assert vars_["key"] == "my-demo-app"
+        assert vars_["display_name"] == "My Demo App"
+        assert vars_["classification"] == "CUI"
+        assert vars_["impact_level"] == "IL5"
+        assert vars_["env_flag"] == "ICDEV_MY_DEMO_APP_ENABLED"
+        assert vars_["url_prefix"] == "/my-demo-app"
+        assert vars_["module_package"] == "apps.my-demo-app"
+
+    def test_build_template_variables_defaults_display_name(self):
+        vars_ = _build_template_variables({}, "acme_lab")
+        assert vars_["display_name"] == "Acme Lab"
+
+    def test_overlay_template_specializes_child_root(self, tmp_path):
+        """A flavor template overlays its files onto an existing child root.
+
+        The baseline README is replaced by the template README, while files not
+        listed in the template manifest are preserved.
+        """
+        child_root = tmp_path / "child"
+        child_root.mkdir()
+        baseline = child_root / "baseline.txt"
+        baseline.write_text("parent baseline", encoding="utf-8")
+        baseline_readme = child_root / "README.md"
+        baseline_readme.write_text("# Baseline", encoding="utf-8")
+
+        blueprint = {
+            "classification": "CUI",
+            "impact_level": "IL4",
+            "display_name": "Overlay App",
+        }
+        result = _overlay_template(
+            child_root,
+            CHILD_APP_FLAVORS / "compliance",
+            blueprint,
+            "overlay_app",
+        )
+
+        assert result["success"]
+        assert "README.md" in result["rendered_files"]
+        # Baseline file outside the template should still exist.
+        assert baseline.exists()
+        # Template README should have replaced the baseline README.
+        readme_text = (child_root / "README.md").read_text(encoding="utf-8")
+        assert "Overlay App" in readme_text
+        # Compliance-specific files were overlaid.
+        assert (child_root / "args" / "security_gates.yaml").exists()
+        blueprint_path = child_root / "apps" / "overlay_app" / "blueprint.py"
+        assert blueprint_path.exists()
+        ast.parse(blueprint_path.read_text(encoding="utf-8"))

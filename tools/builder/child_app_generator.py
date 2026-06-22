@@ -28,6 +28,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from icdev.tools.builder.template_engine import render_tree as _render_template_tree
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
 # Use centralized DB path resolution (D152 pattern)
@@ -49,6 +51,64 @@ def _import_sister(module_name, func_name):
         return getattr(mod, func_name)
     except (ImportError, AttributeError):
         return None
+
+
+def _resolve_template_dir(
+    template: Optional[str],
+    flavor: Optional[str],
+    icdev_root: Path,
+) -> Optional[Path]:
+    """Resolve a child-app template directory from explicit path or built-in flavor."""
+    if template:
+        p = Path(template).expanduser().resolve()
+        if p.exists():
+            return p
+        raise FileNotFoundError(f"Template directory not found: {p}")
+    if flavor:
+        p = icdev_root / "data" / "templates" / "child_apps" / flavor
+        if p.exists():
+            return p
+        raise FileNotFoundError(f"Built-in flavor not found: {flavor}")
+    return None
+
+
+def _build_template_variables(blueprint: dict, name: str) -> dict[str, str]:
+    """Build template variable overrides from a child-app blueprint."""
+    classification = blueprint.get("classification", "CUI")
+    impact_level = blueprint.get("impact_level", "IL4")
+    return {
+        "key": name,
+        "display_name": blueprint.get("display_name") or name.replace("-", " ").replace("_", " ").title(),
+        "env_flag": f"ICDEV_{name.upper().replace('-', '_')}_ENABLED",
+        "url_prefix": f"/{name}",
+        "module_package": f"apps.{name}",
+        "classification": classification,
+        "impact_level": impact_level,
+    }
+
+
+def _overlay_template(
+    child_root: Path,
+    template_dir: Path,
+    blueprint: dict,
+    app_name: str,
+) -> dict[str, Any]:
+    """Overlay a child-app flavor template onto the generated child root.
+
+    The legacy generator produces a complete baseline; the template flavor
+    specializes it (blueprint, args, context, etc.). Files provided by the
+    template overwrite the baseline so the flavor's intent wins.
+    """
+    variables = _build_template_variables(blueprint, app_name)
+    result = _render_template_tree(template_dir, child_root, variables)
+    return {
+        "template_dir": str(template_dir),
+        "variables": variables,
+        "rendered_files": result.get("rendered_files", []),
+        "errors": result.get("errors", []),
+        "validation_failures": result.get("validation_failures", []),
+        "success": result.get("success", False),
+    }
 
 
 try:
@@ -3507,6 +3567,8 @@ def generate_child_app(
     name: str,
     icdev_root: Optional[Path] = None,
     db_path: Optional[Path] = None,
+    template_dir: Optional[Path] = None,
+    legacy: bool = False,
 ) -> dict:
     """Generate a complete child application from a blueprint.
 
@@ -3514,12 +3576,18 @@ def generate_child_app(
     11b README + 13 audit + 14 FORGE validation + 15 syntax validation +
     16 DB execution + 17 agent card validation), collecting results from each.
 
+    When ``template_dir`` is provided and ``legacy`` is False, the legacy
+    baseline is first generated, then the template flavor is rendered on top
+    to specialize the child app (blueprint, args, context, etc.).
+
     Args:
         blueprint: Complete blueprint dict from app_blueprint.py.
         project_path: Parent directory for the child app.
         name: Child application name.
         icdev_root: Path to ICDEV™ project root (auto-detected if None).
         db_path: Path to ICDEV™ database (auto-detected if None).
+        template_dir: Optional child-app template directory (e.g. data/templates/child_apps/compliance).
+        legacy: If True, skip the template overlay and use the original copy-and-adapt path only.
 
     Returns:
         Summary dict with step results and overall status.
@@ -3533,7 +3601,8 @@ def generate_child_app(
         blueprint["capabilities"] = {}
     blueprint["capabilities"]["security"] = True
 
-    logger.info("Generating child app '%s' at %s", name, child_root)
+    mode = "legacy copy-and-adapt" if legacy else ("template-composed" if template_dir else "baseline")
+    logger.info("Generating child app '%s' at %s (mode=%s)", name, child_root, mode)
     start_time = datetime.now(tz=timezone.utc)
 
     results: Dict[str, Any] = {
@@ -3578,6 +3647,22 @@ def generate_child_app(
             logger.error("Step %s failed: %s", step_name, e, exc_info=True)
             results["steps"][step_name] = {"status": "error", "error": str(e)}
             results["errors"].append(f"{step_name}: {e}")
+
+    # Template flavor overlay (non-legacy mode): specialize the baseline with a
+    # configurable Jinja2 template tree.
+    if template_dir and not legacy:
+        try:
+            logger.info("Overlaying template flavor from %s", template_dir)
+            overlay_result = _overlay_template(child_root, template_dir, blueprint, name)
+            results["steps"]["00_template_overlay"] = {"status": "success" if overlay_result["success"] else "error", **overlay_result}
+            if not overlay_result["success"]:
+                results["errors"].append(
+                    f"00_template_overlay: {overlay_result.get('errors', []) + overlay_result.get('validation_failures', [])}"
+                )
+        except Exception as e:
+            logger.error("Template overlay failed: %s", e, exc_info=True)
+            results["steps"]["00_template_overlay"] = {"status": "error", "error": str(e)}
+            results["errors"].append(f"00_template_overlay: {e}")
 
     # Compute overall status
     failed_steps = [s for s, r in results["steps"].items() if r.get("status") == "error"]
@@ -3667,6 +3752,19 @@ def main():
     parser.add_argument("--db-path", help="Path to ICDEV™ database (default: data/icdev.db)")
     parser.add_argument("--json", action="store_true", help="Output results as JSON")
     parser.add_argument("--verbose", action="store_true", help="Enable debug logging")
+    parser.add_argument(
+        "--template",
+        help="Path to a child-app template directory (e.g. data/templates/child_apps/compliance)",
+    )
+    parser.add_argument(
+        "--flavor",
+        help="Built-in child-app flavor name (compliance, ai-lab, govcon, minimal). Overrides --template default.",
+    )
+    parser.add_argument(
+        "--legacy",
+        action="store_true",
+        help="Use the original copy-and-adapt generator only, without template overlay",
+    )
 
     args = parser.parse_args()
 
@@ -3699,6 +3797,18 @@ def main():
     icdev_root = Path(args.icdev_root) if args.icdev_root else BASE_DIR
     db_path = Path(args.db_path) if args.db_path else DB_PATH
 
+    # Resolve child-app template flavor (default to minimal unless legacy)
+    template_dir = None
+    if args.legacy:
+        if args.template or args.flavor:
+            logger.warning("--legacy ignores --template/--flavor")
+    else:
+        template_dir = _resolve_template_dir(
+            args.template,
+            args.flavor or "minimal",
+            icdev_root,
+        )
+
     # Generate child app
     results = generate_child_app(
         blueprint=blueprint,
@@ -3706,6 +3816,8 @@ def main():
         name=args.name,
         icdev_root=icdev_root,
         db_path=db_path,
+        template_dir=template_dir,
+        legacy=args.legacy,
     )
 
     if args.json:

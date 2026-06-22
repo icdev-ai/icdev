@@ -1,0 +1,17 @@
+# ANVIL Build Workflow — {{ display_name }}
+
+This goal defines the build workflow for the {{ display_name }} child application.
+
+## Phases
+
+1. **Architect** — Design the app structure and acceptance criteria.
+2. **Navigate** — Map existing tools and patterns from the parent ICDEV™ project.
+3. **Verify** — Write failing tests (RED).
+4. **Integrate** — Generate the implementation (GREEN).
+5. **Launch** — Refactor, scan, and deploy.
+
+## Acceptance Criteria
+
+- [ ] Child app has a working Flask blueprint under {{ module_package }}.
+- [ ] FORGE layers (goals, tools, args, context, hardprompts) are populated.
+- [ ] The app can be enabled via {{ env_flag }} in the environment.

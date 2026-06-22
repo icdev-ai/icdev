@@ -1,0 +1,17 @@
+# App Brief — {{ display_name }}
+
+{{ display_name }} is a generated ICDEV™ child application.
+
+## Scope
+
+- Key: `{{ key }}`
+- Env flag: `{{ env_flag }}`
+- URL prefix: `{{ url_prefix }}`
+- Classification: `{{ classification }}`
+- Impact level: `{{ impact_level }}`
+
+## Guardrails
+
+- This child application cannot generate further child applications (grandchild prevention).
+- Use `get_connection()` for all database access.
+- Keep all secrets in `.env`, never in code.
