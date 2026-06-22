@@ -154,6 +154,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Phase 35 — Innovation Engine (D206)
         "innovation_signals",
         "innovation_triage_log",
+        # ACF normalized innovation engine outputs (append-only)
+        "innovation_signal",
         # Phase 39 — Observability
         "agent_executions",
         # Phase 40 — NLQ
@@ -166,6 +168,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "tool_chain_events",
         "agent_trust_scores",
         "agent_output_violations",
+        # Agentic AI safety_layer SIEM event sink (append-only, best-effort forwarder)
+        "siem_events",
         # Phase 46 — Observability, Traceability & XAI (D280-D290)
         "otel_spans",
         "prov_entities",
@@ -230,6 +234,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "creative_feature_gaps",
         "creative_specs",
         "creative_trends",
+        # ACF normalized creative engine inputs (append-only)
+        "creative_gap",
         # GovCon Intelligence (Phase 59, D361-D373)
         "sam_gov_quota_events",
         "rfp_shall_statements",
