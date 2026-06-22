@@ -2044,6 +2044,7 @@ def check_llm_injection_patterns(
 # ---------------------------------------------------------------------------
 
 _SKILL_DIR = PROJECT_ROOT / ".agents" / "skills"
+_CLAUDE_SKILL_DIR = PROJECT_ROOT / ".claude" / "skills"
 _SKILL_MAX_DESC = 1024
 _SKILL_MAX_BODY_LINES = 100
 

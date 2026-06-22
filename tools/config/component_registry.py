@@ -876,9 +876,20 @@ def validate_canvas_completeness(
     constants_present = constants_path.exists()
 
     # Point 6: DB migration directory
+    # Check declared path and common legacy fallback (db/ without /migrations sub-dir).
     migration_path_str = completeness.get("db_migration")
     migration_path = root / migration_path_str if migration_path_str else None
-    migration_present = _file_exists(migration_path) if migration_path_str else None
+    migration_present: bool | None = None
+    if migration_path_str:
+        migration_present = _file_exists(migration_path)
+        if not migration_present:
+            # Fallback: check parent db/ directory (older canvases don't have /migrations)
+            _db_parent = Path(migration_path_str).parent
+            if _db_parent.name == "migrations":
+                _db_parent = _db_parent.parent
+            if (root / _db_parent).exists():
+                migration_present = True
+                migration_path_str = str(_db_parent)
 
     # Point 7: nav link
     nav_link_present = bool(completeness.get("nav_link")) or bool(comp.nav.get("section"))
@@ -892,6 +903,19 @@ def validate_canvas_completeness(
     seed_queries_path = root / seed_queries_str if seed_queries_str else None
     iqe_adapter_present = _file_exists(iqe_adapter_path) if iqe_adapter_module else None
     seed_queries_present = _file_exists(seed_queries_path) if seed_queries_str else None
+
+    # Fallback: search common IQE seed-query directory name variants when not found.
+    if not seed_queries_present and iqe_adapter_present:
+        _iqe_query_root = root / "context" / "iqe" / "queries"
+        if _iqe_query_root.exists():
+            _name_variants = [key, key + "_canvas", key.replace("_canvas", ""), _module_leaf]
+            for _var in _name_variants:
+                _cand = _iqe_query_root / _var
+                if _cand.exists() and any(_cand.iterdir()):
+                    seed_queries_present = True
+                    seed_queries_path = _cand
+                    break
+
     iqe_present = iqe_adapter_present is True and seed_queries_present is True
 
     items: list[CanvasCompletenessItem] = [
