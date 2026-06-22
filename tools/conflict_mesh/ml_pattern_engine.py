@@ -21,7 +21,6 @@ Usage:
 
 from __future__ import annotations
 
-import logging
 import re
 import sys
 from dataclasses import dataclass
@@ -32,7 +31,8 @@ BASE_DIR = Path(__file__).resolve().parents[2]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-logger = logging.getLogger("conflict_mesh.ml_engine")
+from tools.logging.icdev_logger import get_logger
+log = get_logger("conflict_mesh.ml_engine")
 
 VIOLENCE_KEYWORDS = frozenset({
     "kills", "killed", "attack", "attacked", "offensive", "siege",
@@ -148,5 +148,5 @@ class MLPatternEngine:
             resp = self._llm.complete(req, function="summarization")
             return resp.text.strip() if resp and resp.text else None
         except Exception as exc:
-            logger.debug("LLM assessment skipped: %s", exc)
+            log.debug("LLM assessment skipped: %s", exc)
             return None

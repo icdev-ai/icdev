@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import hashlib
-import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 
 from tools.mcip.constants import DAT_SOURCE_TYPES, DTI_WEIGHTS, classify_dti
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+log = get_logger("mcip.analytics")
 
 
 def _now_iso() -> str:
@@ -52,7 +52,7 @@ def ingest_event(
         )
         conn.commit()
     except Exception as exc:
-        logger.warning("mcip ingest_event error: %s", exc)
+        log.warning("mcip ingest_event error: %s", exc)
     finally:
         conn.close()
     return event_id
@@ -89,7 +89,7 @@ def compute_dti(window_hours: int = 6) -> dict:
             sub_scores[src] = float(avg_sig)
             event_count += int(cnt)
     except Exception as exc:
-        logger.warning("mcip compute_dti query error: %s", exc)
+        log.warning("mcip compute_dti query error: %s", exc)
     finally:
         conn.close()
 
@@ -127,7 +127,7 @@ def record_dti_score(score: float, sub_scores: dict, event_count: int) -> str:
         )
         conn.commit()
     except Exception as exc:
-        logger.warning("mcip record_dti_score error: %s", exc)
+        log.warning("mcip record_dti_score error: %s", exc)
     finally:
         conn.close()
     return row_id
@@ -147,7 +147,7 @@ def get_current_dti() -> dict | None:
         if row:
             return dict(row)
     except Exception as exc:
-        logger.warning("mcip get_current_dti error: %s", exc)
+        log.warning("mcip get_current_dti error: %s", exc)
     finally:
         conn.close()
     return None
@@ -166,7 +166,7 @@ def get_dti_history(hours: int = 48) -> list[dict]:
         ).fetchall()
         return [dict(r) for r in rows]
     except Exception as exc:
-        logger.warning("mcip get_dti_history error: %s", exc)
+        log.warning("mcip get_dti_history error: %s", exc)
     finally:
         conn.close()
     return []
@@ -188,7 +188,7 @@ def get_recent_events(source_type: str | None = None, limit: int = 50) -> list[d
             ).fetchall()
         return [dict(r) for r in rows]
     except Exception as exc:
-        logger.warning("mcip get_recent_events error: %s", exc)
+        log.warning("mcip get_recent_events error: %s", exc)
     finally:
         conn.close()
     return []
