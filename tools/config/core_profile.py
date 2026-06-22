@@ -85,6 +85,14 @@ def profile_env_overrides(profile: dict[str, Any]) -> dict[str, str]:
     if profile.get("classification") and not os.environ.get("ICDEV_CLASSIFICATION"):
         overrides["ICDEV_CLASSIFICATION"] = profile["classification"]
 
+    if profile.get("banner_mode") and not os.environ.get("ICDEV_BANNER_MODE"):
+        overrides["ICDEV_BANNER_MODE"] = profile["banner_mode"]
+
+    if profile.get("brand_path") and not os.environ.get("ICDEV_BRAND_PATH"):
+        raw = profile["brand_path"]
+        resolved = str(BASE_DIR / raw) if not Path(raw).is_absolute() else raw
+        overrides["ICDEV_BRAND_PATH"] = resolved
+
     llm = profile.get("llm", {})
     if llm.get("provider") and not os.environ.get("ICDEV_LLM_PROVIDER"):
         overrides["ICDEV_LLM_PROVIDER"] = llm["provider"]
