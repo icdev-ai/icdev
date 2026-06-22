@@ -318,6 +318,7 @@ class TestRenderedHtmlContainsActionBar:
             "{% block content %}{% endblock %}"
         )
         env = Environment(
+            autoescape=True,
             loader=ChoiceLoader([
                 DictLoader({"base.html": stub_base}),
                 FileSystemLoader(str(_TEMPLATES_DIR)),
