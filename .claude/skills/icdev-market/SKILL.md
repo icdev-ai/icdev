@@ -84,11 +84,6 @@ python tools/marketplace/asset_scanner.py \
     --asset-path /path/to/asset --json
 ```
 
-### Provenance
-```bash
-python tools/marketplace/provenance_tracker.py --report --asset-id "asset-abc" --json
-```
-
 ### Catalog Management
 ```bash
 # List assets
