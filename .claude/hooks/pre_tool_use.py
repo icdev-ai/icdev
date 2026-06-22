@@ -204,6 +204,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # Phase 64 — RAG Subsystem (D-RAG-8, D-RAG-11)
         "rag_ingestion_log",
         "rag_retrieval_log",
+        # RAG provenance ledger — append-only AIA chain-of-custody (D-AIDP, NIST AU-3)
+        "rag_provenance_ledger",
         # Phase 69 — Codebase Assistant (D-CA-6)
         "codebase_qa_cache",
         # Genesis v2.0 (D-GEN-6, D-GEN-10)

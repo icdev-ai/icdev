@@ -1,0 +1,9 @@
+# CUI // SP-CTI
+"""{{ display_name }} — constants."""
+
+EXTENSION_KEY = "{{ key }}"
+DISPLAY_NAME = "{{ display_name }}"
+ENV_FLAG = "{{ env_flag }}"
+URL_PREFIX = "{{ url_prefix or '/' + key | replace('_', '-') }}"
+MIN_IL = "{{ min_il }}"
+ALLOWED_ROLES = [r.strip() for r in "{{ default_roles }}".split(",")]

@@ -1311,6 +1311,27 @@ CREATE TABLE IF NOT EXISTS mcip_dti_scores (
     computed_at     TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_mcip_dti_scores_at ON mcip_dti_scores(computed_at);
+
+-- RAG provenance ledger — append-only AIA chain-of-custody (D-AIDP, NIST AU-3)
+CREATE TABLE IF NOT EXISTS rag_provenance_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chunk_uuid TEXT NOT NULL,
+    parent_doc_uuid TEXT,
+    sha256_hash TEXT,
+    token_count INTEGER DEFAULT 0,
+    classification_label TEXT,
+    version_tree_ref TEXT,
+    model_id TEXT,
+    hyperparams_json TEXT DEFAULT '{}',
+    prompt_sha256 TEXT,
+    signature TEXT,
+    event_type TEXT NOT NULL DEFAULT 'ingest'
+        CHECK(event_type IN ('ingest', 'chain_of_custody')),
+    ingest_timestamp TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_rag_prov_chunk ON rag_provenance_ledger(chunk_uuid);
+CREATE INDEX IF NOT EXISTS idx_rag_prov_event_type ON rag_provenance_ledger(event_type);
 """
 
 

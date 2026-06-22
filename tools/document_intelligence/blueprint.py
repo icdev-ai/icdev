@@ -805,7 +805,7 @@ def api_kg_explore():
     # global RLS predicate would add an UndefinedColumn clause.  Disable RLS for
     # this read-only KG endpoint; collection/doc scoping is enforced below via
     # dic_chunk_links / dic_documents.
-    conn.set_security_context(None)
+    conn.set_security_context(None)  # rls-bypass: kg_nodes/kg_edges/kg_graphs have no tenant_id; scoped via dic_chunk_links + dic_documents instead
 
     def _collection_chunk_clause(alias: str = "n") -> tuple[str, list]:
         """Return a predicate and params that restrict a kg_nodes alias to
