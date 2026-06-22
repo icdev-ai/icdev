@@ -35,6 +35,7 @@ registry-driven, template-driven architecture.
 | Enable/Disable | `tools/cli/enable.py` | `icdev enable/disable/status/list` derived from registry env flags. | toggle names, `--env-file`, `--json` | Updated `.env` + status JSON |
 | Profile CLI | `tools/cli/profile.py` | `icdev profile list/show/apply` for core profiles. | profile name, `--env-file`, `--dry-run` | Written/previewed env overrides |
 | Scaffold CLI | `tools/cli/scaffold.py` | `icdev scaffold canvas` and `icdev scaffold child-app`. | key, `--template`, `--flavor`, `--out` | Scaffolded tree |
+| Backfill Manifests | `tools/cli/backfill_manifests.py` | Creates `data/templates/canvases/{key}/manifest.yaml` stubs for all registered canvases that lack one. Makes existing canvases discoverable and diff-able against the template baseline. | `[--dry-run]` `[--key <canvas-key>]` `[--json]` | Created/skipped stubs per canvas |
 | CLI Dispatcher | `tools/cli/__main__.py` | Routes `icdev` subcommands to the module-level scripts above. | subcommand + args | stdout / JSON |
 
 ## Runtime integration
@@ -46,6 +47,7 @@ registry-driven, template-driven architecture.
 | LLM router | `tools/llm/router.py` | Uses profile provider default when not overridden. |
 | Canvas access / RBAC | `tools/security/canvas_access.py` | `guard_component_access()` enforces `min_il` and explicit grants. |
 | Oracle verifiers | `tools/foundry/oracle_verifiers.py` | Derives registered routes from registry instead of parsing source text. |
+| Admin Console Blueprint | `tools/admin/blueprint.py` | Flask blueprint for the admin console (`/admin/`). Provides tenant component override CRUD, component audit log viewer, and canvas access grant log. Gated by `ICDEV_ADMIN_CONSOLE_ENABLED=true` and admin role. |
 
 ## Database artifacts
 | Migration | File | Description |
