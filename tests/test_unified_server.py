@@ -35,8 +35,9 @@ class TestRegistryCompleteness:
         assert len(TOOL_REGISTRY) >= 230
 
     def test_total_resource_count(self):
-        """Registry must have 6 resources."""
-        assert len(RESOURCE_REGISTRY) == 6
+        """Registry must have 6 true resources (entries with 'name' field)."""
+        true_resources = {k: v for k, v in RESOURCE_REGISTRY.items() if "name" in v}
+        assert len(true_resources) == 6
 
     def test_no_duplicate_tool_names(self):
         """Tool names must be unique (dict keys guarantee this, but verify count)."""
@@ -102,9 +103,11 @@ class TestRegistryCompleteness:
             assert "properties" in schema, f"Tool '{name}' schema missing 'properties'"
 
     def test_all_resources_have_required_keys(self):
-        """Every resource entry must have name, description, module, handler."""
+        """Every true resource entry must have name, description, module, handler."""
         required = {"name", "description", "module", "handler"}
         for uri, entry in RESOURCE_REGISTRY.items():
+            if "name" not in entry:
+                continue  # tool-overflow entries don't need resource fields
             missing = required - set(entry.keys())
             assert not missing, f"Resource '{uri}' missing keys: {missing}"
 
@@ -217,7 +220,8 @@ class TestGapHandlerCoverage:
         assert names == actual
 
     def test_registry_tools(self):
-        """9 registry gap handler tools."""
+        """Registry gap handler tools (original 9 + 4 added: egress_monitor_evaluate,
+        evolution_daemon_status, propagation_verify, sandbox_score)."""
         names = {
             "register_child",
             "list_children",
@@ -228,12 +232,18 @@ class TestGapHandlerCoverage:
             "absorption_candidates",
             "unevaluated_behaviors",
             "cross_pollination_candidates",
+            "egress_monitor_evaluate",
+            "evolution_daemon_status",
+            "propagation_verify",
+            "sandbox_score",
         }
         actual = {n for n, e in TOOL_REGISTRY.items() if e["category"] == "registry"}
         assert names == actual
 
     def test_security_agentic_tools(self):
-        """9 security/agentic gap handler tools."""
+        """Security/agentic gap handler tools (original 9 + 6 added: blueprint_verify,
+        credential_broker_request, credential_broker_status, egress_policy_resolve,
+        evaluate_aggregation_rules, guard_result)."""
         names = {
             "scan_code_patterns",
             "validate_tool_chain",
@@ -244,6 +254,12 @@ class TestGapHandlerCoverage:
             "generate_ai_bom",
             "run_atlas_red_team",
             "detect_behavioral_drift",
+            "blueprint_verify",
+            "credential_broker_request",
+            "credential_broker_status",
+            "egress_policy_resolve",
+            "evaluate_aggregation_rules",
+            "guard_result",
         }
         actual = {n for n, e in TOOL_REGISTRY.items() if e["category"] == "security_agentic"}
         assert names == actual
@@ -312,18 +328,20 @@ class TestUnifiedServerLifecycle:
         assert server.name == "icdev-unified"
 
     def test_server_registers_all_tools(self):
-        """Server must register all tools from the registry."""
+        """Server must register all tools from TOOL_REGISTRY plus tool-overflow entries from RESOURCE_REGISTRY."""
         from tools.mcp.unified_server import create_server
 
         server = create_server()
-        assert len(server._tools) == len(TOOL_REGISTRY)
+        tool_overflow = sum(1 for e in RESOURCE_REGISTRY.values() if "input_schema" in e and "name" not in e)
+        assert len(server._tools) == len(TOOL_REGISTRY) + tool_overflow
 
     def test_server_registers_all_resources(self):
-        """Server must register all 6 resources."""
+        """Server must register exactly the 6 true resources (entries with 'name' field)."""
         from tools.mcp.unified_server import create_server
 
         server = create_server()
-        assert len(server._resources) == 6
+        true_resource_count = sum(1 for e in RESOURCE_REGISTRY.values() if "name" in e)
+        assert len(server._resources) == true_resource_count
 
     def test_handler_cache_empty_at_startup(self):
         """No handlers should be imported at startup (lazy loading)."""
@@ -388,7 +406,8 @@ class TestUnifiedServerLifecycle:
                     "description": entry.get("description", ""),
                 }
             )
-        assert len(tools_list) == len(TOOL_REGISTRY)
+        tool_overflow = sum(1 for e in RESOURCE_REGISTRY.values() if "input_schema" in e and "name" not in e)
+        assert len(tools_list) == len(TOOL_REGISTRY) + tool_overflow
         assert all("name" in t and "description" in t for t in tools_list)
 
 
