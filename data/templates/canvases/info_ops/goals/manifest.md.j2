@@ -1,0 +1,22 @@
+# {{ display_name }} Goals
+
+This project was scaffolded from the `data/templates/canvases/info_ops` template.
+
+## Goal
+
+Build and operate an Information Operations canvas that enables analysts to monitor campaigns, analyze narratives, browse OSINT feeds, and manage reports through a Flask blueprint integrated with the ICDEV™ FORGE framework.
+
+## FORGE Layers
+
+- Goals: this file
+- Orchestration: Claude Code / ICDEV™ agents via CLAUDE.md
+- Tools: deterministic Python scripts under `tools/`
+- Args: behavior configuration under `args/`
+- Context: reference material under `context/`
+- Hard Prompts: reusable LLM instruction templates under `hardprompts/`
+
+## Acceptance Criteria
+
+- Blueprint registers at `{{ url_prefix }}` and exposes landing, dashboard, analysis, reports, OSINT, and settings pages.
+- REST endpoints `/api/stats`, `/api/analysis`, `/api/reports`, and `/api/osint` return deterministic sample data.
+- `python tools/builder/forge_validator.py --project-dir . --gate` passes.

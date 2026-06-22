@@ -1,0 +1,31 @@
+# {{ display_name }}
+
+This is an ICDEV™ FORGE canvas project generated from `data/templates/canvases/info_ops`.
+
+## FORGE Framework
+
+This project follows the 6-layer FORGE framework:
+
+1. **Goals** — `goals/manifest.md`
+2. **Orchestration** — Claude Code / ICDEV™ agents
+3. **Tools** — deterministic Python scripts under `tools/`
+4. **Args** — behavior configuration under `args/`
+5. **Context** — reference material under `context/`
+6. **Hard Prompts** — reusable LLM instruction templates under `hardprompts/`
+
+## Canvas
+
+- Key: `{{ key }}`
+- URL prefix: `{{ url_prefix }}`
+- Env flag: `{{ env_flag }}`
+- Module: `tools/{{ key }}/blueprint.py`
+
+## Quick Start
+
+```bash
+# Enable the canvas
+export {{ env_flag }}=true
+
+# Validate FORGE compliance
+python tools/builder/forge_validator.py --project-dir . --gate
+```

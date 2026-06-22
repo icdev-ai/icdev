@@ -1,0 +1,672 @@
+#!/usr/bin/env python3
+# CUI // SP-CTI
+"""Unified component registry loader for ICDEV™.
+
+Single source of truth for canvases, child apps, and core extensions declared
+in `args/component_registry.yaml`. Replaces the hardcoded `_CANVAS_DEFS`,
+`_APP_DEFS`, `_CANVAS_ROUTES`, and `_CANVAS_MAP` scattered across
+`tools/dashboard/app.py` and `tools/cli/enable.py`.
+
+Usage:
+    from tools.config.component_registry import ComponentRegistry
+    registry = ComponentRegistry()
+
+    # Iterate enabled canvases
+    for comp in registry.iter_enabled(kind="canvas"):
+        bp = comp.get_blueprint()
+        app.register_blueprint(bp, url_prefix=comp.url_prefix)
+
+    # IQE dispatch map
+    canvas_map = registry.get_iqe_mapping()
+
+    # CLI toggles
+    toggles = registry.get_toggles()
+
+The loader is deterministic and read-only: it only inspects the registry file
+and environment variables. It does not write files or mutate global state.
+"""
+
+from __future__ import annotations
+
+import ast
+import dataclasses
+import importlib
+import os
+from pathlib import Path
+from typing import Any, Iterator
+
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger("icdev.component_registry")
+
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
+DEFAULT_REGISTRY_PATH = BASE_DIR / "args" / "component_registry.yaml"
+
+
+# ---------------------------------------------------------------------------
+# Data model
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True)
+class Component:
+    """One registered ICDEV component (canvas, child_app, feature, core_extension)."""
+
+    key: str
+    kind: str  # canvas | child_app | feature | core_extension
+    cli_name: str
+    display_name: str
+    description: str
+    env_flag: str
+    extra_env_flags: list[str]
+    default_enabled: bool
+    module: str | None
+    blueprint_attr: str | None
+    url_prefix: str
+    min_il: str
+    default_roles: list[str]
+    nav: dict[str, Any]
+    iqe: dict[str, Any]
+    completeness: dict[str, Any]
+    raw: dict[str, Any]
+
+    def is_enabled(self, env: dict[str, str] | None = None) -> bool:
+        """Return True if the component's primary env flag is enabled.
+
+        Args:
+            env: Optional mapping of environment variables. Defaults to
+                 `os.environ`.
+        """
+        env = env if env is not None else os.environ
+        value = env.get(self.env_flag, "true" if self.default_enabled else "false")
+        return str(value).strip().strip('"').strip("'").lower() in (
+            "true",
+            "1",
+            "yes",
+            "on",
+        )
+
+    def get_blueprint(self) -> Any | None:
+        """Dynamically import the module and resolve the blueprint attribute.
+
+        Mirrors the logic in `tools/dashboard/app.py`:
+          - If the attribute is callable and lacks a `.name`, treat it as a
+            factory and call it once.
+          - Otherwise return the attribute itself.
+
+        Returns None for feature toggles or if import/resolution fails.
+        """
+        if self.module is None or self.blueprint_attr is None:
+            return None
+
+        try:
+            mod = importlib.import_module(self.module)
+        except Exception as exc:
+            logger.warning(
+                "Component %s import failed (%s): %s", self.key, self.module, exc
+            )
+            return None
+
+        bp = getattr(mod, self.blueprint_attr, None)
+        if bp is None:
+            logger.warning(
+                "Component %s missing blueprint attribute %s in %s",
+                self.key,
+                self.blueprint_attr,
+                self.module,
+            )
+            return None
+
+        try:
+            if callable(bp) and not hasattr(bp, "name"):
+                bp = bp()
+        except Exception as exc:
+            logger.warning(
+                "Component %s blueprint factory failed (%s.%s): %s",
+                self.key,
+                self.module,
+                self.blueprint_attr,
+                exc,
+            )
+            return None
+
+        return bp
+
+
+# ---------------------------------------------------------------------------
+# Registry loader
+# ---------------------------------------------------------------------------
+
+
+class ComponentRegistry:
+    """Load and query `args/component_registry.yaml`."""
+
+    def __init__(
+        self,
+        registry_path: Path | str | None = None,
+        env: dict[str, str] | None = None,
+    ):
+        """Initialize the registry.
+
+        Args:
+            registry_path: Path to `component_registry.yaml`. Defaults to
+                `args/component_registry.yaml` under the repo root.
+            env: Optional environment-variable mapping. Defaults to `os.environ`.
+        """
+        self.registry_path = Path(registry_path or DEFAULT_REGISTRY_PATH)
+        self._env = env if env is not None else os.environ
+        self._components: tuple[Component, ...] = tuple(self._load_components())
+        self._by_key: dict[str, Component] = {c.key: c for c in self._components}
+
+    # ------------------------------------------------------------------
+    # YAML loading
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _load_yaml(path: Path) -> dict[str, Any]:
+        """Load YAML. PyYAML preferred; minimal fallback for air-gap."""
+        if not path.exists():
+            logger.warning("Component registry not found: %s", path)
+            return {}
+        try:
+            import yaml
+
+            with open(path, "r", encoding="utf-8") as fh:
+                return yaml.safe_load(fh) or {}
+        except ImportError:
+            logger.warning(
+                "PyYAML not installed; component registry cannot be loaded air-gap. "
+                "Install PyYAML or provide an alternative loader."
+            )
+            return {}
+        except Exception as exc:
+            logger.error("Failed to load component registry %s: %s", path, exc)
+            return {}
+
+    def _load_components(self) -> Iterator[Component]:
+        data = self._load_yaml(self.registry_path)
+        entries = data.get("components", [])
+        if not isinstance(entries, list):
+            logger.error("component_registry.yaml 'components' must be a list")
+            return
+
+        for idx, raw in enumerate(entries):
+            if not isinstance(raw, dict):
+                logger.warning("Skipping non-dict registry entry #%s", idx)
+                continue
+            try:
+                yield self._make_component(raw)
+            except Exception as exc:
+                logger.warning(
+                    "Skipping invalid registry entry #%s (%s): %s", idx, raw.get("key"), exc
+                )
+
+    @staticmethod
+    def _make_component(raw: dict[str, Any]) -> Component:
+        """Construct a Component from a raw registry dict."""
+        key = str(raw.get("key", "")).strip()
+        if not key:
+            raise ValueError("component missing required 'key'")
+
+        kind = str(raw.get("kind", "canvas")).strip()
+        cli_name = str(raw.get("cli_name", key)).strip() or key
+        display_name = str(raw.get("display_name", key)).strip()
+        description = str(raw.get("description", "")).strip()
+        env_flag = str(raw.get("env_flag", f"ICDEV_{key.upper()}_ENABLED")).strip()
+        extra_env_flags = list(raw.get("extra_env_flags", []) or [])
+        default_enabled = bool(raw.get("default_enabled", False))
+        module = raw.get("module")
+        module = str(module).strip() if module else ""
+        blueprint_attr = raw.get("blueprint_attr")
+        blueprint_attr = str(blueprint_attr).strip() if blueprint_attr else ""
+        url_prefix = str(raw.get("url_prefix", f"/{key}")).strip()
+        min_il = str(raw.get("min_il", "IL2")).strip()
+        default_roles = list(raw.get("default_roles", []) or [])
+        nav = dict(raw.get("nav", {}) or {})
+        iqe = dict(raw.get("iqe", {}) or {})
+        completeness = dict(raw.get("completeness", {}) or {})
+
+        if kind not in ("feature", "core_extension"):
+            if not module:
+                raise ValueError(f"component {key!r} missing required 'module'")
+            if not blueprint_attr:
+                raise ValueError(f"component {key!r} missing required 'blueprint_attr'")
+
+        return Component(
+            key=key,
+            kind=kind,
+            cli_name=cli_name,
+            display_name=display_name,
+            description=description,
+            env_flag=env_flag,
+            extra_env_flags=extra_env_flags,
+            default_enabled=default_enabled,
+            module=module or None,
+            blueprint_attr=blueprint_attr or None,
+            url_prefix=url_prefix,
+            min_il=min_il,
+            default_roles=default_roles,
+            nav=nav,
+            iqe=iqe,
+            completeness=completeness,
+            raw=raw,
+        )
+
+    # ------------------------------------------------------------------
+    # Query API
+    # ------------------------------------------------------------------
+
+    def __len__(self) -> int:
+        return len(self._components)
+
+    def __iter__(self) -> Iterator[Component]:
+        return iter(self._components)
+
+    def __contains__(self, key: str) -> bool:
+        return key in self._by_key
+
+    def get(self, key: str) -> Component | None:
+        """Return component by key, or None if not registered."""
+        return self._by_key.get(key)
+
+    def list_all(self, kind: str | None = None) -> list[Component]:
+        """Return all components, optionally filtered by kind."""
+        if kind is None:
+            return list(self._components)
+        return [c for c in self._components if c.kind == kind]
+
+    def list_enabled(self, kind: str | None = None) -> list[Component]:
+        """Return enabled components, optionally filtered by kind."""
+        return [c for c in self.list_all(kind) if c.is_enabled(self._env)]
+
+    def iter_canvases(self) -> Iterator[Component]:
+        """Yield all canvas components."""
+        return iter(self.list_all(kind="canvas"))
+
+    def iter_child_apps(self) -> Iterator[Component]:
+        """Yield all child_app components."""
+        return iter(self.list_all(kind="child_app"))
+
+    def iter_enabled(self, kind: str | None = None) -> Iterator[Component]:
+        """Yield enabled components."""
+        return iter(self.list_enabled(kind))
+
+    def is_enabled(self, key: str) -> bool:
+        """Return True if the named component is enabled."""
+        comp = self._by_key.get(key)
+        if comp is None:
+            return False
+        return comp.is_enabled(self._env)
+
+    def get_blueprint(self, key: str) -> Any | None:
+        """Resolve and return the Flask blueprint for a component."""
+        comp = self._by_key.get(key)
+        if comp is None:
+            logger.warning("Requested blueprint for unknown component %s", key)
+            return None
+        return comp.get_blueprint()
+
+    def get_toggles(self) -> dict[str, list[str]]:
+        """Return canonical CLI toggle names → env flag list.
+
+        Toggle name is `cli_name` when present, otherwise `key`. The value
+        includes the primary `env_flag` plus any `extra_env_flags` (legacy
+        aliases that must flip together, e.g., ICDEV_BDC_ENABLED +
+        ICDEV_BOUNDARY_ENABLED).
+
+        Includes every component that has an env_flag. For the user-facing
+        `icdev enable/disable` surface, use `get_cli_toggles()` instead.
+        """
+        toggles: dict[str, list[str]] = {}
+        for c in self._components:
+            if not c.env_flag:
+                continue
+            name = c.cli_name or c.key
+            flags = [c.env_flag] + list(c.extra_env_flags)
+            toggles[name] = flags
+        return toggles
+
+    def get_cli_toggles(self) -> dict[str, list[str]]:
+        """Return user-facing CLI toggles (canvas + feature kinds only).
+
+        Core extensions and child apps are registered separately in the
+        dashboard and are not exposed through `icdev enable/disable` in
+        Phase 0.
+        """
+        toggles: dict[str, list[str]] = {}
+        for c in self._components:
+            if c.kind not in ("canvas", "feature"):
+                continue
+            if not c.env_flag:
+                continue
+            name = c.cli_name or c.key
+            flags = [c.env_flag] + list(c.extra_env_flags)
+            toggles[name] = flags
+        return toggles
+
+    def get_descriptions(self) -> dict[str, str]:
+        """Return canonical toggle name → description for CLI display."""
+        return {(c.cli_name or c.key): c.display_name for c in self._components}
+
+    def get_cli_descriptions(self) -> dict[str, str]:
+        """Return user-facing CLI toggle descriptions (canvas + feature only)."""
+        return {
+            (c.cli_name or c.key): c.display_name
+            for c in self._components
+            if c.kind in ("canvas", "feature") and c.env_flag
+        }
+
+    def get_iqe_mapping(self) -> dict[str, tuple[str, list[str]]]:
+        """Return component key → (adapter_module, collections) for IQE dispatch.
+
+        Includes any component (canvas, child_app, core_extension, feature) that
+        declares an IQE adapter. This lets the registry act as the single
+        source of truth for /api/iqe/dispatch routing.
+        """
+        mapping: dict[str, tuple[str, list[str]]] = {}
+        for c in self._components:
+            adapter = c.iqe.get("adapter_module")
+            collections = c.iqe.get("collections")
+            if adapter and isinstance(collections, list):
+                mapping[c.key] = (str(adapter), list(collections))
+        return mapping
+
+    def get_nav_context(self) -> dict[str, Any]:
+        """Return navigation tree derived from registry entries.
+
+        Structure: {"sections": {"Section Name": {"label": ..., "items": [
+            {"key": ..., "display_name": ..., "href": ..., "enabled": ...}
+        ]}}}
+
+        Full link-level navigation remains in templates; this context is the
+        seed for Phase 5-6 templatization.
+        """
+        sections: dict[str, dict[str, Any]] = {}
+        for c in self._components:
+            section = c.nav.get("section")
+            label = c.nav.get("label")
+            if not section:
+                continue
+            sections.setdefault(section, {"items": []})
+            if label and label not in sections[section]:
+                sections[section]["label"] = label
+            sections[section]["items"].append(
+                {
+                    "key": c.key,
+                    "display_name": c.display_name,
+                    "kind": c.kind,
+                    "url_prefix": c.url_prefix,
+                    "enabled": c.is_enabled(self._env),
+                }
+            )
+        return {"sections": sections}
+
+    def get_url_prefixes(self) -> dict[str, str]:
+        """Return component key → url_prefix (legacy _CANVAS_ROUTES replacement)."""
+        return {c.key: c.url_prefix for c in self._components}
+
+    def get_default_enabled_flags(self) -> set[str]:
+        """Return the set of keys that are enabled by default."""
+        return {c.key for c in self._components if c.default_enabled}
+
+    def validate_canvas_completeness(
+        self,
+        key: str,
+        repo_root: Path | str | None = None,
+    ) -> CanvasCompletenessReport:
+        """Validate a canvas against the 8-point completeness gate.
+
+        Convenience wrapper around :func:`validate_canvas_completeness` that
+        passes this registry instance.
+        """
+        return validate_canvas_completeness(key, registry=self, repo_root=repo_root)
+
+
+# ---------------------------------------------------------------------------
+# 8-point canvas completeness validator (CLAUDE.md dashboard-page gate)
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass(frozen=True)
+class CanvasCompletenessItem:
+    """One of the 8 required completeness points for a canvas."""
+
+    point: str
+    required: bool
+    present: bool
+    path: str | None
+    message: str
+
+
+@dataclasses.dataclass(frozen=True)
+class CanvasCompletenessReport:
+    """Result of validating a canvas against the 8-point gate."""
+
+    key: str
+    passed: bool
+    items: tuple[CanvasCompletenessItem, ...]
+
+
+def _file_exists(path: Path | str | None) -> bool:
+    if path is None:
+        return False
+    return Path(path).exists()
+
+
+def _has_route_decorator(blueprint_path: Path) -> bool:
+    """Return True if the blueprint file contains a Flask route decorator."""
+    if not blueprint_path.exists():
+        return False
+    try:
+        tree = ast.parse(blueprint_path.read_text(encoding="utf-8"))
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            for deco in node.decorator_list:
+                if isinstance(deco, ast.Call) and isinstance(deco.func, ast.Attribute):
+                    if deco.func.attr == "route":
+                        return True
+                elif isinstance(deco, ast.Attribute) and deco.attr == "route":
+                    return True
+    return False
+
+
+def _module_dir_from_module(module: str) -> str:
+    """Convert 'tools.xxx.blueprint' to 'tools/xxx'."""
+    parts = module.split(".")
+    if len(parts) > 1 and parts[-1] == "blueprint":
+        parts = parts[:-1]
+    return "/".join(parts)
+
+
+def validate_canvas_completeness(
+    key: str,
+    registry: ComponentRegistry | None = None,
+    repo_root: Path | str | None = None,
+) -> CanvasCompletenessReport:
+    """Validate a registered canvas against the 8-point completeness gate.
+
+    The gate is defined in CLAUDE.md for new dashboard pages:
+      1. tools/dashboard/templates/<canvas>/page.html exists
+      2. icdev/tools/dashboard/templates/<canvas>/page.html mirrored
+      3. tools/<canvas>/blueprint.py contains @bp.route decorators
+      4. tools/<canvas>/ has a backing module beyond blueprint.py
+      5. tools/<canvas>/constants.py exists
+      6. DB migration directory exists (when declared in registry)
+      7. Nav/parent link declared in registry
+      8. IQE integration: adapter + seed queries + registry IQE data
+
+    Args:
+        key: Canvas registry key.
+        registry: Optional registry instance. Defaults to global singleton.
+        repo_root: Optional repo root. Defaults to parent of this module.
+
+    Returns:
+        CanvasCompletenessReport with per-point findings.
+    """
+    if registry is None:
+        registry = get_registry()
+    comp = registry.get(key)
+    if comp is None:
+        item = CanvasCompletenessItem(
+            point="registered",
+            required=True,
+            present=False,
+            path=None,
+            message=f"Component '{key}' not found in registry",
+        )
+        return CanvasCompletenessReport(key=key, passed=False, items=(item,))
+
+    if comp.kind != "canvas":
+        item = CanvasCompletenessItem(
+            point="registered",
+            required=True,
+            present=False,
+            path=None,
+            message=f"Component '{key}' is kind={comp.kind}, not canvas",
+        )
+        return CanvasCompletenessReport(key=key, passed=False, items=(item,))
+
+    root = Path(repo_root or BASE_DIR).resolve()
+    completeness = comp.completeness
+
+    # Point 1: main page template
+    template_path_str = completeness.get("template") or f"tools/dashboard/templates/{key}/page.html"
+    template_path = root / template_path_str
+    page_present = template_path.exists()
+
+    # Point 2: icdev mirror
+    icdev_template_path = root / "icdev" / template_path_str
+    mirror_present = icdev_template_path.exists()
+
+    # Point 3: blueprint with route decorators
+    module_path = comp.module or ""
+    module_dir = _module_dir_from_module(module_path)
+    blueprint_path = root / module_dir / "blueprint.py"
+    route_present = _has_route_decorator(blueprint_path)
+
+    # Point 4: backing module (a non-blueprint, non-init Python file in the package)
+    module_pkg = root / module_dir
+    backing_present = False
+    if module_pkg.is_dir():
+        for py_file in module_pkg.glob("*.py"):
+            if py_file.name not in ("__init__.py", "blueprint.py"):
+                backing_present = True
+                break
+
+    # Point 5: constants
+    constants_path_str = completeness.get("constants") or f"{module_dir}/constants.py"
+    constants_path = root / constants_path_str
+    constants_present = constants_path.exists()
+
+    # Point 6: DB migration directory
+    migration_path_str = completeness.get("db_migration")
+    migration_path = root / migration_path_str if migration_path_str else None
+    migration_present = _file_exists(migration_path) if migration_path_str else None
+
+    # Point 7: nav link
+    nav_link_present = bool(completeness.get("nav_link")) or bool(comp.nav.get("section"))
+
+    # Point 8: IQE integration
+    iqe_adapter_module = comp.iqe.get("adapter_module")
+    seed_queries_str = completeness.get("seed_queries")
+    iqe_adapter_path = None
+    if iqe_adapter_module:
+        iqe_adapter_path = root / (iqe_adapter_module.replace(".", "/") + ".py")
+    seed_queries_path = root / seed_queries_str if seed_queries_str else None
+    iqe_adapter_present = _file_exists(iqe_adapter_path) if iqe_adapter_module else None
+    seed_queries_present = _file_exists(seed_queries_path) if seed_queries_str else None
+    iqe_present = iqe_adapter_present is True and seed_queries_present is True
+
+    items: list[CanvasCompletenessItem] = [
+        CanvasCompletenessItem(
+            point="page_template",
+            required=True,
+            present=page_present,
+            path=str(template_path.relative_to(root)) if page_present else template_path_str,
+            message="tools/dashboard/templates/{key}/page.html exists" if page_present else f"missing {template_path_str}",
+        ),
+        CanvasCompletenessItem(
+            point="icdev_mirror",
+            required=True,
+            present=mirror_present,
+            path=str(icdev_template_path.relative_to(root)) if mirror_present else f"icdev/{template_path_str}",
+            message="icdev mirror exists" if mirror_present else f"missing icdev/{template_path_str}",
+        ),
+        CanvasCompletenessItem(
+            point="blueprint_route",
+            required=True,
+            present=route_present,
+            path=str(blueprint_path.relative_to(root)) if blueprint_path.exists() else str(blueprint_path.relative_to(root)),
+            message="blueprint contains @bp.route" if route_present else f"no @bp.route found in {module_dir}/blueprint.py",
+        ),
+        CanvasCompletenessItem(
+            point="backing_module",
+            required=True,
+            present=backing_present,
+            path=str(module_pkg.relative_to(root)) if module_pkg.exists() else module_dir,
+            message="backing module .py present" if backing_present else f"no backing module .py in {module_dir}",
+        ),
+        CanvasCompletenessItem(
+            point="constants",
+            required=True,
+            present=constants_present,
+            path=str(constants_path.relative_to(root)) if constants_present else constants_path_str,
+            message="constants.py exists" if constants_present else f"missing {constants_path_str}",
+        ),
+        CanvasCompletenessItem(
+            point="db_migration",
+            required=migration_path_str is not None,
+            present=bool(migration_present),
+            path=migration_path_str,
+            message=f"DB migration dir exists: {migration_path_str}" if migration_present else f"missing {migration_path_str}",
+        ),
+        CanvasCompletenessItem(
+            point="nav_link",
+            required=True,
+            present=nav_link_present,
+            path=None,
+            message="nav link declared in registry" if nav_link_present else "missing nav_link or nav.section",
+        ),
+        CanvasCompletenessItem(
+            point="iqe_integration",
+            required=bool(iqe_adapter_module),
+            present=iqe_present,
+            path=str(iqe_adapter_path.relative_to(root)) if iqe_adapter_present else str(iqe_adapter_path) if iqe_adapter_path else None,
+            message="IQE adapter + seed queries exist" if iqe_present else "missing IQE adapter or seed queries",
+        ),
+    ]
+
+    passed = all(item.present or not item.required for item in items)
+    return CanvasCompletenessReport(
+        key=key,
+        passed=passed,
+        items=tuple(items),
+    )
+
+
+_REGISTRY_SINGLETON: ComponentRegistry | None = None
+
+
+def get_registry(
+    registry_path: Path | str | None = None,
+    env: dict[str, str] | None = None,
+) -> ComponentRegistry:
+    """Return a registry instance.
+
+    Uses a module-level singleton when called with default arguments to avoid
+    repeated YAML parsing.
+    """
+    global _REGISTRY_SINGLETON
+    if registry_path is None and env is None:
+        if _REGISTRY_SINGLETON is None:
+            _REGISTRY_SINGLETON = ComponentRegistry()
+        return _REGISTRY_SINGLETON
+    return ComponentRegistry(registry_path=registry_path, env=env)
+
+
+def reset_registry_singleton() -> None:
+    """Clear the cached singleton (useful in tests)."""
+    global _REGISTRY_SINGLETON
+    _REGISTRY_SINGLETON = None
