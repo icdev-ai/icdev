@@ -251,8 +251,8 @@ def test_registry_counts(registry):
     assert len(registry.list_all(kind="canvas")) == 28
     assert len(registry.list_all(kind="child_app")) == 4
     assert len(registry.list_all(kind="feature")) == 8
-    assert len(registry.list_all(kind="core_extension")) == 14
-    assert len(registry) == 54
+    assert len(registry.list_all(kind="core_extension")) == 15  # +admin_console
+    assert len(registry) == 55  # +admin_console
 
 
 def test_component_enablement_uses_primary_env_flag(registry):

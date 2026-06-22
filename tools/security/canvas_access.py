@@ -388,6 +388,20 @@ def guard_component_access(
             )
             abort(403)
 
+        # Check per-tenant component override (B1 — enterprise configurable platform)
+        if tenant_id:
+            try:
+                from tools.config.component_registry import get_registry
+                if not get_registry().is_enabled_for_tenant(component_key, tenant_id):
+                    logger.warning(
+                        "Canvas access denied (tenant override): %s tenant=%s",
+                        component_key,
+                        tenant_id,
+                    )
+                    abort(403)
+            except Exception:
+                pass  # registry unavailable — fall through to grant check
+
         if not check_access(
             user_id,
             tenant_id,

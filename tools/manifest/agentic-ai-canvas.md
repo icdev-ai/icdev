@@ -39,6 +39,16 @@ Agent layer for Agentic Research Pipeline (AADC Template #5) — the `researcher
 - `TextChunker` — splits raw docs into model-ready chunks
 - `ResearchAgent.search(query)` → `ResearchResult(query, chunks, sources, duration_ms, error)` — chunks feed `AgenticResearchPipeline.run()`
 
+### `tools/agentic_ai_canvas/confidence_gate.py`
+Standalone AADC Confidence Gate — safety layer for the Agentic Research Pipeline implementing the `confidence-threshold` node type.
+- `evaluate(design_id, output_text, score, *, threshold, node_id)` → routing decision dict (`decision`, `allowed`, `score`, `threshold`, `output_text_len`, `event_id`, `detail`)
+- `get_config(design_id)` → current gate configuration (threshold, low_confidence_action); falls back to defaults when no row exists
+- `update_config(design_id, threshold, *, low_confidence_action)` → upsert gate config; validates threshold 0.0–1.0 and action ∈ {escalate, block, retry}
+- `evaluate_pipeline_node(design_id, llm_output, *, threshold, node_id)` → convenience wrapper; extracts `confidence` key from LLM output dict
+- `check_confidence_gate_path(nodes, edges)` → list of NIST AI RMF MEA-1 findings for LLM nodes that reach an output-validator without a confidence-threshold node on the path
+- Decisions are written to `aadc_confidence_events` (append-only, NIST AU-2); configs stored in `aadc_gate_configs`
+- Default threshold: 0.70; default low-confidence action: escalate
+
 ### `tools/agentic_ai_canvas/governance_layer.py`
 Governance layer for Agentic Research Pipeline (AADC Template #5) — the three governance nodes between Synthesis LLM and final output. Composed in order: `ConfidenceGate → OutputValidator → PipelineAuditLogger`.
 - `ConfidenceGate(threshold).evaluate(confidence)` → `ConfidenceGateResult`
@@ -114,6 +124,13 @@ Phase 4 — A2A bridge + sandbox-exec assessment.
 ### `tools/agentic_ai_canvas/safety_extensions.py`
 Phase 4 — Trusted monitor + PII field-level safety checks.
 - `check_safety_extensions(nodes, edges)` → (findings, score or None)
+
+### `tools/agentic_ai_canvas/memory_layer.py`
+Memory layer compliance checks for agentic research pipelines (NIST AI RMF + MITRE ATLAS AML.T0020).
+- `check_memory_layer(nodes, edges)` → `(findings, score_pct)` — returns `([], None)` when no memory nodes are present (design not penalised for omitting memory)
+- `get_memory_layer_map(nodes, edges)` → per-memory-node coverage summary with fields: `has_embedding_model`, `has_chunker_upstream`, `has_audit_downstream`, `has_validator_upstream`
+- Checks: `vector_db_has_embedding_model` (MEA — data integrity), `vector_db_has_chunker` (MAP — pipeline completeness), `persistent_memory_has_audit` (GOVERN — immutable audit trail), `vector_db_has_data_validator` (MITRE ATLAS AML.T0020 RAG poisoning defence)
+- Driven by `MEMORY_LAYER_CHECKS` and `MEMORY_NODES` constants from `tools/agentic_ai_canvas/constants.py`
 
 ### `tools/agentic_ai_canvas/safety_layer.py`
 Circuit breaker safety layer — in-process singleton per design.
@@ -402,6 +419,8 @@ Flask Blueprint (`aadc_bp`) — all routes registered under `/agentic-ai`.
 | `aadc_lifecycle_states` | Phase 10 — Design lifecycle state transition log per design (migration 112) |
 | `aadc_review_comments` | Phase 10 — Design review comments and decisions per design (migration 112) |
 | `aadc_design_events` | Activity feed — one row per significant canvas action emitted by `events.py` |
+| `aadc_confidence_events` | Append-only audit log of confidence gate decisions (NIST AU-2); written by `confidence_gate.py` |
+| `aadc_gate_configs` | Per-design confidence gate configuration (threshold, low_confidence_action); managed by `confidence_gate.py` |
 
 ---
 

@@ -179,6 +179,21 @@ for _comp in _REGISTRY.iter_enabled(kind="child_app"):
             "App module %s import failed (%s): %s", _comp.key, _comp.module, _exc
         )
 
+# ── Core Extensions (registry-driven, e.g. admin_console) ──────────────────
+_CORE_EXT_BLUEPRINTS: dict[str, object] = {}
+
+for _comp in _REGISTRY.iter_enabled(kind="core_extension"):
+    if not getattr(_comp, "blueprint_attr", None):
+        continue
+    try:
+        _bp = _comp.get_blueprint()
+        if _bp:
+            _CORE_EXT_BLUEPRINTS[_comp.key] = _bp
+    except Exception as _exc:
+        get_logger("icdev.dashboard").warning(
+            "Core extension %s import failed (%s): %s", _comp.key, _comp.module, _exc
+        )
+
 # ---------------------------------------------------------------------------
 # GovCon/CPMP/Proposals page registration (D-CHILD-6: isolated)
 # ---------------------------------------------------------------------------
@@ -2369,6 +2384,14 @@ def create_app() -> Flask:
             app.logger.info("App module %s registered", _ak)
         except Exception as _exc:
             app.logger.warning("App module %s registration failed: %s", _ak, _exc)
+
+    # ---- Core Extension Blueprints (registry-driven, e.g. admin_console) ----
+    for _ek, _ebp in _CORE_EXT_BLUEPRINTS.items():
+        try:
+            app.register_blueprint(_ebp)
+            app.logger.info("Core extension %s registered", _ek)
+        except Exception as _exc:
+            app.logger.warning("Core extension %s registration failed: %s", _ek, _exc)
 
     # ---- HITL Workflow API Blueprint (always registered when importable; gated per-route) ----
     try:

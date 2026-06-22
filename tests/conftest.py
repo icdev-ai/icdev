@@ -1286,6 +1286,31 @@ CREATE TABLE IF NOT EXISTS foundry_outcomes (
     classification TEXT    NOT NULL DEFAULT 'CUI',
     created_at     TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- MCIP DAT — Diplomatic Activity Tracker (issue-18)
+CREATE TABLE IF NOT EXISTS mcip_dat_events (
+    id              TEXT PRIMARY KEY,
+    source_type     TEXT NOT NULL,
+    content_hash    TEXT NOT NULL,
+    sender          TEXT NOT NULL DEFAULT 'unknown',
+    recipient       TEXT NOT NULL DEFAULT 'unknown',
+    classification  TEXT NOT NULL DEFAULT 'CUI',
+    tension_signal  REAL NOT NULL DEFAULT 0.0,
+    ingested_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mcip_dat_events_source ON mcip_dat_events(source_type);
+CREATE INDEX IF NOT EXISTS idx_mcip_dat_events_at     ON mcip_dat_events(ingested_at);
+
+CREATE TABLE IF NOT EXISTS mcip_dti_scores (
+    id              TEXT PRIMARY KEY,
+    score           REAL NOT NULL,
+    cable_sub       REAL NOT NULL DEFAULT 0.0,
+    unsc_sub        REAL NOT NULL DEFAULT 0.0,
+    backchannel_sub REAL NOT NULL DEFAULT 0.0,
+    event_count     INTEGER NOT NULL DEFAULT 0,
+    computed_at     TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mcip_dti_scores_at ON mcip_dti_scores(computed_at);
 """
 
 

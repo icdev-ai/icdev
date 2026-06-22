@@ -501,6 +501,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "centralized_logs",
         # Enterprise-configurable platform (Phase 5) — component enable/profile/override audit
         "component_audit_log",
+        # MCIP DAT — DTI snapshots are append-only audit trail (NIST AU-9, issue-18)
+        "mcip_dti_scores",
     ]
 
     if tool_name == "Bash":
