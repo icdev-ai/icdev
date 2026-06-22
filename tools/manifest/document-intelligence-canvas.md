@@ -269,6 +269,12 @@ prov = get_chunk_provenance(
 #     ingest_timestamp, attribution_score}
 ```
 
+## MCP Dispatch
+
+| Tool | Purpose |
+|------|---------|
+| `tools/document_intelligence/gap_handlers.py` | Thin MCP gap-handler wrappers for DIC MCP dispatch. Exposes four handlers: `handle_dic_ingest(params)` → `ingest_orchestrator.ingest_document`, `handle_dic_search(params)` → `search_engine.search`, `handle_dic_generate(params)` → `doc_generator.generate`, `handle_dic_chat(params)` → `search_engine.answer`. All handlers catch exceptions and return structured error dicts rather than raising, making them safe for MCP gateway dispatch. Registered in `tools/mcp/tool_registry.py` and `tools/mcp/gap_handlers.py`. |
+
 ## Ecosystem Integration Tools
 
 | Tool | Purpose |

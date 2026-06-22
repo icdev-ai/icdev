@@ -1389,6 +1389,17 @@ CREATE TABLE IF NOT EXISTS rag_citations (
     classification  TEXT    DEFAULT 'CUI',
     created_at      TEXT    DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS showcase_apps (
+    id          TEXT    PRIMARY KEY,
+    name        TEXT    NOT NULL,
+    category    TEXT    NOT NULL DEFAULT '',
+    description TEXT    NOT NULL DEFAULT '',
+    status      TEXT    NOT NULL DEFAULT 'draft',
+    slug        TEXT,
+    metadata    TEXT    NOT NULL DEFAULT '{}',
+    created_at  TEXT    DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TEXT    DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
