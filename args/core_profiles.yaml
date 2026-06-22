@@ -85,3 +85,44 @@ profiles:
       - sdc
       - mission_canvas
       - integrity
+
+  commercial:
+    description: Commercial enterprise deployment. No DoD markings, no classification banner, operator-branded.
+    storage_backend: postgresql
+    llm:
+      provider: anthropic
+      default_model: claude-sonnet-4-6
+    airgap: false
+    banner_mode: none
+    brand_path: args/brands/commercial.yaml
+    default_enabled_components:
+      - ndc
+      - aimc
+      - ohc
+      - dic
+      - aiify
+      - foundry
+      - admin_console
+
+  government:
+    description: DoD/IC government deployment. CUI banner, ICDEV™ branding, cloud LLMs with BYOK.
+    storage_backend: postgresql
+    llm:
+      provider: anthropic
+      default_model: claude-sonnet-4-6
+    airgap: false
+    enable_byok: true
+    enable_cui_banner: true
+    banner_mode: cui
+    brand_path: args/brands/government.yaml
+    default_enabled_components:
+      - ndc
+      - sdc
+      - aimc
+      - mission_canvas
+      - ohc
+      - integrity
+      - logs
+      - dic
+      - aiify
+      - foundry
