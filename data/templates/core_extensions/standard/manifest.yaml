@@ -1,0 +1,74 @@
+# CUI // SP-CTI
+# Standard core extension template.
+# Generates: module init, blueprint factory, registry YAML snippet.
+name: standard
+kind: core_extension
+description: >-
+  Standard core extension skeleton: env-gated blueprint factory,
+  module __init__, constants, and a tools/manifest shard snippet.
+
+variables:
+  key:
+    type: string
+    required: true
+    description: Short technical key for the extension (e.g. "notification_hub").
+  display_name:
+    type: string
+    required: true
+    description: Human-facing name shown in nav and logs.
+  env_flag:
+    type: string
+    required: true
+    description: Primary .env toggle (e.g. ICDEV_NOTIFICATION_HUB_ENABLED).
+  url_prefix:
+    type: string
+    default: "/{{ key | replace('_', '-') }}"
+    description: Flask URL prefix (empty string for non-web extensions).
+  module_package:
+    type: string
+    default: "tools.{{ key }}"
+    description: Python dotted package path for the extension module.
+  description:
+    type: string
+    default: "{{ display_name }} core extension."
+    description: One-line description written into registry YAML.
+  min_il:
+    type: string
+    default: "IL4"
+    description: Minimum impact level required to use this extension.
+  default_roles:
+    type: string
+    default: "admin"
+    description: Comma-separated default roles for this extension.
+  include_blueprint:
+    type: boolean
+    default: "true"
+    description: Whether to generate a Flask blueprint factory.
+  include_iqe:
+    type: boolean
+    default: "false"
+    description: Whether to generate an IQE adapter stub.
+
+files:
+  - src: __init__.py.j2
+    dest: "{{ module_package | replace('.', '/') }}/__init__.py"
+
+  - src: blueprint.py.j2
+    dest: "{{ module_package | replace('.', '/') }}/blueprint.py"
+    when: "{{ include_blueprint }}"
+
+  - src: constants.py.j2
+    dest: "{{ module_package | replace('.', '/') }}/constants.py"
+
+  - src: registry_snippet.yaml.j2
+    dest: ".tmp/registry_snippet_{{ key }}.yaml"
+
+  - src: iqe_adapter.py.j2
+    dest: "tools/iqe/adapters/{{ key }}.py"
+    when: "{{ include_iqe }}"
+
+validators:
+  - type: file_exists
+    path: "{{ module_package | replace('.', '/') }}/__init__.py"
+  - type: python_syntax
+    path: "{{ module_package | replace('.', '/') }}/__init__.py"

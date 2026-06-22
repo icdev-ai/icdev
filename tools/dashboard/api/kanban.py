@@ -793,7 +793,7 @@ def task_heartbeat(task_id):
     """
     conn = get_connection()
     if hasattr(conn, "set_security_context"):
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: kanban_tasks has no tenant_id column; internal system table
     try:
         row = conn.execute(
             "SELECT status FROM kanban_tasks WHERE id = ?", (task_id,)
@@ -837,7 +837,7 @@ def task_handoff(task_id):
 
     conn = get_connection()
     if hasattr(conn, "set_security_context"):
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: kanban_tasks has no tenant_id column; internal system table
     try:
         row = conn.execute(
             "SELECT id FROM kanban_tasks WHERE id = ?", (task_id,)
@@ -891,7 +891,7 @@ def task_subscribe(task_id):
 
     conn = get_connection()
     if hasattr(conn, "set_security_context"):
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: kanban_task_subscriptions has no tenant_id column; internal system table
     try:
         row = conn.execute("SELECT id FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone()
         if not row:
@@ -914,7 +914,7 @@ def list_subscriptions(task_id):
     """List all webhook subscriptions for a task."""
     conn = get_connection()
     if hasattr(conn, "set_security_context"):
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: kanban_task_subscriptions has no tenant_id column; internal system table
     try:
         rows = conn.execute(
             "SELECT id, channel, target, events, created_at "
@@ -931,7 +931,7 @@ def delete_subscription(sub_id):
     """Remove a webhook subscription."""
     conn = get_connection()
     if hasattr(conn, "set_security_context"):
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: kanban_task_subscriptions has no tenant_id column; internal system table
     try:
         conn.execute("DELETE FROM kanban_task_subscriptions WHERE id = ?", (sub_id,))
         conn.commit()
@@ -998,7 +998,7 @@ def specify_task():
         try:
             conn = get_connection()
             if hasattr(conn, "set_security_context"):
-                conn.set_security_context(None)
+                conn.set_security_context(None)  # rls-bypass: kanban_tasks has no tenant_id column; internal system table
             try:
                 conn.execute(
                     "UPDATE kanban_tasks SET acceptance_criteria = ?, updated_at = ? WHERE id = ?",
@@ -1026,7 +1026,7 @@ def judge_task(task_id):
 
     conn = get_connection()
     if hasattr(conn, "set_security_context"):
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: kanban_tasks has no tenant_id column; internal system table
     try:
         row = conn.execute(
             "SELECT title, acceptance_criteria FROM kanban_tasks WHERE id = ?", (task_id,)

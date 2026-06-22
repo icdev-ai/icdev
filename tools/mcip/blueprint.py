@@ -8,7 +8,7 @@ All 8 required components per CLAUDE.md dashboard gate are present:
   3. route: @bp.route("/dat")
   4. backing module: tools/mcip/analytics.py
   5. constants: tools/mcip/constants.py
-  6. DB: mcip_dat_events + mcip_dti_scores (migration via conftest schema)
+  6. DB: mcip_dat_events + mcip_dti_scores (tools/mcip/db/init_db.py)
   7. nav link: base.html Strategos → DAT
   8. IQE: tools/iqe/adapters/mcip.py + /api/iqe-query + widget + dispatch entry
 """
@@ -33,6 +33,13 @@ from tools.mcip.constants import (
 
 from tools.logging.icdev_logger import get_logger
 log = get_logger("mcip.blueprint")
+
+# Ensure mcip_dat_events + mcip_dti_scores exist in the global ICDEV DB at import time.
+try:
+    from tools.mcip.db.init_db import init_db as _mcip_init_db
+    _mcip_init_db()
+except Exception as _e:
+    log.warning("mcip db init skipped: %s", _e)
 
 bp = Blueprint("mcip_dat", __name__)
 

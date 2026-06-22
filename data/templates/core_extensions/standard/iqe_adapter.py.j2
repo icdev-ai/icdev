@@ -1,0 +1,21 @@
+# CUI // SP-CTI
+"""{{ display_name }} — IQE adapter stub.
+
+Auto-generated from template: data/templates/core_extensions/standard
+"""
+from __future__ import annotations
+
+from tools.iqe.registry import register_collection
+
+
+def register_{{ key | replace('-', '_') }}_collections() -> None:
+    register_collection(
+        key="{{ key }}.items",
+        label="{{ display_name }} Items",
+        description="Query items managed by {{ display_name }}.",
+        source_module="{{ module_package }}",
+    )
+
+
+# Auto-register on import
+register_{{ key | replace('-', '_') }}_collections()
