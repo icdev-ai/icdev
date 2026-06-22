@@ -1,0 +1,46 @@
+# CUI // SP-CTI
+"""{{ display_name }} — Flask Blueprint.
+
+Auto-generated from template: data/templates/child_apps/minimal
+"""
+
+from __future__ import annotations
+
+import os
+from datetime import datetime, timezone
+
+from flask import Blueprint, jsonify, render_template
+
+from tools.logging.icdev_logger import get_logger
+
+log = get_logger(__name__)
+
+_ENABLED = os.environ.get("{{ env_flag }}", "false").lower() in ("true", "1", "yes")
+
+
+{{ key }}_bp: Blueprint | None = None
+
+
+def create_{{ key }}_blueprint() -> Blueprint | None:
+    if not _ENABLED:
+        log.info("{{ display_name }} disabled via {{ env_flag }}=false")
+        return None
+
+    bp = Blueprint("{{ key }}", __name__, template_folder="../../tools/dashboard/templates")
+
+    @bp.route("{{ url_prefix or '/' }}")
+    def index():
+        return render_template("{{ key }}/index.html")
+
+    @bp.route("/api/stats", methods=["GET"])
+    def api_stats():
+        return jsonify({
+            "app": "{{ key }}",
+            "display_name": "{{ display_name }}",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "classification": "CUI // SP-CTI",
+        })
+
+    global {{ key }}_bp
+    {{ key }}_bp = bp
+    return bp

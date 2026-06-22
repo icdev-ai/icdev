@@ -1,0 +1,46 @@
+# CUI // SP-CTI
+# Minimal canvas template — generates a skeleton ICDEV™ design canvas.
+name: minimal
+kind: canvas
+description: Minimal design canvas skeleton with blueprint, constants, and page template.
+variables:
+  key:
+    type: string
+    required: true
+    description: Short technical key for the canvas (e.g. "demo").
+  display_name:
+    type: string
+    required: true
+    description: Human-facing canvas name.
+  env_flag:
+    type: string
+    required: true
+    description: Primary .env toggle that gates the canvas.
+  url_prefix:
+    type: string
+    default: "/{{ key }}"
+    description: Flask url_prefix for the canvas blueprint.
+  module_package:
+    type: string
+    default: "tools.{{ key }}_canvas"
+    description: Python package path for the canvas module (e.g. "tools.demo_canvas").
+
+files:
+  - src: __init__.py.j2
+    dest: "{{ module_package | replace('.', '/') }}/__init__.py"
+  - src: blueprint.py.j2
+    dest: "{{ module_package | replace('.', '/') }}/blueprint.py"
+  - src: constants.py.j2
+    dest: "{{ module_package | replace('.', '/') }}/constants.py"
+  - src: page.html.j2
+    dest: "tools/dashboard/templates/{{ key }}/page.html"
+
+validators:
+  - type: file_exists
+    path: "{{ module_package | replace('.', '/') }}/blueprint.py"
+  - type: file_exists
+    path: "{{ module_package | replace('.', '/') }}/constants.py"
+  - type: file_exists
+    path: "tools/dashboard/templates/{{ key }}/page.html"
+  - type: python_syntax
+    path: "{{ module_package | replace('.', '/') }}/blueprint.py"

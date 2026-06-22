@@ -1,0 +1,18 @@
+# {{ display_name }} — ANVIL Build Workflow
+
+This goal defines the ANVIL (Architect-Navigate-Verify-Integrate-Launch) build workflow for the {{ display_name }}.
+
+## Phases
+
+1. **Architect** — design the canvas blueprint, routes, and API contracts.
+2. **Navigate** — map existing ICDEV™ tools, templates, and dashboard patterns.
+3. **Verify** — write failing tests for the blueprint routes and API responses.
+4. **Integrate** — generate the deterministic Python blueprint and templates.
+5. **Launch** — run forge_validator, lint, and health checks before merge.
+
+## Acceptance Criteria
+
+- Blueprint registers at `{{ url_prefix }}`.
+- All page routes return HTTP 200 in a test client.
+- API endpoints return deterministic JSON.
+- `forge_validator.py --project-dir . --gate` passes with no failures.

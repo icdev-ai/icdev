@@ -1,0 +1,9 @@
+{% raw %}{% extends "base.html" %}{% endraw %}
+{% raw %}{% block title %}{% endraw %}{{ display_name }}{% raw %}{% endblock %}{% endraw %}
+{% raw %}{% block content %}{% endraw %}
+<div class="container-fluid py-4">
+  <h1>{{ display_name }}</h1>
+  <p class="text-muted">Child app key: <code>{{ key }}</code> | Env flag: <code>{{ env_flag }}</code></p>
+  <p>This child app was generated from the <code>data/templates/child_apps/minimal</code> template.</p>
+</div>
+{% raw %}{% endblock %}{% endraw %}

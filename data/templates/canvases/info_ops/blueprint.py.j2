@@ -1,0 +1,110 @@
+# CUI // SP-CTI
+"""{{ display_name }} — Flask Blueprint.
+
+Routes:
+  GET  {{ url_prefix }}/           landing page
+  GET  {{ url_prefix }}/dashboard  main dashboard
+  GET  {{ url_prefix }}/analysis   analysis input + results
+  GET  {{ url_prefix }}/reports    report library
+  GET  {{ url_prefix }}/osint      OSINT data browser
+  GET  {{ url_prefix }}/settings   app configuration
+
+Auto-generated from template: data/templates/canvases/info_ops
+"""
+
+from __future__ import annotations
+
+import os
+from datetime import datetime, timezone
+
+from flask import Blueprint, jsonify, render_template, request
+
+from tools.logging.icdev_logger import get_logger
+
+log = get_logger(__name__)
+
+_ENABLED = os.environ.get("{{ env_flag }}", "true").lower() not in ("0", "false", "no")
+
+
+def create_{{ key }}_blueprint() -> Blueprint | None:
+    if not _ENABLED:
+        log.info("{{ display_name }} disabled via {{ env_flag }}=false")
+        return None
+
+    bp = Blueprint("{{ key }}", __name__, template_folder="../../tools/dashboard/templates")
+
+    # ── Pages ─────────────────────────────────────────────────────────────────
+
+    @bp.route("/")
+    def index():
+        return render_template("{{ key }}/index.html")
+
+    @bp.route("/dashboard")
+    def dashboard():
+        return render_template("{{ key }}/dashboard.html")
+
+    @bp.route("/analysis")
+    def analysis():
+        return render_template("{{ key }}/analysis.html")
+
+    @bp.route("/reports")
+    def reports():
+        return render_template("{{ key }}/reports.html")
+
+    @bp.route("/osint")
+    def osint():
+        return render_template("{{ key }}/osint.html")
+
+    @bp.route("/settings")
+    def settings():
+        return render_template("{{ key }}/settings.html")
+
+    # ── API ───────────────────────────────────────────────────────────────────
+
+    @bp.route("/api/stats", methods=["GET"])
+    def api_stats():
+        return jsonify({
+            "campaigns": 12,
+            "active_operations": 4,
+            "pending_reports": 7,
+            "osint_feeds": 23,
+            "alerts_today": 3,
+            "classification": "CUI // SP-CTI",
+        })
+
+    @bp.route("/api/analysis", methods=["POST"])
+    def api_analysis():
+        data = request.get_json(silent=True) or {}
+        query = data.get("query", "")
+        return jsonify({
+            "query": query,
+            "status": "completed",
+            "results": [
+                {"type": "sentiment", "value": "negative", "confidence": 0.87},
+                {"type": "narrative", "value": "disinformation campaign detected", "confidence": 0.92},
+            ],
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+
+    @bp.route("/api/reports", methods=["GET"])
+    def api_reports():
+        return jsonify({
+            "reports": [
+                {"id": "rpt-001", "title": "Q2 Information Environment Assessment", "date": "2026-05-10", "status": "final"},
+                {"id": "rpt-002", "title": "Social Media Narrative Analysis", "date": "2026-05-12", "status": "draft"},
+                {"id": "rpt-003", "title": "OSINT Feed Quality Review", "date": "2026-05-14", "status": "final"},
+            ]
+        })
+
+    @bp.route("/api/osint", methods=["GET"])
+    def api_osint():
+        return jsonify({
+            "feeds": [
+                {"id": "osint-001", "source": "Twitter/X", "category": "social", "status": "active", "last_update": "2026-05-15T14:30:00Z"},
+                {"id": "osint-002", "source": "NewsAPI", "category": "news", "status": "active", "last_update": "2026-05-15T13:15:00Z"},
+                {"id": "osint-003", "source": "RSS Mil-Intel", "category": "defense", "status": "active", "last_update": "2026-05-15T12:00:00Z"},
+                {"id": "osint-004", "source": "Dark Web Monitor", "category": "cyber", "status": "warning", "last_update": "2026-05-14T22:00:00Z"},
+            ]
+        })
+
+    return bp

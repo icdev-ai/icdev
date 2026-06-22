@@ -1,0 +1,40 @@
+# CUI // SP-CTI
+# Minimal child-app template — generates a standalone ICDEV™ child application.
+name: minimal
+kind: child_app
+description: Minimal child application skeleton with its own blueprint and page.
+variables:
+  key:
+    type: string
+    required: true
+    description: Short child-app key (e.g. "my_app").
+  display_name:
+    type: string
+    required: true
+    description: Human-facing app name.
+  env_flag:
+    type: string
+    default: "ICDEV_{{ key | upper }}_ENABLED"
+    description: Primary .env toggle that gates the app.
+  url_prefix:
+    type: string
+    default: "/{{ key }}"
+    description: Flask url_prefix for the app blueprint.
+  module_package:
+    type: string
+    default: "apps.{{ key }}"
+    description: Python package path for the app module.
+
+files:
+  - src: __init__.py.j2
+    dest: "{{ module_package | replace('.', '/') }}/__init__.py"
+  - src: blueprint.py.j2
+    dest: "{{ module_package | replace('.', '/') }}/blueprint.py"
+  - src: page.html.j2
+    dest: "tools/dashboard/templates/{{ key }}/index.html"
+
+validators:
+  - type: file_exists
+    path: "{{ module_package | replace('.', '/') }}/blueprint.py"
+  - type: python_syntax
+    path: "{{ module_package | replace('.', '/') }}/blueprint.py"

@@ -1,0 +1,73 @@
+# CUI // SP-CTI
+# Info Ops Canvas template — replicates the existing ICDEV info_ops canvas
+# as a Jinja2-driven template. Used to prove the template engine against a
+# real, shipped canvas.
+name: info_ops
+kind: canvas
+description: Information Operations canvas template (matches tools/info_ops).
+variables:
+  key:
+    type: string
+    required: true
+    description: Short canvas key (e.g. "info_ops").
+  display_name:
+    type: string
+    required: true
+    description: Human-facing canvas name.
+  env_flag:
+    type: string
+    default: "ICDEV_{{ key | upper }}_ENABLED"
+    description: Primary .env toggle that gates the canvas.
+  url_prefix:
+    type: string
+    default: "/{{ key }}"
+    description: Flask url_prefix for the canvas blueprint.
+  module_package:
+    type: string
+    default: "tools.{{ key }}"
+    description: Python package path for the canvas module.
+
+files:
+  - src: __init__.py.j2
+    dest: "{{ module_package | replace('.', '/') }}/__init__.py"
+  - src: blueprint.py.j2
+    dest: "{{ module_package | replace('.', '/') }}/blueprint.py"
+
+  # FORGE skeleton — enough for a freshly scaffolded project to pass
+  # `python tools/builder/forge_validator.py --project-dir . --gate`.
+  - src: goals/manifest.md.j2
+    dest: "goals/manifest.md"
+  - src: goals/build_app.md.j2
+    dest: "goals/build_app.md"
+  - src: args/project_defaults.yaml.j2
+    dest: "args/project_defaults.yaml"
+  - src: context/compliance/.gitkeep
+    dest: "context/compliance/.gitkeep"
+  - src: hardprompts/canvas_brief.md.j2
+    dest: "hardprompts/canvas_brief.md"
+  - src: tools/db/__init__.py.j2
+    dest: "tools/db/__init__.py"
+  - src: tools/memory/__init__.py.j2
+    dest: "tools/memory/__init__.py"
+  - src: tools/mcp/__init__.py.j2
+    dest: "tools/mcp/__init__.py"
+  - src: CLAUDE.md.j2
+    dest: "CLAUDE.md"
+  - src: .env.example.j2
+    dest: ".env.example"
+
+validators:
+  - type: file_exists
+    path: "{{ module_package | replace('.', '/') }}/blueprint.py"
+  - type: file_exists
+    path: "goals/manifest.md"
+  - type: file_exists
+    path: "CLAUDE.md"
+  - type: python_syntax
+    path: "{{ module_package | replace('.', '/') }}/blueprint.py"
+  - type: python_syntax
+    path: "tools/db/__init__.py"
+  - type: python_syntax
+    path: "tools/memory/__init__.py"
+  - type: python_syntax
+    path: "tools/mcp/__init__.py"
