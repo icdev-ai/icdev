@@ -863,3 +863,28 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Ext Databridge | tools\iqe\adapters\ext_databridge.py | Auto-registered: adapters/ext_databridge.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Event Dispatcher | tools\ace\event_dispatcher.py | Auto-registered: ace/event_dispatcher.py | --json | JSON |
+| Problem Classifier | tools\ace\problem_classifier.py | Auto-registered: ace/problem_classifier.py | --json | JSON |
+| Role Loader | tools\ace\role_loader.py | Auto-registered: ace/role_loader.py | --json | JSON |
+| Simulate Roles | tools\ace\simulate_roles.py | Auto-registered: ace/simulate_roles.py | --json | JSON |
+| Skill Adapter | tools\ace\skill_adapter.py | Auto-registered: ace/skill_adapter.py | --json | JSON |
+| Pm Skills Wiring | tools\cpmp\pm_skills_wiring.py | Auto-registered: cpmp/pm_skills_wiring.py | --json | JSON |
+| Freshness Engine | tools\document_intelligence\freshness_engine.py | Auto-registered: document_intelligence/freshness_engine.py | --json | JSON |
+| Geoint Ingestor | tools\geoint\geoint_ingestor.py | Auto-registered: geoint/geoint_ingestor.py | --json | JSON |
+| Contract Mods Manager | tools\govcon\contract_mods_manager.py | Auto-registered: govcon/contract_mods_manager.py | --json | JSON |
+| Generate Icdev Proposal Content | tools\govcon\generate_icdev_proposal_content.py | Auto-registered: govcon/generate_icdev_proposal_content.py | --json | JSON |
+| Igce Estimator | tools\govcon\igce_estimator.py | Auto-registered: govcon/igce_estimator.py | --json | JSON |
+| Map Icdev Capabilities | tools\govcon\map_icdev_capabilities.py | Auto-registered: govcon/map_icdev_capabilities.py | --json | JSON |
+| Option Period Tracker | tools\govcon\option_period_tracker.py | Auto-registered: govcon/option_period_tracker.py | --json | JSON |
+| Personnel Manager | tools\govcon\personnel_manager.py | Auto-registered: govcon/personnel_manager.py | --json | JSON |
+| Pmo Ai Advisor | tools\govcon\pmo_ai_advisor.py | Auto-registered: govcon/pmo_ai_advisor.py | --json | JSON |
+| Procurement Vehicles | tools\govcon\procurement_vehicles.py | Auto-registered: govcon/procurement_vehicles.py | --json | JSON |
+| Run Writeguard On Drafts | tools\govcon\run_writeguard_on_drafts.py | Auto-registered: govcon/run_writeguard_on_drafts.py | --json | JSON |
+| Seed Icdev Knowledge Base | tools\govcon\seed_icdev_knowledge_base.py | Auto-registered: govcon/seed_icdev_knowledge_base.py | --json | JSON |
+| Seed Solicitation Requirements | tools\govcon\seed_solicitation_requirements.py | Auto-registered: govcon/seed_solicitation_requirements.py | --json | JSON |
+| Update Icdev Proposal Metadata | tools\govcon\update_icdev_proposal_metadata.py | Auto-registered: govcon/update_icdev_proposal_metadata.py | --json | JSON |
