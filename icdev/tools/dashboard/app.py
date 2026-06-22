@@ -87,7 +87,7 @@ _AIRGAP_DISABLED_ROUTES = frozenset(
         "/fathomdesk",
     }
 )
-# Legacy canvas feature flags (derived from env — registration handled by _CANVAS_DEFS loop below)
+# Legacy canvas feature flags (derived from the component registry — see _CANVAS_FLAGS below)
 _HAS_STRATEGOS = os.environ.get("ICDEV_STRATEGOS_ENABLED", "true").lower() in ("true", "1", "yes")
 _HAS_NETWORK = os.environ.get("ICDEV_NETWORK_ENABLED", "false").lower() == "true"
 _HAS_PIPELINE = os.environ.get("ICDEV_PIPELINE_ENABLED", "false").lower() == "true"
@@ -135,91 +135,49 @@ _HAS_FINETUNE_API = True
 _HAS_CHAT_API = True
 from tools.dashboard.ux_helpers import register_ux_filters  # noqa: E402
 
+# ── Component Registry (single source of truth) ─────────────────────────────
+# Replaces legacy _CANVAS_DEFS / _APP_DEFS hardcoded lists with data from
+# args/component_registry.yaml. See tools/config/component_registry.py.
+from tools.config.component_registry import get_registry  # noqa: E402
+
+_REGISTRY = get_registry()
+
+# URL prefixes for all canvases; used by base.html to highlight the Canvases menu.
+_CANVAS_URL_PREFIXES = tuple(
+    comp.url_prefix
+    for comp in _REGISTRY.iter_canvases()
+    if comp.url_prefix
+)
+
 # ── Design Canvases (conditional registration) ────────────────────────────
-_CANVAS_FLAGS = {}
-_CANVAS_BLUEPRINTS = {}
+_CANVAS_FLAGS: dict[str, bool] = {}
+_CANVAS_BLUEPRINTS: dict[str, object] = {}
 
-_CANVAS_DEFS = [
-    ("idc", "ICDEV_IDC_ENABLED", "tools.infra_canvas.blueprint", "infra_bp"),
-    ("ndc", "ICDEV_NDC_ENABLED", "tools.network.blueprint", "create_network_blueprint"),
-    ("sdc", "ICDEV_SDC_ENABLED", "tools.security_canvas.blueprint", "create_security_blueprint"),
-    ("bdc", "ICDEV_BDC_ENABLED", "tools.boundary_canvas.blueprint", "create_boundary_blueprint"),
-    ("pdc", "ICDEV_PDC_ENABLED", "tools.pipeline.blueprint", "create_pipeline_blueprint"),
-    ("odc", "ICDEV_ODC_ENABLED", "tools.observability_canvas.blueprint", "create_observability_blueprint"),
-    ("ddc", "ICDEV_DDC_ENABLED", "tools.data_canvas.blueprint", "create_data_canvas_blueprint"),
-    ("qdc", "ICDEV_QDC_ENABLED", "tools.qdc_canvas.blueprint", "qdc_bp"),
-    ("mdc", "ICDEV_MIGRATION_CANVAS_ENABLED", "tools.migration_canvas.blueprint", "create_migration_blueprint"),
-    ("aadc", "ICDEV_AADC_ENABLED", "tools.agentic_ai_canvas.blueprint", "aadc_bp"),
-    ("aimc", "ICDEV_AIML_CANVAS_ENABLED", "tools.aiml_canvas.blueprint", "create_aiml_blueprint"),
-    ("ohc", "ICDEV_OPS_HUB_ENABLED", "tools.ops_hub.blueprint", "create_ops_hub_blueprint"),
-    ("iop", "ICDEV_INFO_OPS_ENABLED", "tools.info_ops.blueprint", "create_info_ops_blueprint"),
-    ("mission_canvas", "ICDEV_MISSION_CANVAS_ENABLED", "tools.mission_canvas.blueprint", "create_mission_canvas_blueprint"),
-    ("nocc", "ICDEV_NOCC_ENABLED", "tools.noc_canvas.blueprint", "create_noc_canvas_blueprint"),
-    ("pmc", "ICDEV_PMC_ENABLED", "tools.pmc_canvas.blueprint", "create_pmc_blueprint"),
-    ("ccc", "ICDEV_CCC_ENABLED", "tools.ccc_canvas.blueprint", "create_ccc_blueprint"),
-    ("dsoc", "ICDEV_DSOC_ENABLED", "tools.dsoc_canvas.blueprint", "create_dsoc_blueprint"),
-    ("aiify",  "ICDEV_AIIFY_ENABLED",  "tools.aiify.blueprint", "aiify_bp"),
-    ("aiify_compat", "ICDEV_AIIFY_ENABLED", "tools.aiify.blueprint", "aiify_compat_bp"),
-    ("dic", "ICDEV_DIC_ENABLED", "tools.document_intelligence.blueprint", "dic_bp"),
-    ("demo_runner", "ICDEV_DEMO_RUNNER_ENABLED", "tools.showcase.blueprint", "demo_runner_bp"),
-    ("slides", "ICDEV_SLIDES_ENABLED", "tools.slides.blueprint", "slides_bp"),
-    ("ace", "ICDEV_ACE_ENABLED", "icdev.tools.ace.blueprint", "ace_bp"),
-    ("aisg", "ICDEV_AISG_ENABLED", "tools.aisg.blueprint", "bp"),
-    ("integrity", "ICDEV_INTEGRITY_ENABLED", "tools.integrity.blueprint", "create_integrity_blueprint"),
-    ("foundry", "ICDEV_FOUNDRY_ENABLED", "tools.foundry.blueprint", "create_foundry_blueprint"),
-    ("logs", "ICDEV_LOGS_ENABLED", "tools.logging.blueprint", "create_logs_blueprint"),
-]
-
-_CANVAS_DEFAULTS_TRUE = {"ndc", "sdc", "aimc", "mission_canvas", "ohc", "integrity", "logs"}
-
-for _key, _env, _mod, _attr in _CANVAS_DEFS:
-    _default = "true" if _key in _CANVAS_DEFAULTS_TRUE else "false"
-    _enabled = os.environ.get(_env, _default).lower() in ("true", "1", "yes")
-    _CANVAS_FLAGS[_key] = False
-    if _enabled:
-        try:
-            import importlib as _il
-
-            _m = _il.import_module(_mod)
-            _bp = getattr(_m, _attr, None)
-            if callable(_bp) and not hasattr(_bp, "name"):
-                _bp = _bp()
-            if _bp:
-                _CANVAS_BLUEPRINTS[_key] = _bp
-                _CANVAS_FLAGS[_key] = True
-        except Exception as _exc:
-            get_logger("icdev.dashboard").warning(
-                "Canvas %s import failed (%s): %s", _key.upper(), _mod, _exc
-            )
+for _comp in _REGISTRY.iter_enabled(kind="canvas"):
+    try:
+        _bp = _comp.get_blueprint()
+        if _bp:
+            _CANVAS_BLUEPRINTS[_comp.key] = _bp
+            _CANVAS_FLAGS[_comp.key] = True
+    except Exception as _exc:
+        get_logger("icdev.dashboard").warning(
+            "Canvas %s import failed (%s): %s", _comp.key.upper(), _comp.module, _exc
+        )
 
 # ── Application Modules (conditional registration) ─────────────────────────
 _APP_FLAGS: dict[str, bool] = {}
 _APP_BLUEPRINTS: dict[str, object] = {}
 
-_APP_DEFS = [
-    ("hitl_workflow", "ICDEV_HITL_ENABLED",          "tools.workflow_hitl.blueprint", "create_wf_page_blueprint"),
-    ("forge_academy", "ICDEV_FORGE_ACADEMY_ENABLED",  "apps.forge_academy.blueprint",  "academy_bp"),
-    ("gameday",       "ICDEV_GAMEDAY_ENABLED",         "apps.ai_gameday.blueprint",     "bp"),
-    ("innovation",    "ICDEV_INNOVATION_ENABLED",      "apps.innovation.blueprint",     "innovation_bp"),
-]
-
-for _key, _env, _mod, _attr in _APP_DEFS:
-    _enabled = os.environ.get(_env, "false").lower() in ("true", "1", "yes")
-    _APP_FLAGS[_key] = False
-    if _enabled:
-        try:
-            import importlib as _il
-            _m = _il.import_module(_mod)
-            _bp = getattr(_m, _attr, None)
-            if callable(_bp) and not hasattr(_bp, "name"):
-                _bp = _bp()
-            if _bp:
-                _APP_BLUEPRINTS[_key] = _bp
-                _APP_FLAGS[_key] = True
-        except Exception as _exc:
-            get_logger("icdev.dashboard").warning(
-                "App module %s import failed (%s): %s", _key, _mod, _exc
-            )
+for _comp in _REGISTRY.iter_enabled(kind="child_app"):
+    try:
+        _bp = _comp.get_blueprint()
+        if _bp:
+            _APP_BLUEPRINTS[_comp.key] = _bp
+            _APP_FLAGS[_comp.key] = True
+    except Exception as _exc:
+        get_logger("icdev.dashboard").warning(
+            "App module %s import failed (%s): %s", _comp.key, _comp.module, _exc
+        )
 
 # ---------------------------------------------------------------------------
 # GovCon/CPMP/Proposals page registration (D-CHILD-6: isolated)
@@ -2033,6 +1991,12 @@ def create_app() -> Flask:
             "gameday_enabled": _APP_FLAGS.get("gameday", False),
             "airgap_mode": _AIRGAP_MODE,
             "route_module_map": _route_map,
+            "nav_tree": _REGISTRY.get_nav_context(),
+            "component_registry": _REGISTRY,
+            "canvas_menu_active": any(
+                flask_request.path.startswith(prefix)
+                for prefix in _CANVAS_URL_PREFIXES
+            ),
         }
 
     # ---- Air-gap route guard: friendly message for disabled pages ----
@@ -2179,29 +2143,14 @@ def create_app() -> Flask:
             cards = []
         return render_template("canvas_compliance.html", cards=cards)
 
-    # ---- Design Canvases (all 8) ----
-    _CANVAS_ROUTES = {
-        "idc": "/infra",
-        "ndc": "/network",
-        "sdc": "/security",
-        "bdc": "/boundary",
-        "pdc": "/devops",
-        "odc": "/observability",
-        "ddc": "/data",
-        "qdc": "/quality",
-        "mdc": "/migration-canvas",
-        "aimc": "/ai-ml",
-        "ohc": "",
-        "iop": "/info-ops",
-        "mission_canvas": "/mission-canvas",
-        "nocc": "",
-        "pmc": "",
-        "ccc": "",
-        "dsoc": "",
-        "integrity": "",
-        "foundry": "",
-        "logs": "",
-    }
+    # ---- Design Canvases (registry-driven) ----
+    try:
+        from tools.security.canvas_access import guard_component_access
+    except Exception as _guard_exc:
+        app.logger.warning("Canvas access guard unavailable: %s", _guard_exc)
+        guard_component_access = None  # type: ignore[assignment]
+
+    _CANVAS_ROUTES = _REGISTRY.get_url_prefixes()
     for _ck, _cbp in _CANVAS_BLUEPRINTS.items():
         try:
             prefix = _CANVAS_ROUTES.get(_ck, f"/{_ck}")
@@ -2210,6 +2159,15 @@ def create_app() -> Flask:
             else:
                 app.register_blueprint(_cbp)
             app.logger.info("Canvas %s registered at %s/", _ck.upper(), prefix)
+
+            # Attach RBAC + canvas-access guard (backward-compatible unless
+            # ICDEV_ENFORCE_CANVAS_ACCESS is set).
+            if guard_component_access:
+                _comp_meta = _REGISTRY.get(_ck)
+                if _comp_meta:
+                    _cbp.before_request(
+                        guard_component_access(_ck, _comp_meta.min_il)
+                    )
         except Exception as exc:
             app.logger.warning("Canvas %s registration failed: %s", _ck.upper(), exc)
 
@@ -2250,8 +2208,8 @@ def create_app() -> Flask:
         app.logger.warning("Supply Chain blueprint failed to register: %s", _exc)
 
     # ---- SIPA Software Integrity & Provenance Assessor Blueprint ----
-    # Registered via the _CANVAS_DEFS loop above (key "integrity", empty url_prefix
-    # in _CANVAS_ROUTES so the blueprint's explicit /integrity + /api/integrity
+    # Registered via the registry-driven canvas loop above (key "integrity",
+    # empty url_prefix so the blueprint's explicit /integrity + /api/integrity
     # paths are not double-prefixed). No manual registration here.
 
     # ---- Strategos Blueprint ----
@@ -2352,7 +2310,7 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("TA Patterns blueprint failed to register: %s", _exc)
 
-    # ---- App Module Blueprints (_APP_DEFS — page blueprints for workflow, academy, etc.) ----
+    # ---- App Module Blueprints (registry-driven child_app components) ----
     for _ak, _abp in _APP_BLUEPRINTS.items():
         try:
             app.register_blueprint(_abp)
@@ -3413,49 +3371,7 @@ def create_app() -> Flask:
         from tools.iqe.parser import parse as _iqe_parse, IQESyntaxError as _IQESyntaxError
         from tools.iqe.executor import execute_query
 
-        _CANVAS_MAP = {
-            "ndc":        ("tools.iqe.adapters.ndc",         ["network.topologies", "network.devices", "network.objects", "network.circuits", "network.sites", "network.ai_decisions", "network.partners", "network.agreements_expiring"]),
-            "sdc":        ("tools.iqe.adapters.security",    ["attack.nodes", "attack.edges", "attack.paths", "security.ai_decisions"]),
-            "pdc":        ("tools.iqe.adapters.pipeline",    ["pipeline.snapshots", "pipeline.nodes", "pipeline.edges", "pipeline.ai_decisions"]),
-            "ddc":        ("tools.iqe.adapters.data",        ["data.lineage.edges", "data.classifications", "data.ai_decisions"]),
-            "idc":        ("tools.iqe.adapters.infra",       ["infra.resources", "infra.snapshots", "infra.ai_decisions"]),
-            "odc":        ("tools.iqe.adapters.observability", ["mitre.techniques", "mitre.coverage", "mitre.gaps", "observability.ai_decisions"]),
-            "bdc":        ("tools.iqe.adapters.bdc",         ["bdc.designs", "bdc.assessments", "bdc.isas", "bdc.alerts", "bdc.ai_decisions"]),
-            "cam":        ("tools.iqe.adapters.cam",          ["cam.projects", "cam.phases", "cam.app_components", "cam.ai_opportunities"]),
-            "mc":         ("tools.iqe.adapters.mc",          ["mc.designs", "mc.waves", "mc.assessments", "mc.ai_decisions"]),
-            "aadc":       ("tools.iqe.adapters.aadc",        ["aadc.designs", "aadc.assessments", "aadc.artifacts", "aadc.ai_decisions"]),
-            "aimc":       ("tools.iqe.adapters.aimc",        ["aimc.designs", "aimc.nodes", "aimc.assessments", "aimc.artifacts", "aimc.ai_decisions"]),
-            "ohc":        ("tools.iqe.adapters.ohc",         ["ohc.experiments", "ohc.runs", "ohc.models", "ohc.datasets", "ohc.adapters", "ohc.drift_events"]),
-            "nocc":       ("tools.iqe.adapters.nocc",        ["noc.alarms", "noc.incidents", "noc.rfcs", "noc.mops", "noc.maintenance_windows", "noc.sla_records"]),
-            "pmc":        ("tools.iqe.adapters.pmc",         ["pmc.peers", "pmc.ix_memberships", "pmc.prefixes", "pmc.peering_requests", "pmc.route_policies"]),
-            "ccc":        ("tools.iqe.adapters.ccc",         ["ccc.circuits", "ccc.cross_connects", "ccc.loa", "ccc.capacity_plans", "ccc.dwdm_spans", "ccc.xc_orders"]),
-            "dsoc":       ("tools.iqe.adapters.dsoc",        ["dsoc.flowspec_rules", "dsoc.rtbh_entries", "dsoc.scrubbing_centers", "dsoc.threats", "dsoc.mitigations", "dsoc.bgp_hijacks"]),
-            "govlift":    ("tools.iqe.adapters.govlift",     ["govlift.workloads", "govlift.waves", "govlift.migrations", "govlift.stig", "govlift.audit"]),
-            "compliance": ("tools.iqe.adapters.compliance",  ["compliance.snapshots", "compliance.controls", "compliance.violations"]),
-            "kanban":     ("tools.iqe.adapters.core_kanban", ["kanban.tasks", "kanban.epics"]),
-            "agents":        ("tools.iqe.adapters.core_agents",    ["agents.registry"]),
-            "projects":      ("tools.iqe.adapters.core_agents",    ["projects.list"]),
-            "qdc":            ("tools.iqe.adapters.qdc",            ["qdc.designs", "qdc.assessments", "qdc.gate_results", "qdc.ai_decisions"]),
-            "ai_observatory": ("tools.iqe.adapters.ai_observatory", ["observatory.decisions", "observatory.confabulation_flags"]),
-            "ontology":      ("tools.iqe.adapters.ontology",       ["ontology.classes", "ontology.closure", "ontology.alignments"]),
-            "cache_savings": ("tools.iqe.adapters.cache_savings",  ["cache.stats", "cache.entries"]),
-            "strategos":      ("tools.iqe.adapters.strategos",       ["strategos.signals", "strategos.conflict_events", "strategos.leadership_briefs", "strategos.sio_assessments"]),
-            "supply_chain":   ("tools.iqe.adapters.supply_chain",    ["supply_chain.vendors", "supply_chain.scrm_risks", "supply_chain.cve_triage", "supply_chain.isa_agreements"]),
-            "aiify":            ("tools.iqe.adapters.aiify", ["aiify.opportunities", "aiify.scans", "aiify.roadmaps", "aiify.posture"]),
-            "aisg":             ("tools.iqe.adapters.aisg",  ["aisg.roadmaps", "aisg.skills", "aisg.roi", "aisg.patterns"]),
-            "dic":              ("tools.iqe.adapters.dic",   ["dic.drift_events", "dic.regen_queue", "dic.ssp_fragments"]),
-            "integrity":        ("tools.iqe.adapters.integrity", ["integrity.assessments", "integrity.capabilities", "integrity.findings", "integrity.verdicts"]),
-            "demo_runner":    ("tools.iqe.adapters.demo_runner",     ["demo_runner.runs", "demo_runner.scenarios", "demo_runner.results"]),
-            "sdc_demo":       ("tools.iqe.adapters.sdc_demo",        ["sdc_demo.runs", "sdc_demo.scenarios", "sdc_demo.threat_summary", "sdc_demo.workflow_steps"]),
-            "innovation":     ("tools.iqe.adapters.innovation",      ["innovation.ideas", "innovation.assessments", "innovation.pilots"]),
-            "mission_canvas": ("tools.iqe.adapters.mission_canvas",  ["mission.sessions", "mission.twins", "mission.evidence", "mission.alerts"]),
-            "govcon":         ("tools.iqe.adapters.govcon",           ["govcon.opportunities", "govcon.awards", "govcon.blackhat", "govcon.competitors"]),
-            "slides":         ("tools.iqe.adapters.slides",            ["slides.decks", "slides.slides"]),
-            "cpmp":           ("tools.iqe.adapters.cpmp",              ["cpmp.contracts", "cpmp.deliverables", "cpmp.clins", "cpmp.cpars", "cpmp.evm"]),
-            "ace":            ("tools.iqe.adapters.ace",                ["ace.instances", "ace.coworkers", "ace.messages"]),
-            "logs":           ("tools.iqe.adapters.logs",               ["logs.entries"]),
-            "foundry":        ("tools.iqe.adapters.foundry",            ["foundry.concepts", "foundry.signals", "foundry.runs", "foundry.outcomes"]),
-        }
+        _CANVAS_MAP = _REGISTRY.get_iqe_mapping()
 
         data = flask_request.get_json(silent=True) or {}
         question = (data.get("question") or "").strip()

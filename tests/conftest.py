@@ -188,6 +188,29 @@ CREATE TABLE IF NOT EXISTS canvas_access_grants (
     revoked_at TEXT,
     UNIQUE (tenant_id, principal_type, principal_id, canvas_name)
 );
+CREATE TABLE IF NOT EXISTS tenant_component_overrides (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    component_key TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+    updated_by TEXT DEFAULT 'system',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (tenant_id, component_key)
+);
+CREATE TABLE IF NOT EXISTS component_audit_log (
+    id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    actor TEXT NOT NULL DEFAULT 'system',
+    tenant_id TEXT,
+    component_key TEXT,
+    profile_name TEXT,
+    details TEXT DEFAULT '{}',
+    classification TEXT DEFAULT 'CUI',
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_component_audit_log_event ON component_audit_log(event_type);
+CREATE INDEX IF NOT EXISTS idx_component_audit_log_component ON component_audit_log(component_key);
+CREATE INDEX IF NOT EXISTS idx_component_audit_log_recorded_at ON component_audit_log(recorded_at);
 CREATE TABLE IF NOT EXISTS abac_decisions (
     id TEXT PRIMARY KEY,
     user_id TEXT,

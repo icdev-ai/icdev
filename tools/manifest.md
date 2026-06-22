@@ -37,6 +37,7 @@
 - [Knowledge & Self-Healing](manifest/knowledge-self-healing.md)
 - [Monitoring](manifest/monitoring.md)
 - [Dashboard](manifest/dashboard.md)
+- [Enterprise-Configurable Platform](manifest/enterprise-configurable-platform.md)
 - [CLI Output Formatting](manifest/cli-output-formatting.md)
 - [Browser Automation (Selenium Driver Manager)](manifest/browser.md)
 - [Testing Framework (Adapted from ADW)](manifest/testing-framework.md)

@@ -22,55 +22,30 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
 
+# Ensure repo root is on sys.path so `tools.config` is importable when run directly.
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from tools.config.component_registry import get_registry, log_component_audit  # noqa: E402
+
+_REGISTRY = get_registry()
+
+
+def _actor() -> str:
+    return os.environ.get("USER") or os.environ.get("USERNAME") or "cli"
 
 # Canonical name → list of required env flags (all must be true to enable).
-# Kept in sync with args/awareness_enablement_map.yaml.
-TOGGLES: dict[str, list[str]] = {
-    # Design canvases
-    "boundary":      ["ICDEV_BOUNDARY_ENABLED", "ICDEV_BDC_ENABLED"],
-    "data":          ["ICDEV_DATA_CANVAS_ENABLED", "ICDEV_DDC_ENABLED"],
-    "infra":         ["ICDEV_INFRA_ENABLED", "ICDEV_IDC_ENABLED"],
-    "network":       ["ICDEV_NETWORK_ENABLED", "ICDEV_NDC_ENABLED"],
-    "observability": ["ICDEV_OBSERVABILITY_ENABLED", "ICDEV_ODC_ENABLED"],
-    "pipeline":      ["ICDEV_PIPELINE_ENABLED", "ICDEV_PDC_ENABLED"],
-    "security":      ["ICDEV_SECURITY_ENABLED", "ICDEV_SDC_ENABLED"],
-    "quality":       ["ICDEV_QDC_ENABLED"],
-    "migration":     ["ICDEV_MIGRATION_CANVAS_ENABLED"],
-    "canvas-kg":     ["ICDEV_CANVAS_KG_ENABLED"],
-    # Other subsystems
-    "rag":           ["RAG_ENABLED"],
-    "govcon":        ["ICDEV_GOVCON_ENABLED"],
-    "finetune":      ["FINETUNE_ENABLED"],
-    "filesync":      ["ICDEV_FILESYNC_ENABLED"],
-    "cui-banner":    ["ICDEV_CUI_BANNER_ENABLED"],
-    "byok":          ["ICDEV_BYOK_ENABLED"],
-    "two-tier-llm":  ["LLM_TWO_TIER_ENABLED"],
-}
+# Derived from args/component_registry.yaml (canvas + feature components only).
+TOGGLES: dict[str, list[str]] = _REGISTRY.get_cli_toggles()
 
 # Short descriptions for `icdev status` and `--list` output
-DESCRIPTIONS: dict[str, str] = {
-    "boundary":      "Boundary Design Canvas — ATO boundary + supply chain",
-    "data":          "Data Design Canvas — schemas, lineage, quality",
-    "infra":         "Infrastructure Design Canvas — cloud, IaC, cost",
-    "network":       "Network Design Canvas — topology, routing, capacity",
-    "observability": "Observability Design Canvas — logging, monitoring, SRE",
-    "pipeline":      "Pipeline Design Canvas — CI/CD, GitOps, stages",
-    "security":      "Security Design Canvas — threat model, hardening, STIGs",
-    "quality":       "Quality Design Canvas — test strategy, QA/QC",
-    "migration":     "Migration Canvas — 7Rs modernization workflows",
-    "canvas-kg":     "Canvas knowledge graph (cross-canvas reasoning)",
-    "rag":           "RAG subsystem (semantic retrieval across all canvases)",
-    "govcon":        "GovCon Intelligence (proposals, CPMP) — parent-only",
-    "finetune":      "Fine-tuning pipeline (local model training)",
-    "filesync":      "File sync dashboard + conflict resolution",
-    "cui-banner":    "Render CUI banner on all dashboard pages",
-    "byok":          "Bring-Your-Own-Key tenant LLM isolation",
-    "two-tier-llm":  "Two-tier LLM routing (local + Claude review)",
-}
+DESCRIPTIONS: dict[str, str] = _REGISTRY.get_cli_descriptions()
 
 
 def _normalize(val: str) -> bool:
@@ -164,6 +139,20 @@ def set_toggles(env_file: Path, names: list[str], value: bool) -> dict:
     if updates and not unknown:
         new_text = _rewrite_flags(text, updates)
         _save_env_file(env_file, new_text)
+
+        actor = _actor()
+        for t in per_toggle:
+            if t["changed"]:
+                log_component_audit(
+                    event_type="enable" if value else "disable",
+                    actor=actor,
+                    component_key=t["name"],
+                    details={
+                        "flags": t["flags"],
+                        "changed_flags": t["changed"],
+                        "env_file": str(env_file),
+                    },
+                )
 
     return {
         "env_file": str(env_file),

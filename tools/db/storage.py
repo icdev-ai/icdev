@@ -53,6 +53,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any, Optional
 
+from tools.config.core_profile import profile_default
+
 # Regex for table name extraction used by column-level masking.
 _RE_FROM_TABLE = re.compile(r"\bFROM\b\s+([\w\"\.]+)", re.IGNORECASE)
 _RE_UPDATE_TABLE = re.compile(r"\bUPDATE\b\s+([\w\"\.]+)", re.IGNORECASE)
@@ -105,7 +107,8 @@ DB_PATH = os.environ.get("ICDEV_DB_PATH", _default_db_path())
 
 # Backend detection — PostgreSQL is the primary backend (PG-primary policy).
 # SQLite is an init-only fallback used when PG is unreachable or explicitly pinned.
-_BACKEND = os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql").lower()
+# Respect the active core profile if no explicit env var is set.
+_BACKEND = profile_default("ICDEV_STORAGE_BACKEND", "postgresql").lower()
 
 # ---------------------------------------------------------------------------
 # Audit logging flags — disabled by default (overhead on every query).

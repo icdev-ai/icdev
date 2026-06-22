@@ -10809,6 +10809,44 @@ CREATE INDEX IF NOT EXISTS idx_centralized_logs_component ON centralized_logs(co
 CREATE INDEX IF NOT EXISTS idx_centralized_logs_ts        ON centralized_logs(ts);
 CREATE INDEX IF NOT EXISTS idx_centralized_logs_level     ON centralized_logs(level);
 
+-- ============================================================
+-- TENANT COMPONENT OVERRIDES (Phase 5 enterprise-configurable platform)
+-- ============================================================
+CREATE TABLE IF NOT EXISTS tenant_component_overrides (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    component_key TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+    updated_by TEXT DEFAULT 'system',
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(tenant_id, component_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_tenant_component_overrides_tenant ON tenant_component_overrides(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_tenant_component_overrides_key ON tenant_component_overrides(component_key);
+
+-- ============================================================
+-- COMPONENT AUDIT LOG (Phase 5 enterprise-configurable platform)
+-- ============================================================
+-- Append-only record of enable/disable actions, profile applies, and
+-- tenant-level component overrides. Kept separate from audit_trail because
+-- component events have a stable, narrow schema.
+CREATE TABLE IF NOT EXISTS component_audit_log (
+    id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL,
+    actor TEXT NOT NULL DEFAULT 'system',
+    tenant_id TEXT,
+    component_key TEXT,
+    profile_name TEXT,
+    details TEXT DEFAULT '{}',
+    classification TEXT DEFAULT 'CUI',
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_component_audit_log_event ON component_audit_log(event_type);
+CREATE INDEX IF NOT EXISTS idx_component_audit_log_component ON component_audit_log(component_key);
+CREATE INDEX IF NOT EXISTS idx_component_audit_log_recorded_at ON component_audit_log(recorded_at);
+
 """
 
 

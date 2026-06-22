@@ -3,11 +3,14 @@
 """`icdev scaffold` — generate ICDEV™ canvases and child apps from templates.
 
 Subcommands:
-  icdev scaffold canvas <key> --display-name "Name" [--out PATH]
+  icdev scaffold canvas <key> --display-name "Name" [--flavor FLAVOR] [--out PATH]
+  icdev scaffold child-app <key> --display-name "Name" [--flavor FLAVOR] [--canvases ...] [--out PATH]
 
 Examples:
   icdev scaffold canvas demo --display-name "Demo Canvas" --out ./demo-canvas
   icdev scaffold canvas demo --display-name "Demo Canvas" --vars url_prefix=/demo
+  icdev scaffold child-app my_lab --display-name "My Lab" --flavor ai-lab --canvases dic,slides
+  icdev scaffold child-app my_lab --display-name "My Lab" --template ./custom-template
 """
 
 from __future__ import annotations
@@ -41,7 +44,8 @@ def _build_parser() -> argparse.ArgumentParser:
     canvas.add_argument("--display-name", required=True, help="Human-facing canvas name")
     canvas.add_argument("--env-flag", default=None, help="Primary .env toggle (default: ICDEV_<KEY>_ENABLED)")
     canvas.add_argument("--url-prefix", default=None, help="Flask url_prefix (default: /<key>)")
-    canvas.add_argument("--template", default="data/templates/canvases/minimal", help="Template directory")
+    canvas.add_argument("--flavor", default=None, help="Built-in canvas flavor (e.g. minimal)")
+    canvas.add_argument("--template", default="data/templates/canvases/minimal", help="Template directory (overrides --flavor)")
     canvas.add_argument("--out", default=None, help="Output directory (default: ./<key>-canvas)")
     canvas.add_argument("--vars", nargs="*", default=[], help="Extra variable overrides as key=value")
     canvas.add_argument("--json", action="store_true", help="Emit JSON result")
@@ -51,7 +55,9 @@ def _build_parser() -> argparse.ArgumentParser:
     child_app.add_argument("--display-name", required=True, help="Human-facing app name")
     child_app.add_argument("--env-flag", default=None, help="Primary .env toggle (default: ICDEV_<KEY>_ENABLED)")
     child_app.add_argument("--url-prefix", default=None, help="Flask url_prefix (default: /<key>)")
-    child_app.add_argument("--template", default="data/templates/child_apps/minimal", help="Template directory")
+    child_app.add_argument("--flavor", default=None, help="Built-in child-app flavor (e.g. minimal, ai-lab, compliance, govcon)")
+    child_app.add_argument("--canvases", default=None, help="Comma-separated canvas keys this child app depends on (template-specific)")
+    child_app.add_argument("--template", default="data/templates/child_apps/minimal", help="Template directory (overrides --flavor)")
     child_app.add_argument("--out", default=None, help="Output directory (default: ./<key>-app)")
     child_app.add_argument("--vars", nargs="*", default=[], help="Extra variable overrides as key=value")
     child_app.add_argument("--json", action="store_true", help="Emit JSON result")
@@ -75,7 +81,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
 
-    template_dir = BASE_DIR / args.template
+    if args.flavor:
+        kind = "canvases" if args.target == "canvas" else "child_apps"
+        template_dir = BASE_DIR / "data" / "templates" / kind / args.flavor
+    else:
+        template_dir = BASE_DIR / args.template
     if not template_dir.exists():
         print(f"Template not found: {template_dir}", file=sys.stderr)
         return 2
@@ -89,6 +99,8 @@ def main(argv: list[str] | None = None) -> int:
         "env_flag": _derive_env_flag(args.key, args.env_flag),
         "url_prefix": _derive_url_prefix(args.key, args.url_prefix),
     }
+    if args.target == "child-app" and args.canvases:
+        variables["canvases"] = args.canvases
 
     for raw in args.vars:
         if "=" not in raw:
