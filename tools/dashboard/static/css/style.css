@@ -41,6 +41,20 @@
     --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.4);
     --radius: 6px;
     --radius-lg: 10px;
+    /* Brand bridge — overridden via <style> in base.html using brand.primary_color */
+    --accent-primary: #4a90d9;
+    --accent-secondary: #7c3aed;
+    /* Canvas surface tokens — dark drawing workspaces stay dark in both themes */
+    --canvas-bg: #0d1117;
+    --canvas-surface: #16213e;
+    --canvas-border: #1e3a6e;
+    --canvas-text: #eaeaea;
+    --canvas-text-dim: #7a8cb0;
+    --canvas-text-muted: #5a6e8c;
+    --canvas-edge: #475569;
+    --canvas-accent: #6366f1;
+    --canvas-accent-light: #a5b4fc;
+    --canvas-connect: #22d3ee;
 }
 
 html[data-theme="light"] {
