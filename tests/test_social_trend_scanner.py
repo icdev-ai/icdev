@@ -1,8 +1,6 @@
 """Tests for social trend scanner (adapt-l30-04)."""
 import json
-import pytest
 from unittest.mock import patch, MagicMock
-from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
@@ -16,7 +14,6 @@ def test_module_importable():
 
 def test_public_api_symbols():
     from tools.research.source_scanners.social_trend_scanner import (
-        scan_social_trends,
         _dedup,
         _content_hash,
         _normalize_entity,

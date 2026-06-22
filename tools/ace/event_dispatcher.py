@@ -19,7 +19,6 @@ Supported topic → role topic mapping is declared in each role's YAML:
 """
 from __future__ import annotations
 
-import logging
 from tools.logging.icdev_logger import get_logger
 import threading
 import time

@@ -182,7 +182,8 @@ def update_crossrefs(new_slug: str, new_content: str, memory_dir: Path | None = 
     Returns:
         List of file paths that were updated with a back-link.
     """
-    import os, re
+    import os
+    import re
 
     if memory_dir is None:
         userprofile = Path(os.environ.get("USERPROFILE", Path.home()))

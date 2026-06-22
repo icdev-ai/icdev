@@ -52,7 +52,6 @@ try:
     from tools.logging.icdev_logger import get_logger
     logger = get_logger("databridge.github")
 except Exception:
-    import logging
     logger = get_logger("databridge.github")
 
 _OFFSET_FILE = BASE_DIR / ".tmp" / "github_offset.txt"

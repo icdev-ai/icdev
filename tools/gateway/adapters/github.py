@@ -28,7 +28,6 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-import logging
 import os
 import sys
 from datetime import datetime, timezone

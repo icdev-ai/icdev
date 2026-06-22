@@ -12,7 +12,6 @@ from __future__ import annotations
 import importlib
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 orch = importlib.import_module("tools.document_intelligence.ingest_orchestrator")
 detect_collection_anomalies = orch.detect_collection_anomalies

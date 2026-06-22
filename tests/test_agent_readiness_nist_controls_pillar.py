@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import pathlib
 import textwrap
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
 from tools.ai_augmentation.agent_readiness.pillars.nist_controls import (
     PILLAR,
