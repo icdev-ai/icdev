@@ -509,8 +509,8 @@ def test_validate_canvas_completeness_info_ops_reports_items(registry):
     assert "page_template" in points
     assert "blueprint_route" in points
     assert "nav_link" in points
-    # The legacy info_ops canvas uses index.html, not page.html, so this point is expected to be absent.
-    assert points["page_template"].present is False
+    # info_ops uses index.html; the validator finds it via the legacy-name fallback scan.
+    assert points["page_template"].present is True
 
 
 def test_validate_canvas_completeness_synthetic_canvas_passes(tmp_path, monkeypatch):
