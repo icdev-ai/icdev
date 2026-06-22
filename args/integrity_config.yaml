@@ -163,3 +163,5 @@ known_safe_dynamic_import_modules:
   - config/component_registry.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
   - tools/genesis/kanban_scheduler.py  # Startup inbox replay: loads notification adapter listeners (telegram/teams/mattermost/github/gitlab/skype) from a hardcoded FORGE-internal list (_startup_replay_listeners); _module_path values are not user-controlled. Missing adapters are silently skipped via except. Authorized by REQ-KANBAN-INBOX-REPLAY-01.
   - genesis/kanban_scheduler.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/genesis/reflexes/kanban.py  # Channel-listener poll: loads notification adapter listeners (teams/mattermost/github/gitlab/skype) from a hardcoded FORGE-internal list (_channel_listeners); module_path values are not user-controlled. Missing adapters are silently skipped via except. Authorized by REQ-KANBAN-CHANNEL-LISTENER-01.
+  - genesis/reflexes/kanban.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)

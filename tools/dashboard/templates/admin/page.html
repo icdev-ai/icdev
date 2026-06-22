@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}Admin Console{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex align-items-center mb-4">
+    <h1 class="mb-0 me-3">Admin Console</h1>
+    <span class="badge bg-danger">Admin</span>
+  </div>
+
+  <!-- Nav tabs -->
+  <ul class="nav nav-tabs mb-4" id="adminTabs" role="tablist">
+    <li class="nav-item">
+      <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-components">Components</button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-audit">Audit Log</button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-grants">Access Grants</button>
+    </li>
+  </ul>
+
+  <div class="tab-content">
+
+    <!-- Tab 1: Component Toggles -->
+    <div class="tab-pane fade show active" id="tab-components">
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">Tenant Component Overrides</span>
+          <div class="input-group" style="width:260px">
+            <span class="input-group-text">Tenant</span>
+            <input type="text" id="tenant-id-input" class="form-control form-control-sm"
+                   placeholder="tenant-id" value="default">
+            <button class="btn btn-sm btn-outline-primary" onclick="loadComponents()">Load</button>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div id="components-loading" class="p-3 text-muted small">Enter a tenant ID and click Load.</div>
+          <table class="table table-sm table-hover mb-0 d-none" id="components-table">
+            <thead class="table-dark">
+              <tr>
+                <th>Key</th><th>Kind</th><th>Display Name</th>
+                <th>Env Default</th><th>Tenant Override</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="components-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 2: Audit Log -->
+    <div class="tab-pane fade" id="tab-audit">
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">Component Audit Log</span>
+          <button class="btn btn-sm btn-outline-secondary" onclick="loadAudit()">Refresh</button>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-dark">
+              <tr><th>Time</th><th>Event</th><th>Actor</th><th>Component</th><th>Tenant</th><th>Details</th></tr>
+            </thead>
+            <tbody id="audit-tbody">
+              <tr><td colspan="6" class="text-muted p-3">Click Refresh to load audit log.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 3: Access Grants -->
+    <div class="tab-pane fade" id="tab-grants">
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">Canvas Access Grants</span>
+          <button class="btn btn-sm btn-outline-secondary" onclick="loadGrants()">Refresh</button>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-hover mb-0">
+            <thead class="table-dark">
+              <tr><th>Tenant</th><th>Principal</th><th>Canvas</th><th>Level</th><th>Granted By</th><th>Granted At</th><th>Revoked</th></tr>
+            </thead>
+            <tbody id="grants-tbody">
+              <tr><td colspan="7" class="text-muted p-3">Click Refresh to load grants.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- tab-content -->
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const API = {
+  components: tid => `/api/admin/tenants/${encodeURIComponent(tid)}/components`,
+  setOverride: (tid, key) => `/api/admin/tenants/${encodeURIComponent(tid)}/components/${key}`,
+  audit: '/api/admin/audit/component-changes',
+  grants: '/api/admin/audit/access-grants',
+};
+
+function badge(enabled) {
+  return enabled
+    ? '<span class="badge bg-success">enabled</span>'
+    : '<span class="badge bg-secondary">disabled</span>';
+}
+
+async function loadComponents() {
+  const tid = document.getElementById('tenant-id-input').value.trim();
+  if (!tid) return;
+  document.getElementById('components-loading').textContent = 'Loading…';
+  document.getElementById('components-loading').classList.remove('d-none');
+  document.getElementById('components-table').classList.add('d-none');
+  try {
+    const resp = await fetch(API.components(tid));
+    const data = await resp.json();
+    const tbody = document.getElementById('components-tbody');
+    tbody.innerHTML = '';
+    for (const c of (data.components || [])) {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td><code>${c.key}</code></td>
+        <td><span class="badge bg-info text-dark">${c.kind}</span></td>
+        <td>${c.display_name}</td>
+        <td>${badge(c.env_enabled)}</td>
+        <td>${c.has_override ? badge(c.tenant_enabled) + ' <small class="text-muted">(override)</small>' : '<span class="text-muted small">inherited</span>'}</td>
+        <td>
+          <button class="btn btn-xs btn-outline-success me-1" onclick="setOverride('${tid}','${c.key}',true)" title="Enable for tenant">✓</button>
+          <button class="btn btn-xs btn-outline-danger me-1" onclick="setOverride('${tid}','${c.key}',false)" title="Disable for tenant">✗</button>
+          ${c.has_override ? `<button class="btn btn-xs btn-outline-secondary" onclick="clearOverride('${tid}','${c.key}')" title="Clear override">↺</button>` : ''}
+        </td>`;
+      tbody.appendChild(row);
+    }
+    document.getElementById('components-loading').classList.add('d-none');
+    document.getElementById('components-table').classList.remove('d-none');
+  } catch(e) {
+    document.getElementById('components-loading').textContent = 'Error: ' + e;
+  }
+}
+
+async function setOverride(tid, key, enabled) {
+  await fetch(API.setOverride(tid, key), {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({enabled}),
+  });
+  loadComponents();
+}
+
+async function clearOverride(tid, key) {
+  await fetch(API.setOverride(tid, key), {method: 'DELETE'});
+  loadComponents();
+}
+
+async function loadAudit() {
+  try {
+    const resp = await fetch(API.audit + '?limit=100');
+    const data = await resp.json();
+    const tbody = document.getElementById('audit-tbody');
+    tbody.innerHTML = '';
+    for (const e of (data.entries || [])) {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td class="small text-muted">${(e.recorded_at||'').substring(0,19)}</td>
+        <td><span class="badge bg-primary">${e.event_type}</span></td>
+        <td>${e.actor||'-'}</td>
+        <td><code>${e.component_key||'-'}</code></td>
+        <td>${e.tenant_id||'-'}</td>
+        <td class="small text-muted">${e.details||''}</td>`;
+      tbody.appendChild(row);
+    }
+    if (!data.entries?.length) tbody.innerHTML = '<tr><td colspan="6" class="text-muted p-3">No audit entries.</td></tr>';
+  } catch(e) {
+    document.getElementById('audit-tbody').innerHTML = '<tr><td colspan="6">Error: ' + e + '</td></tr>';
+  }
+}
+
+async function loadGrants() {
+  try {
+    const resp = await fetch(API.grants + '?limit=200');
+    const data = await resp.json();
+    const tbody = document.getElementById('grants-tbody');
+    tbody.innerHTML = '';
+    for (const g of (data.grants || [])) {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>${g.tenant_id}</td>
+        <td>${g.principal_type}:<code>${g.principal_id}</code></td>
+        <td><code>${g.canvas_name}</code></td>
+        <td><span class="badge bg-secondary">${g.access_level}</span></td>
+        <td>${g.granted_by}</td>
+        <td class="small text-muted">${(g.granted_at||'').substring(0,19)}</td>
+        <td>${g.revoked_at ? '<span class="badge bg-danger">revoked</span>' : ''}</td>`;
+      tbody.appendChild(row);
+    }
+    if (!data.grants?.length) tbody.innerHTML = '<tr><td colspan="7" class="text-muted p-3">No grants found.</td></tr>';
+  } catch(e) {
+    document.getElementById('grants-tbody').innerHTML = '<tr><td colspan="7">Error: ' + e + '</td></tr>';
+  }
+}
+</script>
+{% endblock %}

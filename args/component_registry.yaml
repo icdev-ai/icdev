@@ -1336,3 +1336,39 @@ components:
   nav:
     section: System
     label: Two-Tier LLM
+- key: admin_console
+  kind: core_extension
+  cli_name: admin-console
+  display_name: Admin Console
+  description: >-
+    Tenant component management, audit log viewer, and canvas access
+    grant management. Enable with ICDEV_ADMIN_CONSOLE_ENABLED=true.
+  env_flag: ICDEV_ADMIN_CONSOLE_ENABLED
+  extra_env_flags: []
+  default_enabled: false
+  module: tools.admin.blueprint
+  blueprint_attr: create_admin_blueprint
+  url_prefix: /admin
+  min_il: IL4
+  default_roles:
+    - admin
+    - superadmin
+  nav:
+    section: System
+    label: Admin Console
+    links:
+      - label: Components
+        href: /admin/
+  iqe:
+    adapter_module: tools.iqe.adapters.admin_console
+    collections:
+      - admin.component_changes
+      - admin.access_grants
+  completeness:
+    template: tools/dashboard/templates/admin/page.html
+    blueprint: true
+    constants: false
+    db_migration: false
+    iqe_adapter: false
+    nav_link: true
+    seed_queries: false
