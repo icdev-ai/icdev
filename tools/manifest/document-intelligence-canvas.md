@@ -249,6 +249,26 @@ Air-gap-first, dual-mode implementation porting open-notebook/NotebookLM essenti
 | `POST /api/generate/enhance` | Layer LLM narrative on a BM25+KG output. Returns enhanced content_json. |
 | `POST /api/collections/<id>/attach-coworker` | Register DIC collection as ACE co-worker context; returns {coworker_url}. |
 
+## Provenance
+
+| Tool | Purpose |
+|------|---------|
+| `tools/dic/provenance_adapter.py` | DIC Provenance Adapter — bridges DIC search results to `provenance_engine` metadata for footnote popover annotation (irad-aidp-09). `get_chunk_provenance(chunk_uuid, chunk_text, llm_output)` returns `{sha256, classification, source_doc_uuid, version_tree_ref, ingest_timestamp, attribution_score}`. Attribution score is a deterministic token-overlap recall ratio (chunk tokens ∩ output tokens / chunk tokens) — no LLM calls. Queries `rag_provenance_ledger` via `provenance_engine.get_lineage()` (irad-aidp-02); falls back to a direct DB SELECT on `rag_provenance_ledger` when the engine is unavailable. |
+
+### Key API
+
+```python
+from tools.dic.provenance_adapter import get_chunk_provenance
+
+prov = get_chunk_provenance(
+    chunk_uuid="abc-123",
+    chunk_text="The system shall ...",
+    llm_output="Access control policies require ...",
+)
+# -> {sha256, classification, source_doc_uuid, version_tree_ref,
+#     ingest_timestamp, attribution_score}
+```
+
 ## Ecosystem Integration Tools
 
 | Tool | Purpose |
