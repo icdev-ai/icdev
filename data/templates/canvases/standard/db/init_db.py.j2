@@ -1,0 +1,80 @@
+# CUI // SP-CTI
+"""{{ display_name }} — Canvas DB initializer.
+
+Uses get_canvas_connection() (not get_connection()) because canvas tables
+have no classification/tenant_id columns and must bypass RLS injection.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+_SCHEMA_PG = """
+CREATE TABLE IF NOT EXISTS {{ key }}_items (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    title TEXT NOT NULL,
+    content TEXT,
+    status TEXT NOT NULL DEFAULT 'active',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_{{ key }}_items_tenant ON {{ key }}_items (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_{{ key }}_items_status ON {{ key }}_items (status);
+
+CREATE TABLE IF NOT EXISTS {{ key }}_events (
+    id TEXT PRIMARY KEY,
+    item_id TEXT REFERENCES {{ key }}_items(id),
+    event_type TEXT NOT NULL,
+    payload JSONB DEFAULT '{}',
+    recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
+_SCHEMA_SQLITE = """
+CREATE TABLE IF NOT EXISTS {{ key }}_items (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL DEFAULT 'default',
+    title TEXT NOT NULL,
+    content TEXT,
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','inactive','archived')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_{{ key }}_items_tenant ON {{ key }}_items (tenant_id);
+CREATE INDEX IF NOT EXISTS idx_{{ key }}_items_status ON {{ key }}_items (status);
+
+CREATE TABLE IF NOT EXISTS {{ key }}_events (
+    id TEXT PRIMARY KEY,
+    item_id TEXT,
+    event_type TEXT NOT NULL,
+    payload TEXT DEFAULT '{}',
+    recorded_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+
+def init_db(db_path=None) -> None:
+    """Create canvas tables idempotently."""
+    backend = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower()
+    try:
+        from tools.db.storage import get_canvas_connection
+        conn = get_canvas_connection("{{ env_flag }}", db_path=db_path)
+        schema = _SCHEMA_PG if backend == "postgresql" else _SCHEMA_SQLITE
+        conn.executescript(schema) if backend != "postgresql" else _apply_pg(conn, schema)
+        conn.commit()
+    except Exception as exc:
+        print(f"{{ display_name }} DB init warning: {exc}")
+
+
+def _apply_pg(conn, schema: str) -> None:
+    for stmt in schema.strip().split(";"):
+        stmt = stmt.strip()
+        if stmt:
+            conn.execute(stmt)
+
+
+if __name__ == "__main__":
+    init_db()
+    print("{{ display_name }} DB initialised.")

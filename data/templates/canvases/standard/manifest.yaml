@@ -1,0 +1,85 @@
+# CUI // SP-CTI
+# Standard canvas template — satisfies all 8 completeness-gate requirements.
+# Generates: blueprint, constants, page, DB init, IQE adapter, seed queries.
+name: standard
+kind: canvas
+description: Full 8-point completeness-gate canvas with IQE, DB init, and RBAC.
+
+variables:
+  key:
+    type: string
+    required: true
+    description: Short technical key for the canvas (e.g. "demo").
+  display_name:
+    type: string
+    required: true
+    description: Human-facing canvas name.
+  env_flag:
+    type: string
+    required: true
+    description: Primary .env toggle that gates the canvas.
+  url_prefix:
+    type: string
+    default: "/{{ key }}"
+    description: Flask url_prefix for the canvas blueprint.
+  module_package:
+    type: string
+    default: "tools.{{ key }}_canvas"
+    description: Python package path for the canvas module.
+  include_iqe:
+    type: boolean
+    default: "true"
+    description: Whether to generate IQE adapter and seed queries.
+  include_db:
+    type: boolean
+    default: "true"
+    description: Whether to generate a DB migration init script.
+  default_roles:
+    type: string
+    default: "developer"
+    description: Comma-separated default roles for this canvas.
+
+files:
+  - src: __init__.py.j2
+    dest: "{{ module_package | replace('.', '/') }}/__init__.py"
+
+  - src: blueprint.py.j2
+    dest: "{{ module_package | replace('.', '/') }}/blueprint.py"
+
+  - src: constants.py.j2
+    dest: "{{ module_package | replace('.', '/') }}/constants.py"
+
+  - src: page.html.j2
+    dest: "tools/dashboard/templates/{{ key }}/page.html"
+
+  - src: db/init_db.py.j2
+    dest: "{{ module_package | replace('.', '/') }}/db/init_db.py"
+    when: "{{ include_db }}"
+
+  - src: iqe_adapter.py.j2
+    dest: "tools/iqe/adapters/{{ key }}.py"
+    when: "{{ include_iqe }}"
+
+  - src: queries/overview.iqe.j2
+    dest: "context/iqe/queries/{{ key }}/01_overview.iqe"
+    when: "{{ include_iqe }}"
+
+  - src: queries/status.iqe.j2
+    dest: "context/iqe/queries/{{ key }}/02_status.iqe"
+    when: "{{ include_iqe }}"
+
+  - src: queries/search.iqe.j2
+    dest: "context/iqe/queries/{{ key }}/03_search.iqe"
+    when: "{{ include_iqe }}"
+
+validators:
+  - type: file_exists
+    path: "{{ module_package | replace('.', '/') }}/blueprint.py"
+  - type: file_exists
+    path: "{{ module_package | replace('.', '/') }}/constants.py"
+  - type: file_exists
+    path: "tools/dashboard/templates/{{ key }}/page.html"
+  - type: python_syntax
+    path: "{{ module_package | replace('.', '/') }}/blueprint.py"
+  - type: python_syntax
+    path: "{{ module_package | replace('.', '/') }}/constants.py"

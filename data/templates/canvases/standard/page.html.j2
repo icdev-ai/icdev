@@ -1,0 +1,49 @@
+{% raw %}{% extends "base.html" %}
+{% block title %}{% endraw %}{{ display_name }}{% raw %}{% endblock %}
+
+{% block content %}{% endraw %}
+<div class="container-fluid py-4">
+  <div class="d-flex align-items-center mb-3">
+    <h1 class="mb-0 me-3">{{ display_name }}</h1>
+    <span class="badge bg-secondary">{{ key }}</span>
+  </div>
+
+  <p class="text-muted small">
+    Env flag: <code>{{ env_flag }}</code> &nbsp;|&nbsp;
+    URL prefix: <code>{{ url_prefix }}</code>
+  </p>
+
+  <!-- Main content area -->
+  <div class="row g-3">
+    <div class="col-lg-8">
+      <div class="card">
+        <div class="card-header fw-semibold">{{ display_name }} Data</div>
+        <div class="card-body">
+          <div id="{{ key }}-data-container">
+            <p class="text-muted">Loading…</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <!-- IQE query widget -->
+      {% raw %}{% include "includes/iqe_query_widget.html" ignore missing %}{% endraw %}
+    </div>
+  </div>
+</div>
+
+{% raw %}{% block extra_js %}{% endraw %}
+<script>
+(function() {
+  fetch('/api/{{ key }}/stats')
+    .then(r => r.json())
+    .then(d => {
+      document.getElementById('{{ key }}-data-container').innerHTML =
+        '<pre class="small">' + JSON.stringify(d, null, 2) + '</pre>';
+    })
+    .catch(() => {});
+})();
+</script>
+{% raw %}{% endblock %}
+{% endblock %}{% endraw %}

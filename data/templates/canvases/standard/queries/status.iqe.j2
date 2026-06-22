@@ -1,0 +1,4 @@
+foreach item in {{ key }}.items
+  where item.status == "active"
+  select item.id, item.title, item.updated_at
+  order by item.updated_at desc
