@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}ICDEV™ Dashboard{% endblock %}</title>
+    <title>{% block title %}{{ brand.product_name if brand is defined else "ICDEV™" }} Dashboard{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ux.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/hljs/github-dark.min.css') }}">
@@ -137,16 +137,14 @@
     <!-- Skip to main content (accessibility) -->
     <a href="#main-content" class="skip-link">Skip to main content</a>
 
-    <!-- CUI Banner Top (D173 — toggle via ICDEV_CUI_BANNER_ENABLED) -->
+    <!-- Classification / Info Banner (DSW-1 — configured via args/banner.yaml or ICDEV_BANNER_MODE) -->
     {% block global_banner %}
-    {% if cui_banner_enabled %}
-    <div class="cui-banner" role="banner" aria-label="Classification marking">{{ cui_banner_top }}</div>
-    {% endif %}
+    {% include "includes/_banner.html" ignore missing %}
     {% endblock %}
 
     <!-- Navigation -->
     <nav class="navbar" role="navigation" aria-label="Main navigation">
-        <a class="navbar-brand" href="/">ICDEV™</a>
+        <a class="navbar-brand" href="/">{{ brand.product_name if brand is defined else "ICDEV™" }}</a>
         <button id="nav-hamburger" aria-label="Toggle navigation" aria-expanded="false" onclick="ICDEV.toggleMobileNav()">&#9776;</button>
         <ul class="navbar-nav" id="navbar-nav">
 
@@ -483,8 +481,15 @@
         {% block content %}{% endblock %}
     </div>
 
-    <!-- CUI Banner Bottom (D173) -->
-    {% if cui_banner_enabled %}
+    <!-- Classification / Info Banner Bottom (DSW-1) -->
+    {% if banner is defined and banner.enabled and banner.position in ('bottom', 'both') %}
+    <div class="icdev-banner icdev-banner-bottom"
+         role="contentinfo"
+         aria-label="Classification marking"
+         style="background-color:{{ banner.background_color }};color:{{ banner.text_color }};font-size:{{ banner.font_size }};font-weight:{{ banner.font_weight }};letter-spacing:{{ banner.letter_spacing }};">
+      {{ banner.text }}
+    </div>
+    {% elif cui_banner_enabled %}
     <div class="cui-banner bottom" role="contentinfo" aria-label="Classification marking">{{ cui_banner_bottom }}</div>
     {% endif %}
 
@@ -517,6 +522,15 @@
     <script>
     // Theme toggle (FDE E1)
     window.ICDEV = window.ICDEV || {};
+
+    // Canvas Shell pane collapse (DSW-2)
+    ICDEV.collapsePane = function(side) {
+        var pane = document.getElementById('canvas-pane-' + side);
+        if (!pane) return;
+        var collapsed = pane.classList.toggle('collapsed');
+        try { localStorage.setItem('icdev-pane-' + side, collapsed ? 'collapsed' : ''); } catch(e) {}
+    };
+
     ICDEV.toggleMobileNav = function() {
         var nav = document.getElementById('navbar-nav');
         var btn = document.getElementById('nav-hamburger');

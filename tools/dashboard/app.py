@@ -56,6 +56,7 @@ from tools.dashboard.config import (  # noqa: E402
     HOST,
     DEBUG,
 )
+from tools.dashboard.brand import brand_context_processor  # noqa: E402
 from tools.dashboard.auth import register_dashboard_auth, validate_api_key, log_auth_event, require_role  # noqa: E402
 from tools.dashboard.websocket import init_socketio, get_socketio  # noqa: E402
 from tools.dashboard.findings_aggregator import (  # noqa: E402
@@ -2065,6 +2066,9 @@ def create_app() -> Flask:
                 for prefix in _CANVAS_URL_PREFIXES
             ),
         }
+
+    # ---- Brand + banner context processor (DSW-1) ----
+    app.context_processor(brand_context_processor)
 
     # ---- Air-gap route guard: friendly message for disabled pages ----
     if _AIRGAP_MODE:
