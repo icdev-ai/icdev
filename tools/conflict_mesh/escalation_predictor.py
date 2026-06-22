@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import logging
 import sys
 import uuid
 from dataclasses import asdict
@@ -43,7 +42,8 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.conflict_mesh.ml_pattern_engine import EscalationSignals, MLPatternEngine  # noqa: E402
 
-logger = logging.getLogger("conflict_mesh.predictor")
+from tools.logging.icdev_logger import get_logger
+log = get_logger("conflict_mesh.predictor")
 
 _MODEL_VERSION_DEFAULT = "v1.0"
 
@@ -141,7 +141,7 @@ class EscalationPredictor:
             conn.commit()
             conn.close()
         except Exception as exc:
-            logger.warning("Failed to store prediction for event %s: %s", event.get("id"), exc)
+            log.warning("Failed to store prediction for event %s: %s", event.get("id"), exc)
         return row
 
     def predict_batch(
@@ -176,7 +176,7 @@ class EscalationPredictor:
             conn.close()
             return rows
         except Exception as exc:
-            logger.warning("get_high_risk query failed: %s", exc)
+            log.warning("get_high_risk query failed: %s", exc)
             return []
 
 
@@ -204,7 +204,7 @@ def main() -> None:
             ).fetchall()
             conn.close()
         except Exception as exc:
-            logger.error("Failed to fetch events: %s", exc)
+            log.error("Failed to fetch events: %s", exc)
             events = []
 
         results = predictor.predict_batch(events)
@@ -222,7 +222,7 @@ def main() -> None:
             ).fetchone()
             conn.close()
         except Exception as exc:
-            logger.error("Failed to fetch event %s: %s", args.event_id, exc)
+            log.error("Failed to fetch event %s: %s", args.event_id, exc)
             event = None
 
         if event:
