@@ -18,3 +18,5 @@ Runs RICOAS Phase 1 — conversational requirements intake:
 7. **Export decomposed items** for handoff to Architect agent (ANVIL workflow)
 
 All operations produce classification-marked output per project settings and record audit trail entries.
+
+See [REFERENCE.md](REFERENCE.md) for step-by-step commands (Steps 1–10).

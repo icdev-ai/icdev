@@ -1,5 +1,5 @@
 ---
-description: "ICDEV™ workflow: Query the ICDEV™ compliance database using natural language. Converts questions to safe SQL queries and returns formatted results. Use when invoking /icdev-query."
+description: "ICDEV™ workflow: "Query the ICDEV™ compliance database using natural language. Converts questions to safe SQL queries and returns formatted results. Use when invoking /icdev-query.""
 globs:
   - "**/*.py"
   - "**/*.yaml"
@@ -7,4 +7,4 @@ globs:
 
 # icdev-query
 
-When the user asks to query the icdev™ compliance database using natural language. converts questions to safe sql queries and returns formatted results. use when invoking /icdev-query., follow these steps:
+When the user asks to "query the icdev™ compliance database using natural language. converts questions to safe sql queries and returns formatted results. use when invoking /icdev-query.", follow these steps:

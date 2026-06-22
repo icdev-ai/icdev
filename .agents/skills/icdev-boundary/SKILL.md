@@ -17,6 +17,8 @@ Runs RICOAS Phase 2 — ATO boundary impact and supply chain intelligence:
 
 All operations produce CUI-marked output and record audit trail entries.
 
+See [REFERENCE.md](REFERENCE.md) for step-by-step commands (Steps 1–8).
+
 ## Error Handling
 - If ATO system not registered: prompt to register before assessment
 - If requirement not found: check intake session, report error

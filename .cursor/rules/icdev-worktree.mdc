@@ -1,5 +1,5 @@
 ---
-description: "ICDEV™ workflow: Create and manage isolated git worktrees for parallel ICDEV™ task execution. Use when invoking /icdev-worktree."
+description: "ICDEV™ workflow: "Create and manage isolated git worktrees for parallel ICDEV™ task execution. Use when invoking /icdev-worktree.""
 globs:
   - "**/*.py"
   - "**/*.yaml"
@@ -7,4 +7,4 @@ globs:
 
 # icdev-worktree
 
-When the user asks to create and manage isolated git worktrees for parallel icdev™ task execution. use when invoking /icdev-worktree., follow these steps:
+When the user asks to "create and manage isolated git worktrees for parallel icdev™ task execution. use when invoking /icdev-worktree.", follow these steps:

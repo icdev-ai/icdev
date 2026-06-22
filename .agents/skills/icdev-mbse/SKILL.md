@@ -18,6 +18,8 @@ Integrates MBSE into the ICDEV™ SDLC workflow:
 
 All operations produce CUI-marked output and record audit trail entries.
 
+See [REFERENCE.md](REFERENCE.md) for step-by-step commands (Steps 1–10).
+
 ## Error Handling
 - If XMI parse fails: report validation errors, continue with existing model data
 - If ReqIF parse fails: report validation errors, continue with existing requirements

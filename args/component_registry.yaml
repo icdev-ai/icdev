@@ -437,7 +437,6 @@ components:
     template: tools/dashboard/templates/info-ops/page.html
     blueprint: true
     constants: tools/info_ops/constants.py
-    db_migration: tools/info_ops/db/migrations
     nav_link: true
 - key: mission_canvas
   kind: canvas
