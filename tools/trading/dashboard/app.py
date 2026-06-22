@@ -977,6 +977,9 @@ def api_overview():
             "SELECT ticker, direction, composite_score, confidence, sector "
             "FROM ad_market_snapshot ORDER BY composite_score DESC"
         ).fetchall()
+        latest_ts_row = conn.execute(
+            "SELECT MAX(created_at) FROM ad_market_snapshot"
+        ).fetchone()
         conn.close()
         sigs = [dict(r) for r in rows]
         from collections import Counter
@@ -986,6 +989,7 @@ def api_overview():
             [s for s in sigs if s.get("direction") in ("SELL", "SHORT")],
             key=lambda x: x.get("composite_score", 50)
         )[:3]
+        snapshot_as_of = latest_ts_row[0] if latest_ts_row and latest_ts_row[0] else None
         overview["market"] = {
             "universe": len(sigs),
             "buy": dir_counts.get("BUY", 0),
@@ -994,6 +998,8 @@ def api_overview():
             "hold": dir_counts.get("HOLD", 0),
             "top_bullish": [{"ticker": s["ticker"], "score": s.get("composite_score", 0)} for s in top_bull],
             "top_bearish": [{"ticker": s["ticker"], "score": s.get("composite_score", 0)} for s in top_bear],
+            "as_of": snapshot_as_of,
+            "is_delayed": True,
         }
     except Exception:
         overview["market"] = {"universe": 0, "buy": 0, "sell": 0, "short": 0, "hold": 0, "top_bullish": [], "top_bearish": []}
