@@ -39,6 +39,18 @@ logger = get_logger("icdev.llm.router")
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CONFIG_PATH = BASE_DIR / "args" / "llm_config.yaml"
 
+# Providers that are allowed when cloud features are disabled (air-gap / offline mode).
+_LOCAL_PROVIDERS: frozenset[str] = frozenset({"ollama", "local", "litellm_local"})
+
+
+def _cloud_blocked() -> bool:
+    """True when the active profile or env disables cloud LLM providers."""
+    env = os.environ.get
+    return (
+        env("ICDEV_DISABLE_CLOUD_FEATURES", "").strip().lower() in ("1", "true", "yes")
+        or env("ICDEV_AIRGAP", "").strip().lower() in ("1", "true", "yes")
+    )
+
 
 class LLMUnavailableError(RuntimeError):
     """Raised when no LLM provider in the routing chain can serve a request.
@@ -630,10 +642,18 @@ class LLMRouter:
             logger.warning("No routing chain for function '%s'", function)
             return None, "", {}
 
+        _block_cloud = _cloud_blocked()
         for model_name in chain:
             if self._check_model_available(model_name):
                 model_cfg = self._get_model_config(model_name)
                 provider_name = model_cfg.get("provider", "")
+                if _block_cloud and provider_name not in _LOCAL_PROVIDERS:
+                    logger.warning(
+                        "Cloud provider '%s' skipped for '%s' (air-gap / cloud-blocked mode)",
+                        provider_name,
+                        function,
+                    )
+                    continue
                 provider = self._get_provider(provider_name)
                 if provider:
                     logger.debug(
@@ -650,6 +670,13 @@ class LLMRouter:
             model_name = chain[0]
             model_cfg = self._get_model_config(model_name)
             provider_name = model_cfg.get("provider", "")
+            if _block_cloud and provider_name not in _LOCAL_PROVIDERS:
+                logger.warning(
+                    "Cloud provider '%s' blocked by air-gap policy; function '%s' unavailable",
+                    provider_name,
+                    function,
+                )
+                return None, "", {}
             provider = self._get_provider(provider_name)
             if provider:
                 logger.warning(

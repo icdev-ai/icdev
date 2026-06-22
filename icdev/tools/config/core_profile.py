@@ -76,6 +76,9 @@ def profile_env_overrides(profile: dict[str, Any]) -> dict[str, str]:
     if profile.get("airgap") and not os.environ.get("ICDEV_AIRGAP"):
         overrides["ICDEV_AIRGAP"] = "true"
 
+    if profile.get("disable_cloud_features") and not os.environ.get("ICDEV_DISABLE_CLOUD_FEATURES"):
+        overrides["ICDEV_DISABLE_CLOUD_FEATURES"] = "true"
+
     if profile.get("enable_byok") and not os.environ.get("ICDEV_BYOK_ENABLED"):
         overrides["ICDEV_BYOK_ENABLED"] = "true"
 
