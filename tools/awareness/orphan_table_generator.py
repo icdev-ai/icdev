@@ -833,6 +833,26 @@ _KNOWN_SCHEMAS: Dict[str, List[Tuple[str, str]]] = {
         ("created_at", "TEXT"),
         ("updated_at", "TEXT"),
     ],
+    # MCIP DAT canvas — migration 207_mcip_dat_tables.sql
+    "mcip_dat_events": [
+        ("id", "TEXT PRIMARY KEY"),
+        ("source_type", "TEXT NOT NULL"),
+        ("content_hash", "TEXT NOT NULL"),
+        ("sender", "TEXT NOT NULL DEFAULT 'unknown'"),
+        ("recipient", "TEXT NOT NULL DEFAULT 'unknown'"),
+        ("classification", "TEXT NOT NULL DEFAULT 'CUI'"),
+        ("tension_signal", "REAL NOT NULL DEFAULT 0.0"),
+        ("ingested_at", "TEXT NOT NULL"),
+    ],
+    "mcip_dti_scores": [
+        ("id", "TEXT PRIMARY KEY"),
+        ("score", "REAL NOT NULL"),
+        ("cable_sub", "REAL NOT NULL DEFAULT 0.0"),
+        ("unsc_sub", "REAL NOT NULL DEFAULT 0.0"),
+        ("backchannel_sub", "REAL NOT NULL DEFAULT 0.0"),
+        ("event_count", "INTEGER NOT NULL DEFAULT 0"),
+        ("computed_at", "TEXT NOT NULL"),
+    ],
 }
 
 

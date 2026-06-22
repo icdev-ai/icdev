@@ -158,6 +158,24 @@ known_safe_obfuscation_modules:
 # specific file in Mode A (provenance_aware) self-scans only; it has no effect
 # on external-artifact assessments.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Known-safe ICDEV modules that legitimately use the crypto capability
+# (hashlib / hmac) for cryptographic protocol purposes — explicitly authorized.
+# The SIPA 'crypto' detector flags hashlib.sha256/hmac calls; in these modules
+# they serve as standard JWT signature verification primitives (RS256 / PKCS#1
+# v1.5), not unauthorized token-signing or ransomware-style encryption. Adding
+# a module path here suppresses the unauthorized_capability 'crypto' finding in
+# Mode A (provenance_aware) self-scans only; it has no effect on
+# external-artifact assessments.
+# ---------------------------------------------------------------------------
+known_safe_crypto_modules:
+  - tools/gateway/adapters/botframework_base.py  # hashlib.sha256 in _validate_jwt_signature: RS256 PKCS#1 v1.5 JWT digest for stdlib-only Bot Framework token authentication. Authorized by Decision D133 (channel adapters ABC) + D142 (BotFramework shared base Teams+Skype).
+  - gateway/adapters/botframework_base.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/gateway/adapters/github.py  # hmac.new + hmac.compare_digest in verify_signature: HMAC-SHA256 of raw webhook body vs X-Hub-Signature-256 header per GitHub webhook security protocol. Not token-signing or ransomware-style encryption. Authorized by Decision D133 (channel adapters ABC) + Decision D143 (GitHub/GitLab !icdev comment prefix adapter).
+  - gateway/adapters/github.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/gateway/adapters/gitlab.py  # hmac.compare_digest in verify_signature: timing-safe comparison of X-Gitlab-Token shared secret per GitLab webhook security protocol (prevents timing side-channel attacks on token equality). Not token-signing or ransomware-style encryption. Authorized by Decision D133 (channel adapters ABC) + Decision D143 (GitHub/GitLab !icdev comment prefix adapter).
+  - gateway/adapters/gitlab.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+
 known_safe_dynamic_import_modules:
   - tools/config/component_registry.py  # Loads Flask blueprints declared in args/component_registry.yaml (a trusted FORGE config — not user-controlled); dynamic dispatch is the registry-driven canvas/child-app loading pattern. Authorized by REQ-REGISTRY-DYNAMIC-IMPORT-01.
   - config/component_registry.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)

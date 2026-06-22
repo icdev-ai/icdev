@@ -92,7 +92,7 @@ def _compute_adaptive_cooldown(conn, *, cfg: dict | None = None) -> float:
     try:
         rows = conn.execute(
             "SELECT dti_score, computed_at "
-            "FROM sg_dti_snapshots "
+            "FROM sg_dat_dti_snapshots "
             "ORDER BY computed_at DESC "
             "LIMIT %s",
             (min_samples + 1,),
@@ -101,7 +101,7 @@ def _compute_adaptive_cooldown(conn, *, cfg: dict | None = None) -> float:
         try:
             rows = conn.execute(
                 "SELECT dti_score, computed_at "
-                "FROM sg_dti_snapshots "
+                "FROM sg_dat_dti_snapshots "
                 "ORDER BY computed_at DESC "
                 "LIMIT ?",
                 (min_samples + 1,),
