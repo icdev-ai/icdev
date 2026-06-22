@@ -1,3 +1,8 @@
+---
+name: icdev-worktree
+description: "Create and manage isolated git worktrees for parallel ICDEV™ task execution. Use when invoking /icdev-worktree."
+---
+
 # [TEMPLATE: CUI // SP-CTI]
 # Skill: icdev-worktree
 # Git Worktree Task Isolation
