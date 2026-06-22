@@ -21,6 +21,11 @@ icdev enable <name> [...]         # Turn on canvas / subsystem toggles in .env
 icdev disable <name> [...]        # Turn off toggles
 icdev status [--json]              # Show active toggles
 icdev list [--json]               # List supported toggles
+icdev scaffold canvas <key>        # Generate a new canvas from a Jinja2 template
+icdev scaffold child-app <key>     # Generate a new child app from a Jinja2 template
+icdev profile list                 # List enterprise core profiles
+icdev profile show [<name>]        # Show active/core profile details
+icdev profile apply <name>         # Apply a profile's env overrides to .env
 
 # Testing
 pytest tests/ -v --tb=short      # Run all platform tests (~330+ tests; SQLite forced by conftest)
