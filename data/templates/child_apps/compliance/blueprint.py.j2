@@ -1,7 +1,9 @@
 # CUI // SP-CTI
 """{{ display_name }} — Flask Blueprint.
 
-Auto-generated from template: data/templates/child_apps/minimal
+Compliance-focused child app with SSP, POAM, and STIG placeholders.
+
+Auto-generated from template: data/templates/child_apps/compliance
 """
 
 from __future__ import annotations
@@ -33,13 +35,21 @@ def create_{{ py_key }}_blueprint() -> Blueprint | None:
     def index():
         return render_template("{{ key }}/index.html")
 
-    @bp.route("/api/stats", methods=["GET"])
+    @bp.route("/api/ssp")
+    def api_ssp():
+        return jsonify({"controls": [], "status": "draft", "classification": "{{ classification }}"})
+
+    @bp.route("/api/poam")
+    def api_poam():
+        return jsonify({"items": [], "status": "draft"})
+
+    @bp.route("/api/stats")
     def api_stats():
         return jsonify({
             "app": "{{ key }}",
             "display_name": "{{ display_name }}",
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "classification": "CUI // SP-CTI",
+            "classification": "{{ classification }}",
         })
 
     global {{ py_key }}_bp

@@ -1,7 +1,9 @@
 # CUI // SP-CTI
 """{{ display_name }} — Flask Blueprint.
 
-Auto-generated from template: data/templates/child_apps/minimal
+AI Lab child app with LLM routing, RAG, and experiment tracking.
+
+Auto-generated from template: data/templates/child_apps/ai-lab
 """
 
 from __future__ import annotations
@@ -33,13 +35,21 @@ def create_{{ py_key }}_blueprint() -> Blueprint | None:
     def index():
         return render_template("{{ key }}/index.html")
 
-    @bp.route("/api/stats", methods=["GET"])
+    @bp.route("/api/models")
+    def api_models():
+        return jsonify({"models": [{"id": "local", "provider": "ollama", "name": "qwen3.5:latest"}]})
+
+    @bp.route("/api/experiments")
+    def api_experiments():
+        return jsonify({"experiments": []})
+
+    @bp.route("/api/stats")
     def api_stats():
         return jsonify({
             "app": "{{ key }}",
             "display_name": "{{ display_name }}",
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "classification": "CUI // SP-CTI",
+            "classification": "{{ classification }}",
         })
 
     global {{ py_key }}_bp

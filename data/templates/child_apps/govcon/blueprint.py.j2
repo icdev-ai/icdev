@@ -1,7 +1,9 @@
 # CUI // SP-CTI
 """{{ display_name }} — Flask Blueprint.
 
-Auto-generated from template: data/templates/child_apps/minimal
+GovCon capture-to-delivery child app with proposal and CPMP placeholders.
+
+Auto-generated from template: data/templates/child_apps/govcon
 """
 
 from __future__ import annotations
@@ -33,13 +35,21 @@ def create_{{ py_key }}_blueprint() -> Blueprint | None:
     def index():
         return render_template("{{ key }}/index.html")
 
-    @bp.route("/api/stats", methods=["GET"])
+    @bp.route("/api/opportunities")
+    def api_opportunities():
+        return jsonify({"opportunities": []})
+
+    @bp.route("/api/proposals")
+    def api_proposals():
+        return jsonify({"proposals": []})
+
+    @bp.route("/api/stats")
     def api_stats():
         return jsonify({
             "app": "{{ key }}",
             "display_name": "{{ display_name }}",
             "timestamp": datetime.now(timezone.utc).isoformat(),
-            "classification": "CUI // SP-CTI",
+            "classification": "{{ classification }}",
         })
 
     global {{ py_key }}_bp

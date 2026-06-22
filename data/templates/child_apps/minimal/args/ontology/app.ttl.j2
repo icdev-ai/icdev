@@ -1,0 +1,29 @@
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix icdev: <https://icdev.dev/ontology/core#> .
+@prefix app: <https://icdev.dev/ontology/apps/{{ key }}#> .
+
+<{{ key }}> rdf:type owl:Ontology ;
+    owl:imports <../../args/ontology/icdev_core.ttl> ;
+    owl:versionInfo "1.0.0" ;
+    rdfs:label "{{ display_name }} Ontology" ;
+    rdfs:comment "Child app ontology extending ICDEV core." .
+
+app:hasClassification rdf:type owl:ObjectProperty ;
+    rdfs:domain app:{{ key | title }}Project ;
+    rdfs:range icdev:ClassificationLevel ;
+    rdfs:label "has classification" ;
+    rdfs:comment "Inherited classification: {{ classification }}." .
+
+app:{{ key | title }}Project rdf:type owl:Class ;
+    rdfs:label "{{ display_name }} Project" ;
+    rdfs:comment "Root project class for {{ display_name }}." ;
+    rdfs:subClassOf icdev:Project ;
+    app:hasClassification icdev:{{ classification | replace(" ", "_") | replace("//", "_") }} .
+
+app:{{ key | title }}Record rdf:type owl:Class ;
+    rdfs:label "{{ display_name }} Record" ;
+    rdfs:comment "Domain-specific class for {{ display_name }}." ;
+    rdfs:subClassOf icdev:Artifact .

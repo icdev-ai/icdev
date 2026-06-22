@@ -1,13 +1,13 @@
 # CUI // SP-CTI
-# Minimal child-app template — generates a standalone ICDEV™ child application.
-name: minimal
+# Compliance child-app flavor — extends minimal with compliance artifacts.
+name: compliance
 kind: child_app
-description: Minimal child application skeleton with its own blueprint and page.
+description: Compliance-focused child app with SSP, POAM, STIG, and CUI markings.
 variables:
   key:
     type: string
     required: true
-    description: Short child-app key (e.g. "my_app").
+    description: Short child-app key (e.g. "compliance_lab").
   display_name:
     type: string
     required: true
@@ -34,41 +34,43 @@ variables:
     description: Default impact level for the app.
 
 files:
-  - src: __init__.py.j2
+  - src: ../minimal/__init__.py.j2
     dest: "{{ module_package | replace('.', '/') }}/__init__.py"
   - src: blueprint.py.j2
     dest: "{{ module_package | replace('.', '/') }}/blueprint.py"
-  - src: page.html.j2
+  - src: ../minimal/page.html.j2
     dest: "tools/dashboard/templates/{{ key }}/index.html"
-  - src: goals/manifest.md.j2
+  - src: ../minimal/goals/manifest.md.j2
     dest: "goals/manifest.md"
-  - src: goals/build_app.md.j2
+  - src: ../minimal/goals/build_app.md.j2
     dest: "goals/build_app.md"
-  - src: args/project_defaults.yaml.j2
+  - src: ../minimal/args/project_defaults.yaml.j2
     dest: "args/project_defaults.yaml"
+  - src: args/security_gates.yaml.j2
+    dest: "args/security_gates.yaml"
   - src: context/compliance/.gitkeep
     dest: "context/compliance/.gitkeep"
-  - src: hardprompts/app_brief.md.j2
+  - src: ../minimal/hardprompts/app_brief.md.j2
     dest: "hardprompts/app_brief.md"
-  - src: tools/db/__init__.py.j2
+  - src: ../minimal/tools/db/__init__.py.j2
     dest: "tools/db/__init__.py"
-  - src: tools/memory/__init__.py.j2
-    dest: "tools/memory/__init__.py"
-  - src: tools/mcp/__init__.py.j2
-    dest: "tools/mcp/__init__.py"
-  - src: CLAUDE.md.j2
-    dest: "CLAUDE.md"
-  - src: .env.example.j2
-    dest: ".env.example"
-  - src: README.md.j2
-    dest: "README.md"
-  - src: memory/MEMORY.md.j2
-    dest: "memory/MEMORY.md"
-  - src: tools/db/init_db.py.j2
+  - src: ../minimal/tools/db/init_db.py.j2
     dest: "tools/db/init_db.py"
-  - src: args/ontology/app.ttl.j2
+  - src: ../minimal/tools/memory/__init__.py.j2
+    dest: "tools/memory/__init__.py"
+  - src: ../minimal/tools/mcp/__init__.py.j2
+    dest: "tools/mcp/__init__.py"
+  - src: ../minimal/CLAUDE.md.j2
+    dest: "CLAUDE.md"
+  - src: ../minimal/.env.example.j2
+    dest: ".env.example"
+  - src: ../minimal/README.md.j2
+    dest: "README.md"
+  - src: ../minimal/memory/MEMORY.md.j2
+    dest: "memory/MEMORY.md"
+  - src: ../minimal/args/ontology/app.ttl.j2
     dest: "args/ontology/app.ttl"
-  - src: args/ontology/app_config.yaml.j2
+  - src: ../minimal/args/ontology/app_config.yaml.j2
     dest: "args/ontology/app_config.yaml"
 
 validators:
@@ -83,10 +85,4 @@ validators:
   - type: file_exists
     path: "README.md"
   - type: file_exists
-    path: "memory/MEMORY.md"
-  - type: file_exists
-    path: "tools/db/init_db.py"
-  - type: python_syntax
-    path: "tools/db/init_db.py"
-  - type: file_exists
-    path: "args/ontology/app.ttl"
+    path: "args/security_gates.yaml"

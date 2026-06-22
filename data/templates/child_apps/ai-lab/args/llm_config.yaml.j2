@@ -1,0 +1,19 @@
+# LLM configuration for {{ display_name }}
+routing:
+  default:
+    chain:
+      - ollama-local
+      - anthropic-cloud
+
+providers:
+  ollama-local:
+    kind: ollama
+    base_url: http://localhost:11434
+    model: qwen3.5:latest
+  anthropic-cloud:
+    kind: anthropic
+    model: claude-sonnet-4-6
+
+two_tier:
+  enabled: true
+  confidence_threshold: 0.85

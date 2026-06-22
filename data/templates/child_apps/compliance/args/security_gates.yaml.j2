@@ -1,0 +1,15 @@
+# Security gates for {{ display_name }}
+gates:
+  - name: sast
+    tool: bandit
+    severity: medium
+    block: true
+  - name: dependency_audit
+    tool: pip-audit
+    block: true
+  - name: secret_scan
+    tool: detect-secrets
+    block: true
+  - name: compliance_markings
+    required: true
+    classification: "{{ classification }}"

@@ -1,0 +1,17 @@
+# Ontology configuration for {{ display_name }}
+parent_ontologies:
+  - path: ../../args/ontology/icdev_core.ttl
+    namespace: https://icdev.dev/ontology/core#
+    description: ICDEV Core Ontology
+
+domain_classes:
+  - "app:{{ key | title }}Project"
+
+classification_inheritance:
+  enabled: true
+  source: parent_ontology
+  child_classification: {{ classification }}
+
+validation:
+  validate_on_scaffold: true
+  require_parent_import: true
