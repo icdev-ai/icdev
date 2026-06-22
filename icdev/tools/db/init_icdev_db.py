@@ -10570,6 +10570,33 @@ CREATE INDEX IF NOT EXISTS idx_requirements_status   ON requirements (status);
 CREATE INDEX IF NOT EXISTS idx_requirements_priority ON requirements (priority);
 CREATE INDEX IF NOT EXISTS idx_requirements_created  ON requirements (created_at);
 
+-- RAG provenance ledger — append-only AIA chain-of-custody log (D-AIDP, NIST AU-3)
+-- event_type='ingest': chunk bound to source document with hash verification
+-- event_type='chain_of_custody': LLM invocation audit block (model, hyperparams, prompt hash, signature)
+CREATE TABLE IF NOT EXISTS rag_provenance_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chunk_uuid TEXT NOT NULL,
+    parent_doc_uuid TEXT,
+    sha256_hash TEXT,
+    token_count INTEGER DEFAULT 0,
+    classification_label TEXT,
+    version_tree_ref TEXT,
+    model_id TEXT,
+    hyperparams_json TEXT DEFAULT '{}',
+    prompt_sha256 TEXT,
+    signature TEXT,
+    event_type TEXT NOT NULL DEFAULT 'ingest'
+        CHECK(event_type IN ('ingest', 'chain_of_custody')),
+    ingest_timestamp TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_rag_prov_chunk
+    ON rag_provenance_ledger(chunk_uuid);
+CREATE INDEX IF NOT EXISTS idx_rag_prov_parent_doc
+    ON rag_provenance_ledger(parent_doc_uuid);
+CREATE INDEX IF NOT EXISTS idx_rag_prov_event_type
+    ON rag_provenance_ledger(event_type);
+
 """
 
 
