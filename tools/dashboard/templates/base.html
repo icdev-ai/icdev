@@ -8,6 +8,14 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/ux.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/hljs/github-dark.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/assistant-widget.css') }}">
+    {%- if brand is defined and (brand.primary_color or brand.secondary_color) %}
+    <style>:root {
+      --accent-primary: {{ brand.primary_color | default('#4a90d9') }};
+      --accent-secondary: {{ brand.secondary_color | default('#7c3aed') }};
+      --accent-blue: {{ brand.primary_color | default('#4a90d9') }};
+      --accent-blue-light: {{ brand.primary_color | default('#6db3f8') }};
+    }</style>
+    {%- endif %}
     {% block head %}{% endblock %}
     {% block extra_css %}{% endblock %}
     <script>
