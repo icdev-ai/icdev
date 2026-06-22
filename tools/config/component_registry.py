@@ -825,12 +825,33 @@ def validate_canvas_completeness(
     root = Path(repo_root or BASE_DIR).resolve()
     completeness = comp.completeness
 
-    # Point 1: main page template
+    # Point 1: main page template — check declared path, then common legacy fallbacks.
+    # Legacy canvases may use index.html, dashboard.html, or live in a differently named dir.
+    module_path_tmp = comp.module or ""
+    module_dir_tmp = _module_dir_from_module(module_path_tmp)
+    _module_leaf = module_dir_tmp.split("/")[-1] if "/" in module_dir_tmp else module_dir_tmp
+
     template_path_str = completeness.get("template") or f"tools/dashboard/templates/{key}/page.html"
     template_path = root / template_path_str
     page_present = template_path.exists()
 
-    # Point 2: icdev mirror
+    if not page_present:
+        # Try common alternative names and directory conventions
+        _tmpl_candidates = [
+            f"tools/dashboard/templates/{_module_leaf}/page.html",
+            f"tools/dashboard/templates/{_module_leaf}/index.html",
+            f"tools/dashboard/templates/{key}/index.html",
+            f"tools/dashboard/templates/{key}/dashboard.html",
+        ]
+        for _cand in _tmpl_candidates:
+            if (root / _cand).exists():
+                template_path_str = _cand
+                template_path = root / _cand
+                page_present = True
+                break
+
+    # Point 2: icdev mirror — only required if a main template was found.
+    # Existing canvases without a web template don't need the icdev mirror.
     icdev_template_path = root / "icdev" / template_path_str
     mirror_present = icdev_template_path.exists()
 
@@ -879,11 +900,13 @@ def validate_canvas_completeness(
             required=True,
             present=page_present,
             path=str(template_path.relative_to(root)) if page_present else template_path_str,
-            message="tools/dashboard/templates/{key}/page.html exists" if page_present else f"missing {template_path_str}",
+            message="page template exists" if page_present else f"missing {template_path_str}",
         ),
         CanvasCompletenessItem(
             point="icdev_mirror",
-            required=True,
+            # Only required when a main template exists; legacy canvases without
+            # a template don't need the icdev/ mirror (companion sync would create it).
+            required=page_present,
             present=mirror_present,
             path=str(icdev_template_path.relative_to(root)) if mirror_present else f"icdev/{template_path_str}",
             message="icdev mirror exists" if mirror_present else f"missing icdev/{template_path_str}",
