@@ -121,7 +121,7 @@ class TestCheckLockFileFreshness:
 
     def test_passes_when_lock_file_is_fresh(self, tmp_path, monkeypatch):
         self._patch_thresholds(monkeypatch, max_age_months=6)
-        lock = _write(tmp_path, "poetry.lock", "# fresh\n")
+        _write(tmp_path, "poetry.lock", "# fresh\n")
         # mtime defaults to now; no need to adjust
         result = _check_lock_file_freshness(tmp_path)
         assert result.passed

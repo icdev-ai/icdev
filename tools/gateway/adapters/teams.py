@@ -19,7 +19,6 @@ Decision D142: Teams uses BotFrameworkBaseAdapter.
 
 from __future__ import annotations
 
-import logging
 import os
 import sys
 from pathlib import Path
@@ -55,7 +54,6 @@ class TeamsAdapter(BotFrameworkBaseAdapter):
     def send_message(self, channel_user_id: str, text: str, thread_id: str = "") -> bool:
         """Send reply — tries TeamsConnector first, falls back to Bot Connector API."""
         conversation_id = thread_id or self._last_conversation_id
-        service_url = self._last_service_url
 
         # Delegate to DataBridge connector for IQE observability
         try:

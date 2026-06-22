@@ -2891,7 +2891,6 @@ def detect_ingest_throughput_anomaly(
     # (gap detection is left to stale-job detection in detect_ingest_job_anomalies)
     zero_hours: list[dict] = []
     if len(sorted_hours) >= 4:
-        active_set = {bucket for bucket, cnt in sorted_hours if cnt > 0}
         # For each consecutive pair of active hours more than 1 hour apart,
         # emit intermediate hours as zero-throughput gaps (max 5 per pair).
         from datetime import timedelta as _td

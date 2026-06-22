@@ -8,11 +8,10 @@ Item 4: DIC answer filing — _file_qa_to_wiki writes wiki file after grounded a
 Item 5: ACE session end cross-role wiki links via _file_session_to_wiki
 """
 
-import re
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 
 # ---------------------------------------------------------------------------
@@ -34,10 +33,9 @@ class TestFileQaToWiki(unittest.TestCase):
     def test_writes_file_to_wiki_dir(self):
         from tools.document_intelligence.search_engine import _file_qa_to_wiki, _qa_slug
         with tempfile.TemporaryDirectory() as td:
-            wiki = _make_wiki_dir(td)
+            _make_wiki_dir(td)
             with patch.dict("os.environ", {"USERPROFILE": td}):
                 # Patch auto_dir derivation inside function
-                import os
                 from pathlib import Path as _Path
 
                 auto_path = _Path(td) / ".claude/projects/C--AI-ICDev/memory"

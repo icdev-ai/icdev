@@ -238,11 +238,6 @@ def test_generate_snippets_order_preserved(monkeypatch):
     class _EchoRouter(_Router):
         def invoke(self, fn, req):
             _EchoRouter.call_count += 1
-            # echo back the chunk content prefix for traceability
-            content_line = [
-                l for l in req.messages[0]["content"].splitlines()
-                if l.startswith("Document excerpt:")
-            ]
             return _Resp(_Router._content)
 
     _patch_router(monkeypatch, _EchoRouter)

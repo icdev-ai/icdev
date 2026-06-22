@@ -21,13 +21,12 @@ Usage (format detection):
 
 from __future__ import annotations
 
-import logging
 from tools.logging.icdev_logger import get_logger
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    pass
+    from tools.document_intelligence.extractors import Extraction
 
 logger = get_logger(__name__)
 

@@ -21,10 +21,7 @@ Run: pytest tests/test_ski_roles_lifecycle.py -v
 """
 from __future__ import annotations
 
-import json
-import os
 from pathlib import Path
-from typing import Any
 
 import pytest
 import yaml
@@ -364,9 +361,6 @@ class TestA2AEventRouting:
         assert "prd.authored" in pm_emits
 
     def test_event_dispatcher_topic_index(self, role_loader):
-        from icdev.tools.ace.event_dispatcher import ACEEventDispatcher
-        dispatcher_cls = ACEEventDispatcher
-
         topic_index: dict[str, list] = {}
         for role in role_loader.list_roles():
             for topic in (role.communication.get("listen_topics") or []):
