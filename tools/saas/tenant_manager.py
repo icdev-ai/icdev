@@ -37,11 +37,14 @@ Usage:
 import argparse
 import hashlib
 import json
+import logging
 import re
 import secrets
 import sys
 import uuid
 from datetime import datetime, timezone
+
+logger = logging.getLogger(__name__)
 from pathlib import Path
 
 # ---------------------------------------------------------------------------
@@ -355,6 +358,13 @@ def provision_tenant(tenant_id):
         )
 
         conn.commit()
+
+        try:
+            from tools.security.canvas_access import seed_tenant_defaults
+            seed_tenant_defaults(tenant_id, granted_by="system")
+        except Exception as _seed_exc:
+            logger.warning("seed_tenant_defaults failed for %s: %s", tenant_id, _seed_exc)
+
         return {
             "id": tenant_id,
             "slug": slug,

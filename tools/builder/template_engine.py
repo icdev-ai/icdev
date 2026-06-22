@@ -140,12 +140,25 @@ def _render_string(template_str: str, context: dict[str, Any]) -> str:
     return env.from_string(template_str).render(context)
 
 
+def _eval_when(when_expr: str | None, context: dict[str, Any]) -> bool:
+    """Evaluate a ``when`` expression from a manifest file entry.
+
+    Returns True (include file) if when is absent or evaluates to a truthy string.
+    Falsy strings: 'false', '0', 'no', '', 'none'.
+    """
+    if when_expr is None:
+        return True
+    rendered = _render_string(str(when_expr), context)
+    return rendered.lower() not in ("false", "0", "no", "", "none")
+
+
 def render_tree(
     template_dir: Path,
     out_dir: Path,
     variables: dict[str, str],
     *,
     skip_existing: bool = False,
+    dry_run: bool = False,
 ) -> dict[str, Any]:
     """Render a template tree into ``out_dir``.
 
@@ -157,7 +170,8 @@ def render_tree(
 
     Returns:
         Result dict with ``manifest``, ``variables``, ``rendered_files``,
-        ``skipped_files``, ``errors``.
+        ``skipped_files``, ``errors``.  When ``dry_run`` is True, no files are
+        written but ``rendered_files`` lists what *would* be created.
     """
     manifest = load_manifest(template_dir)
     spec_vars = manifest.get("variables", {})
@@ -167,13 +181,19 @@ def render_tree(
     skipped: list[str] = []
     errors: list[str] = []
 
-    out_dir.mkdir(parents=True, exist_ok=True)
+    if not dry_run:
+        out_dir.mkdir(parents=True, exist_ok=True)
 
     for file_entry in manifest.get("files", []):
         src_name = file_entry.get("src")
         dest_tmpl = file_entry.get("dest")
         if not src_name or not dest_tmpl:
             errors.append(f"Invalid file entry (missing src or dest): {file_entry}")
+            continue
+
+        # Conditional inclusion: skip file if `when` evaluates to falsy
+        if not _eval_when(file_entry.get("when"), context):
+            skipped.append(_render_string(dest_tmpl, context))
             continue
 
         dest_rel = _render_string(dest_tmpl, context)
@@ -183,7 +203,6 @@ def render_tree(
             skipped.append(dest_rel)
             continue
 
-        dest_path.parent.mkdir(parents=True, exist_ok=True)
         src_path = template_dir / src_name
 
         if not src_path.exists():
@@ -193,7 +212,7 @@ def render_tree(
         src_text = src_path.read_text(encoding="utf-8")
         if src_name.endswith(".j2"):
             rendered_text = _render_string(src_text, context)
-            dest_name = dest_rel  # strip .j2 logic handled below if needed
+            dest_name = dest_rel
         else:
             rendered_text = src_text
             dest_name = dest_rel
@@ -203,7 +222,9 @@ def render_tree(
             dest_name = dest_name[:-3]
             dest_path = out_dir / dest_name
 
-        dest_path.write_text(rendered_text, encoding="utf-8")
+        if not dry_run:
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            dest_path.write_text(rendered_text, encoding="utf-8")
         rendered.append(dest_name)
 
     result = {
@@ -212,11 +233,15 @@ def render_tree(
         "rendered_files": rendered,
         "skipped_files": skipped,
         "errors": errors,
+        "dry_run": dry_run,
     }
 
-    # Run validators if present
-    validators = manifest.get("validators", [])
-    validation_failures = _run_validators(validators, out_dir, context)
+    # Validators only run on real (non-dry-run) renders
+    if not dry_run:
+        validators = manifest.get("validators", [])
+        validation_failures = _run_validators(validators, out_dir, context)
+    else:
+        validation_failures = []
     result["validation_failures"] = validation_failures
     result["success"] = not errors and not validation_failures
 

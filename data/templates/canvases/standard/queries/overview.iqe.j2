@@ -1,0 +1,4 @@
+foreach item in {{ key }}.items
+  select item.id, item.title, item.status, item.created_at
+  order by item.created_at desc
+  limit 50

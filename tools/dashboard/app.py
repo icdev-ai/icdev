@@ -1581,6 +1581,58 @@ def _get_chat_models() -> tuple[list[dict], str]:
     return result, default_model
 
 
+def _aggregate_chat_sources(conn, tenant_id: str, context_id: str) -> list[dict]:
+    """Aggregate chat-upload RAG chunks by source_id.
+
+    Parses JSON metadata in Python so no SQLite-only json_extract() appears
+    in the SQL — making the query run on PostgreSQL without modification.
+    Mirrors the logic of the original GROUP-BY json_extract query.
+    """
+    import json as _json
+
+    params: list = ["chat_upload"]
+    sql = (
+        "SELECT source_id, metadata, created_at "
+        "FROM rag_chunks "
+        "WHERE source_type = ?"
+    )
+    if tenant_id:
+        sql += " AND tenant_id = ?"
+        params.append(tenant_id)
+    sql += " ORDER BY created_at DESC"
+
+    rows = conn.execute(sql, params).fetchall()
+
+    agg: dict = {}
+    for row in rows:
+        r = dict(row)
+        sid = r["source_id"]
+        try:
+            meta = _json.loads(r.get("metadata") or "{}")
+        except (ValueError, TypeError):
+            meta = {}
+        row_ctx = meta.get("context_id", "")
+        if context_id and row_ctx != context_id:
+            continue
+        if sid not in agg:
+            agg[sid] = {
+                "source_id": sid,
+                "filename": meta.get("filename", ""),
+                "context_id": row_ctx,
+                "chunk_count": 0,
+                "indexed_at": r.get("created_at"),
+            }
+        agg[sid]["chunk_count"] += 1
+        if not agg[sid]["filename"] and meta.get("filename"):
+            agg[sid]["filename"] = meta.get("filename", "")
+        cur_ts = r.get("created_at")
+        if cur_ts and (not agg[sid]["indexed_at"] or cur_ts > agg[sid]["indexed_at"]):
+            agg[sid]["indexed_at"] = cur_ts
+
+    result = sorted(agg.values(), key=lambda x: x.get("indexed_at") or "", reverse=True)
+    return result[:50]
+
+
 def create_app() -> Flask:
     app = Flask(
         __name__,
@@ -9570,27 +9622,8 @@ def create_app() -> Flask:
         context_id = flask_request.args.get("context_id", "")
         try:
             with get_connection() as conn:
-                rows = conn.execute(
-                    """
-                    SELECT DISTINCT source_id,
-                           MAX(json_extract(metadata, '$.filename')) AS filename,
-                           MAX(json_extract(metadata, '$.context_id')) AS context_id,
-                           COUNT(*) AS chunk_count,
-                           MAX(created_at) AS indexed_at
-                    FROM rag_chunks
-                    WHERE source_type = 'chat_upload'
-                      AND (? = '' OR tenant_id = ?)
-                      AND (? = '' OR json_extract(metadata, '$.context_id') = ?)
-                    GROUP BY source_id
-                    ORDER BY indexed_at DESC
-                    LIMIT 50
-                    """,
-                    (tenant_id, tenant_id, context_id, context_id),
-                ).fetchall()
-                return jsonify({
-                    "sources": [dict(r) for r in rows],
-                    "total": len(rows),
-                })
+                sources = _aggregate_chat_sources(conn, tenant_id, context_id)
+                return jsonify({"sources": sources, "total": len(sources)})
         except Exception as exc:
             app.logger.warning("api_chat_sources error: %s", exc)
             return jsonify({"sources": [], "total": 0})

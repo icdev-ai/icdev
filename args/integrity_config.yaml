@@ -134,3 +134,32 @@ known_safe_filesystem_modules:
 known_safe_process_exec_modules:
   - tools/testing/cleanup_utils.py  # Signal-aware subprocess wrapper (run_with_cleanup) for graceful CI shutdown; subprocess.Popen tracks the active child so SIGTERM/SIGINT handlers can terminate it before the runner exits. Authorized by REQ-TESTING-GRACEFUL-SHUTDOWN-01 (pgp-vfy-03-d4).
   - testing/cleanup_utils.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+
+# ---------------------------------------------------------------------------
+# Known-safe ICDEV modules that legitimately use the obfuscation-flagged APIs
+# (base64.b64decode, bytes char-code literals) for cryptographic protocol
+# purposes — explicitly authorized. The SIPA 'obfuscation' detector flags
+# base64 decode + multi-byte literals; in these modules they serve as standard
+# JWT / PKCS#1 primitives, not intent concealment. Adding a module path here
+# suppresses the unauthorized_capability 'obfuscation' finding in Mode A
+# (provenance_aware) self-scans only; it has no effect on external-artifact
+# assessments.
+# ---------------------------------------------------------------------------
+known_safe_obfuscation_modules:
+  - tools/gateway/adapters/botframework_base.py  # RFC 7519 JWT base64url decode (_b64url_decode) + PKCS#1 v1.5 SHA-256 DigestInfo ASN.1 prefix (bytes literal) for stdlib-only RS256 Bot Framework token validation. Authorized by Decision D133 (channel adapters ABC) + D142 (BotFramework shared base Teams+Skype).
+  - gateway/adapters/botframework_base.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+
+# ---------------------------------------------------------------------------
+# Known-safe ICDEV modules that legitimately call importlib.import_module on a
+# non-literal (variable) module name — explicitly authorized. The
+# 'dynamic_import' known_bad_signature category is designed to catch imports of
+# attacker-controlled module names (e.g., from user input). Adding a module path
+# here suppresses the known_bad_signature 'dynamic_import' finding for that
+# specific file in Mode A (provenance_aware) self-scans only; it has no effect
+# on external-artifact assessments.
+# ---------------------------------------------------------------------------
+known_safe_dynamic_import_modules:
+  - tools/config/component_registry.py  # Loads Flask blueprints declared in args/component_registry.yaml (a trusted FORGE config — not user-controlled); dynamic dispatch is the registry-driven canvas/child-app loading pattern. Authorized by REQ-REGISTRY-DYNAMIC-IMPORT-01.
+  - config/component_registry.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/genesis/kanban_scheduler.py  # Startup inbox replay: loads notification adapter listeners (telegram/teams/mattermost/github/gitlab/skype) from a hardcoded FORGE-internal list (_startup_replay_listeners); _module_path values are not user-controlled. Missing adapters are silently skipped via except. Authorized by REQ-KANBAN-INBOX-REPLAY-01.
+  - genesis/kanban_scheduler.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
