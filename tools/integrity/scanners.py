@@ -698,6 +698,31 @@ _SIGNATURE_CATEGORIES: dict[str, str] = {
     "persistence":      "medium",     # cron / startup / Run-key survival
 }
 
+
+def _load_safe_dynamic_import_modules() -> frozenset:
+    """Load known_safe_dynamic_import_modules from integrity_config.yaml.
+
+    Returns a frozenset of repo-relative module paths whose 'dynamic_import'
+    known_bad_signature findings are suppressed in Mode A self-scans only.
+    All listed modules must use hardcoded (non-user-supplied) import targets.
+    """
+    try:
+        cfg = _load_config()
+        return frozenset(cfg.get("known_safe_dynamic_import_modules") or [])
+    except Exception:
+        return frozenset()
+
+
+def _is_safe_dynamic_import_module(file_path) -> bool:
+    """True when file_path matches an entry in known_safe_dynamic_import_modules."""
+    if not file_path:
+        return False
+    normalised = str(file_path).replace("\\", "/")
+    return any(normalised.endswith(m) for m in _SAFE_DYNAMIC_IMPORT_MODULES)
+
+
+_SAFE_DYNAMIC_IMPORT_MODULES: frozenset = _load_safe_dynamic_import_modules()
+
 # Regex fallback — one or more compiled patterns per category, used only when
 # Semgrep is unavailable. Each pattern is deliberately narrow: it targets the
 # malicious idiom itself, not the individual benign primitives (a bare
@@ -896,6 +921,15 @@ def run_signature_scan(assessment_id: int, staged_path: Optional[str] = None, co
             hits = _signature_fallback_scan(staged)
             engine = "regex_fallback"
         normalized = _normalize_signatures(hits, staged, engine)
+        # Suppress dynamic_import findings for first-party modules with hardcoded
+        # import targets (non-attacker-controllable) authorized in integrity_config.yaml.
+        normalized = [
+            f for f in normalized
+            if not (
+                f.get("detail", {}).get("category") == "dynamic_import"
+                and _is_safe_dynamic_import_module(f.get("file_path"))
+            )
+        ]
         finding_ids = _persist(c, assessment_id, normalized)
         return {
             "scanner": "semgrep",

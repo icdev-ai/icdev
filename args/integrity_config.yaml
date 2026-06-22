@@ -134,3 +134,16 @@ known_safe_filesystem_modules:
 known_safe_process_exec_modules:
   - tools/testing/cleanup_utils.py  # Signal-aware subprocess wrapper (run_with_cleanup) for graceful CI shutdown; subprocess.Popen tracks the active child so SIGTERM/SIGINT handlers can terminate it before the runner exits. Authorized by REQ-TESTING-GRACEFUL-SHUTDOWN-01 (pgp-vfy-03-d4).
   - testing/cleanup_utils.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+
+# ---------------------------------------------------------------------------
+# Known-safe ICDEV modules that legitimately use dynamic import
+# (importlib.import_module with a non-literal module path) as documented
+# system behavior — explicitly authorized. Adding a module path here suppresses
+# the 'dynamic_import' known_bad_signature finding in Mode A (provenance_aware)
+# self-scans only; it has no effect on external-artifact assessments.
+# All entries must use first-party ICDEV module paths from a hardcoded list
+# (never user-supplied input); the import is not attacker-controllable.
+# ---------------------------------------------------------------------------
+known_safe_dynamic_import_modules:
+  - tools/genesis/kanban_scheduler.py  # Startup inbox replay imports hardcoded first-party notification listener adapters (telegram/teams/mattermost/github/gitlab/skype) from _startup_replay_listeners — a literal list, not user-controlled. Authorized by REQ-KANBAN-STARTUP-REPLAY-01.
+  - genesis/kanban_scheduler.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
