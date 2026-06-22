@@ -21,8 +21,8 @@ icdev enable <name> [...]         # Turn on canvas / subsystem toggles in .env
 icdev disable <name> [...]        # Turn off toggles
 icdev status [--json]              # Show active toggles
 icdev list [--json]               # List supported toggles
-icdev scaffold canvas <key>        # Generate a new canvas from a Jinja2 template
-icdev scaffold child-app <key>     # Generate a new child app from a Jinja2 template
+icdev scaffold canvas <key> --display-name "Name" [--flavor <flavor>]   # Generate a new canvas from a Jinja2 template
+icdev scaffold child-app <key> --display-name "Name" --flavor <flavor> [--canvases k1,k2]  # Generate a new child app from a Jinja2 template
 icdev profile list                 # List enterprise core profiles
 icdev profile show [<name>]        # Show active/core profile details
 icdev profile apply <name>         # Apply a profile's env overrides to .env
@@ -161,6 +161,15 @@ The root `tools/` package is a backward-compatibility shim (`tools/__init__.py`)
 - SaaS platform DB: `data/platform.db`
 - Per-tenant: `data/tenants/{slug}.db`
 - Audit trail is **append-only/immutable** (NIST AU). Never UPDATE or DELETE audit rows.
+
+### Unified Component Registry
+Canvases, child apps, features, and core extensions are declared in `args/component_registry.yaml` and loaded by `tools/config/component_registry.py`. Runtime registration (blueprints, routes, CLI toggles, nav links, IQE dispatch, RBAC metadata) is derived from the registry.
+
+- Add a canvas by editing `args/component_registry.yaml` and providing the module/templates; no changes to `tools/dashboard/app.py`, `tools/cli/enable.py`, or `tools/dashboard/templates/base.html` are required.
+- Core profiles live in `args/core_profiles.yaml`; activate with `icdev profile apply <name>`.
+- Tenant-level enablement overrides live in `tenant_component_overrides` (migration 207); fallback is the env/default setting.
+- Component configuration changes are logged to the append-only `component_audit_log` (migration 208).
+- Full feature doc: [docs/features/enterprise-configurable-platform.md](docs/features/enterprise-configurable-platform.md)
 
 ---
 
@@ -332,6 +341,8 @@ python tools/workflow/coherence_checker.py --all --gate                # coheren
   6. `tests/conftest.py` — add new table schemas to MINIMAL_ICDEV_SCHEMA
   7. `python tools/dx/companion.py --sync --write --json` — sync to all AI platforms
   8. `python tools/workflow/coherence_checker.py --all --fix --gate` — coherence validation
+- **Adding or changing a canvas / child app / feature:** update `args/component_registry.yaml` first. Do not add new Python lists in `tools/dashboard/app.py`, `tools/cli/enable.py`, or `tools/dashboard/templates/base.html`. Mirror any registry file changes to the root `tools/` copy until the canonical/legacy split is removed.
+- **Component configuration audit:** when adding an append-only component-audit event, use `log_component_audit()` from `tools.config.component_registry`. New component-audit tables must be added to `APPEND_ONLY_TABLES` in `.claude/hooks/pre_tool_use.py`.
 
 ### RLS Bypass Annotations for cwd-Sensitive Hook Logic
 

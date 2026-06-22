@@ -4,9 +4,10 @@
 #
 # Consumed by:
 #   - tools/config/component_registry.py (loader)
-#   - tools/dashboard/app.py (blueprint registration)
+#   - tools/dashboard/app.py (blueprint registration + nav context)
 #   - tools/dashboard/app.py::iqe_dispatch() (IQE adapter lookup)
 #   - tools/cli/enable.py (toggle derivation)
+#   - tools/security/canvas_access.py (default role seeding)
 #   - tools/workflow/coherence_checker.py (sync + completeness gates)
 #
 # Design decisions:
@@ -14,1280 +15,1324 @@
 #   - key: unique technical identifier (matches legacy _CANVAS_DEFS keys)
 #   - cli_name: human-facing toggle name used by `icdev enable/disable/status`
 #   - env_flag: primary .env toggle that gates the component
-#   - extra_env_flags: legacy/secondary flags that must also flip (e.g.
-#     `bdc` needs both `ICDEV_BDC_ENABLED` and `ICDEV_BOUNDARY_ENABLED`)
+#   - extra_env_flags: legacy/secondary flags that must also flip
 #   - default_enabled: used when env_flag is not set
 #   - module + blueprint_attr: dynamic import location. Optional for `feature`.
-#     - If blueprint_attr is a callable that returns a Blueprint without a .name,
-#       the loader calls it once (factory pattern).
-#     - Otherwise the attribute itself is used (pre-instantiated Blueprint).
 #   - url_prefix: Flask url_prefix passed to register_blueprint. Empty string
 #     means the blueprint defines its own routes.
 #   - iqe: natural-language query adapter and collection list for /api/iqe/dispatch.
-#   - nav: navigation metadata (full templatization in Phase 5-6).
+#   - nav: navigation metadata (section, label, links, order). Links drive the
+#     registry-rendered Canvases menu in base.html.
 #   - min_il + default_roles: RBAC metadata mirrored from args/canvas_registry.yaml.
 #   - completeness: 8-point canvas completeness gate requirements.
 #
-# Phase 0 scope: this file reproduces the hardcoded _CANVAS_DEFS, _APP_DEFS,
-# _CANVAS_ROUTES, and _CANVAS_MAP from tools/dashboard/app.py, plus the feature
-# toggles from tools/cli/enable.py. Legacy one-off blueprint registrations
-# (simulation, system_graph, zta, etc.) are intentionally omitted from this
-# initial registry and will be migrated in a follow-up phase.
+# Phase 5 update: nav.links added for all Canvases-menu entries so the dashboard
+# menu is data-driven instead of hardcoded in base.html.
 
 components:
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Design Canvases
   # ═══════════════════════════════════════════════════════════════════════════
-
-  - key: idc
-    kind: canvas
-    cli_name: infra
-    display_name: "Infrastructure Design Canvas"
-    description: "Cloud, IaC, Terraform, K8s manifest management."
-    env_flag: ICDEV_IDC_ENABLED
-    extra_env_flags: [ICDEV_INFRA_ENABLED]
-    default_enabled: false
-    module: tools.infra_canvas.blueprint
-    blueprint_attr: infra_bp
-    url_prefix: /infra
-    min_il: IL4
-    default_roles: [developer]
-    nav:
-      section: Canvases
-      label: Infrastructure
-    iqe:
-      adapter_module: tools.iqe.adapters.infra
-      collections:
-        - infra.resources
-        - infra.snapshots
-        - infra.ai_decisions
-    completeness:
-      template: tools/dashboard/templates/infra/page.html
-      blueprint: true
-      constants: tools/infra_canvas/constants.py
-      db_migration: tools/infra_canvas/db/migrations
-      iqe_adapter: true
-      nav_link: true
-      seed_queries: context/iqe/queries/infra/
-
-  - key: ndc
-    kind: canvas
-    cli_name: network
-    display_name: "Network Design Canvas"
-    description: "Topology, routing, capacity, redundancy, EOL analysis."
-    env_flag: ICDEV_NDC_ENABLED
-    extra_env_flags: [ICDEV_NETWORK_ENABLED]
-    default_enabled: true
-    module: tools.network.blueprint
-    blueprint_attr: create_network_blueprint
-    url_prefix: /network
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Canvases
-      label: Network
-    iqe:
-      adapter_module: tools.iqe.adapters.ndc
-      collections:
-        - network.topologies
-        - network.devices
-        - network.objects
-        - network.circuits
-        - network.sites
-        - network.ai_decisions
-        - network.partners
-        - network.agreements_expiring
-    completeness:
-      template: tools/dashboard/templates/network/page.html
-      blueprint: true
-      constants: tools/network/constants.py
-      db_migration: tools/network/db/migrations
-      iqe_adapter: true
-      nav_link: true
-      seed_queries: context/iqe/queries/network/
-
-  - key: sdc
-    kind: canvas
-    cli_name: security
-    display_name: "Security Design Canvas"
-    description: "Threat model, hardening, STIGs, attack-path analysis."
-    env_flag: ICDEV_SDC_ENABLED
-    extra_env_flags: [ICDEV_SECURITY_ENABLED]
-    default_enabled: true
-    module: tools.security_canvas.blueprint
-    blueprint_attr: create_security_blueprint
-    url_prefix: /security
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Canvases
-      label: Security
-    iqe:
-      adapter_module: tools.iqe.adapters.security
-      collections:
-        - attack.nodes
-        - attack.edges
-        - attack.paths
-        - security.ai_decisions
-    completeness:
-      template: tools/dashboard/templates/security/page.html
-      blueprint: true
-      constants: tools/security_canvas/constants.py
-      db_migration: tools/security_canvas/db/migrations
-      iqe_adapter: true
-      nav_link: true
-      seed_queries: context/iqe/queries/security/
-
-  - key: bdc
-    kind: canvas
-    cli_name: boundary
-    display_name: "Boundary & Supply Chain Canvas"
-    description: "ATO boundary impact, supply chain SCRM, ISA lifecycle."
-    env_flag: ICDEV_BDC_ENABLED
-    extra_env_flags: [ICDEV_BOUNDARY_ENABLED]
-    default_enabled: false
-    module: tools.boundary_canvas.blueprint
-    blueprint_attr: create_boundary_blueprint
-    url_prefix: /boundary
-    min_il: IL4
-    default_roles: [compliance_officer, isso]
-    nav:
-      section: Canvases
-      label: Boundary
-    iqe:
-      adapter_module: tools.iqe.adapters.bdc
-      collections:
-        - bdc.designs
-        - bdc.assessments
-        - bdc.isas
-        - bdc.alerts
-        - bdc.ai_decisions
-    completeness:
-      template: tools/dashboard/templates/boundary/page.html
-      blueprint: true
-      constants: tools/boundary_canvas/constants.py
-      db_migration: tools/boundary_canvas/db/migrations
-      iqe_adapter: true
-      nav_link: true
-      seed_queries: context/iqe/queries/boundary/
-
-  - key: pdc
-    kind: canvas
-    cli_name: pipeline
-    display_name: "Pipeline Design Canvas"
-    description: "CI/CD pipeline management, worktree isolation, GitLab integration."
-    env_flag: ICDEV_PDC_ENABLED
-    extra_env_flags: [ICDEV_PIPELINE_ENABLED]
-    default_enabled: false
-    module: tools.pipeline.blueprint
-    blueprint_attr: create_pipeline_blueprint
-    url_prefix: /devops
-    min_il: IL4
-    default_roles: [developer]
-    nav:
-      section: Canvases
-      label: DevOps
-    iqe:
-      adapter_module: tools.iqe.adapters.pipeline
-      collections:
-        - pipeline.snapshots
-        - pipeline.nodes
-        - pipeline.edges
-        - pipeline.ai_decisions
-    completeness:
-      template: tools/dashboard/templates/devops/page.html
-      blueprint: true
-      constants: tools/pipeline/constants.py
-      db_migration: tools/pipeline/db/migrations
-      iqe_adapter: true
-      nav_link: true
-      seed_queries: context/iqe/queries/pipeline/
-
-  - key: odc
-    kind: canvas
-    cli_name: observability
-    display_name: "Observability Design Canvas"
-    description: "Logging, monitoring, distributed tracing, SRE."
-    env_flag: ICDEV_ODC_ENABLED
-    extra_env_flags: [ICDEV_OBSERVABILITY_ENABLED]
-    default_enabled: false
-    module: tools.observability_canvas.blueprint
-    blueprint_attr: create_observability_blueprint
-    url_prefix: /observability
-    min_il: IL4
-    default_roles: [developer]
-    nav:
-      section: Canvases
-      label: Observability
-    iqe:
-      adapter_module: tools.iqe.adapters.observability
-      collections:
-        - mitre.techniques
-        - mitre.coverage
-        - mitre.gaps
-        - observability.ai_decisions
-    completeness:
-      template: tools/dashboard/templates/observability/page.html
-      blueprint: true
-      constants: tools/observability_canvas/constants.py
-      db_migration: tools/observability_canvas/db/migrations
-      iqe_adapter: true
-      nav_link: true
-      seed_queries: context/iqe/queries/observability/
-
-  - key: ddc
-    kind: canvas
-    cli_name: data
-    display_name: "Data Design Canvas"
-    description: "Data lineage, schemas, synthetic data, quality."
-    env_flag: ICDEV_DDC_ENABLED
-    extra_env_flags: [ICDEV_DATA_CANVAS_ENABLED]
-    default_enabled: false
-    module: tools.data_canvas.blueprint
-    blueprint_attr: create_data_canvas_blueprint
-    url_prefix: /data
-    min_il: IL4
-    default_roles: [developer]
-    nav:
-      section: Canvases
-      label: Data
-    iqe:
-      adapter_module: tools.iqe.adapters.data
-      collections:
-        - data.lineage.edges
-        - data.classifications
-        - data.ai_decisions
-    completeness:
-      template: tools/dashboard/templates/data/page.html
-      blueprint: true
-      constants: tools/data_canvas/constants.py
-      db_migration: tools/data_canvas/db/migrations
-      iqe_adapter: true
-      nav_link: true
-      seed_queries: context/iqe/queries/data/
-
-  - key: qdc
-    kind: canvas
-    cli_name: quality
-    display_name: "Quality Design Canvas"
-    description: "Test strategy, QA/QC, runbooks."
-    env_flag: ICDEV_QDC_ENABLED
-    default_enabled: false
-    module: tools.qdc_canvas.blueprint
-    blueprint_attr: qdc_bp
-    url_prefix: /quality
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Canvases
-      label: QA/QC
-    iqe:
-      adapter_module: tools.iqe.adapters.qdc
-      collections:
-        - qdc.designs
-        - qdc.assessments
-        - qdc.gate_results
-        - qdc.ai_decisions
-    completeness:
-      template: tools/dashboard/templates/quality/page.html
-      blueprint: true
-      constants: tools/qdc_canvas/constants.py
-      db_migration: tools/qdc_canvas/db/migrations
-      iqe_adapter: true
-      nav_link: true
-      seed_queries: context/iqe/queries/quality/
-
-  - key: mdc
-    kind: canvas
-    cli_name: migration
-    display_name: "Migration Canvas"
-    description: "7Rs modernization workflows and migration intelligence."
-    env_flag: ICDEV_MIGRATION_CANVAS_ENABLED
-    default_enabled: false
-    module: tools.migration_canvas.blueprint
-    blueprint_attr: create_migration_blueprint
-    url_prefix: /migration-canvas
-    min_il: IL4
-    default_roles: [developer]
-    nav:
-      section: Canvases
-      label: Migration
-    iqe:
-      adapter_module: tools.iqe.adapters.mc
-      collections:
-        - mc.designs
-        - mc.waves
-        - mc.assessments
-        - mc.ai_decisions
-    completeness:
-      template: tools/dashboard/templates/migration-canvas/page.html
-      blueprint: true
-      constants: tools/migration_canvas/constants.py
-      db_migration: tools/migration_canvas/db/migrations
-      iqe_adapter: true
-      nav_link: true
-      seed_queries: context/iqe/queries/migration/
-
-  - key: aadc
-    kind: canvas
-    display_name: "Agentic AI Canvas"
-    description: "Agentic AI design, impact graph, assessments."
-    env_flag: ICDEV_AADC_ENABLED
-    default_enabled: false
-    module: tools.agentic_ai_canvas.blueprint
-    blueprint_attr: aadc_bp
-    url_prefix: /agentic-ai
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Canvases
-      label: Agentic AI
-    iqe:
-      adapter_module: tools.iqe.adapters.aadc
-      collections:
-        - aadc.designs
-        - aadc.assessments
-        - aadc.artifacts
-        - aadc.ai_decisions
-    completeness:
-      template: tools/dashboard/templates/agentic-ai/page.html
-      blueprint: true
-      constants: tools/agentic_ai_canvas/constants.py
-      db_migration: tools/agentic_ai_canvas/db/migrations
-      iqe_adapter: true
-      nav_link: true
-      seed_queries: context/iqe/queries/agentic-ai/
-
-  - key: aimc
-    kind: canvas
-    display_name: "AI/ML Canvas"
-    description: "AI/ML design canvas and model catalog."
-    env_flag: ICDEV_AIML_CANVAS_ENABLED
-    default_enabled: true
-    module: tools.aiml_canvas.blueprint
-    blueprint_attr: create_aiml_blueprint
-    url_prefix: /ai-ml
-    min_il: IL4
-    default_roles: [developer]
-    nav:
-      section: Canvases
-      label: AI/ML
-    iqe:
-      adapter_module: tools.iqe.adapters.aimc
-      collections:
-        - aimc.designs
-        - aimc.nodes
-        - aimc.assessments
-        - aimc.artifacts
-        - aimc.ai_decisions
-    completeness:
-      template: tools/dashboard/templates/ai-ml/page.html
-      blueprint: true
-      constants: tools/aiml_canvas/constants.py
-      db_migration: tools/aiml_canvas/db/migrations
-      iqe_adapter: true
-      nav_link: true
-      seed_queries: context/iqe/queries/ai-ml/
-
-  - key: ohc
-    kind: canvas
-    display_name: "Operations Hub Canvas"
-    description: "Operations hub, LLMOps, MLOps, SLOs, incidents."
-    env_flag: ICDEV_OPS_HUB_ENABLED
-    default_enabled: true
-    module: tools.ops_hub.blueprint
-    blueprint_attr: create_ops_hub_blueprint
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Canvases
-      label: Operations
-    iqe:
-      adapter_module: tools.iqe.adapters.ohc
-      collections:
-        - ohc.experiments
-        - ohc.runs
-        - ohc.models
-        - ohc.datasets
-        - ohc.adapters
-        - ohc.drift_events
-    completeness:
-      template: tools/dashboard/templates/ops/page.html
-      blueprint: true
-      constants: tools/ops_hub/constants.py
-      db_migration: tools/ops_hub/db/migrations
-      iqe_adapter: true
-      nav_link: true
-      seed_queries: context/iqe/queries/ops/
-
-  - key: iop
-    kind: canvas
-    display_name: "Info Ops Canvas"
-    description: "Information operations canvas."
-    env_flag: ICDEV_INFO_OPS_ENABLED
-    default_enabled: false
-    module: tools.info_ops.blueprint
-    blueprint_attr: create_info_ops_blueprint
-    url_prefix: /info-ops
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Canvases
-      label: Info Ops
-    completeness:
-      template: tools/dashboard/templates/info-ops/page.html
-      blueprint: true
-      constants: tools/info_ops/constants.py
-      db_migration: tools/info_ops/db/migrations
-      nav_link: true
-
-  - key: mission_canvas
-    kind: canvas
-    display_name: "Mission Control Canvas"
-    description: "Mission control and digital twin operations."
-    env_flag: ICDEV_MISSION_CANVAS_ENABLED
-    default_enabled: true
-    module: tools.mission_canvas.blueprint
-    blueprint_attr: create_mission_canvas_blueprint
-    url_prefix: /mission-canvas
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Canvases
-      label: Mission Control
-    iqe:
-      adapter_module: tools.iqe.adapters.mission_canvas
-      collections:
-        - mission.sessions
-        - mission.twins
-        - mission.evidence
-        - mission.alerts
-    completeness:
-      template: tools/dashboard/templates/mission-canvas/page.html
-      blueprint: true
-      constants: tools/mission_canvas/constants.py
-      db_migration: tools/mission_canvas/db/migrations
-      iqe_adapter: true
-      nav_link: true
-      seed_queries: context/iqe/queries/mission/
-
-  - key: nocc
-    kind: canvas
-    display_name: "NOC Canvas"
-    description: "Network operations center: alarms, incidents, RFCs, maintenance."
-    env_flag: ICDEV_NOCC_ENABLED
-    default_enabled: false
-    module: tools.noc_canvas.blueprint
-    blueprint_attr: create_noc_canvas_blueprint
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Canvases
-      label: NOC Operations
-    iqe:
-      adapter_module: tools.iqe.adapters.nocc
-      collections:
-        - noc.alarms
-        - noc.incidents
-        - noc.rfcs
-        - noc.mops
-        - noc.maintenance_windows
-        - noc.sla_records
-    completeness:
-      template: tools/dashboard/templates/noc/page.html
-      blueprint: true
-      constants: tools/noc_canvas/constants.py
-      db_migration: tools/noc_canvas/db/migrations
-      iqe_adapter: true
-      nav_link: true
-      seed_queries: context/iqe/queries/noc/
-
-  - key: pmc
-    kind: canvas
-    display_name: "Peering Management Canvas"
-    description: "BGP peering, IX memberships, prefixes, route policies."
-    env_flag: ICDEV_PMC_ENABLED
-    default_enabled: false
-    module: tools.pmc_canvas.blueprint
-    blueprint_attr: create_pmc_blueprint
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Canvases
-      label: Peering Management
-    iqe:
-      adapter_module: tools.iqe.adapters.pmc
-      collections:
-        - pmc.peers
-        - pmc.ix_memberships
-        - pmc.prefixes
-        - pmc.peering_requests
-        - pmc.route_policies
-    completeness:
-      template: tools/dashboard/templates/pmc/page.html
-      blueprint: true
-      constants: tools/pmc_canvas/constants.py
-      db_migration: tools/pmc_canvas/db/migrations
-      iqe_adapter: true
-      nav_link: true
-      seed_queries: context/iqe/queries/pmc/
-
-  - key: ccc
-    kind: canvas
-    display_name: "Cloud Capacity & Circuits Canvas"
-    description: "Circuits, cross-connects, LOAs, capacity plans, DWDM."
-    env_flag: ICDEV_CCC_ENABLED
-    default_enabled: false
-    module: tools.ccc_canvas.blueprint
-    blueprint_attr: create_ccc_blueprint
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Canvases
-      label: Circuit & Capacity
-    iqe:
-      adapter_module: tools.iqe.adapters.ccc
-      collections:
-        - ccc.circuits
-        - ccc.cross_connects
-        - ccc.loa
-        - ccc.capacity_plans
-        - ccc.dwdm_spans
-        - ccc.xc_orders
-    completeness:
-      template: tools/dashboard/templates/ccc/page.html
-      blueprint: true
-      constants: tools/ccc_canvas/constants.py
-      db_migration: tools/ccc_canvas/db/migrations
-      iqe_adapter: true
-      nav_link: true
-      seed_queries: context/iqe/queries/ccc/
-
-  - key: dsoc
-    kind: canvas
-    display_name: "DDoS Security Ops Canvas"
-    description: "DDoS and security operations: flowspec, RTBH, scrubbing, BGP."
-    env_flag: ICDEV_DSOC_ENABLED
-    default_enabled: false
-    module: tools.dsoc_canvas.blueprint
-    blueprint_attr: create_dsoc_blueprint
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Canvases
-      label: DDoS & Security Ops
-    iqe:
-      adapter_module: tools.iqe.adapters.dsoc
-      collections:
-        - dsoc.flowspec_rules
-        - dsoc.rtbh_entries
-        - dsoc.scrubbing_centers
-        - dsoc.threats
-        - dsoc.mitigations
-        - dsoc.bgp_hijacks
-    completeness:
-      template: tools/dashboard/templates/dsoc/page.html
-      blueprint: true
-      constants: tools/dsoc_canvas/constants.py
-      db_migration: tools/dsoc_canvas/db/migrations
-      iqe_adapter: true
-      nav_link: true
-      seed_queries: context/iqe/queries/dsoc/
-
-  - key: aiify
-    kind: canvas
-    display_name: "AI-ify"
-    description: "AI-ify opportunities, scans, roadmaps, compliance posture."
-    env_flag: ICDEV_AIIFY_ENABLED
-    default_enabled: false
-    module: tools.aiify.blueprint
-    blueprint_attr: aiify_bp
-    url_prefix: /ai-ify
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Canvases
-      label: AI-ify
-    iqe:
-      adapter_module: tools.iqe.adapters.aiify
-      collections:
-        - aiify.opportunities
-        - aiify.scans
-        - aiify.roadmaps
-        - aiify.posture
-    completeness:
-      template: tools/dashboard/templates/ai-ify/page.html
-      blueprint: true
-      constants: tools/aiify/constants.py
-      db_migration: tools/aiify/db/migrations
-      iqe_adapter: true
-      nav_link: true
-      seed_queries: context/iqe/queries/ai-ify/
-
-  - key: aiify_compat
-    kind: canvas
-    display_name: "AI-ify Compatibility"
-    description: "Backward-compatible AI-ify routes."
-    env_flag: ICDEV_AIIFY_ENABLED
-    default_enabled: false
-    module: tools.aiify.blueprint
-    blueprint_attr: aiify_compat_bp
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Canvases
-      label: AI-ify
-    completeness:
-      blueprint: true
-      nav_link: false
-
-  - key: dic
-    kind: canvas
-    display_name: "Document Intelligence Canvas"
-    description: "RAG+KG document intelligence: ingest, search, generate, classify, handoff."
-    env_flag: ICDEV_DIC_ENABLED
-    default_enabled: false
-    module: tools.document_intelligence.blueprint
-    blueprint_attr: dic_bp
-    url_prefix: /document-intelligence
-    min_il: IL4
-    default_roles: [researcher, intelligence_analyst, writer, editor, derivative_classifier, document_classification_specialist]
-    nav:
-      section: Canvases
-      label: Document Intelligence
-    iqe:
-      adapter_module: tools.iqe.adapters.dic
-      collections:
-        - dic.drift_events
-        - dic.regen_queue
-        - dic.ssp_fragments
-    completeness:
-      template: tools/dashboard/templates/document_intelligence/page.html
-      blueprint: true
-      constants: tools/document_intelligence/constants.py
-      db_migration: tools/document_intelligence/db/migrations
-      iqe_adapter: true
-      nav_link: true
-      seed_queries: context/iqe/queries/document_intelligence/
-
-  - key: demo_runner
-    kind: canvas
-    display_name: "Demo Runner"
-    description: "Interactive demo scenarios and results."
-    env_flag: ICDEV_DEMO_RUNNER_ENABLED
-    default_enabled: false
-    module: tools.showcase.blueprint
-    blueprint_attr: demo_runner_bp
-    url_prefix: /demo-runner
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Canvases
-      label: Agentic AI
-    iqe:
-      adapter_module: tools.iqe.adapters.demo_runner
-      collections:
-        - demo_runner.runs
-        - demo_runner.scenarios
-        - demo_runner.results
-    completeness:
-      template: tools/dashboard/templates/demo_runner/page.html
-      blueprint: true
-      constants: tools/showcase/constants.py
-      iqe_adapter: true
-      nav_link: true
-
-  - key: slides
-    kind: canvas
-    display_name: "Slide Deck Generator"
-    description: "Deterministic data-driven slide deck generation."
-    env_flag: ICDEV_SLIDES_ENABLED
-    default_enabled: false
-    module: tools.slides.blueprint
-    blueprint_attr: slides_bp
-    url_prefix: /slides
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Build
-      label: Presentations
-    completeness:
-      template: tools/dashboard/templates/slides/page.html
-      blueprint: true
-      constants: tools/slides/constants.py
-      iqe_adapter: false
-      nav_link: true
-      seed_queries: context/iqe/queries/slides/
-
-  - key: ace
-    kind: canvas
-    display_name: "ANVIL Co-Worker Engine"
-    description: "Autonomous co-worker teams and role-based agents."
-    env_flag: ICDEV_ACE_ENABLED
-    default_enabled: false
-    module: icdev.tools.ace.blueprint
-    blueprint_attr: ace_bp
-    url_prefix: /coworker
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Ops
-      label: Co-Worker Teams
-    iqe:
-      adapter_module: tools.iqe.adapters.ace
-      collections:
-        - ace.instances
-        - ace.coworkers
-        - ace.messages
-    completeness:
-      template: tools/dashboard/templates/ace/page.html
-      blueprint: true
-      constants: icdev/tools/ace/constants.py
-      iqe_adapter: true
-      nav_link: true
-
-  - key: aisg
-    kind: canvas
-    display_name: "AI Skills Gap"
-    description: "AI skills gap roadmaps and ROI tracking."
-    env_flag: ICDEV_AISG_ENABLED
-    default_enabled: false
-    module: tools.aisg.blueprint
-    blueprint_attr: bp
-    url_prefix: /ai-skills
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Build
-      label: AI Enablement
-    iqe:
-      adapter_module: tools.iqe.adapters.aisg
-      collections:
-        - aisg.roadmaps
-        - aisg.skills
-        - aisg.roi
-        - aisg.patterns
-    completeness:
-      template: tools/dashboard/templates/aisg/page.html
-      blueprint: true
-      constants: tools/aisg/constants.py
-      iqe_adapter: true
-      nav_link: true
-
-  - key: integrity
-    kind: canvas
-    display_name: "SIPA Software Integrity"
-    description: "Software integrity and provenance assessment."
-    env_flag: ICDEV_INTEGRITY_ENABLED
-    default_enabled: true
-    module: tools.integrity.blueprint
-    blueprint_attr: create_integrity_blueprint
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Security
-      label: SIPA
-    iqe:
-      adapter_module: tools.iqe.adapters.integrity
-      collections:
-        - integrity.assessments
-        - integrity.capabilities
-        - integrity.findings
-        - integrity.verdicts
-    completeness:
-      template: tools/dashboard/templates/integrity/page.html
-      blueprint: true
-      constants: tools/integrity/constants.py
-      iqe_adapter: true
-      nav_link: true
-
-  - key: foundry
-    kind: canvas
-    display_name: "Autonomous Capability Foundry"
-    description: "Autonomous 0-to-1 product factory."
-    env_flag: ICDEV_FOUNDRY_ENABLED
-    default_enabled: false
-    module: tools.foundry.blueprint
-    blueprint_attr: create_foundry_blueprint
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Build
-      label: Foundry
-    iqe:
-      adapter_module: tools.iqe.adapters.foundry
-      collections:
-        - foundry.concepts
-        - foundry.signals
-        - foundry.runs
-        - foundry.outcomes
-    completeness:
-      template: tools/dashboard/templates/foundry/page.html
-      blueprint: true
-      constants: tools/foundry/constants.py
-      iqe_adapter: true
-      nav_link: true
-
-  - key: logs
-    kind: canvas
-    display_name: "Log Analytics Canvas"
-    description: "Log analytics and observability."
-    env_flag: ICDEV_LOGS_ENABLED
-    default_enabled: true
-    module: tools.logging.blueprint
-    blueprint_attr: create_logs_blueprint
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Security
-      label: Logs
-    iqe:
-      adapter_module: tools.iqe.adapters.logs
-      collections:
-        - logs.entries
-    completeness:
-      template: tools/dashboard/templates/logs/page.html
-      blueprint: true
-      constants: tools/logging/constants.py
-      iqe_adapter: true
-      nav_link: true
+- key: idc
+  kind: canvas
+  cli_name: infra
+  display_name: Infrastructure Design Canvas
+  description: Cloud, IaC, Terraform, K8s manifest management.
+  env_flag: ICDEV_IDC_ENABLED
+  extra_env_flags:
+  - ICDEV_INFRA_ENABLED
+  default_enabled: false
+  module: tools.infra_canvas.blueprint
+  blueprint_attr: infra_bp
+  url_prefix: /infra
+  min_il: IL4
+  default_roles:
+  - developer
+  nav:
+    section: Canvases
+    label: Infrastructure
+  iqe:
+    adapter_module: tools.iqe.adapters.infra
+    collections:
+    - infra.resources
+    - infra.snapshots
+    - infra.ai_decisions
+  completeness:
+    template: tools/dashboard/templates/infra/page.html
+    blueprint: true
+    constants: tools/infra_canvas/constants.py
+    db_migration: tools/infra_canvas/db/migrations
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/infra/
+- key: ndc
+  kind: canvas
+  cli_name: network
+  display_name: Network Design Canvas
+  description: Topology, routing, capacity, redundancy, EOL analysis.
+  env_flag: ICDEV_NDC_ENABLED
+  extra_env_flags:
+  - ICDEV_NETWORK_ENABLED
+  default_enabled: true
+  module: tools.network.blueprint
+  blueprint_attr: create_network_blueprint
+  url_prefix: /network
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Canvases
+    label: Network
+  iqe:
+    adapter_module: tools.iqe.adapters.ndc
+    collections:
+    - network.topologies
+    - network.devices
+    - network.objects
+    - network.circuits
+    - network.sites
+    - network.ai_decisions
+    - network.partners
+    - network.agreements_expiring
+  completeness:
+    template: tools/dashboard/templates/network/page.html
+    blueprint: true
+    constants: tools/network/constants.py
+    db_migration: tools/network/db/migrations
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/network/
+- key: sdc
+  kind: canvas
+  cli_name: security
+  display_name: Security Design Canvas
+  description: Threat model, hardening, STIGs, attack-path analysis.
+  env_flag: ICDEV_SDC_ENABLED
+  extra_env_flags:
+  - ICDEV_SECURITY_ENABLED
+  default_enabled: true
+  module: tools.security_canvas.blueprint
+  blueprint_attr: create_security_blueprint
+  url_prefix: /security
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Canvases
+    label: Security
+  iqe:
+    adapter_module: tools.iqe.adapters.security
+    collections:
+    - attack.nodes
+    - attack.edges
+    - attack.paths
+    - security.ai_decisions
+  completeness:
+    template: tools/dashboard/templates/security/page.html
+    blueprint: true
+    constants: tools/security_canvas/constants.py
+    db_migration: tools/security_canvas/db/migrations
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/security/
+- key: bdc
+  kind: canvas
+  cli_name: boundary
+  display_name: Boundary & Supply Chain Canvas
+  description: ATO boundary impact, supply chain SCRM, ISA lifecycle.
+  env_flag: ICDEV_BDC_ENABLED
+  extra_env_flags:
+  - ICDEV_BOUNDARY_ENABLED
+  default_enabled: false
+  module: tools.boundary_canvas.blueprint
+  blueprint_attr: create_boundary_blueprint
+  url_prefix: /boundary
+  min_il: IL4
+  default_roles:
+  - compliance_officer
+  - isso
+  nav:
+    section: Canvases
+    label: Boundary
+  iqe:
+    adapter_module: tools.iqe.adapters.bdc
+    collections:
+    - bdc.designs
+    - bdc.assessments
+    - bdc.isas
+    - bdc.alerts
+    - bdc.ai_decisions
+  completeness:
+    template: tools/dashboard/templates/boundary/page.html
+    blueprint: true
+    constants: tools/boundary_canvas/constants.py
+    db_migration: tools/boundary_canvas/db/migrations
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/boundary/
+- key: pdc
+  kind: canvas
+  cli_name: pipeline
+  display_name: Pipeline Design Canvas
+  description: CI/CD pipeline management, worktree isolation, GitLab integration.
+  env_flag: ICDEV_PDC_ENABLED
+  extra_env_flags:
+  - ICDEV_PIPELINE_ENABLED
+  default_enabled: false
+  module: tools.pipeline.blueprint
+  blueprint_attr: create_pipeline_blueprint
+  url_prefix: /devops
+  min_il: IL4
+  default_roles:
+  - developer
+  nav:
+    section: Canvases
+    label: DevOps
+  iqe:
+    adapter_module: tools.iqe.adapters.pipeline
+    collections:
+    - pipeline.snapshots
+    - pipeline.nodes
+    - pipeline.edges
+    - pipeline.ai_decisions
+  completeness:
+    template: tools/dashboard/templates/devops/page.html
+    blueprint: true
+    constants: tools/pipeline/constants.py
+    db_migration: tools/pipeline/db/migrations
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/pipeline/
+- key: odc
+  kind: canvas
+  cli_name: observability
+  display_name: Observability Design Canvas
+  description: Logging, monitoring, distributed tracing, SRE.
+  env_flag: ICDEV_ODC_ENABLED
+  extra_env_flags:
+  - ICDEV_OBSERVABILITY_ENABLED
+  default_enabled: false
+  module: tools.observability_canvas.blueprint
+  blueprint_attr: create_observability_blueprint
+  url_prefix: /observability
+  min_il: IL4
+  default_roles:
+  - developer
+  nav:
+    section: Canvases
+    label: Observability
+  iqe:
+    adapter_module: tools.iqe.adapters.observability
+    collections:
+    - mitre.techniques
+    - mitre.coverage
+    - mitre.gaps
+    - observability.ai_decisions
+  completeness:
+    template: tools/dashboard/templates/observability/page.html
+    blueprint: true
+    constants: tools/observability_canvas/constants.py
+    db_migration: tools/observability_canvas/db/migrations
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/observability/
+- key: ddc
+  kind: canvas
+  cli_name: data
+  display_name: Data Design Canvas
+  description: Data lineage, schemas, synthetic data, quality.
+  env_flag: ICDEV_DDC_ENABLED
+  extra_env_flags:
+  - ICDEV_DATA_CANVAS_ENABLED
+  default_enabled: false
+  module: tools.data_canvas.blueprint
+  blueprint_attr: create_data_canvas_blueprint
+  url_prefix: /data
+  min_il: IL4
+  default_roles:
+  - developer
+  nav:
+    section: Canvases
+    label: Data
+  iqe:
+    adapter_module: tools.iqe.adapters.data
+    collections:
+    - data.lineage.edges
+    - data.classifications
+    - data.ai_decisions
+  completeness:
+    template: tools/dashboard/templates/data/page.html
+    blueprint: true
+    constants: tools/data_canvas/constants.py
+    db_migration: tools/data_canvas/db/migrations
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/data/
+- key: qdc
+  kind: canvas
+  cli_name: quality
+  display_name: Quality Design Canvas
+  description: Test strategy, QA/QC, runbooks.
+  env_flag: ICDEV_QDC_ENABLED
+  default_enabled: false
+  module: tools.qdc_canvas.blueprint
+  blueprint_attr: qdc_bp
+  url_prefix: /quality
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Canvases
+    label: QA/QC
+  iqe:
+    adapter_module: tools.iqe.adapters.qdc
+    collections:
+    - qdc.designs
+    - qdc.assessments
+    - qdc.gate_results
+    - qdc.ai_decisions
+  completeness:
+    template: tools/dashboard/templates/quality/page.html
+    blueprint: true
+    constants: tools/qdc_canvas/constants.py
+    db_migration: tools/qdc_canvas/db/migrations
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/quality/
+- key: mdc
+  kind: canvas
+  cli_name: migration
+  display_name: Migration Canvas
+  description: 7Rs modernization workflows and migration intelligence.
+  env_flag: ICDEV_MIGRATION_CANVAS_ENABLED
+  default_enabled: false
+  module: tools.migration_canvas.blueprint
+  blueprint_attr: create_migration_blueprint
+  url_prefix: /migration-canvas
+  min_il: IL4
+  default_roles:
+  - developer
+  nav:
+    section: Canvases
+    label: Migration
+  iqe:
+    adapter_module: tools.iqe.adapters.mc
+    collections:
+    - mc.designs
+    - mc.waves
+    - mc.assessments
+    - mc.ai_decisions
+  completeness:
+    template: tools/dashboard/templates/migration-canvas/page.html
+    blueprint: true
+    constants: tools/migration_canvas/constants.py
+    db_migration: tools/migration_canvas/db/migrations
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/migration/
+- key: aadc
+  kind: canvas
+  display_name: Agentic AI Canvas
+  description: Agentic AI design, impact graph, assessments.
+  env_flag: ICDEV_AADC_ENABLED
+  default_enabled: false
+  module: tools.agentic_ai_canvas.blueprint
+  blueprint_attr: aadc_bp
+  url_prefix: /agentic-ai
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Canvases
+    label: Agentic AI
+  iqe:
+    adapter_module: tools.iqe.adapters.aadc
+    collections:
+    - aadc.designs
+    - aadc.assessments
+    - aadc.artifacts
+    - aadc.ai_decisions
+  completeness:
+    template: tools/dashboard/templates/agentic-ai/page.html
+    blueprint: true
+    constants: tools/agentic_ai_canvas/constants.py
+    db_migration: tools/agentic_ai_canvas/db/migrations
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/agentic-ai/
+- key: aimc
+  kind: canvas
+  display_name: AI/ML Canvas
+  description: AI/ML design canvas and model catalog.
+  env_flag: ICDEV_AIML_CANVAS_ENABLED
+  default_enabled: true
+  module: tools.aiml_canvas.blueprint
+  blueprint_attr: create_aiml_blueprint
+  url_prefix: /ai-ml
+  min_il: IL4
+  default_roles:
+  - developer
+  nav:
+    section: Canvases
+    label: AI/ML
+  iqe:
+    adapter_module: tools.iqe.adapters.aimc
+    collections:
+    - aimc.designs
+    - aimc.nodes
+    - aimc.assessments
+    - aimc.artifacts
+    - aimc.ai_decisions
+  completeness:
+    template: tools/dashboard/templates/ai-ml/page.html
+    blueprint: true
+    constants: tools/aiml_canvas/constants.py
+    db_migration: tools/aiml_canvas/db/migrations
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/ai-ml/
+- key: ohc
+  kind: canvas
+  display_name: Operations Hub Canvas
+  description: Operations hub, LLMOps, MLOps, SLOs, incidents.
+  env_flag: ICDEV_OPS_HUB_ENABLED
+  default_enabled: true
+  module: tools.ops_hub.blueprint
+  blueprint_attr: create_ops_hub_blueprint
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Canvases
+    label: Operations
+  iqe:
+    adapter_module: tools.iqe.adapters.ohc
+    collections:
+    - ohc.experiments
+    - ohc.runs
+    - ohc.models
+    - ohc.datasets
+    - ohc.adapters
+    - ohc.drift_events
+  completeness:
+    template: tools/dashboard/templates/ops/page.html
+    blueprint: true
+    constants: tools/ops_hub/constants.py
+    db_migration: tools/ops_hub/db/migrations
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/ops/
+- key: iop
+  kind: canvas
+  display_name: Info Ops Canvas
+  description: Information operations canvas.
+  env_flag: ICDEV_INFO_OPS_ENABLED
+  default_enabled: false
+  module: tools.info_ops.blueprint
+  blueprint_attr: create_info_ops_blueprint
+  url_prefix: /info-ops
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Canvases
+    label: Info Ops
+  completeness:
+    template: tools/dashboard/templates/info-ops/page.html
+    blueprint: true
+    constants: tools/info_ops/constants.py
+    db_migration: tools/info_ops/db/migrations
+    nav_link: true
+- key: mission_canvas
+  kind: canvas
+  display_name: Mission Control Canvas
+  description: Mission control and digital twin operations.
+  env_flag: ICDEV_MISSION_CANVAS_ENABLED
+  default_enabled: true
+  module: tools.mission_canvas.blueprint
+  blueprint_attr: create_mission_canvas_blueprint
+  url_prefix: /mission-canvas
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Canvases
+    label: Mission Control
+    links:
+    - label: Dashboard
+      href: /mission-canvas/
+      style: color:#00bcd4;
+  iqe:
+    adapter_module: tools.iqe.adapters.mission_canvas
+    collections:
+    - mission.sessions
+    - mission.twins
+    - mission.evidence
+    - mission.alerts
+  completeness:
+    template: tools/dashboard/templates/mission-canvas/page.html
+    blueprint: true
+    constants: tools/mission_canvas/constants.py
+    db_migration: tools/mission_canvas/db/migrations
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/mission/
+- key: nocc
+  kind: canvas
+  display_name: NOC Canvas
+  description: 'Network operations center: alarms, incidents, RFCs, maintenance.'
+  env_flag: ICDEV_NOCC_ENABLED
+  default_enabled: false
+  module: tools.noc_canvas.blueprint
+  blueprint_attr: create_noc_canvas_blueprint
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Canvases
+    label: NOC Operations
+  iqe:
+    adapter_module: tools.iqe.adapters.nocc
+    collections:
+    - noc.alarms
+    - noc.incidents
+    - noc.rfcs
+    - noc.mops
+    - noc.maintenance_windows
+    - noc.sla_records
+  completeness:
+    template: tools/dashboard/templates/noc/page.html
+    blueprint: true
+    constants: tools/noc_canvas/constants.py
+    db_migration: tools/noc_canvas/db/migrations
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/noc/
+- key: pmc
+  kind: canvas
+  display_name: Peering Management Canvas
+  description: BGP peering, IX memberships, prefixes, route policies.
+  env_flag: ICDEV_PMC_ENABLED
+  default_enabled: false
+  module: tools.pmc_canvas.blueprint
+  blueprint_attr: create_pmc_blueprint
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Canvases
+    label: Peering Management
+  iqe:
+    adapter_module: tools.iqe.adapters.pmc
+    collections:
+    - pmc.peers
+    - pmc.ix_memberships
+    - pmc.prefixes
+    - pmc.peering_requests
+    - pmc.route_policies
+  completeness:
+    template: tools/dashboard/templates/pmc/page.html
+    blueprint: true
+    constants: tools/pmc_canvas/constants.py
+    db_migration: tools/pmc_canvas/db/migrations
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/pmc/
+- key: ccc
+  kind: canvas
+  display_name: Cloud Capacity & Circuits Canvas
+  description: Circuits, cross-connects, LOAs, capacity plans, DWDM.
+  env_flag: ICDEV_CCC_ENABLED
+  default_enabled: false
+  module: tools.ccc_canvas.blueprint
+  blueprint_attr: create_ccc_blueprint
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Canvases
+    label: Circuit & Capacity
+  iqe:
+    adapter_module: tools.iqe.adapters.ccc
+    collections:
+    - ccc.circuits
+    - ccc.cross_connects
+    - ccc.loa
+    - ccc.capacity_plans
+    - ccc.dwdm_spans
+    - ccc.xc_orders
+  completeness:
+    template: tools/dashboard/templates/ccc/page.html
+    blueprint: true
+    constants: tools/ccc_canvas/constants.py
+    db_migration: tools/ccc_canvas/db/migrations
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/ccc/
+- key: dsoc
+  kind: canvas
+  display_name: DDoS Security Ops Canvas
+  description: 'DDoS and security operations: flowspec, RTBH, scrubbing, BGP.'
+  env_flag: ICDEV_DSOC_ENABLED
+  default_enabled: false
+  module: tools.dsoc_canvas.blueprint
+  blueprint_attr: create_dsoc_blueprint
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Canvases
+    label: DDoS & Security Ops
+    links:
+    - label: DSOC Overview
+      href: /dsoc
+      style: color:#f87171;
+    - label: Flowspec Rules
+      href: /dsoc/flowspec
+    - label: RTBH Blackholes
+      href: /dsoc/rtbh
+    - label: Scrubbing Centers
+      href: /dsoc/scrubbing
+    - label: Threats
+      href: /dsoc/threats
+    - label: Mitigations
+      href: /dsoc/mitigations
+    - label: BGP Security
+      href: /dsoc/bgp-security
+  iqe:
+    adapter_module: tools.iqe.adapters.dsoc
+    collections:
+    - dsoc.flowspec_rules
+    - dsoc.rtbh_entries
+    - dsoc.scrubbing_centers
+    - dsoc.threats
+    - dsoc.mitigations
+    - dsoc.bgp_hijacks
+  completeness:
+    template: tools/dashboard/templates/dsoc/page.html
+    blueprint: true
+    constants: tools/dsoc_canvas/constants.py
+    db_migration: tools/dsoc_canvas/db/migrations
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/dsoc/
+- key: aiify
+  kind: canvas
+  display_name: AI-ify
+  description: AI-ify opportunities, scans, roadmaps, compliance posture.
+  env_flag: ICDEV_AIIFY_ENABLED
+  default_enabled: false
+  module: tools.aiify.blueprint
+  blueprint_attr: aiify_bp
+  url_prefix: /ai-ify
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Canvases
+    label: AI-ify
+    links:
+    - label: AI-ify
+      href: /ai-ify/
+      style: color:#6ee7b7;
+    - label: Compliance Posture
+      href: /ai-ify/posture
+  iqe:
+    adapter_module: tools.iqe.adapters.aiify
+    collections:
+    - aiify.opportunities
+    - aiify.scans
+    - aiify.roadmaps
+    - aiify.posture
+  completeness:
+    template: tools/dashboard/templates/ai-ify/page.html
+    blueprint: true
+    constants: tools/aiify/constants.py
+    db_migration: tools/aiify/db/migrations
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/ai-ify/
+- key: aiify_compat
+  kind: canvas
+  display_name: AI-ify Compatibility
+  description: Backward-compatible AI-ify routes.
+  env_flag: ICDEV_AIIFY_ENABLED
+  default_enabled: false
+  module: tools.aiify.blueprint
+  blueprint_attr: aiify_compat_bp
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Canvases
+    label: AI-ify
+  completeness:
+    blueprint: true
+    nav_link: false
+- key: dic
+  kind: canvas
+  display_name: Document Intelligence Canvas
+  description: 'RAG+KG document intelligence: ingest, search, generate, classify, handoff.'
+  env_flag: ICDEV_DIC_ENABLED
+  default_enabled: false
+  module: tools.document_intelligence.blueprint
+  blueprint_attr: dic_bp
+  url_prefix: /document-intelligence
+  min_il: IL4
+  default_roles:
+  - researcher
+  - intelligence_analyst
+  - writer
+  - editor
+  - derivative_classifier
+  - document_classification_specialist
+  nav:
+    section: Canvases
+    label: Document Intelligence
+    links:
+    - label: DIC Overview
+      href: /document-intelligence/
+      style: color:#7ab3f0;
+    - label: Collections
+      href: /document-intelligence/collections
+    - label: Search & Chat
+      href: /document-intelligence/search
+    - label: Analytics
+      href: /document-intelligence/analytics
+    - label: HITL Review
+      href: /document-intelligence/review
+    - label: AI-Assist
+      href: /document-intelligence/generate
+    - label: ACOIC
+      href: /document-intelligence/acoic
+    - label: Freshness
+      href: /document-intelligence/freshness
+    - label: Explorer
+      href: /document-intelligence/explorer
+    - label: Handoff
+      href: /document-intelligence/handoff
+    - label: 📓 Notebook
+      href: /document-intelligence/notebook
+  iqe:
+    adapter_module: tools.iqe.adapters.dic
+    collections:
+    - dic.drift_events
+    - dic.regen_queue
+    - dic.ssp_fragments
+  completeness:
+    template: tools/dashboard/templates/document_intelligence/page.html
+    blueprint: true
+    constants: tools/document_intelligence/constants.py
+    db_migration: tools/document_intelligence/db/migrations
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/document_intelligence/
+- key: demo_runner
+  kind: canvas
+  display_name: Demo Runner
+  description: Interactive demo scenarios and results.
+  env_flag: ICDEV_DEMO_RUNNER_ENABLED
+  default_enabled: false
+  module: tools.showcase.blueprint
+  blueprint_attr: demo_runner_bp
+  url_prefix: /demo-runner
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Canvases
+    label: Agentic AI
+    links:
+    - label: ▶ Demo Runner
+      href: /demo-runner/
+      style: color:#f59e0b;
+  iqe:
+    adapter_module: tools.iqe.adapters.demo_runner
+    collections:
+    - demo_runner.runs
+    - demo_runner.scenarios
+    - demo_runner.results
+  completeness:
+    template: tools/dashboard/templates/demo_runner/page.html
+    blueprint: true
+    constants: tools/showcase/constants.py
+    iqe_adapter: true
+    nav_link: true
+- key: slides
+  kind: canvas
+  display_name: Slide Deck Generator
+  description: Deterministic data-driven slide deck generation.
+  env_flag: ICDEV_SLIDES_ENABLED
+  default_enabled: false
+  module: tools.slides.blueprint
+  blueprint_attr: slides_bp
+  url_prefix: /slides
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Build
+    label: Presentations
+  completeness:
+    template: tools/dashboard/templates/slides/page.html
+    blueprint: true
+    constants: tools/slides/constants.py
+    iqe_adapter: false
+    nav_link: true
+    seed_queries: context/iqe/queries/slides/
+- key: ace
+  kind: canvas
+  display_name: ANVIL Co-Worker Engine
+  description: Autonomous co-worker teams and role-based agents.
+  env_flag: ICDEV_ACE_ENABLED
+  default_enabled: false
+  module: icdev.tools.ace.blueprint
+  blueprint_attr: ace_bp
+  url_prefix: /coworker
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Ops
+    label: Co-Worker Teams
+  iqe:
+    adapter_module: tools.iqe.adapters.ace
+    collections:
+    - ace.instances
+    - ace.coworkers
+    - ace.messages
+  completeness:
+    template: tools/dashboard/templates/ace/page.html
+    blueprint: true
+    constants: icdev/tools/ace/constants.py
+    iqe_adapter: true
+    nav_link: true
+- key: aisg
+  kind: canvas
+  display_name: AI Skills Gap
+  description: AI skills gap roadmaps and ROI tracking.
+  env_flag: ICDEV_AISG_ENABLED
+  default_enabled: false
+  module: tools.aisg.blueprint
+  blueprint_attr: bp
+  url_prefix: /ai-skills
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Build
+    label: AI Enablement
+  iqe:
+    adapter_module: tools.iqe.adapters.aisg
+    collections:
+    - aisg.roadmaps
+    - aisg.skills
+    - aisg.roi
+    - aisg.patterns
+  completeness:
+    template: tools/dashboard/templates/aisg/page.html
+    blueprint: true
+    constants: tools/aisg/constants.py
+    iqe_adapter: true
+    nav_link: true
+- key: integrity
+  kind: canvas
+  display_name: SIPA Software Integrity
+  description: Software integrity and provenance assessment.
+  env_flag: ICDEV_INTEGRITY_ENABLED
+  default_enabled: true
+  module: tools.integrity.blueprint
+  blueprint_attr: create_integrity_blueprint
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Security
+    label: SIPA
+  iqe:
+    adapter_module: tools.iqe.adapters.integrity
+    collections:
+    - integrity.assessments
+    - integrity.capabilities
+    - integrity.findings
+    - integrity.verdicts
+  completeness:
+    template: tools/dashboard/templates/integrity/page.html
+    blueprint: true
+    constants: tools/integrity/constants.py
+    iqe_adapter: true
+    nav_link: true
+- key: foundry
+  kind: canvas
+  display_name: Autonomous Capability Foundry
+  description: Autonomous 0-to-1 product factory.
+  env_flag: ICDEV_FOUNDRY_ENABLED
+  default_enabled: false
+  module: tools.foundry.blueprint
+  blueprint_attr: create_foundry_blueprint
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Build
+    label: Foundry
+  iqe:
+    adapter_module: tools.iqe.adapters.foundry
+    collections:
+    - foundry.concepts
+    - foundry.signals
+    - foundry.runs
+    - foundry.outcomes
+  completeness:
+    template: tools/dashboard/templates/foundry/page.html
+    blueprint: true
+    constants: tools/foundry/constants.py
+    iqe_adapter: true
+    nav_link: true
+- key: logs
+  kind: canvas
+  display_name: Log Analytics Canvas
+  description: Log analytics and observability.
+  env_flag: ICDEV_LOGS_ENABLED
+  default_enabled: true
+  module: tools.logging.blueprint
+  blueprint_attr: create_logs_blueprint
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Security
+    label: Logs
+  iqe:
+    adapter_module: tools.iqe.adapters.logs
+    collections:
+    - logs.entries
+  completeness:
+    template: tools/dashboard/templates/logs/page.html
+    blueprint: true
+    constants: tools/logging/constants.py
+    iqe_adapter: true
+    nav_link: true
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Child / Application Modules
   # ═══════════════════════════════════════════════════════════════════════════
-
-  - key: hitl_workflow
-    kind: child_app
-    display_name: "HITL Workflow"
-    description: "Human-in-the-loop workflow page module."
-    env_flag: ICDEV_HITL_ENABLED
-    default_enabled: false
-    module: tools.workflow_hitl.blueprint
-    blueprint_attr: create_wf_page_blueprint
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Ops
-      label: HITL
-    completeness:
-      blueprint: true
-      nav_link: true
-
-  - key: forge_academy
-    kind: child_app
-    display_name: "FORGE Academy"
-    description: "Gamified developer training."
-    env_flag: ICDEV_FORGE_ACADEMY_ENABLED
-    default_enabled: false
-    module: apps.forge_academy.blueprint
-    blueprint_attr: academy_bp
-    url_prefix: /forge-academy
-    min_il: IL2
-    default_roles: []
-    nav:
-      section: Learn
-      label: FORGE Academy
-    completeness:
-      blueprint: true
-      nav_link: true
-
-  - key: gameday
-    kind: child_app
-    display_name: "AI GameDay"
-    description: "AI-driven tabletop exercise and threat simulation."
-    env_flag: ICDEV_GAMEDAY_ENABLED
-    default_enabled: false
-    module: apps.ai_gameday.blueprint
-    blueprint_attr: bp
-    url_prefix: /gameday
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Learn
-      label: AI GameDay
-    completeness:
-      blueprint: true
-      nav_link: true
-
-  - key: innovation
-    kind: child_app
-    display_name: "Innovation Canvas"
-    description: "Innovation engine and feature discovery."
-    env_flag: ICDEV_INNOVATION_ENABLED
-    default_enabled: false
-    module: apps.innovation.blueprint
-    blueprint_attr: innovation_bp
-    url_prefix: /innovation
-    min_il: IL4
-    default_roles: [developer]
-    nav:
-      section: Build
-      label: Innovation
-    iqe:
-      adapter_module: tools.iqe.adapters.innovation
-      collections:
-        - innovation.ideas
-        - innovation.assessments
-        - innovation.pilots
-    completeness:
-      blueprint: true
-      nav_link: true
+- key: hitl_workflow
+  kind: child_app
+  display_name: HITL Workflow
+  description: Human-in-the-loop workflow page module.
+  env_flag: ICDEV_HITL_ENABLED
+  default_enabled: false
+  module: tools.workflow_hitl.blueprint
+  blueprint_attr: create_wf_page_blueprint
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Ops
+    label: HITL
+  completeness:
+    blueprint: true
+    nav_link: true
+- key: forge_academy
+  kind: child_app
+  display_name: FORGE Academy
+  description: Gamified developer training.
+  env_flag: ICDEV_FORGE_ACADEMY_ENABLED
+  default_enabled: false
+  module: apps.forge_academy.blueprint
+  blueprint_attr: academy_bp
+  url_prefix: /forge-academy
+  min_il: IL2
+  default_roles: []
+  nav:
+    section: Learn
+    label: FORGE Academy
+  completeness:
+    blueprint: true
+    nav_link: true
+- key: gameday
+  kind: child_app
+  display_name: AI GameDay
+  description: AI-driven tabletop exercise and threat simulation.
+  env_flag: ICDEV_GAMEDAY_ENABLED
+  default_enabled: false
+  module: apps.ai_gameday.blueprint
+  blueprint_attr: bp
+  url_prefix: /gameday
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Learn
+    label: AI GameDay
+  completeness:
+    blueprint: true
+    nav_link: true
+- key: innovation
+  kind: child_app
+  display_name: Innovation Canvas
+  description: Innovation engine and feature discovery.
+  env_flag: ICDEV_INNOVATION_ENABLED
+  default_enabled: false
+  module: apps.innovation.blueprint
+  blueprint_attr: innovation_bp
+  url_prefix: /innovation
+  min_il: IL4
+  default_roles:
+  - developer
+  nav:
+    section: Build
+    label: Innovation
+  iqe:
+    adapter_module: tools.iqe.adapters.innovation
+    collections:
+    - innovation.ideas
+    - innovation.assessments
+    - innovation.pilots
+  completeness:
+    blueprint: true
+    nav_link: true
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Core Extensions (registered separately in dashboard/app.py; IQE only here)
   # ═══════════════════════════════════════════════════════════════════════════
-
-  - key: cam
-    kind: core_extension
-    display_name: "Cloud Assessment Modeler"
-    description: "Cloud assessment modeling core extension."
-    env_flag: ICDEV_CAM_ENABLED
-    default_enabled: false
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    iqe:
-      adapter_module: tools.iqe.adapters.cam
-      collections:
-        - cam.projects
-        - cam.phases
-        - cam.app_components
-        - cam.ai_opportunities
-
-  - key: mc
-    kind: core_extension
-    display_name: "Migration Canvas (legacy)"
-    description: "Legacy migration canvas IQE adapter."
-    env_flag: ICDEV_MC_ENABLED
-    default_enabled: false
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    iqe:
-      adapter_module: tools.iqe.adapters.mc
-      collections:
-        - mc.designs
-        - mc.waves
-        - mc.assessments
-        - mc.ai_decisions
-
-  - key: compliance
-    kind: core_extension
-    display_name: "Compliance Core"
-    description: "Cross-framework compliance IQE adapter."
-    env_flag: ICDEV_COMPLIANCE_IQE_ENABLED
-    default_enabled: false
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    iqe:
-      adapter_module: tools.iqe.adapters.compliance
-      collections:
-        - compliance.snapshots
-        - compliance.controls
-        - compliance.violations
-
-  - key: kanban
-    kind: core_extension
-    display_name: "Kanban Core"
-    description: "Kanban task and epic IQE adapter."
-    env_flag: ICDEV_KANBAN_IQE_ENABLED
-    default_enabled: false
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    iqe:
-      adapter_module: tools.iqe.adapters.core_kanban
-      collections:
-        - kanban.tasks
-        - kanban.epics
-
-  - key: agents
-    kind: core_extension
-    display_name: "Agent Registry"
-    description: "A2A agent registry IQE adapter."
-    env_flag: ICDEV_AGENTS_IQE_ENABLED
-    default_enabled: false
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    iqe:
-      adapter_module: tools.iqe.adapters.core_agents
-      collections:
-        - agents.registry
-
-  - key: projects
-    kind: core_extension
-    display_name: "Project Registry"
-    description: "Project list IQE adapter."
-    env_flag: ICDEV_PROJECTS_IQE_ENABLED
-    default_enabled: false
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    iqe:
-      adapter_module: tools.iqe.adapters.core_agents
-      collections:
-        - projects.list
-
-  - key: govlift
-    kind: core_extension
-    display_name: "GovLift"
-    description: "GovLift cloud migration tool IQE adapter."
-    env_flag: ICDEV_GOVLIFT_ENABLED
-    default_enabled: false
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    iqe:
-      adapter_module: tools.iqe.adapters.govlift
-      collections:
-        - govlift.workloads
-        - govlift.waves
-        - govlift.migrations
-        - govlift.stig
-        - govlift.audit
-
-  - key: ai_observatory
-    kind: core_extension
-    display_name: "AI Observatory"
-    description: "AI decision traceability IQE adapter."
-    env_flag: ICDEV_AI_OBSERVATORY_ENABLED
-    default_enabled: false
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    iqe:
-      adapter_module: tools.iqe.adapters.ai_observatory
-      collections:
-        - observatory.decisions
-        - observatory.confabulation_flags
-
-  - key: ontology
-    kind: core_extension
-    display_name: "Ontology Explorer"
-    description: "Ontology exploration IQE adapter."
-    env_flag: ICDEV_ONTOLOGY_ENABLED
-    default_enabled: false
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    iqe:
-      adapter_module: tools.iqe.adapters.ontology
-      collections:
-        - ontology.classes
-        - ontology.closure
-        - ontology.alignments
-
-  - key: cache_savings
-    kind: core_extension
-    display_name: "Cache Savings"
-    description: "Cache savings IQE adapter."
-    env_flag: ICDEV_CACHE_SAVINGS_ENABLED
-    default_enabled: false
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    iqe:
-      adapter_module: tools.iqe.adapters.cache_savings
-      collections:
-        - cache.stats
-        - cache.entries
-
-  - key: strategos
-    kind: core_extension
-    display_name: "Strategos"
-    description: "Strategic intelligence IQE adapter."
-    env_flag: ICDEV_STRATEGOS_ENABLED
-    default_enabled: false
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    iqe:
-      adapter_module: tools.iqe.adapters.strategos
-      collections:
-        - strategos.signals
-        - strategos.conflict_events
-        - strategos.leadership_briefs
-        - strategos.sio_assessments
-
-  - key: supply_chain
-    kind: core_extension
-    display_name: "Supply Chain Intelligence"
-    description: "Supply chain intelligence IQE adapter."
-    env_flag: ICDEV_SUPPLY_CHAIN_ENABLED
-    default_enabled: false
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    iqe:
-      adapter_module: tools.iqe.adapters.supply_chain
-      collections:
-        - supply_chain.vendors
-        - supply_chain.scrm_risks
-        - supply_chain.cve_triage
-        - supply_chain.isa_agreements
-
-  - key: sdc_demo
-    kind: core_extension
-    display_name: "SDC Demo"
-    description: "Security design canvas demo IQE adapter."
-    env_flag: ICDEV_SDC_DEMO_ENABLED
-    default_enabled: false
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    iqe:
-      adapter_module: tools.iqe.adapters.sdc_demo
-      collections:
-        - sdc_demo.runs
-        - sdc_demo.scenarios
-        - sdc_demo.threat_summary
-        - sdc_demo.workflow_steps
-
-  - key: cpmp
-    kind: core_extension
-    display_name: "CPMP"
-    description: "Contract performance management IQE adapter."
-    env_flag: ICDEV_CPMP_ENABLED
-    default_enabled: false
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    iqe:
-      adapter_module: tools.iqe.adapters.cpmp
-      collections:
-        - cpmp.contracts
-        - cpmp.deliverables
-        - cpmp.clins
-        - cpmp.cpars
-        - cpmp.evm
+- key: cam
+  kind: core_extension
+  display_name: Cloud Assessment Modeler
+  description: Cloud assessment modeling core extension.
+  env_flag: ICDEV_CAM_ENABLED
+  default_enabled: false
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  iqe:
+    adapter_module: tools.iqe.adapters.cam
+    collections:
+    - cam.projects
+    - cam.phases
+    - cam.app_components
+    - cam.ai_opportunities
+- key: mc
+  kind: core_extension
+  display_name: Migration Canvas (legacy)
+  description: Legacy migration canvas IQE adapter.
+  env_flag: ICDEV_MC_ENABLED
+  default_enabled: false
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  iqe:
+    adapter_module: tools.iqe.adapters.mc
+    collections:
+    - mc.designs
+    - mc.waves
+    - mc.assessments
+    - mc.ai_decisions
+- key: compliance
+  kind: core_extension
+  display_name: Compliance Core
+  description: Cross-framework compliance IQE adapter.
+  env_flag: ICDEV_COMPLIANCE_IQE_ENABLED
+  default_enabled: false
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  iqe:
+    adapter_module: tools.iqe.adapters.compliance
+    collections:
+    - compliance.snapshots
+    - compliance.controls
+    - compliance.violations
+- key: kanban
+  kind: core_extension
+  display_name: Kanban Core
+  description: Kanban task and epic IQE adapter.
+  env_flag: ICDEV_KANBAN_IQE_ENABLED
+  default_enabled: false
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  iqe:
+    adapter_module: tools.iqe.adapters.core_kanban
+    collections:
+    - kanban.tasks
+    - kanban.epics
+- key: agents
+  kind: core_extension
+  display_name: Agent Registry
+  description: A2A agent registry IQE adapter.
+  env_flag: ICDEV_AGENTS_IQE_ENABLED
+  default_enabled: false
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  iqe:
+    adapter_module: tools.iqe.adapters.core_agents
+    collections:
+    - agents.registry
+- key: projects
+  kind: core_extension
+  display_name: Project Registry
+  description: Project list IQE adapter.
+  env_flag: ICDEV_PROJECTS_IQE_ENABLED
+  default_enabled: false
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  iqe:
+    adapter_module: tools.iqe.adapters.core_agents
+    collections:
+    - projects.list
+- key: govlift
+  kind: core_extension
+  display_name: GovLift
+  description: GovLift cloud migration tool IQE adapter.
+  env_flag: ICDEV_GOVLIFT_ENABLED
+  default_enabled: false
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  iqe:
+    adapter_module: tools.iqe.adapters.govlift
+    collections:
+    - govlift.workloads
+    - govlift.waves
+    - govlift.migrations
+    - govlift.stig
+    - govlift.audit
+  nav:
+    links:
+    - label: GovLift
+      href: /govlift
+      style: color:#34d399;
+    - label: Workloads
+      href: /govlift/workloads
+    - label: Waves
+      href: /govlift/waves
+    - label: Executor
+      href: /govlift/executor
+    - label: STIG
+      href: /govlift/stig
+    - label: Audit
+      href: /govlift/audit
+    section: Canvases
+    label: Cloud Migration
+- key: ai_observatory
+  kind: core_extension
+  display_name: AI Observatory
+  description: AI decision traceability IQE adapter.
+  env_flag: ICDEV_AI_OBSERVATORY_ENABLED
+  default_enabled: false
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  iqe:
+    adapter_module: tools.iqe.adapters.ai_observatory
+    collections:
+    - observatory.decisions
+    - observatory.confabulation_flags
+- key: ontology
+  kind: core_extension
+  display_name: Ontology Explorer
+  description: Ontology exploration IQE adapter.
+  env_flag: ICDEV_ONTOLOGY_ENABLED
+  default_enabled: false
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  iqe:
+    adapter_module: tools.iqe.adapters.ontology
+    collections:
+    - ontology.classes
+    - ontology.closure
+    - ontology.alignments
+- key: cache_savings
+  kind: core_extension
+  display_name: Cache Savings
+  description: Cache savings IQE adapter.
+  env_flag: ICDEV_CACHE_SAVINGS_ENABLED
+  default_enabled: false
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  iqe:
+    adapter_module: tools.iqe.adapters.cache_savings
+    collections:
+    - cache.stats
+    - cache.entries
+- key: strategos
+  kind: core_extension
+  display_name: Strategos
+  description: Strategic intelligence IQE adapter.
+  env_flag: ICDEV_STRATEGOS_ENABLED
+  default_enabled: false
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  iqe:
+    adapter_module: tools.iqe.adapters.strategos
+    collections:
+    - strategos.signals
+    - strategos.conflict_events
+    - strategos.leadership_briefs
+    - strategos.sio_assessments
+- key: supply_chain
+  kind: core_extension
+  display_name: Supply Chain Intelligence
+  description: Supply chain intelligence IQE adapter.
+  env_flag: ICDEV_SUPPLY_CHAIN_ENABLED
+  default_enabled: false
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  iqe:
+    adapter_module: tools.iqe.adapters.supply_chain
+    collections:
+    - supply_chain.vendors
+    - supply_chain.scrm_risks
+    - supply_chain.cve_triage
+    - supply_chain.isa_agreements
+  nav:
+    links:
+    - label: SCRM Dashboard
+      href: /supply_chain
+      style: color:#f0883e;
+    section: Canvases
+    label: Supply Chain
+- key: sdc_demo
+  kind: core_extension
+  display_name: SDC Demo
+  description: Security design canvas demo IQE adapter.
+  env_flag: ICDEV_SDC_DEMO_ENABLED
+  default_enabled: false
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  iqe:
+    adapter_module: tools.iqe.adapters.sdc_demo
+    collections:
+    - sdc_demo.runs
+    - sdc_demo.scenarios
+    - sdc_demo.threat_summary
+    - sdc_demo.workflow_steps
+- key: cpmp
+  kind: core_extension
+  display_name: CPMP
+  description: Contract performance management IQE adapter.
+  env_flag: ICDEV_CPMP_ENABLED
+  default_enabled: false
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  iqe:
+    adapter_module: tools.iqe.adapters.cpmp
+    collections:
+    - cpmp.contracts
+    - cpmp.deliverables
+    - cpmp.clins
+    - cpmp.cpars
+    - cpmp.evm
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # Feature Toggles (no blueprint; used by CLI and awareness engine)
+  # Feature Toggles
   # ═══════════════════════════════════════════════════════════════════════════
-
-  - key: canvas_kg
-    kind: feature
-    cli_name: canvas-kg
-    display_name: "Canvas Knowledge Graph"
-    description: "Cross-canvas knowledge graph reasoning."
-    env_flag: ICDEV_CANVAS_KG_ENABLED
-    default_enabled: false
-    url_prefix: /canvas-kg
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Canvases
-      label: Cross-Canvas
-
-  - key: rag
-    kind: feature
-    display_name: "RAG Subsystem"
-    description: "Semantic retrieval across all canvases."
-    env_flag: RAG_ENABLED
-    default_enabled: false
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Intelligence
-      label: RAG
-
-  - key: govcon
-    kind: feature
-    display_name: "GovCon Intelligence"
-    description: "GovCon capture-to-delivery: SAM.gov, proposals, CPMP. Parent-only."
-    env_flag: ICDEV_GOVCON_ENABLED
-    default_enabled: false
-    url_prefix: /govcon
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Intelligence
-      label: GovCon
-    iqe:
-      adapter_module: tools.iqe.adapters.govcon
-      collections:
-        - govcon.opportunities
-        - govcon.awards
-        - govcon.blackhat
-        - govcon.competitors
-
-  - key: finetune
-    kind: feature
-    display_name: "Fine-Tuning Pipeline"
-    description: "Local model training pipeline."
-    env_flag: FINETUNE_ENABLED
-    default_enabled: false
-    url_prefix: /finetune
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Build
-      label: Fine-Tuning
-
-  - key: filesync
-    kind: feature
-    display_name: "File Sync"
-    description: "File sync dashboard and conflict resolution."
-    env_flag: ICDEV_FILESYNC_ENABLED
-    default_enabled: false
-    url_prefix: /filesync
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: Ops
-      label: File Sync
-
-  - key: cui_banner
-    kind: feature
-    cli_name: cui-banner
-    display_name: "CUI Banner"
-    description: "Render CUI classification banner on all dashboard pages."
-    env_flag: ICDEV_CUI_BANNER_ENABLED
-    default_enabled: false
-    url_prefix: ""
-    min_il: IL2
-    default_roles: []
-    nav:
-      section: System
-      label: CUI Banner
-
-  - key: byok
-    kind: feature
-    display_name: "Bring Your Own Key"
-    description: "Tenant-level LLM key isolation."
-    env_flag: ICDEV_BYOK_ENABLED
-    default_enabled: false
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: System
-      label: BYOK
-
-  - key: two_tier_llm
-    kind: feature
-    cli_name: two-tier-llm
-    display_name: "Two-Tier LLM"
-    description: "Two-tier LLM routing with local worker + Claude review."
-    env_flag: LLM_TWO_TIER_ENABLED
-    default_enabled: false
-    url_prefix: ""
-    min_il: IL4
-    default_roles: []
-    nav:
-      section: System
-      label: Two-Tier LLM
+- key: canvas_kg
+  kind: feature
+  cli_name: canvas-kg
+  display_name: Canvas Knowledge Graph
+  description: Cross-canvas knowledge graph reasoning.
+  env_flag: ICDEV_CANVAS_KG_ENABLED
+  default_enabled: false
+  url_prefix: /canvas-kg
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Canvases
+    label: Cross-Canvas
+    links:
+    - label: Canvas KG
+      href: /canvas-kg
+      style: color:#a78bfa;
+- key: rag
+  kind: feature
+  display_name: RAG Subsystem
+  description: Semantic retrieval across all canvases.
+  env_flag: RAG_ENABLED
+  default_enabled: false
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Intelligence
+    label: RAG
+- key: govcon
+  kind: feature
+  display_name: GovCon Intelligence
+  description: 'GovCon capture-to-delivery: SAM.gov, proposals, CPMP. Parent-only.'
+  env_flag: ICDEV_GOVCON_ENABLED
+  default_enabled: false
+  url_prefix: /govcon
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Intelligence
+    label: GovCon
+  iqe:
+    adapter_module: tools.iqe.adapters.govcon
+    collections:
+    - govcon.opportunities
+    - govcon.awards
+    - govcon.blackhat
+    - govcon.competitors
+- key: finetune
+  kind: feature
+  display_name: Fine-Tuning Pipeline
+  description: Local model training pipeline.
+  env_flag: FINETUNE_ENABLED
+  default_enabled: false
+  url_prefix: /finetune
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Build
+    label: Fine-Tuning
+- key: filesync
+  kind: feature
+  display_name: File Sync
+  description: File sync dashboard and conflict resolution.
+  env_flag: ICDEV_FILESYNC_ENABLED
+  default_enabled: false
+  url_prefix: /filesync
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: Ops
+    label: File Sync
+- key: cui_banner
+  kind: feature
+  cli_name: cui-banner
+  display_name: CUI Banner
+  description: Render CUI classification banner on all dashboard pages.
+  env_flag: ICDEV_CUI_BANNER_ENABLED
+  default_enabled: false
+  url_prefix: ''
+  min_il: IL2
+  default_roles: []
+  nav:
+    section: System
+    label: CUI Banner
+- key: byok
+  kind: feature
+  display_name: Bring Your Own Key
+  description: Tenant-level LLM key isolation.
+  env_flag: ICDEV_BYOK_ENABLED
+  default_enabled: false
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: System
+    label: BYOK
+- key: two_tier_llm
+  kind: feature
+  cli_name: two-tier-llm
+  display_name: Two-Tier LLM
+  description: Two-tier LLM routing with local worker + Claude review.
+  env_flag: LLM_TWO_TIER_ENABLED
+  default_enabled: false
+  url_prefix: ''
+  min_il: IL4
+  default_roles: []
+  nav:
+    section: System
+    label: Two-Tier LLM

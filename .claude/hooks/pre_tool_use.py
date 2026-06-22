@@ -493,6 +493,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "cwk_sessions",
         # EQO Centralized Logging (eqo-log-01, migration 181) — log rows are immutable evidence (NIST AU)
         "centralized_logs",
+        # Enterprise-configurable platform (Phase 5) — component enable/profile/override audit
+        "component_audit_log",
     ]
 
     if tool_name == "Bash":

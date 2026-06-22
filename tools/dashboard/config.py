@@ -8,6 +8,8 @@ with environment variable overrides.
 import os
 from pathlib import Path
 
+from tools.config.core_profile import apply_active_profile_env_defaults, profile_default
+
 # Base directory: project root (3 levels up from this file)
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
@@ -91,6 +93,10 @@ CUI_CONFIG = _load_yaml(_cui_path) if _cui_path.exists() else {}
 # Database
 DB_PATH = os.environ.get("ICDEV_DB_PATH", str(BASE_DIR / "data" / "icdev.db"))
 
+# Active core profile defaults (env var wins, then profile, then hardcoded default)
+apply_active_profile_env_defaults()
+_PROFILE_DEFAULTS_APPLIED = True
+
 # CUI banner text
 CUI_BANNER_TOP = os.environ.get(
     "ICDEV_CUI_BANNER_TOP",
@@ -104,20 +110,22 @@ CUI_DESIGNATION = CUI_CONFIG.get("designation_indicator", {})
 CUI_PORTION_MARKING = CUI_CONFIG.get("portion_marking", "(CUI)")
 
 # Server
-PORT = int(os.environ.get("ICDEV_DASHBOARD_PORT", "5050"))
-HOST = os.environ.get("ICDEV_DASHBOARD_HOST", "0.0.0.0")  # nosec B104 — dashboard default; override via ICDEV_DASHBOARD_HOST
-DEBUG = os.environ.get("ICDEV_DASHBOARD_DEBUG", "false").lower() in ("1", "true", "yes")
+PORT = int(profile_default("ICDEV_DASHBOARD_PORT", "5050"))
+HOST = profile_default("ICDEV_DASHBOARD_HOST", "0.0.0.0")  # nosec B104 — dashboard default; override via ICDEV_DASHBOARD_HOST
+_DEBUG_VAL = str(profile_default("ICDEV_DASHBOARD_DEBUG", "false")).lower()
+DEBUG = _DEBUG_VAL in ("1", "true", "yes")
 
 # Monitoring thresholds (from monitoring_config.yaml)
 SELF_HEALING = MONITORING_CONFIG.get("self_healing", {})
 HEALTH_CHECK = MONITORING_CONFIG.get("health_check", {})
 SLA = MONITORING_CONFIG.get("sla", {})
 
-# CUI banner toggle (D173) — env var takes precedence, then args/cui_markings.yaml `enabled` key
-CUI_BANNER_ENABLED = str(os.environ.get(
+# CUI banner toggle (D173) — env var takes precedence, then active profile, then args/cui_markings.yaml
+_CUI_BANNER_DEFAULT = profile_default(
     "ICDEV_CUI_BANNER_ENABLED",
-    CUI_CONFIG.get("enabled", "false"),
-)).lower() in ("1", "true", "yes")
+    str(CUI_CONFIG.get("enabled", "false")),
+)
+CUI_BANNER_ENABLED = str(_CUI_BANNER_DEFAULT).lower() in ("1", "true", "yes")
 
 # Dashboard auth (D169-D172)
 DASHBOARD_SECRET = os.environ.get(
@@ -126,9 +134,10 @@ DASHBOARD_SECRET = os.environ.get(
 )
 
 # BYOK — Bring Your Own Key (D175-D178)
-BYOK_ENABLED = os.environ.get("ICDEV_BYOK_ENABLED", "false").lower() in ("1", "true", "yes")
+_BYOK_VAL = str(profile_default("ICDEV_BYOK_ENABLED", "false")).lower()
+BYOK_ENABLED = _BYOK_VAL in ("1", "true", "yes")
 
 BYOK_ENCRYPTION_KEY = os.environ.get("ICDEV_BYOK_ENCRYPTION_KEY", "")
 
 # Classification
-DEFAULT_CLASSIFICATION = os.environ.get("ICDEV_CLASSIFICATION", "")
+DEFAULT_CLASSIFICATION = profile_default("ICDEV_CLASSIFICATION", "")

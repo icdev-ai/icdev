@@ -24,6 +24,11 @@ Usage: icdev <subcommand> [args]
 Subcommands:
   init [target]            Scaffold a new ICDEV(TM) project (CLAUDE.md + FORGE
                            data + .claude/ + .env). Default target: cwd.
+  scaffold canvas <key>    Generate a new canvas from a Jinja2 template.
+  scaffold child-app <key> Generate a new child app from a Jinja2 template.
+  profile list             List enterprise core profiles.
+  profile show [<name>]     Show active/core profile details.
+  profile apply <name>     Apply a profile's env overrides to .env.
   enable <name> [...]      Enable canvas(es) / subsystem(s) by flipping the
                            right .env flags (e.g. boundary, security, rag).
   disable <name> [...]     Disable — flip flags to false.
@@ -58,6 +63,14 @@ def main(argv: list[str] | None = None) -> int:
     if sub in ("enable", "disable", "status", "list"):
         from icdev.tools.cli.enable import main as enable_main
         return enable_main([sub] + rest)
+
+    if sub == "scaffold":
+        from icdev.tools.cli.scaffold import main as scaffold_main
+        return scaffold_main(rest)
+
+    if sub == "profile":
+        from icdev.tools.cli.profile import main as profile_main
+        return profile_main(rest)
 
     print(f"icdev: unknown subcommand '{sub}'\n\n{USAGE}", file=sys.stderr)
     return 2
