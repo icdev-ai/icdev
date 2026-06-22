@@ -1,0 +1,30 @@
+{#
+  _banner.html — Classification / Information Banner (DSW-1)
+  Rendered at top of every page via base.html {% block global_banner %}.
+
+  Template variables (injected by brand_context_processor):
+    banner.enabled          — bool
+    banner.mode             — none | cui | secret | il6 | custom
+    banner.text             — display text
+    banner.background_color — CSS color string
+    banner.text_color       — CSS color string
+    banner.position         — top | bottom | both
+    banner.font_size        — e.g. "0.75rem"
+    banner.font_weight      — e.g. "600"
+    banner.letter_spacing   — e.g. "0.08em"
+
+  For DoD/IC: set ICDEV_BANNER_MODE=cui (or leave args/banner.yaml default)
+  For commercial: set ICDEV_BANNER_MODE=none
+  For white-label: set mode: custom in args/banner.yaml
+#}
+{% if banner is defined and banner.enabled and banner.position in ('top', 'both') %}
+<div class="icdev-banner icdev-banner-top icdev-banner-{{ banner.mode }}"
+     role="banner"
+     aria-label="Classification marking"
+     style="background-color:{{ banner.background_color }};color:{{ banner.text_color }};font-size:{{ banner.font_size }};font-weight:{{ banner.font_weight }};letter-spacing:{{ banner.letter_spacing }};">
+  {{ banner.text }}
+</div>
+{% elif cui_banner_enabled is defined and cui_banner_enabled %}
+{# Backward-compat: pre-DSW1 deployments that haven't migrated to banner.yaml #}
+<div class="cui-banner" role="banner" aria-label="Classification marking">{{ cui_banner_top }}</div>
+{% endif %}

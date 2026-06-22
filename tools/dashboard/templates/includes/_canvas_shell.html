@@ -1,0 +1,104 @@
+{#
+  _canvas_shell.html — Standardized Canvas Layout (DSW-2)
+  =========================================================
+  Intermediate template for canvases that want the standard 3-pane shell.
+  New canvases EXTEND this instead of base.html directly.
+
+  Layout (responsive flex):
+    ┌─────────────────────────────────────────────┐
+    │  [Left Pane — optional, collapsible]        │
+    │  ├──────────────────────────────────────┤   │
+    │  │  Canvas Header (title + actions)     │   │
+    │  ├──────────────────────────────────────┤   │
+    │  │  Main Content Area                   │   │
+    │  └──────────────────────────────────────┘   │
+    │  [Right Pane — optional, collapsible]       │
+    └─────────────────────────────────────────────┘
+
+  Usage — new canvas extending the shell:
+    {% extends "includes/_canvas_shell.html" %}
+    {% block canvas_has_left %}true{% endblock %}   {# opt-in left pane #}
+
+    {% block canvas_left %}
+      <h6 class="pane-section-label">Filters</h6>
+      ...
+    {% endblock %}
+
+    {% block canvas_header %}
+      <h4 class="canvas-title">My Canvas</h4>
+      <div class="ms-auto"><!-- header actions --></div>
+    {% endblock %}
+
+    {% block canvas_content %}
+      <!-- main body -->
+    {% endblock %}
+
+  Pane collapse state is persisted to localStorage (key: icdev-pane-{left|right}).
+#}
+{% extends "base.html" %}
+
+{% block content %}
+{#- Read pane opt-in flags from child block string values -#}
+{%- set _has_left = self.canvas_has_left() | trim | lower == 'true' -%}
+{%- set _has_right = self.canvas_has_right() | trim | lower == 'true' -%}
+
+<div class="canvas-shell{% if _has_left %} canvas-has-left{% endif %}{% if _has_right %} canvas-has-right{% endif %}">
+
+  {# ── Left Pane ────────────────────────────────────────────────────────── #}
+  {% if _has_left %}
+  <aside class="canvas-pane canvas-pane-left" id="canvas-pane-left" aria-label="Left panel">
+    <button class="pane-toggle pane-toggle-left"
+            onclick="ICDEV.collapsePane('left')"
+            title="Collapse left panel"
+            aria-label="Collapse left panel">‹</button>
+    <div class="pane-body">
+      {% block canvas_left %}{% endblock %}
+    </div>
+  </aside>
+  {% endif %}
+
+  {# ── Main Area ────────────────────────────────────────────────────────── #}
+  <div class="canvas-main" id="canvas-main">
+    {% if self.canvas_header() | trim %}
+    <div class="canvas-header">
+      {% block canvas_header %}{% endblock %}
+    </div>
+    {% endif %}
+
+    <div class="canvas-body">
+      {% block canvas_content %}{% endblock %}
+    </div>
+  </div>
+
+  {# ── Right Pane ───────────────────────────────────────────────────────── #}
+  {% if _has_right %}
+  <aside class="canvas-pane canvas-pane-right" id="canvas-pane-right" aria-label="Right panel">
+    <button class="pane-toggle pane-toggle-right"
+            onclick="ICDEV.collapsePane('right')"
+            title="Collapse right panel"
+            aria-label="Collapse right panel">›</button>
+    <div class="pane-body">
+      {% block canvas_right %}{% endblock %}
+    </div>
+  </aside>
+  {% endif %}
+
+</div>
+
+<script>
+(function () {
+  // Restore pane collapse state from localStorage on page load
+  ['left', 'right'].forEach(function (side) {
+    var pane = document.getElementById('canvas-pane-' + side);
+    if (!pane) return;
+    if (localStorage.getItem('icdev-pane-' + side) === 'collapsed') {
+      pane.classList.add('collapsed');
+    }
+  });
+})();
+</script>
+{% endblock %}
+
+{# ── Flag blocks — override in child to enable panes ──────────────────────── #}
+{% block canvas_has_left %}false{% endblock %}
+{% block canvas_has_right %}false{% endblock %}
