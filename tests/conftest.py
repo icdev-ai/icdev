@@ -1332,6 +1332,63 @@ CREATE TABLE IF NOT EXISTS rag_provenance_ledger (
 );
 CREATE INDEX IF NOT EXISTS idx_rag_prov_chunk ON rag_provenance_ledger(chunk_uuid);
 CREATE INDEX IF NOT EXISTS idx_rag_prov_event_type ON rag_provenance_ledger(event_type);
+
+-- SBOM component registry and supply chain risk tables (migration 209)
+CREATE TABLE IF NOT EXISTS sbom_components (
+    id              TEXT    PRIMARY KEY,
+    component_name  TEXT    NOT NULL,
+    version         TEXT,
+    vendor          TEXT,
+    component_type  TEXT,
+    purl            TEXT,
+    license         TEXT,
+    classification  TEXT    NOT NULL DEFAULT 'CUI',
+    created_at      TEXT    DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT    DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS supply_chain_vulnerabilities (
+    id                TEXT    PRIMARY KEY,
+    sbom_id           TEXT    NOT NULL REFERENCES sbom_components(id),
+    cve_id            TEXT    NOT NULL,
+    cvss_score        REAL    NOT NULL DEFAULT 0.0,
+    severity          TEXT,
+    affected_versions TEXT,
+    fixed_version     TEXT,
+    classification    TEXT    NOT NULL DEFAULT 'CUI',
+    created_at        TEXT    DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS supply_chain_risk_scores (
+    id              TEXT    PRIMARY KEY,
+    sbom_id         TEXT    NOT NULL REFERENCES sbom_components(id),
+    risk_level      TEXT,
+    exploitability  TEXT,
+    patch_available INTEGER NOT NULL DEFAULT 0,
+    last_assessed   TEXT    NOT NULL,
+    classification  TEXT    NOT NULL DEFAULT 'CUI',
+    created_at      TEXT    DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS rag_queries (
+    id              TEXT    PRIMARY KEY,
+    query_text      TEXT    NOT NULL,
+    lens            TEXT    DEFAULT 'default',
+    status          TEXT    DEFAULT 'pending'
+        CHECK(status IN ('pending', 'running', 'done', 'failed')),
+    agent_id        TEXT,
+    tenant_id       TEXT    DEFAULT '',
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    DEFAULT CURRENT_TIMESTAMP,
+    completed_at    TEXT
+);
+CREATE TABLE IF NOT EXISTS rag_citations (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    query_id        TEXT    NOT NULL REFERENCES rag_queries(id),
+    source_doc      TEXT    NOT NULL,
+    citation_text   TEXT,
+    confidence      REAL    DEFAULT 0.0,
+    tenant_id       TEXT    DEFAULT '',
+    classification  TEXT    DEFAULT 'CUI',
+    created_at      TEXT    DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 

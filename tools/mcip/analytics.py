@@ -2,8 +2,8 @@
 """MCIP DAT analytics — ingestion, DTI scoring, and query helpers."""
 from __future__ import annotations
 
-import hashlib
 import uuid
+import zlib
 from datetime import datetime, timedelta, timezone
 
 from tools.mcip.constants import DAT_SOURCE_TYPES, DTI_WEIGHTS, classify_dti
@@ -195,5 +195,5 @@ def get_recent_events(source_type: str | None = None, limit: int = 50) -> list[d
 
 
 def content_hash(text: str) -> str:
-    """Deterministic SHA-256 hash for dedup of cable content."""
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+    """Deterministic CRC-32 fingerprint for dedup of cable content."""
+    return format(zlib.crc32(text.encode("utf-8")) & 0xFFFFFFFF, "08x")

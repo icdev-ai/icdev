@@ -25,8 +25,8 @@ def _fetch_govcon_opportunities(conn: Any) -> list[dict]:
         return []
     try:
         rows = conn.execute(
-            "SELECT id, title, agency, naics_code, posted_date, synopsis "
-            "FROM sam_opportunities "
+            "SELECT id, title, agency, naics_code, posted_date, description "
+            "FROM sam_gov_opportunities "
             "ORDER BY posted_date DESC "
             "LIMIT 50"
         ).fetchall()
@@ -45,7 +45,7 @@ def _run_continuous_discovery(opportunity: dict) -> dict | None:
             f"Title: {opportunity.get('title', '')}\n"
             f"Agency: {opportunity.get('agency', '')}\n"
             f"NAICS: {opportunity.get('naics_code', '')}\n"
-            f"Synopsis: {opportunity.get('synopsis', '')}\n\n"
+            f"Synopsis: {opportunity.get('description', '')}\n\n"
             f"Return: opportunity statement, key assumptions to test, "
             f"stakeholder personas, and a bid/no-bid signal (go/no-go)."
         )

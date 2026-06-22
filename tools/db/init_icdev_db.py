@@ -408,6 +408,54 @@ CREATE TABLE IF NOT EXISTS sbom_records (
     generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS sbom_components (
+    id              TEXT    PRIMARY KEY,
+    component_name  TEXT    NOT NULL,
+    version         TEXT,
+    vendor          TEXT,
+    component_type  TEXT    CHECK(component_type IN (
+                                'library', 'framework', 'container', 'os',
+                                'firmware', 'device', 'application', 'service', 'other')),
+    purl            TEXT,
+    license         TEXT,
+    classification  TEXT    NOT NULL DEFAULT 'CUI',
+    created_at      TEXT    DEFAULT (datetime('now')),
+    updated_at      TEXT    DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_sbom_comp_name   ON sbom_components(component_name);
+CREATE INDEX IF NOT EXISTS idx_sbom_comp_vendor ON sbom_components(vendor);
+
+CREATE TABLE IF NOT EXISTS supply_chain_vulnerabilities (
+    id                TEXT    PRIMARY KEY,
+    sbom_id           TEXT    NOT NULL REFERENCES sbom_components(id),
+    cve_id            TEXT    NOT NULL,
+    cvss_score        REAL    NOT NULL DEFAULT 0.0,
+    severity          TEXT    CHECK(severity IN (
+                                  'critical', 'high', 'medium', 'low',
+                                  'informational', 'none')),
+    affected_versions TEXT,
+    fixed_version     TEXT,
+    classification    TEXT    NOT NULL DEFAULT 'CUI',
+    created_at        TEXT    DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_scv_sbom_id    ON supply_chain_vulnerabilities(sbom_id);
+CREATE INDEX IF NOT EXISTS idx_scv_cvss_score ON supply_chain_vulnerabilities(cvss_score);
+
+CREATE TABLE IF NOT EXISTS supply_chain_risk_scores (
+    id              TEXT    PRIMARY KEY,
+    sbom_id         TEXT    NOT NULL REFERENCES sbom_components(id),
+    risk_level      TEXT    CHECK(risk_level IN (
+                                'critical', 'high', 'medium', 'low', 'none')),
+    exploitability  TEXT    CHECK(exploitability IN (
+                                'functional', 'poc', 'unproven', 'not_defined')),
+    patch_available INTEGER NOT NULL DEFAULT 0,
+    last_assessed   TEXT    NOT NULL,
+    classification  TEXT    NOT NULL DEFAULT 'CUI',
+    created_at      TEXT    DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_scrs_sbom_id      ON supply_chain_risk_scores(sbom_id);
+CREATE INDEX IF NOT EXISTS idx_scrs_last_assessed ON supply_chain_risk_scores(last_assessed);
+
 -- ============================================================
 -- CODE REVIEW GATES
 -- ============================================================
