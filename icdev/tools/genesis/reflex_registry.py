@@ -121,6 +121,8 @@ REGISTRY: List[ReflexEntry] = [
     # ACE — ANVIL Co-Worker Engine reflexes
     ReflexEntry("ace_team_monitor",          SUPPORT, 6.0,
                 "ACE: detect and escalate stale co-worker instances"),
+    ReflexEntry("ace_skill_promoter",        SUPPORT, 24.0,
+                "ACE: SIPA-gated daily promotion of success-pattern candidates to roles/candidates/"),
     # PMA — Program Management Analysis reflexes
     ReflexEntry("pma_credential_monitor",    DOMAIN, 24.0,
                 "PMA: nightly credential expiry scan and SPOF dependency detection"),

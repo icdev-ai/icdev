@@ -45,6 +45,9 @@ class CoWorkerSpec:
     tool_permissions: list[str] = field(default_factory=list)
     trust_tier: str = TRUST_TIER_DEFAULT
     description: str = ""
+    # Phase 2: filesystem + routine access scope (populated from role YAML)
+    folder_access: list[dict] = field(default_factory=list)
+    icdev_tools: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -144,10 +147,14 @@ class TeamAssembler:
                 llm_function = role.llm_function
                 tool_permissions = list(role.tool_permissions)
                 trust_tier = role.trust_tier
+                folder_access = list(role.folder_access)
+                icdev_tools = list(role.icdev_tools)
             except RoleNotFoundError:
                 llm_function = ""
                 tool_permissions = []
                 trust_tier = TRUST_TIER_DEFAULT
+                folder_access = []
+                icdev_tools = []
 
             for i in range(slot.count):
                 role_slot = f"{slot.role_id}-{i}" if slot.count > 1 else slot.role_id
@@ -161,6 +168,8 @@ class TeamAssembler:
                         llm_function=llm_function,
                         tool_permissions=tool_permissions,
                         trust_tier=trust_tier,
+                        folder_access=folder_access,
+                        icdev_tools=icdev_tools,
                     )
                 )
         return specs

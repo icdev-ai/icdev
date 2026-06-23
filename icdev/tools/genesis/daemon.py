@@ -104,6 +104,7 @@ REFLEX_NAMES = [
     "integrity_monitor",
     "foundry_cycle",
     "ace_team_monitor",
+    "ace_skill_promoter",
     "pma_credential_monitor",
     "pma_int_gap_monitor",
     "skill_security_monitor",

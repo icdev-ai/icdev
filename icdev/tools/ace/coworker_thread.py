@@ -259,12 +259,48 @@ class CoWorkerThread(threading.Thread):
         except Exception as exc:
             logger.warning("[SOUL] preamble injection failed for %s: %s", self.spec.role_id, exc)
 
-        # 2. Transition to working state
+        # 2. Confidence gate (NOVA TRUST) — if coworker trust_score < 0.6 (supervised
+        #    band) require human approval before the step loop begins.
+        try:
+            from icdev.tools.ace.trust_calibrator import (
+                get_trust_score,
+                TRUST_SUPERVISED,
+            )
+            _ts = get_trust_score(self.spec.role_id)
+            if _ts < TRUST_SUPERVISED:
+                logger.info(
+                    "ace_trust_gate: coworker=%s role=%s score=%.2f < 0.6 — "
+                    "HITL required (supervised band)",
+                    self.spec.coworker_id,
+                    self.spec.role_id,
+                    _ts,
+                )
+                self._set_state("hitl_pending")
+                self._audit(
+                    "hitl_pending",
+                    f"low_confidence: trust_score={_ts:.2f} (supervised band, threshold=0.6)",
+                )
+                while not self._stop_event.is_set():
+                    pending = HITLGate.get_pending(self.spec.coworker_id)
+                    if not pending:
+                        break
+                    time.sleep(_HITL_POLL_INTERVAL)
+                if self._stop_event.is_set():
+                    return
+                self._audit("hitl_resolved", "confidence gate cleared by human approval")
+                logger.info(
+                    "ace_trust_gate: HITL resolved for %s, proceeding",
+                    self.spec.coworker_id,
+                )
+        except Exception as _tg_exc:
+            logger.debug("ace_trust_gate: check skipped: %s", _tg_exc)
+
+        # 3. Transition to working state
         self._set_state("working")
 
         executor = StepExecutor()
 
-        # 3 & 4. Execute each step; poll inbox between steps
+        # 4 & 5. Execute each step; poll inbox between steps
         for raw_step in role.steps:
             if self._stop_event.is_set():
                 break
@@ -316,6 +352,10 @@ class CoWorkerThread(threading.Thread):
 
         self._set_state("done")
         self._audit("coworker_done", "all steps completed")
+
+        # Phase 3: capture success pattern for green-tier co-workers (SIPA-gated promotion)
+        if self.spec.trust_tier == "green":
+            self._capture_success_pattern(role)
 
     # ------------------------------------------------------------------
     # Inbox message handling
@@ -573,6 +613,76 @@ class CoWorkerThread(threading.Thread):
                 conn.close()
         except Exception as _exc:
             logger.debug("ace audit write failed for %s/%s: %s", self.instance_id, action, _exc)
+
+    # ------------------------------------------------------------------
+    # Phase 3: success pattern capture
+    # ------------------------------------------------------------------
+
+    def _capture_success_pattern(self, role: Any) -> None:
+        """Persist a success pattern to ace_skill_candidates for SIPA-gated promotion.
+
+        Only called for green-tier co-workers that completed all steps without
+        error.  Best-effort — never raises or crashes the caller.
+        """
+        try:
+            import yaml
+            import uuid as _uuid
+
+            from icdev.tools.db.storage import get_canvas_connection
+
+            # Derive candidate role_id: versioned slug so it doesn't overwrite the live role
+            role_id = getattr(role, "role_id", self.spec.role_id)
+            candidate_id = str(_uuid.uuid4())
+            candidate_role_id = f"{role_id}_success_{candidate_id[:8]}"
+
+            # Build a minimal candidate YAML from the role's current proven config
+            steps = [
+                (s.name if hasattr(s, "name") else str(s)) for s in getattr(role, "steps", [])
+            ]
+            spec: dict = {
+                "role_id": candidate_role_id,
+                "display_name": f"{getattr(role, 'display_name', role_id)} (Promoted)",
+                "description": (
+                    f"Auto-promoted success pattern from role '{role_id}', "
+                    f"instance '{self.instance_id}', coworker '{self.spec.coworker_id}'."
+                ),
+                "version": "1.0",
+                "source": "promoted_candidate",
+                "trust_tier": self.spec.trust_tier,
+                "steps": steps,
+                "llm_function": getattr(self.spec, "llm_function", ""),
+                "tool_permissions": list(getattr(self.spec, "tool_permissions", [])),
+                "folder_access": list(getattr(self.spec, "folder_access", [])),
+                "icdev_tools": list(getattr(self.spec, "icdev_tools", [])),
+                "communication": dict(getattr(role, "communication", {})),
+                "genesis_reflex": getattr(role, "genesis_reflex", ""),
+            }
+            candidate_yaml = yaml.dump(spec, allow_unicode=True, sort_keys=False)
+
+            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            conn = get_canvas_connection(_DB_ENV)
+            try:
+                conn.execute(
+                    "INSERT INTO ace_skill_candidates "
+                    "(id, role_id, source_role, instance_id, candidate_yaml, trust_tier, status, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)",
+                    (candidate_id, candidate_role_id, role_id, self.instance_id, candidate_yaml, self.spec.trust_tier, now),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            self._audit(
+                "skill_candidate_captured",
+                f"candidate_id={candidate_id} source_role={role_id}",
+            )
+            logger.debug(
+                "[ACE skill] captured success pattern: candidate_id=%s role=%s",
+                candidate_id,
+                candidate_role_id,
+            )
+        except Exception as exc:
+            logger.debug("_capture_success_pattern failed for %s: %s", self.spec.coworker_id, exc)
 
     # ------------------------------------------------------------------
     # Utility

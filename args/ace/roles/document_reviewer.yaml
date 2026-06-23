@@ -10,7 +10,7 @@ version: '1.0'
 trust_tier: yellow
 default_count: 1
 max_instances: 2
-canvas: document_intelligence
+canvas: dic
 steps:
 - name: receive_draft
   tool: event_bus.subscribe

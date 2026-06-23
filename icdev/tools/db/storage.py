@@ -1291,6 +1291,56 @@ def _attach_flask_security_context(conn: "StorageConnection") -> None:
         pass
 
 
+def _resolve_zone_dsn_env() -> "str | None":
+    """Return the pg_dsn_env value for the active ICDEV_DATA_ZONE, or None.
+
+    When ICDEV_DATA_ZONE is set, look up the zone row in data_residency_zones
+    and return its pg_dsn_env column value (the name of an env var that holds
+    the zone-specific PostgreSQL DSN).  Returns None if the zone is not found
+    or the table does not yet exist (e.g. during initial migration).
+    """
+    zone_id = os.environ.get("ICDEV_DATA_ZONE")
+    if not zone_id:
+        return None
+    try:
+        import psycopg2
+        import psycopg2.extras
+
+        db_url = os.environ.get("ICDEV_DATABASE_URL")
+        ssl_kwargs = _pg_ssl_kwargs()
+        _pg_timeout = int(os.environ.get("ICDEV_PG_CONNECT_TIMEOUT", "10"))
+        _pg_options = _pg_session_options()
+        if db_url:
+            conn = psycopg2.connect(
+                db_url, connect_timeout=_pg_timeout, options=_pg_options,
+                cursor_factory=psycopg2.extras.RealDictCursor, **ssl_kwargs,
+            )
+        else:
+            conn = psycopg2.connect(
+                host=os.environ.get("ICDEV_PG_HOST", "localhost"),
+                port=int(os.environ.get("ICDEV_PG_PORT", "5432")),
+                user=os.environ.get("ICDEV_PG_USER", "icdev"),
+                password=os.environ.get("ICDEV_PG_PASSWORD", "icdev_dev_2026"),
+                dbname=os.environ.get("ICDEV_PG_DATABASE", "icdev"),
+                connect_timeout=_pg_timeout, options=_pg_options,
+                cursor_factory=psycopg2.extras.RealDictCursor,
+            )
+        with conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT pg_dsn_env FROM data_residency_zones WHERE id = %s",
+                    (zone_id,),
+                )
+                row = cur.fetchone()
+        conn.close()
+        if row:
+            return row["pg_dsn_env"]
+        get_logger(__name__).warning("ICDEV_DATA_ZONE=%r not found in data_residency_zones", zone_id)
+    except Exception as exc:  # noqa: BLE001
+        get_logger(__name__).warning("Could not resolve data zone DSN (%s)", exc)
+    return None
+
+
 def get_connection(db_path: str = None) -> StorageConnection:
     """Return a StorageConnection for the configured backend.
 
@@ -1300,12 +1350,48 @@ def get_connection(db_path: str = None) -> StorageConnection:
     so that operations (task creation, notifications) are not silently
     lost during PG outages.
 
+    When ICDEV_DATA_RESIDENCY_ENABLED=true and Flask g.tenant_id is set,
+    delegates to get_zone_connection() for per-tenant PG routing.
+
+    When ICDEV_DATA_ZONE is set, the zone's pg_dsn_env column names an env
+    var that overrides ICDEV_DATABASE_URL for that connection, routing it to
+    the zone-specific PostgreSQL instance.
+
     Returns a StorageConnection wrapper that transparently handles
     SQL translation between SQLite and PostgreSQL. When called inside a
     Flask request context the connection is automatically scoped to the
     authenticated user's tenant and classification via set_security_context.
     """
     backend = os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql").lower()
+
+    # Per-tenant data-residency routing: delegate to zone_router when enabled
+    # and a tenant is active in the current Flask request context.
+    if os.environ.get("ICDEV_DATA_RESIDENCY_ENABLED", "").lower() in ("true", "1"):
+        try:
+            from flask import g, has_request_context
+            if has_request_context():
+                tenant_id = getattr(g, "tenant_id", None)
+                if tenant_id:
+                    from tools.db.zone_router import get_zone_connection
+                    return get_zone_connection(tenant_id)
+        except (ImportError, RuntimeError):
+            pass
+
+    # Data-residency zone override: when ICDEV_DATA_ZONE is set, the zone row's
+    # pg_dsn_env names an env var that holds the zone-specific PG DSN.
+    zone_dsn_env = _resolve_zone_dsn_env()
+    if zone_dsn_env:
+        zone_db_url = os.environ.get(zone_dsn_env)
+        if zone_db_url:
+            try:
+                raw_conn = _get_pg_connection(zone_db_url)
+                conn = StorageConnection(raw_conn, "postgresql")
+                _attach_flask_security_context(conn)
+                return conn
+            except Exception as exc:  # noqa: BLE001
+                get_logger(__name__).warning(
+                    "Zone DSN from %s unreachable (%s), falling back to default", zone_dsn_env, exc
+                )
 
     # A db_path ending in '.db' selects a dedicated SQLite file ONLY when the
     # process backend is pinned to sqlite.  On a PostgreSQL-primary stack the

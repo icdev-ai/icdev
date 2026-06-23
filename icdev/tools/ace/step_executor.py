@@ -35,16 +35,21 @@ class CoWorkerSpec:
     """Declarative description of what an ACE co-worker is allowed to do.
 
     Attributes:
-        tool_permissions: Dotted import paths the co-worker may invoke
-            (e.g. ``["icdev.tools.rag.retriever.retrieve"]``).
+        tool_permissions: Dotted import paths or built-in step type names
+            (e.g. ``["icdev.tools.rag.retriever.retrieve", "FileRead"]``).
         trust_tier: Risk tier key passed to the trust kernel
             (e.g. ``"green"``, ``"yellow"``, ``"orange"``).
         name: Human-readable co-worker name (informational only).
+        folder_access: Phase 2 filesystem scope from role YAML
+            (e.g. ``[{"path": "reports/", "mode": "r"}]``).
+        icdev_tools: Phase 2 allowlisted tool commands from role YAML.
     """
 
     tool_permissions: list[str] = field(default_factory=list)
     trust_tier: str = "green"
     name: str = "ace-coworker"
+    folder_access: list[dict] = field(default_factory=list)
+    icdev_tools: list[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -131,6 +136,10 @@ def _substitute_vars(value: Any, context: dict) -> Any:
     if isinstance(value, list):
         return [_substitute_vars(item, context) for item in value]
     return value
+
+
+# Built-in step types handled directly by StepExecutor (not resolved as imports)
+_BUILT_IN_STEP_TYPES: frozenset[str] = frozenset({"FileRead", "FileWrite", "RunTool"})
 
 
 def _resolve_tool(dotted: str) -> Any:
@@ -261,35 +270,51 @@ class StepExecutor:
             )
             raise TrustKernelDeniedError(err)
 
-        # 4. Resolve the callable
-        fn = _resolve_tool(tool_path)
-
-        # 5. Substitute $variable references in args
+        # 4. Substitute $variable references in args
         resolved_args = _substitute_vars(raw_args, context)
 
-        # 6. Execute
-        try:
-            result = fn(**resolved_args)
-        except Exception as exc:
-            err = f"{type(exc).__name__}: {exc}"
-            _emit_audit(
-                step_id=step_id,
-                tool=tool_path,
-                trust_tier=spec.trust_tier,
-                success=False,
-                skipped=False,
-                error=err,
-                duration_ms=(time.monotonic() - start) * 1000,
-            )
-            raise
+        # 5a. Built-in step types (FileRead / FileWrite / RunTool)
+        if tool_path in _BUILT_IN_STEP_TYPES:
+            try:
+                result = self._run_built_in(tool_path, resolved_args, spec, context)
+            except Exception as exc:
+                err = f"{type(exc).__name__}: {exc}"
+                _emit_audit(
+                    step_id=step_id,
+                    tool=tool_path,
+                    trust_tier=spec.trust_tier,
+                    success=False,
+                    skipped=False,
+                    error=err,
+                    duration_ms=(time.monotonic() - start) * 1000,
+                )
+                raise
+        else:
+            # 5b. Resolve and call a Python callable
+            fn = _resolve_tool(tool_path)
+
+            try:
+                result = fn(**resolved_args)
+            except Exception as exc:
+                err = f"{type(exc).__name__}: {exc}"
+                _emit_audit(
+                    step_id=step_id,
+                    tool=tool_path,
+                    trust_tier=spec.trust_tier,
+                    success=False,
+                    skipped=False,
+                    error=err,
+                    duration_ms=(time.monotonic() - start) * 1000,
+                )
+                raise
 
         duration_ms = (time.monotonic() - start) * 1000
 
-        # 7. Store output in context
+        # 6. Store output in context
         if output_var:
             context[output_var] = result
 
-        # 8. Audit log
+        # 7. Audit log
         _emit_audit(
             step_id=step_id,
             tool=tool_path,
@@ -301,3 +326,61 @@ class StepExecutor:
         )
 
         return result
+
+    # ------------------------------------------------------------------
+    # Built-in step dispatch
+    # ------------------------------------------------------------------
+
+    def _run_built_in(
+        self,
+        step_type: str,
+        args: dict,
+        spec: "CoWorkerSpec",
+        context: dict,
+    ) -> Any:
+        """Dispatch FileRead / FileWrite / RunTool to their respective modules.
+
+        *spec* may be the local CoWorkerSpec (tests) or the richer
+        team_assembler.CoWorkerSpec (production).  Both carry the required
+        ``folder_access``, ``icdev_tools``, and ``trust_tier`` attributes via
+        duck typing.
+        """
+        coworker_id: str = getattr(spec, "coworker_id", getattr(spec, "name", "unknown"))
+        instance_id: str = str(context.get("instance_id", ""))
+        folder_access: list = getattr(spec, "folder_access", [])
+        icdev_tools: list = getattr(spec, "icdev_tools", [])
+
+        if step_type == "FileRead":
+            from icdev.tools.ace.file_access_broker import FileAccessBroker
+
+            path = args.get("path", "")
+            if not path:
+                raise ValueError("FileRead step requires 'path' in args")
+            broker = FileAccessBroker(folder_access)
+            return broker.read(path, coworker_id=coworker_id, instance_id=instance_id)
+
+        if step_type == "FileWrite":
+            from icdev.tools.ace.file_access_broker import FileAccessBroker
+
+            path = args.get("path", "")
+            content = args.get("content", "")
+            if not path:
+                raise ValueError("FileWrite step requires 'path' in args")
+            broker = FileAccessBroker(folder_access)
+            return broker.write(path, content, coworker_id=coworker_id, instance_id=instance_id)
+
+        if step_type == "RunTool":
+            from icdev.tools.ace.tool_runner import ToolRunner
+
+            command = args.get("command", "")
+            if not command:
+                raise ValueError("RunTool step requires 'command' in args")
+            runner = ToolRunner(icdev_tools)
+            return runner.run(
+                command,
+                coworker_id=coworker_id,
+                instance_id=instance_id,
+                trust_tier=spec.trust_tier,
+            )
+
+        raise ValueError(f"Unknown built-in step type: {step_type!r}")

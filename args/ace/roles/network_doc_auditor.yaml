@@ -9,7 +9,7 @@ version: '1.0'
 trust_tier: yellow
 default_count: 1
 max_instances: 1
-canvas: network
+canvas: ndc
 steps:
 - name: scan_network_drift
   tool: drift_detector.run_drift_check

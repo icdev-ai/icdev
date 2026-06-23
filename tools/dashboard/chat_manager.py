@@ -1045,6 +1045,16 @@ class ChatManager:
 
         if role == "user":
             _fire_intake_hook(context_id, content)
+            # ACE co-worker trigger: detect @team / implicit RICOAS signals and launch
+            if not hook_ctx.get("coworker_instance_id"):
+                try:
+                    from icdev.tools.ace.chat_trigger import detect_ace_trigger, maybe_launch_ace
+                    if detect_ace_trigger(content):
+                        _ace_id = maybe_launch_ace(context_id, content)
+                        if _ace_id:
+                            hook_ctx["coworker_instance_id"] = _ace_id
+                except Exception as _ace_exc:
+                    logger.debug("ACE trigger skipped: %s", _ace_exc)
             _check_coworker_trigger(context_id, content, hook_ctx)
             # RICOAS Adaptation 3: detect and persist corrections
             _detect_and_store_correction(context_id, content, turn_number=turn)

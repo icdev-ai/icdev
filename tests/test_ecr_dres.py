@@ -162,6 +162,82 @@ def test_zone_router_fallback(tmp_path, monkeypatch):
     conn.close()
 
 
+def test_erasure_nulls_pii(tmp_path):
+    """erase_tenant_data() nulls PII columns and writes an erasure_audit row.
+
+    Acceptance criteria (ECR-DRES-03):
+      - email / name / ip_address are set to NULL for the target tenant
+      - non-PII columns (role) are untouched
+      - other tenants' rows are untouched
+      - append-only erasure_audit row is created with correct fields
+    """
+    conn = sqlite3.connect(str(tmp_path / "test_erasure.db"))
+    conn.row_factory = sqlite3.Row
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS users (
+            id          TEXT PRIMARY KEY,
+            tenant_id   TEXT NOT NULL,
+            email       TEXT,
+            name        TEXT,
+            ip_address  TEXT,
+            role        TEXT
+        );
+        CREATE TABLE IF NOT EXISTS erasure_audit (
+            id              TEXT PRIMARY KEY,
+            tenant_id       TEXT NOT NULL,
+            requested_by    TEXT NOT NULL,
+            scope           TEXT NOT NULL DEFAULT 'pii',
+            tables_affected TEXT,
+            completed_at    TEXT NOT NULL
+        );
+    """)
+    conn.execute(
+        "INSERT INTO users (id, tenant_id, email, name, ip_address, role) "
+        "VALUES ('u1', 'acme', 'alice@acme.com', 'Alice Smith', '1.2.3.4', 'admin')"
+    )
+    conn.execute(
+        "INSERT INTO users (id, tenant_id, email, name, ip_address, role) "
+        "VALUES ('u2', 'other', 'bob@other.com', 'Bob Jones', '5.6.7.8', 'user')"
+    )
+    conn.commit()
+
+    from tools.compliance.gdpr_eraser import erase_tenant_data
+
+    result = erase_tenant_data("acme", "admin@icdev.local", conn=conn)
+
+    # PII columns for the target tenant must be NULL
+    row = conn.execute(
+        "SELECT email, name, ip_address, role FROM users WHERE id='u1'"
+    ).fetchone()
+    assert row["email"] is None, "email must be NULL after erasure"
+    assert row["name"] is None, "name must be NULL after erasure"
+    assert row["ip_address"] is None, "ip_address must be NULL after erasure"
+    assert row["role"] == "admin", "non-PII column must be untouched"
+
+    # Other tenant's data must be untouched
+    row2 = conn.execute(
+        "SELECT email, name FROM users WHERE id='u2'"
+    ).fetchone()
+    assert row2["email"] == "bob@other.com", "other tenant email must be untouched"
+    assert row2["name"] == "Bob Jones", "other tenant name must be untouched"
+
+    # Erasure audit row must be created (append-only)
+    audit = conn.execute(
+        "SELECT * FROM erasure_audit WHERE tenant_id='acme'"
+    ).fetchone()
+    assert audit is not None, "erasure_audit row must be created"
+    assert audit["requested_by"] == "admin@icdev.local"
+    assert audit["scope"] == "pii"
+    assert "users" in (audit["tables_affected"] or ""), "users must appear in tables_affected"
+
+    # Return value shape
+    assert result["erasure_id"]
+    assert result["tenant_id"] == "acme"
+    assert "users" in result["tables_affected"]
+
+    conn.close()
+
+
 def test_migration_212_module_importable():
     """Migration 212 module can be imported without error."""
     repo_root = str(

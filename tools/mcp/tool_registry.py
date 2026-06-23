@@ -6523,6 +6523,19 @@ TOOL_REGISTRY = {
             "required": ["instance_id"],
         },
     },
+    "ace_abort": {
+        "category": "ace",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_ace_abort",
+        "description": "Abort a running ACE co-worker instance. Sets its state to cancelled and stops all coworker threads.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "instance_id": {"type": "string", "description": "ACE instance ID to abort"},
+            },
+            "required": ["instance_id"],
+        },
+    },
     # ============================================================
     # CONTEXT COMPRESSION (Innovation Sig-84ab — Headroom)
     # ============================================================

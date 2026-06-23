@@ -484,8 +484,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "dd_mapping_transforms",
         # Slide Deck Generator — generation audit trail (NIST AU, append-only)
         "slides_audit",
-        # ACE (Autonomous Collaborative Engine) — step execution audit trail (NIST AU, append-only)
+        # ACE (Autonomous Collaborative Engine) — step execution audit trail + skill candidates (NIST AU, append-only)
         "ace_audit_log",
+        "ace_skill_candidates",
         # SIPA Software Integrity & Provenance Assessor (sipa-, NIST AU — assessment evidence is immutable)
         "integrity_capabilities",
         "integrity_findings",
@@ -511,6 +512,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "evidence_items",
         # ECR DRES — zone assignments are append-only audit trail (NIST AU-9, migration 212)
         "tenant_zone_assignments",
+        # ECR DRES-03 — GDPR erasure audit log (append-only NIST AU, immutable evidence of erasure)
+        "erasure_audit",
     ]
 
     if tool_name == "Bash":

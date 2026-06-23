@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-_ROLES_DIR = Path(__file__).parent.parent.parent / "args" / "ace" / "roles"
+_ROLES_DIR = Path(__file__).parents[3] / "args" / "ace" / "roles"
 _REQUIRED_FIELDS = {"role_id", "steps", "trust_tier", "tool_permissions"}
 _CACHE_TTL = 60  # seconds
 
@@ -60,6 +60,9 @@ class RoleTemplate:
     # Extended fields (optional — absent in legacy role YAMLs)
     canvas: str = ""
     personality: dict[str, Any] = field(default_factory=dict)
+    # Phase 2: filesystem + routine access scope (absent in legacy roles → empty)
+    folder_access: list[dict[str, Any]] = field(default_factory=list)
+    icdev_tools: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         # Expose listen_topics at top level for dispatcher hot-path
@@ -89,6 +92,8 @@ class RoleTemplate:
             genesis_reflex=data.get("genesis_reflex", ""),
             canvas=data.get("canvas", ""),
             personality=dict(data.get("personality") or {}),
+            folder_access=list(data.get("folder_access") or []),
+            icdev_tools=list(data.get("icdev_tools") or []),
         )
 
 
