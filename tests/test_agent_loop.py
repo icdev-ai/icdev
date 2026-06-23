@@ -34,12 +34,23 @@ class ScriptedRouter:
       - a str                       -> final text response (no tool_calls)
     """
 
-    def __init__(self, responses: list[Any], *, provider_name: str = "anthropic",
-                 supports_tools: bool = True) -> None:
+    def __init__(
+        self,
+        responses: list[Any],
+        *,
+        provider_name: str = "anthropic",
+        supports_tools: bool = True,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cost_usd: float = 0.0,
+    ) -> None:
         self._responses = list(responses)
         self.calls: list[dict[str, Any]] = []
         self._provider = FakeProvider(provider_name=provider_name)
         self._model_config = {"supports_tools": supports_tools}
+        self._input_tokens = input_tokens
+        self._output_tokens = output_tokens
+        self._cost_usd = cost_usd
 
     def get_provider_for_function(self, function: str):
         return self._provider, "fake-model", self._model_config
@@ -53,13 +64,23 @@ class ScriptedRouter:
             "tools_count": len(request.tools or []),
         })
         if isinstance(entry, str):
-            return LLMResponse(content=entry, stop_reason="end_turn", provider="fake")
+            return LLMResponse(
+                content=entry,
+                stop_reason="end_turn",
+                provider="fake",
+                input_tokens=self._input_tokens,
+                output_tokens=self._output_tokens,
+                cost_usd=self._cost_usd,
+            )
         # list of tool-call dicts
         return LLMResponse(
             content="",
             tool_calls=list(entry),
             stop_reason="tool_use",
             provider="fake",
+            input_tokens=self._input_tokens,
+            output_tokens=self._output_tokens,
+            cost_usd=self._cost_usd,
         )
 
 
@@ -276,3 +297,156 @@ class TestTurnCallback:
             on_turn=on_turn,
         )
         assert seen == [0, 1]
+
+
+# ---------------------------------------------------------------------------
+# Budget / context-window guardrails
+# ---------------------------------------------------------------------------
+
+
+class TestBudgets:
+    def test_max_total_tokens_truncates(self):
+        router = ScriptedRouter(
+            [[{"id": f"c{i}", "name": "echo", "input": {}}] for i in range(10)],
+            input_tokens=1000,
+            output_tokens=1000,
+        )
+        result = run_agent_loop(
+            router, system_prompt="s", user_prompt="u",
+            tools=[_tool("echo")], tool_handlers={"echo": lambda i, s: "r"},
+            max_iterations=10,
+            max_total_tokens=2500,
+        )
+        assert result.truncated is True
+        assert result.truncation_reason == "max_total_tokens"
+        assert result.done is False
+        # Each turn adds input+output=2000 tokens. After turn 1 total=2000 (OK);
+        # after turn 2 total=4000 > 2500, so it stops at the second turn.
+        assert result.turns == 2
+        assert result.total_input_tokens == 2000
+        assert result.total_output_tokens == 2000
+        assert "max_total_tokens=2500" in result.messages[-1]["content"]
+
+    def test_max_cost_usd_truncates(self):
+        router = ScriptedRouter(
+            [[{"id": f"c{i}", "name": "echo", "input": {}}] for i in range(10)],
+            cost_usd=1.0,
+        )
+        result = run_agent_loop(
+            router, system_prompt="s", user_prompt="u",
+            tools=[_tool("echo")], tool_handlers={"echo": lambda i, s: "r"},
+            max_iterations=10,
+            max_cost_usd=2.5,
+        )
+        assert result.truncated is True
+        assert result.truncation_reason == "max_cost_usd"
+        assert result.turns == 3
+        assert result.total_cost_usd == 3.0
+        assert "max_cost_usd=2.5000" in result.messages[-1]["content"]
+
+    def test_context_compression_triggered(self, monkeypatch):
+        long_prompt = "word " * 200  # 1000 chars ~ 250 tokens, exceeds window of 40
+        router = ScriptedRouter([[{"id": "c1", "name": "echo", "input": {}}], "done"])
+
+        calls: list[tuple[Any, dict[str, Any]]] = []
+
+        @dataclass
+        class FakeCompressed:
+            messages: list[dict[str, Any]]
+            original_tokens: int
+            compressed_tokens: int
+            compression_ratio: float
+            method: str
+
+        def fake_compress(messages, *, budget_tokens, content_type):
+            calls.append((messages, {"budget_tokens": budget_tokens, "content_type": content_type}))
+            return FakeCompressed(
+                messages=messages,
+                original_tokens=250,
+                compressed_tokens=30,
+                compression_ratio=0.12,
+                method="fake_compress",
+            )
+
+        monkeypatch.setattr(
+            "icdev.tools.llm.context_compressor.compress_messages",
+            fake_compress,
+        )
+
+        result = run_agent_loop(
+            router, system_prompt="s", user_prompt=long_prompt,
+            tools=[_tool("echo")], tool_handlers={"echo": lambda i, s: "r"},
+            max_iterations=5,
+            context_window_tokens=40,
+            compression_budget_tokens=30,
+        )
+        assert result.done is True
+        # Compression runs before each LLM turn while messages exceed the window.
+        assert len(calls) == 2
+        assert all(c[1]["budget_tokens"] == 30 for c in calls)
+        assert result.compression_events == [
+            {
+                "method": "fake_compress",
+                "original_tokens": 250,
+                "compressed_tokens": 30,
+                "compression_ratio": 0.12,
+            },
+            {
+                "method": "fake_compress",
+                "original_tokens": 250,
+                "compressed_tokens": 30,
+                "compression_ratio": 0.12,
+            },
+        ]
+
+    def test_load_budget_defaults_from_config(self):
+        from icdev.tools.llm.agent_loop import _load_budget_defaults
+
+        defaults = _load_budget_defaults()
+        assert defaults["max_total_tokens"] == 128000
+        assert defaults["context_window_tokens"] == 64000
+        assert defaults["compression_budget_tokens"] == 48000
+        assert defaults["max_cost_usd"] == 5.00
+
+
+# ---------------------------------------------------------------------------
+# Truncation reason normalization
+# ---------------------------------------------------------------------------
+
+
+class TestTruncationReason:
+    def test_completed_reason(self):
+        router = ScriptedRouter(["immediate answer"])
+        result = run_agent_loop(
+            router, system_prompt="s", user_prompt="u",
+            tools=[_tool("echo")], tool_handlers={"echo": lambda i, s: "x"},
+        )
+        assert result.done is True
+        assert result.truncated is False
+        assert result.truncation_reason == "completed"
+
+    def test_max_iterations_reason(self):
+        router = ScriptedRouter(
+            [[{"id": f"c{i}", "name": "echo", "input": {}}] for i in range(100)],
+        )
+        result = run_agent_loop(
+            router, system_prompt="s", user_prompt="u",
+            tools=[_tool("echo")], tool_handlers={"echo": lambda i, s: "r"},
+            max_iterations=2,
+        )
+        assert result.truncation_reason == "max_iterations"
+
+    def test_stop_event_reason(self):
+        router = ScriptedRouter([[{"id": "c0", "name": "echo", "input": {}}], "done"])
+        stop = threading.Event()
+
+        def echo(inp, s):
+            stop.set()
+            return "r"
+
+        result = run_agent_loop(
+            router, system_prompt="s", user_prompt="u",
+            tools=[_tool("echo")], tool_handlers={"echo": echo},
+            max_iterations=10, stop_event=stop,
+        )
+        assert result.truncation_reason == "stop_event"

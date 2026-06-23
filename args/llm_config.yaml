@@ -475,7 +475,7 @@ routing:
     effort: low
 
   code_generation:
-    chain: [qwen3-local, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
+    chain: [qwen3-local, kimi-cloud, claude-sonnet, gemini-2.5-pro, gpt-4o, codestral-local]
     effort: high
 
   saas_proxy:
@@ -1015,6 +1015,19 @@ chain_orchestration:
           - Bull case (strong buy / buy)
           - Bear case (sell / strong sell)
           - Neutral case (hold / wait)
+
+# -----------------------------------------------------------------------
+# Agent Loop Primitive Budget Defaults (D-ALG-3)
+# -----------------------------------------------------------------------
+# Default hard/soft guardrails for the reusable run_agent_loop() primitive.
+# Per-role overrides can be set in role YAML as agent_max_total_tokens,
+# agent_max_cost_usd, agent_context_window_tokens, agent_compression_budget_tokens.
+agent_loop:
+  budgets:
+    max_total_tokens: 128000
+    context_window_tokens: 64000
+    compression_budget_tokens: 48000
+    max_cost_usd: 5.00
 
 # -----------------------------------------------------------------------
 # Response Cache + Context Caching (D-CACHE-1 through D-CACHE-10)

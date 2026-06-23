@@ -225,17 +225,27 @@ class CoWorkerThread(threading.Thread):
     # ------------------------------------------------------------------
 
     def _run_inner(self) -> None:
-        # 0. Enrich context with instance-level data from DB
+        # 0. Enrich context with instance-level data from DB.
+        #    ace_instances stores the launch config (including problem_text) in
+        #    its config_json column — there is no standalone problem_text column.
         try:
+            import json as _json
             from icdev.tools.db.storage import get_canvas_connection
             _conn = get_canvas_connection(_DB_ENV)
             try:
                 _row = _conn.execute(
-                    "SELECT problem_text FROM ace_instances WHERE id = %s",
+                    "SELECT config_json FROM ace_instances WHERE id = %s",
                     (self.instance_id,),
                 ).fetchone()
                 if _row:
-                    self._ace_context["problem_text"] = dict(_row).get("problem_text", "")
+                    _cfg = dict(_row).get("config_json") or ""
+                    if isinstance(_cfg, str):
+                        try:
+                            _cfg = _json.loads(_cfg)
+                        except (ValueError, TypeError):
+                            _cfg = {}
+                    if isinstance(_cfg, dict):
+                        self._ace_context["problem_text"] = _cfg.get("problem_text", "")
             finally:
                 _conn.close()
         except Exception as _exc:
@@ -417,6 +427,10 @@ class CoWorkerThread(threading.Thread):
             return
 
         max_iter = int(getattr(role, "max_iterations", 12))
+        max_total_tokens = getattr(role, "agent_max_total_tokens", None)
+        max_cost_usd = getattr(role, "agent_max_cost_usd", None)
+        context_window_tokens = getattr(role, "agent_context_window_tokens", None)
+        compression_budget_tokens = getattr(role, "agent_compression_budget_tokens", None)
         self._audit("agent_loop_start", f"tools={tool_inventory} max_iter={max_iter}")
 
         try:
@@ -430,6 +444,10 @@ class CoWorkerThread(threading.Thread):
                 max_iterations=max_iter,
                 stop_event=self._stop_event,
                 on_turn=self._on_agent_turn,
+                max_total_tokens=max_total_tokens,
+                max_cost_usd=max_cost_usd,
+                context_window_tokens=context_window_tokens,
+                compression_budget_tokens=compression_budget_tokens,
             )
         except AgentLoopUnsupported as exc:
             # Provider can't do native tool use — fall back to step mode with audit.
@@ -473,23 +491,36 @@ class CoWorkerThread(threading.Thread):
                 return  # paused to hitl_pending (state set by _trigger_compliance_hitl)
 
     def _persist_agent_turn(self, turn: int, text: str, tool_summary: str) -> None:
-        """Write one agent-loop turn to ace_coworker_messages (best-effort)."""
+        """Write one agent-loop turn to ``ace_messages`` (best-effort).
+
+        Mirrors ``MessageBus._persist`` — the same table the dashboard's
+        ``/api/ace/<id>/messages`` endpoint reads — so agent-mode turns appear
+        in the co-worker chat view alongside step-mode messages. Uses the
+        canvas connection's placeholder style and a uuid id; ``created_at``
+        defaults to now() in the schema.
+        """
         try:
+            import json as _json
+            import uuid as _uuid
             from icdev.tools.db.storage import get_canvas_connection
 
-            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
             conn = get_canvas_connection(_DB_ENV)
             try:
                 conn.execute(
-                    "INSERT INTO ace_coworker_messages "
-                    "(instance_id, coworker_id, role, content, created_at) "
-                    "VALUES (%s, %s, %s, %s, %s)",
+                    "INSERT INTO ace_messages "
+                    "(id, instance_id, coworker_id, message_type, role, content, metadata_json) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (
+                        str(_uuid.uuid4()),
                         self.instance_id,
                         self.spec.coworker_id,
-                        f"agent:turn:{turn}",
+                        "agent_turn",
+                        "assistant",
                         f"{text}\n[tools: {tool_summary}]",
-                        now,
+                        _json.dumps(
+                            {"turn": turn, "tools": tool_summary},
+                            ensure_ascii=False,
+                        ),
                     ),
                 )
                 conn.commit()

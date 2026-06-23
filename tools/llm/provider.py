@@ -76,6 +76,7 @@ class LLMResponse:
     cache_read_input_tokens: int = 0      # D-CACHE-10: Anthropic prompt cache read savings
     duration_ms: int = 0
     stop_reason: str = ""
+    cost_usd: float = 0.0                 # Cumulative USD cost (when provider computes it)
     classification: str = "CUI"
 
 
