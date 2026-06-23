@@ -1463,6 +1463,14 @@ CREATE TABLE IF NOT EXISTS tenant_zone_assignments (
 );
 CREATE INDEX IF NOT EXISTS idx_tenant_zone_assignments_zone
     ON tenant_zone_assignments(zone_id);
+CREATE TABLE IF NOT EXISTS erasure_audit (
+    id              TEXT PRIMARY KEY,
+    tenant_id       TEXT NOT NULL,
+    requested_by    TEXT NOT NULL,
+    scope           TEXT NOT NULL DEFAULT 'pii',
+    tables_affected TEXT,
+    completed_at    TEXT NOT NULL
+);
 """
 
 

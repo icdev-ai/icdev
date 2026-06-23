@@ -608,6 +608,52 @@ def api_abort(instance_id: str):
     return jsonify({"instance_id": instance_id, "state": "cancelled", "aborted": True})
 
 
+@ace_api_bp.route("/<instance_id>/hitl", methods=["POST"])
+def api_hitl_resolve(instance_id: str):
+    """Resolve or reject a pending HITL gate for a coworker.
+
+    Body: {coworker_id, detail, approved}
+    Approved=true inserts a hitl_resolved audit row so the paused coworker
+    thread resumes.  Approved=false inserts hitl_rejected and the thread
+    stops after the next poll cycle.
+    """
+    data = request.get_json(silent=True) or {}
+    coworker_id = (data.get("coworker_id") or "").strip()
+    detail = (data.get("detail") or "").strip()
+    approved = bool(data.get("approved", True))
+    if not coworker_id or not detail:
+        return jsonify({"error": "coworker_id and detail are required"}), 400
+    try:
+        from icdev.tools.ace.coworker_thread import HITLGate
+        from icdev.tools.db.storage import get_canvas_connection
+        from datetime import datetime, timezone as _tz
+
+        if approved:
+            HITLGate.resolve(coworker_id, detail, instance_id)
+        else:
+            now = datetime.now(_tz.utc).isoformat(timespec="seconds")
+            conn = get_canvas_connection("ICDEV_ACE_DB_URL")
+            try:
+                conn.execute(
+                    "INSERT INTO ace_audit_log "
+                    "(instance_id, coworker_id, action, detail, actor, created_at) "
+                    "VALUES (?, ?, 'hitl_rejected', ?, 'hitl_gate', ?)",
+                    (instance_id, coworker_id, detail, now),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        return jsonify({
+            "instance_id": instance_id,
+            "coworker_id": coworker_id,
+            "resolved": True,
+            "approved": approved,
+        })
+    except Exception as exc:
+        logger.warning("ace hitl resolve failed for %s/%s: %s", instance_id, coworker_id, exc)
+        return jsonify({"error": str(exc)}), 500
+
+
 @ace_api_bp.route("/profiles", methods=["GET"])
 def api_profiles_list():
     """List all coworker profiles (both built-in and generated)."""

@@ -210,7 +210,7 @@ def _ensure_teardown_registered() -> None:
     released promptly rather than waiting for GC.
     """
     try:
-        from flask import current_app, g
+        from flask import current_app
 
         app = current_app._get_current_object()
         app_id = id(app)

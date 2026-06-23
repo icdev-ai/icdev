@@ -35,6 +35,15 @@ tool_permissions:
 - Grep
 - Glob
 genesis_reflex: kanban
+# Phase 2: controlled filesystem + routine access scope
+folder_access:
+  - path: ".tmp/ace/"
+    mode: "rw"
+  - path: "reports/"
+    mode: "r"
+icdev_tools:
+  - "python tools/testing/health_check.py --json"
+  - "python tools/db/storage.py --health --json"
 personality:
   domain: Software Development & Engineering
   supported_verticals:

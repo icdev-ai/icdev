@@ -888,3 +888,53 @@
 | Seed Icdev Knowledge Base | tools\govcon\seed_icdev_knowledge_base.py | Auto-registered: govcon/seed_icdev_knowledge_base.py | --json | JSON |
 | Seed Solicitation Requirements | tools\govcon\seed_solicitation_requirements.py | Auto-registered: govcon/seed_solicitation_requirements.py | --json | JSON |
 | Update Icdev Proposal Metadata | tools\govcon\update_icdev_proposal_metadata.py | Auto-registered: govcon/update_icdev_proposal_metadata.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Gdpr Eraser | tools\compliance\gdpr_eraser.py | Auto-registered: compliance/gdpr_eraser.py | --json | JSON |
+| Soc2 Collector | tools\compliance\soc2_collector.py | Auto-registered: compliance/soc2_collector.py | --json | JSON |
+| Soc2 Exporter | tools\compliance\soc2_exporter.py | Auto-registered: compliance/soc2_exporter.py | --json | JSON |
+| Vehicle Identifier | tools\govcon\vehicle_identifier.py | Auto-registered: govcon/vehicle_identifier.py | --json | JSON |
+| Dep Version Advisor | tools\installer\dep_version_advisor.py | Auto-registered: installer/dep_version_advisor.py | --json | JSON |
+| Claim Parser | tools\integrity\claim_parser.py | Auto-registered: integrity/claim_parser.py | --json | JSON |
+| Intent Reconciler | tools\integrity\intent_reconciler.py | Auto-registered: integrity/intent_reconciler.py | --json | JSON |
+| Skillspector Cache | tools\integrity\skillspector_cache.py | Auto-registered: integrity/skillspector_cache.py | --json | JSON |
+| Scheduler Control | tools\kanban\scheduler_control.py | Auto-registered: kanban/scheduler_control.py | --json | JSON |
+| Seed Ace Kanban | tools\kanban\seed_ace_kanban.py | Auto-registered: kanban/seed_ace_kanban.py | --json | JSON |
+| Seed Aisg Ship | tools\kanban\seed_aisg_ship.py | Auto-registered: kanban/seed_aisg_ship.py | --json | JSON |
+| Seed Appendix Initiatives | tools\kanban\seed_appendix_initiatives.py | Auto-registered: kanban/seed_appendix_initiatives.py | --json | JSON |
+| Seed Chyg Kanban | tools\kanban\seed_chyg_kanban.py | Auto-registered: kanban/seed_chyg_kanban.py | --json | JSON |
+| Seed Dic Kanban | tools\kanban\seed_dic_kanban.py | Auto-registered: kanban/seed_dic_kanban.py | --json | JSON |
+| Seed Irad Kanban | tools\kanban\seed_irad_kanban.py | Auto-registered: kanban/seed_irad_kanban.py | --json | JSON |
+| Seed Pma Gaps Kanban | tools\kanban\seed_pma_gaps_kanban.py | Auto-registered: kanban/seed_pma_gaps_kanban.py | --json | JSON |
+| Seed Pmo Demo Wow | tools\kanban\seed_pmo_demo_wow.py | Auto-registered: kanban/seed_pmo_demo_wow.py | --json | JSON |
+| Seed Prop Security Kanban | tools\kanban\seed_prop_security_kanban.py | Auto-registered: kanban/seed_prop_security_kanban.py | --json | JSON |
+| Seed Sipa Integrity | tools\kanban\seed_sipa_integrity.py | Auto-registered: kanban/seed_sipa_integrity.py | --json | JSON |
+| Seed Wgint | tools\kanban\seed_wgint.py | Auto-registered: kanban/seed_wgint.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Seed Zig Kanban | tools\kanban\seed_zig_kanban.py | Auto-registered: kanban/seed_zig_kanban.py | --json | JSON |
+| Skill Promotion Gate | tools\kanban\skill_promotion_gate.py | Auto-registered: kanban/skill_promotion_gate.py | --json | JSON |
+| Provider Health | tools\llm\provider_health.py | Auto-registered: llm/provider_health.py | --json | JSON |
+| Seed Demo Showcase | tools\ndc\seed_demo_showcase.py | Auto-registered: ndc/seed_demo_showcase.py | --json | JSON |
+| Synthetic Config Gen | tools\network\synthetic_config_gen.py | Auto-registered: network/synthetic_config_gen.py | --json | JSON |
+| Alert Service | tools\notification_service\alert_service.py | Auto-registered: notification_service/alert_service.py | --json | JSON |
+| Event Service | tools\notification_service\event_service.py | Auto-registered: notification_service/event_service.py | --json | JSON |
+| Handler Service | tools\notification_service\handler_service.py | Auto-registered: notification_service/handler_service.py | --json | JSON |
+| Render Handler Service | tools\notification_service\render_handler_service.py | Auto-registered: notification_service/render_handler_service.py | --json | JSON |
+| Report Service | tools\notification_service\report_service.py | Auto-registered: notification_service/report_service.py | --json | JSON |
+| Osint Ingestor | tools\osint\osint_ingestor.py | Auto-registered: osint/osint_ingestor.py | --json | JSON |
+| Hacker News | tools\platform_connectors\hacker_news.py | Auto-registered: platform_connectors/hacker_news.py | --json | JSON |
+| Credential Monitor | tools\pma\credential_monitor.py | Auto-registered: pma/credential_monitor.py | --json | JSON |
+| Int Gap Monitor | tools\pma\int_gap_monitor.py | Auto-registered: pma/int_gap_monitor.py | --json | JSON |
+| Meeting Coordinator | tools\pma\meeting_coordinator.py | Auto-registered: pma/meeting_coordinator.py | --json | JSON |
+| Entitlement Rag | tools\rag\entitlement_rag.py | Auto-registered: rag/entitlement_rag.py | --json | JSON |
+| Zig Activity Tracker | tools\security_canvas\zig_activity_tracker.py | Auto-registered: security_canvas/zig_activity_tracker.py | --json | JSON |
+| Zig Artifact Generator | tools\security_canvas\zig_artifact_generator.py | Auto-registered: security_canvas/zig_artifact_generator.py | --json | JSON |
+| Zig Assessor | tools\security_canvas\zig_assessor.py | Auto-registered: security_canvas/zig_assessor.py | --json | JSON |
+| Zig External Adapter | tools\security_canvas\zig_external_adapter.py | Auto-registered: security_canvas/zig_external_adapter.py | --json | JSON |

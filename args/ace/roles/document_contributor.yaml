@@ -8,7 +8,7 @@ version: '1.0'
 trust_tier: yellow
 default_count: 2
 max_instances: 4
-canvas: document_intelligence
+canvas: dic
 steps:
 - name: receive_section_assignment
   tool: event_bus.subscribe

@@ -408,6 +408,43 @@ def create_admin_blueprint() -> Blueprint | None:
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
+    # ------------------------------------------------------------------ #
+    # REST API — GDPR Erasure
+    # ------------------------------------------------------------------ #
+
+    @bp.route("/api/admin/tenants/<tenant_id>/erasure", methods=["POST"])
+    def api_erasure(tenant_id: str):
+        """Initiate GDPR right-to-erasure for a tenant.
+
+        Body JSON:
+            confirmation_token (str, required) — must equal the literal string
+                "CONFIRM_ERASURE" to prevent accidental triggering.
+            scope (str, optional) — defaults to 'pii'.
+        """
+        payload = request.get_json(silent=True) or {}
+        token = payload.get("confirmation_token", "")
+        if token != "CONFIRM_ERASURE":
+            return jsonify({"error": "confirmation_token must be 'CONFIRM_ERASURE'"}), 400
+
+        scope = str(payload.get("scope") or "pii")
+        user = getattr(g, "current_user", None) or {}
+        requested_by = str(user.get("email") or user.get("id") or "admin")
+
+        try:
+            from tools.compliance.gdpr_eraser import erase_tenant_data
+            result = erase_tenant_data(tenant_id, requested_by, scope)
+        except Exception as exc:
+            log.error("GDPR erasure failed for tenant %s: %s", tenant_id, exc)
+            return jsonify({"error": str(exc)}), 500
+
+        log.info(
+            "GDPR erasure completed: tenant=%s by=%s tables=%s",
+            tenant_id,
+            requested_by,
+            result["tables_affected"],
+        )
+        return jsonify(result), 200
+
     @bp.route("/api/admin/stats", methods=["GET"])
     def api_stats():
         """Return admin console summary stats."""

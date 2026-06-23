@@ -24,6 +24,13 @@ INSTANCE_STATES: tuple[str, ...] = (
     "cancelled",
 )
 
+SKILL_CANDIDATE_STATUSES: tuple[str, ...] = (
+    "pending",
+    "promoted",   # SIPA passed → written to roles/candidates/ for human review
+    "rejected",   # SIPA failed or TDD gate rejected
+    "skipped",    # duplicate of an existing candidate
+)
+
 COWORKER_STATES: tuple[str, ...] = (
     "idle",
     "active",
@@ -47,6 +54,7 @@ def _check(values: tuple[str, ...]) -> str:
 
 _CHECK_INSTANCE_STATE = _check(INSTANCE_STATES)
 _CHECK_COWORKER_STATE = _check(COWORKER_STATES)
+_CHECK_SKILL_STATUS = _check(SKILL_CANDIDATE_STATUSES)
 
 SCHEMA = f"""
 CREATE TABLE IF NOT EXISTS ace_instances (
@@ -118,6 +126,7 @@ CREATE TABLE IF NOT EXISTS ace_audit_log (
     detail          TEXT NOT NULL DEFAULT '',
     actor           TEXT NOT NULL DEFAULT 'system',
     classification  TEXT NOT NULL DEFAULT 'CUI',
+    control_refs    TEXT NOT NULL DEFAULT '',
     created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_ace_audit_instance ON ace_audit_log(instance_id);
@@ -151,6 +160,23 @@ CREATE TABLE IF NOT EXISTS ace_event_results (
     created_at      TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_ace_event_results_event ON ace_event_results(event_id);
+
+CREATE TABLE IF NOT EXISTS ace_skill_candidates (
+    id                    TEXT PRIMARY KEY,
+    role_id               TEXT NOT NULL,
+    source_role           TEXT NOT NULL DEFAULT '',
+    instance_id           TEXT NOT NULL DEFAULT '',
+    candidate_yaml        TEXT NOT NULL DEFAULT '',
+    trust_tier            TEXT NOT NULL DEFAULT 'yellow',
+    status                TEXT NOT NULL DEFAULT 'pending' CHECK(status {_CHECK_SKILL_STATUS}),
+    sipa_verdict          TEXT,
+    sipa_score            REAL,
+    rejection_reason      TEXT,
+    created_at            TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    resolved_at           TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_ace_skill_candidates_status ON ace_skill_candidates(status);
+CREATE INDEX IF NOT EXISTS idx_ace_skill_candidates_role ON ace_skill_candidates(role_id);
 """
 
 # ---------------------------------------------------------------------------
@@ -166,6 +192,14 @@ def init() -> None:
     try:
         conn.executescript(SCHEMA)
         conn.commit()
+        # Phase 4: add control_refs to existing ace_audit_log installs (idempotent)
+        try:
+            conn.execute(
+                "ALTER TABLE ace_audit_log ADD COLUMN control_refs TEXT NOT NULL DEFAULT ''"
+            )
+            conn.commit()
+        except Exception:
+            pass  # column already exists — safe to ignore
     finally:
         conn.close()
 

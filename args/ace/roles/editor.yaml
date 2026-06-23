@@ -12,7 +12,7 @@ version: '1.1'
 trust_tier: yellow
 default_count: 1
 max_instances: 2
-canvas: document_intelligence
+canvas: dic
 steps:
 - receive_writer_draft
 - detect_content_domain

@@ -2005,6 +2005,27 @@ def handle_ace_status(args: dict) -> dict:
         return {"error": str(exc)}
 
 
+def handle_ace_abort(args: dict) -> dict:
+    """Abort a running ACE co-worker instance."""
+    instance_id = args.get("instance_id", "")
+    if not instance_id:
+        return {"error": "instance_id is required"}
+    try:
+        from icdev.tools.ace.controller import ACEController
+
+        ACEController.get_instance().abort(instance_id)
+        return {"instance_id": instance_id, "state": "cancelled", "aborted": True}
+    except ImportError:
+        return {
+            "error": "ACEController not yet available (ace-runtime not shipped)",
+            "instance_id": instance_id,
+            "state": "unavailable",
+        }
+    except Exception as exc:
+        logger.warning("handle_ace_abort: %s", exc)
+        return {"error": str(exc)}
+
+
 def handle_cod_invoke(args: dict) -> dict:
     """Invoke Chain of Debate via ChainOrchestrator."""
     try:
