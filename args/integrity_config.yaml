@@ -134,3 +134,14 @@ known_safe_filesystem_modules:
 known_safe_process_exec_modules:
   - tools/testing/cleanup_utils.py  # Signal-aware subprocess wrapper (run_with_cleanup) for graceful CI shutdown; subprocess.Popen tracks the active child so SIGTERM/SIGINT handlers can terminate it before the runner exits. Authorized by REQ-TESTING-GRACEFUL-SHUTDOWN-01 (pgp-vfy-03-d4).
   - testing/cleanup_utils.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+
+# ---------------------------------------------------------------------------
+# Known-safe ICDEV modules that legitimately use base64 decode as part of a
+# documented protocol requirement — NOT intent concealment. Adding a module
+# path here suppresses the unauthorized_capability 'obfuscation' finding in
+# Mode A (provenance_aware) self-scans only; it has no effect on
+# external-artifact assessments.
+# ---------------------------------------------------------------------------
+known_safe_obfuscation_modules:
+  - tools/auth/saml.py  # process_acs_response() decodes base64-encoded SAML XML from the IdP ACS POST — required by SAML 2.0 HTTP-POST binding spec; decodes to plaintext XML immediately (no exec/eval). Authorized by REQ-AUTH-SAML-BASE64-DECODE-01.
+  - auth/saml.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
