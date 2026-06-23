@@ -22,6 +22,9 @@
     <li class="nav-item">
       <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-sso">SSO Providers</button>
     </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-evidence" onclick="loadEvidence()">Evidence</button>
+    </li>
   </ul>
 
   <div class="tab-content">
@@ -126,6 +129,42 @@
   </div><!-- tab-content -->
 </div>
 
+    <!-- Tab 5: SOC 2 Evidence -->
+    <div class="tab-pane fade" id="tab-evidence">
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">SOC 2 Evidence Items</span>
+          <div class="d-flex gap-2 align-items-center">
+            <input type="text" id="evidence-tenant-input" class="form-control form-control-sm"
+                   style="width:160px" placeholder="tenant-id" value="default">
+            <select id="evidence-ctrl-filter" class="form-select form-select-sm" style="width:140px">
+              <option value="">All Controls</option>
+            </select>
+            <button class="btn btn-sm btn-outline-primary" onclick="loadEvidence()">Refresh</button>
+            <a id="evidence-export-link" href="#" onclick="exportEvidence(event)"
+               class="btn btn-sm btn-outline-success">Export HTML</a>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div id="evidence-loading" class="p-3 text-muted small">Click Refresh or the Evidence tab to load.</div>
+          <table class="table table-sm table-hover mb-0 d-none" id="evidence-table">
+            <thead class="table-light">
+              <tr>
+                <th>Control</th>
+                <th>Framework</th>
+                <th>Type</th>
+                <th>Source</th>
+                <th>Summary</th>
+                <th>Collected At</th>
+                <th>Collector</th>
+              </tr>
+            </thead>
+            <tbody id="evidence-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
 <!-- SSO Add/Edit Modal -->
 <div class="modal fade" id="ssoModal" tabindex="-1" aria-labelledby="ssoModalTitle" aria-hidden="true">
   <div class="modal-dialog modal-lg">
@@ -188,6 +227,7 @@ const API = {
   setOverride: (tid, key) => `/api/admin/tenants/${encodeURIComponent(tid)}/components/${key}`,
   audit: '/api/admin/audit/component-changes',
   grants: '/api/admin/audit/access-grants',
+  evidence: (tid, ctrl) => `/api/admin/tenants/${encodeURIComponent(tid)}/evidence` + (ctrl ? `?control_id=${encodeURIComponent(ctrl)}` : ''),
 };
 
 function badge(enabled) {
@@ -398,6 +438,54 @@ async function disableSSO(pid) {
   }
 }
 // ── End SSO Providers ───────────────────────────────────────────────
+
+// ── SOC 2 Evidence ──────────────────────────────────────────────────
+async function loadEvidence() {
+  const tid = document.getElementById('evidence-tenant-input').value.trim() || 'default';
+  const ctrl = document.getElementById('evidence-ctrl-filter').value;
+  document.getElementById('evidence-loading').textContent = 'Loading…';
+  document.getElementById('evidence-loading').classList.remove('d-none');
+  document.getElementById('evidence-table').classList.add('d-none');
+  try {
+    const resp = await fetch(API.evidence(tid, ctrl));
+    const data = await resp.json();
+    const tbody = document.getElementById('evidence-tbody');
+    const ctrlSel = document.getElementById('evidence-ctrl-filter');
+    // Populate control filter if empty
+    if (ctrlSel.options.length <= 1 && data.controls) {
+      data.controls.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c; opt.textContent = c;
+        ctrlSel.appendChild(opt);
+      });
+    }
+    tbody.innerHTML = '';
+    for (const e of (data.items || [])) {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td><strong>${e.control_id}</strong></td>
+        <td><span class="badge bg-info text-dark">${e.framework}</span></td>
+        <td><span class="badge bg-secondary">${e.evidence_type || '—'}</span></td>
+        <td class="small text-muted">${e.source_table || '—'}${e.source_row_id ? ':' + e.source_row_id.substring(0,8) + '…' : ''}</td>
+        <td class="small">${e.summary || '—'}</td>
+        <td class="small text-muted">${(e.collected_at||'').substring(0,19)}</td>
+        <td class="small text-muted">${e.collector}</td>`;
+      tbody.appendChild(row);
+    }
+    document.getElementById('evidence-loading').classList.add('d-none');
+    document.getElementById('evidence-table').classList.remove('d-none');
+    if (!(data.items?.length)) tbody.innerHTML = '<tr><td colspan="7" class="text-muted p-3">No evidence items. Run the collector first.</td></tr>';
+  } catch(e) {
+    document.getElementById('evidence-loading').textContent = 'Error: ' + e;
+  }
+}
+
+async function exportEvidence(evt) {
+  evt.preventDefault();
+  const tid = document.getElementById('evidence-tenant-input').value.trim() || 'default';
+  window.open(`/api/admin/tenants/${encodeURIComponent(tid)}/evidence/export?format=html`, '_blank');
+}
+// ── End SOC 2 Evidence ──────────────────────────────────────────────
 
 async function loadGrants() {
   try {

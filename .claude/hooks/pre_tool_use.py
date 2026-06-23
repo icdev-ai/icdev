@@ -507,6 +507,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "mcip_dti_scores",
         # ECR SSO — session records are append-only NIST AU (sso_providers is mutable)
         "sso_sessions",
+        # ECR SOC 2 — evidence records are immutable compliance evidence (NIST AU-9, migration 211)
+        "evidence_items",
     ]
 
     if tool_name == "Bash":

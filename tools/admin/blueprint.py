@@ -343,6 +343,71 @@ def create_admin_blueprint() -> Blueprint | None:
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
+    # ------------------------------------------------------------------ #
+    # REST API — SOC 2 Evidence Items
+    # ------------------------------------------------------------------ #
+
+    @bp.route("/api/admin/tenants/<tenant_id>/evidence", methods=["GET"])
+    def api_list_evidence(tenant_id: str):
+        """List evidence_items for a tenant. ?control_id=CC6.1 to filter."""
+        from tools.db.storage import get_connection
+
+        control_id = request.args.get("control_id")
+        framework = request.args.get("framework", "soc2")
+        try:
+            with get_connection() as conn:
+                if control_id:
+                    rows = conn.execute(
+                        "SELECT id, control_id, framework, tenant_id, evidence_type, "
+                        "source_table, source_row_id, summary, collected_at, collector "
+                        "FROM evidence_items WHERE tenant_id = ? AND control_id = ? "
+                        "AND framework = ? ORDER BY collected_at DESC LIMIT 500",
+                        (tenant_id, control_id, framework),
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        "SELECT id, control_id, framework, tenant_id, evidence_type, "
+                        "source_table, source_row_id, summary, collected_at, collector "
+                        "FROM evidence_items WHERE tenant_id = ? AND framework = ? "
+                        "ORDER BY collected_at DESC LIMIT 500",
+                        (tenant_id, framework),
+                    ).fetchall()
+                ctrl_rows = conn.execute(
+                    "SELECT DISTINCT control_id FROM evidence_items "
+                    "WHERE tenant_id = ? ORDER BY control_id",
+                    (tenant_id,),
+                ).fetchall()
+            cols = ["id", "control_id", "framework", "tenant_id", "evidence_type",
+                    "source_table", "source_row_id", "summary", "collected_at", "collector"]
+            items = [dict(zip(cols, r)) for r in rows]
+            controls = [r[0] for r in ctrl_rows]
+            return jsonify({"tenant_id": tenant_id, "items": items, "controls": controls})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/admin/tenants/<tenant_id>/evidence/export", methods=["GET"])
+    def api_export_evidence(tenant_id: str):
+        """Export SOC 2 evidence report as HTML or JSON."""
+        import tempfile
+        from pathlib import Path
+        from tools.compliance.soc2_exporter import export_report
+
+        fmt = request.args.get("format", "html")
+        framework = request.args.get("framework", "soc2")
+        with tempfile.NamedTemporaryFile(suffix=f".{fmt}", delete=False) as tmp:
+            tmp_path = tmp.name
+        try:
+            export_report(tenant_id, tmp_path, fmt=fmt, framework=framework)
+            content = Path(tmp_path).read_text(encoding="utf-8")
+            mime = "text/html" if fmt == "html" else "application/json"
+            from flask import Response as FlaskResponse
+            return FlaskResponse(
+                content, mimetype=mime,
+                headers={"Content-Disposition": f'attachment; filename="soc2_report.{fmt}"'},
+            )
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
     @bp.route("/api/admin/stats", methods=["GET"])
     def api_stats():
         """Return admin console summary stats."""
