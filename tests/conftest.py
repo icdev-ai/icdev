@@ -1400,6 +1400,36 @@ CREATE TABLE IF NOT EXISTS showcase_apps (
     created_at  TEXT    DEFAULT CURRENT_TIMESTAMP,
     updated_at  TEXT    DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS sso_providers (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    protocol TEXT NOT NULL CHECK(protocol IN ('saml','oidc')),
+    entity_id TEXT,
+    metadata_url TEXT,
+    client_id TEXT,
+    client_secret_enc TEXT,
+    attr_mapping TEXT,
+    claims_mapping TEXT,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_sso_providers_tenant ON sso_providers(tenant_id);
+CREATE TABLE IF NOT EXISTS sso_sessions (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    user_id TEXT,
+    name_id TEXT,
+    session_index TEXT,
+    id_token TEXT,
+    access_token_enc TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sso_sessions_tenant ON sso_sessions(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_sso_sessions_provider ON sso_sessions(provider_id);
 """
 
 
