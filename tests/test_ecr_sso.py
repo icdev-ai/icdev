@@ -217,3 +217,168 @@ def test_saml_acs_rejects_invalid_b64():
 
     with pytest.raises(ValueError, match="base64"):
         process_acs_response("NOT_BASE64!!!", relay_state="/")
+
+
+# ---------------------------------------------------------------------------
+# ecr-sso-04: Admin Console SSO CRUD API tests
+# ---------------------------------------------------------------------------
+
+def test_sso_admin_crud(_sso_db, monkeypatch):
+    """Admin API: create / list / update / soft-disable SSO providers."""
+    import importlib
+    import json as _json
+    from flask import Flask, g
+
+    monkeypatch.setenv("ICDEV_ADMIN_CONSOLE_ENABLED", "true")
+    monkeypatch.setenv("ICDEV_ENFORCE_CANVAS_ACCESS", "false")
+
+    import tools.admin.blueprint as admin_mod
+    importlib.reload(admin_mod)
+
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    app.config["SECRET_KEY"] = "test-sso-crud"
+
+    bp = admin_mod.create_admin_blueprint()
+    assert bp is not None, "Admin blueprint must be enabled"
+    app.register_blueprint(bp)
+
+    @app.before_request
+    def _set_user():
+        g.current_user = {"id": "admin", "role": "admin"}
+
+    client = app.test_client()
+    tid = "sso-crud-tenant"
+
+    # CREATE — SAML provider
+    resp = client.post(
+        f"/api/admin/tenants/{tid}/sso-providers",
+        data=_json.dumps({
+            "name": "Corp SAML IdP",
+            "protocol": "saml",
+            "entity_id": "https://idp.corp.example",
+            "metadata_url": "https://idp.corp.example/metadata",
+        }),
+        content_type="application/json",
+    )
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    body = resp.get_json()
+    pid = body["provider_id"]
+    assert pid
+    assert body["protocol"] == "saml"
+    assert "login_url" in body
+
+    # LIST — provider appears with login_url
+    resp = client.get(f"/api/admin/tenants/{tid}/sso-providers")
+    assert resp.status_code == 200
+    providers = resp.get_json()["providers"]
+    assert any(p["id"] == pid for p in providers)
+    p = next(x for x in providers if x["id"] == pid)
+    assert "login_url" in p
+    assert "saml" in p["login_url"]
+
+    # UPDATE — rename provider
+    resp = client.put(
+        f"/api/admin/tenants/{tid}/sso-providers/{pid}",
+        data=_json.dumps({"name": "Updated Corp IdP"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    assert resp.get_json()["updated"] is True
+
+    # Verify updated name persists
+    providers = client.get(f"/api/admin/tenants/{tid}/sso-providers").get_json()["providers"]
+    assert next(x for x in providers if x["id"] == pid)["name"] == "Updated Corp IdP"
+
+    # DISABLE — soft delete (enabled=0, row preserved)
+    resp = client.delete(f"/api/admin/tenants/{tid}/sso-providers/{pid}")
+    assert resp.status_code == 200
+    assert resp.get_json()["disabled"] is True
+
+    # Default list excludes disabled
+    default_providers = client.get(f"/api/admin/tenants/{tid}/sso-providers").get_json()["providers"]
+    assert not any(x["id"] == pid for x in default_providers)
+
+    # ?all=1 includes disabled with enabled=0
+    all_providers = client.get(f"/api/admin/tenants/{tid}/sso-providers?all=1").get_json()["providers"]
+    disabled_p = next((x for x in all_providers if x["id"] == pid), None)
+    assert disabled_p is not None
+    assert disabled_p["enabled"] == 0
+
+
+# ---------------------------------------------------------------------------
+# ecr-sso-03: OIDC integration tests
+# ---------------------------------------------------------------------------
+
+def _make_oidc_provider(conn, provider_id: str, auth_url: str) -> None:
+    """Insert a test OIDC provider row."""
+    conn.execute(
+        "INSERT INTO sso_providers "
+        "(id, tenant_id, name, protocol, client_id, client_secret_enc, metadata_url) "
+        "VALUES (?, ?, ?, 'oidc', ?, ?, ?)",
+        (provider_id, "test-tenant", "Test OIDC IdP", "client-id", "client-secret", auth_url),
+    )
+    conn.commit()
+
+
+def test_oidc_login_url(_sso_db):
+    """get_oidc_login_url returns a URL and a state string."""
+    from tools.db import storage
+    from tools.auth.oidc import get_oidc_login_url, _CLIENTS
+
+    pid = f"oidc-{uuid.uuid4().hex[:8]}"
+    with storage.get_connection() as conn:
+        _make_oidc_provider(conn, pid, "https://accounts.example.com/authorize")
+
+    # Clear any cached client for this provider
+    _CLIENTS.pop(pid, None)
+
+    url, state = get_oidc_login_url(pid)
+    assert "accounts.example.com" in url
+    assert "client_id=" in url or "response_type=" in url
+    assert state  # non-empty state for CSRF
+
+
+def test_oidc_callback_creates_session(_sso_db, monkeypatch):
+    """exchange_oidc_code persists an sso_sessions row and returns user_info."""
+    import base64 as _b64
+    import json as _json
+    from tools.db import storage
+    from tools.auth import oidc as oidc_mod
+
+    pid = f"oidc-{uuid.uuid4().hex[:8]}"
+    with storage.get_connection() as conn:
+        _make_oidc_provider(conn, pid, "https://accounts.example.com/token")
+
+    # Build a minimal JWT id_token (unsigned, for test purposes)
+    payload = {"sub": "user-123", "email": "alice@example.com", "name": "Alice"}
+    header_b64 = _b64.urlsafe_b64encode(b'{"alg":"none"}').rstrip(b"=").decode()
+    payload_b64 = _b64.urlsafe_b64encode(_json.dumps(payload).encode()).rstrip(b"=").decode()
+    fake_id_token = f"{header_b64}.{payload_b64}.fakesig"
+
+    # Stub OAuth2Session.fetch_token to avoid real HTTP
+    class _FakeClient:
+        redirect_uri = ""
+        def fetch_token(self, *a, **kw):
+            return {"id_token": fake_id_token, "access_token": "tok"}
+        def create_authorization_url(self, url, **kw):
+            return url + "?response_type=code", "state-xyz"
+
+    oidc_mod._CLIENTS[pid] = _FakeClient()
+
+    user_info = oidc_mod.exchange_oidc_code(
+        pid, code="auth-code", state="state-xyz",
+        token_endpoint="https://accounts.example.com/token",
+    )
+    assert user_info["email"] == "alice@example.com"
+
+    # Verify session persisted
+    with storage.get_connection() as conn:
+        row = conn.execute(
+            "SELECT name_id, provider_id FROM sso_sessions WHERE provider_id = ?", (pid,)
+        ).fetchone()
+    assert row is not None
+    assert row[0] == "alice@example.com"
+
+    # Cleanup
+    oidc_mod._CLIENTS.pop(pid, None)

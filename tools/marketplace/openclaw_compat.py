@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # CUI // SP-CTI
 from __future__ import annotations
 

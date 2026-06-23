@@ -52,6 +52,38 @@ def acs(provider_id: str) -> Response:
     return redirect(relay_state or "/")
 
 
+@bp.route("/oidc/<provider_id>/login", methods=["GET"])
+def oidc_login(provider_id: str) -> Response:
+    """Initiate OIDC login — redirect user to IdP authorization endpoint."""
+    from tools.auth.oidc import get_oidc_login_url
+
+    try:
+        url, state = get_oidc_login_url(provider_id)
+    except ValueError as exc:
+        return Response(str(exc), status=404)
+    session["oidc_state"] = state
+    session["oidc_provider_id"] = provider_id
+    return redirect(url)
+
+
+@bp.route("/oidc/<provider_id>/callback", methods=["GET"])
+def oidc_callback(provider_id: str) -> Response:
+    """OIDC callback — exchange code, persist session, redirect."""
+    from tools.auth.oidc import exchange_oidc_code
+
+    code = request.args.get("code", "")
+    state = request.args.get("state", "")
+    if not code:
+        return Response("Missing authorization code", status=400)
+    try:
+        user_info = exchange_oidc_code(provider_id, code=code, state=state)
+    except Exception as exc:
+        return Response(f"OIDC exchange failed: {exc}", status=400)
+    session["sso_name_id"] = user_info.get("email") or user_info.get("sub")
+    session["sso_provider_id"] = provider_id
+    return redirect("/")
+
+
 def _persist_sso_session(provider_id: str, result: dict) -> None:
     from tools.db import storage
 
