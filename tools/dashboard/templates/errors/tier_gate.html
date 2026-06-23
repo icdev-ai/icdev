@@ -1,0 +1,32 @@
+{# CUI // SP-CTI #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Upgrade Required — ICDEV™</title>
+  <style>
+    body { font-family: sans-serif; background: #0f1117; color: #e2e8f0; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+    .card { background: #1a1f2e; border: 1px solid #2d3748; border-radius: 12px; padding: 2.5rem 3rem; max-width: 540px; text-align: center; }
+    .lock { font-size: 3rem; margin-bottom: 1rem; }
+    h2 { margin: 0 0 0.5rem; font-size: 1.5rem; }
+    .tier-badge { display: inline-block; padding: 0.25rem 0.75rem; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; margin: 0.25rem; }
+    .tier-current { background: #2d3748; color: #a0aec0; }
+    .tier-required { background: #553c9a; color: #e9d8fd; }
+    p { color: #a0aec0; margin: 1rem 0; }
+    .btn { display: inline-block; padding: 0.65rem 1.75rem; border-radius: 8px; background: #553c9a; color: #fff; text-decoration: none; font-weight: 600; margin-top: 1rem; }
+    .btn:hover { background: #6b46c1; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="lock">&#x1F512;</div>
+    <h2>Feature Locked</h2>
+    <p>
+      <span class="tier-badge tier-required">{{ required_tier | upper }} required</span>
+      <span class="tier-badge tier-current">Your tier: {{ active_tier | upper }}</span>
+    </p>
+    <p>This canvas requires the <strong>{{ required_tier | title }}</strong> plan or higher.</p>
+    <a href="{{ upgrade_url | default('#upgrade') }}" class="btn">Upgrade to {{ required_tier | title }}</a>
+  </div>
+</body>
+</html>

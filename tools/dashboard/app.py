@@ -196,6 +196,14 @@ for _key, _env, _mod, _attr in _CANVAS_DEFS:
 _APP_FLAGS: dict[str, bool] = {}
 _APP_BLUEPRINTS: dict[str, object] = {}
 
+# ECR tier gate — community / starter / professional / enterprise
+_TIER_ORDER = ["community", "starter", "professional", "enterprise"]
+
+
+def _get_active_tier() -> str:
+    tier = os.environ.get("ECR_TIER", "community").lower().strip()
+    return tier if tier in _TIER_ORDER else "community"
+
 _APP_DEFS = [
     ("hitl_workflow", "ICDEV_HITL_ENABLED",          "tools.workflow_hitl.blueprint", "create_wf_page_blueprint"),
     ("forge_academy", "ICDEV_FORGE_ACADEMY_ENABLED",  "apps.forge_academy.blueprint",  "academy_bp"),
@@ -2033,6 +2041,8 @@ def create_app() -> Flask:
             "gameday_enabled": _APP_FLAGS.get("gameday", False),
             "airgap_mode": _AIRGAP_MODE,
             "route_module_map": _route_map,
+            "active_tier": _get_active_tier(),
+            "tier_order": _TIER_ORDER,
         }
 
     # ---- Air-gap route guard: friendly message for disabled pages ----
@@ -10964,6 +10974,25 @@ def create_app() -> Flask:
 
     if _track_request is not None:
         _track_request(app)
+
+    @app.route("/api/license/tier")
+    def license_tier():
+        """GET /api/license/tier — active tier + available/locked canvas lists."""
+        try:
+            from tools.license.tier import (
+                get_available_features,
+                get_locked_features,
+            )
+            active = _get_active_tier()
+            return jsonify({
+                "active_tier": active,
+                "tier_order": _TIER_ORDER,
+                "available_features": get_available_features(active),
+                "locked_features": get_locked_features(active),
+            })
+        except Exception as exc:
+            active = _get_active_tier()
+            return jsonify({"active_tier": active, "tier_order": _TIER_ORDER, "error": str(exc)})
 
     return app
 
