@@ -535,7 +535,9 @@ routing:
     effort: low
 
   ndc_config_review:
-    chain: [claude-sonnet, gpt-4o, qwen3-local, gemini-2.5-flash, llama-local]
+    # Use Ollama cloud (kimi-k2.6:cloud) first when OLLAMA_API_KEY is present,
+    # then fall back through cloud providers and local Ollama models.
+    chain: [kimi-cloud, kimi-local, qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
 
   # Panel fires N calls in parallel — use fast/cheap models to keep wall-clock latency low
