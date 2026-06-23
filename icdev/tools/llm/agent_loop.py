@@ -93,6 +93,12 @@ class AgentLoopResult:
         stop_reason:   ``stop_reason`` of the final LLM response.
         tool_call_log: List of ``{turn, name, input, result, error}`` dicts.
         messages:      The full message history at termination (for inspection/persist).
+        total_input_tokens:  Cumulative input tokens across all turns.
+        total_output_tokens: Cumulative output tokens across all turns.
+        total_cost_usd:      Cumulative cost across all turns (when provider reports it).
+        compression_events:  List of context-compression events applied to messages.
+        truncation_reason:   Why the loop stopped: ``completed``, ``max_iterations``,
+            ``max_total_tokens``, ``max_cost_usd``, or ``stop_event``.
     """
 
     done: bool = False
@@ -102,11 +108,114 @@ class AgentLoopResult:
     stop_reason: str = ""
     tool_call_log: list[dict[str, Any]] = field(default_factory=list)
     messages: list[dict[str, Any]] = field(default_factory=list)
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
+    total_cost_usd: float = 0.0
+    compression_events: list[dict[str, Any]] = field(default_factory=list)
+    truncation_reason: str = ""
 
 
 # Type alias: handler(input_dict, stop_event) -> str (or DONE sentinel).
 ToolHandler = Callable[[dict[str, Any], "threading.Event | None"], str]
 TurnCallback = Callable[[int, Any, list[dict[str, Any]]], None]
+
+
+# ---------------------------------------------------------------------------
+# Budget / context-window helpers
+# ---------------------------------------------------------------------------
+
+
+def _estimate_text_tokens(text: str) -> int:
+    """Cheap token estimate: ~4 characters per token, matching ContextCompressor."""
+    if not text:
+        return 0
+    return max(1, len(text) // 4)
+
+
+def _estimate_message_tokens(msg: dict[str, Any]) -> int:
+    """Estimate tokens in a single message (text-only; tool blocks counted by text)."""
+    content = msg.get("content", "")
+    if isinstance(content, list):
+        return sum(
+            _estimate_text_tokens(str(block.get("text", "")))
+            for block in content
+            if isinstance(block, dict)
+        )
+    return _estimate_text_tokens(str(content))
+
+
+
+
+def _load_budget_defaults() -> dict[str, Any]:
+    """Read ``agent_loop.budgets`` defaults from repo-root ``args/llm_config.yaml``."""
+    defaults: dict[str, Any] = {}
+    try:
+        import yaml
+        from pathlib import Path
+
+        here = Path(__file__).resolve()
+        root: Path | None = None
+        for parent in [here, *here.parents]:
+            if (parent / ".git").exists():
+                root = parent
+                break
+        if root is None:
+            return defaults
+        cfg_path = root / "args" / "llm_config.yaml"
+        if not cfg_path.exists():
+            return defaults
+        with open(cfg_path, encoding="utf-8") as f:
+            raw = yaml.safe_load(f) or {}
+        budgets = raw.get("agent_loop", {}).get("budgets", {})
+        for key in (
+            "max_total_tokens",
+            "context_window_tokens",
+            "compression_budget_tokens",
+        ):
+            if key in budgets:
+                defaults[key] = int(budgets[key])
+        if "max_cost_usd" in budgets:
+            defaults["max_cost_usd"] = float(budgets["max_cost_usd"])
+    except Exception as exc:
+        logger.debug("agent_loop: failed to load budget defaults: %s", exc)
+    return defaults
+
+
+def _maybe_compress_messages(
+    messages: list[dict[str, Any]],
+    *,
+    context_window_tokens: int | None,
+    compression_budget_tokens: int | None,
+    compression_events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Compress message history when it exceeds the context-window threshold.
+
+    Uses :func:`icdev.tools.llm.context_compressor.compress_messages` so tool-use
+    blocks are preserved. A failed compression is logged and leaves messages
+    unchanged.
+    """
+    if not context_window_tokens:
+        return messages
+    current = sum(_estimate_message_tokens(m) for m in messages)
+    if current <= context_window_tokens:
+        return messages
+    try:
+        from icdev.tools.llm.context_compressor import compress_messages
+
+        budget = compression_budget_tokens or int(context_window_tokens * 0.75)
+        result = compress_messages(messages, budget_tokens=budget, content_type="auto")
+        compression_events.append(
+            {
+                "method": result.method,
+                "original_tokens": result.original_tokens,
+                "compressed_tokens": result.compressed_tokens,
+                "compression_ratio": result.compression_ratio,
+            }
+        )
+        return result.messages
+    except Exception as exc:
+        logger.warning("agent_loop: context compression failed: %s", exc)
+        return messages
 
 
 # ---------------------------------------------------------------------------
@@ -171,11 +280,19 @@ def _assistant_message(response: Any) -> dict[str, Any]:
     return {"role": "assistant", "content": content}
 
 
-def _tool_result_message(tool_use_id: str, text: str, is_error: bool = False) -> dict[str, Any]:
-    """Build a user message carrying a single tool_result content block."""
+def _tool_result_message(
+    tool_use_id: str, text: str, tool_name: str = "", is_error: bool = False
+) -> dict[str, Any]:
+    """Build a user message carrying a single tool_result content block.
+
+    ``tool_name`` is included so providers that use a dedicated tool-result
+    message role (e.g. Ollama's ``{"role":"tool","name":...}``) can emit it
+    without having to reverse-map ``tool_use_id`` back to a name.
+    """
     block: dict[str, Any] = {
         "type": "tool_result",
         "tool_use_id": tool_use_id,
+        "name": tool_name,
         "content": [{"type": "text", "text": text}],
     }
     if is_error:
@@ -202,19 +319,25 @@ def run_agent_loop(
     effort: str = "medium",
     stop_event: threading.Event | None = None,
     on_turn: TurnCallback | None = None,
+    max_total_tokens: int | None = None,
+    max_cost_usd: float | None = None,
+    context_window_tokens: int | None = None,
+    compression_budget_tokens: int | None = None,
 ) -> AgentLoopResult:
     """Run an agentic LLM loop with native tool use until the task is done.
 
     Each turn:
-      1. Call ``router.invoke(llm_function, LLMRequest(... tools=tools ...))``.
-      2. If the response has no ``tool_calls`` → the LLM ended the turn; return
+      1. Optionally compress message history if it exceeds the context window.
+      2. Call ``router.invoke(llm_function, LLMRequest(... tools=tools ...))``.
+      3. If the response has no ``tool_calls`` → the LLM ended the turn; return
          its ``content`` as the final answer.
-      3. Otherwise append the assistant ``tool_use`` message, dispatch each tool
+      4. Otherwise append the assistant ``tool_use`` message, dispatch each tool
          call through ``tool_handlers``, append ``tool_result`` messages, and
          re-prompt. A handler returning :data:`DONE` terminates the loop.
 
     Termination: end_turn (no tool_calls), a ``DONE`` sentinel from a handler,
-    ``stop_event`` set, or ``max_iterations`` reached (→ ``truncated=True``).
+    ``stop_event`` set, ``max_iterations`` reached (→ ``truncated=True``), or a
+    hard budget cap exceeded (``max_total_tokens`` / ``max_cost_usd``).
 
     Args:
         router:        An ``LLMRouter`` instance.
@@ -230,6 +353,12 @@ def run_agent_loop(
         stop_event:    When set, the loop exits at the next turn boundary.
         on_turn:       Optional ``callback(turn, response, messages)`` after each
                        turn (for audit/persist/observability).
+        max_total_tokens: Hard cap on cumulative input+output tokens across turns.
+        max_cost_usd:     Hard cap on cumulative USD cost (when providers report it).
+        context_window_tokens: Soft threshold; if message history exceeds this,
+            it is compressed before the next LLM turn.
+        compression_budget_tokens: Target token budget used when compression is
+            triggered (defaults to 75% of ``context_window_tokens``).
 
     Returns:
         AgentLoopResult.
@@ -242,6 +371,19 @@ def run_agent_loop(
 
     _check_tool_support(router, llm_function)
 
+    # Resolve optional budget defaults from args/llm_config.yaml.
+    budget_defaults = _load_budget_defaults()
+    if max_total_tokens is None and "max_total_tokens" in budget_defaults:
+        max_total_tokens = budget_defaults["max_total_tokens"]
+    if max_cost_usd is None and "max_cost_usd" in budget_defaults:
+        max_cost_usd = budget_defaults["max_cost_usd"]
+    if context_window_tokens is None and "context_window_tokens" in budget_defaults:
+        context_window_tokens = budget_defaults["context_window_tokens"]
+    if compression_budget_tokens is None and "compression_budget_tokens" in budget_defaults:
+        compression_budget_tokens = budget_defaults["compression_budget_tokens"]
+    if compression_budget_tokens is None and context_window_tokens is not None:
+        compression_budget_tokens = int(context_window_tokens * 0.75)
+
     messages: list[dict[str, Any]] = [
         {"role": "user", "content": user_prompt}
     ]
@@ -252,6 +394,15 @@ def run_agent_loop(
     for turn in range(max_iterations):
         if stop_event is not None and stop_event.is_set():
             break
+
+        # Compress message history when it is approaching the model context window.
+        messages = _maybe_compress_messages(
+            messages,
+            context_window_tokens=context_window_tokens,
+            compression_budget_tokens=compression_budget_tokens,
+            compression_events=result.compression_events,
+        )
+        result.messages = messages
 
         request = LLMRequest(
             system_prompt=system_prompt,
@@ -265,6 +416,9 @@ def run_agent_loop(
         result.turns = turn + 1
         result.stop_reason = getattr(response, "stop_reason", "") or ""
         result.final_content = getattr(response, "content", "") or ""
+        result.total_input_tokens += getattr(response, "input_tokens", 0) or 0
+        result.total_output_tokens += getattr(response, "output_tokens", 0) or 0
+        result.total_cost_usd += getattr(response, "cost_usd", 0.0) or 0.0
 
         # No tool calls → LLM ended the turn with a final answer.
         tool_calls = getattr(response, "tool_calls", None) or []
@@ -296,7 +450,7 @@ def run_agent_loop(
                 err_text = f"Tool {tc_name!r} is not registered."
                 entry["error"] = err_text
                 tool_call_log.append(entry)
-                messages.append(_tool_result_message(tc_id, err_text, is_error=True))
+                messages.append(_tool_result_message(tc_id, err_text, tool_name=tc_name, is_error=True))
                 continue
 
             try:
@@ -305,7 +459,7 @@ def run_agent_loop(
                 err_text = f"{type(exc).__name__}: {exc}"
                 entry["error"] = err_text
                 tool_call_log.append(entry)
-                messages.append(_tool_result_message(tc_id, err_text, is_error=True))
+                messages.append(_tool_result_message(tc_id, err_text, tool_name=tc_name, is_error=True))
                 logger.warning("agent_loop: handler %s raised: %s", tc_name, exc)
                 continue
 
@@ -313,17 +467,49 @@ def run_agent_loop(
                 done_signalled = True
                 entry["result"] = "DONE"
                 tool_call_log.append(entry)
-                messages.append(_tool_result_message(tc_id, "Task complete."))
+                messages.append(_tool_result_message(tc_id, "Task complete.", tool_name=tc_name))
                 # Continue draining remaining tool_calls in this turn, then stop.
                 continue
 
             out_text = str(handler_out)
             entry["result"] = out_text
             tool_call_log.append(entry)
-            messages.append(_tool_result_message(tc_id, out_text))
+            messages.append(_tool_result_message(tc_id, out_text, tool_name=tc_name))
 
         if on_turn is not None:
             on_turn(turn, response, messages)
+
+        # Hard budget check after executing all tools this turn.
+        if max_total_tokens is not None and (
+            result.total_input_tokens + result.total_output_tokens
+        ) > max_total_tokens:
+            result.truncated = True
+            result.truncation_reason = "max_total_tokens"
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        f"Agent loop stopped: exceeded max_total_tokens="
+                        f"{max_total_tokens} (input={result.total_input_tokens}, "
+                        f"output={result.total_output_tokens})."
+                    ),
+                }
+            )
+            break
+
+        if max_cost_usd is not None and result.total_cost_usd > max_cost_usd:
+            result.truncated = True
+            result.truncation_reason = "max_cost_usd"
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        f"Agent loop stopped: exceeded max_cost_usd={max_cost_usd:.4f} "
+                        f"(current={result.total_cost_usd:.4f})."
+                    ),
+                }
+            )
+            break
 
         if done_signalled:
             result.done = True
@@ -345,4 +531,12 @@ def run_agent_loop(
     if response is not None:
         result.final_content = getattr(response, "content", "") or result.final_content
         result.stop_reason = getattr(response, "stop_reason", "") or result.stop_reason
+
+    # Set the human-readable truncation/completion reason for the caller.
+    if result.truncated and not result.truncation_reason:
+        result.truncation_reason = "max_iterations"
+    elif result.done and not result.truncated:
+        result.truncation_reason = "completed"
+    elif not result.done and not result.truncated:
+        result.truncation_reason = "stop_event"
     return result
