@@ -283,6 +283,268 @@ def test_stripe_webhook_updates_status(tmp_path, monkeypatch):
     assert result4["handled"] is False
 
 
+def _make_usage_app(conn):
+    """Build a minimal Flask app with the admin blueprint wired to a test SQLite conn.
+
+    The tools.* shim puts TWO different module objects into sys.modules:
+      sys.modules['tools.db.storage']  — used by `from tools.db.storage import …`
+      sys.modules['icdev.tools.db.storage'] — the canonical object
+    Patching only the canonical object does NOT affect `from tools.db.storage import`
+    lookups, so we must patch sys.modules['tools.db.storage'] directly.
+    """
+    import importlib
+    import os
+    import sys
+
+    os.environ["ICDEV_ADMIN_CONSOLE_ENABLED"] = "true"
+    admin_bp_mod = importlib.import_module("tools.admin.blueprint")
+    importlib.reload(admin_bp_mod)
+
+    # Ensure the shim entry is loaded so we can patch it.
+    import tools.db.storage  # noqa: F401
+
+    _shim = sys.modules["tools.db.storage"]
+
+    class _CM:
+        def __enter__(self_):
+            return conn
+        def __exit__(self_, *a):
+            return False
+
+    _orig = _shim.get_connection
+    _shim.get_connection = _CM
+
+    from flask import Flask
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+
+    with patch("tools.admin.blueprint._ENABLED", True):
+        bp = admin_bp_mod.create_admin_blueprint()
+
+    assert bp is not None, "Admin blueprint must be created when _ENABLED=True"
+    app.register_blueprint(bp)
+    return app
+
+
+def test_usage_api_returns_data(tmp_path):
+    """GET /api/admin/tenants/<tid>/usage returns summary + daily breakdown JSON."""
+    import json
+
+    conn = _make_db(tmp_path)
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+    rec_at = f"{yesterday}T10:00:00"
+    conn.execute(
+        "INSERT INTO usage_events (id, tenant_id, event_type, quantity, recorded_at) "
+        "VALUES (?, 'tenant-test', 'api_call', 5.0, ?)",
+        (str(uuid.uuid4()), rec_at),
+    )
+    conn.execute(
+        "INSERT INTO usage_events (id, tenant_id, event_type, quantity, recorded_at) "
+        "VALUES (?, 'tenant-test', 'llm_token', 200.0, ?)",
+        (str(uuid.uuid4()), rec_at),
+    )
+    conn.commit()
+
+    app = _make_usage_app(conn)
+    since = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+
+    with app.test_client() as client:
+        resp = client.get(f"/api/admin/tenants/tenant-test/usage?since={since}")
+
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.data}"
+    data = json.loads(resp.data)
+
+    assert "summary" in data, "Response must include 'summary'"
+    assert "daily" in data, "Response must include 'daily'"
+    assert "current_month_total" in data, "Response must include 'current_month_total'"
+    assert data["tenant_id"] == "tenant-test"
+    assert data["since"] == since
+
+    summary = data["summary"]
+    assert "api_call" in summary or "llm_token" in summary, (
+        f"Expected api_call or llm_token in summary, got: {summary}"
+    )
+
+    assert len(data["daily"]) >= 1, "daily breakdown should have at least one entry"
+    row = data["daily"][0]
+    assert "date" in row and "event_type" in row and "total_quantity" in row
+
+
+def test_usage_overview_api(tmp_path):
+    """GET /api/admin/usage/overview returns top_consumers + by_event_type."""
+    import json
+
+    conn = _make_db(tmp_path)
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+    rec_at = f"{yesterday}T11:00:00"
+    conn.execute(
+        "INSERT INTO usage_events (id, tenant_id, event_type, quantity, recorded_at) "
+        "VALUES (?, 'tenant-alpha', 'llm_token', 1000.0, ?)",
+        (str(uuid.uuid4()), rec_at),
+    )
+    conn.execute(
+        "INSERT INTO usage_events (id, tenant_id, event_type, quantity, recorded_at) "
+        "VALUES (?, 'tenant-beta', 'api_call', 50.0, ?)",
+        (str(uuid.uuid4()), rec_at),
+    )
+    conn.commit()
+
+    app = _make_usage_app(conn)
+    since = (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%Y-%m-%d")
+
+    with app.test_client() as client:
+        resp = client.get(f"/api/admin/usage/overview?since={since}")
+
+    assert resp.status_code == 200, f"Expected 200, got {resp.status_code}: {resp.data}"
+    data = json.loads(resp.data)
+
+    assert "top_consumers" in data
+    assert "by_event_type" in data
+    assert isinstance(data["top_consumers"], list)
+    assert isinstance(data["by_event_type"], dict)
+
+
+def test_usage_summary_aggregates(tmp_path):
+    """get_usage_summary() returns correct per-event_type totals."""
+    import importlib
+    import sys
+
+    conn = _make_db(tmp_path)
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+    rec_at = f"{yesterday}T09:00:00"
+
+    for qty, et in [
+        (200.0, "llm_token"),
+        (300.0, "llm_token"),
+        (500.0, "llm_token"),
+        (1.0, "api_call"),
+        (1.0, "api_call"),
+    ]:
+        conn.execute(
+            "INSERT INTO usage_events (id, tenant_id, event_type, quantity, recorded_at) "
+            "VALUES (?, 'tenant-sum', ?, ?, ?)",
+            (str(uuid.uuid4()), et, qty, rec_at),
+        )
+    conn.commit()
+
+    import tools.db.storage  # ensure shim module is in sys.modules
+    _shim = sys.modules["tools.db.storage"]
+
+    class _CM:
+        def __enter__(self):
+            return conn
+
+        def __exit__(self, *a):
+            return False
+
+    orig = _shim.get_connection
+    _shim.get_connection = _CM
+    try:
+        metering = importlib.import_module("tools.billing.metering")
+        summary = metering.get_usage_summary("tenant-sum", since=f"{yesterday}T00:00:00")
+    finally:
+        _shim.get_connection = orig
+
+    assert "llm_token" in summary, f"Expected llm_token in summary: {summary}"
+    assert summary["llm_token"] == 1000.0
+    assert "api_call" in summary
+    assert summary["api_call"] == 2.0
+
+
+def test_stripe_invalid_sig_rejected(monkeypatch):
+    """POST /webhooks/stripe with a bad Stripe-Signature header returns 403."""
+    import importlib
+    import json
+
+    monkeypatch.setenv("ICDEV_STRIPE_WEBHOOK_SECRET", "whsec_test_secret_xyz")
+
+    admin_bp_mod = importlib.import_module("tools.admin.blueprint")
+    importlib.reload(admin_bp_mod)
+
+    from flask import Flask
+
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    wb = admin_bp_mod.create_stripe_webhook_blueprint()
+    app.register_blueprint(wb)
+
+    payload = json.dumps({
+        "type": "invoice.payment_succeeded",
+        "data": {"object": {}},
+    }).encode()
+
+    with app.test_client() as client:
+        resp = client.post(
+            "/webhooks/stripe",
+            data=payload,
+            content_type="application/json",
+            headers={"Stripe-Signature": "t=1,v1=badhash"},
+        )
+    assert resp.status_code == 403, f"Expected 403, got {resp.status_code}"
+
+
+def test_daily_rollup_correct(tmp_path):
+    """Daily rollup upserts correct aggregated totals per (tenant, event_type, model, date)."""
+    conn = _make_db(tmp_path)
+    yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+    rec_at = f"{yesterday}T14:00:00"
+
+    # Two llm_token events for tenant-R, same model → expect 800.0
+    for qty in [500.0, 300.0]:
+        conn.execute(
+            "INSERT INTO usage_events "
+            "(id, tenant_id, event_type, quantity, model, recorded_at) "
+            "VALUES (?, 'tenant-R', 'llm_token', ?, 'claude-sonnet-4-6', ?)",
+            (str(uuid.uuid4()), qty, rec_at),
+        )
+    # One api_call event → expect 7.0
+    conn.execute(
+        "INSERT INTO usage_events "
+        "(id, tenant_id, event_type, quantity, model, recorded_at) "
+        "VALUES (?, 'tenant-R', 'api_call', 7.0, NULL, ?)",
+        (str(uuid.uuid4()), rec_at),
+    )
+    conn.commit()
+
+    # Mirror the reflex aggregate-then-upsert pattern
+    date_start = f"{yesterday}T00:00:00"
+    date_end = f"{yesterday}T23:59:59"
+    agg_rows = conn.execute(
+        "SELECT tenant_id, event_type, COALESCE(model, '') AS model, SUM(quantity) AS total "
+        "FROM usage_events "
+        "WHERE recorded_at >= ? AND recorded_at <= ? "
+        "GROUP BY tenant_id, event_type, COALESCE(model, '')",
+        (date_start, date_end),
+    ).fetchall()
+    for r in agg_rows:
+        conn.execute(
+            "INSERT INTO usage_daily_rollup "
+            "(tenant_id, event_type, model, rollup_date, total_quantity) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT (tenant_id, event_type, model, rollup_date) "
+            "DO UPDATE SET total_quantity = excluded.total_quantity",
+            (r[0], r[1], r[2], yesterday, r[3]),
+        )
+    conn.commit()
+
+    llm_row = conn.execute(
+        "SELECT total_quantity FROM usage_daily_rollup "
+        "WHERE tenant_id='tenant-R' AND event_type='llm_token' AND rollup_date=?",
+        (yesterday,),
+    ).fetchone()
+    assert llm_row is not None, "llm_token rollup row not found"
+    assert llm_row["total_quantity"] == 800.0
+
+    api_row = conn.execute(
+        "SELECT total_quantity FROM usage_daily_rollup "
+        "WHERE tenant_id='tenant-R' AND event_type='api_call' AND rollup_date=?",
+        (yesterday,),
+    ).fetchone()
+    assert api_row is not None, "api_call rollup row not found"
+    assert api_row["total_quantity"] == 7.0
+    conn.close()
+
+
 def test_rollup_reflex_run(tmp_path):
     """usage_rollup reflex rolls up yesterday's events into usage_daily_rollup."""
     conn = sqlite3.connect(str(tmp_path / "rollup_test.db"))

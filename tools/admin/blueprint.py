@@ -461,6 +461,134 @@ def create_admin_blueprint() -> Blueprint | None:
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
+    # ------------------------------------------------------------------ #
+    # REST API — Usage Analytics
+    # ------------------------------------------------------------------ #
+
+    @bp.route("/api/admin/tenants/<tenant_id>/usage", methods=["GET"])
+    def api_tenant_usage(tenant_id: str):
+        """Per-tenant usage breakdown.
+
+        Query params:
+          since  — ISO date string (default: 30 days ago)
+
+        Returns:
+          summary   — total quantity per event_type for the window
+          daily     — [{date, event_type, total_quantity}, ...]
+          current_month_total — sum of all events this calendar month
+        """
+        from tools.db.storage import get_connection
+
+        since_raw = request.args.get("since", "")
+        if since_raw:
+            since = since_raw[:10]
+        else:
+            since_dt = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            from datetime import timedelta
+            since_dt = since_dt - timedelta(days=30)
+            since = since_dt.strftime("%Y-%m-%d")
+
+        month_start = datetime.now(timezone.utc).strftime("%Y-%m-01")
+
+        try:
+            with get_connection() as conn:
+                summary_rows = conn.execute(
+                    "SELECT event_type, SUM(quantity) AS total_quantity "
+                    "FROM usage_events "
+                    "WHERE tenant_id = ? AND recorded_at >= ? "
+                    "GROUP BY event_type ORDER BY total_quantity DESC",
+                    (tenant_id, since),
+                ).fetchall()
+
+                daily_rows = conn.execute(
+                    "SELECT substr(recorded_at, 1, 10) AS date, event_type, "
+                    "SUM(quantity) AS total_quantity "
+                    "FROM usage_events "
+                    "WHERE tenant_id = ? AND recorded_at >= ? "
+                    "GROUP BY substr(recorded_at, 1, 10), event_type "
+                    "ORDER BY date, event_type",
+                    (tenant_id, since),
+                ).fetchall()
+
+                month_row = conn.execute(
+                    "SELECT SUM(quantity) AS total "
+                    "FROM usage_events "
+                    "WHERE tenant_id = ? AND recorded_at >= ?",
+                    (tenant_id, month_start),
+                ).fetchone()
+
+            summary = {r[0]: r[1] for r in summary_rows}
+            daily = [{"date": r[0], "event_type": r[1], "total_quantity": r[2]} for r in daily_rows]
+            month_total = (month_row[0] or 0.0) if month_row else 0.0
+
+            return jsonify({
+                "tenant_id": tenant_id,
+                "since": since,
+                "summary": summary,
+                "daily": daily,
+                "current_month_total": month_total,
+            })
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/admin/usage/overview", methods=["GET"])
+    def api_usage_overview():
+        """Cross-tenant usage overview (super-admin).
+
+        Query params:
+          since  — ISO date string (default: 30 days ago)
+          limit  — max top-consumer rows (default 50)
+
+        Returns:
+          top_consumers — [{tenant_id, event_type, total_quantity}, ...]
+          by_event_type — {event_type: total_quantity, ...}
+        """
+        from tools.db.storage import get_connection
+
+        since_raw = request.args.get("since", "")
+        if since_raw:
+            since = since_raw[:10]
+        else:
+            from datetime import timedelta
+            since_dt = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            since_dt = since_dt - timedelta(days=30)
+            since = since_dt.strftime("%Y-%m-%d")
+
+        limit = min(int(request.args.get("limit", 50)), 200)
+
+        try:
+            with get_connection() as conn:
+                consumer_rows = conn.execute(
+                    "SELECT tenant_id, event_type, SUM(quantity) AS total_quantity "
+                    "FROM usage_events "
+                    "WHERE recorded_at >= ? "
+                    "GROUP BY tenant_id, event_type "
+                    "ORDER BY total_quantity DESC LIMIT ?",
+                    (since, limit),
+                ).fetchall()
+
+                type_rows = conn.execute(
+                    "SELECT event_type, SUM(quantity) AS total_quantity "
+                    "FROM usage_events "
+                    "WHERE recorded_at >= ? "
+                    "GROUP BY event_type ORDER BY total_quantity DESC",
+                    (since,),
+                ).fetchall()
+
+            top_consumers = [
+                {"tenant_id": r[0], "event_type": r[1], "total_quantity": r[2]}
+                for r in consumer_rows
+            ]
+            by_event_type = {r[0]: r[1] for r in type_rows}
+
+            return jsonify({
+                "since": since,
+                "top_consumers": top_consumers,
+                "by_event_type": by_event_type,
+            })
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
     return bp
 
 
