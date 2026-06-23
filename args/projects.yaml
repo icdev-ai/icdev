@@ -4,6 +4,57 @@
 # Human edits to name/description/briefs are preserved.
 
 projects:
+- key: ecr
+  name: ECR — Enterprise Commercialization Readiness
+  description: 10-epic initiative making ICDEV enterprise-ready and commercially viable.
+    Covers SSO/SAML/OIDC, SOC-2 evidence export, data residency + GDPR deletion,
+    usage metering + Stripe billing, license tier gates, guided onboarding wizard,
+    public API + webhooks, Prometheus observability, in-product changelog, and
+    demo/sandbox tooling. Implements in epic order (sso first, demo last).
+  task_prefix: ecr-
+  default_open: true
+  briefs:
+  - 'sso: SAML 2.0 + OIDC integration, per-tenant config, RBAC mapping (ecr-sso-01..05)'
+  - 'soc2: evidence_items table, audit export command, PDF report, control map (ecr-soc2-01..05)'
+  - 'dres: data residency zones, PG router, GDPR erasure API + audit (ecr-dres-01..04)'
+  - 'bill: usage_events table, LLM/API metering middleware, Stripe webhook, admin UI (ecr-bill-01..05)'
+  - 'tier: min_tier in registry, license_tier profile, guard enforcement, upgrade CTA (ecr-tier-01..05)'
+  - 'onb: onboarding_state pref, 3-step wizard modal, progress tracking (ecr-onb-01..04)'
+  - 'api: api_keys table, /v1/ prefix + auth middleware, webhook registry, OpenAPI spec (ecr-api-01..05)'
+  - 'obs: prometheus_client integration, /metrics endpoint, Grafana dashboard JSON (ecr-obs-01..04)'
+  - 'cl: CHANGELOG.md parser, /updates route, navbar unseen-release badge (ecr-cl-01..03)'
+  - 'demo: icdev demo seed command, synthetic data for 6 canvases, ICDEV_DEMO_MODE (ecr-demo-01..04)'
+  epics:
+  - key: sso
+    title: SSO — SAML 2.0 + OIDC Identity
+    priority: high
+  - key: soc2
+    title: SOC2 — Compliance Evidence Export
+    priority: high
+  - key: dres
+    title: DRES — Data Residency + GDPR Erasure
+    priority: high
+  - key: bill
+    title: BILL — Usage Metering + Billing
+    priority: high
+  - key: tier
+    title: TIER — License Tiers + Feature Gates
+    priority: high
+  - key: onb
+    title: ONB — Guided Onboarding Wizard
+    priority: medium
+  - key: api
+    title: API — Public API + Webhooks
+    priority: high
+  - key: obs
+    title: OBS — Prometheus Observability
+    priority: medium
+  - key: cl
+    title: CL — Changelog + Release Notes
+    priority: low
+  - key: demo
+    title: DEMO — Demo/Sandbox Tooling
+    priority: medium
 - key: loop
   name: Loop Project
   description: Auto-registered project for tasks with prefix 'loop-'. Update name
