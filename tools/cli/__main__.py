@@ -34,6 +34,7 @@ Subcommands:
   disable <name> [...]     Disable — flip flags to false.
   status [--json]          Report which toggles are currently on/off.
   list [--json]            List supported toggle names + descriptions.
+  audit export             Export SOC 2 (and future framework) evidence reports.
 
 Run `icdev <subcommand> --help` for subcommand-specific options.
 """
@@ -71,6 +72,10 @@ def main(argv: list[str] | None = None) -> int:
     if sub == "profile":
         from icdev.tools.cli.profile import main as profile_main
         return profile_main(rest)
+
+    if sub == "audit":
+        from tools.cli.audit import main as audit_main
+        return audit_main(rest)
 
     print(f"icdev: unknown subcommand '{sub}'\n\n{USAGE}", file=sys.stderr)
     return 2
