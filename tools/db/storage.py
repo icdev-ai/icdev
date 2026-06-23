@@ -1297,11 +1297,31 @@ def get_connection(db_path: str = None) -> StorageConnection:
     so that operations (task creation, notifications) are not silently
     lost during PG outages.
 
+    When ICDEV_DATA_RESIDENCY_ENABLED=true and a Flask request context
+    carries g.tenant_id, the call is delegated to zone_router.get_zone_connection()
+    which routes to the tenant's dedicated PG instance (or falls back to default).
+
     Returns a StorageConnection wrapper that transparently handles
     SQL translation between SQLite and PostgreSQL. When called inside a
     Flask request context the connection is automatically scoped to the
     authenticated user's tenant and classification via set_security_context.
     """
+    # Data residency routing: delegate to zone router when enabled and tenant is known.
+    if os.environ.get("ICDEV_DATA_RESIDENCY_ENABLED", "").lower() in ("true", "1"):
+        try:
+            from flask import g, has_request_context  # noqa: PLC0415
+
+            if has_request_context():
+                tenant_id = getattr(g, "tenant_id", None)
+                if tenant_id:
+                    from tools.db.zone_router import get_zone_connection  # noqa: PLC0415
+
+                    conn = get_zone_connection(tenant_id)
+                    _attach_flask_security_context(conn)
+                    return conn
+        except ImportError:
+            pass
+
     backend = os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql").lower()
 
     # A db_path ending in '.db' selects a dedicated SQLite file ONLY when the

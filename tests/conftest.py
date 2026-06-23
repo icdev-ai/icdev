@@ -1263,6 +1263,21 @@ CREATE TABLE IF NOT EXISTS foundry_outcomes (
     classification TEXT    NOT NULL DEFAULT 'CUI',
     created_at     TEXT    NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS data_residency_zones (
+    zone_id     TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    pg_dsn_env  TEXT NOT NULL,
+    region      TEXT,
+    description TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS tenant_zone_assignments (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    tenant_id   TEXT NOT NULL UNIQUE,
+    zone_id     TEXT NOT NULL REFERENCES data_residency_zones(zone_id),
+    assigned_at TEXT NOT NULL DEFAULT (datetime('now')),
+    assigned_by TEXT
+);
 """
 
 
