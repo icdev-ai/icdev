@@ -34,6 +34,9 @@ Subcommands:
   disable <name> [...]     Disable — flip flags to false.
   status [--json]          Report which toggles are currently on/off.
   list [--json]            List supported toggle names + descriptions.
+  demo seed --tenant <slug> [--canvases <c1,c2,...>]
+                           Provision a demo tenant with synthetic data and
+                           ICDEV_DEMO_MODE enabled (read-only banner).
 
 Run `icdev <subcommand> --help` for subcommand-specific options.
 """
@@ -72,8 +75,43 @@ def main(argv: list[str] | None = None) -> int:
         from icdev.tools.cli.profile import main as profile_main
         return profile_main(rest)
 
+    if sub == "demo":
+        return _demo_main(rest)
+
     print(f"icdev: unknown subcommand '{sub}'\n\n{USAGE}", file=sys.stderr)
     return 2
+
+
+def _demo_main(args: list[str]) -> int:
+    """Handle 'icdev demo <cmd> [opts]'."""
+    import argparse
+    import json
+
+    parser = argparse.ArgumentParser(prog="icdev demo")
+    subs = parser.add_subparsers(dest="cmd")
+
+    seed_p = subs.add_parser("seed", help="Provision a demo tenant with synthetic data")
+    seed_p.add_argument("--tenant", required=True, help="Demo tenant slug (e.g. demo-acme)")
+    seed_p.add_argument(
+        "--canvases",
+        default=None,
+        help="Comma-separated canvas domains to seed (default: all 6 standard domains)",
+    )
+
+    parsed = parser.parse_args(args)
+    if parsed.cmd == "seed":
+        canvases = (
+            [c.strip() for c in parsed.canvases.split(",") if c.strip()]
+            if parsed.canvases
+            else None
+        )
+        from icdev.tools.demo.seeder import seed_demo_tenant
+        result = seed_demo_tenant(parsed.tenant, canvases=canvases)
+        print(json.dumps(result, indent=2))
+        return 0
+
+    parser.print_help()
+    return 1
 
 
 if __name__ == "__main__":

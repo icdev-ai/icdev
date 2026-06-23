@@ -374,9 +374,10 @@ def test_controller_launch_returns_instance_id(ace_db, monkeypatch):
     captured: dict = {}
 
     class _RecordOnlyExecutor:
-        def submit(self, fn, *args):
+        def submit(self, fn, *args, **kwargs):
             captured["fn"] = fn
             captured["args"] = args
+            captured["kwargs"] = kwargs
             return None
 
     ctrl._executor = _RecordOnlyExecutor()
@@ -436,8 +437,8 @@ def test_controller_launch_returns_instance_id(ace_db, monkeypatch):
     )
 
     class _SyncExecutor:
-        def submit(self, fn, *args):
-            fn(*args)
+        def submit(self, fn, *args, **kwargs):
+            fn(*args, **kwargs)
             return None
 
     ctrl._executor = _SyncExecutor()
@@ -462,3 +463,37 @@ def test_controller_launch_returns_instance_id(ace_db, monkeypatch):
     assert len(coworkers) == 1
     # The controller still attempted the normal lifecycle transitions.
     assert "active" in states and "complete" in states
+
+
+def test_controller_launch_threads_role_ids_to_run(ace_db):
+    """Regression: launch() must pass role_ids to _run as the ``role_ids``
+    parameter, not as the preceding ``webhook_url`` positional. The original
+    submit call passed role_ids as the 7th positional arg, which landed in
+    ``_run``'s ``webhook_url`` slot — so ``_run`` always saw ``role_ids=None``
+    and fell back to the problem classifier even when explicit roles were
+    requested. The fix submits role_ids as a keyword arg."""
+    from icdev.tools.ace.controller import ACEController
+
+    ctrl = ACEController()
+    captured: dict = {}
+
+    class _KwargAwareExecutor:
+        def submit(self, fn, *args, **kwargs):
+            captured["fn"] = fn
+            captured["args"] = args
+            captured["kwargs"] = kwargs
+            return None
+
+    ctrl._executor = _KwargAwareExecutor()
+
+    ctrl.launch(
+        "build a data pipeline", "cli", "ref-roles", role_ids=["agent_developer"]
+    )
+
+    assert captured["fn"] == ctrl._run
+    # role_ids must arrive as the `role_ids` kwarg, not silently swallowed by
+    # the `webhook_url` positional slot.
+    assert captured["kwargs"].get("role_ids") == ["agent_developer"]
+    # And the positional slots are exactly the 6 leading scalars — role_ids is
+    # NOT among them (it is not passed positionally into webhook_url's place).
+    assert len(captured["args"]) == 6

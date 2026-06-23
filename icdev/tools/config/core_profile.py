@@ -91,6 +91,10 @@ def profile_env_overrides(profile: dict[str, Any]) -> dict[str, str]:
     if profile.get("banner_mode") and not os.environ.get("ICDEV_BANNER_MODE"):
         overrides["ICDEV_BANNER_MODE"] = profile["banner_mode"]
 
+    license_tier = profile.get("license_tier")
+    if license_tier and not os.environ.get("ICDEV_LICENSE_TIER"):
+        overrides["ICDEV_LICENSE_TIER"] = license_tier
+
     if profile.get("brand_path") and not os.environ.get("ICDEV_BRAND_PATH"):
         # Resolve relative paths against repo root so .env entries are portable
         raw = profile["brand_path"]

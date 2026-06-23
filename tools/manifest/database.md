@@ -16,6 +16,7 @@
 ## Database (Additional)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
+| Zone Router | tools/db/zone_router.py | Per-tenant PostgreSQL connection router by data residency zone (ECR-DRES-02) — resolves tenant_zone_assignments, reads zone DSN from env var, opens zone-specific PG connection or falls back to default; caches in Flask g per-request with teardown handler | (library) | get_zone_connection(tenant_id) |
 | Migrate Add Missing Columns | tools/db/migrate_add_missing_columns.py | Add missing columns migration utility | --json | Migration results |
 | Migrate FathomDesk | tools/db/migrate_fathomdesk.py | Idempotent migration of ad_*, kg_*, and trading_daemon_* tables from legacy data/fathomdesk.db (SQLite) into the main ICDEV database (SQLite or PostgreSQL) | --source, --json, --gate | Migration results; exit 1 on --gate + failures |
 | Migrate to Storage | tools/db/migrate_to_storage.py | Migrate to centralized storage module | --json | Migration results |

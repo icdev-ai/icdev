@@ -37,15 +37,16 @@ Usage:
 import argparse
 import hashlib
 import json
-import logging
 import re
 import secrets
 import sys
 import uuid
 from datetime import datetime, timezone
-
-logger = logging.getLogger(__name__)
 from pathlib import Path
+
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -365,6 +366,14 @@ def provision_tenant(tenant_id):
         except Exception as _seed_exc:
             logger.warning("seed_tenant_defaults failed for %s: %s", tenant_id, _seed_exc)
 
+        # Wire Prometheus metrics — best-effort
+        try:
+            import tools.observability.metrics as _obs_m
+            if _obs_m.active_tenants is not None:
+                _obs_m.active_tenants.inc()
+        except Exception:
+            pass
+
         return {
             "id": tenant_id,
             "slug": slug,
@@ -606,6 +615,15 @@ def suspend_tenant(tenant_id):
         )
 
         conn.commit()
+
+        # Wire Prometheus metrics — best-effort
+        try:
+            import tools.observability.metrics as _obs_m
+            if _obs_m.active_tenants is not None:
+                _obs_m.active_tenants.dec()
+        except Exception:
+            pass
+
         return {"id": tenant_id, "status": TenantStatus.SUSPENDED.value, "updated_at": now}
     except Exception:
         conn.rollback()
@@ -648,6 +666,15 @@ def delete_tenant(tenant_id):
         )
 
         conn.commit()
+
+        # Wire Prometheus metrics — best-effort
+        try:
+            import tools.observability.metrics as _obs_m
+            if _obs_m.active_tenants is not None:
+                _obs_m.active_tenants.dec()
+        except Exception:
+            pass
+
         return {"id": tenant_id, "status": TenantStatus.DELETED.value, "updated_at": now}
     except Exception:
         conn.rollback()

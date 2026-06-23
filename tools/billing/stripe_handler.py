@@ -13,11 +13,12 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import logging
 import os
 import time
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
 
 _TOLERANCE_SECONDS = 300  # Stripe recommends 5 min
 

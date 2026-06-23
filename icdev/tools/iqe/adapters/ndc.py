@@ -45,6 +45,8 @@ _COLLECTIONS = [
     "network.ipam",
     "network.findings",
     "network.compliance_findings",  # alias for network.findings
+    "network.config_reviews",
+    "network.config_review_findings",
     "network.projects",
     "network.versions",
     "network.groups",
@@ -115,6 +117,12 @@ class NDCAdapter(IQEAdapter):
         elif collection in ("network.findings", "network.compliance_findings"):
             sql = f"SELECT * FROM nc_compliance_findings {tid_filter}"  # nosec B608
             rows = _fetch(conn, sql, tid_params)
+        elif collection == "network.config_reviews":
+            rows = _fetch(conn, "SELECT * FROM nc_config_reviews ORDER BY created_at DESC")
+        elif collection == "network.config_review_findings":
+            sql = "SELECT f.*, r.vendor, r.role_key, r.title AS review_title FROM nc_config_review_findings f " \
+                  "JOIN nc_config_reviews r ON r.id = f.review_id"
+            rows = _fetch(conn, sql)
         elif collection == "network.projects":
             rows = _fetch(conn, "SELECT * FROM nc_projects")
         elif collection == "network.versions":

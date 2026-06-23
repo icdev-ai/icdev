@@ -357,6 +357,26 @@ def guard_component_access(
         except ImportError:
             return
 
+        # Tier gate — checked before auth since it's a system-wide deployment gate
+        try:
+            from tools.billing.tier import get_active_tier, tier_satisfies
+            from tools.config.component_registry import get_registry as _get_reg
+            _comp_def = _get_reg().get(component_key)
+            if _comp_def is not None:
+                _min_tier = getattr(_comp_def, "min_tier", "community")
+                if not tier_satisfies(get_active_tier(), _min_tier):
+                    from tools.security.exceptions import TierAccessDenied
+                    logger.warning(
+                        "Tier gate blocked: canvas=%s required=%s active=%s",
+                        component_key, _min_tier, get_active_tier(),
+                    )
+                    raise TierAccessDenied(component_key, _min_tier)
+        except Exception as _tier_exc:
+            from tools.security.exceptions import TierAccessDenied as _TAD
+            if isinstance(_tier_exc, _TAD):
+                raise
+            logger.debug("Tier gate check error for %s: %s", component_key, _tier_exc)
+
         user = getattr(g, "current_user", None) or {}
         user_id = str(user.get("id", "") or user.get("user_id", "") or "")
         tenant_id = str(

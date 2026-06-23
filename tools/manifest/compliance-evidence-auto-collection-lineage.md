@@ -5,6 +5,7 @@
 ## Compliance Evidence Auto-Collection + Lineage (Phase 56)
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
+| SOC 2 Collector | tools/compliance/soc2_collector.py | SOC 2-specific evidence harvester — queries audit_trail and component_audit_log, maps rows to SOC 2 controls via soc2_controls.yaml, inserts into evidence_items. | --tenant-id, --framework (default soc2), --since (ISO date), --json | {collected, skipped, controls_covered} |
 | Evidence Collector | tools/compliance/evidence_collector.py | Universal evidence auto-collection across 14 compliance frameworks. DB query + file scan. | --project-id, --project-dir, --framework, --freshness, --list-frameworks, --json | Evidence manifest |
 | Evidence Chain | tools/compliance/evidence_chain.py | Continuous Compliance Evidence Chain — connects PDC/NDC/SDC audit trails into OSCAL 1.1.2-aligned evidence timeline. Stores snapshots in compliance_evidence_chain table. Gate: fails if no assessment evidence or >10 unresolved findings. | --project-id, --since (24h/7d), --json, --gate, --export-oscal, --output | Evidence chain manifest + OSCAL Assessment Results |
 | Evidence API | tools/dashboard/api/evidence.py | Blueprint: evidence stats, collect, freshness check, framework list | /api/evidence/* | REST endpoints |

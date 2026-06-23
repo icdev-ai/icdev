@@ -91,6 +91,8 @@ components:
     - network.objects
     - network.circuits
     - network.sites
+    - network.config_reviews
+    - network.config_review_findings
     - network.ai_decisions
     - network.partners
     - network.agreements_expiring
@@ -861,6 +863,7 @@ components:
   blueprint_attr: create_foundry_blueprint
   url_prefix: ''
   min_il: IL4
+  min_tier: enterprise
   default_roles: []
   nav:
     section: Build
@@ -1349,6 +1352,7 @@ components:
   blueprint_attr: create_admin_blueprint
   url_prefix: /admin
   min_il: IL4
+  min_tier: enterprise
   default_roles:
     - admin
     - superadmin

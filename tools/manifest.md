@@ -963,3 +963,46 @@
 | Github Listener | tools\notifications\adapters\github_listener.py | Auto-registered: adapters/github_listener.py | --json | JSON |
 | Github Notify | tools\notifications\adapters\github_notify.py | Auto-registered: adapters/github_notify.py | --json | JSON |
 | Gitlab Listener | tools\notifications\adapters\gitlab_listener.py | Auto-registered: adapters/gitlab_listener.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Canvas Seeders | tools\demo\canvas_seeders.py | Auto-registered: demo/canvas_seeders.py | --json | JSON |
+| Config Review | tools\network\config_review.py | Auto-registered: network/config_review.py | --json | JSON |
+| Health Blueprint | tools\observability\health_blueprint.py | Auto-registered: observability/health_blueprint.py | --json | JSON |
+| Gitlab Notify | tools\notifications\adapters\gitlab_notify.py | Auto-registered: adapters/gitlab_notify.py | --json | JSON |
+| Listener Base | tools\notifications\adapters\listener_base.py | Auto-registered: adapters/listener_base.py | --json | JSON |
+| Mattermost Listener | tools\notifications\adapters\mattermost_listener.py | Auto-registered: adapters/mattermost_listener.py | --json | JSON |
+| Skype Listener | tools\notifications\adapters\skype_listener.py | Auto-registered: adapters/skype_listener.py | --json | JSON |
+| Skype Notify | tools\notifications\adapters\skype_notify.py | Auto-registered: adapters/skype_notify.py | --json | JSON |
+| Teams Bot | tools\notifications\adapters\teams_bot.py | Auto-registered: adapters/teams_bot.py | --json | JSON |
+| Teams Listener | tools\notifications\adapters\teams_listener.py | Auto-registered: adapters/teams_listener.py | --json | JSON |
+| Mcip | tools\iqe\adapters\mcip.py | Auto-registered: adapters/mcip.py | --json | JSON |
+| Skillspector Adapter | tools\integrity\adapters\skillspector_adapter.py | Auto-registered: adapters/skillspector_adapter.py | --json | JSON |
+| Ace Team Monitor | tools\genesis\reflexes\ace_team_monitor.py | Auto-registered: reflexes/ace_team_monitor.py | --json | JSON |
+| Aidp Monitor | tools\genesis\reflexes\aidp_monitor.py | Auto-registered: reflexes/aidp_monitor.py | --json | JSON |
+| Cpmp Monitor | tools\genesis\reflexes\cpmp_monitor.py | Auto-registered: reflexes/cpmp_monitor.py | --json | JSON |
+| Dic Review Cadence | tools\genesis\reflexes\dic_review_cadence.py | Auto-registered: reflexes/dic_review_cadence.py | --json | JSON |
+| Fathomdesk Correlation Monitor | tools\genesis\reflexes\fathomdesk_correlation_monitor.py | Auto-registered: reflexes/fathomdesk_correlation_monitor.py | --json | JSON |
+| Inspect Adapt | tools\genesis\reflexes\inspect_adapt.py | Auto-registered: reflexes/inspect_adapt.py | --json | JSON |
+| Integrity Monitor | tools\genesis\reflexes\integrity_monitor.py | Auto-registered: reflexes/integrity_monitor.py | --json | JSON |
+| Mcip Dti Scorer | tools\genesis\reflexes\mcip_dti_scorer.py | Auto-registered: reflexes/mcip_dti_scorer.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Pma Credential Monitor | tools\genesis\reflexes\pma_credential_monitor.py | Auto-registered: reflexes/pma_credential_monitor.py | --json | JSON |
+| Pma Int Gap Monitor | tools\genesis\reflexes\pma_int_gap_monitor.py | Auto-registered: reflexes/pma_int_gap_monitor.py | --json | JSON |
+| Pmo Option Tracker | tools\genesis\reflexes\pmo_option_tracker.py | Auto-registered: reflexes/pmo_option_tracker.py | --json | JSON |
+| Pmo Weekly Report | tools\genesis\reflexes\pmo_weekly_report.py | Auto-registered: reflexes/pmo_weekly_report.py | --json | JSON |
+| Skill Security Monitor | tools\genesis\reflexes\skill_security_monitor.py | Auto-registered: reflexes/skill_security_monitor.py | --json | JSON |
+| Usage Rollup | tools\genesis\reflexes\usage_rollup.py | Auto-registered: reflexes/usage_rollup.py | --json | JSON |
+| Botframework Base | tools\gateway\adapters\botframework_base.py | Auto-registered: adapters/botframework_base.py | --json | JSON |
+| Clawhub Connector | tools\databridge\connectors\clawhub_connector.py | Auto-registered: connectors/clawhub_connector.py | --json | JSON |
+| Github Connector | tools\databridge\connectors\github_connector.py | Auto-registered: connectors/github_connector.py | --json | JSON |
+| Skype Connector | tools\databridge\connectors\skype_connector.py | Auto-registered: connectors/skype_connector.py | --json | JSON |
+| Teams Connector | tools\databridge\connectors\teams_connector.py | Auto-registered: connectors/teams_connector.py | --json | JSON |
+| Llm Http Auth | tools\ai_augmentation\implementations\llm_http_auth.py | Auto-registered: implementations/llm_http_auth.py | --json | JSON |
+| Stig Nlp Extractor | tools\ai_augmentation\agent_readiness\pillars\stig_nlp_extractor.py | Auto-registered: pillars/stig_nlp_extractor.py | --json | JSON |

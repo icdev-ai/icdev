@@ -127,6 +127,7 @@ class Component:
     blueprint_attr: str | None
     url_prefix: str
     min_il: str
+    min_tier: str  # community | professional | enterprise
     default_roles: list[str]
     nav: dict[str, Any]
     iqe: dict[str, Any]
@@ -284,6 +285,10 @@ class ComponentRegistry:
         blueprint_attr = str(blueprint_attr).strip() if blueprint_attr else ""
         url_prefix = str(raw.get("url_prefix", f"/{key}")).strip()
         min_il = str(raw.get("min_il", "IL2")).strip()
+        _valid_tiers = ("community", "professional", "enterprise")
+        min_tier = str(raw.get("min_tier", "community")).strip().lower()
+        if min_tier not in _valid_tiers:
+            min_tier = "community"
         default_roles = list(raw.get("default_roles", []) or [])
         nav = dict(raw.get("nav", {}) or {})
         iqe = dict(raw.get("iqe", {}) or {})
@@ -308,6 +313,7 @@ class ComponentRegistry:
             blueprint_attr=blueprint_attr or None,
             url_prefix=url_prefix,
             min_il=min_il,
+            min_tier=min_tier,
             default_roles=default_roles,
             nav=nav,
             iqe=iqe,
@@ -683,6 +689,7 @@ class ComponentRegistry:
                     "kind": c.kind,
                     "url_prefix": c.url_prefix,
                     "min_il": c.min_il,
+                    "min_tier": c.min_tier,
                     "default_roles": list(c.default_roles),
                     "enabled": c.is_enabled(self._env),
                     "links": self._normalize_nav_links(c.nav, c.url_prefix),
@@ -739,6 +746,7 @@ class CanvasCompletenessReport:
     key: str
     passed: bool
     items: tuple[CanvasCompletenessItem, ...]
+    min_tier: str = "community"
 
 
 def _file_exists(path: Path | str | None) -> bool:
@@ -998,6 +1006,7 @@ def validate_canvas_completeness(
         key=key,
         passed=passed,
         items=tuple(items),
+        min_tier=comp.min_tier,
     )
 
 

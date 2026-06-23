@@ -71,6 +71,8 @@ except ImportError:
     _track_request = None
 # Air-gap mode: hide cloud-dependent pages (Pulse, ClawHub, Genesis, GovCon, etc.)
 _AIRGAP_MODE = os.environ.get("ICDEV_AIRGAP", "").lower() in ("true", "1", "yes")
+# Demo mode: read-only enforcement (POST/PUT/DELETE to /api/* blocked except onboarding + IQE)
+_DEMO_MODE = os.environ.get("ICDEV_DEMO_MODE", "").lower() in ("true", "1", "yes")
 # Pages disabled in air-gap mode (routes → friendly message instead of 404)
 _AIRGAP_DISABLED_ROUTES = frozenset(
     {
@@ -142,6 +144,16 @@ from tools.dashboard.ux_helpers import register_ux_filters  # noqa: E402
 from tools.config.component_registry import get_registry  # noqa: E402
 
 _REGISTRY = get_registry()
+
+
+def _get_active_tier_safe() -> str:
+    """Return the active license tier; falls back to 'community' if unavailable."""
+    try:
+        from tools.billing.tier import get_active_tier
+        return get_active_tier()
+    except Exception:
+        return "community"
+
 
 # URL prefixes for all canvases; used by base.html to highlight the Canvases menu.
 _CANVAS_URL_PREFIXES = tuple(
@@ -1704,18 +1716,12 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("Budget services skipped: %s", _exc)
 
-    # Liveness probe — used by /start, container healthchecks, and uptime monitors.
-    # Cheap, no DB call. For deeper checks see /api/platform/health.
-    @app.route("/health", methods=["GET"])
-    def health():
-        return (
-            {
-                "status": "ok",
-                "service": "icdev-dashboard",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            },
-            200,
-        )
+    # Health / readiness / liveness probes (ECR-OBS-03)
+    try:
+        from tools.observability.health_blueprint import health_bp as _health_bp
+        app.register_blueprint(_health_bp)
+    except Exception as _exc:
+        app.logger.warning("Health blueprint skipped: %s", _exc)
 
     @app.route("/api/_introspect/routes", methods=["GET"])
     def _introspect_routes():
@@ -2017,6 +2023,23 @@ def create_app() -> Flask:
             _route_map = {}
 
         theme_pref = flask_request.cookies.get("icdev_theme", "dark")
+
+        # ECR-CL-02: unseen-release badge — compare brand.version to last seen
+        _unseen_release = False
+        _uid = flask_session.get("user_id")
+        if _uid:
+            try:
+                _cached_seen = flask_session.get("_seen_version")
+                if _cached_seen is None:
+                    from tools.auth.onboarding import get_last_seen_version as _get_lsv
+                    _cached_seen = _get_lsv(_uid)
+                    flask_session["_seen_version"] = _cached_seen or ""
+                from tools.dashboard.brand import get_brand as _get_brand_ctx
+                _bv = _get_brand_ctx().get("version", "")
+                _unseen_release = bool(_bv) and (_cached_seen or "") != _bv
+            except Exception:
+                pass
+
         return {
             "cui_banner_top": CUI_BANNER_TOP,
             "cui_banner_bottom": CUI_BANNER_BOTTOM,
@@ -2065,6 +2088,10 @@ def create_app() -> Flask:
                 flask_request.path.startswith(prefix)
                 for prefix in _CANVAS_URL_PREFIXES
             ),
+            # License tier context — used by nav lock indicators and tier_gate.html
+            "active_tier": _get_active_tier_safe(),
+            "tier_order": {"community": 0, "professional": 1, "enterprise": 2},
+            "unseen_release": _unseen_release,
         }
 
     # ---- Brand + banner context processor (DSW-1) ----
@@ -2090,6 +2117,23 @@ def create_app() -> Flask:
                         "airgap_unavailable.html",
                         feature_name=disabled.strip("/").replace("-", " ").title(),
                     ), 200
+
+    # ---- ECR-DEMO-03: Demo mode read-only guard ----
+    if _DEMO_MODE:
+
+        @app.before_request
+        def _demo_mode_guard():
+            if flask_request.method not in ("POST", "PUT", "DELETE", "PATCH"):
+                return None
+            path = flask_request.path
+            if not path.startswith("/api/"):
+                return None
+            # Allow onboarding wizard and IQE queries through
+            if path.startswith("/api/onboarding/") or path == "/api/iqe-query":
+                return None
+            from tools.dashboard.brand import get_brand
+            upgrade_url = get_brand().get("support_url", "")
+            return jsonify({"error": "Demo mode: read-only", "upgrade_url": upgrade_url}), 403
 
     # ---- ECR-BILL-02: API call metering (fire-and-forget after_request) ----
     @app.after_request
@@ -2506,6 +2550,14 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("Enterprise SSO blueprint failed to register: %s", _exc)
 
+    # ---- Onboarding API Blueprint ----
+    try:
+        from tools.auth.blueprint import onboarding_bp as _onboarding_bp
+        app.register_blueprint(_onboarding_bp)
+        app.logger.info("Onboarding API blueprint registered at /api/onboarding")
+    except Exception as _exc:
+        app.logger.warning("Onboarding API blueprint failed to register: %s", _exc)
+
     # ---- Stripe Webhook Blueprint (no auth, signature-verified) ----
     try:
         from tools.admin.blueprint import create_stripe_webhook_blueprint as _stripe_wh_factory
@@ -2514,6 +2566,43 @@ def create_app() -> Flask:
         app.logger.info("Stripe webhook blueprint registered at /webhooks/stripe")
     except Exception as _exc:
         app.logger.warning("Stripe webhook blueprint failed to register: %s", _exc)
+
+    # ---- Platform Updates (CHANGELOG.md viewer) ----
+    try:
+        from tools.dashboard.changelog import parse_changelog as _parse_changelog
+        import os as _os
+
+        @app.route("/updates")
+        def updates_page():
+            _changelog_path = _os.path.join(_os.path.dirname(__file__), "..", "..", "CHANGELOG.md")
+            try:
+                releases = _parse_changelog(_changelog_path)
+            except Exception as _exc:
+                app.logger.warning("Failed to parse CHANGELOG.md: %s", _exc)
+                releases = []
+                return render_template("updates/page.html", releases=releases, error=str(_exc))
+            return render_template("updates/page.html", releases=releases, error=None)
+
+        app.logger.info("Updates route registered at /updates")
+    except Exception as _exc:
+        app.logger.warning("Updates route failed to register: %s", _exc)
+
+    # ---- ECR-CL-02: Mark current version as seen ----
+    @app.route("/api/user/prefs/seen-version", methods=["PATCH"])
+    def api_user_prefs_seen_version():
+        user_id = flask_session.get("user_id")
+        if not user_id:
+            return jsonify({"error": "unauthenticated"}), 401
+        try:
+            from tools.auth.onboarding import set_last_seen_version as _set_seen
+            from tools.dashboard.brand import get_brand as _get_brand_sv
+            _brand_ver = _get_brand_sv().get("version", "")
+            _set_seen(user_id, _brand_ver)
+            flask_session["_seen_version"] = _brand_ver
+        except Exception as _exc:
+            app.logger.warning("seen-version PATCH failed: %s", _exc)
+            return jsonify({"error": str(_exc)}), 500
+        return jsonify({"ok": True, "seen_version": _brand_ver})
 
     # ---- Convenience JSON routes that match the spec ----
 
@@ -8268,6 +8357,51 @@ def create_app() -> Flask:
             conn.close()
         return render_template("filesync.html", stats=stats, jobs=jobs, log_entries=log_entries)
 
+    try:
+        from tools.security.exceptions import TierAccessDenied as _TierAccessDenied
+
+        @app.errorhandler(_TierAccessDenied)
+        def tier_gate_handler(e):
+            from tools.billing.tier import get_active_tier as _get_active_tier
+            _active = _get_active_tier()
+            if flask_request.is_json or flask_request.path.startswith("/api/"):
+                return jsonify({
+                    "error": "TierAccessDenied",
+                    "canvas": e.canvas_key,
+                    "required_tier": e.required_tier,
+                    "active_tier": _active,
+                    "message": str(e),
+                }), 403
+            return render_template(
+                "errors/tier_gate.html",
+                canvas_key=e.canvas_key,
+                required_tier=e.required_tier,
+                active_tier=_active,
+            ), 403
+    except ImportError:
+        pass
+
+    @app.route("/api/license/tier", methods=["GET"])
+    def api_license_tier():
+        """Return active tier, available features, and locked features."""
+        from tools.billing.tier import get_active_tier as _gat, tier_satisfies as _ts
+        _active = _gat()
+        _available: list[str] = []
+        _locked: list[str] = []
+        try:
+            for _comp in _REGISTRY.iter_canvases():
+                if _ts(_active, _comp.min_tier):
+                    _available.append(_comp.key)
+                else:
+                    _locked.append(_comp.key)
+        except Exception:
+            pass
+        return jsonify({
+            "active_tier": _active,
+            "available_features": sorted(_available),
+            "locked_features": sorted(_locked),
+        })
+
     @app.errorhandler(401)
     def unauthorized(e):
         if flask_request.is_json or flask_request.path.startswith("/api/"):
@@ -10970,6 +11104,29 @@ def create_app() -> Flask:
 
     if _track_request is not None:
         _track_request(app)
+
+    # ---- ECR-OBS-01: Prometheus /metrics endpoint ----
+    try:
+        from tools.observability.metrics import (
+            wire_flask_metrics as _wire_metrics,
+            registry as _prom_registry,
+            generate_latest as _gen_latest,
+            CONTENT_TYPE_LATEST as _PROM_CT,
+        )
+
+        wire_flask_metrics = _wire_metrics  # expose for tests
+
+        @app.route("/metrics", methods=["GET"])
+        def prometheus_metrics():
+            if _prom_registry is None or _gen_latest is None:
+                return Response("# prometheus_client not installed\n",
+                                status=503, mimetype="text/plain")
+            data = _gen_latest(_prom_registry)
+            return Response(data, status=200, mimetype=_PROM_CT)
+
+        _wire_metrics(app)
+    except Exception as _prom_exc:
+        app.logger.debug("Prometheus metrics init skipped: %s", _prom_exc)
 
     return app
 

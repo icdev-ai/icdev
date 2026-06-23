@@ -70,6 +70,8 @@ except ImportError:
     _track_request = None
 # Air-gap mode: hide cloud-dependent pages (Pulse, ClawHub, Genesis, GovCon, etc.)
 _AIRGAP_MODE = os.environ.get("ICDEV_AIRGAP", "").lower() in ("true", "1", "yes")
+# Demo mode: read-only enforcement (POST/PUT/DELETE to /api/* blocked except onboarding + IQE)
+_DEMO_MODE = os.environ.get("ICDEV_DEMO_MODE", "").lower() in ("true", "1", "yes")
 # Pages disabled in air-gap mode (routes → friendly message instead of 404)
 _AIRGAP_DISABLED_ROUTES = frozenset(
     {
@@ -2019,6 +2021,23 @@ def create_app() -> Flask:
                         "airgap_unavailable.html",
                         feature_name=disabled.strip("/").replace("-", " ").title(),
                     ), 200
+
+    # ---- ECR-DEMO-03: Demo mode read-only guard ----
+    if _DEMO_MODE:
+
+        @app.before_request
+        def _demo_mode_guard():
+            if flask_request.method not in ("POST", "PUT", "DELETE", "PATCH"):
+                return None
+            path = flask_request.path
+            if not path.startswith("/api/"):
+                return None
+            # Allow onboarding wizard and IQE queries through
+            if path.startswith("/api/onboarding/") or path == "/api/iqe-query":
+                return None
+            from tools.dashboard.brand import get_brand
+            upgrade_url = get_brand().get("support_url", "")
+            return jsonify({"error": "Demo mode: read-only", "upgrade_url": upgrade_url}), 403
 
     # ---- Auto-register A2A agents from card files ----
     try:

@@ -69,6 +69,8 @@ def _convert_messages_to_ollama(messages: List[Dict[str, Any]], system_prompt: s
         if isinstance(content, list):
             text_parts: List[str] = []
             images: List[str] = []
+            tool_calls: List[Dict[str, Any]] = []
+            tool_results: List[tuple] = []
 
             for block in content:
                 if not isinstance(block, dict):
@@ -94,20 +96,50 @@ def _convert_messages_to_ollama(messages: List[Dict[str, Any]], system_prompt: s
                         b64 = url.split(",", 1)[1]
                         images.append(b64)
 
-                elif btype == "tool_result":
-                    # Flatten tool_result content blocks to text
-                    inner = block.get("content", [])
-                    for ib in inner:
-                        if isinstance(ib, dict) and ib.get("type") == "text":
-                            text_parts.append(ib.get("text", ""))
+                elif btype == "tool_use":
+                    # Assistant tool call — Ollama expects tool_calls on the
+                    # assistant message as [{"function": {"name", "arguments"}}].
+                    tool_calls.append(
+                        {
+                            "function": {
+                                "name": block.get("name", ""),
+                                "arguments": block.get("input") or {},
+                            }
+                        }
+                    )
 
-            ollama_msg: Dict[str, Any] = {
-                "role": role,
-                "content": "\n".join(text_parts),
-            }
-            if images:
-                ollama_msg["images"] = images
-            result.append(ollama_msg)
+                elif btype == "tool_result":
+                    # Tool result — Ollama uses a dedicated role:"tool" message
+                    # (flattening it into a user message drops the linkage and
+                    # makes the model re-invoke the tool every turn).
+                    inner = block.get("content", [])
+                    rtext = "\n".join(
+                        ib.get("text", "")
+                        for ib in inner
+                        if isinstance(ib, dict) and ib.get("type") == "text"
+                    )
+                    tool_results.append((block.get("name", "") or "", rtext))
+
+            # Emit each tool result as its own role:"tool" message.
+            for tname, rtext in tool_results:
+                tm: Dict[str, Any] = {"role": "tool", "content": rtext}
+                if tname:
+                    tm["name"] = tname
+                result.append(tm)
+
+            # Emit the carrying message when it has text/images/tool_calls. A
+            # message that only carried tool_result blocks is fully represented
+            # by the role:"tool" messages above — don't also emit an empty one.
+            if text_parts or images or tool_calls:
+                ollama_msg: Dict[str, Any] = {
+                    "role": role,
+                    "content": "\n".join(text_parts),
+                }
+                if images:
+                    ollama_msg["images"] = images
+                if tool_calls:
+                    ollama_msg["tool_calls"] = tool_calls
+                result.append(ollama_msg)
         else:
             # Fallback: pass through
             result.append({"role": role, "content": str(content)})
@@ -225,6 +257,36 @@ class OllamaProvider(LLMProvider):
             response.stop_reason = done_reason
         elif data.get("done", False):
             response.stop_reason = "stop"
+
+        # Tool calls — Ollama's /api/chat returns these on `message.tool_calls`
+        # as [{"id": ..., "function": {"name": ..., "arguments": <dict|str>}}].
+        # Normalise to the cross-provider {id, name, input} shape used by the
+        # OpenAI/Anthropic providers and the agent-loop primitive. Without this
+        # every Ollama model reports tool_calls=[] and cannot drive a tool-use
+        # loop even when the model emitted calls.
+        raw_tool_calls = message.get("tool_calls") or []
+        for tc in raw_tool_calls:
+            func = tc.get("function") or {}
+            name = func.get("name") or tc.get("name") or ""
+            if not name:
+                continue
+            args = func.get("arguments")
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except (json.JSONDecodeError, ValueError):
+                    args = {"raw": args}
+            if not isinstance(args, dict):
+                args = {} if args is None else {"raw": args}
+            response.tool_calls.append(
+                {
+                    "id": tc.get("id") or f"call_{name}_{len(response.tool_calls)}",
+                    "name": name,
+                    "input": args,
+                }
+            )
+        if response.tool_calls and not done_reason:
+            response.stop_reason = "tool_use"
 
         # Token usage (Ollama provides these at top level)
         response.input_tokens = data.get("prompt_eval_count", 0) or 0

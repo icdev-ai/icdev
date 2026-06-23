@@ -13510,6 +13510,315 @@ Planning rules:
         """Document library — redirect to SOPs for now."""
         return redirect("/network/sops")
 
+    # ── Configuration Review Assistant ────────────────────────────────────
+    from tools.network.config_review import (
+        get_roles as _cr_get_roles,
+        get_questions as _cr_get_questions,
+        generate_guided_prompts as _cr_generate_prompts,
+        build_llm_prompt as _cr_build_prompt,
+        parse_review_response as _cr_parse_response,
+        compute_config_hash as _cr_config_hash,
+        generate_export_config as _cr_export_config,
+        generate_export_topology as _cr_export_topology,
+    )
+    from tools.network.config_parser import detect_vendor as _cr_detect_vendor
+
+    @bp.route("/config-review")
+    @nc_login_required
+    def nc_config_review_page():
+        """Role-based configuration review assistant."""
+        from tools.network.config_review import get_questions as _cr_get_questions
+        roles = _cr_get_roles()
+        questions_by_role = {k: _cr_get_questions(k) for k in roles}
+        return render_template(
+            "network/config_review.html",
+            roles=roles,
+            questions_by_role=questions_by_role,
+            classification_banner=NC_CONFIG.get("app", {}).get("classification", ""),
+        )
+
+    @bp.route("/api/config-review", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_config_review():
+        """Create a new config review record.
+
+        Accepts multipart (file) or JSON (config_text). Returns review id,
+        detected vendor, role, and guided prompts.
+        """
+        data = request.get_json(silent=True) or {}
+        config_text = ""
+        title = data.get("title", "Config Review")
+        role_key = data.get("role", "network_engineer")
+
+        if request.files and "file" in request.files:
+            f = request.files["file"]
+            if f.filename:
+                config_text = f.read().decode("utf-8", errors="replace")
+                if not title or title == "Config Review":
+                    title = f.filename
+        if not config_text:
+            config_text = data.get("config_text", "")
+
+        if not config_text.strip():
+            return jsonify({"error": "No configuration provided"}), 400
+
+        vendor = data.get("vendor") or _cr_detect_vendor(config_text) or "generic"
+        if role_key not in _cr_get_roles():
+            return jsonify({"error": f"Unknown role: {role_key}"}), 400
+
+        review_id = str(_uuid.uuid4())
+        created_at = datetime.now(timezone.utc).isoformat()
+        answers_json = json.dumps({})
+
+        conn = get_connection()
+        try:
+            conn.execute(
+                "INSERT INTO nc_config_reviews (id, title, vendor, role_key, answers_json, config_text_hash, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (review_id, title, vendor, role_key, answers_json, _cr_config_hash(config_text), "draft", created_at, created_at),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        # Store the raw config in session for now (too large for DB in some cases).
+        session[f"nc_config_review_text_{review_id}"] = config_text
+
+        prompts = _cr_generate_prompts(role_key, vendor)
+        _audit("CONFIG_REVIEW_CREATED", "config_review", review_id, f"vendor={vendor}, role={role_key}")
+        return jsonify({
+            "id": review_id,
+            "title": title,
+            "vendor": vendor,
+            "role": role_key,
+            "questions": _cr_get_questions(role_key),
+            "prompts": prompts,
+        })
+
+    @bp.route("/api/config-review/<review_id>/analyze", methods=["POST"])
+    @nc_login_required
+    def nc_api_analyze_config_review(review_id):
+        """Run the LLM review for a given review id."""
+        data = request.get_json(silent=True) or {}
+        answers = data.get("answers", {})
+        selected_prompt_title = data.get("prompt_title", "")
+
+        session_key = f"nc_config_review_text_{review_id}"
+        config_text = session.get(session_key, "")
+        if not config_text:
+            return jsonify({"error": "Review session expired or not found"}), 404
+
+        conn = get_connection()
+        try:
+            row = conn.execute("SELECT * FROM nc_config_reviews WHERE id=?", (review_id,)).fetchone()
+            if not row:
+                conn.close()
+                return jsonify({"error": "Review not found"}), 404
+            review = _row_to_dict(row)
+            conn.execute("UPDATE nc_config_reviews SET status='analyzing', answers_json=? WHERE id=?", (json.dumps(answers), review_id))
+            conn.commit()
+        finally:
+            conn.close()
+
+        role_key = review["role_key"]
+        vendor = review["vendor"]
+        roles = _cr_get_roles()
+        role_label = roles.get(role_key, {}).get("label", role_key)
+
+        # Optional quick parsing to surface hostname if detectable.
+        hostname = ""
+        try:
+            from tools.network.config_import import import_config
+            import os
+            import tempfile
+
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".cfg", delete=False) as tf:
+                tf.write(config_text)
+                tf_path = tf.name
+            try:
+                device = import_config(tf_path)
+                hostname = device.get("hostname", "")
+            finally:
+                os.unlink(tf_path)
+        except Exception:
+            pass
+
+        prompt = _cr_build_prompt(role_key, config_text, vendor, answers, hostname=hostname, selected_prompt_title=selected_prompt_title)
+
+        result = {}
+        llm_error = None
+        try:
+            from tools.llm.router import LLMRouter
+            from tools.llm.provider import LLMRequest
+            router = LLMRouter()
+            req = LLMRequest(
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=4096,
+                temperature=0.2,
+                skip_injection_scan=True,  # config text is the artifact under review, not an untrusted prompt
+            )
+            resp = router.invoke("ndc_config_review", req)
+            result = _cr_parse_response(resp.content or "", vendor)
+        except Exception as exc:
+            logger.warning("Config review LLM error: %s", exc)
+            llm_error = str(exc)
+            result = _cr_parse_response("", vendor)
+            result["explanation"] = f"LLM unavailable: {llm_error}. Showing deterministic fallback."
+
+        # Persist findings.
+        conn = get_connection()
+        try:
+            result_json = json.dumps(result)
+            conn.execute(
+                "UPDATE nc_config_reviews SET status=?, result_json=?, updated_at=? WHERE id=?",
+                ("complete" if not llm_error else "error", result_json, datetime.now(timezone.utc).isoformat(), review_id),
+            )
+            # Clear old findings.
+            conn.execute("DELETE FROM nc_config_review_findings WHERE review_id=?", (review_id,))
+            for category in ("security_compliance", "optimization", "remediation"):
+                for item in result.get(category, []):
+                    finding_id = str(_uuid.uuid4())
+                    severity = item.get("severity", "info")
+                    if category == "optimization":
+                        severity = item.get("priority", "info")
+                    elif category == "remediation":
+                        severity = item.get("priority", "medium")
+                    conn.execute(
+                        "INSERT INTO nc_config_review_findings (id, review_id, category, severity, title, detail, remediation, sample_config_snippet, references_json) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            finding_id,
+                            review_id,
+                            category,
+                            severity,
+                            item.get("title", ""),
+                            item.get("detail", "") or item.get("description", ""),
+                            item.get("remediation", "") or item.get("recommendation", ""),
+                            item.get("sample_config_snippet", ""),
+                            json.dumps(item.get("references", [])),
+                        ),
+                    )
+            conn.commit()
+        finally:
+            conn.close()
+
+        _audit("CONFIG_REVIEW_ANALYZED", "config_review", review_id, f"role={role_label}, vendor={vendor}")
+        return jsonify({"id": review_id, "status": "complete" if not llm_error else "error", "result": result})
+
+    @bp.route("/api/config-review/<review_id>", methods=["GET"])
+    @nc_login_required
+    def nc_api_get_config_review(review_id):
+        """Retrieve a persisted config review and its findings."""
+        conn = get_connection()
+        try:
+            row = conn.execute("SELECT * FROM nc_config_reviews WHERE id=?", (review_id,)).fetchone()
+            if not row:
+                conn.close()
+                return jsonify({"error": "Review not found"}), 404
+            review = _row_to_dict(row)
+            findings = [_row_to_dict(r) for r in conn.execute(
+                "SELECT * FROM nc_config_review_findings WHERE review_id=? ORDER BY created_at", (review_id,)
+            ).fetchall()]
+        finally:
+            conn.close()
+
+        result = {}
+        if review.get("result_json"):
+            try:
+                result = json.loads(review["result_json"])
+            except json.JSONDecodeError:
+                pass
+
+        return jsonify({
+            "review": review,
+            "findings": findings,
+            "result": result,
+        })
+
+    @bp.route("/api/config-review/<review_id>/export-config", methods=["POST"])
+    @nc_login_required
+    def nc_api_export_review_config(review_id):
+        """Export a starter config from the review findings."""
+        conn = get_connection()
+        try:
+            row = conn.execute("SELECT vendor FROM nc_config_reviews WHERE id=?", (review_id,)).fetchone()
+            if not row:
+                conn.close()
+                return jsonify({"error": "Review not found"}), 404
+            vendor = row["vendor"]
+            findings = [_row_to_dict(r) for r in conn.execute(
+                "SELECT * FROM nc_config_review_findings WHERE review_id=?", (review_id,)
+            ).fetchall()]
+        finally:
+            conn.close()
+
+        config_text = _cr_export_config(vendor, findings)
+        _audit("CONFIG_REVIEW_EXPORT_CONFIG", "config_review", review_id, f"vendor={vendor}")
+        return jsonify({"config": config_text, "vendor": vendor})
+
+    @bp.route("/api/config-review/<review_id>/export-topology", methods=["POST"])
+    @nc_login_required
+    def nc_api_export_review_topology(review_id):
+        """Export a topology graph from the review findings."""
+        conn = get_connection()
+        try:
+            row = conn.execute("SELECT vendor, result_json FROM nc_config_reviews WHERE id=?", (review_id,)).fetchone()
+            if not row:
+                conn.close()
+                return jsonify({"error": "Review not found"}), 404
+            vendor = row["vendor"]
+            result = json.loads(row["result_json"] or "{}")
+            topology = _cr_export_topology(result.get("remediation", []), vendor)
+            # If the LLM returned a topology graph, use it instead.
+            if result.get("topology_graph") and result["topology_graph"].get("nodes"):
+                topology = result["topology_graph"]
+        finally:
+            conn.close()
+
+        _audit("CONFIG_REVIEW_EXPORT_TOPOLOGY", "config_review", review_id, f"vendor={vendor}")
+        return jsonify({"graph": topology, "vendor": vendor})
+
+    @bp.route("/api/iqe-query", methods=["POST"])
+    @nc_login_required
+    def nc_api_config_review_iqe_query():
+        """Per-canvas IQE query endpoint for the Network Canvas.
+
+        Dispatches natural-language questions to the NDC IQE adapter.
+        """
+        from tools.iqe.nl_to_iqe import nl_to_iqe
+        from tools.iqe.parser import IQESyntaxError, parse
+        from tools.iqe.executor import execute_query
+        import tools.iqe.adapters.ndc  # noqa: F401
+
+        data = request.get_json(silent=True) or {}
+        question = (data.get("question") or "").strip()
+        if not question:
+            return jsonify({"error": "question is required"}), 400
+
+        collections = [
+            "network.topologies",
+            "network.devices",
+            "network.config_reviews",
+            "network.config_review_findings",
+            "network.ai_decisions",
+        ]
+        translation = nl_to_iqe(question, collections)
+        iqe_str = translation.get("iqe", "")
+        explanation = translation.get("explanation", "")
+
+        if not data.get("execute", True):
+            return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation}), 200
+
+        try:
+            ast = parse(iqe_str)
+            rows = execute_query(ast, None)
+            return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation, "results": rows, "row_count": len(rows)}), 200
+        except IQESyntaxError as exc:
+            return jsonify({"error": f"IQE syntax error: {exc}", "iqe": iqe_str}), 400
+        except Exception as exc:
+            logger.warning("Network IQE query error: %s", exc)
+            return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))
     return bp

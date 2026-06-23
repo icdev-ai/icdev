@@ -132,6 +132,20 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
 # ---------------------------------------------------------------------------
 
 
+# Common aliases LLMs emit for the file-path parameter even when the schema
+# declares `path`. Accept the canonical name first, then the usual synonyms so
+# a `file_path`/`filename` call doesn't silently resolve to "" and fail.
+_PATH_ALIASES = ("path", "file_path", "filepath", "filename", "file")
+
+
+def _path_arg(inp: dict[str, Any]) -> str:
+    for key in _PATH_ALIASES:
+        val = inp.get(key)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    return ""
+
+
 class AgentToolRegistry:
     """Builds ``(tools, tool_handlers)`` for an ACE agent-mode co-worker.
 
@@ -204,14 +218,14 @@ class AgentToolRegistry:
     def _read_file(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
         from icdev.tools.ace.file_access_broker import FileAccessBroker
 
-        path = inp.get("path", "")
+        path = _path_arg(inp)
         broker = FileAccessBroker(self._folder_access)
         return broker.read(path, coworker_id=self._coworker_id, instance_id=self.instance_id)
 
     def _write_file(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
         from icdev.tools.ace.file_access_broker import FileAccessBroker
 
-        path = inp.get("path", "")
+        path = _path_arg(inp)
         content = inp.get("content", "")
         broker = FileAccessBroker(self._folder_access)
         n = broker.write(path, content, coworker_id=self._coworker_id, instance_id=self.instance_id)
@@ -220,7 +234,7 @@ class AgentToolRegistry:
     def _list_files(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
         from icdev.tools.ace.file_access_broker import FileAccessBroker, ScopeViolationError
 
-        path = inp.get("path", "")
+        path = _path_arg(inp)
         broker = FileAccessBroker(self._folder_access)
         # Reuse the broker's scope resolver by attempting a read of the directory.
         try:

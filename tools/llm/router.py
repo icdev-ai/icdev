@@ -1879,6 +1879,27 @@ class LLMRouter:
                 except Exception:
                     pass  # metering is never allowed to block LLM calls
 
+                # Wire Prometheus metrics — best-effort, never block LLM calls
+                try:
+                    import tools.observability.metrics as _obs_m
+                    if _obs_m.llm_calls_total is not None:
+                        _obs_m.llm_calls_total.labels(
+                            provider=provider_name, model=model_id
+                        ).inc()
+                    if _obs_m.llm_tokens_total is not None:
+                        _in_tok = getattr(response, "input_tokens", 0) or 0
+                        _out_tok = getattr(response, "output_tokens", 0) or 0
+                        if _in_tok:
+                            _obs_m.llm_tokens_total.labels(
+                                provider=provider_name, model=model_id, type="input"
+                            ).inc(_in_tok)
+                        if _out_tok:
+                            _obs_m.llm_tokens_total.labels(
+                                provider=provider_name, model=model_id, type="output"
+                            ).inc(_out_tok)
+                except Exception:
+                    pass
+
                 return response
             except Exception as exc:
                 logger.warning(
