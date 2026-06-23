@@ -1,0 +1,5 @@
+# Network Configuration Review seed queries for IQE
+# Each line is a natural-language prompt the widget can translate to IQE.
+show config reviews created today
+show config review findings with severity CAT1
+show config reviews by network_engineer role

@@ -269,6 +269,33 @@ CREATE TABLE IF NOT EXISTS nc_compliance_findings (
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Configuration Review Assistant: persisted reviews and findings
+CREATE TABLE IF NOT EXISTS nc_config_reviews (
+    id              TEXT PRIMARY KEY,
+    title           TEXT,
+    vendor          TEXT NOT NULL,             -- cisco_ios, cisco_nxos, juniper, generic
+    role_key        TEXT NOT NULL,             -- network_engineer, network_architect, ...
+    answers_json    TEXT DEFAULT '{}',
+    config_text_hash TEXT NOT NULL,
+    status          TEXT DEFAULT 'draft',      -- draft, analyzing, complete, error
+    result_json     TEXT,                      -- full parsed review result
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_config_review_findings (
+    id              TEXT PRIMARY KEY,
+    review_id       TEXT NOT NULL REFERENCES nc_config_reviews(id),
+    category        TEXT NOT NULL,             -- security_compliance, optimization, remediation
+    severity        TEXT DEFAULT 'info',       -- CAT1, CAT2, CAT3, info, high, medium, low
+    title           TEXT NOT NULL,
+    detail          TEXT,
+    remediation     TEXT,
+    sample_config_snippet TEXT,
+    references_json TEXT DEFAULT '[]',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Projects: group multiple topologies, circuits, IPAM under one engagement
 CREATE TABLE IF NOT EXISTS nc_projects (
     id          TEXT PRIMARY KEY,
@@ -1410,7 +1437,7 @@ CREATE INDEX IF NOT EXISTS idx_query_log_ts   ON nc_query_log(ts);
 
 -- ── Enclave-in-a-Box Snippets ─────────────────────────────────────────────
 -- Pre-built compliance-validated sub-topologies (SIPR, IL5 DMZ, Tactical Edge)
--- Drag onto canvas; all STIG properties pre-populated.
+-- Drag onto canvas. all STIG properties pre-populated.
 
 CREATE TABLE IF NOT EXISTS nc_collab_sessions (
     id          TEXT PRIMARY KEY,
@@ -13923,8 +13950,13 @@ def init_db():
                 if stmt and not stmt.startswith("--"):
                     try:
                         conn.execute(stmt)
+                        conn.commit()  # per-statement commit so a failure does not abort the whole schema
                     except Exception:
-                        pass  # table/index already exists
+                        try:
+                            conn.rollback()
+                        except Exception:
+                            pass
+                        # table/index already exists or malformed fragment; ignore and continue
             conn.commit()
             # PG audit immutability triggers (PL/pgSQL syntax)
             try:
@@ -14026,11 +14058,16 @@ def init_db():
                 conn.execute(f"SELECT {col} FROM {table} LIMIT 1")  # nosec B608 -- table/column names are internal constants, not user input
             except Exception:
                 try:
+                    conn.rollback()
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {coltype}")
                     conn.commit()
                     print(f"[init_db] Migrated: added {col} to {table}")
                 except Exception:
-                    pass  # Column might already exist with different syntax
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
+                    # Column might already exist with different syntax; ignore
 
         # Seed templates (upsert — inserts new templates even if some already exist)
         cur = conn.cursor()

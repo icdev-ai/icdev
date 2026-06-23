@@ -49,6 +49,12 @@ _BANNER_PRESETS: dict[str, dict[str, Any]] = {
         "background_color": "#4a0080",
         "text_color": "#ffffff",
     },
+    "demo": {
+        "enabled": True,
+        "text": "DEMO MODE — Read Only",
+        "background_color": "#1a472a",
+        "text_color": "#ffffff",
+    },
 }
 
 _brand_cache: dict[str, Any] | None = None
@@ -88,6 +94,9 @@ def get_brand(reload: bool = False) -> dict[str, Any]:
                 "ICDEV_BRAND_PRODUCT_SHORT", data.get("product_short", "ICDEV")
             ),
             "tagline": data.get("tagline", "AI-Native Enterprise Platform"),
+            "version": os.environ.get(
+                "ICDEV_BRAND_VERSION", data.get("version", "")
+            ),
             "logo_path": data.get("logo_path", "img/icdev-logo.svg"),
             "logo_width": data.get("logo_width", "120px"),
             "favicon_path": data.get("favicon_path", "img/favicon.ico"),
@@ -117,13 +126,18 @@ def get_banner(reload: bool = False) -> dict[str, Any]:
     if _banner_cache is None or reload:
         data = _load_yaml(_banner_path())
 
-        # Resolve mode — priority: ICDEV_BANNER_MODE env > CUI_BANNER_ENABLED env > yaml > default
+        # Resolve mode — priority: ICDEV_BANNER_MODE env > CUI_BANNER_ENABLED env > DEMO_MODE > yaml > default
         mode = os.environ.get("ICDEV_BANNER_MODE", "").strip().lower()
         _from_env = bool(mode)
         if not mode:
             # Backward-compat: ICDEV_CUI_BANNER_ENABLED=true (old flag) implies cui
             if os.environ.get("ICDEV_CUI_BANNER_ENABLED", "").lower() in ("1", "true", "yes"):
                 mode = "cui"
+                _from_env = True
+        if not mode:
+            # Demo mode fallback: ICDEV_DEMO_MODE=true implies demo banner when no explicit mode set
+            if os.environ.get("ICDEV_DEMO_MODE", "").lower() in ("1", "true", "yes"):
+                mode = "demo"
                 _from_env = True
         if not mode:
             mode = str(data.get("mode", "none")).strip().lower()

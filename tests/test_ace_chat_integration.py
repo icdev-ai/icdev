@@ -181,22 +181,44 @@ def test_chat_manager_stores_coworker_link(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_cli_bridge_get_coworker_instances():
-    """get_coworker_instances() returns instance list from dashboard API."""
+    """get_coworker_instances() returns instances matching trigger_ref from canvas DB."""
+    import sqlite3
     import tools.chat.cli_bridge as bridge_mod
 
-    mock_response = {
-        "instances": [
-            {"instance_id": "ace-bridge001", "state": "complete"},
-        ]
-    }
+    # Build an in-memory SQLite DB with one matching instance and one non-matching
+    conn = sqlite3.connect(":memory:")
+    conn.executescript("""
+        CREATE TABLE ace_instances (
+            id TEXT PRIMARY KEY, state TEXT, created_at TEXT, config_json TEXT
+        );
+        CREATE TABLE ace_coworkers (
+            id TEXT PRIMARY KEY, instance_id TEXT, role_id TEXT, display_name TEXT,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    conn.execute(
+        "INSERT INTO ace_instances VALUES (?, ?, ?, ?)",
+        ("ace-bridge001", "complete", "2026-01-01T00:00:00",
+         '{"trigger_ref": "ctx-005", "trigger_source": "chat"}'),
+    )
+    conn.execute(
+        "INSERT INTO ace_instances VALUES (?, ?, ?, ?)",
+        ("ace-bridge002", "active", "2026-01-02T00:00:00",
+         '{"trigger_ref": "ctx-999", "trigger_source": "chat"}'),
+    )
+    conn.execute(
+        "INSERT INTO ace_coworkers VALUES (?, ?, ?, ?, ?)",
+        ("cw-01", "ace-bridge001", "ai_developer", "AI Developer", "2026-01-01"),
+    )
+    conn.commit()
 
-    with patch.object(bridge_mod, "_http", return_value=mock_response) as mock_http:
+    with patch("tools.db.storage.get_canvas_connection", return_value=conn):
         result = bridge_mod.get_coworker_instances("ctx-005")
 
-    mock_http.assert_called_once_with("GET", "/api/chat/ctx-005/coworker-instances")
     assert len(result) == 1
     assert result[0]["instance_id"] == "ace-bridge001"
     assert result[0]["state"] == "complete"
+    assert result[0]["team_manifest"][0]["role_id"] == "ai_developer"
 
 
 # ---------------------------------------------------------------------------

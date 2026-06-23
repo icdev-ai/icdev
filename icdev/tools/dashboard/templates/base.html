@@ -218,8 +218,9 @@
                         {% if _any_enabled %}
                             <li class="nav-section-label">{{ group.label }}</li>
                             {% for comp in group['items'] if comp.enabled %}
+                                {% set _comp_locked = (tier_order | default({})).get(comp.get('min_tier', 'community'), 0) > (tier_order | default({})).get(active_tier | default('community'), 0) %}
                                 {% for link in comp.links if link.enabled | default(true) %}
-                                    <li><a href="{{ link.href }}" {% if link.style %}style="{{ link.style }}"{% endif %}>{{ link.label }}</a></li>
+                                    <li><a href="{{ link.href }}" {% if link.style %}style="{{ link.style }}"{% endif %}>{{ link.label }}{% if _comp_locked %} <span class="nav-lock-badge" title="Requires {{ comp.get('min_tier', '') | title }} plan" style="font-size:.75em;opacity:.7;vertical-align:middle;">&#x1f512;</span>{% endif %}</a></li>
                                 {% endfor %}
                             {% endfor %}
                             <li class="nav-dropdown-divider"></li>
@@ -418,6 +419,13 @@
                 </ul>
             </li>
 
+            <!-- ── Updates ──────────────────────────────────────────────────── -->
+            <li>
+                <a href="/updates" class="{% if request.path == '/updates' %}active{% endif %}" style="position:relative;">
+                    Updates{% if unseen_release %}<span id="nav-release-badge" title="New release available" style="background:#e94560;color:#fff;font-size:.65rem;font-weight:700;border-radius:8px;padding:0 5px;margin-left:.3rem;vertical-align:middle;">1</span>{% endif %}
+                </a>
+            </li>
+
             <!-- ── More ──────────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
                 <a href="javascript:void(0)" class="nav-dropdown-trigger {% if request.path in ['/usage','/quick-paths','/wizard','/notifications','/profile','/analytics'] or '/workflow' in request.path or '/admin' in request.path %}active{% endif %}">More ▾</a>
@@ -607,6 +615,8 @@
     <script defer src="{{ url_for('static', filename='js/chat-renderers.js') }}"></script>
     <!-- Codebase Assistant Widget JS (Phase 69 — D-CA-3) -->
     <script defer src="{{ url_for('static', filename='js/assistant-widget.js') }}"></script>
+    <!-- Onboarding Wizard JS (ECR-ONB) -->
+    <script defer src="{{ url_for('static', filename='js/onboarding.js') }}"></script>
     {% if '/strategos' in request.path %}
     <!-- STRATEGOS Chat panel + JS (loaded only on Strategos pages) -->
     <script defer src="{{ url_for('static', filename='js/strategos-chat.js') }}"></script>
@@ -882,5 +892,8 @@
         });
     })();
     </script>
+    {% block body_end %}
+    {% include "includes/_onboarding_wizard.html" ignore missing %}
+    {% endblock %}
 </body>
 </html>

@@ -531,6 +531,147 @@ def create_admin_blueprint() -> Blueprint | None:
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 
+    # ------------------------------------------------------------------ #
+    # REST API — API Key Management
+    # ------------------------------------------------------------------ #
+
+    @bp.route("/api/admin/tenants/<tenant_id>/api-keys", methods=["GET"])
+    def api_list_api_keys(tenant_id: str):
+        """List API keys for a tenant. Never returns the raw key."""
+        from tools.db.storage import get_connection
+        try:
+            with get_connection() as conn:
+                rows = conn.execute(
+                    "SELECT id, name, key_prefix, scopes, created_at, last_used_at, "
+                    "expires_at, revoked_at FROM api_keys WHERE tenant_id = ? "
+                    "ORDER BY created_at DESC",
+                    (tenant_id,),
+                ).fetchall()
+            return jsonify({"tenant_id": tenant_id, "keys": [dict(r) for r in rows]})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/admin/tenants/<tenant_id>/api-keys", methods=["POST"])
+    def api_create_api_key(tenant_id: str):
+        """Create a new API key. Returns raw_key ONCE — store immediately."""
+        from tools.auth.api_key import generate_api_key
+        from tools.db.storage import get_connection
+        payload = request.get_json(silent=True) or {}
+        name = (payload.get("name") or "").strip()
+        scopes = (payload.get("scopes") or "read").strip()
+        expires_at = payload.get("expires_at")
+        if not name:
+            return jsonify({"error": "Missing 'name' field"}), 400
+        try:
+            prefix, raw_key, key_hash = generate_api_key(
+                tenant_id, name, scopes=scopes, expires_at=expires_at
+            )
+            with get_connection() as conn:
+                row = conn.execute(
+                    "SELECT id FROM api_keys WHERE key_hash = ?", (key_hash,)
+                ).fetchone()
+            key_id = row["id"] if row else None
+            return jsonify({
+                "key_id": key_id,
+                "tenant_id": tenant_id,
+                "name": name,
+                "prefix": prefix,
+                "raw_key": raw_key,
+                "scopes": scopes,
+            }), 201
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/admin/tenants/<tenant_id>/api-keys/<key_id>", methods=["DELETE"])
+    def api_revoke_api_key(tenant_id: str, key_id: str):
+        """Soft-revoke an API key by setting revoked_at."""
+        from tools.db.storage import get_connection
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            with get_connection() as conn:
+                cur = conn.execute(
+                    "UPDATE api_keys SET revoked_at = ? WHERE id = ? AND tenant_id = ?",
+                    (now, key_id, tenant_id),
+                )
+                conn.commit()
+                affected = cur.rowcount
+            if affected == 0:
+                return jsonify({"error": "Key not found"}), 404
+            return jsonify({"key_id": key_id, "tenant_id": tenant_id, "revoked": True})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ------------------------------------------------------------------ #
+    # REST API — Webhook Endpoint Management
+    # ------------------------------------------------------------------ #
+
+    @bp.route("/api/admin/tenants/<tenant_id>/webhooks", methods=["GET"])
+    def api_list_webhooks(tenant_id: str):
+        """List webhook endpoints for a tenant."""
+        from tools.db.storage import get_connection
+        try:
+            with get_connection() as conn:
+                rows = conn.execute(
+                    "SELECT id, url, event_types, enabled, created_at "
+                    "FROM webhook_endpoints WHERE tenant_id = ? ORDER BY created_at DESC",
+                    (tenant_id,),
+                ).fetchall()
+            return jsonify({"tenant_id": tenant_id, "endpoints": [dict(r) for r in rows]})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/admin/tenants/<tenant_id>/webhooks", methods=["POST"])
+    def api_create_webhook(tenant_id: str):
+        """Register a new webhook endpoint. Returns the signing secret ONCE."""
+        import secrets as _secrets
+        from tools.db.storage import get_connection
+        payload = request.get_json(silent=True) or {}
+        url = (payload.get("url") or "").strip()
+        event_types = payload.get("event_types", "*")
+        if not url:
+            return jsonify({"error": "Missing 'url' field"}), 400
+        if isinstance(event_types, list):
+            event_types = ",".join(event_types)
+        wid = str(uuid.uuid4())
+        secret = _secrets.token_hex(32)
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            with get_connection() as conn:
+                conn.execute(
+                    "INSERT INTO webhook_endpoints "
+                    "(id, tenant_id, url, event_types, secret, enabled, created_at) "
+                    "VALUES (?, ?, ?, ?, ?, 1, ?)",
+                    (wid, tenant_id, url, event_types, secret, now),
+                )
+                conn.commit()
+            return jsonify({
+                "endpoint_id": wid,
+                "tenant_id": tenant_id,
+                "url": url,
+                "event_types": event_types,
+                "secret": secret,
+            }), 201
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/admin/tenants/<tenant_id>/webhooks/<endpoint_id>", methods=["DELETE"])
+    def api_disable_webhook(tenant_id: str, endpoint_id: str):
+        """Disable a webhook endpoint (soft delete, sets enabled=0)."""
+        from tools.db.storage import get_connection
+        try:
+            with get_connection() as conn:
+                cur = conn.execute(
+                    "UPDATE webhook_endpoints SET enabled = 0 WHERE id = ? AND tenant_id = ?",
+                    (endpoint_id, tenant_id),
+                )
+                conn.commit()
+                affected = cur.rowcount
+            if affected == 0:
+                return jsonify({"error": "Endpoint not found"}), 404
+            return jsonify({"endpoint_id": endpoint_id, "tenant_id": tenant_id, "disabled": True})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
     @bp.route("/api/admin/usage/overview", methods=["GET"])
     def api_usage_overview():
         """Cross-tenant usage overview (super-admin).

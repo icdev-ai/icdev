@@ -223,6 +223,12 @@ CREATE TABLE IF NOT EXISTS abac_decisions (
     reason TEXT,
     evaluated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS user_preferences (
+    user_id          TEXT PRIMARY KEY,
+    tenant_id        TEXT NOT NULL DEFAULT 'default',
+    onboarding_state TEXT NOT NULL DEFAULT '{}',
+    updated_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ', 'now'))
+);
 CREATE TABLE IF NOT EXISTS user_mfa (
     user_id TEXT PRIMARY KEY,
     totp_secret TEXT NOT NULL,
@@ -1471,6 +1477,20 @@ CREATE TABLE IF NOT EXISTS erasure_audit (
     tables_affected TEXT,
     completed_at    TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS api_keys (
+    id           TEXT PRIMARY KEY,
+    tenant_id    TEXT NOT NULL,
+    name         TEXT NOT NULL,
+    key_prefix   TEXT NOT NULL,
+    key_hash     TEXT NOT NULL UNIQUE,
+    scopes       TEXT NOT NULL DEFAULT 'read',
+    last_used_at TEXT,
+    expires_at   TEXT,
+    revoked_at   TEXT,
+    created_at   TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_api_keys_tenant ON api_keys(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_api_keys_hash   ON api_keys(key_hash);
 """
 
 

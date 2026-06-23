@@ -28,6 +28,12 @@
     <li class="nav-item">
       <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-usage" onclick="loadUsage()">Usage</button>
     </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-apikeys" onclick="loadApiKeys()">API Keys</button>
+    </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-webhooks" onclick="loadWebhooks()">Webhooks</button>
+    </li>
   </ul>
 
   <div class="tab-content">
@@ -232,7 +238,171 @@
       </div>
     </div>
 
+    <!-- Tab 7: API Keys -->
+    <div class="tab-pane fade" id="tab-apikeys">
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">API Keys</span>
+          <div class="d-flex align-items-center gap-2">
+            <div class="input-group" style="width:260px">
+              <span class="input-group-text">Tenant</span>
+              <input type="text" id="apikey-tenant-input" class="form-control form-control-sm"
+                     placeholder="tenant-id" value="default">
+              <button class="btn btn-sm btn-outline-primary" onclick="loadApiKeys()">Load</button>
+            </div>
+            <button class="btn btn-sm btn-success" onclick="openApiKeyModal()">+ Create Key</button>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div id="apikey-loading" class="p-3 text-muted small">Enter a tenant ID and click Load.</div>
+          <table class="table table-sm table-hover mb-0 d-none" id="apikey-table">
+            <thead class="table-dark">
+              <tr>
+                <th>Name</th><th>Prefix</th><th>Scopes</th>
+                <th>Created</th><th>Last Used</th><th>Expires</th><th>Status</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="apikey-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 8: Webhooks -->
+    <div class="tab-pane fade" id="tab-webhooks">
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">Webhook Endpoints</span>
+          <div class="d-flex align-items-center gap-2">
+            <div class="input-group" style="width:260px">
+              <span class="input-group-text">Tenant</span>
+              <input type="text" id="webhook-tenant-input" class="form-control form-control-sm"
+                     placeholder="tenant-id" value="default">
+              <button class="btn btn-sm btn-outline-primary" onclick="loadWebhooks()">Load</button>
+            </div>
+            <button class="btn btn-sm btn-success" onclick="openWebhookModal()">+ Add Endpoint</button>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div id="webhook-loading" class="p-3 text-muted small">Enter a tenant ID and click Load.</div>
+          <table class="table table-sm table-hover mb-0 d-none" id="webhook-table">
+            <thead class="table-dark">
+              <tr><th>URL</th><th>Event Types</th><th>Status</th><th>Created</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="webhook-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </div><!-- tab-content -->
+</div>
+
+<!-- API Key Create Modal -->
+<div class="modal fade" id="apiKeyModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Create API Key</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="apiKeyModalBody">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Key Name <span class="text-danger">*</span></label>
+          <input type="text" id="apikey-name" class="form-control" placeholder="e.g. CI Pipeline Token">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Scopes</label>
+          <div class="form-check"><input class="form-check-input apikey-scope" type="checkbox" value="read" id="scope-read" checked><label class="form-check-label" for="scope-read">read</label></div>
+          <div class="form-check"><input class="form-check-input apikey-scope" type="checkbox" value="write" id="scope-write"><label class="form-check-label" for="scope-write">write</label></div>
+          <div class="form-check"><input class="form-check-input apikey-scope" type="checkbox" value="admin" id="scope-admin"><label class="form-check-label" for="scope-admin">admin</label></div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Expires At <span class="text-muted small">(optional)</span></label>
+          <input type="date" id="apikey-expires" class="form-control">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="createApiKey()">Create</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- API Key Display Modal (shown once after creation) -->
+<div class="modal fade" id="apiKeyDisplayModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-warning-subtle">
+        <h5 class="modal-title">API Key Created</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning py-2 small">Copy this key now — it will not be shown again.</div>
+        <div class="input-group mb-2">
+          <input type="text" id="apikey-raw-display" class="form-control font-monospace" readonly>
+          <button class="btn btn-outline-secondary" type="button" onclick="copyApiKey()">Copy</button>
+        </div>
+        <div id="apikey-copied-msg" class="text-success small d-none">Copied!</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Webhook Add Modal -->
+<div class="modal fade" id="webhookModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Add Webhook Endpoint</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Endpoint URL <span class="text-danger">*</span></label>
+          <input type="url" id="webhook-url" class="form-control" placeholder="https://example.com/webhook">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Event Types</label>
+          <div class="form-check"><input class="form-check-input wh-event" type="checkbox" value="component.updated" id="wh-ev-comp"><label class="form-check-label" for="wh-ev-comp">component.updated</label></div>
+          <div class="form-check"><input class="form-check-input wh-event" type="checkbox" value="key.created" id="wh-ev-key"><label class="form-check-label" for="wh-ev-key">key.created</label></div>
+          <div class="form-check"><input class="form-check-input wh-event" type="checkbox" value="tenant.updated" id="wh-ev-tenant"><label class="form-check-label" for="wh-ev-tenant">tenant.updated</label></div>
+          <div class="form-check"><input class="form-check-input wh-event" type="checkbox" value="*" id="wh-ev-all" checked><label class="form-check-label" for="wh-ev-all">* (all events)</label></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="createWebhook()">Add Endpoint</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Webhook Secret Display Modal -->
+<div class="modal fade" id="webhookSecretModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-warning-subtle">
+        <h5 class="modal-title">Webhook Registered</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning py-2 small">Copy the signing secret now — it will not be shown again.</div>
+        <div class="input-group mb-2">
+          <input type="text" id="webhook-secret-display" class="form-control font-monospace" readonly>
+          <button class="btn btn-outline-secondary" type="button" onclick="copyWebhookSecret()">Copy</button>
+        </div>
+        <div id="webhook-secret-copied-msg" class="text-success small d-none">Copied!</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" data-bs-dismiss="modal">Done</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- SSO Add/Edit Modal -->
@@ -720,5 +890,163 @@ function _renderChart(daily) {
   });
 }
 // ── End Usage Analytics ──────────────────────────────────────────────────────
+
+// ── API Keys ──────────────────────────────────────────────────────────────────
+async function loadApiKeys() {
+  const tid = document.getElementById('apikey-tenant-input').value.trim();
+  if (!tid) return;
+  document.getElementById('apikey-loading').textContent = 'Loading…';
+  document.getElementById('apikey-loading').classList.remove('d-none');
+  document.getElementById('apikey-table').classList.add('d-none');
+  try {
+    const resp = await fetch(`/api/admin/tenants/${encodeURIComponent(tid)}/api-keys`);
+    const data = await resp.json();
+    const tbody = document.getElementById('apikey-tbody');
+    tbody.innerHTML = '';
+    const keys = data.keys || [];
+    if (!keys.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-muted p-3">No API keys. Click "+ Create Key" to create one.</td></tr>';
+    } else {
+      for (const k of keys) {
+        const status = k.revoked_at
+          ? '<span class="badge bg-danger">revoked</span>'
+          : k.expires_at && k.expires_at < new Date().toISOString()
+            ? '<span class="badge bg-warning text-dark">expired</span>'
+            : '<span class="badge bg-success">active</span>';
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${k.name}</td>
+          <td><code class="small">${k.key_prefix}</code></td>
+          <td><span class="badge bg-secondary">${k.scopes}</span></td>
+          <td class="small text-muted">${(k.created_at||'').substring(0,10)}</td>
+          <td class="small text-muted">${(k.last_used_at||'—').substring(0,10)}</td>
+          <td class="small text-muted">${(k.expires_at||'—').substring(0,10)}</td>
+          <td>${status}</td>
+          <td>${!k.revoked_at ? `<button class="btn btn-xs btn-outline-danger" onclick="revokeApiKey('${k.id}')">Revoke</button>` : ''}</td>`;
+        tbody.appendChild(row);
+      }
+    }
+    document.getElementById('apikey-loading').classList.add('d-none');
+    document.getElementById('apikey-table').classList.remove('d-none');
+  } catch(e) {
+    document.getElementById('apikey-loading').textContent = 'Error: ' + e;
+  }
+}
+
+function openApiKeyModal() {
+  document.getElementById('apikey-name').value = '';
+  document.querySelectorAll('.apikey-scope').forEach(cb => { cb.checked = cb.value === 'read'; });
+  document.getElementById('apikey-expires').value = '';
+  new bootstrap.Modal(document.getElementById('apiKeyModal')).show();
+}
+
+async function createApiKey() {
+  const tid = document.getElementById('apikey-tenant-input').value.trim();
+  const name = document.getElementById('apikey-name').value.trim();
+  if (!name) { alert('Key name is required'); return; }
+  const scopes = [...document.querySelectorAll('.apikey-scope:checked')].map(c => c.value).join(' ') || 'read';
+  const expiresVal = document.getElementById('apikey-expires').value;
+  const payload = { name, scopes };
+  if (expiresVal) payload.expires_at = expiresVal + 'T00:00:00Z';
+  const resp = await fetch(`/api/admin/tenants/${encodeURIComponent(tid)}/api-keys`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload),
+  });
+  if (!resp.ok) { const err = await resp.json().catch(() => ({})); alert('Error: ' + (err.error || resp.statusText)); return; }
+  const data = await resp.json();
+  bootstrap.Modal.getInstance(document.getElementById('apiKeyModal'))?.hide();
+  document.getElementById('apikey-raw-display').value = data.raw_key;
+  document.getElementById('apikey-copied-msg').classList.add('d-none');
+  new bootstrap.Modal(document.getElementById('apiKeyDisplayModal')).show();
+  loadApiKeys();
+}
+
+function copyApiKey() {
+  const val = document.getElementById('apikey-raw-display').value;
+  navigator.clipboard.writeText(val).then(() => {
+    document.getElementById('apikey-copied-msg').classList.remove('d-none');
+  });
+}
+
+async function revokeApiKey(kid) {
+  if (!confirm('Revoke this API key? This cannot be undone.')) return;
+  const tid = document.getElementById('apikey-tenant-input').value.trim();
+  const resp = await fetch(`/api/admin/tenants/${encodeURIComponent(tid)}/api-keys/${encodeURIComponent(kid)}`, { method: 'DELETE' });
+  if (resp.ok) { loadApiKeys(); } else { const err = await resp.json().catch(()=>({})); alert('Error: ' + (err.error || resp.statusText)); }
+}
+// ── End API Keys ──────────────────────────────────────────────────────────────
+
+// ── Webhooks ──────────────────────────────────────────────────────────────────
+async function loadWebhooks() {
+  const tid = document.getElementById('webhook-tenant-input').value.trim();
+  if (!tid) return;
+  document.getElementById('webhook-loading').textContent = 'Loading…';
+  document.getElementById('webhook-loading').classList.remove('d-none');
+  document.getElementById('webhook-table').classList.add('d-none');
+  try {
+    const resp = await fetch(`/api/admin/tenants/${encodeURIComponent(tid)}/webhooks`);
+    const data = await resp.json();
+    const tbody = document.getElementById('webhook-tbody');
+    tbody.innerHTML = '';
+    const endpoints = data.endpoints || [];
+    if (!endpoints.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="text-muted p-3">No webhooks. Click "+ Add Endpoint".</td></tr>';
+    } else {
+      for (const e of endpoints) {
+        const status = e.enabled ? '<span class="badge bg-success">active</span>' : '<span class="badge bg-secondary">disabled</span>';
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td class="text-truncate" style="max-width:300px" title="${e.url}"><code class="small">${e.url}</code></td>
+          <td class="small">${(e.event_types||'*').replace(/,/g, ', ')}</td>
+          <td>${status}</td>
+          <td class="small text-muted">${(e.created_at||'').substring(0,10)}</td>
+          <td>${e.enabled ? `<button class="btn btn-xs btn-outline-danger" onclick="disableWebhook('${e.id}')">Disable</button>` : ''}</td>`;
+        tbody.appendChild(row);
+      }
+    }
+    document.getElementById('webhook-loading').classList.add('d-none');
+    document.getElementById('webhook-table').classList.remove('d-none');
+  } catch(e) {
+    document.getElementById('webhook-loading').textContent = 'Error: ' + e;
+  }
+}
+
+function openWebhookModal() {
+  document.getElementById('webhook-url').value = '';
+  document.querySelectorAll('.wh-event').forEach(cb => { cb.checked = cb.value === '*'; });
+  new bootstrap.Modal(document.getElementById('webhookModal')).show();
+}
+
+async function createWebhook() {
+  const tid = document.getElementById('webhook-tenant-input').value.trim();
+  const url = document.getElementById('webhook-url').value.trim();
+  if (!url) { alert('Endpoint URL is required'); return; }
+  const event_types = [...document.querySelectorAll('.wh-event:checked')].map(c => c.value);
+  const resp = await fetch(`/api/admin/tenants/${encodeURIComponent(tid)}/webhooks`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ url, event_types }),
+  });
+  if (!resp.ok) { const err = await resp.json().catch(()=>({})); alert('Error: ' + (err.error || resp.statusText)); return; }
+  const data = await resp.json();
+  bootstrap.Modal.getInstance(document.getElementById('webhookModal'))?.hide();
+  document.getElementById('webhook-secret-display').value = data.secret;
+  document.getElementById('webhook-secret-copied-msg').classList.add('d-none');
+  new bootstrap.Modal(document.getElementById('webhookSecretModal')).show();
+  loadWebhooks();
+}
+
+function copyWebhookSecret() {
+  const val = document.getElementById('webhook-secret-display').value;
+  navigator.clipboard.writeText(val).then(() => {
+    document.getElementById('webhook-secret-copied-msg').classList.remove('d-none');
+  });
+}
+
+async function disableWebhook(wid) {
+  if (!confirm('Disable this webhook endpoint?')) return;
+  const tid = document.getElementById('webhook-tenant-input').value.trim();
+  const resp = await fetch(`/api/admin/tenants/${encodeURIComponent(tid)}/webhooks/${encodeURIComponent(wid)}`, { method: 'DELETE' });
+  if (resp.ok) { loadWebhooks(); } else { const err = await resp.json().catch(()=>({})); alert('Error: ' + (err.error || resp.statusText)); }
+}
+// ── End Webhooks ──────────────────────────────────────────────────────────────
 </script>
 {% endblock %}

@@ -11,6 +11,7 @@
   blueprint_attr: create_{{ key | replace('-', '_') }}_blueprint
   url_prefix: {{ url_prefix or '/' + key | replace('_', '-') }}
   min_il: {{ min_il }}
+  min_tier: {{ min_tier | default('community') }}
   default_roles:
 {% for role in default_roles.split(',') %}
     - {{ role.strip() }}

@@ -534,6 +534,10 @@ routing:
     chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, llama-local]
     effort: low
 
+  ndc_config_review:
+    chain: [claude-sonnet, gpt-4o, qwen3-local, gemini-2.5-flash, llama-local]
+    effort: medium
+
   # Panel fires N calls in parallel — use fast/cheap models to keep wall-clock latency low
   panel_persona_response:
     chain: [qwen3-local, claude-haiku, gpt-4o-mini, gemini-2.0-flash, kimi-cloud]

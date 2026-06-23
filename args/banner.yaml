@@ -7,6 +7,7 @@
 #   secret  — red "SECRET" banner
 #   il6     — purple "SECRET // SI" IL6 banner
 #   custom  — use the text/color fields below
+#   demo    — green "DEMO MODE — Read Only" bar (auto-set when ICDEV_DEMO_MODE=true)
 #
 # Override: ICDEV_BANNER_MODE=none  (env var wins over this file)
 #

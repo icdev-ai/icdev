@@ -1,12 +1,35 @@
 # CUI // SP-CTI
-"""Flask blueprint: SAML 2.0 SSO routes for ICDEV enterprise auth."""
+"""Flask blueprint: SAML 2.0 SSO routes + onboarding API for ICDEV enterprise auth."""
 from __future__ import annotations
 
 import uuid
 
-from flask import Blueprint, Response, redirect, request, session
+from flask import Blueprint, Response, jsonify, redirect, request, session
 
 bp = Blueprint("auth_saml", __name__, url_prefix="/auth/saml")
+
+onboarding_bp = Blueprint("auth_onboarding", __name__)
+
+
+@onboarding_bp.route("/api/onboarding/state", methods=["GET"])
+def api_onboarding_get():
+    """Return onboarding state for the current session user."""
+    from tools.auth.onboarding import get_onboarding_state
+
+    user_id = session.get("user_id") or session.get("sso_name_id") or "anonymous"
+    state = get_onboarding_state(user_id)
+    return jsonify(state)
+
+
+@onboarding_bp.route("/api/onboarding/state", methods=["PATCH"])
+def api_onboarding_patch():
+    """Merge request JSON fields into onboarding state."""
+    from tools.auth.onboarding import update_onboarding_state
+
+    user_id = session.get("user_id") or session.get("sso_name_id") or "anonymous"
+    body = request.get_json(force=True, silent=True) or {}
+    updated = update_onboarding_state(user_id, **body)
+    return jsonify(updated)
 
 
 @bp.route("/<provider_id>/metadata", methods=["GET"])

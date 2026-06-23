@@ -148,6 +148,10 @@ known_safe_process_exec_modules:
 known_safe_obfuscation_modules:
   - tools/gateway/adapters/botframework_base.py  # RFC 7519 JWT base64url decode (_b64url_decode) + PKCS#1 v1.5 SHA-256 DigestInfo ASN.1 prefix (bytes literal) for stdlib-only RS256 Bot Framework token validation. Authorized by Decision D133 (channel adapters ABC) + D142 (BotFramework shared base Teams+Skype).
   - gateway/adapters/botframework_base.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/auth/oidc.py  # base64.urlsafe_b64decode in exchange_oidc_code: standard JWT id_token payload decode per RFC 7519 (OIDC Core §3.1.3.3) — the JWT format header.payload.signature uses base64url encoding; decoding is a required OIDC protocol step, not obfuscation. Authorized by ecr-sso-03/04 (enterprise OIDC SSO integration, commit 08e657407).
+  - auth/oidc.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/auth/saml.py  # base64.b64decode in process_acs_response: standard SAML 2.0 HTTP POST binding — the IdP always base64-encodes the SAMLResponse XML assertion before POST to the ACS endpoint (SAML 2.0 Bindings §3.5). Decoding is a mandatory protocol step, not obfuscation. Authorized by ecr-sso-02 (SAML 2.0 SP integration via stdlib XML, commit f7cfa8f74).
+  - auth/saml.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
 
 # ---------------------------------------------------------------------------
 # Known-safe ICDEV modules that legitimately call importlib.import_module on a
@@ -175,6 +179,12 @@ known_safe_crypto_modules:
   - gateway/adapters/github.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
   - tools/gateway/adapters/gitlab.py  # hmac.compare_digest in verify_signature: timing-safe comparison of X-Gitlab-Token shared secret per GitLab webhook security protocol (prevents timing side-channel attacks on token equality). Not token-signing or ransomware-style encryption. Authorized by Decision D133 (channel adapters ABC) + Decision D143 (GitHub/GitLab !icdev comment prefix adapter).
   - gateway/adapters/gitlab.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/billing/stripe_handler.py  # hmac.new + hmac.compare_digest in verify_stripe_signature: HMAC-SHA256 of raw webhook body vs Stripe-Signature header per Stripe webhook security protocol (https://stripe.com/docs/webhooks/signatures). Same pattern as GitHub/GitLab adapters above. Not token-signing or ransomware-style encryption. Authorized by REQ-BILLING-WEBHOOK-HMAC-01 (Stripe webhook integrity verification for SaaS billing events).
+  - billing/stripe_handler.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/api/webhook_engine.py  # hmac.new + hmac.compare_digest in sign_payload/verify_signature: HMAC-SHA256 of outbound webhook body added as X-ICDEV-Signature header per standard webhook security protocol (same pattern as GitHub/GitLab/Stripe adapters). Implements NIST 800-53 SC-8 (transmission integrity). Not token-signing or ransomware-style encryption. Authorized by REQ-WEBHOOK-HMAC-01 (webhook delivery engine payload integrity).
+  - api/webhook_engine.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/auth/api_key.py  # hashlib.sha256 in _hash(): one-way SHA-256 hash of raw API keys before DB storage — plaintext keys are never persisted per NIST 800-53 IA-5(1). Authorized by REQ-21-003 (SaaS API Key Authentication: "validating against SHA-256 hashed keys stored in the api_keys table. Plaintext keys SHALL never be stored.").
+  - auth/api_key.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
 
 known_safe_dynamic_import_modules:
   - tools/config/component_registry.py  # Loads Flask blueprints declared in args/component_registry.yaml (a trusted FORGE config — not user-controlled); dynamic dispatch is the registry-driven canvas/child-app loading pattern. Authorized by REQ-REGISTRY-DYNAMIC-IMPORT-01.

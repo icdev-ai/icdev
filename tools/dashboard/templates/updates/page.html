@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Updates{% endblock %}
+
+{% block extra_js %}
+<script>
+(function() {
+    fetch('/api/user/prefs/seen-version', {method: 'PATCH', headers: {'Content-Type': 'application/json'}})
+        .then(function() {
+            var badge = document.getElementById('nav-release-badge');
+            if (badge) badge.remove();
+        }).catch(function() {});
+})();
+</script>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+  <div class="d-flex align-items-center mb-4">
+    <h1 class="mb-0 me-3">Platform Updates</h1>
+    <span class="badge bg-primary">Changelog</span>
+  </div>
+
+  {% if error %}
+  <div class="alert alert-warning">{{ error }}</div>
+  {% elif not releases %}
+  <div class="alert alert-info">No releases found in CHANGELOG.md.</div>
+  {% else %}
+
+  <div class="row g-3">
+    {% for rel in releases %}
+    <div class="col-12">
+      <div class="card shadow-sm">
+        <div class="card-header d-flex align-items-center gap-2">
+          <span class="badge bg-secondary font-monospace">v{{ rel.version }}</span>
+          {% if rel.date %}
+          <span class="text-muted small">{{ rel.date }}</span>
+          {% endif %}
+        </div>
+        <div class="card-body">
+          {% if rel.sections %}
+            {% for section_name, items in rel.sections.items() %}
+            <div class="mb-3">
+              <h6 class="text-uppercase fw-semibold mb-2
+                {%- if section_name == 'Added' %} text-success
+                {%- elif section_name == 'Changed' %} text-primary
+                {%- elif section_name in ('Fixed', 'Security') %} text-danger
+                {%- elif section_name == 'Removed' %} text-warning
+                {%- else %} text-secondary
+                {%- endif %}">
+                {% if section_name == 'Added' %}+{% elif section_name == 'Fixed' %}✓{% elif section_name == 'Changed' %}~{% elif section_name == 'Removed' %}-{% else %}•{% endif %}
+                {{ section_name }}
+              </h6>
+              <ul class="mb-0 ps-3">
+                {% for item in items %}
+                <li class="mb-1 small">{{ item }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% endfor %}
+          {% else %}
+          <p class="text-muted small mb-0">No details recorded for this release.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

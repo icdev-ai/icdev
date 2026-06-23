@@ -360,7 +360,6 @@ class ChatManager:
 
     def get_last_message(self, context_id: str) -> dict[str, Any] | None:
         """Return the most recent message, or None."""
-        msgs = self.get_messages(context_id, limit=1, offset=0)
         # get_messages returns in turn order; use DESC for last
         from icdev.tools.db.storage import get_connection
 

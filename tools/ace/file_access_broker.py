@@ -29,7 +29,25 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-_REPO_ROOT = Path(__file__).parents[4].resolve()
+def _find_repo_root() -> Path:
+    """Resolve the ICDEV repo root by walking up from this file to the nearest
+    directory containing the ``CLAUDE.md`` project marker.
+
+    Robust to the canonical/legacy nesting split — ``icdev/tools/ace/...`` and
+    ``tools/ace/...`` live at different depths, so a hardcoded ``parents[N]``
+    index is wrong for one of the two copies (it resolved to ``C:\\AI`` instead
+    of ``C:\\AI\\ICDev``, which made every agent-mode read/write miss the repo
+    and report FileNotFoundError).
+    """
+    here = Path(__file__).resolve()
+    for cand in (here.parent, *here.parents):
+        if (cand / "CLAUDE.md").is_file() and (cand / "tools").is_dir():
+            return cand
+    # Fallback: best-effort two levels above the canonical location.
+    return here.parents[3] if len(here.parents) > 3 else here.parent
+
+
+_REPO_ROOT = _find_repo_root()
 _DB_ENV = "ICDEV_ACE_DB_URL"
 
 
@@ -163,7 +181,6 @@ class FileAccessBroker:
                 )
             return target
 
-        action = "write to" if need_write else "read"
         raise ScopeViolationError(
             f"'{path}' is not within any declared folder_access scope "
             f"({'rw' if need_write else 'r or rw'} required)"

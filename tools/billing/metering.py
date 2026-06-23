@@ -7,13 +7,14 @@ Reads (get_usage_summary) are synchronous and safe to call from any context.
 from __future__ import annotations
 
 import json
-import logging
 import threading
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Internal write — runs in background thread

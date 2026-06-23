@@ -198,6 +198,7 @@ def _register_component(
         "blueprint_attr": blueprint_attr,
         "url_prefix": url_prefix,
         "min_il": "IL4",
+        "min_tier": "community",
         "default_roles": default_roles,
         "nav": {
             "section": nav_section,

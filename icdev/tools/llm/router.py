@@ -1373,6 +1373,15 @@ class LLMRouter:
         if not cfg.get("enabled", False) and env_enabled not in ("true", "1", "yes"):
             return None
 
+        # Tool-use / agentic turns bypass two-tier. Two-tier (draft→review) is a
+        # text-generation pattern: the review step would strip the model's
+        # tool_calls and return refined prose, which breaks any agent loop that
+        # drives on `LLMResponse.tool_calls`. When the request carries tools,
+        # fall through to the normal chain so a tool-capable model is invoked
+        # directly and its tool_calls are preserved.
+        if getattr(request, "tools", None):
+            return None
+
         tier1 = _expand_env(cfg.get("tier1_model", "qwen3-local"))
         tier2 = _expand_env(cfg.get("tier2_model", "claude-sonnet"))
         planners = cfg.get("planner_functions", [])
