@@ -1351,6 +1351,9 @@ def get_connection(db_path: str = None) -> StorageConnection:
     so that operations (task creation, notifications) are not silently
     lost during PG outages.
 
+    When ICDEV_DATA_RESIDENCY_ENABLED=true and Flask g.tenant_id is set,
+    delegates to get_zone_connection() for per-tenant PG routing.
+
     When ICDEV_DATA_ZONE is set, the zone's pg_dsn_env column names an env
     var that overrides ICDEV_DATABASE_URL for that connection, routing it to
     the zone-specific PostgreSQL instance.
@@ -1361,6 +1364,19 @@ def get_connection(db_path: str = None) -> StorageConnection:
     authenticated user's tenant and classification via set_security_context.
     """
     backend = os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql").lower()
+
+    # Per-tenant data-residency routing: delegate to zone_router when enabled
+    # and a tenant is active in the current Flask request context.
+    if os.environ.get("ICDEV_DATA_RESIDENCY_ENABLED", "").lower() in ("true", "1"):
+        try:
+            from flask import g, has_request_context
+            if has_request_context():
+                tenant_id = getattr(g, "tenant_id", None)
+                if tenant_id:
+                    from tools.db.zone_router import get_zone_connection
+                    return get_zone_connection(tenant_id)
+        except (ImportError, RuntimeError):
+            pass
 
     # Data-residency zone override: when ICDEV_DATA_ZONE is set, the zone row's
     # pg_dsn_env names an env var that holds the zone-specific PG DSN.
