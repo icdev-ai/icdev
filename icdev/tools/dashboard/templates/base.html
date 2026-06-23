@@ -214,10 +214,10 @@
                 <ul class="nav-dropdown-menu">
                     {% set _canvases = nav_tree.sections.get('Canvases', {}).get('groups', []) %}
                     {% for group in _canvases %}
-                        {% set _any_enabled = group.items | selectattr('enabled') | list | length > 0 %}
+                        {% set _any_enabled = group['items'] | selectattr('enabled') | list | length > 0 %}
                         {% if _any_enabled %}
                             <li class="nav-section-label">{{ group.label }}</li>
-                            {% for comp in group.items if comp.enabled %}
+                            {% for comp in group['items'] if comp.enabled %}
                                 {% for link in comp.links if link.enabled | default(true) %}
                                     <li><a href="{{ link.href }}" {% if link.style %}style="{{ link.style }}"{% endif %}>{{ link.label }}</a></li>
                                 {% endfor %}

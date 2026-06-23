@@ -134,6 +134,34 @@ def test_zone_dsn_env_override(tmp_path, monkeypatch):
         monkeypatch.setattr(storage_mod, "_resolve_zone_dsn_env", original)
 
 
+def test_zone_router_fallback(tmp_path, monkeypatch):
+    """get_zone_connection falls back to the default connection when the tenant
+    has no zone assignment (or when the backend is SQLite, which skips PG zone
+    lookup entirely).  The returned connection must be usable and closeable
+    without raising.
+    """
+    monkeypatch.setenv("ICDEV_DB_PATH", str(tmp_path / "zone_fallback.db"))
+    # ICDEV_STORAGE_BACKEND=sqlite is already set by conftest — zone lookup is
+    # skipped for non-PG backends, so fallback to default SQLite is guaranteed.
+
+    import sys
+    for key in list(sys.modules.keys()):
+        if "zone_router" in key:
+            del sys.modules[key]
+
+    from tools.db.zone_router import get_zone_connection
+
+    conn = get_zone_connection("tenant-no-zone")
+    assert conn is not None, "get_zone_connection must return a connection, not None"
+
+    # Verify the connection is functional
+    row = conn.execute("SELECT 1 AS x").fetchone()
+    assert row is not None
+
+    # Must close without raising (no connection leak)
+    conn.close()
+
+
 def test_migration_212_module_importable():
     """Migration 212 module can be imported without error."""
     repo_root = str(
