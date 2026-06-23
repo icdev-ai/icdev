@@ -187,7 +187,12 @@ class CoWorkerThread(threading.Thread):
         self.instance_id = instance_id
         self.message_bus = message_bus
         self.trust_kernel = trust_kernel
-        self._context: dict[str, Any] = {"instance_id": instance_id}
+        # NOTE: named _ace_context, not _context — Python 3.14's threading.Thread
+        # uses an internal `self._context` (a contextvars.Context) to manage
+        # contextvars across thread starts. Shadowing it with a plain dict
+        # silently kills the thread with no traceback. See memory
+        # feedback_ace_threading_context_conflict.md.
+        self._ace_context: dict[str, Any] = {"instance_id": instance_id}
         self._stop_event = threading.Event()
         self._step_count = 0
         self._monitor_interval: int = (
@@ -229,7 +234,7 @@ class CoWorkerThread(threading.Thread):
                     (self.instance_id,),
                 ).fetchone()
                 if _row:
-                    self._context["problem_text"] = dict(_row).get("problem_text", "")
+                    self._ace_context["problem_text"] = dict(_row).get("problem_text", "")
             finally:
                 _conn.close()
         except Exception as _exc:
@@ -253,7 +258,7 @@ class CoWorkerThread(threading.Thread):
             from icdev.tools.ace.soul_manager import build_identity_preamble
             preamble = build_identity_preamble(self.spec.role_id)
             if preamble:
-                self._context["soul_preamble"] = preamble
+                self._ace_context["soul_preamble"] = preamble
                 self._audit("soul_preamble_injected", f"role={self.spec.role_id} len={len(preamble)}")
                 logger.debug("[SOUL] preamble injected for %s (%d chars)", self.spec.role_id, len(preamble))
         except Exception as exc:
@@ -298,6 +303,20 @@ class CoWorkerThread(threading.Thread):
         # 3. Transition to working state
         self._set_state("working")
 
+        # 4. Dispatch: agent mode runs an agentic LLM loop that re-prompts the
+        #    LLM after each tool call until it calls `done`; otherwise the
+        #    deterministic step list.
+        if getattr(role, "mode", "steps") == "agent":
+            self._run_agent_loop(role)
+        else:
+            self._run_step_mode(role)
+
+    # ------------------------------------------------------------------
+    # Step-mode loop (deterministic fixed step list)
+    # ------------------------------------------------------------------
+
+    def _run_step_mode(self, role: Any) -> None:
+        """Execute the role's fixed ``steps`` list (the legacy default mode)."""
         executor = StepExecutor()
 
         # 4 & 5. Execute each step; poll inbox between steps
@@ -315,7 +334,7 @@ class CoWorkerThread(threading.Thread):
             self._set_assigned_step(step.get("id", str(raw_step)))
 
             try:
-                result = executor.run(step, self._context, self.spec, self.trust_kernel)
+                result = executor.run(step, self._ace_context, self.spec, self.trust_kernel)
                 self._audit(
                     "step_complete",
                     f"step={step.get('id')} result_type={type(result).__name__}",
@@ -336,7 +355,154 @@ class CoWorkerThread(threading.Thread):
                 if self._check_behavioral_compliance(step_text, role):
                     return  # instance paused to hitl_pending
 
-        # 6. Broadcast completion and update state
+        self._finish_done(role, detail="all steps completed")
+
+    # ------------------------------------------------------------------
+    # Agent-mode loop (agentic LLM re-prompting with native tool use)
+    # ------------------------------------------------------------------
+
+    def _run_agent_loop(self, role: Any) -> None:
+        """Run an agentic LLM loop (mode=agent): LLM → tool_calls → result → re-prompt."""
+        self._role_ref = role  # for _on_agent_turn behavioral compliance checks
+
+        try:
+            from icdev.tools.llm.agent_loop import (
+                AgentLoopUnsupported,
+                run_agent_loop,
+            )
+            from icdev.tools.ace.agent_tools import AgentToolRegistry
+            from tools.llm.router import LLMRouter
+        except ImportError as exc:
+            self._set_state("failed")
+            self._audit("agent_loop_import_failed", str(exc))
+            logger.exception("agent_loop import failed for %s", self.spec.coworker_id)
+            return
+
+        # Build tool schema + handlers bound to this coworker's folder_access /
+        # icdev_tools / trust_tier scope.
+        registry = AgentToolRegistry(self.spec, self.instance_id, stop_event=self._stop_event)
+        agent_tools = list(getattr(role, "agent_tools", []) or [])
+        tools, tool_handlers = registry.build(agent_tools)
+        if not tools:
+            self._set_state("failed")
+            self._audit("agent_loop_no_tools", f"agent_tools={agent_tools!r} resolved to empty set")
+            return
+
+        tool_inventory = ", ".join(sorted(tool_handlers.keys()))
+        soul = self._ace_context.get("soul_preamble", "")
+        system_prompt = (
+            f"{getattr(role, 'description', '') or 'AI co-worker'}\n\n"
+            "You are running in an agentic loop. Call tools to make progress and "
+            "call `done` once the task is complete and verified. Available tools: "
+            f"{tool_inventory}.\n"
+        )
+        if soul:
+            system_prompt += f"\n{soul}\n"
+
+        problem_text = self._ace_context.get("problem_text", "")
+        user_prompt = (
+            f"INSTANCE: {self.instance_id}\n"
+            f"COWORKER: {self.spec.coworker_id} (role={self.spec.role_id})\n\n"
+            f"TASK:\n{problem_text or '(no task description provided)'}\n\n"
+            "Accomplish the task using the available tools, then call done."
+        )
+
+        try:
+            router = LLMRouter()
+        except Exception as exc:
+            self._set_state("failed")
+            self._audit("agent_loop_router_failed", str(exc))
+            logger.exception("agent_loop router init failed for %s", self.spec.coworker_id)
+            return
+
+        max_iter = int(getattr(role, "max_iterations", 12))
+        self._audit("agent_loop_start", f"tools={tool_inventory} max_iter={max_iter}")
+
+        try:
+            result = run_agent_loop(
+                router,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                tools=tools,
+                tool_handlers=tool_handlers,
+                llm_function=getattr(self.spec, "llm_function", "") or "code_generation",
+                max_iterations=max_iter,
+                stop_event=self._stop_event,
+                on_turn=self._on_agent_turn,
+            )
+        except AgentLoopUnsupported as exc:
+            # Provider can't do native tool use — fall back to step mode with audit.
+            self._audit("agent_loop_unsupported", str(exc))
+            logger.warning(
+                "ace agent_loop unsupported for %s: %s — falling back to step mode",
+                self.spec.coworker_id,
+                exc,
+            )
+            self._run_step_mode(role)
+            return
+        except Exception as exc:
+            self._set_state("failed")
+            self._audit("agent_loop_failed", str(exc))
+            logger.exception("agent_loop failed for %s", self.spec.coworker_id)
+            return
+
+        self._audit(
+            "agent_loop_complete",
+            f"done={result.done} truncated={result.truncated} turns={result.turns} "
+            f"tool_calls={len(result.tool_call_log)}",
+        )
+        detail = "agent loop done" if result.done else "agent loop truncated (max_iterations)"
+        self._finish_done(role, detail=detail)
+
+    def _on_agent_turn(self, turn: int, response: Any, messages: list[dict[str, Any]]) -> None:
+        """Persist + audit each agent-loop turn; periodic behavioral compliance check."""
+        text = getattr(response, "content", "") or ""
+        tool_calls = getattr(response, "tool_calls", None) or []
+        tool_summary = ", ".join(
+            f"{tc.get('name')}({list((tc.get('input') or {}).keys())})" for tc in tool_calls
+        ) or "(no tools)"
+        self._set_assigned_step(f"agent_turn_{turn + 1}")
+        self._audit("agent_turn", f"turn={turn + 1} tools={tool_summary}")
+        self._persist_agent_turn(turn + 1, text, tool_summary)
+
+        # Behavioral compliance check every monitor_interval turns.
+        self._step_count += 1
+        if self._monitor_interval > 0 and self._step_count % self._monitor_interval == 0:
+            if self._check_behavioral_compliance(text or tool_summary, getattr(self, "_role_ref", None)):
+                return  # paused to hitl_pending (state set by _trigger_compliance_hitl)
+
+    def _persist_agent_turn(self, turn: int, text: str, tool_summary: str) -> None:
+        """Write one agent-loop turn to ace_coworker_messages (best-effort)."""
+        try:
+            from icdev.tools.db.storage import get_canvas_connection
+
+            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            conn = get_canvas_connection(_DB_ENV)
+            try:
+                conn.execute(
+                    "INSERT INTO ace_coworker_messages "
+                    "(instance_id, coworker_id, role, content, created_at) "
+                    "VALUES (%s, %s, %s, %s, %s)",
+                    (
+                        self.instance_id,
+                        self.spec.coworker_id,
+                        f"agent:turn:{turn}",
+                        f"{text}\n[tools: {tool_summary}]",
+                        now,
+                    ),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception as exc:
+            logger.debug("ace agent turn persist failed for %s: %s", self.spec.coworker_id, exc)
+
+    # ------------------------------------------------------------------
+    # Shared completion
+    # ------------------------------------------------------------------
+
+    def _finish_done(self, role: Any, detail: str = "completed") -> None:
+        """Broadcast done, set state=done, audit, and capture success pattern for green tier."""
         try:
             self.message_bus.broadcast(
                 self.spec.coworker_id,
@@ -351,7 +517,7 @@ class CoWorkerThread(threading.Thread):
             logger.warning("broadcast failed for %s: %s", self.spec.coworker_id, exc)
 
         self._set_state("done")
-        self._audit("coworker_done", "all steps completed")
+        self._audit("coworker_done", detail)
 
         # Phase 3: capture success pattern for green-tier co-workers (SIPA-gated promotion)
         if self.spec.trust_tier == "green":
@@ -391,7 +557,7 @@ class CoWorkerThread(threading.Thread):
         for raw_vstep in verify_steps:
             vstep = self._normalise_step(raw_vstep)
             try:
-                executor.run(vstep, self._context, self.spec, self.trust_kernel)
+                executor.run(vstep, self._ace_context, self.spec, self.trust_kernel)
             except Exception as exc:
                 self._audit("verify_step_failed", f"step={vstep.get('id')} reason={exc}")
 
@@ -707,7 +873,7 @@ class CoWorkerThread(threading.Thread):
                 "instance_id": self.instance_id,
                 "coworker_id": self.spec.coworker_id,
                 "llm_function": self.spec.llm_function or "code_generation",
-                "problem_text": self._context.get("problem_text", ""),
+                "problem_text": self._ace_context.get("problem_text", ""),
                 "role_description": self.spec.description or "",
             },
             "output_var": f"{step_name}_result",

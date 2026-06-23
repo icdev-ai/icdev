@@ -514,6 +514,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "tenant_zone_assignments",
         # ECR DRES-03 — GDPR erasure audit log (append-only NIST AU, immutable evidence of erasure)
         "erasure_audit",
+        # ECR Billing (migration 213) — usage events are immutable billing audit records (NIST AU-9)
+        "usage_events",
     ]
 
     if tool_name == "Bash":

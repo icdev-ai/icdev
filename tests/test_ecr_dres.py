@@ -1,5 +1,5 @@
 # CUI // SP-CTI
-"""ECR-DRES-01: Data residency zone tables + per-tenant zone config tests."""
+"""ECR-DRES V&V: Data residency zones + GDPR erasure audit trail tests."""
 from __future__ import annotations
 
 import importlib
@@ -8,6 +8,10 @@ import sqlite3
 import sys
 
 import pytest
+
+# Windows first-SQLite-connection latency can exceed the default 30s per-test
+# timeout (antivirus scanning of new .db files).  Override for this file.
+pytestmark = pytest.mark.timeout(120)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -253,3 +257,154 @@ def test_migration_212_module_importable():
     spec.loader.exec_module(mod)
     assert hasattr(mod, "up"), "migration 212 must expose an up() function"
     assert hasattr(mod, "DDL"), "migration 212 must expose DDL"
+
+
+def test_erasure_audit_row_created(tmp_path):
+    """erase_tenant_data() writes exactly one erasure_audit row per call."""
+    conn = sqlite3.connect(str(tmp_path / "audit_row_test.db"))
+    conn.row_factory = sqlite3.Row
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS users (
+            id        TEXT PRIMARY KEY,
+            tenant_id TEXT NOT NULL,
+            email     TEXT,
+            name      TEXT
+        );
+        CREATE TABLE IF NOT EXISTS erasure_audit (
+            id              TEXT PRIMARY KEY,
+            tenant_id       TEXT NOT NULL,
+            requested_by    TEXT NOT NULL,
+            scope           TEXT NOT NULL DEFAULT 'pii',
+            tables_affected TEXT,
+            completed_at    TEXT NOT NULL
+        );
+    """)
+    conn.execute(
+        "INSERT INTO users VALUES ('u1', 'acme', 'alice@acme.com', 'Alice')"
+    )
+    conn.commit()
+
+    from tools.compliance.gdpr_eraser import erase_tenant_data
+
+    result = erase_tenant_data("acme", "auditor@icdev.local", conn=conn)
+
+    rows = conn.execute(
+        "SELECT * FROM erasure_audit WHERE tenant_id='acme'"
+    ).fetchall()
+    assert len(rows) == 1, "exactly one erasure_audit row expected after erasure"
+    row = rows[0]
+    assert row["requested_by"] == "auditor@icdev.local"
+    assert row["scope"] == "pii"
+    assert row["completed_at"] is not None, "completed_at must be populated"
+    # Return value must contain the same audit id
+    assert result["erasure_id"] == row["id"], "result erasure_id must match row id"
+    assert result["tenant_id"] == "acme"
+
+    conn.close()
+
+
+def test_erasure_skips_audit_tables(tmp_path):
+    """Append-only tables in _SKIP_TABLES are not modified by erase_tenant_data()."""
+    conn = sqlite3.connect(str(tmp_path / "skip_audit_test.db"))
+    conn.row_factory = sqlite3.Row
+    conn.executescript("""
+        -- rls_audit is in _SKIP_TABLES; give it tenant_id + PII columns
+        -- to confirm it is explicitly skipped (not just lacking those columns).
+        CREATE TABLE IF NOT EXISTS rls_audit (
+            id        TEXT PRIMARY KEY,
+            tenant_id TEXT NOT NULL,
+            email     TEXT,
+            name      TEXT
+        );
+        -- Regular user-facing table — should be erased.
+        CREATE TABLE IF NOT EXISTS users (
+            id        TEXT PRIMARY KEY,
+            tenant_id TEXT NOT NULL,
+            email     TEXT,
+            name      TEXT
+        );
+        CREATE TABLE IF NOT EXISTS erasure_audit (
+            id              TEXT PRIMARY KEY,
+            tenant_id       TEXT NOT NULL,
+            requested_by    TEXT NOT NULL,
+            scope           TEXT NOT NULL DEFAULT 'pii',
+            tables_affected TEXT,
+            completed_at    TEXT NOT NULL
+        );
+    """)
+    conn.execute(
+        "INSERT INTO rls_audit  VALUES ('r1', 'acme', 'audit@acme.com', 'Auditor')"
+    )
+    conn.execute(
+        "INSERT INTO users       VALUES ('u1', 'acme', 'user@acme.com',  'User')"
+    )
+    conn.commit()
+
+    from tools.compliance.gdpr_eraser import erase_tenant_data
+
+    result = erase_tenant_data("acme", "admin@icdev.local", conn=conn)
+
+    # rls_audit is in _SKIP_TABLES — PII must be untouched
+    skip_row = conn.execute(
+        "SELECT email, name FROM rls_audit WHERE id='r1'"
+    ).fetchone()
+    assert skip_row["email"] == "audit@acme.com", (
+        "rls_audit.email must not be nulled (append-only skip table)"
+    )
+    assert skip_row["name"] == "Auditor", (
+        "rls_audit.name must not be nulled (append-only skip table)"
+    )
+
+    # users is a normal table — PII must be erased
+    user_row = conn.execute(
+        "SELECT email, name FROM users WHERE id='u1'"
+    ).fetchone()
+    assert user_row["email"] is None, "users.email must be NULL after erasure"
+    assert user_row["name"] is None, "users.name must be NULL after erasure"
+
+    # rls_audit must NOT appear in tables_affected
+    assert "rls_audit" not in result["tables_affected"], (
+        "rls_audit must not appear in tables_affected"
+    )
+    # users must appear in tables_affected
+    assert "users" in result["tables_affected"], (
+        "users must appear in tables_affected"
+    )
+
+    conn.close()
+
+
+def test_erasure_requires_admin(monkeypatch):
+    """The admin-role guard aborts 403 for non-admin users when enforcement is on,
+    and passes through for admin users.
+    """
+    monkeypatch.setenv("ICDEV_ENFORCE_CANVAS_ACCESS", "true")
+
+    from flask import Flask, g
+    from werkzeug.exceptions import Forbidden
+    import tools.admin.blueprint as bp_mod
+
+    app = Flask(__name__)
+
+    # Non-admin user — expect Forbidden
+    with app.test_request_context():
+        g.current_user = {"role": "viewer", "email": "viewer@test.com"}
+        try:
+            bp_mod._require_admin()
+            raise AssertionError("Expected Forbidden for non-admin viewer role")
+        except Forbidden as exc:
+            assert exc.code == 403, f"Expected 403, got {exc.code}"
+
+    # Admin user — must pass without raising
+    with app.test_request_context():
+        g.current_user = {"role": "admin", "email": "admin@test.com"}
+        bp_mod._require_admin()  # Must not raise
+
+    # No user context — non-admin-by-default also blocked when enforcement is on
+    with app.test_request_context():
+        g.current_user = None
+        try:
+            bp_mod._require_admin()
+            raise AssertionError("Expected Forbidden for unauthenticated user")
+        except Forbidden as exc:
+            assert exc.code == 403
