@@ -27,7 +27,6 @@ gate (``trust_score < 0.6``) in :class:`CoWorkerThread` still applies.
 from __future__ import annotations
 
 import threading
-from pathlib import Path
 from typing import Any, Callable
 
 from icdev.tools.llm.agent_loop import DONE

@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
 
 from icdev.tools.llm.agent_loop import (
     DONE,
-    AgentLoopResult,
     AgentLoopUnsupported,
     run_agent_loop,
 )
