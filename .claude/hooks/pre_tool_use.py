@@ -96,6 +96,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "ad_news_scenario_links",
         "ad_news_clusters",
         "ad_news_patterns",
+        # FathomDesk macro regime classification store (migration 021, NIST AU — append-only signal log)
+        "ad_macro_regimes",
         # FathomDesk Trading Oracle (append-only predictions + convergence)
         "ad_trading_predictions",
         "ad_trading_convergence_events",
@@ -416,6 +418,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # FathomDesk Value Compass (migration 048 — F&G + Buffett snapshots, NIST AU)
         "ad_fear_greed_snapshots",
         "ad_buffett_snapshots",
+        # Strategos interdiction analysis results (migration 058, NIST AU — append-only ranked outputs)
+        "sg_interdiction_results",
         # Strategos Analyst Annotation Layer (migration 060, NIST AU — append-only annotation store)
         "sg_analyst_annotations",
         # DES execution audit log (NIST AU — append-only)
@@ -432,6 +436,10 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "wf_citations",
         # WNE artifact store (migration 084, NIST AU — append-only)
         "wne_artifacts",
+        # Genesis reflex output artifact store (migration 188, NIST AU — append-only reflex output log)
+        "genesis_outputs",
+        # Genesis design phase-transition log (migration 189, NIST AU — append-only phase audit)
+        "genesis_phase_log",
         # Genesis reflex run log (migration 116, NIST AU — cooldown tracking + audit)
         "genesis_reflex_log",
         # NMCE — AI conversation audit trail (migration canvas, NIST AU)
@@ -516,6 +524,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "erasure_audit",
         # ECR Billing (migration 213) — usage events are immutable billing audit records (NIST AU-9)
         "usage_events",
+        # ECR API Keys (migration 215) — keys are append-only; revocation sets revoked_at, never deletes (NIST AU-9)
+        "api_keys",
     ]
 
     if tool_name == "Bash":

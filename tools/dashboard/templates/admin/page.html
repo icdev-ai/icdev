@@ -25,6 +25,9 @@
     <li class="nav-item">
       <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-evidence" onclick="loadEvidence()">Evidence</button>
     </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-usage" onclick="loadUsage()">Usage</button>
+    </li>
   </ul>
 
   <div class="tab-content">
@@ -126,9 +129,6 @@
       </div>
     </div>
 
-  </div><!-- tab-content -->
-</div>
-
     <!-- Tab 5: SOC 2 Evidence -->
     <div class="tab-pane fade" id="tab-evidence">
       <div class="card">
@@ -164,6 +164,76 @@
         </div>
       </div>
     </div>
+
+    <!-- Tab 6: Usage Analytics -->
+    <div class="tab-pane fade" id="tab-usage">
+      <!-- Date-range picker -->
+      <div class="d-flex align-items-center gap-3 mb-3">
+        <span class="fw-semibold text-muted small">Date range:</span>
+        <div class="btn-group btn-group-sm" role="group" id="usage-range-group">
+          <input type="radio" class="btn-check" name="usageRange" id="ur7"  value="7"  autocomplete="off">
+          <label class="btn btn-outline-secondary" for="ur7">7 days</label>
+          <input type="radio" class="btn-check" name="usageRange" id="ur30" value="30" autocomplete="off" checked>
+          <label class="btn btn-outline-secondary" for="ur30">30 days</label>
+          <input type="radio" class="btn-check" name="usageRange" id="ur90" value="90" autocomplete="off">
+          <label class="btn btn-outline-secondary" for="ur90">90 days</label>
+        </div>
+        <div class="input-group input-group-sm" style="width:220px">
+          <span class="input-group-text">Tenant</span>
+          <input type="text" id="usage-tenant-input" class="form-control" placeholder="tenant-id" value="default">
+          <button class="btn btn-outline-primary" onclick="loadUsage()">Load</button>
+        </div>
+      </div>
+
+      <!-- Current-month indicator -->
+      <div id="usage-month-banner" class="alert alert-info py-2 small d-none">
+        <span id="usage-month-text"></span>
+      </div>
+
+      <!-- Bar chart -->
+      <div class="card mb-3">
+        <div class="card-header fw-semibold">Daily Usage by Event Type</div>
+        <div class="card-body" style="position:relative; height:280px">
+          <div id="usage-chart-loading" class="text-muted small p-2">Select a tenant and click Load.</div>
+          <canvas id="usageChart" class="d-none" style="max-height:260px"></canvas>
+        </div>
+      </div>
+
+      <!-- Summary + top-consumers -->
+      <div class="row g-3">
+        <div class="col-md-4">
+          <div class="card h-100">
+            <div class="card-header fw-semibold">Period Summary</div>
+            <div class="card-body p-0">
+              <table class="table table-sm mb-0">
+                <thead class="table-light"><tr><th>Event Type</th><th class="text-end">Total</th></tr></thead>
+                <tbody id="usage-summary-tbody">
+                  <tr><td colspan="2" class="text-muted p-3 small">No data.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-8">
+          <div class="card h-100">
+            <div class="card-header fw-semibold">Cross-Tenant Top Consumers</div>
+            <div class="card-body p-0">
+              <table class="table table-sm mb-0">
+                <thead class="table-light">
+                  <tr><th>Tenant</th><th>Event Type</th><th class="text-end">Total Quantity</th></tr>
+                </thead>
+                <tbody id="usage-consumers-tbody">
+                  <tr><td colspan="3" class="text-muted p-3 small">Load tenant usage to also refresh cross-tenant view.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- tab-content -->
+</div>
 
 <!-- SSO Add/Edit Modal -->
 <div class="modal fade" id="ssoModal" tabindex="-1" aria-labelledby="ssoModalTitle" aria-hidden="true">
@@ -221,6 +291,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 <script>
 const API = {
   components: tid => `/api/admin/tenants/${encodeURIComponent(tid)}/components`,
@@ -510,5 +581,144 @@ async function loadGrants() {
     document.getElementById('grants-tbody').innerHTML = '<tr><td colspan="7">Error: ' + e + '</td></tr>';
   }
 }
+
+// ── Usage Analytics ─────────────────────────────────────────────────────────
+
+const EVENT_COLORS = {
+  llm_token:     'rgba(99,102,241,0.8)',
+  api_call:      'rgba(34,197,94,0.8)',
+  storage_mb:    'rgba(251,146,60,0.8)',
+  canvas_load:   'rgba(14,165,233,0.8)',
+  coworker_task: 'rgba(168,85,247,0.8)',
+};
+
+let _usageChart = null;
+
+function _getDaysBefore(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
+function _getSelectedDays() {
+  const checked = document.querySelector('input[name="usageRange"]:checked');
+  return checked ? parseInt(checked.value, 10) : 30;
+}
+
+// Attach range-button listeners once DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('input[name="usageRange"]').forEach(r => {
+    r.addEventListener('change', () => {
+      const tid = document.getElementById('usage-tenant-input').value.trim();
+      if (tid) loadUsage();
+    });
+  });
+});
+
+async function loadUsage() {
+  const tid = document.getElementById('usage-tenant-input').value.trim();
+  if (!tid) return;
+
+  const days = _getSelectedDays();
+  const since = _getDaysBefore(days);
+
+  // Per-tenant breakdown
+  const tenantResp = await fetch(`/api/admin/tenants/${encodeURIComponent(tid)}/usage?since=${since}`);
+  const tenantData = await tenantResp.json();
+
+  _renderSummaryTable(tenantData.summary || {});
+  _renderChart(tenantData.daily || []);
+  _renderMonthBanner(tenantData.current_month_total || 0);
+
+  // Cross-tenant overview
+  const overviewResp = await fetch(`/api/admin/usage/overview?since=${since}`);
+  const overviewData = await overviewResp.json();
+  _renderConsumersTable(overviewData.top_consumers || []);
+}
+
+function _renderSummaryTable(summary) {
+  const tbody = document.getElementById('usage-summary-tbody');
+  const entries = Object.entries(summary);
+  if (!entries.length) {
+    tbody.innerHTML = '<tr><td colspan="2" class="text-muted p-3 small">No events in this period.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = entries
+    .map(([et, qty]) => `<tr>
+      <td><span class="badge" style="background:${EVENT_COLORS[et]||'#6c757d'}">${et}</span></td>
+      <td class="text-end fw-semibold">${qty.toLocaleString()}</td>
+    </tr>`)
+    .join('');
+}
+
+function _renderMonthBanner(total) {
+  const banner = document.getElementById('usage-month-banner');
+  const text   = document.getElementById('usage-month-text');
+  text.textContent = `Current month total: ${total.toLocaleString()} units`;
+  banner.classList.remove('d-none');
+}
+
+function _renderConsumersTable(consumers) {
+  const tbody = document.getElementById('usage-consumers-tbody');
+  if (!consumers.length) {
+    tbody.innerHTML = '<tr><td colspan="3" class="text-muted p-3 small">No data.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = consumers.slice(0, 20).map(c => `<tr>
+    <td><code class="small">${c.tenant_id}</code></td>
+    <td><span class="badge" style="background:${EVENT_COLORS[c.event_type]||'#6c757d'}">${c.event_type}</span></td>
+    <td class="text-end">${c.total_quantity.toLocaleString()}</td>
+  </tr>`).join('');
+}
+
+function _renderChart(daily) {
+  const loading = document.getElementById('usage-chart-loading');
+  const canvas  = document.getElementById('usageChart');
+
+  if (!daily.length) {
+    loading.textContent = 'No usage events in this period.';
+    loading.classList.remove('d-none');
+    canvas.classList.add('d-none');
+    return;
+  }
+
+  loading.classList.add('d-none');
+  canvas.classList.remove('d-none');
+
+  // Collect all unique dates and event types
+  const dates     = [...new Set(daily.map(d => d.date))].sort();
+  const eventTypes = [...new Set(daily.map(d => d.event_type))];
+
+  // Build lookup: {date+et -> qty}
+  const lookup = {};
+  for (const row of daily) lookup[`${row.date}|${row.event_type}`] = row.total_quantity;
+
+  const datasets = eventTypes.map(et => ({
+    label: et,
+    data: dates.map(d => lookup[`${d}|${et}`] || 0),
+    backgroundColor: EVENT_COLORS[et] || 'rgba(107,114,128,0.7)',
+    borderRadius: 3,
+  }));
+
+  if (_usageChart) {
+    _usageChart.destroy();
+    _usageChart = null;
+  }
+
+  _usageChart = new Chart(canvas, {
+    type: 'bar',
+    data: { labels: dates, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: 'top' } },
+      scales: {
+        x: { stacked: true, ticks: { maxRotation: 45, font: { size: 11 } } },
+        y: { stacked: true, beginAtZero: true },
+      },
+    },
+  });
+}
+// ── End Usage Analytics ──────────────────────────────────────────────────────
 </script>
 {% endblock %}
