@@ -1129,6 +1129,16 @@ reflexes:
     overflow_warn_lines: 160      # MEMORY.md line count that triggers overflow warning (Claude Code truncates at 200)
     # auto_memory_path:           # Override path for Claude Code auto-memory dir (derived by convention if omitted)
 
+  usage_rollup:
+    enabled: true
+    risk_tier: green
+    schedule: "daily 00:05"
+    description: "Aggregate yesterday's usage_events into usage_daily_rollup (billing rollup)"
+    success_metric:
+      name: rows_upserted
+      threshold: 0
+      operator: gte  # 0 = no usage yesterday (healthy), > 0 = rows rolled up
+
 # ── Promoter Configuration ───────────────────────────────────────────────────
 
 promoter:

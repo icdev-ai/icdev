@@ -938,3 +938,28 @@
 | Zig Artifact Generator | tools\security_canvas\zig_artifact_generator.py | Auto-registered: security_canvas/zig_artifact_generator.py | --json | JSON |
 | Zig Assessor | tools\security_canvas\zig_assessor.py | Auto-registered: security_canvas/zig_assessor.py | --json | JSON |
 | Zig External Adapter | tools\security_canvas\zig_external_adapter.py | Auto-registered: security_canvas/zig_external_adapter.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Zig Phase Tracker | tools\security_canvas\zig_phase_tracker.py | Auto-registered: security_canvas/zig_phase_tracker.py | --json | JSON |
+| Zig Pillar Scorer | tools\security_canvas\zig_pillar_scorer.py | Auto-registered: security_canvas/zig_pillar_scorer.py | --json | JSON |
+| Zig Portfolio | tools\security_canvas\zig_portfolio.py | Auto-registered: security_canvas/zig_portfolio.py | --json | JSON |
+| Zig Roadmap Generator | tools\security_canvas\zig_roadmap_generator.py | Auto-registered: security_canvas/zig_roadmap_generator.py | --json | JSON |
+| Seed Official Skills | tools\skillhub\seed_official_skills.py | Auto-registered: skillhub/seed_official_skills.py | --json | JSON |
+| Gepa Optimizer | tools\skills\gepa_optimizer.py | Auto-registered: skills/gepa_optimizer.py | --json | JSON |
+| Ndaa 889 Screener | tools\supply_chain\ndaa_889_screener.py | Auto-registered: supply_chain/ndaa_889_screener.py | --json | JSON |
+| Qa Verify Backgrounds | tools\testing\qa_verify_backgrounds.py | Auto-registered: testing/qa_verify_backgrounds.py | --json | JSON |
+| Lesson Learned Remediation | tools\workflow\lesson_learned_remediation.py | Auto-registered: workflow/lesson_learned_remediation.py | --json | JSON |
+| Lac Scenarios | tools\zta\lac_scenarios.py | Auto-registered: zta/lac_scenarios.py | --json | JSON |
+| Lac Simulator | tools\zta\lac_simulator.py | Auto-registered: zta/lac_simulator.py | --json | JSON |
+| Alpaca Provider | tools\trading\data\alpaca_provider.py | Auto-registered: data/alpaca_provider.py | --json | JSON |
+| Fixture Provider | tools\trading\data\fixture_provider.py | Auto-registered: data/fixture_provider.py | --json | JSON |
+| Icdev Executive Overview | tools\slides\curated_decks\icdev_executive_overview.py | Auto-registered: curated_decks/icdev_executive_overview.py | --json | JSON |
+| Govcon Discovery | tools\nova\reflexes\govcon_discovery.py | Auto-registered: reflexes/govcon_discovery.py | --json | JSON |
+| Product Manager Soul | tools\nova\souls\product_manager_soul.py | Auto-registered: souls/product_manager_soul.py | --json | JSON |
+| Software Craftsperson Soul | tools\nova\souls\software_craftsperson_soul.py | Auto-registered: souls/software_craftsperson_soul.py | --json | JSON |
+| Github Listener | tools\notifications\adapters\github_listener.py | Auto-registered: adapters/github_listener.py | --json | JSON |
+| Github Notify | tools\notifications\adapters\github_notify.py | Auto-registered: adapters/github_notify.py | --json | JSON |
+| Gitlab Listener | tools\notifications\adapters\gitlab_listener.py | Auto-registered: adapters/gitlab_listener.py | --json | JSON |

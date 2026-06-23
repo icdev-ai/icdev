@@ -407,7 +407,6 @@ def create_context(
 def get_context(context_id: str) -> dict[str, Any] | None:
     """Module-level shorthand — user_id not needed for single-row lookup."""
     from icdev.tools.db.storage import get_connection
-    import json
 
     conn = get_connection()
     try:
