@@ -1853,6 +1853,32 @@ class LLMRouter:
                 # RL: record success so this model's Q-value improves
                 self._get_rl_router().record_outcome(function, model_name, success=True, latency_ms=_latency)
 
+                # ECR-BILL-02: fire-and-forget token metering
+                try:
+                    from tools.billing.metering import record_usage as _rec_usage
+                    _total_tokens = (getattr(response, "input_tokens", 0) or 0) + (
+                        getattr(response, "output_tokens", 0) or 0
+                    )
+                    if _total_tokens > 0:
+                        # Resolve tenant_id from Flask request context when available
+                        _bill_tenant = None
+                        try:
+                            from flask import g as _flask_g, has_request_context as _hrc
+                            if _hrc():
+                                _bill_tenant = getattr(_flask_g, "tenant_id", None)
+                        except Exception:
+                            pass
+                        if not _bill_tenant:
+                            _bill_tenant = getattr(request, "tenant_id", None) or "system"
+                        _rec_usage(
+                            _bill_tenant,
+                            "llm_token",
+                            quantity=float(_total_tokens),
+                            model=getattr(response, "model_id", model_id) or model_id,
+                        )
+                except Exception:
+                    pass  # metering is never allowed to block LLM calls
+
                 return response
             except Exception as exc:
                 logger.warning(
