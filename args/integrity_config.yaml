@@ -125,6 +125,19 @@ known_safe_filesystem_modules:
   - llm/provider_scaffold.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
 
 # ---------------------------------------------------------------------------
+# Known-safe ICDEV modules that legitimately use the obfuscation capability
+# (base64 decode / hex decode) as documented protocol behavior — explicitly
+# authorized. JWT/OIDC tokens are base64url-encoded by RFC 7519; decoding the
+# payload to extract claims is required by the OIDC spec and is NOT intent
+# concealment. Adding a module path here suppresses the unauthorized_capability
+# 'obfuscation' finding in Mode A (provenance_aware) self-scans only; it has
+# no effect on external-artifact assessments.
+# ---------------------------------------------------------------------------
+known_safe_obfuscation_modules:
+  - tools/auth/oidc.py  # base64.urlsafe_b64decode in exchange_oidc_code() decodes the JWT id_token payload per RFC 7519 §3; authorized by REQ-AUTH-OIDC-JWT-DECODE-01 (task-06f70781c8).
+  - auth/oidc.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+
+# ---------------------------------------------------------------------------
 # Known-safe ICDEV modules that legitimately use the process_exec capability
 # (subprocess.Popen / subprocess.run) as documented system behavior — explicitly
 # authorized. Adding a module path here suppresses the unauthorized_capability
