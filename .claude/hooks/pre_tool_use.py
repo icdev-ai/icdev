@@ -505,6 +505,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "component_audit_log",
         # MCIP DAT — DTI snapshots are append-only audit trail (NIST AU-9, issue-18)
         "mcip_dti_scores",
+        # ECR SSO — session records are append-only NIST AU (sso_providers is mutable)
+        "sso_sessions",
     ]
 
     if tool_name == "Bash":
