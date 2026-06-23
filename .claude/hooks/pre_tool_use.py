@@ -509,6 +509,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "sso_sessions",
         # ECR SOC 2 — evidence records are immutable compliance evidence (NIST AU-9, migration 211)
         "evidence_items",
+        # ECR DRES — zone assignments are append-only audit trail (NIST AU-9, migration 212)
+        "tenant_zone_assignments",
     ]
 
     if tool_name == "Bash":

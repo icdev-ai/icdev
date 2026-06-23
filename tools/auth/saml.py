@@ -155,3 +155,22 @@ def process_acs_response(
         attributes[attr_name] = values
 
     return {"name_id": name_id, "attributes": attributes, "relay_state": relay_state}
+
+
+def apply_attr_mapping(raw_attributes: dict, attr_mapping_json: str | None) -> dict:
+    """Map SAML attribute names to ICDEV field names via provider attr_mapping JSON.
+
+    attr_mapping_json: e.g. '{"icdev_roles": "Role"}' — SAML attr "Role" → "icdev_roles".
+    Returns raw_attributes unchanged if mapping is absent or unparseable.
+    """
+    import json as _json
+
+    if not attr_mapping_json:
+        return raw_attributes
+    try:
+        mapping: dict = _json.loads(attr_mapping_json)
+    except Exception:
+        return raw_attributes
+    return {icdev_field: raw_attributes[saml_attr]
+            for icdev_field, saml_attr in mapping.items()
+            if saml_attr in raw_attributes}

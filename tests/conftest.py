@@ -1447,6 +1447,22 @@ CREATE INDEX IF NOT EXISTS idx_evidence_items_control ON evidence_items(tenant_i
 CREATE UNIQUE INDEX IF NOT EXISTS idx_evidence_items_source
     ON evidence_items(source_table, source_row_id, control_id)
     WHERE source_table IS NOT NULL AND source_row_id IS NOT NULL;
+CREATE TABLE IF NOT EXISTS data_residency_zones (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    region      TEXT NOT NULL,
+    pg_dsn_env  TEXT NOT NULL,
+    description TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS tenant_zone_assignments (
+    tenant_id   TEXT PRIMARY KEY,
+    zone_id     TEXT NOT NULL REFERENCES data_residency_zones(id),
+    assigned_at TEXT NOT NULL DEFAULT (datetime('now')),
+    assigned_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_tenant_zone_assignments_zone
+    ON tenant_zone_assignments(zone_id);
 """
 
 
