@@ -22,6 +22,7 @@ from icdev.tools.ace.step_executor import (
     TrustKernelDeniedError,
 )
 from icdev.tools.ace.team_assembler import CoWorkerSpec
+from icdev.tools.chat.chat_manager import ChatManager
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("icdev.ace.coworker_thread")
@@ -518,6 +519,7 @@ class CoWorkerThread(threading.Thread):
 
         self._set_state("done")
         self._audit("coworker_done", detail)
+        self._post_completion_chat_feedback(role, detail)
 
         # Phase 3: capture success pattern for green-tier co-workers (SIPA-gated promotion)
         if self.spec.trust_tier == "green":
@@ -779,6 +781,85 @@ class CoWorkerThread(threading.Thread):
                 conn.close()
         except Exception as _exc:
             logger.debug("ace audit write failed for %s/%s: %s", self.instance_id, action, _exc)
+
+    # ------------------------------------------------------------------
+    # Chat feedback loop — write completion summary back to originating chat context
+    # ------------------------------------------------------------------
+
+    def _post_completion_chat_feedback(self, role: Any, detail: str) -> None:
+        """Write a co-worker completion summary into the originating chat context.
+
+        Reads trigger_ref from ace_instances.config_json.  Only writes when
+        trigger_source == 'chat' and trigger_ref is a non-empty context ID.
+        No-ops gracefully on any error so completion is never blocked.
+        """
+        try:
+            from icdev.tools.db.storage import get_canvas_connection
+
+            conn = get_canvas_connection(_DB_ENV)
+            try:
+                row = conn.execute(
+                    "SELECT config_json FROM ace_instances WHERE id = %s",
+                    (self.instance_id,),
+                ).fetchone()
+            finally:
+                conn.close()
+
+            if not row:
+                return
+
+            cfg: dict[str, Any] = {}
+            try:
+                cfg = json.loads(row[0] if isinstance(row, (tuple, list)) else dict(row).get("config_json", "{}") or "{}")
+            except Exception:
+                return
+
+            if cfg.get("trigger_source") != "chat":
+                return
+
+            ctx_id: str = cfg.get("trigger_ref", "")
+            if not ctx_id:
+                return
+
+            role_display = getattr(role, "display_name", None) or self.spec.role_id
+            problem_text = cfg.get("problem_text", "")
+            summary_lines = [
+                f"**Co-worker `{self.spec.coworker_id}` ({role_display}) completed.**",
+                f"Instance: `{self.instance_id}`",
+            ]
+            if problem_text:
+                excerpt = problem_text[:200].rstrip()
+                if len(problem_text) > 200:
+                    excerpt += "…"
+                summary_lines.append(f"Task: {excerpt}")
+            summary_lines.append(f"Detail: {detail}")
+            summary = "\n".join(summary_lines)
+
+            user_id = cfg.get("user_id", "system")
+            mgr = ChatManager(user_id=user_id, classification="CUI")
+            mgr.add_message(
+                ctx_id,
+                role="assistant",
+                content=summary,
+                content_type="action_card",
+                metadata={
+                    "source": "ace_coworker",
+                    "instance_id": self.instance_id,
+                    "coworker_id": self.spec.coworker_id,
+                    "role_id": self.spec.role_id,
+                },
+            )
+            logger.debug(
+                "ace_chat_feedback: wrote completion summary to ctx=%s for coworker=%s",
+                ctx_id,
+                self.spec.coworker_id,
+            )
+        except Exception as exc:
+            logger.debug(
+                "ace_chat_feedback: no-op for coworker=%s: %s",
+                self.spec.coworker_id,
+                exc,
+            )
 
     # ------------------------------------------------------------------
     # Phase 3: success pattern capture

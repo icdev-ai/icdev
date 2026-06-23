@@ -462,3 +462,39 @@ def create_admin_blueprint() -> Blueprint | None:
         })
 
     return bp
+
+
+def create_stripe_webhook_blueprint():
+    """Return a Blueprint for POST /webhooks/stripe.
+
+    This blueprint has NO auth — Stripe signature verification is used instead.
+    Must be registered separately from the admin blueprint so that
+    before_request(_require_admin) does not apply.
+    """
+    from tools.billing.stripe_handler import verify_stripe_signature, handle_webhook
+
+    wb = Blueprint("stripe_webhooks", __name__)
+
+    @wb.route("/webhooks/stripe", methods=["POST"])
+    def stripe_webhook():
+        payload = request.get_data()
+        sig_header = request.headers.get("Stripe-Signature", "")
+
+        if not verify_stripe_signature(payload, sig_header):
+            log.warning("stripe_webhook: invalid signature")
+            return jsonify({"error": "invalid signature"}), 403
+
+        try:
+            import json as _json
+            body = _json.loads(payload)
+        except Exception:
+            return jsonify({"error": "invalid JSON"}), 400
+
+        event_type = body.get("type", "")
+        event_data = (body.get("data") or {}).get("object") or {}
+
+        result = handle_webhook(event_type, event_data)
+        log.info("stripe_webhook: %s handled=%s", event_type, result.get("handled"))
+        return jsonify(result), 200
+
+    return wb

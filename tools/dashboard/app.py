@@ -2091,6 +2091,19 @@ def create_app() -> Flask:
                         feature_name=disabled.strip("/").replace("-", " ").title(),
                     ), 200
 
+    # ---- ECR-BILL-02: API call metering (fire-and-forget after_request) ----
+    @app.after_request
+    def _meter_api_call(response):
+        try:
+            if flask_request.path.startswith("/api/"):
+                from flask import g as _g
+                _tenant = getattr(_g, "tenant_id", None) or "system"
+                from tools.billing.metering import record_usage as _rec
+                _rec(_tenant, "api_call")
+        except Exception:
+            pass
+        return response
+
     # ---- Auto-register A2A agents from card files ----
     try:
         from tools.a2a.agent_registry import register_all_from_cards
@@ -2492,6 +2505,15 @@ def create_app() -> Flask:
         app.logger.info("Enterprise SSO blueprint registered at /auth/saml")
     except Exception as _exc:
         app.logger.warning("Enterprise SSO blueprint failed to register: %s", _exc)
+
+    # ---- Stripe Webhook Blueprint (no auth, signature-verified) ----
+    try:
+        from tools.admin.blueprint import create_stripe_webhook_blueprint as _stripe_wh_factory
+        _stripe_wh_bp = _stripe_wh_factory()
+        app.register_blueprint(_stripe_wh_bp)
+        app.logger.info("Stripe webhook blueprint registered at /webhooks/stripe")
+    except Exception as _exc:
+        app.logger.warning("Stripe webhook blueprint failed to register: %s", _exc)
 
     # ---- Convenience JSON routes that match the spec ----
 
