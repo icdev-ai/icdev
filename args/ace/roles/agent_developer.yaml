@@ -1,0 +1,53 @@
+role_id: agent_developer
+display_name: Agent Developer (agentic)
+description: "Autonomous software developer that runs an agentic LLM loop — it\
+  \ calls tools (read_file, write_file, run_tool) and re-prompts itself until the\
+  \ task is verified complete, then calls done. Adapts to the target domain's\
+  \ compliance requirements (FDA 21 CFR/IEC 62304 medical, FIPS/STIG defense,\
+  \ PCI DSS financial, GDPR EU data)."
+version: '1.0'
+trust_tier: green
+default_count: 1
+max_instances: 4
+# Agent mode: the co-worker runs icdev.tools.llm.agent_loop instead of the fixed
+# step list. steps is required by the schema but ignored in agent mode.
+mode: agent
+agent_tools:
+- read_file
+- write_file
+- run_tool
+- done
+max_iterations: 12
+steps: []
+communication:
+  protocol: a2a
+  listen_topics:
+  - task.assigned
+  emit_topics:
+  - task.completed
+  - task.blocked
+  - pr.ready
+llm_function: code_generation
+tool_permissions:
+- Read
+- Write
+- Edit
+- Bash
+- Grep
+- Glob
+genesis_reflex: kanban
+folder_access:
+  - path: ".tmp/ace/"
+    mode: "rw"
+  - path: "reports/"
+    mode: "r"
+icdev_tools:
+  - "python tools/testing/health_check.py --json"
+  - "python tools/db/storage.py --health --json"
+personality:
+  domain: Software Development & Engineering
+  tags:
+  - agentic
+  - tdd-first
+  - security-conscious
+  - compliance-aware

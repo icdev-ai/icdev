@@ -63,6 +63,13 @@ class RoleTemplate:
     # Phase 2: filesystem + routine access scope (absent in legacy roles → empty)
     folder_access: list[dict[str, Any]] = field(default_factory=list)
     icdev_tools: list[str] = field(default_factory=list)
+    # Agent mode: when mode=="agent" the co-worker runs an agentic LLM loop
+    # (icdev.tools.llm.agent_loop) that re-prompts the LLM after each tool call
+    # until it calls `done`, instead of the fixed steps list. Defaults preserve
+    # the legacy deterministic step-list behaviour.
+    mode: str = "steps"
+    agent_tools: list[str] = field(default_factory=list)
+    max_iterations: int = 12
 
     def __post_init__(self) -> None:
         # Expose listen_topics at top level for dispatcher hot-path
@@ -94,6 +101,9 @@ class RoleTemplate:
             personality=dict(data.get("personality") or {}),
             folder_access=list(data.get("folder_access") or []),
             icdev_tools=list(data.get("icdev_tools") or []),
+            mode=str(data.get("mode", "steps")),
+            agent_tools=list(data.get("agent_tools") or []),
+            max_iterations=int(data.get("max_iterations", 12)),
         )
 
 
