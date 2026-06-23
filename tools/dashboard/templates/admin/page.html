@@ -19,6 +19,9 @@
     <li class="nav-item">
       <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-grants">Access Grants</button>
     </li>
+    <li class="nav-item">
+      <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-sso">SSO Providers</button>
+    </li>
   </ul>
 
   <div class="tab-content">
@@ -90,7 +93,91 @@
       </div>
     </div>
 
+    <!-- Tab 4: SSO Providers -->
+    <div class="tab-pane fade" id="tab-sso">
+      <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <span class="fw-semibold">SSO Providers</span>
+          <div class="d-flex align-items-center gap-2">
+            <div class="input-group" style="width:260px">
+              <span class="input-group-text">Tenant</span>
+              <input type="text" id="sso-tenant-input" class="form-control form-control-sm"
+                     placeholder="tenant-id" value="default">
+              <button class="btn btn-sm btn-outline-primary" onclick="loadSSOProviders()">Load</button>
+            </div>
+            <button class="btn btn-sm btn-success" onclick="openSSOModal()">+ Add Provider</button>
+          </div>
+        </div>
+        <div class="card-body p-0">
+          <div id="sso-loading" class="p-3 text-muted small">Enter a tenant ID and click Load.</div>
+          <table class="table table-sm table-hover mb-0 d-none" id="sso-table">
+            <thead class="table-dark">
+              <tr>
+                <th>Name</th><th>Protocol</th><th>Entity / Client ID</th>
+                <th>Metadata URL</th><th>Status</th><th>Login Link</th><th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="sso-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </div><!-- tab-content -->
+</div>
+
+<!-- SSO Add/Edit Modal -->
+<div class="modal fade" id="ssoModal" tabindex="-1" aria-labelledby="ssoModalTitle" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="ssoModalTitle">Add SSO Provider</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="sso-modal-pid">
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Provider Name <span class="text-danger">*</span></label>
+          <input type="text" id="sso-name" class="form-control" placeholder="e.g. Corp SAML IdP">
+        </div>
+        <div class="mb-3">
+          <label class="form-label fw-semibold">Protocol <span class="text-danger">*</span></label>
+          <select id="sso-protocol" class="form-select" onchange="toggleSSOFields()">
+            <option value="saml">SAML 2.0</option>
+            <option value="oidc">OIDC</option>
+          </select>
+        </div>
+        <div id="sso-saml-fields">
+          <div class="mb-3">
+            <label class="form-label">Entity ID</label>
+            <input type="text" id="sso-entity-id" class="form-control"
+                   placeholder="https://idp.example.com/entity">
+          </div>
+        </div>
+        <div id="sso-oidc-fields" class="d-none">
+          <div class="mb-3">
+            <label class="form-label">Client ID</label>
+            <input type="text" id="sso-client-id" class="form-control"
+                   placeholder="client_id from identity provider">
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Metadata / Discovery URL</label>
+          <input type="url" id="sso-metadata-url" class="form-control"
+                 placeholder="https://idp.example.com/metadata">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Attribute Mapping <span class="text-muted small">(JSON)</span></label>
+          <textarea id="sso-attr-mapping" class="form-control font-monospace" rows="3"
+                    placeholder='{"email": "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress"}'></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" onclick="saveSSOProvider()">Save</button>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
 
@@ -178,6 +265,139 @@ async function loadAudit() {
     document.getElementById('audit-tbody').innerHTML = '<tr><td colspan="6">Error: ' + e + '</td></tr>';
   }
 }
+
+// ── SSO Providers ──────────────────────────────────────────────────
+const SSO_API = {
+  list:   tid      => `/api/admin/tenants/${encodeURIComponent(tid)}/sso-providers`,
+  listAll:tid      => `/api/admin/tenants/${encodeURIComponent(tid)}/sso-providers?all=1`,
+  create: tid      => `/api/admin/tenants/${encodeURIComponent(tid)}/sso-providers`,
+  update: (tid,pid)=> `/api/admin/tenants/${encodeURIComponent(tid)}/sso-providers/${encodeURIComponent(pid)}`,
+  disable:(tid,pid)=> `/api/admin/tenants/${encodeURIComponent(tid)}/sso-providers/${encodeURIComponent(pid)}`,
+};
+
+async function loadSSOProviders() {
+  const tid = document.getElementById('sso-tenant-input').value.trim();
+  if (!tid) return;
+  document.getElementById('sso-loading').textContent = 'Loading…';
+  document.getElementById('sso-loading').classList.remove('d-none');
+  document.getElementById('sso-table').classList.add('d-none');
+  try {
+    const resp = await fetch(SSO_API.listAll(tid));
+    const data = await resp.json();
+    const tbody = document.getElementById('sso-tbody');
+    tbody.innerHTML = '';
+    const providers = data.providers || [];
+    if (!providers.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="text-muted p-3">No providers. Click "+ Add Provider" to create one.</td></tr>';
+    } else {
+      for (const p of providers) {
+        const statusBadge = p.enabled
+          ? '<span class="badge bg-success">enabled</span>'
+          : '<span class="badge bg-secondary">disabled</span>';
+        const loginCell = p.enabled
+          ? `<a href="${p.login_url}" class="btn btn-xs btn-outline-info" target="_blank">Login</a>`
+          : '<span class="text-muted small">—</span>';
+        const actions = p.enabled
+          ? `<button class="btn btn-xs btn-outline-primary me-1" onclick="editSSO('${p.id}')">Edit</button>
+             <button class="btn btn-xs btn-outline-danger" onclick="disableSSO('${p.id}')">Disable</button>`
+          : '';
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td>${p.name}</td>
+          <td><span class="badge bg-info text-dark">${(p.protocol||'').toUpperCase()}</span></td>
+          <td><code class="small">${p.entity_id || p.client_id || '—'}</code></td>
+          <td class="small text-muted text-truncate" style="max-width:200px" title="${p.metadata_url||''}">${p.metadata_url||'—'}</td>
+          <td>${statusBadge}</td>
+          <td>${loginCell}</td>
+          <td>${actions}</td>`;
+        tbody.appendChild(row);
+      }
+    }
+    document.getElementById('sso-loading').classList.add('d-none');
+    document.getElementById('sso-table').classList.remove('d-none');
+  } catch(e) {
+    document.getElementById('sso-loading').textContent = 'Error: ' + e;
+  }
+}
+
+function toggleSSOFields() {
+  const proto = document.getElementById('sso-protocol').value;
+  document.getElementById('sso-saml-fields').classList.toggle('d-none', proto !== 'saml');
+  document.getElementById('sso-oidc-fields').classList.toggle('d-none', proto !== 'oidc');
+}
+
+function openSSOModal() {
+  document.getElementById('ssoModalTitle').textContent = 'Add SSO Provider';
+  document.getElementById('sso-modal-pid').value = '';
+  document.getElementById('sso-name').value = '';
+  document.getElementById('sso-protocol').value = 'saml';
+  document.getElementById('sso-entity-id').value = '';
+  document.getElementById('sso-client-id').value = '';
+  document.getElementById('sso-metadata-url').value = '';
+  document.getElementById('sso-attr-mapping').value = '';
+  toggleSSOFields();
+  new bootstrap.Modal(document.getElementById('ssoModal')).show();
+}
+
+async function editSSO(pid) {
+  const tid = document.getElementById('sso-tenant-input').value.trim();
+  const resp = await fetch(SSO_API.listAll(tid));
+  const data = await resp.json();
+  const p = (data.providers || []).find(x => x.id === pid);
+  if (!p) return;
+  document.getElementById('ssoModalTitle').textContent = 'Edit SSO Provider';
+  document.getElementById('sso-modal-pid').value = pid;
+  document.getElementById('sso-name').value = p.name || '';
+  document.getElementById('sso-protocol').value = p.protocol || 'saml';
+  document.getElementById('sso-entity-id').value = p.entity_id || '';
+  document.getElementById('sso-client-id').value = p.client_id || '';
+  document.getElementById('sso-metadata-url').value = p.metadata_url || '';
+  document.getElementById('sso-attr-mapping').value = p.attr_mapping || '';
+  toggleSSOFields();
+  new bootstrap.Modal(document.getElementById('ssoModal')).show();
+}
+
+async function saveSSOProvider() {
+  const tid = document.getElementById('sso-tenant-input').value.trim();
+  const pid = document.getElementById('sso-modal-pid').value;
+  const proto = document.getElementById('sso-protocol').value;
+  const payload = {
+    name:         document.getElementById('sso-name').value.trim(),
+    protocol:     proto,
+    entity_id:    document.getElementById('sso-entity-id').value.trim() || null,
+    client_id:    document.getElementById('sso-client-id').value.trim() || null,
+    metadata_url: document.getElementById('sso-metadata-url').value.trim() || null,
+    attr_mapping: document.getElementById('sso-attr-mapping').value.trim() || null,
+  };
+  if (!payload.name) { alert('Provider name is required'); return; }
+  const url    = pid ? SSO_API.update(tid, pid) : SSO_API.create(tid);
+  const method = pid ? 'PUT' : 'POST';
+  const resp   = await fetch(url, {
+    method,
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  });
+  if (resp.ok) {
+    bootstrap.Modal.getInstance(document.getElementById('ssoModal'))?.hide();
+    loadSSOProviders();
+  } else {
+    const err = await resp.json().catch(() => ({}));
+    alert('Error: ' + (err.error || resp.statusText));
+  }
+}
+
+async function disableSSO(pid) {
+  if (!confirm('Disable this SSO provider? The row is preserved and can be re-enabled.')) return;
+  const tid  = document.getElementById('sso-tenant-input').value.trim();
+  const resp = await fetch(SSO_API.disable(tid, pid), {method: 'DELETE'});
+  if (resp.ok) {
+    loadSSOProviders();
+  } else {
+    const err = await resp.json().catch(() => ({}));
+    alert('Error: ' + (err.error || resp.statusText));
+  }
+}
+// ── End SSO Providers ───────────────────────────────────────────────
 
 async function loadGrants() {
   try {

@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # CUI // SP-CTI
 """Marketplace MCP server exposing FORGE asset registry tools.
 

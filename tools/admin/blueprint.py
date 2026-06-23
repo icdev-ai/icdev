@@ -15,6 +15,7 @@ Access: ICDEV_ADMIN_CONSOLE_ENABLED=true + admin role.
 from __future__ import annotations
 
 import os
+import uuid
 from datetime import datetime, timezone
 
 from flask import Blueprint, abort, g, jsonify, render_template, request
@@ -213,6 +214,132 @@ def create_admin_blueprint() -> Blueprint | None:
                 "limit": limit,
                 "offset": offset,
             })
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ------------------------------------------------------------------ #
+    # REST API — SSO Providers
+    # ------------------------------------------------------------------ #
+
+    @bp.route("/api/admin/tenants/<tenant_id>/sso-providers", methods=["GET"])
+    def api_list_sso_providers(tenant_id: str):
+        """List SSO providers for a tenant. ?all=1 includes disabled ones."""
+        from tools.db.storage import get_connection
+
+        include_all = request.args.get("all", "0") in ("1", "true")
+        where_extra = "" if include_all else " AND enabled = 1"
+        try:
+            with get_connection() as conn:
+                rows = conn.execute(
+                    "SELECT id, tenant_id, name, protocol, entity_id, metadata_url, "
+                    "client_id, attr_mapping, enabled, created_at, updated_at "
+                    f"FROM sso_providers WHERE tenant_id = ?{where_extra} ORDER BY created_at DESC",
+                    (tenant_id,),
+                ).fetchall()
+            providers = []
+            for r in rows:
+                p = dict(r)
+                p["login_url"] = (
+                    f"/auth/saml/{p['id']}/login"
+                    if p["protocol"] == "saml"
+                    else f"/auth/saml/oidc/{p['id']}/login"
+                )
+                providers.append(p)
+            return jsonify({"tenant_id": tenant_id, "providers": providers})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/admin/tenants/<tenant_id>/sso-providers", methods=["POST"])
+    def api_create_sso_provider(tenant_id: str):
+        """Create a new SSO provider for a tenant."""
+        from tools.db.storage import get_connection
+
+        payload = request.get_json(silent=True) or {}
+        name = (payload.get("name") or "").strip()
+        protocol = (payload.get("protocol") or "").lower()
+
+        if not name:
+            return jsonify({"error": "Missing 'name' field"}), 400
+        if protocol not in ("saml", "oidc"):
+            return jsonify({"error": "protocol must be 'saml' or 'oidc'"}), 400
+
+        pid = str(uuid.uuid4())
+        try:
+            with get_connection() as conn:
+                conn.execute(
+                    "INSERT INTO sso_providers "
+                    "(id, tenant_id, name, protocol, entity_id, metadata_url, client_id, attr_mapping) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        pid, tenant_id, name, protocol,
+                        payload.get("entity_id"),
+                        payload.get("metadata_url"),
+                        payload.get("client_id"),
+                        payload.get("attr_mapping"),
+                    ),
+                )
+                conn.commit()
+            login_url = (
+                f"/auth/saml/{pid}/login" if protocol == "saml" else f"/auth/saml/oidc/{pid}/login"
+            )
+            return jsonify({
+                "provider_id": pid,
+                "tenant_id": tenant_id,
+                "name": name,
+                "protocol": protocol,
+                "login_url": login_url,
+            }), 201
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/admin/tenants/<tenant_id>/sso-providers/<provider_id>", methods=["PUT"])
+    def api_update_sso_provider(tenant_id: str, provider_id: str):
+        """Update fields on an existing SSO provider."""
+        from tools.db.storage import get_connection
+
+        payload = request.get_json(silent=True) or {}
+        _ALLOWED = ("name", "protocol", "entity_id", "metadata_url", "client_id", "attr_mapping")
+        updates = {k: payload[k] for k in _ALLOWED if k in payload}
+
+        if not updates:
+            return jsonify({"error": "No updatable fields provided"}), 400
+        if "protocol" in updates and updates["protocol"] not in ("saml", "oidc"):
+            return jsonify({"error": "protocol must be 'saml' or 'oidc'"}), 400
+
+        now = datetime.now(timezone.utc).isoformat()
+        set_clause = ", ".join(f"{k} = ?" for k in updates) + ", updated_at = ?"
+        params = list(updates.values()) + [now, provider_id, tenant_id]
+        try:
+            with get_connection() as conn:
+                cur = conn.execute(
+                    f"UPDATE sso_providers SET {set_clause} WHERE id = ? AND tenant_id = ?",
+                    params,
+                )
+                conn.commit()
+                affected = cur.rowcount
+            if affected == 0:
+                return jsonify({"error": "Provider not found"}), 404
+            return jsonify({"provider_id": provider_id, "tenant_id": tenant_id, "updated": True})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/admin/tenants/<tenant_id>/sso-providers/<provider_id>", methods=["DELETE"])
+    def api_disable_sso_provider(tenant_id: str, provider_id: str):
+        """Soft-disable an SSO provider (sets enabled=0). Row is preserved."""
+        from tools.db.storage import get_connection
+
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            with get_connection() as conn:
+                cur = conn.execute(
+                    "UPDATE sso_providers SET enabled = 0, updated_at = ? WHERE id = ? AND tenant_id = ?",
+                    (now, provider_id, tenant_id),
+                )
+                conn.commit()
+                affected = cur.rowcount
+            if affected == 0:
+                return jsonify({"error": "Provider not found"}), 404
+            return jsonify({"provider_id": provider_id, "tenant_id": tenant_id, "disabled": True})
         except Exception as exc:
             return jsonify({"error": str(exc)}), 500
 

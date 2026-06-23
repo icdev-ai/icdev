@@ -86,6 +86,31 @@ for r in results:
 # mode="hybrid" enables vector+rerank when RAGRetriever is available
 ```
 
+## Freshness
+
+| Tool | Purpose |
+|------|---------|
+| `tools/document_intelligence/freshness_engine.py` | DIC Freshness Engine — staleness scoring and autonomous reflex trigger. `scan_collection(collection_id, ...)` scores every document in a collection across four dimensions: document age vs retention tier (default 90 days), time since last approved version, drift events since last update, and pending-review section count. Writes per-doc `dic_doc_freshness` rows (upsert) and a collection-level `dic_freshness_scans` row; returns `ScanResult` with `stale_count`, `aging_count`, `fresh_count`, `regen_priority`. `corpus_heatmap(tenant_id, limit)` returns all documents ordered by score descending (stale first) for the dashboard heatmap. All reads use `get_connection()` so RLS applies. |
+
+### Key API
+
+```python
+from tools.document_intelligence.freshness_engine import scan_collection, corpus_heatmap
+
+result = scan_collection("ato_docs", tenant_id="default", classification="CUI")
+print(result.stale_count, result.regen_priority)
+for doc in result.docs:
+    print(doc.doc_id, doc.state, doc.score, doc.reason)
+
+heatmap = corpus_heatmap(tenant_id="default", limit=100)
+# -> [{"doc_id", "collection_id", "state", "reason", "score", "title"}, ...]
+```
+
+### Tables
+
+- `dic_doc_freshness` — per-doc freshness row (doc_id PK, collection_id, state ∈ fresh/aging/stale/unknown, reason, source_event, score 0–1, updated_at, tenant_id, classification).
+- `dic_freshness_scans` — per-collection scan summary (scan_id, collection_id, stale_count, regen_priority, scanned_at, tenant_id).
+
 ## Generation
 
 | Tool | Purpose |

@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # CUI // SP-CTI
 """Declarative tool registry for the Unified MCP Gateway Server (D301).
 
