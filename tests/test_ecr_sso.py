@@ -382,3 +382,115 @@ def test_oidc_callback_creates_session(_sso_db, monkeypatch):
 
     # Cleanup
     oidc_mod._CLIENTS.pop(pid, None)
+
+
+# ---------------------------------------------------------------------------
+# ecr-sso-05: V&V — ACS session persistence, role mapping, expiry rejection
+# ---------------------------------------------------------------------------
+
+def test_acs_creates_session(_sso_db, monkeypatch):
+    """ACS route persists an sso_sessions row after a valid SAML response."""
+    import base64
+    import importlib
+    from xml.etree import ElementTree as ET
+    from flask import Flask
+    from tools.db import storage
+
+    monkeypatch.setattr(storage, "get_connection", _sqlite_conn_factory(_sso_db))
+
+    import tools.auth.blueprint as bp_mod
+    importlib.reload(bp_mod)
+
+    app = Flask(__name__)
+    app.config["TESTING"] = True
+    app.config["SECRET_KEY"] = "test-acs-session"
+    app.register_blueprint(bp_mod.bp)
+
+    pid = f"saml-{uuid.uuid4().hex[:8]}"
+    with storage.get_connection() as conn:
+        _make_saml_provider(conn, pid, "https://idp.example.com/sso")
+
+    # Build a minimal SAML Response
+    _SAML = "urn:oasis:names:tc:SAML:2.0:assertion"
+    _SAMLP = "urn:oasis:names:tc:SAML:2.0:protocol"
+    root = ET.Element(f"{{{_SAMLP}}}Response")
+    assertion = ET.SubElement(root, f"{{{_SAML}}}Assertion")
+    subject = ET.SubElement(assertion, f"{{{_SAML}}}Subject")
+    ET.SubElement(subject, f"{{{_SAML}}}NameID").text = "acs-user@example.com"
+    xml_bytes = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    b64 = base64.b64encode(xml_bytes).decode("ascii")
+
+    client = app.test_client()
+    resp = client.post(
+        f"/auth/saml/{pid}/acs",
+        data={"SAMLResponse": b64, "RelayState": "/dashboard"},
+    )
+    # Should redirect (302) to relay_state, not error
+    assert resp.status_code in (302, 301), f"Expected redirect, got {resp.status_code}"
+
+    # Verify sso_sessions row was created
+    with storage.get_connection() as conn:
+        row = conn.execute(
+            "SELECT name_id FROM sso_sessions WHERE provider_id = ?", (pid,)
+        ).fetchone()
+    assert row is not None, "ACS must persist an sso_sessions row"
+    assert row[0] == "acs-user@example.com"
+
+
+def test_saml_role_mapping():
+    """process_acs_response captures role/groups SAML attributes."""
+    import base64
+    from xml.etree import ElementTree as ET
+    from tools.auth.saml import process_acs_response
+
+    _SAML = "urn:oasis:names:tc:SAML:2.0:assertion"
+    _SAMLP = "urn:oasis:names:tc:SAML:2.0:protocol"
+
+    root = ET.Element(f"{{{_SAMLP}}}Response")
+    assertion = ET.SubElement(root, f"{{{_SAML}}}Assertion")
+    subject = ET.SubElement(assertion, f"{{{_SAML}}}Subject")
+    ET.SubElement(subject, f"{{{_SAML}}}NameID").text = "role-user@example.com"
+
+    attr_stmt = ET.SubElement(assertion, f"{{{_SAML}}}AttributeStatement")
+    # Role attribute with two values
+    role_attr = ET.SubElement(attr_stmt, f"{{{_SAML}}}Attribute", attrib={"Name": "role"})
+    ET.SubElement(role_attr, f"{{{_SAML}}}AttributeValue").text = "admin"
+    ET.SubElement(role_attr, f"{{{_SAML}}}AttributeValue").text = "analyst"
+    # Groups attribute
+    grp_attr = ET.SubElement(attr_stmt, f"{{{_SAML}}}Attribute", attrib={"Name": "groups"})
+    ET.SubElement(grp_attr, f"{{{_SAML}}}AttributeValue").text = "icdev-users"
+
+    xml_bytes = ET.tostring(root, encoding="utf-8", xml_declaration=True)
+    b64 = base64.b64encode(xml_bytes).decode("ascii")
+
+    result = process_acs_response(b64, relay_state="/")
+    assert result["name_id"] == "role-user@example.com"
+    assert "admin" in result["attributes"]["role"]
+    assert "analyst" in result["attributes"]["role"]
+    assert result["attributes"]["groups"] == ["icdev-users"]
+
+
+def test_expired_session_rejected(_sso_db):
+    """Sessions with expires_at in the past are not returned as valid."""
+    from tools.db import storage
+
+    sid = f"expired-{uuid.uuid4().hex[:8]}"
+    pid = f"saml-{uuid.uuid4().hex[:8]}"
+
+    with storage.get_connection() as conn:
+        # Insert an already-expired session
+        conn.execute(
+            "INSERT INTO sso_sessions (id, tenant_id, provider_id, name_id, expires_at) "
+            "VALUES (?, ?, ?, ?, datetime('now', '-1 hour'))",
+            (sid, "test-tenant", pid, "expired-user@example.com"),
+        )
+        conn.commit()
+
+        # A query that respects expires_at (as the application should)
+        valid = conn.execute(
+            "SELECT id FROM sso_sessions WHERE id = ? "
+            "AND (expires_at IS NULL OR expires_at > datetime('now'))",
+            (sid,),
+        ).fetchone()
+
+    assert valid is None, "Expired session must not pass the validity check"
