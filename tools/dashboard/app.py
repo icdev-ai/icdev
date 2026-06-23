@@ -2485,6 +2485,14 @@ def create_app() -> Flask:
     except Exception as _exc:
         app.logger.warning("SaaS Portal blueprint failed to register: %s", _exc)
 
+    # ---- Enterprise SSO Blueprint (SAML 2.0 + OIDC) ----
+    try:
+        from tools.auth.blueprint import bp as _auth_bp
+        app.register_blueprint(_auth_bp)
+        app.logger.info("Enterprise SSO blueprint registered at /auth/saml")
+    except Exception as _exc:
+        app.logger.warning("Enterprise SSO blueprint failed to register: %s", _exc)
+
     # ---- Convenience JSON routes that match the spec ----
 
     @app.route("/api/alerts", methods=["GET"])
