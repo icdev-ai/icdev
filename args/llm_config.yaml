@@ -78,24 +78,24 @@ providers:
 models:
   # -- Anthropic direct API (user has Anthropic subscription, not Bedrock) --
   claude-opus:
-    provider: anthropic
-    model_id: claude-opus-4-6
+    provider: claude-cli  # CLI bridge — no ANTHROPIC_API_KEY needed in this environment
+    model_id: claude-opus-4-8
     max_output_tokens: 128000
     supports_thinking: true
     supports_tools: true
     supports_structured_output: true
     supports_vision: true
-    pricing: { input_per_1k: 0.005, output_per_1k: 0.025 }
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
   claude-sonnet:
-    provider: anthropic  # Anthropic direct API (not Bedrock) — ANTHROPIC_API_KEY
-    model_id: "claude-sonnet-4-5-20250929"
+    provider: claude-cli  # CLI bridge — no ANTHROPIC_API_KEY needed in this environment
+    model_id: claude-sonnet-4-6
     max_output_tokens: 64000
     supports_thinking: true
     supports_tools: true
     supports_structured_output: true
     supports_vision: true
-    pricing: { input_per_1k: 0.003, output_per_1k: 0.015 }
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
   # Claude Sonnet via CLI bridge — used when ANTHROPIC_API_KEY is absent.
   # Identical capabilities to claude-sonnet; routes through local claude CLI.
@@ -110,13 +110,13 @@ models:
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
   claude-haiku:
-    provider: anthropic
+    provider: claude-cli  # CLI bridge — no ANTHROPIC_API_KEY needed in this environment
     model_id: claude-haiku-4-5-20251001
     max_output_tokens: 8192
     supports_thinking: false
     supports_tools: true
     supports_structured_output: false
-    pricing: { input_per_1k: 0.001, output_per_1k: 0.005 }
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
   # -- Anthropic Direct API --
   claude-opus-api:
@@ -838,7 +838,7 @@ redaction:
 two_tier:
   enabled: true
   tier1_model: kimi-cloud       # Worker — kimi-k2.6 cloud first; qwen3-local (no-think) fallback
-  tier2_model: claude-sonnet-api  # Planner/Reviewer — Anthropic API (not Bedrock)
+  tier2_model: claude-sonnet  # Planner/Reviewer — CLI bridge (no ANTHROPIC_API_KEY in this environment)
 
   # Dual-model mode: swap tier1 + overrides for simultaneous VRAM residency
   # Toggle via: env ICDEV_DUAL_MODEL=true, or dashboard toggle, or API
@@ -885,7 +885,7 @@ two_tier:
   # Override tier1_model for specific functions
   function_model_overrides:
     pulse_draft: gemma3-local        # gemma3 for article writing (no thinking mode)
-    wg_rewrite: claude-sonnet-api    # Claude for WriteGuard rewriting (scanner path, Claude override)
+    wg_rewrite: claude-sonnet    # Claude for WriteGuard rewriting (scanner path, CLI bridge)
     pulse_rewrite: qwen3-local      # qwen3.5 for Pulse rewriting (think:false via provider)
 
 # -----------------------------------------------------------------------
