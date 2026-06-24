@@ -192,6 +192,9 @@
       <button class="da-action-btn da-btn-export" onclick="daExportDrawio()">
         &#128229; Export Remediated Diagram (.drawio)
       </button>
+      <button class="da-action-btn" id="daBtnHtmlReport" onclick="daDownloadHtmlReport()" style="background:#1e3a5a;color:#93c5fd;border:1px solid #1d4ed8;border-radius:6px;padding:8px 16px;cursor:pointer;font-size:13px;" disabled>
+        &#128196; Download HTML Report
+      </button>
       <a class="da-action-btn da-btn-ndc" id="daOpenNDC" href="/network" target="_blank">
         &#128279; Open in NDC Canvas
       </a>
@@ -350,6 +353,8 @@
       }
       const anaData = await anaResp.json();
       daAnalysisId = anaData.analysis_id;
+      const htmlReportBtn = document.getElementById('daBtnHtmlReport');
+      if (htmlReportBtn) htmlReportBtn.disabled = false;
 
       // Render results
       daRenderResults(anaData);
@@ -533,6 +538,12 @@
     } catch (err) {
       alert('Export error: ' + err.message);
     }
+  }
+
+  // ── Download HTML Report ─────────────────────────────────────────────────
+  function daDownloadHtmlReport() {
+    if (!daAnalysisId) { alert('Run an analysis first.'); return; }
+    window.location.href = `/network/api/diagram-analysis/${daAnalysisId}/report.html`;
   }
 
   // ── Utilities ─────────────────────────────────────────────────────────────

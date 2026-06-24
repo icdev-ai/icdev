@@ -13839,6 +13839,8 @@ Planning rules:
             detect_format as _da_detect_format,
             run_analysis as _da_run_analysis,
             generate_drawio_export as _da_generate_drawio_export,
+            generate_html_report as _da_generate_html_report,
+            enrich_with_attack as _da_enrich_with_attack,
             compute_file_hash as _da_compute_file_hash,
             save_findings as _da_save_findings,
             parse_drawio_file as _da_parse_drawio_file,
@@ -13933,7 +13935,7 @@ Planning rules:
 
                 result = _da_run_analysis(upload_id, industry, conn)
                 cloud_ctx = result.get("cloud_context", {})
-                tabs = result.get("tabs", {})
+                tabs = _da_enrich_with_attack(result.get("tabs", {}))
 
                 conn.execute(
                     "UPDATE nc_diagram_analyses SET status='done', result_json=?, "
@@ -14064,6 +14066,52 @@ Planning rules:
                 drawio_xml,
                 mimetype="application/xml",
                 headers={"Content-Disposition": f'attachment; filename="{filename_stem}_remediated.drawio"'},
+            )
+
+        @bp.route("/api/diagram-analysis/<analysis_id>/report.html", methods=["GET"])
+        @nc_login_required
+        def nc_api_diagram_report_html(analysis_id):
+            """Generate and stream a self-contained HTML report for sharing without dashboard access."""
+            from flask import Response as _Resp
+
+            conn = get_connection()
+            try:
+                row = conn.execute(
+                    "SELECT * FROM nc_diagram_analyses WHERE id=%s", (analysis_id,)
+                ).fetchone()
+                if not row:
+                    return jsonify({"error": "Analysis not found"}), 404
+                ana = dict(row)
+                upload_row = conn.execute(
+                    "SELECT filename FROM nc_diagram_uploads WHERE id=%s", (ana["upload_id"],)
+                ).fetchone()
+            finally:
+                conn.close()
+
+            tabs = json.loads(ana.get("result_json") or "{}")
+            cloud_ctx = {
+                "providers": json.loads(ana.get("cloud_providers_json") or "[]"),
+                "mode": ana.get("topology_mode", "unknown"),
+            }
+            filename = dict(upload_row).get("filename", "diagram") if upload_row else "diagram"
+            meta = {
+                "filename": filename,
+                "industry": ana.get("industry", "commercial"),
+                "topology_mode": ana.get("topology_mode", "unknown"),
+                "cloud_providers": json.loads(ana.get("cloud_providers_json") or "[]"),
+                "analysis_id": analysis_id,
+                "created_at": ana.get("created_at", ""),
+            }
+
+            html = _da_generate_html_report({"tabs": tabs, "cloud_context": cloud_ctx}, meta)
+            filename_stem = filename.rsplit(".", 1)[0]
+            return _Resp(
+                html,
+                mimetype="text/html",
+                headers={
+                    "Content-Disposition": f'attachment; filename="{filename_stem}_analysis_report.html"',
+                    "Content-Type": "text/html; charset=utf-8",
+                },
             )
 
     # ── Done ───────────────────────────────────────────────────────────────

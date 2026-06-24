@@ -22,6 +22,11 @@ logger = get_logger(__name__)
 UPLOAD_DIR = Path("data/ndc_uploads/diagrams")
 EXPORT_DIR = Path("data/ndc_uploads/exports")
 
+# ── Token budget guardrails ───────────────────────────────────────────────────
+_MAX_IMAGES_PER_CALL = 4       # max images per LLM call — avoids context overrun
+_TOKEN_BUDGET_PER_IMAGE = 1200  # output tokens allocated per image/page
+_TOKEN_BUDGET_BASE = 2048       # minimum tokens for any single call
+
 # ── Format Detection ──────────────────────────────────────────────────────────
 
 def detect_format(filename: str, file_bytes: bytes) -> str:
@@ -448,7 +453,7 @@ def build_vision_messages(
             intro += f"\nZones/swimlanes: {', '.join(zone_labels[:20])}"
 
     content = [{"type": "text", "text": intro}]
-    for img_bytes in images[:10]:  # cap to avoid token overrun
+    for img_bytes in images:
         content.append({
             "type": "image_url",
             "image_url": {"url": _bytes_to_data_uri(img_bytes)},
@@ -523,6 +528,28 @@ def _fallback_analysis(upload: dict, industry: str, cloud_context: dict) -> dict
     }
 
 
+# ── Batch Merge Helper ────────────────────────────────────────────────────────
+
+def _merge_tab_results(batches: list) -> dict:
+    """Merge tab dicts from multiple batch LLM calls, deduplicating by title."""
+    keys = ["overview", "inventory", "topology", "security", "compliance", "remediate"]
+    merged = {k: [] for k in keys}
+    seen: set = set()
+    for batch in batches:
+        for k in keys:
+            for item in (batch or {}).get(k, []):
+                title = str(
+                    item.get("title") or item.get("component") or item.get("zone") or ""
+                ).strip()[:120]
+                dedup_key = f"{k}:{title}"
+                if dedup_key not in seen:
+                    seen.add(dedup_key)
+                    merged[k].append(item)
+    for i, item in enumerate(merged["remediate"], 1):
+        item["priority"] = i
+    return merged
+
+
 # ── Main Analysis Orchestrator ────────────────────────────────────────────────
 
 def run_analysis(upload_id: str, industry: str, conn) -> dict:
@@ -538,10 +565,7 @@ def run_analysis(upload_id: str, industry: str, conn) -> dict:
     7. parse_analysis_response()
     8. Return {tabs, cloud_context, industry}
     """
-    from tools.llm.router import LLMRouter
-    from tools.llm.provider import LLMRequest
-
-    row = conn.execute("SELECT * FROM nc_diagram_uploads WHERE id=?", (upload_id,)).fetchone()
+    row = conn.execute("SELECT * FROM nc_diagram_uploads WHERE id=%s", (upload_id,)).fetchone()
     if not row:
         raise ValueError(f"Upload {upload_id!r} not found")
     upload = dict(row)
@@ -552,6 +576,8 @@ def run_analysis(upload_id: str, industry: str, conn) -> dict:
     vision_text = ""
     if images:
         try:
+            from tools.llm.router import LLMRouter
+            from tools.llm.provider import LLMRequest
             router = LLMRouter()
             quick_content = [
                 {"type": "text", "text": "Describe all network components, zones, and cloud providers visible in this diagram. Be specific about provider names and service types."},
@@ -581,20 +607,52 @@ def run_analysis(upload_id: str, industry: str, conn) -> dict:
     if upload["format"] == "pdf" and not images:
         extra_context = extract_text_from_pdf(Path(upload["file_path"]))
 
-    messages = build_vision_messages(images, graph_json, system_prompt, extra_context)
-
     tabs = {}
     try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
         router = LLMRouter()
-        req = LLMRequest(
-            messages=messages,
-            max_tokens=4096,
-            temperature=0.2,
-            skip_injection_scan=True,
-        )
-        resp = router.invoke("ndc_diagram_analysis", req)
-        raw = getattr(resp, "content", "") or ""
-        tabs = parse_analysis_response(raw)
+        all_images = images or []
+        chunks = [
+            all_images[i:i + _MAX_IMAGES_PER_CALL]
+            for i in range(0, max(len(all_images), 1), _MAX_IMAGES_PER_CALL)
+        ] or [[]]
+        total = len(chunks)
+        batch_results = []
+        for idx, chunk in enumerate(chunks):
+            page_note = (
+                f" Pages {idx * _MAX_IMAGES_PER_CALL + 1}–"
+                f"{min((idx + 1) * _MAX_IMAGES_PER_CALL, len(all_images))} of {len(all_images)}."
+            ) if total > 1 else ""
+            ctx = extra_context + (f"\n\nBatch {idx + 1}/{total}.{page_note}" if total > 1 else "")
+            msgs = build_vision_messages(
+                chunk,
+                graph_json if idx == 0 else None,
+                system_prompt,
+                ctx,
+            )
+            budget = max(_TOKEN_BUDGET_BASE, _TOKEN_BUDGET_PER_IMAGE * max(len(chunk), 1))
+            req = LLMRequest(
+                messages=msgs,
+                max_tokens=budget,
+                temperature=0.2,
+                skip_injection_scan=True,
+            )
+            resp = router.invoke("ndc_diagram_analysis", req)
+            raw = getattr(resp, "content", "") or ""
+            batch_results.append(parse_analysis_response(raw))
+            logger.info("Diagram analysis batch %d/%d complete", idx + 1, total)
+
+        tabs = _merge_tab_results(batch_results) if total > 1 else (batch_results[0] if batch_results else {})
+        if total > 1:
+            tabs.setdefault("overview", []).insert(0, {
+                "title": f"Multi-page analysis: {len(all_images)} pages in {total} batches",
+                "detail": (
+                    f"Token budget: {_TOKEN_BUDGET_PER_IMAGE} tokens/page, "
+                    f"{_MAX_IMAGES_PER_CALL} pages/batch. Findings merged and deduplicated."
+                ),
+                "severity": "info",
+            })
     except Exception as exc:
         logger.error("Diagram analysis LLM call failed: %s", exc)
         tabs = _fallback_analysis(upload, industry, cloud_context)
@@ -624,7 +682,7 @@ def save_findings(conn, analysis_id: str, tabs: dict) -> None:
             conn.execute(
                 "INSERT INTO nc_diagram_findings "
                 "(id, analysis_id, tab, severity, title, detail, remediation, references_json) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                 (fid, analysis_id, tab_key, severity, title, detail, remediation, refs_json),
             )
 
@@ -869,3 +927,285 @@ def generate_drawio_export(
     {cells_xml}
   </root>
 </mxGraphModel>"""
+
+
+# ── ATT&CK + D3FEND Enrichment ────────────────────────────────────────────────
+
+_ATTACK_MAP = [
+    (
+        ["0.0.0.0/0", "open port", "unrestricted inbound", "any source", "public access", "exposed"],
+        [{"id": "T1190", "name": "Exploit Public-Facing Application", "url": "https://attack.mitre.org/techniques/T1190"},
+         {"id": "T1133", "name": "External Remote Services", "url": "https://attack.mitre.org/techniques/T1133"}],
+        [{"id": "D3-NTA", "name": "Network Traffic Analysis", "url": "https://d3fend.mitre.org/technique/d3f:NetworkTrafficAnalysis"},
+         {"id": "D3-FW",  "name": "Filtering (Firewall)", "url": "https://d3fend.mitre.org/technique/d3f:NetworkTrafficFiltering"}],
+    ),
+    (
+        ["encrypt", "tls", "ipsec", "plaintext", "unencrypted", "http ", "clear text", "weak cipher"],
+        [{"id": "T1557", "name": "Adversary-in-the-Middle", "url": "https://attack.mitre.org/techniques/T1557"},
+         {"id": "T1040", "name": "Network Sniffing", "url": "https://attack.mitre.org/techniques/T1040"}],
+        [{"id": "D3-ET",   "name": "Encrypted Tunnels", "url": "https://d3fend.mitre.org/technique/d3f:EncryptedTunnels"},
+         {"id": "D3-DNSE", "name": "Data in Transit Encryption", "url": "https://d3fend.mitre.org/technique/d3f:DatainTransitEncryption"}],
+    ),
+    (
+        ["authentication", "mfa", "multi-factor", "password", "credential", "iam", "privilege", "account"],
+        [{"id": "T1078", "name": "Valid Accounts", "url": "https://attack.mitre.org/techniques/T1078"},
+         {"id": "T1110", "name": "Brute Force", "url": "https://attack.mitre.org/techniques/T1110"}],
+        [{"id": "D3-MFA", "name": "Multi-Factor Authentication", "url": "https://d3fend.mitre.org/technique/d3f:Multi-FactorAuthentication"},
+         {"id": "D3-OTP", "name": "One-Time Password", "url": "https://d3fend.mitre.org/technique/d3f:One-timePassword"}],
+    ),
+    (
+        ["log", "audit", "monitoring", "siem", "cloudtrail", "activity log", "flow log", "detection"],
+        [{"id": "T1562.001", "name": "Impair Defenses: Disable or Modify Tools", "url": "https://attack.mitre.org/techniques/T1562/001"},
+         {"id": "T1070",     "name": "Indicator Removal", "url": "https://attack.mitre.org/techniques/T1070"}],
+        [{"id": "D3-SDA", "name": "System Daemon Monitoring", "url": "https://d3fend.mitre.org/technique/d3f:SystemDaemonMonitoring"},
+         {"id": "D3-NTA", "name": "Network Traffic Analysis", "url": "https://d3fend.mitre.org/technique/d3f:NetworkTrafficAnalysis"}],
+    ),
+    (
+        ["lateral movement", "east-west", "segmentation", "vlan", "subnet", "zone separation", "micro-segmentation"],
+        [{"id": "T1210", "name": "Exploitation of Remote Services", "url": "https://attack.mitre.org/techniques/T1210"},
+         {"id": "T1021", "name": "Remote Services", "url": "https://attack.mitre.org/techniques/T1021"}],
+        [{"id": "D3-NI",   "name": "Network Isolation", "url": "https://d3fend.mitre.org/technique/d3f:NetworkIsolation"},
+         {"id": "D3-ISVA", "name": "Inbound Session Volume Analysis", "url": "https://d3fend.mitre.org/technique/d3f:InboundSessionVolumeAnalysis"}],
+    ),
+    (
+        ["vpn", "tunnel", "ike", "ikev1", "weak vpn", "site-to-site"],
+        [{"id": "T1572", "name": "Protocol Tunneling", "url": "https://attack.mitre.org/techniques/T1572"},
+         {"id": "T1557", "name": "Adversary-in-the-Middle", "url": "https://attack.mitre.org/techniques/T1557"}],
+        [{"id": "D3-ET",  "name": "Encrypted Tunnels", "url": "https://d3fend.mitre.org/technique/d3f:EncryptedTunnels"},
+         {"id": "D3-NTA", "name": "Network Traffic Analysis", "url": "https://d3fend.mitre.org/technique/d3f:NetworkTrafficAnalysis"}],
+    ),
+    (
+        ["cve", "vulnerability", "patch", "unpatched", "outdated", "eol", "end-of-life", "exploit"],
+        [{"id": "T1190", "name": "Exploit Public-Facing Application", "url": "https://attack.mitre.org/techniques/T1190"},
+         {"id": "T1203", "name": "Exploitation for Client Execution", "url": "https://attack.mitre.org/techniques/T1203"}],
+        [{"id": "D3-SWU", "name": "Software Update", "url": "https://d3fend.mitre.org/technique/d3f:SoftwareUpdate"},
+         {"id": "D3-VUL", "name": "Vulnerability Scanning", "url": "https://d3fend.mitre.org/technique/d3f:VulnerabilityScanning"}],
+    ),
+    (
+        ["dns", "domain", "name resolution", "dns poisoning", "split-dns"],
+        [{"id": "T1071.004", "name": "Application Layer Protocol: DNS", "url": "https://attack.mitre.org/techniques/T1071/004"},
+         {"id": "T1568",     "name": "Dynamic Resolution", "url": "https://attack.mitre.org/techniques/T1568"}],
+        [{"id": "D3-DNSAL", "name": "DNS Allowlisting", "url": "https://d3fend.mitre.org/technique/d3f:DNSAllowlisting"},
+         {"id": "D3-DNSBL", "name": "DNS Denylisting", "url": "https://d3fend.mitre.org/technique/d3f:DNSDenylisting"}],
+    ),
+    (
+        ["supply chain", "third-party", "vendor", "software integrity", "sbom"],
+        [{"id": "T1195", "name": "Supply Chain Compromise", "url": "https://attack.mitre.org/techniques/T1195"},
+         {"id": "T1554", "name": "Compromise Host Software Binary", "url": "https://attack.mitre.org/techniques/T1554"}],
+        [{"id": "D3-SBV", "name": "Software Binary Attestation", "url": "https://d3fend.mitre.org/technique/d3f:SoftwareBinaryAttestation"},
+         {"id": "D3-SWU", "name": "Software Update", "url": "https://d3fend.mitre.org/technique/d3f:SoftwareUpdate"}],
+    ),
+    (
+        ["data exfiltration", "egress", "data loss", "dlp", "outbound"],
+        [{"id": "T1041", "name": "Exfiltration Over C2 Channel", "url": "https://attack.mitre.org/techniques/T1041"},
+         {"id": "T1048", "name": "Exfiltration Over Alternative Protocol", "url": "https://attack.mitre.org/techniques/T1048"}],
+        [{"id": "D3-NTF", "name": "Network Traffic Filtering", "url": "https://d3fend.mitre.org/technique/d3f:NetworkTrafficFiltering"},
+         {"id": "D3-DLP", "name": "Data Loss Prevention", "url": "https://d3fend.mitre.org/technique/d3f:DataLossPrevention"}],
+    ),
+]
+
+
+def enrich_with_attack(tabs: dict) -> dict:
+    """Add ATT&CK and D3FEND refs to security/compliance/remediate findings via keyword matching."""
+    enriched = dict(tabs)
+
+    def _match(text: str):
+        t = text.lower()
+        attack_refs, defend_refs = [], []
+        seen_a: set = set()
+        seen_d: set = set()
+        for keywords, attacks, defends in _ATTACK_MAP:
+            if any(kw in t for kw in keywords):
+                for a in attacks:
+                    if a["id"] not in seen_a:
+                        seen_a.add(a["id"])
+                        attack_refs.append({"type": "ATT&CK", "id": a["id"], "description": a["name"], "url": a["url"]})
+                for d in defends:
+                    if d["id"] not in seen_d:
+                        seen_d.add(d["id"])
+                        defend_refs.append({"type": "D3FEND", "id": d["id"], "description": d["name"], "url": d["url"]})
+        return attack_refs, defend_refs
+
+    for tab_key in ("security", "compliance", "remediate"):
+        new_items = []
+        for item in enriched.get(tab_key, []):
+            haystack = f"{item.get('title', '')} {item.get('detail', '')} {item.get('control_id', '')}"
+            atk, dfd = _match(haystack)
+            if atk or dfd:
+                item = dict(item)
+                existing = item.get("references") or []
+                if not isinstance(existing, list):
+                    existing = []
+                existing_ids = {r.get("id") for r in existing}
+                item["references"] = existing + [r for r in atk + dfd if r["id"] not in existing_ids]
+            new_items.append(item)
+        enriched[tab_key] = new_items
+
+    return enriched
+
+
+# ── Standalone HTML Report Generator ─────────────────────────────────────────
+
+_SEV_CSS = {
+    "critical": "background:#c00;color:#fff",
+    "high":     "background:#e65c00;color:#fff",
+    "medium":   "background:#cc9900;color:#fff",
+    "low":      "background:#669900;color:#fff",
+    "info":     "background:#336699;color:#fff",
+}
+
+_HTML_STYLE = """
+body{font-family:Arial,Helvetica,sans-serif;font-size:13px;margin:0;padding:16px;color:#222}
+h1{font-size:18px;margin:0 0 4px}
+h2{font-size:14px;margin:16px 0 6px;border-bottom:2px solid #336699;padding-bottom:3px;color:#336699}
+.meta{font-size:11px;color:#555;margin-bottom:12px}
+.badge{display:inline-block;padding:2px 7px;border-radius:3px;font-size:11px;font-weight:bold;margin-right:4px}
+table{border-collapse:collapse;width:100%;margin-bottom:12px;font-size:12px}
+th{background:#336699;color:#fff;padding:5px 8px;text-align:left}
+td{padding:4px 8px;border-bottom:1px solid #ddd;vertical-align:top}
+tr:nth-child(even){background:#f5f7fa}
+.ref{font-size:10px;color:#555;margin-top:3px}
+.classification{background:#c00;color:#fff;text-align:center;font-weight:bold;padding:4px;margin-bottom:10px;font-size:13px}
+.section{page-break-inside:avoid}
+.tag{display:inline-block;background:#e8f0fe;border:1px solid #b8cdf8;border-radius:3px;padding:1px 5px;font-size:10px;margin:1px}
+@media print{body{padding:0}h2{color:#000;border-color:#000}}
+"""
+
+
+def generate_html_report(analysis_result: dict, meta: dict) -> str:
+    """Generate a fully self-contained HTML report from a diagram analysis result.
+
+    Args:
+        analysis_result: dict with 'tabs' (6-tab dict) and optionally 'cloud_context'.
+        meta: dict with filename, industry, topology_mode, cloud_providers, analysis_id, created_at.
+
+    Returns:
+        UTF-8 HTML string with inline CSS — no external dependencies.
+    """
+    from tools.network.constants import DIAGRAM_ANALYSIS_INDUSTRIES
+
+    tabs = analysis_result.get("tabs", analysis_result)
+    cloud_ctx = analysis_result.get("cloud_context", {})
+
+    filename = meta.get("filename", "diagram")
+    industry_key = meta.get("industry", "commercial")
+    industry_label = DIAGRAM_ANALYSIS_INDUSTRIES.get(industry_key, {}).get("label", industry_key)
+    providers = meta.get("cloud_providers") or cloud_ctx.get("providers") or []
+    topology_mode = meta.get("topology_mode") or cloud_ctx.get("mode", "unknown")
+    created_at = meta.get("created_at", "")
+    analysis_id = meta.get("analysis_id", "")
+    classification = meta.get("classification") or _CLASSIFICATION_BANNERS.get(industry_key, "")
+
+    def sev_badge(sev: str) -> str:
+        css = _SEV_CSS.get((sev or "info").lower(), _SEV_CSS["info"])
+        return f'<span class="badge" style="{css}">{_esc((sev or "info").upper())}</span>'
+
+    def refs_html(refs) -> str:
+        if not refs:
+            return ""
+        parts = []
+        for r in refs:
+            rid = r.get("id", "")
+            desc = r.get("description", "")
+            rtype = r.get("type", "")
+            url = r.get("url", "")
+            label = f"[{rtype}] {rid}: {desc}" if desc else f"[{rtype}] {rid}"
+            if url:
+                parts.append(f'<a href="{_esc(url)}" style="color:#336699;text-decoration:none">{_esc(label)}</a>')
+            else:
+                parts.append(_esc(label))
+        return '<div class="ref">' + " &nbsp;|&nbsp; ".join(parts) + "</div>"
+
+    overview_rows = "".join(
+        f"<tr><td>{sev_badge(f.get('severity', 'info'))}</td>"
+        f"<td><b>{_esc(f.get('title', ''))}</b><br>{_esc(f.get('detail', ''))}</td></tr>"
+        for f in tabs.get("overview", [])
+    )
+    inv_rows = "".join(
+        f"<tr><td>{_esc(f.get('component', ''))}</td><td>{_esc(f.get('type', ''))}</td>"
+        f"<td>{f.get('count', 0)}</td><td>{_esc(f.get('provider', ''))}</td>"
+        f"<td>{_esc(f.get('detail', ''))}</td></tr>"
+        for f in tabs.get("inventory", [])
+    )
+    topo_rows = "".join(
+        f"<tr><td>{_esc(f.get('zone', ''))}</td>"
+        f"<td>{sev_badge(f.get('severity', 'info'))}</td>"
+        f"<td>{_esc(f.get('trust_level', ''))}</td>"
+        f"<td>{_esc(f.get('cloud_provider', ''))}</td>"
+        f"<td>{_esc(f.get('description', ''))}</td></tr>"
+        for f in tabs.get("topology", [])
+    )
+    sec_rows = "".join(
+        f"<tr><td>{sev_badge(f.get('severity', 'info'))}</td>"
+        f"<td><b>{_esc(f.get('title', ''))}</b>"
+        f"<br><small>{_esc(f.get('affected_component', ''))}</small>"
+        f"<br>{_esc(f.get('detail', ''))}"
+        f"{refs_html(f.get('references'))}</td></tr>"
+        for f in sorted(tabs.get("security", []), key=lambda x: -_sev_rank(x.get("severity", "info")))
+    )
+    comp_rows = "".join(
+        f"<tr><td>{_esc(f.get('control_id', ''))}</td>"
+        f"<td>{_esc(f.get('framework', ''))}</td>"
+        f"<td>{sev_badge(f.get('severity', 'info'))}</td>"
+        f"<td><span style=\"color:{'#c00' if f.get('status') == 'gap' else '#669900' if f.get('status') == 'met' else '#cc9900'}\">"
+        f"{_esc((f.get('status') or '').upper())}</span></td>"
+        f"<td>{_esc(f.get('detail', ''))}{refs_html(f.get('references'))}</td></tr>"
+        for f in tabs.get("compliance", [])
+    )
+    rem_rows = "".join(
+        f"<tr><td style=\"text-align:center;font-weight:bold\">{f.get('priority', '')}</td>"
+        f"<td><span style=\"background:#e8f0fe;padding:1px 6px;border-radius:3px;font-size:11px\">"
+        f"{_esc((f.get('effort') or '').upper())}</span></td>"
+        f"<td><b>{_esc(f.get('title', ''))}</b><br>{_esc(f.get('detail', ''))}"
+        f"{refs_html(f.get('references'))}</td></tr>"
+        for f in tabs.get("remediate", [])
+    )
+    provider_badges = "".join(
+        f'<span class="tag">{_esc(_PROVIDER_DISPLAY.get(p, p))}</span>' for p in providers
+    )
+
+    clf_top = f"<div class='classification'>{_esc(classification)}</div>" if classification else ""
+    clf_bot = f"<div class='classification' style='margin-top:16px'>{_esc(classification)}</div>" if classification else ""
+
+    def _section(heading, empty_msg, table_header, rows):
+        if not rows:
+            return f"<div class='section'><h2>{heading}</h2><p><i>{empty_msg}</i></p></div>"
+        return (
+            f"<div class='section'><h2>{heading}</h2>"
+            f"<table>{table_header}{rows}</table></div>"
+        )
+
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Network Diagram Analysis — {_esc(filename)}</title>
+<style>{_HTML_STYLE}</style>
+</head>
+<body>
+{clf_top}
+<h1>Network Diagram Analysis Report</h1>
+<div class="meta">
+  <b>File:</b> {_esc(filename)} &nbsp;|&nbsp;
+  <b>Industry:</b> {_esc(industry_label)} &nbsp;|&nbsp;
+  <b>Topology:</b> {_esc(topology_mode)} &nbsp;|&nbsp;
+  <b>Providers:</b> {provider_badges if provider_badges else "unknown"} &nbsp;|&nbsp;
+  <b>Analysis ID:</b> {_esc(analysis_id)} &nbsp;|&nbsp;
+  <b>Generated:</b> {_esc(str(created_at))}
+</div>
+{_section("Overview", "No overview findings.",
+    "<tr><th width='90'>Severity</th><th>Finding</th></tr>", overview_rows)}
+{_section("Inventory", "No inventory data.",
+    "<tr><th>Component</th><th>Type</th><th>#</th><th>Provider</th><th>Detail</th></tr>", inv_rows)}
+{_section("Topology", "No topology findings.",
+    "<tr><th>Zone</th><th>Severity</th><th>Trust</th><th>Provider</th><th>Description</th></tr>", topo_rows)}
+{_section("Security Findings", "No security findings.",
+    "<tr><th width='90'>Severity</th><th>Finding</th></tr>", sec_rows)}
+{_section("Compliance Gaps", "No compliance findings.",
+    "<tr><th>Control</th><th>Framework</th><th>Severity</th><th>Status</th><th>Detail</th></tr>", comp_rows)}
+{_section("Remediation Plan", "No remediation items.",
+    "<tr><th width='40'>#</th><th width='70'>Effort</th><th>Action</th></tr>", rem_rows)}
+{clf_bot}
+</body>
+</html>"""

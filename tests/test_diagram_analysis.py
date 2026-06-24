@@ -1,15 +1,12 @@
 """Unit tests for tools/network/diagram_analysis.py."""
 
-import base64
-import io
 import json
 import struct
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import pytest
 
 # Make sure the package root is on sys.path
 ROOT = Path(__file__).resolve().parent.parent
@@ -18,11 +15,14 @@ if str(ROOT) not in sys.path:
 
 from tools.network.diagram_analysis import (
     _esc,
+    _merge_tab_results,
     _sev_rank,
     compute_file_hash,
     detect_cloud_providers,
     detect_format,
+    enrich_with_attack,
     generate_drawio_export,
+    generate_html_report,
     parse_analysis_response,
     save_findings,
 )
@@ -416,3 +416,159 @@ def test_diagram_upload_formats():
     assert "pdf" in DIAGRAM_UPLOAD_FORMATS
     assert "drawio" in DIAGRAM_UPLOAD_FORMATS
     assert "docx" in DIAGRAM_UPLOAD_FORMATS
+
+
+# ── _merge_tab_results ────────────────────────────────────────────────────────
+
+def _make_batch(tab_key: str, titles: list[str], extra: dict = {}) -> dict:
+    items = [{**{"title": t, "detail": "d", "severity": "low"}, **extra} for t in titles]
+    return {k: (items if k == tab_key else []) for k in
+            ["overview", "inventory", "topology", "security", "compliance", "remediate"]}
+
+
+def test_merge_tab_results_deduplicates_by_title():
+    b1 = _make_batch("security", ["Open port", "Weak TLS"])
+    b2 = _make_batch("security", ["Open port", "No MFA"])  # "Open port" is a dup
+    merged = _merge_tab_results([b1, b2])
+    titles = [i["title"] for i in merged["security"]]
+    assert titles.count("Open port") == 1
+    assert "Weak TLS" in titles
+    assert "No MFA" in titles
+
+
+def test_merge_tab_results_renumbers_remediate():
+    b1 = _make_batch("remediate", ["Fix A", "Fix B"])
+    b2 = _make_batch("remediate", ["Fix C"])
+    merged = _merge_tab_results([b1, b2])
+    priorities = [i["priority"] for i in merged["remediate"]]
+    assert priorities == [1, 2, 3]
+
+
+def test_merge_tab_results_empty_batches():
+    merged = _merge_tab_results([])
+    assert all(v == [] for v in merged.values())
+
+
+def test_merge_tab_results_cross_tab_dedup_independent():
+    """Same title in different tabs should NOT dedup across tabs."""
+    b1 = _make_batch("security", ["Shared"])
+    b2 = _make_batch("compliance", ["Shared"])
+    merged = _merge_tab_results([b1, b2])
+    assert len(merged["security"]) == 1
+    assert len(merged["compliance"]) == 1
+
+
+# ── enrich_with_attack ────────────────────────────────────────────────────────
+
+_MINIMAL_TABS = {
+    "overview": [],
+    "inventory": [],
+    "topology": [],
+    "security": [{"title": "Unencrypted traffic", "severity": "high", "detail": "HTTP without TLS"}],
+    "compliance": [{"title": "Firewall gap", "control_id": "AC-4", "severity": "medium", "detail": "ingress misconfiguration"}],
+    "remediate": [{"title": "Rotate credentials", "priority": 1, "detail": "default password found"}],
+}
+
+
+def test_enrich_with_attack_adds_references():
+    result = enrich_with_attack(_MINIMAL_TABS)
+    sec = result["security"]
+    assert len(sec) == 1
+    refs = sec[0].get("references", [])
+    assert len(refs) > 0
+    ref_types = {r["type"] for r in refs}
+    assert "ATT&CK" in ref_types or "D3FEND" in ref_types
+
+
+def test_enrich_with_attack_no_dup_refs():
+    tabs = {
+        **{k: [] for k in ["overview", "inventory", "topology"]},
+        "security": [{"title": "weak credentials default password", "detail": "brute force"}],
+        "compliance": [],
+        "remediate": [],
+    }
+    result = enrich_with_attack(tabs)
+    refs = result["security"][0].get("references", [])
+    ids = [r["id"] for r in refs]
+    assert len(ids) == len(set(ids)), "Duplicate reference IDs found"
+
+
+def test_enrich_with_attack_preserves_non_matching():
+    tabs = {
+        **{k: [] for k in ["overview", "inventory", "topology"]},
+        "security": [{"title": "Completely unrelated finding", "detail": "no keywords"}],
+        "compliance": [],
+        "remediate": [],
+    }
+    result = enrich_with_attack(tabs)
+    assert result["security"][0].get("references", []) == []
+
+
+def test_enrich_with_attack_does_not_mutate_input():
+    import copy
+    original = copy.deepcopy(_MINIMAL_TABS)
+    enrich_with_attack(_MINIMAL_TABS)
+    assert _MINIMAL_TABS == original
+
+
+# ── generate_html_report ──────────────────────────────────────────────────────
+
+_SAMPLE_RESULT = {
+    "tabs": {
+        "overview": [{"severity": "high", "title": "Critical exposure", "detail": "Exposed RDP"}],
+        "inventory": [{"component": "LoadBalancer", "type": "network", "count": 2, "provider": "aws", "detail": "ALB"}],
+        "topology": [{"zone": "DMZ", "severity": "medium", "trust_level": "untrusted", "cloud_provider": "aws", "description": "edge zone"}],
+        "security": [{"severity": "critical", "title": "Open RDP", "affected_component": "server-1", "detail": "port 3389", "references": [
+            {"type": "ATT&CK", "id": "T1021.001", "description": "Remote Desktop Protocol", "url": "https://attack.mitre.org/techniques/T1021/001/"}
+        ]}],
+        "compliance": [{"control_id": "AC-17", "framework": "NIST", "severity": "high", "status": "gap", "detail": "no MFA"}],
+        "remediate": [{"priority": 1, "title": "Block RDP", "effort": "low", "category": "network", "detail": "close 3389"}],
+    }
+}
+
+_SAMPLE_META = {
+    "filename": "test_diagram.png",
+    "industry": "defense",
+    "topology_mode": "hybrid",
+    "cloud_providers": ["aws"],
+    "analysis_id": "abc123",
+    "created_at": "2026-06-23T00:00:00Z",
+}
+
+
+def test_generate_html_report_returns_string():
+    html = generate_html_report(_SAMPLE_RESULT, _SAMPLE_META)
+    assert isinstance(html, str)
+    assert len(html) > 200
+
+
+def test_generate_html_report_no_external_links():
+    html = generate_html_report(_SAMPLE_RESULT, _SAMPLE_META)
+    import re as _re
+    # No <link rel="stylesheet"> or <script src="..."> loading external files
+    assert not _re.search(r'<link[^>]+rel=["\']stylesheet["\'][^>]+href=["\']https?://', html)
+    assert not _re.search(r'<script[^>]+src=["\']https?://', html)
+
+
+def test_generate_html_report_contains_key_sections():
+    html = generate_html_report(_SAMPLE_RESULT, _SAMPLE_META)
+    assert "Open RDP" in html
+    assert "LoadBalancer" in html
+    assert "DMZ" in html
+    assert "AC-17" in html
+    assert "Block RDP" in html
+
+
+def test_generate_html_report_xss_escaped():
+    evil = {"tabs": {
+        "overview": [{"severity": "high", "title": "<script>alert(1)</script>", "detail": "xss"}],
+        "inventory": [], "topology": [], "security": [], "compliance": [], "remediate": [],
+    }}
+    html = generate_html_report(evil, _SAMPLE_META)
+    assert "<script>alert(1)</script>" not in html
+
+
+def test_generate_html_report_empty_tabs():
+    empty = {"tabs": {k: [] for k in ["overview", "inventory", "topology", "security", "compliance", "remediate"]}}
+    html = generate_html_report(empty, _SAMPLE_META)
+    assert "<html" in html.lower()  # well-formed even with no data
