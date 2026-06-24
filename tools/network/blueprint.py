@@ -13941,7 +13941,7 @@ Planning rules:
                 conn.execute(
                     "INSERT INTO nc_diagram_uploads "
                     "(id, filename, format, file_path, file_hash, page_count, topology_id) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                     (upload_id, safe_name, fmt, str(file_path), file_hash, page_count, topology_id),
                 )
                 conn.commit()
@@ -13970,7 +13970,7 @@ Planning rules:
             try:
                 conn.execute(
                     "INSERT INTO nc_diagram_analyses (id, upload_id, industry, status) "
-                    "VALUES (?, ?, ?, 'running')",
+                    "VALUES (%s, %s, %s, 'running')",
                     (analysis_id, upload_id, industry),
                 )
                 conn.commit()
@@ -13980,9 +13980,9 @@ Planning rules:
                 tabs = _da_enrich_with_attack(result.get("tabs", {}))
 
                 conn.execute(
-                    "UPDATE nc_diagram_analyses SET status='done', result_json=?, "
-                    "cloud_providers_json=?, topology_mode=?, updated_at=CURRENT_TIMESTAMP "
-                    "WHERE id=?",
+                    "UPDATE nc_diagram_analyses SET status='done', result_json=%s, "
+                    "cloud_providers_json=%s, topology_mode=%s, updated_at=CURRENT_TIMESTAMP "
+                    "WHERE id=%s",
                     (
                         json.dumps(tabs),
                         json.dumps(cloud_ctx.get("providers", [])),
@@ -14004,7 +14004,7 @@ Planning rules:
                 logger.error("Diagram analysis error: %s", exc)
                 try:
                     conn.execute(
-                        "UPDATE nc_diagram_analyses SET status='error', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                        "UPDATE nc_diagram_analyses SET status='error', updated_at=CURRENT_TIMESTAMP WHERE id=%s",
                         (analysis_id,),
                     )
                     conn.commit()
@@ -14021,7 +14021,7 @@ Planning rules:
             conn = get_connection()
             try:
                 row = conn.execute(
-                    "SELECT * FROM nc_diagram_analyses WHERE id=?", (analysis_id,)
+                    "SELECT * FROM nc_diagram_analyses WHERE id=%s", (analysis_id,)
                 ).fetchone()
                 if not row:
                     return jsonify({"error": "Analysis not found"}), 404
@@ -14030,7 +14030,7 @@ Planning rules:
                 ana["cloud_providers"] = json.loads(ana.get("cloud_providers_json") or "[]")
                 findings = [
                     dict(r) for r in conn.execute(
-                        "SELECT * FROM nc_diagram_findings WHERE analysis_id=? ORDER BY "
+                        "SELECT * FROM nc_diagram_findings WHERE analysis_id=%s ORDER BY "
                         "CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
                         "WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END",
                         (analysis_id,),
@@ -14049,13 +14049,13 @@ Planning rules:
             conn = get_connection()
             try:
                 row = conn.execute(
-                    "SELECT * FROM nc_diagram_analyses WHERE id=?", (analysis_id,)
+                    "SELECT * FROM nc_diagram_analyses WHERE id=%s", (analysis_id,)
                 ).fetchone()
                 if not row:
                     return jsonify({"error": "Analysis not found"}), 404
                 ana = dict(row)
                 upload_row = conn.execute(
-                    "SELECT * FROM nc_diagram_uploads WHERE id=?", (ana["upload_id"],)
+                    "SELECT * FROM nc_diagram_uploads WHERE id=%s", (ana["upload_id"],)
                 ).fetchone()
             finally:
                 conn.close()
@@ -14096,7 +14096,7 @@ Planning rules:
             try:
                 conn2.execute(
                     "INSERT INTO nc_diagram_exports (id, analysis_id, export_type, file_path) "
-                    "VALUES (?, ?, 'drawio', ?)",
+                    "VALUES (%s, %s, 'drawio', %s)",
                     (export_id, analysis_id, str(export_path)),
                 )
                 conn2.commit()

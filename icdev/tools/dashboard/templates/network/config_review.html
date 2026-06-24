@@ -285,6 +285,7 @@ let _crPollTimer = null;
 let _crLastProgress = null;
 
 function _crResetProgress() {
+  _crLastProgress = null;
   const bar = document.getElementById('cr-progress-bar');
   const wrap = document.getElementById('cr-progress');
   const meta = document.getElementById('cr-progress-meta');
@@ -414,9 +415,9 @@ async function runReview() {
 function renderPrompts(prompts) {
   const container = document.getElementById('cr-prompts-list');
   container.innerHTML = '';
-  prompts.forEach(p => {
+  prompts.forEach((p, i) => {
     const div = document.createElement('div');
-    div.className = 'cr-prompt-card';
+    div.className = 'cr-prompt-card' + (i === 0 ? ' active' : '');
     div.innerHTML = `<div class="cr-prompt-title">${escapeHtml(p.title)}</div><div class="cr-prompt-preview">${escapeHtml(p.preview)}</div>`;
     div.onclick = () => {
       document.querySelectorAll('.cr-prompt-card').forEach(c => c.classList.remove('active'));
@@ -424,6 +425,7 @@ function renderPrompts(prompts) {
       currentPromptTitle = p.title;
     };
     container.appendChild(div);
+    if (i === 0) currentPromptTitle = p.title;
   });
 }
 

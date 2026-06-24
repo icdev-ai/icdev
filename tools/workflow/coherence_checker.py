@@ -23,7 +23,8 @@ Checks:
  13. openapi_parity — generate_openapi_spec(app) paths match app.url_map /api/v1/* routes
  14. security_context — RLS auto-wiring intact; set_security_context(None) bypasses documented
  15. canvas_placeholder_style — bare ? in execute() SQL for get_canvas_connection callers (use %s)
- 16. ace_yaml_listen_topics   — role YAMLs must not mix task.assigned with reactive topics (deadlock risk)
+ 16. runtime_placeholder_style — bare ? in execute() SQL in ANY runtime tools/ file (use %s; translate_sql is not a fix)
+ 17. ace_yaml_listen_topics   — role YAMLs must not mix task.assigned with reactive topics (deadlock risk)
 
 All checks: stdlib only (ast, re, pathlib), air-gap safe, zero deps.
 (openapi_parity imports Flask/dashboard at runtime; gracefully skips if unavailable.)
@@ -3175,6 +3176,7 @@ def check_log_standard_compliance() -> CoherenceCheck:
 
 # ---------------------------------------------------------------------------
 # Check 15: canvas_placeholder_style — bare ? in canvas execute() SQL
+# Check 16: runtime_placeholder_style — bare ? in ANY runtime tools/ execute() SQL
 # ---------------------------------------------------------------------------
 
 
@@ -3290,7 +3292,149 @@ def check_canvas_placeholder_style(
 
 
 # ---------------------------------------------------------------------------
-# Check 16: ACE YAML listen_topics deadlock guard
+# Check 16: runtime_placeholder_style — bare ? in ANY runtime tools/ file
+# ---------------------------------------------------------------------------
+
+# Files legitimately allowed to use ? (SQLite-first init/seed/migrate paths)
+_PLACEHOLDER_EXEMPT_PATTERNS = (
+    "db/init_db.py",
+    "db/migrations",
+    "/migrations/",
+    "/seed_",
+    "/tests/",
+    "test_",
+    "conftest.py",
+    "translate_sql",   # storage.py itself defines the translation
+)
+
+
+def check_runtime_placeholder_style(
+    changed_files: Optional[List[Path]] = None,
+) -> CoherenceCheck:
+    """Detect bare ? SQL parameter placeholders in ANY runtime tools/ execute() call.
+
+    Scope is wider than check_canvas_placeholder_style (check 15), which only
+    covers get_canvas_connection callers. This check covers ALL tools/ runtime
+    modules — blueprint.py, route files, engine modules, etc.
+
+    translate_sql() in storage.py silently rewrites ? → %s, which means
+    violations compile and run without error, masking the bug until a code path
+    bypasses the wrapper. This check makes the violation visible at coherence
+    gate time (pre-merge) rather than at runtime.
+
+    Exempt: db/init_db.py, db/migrations/, seed_*.py, tests/ — these paths
+    legitimately target SQLite and rely on translate_sql for PG compat.
+
+    Tier: FAIL — blocks --gate so CI catches the mistake before merge.
+    """
+    tools_dir = PROJECT_ROOT / "tools"
+    if not tools_dir.exists():
+        return CoherenceCheck(
+            check_id="runtime_placeholder_style",
+            check_name="Runtime SQL Placeholder Style",
+            status="pass",
+            expected=["All runtime execute() calls use %s not ? placeholders"],
+            actual=["tools/ directory not found — scan skipped"],
+            missing=[],
+            extra=[],
+            message="tools/ directory missing — scan skipped",
+        )
+
+    candidates: List[Path] = []
+    if changed_files:
+        candidates = [p for p in changed_files if p.suffix == ".py" and p.exists()]
+    else:
+        candidates = list(tools_dir.rglob("*.py"))
+
+    violations: List[str] = []
+    scanned = 0
+
+    for py_path in candidates:
+        # Skip exempt paths (init/seed/migrate/test files)
+        path_str = py_path.as_posix()
+        if any(pat in path_str for pat in _PLACEHOLDER_EXEMPT_PATTERNS):
+            continue
+
+        try:
+            source = py_path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+
+        # Fast pre-filter: must have execute( and ? to be worth AST parsing
+        if "execute(" not in source or "?" not in source:
+            continue
+
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            continue
+
+        scanned += 1
+        try:
+            rel = py_path.relative_to(PROJECT_ROOT).as_posix()
+        except ValueError:
+            rel = str(py_path)
+
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if not (isinstance(node.func, ast.Attribute) and node.func.attr == "execute"):
+                continue
+            if not node.args:
+                continue
+
+            sql_arg = node.args[0]
+            sql_text: Optional[str] = None
+
+            if isinstance(sql_arg, ast.Constant) and isinstance(sql_arg.value, str):
+                sql_text = sql_arg.value
+            elif isinstance(sql_arg, ast.JoinedStr):
+                parts = []
+                for frag in sql_arg.values:
+                    if isinstance(frag, ast.Constant) and isinstance(frag.value, str):
+                        parts.append(frag.value)
+                sql_text = "".join(parts)
+
+            if sql_text and "?" in sql_text:
+                lineno = getattr(node, "lineno", 0)
+                violations.append(
+                    f"{rel}:{lineno}: execute() SQL uses bare ? placeholder — use %s for psycopg2"
+                )
+
+    if violations:
+        # FAIL on changed-file scope (gates new violations pre-commit/pre-merge).
+        # WARN on full-repo scan — 7800+ legacy violations exist because translate_sql
+        # silently masked them; a hard FAIL would block CI until all are migrated.
+        # Fix by replacing ? with %s in the flagged execute() call sites.
+        tier = "fail" if changed_files else "warn"
+        return CoherenceCheck(
+            check_id="runtime_placeholder_style",
+            check_name="Runtime SQL Placeholder Style",
+            status=tier,
+            expected=["All runtime execute() calls use %s placeholders (psycopg2)"],
+            actual=[f"{len(violations)} violation(s) across {scanned} runtime file(s)"],
+            missing=violations,
+            extra=[],
+            message=(
+                f"{len(violations)} execute() call(s) use bare ? placeholder — "
+                "psycopg2 requires %s; translate_sql auto-rewrite is not a fix"
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="runtime_placeholder_style",
+        check_name="Runtime SQL Placeholder Style",
+        status="pass",
+        expected=["All runtime execute() calls use %s placeholders (psycopg2)"],
+        actual=[f"Scanned {scanned} runtime file(s), 0 ? placeholders found"],
+        missing=[],
+        extra=[],
+        message=f"All runtime execute() calls use %s placeholders — {scanned} file(s) checked",
+    )
+
+
+# ---------------------------------------------------------------------------
+# Check 17: ACE YAML listen_topics deadlock guard
 # ---------------------------------------------------------------------------
 
 # Mirror of _BOOTSTRAP_TOPICS in coworker_thread.py — kept in sync manually.
@@ -3994,6 +4138,7 @@ CHECK_REGISTRY = {
     "blueprint_imports": check_blueprint_imports,
     "new_page_completeness": check_new_page_completeness,
     "canvas_placeholder_style": check_canvas_placeholder_style,
+    "runtime_placeholder_style": check_runtime_placeholder_style,
     "ace_yaml_listen_topics": check_ace_yaml_listen_topics,
     "skill_security": check_skill_security,
     "spec_discipline": check_spec_discipline,
@@ -4032,6 +4177,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "mcp_security": "skip",  # scanner module creation requires human judgment
     "security_context": "skip",  # RLS bypass documentation and wiring fixes require human judgment
     "canvas_placeholder_style": "skip",  # SQL placeholder fixes require human judgment (search+replace in SQL strings)
+    "runtime_placeholder_style": "skip",  # SQL placeholder fixes require human judgment (search+replace in SQL strings)
     "ace_yaml_listen_topics": "skip",  # YAML restructuring requires human judgment
     "component_registry": "skip",  # registry schema issues require human editing
     "canvas_completeness": "skip",  # missing canvas components must be created by hand
