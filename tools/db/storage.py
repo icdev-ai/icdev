@@ -281,6 +281,15 @@ def translate_sql(sql: str, backend: str = "postgresql") -> str:
     sql = _escape_pct_in_literals(sql)
 
     # 7b. ? placeholder → %s
+    # WARNING: this translation masks source code that uses SQLite-style ?
+    # placeholders in runtime modules. Log so the silent translation is
+    # visible in server logs and doesn't become a hidden load-bearing shim.
+    if "?" in sql:
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "translate_sql: bare ? placeholder detected in SQL — use %%s for "
+            "psycopg2 directly. SQL (first 120 chars): %.120s", sql
+        )
     sql = sql.replace("?", "%s")
 
     # 8. DDL translations (CREATE TABLE / CREATE INDEX)

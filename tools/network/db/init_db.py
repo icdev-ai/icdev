@@ -14000,9 +14000,14 @@ def init_db():
             # ICDEV's StorageConnection translates SQL automatically
             for stmt in SCHEMA.split(";"):
                 stmt = stmt.strip()
-                if stmt and not stmt.startswith("--"):
+                # Strip leading SQL comment lines so a section-header comment
+                # before CREATE TABLE does not cause the whole statement to be
+                # skipped by the startswith("--") guard below.
+                sql_lines = [l for l in stmt.splitlines() if not l.strip().startswith("--")]
+                stmt_sql = "\n".join(sql_lines).strip()
+                if stmt_sql and not stmt_sql.startswith("--"):
                     try:
-                        conn.execute(stmt)
+                        conn.execute(stmt_sql)
                         conn.commit()  # per-statement commit so a failure does not abort the whole schema
                     except Exception:
                         try:

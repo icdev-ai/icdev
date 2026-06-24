@@ -64,6 +64,14 @@ providers:
     base_url: ${OLLAMA_CLOUD_BASE_URL:-https://ollama.com}
     api_key_env: OLLAMA_API_KEY
 
+  # Claude CLI bridge — routes through the locally authenticated Claude Code
+  # session. Used when ANTHROPIC_API_KEY is absent (this environment).
+  claude-cli:
+    type: cli
+    cli_binary: claude
+    backend: auto
+    soft_wait_seconds: 120
+
 # -----------------------------------------------------------------------
 # Model Registry
 # -----------------------------------------------------------------------
@@ -88,6 +96,18 @@ models:
     supports_structured_output: true
     supports_vision: true
     pricing: { input_per_1k: 0.003, output_per_1k: 0.015 }
+
+  # Claude Sonnet via CLI bridge — used when ANTHROPIC_API_KEY is absent.
+  # Identical capabilities to claude-sonnet; routes through local claude CLI.
+  claude-sonnet-cli:
+    provider: claude-cli
+    model_id: claude-sonnet-4-6
+    max_output_tokens: 64000
+    supports_thinking: true
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
   claude-haiku:
     provider: anthropic
@@ -494,8 +514,17 @@ routing:
     chain: [gemma3-local, llava-local, qwen3-local]
     effort: medium
 
+  # Network Diagram Analysis — vision-capable chain; CLI bridge first (no API key needed)
+  ndc_diagram_quick_scan:
+    chain: [claude-sonnet-cli, gemma4-local, gemma3-local, llava-local]
+    effort: low
+
+  ndc_diagram_analysis:
+    chain: [claude-sonnet-cli, gemma4-local, gemma3-local, llava-local]
+    effort: medium
+
   document_vision:
-    chain: [claude-sonnet, gpt-4o, gemini-2.5-flash, gemma3-local, llava-local]
+    chain: [claude-sonnet-cli, claude-sonnet, gpt-4o, gemini-2.5-flash, gemma3-local, llava-local]
     effort: medium
 
   ui_analysis:
@@ -878,6 +907,8 @@ rag:
       - ui_analysis
       - diagram_extraction
       - compliance_diagram
+      - ndc_diagram_quick_scan
+      - ndc_diagram_analysis
       - e2e_testing
       - playwright_execution
       - browser_automation
