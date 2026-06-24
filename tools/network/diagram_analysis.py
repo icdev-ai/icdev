@@ -9,14 +9,15 @@ import base64
 import hashlib
 import io
 import json
-import logging
 import re
 import uuid
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
 
 UPLOAD_DIR = Path("data/ndc_uploads/diagrams")
 EXPORT_DIR = Path("data/ndc_uploads/exports")
@@ -850,7 +851,6 @@ def generate_drawio_export(
             f'vertex="1" parent="{leg_id}">'
             f'<mxGeometry x="10" y="{28 + i * 40}" width="90" height="28" as="geometry"/></mxCell>'
         )
-    base_y = 28 + len(legend_items) * 40
     for i, provider in enumerate(providers):
         pid = nid()
         cells.append(
