@@ -514,17 +514,19 @@ routing:
     chain: [gemma3-local, llava-local, qwen3-local]
     effort: medium
 
-  # Network Diagram Analysis — vision-capable chain; CLI bridge first (no API key needed)
+  # Network Diagram Analysis — text+graph-JSON analysis (vision models unavailable in this env)
+  # kimi-cloud does graph-JSON text analysis; claude-sonnet-cli (CLI bridge) is the fallback.
+  # Images are dropped by both providers (text-only path), but graph structure/labels carry enough signal.
   ndc_diagram_quick_scan:
-    chain: [claude-sonnet-cli, gemma4-local, gemma3-local, llava-local]
+    chain: [kimi-cloud, claude-sonnet-cli, qwen3-local]
     effort: low
 
   ndc_diagram_analysis:
-    chain: [claude-sonnet-cli, gemma4-local, gemma3-local, llava-local]
+    chain: [kimi-cloud, claude-sonnet-cli, qwen3-local]
     effort: medium
 
   document_vision:
-    chain: [claude-sonnet-cli, claude-sonnet, gpt-4o, gemini-2.5-flash, gemma3-local, llava-local]
+    chain: [kimi-cloud, claude-sonnet-cli, claude-sonnet, gpt-4o, gemini-2.5-flash]
     effort: medium
 
   ui_analysis:
