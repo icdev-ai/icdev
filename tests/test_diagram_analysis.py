@@ -118,7 +118,7 @@ def test_compute_file_hash_deterministic():
     h1 = compute_file_hash(data)
     h2 = compute_file_hash(data)
     assert h1 == h2
-    assert len(h1) == 64  # sha256 hex
+    assert len(h1) == 8  # crc32 hex
 
 
 def test_compute_file_hash_different_inputs():

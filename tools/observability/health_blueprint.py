@@ -27,10 +27,20 @@ except Exception:
 # ---------------------------------------------------------------------------
 
 def _check_db() -> str:
+    """Ping the database without going through the RLS/security-context layer.
+
+    StorageConnection auto-attaches the Flask g.security_context inside a
+    request context.  That causes _inject_rls to append WHERE classification
+    IN (...) to bare "SELECT 1" (which has no FROM table), producing a PG
+    "column does not exist" error.  Bypass by using the raw underlying
+    connection directly so no predicate injection happens.
+    """
     try:
         from tools.db.storage import get_connection
         conn = get_connection()
-        conn.execute("SELECT 1")
+        raw = conn._conn
+        cur = raw.cursor()
+        cur.execute("SELECT 1")
         conn.close()
         return "ok"
     except Exception:
@@ -46,10 +56,13 @@ def _check_llm() -> str:
 
 
 def _check_kanban() -> str:
+    """Check kanban_tasks table is reachable, bypassing RLS for the probe."""
     try:
         from tools.db.storage import get_connection
         conn = get_connection()
-        conn.execute("SELECT 1 FROM kanban_tasks LIMIT 1")
+        raw = conn._conn
+        cur = raw.cursor()
+        cur.execute("SELECT 1 FROM kanban_tasks LIMIT 1")
         conn.close()
         return "ok"
     except Exception:
