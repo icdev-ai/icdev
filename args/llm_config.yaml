@@ -236,9 +236,32 @@ models:
     supports_structured_output: true
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
-  # Primary Ollama cloud model — devstral-small-2:24b (fast, 2-3s TTFT)
-  # kimi-k2.6 retired; qwen3.5:397b times out; devstral-small-2 verified responsive.
+  # Primary Ollama cloud model — kimi-k2.7-code (vision-capable, 3s TTFT, verified 2026-06-24)
   kimi-cloud:
+    provider: ollama_cloud
+    model_id: "kimi-k2.7-code"
+    max_output_tokens: 32768
+    supports_thinking: false
+    disable_thinking: false
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  # MiniMax M3 via Ollama cloud — vision-capable, 7s TTFT, strong multimodal reasoning
+  minimax-cloud:
+    provider: ollama_cloud
+    model_id: "minimax-m3"
+    max_output_tokens: 32768
+    supports_thinking: false
+    disable_thinking: false
+    supports_tools: true
+    supports_structured_output: true
+    supports_vision: true
+    pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
+
+  # devstral-small-2:24b — fast text model (2.3s), no vision
+  devstral-cloud:
     provider: ollama_cloud
     model_id: "devstral-small-2:24b"
     max_output_tokens: 32768
@@ -398,7 +421,7 @@ task_categories:
     description: "Long-form prose, narrative, documentation"
 
   vision:
-    preferred: [gemma3-local, gemma4-local, llava-local, claude-sonnet, gpt-4o]
+    preferred: [kimi-cloud, minimax-cloud, claude-sonnet, gpt-4o]
     description: "Image analysis, screenshots, UI understanding"
 
   summarization:
@@ -524,18 +547,17 @@ routing:
     chain: [gemma3-local, llava-local, qwen3-local]
     effort: medium
 
-  # Network Diagram Analysis — text+graph-JSON analysis (vision models unavailable in this env)
-  # Ollama cloud primary (qwen3.5:397b), CLI bridge fallback, local qwen3 last resort.
+  # Network Diagram Analysis — vision-capable models first (kimi-k2.7-code + minimax-m3 verified)
   ndc_diagram_quick_scan:
-    chain: [kimi-cloud, deepseek-cloud, claude-sonnet-cli, qwen3-local]
+    chain: [kimi-cloud, minimax-cloud, deepseek-cloud, claude-sonnet-cli, qwen3-local]
     effort: low
 
   ndc_diagram_analysis:
-    chain: [kimi-cloud, deepseek-cloud, claude-sonnet-cli, qwen3-local]
+    chain: [kimi-cloud, minimax-cloud, deepseek-cloud, claude-sonnet-cli, qwen3-local]
     effort: medium
 
   document_vision:
-    chain: [kimi-cloud, claude-sonnet-cli, claude-sonnet, gpt-4o, gemini-2.5-flash]
+    chain: [kimi-cloud, minimax-cloud, claude-sonnet-cli, claude-sonnet, gpt-4o]
     effort: medium
 
   ui_analysis:
