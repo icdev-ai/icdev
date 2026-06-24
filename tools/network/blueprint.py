@@ -42,6 +42,33 @@ _NETWORK_DIR = Path(__file__).resolve().parent
 _ICDEV_ROOT = _NETWORK_DIR.parent.parent
 _TEMPLATE_DIR = _ICDEV_ROOT / "tools" / "dashboard" / "templates"
 
+# ── Config-review progress tracking ─────────────────────────────────────────────
+# In-memory progress store used by the SSE stream and by the HTTP poll fallback.
+# Keyed by review id; entries are short-lived and overwritten on re-analysis.
+_CR_PROGRESS: dict[str, dict] = {}
+
+
+def _cr_set_progress(review_id: str, phase: str, completed: int, total: int, status: str = "running", detail: str = "") -> None:
+    """Broadcast a progress event and cache it for HTTP polling fallback."""
+    payload = {
+        "operation_id": review_id,
+        "operation_type": "ndc_config_review",
+        "phase": phase,
+        "completed": completed,
+        "total": total,
+        "status": status,
+        "percent": round((completed / total) * 100, 1) if total > 0 else 0,
+        "detail": detail,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    _CR_PROGRESS[review_id] = payload
+    try:
+        from tools.dashboard.sse_manager import sse_manager
+
+        sse_manager.broadcast(payload, "progress")
+    except Exception:
+        pass
+
 # ── Import helper modules ──────────────────────────────────────────────────────
 from tools.network.constants import (  # noqa: E402
     CLOUD_OBJECTS,
@@ -13625,6 +13652,8 @@ Planning rules:
         roles = _cr_get_roles()
         role_label = roles.get(role_key, {}).get("label", role_key)
 
+        _cr_set_progress(review_id, "starting", 1, 7, "running", "Preparing review session...")
+
         # Optional quick parsing to surface hostname if detectable.
         hostname = ""
         try:
@@ -13632,6 +13661,7 @@ Planning rules:
             import os
             import tempfile
 
+            _cr_set_progress(review_id, "parsing", 2, 7, "running", "Parsing device hostname and interfaces...")
             with tempfile.NamedTemporaryFile(mode="w", suffix=".cfg", delete=False) as tf:
                 tf.write(config_text)
                 tf_path = tf.name
@@ -13643,11 +13673,11 @@ Planning rules:
         except Exception:
             pass
 
+        _cr_set_progress(review_id, "building_prompt", 3, 7, "running", "Building role-specific review prompt...")
         prompt = _cr_build_prompt(role_key, config_text, vendor, answers, hostname=hostname, selected_prompt_title=selected_prompt_title)
 
         result = {}
         llm_error = None
-        _dbg_path = Path(current_app.root_path).parent.parent / ".tmp" / "ndc_cr_debug.log"
         try:
             from tools.llm.router import LLMRouter
             from tools.llm.provider import LLMRequest
@@ -13659,26 +13689,18 @@ Planning rules:
                 skip_injection_scan=True,  # config text is the artifact under review, not an untrusted prompt
                 output_schema={"type": "object"},  # ask Ollama to emit valid JSON when supported
             )
-            with open(_dbg_path, "a", encoding="utf-8") as _df:
-                _df.write(f"[NDC-CR-DEBUG] invoke prompt_len={len(prompt)} max_tokens={req.max_tokens} role={role_key} vendor={vendor}\n")
-                _df.flush()
+            _cr_set_progress(review_id, "invoking_llm", 4, 7, "running", "Invoking AI model for configuration review...")
             resp = router.invoke("ndc_config_review", req)
-            with open(_dbg_path, "a", encoding="utf-8") as _df:
-                _df.write(f"[NDC-CR-DEBUG] resp content_len={len(resp.content or '')} model_id={resp.model_id or 'none'} provider={resp.provider or 'none'} stop={resp.stop_reason or 'none'}\n")
-                _df.flush()
+            _cr_set_progress(review_id, "parsing_response", 5, 7, "running", "Parsing AI response into findings...")
             result = _cr_parse_response(resp.content or "", vendor)
         except Exception as exc:
-            with open(_dbg_path, "a", encoding="utf-8") as _df:
-                _df.write(f"[NDC-CR-DEBUG] exception: {exc}\n")
-                import traceback
-                _df.write(traceback.format_exc())
-                _df.flush()
             logger.warning("Config review LLM error: %s", exc)
             llm_error = str(exc)
             result = _cr_parse_response("", vendor)
-            result["explanation"] = f"LLM unavailable: {llm_error}. Showing deterministic fallback (MARKER-A)."
+            result["explanation"] = f"LLM unavailable: {llm_error}. Showing deterministic fallback."
 
         # Persist findings.
+        _cr_set_progress(review_id, "persisting", 6, 7, "running", "Persisting findings and building report...")
         conn = get_connection()
         try:
             result_json = json.dumps(result)
@@ -13715,9 +13737,33 @@ Planning rules:
         finally:
             conn.close()
 
+        _cr_set_progress(
+            review_id,
+            "complete" if not llm_error else "failed",
+            7,
+            7,
+            "completed" if not llm_error else "failed",
+            "Review complete." if not llm_error else f"Review failed: {llm_error}",
+        )
+
         _audit("CONFIG_REVIEW_ANALYZED", "config_review", review_id, f"role={role_label}, vendor={vendor}")
-        result["_debug_marker"] = "ROOT-COPY"
         return jsonify({"id": review_id, "status": "complete" if not llm_error else "error", "result": result})
+
+    @bp.route("/api/config-review/<review_id>/progress", methods=["GET"])
+    @nc_login_required
+    def nc_api_config_review_progress(review_id):
+        """Return current progress for a config review (HTTP polling fallback)."""
+        progress = _CR_PROGRESS.get(review_id, {
+            "operation_id": review_id,
+            "operation_type": "ndc_config_review",
+            "phase": "unknown",
+            "completed": 0,
+            "total": 7,
+            "status": "running",
+            "percent": 0,
+            "detail": "Waiting for review to start...",
+        })
+        return jsonify(progress)
 
     @bp.route("/api/config-review/<review_id>", methods=["GET"])
     @nc_login_required

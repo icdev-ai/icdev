@@ -50,6 +50,9 @@
   .cr-btn-secondary { background: #2a2a4a; color: #ddd; }
 
   .cr-status { font-size: 0.85rem; color: #999; min-height: 1.5rem; margin: 0.75rem 0; }
+  .cr-progress { display: none; width: 100%; height: 6px; background: #2a2a4a; border-radius: 3px; overflow: hidden; margin: 0.5rem 0; }
+  .cr-progress-bar { height: 100%; width: 0%; background: linear-gradient(90deg, #7c3aed, #a78bfa); transition: width 0.3s ease; }
+  .cr-progress-meta { display: flex; justify-content: space-between; font-size: 0.75rem; color: #aaa; margin-top: 0.25rem; }
 
   .cr-tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid #333; margin-bottom: 1rem; }
   .cr-tab { padding: 0.6rem 1rem; background: transparent; border: none; color: #999; cursor: pointer; font-size: 0.85rem; }
@@ -139,6 +142,13 @@
     <button class="cr-btn cr-btn-secondary" onclick="resetReview()">Reset</button>
   </div>
   <div class="cr-status" id="cr-status">Select a role and provide a configuration to begin.</div>
+  <div class="cr-progress" id="cr-progress">
+    <div class="cr-progress-bar" id="cr-progress-bar"></div>
+  </div>
+  <div class="cr-progress-meta" id="cr-progress-meta" style="display:none;">
+    <span id="cr-progress-phase">Waiting...</span>
+    <span id="cr-progress-percent">0%</span>
+  </div>
 
   <!-- Results -->
   <div id="cr-results" style="display:none;">
@@ -270,6 +280,78 @@ function updateRunButton() {
 
 document.getElementById('cr-config-text').addEventListener('input', updateRunButton);
 
+let _crEventSource = null;
+let _crPollTimer = null;
+let _crLastProgress = null;
+
+function _crResetProgress() {
+  const bar = document.getElementById('cr-progress-bar');
+  const wrap = document.getElementById('cr-progress');
+  const meta = document.getElementById('cr-progress-meta');
+  bar.style.width = '0%';
+  wrap.style.display = 'none';
+  meta.style.display = 'none';
+  if (_crEventSource) { _crEventSource.close(); _crEventSource = null; }
+  if (_crPollTimer) { clearInterval(_crPollTimer); _crPollTimer = null; }
+}
+
+function _crApplyProgress(payload, fromFallback) {
+  if (!payload || payload.operation_type !== 'ndc_config_review' || payload.operation_id !== currentReview.id) return;
+  _crLastProgress = payload;
+  const status = document.getElementById('cr-status');
+  const wrap = document.getElementById('cr-progress');
+  const bar = document.getElementById('cr-progress-bar');
+  const meta = document.getElementById('cr-progress-meta');
+  const phase = document.getElementById('cr-progress-phase');
+  const pct = document.getElementById('cr-progress-percent');
+  wrap.style.display = 'block';
+  meta.style.display = 'flex';
+  bar.style.width = (payload.percent || 0) + '%';
+  phase.textContent = payload.detail || payload.phase || 'Working...';
+  pct.textContent = (payload.percent || 0) + '%';
+  if (payload.status === 'completed' || payload.status === 'failed') {
+    if (_crEventSource) { _crEventSource.close(); _crEventSource = null; }
+    if (_crPollTimer) { clearInterval(_crPollTimer); _crPollTimer = null; }
+  }
+  if (payload.status === 'failed') {
+    status.textContent = 'Error: ' + (payload.detail || 'Review failed');
+  }
+}
+
+function _crStartSSE(reviewId) {
+  if (typeof EventSource === 'undefined') return false;
+  try {
+    const es = new EventSource('/api/events/progress');
+    _crEventSource = es;
+    es.onmessage = (ev) => {
+      try {
+        const data = JSON.parse(ev.data);
+        _crApplyProgress(data, false);
+      } catch (e) { /* ignore malformed */ }
+    };
+    es.onerror = () => {
+      if (_crEventSource) { _crEventSource.close(); _crEventSource = null; }
+    };
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function _crStartPolling(reviewId) {
+  if (_crPollTimer) return;
+  const poll = async () => {
+    if (!currentReview) return;
+    try {
+      const r = await fetch(NC_BASE + '/api/config-review/' + reviewId + '/progress');
+      const data = await r.json();
+      _crApplyProgress(data, true);
+    } catch (e) { /* ignore */ }
+  };
+  poll();
+  _crPollTimer = setInterval(poll, 1500);
+}
+
 async function runReview() {
   const configText = document.getElementById('cr-config-text').value.trim();
   if (!configText) { alert('Paste or upload a configuration first.'); return; }
@@ -278,6 +360,7 @@ async function runReview() {
   const status = document.getElementById('cr-status');
   const runBtn = document.getElementById('cr-run');
   runBtn.disabled = true;
+  _crResetProgress();
   status.textContent = 'Creating review session...';
 
   try {
@@ -298,7 +381,17 @@ async function runReview() {
     renderPrompts(createData.prompts);
     document.getElementById('cr-prompts-panel').style.display = 'block';
 
-    status.textContent = 'Analyzing configuration with AI...';
+    // Subscribe to progress (SSE preferred, polling fallback).
+    const sseStarted = _crStartSSE(createData.id);
+    if (!sseStarted) _crStartPolling(createData.id);
+    // If no SSE event arrives within 3s, also start polling as a safety net.
+    setTimeout(() => {
+      if (!_crLastProgress && currentReview && currentReview.id === createData.id) {
+        _crStartPolling(createData.id);
+      }
+    }, 3000);
+
+    status.textContent = 'Analysis started...';
     const analyzeResp = await fetch(NC_BASE + '/api/config-review/' + createData.id + '/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -313,6 +406,7 @@ async function runReview() {
     status.textContent = 'Error: ' + err.message;
     console.error(err);
   } finally {
+    _crResetProgress();
     runBtn.disabled = false;
   }
 }
@@ -440,8 +534,9 @@ function resetReview() {
   document.getElementById('cr-questions-panel').style.display = 'none';
   document.getElementById('cr-prompts-panel').style.display = 'none';
   document.getElementById('cr-results').style.display = 'none';
-  document.getElementById('cr-status').textContent = 'Select a role and provide a configuration to begin.';
   currentReview = null; currentRole = null; currentPromptTitle = ''; currentAnswers = {}; currentResult = null;
+  _crLastProgress = null;
+  _crResetProgress();
   updateRunButton();
 }
 </script>
