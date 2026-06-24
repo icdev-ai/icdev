@@ -24,8 +24,8 @@ EXPORT_DIR = Path("data/ndc_uploads/exports")
 
 # ── Token budget guardrails ───────────────────────────────────────────────────
 _MAX_IMAGES_PER_CALL = 4       # max images per LLM call — avoids context overrun
-_TOKEN_BUDGET_PER_IMAGE = 1200  # output tokens allocated per image/page
-_TOKEN_BUDGET_BASE = 2048       # minimum tokens for any single call
+_TOKEN_BUDGET_PER_IMAGE = 2048  # output tokens allocated per image/page (increased: 6-tab JSON needs room)
+_TOKEN_BUDGET_BASE = 6144       # minimum tokens for any single call (was 2048 — truncated JSON)
 
 # ── Format Detection ──────────────────────────────────────────────────────────
 
