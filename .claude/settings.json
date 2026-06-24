@@ -6,7 +6,8 @@
       "Edit",
       "Glob",
       "Grep",
-      "Bash(*)"
+      "Bash(*)",
+      "PowerShell(*)"
     ],
     "deny": [
       "Bash(git push --force:*)",
