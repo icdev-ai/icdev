@@ -565,10 +565,15 @@ def run_analysis(upload_id: str, industry: str, conn) -> dict:
     7. parse_analysis_response()
     8. Return {tabs, cloud_context, industry}
     """
+    import sys as _sys
+    _sys.stderr.write(f"[DA DEBUG] run_analysis start upload_id={upload_id}\n")
+    _sys.stderr.flush()
     row = conn.execute("SELECT * FROM nc_diagram_uploads WHERE id=%s", (upload_id,)).fetchone()
     if not row:
         raise ValueError(f"Upload {upload_id!r} not found")
     upload = dict(row)
+    _sys.stderr.write(f"[DA DEBUG] upload loaded: {upload.get('format')} path={upload.get('file_path')}\n")
+    _sys.stderr.flush()
 
     images, graph_json = _load_images_for_upload(upload)
 
@@ -638,8 +643,17 @@ def run_analysis(upload_id: str, industry: str, conn) -> dict:
                 temperature=0.2,
                 skip_injection_scan=True,
             )
+            _sys.stderr.write(f"[DA DEBUG] invoking ndc_diagram_analysis budget={budget}\n"); _sys.stderr.flush()
             resp = router.invoke("ndc_diagram_analysis", req)
             raw = getattr(resp, "content", "") or ""
+            _sys.stderr.write(f"[DA DEBUG] got response len={len(raw)}\n"); _sys.stderr.flush()
+            logger.info(
+                "Diagram analysis raw response: len=%d model=%s first80=%r last80=%r",
+                len(raw),
+                getattr(resp, "model_id", "unknown"),
+                raw[:80],
+                raw[-80:] if len(raw) > 80 else raw,
+            )
             batch_results.append(parse_analysis_response(raw))
             logger.info("Diagram analysis batch %d/%d complete", idx + 1, total)
 

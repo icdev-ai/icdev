@@ -547,13 +547,13 @@ routing:
     chain: [gemma3-local, llava-local, qwen3-local]
     effort: medium
 
-  # Network Diagram Analysis — vision-capable models first (kimi-k2.7-code + minimax-m3 verified)
+  # Network Diagram Analysis — CLI bridge primary (verified working); Ollama cloud fallbacks
   ndc_diagram_quick_scan:
-    chain: [kimi-cloud, minimax-cloud, deepseek-cloud, claude-sonnet-cli, qwen3-local]
+    chain: [claude-sonnet-cli, kimi-cloud, minimax-cloud, deepseek-cloud, qwen3-local]
     effort: low
 
   ndc_diagram_analysis:
-    chain: [kimi-cloud, minimax-cloud, deepseek-cloud, claude-sonnet-cli, qwen3-local]
+    chain: [claude-sonnet-cli, kimi-cloud, minimax-cloud, deepseek-cloud, qwen3-local]
     effort: medium
 
   document_vision:
