@@ -512,7 +512,14 @@ def parse_analysis_response(raw_text: str) -> dict:
             data = {}
 
     keys = ["overview", "inventory", "topology", "security", "compliance", "remediate"]
-    return {k: data.get(k) if isinstance(data.get(k), list) else [] for k in keys}
+    # LLMs sometimes return "remediation" instead of "remediate" — accept both
+    _aliases = {"remediate": "remediation"}
+
+    def _pick(k):
+        v = data.get(k) or data.get(_aliases.get(k, ""))
+        return v if isinstance(v, list) else []
+
+    return {k: _pick(k) for k in keys}
 
 
 def _fallback_analysis(upload: dict, industry: str, cloud_context: dict) -> dict:
