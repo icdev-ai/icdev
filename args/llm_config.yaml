@@ -217,11 +217,14 @@ models:
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
 
   # kimi-k2.6 via Ollama cloud (OLLAMA_API_KEY) — primary inference model
+  # disable_thinking: true is required because this model emits its reasoning
+  # in a "thinking" field that counts against num_predict, leaving content empty.
   kimi-cloud:
     provider: ollama_cloud
     model_id: "kimi-k2.6:cloud"
     max_output_tokens: 32768
     supports_thinking: false
+    disable_thinking: true
     supports_tools: true
     supports_structured_output: true
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
@@ -231,6 +234,7 @@ models:
     model_id: "kimi-k2.6:cloud"
     max_output_tokens: 32768
     supports_thinking: false
+    disable_thinking: true
     supports_tools: true
     supports_structured_output: true
     pricing: { input_per_1k: 0.0, output_per_1k: 0.0 }
