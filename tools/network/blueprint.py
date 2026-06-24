@@ -13887,6 +13887,7 @@ Planning rules:
             save_findings as _da_save_findings,
             parse_drawio_file as _da_parse_drawio_file,
             get_pdf_page_count as _da_pdf_page_count,
+            generate_ndc_topology as _da_generate_ndc_topology,
             UPLOAD_DIR as _DA_UPLOAD_DIR,
             EXPORT_DIR as _DA_EXPORT_DIR,
         )
@@ -14113,7 +14114,7 @@ Planning rules:
         @bp.route("/api/diagram-analysis/<analysis_id>/open-in-canvas", methods=["POST"])
         @nc_login_required
         def nc_api_diagram_open_in_canvas(analysis_id):
-            """Generate a remediated draw.io export, import it as a new NDC topology, return the canvas URL."""
+            """Build a proper NDC topology from analysis tabs and open it in canvas."""
             conn = get_connection()
             try:
                 row = conn.execute(
@@ -14132,45 +14133,29 @@ Planning rules:
             cloud_ctx = {
                 "providers": json.loads(ana.get("cloud_providers_json") or "[]"),
                 "mode": ana.get("topology_mode", "unknown"),
-                "has_on_prem": False,
+                "has_on_prem": any(
+                    (i.get("provider") or "on_prem") in ("on_prem", "unknown")
+                    for i in (tabs.get("inventory") or [])
+                ),
             }
 
             filename_stem = "diagram"
-            original_graph = None
             if upload_row:
-                up = dict(upload_row)
-                filename_stem = up.get("filename", "diagram").rsplit(".", 1)[0]
-                if up.get("format") == "drawio":
-                    try:
-                        parsed = _da_parse_drawio_file(Path(up["file_path"]))
-                        original_graph = parsed["graph"]
-                    except Exception:
-                        pass
+                filename_stem = dict(upload_row).get("filename", "diagram").rsplit(".", 1)[0]
 
-            # Generate remediated draw.io XML
-            drawio_xml = _da_generate_drawio_export(
-                {"tabs": tabs},
-                original_graph,
-                cloud_ctx,
-                ana.get("industry", "commercial"),
-                filename_stem,
-            )
+            # Build NDC-native topology with proper icon types, edges, and boundary boxes
+            ndc = _da_generate_ndc_topology(tabs, cloud_ctx)
+            graph_json = ndc["graph_json"]
+            boundaries = ndc.get("boundaries", [])
 
-            # Parse the draw.io XML back to graph_json so NDC Canvas can render it
-            try:
-                parsed_back = import_drawio(drawio_xml)
-                graph_json = parsed_back
-            except Exception:
-                graph_json = {"nodes": [], "edges": [], "zones": []}
-
-            # Create a new topology from the remediated graph
             topo_id = str(_uuid.uuid4())
             topo_name = f"Remediated — {filename_stem}"
             now = _now()
             conn3 = get_connection()
             try:
                 conn3.execute(
-                    "INSERT INTO topologies (id, name, description, graph_json, classification, created_at, updated_at) "
+                    "INSERT INTO topologies "
+                    "(id, name, description, graph_json, classification, created_at, updated_at) "
                     "VALUES (?,?,?,?,?,?,?)",
                     (
                         topo_id,
@@ -14182,6 +14167,30 @@ Planning rules:
                         now,
                     ),
                 )
+                # Insert boundary boxes so NDC Canvas renders security zones
+                for b in boundaries:
+                    bid = str(_uuid.uuid4())
+                    conn3.execute(
+                        "INSERT INTO nc_boundaries "
+                        "(id, topology_id, label, classification, color, fill_opacity, "
+                        "node_ids, stig_tags, pos_x, pos_y, width, height, snap_grid, notes, "
+                        "created_at, updated_at) "
+                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (
+                            bid, topo_id,
+                            b["label"],
+                            b.get("classification", "public"),
+                            b.get("color", "rgba(100,100,200,0.15)"),
+                            b.get("fill_opacity", 0.06),
+                            json.dumps(b.get("node_ids", [])),
+                            json.dumps([]),
+                            b["pos_x"], b["pos_y"],
+                            b["width"], b["height"],
+                            0,
+                            "",
+                            now, now,
+                        ),
+                    )
                 conn3.commit()
             finally:
                 conn3.close()
@@ -14191,6 +14200,8 @@ Planning rules:
                 "topology_id": topo_id,
                 "canvas_url": f"/network/canvas/{topo_id}",
                 "name": topo_name,
+                "node_count": len(graph_json.get("nodes", [])),
+                "boundary_count": len(boundaries),
             }), 201
 
         @bp.route("/api/diagram-analysis/<analysis_id>/report.html", methods=["GET"])
