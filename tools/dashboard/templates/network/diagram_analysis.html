@@ -331,7 +331,7 @@
       // Step 1: Upload
       const formData = new FormData();
       formData.append('file', daSelectedFile);
-      const upResp = await fetch('/api/diagram-upload', { method: 'POST', body: formData });
+      const upResp = await fetch('/network/api/diagram-upload', { method: 'POST', body: formData });
       if (!upResp.ok) {
         const err = await upResp.json();
         throw new Error(err.error || 'Upload failed');
@@ -342,7 +342,7 @@
         `Analyzing ${upData.filename} (${upData.page_count} page${upData.page_count > 1 ? 's' : ''})…`;
 
       // Step 2: Analyze
-      const anaResp = await fetch(`/api/diagram-analysis/${daUploadId}/analyze`, {
+      const anaResp = await fetch(`/network/api/diagram-analysis/${daUploadId}/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ industry: daSelectedIndustry }),
@@ -526,7 +526,7 @@
   async function daExportDrawio() {
     if (!daAnalysisId) { alert('Run an analysis first.'); return; }
     try {
-      const resp = await fetch(`/api/diagram-analysis/${daAnalysisId}/export-drawio`, { method: 'POST' });
+      const resp = await fetch(`/network/api/diagram-analysis/${daAnalysisId}/export-drawio`, { method: 'POST' });
       if (!resp.ok) { const e = await resp.json(); throw new Error(e.error || 'Export failed'); }
       const blob = await resp.blob();
       const cd = resp.headers.get('Content-Disposition') || '';

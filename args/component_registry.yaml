@@ -83,6 +83,17 @@ components:
   nav:
     section: Canvases
     label: Network
+    links:
+    - label: Network Canvas
+      href: /network
+    - label: Diagram Analysis
+      href: /network/diagram-analysis
+    - label: Compliance Audit
+      href: /network/compliance-audit
+    - label: Config Review
+      href: /network/config-review
+    - label: Migration Phases
+      href: /network/migration-phases
   iqe:
     adapter_module: tools.iqe.adapters.ndc
     collections:

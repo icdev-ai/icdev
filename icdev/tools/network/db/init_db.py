@@ -23,6 +23,10 @@ DB_PATH = _ICDEV_ROOT / "data" / "network_canvas.db"
 # default). NC_STORAGE_BACKEND overrides for a dedicated network_canvas backend.
 _NC_BACKEND = os.environ.get("NC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql"))).lower()
 
+# Guard against re-entrant init_db calls (e.g. seed_sops.seed() calls init_db()
+# and init_db() auto-seeds via seed_sops).
+_INIT_DB_IN_PROGRESS = False
+
 
 def get_connection():
     """Get a database connection — SQLite or PostgreSQL.
@@ -13940,6 +13944,10 @@ ENCLAVE_SNIPPETS = [
 
 
 def init_db():
+    global _INIT_DB_IN_PROGRESS
+    if _INIT_DB_IN_PROGRESS:
+        return
+    _INIT_DB_IN_PROGRESS = True
     conn = get_connection()
     try:
         if _NC_BACKEND == "postgresql":
@@ -15089,6 +15097,7 @@ def init_db():
         conn.commit()
         print("[init_db] Done.")
     finally:
+        _INIT_DB_IN_PROGRESS = False
         conn.close()
 
 
