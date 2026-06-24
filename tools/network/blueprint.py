@@ -13647,7 +13647,7 @@ Planning rules:
 
         result = {}
         llm_error = None
-        _dbg_path = BASE_DIR / ".tmp" / "ndc_cr_debug.log"
+        _dbg_path = Path(current_app.root_path).parent.parent / ".tmp" / "ndc_cr_debug.log"
         try:
             from tools.llm.router import LLMRouter
             from tools.llm.provider import LLMRequest
@@ -13661,19 +13661,22 @@ Planning rules:
             )
             with open(_dbg_path, "a", encoding="utf-8") as _df:
                 _df.write(f"[NDC-CR-DEBUG] invoke prompt_len={len(prompt)} max_tokens={req.max_tokens} role={role_key} vendor={vendor}\n")
+                _df.flush()
             resp = router.invoke("ndc_config_review", req)
             with open(_dbg_path, "a", encoding="utf-8") as _df:
                 _df.write(f"[NDC-CR-DEBUG] resp content_len={len(resp.content or '')} model_id={resp.model_id or 'none'} provider={resp.provider or 'none'} stop={resp.stop_reason or 'none'}\n")
+                _df.flush()
             result = _cr_parse_response(resp.content or "", vendor)
         except Exception as exc:
             with open(_dbg_path, "a", encoding="utf-8") as _df:
                 _df.write(f"[NDC-CR-DEBUG] exception: {exc}\n")
                 import traceback
                 _df.write(traceback.format_exc())
+                _df.flush()
             logger.warning("Config review LLM error: %s", exc)
             llm_error = str(exc)
             result = _cr_parse_response("", vendor)
-            result["explanation"] = f"LLM unavailable: {llm_error}. Showing deterministic fallback."
+            result["explanation"] = f"LLM unavailable: {llm_error}. Showing deterministic fallback (MARKER-A)."
 
         # Persist findings.
         conn = get_connection()
@@ -13713,6 +13716,7 @@ Planning rules:
             conn.close()
 
         _audit("CONFIG_REVIEW_ANALYZED", "config_review", review_id, f"role={role_label}, vendor={vendor}")
+        result["_debug_marker"] = "ROOT-COPY"
         return jsonify({"id": review_id, "status": "complete" if not llm_error else "error", "result": result})
 
     @bp.route("/api/config-review/<review_id>", methods=["GET"])

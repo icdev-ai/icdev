@@ -13647,7 +13647,7 @@ Planning rules:
 
         result = {}
         llm_error = None
-        _dbg_path = BASE_DIR / ".tmp" / "ndc_cr_debug.log"
+        _dbg_path = _ICDEV_ROOT / ".tmp" / "ndc_cr_debug.log"
         try:
             from tools.llm.router import LLMRouter
             from tools.llm.provider import LLMRequest
@@ -13713,6 +13713,7 @@ Planning rules:
             conn.close()
 
         _audit("CONFIG_REVIEW_ANALYZED", "config_review", review_id, f"role={role_label}, vendor={vendor}")
+        result["_debug_marker"] = "ICDEV-COPY"
         return jsonify({"id": review_id, "status": "complete" if not llm_error else "error", "result": result})
 
     @bp.route("/api/config-review/<review_id>", methods=["GET"])
