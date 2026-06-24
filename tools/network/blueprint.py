@@ -14110,6 +14110,89 @@ Planning rules:
                 headers={"Content-Disposition": f'attachment; filename="{filename_stem}_remediated.drawio"'},
             )
 
+        @bp.route("/api/diagram-analysis/<analysis_id>/open-in-canvas", methods=["POST"])
+        @nc_login_required
+        def nc_api_diagram_open_in_canvas(analysis_id):
+            """Generate a remediated draw.io export, import it as a new NDC topology, return the canvas URL."""
+            conn = get_connection()
+            try:
+                row = conn.execute(
+                    "SELECT * FROM nc_diagram_analyses WHERE id=%s", (analysis_id,)
+                ).fetchone()
+                if not row:
+                    return jsonify({"error": "Analysis not found"}), 404
+                ana = dict(row)
+                upload_row = conn.execute(
+                    "SELECT * FROM nc_diagram_uploads WHERE id=%s", (ana["upload_id"],)
+                ).fetchone()
+            finally:
+                conn.close()
+
+            tabs = json.loads(ana.get("result_json") or "{}")
+            cloud_ctx = {
+                "providers": json.loads(ana.get("cloud_providers_json") or "[]"),
+                "mode": ana.get("topology_mode", "unknown"),
+                "has_on_prem": False,
+            }
+
+            filename_stem = "diagram"
+            original_graph = None
+            if upload_row:
+                up = dict(upload_row)
+                filename_stem = up.get("filename", "diagram").rsplit(".", 1)[0]
+                if up.get("format") == "drawio":
+                    try:
+                        parsed = _da_parse_drawio_file(Path(up["file_path"]))
+                        original_graph = parsed["graph"]
+                    except Exception:
+                        pass
+
+            # Generate remediated draw.io XML
+            drawio_xml = _da_generate_drawio_export(
+                {"tabs": tabs},
+                original_graph,
+                cloud_ctx,
+                ana.get("industry", "commercial"),
+                filename_stem,
+            )
+
+            # Parse the draw.io XML back to graph_json so NDC Canvas can render it
+            try:
+                parsed_back = import_drawio(drawio_xml)
+                graph_json = parsed_back
+            except Exception:
+                graph_json = {"nodes": [], "edges": [], "zones": []}
+
+            # Create a new topology from the remediated graph
+            topo_id = str(_uuid.uuid4())
+            topo_name = f"Remediated — {filename_stem}"
+            now = _now()
+            conn3 = get_connection()
+            try:
+                conn3.execute(
+                    "INSERT INTO topologies (id, name, description, graph_json, classification, created_at, updated_at) "
+                    "VALUES (?,?,?,?,?,?,?)",
+                    (
+                        topo_id,
+                        topo_name,
+                        f"Auto-generated remediated topology from diagram analysis {analysis_id}",
+                        json.dumps(graph_json),
+                        "public",
+                        now,
+                        now,
+                    ),
+                )
+                conn3.commit()
+            finally:
+                conn3.close()
+
+            _audit("DIAGRAM_OPEN_IN_CANVAS", "topology", topo_id, f"analysis_id={analysis_id}")
+            return jsonify({
+                "topology_id": topo_id,
+                "canvas_url": f"/network/canvas/{topo_id}",
+                "name": topo_name,
+            }), 201
+
         @bp.route("/api/diagram-analysis/<analysis_id>/report.html", methods=["GET"])
         @nc_login_required
         def nc_api_diagram_report_html(analysis_id):
