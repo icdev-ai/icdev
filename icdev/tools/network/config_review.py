@@ -10,10 +10,10 @@ from CLI/headless workflows.
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import uuid
+import zlib
 from typing import Any
 
 from tools.logging.icdev_logger import get_logger
@@ -241,11 +241,55 @@ INSTRUCTIONS:
   }}
 }}
 
-3. For "sample_template", produce a vendor-appropriate (Cisco IOS/NX-OS style for cisco_ios/cisco_nxos, Juniper JunOS style for juniper) baseline template that could be reused across similar devices. Strip site-specific secrets and IP addresses; use placeholders like <HOSTNAME>, <MGMT_IP>, <VLAN_ID>.
+3. For "sample_template", produce a SHORT (≤40 lines) vendor-appropriate skeleton config that could be reused across similar devices. Strip site-specific secrets and IPs; use placeholders like <HOSTNAME>, <MGMT_IP>, <VLAN_ID>. Do NOT include full running-config verbatim.
 4. Severity guidance: CAT1 = immediate exploit/complete exposure; CAT2 = significant weakness; CAT3 = minor finding; info = observation.
 5. Keep all snippets syntactically valid for the detected vendor when possible.
+6. Be concise: limit each findings array to the top 5 most important items. The "explanation" field should be ≤150 words.
+7. topology_graph: include only the most significant nodes (≤8). Omit edges if none are determinable from the config.
 """
     return prompt
+
+
+def _repair_truncated_json(text: str) -> str:
+    """Close any open strings, arrays, and objects left by a truncated LLM response.
+
+    Walks the string character by character tracking open state so we can append
+    the minimum suffix that makes the JSON syntactically complete.  Not a full
+    JSON validator — just good enough to turn a cut-off response into something
+    json.loads can accept.
+    """
+    in_string = False
+    escape_next = False
+    depth_stack: list[str] = []  # '{' or '[' for each open container
+
+    for ch in text:
+        if escape_next:
+            escape_next = False
+            continue
+        if in_string:
+            if ch == "\\":
+                escape_next = True
+            elif ch == '"':
+                in_string = False
+        else:
+            if ch == '"':
+                in_string = True
+            elif ch in ("{", "["):
+                depth_stack.append(ch)
+            elif ch == "}":
+                if depth_stack and depth_stack[-1] == "{":
+                    depth_stack.pop()
+            elif ch == "]":
+                if depth_stack and depth_stack[-1] == "[":
+                    depth_stack.pop()
+
+    suffix = ""
+    if in_string:
+        suffix += '"'  # close the open string
+    # Close any open containers in reverse order.
+    for opener in reversed(depth_stack):
+        suffix += "}" if opener == "{" else "]"
+    return text + suffix
 
 
 def parse_review_response(raw_text: str, vendor: str) -> dict[str, Any]:
@@ -253,18 +297,36 @@ def parse_review_response(raw_text: str, vendor: str) -> dict[str, Any]:
 
     If the response is not valid JSON or is missing required keys, fill in
     deterministic fallbacks so the UI never crashes.
+
+    Recovery order:
+    1. Direct json.loads on extracted JSON block.
+    2. Repair truncated JSON (close open strings/arrays/objects) and retry.
+    3. Deterministic fallback.
     """
     content = raw_text or ""
-    # Try to extract JSON from markdown fences or raw text.
-    json_match = re.search(r"\{.*\}", content, re.DOTALL)
+    # Prefer fenced code blocks; fall back to the largest {...} span.
+    fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL)
+    json_match = fence_match or re.search(r"\{.*\}", content, re.DOTALL)
     if not json_match:
         return _fallback_review("Could not parse LLM response as JSON.", vendor)
 
+    candidate = fence_match.group(1) if fence_match else json_match.group()
+
+    data: dict[str, Any] | None = None
+    # Pass 1 — try as-is.
     try:
-        data = json.loads(json_match.group())
+        data = json.loads(candidate)
     except json.JSONDecodeError as exc:
-        logger.warning("config_review parse JSON error: %s", exc)
-        return _fallback_review(f"JSON parse error: {exc}", vendor)
+        logger.warning("config_review JSON parse error (will attempt repair): %s", exc)
+
+    # Pass 2 — repair truncated output and retry.
+    if data is None:
+        try:
+            data = json.loads(_repair_truncated_json(candidate))
+            logger.info("config_review JSON recovered via truncation repair")
+        except json.JSONDecodeError as exc2:
+            logger.warning("config_review JSON repair failed: %s", exc2)
+            return _fallback_review(f"JSON parse error: {exc2}", vendor)
 
     # Normalize each section to a list.
     result = {
@@ -459,4 +521,4 @@ def generate_export_topology(findings: list[dict[str, Any]], vendor: str) -> dic
 
 def compute_config_hash(config_text: str) -> str:
     """Stable hash for deduplication and audit references."""
-    return hashlib.sha256(config_text.encode("utf-8")).hexdigest()[:16]
+    return format(zlib.crc32(config_text.encode("utf-8")) & 0xFFFFFFFF, "08x")
