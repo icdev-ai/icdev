@@ -296,6 +296,51 @@ CREATE TABLE IF NOT EXISTS nc_config_review_findings (
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Diagram Analysis: uploaded diagrams and AI analysis results
+CREATE TABLE IF NOT EXISTS nc_diagram_uploads (
+    id              TEXT PRIMARY KEY,
+    filename        TEXT NOT NULL,
+    format          TEXT NOT NULL,           -- png|jpg|pdf|drawio|docx
+    file_path       TEXT NOT NULL,
+    file_hash       TEXT NOT NULL,
+    page_count      INTEGER DEFAULT 1,
+    topology_id     TEXT,                    -- FK to topologies (nullable)
+    uploaded_at     TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_diagram_analyses (
+    id                   TEXT PRIMARY KEY,
+    upload_id            TEXT NOT NULL REFERENCES nc_diagram_uploads(id),
+    industry             TEXT NOT NULL,      -- dod_il4|dod_il5|dod_il6|healthcare|financial|commercial
+    frameworks_json      TEXT DEFAULT '[]',
+    cloud_providers_json TEXT DEFAULT '[]',  -- ["aws","azure"] detected from diagram
+    topology_mode        TEXT DEFAULT 'unknown', -- cloud_native|hybrid|multi_cloud|on_prem|unknown
+    status               TEXT NOT NULL DEFAULT 'pending', -- pending|running|done|error
+    result_json          TEXT DEFAULT '{}',  -- full 6-tab structured output
+    created_at           TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_diagram_findings (
+    id              TEXT PRIMARY KEY,
+    analysis_id     TEXT NOT NULL REFERENCES nc_diagram_analyses(id),
+    tab             TEXT NOT NULL,           -- security|compliance|remediate|topology|inventory|overview
+    severity        TEXT NOT NULL DEFAULT 'info', -- critical|high|medium|low|info
+    title           TEXT NOT NULL,
+    detail          TEXT,
+    remediation     TEXT,
+    references_json TEXT DEFAULT '[]',       -- [{type: CVE|NIST|OWASP|STIG, id, description}]
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_diagram_exports (
+    id              TEXT PRIMARY KEY,
+    analysis_id     TEXT NOT NULL REFERENCES nc_diagram_analyses(id),
+    export_type     TEXT NOT NULL DEFAULT 'drawio',
+    file_path       TEXT NOT NULL,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Projects: group multiple topologies, circuits, IPAM under one engagement
 CREATE TABLE IF NOT EXISTS nc_projects (
     id          TEXT PRIMARY KEY,

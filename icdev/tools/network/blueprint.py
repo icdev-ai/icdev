@@ -13653,9 +13653,10 @@ Planning rules:
             router = LLMRouter()
             req = LLMRequest(
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=4096,
+                max_tokens=8192,
                 temperature=0.2,
                 skip_injection_scan=True,  # config text is the artifact under review, not an untrusted prompt
+                output_schema={"type": "object"},  # ask Ollama to emit valid JSON when supported
             )
             resp = router.invoke("ndc_config_review", req)
             result = _cr_parse_response(resp.content or "", vendor)
