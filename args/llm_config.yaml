@@ -70,7 +70,7 @@ providers:
     type: cli
     cli_binary: claude
     backend: auto
-    soft_wait_seconds: 120
+    soft_wait_seconds: 360
 
 # -----------------------------------------------------------------------
 # Model Registry
