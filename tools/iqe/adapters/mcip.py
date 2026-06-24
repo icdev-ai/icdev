@@ -2,10 +2,9 @@
 """IQE adapter for MCIP DAT — registers dat.events and dat.dti_history collections."""
 from __future__ import annotations
 
-from tools.iqe.registry import register_collection
+from tools.iqe.executor import register_collection
 
 
-@register_collection("dat.events")
 def _dat_events(query_ast, conn=None):
     """Query mcip_dat_events via IQE."""
     from tools.db.storage import get_connection
@@ -23,7 +22,6 @@ def _dat_events(query_ast, conn=None):
             _conn.close()
 
 
-@register_collection("dat.dti_history")
 def _dat_dti_history(query_ast, conn=None):
     """Query mcip_dti_scores via IQE."""
     from tools.db.storage import get_connection
@@ -39,3 +37,7 @@ def _dat_dti_history(query_ast, conn=None):
     finally:
         if conn is None:
             _conn.close()
+
+
+register_collection("dat.events", _dat_events)
+register_collection("dat.dti_history", _dat_dti_history)

@@ -13647,20 +13647,29 @@ Planning rules:
 
         result = {}
         llm_error = None
+        _dbg_path = BASE_DIR / ".tmp" / "ndc_cr_debug.log"
         try:
             from tools.llm.router import LLMRouter
             from tools.llm.provider import LLMRequest
             router = LLMRouter()
             req = LLMRequest(
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=8192,
+                max_tokens=8000,
                 temperature=0.2,
                 skip_injection_scan=True,  # config text is the artifact under review, not an untrusted prompt
                 output_schema={"type": "object"},  # ask Ollama to emit valid JSON when supported
             )
+            with open(_dbg_path, "a", encoding="utf-8") as _df:
+                _df.write(f"[NDC-CR-DEBUG] invoke prompt_len={len(prompt)} max_tokens={req.max_tokens} role={role_key} vendor={vendor}\n")
             resp = router.invoke("ndc_config_review", req)
+            with open(_dbg_path, "a", encoding="utf-8") as _df:
+                _df.write(f"[NDC-CR-DEBUG] resp content_len={len(resp.content or '')} model_id={resp.model_id or 'none'} provider={resp.provider or 'none'} stop={resp.stop_reason or 'none'}\n")
             result = _cr_parse_response(resp.content or "", vendor)
         except Exception as exc:
+            with open(_dbg_path, "a", encoding="utf-8") as _df:
+                _df.write(f"[NDC-CR-DEBUG] exception: {exc}\n")
+                import traceback
+                _df.write(traceback.format_exc())
             logger.warning("Config review LLM error: %s", exc)
             llm_error = str(exc)
             result = _cr_parse_response("", vendor)

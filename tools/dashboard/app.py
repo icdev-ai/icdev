@@ -2387,8 +2387,9 @@ def create_app() -> Flask:
                 return resp
 
             app.add_url_rule("/dat", "dat_page_alias", _dat_page_alias)
+            app.add_url_rule("/mcip", "mcip_page_alias", _dat_page_alias)
             app.add_url_rule("/api/dat/dti", "dat_dti_api", _dat_dti_api)
-            app.logger.info("DAT aliases registered at /dat and /api/dat/dti")
+            app.logger.info("DAT aliases registered at /dat, /mcip, and /api/dat/dti")
         except Exception as _exc:
             app.logger.warning("Strategos blueprint failed to register: %s", _exc)
     else:
@@ -2566,6 +2567,18 @@ def create_app() -> Flask:
         app.logger.info("Stripe webhook blueprint registered at /webhooks/stripe")
     except Exception as _exc:
         app.logger.warning("Stripe webhook blueprint failed to register: %s", _exc)
+
+    # ---- Centralized Logs viewer ----
+    try:
+        from tools.logging.blueprint import create_logs_blueprint as _create_logs_bp
+        _logs_bp = _create_logs_bp()
+        if _logs_bp is not None:
+            app.register_blueprint(_logs_bp)
+            app.logger.info("Logs blueprint registered at /logs")
+        else:
+            app.logger.info("Logs blueprint disabled (ICDEV_LOGS_ENABLED=false)")
+    except Exception as _exc:
+        app.logger.warning("Logs blueprint failed to register: %s", _exc)
 
     # ---- Platform Updates (CHANGELOG.md viewer) ----
     try:
@@ -3570,6 +3583,9 @@ def create_app() -> Flask:
         from tools.iqe.executor import execute_query
 
         _CANVAS_MAP = _REGISTRY.get_iqe_mapping()
+        # Supplement with app.py-registered canvases not in component_registry.yaml
+        _CANVAS_MAP.setdefault("updates", ("tools.iqe.adapters.updates", ["updates.releases"]))
+        _CANVAS_MAP.setdefault("logs", ("tools.iqe.adapters.logs", ["logs.entries", "logs.errors"]))
 
         data = flask_request.get_json(silent=True) or {}
         question = (data.get("question") or "").strip()
@@ -11114,7 +11130,7 @@ def create_app() -> Flask:
             CONTENT_TYPE_LATEST as _PROM_CT,
         )
 
-        wire_flask_metrics = _wire_metrics  # expose for tests
+        _wire_metrics(app)
 
         @app.route("/metrics", methods=["GET"])
         def prometheus_metrics():

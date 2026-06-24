@@ -574,7 +574,7 @@ def _lookup_kb_ids(conn, titles: list[str]) -> list[str]:
     ids = []
     for title in titles:
         row = conn.execute(
-            "SELECT id FROM proposal_knowledge_base WHERE title = ? AND created_by = 'icdev_kb_seed' AND status = 'active'",
+            "SELECT id FROM proposal_knowledge_base WHERE title = %s AND created_by = 'icdev_kb_seed' AND status = 'active'",
             (title,),
         ).fetchone()
         if row:
@@ -584,7 +584,7 @@ def _lookup_kb_ids(conn, titles: list[str]) -> list[str]:
 
 def _update_section_description(conn, section_id: str, text: str) -> None:
     conn.execute(
-        "UPDATE proposal_sections SET description = ?, updated_at = ? WHERE id = ?",
+        "UPDATE proposal_sections SET description = %s, updated_at = %s WHERE id = %s",
         (text, _utcnow_iso(), section_id),
     )
 
@@ -605,7 +605,7 @@ def _insert_draft(
             id, section_id, opportunity_id, draft_content, draft_method,
             capability_ids, knowledge_block_ids, confidence_score, status,
             created_at, updated_at, classification
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (
             draft_id,

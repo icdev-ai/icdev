@@ -1,0 +1,7 @@
+canvas: mcip
+queries:
+  - "Show all diplomatic activity events"
+  - "Show dti history for the last 48 hours"
+  - "Show events with high tension signal"
+  - "Show diplomatic events from cable traffic source"
+  - "Show recent dti scores ordered by computed_at"

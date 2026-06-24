@@ -200,7 +200,7 @@ def _user_role(collection_id: str, user_id: str) -> str:
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT role FROM dic_team_access WHERE collection_id = ? AND user_id = ? LIMIT 1",
+            "SELECT role FROM dic_team_access WHERE collection_id = %s AND user_id = %s LIMIT 1",
             (collection_id, user_id),
         ).fetchone()
         if row:
@@ -235,7 +235,7 @@ def _role_badge(role: str) -> str:
 def _collection_id_from_doc(doc_id: str) -> str | None:
     conn = _conn()
     try:
-        row = conn.execute("SELECT collection_id FROM dic_documents WHERE doc_id = ? LIMIT 1", (doc_id,)).fetchone()
+        row = conn.execute("SELECT collection_id FROM dic_documents WHERE doc_id = %s LIMIT 1", (doc_id,)).fetchone()
         if row:
             return row[0] if hasattr(row, "__getitem__") else row["collection_id"]
     except Exception:
@@ -249,7 +249,7 @@ def _collection_id_from_version(version_id: str) -> str | None:
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT d.collection_id FROM dic_versions v JOIN dic_documents d ON d.doc_id = v.doc_id WHERE v.version_id = ? LIMIT 1",
+            "SELECT d.collection_id FROM dic_versions v JOIN dic_documents d ON d.doc_id = v.doc_id WHERE v.version_id = %s LIMIT 1",
             (version_id,),
         ).fetchone()
         if row:
@@ -265,7 +265,7 @@ def _collection_id_from_section(section_id: str) -> str | None:
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT d.collection_id FROM dic_sections s JOIN dic_documents d ON d.doc_id = s.doc_id WHERE s.section_id = ? LIMIT 1",
+            "SELECT d.collection_id FROM dic_sections s JOIN dic_documents d ON d.doc_id = s.doc_id WHERE s.section_id = %s LIMIT 1",
             (section_id,),
         ).fetchone()
         if row:
@@ -297,14 +297,14 @@ def collections():
         for c in cols:
             try:
                 doc_count_row = conn.execute(
-                    "SELECT COUNT(*) FROM dic_documents WHERE collection_id = ?", (c["collection_id"],)
+                    "SELECT COUNT(*) FROM dic_documents WHERE collection_id = %s", (c["collection_id"],)
                 ).fetchone()
                 c["doc_count"] = doc_count_row[0] if doc_count_row else 0
             except Exception:
                 c["doc_count"] = 0
             try:
                 team_row = conn.execute(
-                    "SELECT COUNT(*) FROM dic_team_access WHERE collection_id = ?", (c["collection_id"],)
+                    "SELECT COUNT(*) FROM dic_team_access WHERE collection_id = %s", (c["collection_id"],)
                 ).fetchone()
                 c["team_size"] = team_row[0] if team_row else 0
             except Exception:
@@ -613,7 +613,7 @@ def api_ingest():
         conn = _conn()
         conn.execute(
             "INSERT INTO dic_ingest_jobs (job_id, filename, collection_id, status, tenant_id) "
-            "VALUES (?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s)",
             (job_id, filename, collection_id, "queued", tenant_id),
         )
         conn.commit()
@@ -633,7 +633,7 @@ def api_ingest():
                 try:
                     c = _conn()
                     c.execute(
-                        "UPDATE dic_ingest_jobs SET status=?, stage_detail=?, updated_at=? WHERE job_id=?",
+                        "UPDATE dic_ingest_jobs SET status=%s, stage_detail=%s, updated_at=%s WHERE job_id=%s",
                         (stage, detail, _now(), job_id),
                     )
                     c.commit()
@@ -668,8 +668,8 @@ def api_ingest():
             try:
                 c = _conn()
                 c.execute(
-                    "UPDATE dic_ingest_jobs SET status='done', doc_id=?, chunks_total=?, "
-                    "chunks_done=?, errors_json=?, updated_at=? WHERE job_id=?",
+                    "UPDATE dic_ingest_jobs SET status='done', doc_id=%s, chunks_total=%s, "
+                    "chunks_done=%s, errors_json=%s, updated_at=%s WHERE job_id=%s",
                     (outcome.doc_id, outcome.chunks, outcome.chunks_embedded,
                      json.dumps(outcome.errors), _now(), job_id),
                 )
@@ -685,7 +685,7 @@ def api_ingest():
             try:
                 c = _conn()
                 c.execute(
-                    "UPDATE dic_ingest_jobs SET status='error', stage_detail=?, updated_at=? WHERE job_id=?",
+                    "UPDATE dic_ingest_jobs SET status='error', stage_detail=%s, updated_at=%s WHERE job_id=%s",
                     (str(exc), _now(), job_id),
                 )
                 c.commit()
@@ -832,13 +832,13 @@ def api_kg_explore():
             terms = _extract_terms(query)
             if not terms or not coll_id:
                 return []
-            like = " OR ".join(["LOWER(rc.content) LIKE LOWER(?)"] * len(terms))
+            like = " OR ".join(["LOWER(rc.content) LIKE LOWER(%s)"] * len(terms))
             params = [coll_id] + [f"%{t}%" for t in terms]
             cur = conn.execute(
                 "SELECT DISTINCT rc.id FROM rag_chunks rc "
                 "JOIN dic_chunk_links l ON l.rag_chunk_id = rc.id "
                 "JOIN dic_documents d ON d.doc_id = l.doc_id "
-                f"WHERE d.collection_id = ? AND ({like}) "
+                f"WHERE d.collection_id = %s AND ({like}) "
                 "LIMIT 50",
                 tuple(params),
             )
@@ -1092,7 +1092,7 @@ def api_provenance(chunk_id: str):
     try:
         # Look up chunk — PG uses 'id' (text), SQLite may use 'chunk_id'
         cur = conn.execute(
-            "SELECT content, content_hash, source_id, classification FROM rag_chunks WHERE id = ?",
+            "SELECT content, content_hash, source_id, classification FROM rag_chunks WHERE id = %s",
             (chunk_id,),
         )
         row = cur.fetchone()
@@ -1107,7 +1107,7 @@ def api_provenance(chunk_id: str):
 
         # Look up doc linkage
         cur2 = conn.execute(
-            "SELECT doc_id, collection_id, page, section FROM dic_chunk_links WHERE rag_chunk_id = ?",
+            "SELECT doc_id, collection_id, page, section FROM dic_chunk_links WHERE rag_chunk_id = %s",
             (chunk_id,),
         )
         link = cur2.fetchone()
@@ -1565,7 +1565,7 @@ def api_collections_create():
     try:
         conn.execute(
             "INSERT INTO dic_collections (collection_id, name, description, classification, tenant_id) "
-            "VALUES (?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s)",
             (collection_id, name, data.get("description", ""), data.get("classification", classification), tenant_id),
         )
         conn.commit()
@@ -1600,7 +1600,7 @@ def api_team_add(collection_id):
     conn = _conn()
     try:
         conn.execute(
-            "INSERT INTO dic_team_access (access_id, collection_id, user_id, role, tenant_id, classification) VALUES (?,?,?,?,?,?)",
+            "INSERT INTO dic_team_access (access_id, collection_id, user_id, role, tenant_id, classification) VALUES (%s,%s,%s,%s,%s,%s)",
             (access_id, collection_id, user_id, role, tenant_id, classification or "CUI"),
         )
         conn.commit()
@@ -1630,7 +1630,7 @@ def api_collection_documents(collection_id):
             try:
                 ver = conn.execute(
                     "SELECT version_id, status, origin, version_no FROM dic_versions "
-                    "WHERE doc_id = ? ORDER BY version_no DESC LIMIT 1",
+                    "WHERE doc_id = %s ORDER BY version_no DESC LIMIT 1",
                     (r["doc_id"],),
                 ).fetchone()
                 if ver:
@@ -1638,7 +1638,7 @@ def api_collection_documents(collection_id):
                     r["latest_status"] = ver[1] if hasattr(ver, "__getitem__") else ver["status"]
                     r["latest_origin"] = ver[2] if hasattr(ver, "__getitem__") else ver["origin"]
                     r["version_count"] = conn.execute(
-                        "SELECT COUNT(*) FROM dic_versions WHERE doc_id = ?",
+                        "SELECT COUNT(*) FROM dic_versions WHERE doc_id = %s",
                         (r["doc_id"],),
                     ).fetchone()[0]
                 else:
@@ -1653,7 +1653,7 @@ def api_collection_documents(collection_id):
                 r["version_count"] = 0
             try:
                 chunk_row = conn.execute(
-                    "SELECT COUNT(*) FROM dic_chunk_links WHERE doc_id = ?",
+                    "SELECT COUNT(*) FROM dic_chunk_links WHERE doc_id = %s",
                     (r["doc_id"],),
                 ).fetchone()
                 r["chunk_count"] = chunk_row[0] if chunk_row else 0
@@ -1689,7 +1689,7 @@ def _record_review_note(item_id: str, item_type: str, note_text: str, reviewer_i
         note_id = f"note_{hashlib.sha256(f'{item_id}:{_now()}'.encode()).hexdigest()[:16]}"
         conn.execute(
             "INSERT INTO dic_review_notes (note_id, item_id, item_type, note_text, reviewer_id, created_at) "
-            "VALUES (?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s)",
             (note_id, item_id, item_type, note_text, reviewer_id, _now()),
         )
         conn.commit()
@@ -1722,7 +1722,7 @@ def api_review_assign(item_id):
             table, pk = "dic_sections", "section_id"
         else:
             table, pk = "dic_ssp_fragments", "fragment_id"
-        conn.execute(f"UPDATE {table} SET assigned_to = ? WHERE {pk} = ?", (assigned_to, item_id))  # nosec B608 — table/pk from ternary constants, not user input
+        conn.execute(f"UPDATE {table} SET assigned_to = %s WHERE {pk} = %s", (assigned_to, item_id))  # nosec B608 — table/pk from ternary constants, not user input
         conn.commit()
         return jsonify({"status": "assigned", "item_id": item_id, "assigned_to": assigned_to})
     except Exception as exc:
@@ -1749,7 +1749,7 @@ def api_review_revise(item_id):
     try:
         if item_type == "version":
             conn.execute(
-                "UPDATE dic_versions SET status='needs_revision', review_notes=? WHERE version_id=?",
+                "UPDATE dic_versions SET status='needs_revision', review_notes=%s WHERE version_id=%s",
                 (note, item_id),
             )
         else:
@@ -1758,7 +1758,7 @@ def api_review_revise(item_id):
                 request_revision(item_id, reviewed_by=reviewer)
             except Exception:
                 conn.execute(
-                    "UPDATE dic_ssp_fragments SET status='needs_revision', reviewed_by=?, reviewed_at=? WHERE fragment_id=?",
+                    "UPDATE dic_ssp_fragments SET status='needs_revision', reviewed_by=%s, reviewed_at=%s WHERE fragment_id=%s",
                     (reviewer, _now(), item_id),
                 )
         conn.commit()
@@ -1789,7 +1789,7 @@ def api_review_approve(item_id):
     try:
         if item_type == "version":
             conn.execute(
-                "UPDATE dic_versions SET status='approved' WHERE version_id=?", (item_id,)
+                "UPDATE dic_versions SET status='approved' WHERE version_id=%s", (item_id,)
             )
         else:
             # Try ACOIC approve helper first.
@@ -1798,7 +1798,7 @@ def api_review_approve(item_id):
                 approve_fragment(item_id, reviewed_by=reviewer)
             except Exception:
                 conn.execute(
-                    "UPDATE dic_ssp_fragments SET status='approved', reviewed_by=?, reviewed_at=? WHERE fragment_id=?",
+                    "UPDATE dic_ssp_fragments SET status='approved', reviewed_by=%s, reviewed_at=%s WHERE fragment_id=%s",
                     (reviewer, _now(), item_id),
                 )
         conn.commit()
@@ -1829,7 +1829,7 @@ def api_review_reject(item_id):
     try:
         if item_type == "version":
             conn.execute(
-                "UPDATE dic_versions SET status='rejected' WHERE version_id=?", (item_id,)
+                "UPDATE dic_versions SET status='rejected' WHERE version_id=%s", (item_id,)
             )
         else:
             try:
@@ -1837,7 +1837,7 @@ def api_review_reject(item_id):
                 reject_fragment(item_id, reviewed_by=reviewer)
             except Exception:
                 conn.execute(
-                    "UPDATE dic_ssp_fragments SET status='rejected', reviewed_by=?, reviewed_at=? WHERE fragment_id=?",
+                    "UPDATE dic_ssp_fragments SET status='rejected', reviewed_by=%s, reviewed_at=%s WHERE fragment_id=%s",
                     (reviewer, _now(), item_id),
                 )
         conn.commit()
@@ -1868,7 +1868,7 @@ def api_section_lock_acquire(section_id: str):
     _c = _conn()
     try:
         doc_row = _c.execute(
-            "SELECT doc_id FROM dic_sections WHERE section_id = ? LIMIT 1", (section_id,)
+            "SELECT doc_id FROM dic_sections WHERE section_id = %s LIMIT 1", (section_id,)
         ).fetchone()
         doc_id = doc_row["doc_id"] if doc_row else ""
     finally:
@@ -1969,7 +1969,7 @@ def api_section_annotations_create(section_id: str):
     try:
         _ensure_dic_annotations(conn)
         doc_row = conn.execute(
-            "SELECT doc_id FROM dic_sections WHERE section_id = ? LIMIT 1", (section_id,)
+            "SELECT doc_id FROM dic_sections WHERE section_id = %s LIMIT 1", (section_id,)
         ).fetchone()
         doc_id = doc_row[0] if doc_row else ""
         ann_id = f"ann_{uuid.uuid4().hex[:16]}"
@@ -1979,14 +1979,14 @@ def api_section_annotations_create(section_id: str):
             """INSERT INTO dic_section_annotations
                (ann_id, section_id, doc_id, selected_text, category, comment,
                 author, status, classification, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (ann_id, section_id, doc_id,
              (data.get("selected_text") or "").strip(),
              category, comment, author, "open", "CUI", now, now),
         )
         conn.commit()
         row = dict(conn.execute(
-            "SELECT * FROM dic_section_annotations WHERE ann_id = ?", (ann_id,)
+            "SELECT * FROM dic_section_annotations WHERE ann_id = %s", (ann_id,)
         ).fetchone())
         return jsonify(row), 201
     except Exception as exc:
@@ -2010,14 +2010,14 @@ def api_annotation_update(ann_id: str):
     conn = _conn()
     try:
         _ensure_dic_annotations(conn)
-        set_clause = ", ".join(f"{k} = ?" for k in updates)
+        set_clause = ", ".join(f"{k} = %s" for k in updates)
         conn.execute(
-            f"UPDATE dic_section_annotations SET {set_clause} WHERE ann_id = ?",
+            f"UPDATE dic_section_annotations SET {set_clause} WHERE ann_id = %s",
             [*updates.values(), ann_id],
         )
         conn.commit()
         row = conn.execute(
-            "SELECT * FROM dic_section_annotations WHERE ann_id = ?", (ann_id,)
+            "SELECT * FROM dic_section_annotations WHERE ann_id = %s", (ann_id,)
         ).fetchone()
         if not row:
             return jsonify({"error": "not found"}), 404
@@ -2033,7 +2033,7 @@ def api_annotation_delete(ann_id: str):
     conn = _conn()
     try:
         _ensure_dic_annotations(conn)
-        conn.execute("DELETE FROM dic_section_annotations WHERE ann_id = ?", (ann_id,))
+        conn.execute("DELETE FROM dic_section_annotations WHERE ann_id = %s", (ann_id,))
         conn.commit()
         return jsonify({"deleted": ann_id})
     except Exception as exc:
@@ -2055,7 +2055,7 @@ def api_section_approve(section_id):
     conn = _conn()
     try:
         conn.execute(
-            "UPDATE dic_sections SET status='approved', reviewed_by=?, reviewed_at=? WHERE section_id=?",
+            "UPDATE dic_sections SET status='approved', reviewed_by=%s, reviewed_at=%s WHERE section_id=%s",
             (reviewer, _now(), section_id),
         )
         conn.commit()
@@ -2079,7 +2079,7 @@ def api_section_reject(section_id):
     conn = _conn()
     try:
         conn.execute(
-            "UPDATE dic_sections SET status='rejected', reviewed_by=?, reviewed_at=? WHERE section_id=?",
+            "UPDATE dic_sections SET status='rejected', reviewed_by=%s, reviewed_at=%s WHERE section_id=%s",
             (reviewer, _now(), section_id),
         )
         conn.commit()
@@ -2103,7 +2103,7 @@ def api_section_revise(section_id):
     conn = _conn()
     try:
         conn.execute(
-            "UPDATE dic_sections SET status='needs_revision', reviewed_by=?, reviewed_at=? WHERE section_id=?",
+            "UPDATE dic_sections SET status='needs_revision', reviewed_by=%s, reviewed_at=%s WHERE section_id=%s",
             (reviewer, _now(), section_id),
         )
         conn.commit()
@@ -2129,7 +2129,7 @@ def api_section_update_content(section_id):
     try:
         # Capture before-content for edit history + conflict detection
         before_row = conn.execute(
-            "SELECT content FROM dic_sections WHERE section_id = ? LIMIT 1", (section_id,)
+            "SELECT content FROM dic_sections WHERE section_id = %s LIMIT 1", (section_id,)
         ).fetchone()
         before_content = (dict(before_row).get("content") or "") if before_row else ""
 
@@ -2146,7 +2146,7 @@ def api_section_update_content(section_id):
                 }), 409
 
         conn.execute(
-            "UPDATE dic_sections SET content = ?, status = ?, origin = ?, created_at = ? WHERE section_id = ?",
+            "UPDATE dic_sections SET content = %s, status = %s, origin = %s, created_at = %s WHERE section_id = %s",
             (content, "draft", "human_authored", _now(), section_id),
         )
         conn.commit()
@@ -2240,7 +2240,7 @@ def api_template_instantiate(template_id):
                 (doc_id, collection_id, source_id, filename, filepath,
                  content_type, provider, title, byte_size, content_sha256,
                  page_count, created_at, tenant_id, classification)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 doc_id, collection_id, doc_id, f"{template_id}-template.md", "",
@@ -2253,7 +2253,7 @@ def api_template_instantiate(template_id):
             INSERT OR REPLACE INTO dic_versions
                 (version_id, doc_id, version_no, origin, status,
                  content_sha256, created_at, created_by, tenant_id, classification)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 version_id, doc_id, 1, "template", "draft",
@@ -2267,7 +2267,7 @@ def api_template_instantiate(template_id):
                 INSERT OR REPLACE INTO dic_sections
                     (section_id, version_id, doc_id, heading, content,
                      citations_json, status, origin, created_at, created_by, tenant_id, classification)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     section_id, version_id, doc_id, heading, "",
@@ -2384,7 +2384,7 @@ def api_section_style_check(section_id: str):
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT heading, content FROM dic_sections WHERE section_id = ? LIMIT 1",
+            "SELECT heading, content FROM dic_sections WHERE section_id = %s LIMIT 1",
             (section_id,),
         ).fetchone()
         if not row:
@@ -2823,12 +2823,12 @@ def api_suggestion_accept(suggestion_id: str):
     conn = _conn()
     try:
         before_row = conn.execute(
-            "SELECT content FROM dic_sections WHERE section_id = ? LIMIT 1", (section_id,)
+            "SELECT content FROM dic_sections WHERE section_id = %s LIMIT 1", (section_id,)
         ).fetchone()
         before_content = (dict(before_row).get("content") or "") if before_row else ""
 
         conn.execute(
-            "UPDATE dic_sections SET content = ?, status = ?, origin = ?, created_at = ? WHERE section_id = ?",
+            "UPDATE dic_sections SET content = %s, status = %s, origin = %s, created_at = %s WHERE section_id = %s",
             (suggested_content, "draft", "ai_generated", _now(), section_id),
         )
         conn.commit()
@@ -2928,7 +2928,7 @@ def api_section_suggest(section_id: str):
     try:
         conn = _conn()
         cur = conn.execute(
-            "SELECT content FROM dic_sections WHERE section_id = ? LIMIT 1",
+            "SELECT content FROM dic_sections WHERE section_id = %s LIMIT 1",
             (section_id,),
         )
         row = cur.fetchone()
@@ -3460,7 +3460,7 @@ def api_output_detail(output_id: str):
     try:
         row = conn.execute(
             "SELECT id, output_type, content_json, provider, status, created_at "
-            "FROM dic_generated_outputs WHERE id = ? AND tenant_id = ?",
+            "FROM dic_generated_outputs WHERE id = %s AND tenant_id = %s",
             (output_id, tenant_id),
         ).fetchone()
     finally:
@@ -3500,7 +3500,7 @@ def api_generate_tasks():
     try:
         row = conn.execute(
             "SELECT output_type, content_json FROM dic_generated_outputs "
-            "WHERE id = ? AND tenant_id = ?",
+            "WHERE id = %s AND tenant_id = %s",
             (output_id, tenant_id),
         ).fetchone()
     finally:
@@ -3588,7 +3588,7 @@ def api_generate_slides():
     try:
         row = conn.execute(
             "SELECT output_type, content_json FROM dic_generated_outputs "
-            "WHERE id = ? AND tenant_id = ?",
+            "WHERE id = %s AND tenant_id = %s",
             (output_id, tenant_id),
         ).fetchone()
     finally:
@@ -3671,7 +3671,7 @@ def api_generate_slides():
         try:
             cur = sconn.execute(
                 "INSERT INTO slides_decks (title, deck_type, theme, status, source_types) "
-                "VALUES (?, ?, ?, 'running', ?) RETURNING deck_id",
+                "VALUES (%s, %s, %s, 'running', %s) RETURNING deck_id",
                 (deck_title, "executive_overview", theme, json.dumps(["dic"])),
             )
             row2 = cur.fetchone()
@@ -3685,15 +3685,15 @@ def api_generate_slides():
             pptx_path = pptx_builder.build(slide_dicts, theme=theme, title=deck_title)
             now_iso = _dt.now(_tz.utc).isoformat()
             sconn.execute(
-                "UPDATE slides_decks SET status='completed', slide_count=?, pptx_path=?, "
-                "completed_at=? WHERE deck_id=?",
+                "UPDATE slides_decks SET status='completed', slide_count=%s, pptx_path=%s, "
+                "completed_at=%s WHERE deck_id=%s",
                 (len(slide_dicts), pptx_path, now_iso, deck_id),
             )
             for i, sd in enumerate(slide_dicts):
                 sconn.execute(
                     "INSERT INTO slides_slides "
                     "(deck_id, position, slide_type, title, bullets, speaker_notes) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
                     (
                         deck_id, i + 1,
                         sd.get("slide_type", "content"),
@@ -3706,7 +3706,7 @@ def api_generate_slides():
         except Exception as exc:
             try:
                 sconn.execute(
-                    "UPDATE slides_decks SET status='failed', error_message=? WHERE deck_id=?",
+                    "UPDATE slides_decks SET status='failed', error_message=%s WHERE deck_id=%s",
                     (str(exc), deck_id),
                 )
                 sconn.commit()
@@ -3749,7 +3749,7 @@ def api_generate_roadmap():
     try:
         row = conn.execute(
             "SELECT output_type, content_json FROM dic_generated_outputs "
-            "WHERE id = ? AND tenant_id = ?",
+            "WHERE id = %s AND tenant_id = %s",
             (output_id, tenant_id),
         ).fetchone()
     finally:
@@ -3861,7 +3861,7 @@ def api_attach_coworker(collection_id):
                 )"""
             )
             conn.execute(
-                "INSERT INTO coworker_dic_contexts (id, instance_id, collection_id) VALUES (?, NULL, ?)",
+                "INSERT INTO coworker_dic_contexts (id, instance_id, collection_id) VALUES (%s, NULL, %s)",
                 (_uuid.uuid4().hex, collection_id),
             )
             conn.commit()
