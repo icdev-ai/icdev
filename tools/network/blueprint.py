@@ -13600,16 +13600,13 @@ Planning rules:
         conn = get_connection()
         try:
             conn.execute(
-                "INSERT INTO nc_config_reviews (id, title, vendor, role_key, answers_json, config_text_hash, status, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (review_id, title, vendor, role_key, answers_json, _cr_config_hash(config_text), "draft", created_at, created_at),
+                "INSERT INTO nc_config_reviews (id, title, vendor, role_key, answers_json, config_text_hash, config_text, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (review_id, title, vendor, role_key, answers_json, _cr_config_hash(config_text), config_text, "draft", created_at, created_at),
             )
             conn.commit()
         finally:
             conn.close()
-
-        # Store the raw config in session for now (too large for DB in some cases).
-        session[f"nc_config_review_text_{review_id}"] = config_text
 
         prompts = _cr_generate_prompts(role_key, vendor)
         _audit("CONFIG_REVIEW_CREATED", "config_review", review_id, f"vendor={vendor}, role={role_key}")
@@ -13630,15 +13627,14 @@ Planning rules:
         answers = data.get("answers", {})
         selected_prompt_title = data.get("prompt_title", "")
 
-        session_key = f"nc_config_review_text_{review_id}"
-        config_text = session.get(session_key, "")
-        if not config_text:
-            return jsonify({"error": "Review session expired or not found"}), 404
-
         conn = get_connection()
         try:
             row = conn.execute("SELECT * FROM nc_config_reviews WHERE id=?", (review_id,)).fetchone()
             if not row:
+                conn.close()
+                return jsonify({"error": "Review not found"}), 404
+            config_text = _row_to_dict(row).get("config_text", "") or ""
+            if not config_text:
                 conn.close()
                 return jsonify({"error": "Review not found"}), 404
             review = _row_to_dict(row)

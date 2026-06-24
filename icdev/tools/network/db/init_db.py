@@ -14051,6 +14051,8 @@ def init_db():
             ("nc_migration_phases", "properties_json", "TEXT DEFAULT '{}'"),
             # NDC↔Migration integration: traffic flow ↔ phase link
             ("nc_traffic_flows", "phase_id", "TEXT"),
+            # Config review: store raw config text in DB (was Flask session — cookie 4KB limit broke large configs)
+            ("nc_config_reviews", "config_text", "TEXT DEFAULT ''"),
             # Partner registry: add partner_id + approval columns to nc_peering_agreements
             ("nc_peering_agreements", "partner_id", "TEXT"),
             ("nc_peering_agreements", "approver_name", "TEXT DEFAULT ''"),
