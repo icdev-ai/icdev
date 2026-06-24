@@ -1006,3 +1006,9 @@
 | Teams Connector | tools\databridge\connectors\teams_connector.py | Auto-registered: connectors/teams_connector.py | --json | JSON |
 | Llm Http Auth | tools\ai_augmentation\implementations\llm_http_auth.py | Auto-registered: implementations/llm_http_auth.py | --json | JSON |
 | Stig Nlp Extractor | tools\ai_augmentation\agent_readiness\pillars\stig_nlp_extractor.py | Auto-registered: pillars/stig_nlp_extractor.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Diagram Analysis | tools\network\diagram_analysis.py | Auto-registered: network/diagram_analysis.py | --json | JSON |

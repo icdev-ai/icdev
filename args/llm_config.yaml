@@ -800,6 +800,7 @@ redaction:
     - pulse_rewrite
     - wg_rewrite
     - narrative_generation
+    - ndc_config_review  # config text is the analyzed artifact; redaction breaks JSON schema keys like "remediation"
 
 two_tier:
   enabled: true

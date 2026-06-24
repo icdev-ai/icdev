@@ -55,6 +55,9 @@ _COLLECTIONS = [
     "network.ai_decisions",
     "network.partners",
     "network.agreements_expiring",
+    "network.diagram_uploads",
+    "network.diagram_analyses",
+    "network.diagram_findings",
 ]
 
 
@@ -158,6 +161,17 @@ class NDCAdapter(IQEAdapter):
                 "WHERE status='operational' AND contract_end != '' AND contract_end <= date('now', '+90 days') "
                 "ORDER BY contract_end ASC",
             )
+        elif collection == "network.diagram_uploads":
+            rows = _fetch(conn, "SELECT * FROM nc_diagram_uploads ORDER BY uploaded_at DESC")
+        elif collection == "network.diagram_analyses":
+            rows = _fetch(conn, "SELECT * FROM nc_diagram_analyses ORDER BY created_at DESC")
+        elif collection == "network.diagram_findings":
+            sql = (
+                "SELECT f.*, a.industry, a.topology_mode FROM nc_diagram_findings f "
+                "JOIN nc_diagram_analyses a ON a.id = f.analysis_id "
+                "ORDER BY f.created_at DESC"
+            )
+            rows = _fetch(conn, sql)
         else:
             raise ValueError(
                 f"NDCAdapter: unknown collection {collection!r}. "

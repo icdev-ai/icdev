@@ -13653,9 +13653,10 @@ Planning rules:
             router = LLMRouter()
             req = LLMRequest(
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=4096,
+                max_tokens=8192,
                 temperature=0.2,
                 skip_injection_scan=True,  # config text is the artifact under review, not an untrusted prompt
+                output_schema={"type": "object"},  # ask Ollama to emit valid JSON when supported
             )
             resp = router.invoke("ndc_config_review", req)
             result = _cr_parse_response(resp.content or "", vendor)
@@ -13818,6 +13819,239 @@ Planning rules:
         except Exception as exc:
             logger.warning("Network IQE query error: %s", exc)
             return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+
+    # ── Diagram Analysis ─────────────────────────────────────────────────────
+    try:
+        from tools.network.diagram_analysis import (
+            detect_format as _da_detect_format,
+            run_analysis as _da_run_analysis,
+            generate_drawio_export as _da_generate_drawio_export,
+            compute_file_hash as _da_compute_file_hash,
+            save_findings as _da_save_findings,
+            parse_drawio_file as _da_parse_drawio_file,
+            get_pdf_page_count as _da_pdf_page_count,
+            UPLOAD_DIR as _DA_UPLOAD_DIR,
+            EXPORT_DIR as _DA_EXPORT_DIR,
+        )
+        from tools.network.constants import DIAGRAM_ANALYSIS_INDUSTRIES as _DA_INDUSTRIES
+        _DA_AVAILABLE = True
+    except ImportError as _da_err:
+        logger.warning("diagram_analysis module unavailable: %s", _da_err)
+        _DA_AVAILABLE = False
+
+    if _DA_AVAILABLE:
+        @bp.route("/diagram-analysis")
+        @nc_login_required
+        def nc_diagram_analysis_page():
+            """Diagram Analysis landing page."""
+            return render_template(
+                "network/diagram_analysis.html",
+                industries=_DA_INDUSTRIES,
+            )
+
+        @bp.route("/api/diagram-upload", methods=["POST"])
+        @nc_login_required
+        def nc_api_diagram_upload():
+            """Upload a diagram file (PNG/JPG/PDF/draw.io/DOCX) and create an upload record."""
+            from werkzeug.utils import secure_filename as _sfn
+
+            if "file" not in request.files:
+                return jsonify({"error": "No file provided"}), 400
+            f = request.files["file"]
+            if not f.filename:
+                return jsonify({"error": "Empty filename"}), 400
+
+            safe_name = _sfn(f.filename)
+            file_bytes = f.read()
+            fmt = _da_detect_format(safe_name, file_bytes)
+            if fmt == "unknown":
+                return jsonify({"error": f"Unsupported file format: {safe_name}"}), 400
+
+            _DA_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+            upload_id = f"da-{_uuid.uuid4().hex[:12]}"
+            file_path = _DA_UPLOAD_DIR / f"{upload_id}_{safe_name}"
+            file_path.write_bytes(file_bytes)
+
+            file_hash = _da_compute_file_hash(file_bytes)
+            page_count = 1
+            if fmt == "pdf":
+                page_count = _da_pdf_page_count(file_path)
+
+            topology_id = request.form.get("topology_id") or None
+
+            conn = get_connection()
+            try:
+                conn.execute(
+                    "INSERT INTO nc_diagram_uploads "
+                    "(id, filename, format, file_path, file_hash, page_count, topology_id) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (upload_id, safe_name, fmt, str(file_path), file_hash, page_count, topology_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+
+            _audit("DIAGRAM_UPLOADED", "diagram_upload", upload_id, f"format={fmt}, pages={page_count}")
+            return jsonify({
+                "upload_id": upload_id,
+                "filename": safe_name,
+                "format": fmt,
+                "page_count": page_count,
+            }), 201
+
+        @bp.route("/api/diagram-analysis/<upload_id>/analyze", methods=["POST"])
+        @nc_login_required
+        def nc_api_analyze_diagram(upload_id):
+            """Run AI diagram analysis for an uploaded diagram."""
+            data = request.get_json(silent=True) or {}
+            industry = data.get("industry", "commercial")
+            if industry not in _DA_INDUSTRIES:
+                return jsonify({"error": f"Unknown industry: {industry}"}), 400
+
+            analysis_id = f"dax-{_uuid.uuid4().hex[:12]}"
+            conn = get_connection()
+            try:
+                conn.execute(
+                    "INSERT INTO nc_diagram_analyses (id, upload_id, industry, status) "
+                    "VALUES (?, ?, ?, 'running')",
+                    (analysis_id, upload_id, industry),
+                )
+                conn.commit()
+
+                result = _da_run_analysis(upload_id, industry, conn)
+                cloud_ctx = result.get("cloud_context", {})
+                tabs = result.get("tabs", {})
+
+                conn.execute(
+                    "UPDATE nc_diagram_analyses SET status='done', result_json=?, "
+                    "cloud_providers_json=?, topology_mode=?, updated_at=CURRENT_TIMESTAMP "
+                    "WHERE id=?",
+                    (
+                        json.dumps(tabs),
+                        json.dumps(cloud_ctx.get("providers", [])),
+                        cloud_ctx.get("mode", "unknown"),
+                        analysis_id,
+                    ),
+                )
+                _da_save_findings(conn, analysis_id, tabs)
+                conn.commit()
+                _audit("DIAGRAM_ANALYZED", "diagram_analysis", analysis_id, f"industry={industry}, mode={cloud_ctx.get('mode','unknown')}")
+                return jsonify({
+                    "analysis_id": analysis_id,
+                    "status": "done",
+                    "cloud_context": cloud_ctx,
+                    "tabs": tabs,
+                }), 200
+
+            except Exception as exc:
+                logger.error("Diagram analysis error: %s", exc)
+                try:
+                    conn.execute(
+                        "UPDATE nc_diagram_analyses SET status='error', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                        (analysis_id,),
+                    )
+                    conn.commit()
+                except Exception:
+                    pass
+                return jsonify({"error": str(exc), "analysis_id": analysis_id}), 500
+            finally:
+                conn.close()
+
+        @bp.route("/api/diagram-analysis/<analysis_id>", methods=["GET"])
+        @nc_login_required
+        def nc_api_get_diagram_analysis(analysis_id):
+            """Retrieve a persisted diagram analysis and its findings."""
+            conn = get_connection()
+            try:
+                row = conn.execute(
+                    "SELECT * FROM nc_diagram_analyses WHERE id=?", (analysis_id,)
+                ).fetchone()
+                if not row:
+                    return jsonify({"error": "Analysis not found"}), 404
+                ana = dict(row)
+                ana["tabs"] = json.loads(ana.get("result_json") or "{}")
+                ana["cloud_providers"] = json.loads(ana.get("cloud_providers_json") or "[]")
+                findings = [
+                    dict(r) for r in conn.execute(
+                        "SELECT * FROM nc_diagram_findings WHERE analysis_id=? ORDER BY "
+                        "CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
+                        "WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END",
+                        (analysis_id,),
+                    ).fetchall()
+                ]
+            finally:
+                conn.close()
+            return jsonify({"analysis": ana, "findings": findings}), 200
+
+        @bp.route("/api/diagram-analysis/<analysis_id>/export-drawio", methods=["POST"])
+        @nc_login_required
+        def nc_api_export_diagram_drawio(analysis_id):
+            """Generate and stream an annotated draw.io XML file."""
+            from flask import Response as _Resp
+
+            conn = get_connection()
+            try:
+                row = conn.execute(
+                    "SELECT * FROM nc_diagram_analyses WHERE id=?", (analysis_id,)
+                ).fetchone()
+                if not row:
+                    return jsonify({"error": "Analysis not found"}), 404
+                ana = dict(row)
+                upload_row = conn.execute(
+                    "SELECT * FROM nc_diagram_uploads WHERE id=?", (ana["upload_id"],)
+                ).fetchone()
+            finally:
+                conn.close()
+
+            tabs = json.loads(ana.get("result_json") or "{}")
+            cloud_ctx = {
+                "providers": json.loads(ana.get("cloud_providers_json") or "[]"),
+                "mode": ana.get("topology_mode", "unknown"),
+                "has_on_prem": False,
+            }
+
+            original_graph = None
+            filename_stem = "diagram"
+            if upload_row:
+                up = dict(upload_row)
+                filename_stem = up.get("filename", "diagram").rsplit(".", 1)[0]
+                if up.get("format") == "drawio":
+                    try:
+                        parsed = _da_parse_drawio_file(Path(up["file_path"]))
+                        original_graph = parsed["graph"]
+                    except Exception:
+                        pass
+
+            drawio_xml = _da_generate_drawio_export(
+                {"tabs": tabs},
+                original_graph,
+                cloud_ctx,
+                ana.get("industry", "commercial"),
+                filename_stem,
+            )
+
+            _DA_EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+            export_id = f"dex-{_uuid.uuid4().hex[:8]}"
+            export_path = _DA_EXPORT_DIR / f"{export_id}_{filename_stem}_remediated.drawio"
+            export_path.write_text(drawio_xml, encoding="utf-8")
+
+            conn2 = get_connection()
+            try:
+                conn2.execute(
+                    "INSERT INTO nc_diagram_exports (id, analysis_id, export_type, file_path) "
+                    "VALUES (?, ?, 'drawio', ?)",
+                    (export_id, analysis_id, str(export_path)),
+                )
+                conn2.commit()
+            finally:
+                conn2.close()
+
+            _audit("DIAGRAM_EXPORT_DRAWIO", "diagram_export", analysis_id, f"export_id={export_id}")
+            return _Resp(
+                drawio_xml,
+                mimetype="application/xml",
+                headers={"Content-Disposition": f'attachment; filename="{filename_stem}_remediated.drawio"'},
+            )
 
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))

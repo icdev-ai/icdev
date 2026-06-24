@@ -1,0 +1,545 @@
+{% extends "network/base.html" %}
+{% block title %}NDC — Diagram Analysis{% endblock %}
+
+{% block head %}
+<style>
+  .da-container { max-width: 1400px; margin: 2rem auto; padding: 0 1rem; color: #eaeaea; }
+  .da-header { margin-bottom: 1.5rem; }
+  .da-header h1 { font-size: 1.6rem; margin: 0 0 0.25rem; }
+  .da-header p { color: #999; margin: 0; font-size: 0.9rem; }
+
+  .da-panel { background: #1a1a2e; border: 1px solid #333; border-radius: 8px; padding: 1.25rem; margin-bottom: 1.5rem; }
+  .da-panel h2 { font-size: 1.1rem; margin: 0 0 1rem; color: #e0e0e0; }
+
+  /* Upload Dropzone */
+  .da-dropzone { border: 2px dashed #5a5a7a; border-radius: 8px; padding: 2.5rem 1.5rem; text-align: center; cursor: pointer; background: #0f0f1a; transition: border-color 0.2s, background 0.2s; position: relative; }
+  .da-dropzone.drag-over { border-color: #7c3aed; background: #1e1e3a; }
+  .da-dropzone input[type=file] { display: none; }
+  .da-dropzone-icon { font-size: 2.5rem; margin-bottom: 0.5rem; }
+  .da-dropzone-text { font-size: 1rem; color: #ccc; }
+  .da-dropzone-sub { font-size: 0.8rem; color: #777; margin-top: 0.25rem; }
+  .da-upload-preview { display: none; align-items: center; gap: 1rem; padding: 0.75rem 1rem; background: #1e1e3a; border: 1px solid #444; border-radius: 6px; margin-top: 0.75rem; }
+  .da-upload-preview .da-file-name { font-weight: 600; font-size: 0.95rem; }
+  .da-upload-preview .da-file-meta { font-size: 0.8rem; color: #999; }
+  .da-badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; background: #2a1f4a; color: #c4b5fd; border: 1px solid #7c3aed; margin-left: 0.5rem; }
+
+  /* Industry selector */
+  .da-industry-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.75rem; }
+  .da-industry-card { background: #1e1e3a; border: 1px solid #333; border-radius: 6px; padding: 0.9rem 1rem; cursor: pointer; transition: border-color 0.2s, background 0.2s; }
+  .da-industry-card:hover { border-color: #7c3aed; }
+  .da-industry-card.active { border-color: #7c3aed; background: #2a1f4a; }
+  .da-industry-card .da-ind-label { font-weight: 600; font-size: 0.9rem; }
+  .da-industry-card .da-ind-frameworks { font-size: 0.75rem; color: #888; margin-top: 0.25rem; }
+
+  /* Analyze button */
+  .da-analyze-btn { display: block; width: 100%; padding: 0.85rem 1.5rem; font-size: 1rem; font-weight: 700; background: linear-gradient(135deg, #7c3aed, #4f46e5); color: #fff; border: none; border-radius: 8px; cursor: pointer; transition: opacity 0.2s; }
+  .da-analyze-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .da-analyze-btn:not(:disabled):hover { opacity: 0.85; }
+
+  /* Progress */
+  .da-progress { display: none; text-align: center; padding: 2rem; }
+  .da-spinner { width: 48px; height: 48px; border: 4px solid #333; border-top-color: #7c3aed; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 1rem; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .da-progress-text { color: #aaa; font-size: 0.9rem; }
+
+  /* Cloud context banner */
+  .da-cloud-banner { display: none; align-items: center; gap: 0.75rem; flex-wrap: wrap; padding: 0.65rem 1rem; background: #0f1a2e; border: 1px solid #1e3a5a; border-radius: 6px; margin-bottom: 1rem; font-size: 0.85rem; }
+  .da-cloud-banner .da-mode-badge { padding: 0.25rem 0.6rem; border-radius: 4px; font-size: 0.75rem; font-weight: 700; }
+  .da-cloud-banner .da-mode-badge.on-prem { background: #1f2937; color: #9ca3af; }
+  .da-cloud-banner .da-mode-badge.cloud-native { background: #064e3b; color: #6ee7b7; }
+  .da-cloud-banner .da-mode-badge.hybrid { background: #3b2d08; color: #fcd34d; }
+  .da-cloud-banner .da-mode-badge.multi-cloud { background: #1e1b4b; color: #a5b4fc; }
+  .da-provider-tag { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.75rem; border: 1px solid #2a4a8a; background: #0a1a3a; color: #93c5fd; }
+
+  /* Tabs */
+  .da-tabs { display: flex; gap: 0; border-bottom: 1px solid #333; margin-bottom: 1rem; overflow-x: auto; }
+  .da-tab { padding: 0.65rem 1.25rem; cursor: pointer; font-size: 0.9rem; color: #999; border-bottom: 2px solid transparent; white-space: nowrap; transition: color 0.15s, border-color 0.15s; }
+  .da-tab:hover { color: #ddd; }
+  .da-tab.active { color: #c4b5fd; border-bottom-color: #7c3aed; }
+  .da-tab-panel { display: none; }
+  .da-tab-panel.active { display: block; }
+
+  /* Results hidden by default */
+  .da-results { display: none; }
+
+  /* Finding tables */
+  .da-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .da-table th { text-align: left; padding: 0.5rem 0.75rem; color: #aaa; border-bottom: 1px solid #2a2a4a; font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+  .da-table td { padding: 0.6rem 0.75rem; border-bottom: 1px solid #1e1e3a; vertical-align: top; }
+  .da-table tr:last-child td { border-bottom: none; }
+  .da-table tr:hover td { background: #1e1e3a; }
+
+  /* Severity badges */
+  .sev { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.73rem; font-weight: 700; text-transform: uppercase; }
+  .sev-critical { background: #450a0a; color: #fca5a5; border: 1px solid #7f1d1d; }
+  .sev-high     { background: #431407; color: #fdba74; border: 1px solid #9a3412; }
+  .sev-medium   { background: #422006; color: #fcd34d; border: 1px solid #92400e; }
+  .sev-low      { background: #14532d; color: #86efac; border: 1px solid #166534; }
+  .sev-info     { background: #1e3a5a; color: #93c5fd; border: 1px solid #1d4ed8; }
+
+  /* Compliance status */
+  .status-gap     { color: #fca5a5; font-weight: 600; }
+  .status-partial { color: #fcd34d; font-weight: 600; }
+  .status-met     { color: #86efac; font-weight: 600; }
+
+  /* Remediate priority */
+  .prio-badge { display: inline-block; width: 24px; height: 24px; border-radius: 50%; text-align: center; line-height: 24px; font-size: 0.75rem; font-weight: 700; }
+  .prio-1 { background: #7f1d1d; color: #fca5a5; }
+  .prio-2 { background: #9a3412; color: #fdba74; }
+  .prio-3 { background: #92400e; color: #fcd34d; }
+  .prio-n { background: #1e3a5a; color: #93c5fd; }
+
+  /* References pill */
+  .ref-pill { display: inline-block; padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.7rem; font-family: monospace; border: 1px solid #444; background: #1a1a2e; margin: 0.1rem; color: #c4b5fd; }
+
+  /* Overview cards */
+  .da-overview-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 0.75rem; }
+  .da-overview-card { background: #0f0f1a; border: 1px solid #2a2a4a; border-radius: 6px; padding: 0.9rem; }
+  .da-overview-card .ov-title { font-weight: 600; font-size: 0.9rem; margin-bottom: 0.4rem; }
+  .da-overview-card .ov-detail { font-size: 0.82rem; color: #bbb; }
+
+  /* Inventory cards */
+  .da-inv-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.75rem; }
+  .da-inv-card { background: #0f0f1a; border: 1px solid #2a2a4a; border-radius: 6px; padding: 0.85rem; }
+  .da-inv-card .inv-comp { font-weight: 700; font-size: 0.95rem; }
+  .da-inv-card .inv-type { font-size: 0.78rem; color: #888; margin: 0.15rem 0; }
+  .da-inv-card .inv-count { font-size: 0.8rem; color: #aaa; }
+
+  /* Topology zones */
+  .da-topo-zone { background: #0f0f1a; border-left: 3px solid #7c3aed; border-radius: 0 6px 6px 0; padding: 0.85rem 1rem; margin-bottom: 0.75rem; }
+  .da-topo-zone .tz-name { font-weight: 700; font-size: 0.95rem; }
+  .da-topo-zone .tz-detail { font-size: 0.82rem; color: #bbb; margin-top: 0.25rem; }
+  .da-topo-zone .tz-meta { display: flex; gap: 0.75rem; margin-top: 0.5rem; flex-wrap: wrap; }
+  .da-topo-zone .tz-meta span { font-size: 0.75rem; color: #999; }
+
+  /* Export / NDC buttons */
+  .da-action-row { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1rem; }
+  .da-action-btn { padding: 0.6rem 1.1rem; border-radius: 6px; font-size: 0.85rem; font-weight: 600; cursor: pointer; border: 1px solid; transition: opacity 0.15s; }
+  .da-action-btn:hover { opacity: 0.8; }
+  .da-btn-export { background: #1e3a5a; color: #93c5fd; border-color: #1d4ed8; }
+  .da-btn-ndc    { background: #1f2937; color: #d1d5db; border-color: #374151; }
+
+  /* Empty state */
+  .da-empty { text-align: center; padding: 2.5rem 1rem; color: #666; }
+  .da-empty-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="da-container">
+  <div class="da-header">
+    <h1>&#128247; Diagram Analysis</h1>
+    <p>Upload a network diagram and get a comprehensive AI-powered analysis with cloud-aware, industry-specific compliance review.</p>
+  </div>
+
+  <!-- Upload Panel -->
+  <div class="da-panel">
+    <h2>1. Upload Diagram</h2>
+    <div class="da-dropzone" id="daDropzone">
+      <input type="file" id="daFileInput" accept=".png,.jpg,.jpeg,.pdf,.drawio,.xml,.docx">
+      <div class="da-dropzone-icon">&#128444;</div>
+      <div class="da-dropzone-text">Drag &amp; drop or <strong>click to browse</strong></div>
+      <div class="da-dropzone-sub">PNG &bull; JPG &bull; PDF (multi-page) &bull; draw.io / XML &bull; DOCX</div>
+    </div>
+    <div class="da-upload-preview" id="daUploadPreview">
+      <span style="font-size:1.5rem;">&#128196;</span>
+      <div>
+        <div class="da-file-name" id="daFileName">—</div>
+        <div class="da-file-meta" id="daFileMeta">—</div>
+      </div>
+      <span class="da-badge" id="daFormatBadge">—</span>
+    </div>
+  </div>
+
+  <!-- Industry Selector -->
+  <div class="da-panel">
+    <h2>2. Select Industry / Compliance Profile</h2>
+    <div class="da-industry-grid" id="daIndustryGrid">
+      {% for key, info in industries.items() %}
+      <div class="da-industry-card {% if key == 'commercial' %}active{% endif %}"
+           data-industry="{{ key }}" onclick="daSelectIndustry('{{ key }}')">
+        <div class="da-ind-label">{{ info.label }}</div>
+        <div class="da-ind-frameworks">{{ info.frameworks[:4] | join(' · ') }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Analyze Button -->
+  <button class="da-analyze-btn" id="daAnalyzeBtn" disabled onclick="daRunAnalysis()">
+    &#128269; Analyze Diagram
+  </button>
+
+  <!-- Progress Indicator -->
+  <div class="da-progress" id="daProgress">
+    <div class="da-spinner"></div>
+    <div class="da-progress-text" id="daProgressText">Uploading diagram…</div>
+  </div>
+
+  <!-- Results Section -->
+  <div class="da-results" id="daResults">
+
+    <!-- Cloud Context Banner -->
+    <div class="da-cloud-banner" id="daCloudBanner">
+      <strong style="color:#ccc;">Detected:</strong>
+      <span id="daModeBadge" class="da-mode-badge on-prem">on-prem</span>
+      <span id="daProviderTags"></span>
+      <span id="daConnectivityInfo" style="color:#777;font-size:0.8rem;"></span>
+    </div>
+
+    <!-- Action buttons (always visible in results) -->
+    <div class="da-action-row">
+      <button class="da-action-btn da-btn-export" onclick="daExportDrawio()">
+        &#128229; Export Remediated Diagram (.drawio)
+      </button>
+      <a class="da-action-btn da-btn-ndc" id="daOpenNDC" href="/network" target="_blank">
+        &#128279; Open in NDC Canvas
+      </a>
+    </div>
+
+    <!-- Analysis Tabs -->
+    <div class="da-panel" style="margin-top:1rem;">
+      <div class="da-tabs" id="daTabs">
+        <div class="da-tab active" data-tab="overview"   onclick="daShowTab('overview')">&#128203; Overview</div>
+        <div class="da-tab"        data-tab="inventory"  onclick="daShowTab('inventory')">&#128230; Inventory</div>
+        <div class="da-tab"        data-tab="topology"   onclick="daShowTab('topology')">&#127760; Topology</div>
+        <div class="da-tab"        data-tab="security"   onclick="daShowTab('security')">&#128737; Security</div>
+        <div class="da-tab"        data-tab="compliance" onclick="daShowTab('compliance')">&#10003; Compliance</div>
+        <div class="da-tab"        data-tab="remediate"  onclick="daShowTab('remediate')">&#128295; Remediate</div>
+      </div>
+
+      <!-- Overview -->
+      <div class="da-tab-panel active" id="da-panel-overview">
+        <div class="da-overview-grid" id="daOverviewGrid">
+          <div class="da-empty"><div class="da-empty-icon">&#128203;</div>Run an analysis to see the overview.</div>
+        </div>
+      </div>
+
+      <!-- Inventory -->
+      <div class="da-tab-panel" id="da-panel-inventory">
+        <div class="da-inv-grid" id="daInventoryGrid">
+          <div class="da-empty"><div class="da-empty-icon">&#128230;</div>No inventory data yet.</div>
+        </div>
+      </div>
+
+      <!-- Topology -->
+      <div class="da-tab-panel" id="da-panel-topology">
+        <div id="daTopologyList">
+          <div class="da-empty"><div class="da-empty-icon">&#127760;</div>No topology data yet.</div>
+        </div>
+      </div>
+
+      <!-- Security -->
+      <div class="da-tab-panel" id="da-panel-security">
+        <div id="daConfigReviewLink" style="display:none;margin-bottom:0.75rem;padding:0.6rem 1rem;background:#1a1a2e;border:1px solid #333;border-radius:6px;font-size:0.85rem;">
+          &#128279; Related config review findings:
+          <a href="#" id="daConfigReviewHref" style="color:#c4b5fd;">View Config Review</a>
+        </div>
+        <table class="da-table" id="daSecurityTable">
+          <thead><tr><th>Severity</th><th>Finding</th><th>Affected Component</th></tr></thead>
+          <tbody id="daSecurityBody">
+            <tr><td colspan="3" class="da-empty"><div class="da-empty-icon">&#128737;</div>No security findings yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Compliance -->
+      <div class="da-tab-panel" id="da-panel-compliance">
+        <table class="da-table" id="daComplianceTable">
+          <thead><tr><th>Control ID</th><th>Framework</th><th>Status</th><th>Detail</th><th>Severity</th></tr></thead>
+          <tbody id="daComplianceBody">
+            <tr><td colspan="5" class="da-empty"><div class="da-empty-icon">&#10003;</div>No compliance data yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Remediate -->
+      <div class="da-tab-panel" id="da-panel-remediate">
+        <div id="daRemediateList">
+          <div class="da-empty"><div class="da-empty-icon">&#128295;</div>No remediation items yet.</div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /da-results -->
+</div><!-- /da-container -->
+
+{% include "includes/iqe_query_widget.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let daUploadId = null;
+  let daAnalysisId = null;
+  let daSelectedIndustry = 'commercial';
+  let daSelectedFile = null;
+
+  // ── File Upload UI ────────────────────────────────────────────────────────
+  const dropzone = document.getElementById('daDropzone');
+  const fileInput = document.getElementById('daFileInput');
+
+  dropzone.addEventListener('click', () => fileInput.click());
+  dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag-over'); });
+  dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag-over'));
+  dropzone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropzone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) daSetFile(file);
+  });
+  fileInput.addEventListener('change', e => {
+    if (e.target.files[0]) daSetFile(e.target.files[0]);
+  });
+
+  function daSetFile(file) {
+    daSelectedFile = file;
+    document.getElementById('daFileName').textContent = file.name;
+    const ext = file.name.split('.').pop().toLowerCase();
+    const fmtMap = { png:'PNG', jpg:'JPG', jpeg:'JPG', pdf:'PDF', drawio:'draw.io', xml:'draw.io', docx:'DOCX' };
+    document.getElementById('daFormatBadge').textContent = fmtMap[ext] || ext.toUpperCase();
+    const sizeKB = (file.size / 1024).toFixed(1);
+    document.getElementById('daFileMeta').textContent = `${sizeKB} KB`;
+    document.getElementById('daUploadPreview').style.display = 'flex';
+    daCheckReady();
+  }
+
+  // ── Industry Selection ────────────────────────────────────────────────────
+  function daSelectIndustry(key) {
+    document.querySelectorAll('.da-industry-card').forEach(c => c.classList.remove('active'));
+    document.querySelector(`.da-industry-card[data-industry="${key}"]`).classList.add('active');
+    daSelectedIndustry = key;
+    daCheckReady();
+  }
+
+  function daCheckReady() {
+    document.getElementById('daAnalyzeBtn').disabled = !(daSelectedFile && daSelectedIndustry);
+  }
+
+  // ── Analysis Pipeline ─────────────────────────────────────────────────────
+  async function daRunAnalysis() {
+    if (!daSelectedFile) return;
+
+    // Hide results, show progress
+    document.getElementById('daResults').style.display = 'none';
+    document.getElementById('daProgress').style.display = 'block';
+    document.getElementById('daProgressText').textContent = 'Uploading diagram…';
+    document.getElementById('daAnalyzeBtn').disabled = true;
+
+    try {
+      // Step 1: Upload
+      const formData = new FormData();
+      formData.append('file', daSelectedFile);
+      const upResp = await fetch('/api/diagram-upload', { method: 'POST', body: formData });
+      if (!upResp.ok) {
+        const err = await upResp.json();
+        throw new Error(err.error || 'Upload failed');
+      }
+      const upData = await upResp.json();
+      daUploadId = upData.upload_id;
+      document.getElementById('daProgressText').textContent =
+        `Analyzing ${upData.filename} (${upData.page_count} page${upData.page_count > 1 ? 's' : ''})…`;
+
+      // Step 2: Analyze
+      const anaResp = await fetch(`/api/diagram-analysis/${daUploadId}/analyze`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ industry: daSelectedIndustry }),
+      });
+      if (!anaResp.ok) {
+        const err = await anaResp.json();
+        throw new Error(err.error || 'Analysis failed');
+      }
+      const anaData = await anaResp.json();
+      daAnalysisId = anaData.analysis_id;
+
+      // Render results
+      daRenderResults(anaData);
+
+    } catch (err) {
+      document.getElementById('daProgress').style.display = 'none';
+      document.getElementById('daAnalyzeBtn').disabled = false;
+      alert('Error: ' + err.message);
+    }
+  }
+
+  // ── Render Results ────────────────────────────────────────────────────────
+  function daRenderResults(data) {
+    document.getElementById('daProgress').style.display = 'none';
+    document.getElementById('daAnalyzeBtn').disabled = false;
+    document.getElementById('daResults').style.display = 'block';
+
+    const ctx = data.cloud_context || {};
+    const tabs = data.tabs || {};
+
+    // Cloud context banner
+    const banner = document.getElementById('daCloudBanner');
+    banner.style.display = 'flex';
+    const modeBadge = document.getElementById('daModeBadge');
+    const mode = ctx.mode || 'on_prem';
+    const modeClass = { cloud_native: 'cloud-native', hybrid: 'hybrid', multi_cloud: 'multi-cloud', on_prem: 'on-prem' }[mode] || 'on-prem';
+    const modeLabel = { cloud_native: '☁ Cloud-Native', hybrid: '⚡ Hybrid', multi_cloud: '🌐 Multi-Cloud', on_prem: '🏠 On-Prem' }[mode] || mode;
+    modeBadge.className = `da-mode-badge ${modeClass}`;
+    modeBadge.textContent = modeLabel;
+
+    const providerTags = document.getElementById('daProviderTags');
+    const providerIcons = { aws: '🟠 AWS', azure: '🔵 Azure', gcp: '🟢 GCP', oci: '🔴 OCI', ibm: '🟣 IBM' };
+    providerTags.innerHTML = (ctx.providers || []).map(p =>
+      `<span class="da-provider-tag">${providerIcons[p] || p}</span>`
+    ).join('');
+
+    const conn = (ctx.connectivity || []);
+    if (conn.length) {
+      document.getElementById('daConnectivityInfo').textContent = 'Links: ' + conn.join(', ');
+    }
+
+    // Render each tab
+    daRenderOverview(tabs.overview || []);
+    daRenderInventory(tabs.inventory || []);
+    daRenderTopology(tabs.topology || []);
+    daRenderSecurity(tabs.security || []);
+    daRenderCompliance(tabs.compliance || []);
+    daRenderRemediate(tabs.remediate || []);
+
+    // Default to overview tab
+    daShowTab('overview');
+  }
+
+  function daRenderOverview(items) {
+    const grid = document.getElementById('daOverviewGrid');
+    if (!items.length) {
+      grid.innerHTML = '<div class="da-empty"><div class="da-empty-icon">📋</div>No overview data returned.</div>';
+      return;
+    }
+    grid.innerHTML = items.map(i => `
+      <div class="da-overview-card">
+        <div class="ov-title">${escHtml(i.title || '')}</div>
+        <div class="ov-detail">${escHtml(i.detail || '')}</div>
+        ${i.severity && i.severity !== 'info' ? `<div style="margin-top:0.4rem;"><span class="sev sev-${i.severity}">${i.severity}</span></div>` : ''}
+      </div>`).join('');
+  }
+
+  function daRenderInventory(items) {
+    const grid = document.getElementById('daInventoryGrid');
+    if (!items.length) {
+      grid.innerHTML = '<div class="da-empty"><div class="da-empty-icon">📦</div>No inventory data returned.</div>';
+      return;
+    }
+    grid.innerHTML = items.map(i => `
+      <div class="da-inv-card">
+        <div class="inv-comp">${escHtml(i.component || '')}</div>
+        <div class="inv-type">${escHtml(i.type || '')}${i.provider && i.provider !== 'unknown' ? ` &bull; ${escHtml(i.provider)}` : ''}</div>
+        ${i.count ? `<div class="inv-count">Count: ${i.count}</div>` : ''}
+        ${i.detail ? `<div style="font-size:0.78rem;color:#999;margin-top:0.25rem;">${escHtml(i.detail)}</div>` : ''}
+      </div>`).join('');
+  }
+
+  function daRenderTopology(items) {
+    const list = document.getElementById('daTopologyList');
+    if (!items.length) {
+      list.innerHTML = '<div class="da-empty"><div class="da-empty-icon">🌐</div>No topology data returned.</div>';
+      return;
+    }
+    const trustColor = { untrusted: '#7f1d1d', dmz: '#92400e', trusted: '#14532d', restricted: '#1e1b4b' };
+    list.innerHTML = items.map(z => `
+      <div class="da-topo-zone" style="border-left-color:${trustColor[z.trust_level] || '#7c3aed'};">
+        <div class="tz-name">${escHtml(z.zone || 'Zone')}</div>
+        <div class="tz-detail">${escHtml(z.description || '')}</div>
+        <div class="tz-meta">
+          ${z.trust_level ? `<span>Trust: ${escHtml(z.trust_level)}</span>` : ''}
+          ${z.cloud_provider && z.cloud_provider !== 'unknown' ? `<span>Provider: ${escHtml(z.cloud_provider)}</span>` : ''}
+          ${z.connectivity ? `<span>Links: ${escHtml(z.connectivity)}</span>` : ''}
+          ${z.severity && z.severity !== 'info' ? `<span class="sev sev-${z.severity}">${z.severity}</span>` : ''}
+        </div>
+      </div>`).join('');
+  }
+
+  function daRenderSecurity(items) {
+    const tbody = document.getElementById('daSecurityBody');
+    if (!items.length) {
+      tbody.innerHTML = '<tr><td colspan="3" class="da-empty"><div class="da-empty-icon">🛡</div>No security findings.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = items.map(f => `
+      <tr>
+        <td><span class="sev sev-${f.severity || 'info'}">${escHtml(f.severity || 'info')}</span></td>
+        <td>
+          <strong>${escHtml(f.title || '')}</strong>
+          ${f.detail ? `<div style="font-size:0.8rem;color:#aaa;margin-top:0.2rem;">${escHtml(f.detail)}</div>` : ''}
+        </td>
+        <td style="color:#999;font-size:0.82rem;">${escHtml(f.affected_component || '—')}</td>
+      </tr>`).join('');
+  }
+
+  function daRenderCompliance(items) {
+    const tbody = document.getElementById('daComplianceBody');
+    if (!items.length) {
+      tbody.innerHTML = '<tr><td colspan="5" class="da-empty"><div class="da-empty-icon">✓</div>No compliance gaps found.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = items.map(c => `
+      <tr>
+        <td style="font-family:monospace;font-size:0.82rem;">${escHtml(c.control_id || '—')}</td>
+        <td style="color:#aaa;">${escHtml(c.framework || '—')}</td>
+        <td class="status-${c.status || 'gap'}">${escHtml(c.status || 'gap')}</td>
+        <td style="font-size:0.82rem;">${escHtml(c.detail || '')}</td>
+        <td>${c.severity ? `<span class="sev sev-${c.severity}">${c.severity}</span>` : '—'}</td>
+      </tr>`).join('');
+  }
+
+  function daRenderRemediate(items) {
+    const list = document.getElementById('daRemediateList');
+    if (!items.length) {
+      list.innerHTML = '<div class="da-empty"><div class="da-empty-icon">🔧</div>No remediation items.</div>';
+      return;
+    }
+    const sorted = [...items].sort((a, b) => (a.priority || 99) - (b.priority || 99));
+    list.innerHTML = sorted.map((r, i) => {
+      const prioNum = r.priority || (i + 1);
+      const prioClass = prioNum === 1 ? 'prio-1' : prioNum === 2 ? 'prio-2' : prioNum === 3 ? 'prio-3' : 'prio-n';
+      const refs = (r.references || []).map(ref =>
+        `<span class="ref-pill" title="${escHtml(ref.description || '')}">${escHtml(ref.type || '')}:${escHtml(ref.id || '')}</span>`
+      ).join('');
+      return `
+        <div style="display:flex;gap:0.75rem;padding:0.85rem 0;border-bottom:1px solid #1e1e3a;align-items:flex-start;">
+          <span class="prio-badge ${prioClass}">${prioNum}</span>
+          <div style="flex:1;">
+            <div style="font-weight:600;font-size:0.9rem;">${escHtml(r.title || '')}</div>
+            <div style="font-size:0.82rem;color:#bbb;margin-top:0.2rem;">${escHtml(r.detail || '')}</div>
+            ${refs ? `<div style="margin-top:0.4rem;">${refs}</div>` : ''}
+            ${r.effort ? `<div style="font-size:0.75rem;color:#888;margin-top:0.25rem;">Effort: ${escHtml(r.effort)}</div>` : ''}
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  // ── Tab Switching ─────────────────────────────────────────────────────────
+  function daShowTab(name) {
+    document.querySelectorAll('.da-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+    document.querySelectorAll('.da-tab-panel').forEach(p => p.classList.toggle('active', p.id === `da-panel-${name}`));
+  }
+
+  // ── Export draw.io ────────────────────────────────────────────────────────
+  async function daExportDrawio() {
+    if (!daAnalysisId) { alert('Run an analysis first.'); return; }
+    try {
+      const resp = await fetch(`/api/diagram-analysis/${daAnalysisId}/export-drawio`, { method: 'POST' });
+      if (!resp.ok) { const e = await resp.json(); throw new Error(e.error || 'Export failed'); }
+      const blob = await resp.blob();
+      const cd = resp.headers.get('Content-Disposition') || '';
+      const fname = cd.match(/filename="([^"]+)"/)?.[1] || 'diagram_remediated.drawio';
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = fname; a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('Export error: ' + err.message);
+    }
+  }
+
+  // ── Utilities ─────────────────────────────────────────────────────────────
+  function escHtml(str) {
+    const d = document.createElement('div');
+    d.textContent = String(str);
+    return d.innerHTML;
+  }
+</script>
+{% endblock %}

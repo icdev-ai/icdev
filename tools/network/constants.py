@@ -3752,3 +3752,51 @@ CONFIG_REVIEW_QUESTIONS = {
     ],
 }
 
+# ── Diagram Analysis ──────────────────────────────────────────────────────────
+
+DIAGRAM_ANALYSIS_INDUSTRIES = {
+    "dod_il4": {
+        "label": "DoD/IC — IL4 (CUI / FedRAMP High)",
+        "frameworks": ["nist_800_53", "cmmc_level_2", "fedramp_high", "il4", "cnssi_1253", "csa_ccm", "nist_800_144"],
+    },
+    "dod_il5": {
+        "label": "DoD/IC — IL5 (NIPR Secret-Enclave)",
+        "frameworks": ["nist_800_53", "cmmc_level_3", "fedramp_high", "il5", "cnssi_1253", "csa_ccm"],
+    },
+    "dod_il6": {
+        "label": "DoD/IC — IL6 SECRET",
+        "frameworks": ["nist_800_53", "il6", "cnssi_1253", "nsa_type1"],
+    },
+    "healthcare": {
+        "label": "Healthcare (HIPAA / HITRUST)",
+        "frameworks": ["hipaa", "hitrust", "nist_800_53", "csa_ccm"],
+    },
+    "financial": {
+        "label": "Financial (PCI-DSS / SOC 2)",
+        "frameworks": ["pci_dss", "soc2", "nist_800_53", "csa_ccm"],
+    },
+    "commercial": {
+        "label": "Commercial / Enterprise (ISO 27001)",
+        "frameworks": ["nist_800_53", "iso_27001", "owasp", "csa_ccm", "nist_800_144"],
+    },
+}
+
+# Cloud provider metadata — keyed to match keyword detection in diagram_analysis.py
+DIAGRAM_CLOUD_PROVIDERS = {
+    "aws":     {"label": "Amazon Web Services", "cis_benchmark": "cis_aws_foundations",   "well_arch": "aws_well_architected"},
+    "azure":   {"label": "Microsoft Azure",     "cis_benchmark": "cis_azure_foundations", "well_arch": "azure_well_architected"},
+    "gcp":     {"label": "Google Cloud",        "cis_benchmark": "cis_gcp_foundations",   "well_arch": "gcp_cloud_architecture"},
+    "oci":     {"label": "Oracle Cloud",        "cis_benchmark": "cis_oci_foundations",   "well_arch": None},
+    "ibm":     {"label": "IBM Cloud",           "cis_benchmark": None,                    "well_arch": None},
+    "on_prem": {"label": "On-Premises",         "cis_benchmark": None,                    "well_arch": None},
+}
+
+# Topology deployment modes detected from diagram content
+DIAGRAM_TOPOLOGY_MODES = ["cloud_native", "hybrid", "multi_cloud", "on_prem"]
+
+# Analysis output tab categories (used as 'tab' column in nc_diagram_findings)
+DIAGRAM_ANALYSIS_FINDING_CATEGORIES = ["overview", "inventory", "topology", "security", "compliance", "remediate"]
+
+# Accepted upload formats for diagram analysis
+DIAGRAM_UPLOAD_FORMATS = ["png", "jpg", "pdf", "drawio", "docx"]
+
