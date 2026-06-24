@@ -565,7 +565,11 @@ def run_analysis(upload_id: str, industry: str, conn) -> dict:
     7. parse_analysis_response()
     8. Return {tabs, cloud_context, industry}
     """
-    row = conn.execute("SELECT * FROM nc_diagram_uploads WHERE id=%s", (upload_id,)).fetchone()
+    # Use a short-lived connection just for the upload record lookup so the
+    # caller's conn does not sit idle during the potentially long LLM call.
+    from tools.db.storage import get_connection as _gc
+    with _gc() as _rconn:
+        row = _rconn.execute("SELECT * FROM nc_diagram_uploads WHERE id=%s", (upload_id,)).fetchone()
     if not row:
         raise ValueError(f"Upload {upload_id!r} not found")
     upload = dict(row)
