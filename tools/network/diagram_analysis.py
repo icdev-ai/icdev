@@ -6,8 +6,8 @@ and generates an annotated draw.io XML export.
 """
 
 import base64
-import hashlib
 import io
+import zlib
 import json
 import re
 import uuid
@@ -690,7 +690,7 @@ def save_findings(conn, analysis_id: str, tabs: dict) -> None:
 # ── File Hash ─────────────────────────────────────────────────────────────────
 
 def compute_file_hash(file_bytes: bytes) -> str:
-    return hashlib.sha256(file_bytes).hexdigest()
+    return format(zlib.crc32(file_bytes) & 0xFFFFFFFF, "08x")
 
 
 # ── draw.io Export Generator ──────────────────────────────────────────────────
