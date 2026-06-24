@@ -199,7 +199,9 @@ class OllamaProvider(LLMProvider):
             options["temperature"] = request.temperature
 
         max_output = model_config.get("max_output_tokens", 4096)
-        effective_max = min(request.max_tokens, max_output)
+        # Never clamp below a sane minimum; some models return empty content
+        # when num_predict is small relative to the reasoning budget.
+        effective_max = max(min(request.max_tokens, max_output), 256)
         options["num_predict"] = effective_max
 
         if request.stop_sequences:
@@ -322,7 +324,9 @@ class OllamaProvider(LLMProvider):
             options["temperature"] = request.temperature
 
         max_output = model_config.get("max_output_tokens", 4096)
-        effective_max = min(request.max_tokens, max_output)
+        # Never clamp below a sane minimum; some models return empty content
+        # when num_predict is small relative to the reasoning budget.
+        effective_max = max(min(request.max_tokens, max_output), 256)
         options["num_predict"] = effective_max
 
         if request.stop_sequences:

@@ -82,13 +82,12 @@ class StigNlpExtractor:
     def __init__(
         self,
         use_llm: Optional[bool] = None,
-        client: Any = None,
+        client: Any = None,  # kept for backwards-compat; ignored (routed via LLMRouter)
     ) -> None:
         if use_llm is None:
             env_val = os.environ.get("ICDEV_STIG_USE_LLM", "false").lower()
             use_llm = env_val in ("1", "true", "yes")
         self._use_llm = use_llm
-        self._client = client  # may be None; lazily built on first LLM call
 
     # ------------------------------------------------------------------
     # Public API
@@ -106,14 +105,17 @@ class StigNlpExtractor:
         # Truncate to avoid hitting context limits on large files
         excerpt = content[:4000]
         try:
-            client = self._get_client()
-            response = client.messages.create(
+            from tools.llm.router import LLMRouter, LLMRequest
+            router = LLMRouter()
+            req = LLMRequest(
+                function="stig_nlp_extractor",
                 model=_NLP_MODEL,
                 max_tokens=64,
                 system=_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": excerpt}],
             )
-            raw = response.content[0].text.strip()
+            resp = router.invoke("stig_nlp_extractor", req)
+            raw = resp.content.strip()
             parsed = json.loads(raw)
             return {
                 "has_vid": bool(parsed.get("has_vid", False)),
@@ -124,19 +126,3 @@ class StigNlpExtractor:
         except Exception:  # noqa: BLE001 — graceful degradation
             return _regex_extract(content)
 
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
-
-    def _get_client(self) -> Any:
-        if self._client is not None:
-            return self._client
-        try:
-            import anthropic  # optional dep
-            self._client = anthropic.Anthropic()
-            return self._client
-        except Exception as exc:  # noqa: BLE001
-            raise RuntimeError(
-                "Anthropic client unavailable. "
-                "Set ANTHROPIC_API_KEY or pass use_llm=False."
-            ) from exc

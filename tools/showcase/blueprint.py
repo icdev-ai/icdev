@@ -114,7 +114,7 @@ def _get_recent_runs(limit: int = 20) -> list[dict]:
         rows = conn.execute(
             "SELECT run_id, audience, scenarios_json, status, scenarios_passed, "
             "scenarios_total, elapsed_ms, created_at "
-            "FROM showcase_demo_runs ORDER BY created_at DESC LIMIT ?",
+            "FROM showcase_demo_runs ORDER BY created_at DESC LIMIT %s",
             (limit,)
         ).fetchall()
         conn.close()
@@ -145,7 +145,7 @@ def _store_run(run_id: str, audience: str, scenarios, status: str,
             "INSERT INTO showcase_demo_runs "
             "(run_id, audience, scenarios_json, status, result_json, "
             "scenarios_passed, scenarios_total, elapsed_ms, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (run_id, audience, json.dumps(scenarios),
              status, json.dumps(result, default=str),
              passed, total, elapsed_ms,

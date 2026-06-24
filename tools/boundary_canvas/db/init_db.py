@@ -1675,10 +1675,10 @@ def init_db():
         count = cur.fetchone()[0]
         added = 0
         for t in TEMPLATES:
-            cur.execute("SELECT 1 FROM bd_templates WHERE id=?", (t["id"],))
+            cur.execute("SELECT 1 FROM bd_templates WHERE id=%s", (t["id"],))
             if not cur.fetchone():
                 conn.execute(
-                    "INSERT INTO bd_templates (id, name, category, description, graph_json, tags) VALUES (?,?,?,?,?,?)",
+                    "INSERT INTO bd_templates (id, name, category, description, graph_json, tags) VALUES (%s,%s,%s,%s,%s,%s)",
                     (t["id"], t["name"], t["category"], t["description"], t["graph_json"], t["tags"]),
                 )
                 added += 1
@@ -1693,10 +1693,10 @@ def init_db():
         snp_count = cur.fetchone()[0]
         snp_added = 0
         for s in BDC_SNIPPETS:
-            cur.execute("SELECT 1 FROM bd_snippets WHERE id=?", (s["id"],))
+            cur.execute("SELECT 1 FROM bd_snippets WHERE id=%s", (s["id"],))
             if not cur.fetchone():
                 conn.execute(
-                    "INSERT INTO bd_snippets (id, name, category, description, graph_json, tags) VALUES (?,?,?,?,?,?)",
+                    "INSERT INTO bd_snippets (id, name, category, description, graph_json, tags) VALUES (%s,%s,%s,%s,%s,%s)",
                     (s["id"], s["name"], s["category"], s["description"], s["graph_json"], s["tags"]),
                 )
                 snp_added += 1
@@ -1711,12 +1711,12 @@ def init_db():
         rb_count = cur.fetchone()[0]
         rb_added = 0
         for rb in BDC_SEED_RUNBOOKS:
-            cur.execute("SELECT 1 FROM bdc_runbooks WHERE id=?", (rb["id"],))
+            cur.execute("SELECT 1 FROM bdc_runbooks WHERE id=%s", (rb["id"],))
             if not cur.fetchone():
                 conn.execute(
                     "INSERT INTO bdc_runbooks "
                     "(id, title, trigger_event, severity, description, steps_json, owner, classification) "
-                    "VALUES (?,?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         rb["id"],
                         rb["title"],

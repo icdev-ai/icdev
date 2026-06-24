@@ -358,7 +358,7 @@
                     <li><a href="/strategos/hitl">HITL Queue</a></li>
                     <li class="nav-dropdown-divider"></li>
                     <li class="nav-section-label">MCIP</li>
-                    <li><a href="/dat" style="color:#a78bfa;">DAT — Diplomatic Tracker</a></li>
+                    <li><a href="/mcip" style="color:#a78bfa;">DAT — Diplomatic Tracker</a></li>
                     <li class="nav-dropdown-divider"></li>
                     <li><a href="#" onclick="if(typeof openStratChat!=='undefined')openStratChat();return false;" style="color:#f59e0b;font-weight:600;">Intelligence Chat</a></li>
                 </ul>
@@ -817,6 +817,8 @@
             [/^\/foundry/, 'foundry'],
             [/^\/ai-|^\/dashboard\/.*-view/, 'aisg'],
             [/^\/dat/, 'dat'],
+            [/^\/mcip/, 'dat'],
+            [/^\/updates/, 'updates'],
         ];
 
         function detectCanvas() {

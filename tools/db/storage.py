@@ -37,7 +37,7 @@ Configuration:
 Usage:
     from tools.db.storage import get_connection
     conn = get_connection()
-    rows = conn.execute("SELECT * FROM projects WHERE id = ?", (pid,)).fetchall()
+    rows = conn.execute("SELECT * FROM projects WHERE id = %s", (pid,)).fetchall()
     conn.commit()
     conn.close()
 
@@ -683,7 +683,7 @@ def _write_rls_audit(table_name: str, tenant_id: Optional[str]) -> None:
         _ac = _sq.connect(os.environ.get("ICDEV_DB_PATH", DB_PATH), timeout=5)
         _ac.execute(
             "INSERT INTO rls_audit (table_name, action, tenant_id, details, recorded_at)"
-            " VALUES (?, ?, ?, ?, ?)",
+            " VALUES (%s, %s, %s, %s, %s)",
             (table_name, "rls_filter", tenant_id, "{}", datetime.now(timezone.utc).isoformat()),
         )
         _ac.commit()
@@ -701,7 +701,7 @@ def _write_column_audit(table_name: str, role: str, masked_cols: list) -> None:
         _ac = _sq.connect(os.environ.get("ICDEV_DB_PATH", DB_PATH), timeout=5)
         _ac.execute(
             "INSERT INTO column_mask_audit (table_name, role, masked_columns, recorded_at)"
-            " VALUES (?, ?, ?, ?)",
+            " VALUES (%s, %s, %s, %s)",
             (table_name, role, _js.dumps(masked_cols), datetime.now(timezone.utc).isoformat()),
         )
         _ac.commit()

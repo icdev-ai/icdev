@@ -69,7 +69,7 @@ def emit(
             cur = conn.execute(
                 """INSERT INTO ace_events
                    (topic, source_canvas, source_id, payload_json, processed)
-                   VALUES (?, ?, ?, ?, 0)""",
+                   VALUES (%s, %s, %s, %s, 0)""",
                 (topic, source_canvas or "", source_id or "", json.dumps(payload)),
             )
             conn.commit()
@@ -90,7 +90,7 @@ def get_pending(limit: int = 30) -> list[dict[str, Any]]:
             rows = conn.execute(
                 """SELECT id, topic, source_canvas, source_id, payload_json, created_at
                    FROM ace_events WHERE processed = 0
-                   ORDER BY created_at ASC LIMIT ?""",
+                   ORDER BY created_at ASC LIMIT %s""",
                 (limit,),
             ).fetchall()
             return [
@@ -114,7 +114,7 @@ def mark_processed(event_id: int) -> None:
         from icdev.tools.db.storage import get_canvas_connection
         conn = get_canvas_connection(_DB_ENV)
         try:
-            conn.execute("UPDATE ace_events SET processed = 1 WHERE id = ?", (event_id,))
+            conn.execute("UPDATE ace_events SET processed = 1 WHERE id = %s", (event_id,))
             conn.commit()
         finally:
             conn.close()
@@ -136,7 +136,7 @@ def store_result(
             conn.execute(
                 """INSERT INTO ace_event_results
                    (event_id, role_id, instance_id, status)
-                   VALUES (?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s)""",
                 (event_id, role_id, instance_id, status),
             )
             conn.commit()
@@ -157,7 +157,7 @@ def get_recent_results(limit: int = 50) -> list[dict[str, Any]]:
                           r.created_at, e.topic, e.source_canvas, e.payload_json
                    FROM ace_event_results r
                    LEFT JOIN ace_events e ON e.id = r.event_id
-                   ORDER BY r.created_at DESC LIMIT ?""",
+                   ORDER BY r.created_at DESC LIMIT %s""",
                 (limit,),
             ).fetchall()
             return [
