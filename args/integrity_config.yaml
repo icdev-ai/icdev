@@ -152,6 +152,8 @@ known_safe_obfuscation_modules:
   - auth/oidc.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
   - tools/auth/saml.py  # base64.b64decode in process_acs_response: standard SAML 2.0 HTTP POST binding — the IdP always base64-encodes the SAMLResponse XML assertion before POST to the ACS endpoint (SAML 2.0 Bindings §3.5). Decoding is a mandatory protocol step, not obfuscation. Authorized by ecr-sso-02 (SAML 2.0 SP integration via stdlib XML, commit f7cfa8f74).
   - auth/saml.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/network/diagram_analysis.py  # base64.b64decode in parse_drawio_file: draw.io XML embeds raster images in mxCell style attributes as "image=data:<mime>;base64,<data>" (standard draw.io format). Decoding these embedded images is a required step of draw.io file parsing for the Network Diagram Canvas (NDC), not intent concealment. Authorized by Network Diagram Canvas feature (NDC) — draw.io import capability.
+  - network/diagram_analysis.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
 
 # ---------------------------------------------------------------------------
 # Known-safe ICDEV modules that legitimately call importlib.import_module on a
