@@ -210,10 +210,15 @@ class OllamaProvider(LLMProvider):
         if options:
             payload["options"] = options
 
-        # Disable thinking mode when explicitly configured or for qwen3 models.
-        # qwen3 burns all num_predict tokens on reasoning before producing output,
-        # causing timeouts. Configurable via disable_thinking: true in model config.
-        if model_config.get("disable_thinking", False) or "qwen3" in model_id.lower():
+        # Disable thinking mode when explicitly configured, when the model claims it
+        # does not support thinking, or for qwen3 models. Some Ollama endpoints emit
+        # reasoning in a "thinking" field that consumes the num_predict budget and
+        # leaves content empty unless thinking is disabled.
+        if (
+            model_config.get("disable_thinking", False)
+            or not model_config.get("supports_thinking", True)
+            or "qwen3" in model_id.lower()
+        ):
             payload["think"] = False
 
         # Structured output via Ollama's format parameter
@@ -335,8 +340,13 @@ class OllamaProvider(LLMProvider):
         if options:
             payload["options"] = options
 
-        # Disable thinking mode for qwen3+ models (see invoke() comment)
-        if "qwen3" in model_id.lower():
+        # Disable thinking mode when explicitly configured, when the model claims it
+        # does not support thinking, or for qwen3 models (see invoke() comment).
+        if (
+            model_config.get("disable_thinking", False)
+            or not model_config.get("supports_thinking", True)
+            or "qwen3" in model_id.lower()
+        ):
             payload["think"] = False
 
         if request.output_schema and model_config.get("supports_structured_output", False):

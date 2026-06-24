@@ -1,0 +1,15 @@
+{
+  "BaseUrl":             "http://localhost:5050",
+  "BrowserType":         "chromium",
+  "Headless":            false,
+  "TimeoutMs":           10000,
+  "AnalysisTimeoutSec":  180,
+  "RetryTimes":          3,
+  "RetryDelayMs":        500,
+  "ScreenshotDir":       "C:\\AI\\ICDev\\playwright\\screenshots",
+  "ExportDir":           "C:\\AI\\ICDev\\data\\ndc_uploads\\exports",
+  "BrowsersPath":        "C:\\Users\\schuo\\AppData\\Local\\ms-playwright",
+  "JUnitDir":            "C:\\AI\\ICDev\\tests\\psplaywright\\test-results",
+  "DefaultIndustry":     "dod_il4",
+  "DefaultDiagramPath":  "C:\\Users\\schuo\\Downloads\\diagrams\\Figure13_NIPR-SIPR_Customer_Network_Enclave_Topology_Sample.png"
+}
