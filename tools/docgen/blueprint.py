@@ -1,0 +1,500 @@
+# CUI // SP-CTI
+"""IDR — Intelligent Documentation Regeneration — Flask Blueprint.
+
+Routes:
+  GET  /docgen/                             index (session list + new button)
+  GET  /docgen/new                          create session wizard (domain picker)
+  GET  /docgen/<session_id>                 session stepper UI (stages 0-8)
+  GET  /docgen/<session_id>/conflicts       HITL conflict resolution (stage 3)
+  GET  /docgen/<session_id>/review          HITL document review (stage 7)
+
+  POST /docgen/api/sessions                 create session
+  GET  /docgen/api/sessions                 list sessions
+  GET  /docgen/api/sessions/<id>            session detail
+  POST /docgen/api/sessions/<id>/advance    advance to next stage
+  POST /docgen/api/sessions/<id>/uploads    add upload record
+  GET  /docgen/api/sessions/<id>/uploads    list uploads for session
+  POST /docgen/api/sessions/<id>/analyze    trigger Stage 2 analysis for one upload
+  POST /docgen/api/sessions/<id>/reconcile  Stage 3: reconcile diagrams → conflicts
+  GET  /docgen/api/sessions/<id>/conflicts  list conflicts
+  POST /docgen/api/conflicts/<id>/resolve   resolve one conflict (HITL)
+  POST /docgen/api/sessions/<id>/generate   Stage 5: trigger AI doc generation
+  GET  /docgen/api/sessions/<id>/artifacts  list published artifacts
+  POST /docgen/api/iqe-query                IQE natural-language query
+"""
+from __future__ import annotations
+
+import json
+import pathlib
+
+from flask import Blueprint, jsonify, render_template, request
+
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
+
+docgen_bp = Blueprint(
+    "docgen",
+    __name__,
+    url_prefix="/docgen",
+    template_folder="../../tools/dashboard/templates",
+)
+
+
+# ─── Page routes ─────────────────────────────────────────────────────────────
+
+@docgen_bp.route("/")
+def index():
+    from tools.docgen import session_manager as sm
+    from tools.docgen.domain_profiles import list_profiles
+
+    sessions = sm.list_sessions(limit=20)
+    profiles = list_profiles()
+    return render_template(
+        "docgen/index.html",
+        sessions=sessions,
+        profiles=profiles,
+        page_title="Doc Regeneration",
+    )
+
+
+@docgen_bp.route("/new")
+def new_session_page():
+    from tools.docgen.domain_profiles import list_profiles
+
+    domain = request.args.get("domain", "network")
+    from_topo = request.args.get("from_topo")
+    profiles = list_profiles()
+    return render_template(
+        "docgen/index.html",
+        sessions=[],
+        profiles=profiles,
+        preselect_domain=domain,
+        from_topo=from_topo,
+        page_title="New Doc Regeneration",
+    )
+
+
+@docgen_bp.route("/<session_id>")
+def session_detail(session_id: str):
+    from tools.docgen import session_manager as sm
+    from tools.docgen.domain_profiles import get_profile
+
+    session = sm.get_session(session_id)
+    if not session:
+        return render_template("errors/404.html"), 404
+    uploads = sm.list_uploads(session_id)
+    analyses = sm.list_analyses(session_id)
+    artifacts = sm.list_artifacts(session_id)
+    conflicts = sm.list_conflicts(session_id)
+    pending_conflicts = [c for c in conflicts if not c.get("resolved_at")]
+    try:
+        profile = get_profile(session["domain"])
+    except KeyError:
+        profile = {}
+    return render_template(
+        "docgen/index.html",
+        session=session,
+        uploads=uploads,
+        analyses=analyses,
+        artifacts=artifacts,
+        conflicts=conflicts,
+        pending_conflicts=pending_conflicts,
+        profile=profile,
+        page_title=f"IDR — {session.get('title', session_id)}",
+    )
+
+
+@docgen_bp.route("/<session_id>/conflicts")
+def conflicts_page(session_id: str):
+    from tools.docgen import session_manager as sm
+
+    session = sm.get_session(session_id)
+    if not session:
+        return render_template("errors/404.html"), 404
+    conflicts = sm.list_conflicts(session_id, pending_only=False)
+    pending = [c for c in conflicts if not c.get("resolved_at")]
+    resolved = [c for c in conflicts if c.get("resolved_at")]
+    return render_template(
+        "docgen/conflicts.html",
+        session=session,
+        conflicts=conflicts,
+        pending_conflicts=pending,
+        resolved_conflicts=resolved,
+        page_title=f"IDR Conflicts — {session.get('title', session_id)}",
+    )
+
+
+@docgen_bp.route("/<session_id>/review")
+def review_page(session_id: str):
+    from tools.docgen import session_manager as sm
+
+    session = sm.get_session(session_id)
+    if not session:
+        return render_template("errors/404.html"), 404
+    artifacts = sm.list_artifacts(session_id)
+    return render_template(
+        "docgen/review.html",
+        session=session,
+        artifacts=artifacts,
+        page_title=f"IDR Review — {session.get('title', session_id)}",
+    )
+
+
+# ─── API — Sessions ──────────────────────────────────────────────────────────
+
+@docgen_bp.route("/api/sessions", methods=["POST"])
+def api_create_session():
+    from tools.docgen import session_manager as sm
+
+    data = request.get_json(force=True, silent=True) or {}
+    title = (data.get("title") or "").strip()
+    domain = (data.get("domain") or "network").strip()
+    doc_type = (data.get("doc_type") or "runbook").strip()
+    template_id = data.get("template_id")
+    created_by = data.get("created_by") or "dashboard"
+    tenant_id = data.get("tenant_id")
+    classification = data.get("classification", "CUI")
+
+    if not title:
+        return jsonify({"error": "title is required"}), 400
+
+    try:
+        from tools.docgen.domain_profiles import get_profile
+        get_profile(domain)
+    except KeyError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    session = sm.create_session(
+        title=title,
+        domain=domain,
+        doc_type=doc_type,
+        template_id=template_id,
+        created_by=created_by,
+        tenant_id=tenant_id,
+        classification=classification,
+    )
+    return jsonify(session), 201
+
+
+@docgen_bp.route("/api/sessions", methods=["GET"])
+def api_list_sessions():
+    from tools.docgen import session_manager as sm
+
+    domain = request.args.get("domain")
+    limit = min(int(request.args.get("limit", 50)), 200)
+    sessions = sm.list_sessions(domain=domain, limit=limit)
+    return jsonify(sessions)
+
+
+@docgen_bp.route("/api/sessions/<session_id>", methods=["GET"])
+def api_get_session(session_id: str):
+    from tools.docgen import session_manager as sm
+
+    session = sm.get_session(session_id)
+    if not session:
+        return jsonify({"error": "not found"}), 404
+    return jsonify(session)
+
+
+@docgen_bp.route("/api/sessions/<session_id>/advance", methods=["POST"])
+def api_advance_session(session_id: str):
+    from tools.docgen import session_manager as sm
+    from tools.docgen.workflow import advance, stage3_check_gate
+
+    data = request.get_json(force=True, silent=True) or {}
+    to_stage = data.get("stage")
+    if to_stage is None:
+        session = sm.get_session(session_id)
+        if not session:
+            return jsonify({"error": "not found"}), 404
+        to_stage = session["stage"] + 1
+
+    # Gate check for stage 3 → 4 transition
+    if to_stage == 4:
+        if not stage3_check_gate(session_id):
+            pending = sm.pending_conflict_count(session_id)
+            return jsonify({
+                "error": f"Cannot advance: {pending} conflicts pending HITL resolution.",
+                "pending_conflicts": pending,
+            }), 409
+
+    try:
+        updated = advance(session_id, int(to_stage))
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(updated)
+
+
+# ─── API — Uploads ────────────────────────────────────────────────────────────
+
+@docgen_bp.route("/api/sessions/<session_id>/uploads", methods=["POST"])
+def api_add_upload(session_id: str):
+    from tools.docgen import session_manager as sm
+    from tools.docgen.workflow import stage1_ingest_upload, advance
+
+    session = sm.get_session(session_id)
+    if not session:
+        return jsonify({"error": "not found"}), 404
+
+    # Handle multipart file upload or JSON metadata
+    if request.files:
+        file = next(iter(request.files.values()))
+        upload_type = (request.form.get("upload_type") or "doc").strip()
+        safe_name = pathlib.Path(file.filename or "upload").name
+        save_dir = pathlib.Path("data") / "docgen" / "uploads" / session_id
+        save_dir.mkdir(parents=True, exist_ok=True)
+        file_path = str(save_dir / safe_name)
+        file.save(file_path)
+        filename = safe_name
+    else:
+        data = request.get_json(force=True, silent=True) or {}
+        filename = data.get("filename", "")
+        upload_type = data.get("upload_type", "doc")
+        file_path = data.get("file_path")
+
+    upload = sm.add_upload(
+        session_id=session_id,
+        filename=filename,
+        upload_type=upload_type,
+        file_path=file_path,
+    )
+
+    # Automatically ingest into DIC
+    if file_path and pathlib.Path(file_path).exists():
+        upload = stage1_ingest_upload(session_id, upload["id"], file_path) or upload
+
+    # Advance to ingesting if still at setup
+    if session.get("stage", 0) == 0:
+        advance(session_id, 1)
+
+    return jsonify(upload), 201
+
+
+@docgen_bp.route("/api/sessions/<session_id>/uploads", methods=["GET"])
+def api_list_uploads(session_id: str):
+    from tools.docgen import session_manager as sm
+
+    uploads = sm.list_uploads(session_id)
+    return jsonify(uploads)
+
+
+# ─── API — Analysis ───────────────────────────────────────────────────────────
+
+@docgen_bp.route("/api/sessions/<session_id>/analyze", methods=["POST"])
+def api_analyze(session_id: str):
+    from tools.docgen import session_manager as sm
+    from tools.docgen.workflow import stage2_analyze_upload, advance
+
+    data = request.get_json(force=True, silent=True) or {}
+    upload_id = data.get("upload_id")
+
+    session = sm.get_session(session_id)
+    if not session:
+        return jsonify({"error": "not found"}), 404
+    if upload_id:
+        upload = sm.get_upload(upload_id)
+        if not upload:
+            return jsonify({"error": "upload not found"}), 404
+        created = stage2_analyze_upload(session_id, upload_id, upload, session)
+    else:
+        # Analyze all pending uploads
+        created = []
+        for upload in sm.list_uploads(session_id):
+            if upload.get("status") in ("pending", "ingested"):
+                created.extend(
+                    stage2_analyze_upload(session_id, upload["id"], upload, session)
+                )
+
+    # Advance to analyzing if still at ingesting
+    if session.get("stage", 0) <= 1:
+        advance(session_id, 2)
+
+    return jsonify({"analyses_created": len(created), "analyses": created})
+
+
+# ─── API — Reconcile ──────────────────────────────────────────────────────────
+
+@docgen_bp.route("/api/sessions/<session_id>/reconcile", methods=["POST"])
+def api_reconcile(session_id: str):
+    from tools.docgen import session_manager as sm
+    from tools.docgen.reconciler import reconcile
+    from tools.docgen.workflow import advance
+
+    session = sm.get_session(session_id)
+    if not session:
+        return jsonify({"error": "not found"}), 404
+
+    # Gather diagram analyses with their result graphs
+    analyses = sm.list_analyses(session_id)
+    diagram_analyses = [a for a in analyses if a["analysis_type"] == "diagram_analysis"]
+
+    named_graphs: list[tuple[str, dict]] = []
+    for analysis in diagram_analyses:
+        upload = sm.get_upload(analysis["upload_id"])
+        source_name = upload["filename"] if upload else analysis["upload_id"]
+        # Try to load the graph from the NDC analysis result
+        graph = _load_diagram_graph(analysis.get("result_ref_id"))
+        if graph:
+            named_graphs.append((source_name, graph))
+
+    merged = reconcile(
+        session_id=session_id,
+        named_graphs=named_graphs,
+        tenant_id=session.get("tenant_id"),
+    )
+
+    advance(session_id, 3)
+    pending = sm.pending_conflict_count(session_id)
+    return jsonify({
+        "merged": {
+            "node_count": len(merged.get("nodes", [])),
+            "edge_count": len(merged.get("edges", [])),
+            "stitched_hosts": merged.get("_stitched_hosts", []),
+        },
+        "conflicts_recorded": merged.get("_stats", {}).get("conflicts_recorded", 0),
+        "pending_conflicts": pending,
+    })
+
+
+def _load_diagram_graph(result_ref_id: str | None) -> dict | None:
+    """Try to load a diagram analysis graph from NDC nc_diagram_analyses."""
+    if not result_ref_id:
+        return None
+    try:
+        from tools.db.storage import get_connection
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT graph_json FROM nc_diagram_analyses WHERE id=?", (result_ref_id,)
+            ).fetchone()
+        if row and row["graph_json"]:
+            return json.loads(row["graph_json"])
+    except Exception:
+        pass
+    return None
+
+
+# ─── API — Conflicts ──────────────────────────────────────────────────────────
+
+@docgen_bp.route("/api/sessions/<session_id>/conflicts", methods=["GET"])
+def api_list_conflicts(session_id: str):
+    from tools.docgen import session_manager as sm
+
+    pending_only = request.args.get("pending_only", "false").lower() == "true"
+    conflicts = sm.list_conflicts(session_id, pending_only=pending_only)
+    return jsonify(conflicts)
+
+
+@docgen_bp.route("/api/conflicts/<conflict_id>/resolve", methods=["POST"])
+def api_resolve_conflict(conflict_id: str):
+    from tools.docgen import session_manager as sm
+
+    data = request.get_json(force=True, silent=True) or {}
+    resolution = data.get("resolution")
+    resolved_by = data.get("resolved_by", "dashboard")
+    notes = data.get("notes")
+
+    if resolution not in ("a", "b", "manual"):
+        return jsonify({"error": "resolution must be 'a', 'b', or 'manual'"}), 400
+
+    ok = sm.resolve_conflict(conflict_id, resolution, resolved_by, notes)
+    if not ok:
+        return jsonify({"error": "conflict not found or already resolved"}), 404
+    return jsonify({"resolved": True, "conflict_id": conflict_id})
+
+
+# ─── API — Generate ───────────────────────────────────────────────────────────
+
+@docgen_bp.route("/api/sessions/<session_id>/generate", methods=["POST"])
+def api_generate(session_id: str):
+    from tools.docgen import session_manager as sm
+    from tools.docgen.context_builder import build_context
+    from tools.docgen.workflow import stage3_check_gate, advance
+
+    data = request.get_json(force=True, silent=True) or {}
+
+    session = sm.get_session(session_id)
+    if not session:
+        return jsonify({"error": "not found"}), 404
+
+    # Enforce stage 3 gate
+    if not stage3_check_gate(session_id):
+        pending = sm.pending_conflict_count(session_id)
+        return jsonify({
+            "error": "Cannot generate: unresolved conflicts.",
+            "pending_conflicts": pending,
+        }), 409
+
+    uploads = sm.list_uploads(session_id)
+    analyses = sm.list_analyses(session_id)
+    supplemental = data.get("supplemental_text", "")
+
+    context = build_context(
+        session=session,
+        uploads=uploads,
+        analyses=analyses,
+        supplemental_text=supplemental,
+    )
+
+    advance(session_id, 4)
+
+    # Attempt DIC generation
+    doc_id = None
+    try:
+        from tools.document_intelligence.doc_generator import DocGenerator
+
+        gen = DocGenerator()
+        result = gen.generate_document(
+            query=context["query_string"],
+            collection_id=context["session_id"],
+            metadata={"idr_session_id": session_id},
+        )
+        doc_id = result.doc_id if result else None
+        advance(session_id, 5)
+    except ImportError:
+        logger.warning("DIC DocGenerator not available — placeholder generation")
+        advance(session_id, 5)
+    except Exception:
+        logger.exception("IDR generation failed: session=%s", session_id)
+        sm.fail_session(session_id)
+        return jsonify({"error": "Generation failed — check logs"}), 500
+
+    if doc_id:
+        sm.set_field(session_id, dic_collection_id=context["session_id"])
+
+    return jsonify({
+        "status": "generating",
+        "context_summary": {
+            "query_length": len(context["query_string"]),
+            "ace_roles": context["ace_roles"],
+            "topology_nodes": context["topology_summary"].get("node_count", 0),
+            "config_findings": len(context["config_findings"]),
+        },
+        "doc_id": doc_id,
+    })
+
+
+# ─── API — Artifacts ──────────────────────────────────────────────────────────
+
+@docgen_bp.route("/api/sessions/<session_id>/artifacts", methods=["GET"])
+def api_list_artifacts(session_id: str):
+    from tools.docgen import session_manager as sm
+
+    artifacts = sm.list_artifacts(session_id)
+    return jsonify(artifacts)
+
+
+# ─── IQE ─────────────────────────────────────────────────────────────────────
+
+@docgen_bp.route("/api/iqe-query", methods=["POST"])
+def api_iqe_query():
+    from tools.iqe.adapters.docgen import handle_iqe_query
+
+    data = request.get_json(force=True, silent=True) or {}
+    query = data.get("query", "")
+    try:
+        result = handle_iqe_query(query)
+        return jsonify(result)
+    except Exception:
+        logger.exception("IDR IQE query failed")
+        return jsonify({"error": "IQE query failed"}), 500

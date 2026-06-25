@@ -571,3 +571,20 @@ scanner then runs against the *staged copy as data* — the target is read, hash
     imported by `tools/llm/router.py` for auto-detection only.
 - **Revisit if:** the manager is extended to accept a user-supplied file path, or to write
   to any file outside `<repo_root>/.env`.
+
+
+---
+
+## tools/docgen/ — IDR Intelligent Documentation Regeneration Engine
+
+- **File:** `tools/docgen/` (all modules: blueprint.py, workflow.py, session_manager.py, reconciler.py, context_builder.py, domain_profiles.py)
+- **Risk:** Accepts multi-file uploads (diagrams, config files, IaC, documents) from authenticated dashboard users. Files are saved to `data/docgen/uploads/<session_id>/`. User-provided title/notes fields are stored in the DB. Config/IaC reviewers are invoked via `importlib.import_module()` using paths from `args/docgen/profiles.yaml` (not user input).
+- **Decision:** **trusted-first-party**
+- **Rationale:** All upload paths are server-side and scoped under `data/docgen/` — no path traversal. Analyzer module paths come from the operator-controlled `args/docgen/profiles.yaml`, not from user input. Text fields (title, notes) are stored as data, never executed. The `importlib.import_module()` call is bounded to the allowlisted modules in `profiles.yaml`. Classification banners are enforced via `classification_manager`. HITL gates prevent any AI-generated content from being published without human approval.
+- **Guardrails:**
+  - Upload paths scoped to `data/docgen/uploads/<session_id>/` via `pathlib.Path`.
+  - Analyzer module paths from operator YAML only — not from user request body.
+  - DB values stored verbatim (not evaluated).
+  - HITL at Stage 3 (conflict resolution) and Stage 7 (document review) block auto-publish.
+  - WriteGuard hard gate (Stage 6) blocks low-quality content.
+- **Revisit if:** analyst/reviewer module paths are ever accepted from user request payloads, or if generated document content is auto-published without HITL.

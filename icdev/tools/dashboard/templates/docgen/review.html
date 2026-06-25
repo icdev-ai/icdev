@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}IDR Review — {{ session.title }} — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+  <div>
+    <a href="/docgen/{{ session.id }}" style="color:#7a8cb0;font-size:12px;text-decoration:none;">← Back to Session</a>
+    <h2 style="margin:4px 0 0;color:#eaeaea;font-size:18px;">👁 Document Review — {{ session.title }}</h2>
+    <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">
+      Review the AI-generated document. Approve, reject, or request revisions section by section.
+    </p>
+  </div>
+  <div style="display:flex;gap:8px;">
+    <button onclick="approveDocument()"
+      style="background:#0f5132;color:#52c41a;padding:8px 16px;border:1px solid #1a7a4a;border-radius:5px;cursor:pointer;font-size:13px;">
+      ✅ Approve &amp; Publish
+    </button>
+    <button onclick="requestRevision()"
+      style="background:#5a1a0a;color:#ffa07a;padding:8px 16px;border:1px solid #8a3a1a;border-radius:5px;cursor:pointer;font-size:13px;">
+      ↩ Request Revision
+    </button>
+  </div>
+</div>
+
+<!-- Session metadata -->
+<div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:12px 16px;margin-bottom:16px;display:flex;gap:16px;flex-wrap:wrap;">
+  <div>
+    <span style="color:#7a8cb0;font-size:11px;">Domain</span>
+    <div style="color:#eaeaea;font-size:13px;">{{ session.domain }}</div>
+  </div>
+  <div>
+    <span style="color:#7a8cb0;font-size:11px;">Doc Type</span>
+    <div style="color:#eaeaea;font-size:13px;">{{ session.doc_type }}</div>
+  </div>
+  <div>
+    <span style="color:#7a8cb0;font-size:11px;">Classification</span>
+    <div style="color:#e94560;font-size:13px;font-weight:600;">{{ session.classification }}</div>
+  </div>
+  <div>
+    <span style="color:#7a8cb0;font-size:11px;">Status</span>
+    <div style="color:#ffd666;font-size:13px;">{{ session.status }}</div>
+  </div>
+</div>
+
+<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+
+  <!-- Main document viewer -->
+  <div style="flex:1;min-width:320px;">
+    {% if artifacts %}
+    <!-- Artifact tabs -->
+    <div style="display:flex;gap:4px;margin-bottom:12px;">
+      {% for art in artifacts %}
+      <button onclick="showArtifact('{{ loop.index0 }}')" id="tab-{{ loop.index0 }}"
+        style="background:{% if loop.first %}#0f3460{% else %}#0d1b2e{% endif %};color:{% if loop.first %}#7ab3f0{% else %}#7a8cb0{% endif %};
+        padding:5px 12px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:12px;">
+        {{ art.format|upper }}
+      </button>
+      {% endfor %}
+    </div>
+    {% for art in artifacts %}
+    <div id="artifact-{{ loop.index0 }}" style="display:{% if loop.first %}block{% else %}none{% endif %};">
+      {% if art.format == 'html' %}
+      <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:20px;min-height:400px;max-height:600px;overflow-y:auto;">
+        <iframe src="{{ art.file_path or '' }}" style="width:100%;height:500px;border:none;background:#fff;border-radius:4px;"
+          sandbox="allow-same-origin"></iframe>
+      </div>
+      {% else %}
+      <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:20px;text-align:center;">
+        <div style="font-size:40px;margin-bottom:12px;">{{ '📄' if art.format == 'docx' else '📋' }}</div>
+        <div style="color:#eaeaea;font-size:14px;margin-bottom:8px;">{{ art.format|upper }} Document Ready</div>
+        <a href="{{ art.file_path or '#' }}" download
+          style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border:1px solid #1e3a6e;border-radius:4px;font-size:13px;text-decoration:none;">
+          ⬇ Download {{ art.format|upper }}
+        </a>
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% else %}
+    <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:40px;text-align:center;min-height:200px;display:flex;align-items:center;justify-content:center;">
+      <div>
+        <div style="font-size:32px;margin-bottom:12px;color:#7a8cb0;">📄</div>
+        <div style="color:#7a8cb0;font-size:13px;">Document is being generated…</div>
+        <div style="color:#5a6e8c;font-size:11px;margin-top:6px;">Refresh this page once generation completes.</div>
+        <button onclick="location.reload()" style="margin-top:12px;background:#0f3460;color:#7ab3f0;padding:7px 14px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:12px;">↻ Refresh</button>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Review notes -->
+    <div style="margin-top:16px;background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:14px;">
+      <h4 style="margin:0 0 8px;color:#7ab3f0;font-size:13px;">Review Notes</h4>
+      <textarea id="review-notes" placeholder="Enter feedback for AI regeneration (will be injected into next generation pass)…"
+        style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px 10px;border-radius:4px;font-size:12px;min-height:80px;resize:vertical;"></textarea>
+    </div>
+  </div>
+
+  <!-- Sidebar: WriteGuard results + citation trail -->
+  <div style="width:260px;min-width:220px;">
+    <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:14px;margin-bottom:14px;">
+      <h4 style="margin:0 0 8px;color:#7ab3f0;font-size:13px;">WriteGuard Quality</h4>
+      <div style="text-align:center;padding:12px 0;">
+        <div style="font-size:28px;font-weight:bold;color:#52c41a;" id="wg-score">—</div>
+        <div style="color:#7a8cb0;font-size:11px;">overall score</div>
+      </div>
+      <div id="wg-dimensions" style="font-size:11px;color:#7a8cb0;">
+        <!-- Populated by JS if WriteGuard result available -->
+        <div style="color:#5a6e8c;">Score data loads after generation.</div>
+      </div>
+    </div>
+
+    <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:14px;margin-bottom:14px;">
+      <h4 style="margin:0 0 8px;color:#7ab3f0;font-size:13px;">Audit Trail</h4>
+      <div style="font-size:11px;color:#7a8cb0;">
+        <div style="padding:4px 0;border-bottom:1px solid #1a2a3a;">
+          <span style="color:#b8d0e8;">Session created</span>
+          <span style="float:right;">{{ session.created_at[:10] if session.created_at else '—' }}</span>
+        </div>
+        <div style="padding:4px 0;border-bottom:1px solid #1a2a3a;">
+          <span style="color:#b8d0e8;">Classification</span>
+          <span style="float:right;color:#e94560;">{{ session.classification }}</span>
+        </div>
+        <div style="padding:4px 0;">
+          <span style="color:#b8d0e8;">HITL reviewer</span>
+          <span style="float:right;">pending</span>
+        </div>
+      </div>
+    </div>
+
+    {% if artifacts %}
+    <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:14px;">
+      <h4 style="margin:0 0 8px;color:#52c41a;font-size:13px;">Download Formats</h4>
+      {% for art in artifacts %}
+      <div style="margin-bottom:8px;">
+        <a href="{{ art.file_path or '#' }}" download
+          style="color:#7ab3f0;font-size:12px;text-decoration:none;display:flex;align-items:center;gap:6px;">
+          <span>{{ '📄' if art.format == 'docx' else ('🖼' if art.format == 'html' else '📋') }}</span>
+          <span>{{ art.format|upper }}</span>
+        </a>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Approve / Revision modal -->
+<div id="approve-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#0d1b2e;border:1px solid #1a5a2a;border-radius:8px;padding:28px;width:400px;max-width:95vw;text-align:center;">
+    <div style="font-size:36px;margin-bottom:12px;">✅</div>
+    <h3 style="color:#52c41a;margin:0 0 12px;">Approve &amp; Publish?</h3>
+    <p style="color:#7a8cb0;font-size:13px;margin:0 0 20px;">
+      This will publish the document and export DOCX + PDF + HTML. The action is logged to the audit trail.
+    </p>
+    <div style="display:flex;gap:8px;justify-content:center;">
+      <button onclick="document.getElementById('approve-modal').style.display='none'"
+        style="background:#1a2a3a;color:#7a8cb0;padding:7px 14px;border:1px solid #2a3a4a;border-radius:4px;cursor:pointer;font-size:13px;">Cancel</button>
+      <button onclick="confirmApprove()"
+        style="background:#0f5132;color:#52c41a;padding:7px 14px;border:1px solid #1a7a4a;border-radius:4px;cursor:pointer;font-size:13px;">Confirm Approve</button>
+    </div>
+  </div>
+</div>
+
+<script>
+var SESSION_ID = "{{ session.id }}";
+
+function showArtifact(idx) {
+  document.querySelectorAll('[id^="artifact-"]').forEach(function(el,i) { el.style.display = 'none'; });
+  document.querySelectorAll('[id^="tab-"]').forEach(function(el,i) {
+    el.style.background = '#0d1b2e'; el.style.color = '#7a8cb0';
+  });
+  var a = document.getElementById('artifact-' + idx);
+  var t = document.getElementById('tab-' + idx);
+  if (a) a.style.display = 'block';
+  if (t) { t.style.background = '#0f3460'; t.style.color = '#7ab3f0'; }
+}
+
+function approveDocument() {
+  document.getElementById('approve-modal').style.display = 'flex';
+}
+
+function confirmApprove() {
+  document.getElementById('approve-modal').style.display = 'none';
+  // Advance session to publishing
+  fetch('/docgen/api/sessions/' + SESSION_ID + '/advance', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({stage: 8})
+  }).then(function(r){return r.json();}).then(function(d){
+    if (d.error) { alert('Error: ' + d.error); return; }
+    window.location.href = '/docgen/' + SESSION_ID;
+  }).catch(function() { alert('Network error.'); });
+}
+
+function requestRevision() {
+  var notes = document.getElementById('review-notes').value.trim();
+  if (!notes) { alert('Please enter revision notes before requesting a revision.'); return; }
+  fetch('/docgen/api/sessions/' + SESSION_ID + '/advance', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({stage: 5})
+  }).then(function(r){return r.json();}).then(function(d){
+    if (d.error) { alert('Error: ' + d.error); return; }
+    window.location.href = '/docgen/' + SESSION_ID;
+  }).catch(function() { alert('Network error.'); });
+}
+</script>
+{% endblock %}
