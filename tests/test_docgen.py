@@ -690,3 +690,77 @@ def test_api_advance_to_review_blocked_without_writeguard(_docgen_client):
     assert resp.status_code == 409
     data = resp.get_json()
     assert data.get("gate") == "writeguard"
+
+
+# ─── Stage 8: publish + evidence_report audit ─────────────────────────────────
+
+def test_stage8_publish_no_ace_instance_skips_evidence_report(tmp_path):
+    """stage8_publish completes without error when session has no ace_instance_id."""
+    from unittest.mock import patch as _patch
+    from tools.docgen.session_manager import create_session
+    from tools.docgen.workflow import stage8_publish
+
+    session = create_session(title="Pub Test", domain="network")
+    out_dir = str(tmp_path / "artifacts")
+
+    # No ace_instance_id set — evidence_report.generate should never be called.
+    with _patch("icdev.tools.ace.evidence_report.generate") as mock_ev:
+        artifacts = stage8_publish(
+            session_id=session["id"],
+            doc_text="<p>Hello</p>",
+            title="Test Doc",
+            output_dir=out_dir,
+        )
+
+    mock_ev.assert_not_called()
+    # Artifact list may be empty (exporters not installed in test env), but no exception.
+    assert isinstance(artifacts, list)
+
+
+def test_stage8_publish_with_ace_instance_calls_evidence_report(tmp_path):
+    """stage8_publish triggers evidence_report.generate() when ace_instance_id is set."""
+    import sqlite3 as _sqlite3
+    from unittest.mock import patch as _patch, MagicMock
+    from tools.docgen.session_manager import create_session, set_field
+    from tools.docgen.workflow import stage8_publish
+
+    session = create_session(title="ACE Pub Test", domain="network")
+    set_field(session["id"], ace_instance_id="inst-idr-test")
+    out_dir = str(tmp_path / "artifacts2")
+
+    ev_mock = MagicMock(return_value={"instance": {"id": "inst-idr-test"}, "summary": {}})
+    with _patch("icdev.tools.ace.evidence_report.generate", ev_mock):
+        artifacts = stage8_publish(
+            session_id=session["id"],
+            doc_text="<p>Hello ACE</p>",
+            title="ACE Doc",
+            output_dir=out_dir,
+        )
+
+    ev_mock.assert_called_once_with("inst-idr-test", fmt="json")
+    assert isinstance(artifacts, list)
+
+
+def test_stage8_publish_evidence_report_failure_does_not_abort(tmp_path):
+    """Evidence report error must not prevent publish from completing."""
+    from unittest.mock import patch as _patch
+    from tools.docgen.session_manager import create_session, set_field
+    from tools.docgen.workflow import stage8_publish
+
+    session = create_session(title="Err Test", domain="network")
+    set_field(session["id"], ace_instance_id="inst-bad")
+    out_dir = str(tmp_path / "artifacts3")
+
+    with _patch(
+        "icdev.tools.ace.evidence_report.generate",
+        side_effect=RuntimeError("simulated failure"),
+    ):
+        # Should not raise — error is caught and logged at DEBUG level.
+        artifacts = stage8_publish(
+            session_id=session["id"],
+            doc_text="<p>Error path</p>",
+            title="Error Doc",
+            output_dir=out_dir,
+        )
+
+    assert isinstance(artifacts, list)

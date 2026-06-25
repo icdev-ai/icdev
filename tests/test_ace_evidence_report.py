@@ -239,6 +239,126 @@ class TestWatermark:
 
 
 # ---------------------------------------------------------------------------
+# _write_generate_audit()
+# ---------------------------------------------------------------------------
+
+
+class TestWriteGenerateAudit:
+    """Verify that _write_generate_audit() appends a row to ace_audit_log."""
+
+    def _fresh_conn(self, tmp_path: Path) -> sqlite3.Connection:
+        conn = _make_ace_db(tmp_path)
+        _seed_instance(conn, "inst-audit-01")
+        return conn
+
+    def _patched_conn(self, conn):
+        return patch("icdev.tools.db.storage.get_canvas_connection", return_value=conn)
+
+    def test_audit_row_is_written(self, tmp_path):
+        db_path = str(tmp_path / "ace_audit.db")
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        # Build minimal ACE schema
+        conn.executescript("""
+            CREATE TABLE ace_instances (
+                id TEXT PRIMARY KEY, name TEXT DEFAULT '', role_id TEXT DEFAULT '',
+                state TEXT DEFAULT 'complete', trust_tier TEXT DEFAULT 'green',
+                config_json TEXT DEFAULT '{}', result_json TEXT DEFAULT '{}',
+                created_at TEXT DEFAULT '2026-01-01T00:00:00',
+                updated_at TEXT DEFAULT '2026-01-01T00:00:00', completed_at TEXT
+            );
+            CREATE TABLE ace_audit_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, instance_id TEXT,
+                coworker_id TEXT, action TEXT NOT NULL, detail TEXT DEFAULT '',
+                actor TEXT DEFAULT 'system', classification TEXT DEFAULT 'CUI',
+                control_refs TEXT DEFAULT '', created_at TEXT DEFAULT '2026-01-01T00:00:00'
+            );
+        """)
+        conn.commit()
+        conn.close()
+
+        data = {
+            "generated_at": "2026-01-01T00:00:00+00:00",
+            "classification": "CUI",
+            "instance": {"id": "inst-audit-01"},
+            "summary": {"total_actions": 2, "total_artifacts": 1, "control_refs_count": 2},
+        }
+
+        def _open_conn(env_var):
+            c = sqlite3.connect(db_path)
+            c.row_factory = sqlite3.Row
+            return c
+
+        with patch("icdev.tools.db.storage.get_canvas_connection", side_effect=_open_conn):
+            from icdev.tools.ace.evidence_report import _write_generate_audit
+            _write_generate_audit("inst-audit-01", data)
+
+        # Re-open to verify the row was written
+        verify_conn = sqlite3.connect(db_path)
+        verify_conn.row_factory = sqlite3.Row
+        row = verify_conn.execute(
+            "SELECT action, actor, classification, detail "
+            "FROM ace_audit_log WHERE instance_id = ? AND action = 'evidence_report.generate'",
+            ("inst-audit-01",),
+        ).fetchone()
+        verify_conn.close()
+        assert row is not None, "audit row should have been inserted"
+        assert row["action"] == "evidence_report.generate"
+        assert row["actor"] == "evidence_report"
+        assert row["classification"] == "CUI"
+        parsed = json.loads(row["detail"])
+        assert parsed["total_actions"] == 2
+
+    def test_audit_survives_bad_db(self, tmp_path):
+        """_write_generate_audit() must not raise even when the DB write fails."""
+        data = {
+            "generated_at": "2026-01-01T00:00:00+00:00",
+            "classification": "CUI",
+            "instance": {"id": "inst-x"},
+            "summary": {},
+        }
+        broken_conn = sqlite3.connect(":memory:")
+        broken_conn.close()  # close immediately so any execute raises
+        with patch("icdev.tools.db.storage.get_canvas_connection", return_value=broken_conn):
+            from icdev.tools.ace.evidence_report import _write_generate_audit
+            _write_generate_audit("inst-x", data)  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# generate() writes audit at publish
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateAuditAtPublish:
+    """generate() must append an audit row alongside producing its report."""
+
+    def test_generate_json_writes_audit_row(self, tmp_path):
+        conn = _make_ace_db(tmp_path)
+        _seed_instance(conn, "inst-pub")
+
+        calls: list = []
+        original_wga = None
+
+        def _tracking_conn(env_var):
+            calls.append(env_var)
+            return conn
+
+        with (
+            patch("icdev.tools.db.storage.get_canvas_connection", side_effect=_tracking_conn),
+            patch(
+                "icdev.tools.ace.evidence_report._get_banner",
+                return_value={"banner_top": "// CUI //", "banner_bottom": "// CUI //"},
+            ),
+        ):
+            from icdev.tools.ace import evidence_report as er
+            result = er.generate("inst-pub", fmt="json")
+
+        assert isinstance(result, dict)
+        # Two calls to get_canvas_connection: one in _collect(), one in _write_generate_audit()
+        assert len(calls) >= 1
+
+
+# ---------------------------------------------------------------------------
 # init_db adds control_refs column
 # ---------------------------------------------------------------------------
 

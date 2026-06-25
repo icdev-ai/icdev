@@ -23,10 +23,6 @@ DB_PATH = _ICDEV_ROOT / "data" / "network_canvas.db"
 # default). NC_STORAGE_BACKEND overrides for a dedicated network_canvas backend.
 _NC_BACKEND = os.environ.get("NC_STORAGE_BACKEND", os.environ.get("ICDEV_CANVAS_STORAGE_BACKEND", os.environ.get("ICDEV_STORAGE_BACKEND", "postgresql"))).lower()
 
-# Guard against re-entrant init_db calls (e.g. seed_sops.seed() calls init_db()
-# and init_db() auto-seeds via seed_sops).
-_INIT_DB_IN_PROGRESS = False
-
 
 def get_connection():
     """Get a database connection — SQLite or PostgreSQL.
@@ -271,78 +267,6 @@ CREATE TABLE IF NOT EXISTS nc_compliance_findings (
     fix_action  TEXT,                          -- JSON: {action, params} for one-click fix
     remediated_at TEXT,
     created_at  TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
--- Configuration Review Assistant: persisted reviews and findings
-CREATE TABLE IF NOT EXISTS nc_config_reviews (
-    id              TEXT PRIMARY KEY,
-    title           TEXT,
-    vendor          TEXT NOT NULL,             -- cisco_ios, cisco_nxos, juniper, generic
-    role_key        TEXT NOT NULL,             -- network_engineer, network_architect, ...
-    answers_json    TEXT DEFAULT '{}',
-    config_text_hash TEXT NOT NULL,
-    status          TEXT DEFAULT 'draft',      -- draft, analyzing, complete, error
-    result_json     TEXT,                      -- full parsed review result
-    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS nc_config_review_findings (
-    id              TEXT PRIMARY KEY,
-    review_id       TEXT NOT NULL REFERENCES nc_config_reviews(id),
-    category        TEXT NOT NULL,             -- security_compliance, optimization, remediation
-    severity        TEXT DEFAULT 'info',       -- CAT1, CAT2, CAT3, info, high, medium, low
-    title           TEXT NOT NULL,
-    detail          TEXT,
-    remediation     TEXT,
-    sample_config_snippet TEXT,
-    references_json TEXT DEFAULT '[]',
-    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
--- Diagram Analysis: uploaded diagrams and AI analysis results
-CREATE TABLE IF NOT EXISTS nc_diagram_uploads (
-    id              TEXT PRIMARY KEY,
-    filename        TEXT NOT NULL,
-    format          TEXT NOT NULL,           -- png|jpg|pdf|drawio|docx
-    file_path       TEXT NOT NULL,
-    file_hash       TEXT NOT NULL,
-    page_count      INTEGER DEFAULT 1,
-    topology_id     TEXT,                    -- FK to topologies (nullable)
-    uploaded_at     TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS nc_diagram_analyses (
-    id                   TEXT PRIMARY KEY,
-    upload_id            TEXT NOT NULL REFERENCES nc_diagram_uploads(id),
-    industry             TEXT NOT NULL,      -- dod_il4|dod_il5|dod_il6|healthcare|financial|commercial
-    frameworks_json      TEXT DEFAULT '[]',
-    cloud_providers_json TEXT DEFAULT '[]',  -- ["aws","azure"] detected from diagram
-    topology_mode        TEXT DEFAULT 'unknown', -- cloud_native|hybrid|multi_cloud|on_prem|unknown
-    status               TEXT NOT NULL DEFAULT 'pending', -- pending|running|done|error
-    result_json          TEXT DEFAULT '{}',  -- full 6-tab structured output
-    created_at           TEXT DEFAULT CURRENT_TIMESTAMP,
-    updated_at           TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS nc_diagram_findings (
-    id              TEXT PRIMARY KEY,
-    analysis_id     TEXT NOT NULL REFERENCES nc_diagram_analyses(id),
-    tab             TEXT NOT NULL,           -- security|compliance|remediate|topology|inventory|overview
-    severity        TEXT NOT NULL DEFAULT 'info', -- critical|high|medium|low|info
-    title           TEXT NOT NULL,
-    detail          TEXT,
-    remediation     TEXT,
-    references_json TEXT DEFAULT '[]',       -- [{type: CVE|NIST|OWASP|STIG, id, description}]
-    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS nc_diagram_exports (
-    id              TEXT PRIMARY KEY,
-    analysis_id     TEXT NOT NULL REFERENCES nc_diagram_analyses(id),
-    export_type     TEXT NOT NULL DEFAULT 'drawio',
-    file_path       TEXT NOT NULL,
-    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Projects: group multiple topologies, circuits, IPAM under one engagement
@@ -1486,7 +1410,7 @@ CREATE INDEX IF NOT EXISTS idx_query_log_ts   ON nc_query_log(ts);
 
 -- ── Enclave-in-a-Box Snippets ─────────────────────────────────────────────
 -- Pre-built compliance-validated sub-topologies (SIPR, IL5 DMZ, Tactical Edge)
--- Drag onto canvas. all STIG properties pre-populated.
+-- Drag onto canvas; all STIG properties pre-populated.
 
 CREATE TABLE IF NOT EXISTS nc_collab_sessions (
     id          TEXT PRIMARY KEY,
@@ -1969,6 +1893,118 @@ CREATE TABLE IF NOT EXISTS nc_phase_documents (
 );
 CREATE INDEX IF NOT EXISTS idx_nc_phase_docs_phase ON nc_phase_documents(phase_id);
 CREATE INDEX IF NOT EXISTS idx_nc_phase_docs_project ON nc_phase_documents(project_id);
+
+-- CVE Advisory tracking (NQE-sourced + manual)
+CREATE TABLE IF NOT EXISTS nc_advisories (
+    id              TEXT PRIMARY KEY,
+    cve_id          TEXT NOT NULL,
+    vendor          TEXT NOT NULL DEFAULT '',
+    severity        TEXT NOT NULL DEFAULT 'medium'
+                        CHECK(severity IN ('critical','high','medium','low','informational')),
+    published_date  TEXT,
+    total_devices   INTEGER DEFAULT 0,
+    impacted_devices INTEGER DEFAULT 0,
+    remediation_pct REAL DEFAULT 0.0,
+    data_source     TEXT DEFAULT 'manual'
+                        CHECK(data_source IN ('nqe','manual','nvd','vendor')),
+    hitl_status     TEXT DEFAULT 'pending'
+                        CHECK(hitl_status IN ('pending','approved','rejected')),
+    hitl_approved_by TEXT,
+    hitl_approved_at TEXT,
+    description     TEXT,
+    remediation_guidance TEXT,
+    status          TEXT DEFAULT 'open'
+                        CHECK(status IN ('open','in-progress','mitigated','excepted','verified')),
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_nc_advisories_cve ON nc_advisories(cve_id);
+CREATE INDEX IF NOT EXISTS idx_nc_advisories_severity ON nc_advisories(severity);
+CREATE INDEX IF NOT EXISTS idx_nc_advisories_status ON nc_advisories(status);
+
+-- POAM items (Plan of Action & Milestones)
+CREATE TABLE IF NOT EXISTS nc_poam_items (
+    id              TEXT PRIMARY KEY,
+    poam_id         TEXT UNIQUE NOT NULL,
+    advisory_id     TEXT REFERENCES nc_advisories(id),
+    cve_id          TEXT,
+    weakness        TEXT,
+    control_id      TEXT,
+    severity        TEXT DEFAULT 'medium'
+                        CHECK(severity IN ('critical','high','medium','low','informational')),
+    affected_assets_json TEXT DEFAULT '[]',
+    scheduled_completion TEXT,
+    actual_completion    TEXT,
+    status          TEXT DEFAULT 'open'
+                        CHECK(status IN ('open','in-progress','completed','delayed','cancelled')),
+    twin_validated  INTEGER DEFAULT 0,
+    responsible_party TEXT,
+    milestones_json TEXT DEFAULT '[]',
+    resources       TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_nc_poam_advisory ON nc_poam_items(advisory_id);
+CREATE INDEX IF NOT EXISTS idx_nc_poam_status ON nc_poam_items(status);
+
+-- Exception registry (ISSO/ISSM/AO approval chain)
+CREATE TABLE IF NOT EXISTS nc_exceptions (
+    id              TEXT PRIMARY KEY,
+    device_id       TEXT,
+    device_name     TEXT NOT NULL DEFAULT '',
+    exception_type  TEXT NOT NULL DEFAULT 'risk-acceptance'
+                        CHECK(exception_type IN ('risk-acceptance','temporary-deviation','operational-necessity','vendor-constraint')),
+    risk_level      TEXT DEFAULT 'medium'
+                        CHECK(risk_level IN ('critical','high','medium','low')),
+    justification   TEXT,
+    expiry_date     TEXT,
+    isso_approved   INTEGER DEFAULT 0,
+    isso_approved_by TEXT,
+    isso_approved_at TEXT,
+    issm_approved   INTEGER DEFAULT 0,
+    issm_approved_by TEXT,
+    issm_approved_at TEXT,
+    ao_approved     INTEGER DEFAULT 0,
+    ao_approved_by  TEXT,
+    ao_approved_at  TEXT,
+    status          TEXT DEFAULT 'pending'
+                        CHECK(status IN ('pending','isso-approved','issm-approved','fully-approved','rejected','expired')),
+    advisory_id     TEXT REFERENCES nc_advisories(id),
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_nc_exceptions_status ON nc_exceptions(status);
+CREATE INDEX IF NOT EXISTS idx_nc_exceptions_device ON nc_exceptions(device_id);
+
+-- Remediation actions (append-only audit trail)
+CREATE TABLE IF NOT EXISTS nc_remediation_actions (
+    id              TEXT PRIMARY KEY,
+    advisory_id     TEXT REFERENCES nc_advisories(id),
+    device_id       TEXT,
+    action_type     TEXT NOT NULL DEFAULT 'patch',
+    performed_by    TEXT,
+    notes           TEXT,
+    result          TEXT DEFAULT 'pending'
+                        CHECK(result IN ('pending','success','failed','skipped')),
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_nc_remediation_advisory ON nc_remediation_actions(advisory_id);
+
+-- HITL conflict resolutions
+CREATE TABLE IF NOT EXISTS nc_conflict_resolutions (
+    id              TEXT PRIMARY KEY,
+    conflict_type   TEXT NOT NULL,
+    detail          TEXT NOT NULL,
+    severity        TEXT NOT NULL DEFAULT 'medium'
+                        CHECK(severity IN ('high','medium','low')),
+    action          TEXT NOT NULL DEFAULT 'acknowledged'
+                        CHECK(action IN ('acknowledged','resolved')),
+    note            TEXT DEFAULT '',
+    resolved_by     TEXT DEFAULT '',
+    resolved_at     TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_nc_conflict_res_type ON nc_conflict_resolutions(conflict_type);
+CREATE INDEX IF NOT EXISTS idx_nc_conflict_res_action ON nc_conflict_resolutions(action);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────
@@ -13989,10 +14025,6 @@ ENCLAVE_SNIPPETS = [
 
 
 def init_db():
-    global _INIT_DB_IN_PROGRESS
-    if _INIT_DB_IN_PROGRESS:
-        return
-    _INIT_DB_IN_PROGRESS = True
     conn = get_connection()
     try:
         if _NC_BACKEND == "postgresql":
@@ -14000,21 +14032,11 @@ def init_db():
             # ICDEV's StorageConnection translates SQL automatically
             for stmt in SCHEMA.split(";"):
                 stmt = stmt.strip()
-                # Strip leading SQL comment lines so a section-header comment
-                # before CREATE TABLE does not cause the whole statement to be
-                # skipped by the startswith("--") guard below.
-                sql_lines = [l for l in stmt.splitlines() if not l.strip().startswith("--")]
-                stmt_sql = "\n".join(sql_lines).strip()
-                if stmt_sql and not stmt_sql.startswith("--"):
+                if stmt and not stmt.startswith("--"):
                     try:
-                        conn.execute(stmt_sql)
-                        conn.commit()  # per-statement commit so a failure does not abort the whole schema
+                        conn.execute(stmt)
                     except Exception:
-                        try:
-                            conn.rollback()
-                        except Exception:
-                            pass
-                        # table/index already exists or malformed fragment; ignore and continue
+                        pass  # table/index already exists
             conn.commit()
             # PG audit immutability triggers (PL/pgSQL syntax)
             try:
@@ -14101,8 +14123,6 @@ def init_db():
             ("nc_migration_phases", "properties_json", "TEXT DEFAULT '{}'"),
             # NDC↔Migration integration: traffic flow ↔ phase link
             ("nc_traffic_flows", "phase_id", "TEXT"),
-            # Config review: store raw config text in DB (was Flask session — cookie 4KB limit broke large configs)
-            ("nc_config_reviews", "config_text", "TEXT DEFAULT ''"),
             # Partner registry: add partner_id + approval columns to nc_peering_agreements
             ("nc_peering_agreements", "partner_id", "TEXT"),
             ("nc_peering_agreements", "approver_name", "TEXT DEFAULT ''"),
@@ -14118,16 +14138,11 @@ def init_db():
                 conn.execute(f"SELECT {col} FROM {table} LIMIT 1")  # nosec B608 -- table/column names are internal constants, not user input
             except Exception:
                 try:
-                    conn.rollback()
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {coltype}")
                     conn.commit()
                     print(f"[init_db] Migrated: added {col} to {table}")
                 except Exception:
-                    try:
-                        conn.rollback()
-                    except Exception:
-                        pass
-                    # Column might already exist with different syntax; ignore
+                    pass  # Column might already exist with different syntax
 
         # Seed templates (upsert — inserts new templates even if some already exist)
         cur = conn.cursor()
@@ -15149,7 +15164,6 @@ def init_db():
         conn.commit()
         print("[init_db] Done.")
     finally:
-        _INIT_DB_IN_PROGRESS = False
         conn.close()
 
 
