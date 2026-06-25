@@ -1386,3 +1386,51 @@ components:
     iqe_adapter: false
     nav_link: true
     seed_queries: false
+
+# ═══════════════════════════════════════════════════════════════════════════
+# IDR — Intelligent Documentation Regeneration
+# ═══════════════════════════════════════════════════════════════════════════
+- key: docgen
+  kind: canvas
+  cli_name: docgen
+  display_name: Doc Regeneration
+  description: >-
+    AI-powered 8-stage documentation regeneration pipeline.
+    Upload multi-team diagrams, configs, and docs; AI reconciles conflicts;
+    WriteGuard hard-gates quality; HITL approves; publishes DOCX+PDF+HTML.
+  env_flag: ICDEV_DOCGEN_ENABLED
+  extra_env_flags: []
+  default_enabled: true
+  module: tools.docgen.blueprint
+  blueprint_attr: docgen_bp
+  url_prefix: /docgen
+  min_il: IL4
+  default_roles:
+    - network_architect
+    - security_engineer
+    - technical_writer
+    - developer
+  nav:
+    section: Canvases
+    label: Doc Regeneration
+    links:
+      - label: Doc Regeneration
+        href: /docgen
+      - label: New Session
+        href: /docgen/new
+  iqe:
+    adapter_module: tools.iqe.adapters.docgen
+    collections:
+      - docgen.sessions
+      - docgen.uploads
+      - docgen.conflicts
+      - docgen.analyses
+      - docgen.artifacts
+  completeness:
+    template: tools/dashboard/templates/docgen/index.html
+    blueprint: true
+    constants: tools/docgen/domain_profiles.py
+    db_migration: icdev/tools/db/migrations/211_idr_tables.sql
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/docgen/

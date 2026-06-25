@@ -1491,6 +1491,78 @@ CREATE TABLE IF NOT EXISTS api_keys (
 );
 CREATE INDEX IF NOT EXISTS idx_api_keys_tenant ON api_keys(tenant_id);
 CREATE INDEX IF NOT EXISTS idx_api_keys_hash   ON api_keys(key_hash);
+
+CREATE TABLE IF NOT EXISTS idr_sessions (
+    id              TEXT PRIMARY KEY,
+    title           TEXT NOT NULL,
+    domain          TEXT NOT NULL DEFAULT 'network',
+    doc_type        TEXT NOT NULL DEFAULT 'runbook',
+    template_id     TEXT,
+    stage           INTEGER NOT NULL DEFAULT 0,
+    status          TEXT NOT NULL DEFAULT 'setup',
+    dic_collection_id TEXT,
+    ace_instance_id TEXT,
+    topology_id     TEXT,
+    wg_result_id    TEXT,
+    created_by      TEXT,
+    tenant_id       TEXT,
+    classification  TEXT DEFAULT 'CUI',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS idr_uploads (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    filename        TEXT NOT NULL,
+    upload_type     TEXT NOT NULL DEFAULT 'doc',
+    file_path       TEXT,
+    file_hash       TEXT,
+    dic_doc_id      TEXT,
+    extracted_from_doc_id TEXT,
+    status          TEXT NOT NULL DEFAULT 'pending',
+    error_msg       TEXT,
+    tenant_id       TEXT,
+    uploaded_at     TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS idr_analyses (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    upload_id       TEXT NOT NULL,
+    analysis_type   TEXT NOT NULL,
+    result_ref_id   TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'done',
+    error_msg       TEXT,
+    tenant_id       TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS idr_conflicts (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    node_label      TEXT NOT NULL,
+    conflict_type   TEXT NOT NULL,
+    source_a        TEXT NOT NULL,
+    source_a_value  TEXT,
+    source_b        TEXT NOT NULL,
+    source_b_value  TEXT,
+    resolved_by     TEXT,
+    resolution      TEXT,
+    resolution_notes TEXT,
+    resolved_at     TEXT,
+    tenant_id       TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS idr_artifacts (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL,
+    dic_doc_id      TEXT,
+    dic_version_id  TEXT,
+    format          TEXT NOT NULL,
+    file_path       TEXT,
+    wg_result_id    TEXT,
+    published_at    TEXT,
+    tenant_id       TEXT,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 

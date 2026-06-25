@@ -1,0 +1,330 @@
+{% extends "base.html" %}
+{% block title %}Doc Regeneration — ICDEV™{% endblock %}
+{% block content %}
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+  <div>
+    <h2 style="margin:0;color:#eaeaea;font-size:20px;letter-spacing:.3px;">🔄 Intelligent Doc Regeneration</h2>
+    <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">Upload multi-team diagrams &amp; configs → AI reconciles → WriteGuard-gated document · HITL-approved · full audit trail</p>
+  </div>
+  <button onclick="document.getElementById('new-session-modal').style.display='flex'"
+    style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:13px;">
+    + New Regeneration
+  </button>
+</div>
+
+<!-- Workflow stages legend -->
+<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:20px;padding:12px;background:#0d1b2e;border-radius:6px;border:1px solid #1e3a6e;">
+  {% set stage_colors = ['#555','#0f3460','#1e3a6e','#e94560','#0f5132','#1a6e3a','#856404','#1a3a6e','#2d6a4f'] %}
+  {% set stage_labels = ['Setup','Ingesting','Analyzing','⚠ Conflicts','Synthesizing','Generating','✔ WriteGuard','👁 Review','✅ Published'] %}
+  {% for lbl in stage_labels %}
+  <span style="background:{{ stage_colors[loop.index0] }};color:#eaeaea;padding:3px 8px;border-radius:3px;font-size:11px;">
+    {{ loop.index0 }}: {{ lbl }}
+  </span>
+  {% endfor %}
+</div>
+
+<!-- New session modal -->
+<div id="new-session-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:8px;padding:28px;width:480px;max-width:95vw;">
+    <h3 style="margin:0 0 16px;color:#eaeaea;font-size:16px;">New Doc Regeneration Session</h3>
+    <label style="color:#7a8cb0;font-size:12px;display:block;margin-bottom:4px;">Title *</label>
+    <input id="ns-title" type="text" placeholder="e.g. FY2026 Network Runbook"
+      style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px 10px;border-radius:4px;font-size:13px;margin-bottom:12px;">
+    <label style="color:#7a8cb0;font-size:12px;display:block;margin-bottom:4px;">Domain Profile *</label>
+    <select id="ns-domain" style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px 10px;border-radius:4px;font-size:13px;margin-bottom:12px;">
+      {% for p in profiles %}
+      <option value="{{ p.domain }}" {% if p.domain == (preselect_domain or 'network') %}selected{% endif %}>
+        {{ p.display_name }}{% if p.get('multi_domain') %} ★ All Domains{% endif %}
+      </option>
+      {% endfor %}
+    </select>
+    <label style="color:#7a8cb0;font-size:12px;display:block;margin-bottom:4px;">Document Type</label>
+    <select id="ns-doctype" style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px 10px;border-radius:4px;font-size:13px;margin-bottom:16px;">
+      <option value="runbook">Runbook</option>
+      <option value="design_doc">Design Document</option>
+      <option value="migration_plan">Migration Plan</option>
+      <option value="assessment">Assessment</option>
+      <option value="standard_guide">Standard Guide</option>
+    </select>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="document.getElementById('new-session-modal').style.display='none'"
+        style="background:#1a2a3a;color:#7a8cb0;padding:7px 14px;border:1px solid #2a3a4a;border-radius:4px;cursor:pointer;font-size:13px;">Cancel</button>
+      <button id="ns-create-btn" onclick="createSession()"
+        style="background:#0f3460;color:#7ab3f0;padding:7px 14px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:13px;">Create</button>
+    </div>
+    <div id="ns-error" style="color:#e94560;font-size:11px;margin-top:8px;display:none;"></div>
+  </div>
+</div>
+
+{% if session %}
+<!-- Single session view — stepper + upload zone -->
+<div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+
+  <!-- Left column: stepper + uploads -->
+  <div style="flex:1;min-width:300px;">
+    <!-- Session header -->
+    <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+        <div>
+          <h3 style="margin:0 0 4px;color:#eaeaea;font-size:15px;">{{ session.title }}</h3>
+          <span style="background:#1e3a6e;color:#7ab3f0;font-size:10px;padding:2px 7px;border-radius:3px;">{{ session.domain }}</span>
+          <span style="background:#1a2a3a;color:#7a8cb0;font-size:10px;padding:2px 7px;border-radius:3px;margin-left:4px;">{{ session.doc_type }}</span>
+          <span style="background:#0a1525;color:#5a7aa0;font-size:10px;padding:2px 7px;border-radius:3px;margin-left:4px;">{{ session.classification }}</span>
+        </div>
+        <span id="session-status-badge" style="font-size:11px;padding:3px 9px;border-radius:4px;background:#1a2a3a;color:#7ab3f0;">
+          Stage {{ session.stage }}: {{ session.status }}
+        </span>
+      </div>
+    </div>
+
+    <!-- Stage progress bar -->
+    <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:12px;margin-bottom:16px;">
+      <div style="height:8px;background:#0a1525;border-radius:4px;overflow:hidden;margin-bottom:6px;">
+        <div style="height:100%;background:#4f8ef7;width:{{ (session.stage / 8 * 100)|round(0)|int }}%;transition:width .5s;"></div>
+      </div>
+      <div style="color:#7a8cb0;font-size:11px;text-align:center;">Stage {{ session.stage }} / 8 — {{ session.status }}</div>
+    </div>
+
+    <!-- Upload zone (visible during stages 0-1) -->
+    {% if session.stage <= 2 %}
+    <div id="idr-drop-zone" style="background:#0d1b2e;border:2px dashed #1e3a6e;border-radius:8px;padding:20px;margin-bottom:16px;text-align:center;">
+      <div style="color:#5a7aa0;font-size:13px;margin-bottom:10px;">📎 Upload diagrams, configs, docs, IaC files</div>
+      <div style="margin-bottom:10px;">
+        {% for ut in profile.get('upload_types', ['diagram','doc','config','supplement']) %}
+        <span style="background:#1e293b;color:#94a3b8;padding:2px 8px;border-radius:3px;font-size:11px;margin:2px;">{{ ut }}</span>
+        {% endfor %}
+      </div>
+      <select id="upload-type-select" style="background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:6px 10px;border-radius:4px;font-size:12px;margin-bottom:8px;">
+        {% for ut in profile.get('upload_types', ['diagram','doc','config','supplement']) %}
+        <option value="{{ ut }}">{{ ut }}</option>
+        {% endfor %}
+      </select>
+      <br>
+      <input type="file" id="idr-file-input" multiple style="display:none">
+      <button onclick="document.getElementById('idr-file-input').click()"
+        style="background:#0f3460;color:#7ab3f0;padding:8px 20px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:13px;">
+        Choose Files
+      </button>
+      <div id="idr-upload-status" style="color:#7ab3f0;font-size:12px;margin-top:8px;display:none;"></div>
+    </div>
+    {% endif %}
+
+    <!-- Uploads list -->
+    {% if uploads %}
+    <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:14px;margin-bottom:16px;">
+      <h4 style="margin:0 0 10px;color:#7ab3f0;font-size:13px;">Uploads ({{ uploads|length }})</h4>
+      {% for u in uploads %}
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #1a2a3a;">
+        <div>
+          <span style="color:#eaeaea;font-size:12px;">{{ u.filename }}</span>
+          <span style="background:#1e293b;color:#94a3b8;font-size:10px;padding:1px 6px;border-radius:3px;margin-left:6px;">{{ u.upload_type }}</span>
+        </div>
+        <span style="font-size:10px;padding:2px 7px;border-radius:3px;
+          background: {'ingested':'#0f3460','analyzed':'#0f5132','error':'#5a1a1a','pending':'#1a2a3a'}.get(u.status, '#1a2a3a');
+          color: {'ingested':'#7ab3f0','analyzed':'#52c41a','error':'#e94560','pending':'#7a8cb0'}.get(u.status, '#7a8cb0');">
+          {{ u.status }}
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Action buttons per stage -->
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      {% if session.stage <= 1 and uploads|length > 0 %}
+      <button onclick="triggerAnalysis()" style="background:#0f3460;color:#7ab3f0;padding:7px 14px;border:1px solid #1e3a6e;border-radius:4px;cursor:pointer;font-size:12px;">
+        🔬 Analyze All Uploads
+      </button>
+      {% endif %}
+      {% if session.stage == 2 %}
+      <button onclick="triggerReconcile()" style="background:#1a3a6e;color:#7ab3f0;padding:7px 14px;border:1px solid #2a4a7e;border-radius:4px;cursor:pointer;font-size:12px;">
+        🔀 Reconcile Diagrams
+      </button>
+      {% endif %}
+      {% if session.stage == 3 %}
+      <a href="/docgen/{{ session.id }}/conflicts"
+        style="background:#5a1a0a;color:#ff8c7a;padding:7px 14px;border:1px solid #8a2a1a;border-radius:4px;font-size:12px;text-decoration:none;">
+        ⚠ Resolve {{ pending_conflicts|length }} Conflict{{ 's' if pending_conflicts|length != 1 else '' }}
+      </a>
+      {% if pending_conflicts|length == 0 %}
+      <button onclick="advanceStage(4)" style="background:#0f5132;color:#52c41a;padding:7px 14px;border:1px solid #1a7a4a;border-radius:4px;cursor:pointer;font-size:12px;">
+        ✓ All Resolved → Synthesize
+      </button>
+      {% endif %}
+      {% endif %}
+      {% if session.stage == 4 %}
+      <button onclick="triggerGenerate()" style="background:#856404;color:#ffd666;padding:7px 14px;border:1px solid #a07a10;border-radius:4px;cursor:pointer;font-size:12px;">
+        ✨ Generate Document
+      </button>
+      {% endif %}
+      {% if session.stage == 7 %}
+      <a href="/docgen/{{ session.id }}/review"
+        style="background:#1a3a6e;color:#7ab3f0;padding:7px 14px;border:1px solid #2a4a7e;border-radius:4px;font-size:12px;text-decoration:none;">
+        👁 Review &amp; Approve
+      </a>
+      {% endif %}
+    </div>
+    <div id="idr-action-status" style="color:#7ab3f0;font-size:12px;margin-top:8px;"></div>
+  </div>
+
+  <!-- Right column: analyses + artifacts -->
+  <div style="width:280px;min-width:220px;">
+    {% if analyses %}
+    <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:14px;margin-bottom:14px;">
+      <h4 style="margin:0 0 8px;color:#7ab3f0;font-size:13px;">Analyses ({{ analyses|length }})</h4>
+      {% for a in analyses %}
+      <div style="font-size:11px;color:#7a8cb0;padding:3px 0;border-bottom:1px solid #1a2a3a;">
+        <span style="color:#eaeaea;">{{ a.analysis_type }}</span>
+        <span style="float:right;color:#52c41a;">{{ a.status }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if artifacts %}
+    <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:6px;padding:14px;">
+      <h4 style="margin:0 0 8px;color:#52c41a;font-size:13px;">Published Artifacts</h4>
+      {% for art in artifacts %}
+      <div style="margin-bottom:8px;">
+        <a href="{{ art.file_path or '#' }}" style="color:#7ab3f0;font-size:12px;text-decoration:none;">
+          📄 {{ art.format|upper }} — download
+        </a>
+        <div style="color:#5a6e8c;font-size:10px;">{{ art.published_at or '' }}</div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {% include "includes/iqe_query_widget.html" %}
+  </div>
+</div>
+
+{% else %}
+<!-- Sessions list view -->
+{% if sessions %}
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;">
+  {% for s in sessions %}
+  <a href="/docgen/{{ s.id }}" style="text-decoration:none;">
+    <div style="background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:14px;transition:border-color .2s;"
+         onmouseover="this.style.borderColor='#4f8ef7'" onmouseout="this.style.borderColor='#1e3a6e'">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;">
+        <h3 style="margin:0;color:#eaeaea;font-size:14px;flex:1;margin-right:8px;">{{ s.title }}</h3>
+        <span style="font-size:10px;padding:2px 7px;border-radius:3px;white-space:nowrap;
+          background:{'published':'#0f5132','failed':'#5a1a1a','reviewing':'#1a3a6e','writeguard':'#856404'}.get(s.status,'#1a2a3a');
+          color:{'published':'#52c41a','failed':'#e94560','reviewing':'#7ab3f0','writeguard':'#ffd666'}.get(s.status,'#7a8cb0');">
+          {{ s.status }}
+        </span>
+      </div>
+      <div style="margin-bottom:8px;">
+        <span style="background:#1e3a6e;color:#7ab3f0;font-size:10px;padding:1px 6px;border-radius:3px;">{{ s.domain }}</span>
+        <span style="background:#1a2a3a;color:#7a8cb0;font-size:10px;padding:1px 6px;border-radius:3px;margin-left:4px;">{{ s.doc_type }}</span>
+      </div>
+      <!-- Stage progress -->
+      <div style="height:4px;background:#0a1525;border-radius:2px;overflow:hidden;margin-bottom:6px;">
+        <div style="height:100%;background:#4f8ef7;width:{{ (s.stage / 8 * 100)|round(0)|int }}%;"></div>
+      </div>
+      <div style="color:#5a6e8c;font-size:10px;">Stage {{ s.stage }}/8 · {{ s.created_at[:10] if s.created_at else '' }}</div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+{% else %}
+<div style="text-align:center;padding:60px 20px;color:#7a8cb0;">
+  <div style="font-size:40px;margin-bottom:12px;">🔄</div>
+  <h3 style="color:#eaeaea;margin:0 0 8px;">No regeneration sessions yet</h3>
+  <p style="font-size:13px;margin:0 0 16px;">Upload multi-team diagrams, configs, and docs to generate an authoritative, AI-grounded document.</p>
+  <button onclick="document.getElementById('new-session-modal').style.display='flex'"
+    style="background:#0f3460;color:#7ab3f0;padding:9px 20px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:13px;">
+    + Create First Session
+  </button>
+</div>
+{% endif %}
+
+{% include "includes/iqe_query_widget.html" %}
+{% endif %}
+
+<script>
+var SESSION_ID = "{{ session.id if session else '' }}";
+
+function createSession() {
+  var title = document.getElementById('ns-title').value.trim();
+  var domain = document.getElementById('ns-domain').value;
+  var docType = document.getElementById('ns-doctype').value;
+  var errEl = document.getElementById('ns-error');
+  errEl.style.display = 'none';
+  if (!title) { errEl.textContent = 'Title is required.'; errEl.style.display = 'block'; return; }
+  document.getElementById('ns-create-btn').disabled = true;
+  fetch('/docgen/api/sessions', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({title: title, domain: domain, doc_type: docType})
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (d.id) { window.location.href = '/docgen/' + d.id; }
+    else { errEl.textContent = d.error || 'Failed.'; errEl.style.display = 'block'; document.getElementById('ns-create-btn').disabled = false; }
+  }).catch(function() { errEl.textContent = 'Network error.'; errEl.style.display = 'block'; document.getElementById('ns-create-btn').disabled = false; });
+}
+
+function setStatus(msg) {
+  var el = document.getElementById('idr-action-status');
+  if (el) el.textContent = msg;
+}
+
+function triggerAnalysis() {
+  setStatus('Analyzing uploads…');
+  fetch('/docgen/api/sessions/' + SESSION_ID + '/analyze', {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+    .then(function(r){return r.json();}).then(function(d){setStatus('Analyses complete: ' + (d.analyses_created||0) + ' created.'); setTimeout(function(){location.reload();},1500);})
+    .catch(function(){setStatus('Analysis failed — check logs.');});
+}
+
+function triggerReconcile() {
+  setStatus('Reconciling diagrams…');
+  fetch('/docgen/api/sessions/' + SESSION_ID + '/reconcile', {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+    .then(function(r){return r.json();}).then(function(d){
+      setStatus('Reconciled: ' + (d.merged && d.merged.node_count||0) + ' nodes, ' + (d.conflicts_recorded||0) + ' conflicts.');
+      setTimeout(function(){location.reload();},1500);
+    }).catch(function(){setStatus('Reconcile failed — check logs.');});
+}
+
+function triggerGenerate() {
+  setStatus('Generating document…');
+  fetch('/docgen/api/sessions/' + SESSION_ID + '/generate', {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+    .then(function(r){return r.json();}).then(function(d){
+      if (d.error) { setStatus('Error: ' + d.error); return; }
+      setStatus('Generation started.'); setTimeout(function(){location.reload();},2000);
+    }).catch(function(){setStatus('Generate failed — check logs.');});
+}
+
+function advanceStage(n) {
+  setStatus('Advancing to stage ' + n + '…');
+  fetch('/docgen/api/sessions/' + SESSION_ID + '/advance', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({stage:n})})
+    .then(function(r){return r.json();}).then(function(d){
+      if (d.error) { setStatus('Error: ' + d.error); return; }
+      setTimeout(function(){location.reload();},800);
+    }).catch(function(){setStatus('Advance failed.');});
+}
+
+// File upload
+var fileInput = document.getElementById('idr-file-input');
+if (fileInput) {
+  fileInput.addEventListener('change', function() {
+    var files = Array.from(fileInput.files);
+    var ut = document.getElementById('upload-type-select').value;
+    var statusEl = document.getElementById('idr-upload-status');
+    statusEl.style.display = 'block';
+    var done = 0;
+    files.forEach(function(file) {
+      var fd = new FormData();
+      fd.append('file', file);
+      fd.append('upload_type', ut);
+      fetch('/docgen/api/sessions/' + SESSION_ID + '/uploads', {method:'POST',body:fd})
+        .then(function(r){return r.json();}).then(function(d){
+          done++;
+          statusEl.textContent = done + '/' + files.length + ' uploaded';
+          if (done === files.length) setTimeout(function(){location.reload();},1000);
+        }).catch(function(){statusEl.textContent = 'Upload error.';});
+    });
+  });
+}
+</script>
+{% endblock %}
