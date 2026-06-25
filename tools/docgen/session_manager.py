@@ -324,6 +324,14 @@ def add_artifact(
     return dict(row)
 
 
+def get_artifact(artifact_id: str) -> dict[str, Any] | None:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM idr_artifacts WHERE id=?", (artifact_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def list_artifacts(session_id: str) -> list[dict[str, Any]]:
     with get_connection() as conn:
         rows = conn.execute(
