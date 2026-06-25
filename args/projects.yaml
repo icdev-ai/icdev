@@ -11492,3 +11492,94 @@ projects:
   - key: vv
     title: V&V — icdev mirror + Playwright verification
     priority: high
+- key: idr
+  name: "Intelligent Documentation Regeneration"
+  description: >-
+    Generic 8-stage AI pipeline that ingests multi-team artifacts (diagrams,
+    configs/IaC, docs, email snippets), reconciles multiple diagram versions
+    via HITL, generates a new authoritative document grounded in RAG+KG evidence,
+    gates quality with WriteGuard (hard block), requires HITL approval, and
+    publishes with full audit trail + citations. Network is Phase 1; Security
+    (firewall configs), DevOps (IaC), Developer, and Standard Guide follow
+    as domain profiles on the same engine.
+  task_prefix: "idr-"
+  default_open: true
+  briefs:
+    - "core: /docgen engine + session state machine + DIC wiring + idr_ DB migration — idr-core-01..08"
+    - "network: network domain profile + diagram reconciliation + config review integration — idr-network-01..06"
+    - "writeguard: WriteGuard hard gate + auto-fix loop + style guide wiring — idr-writeguard-01..04"
+    - "hitl: conflict resolution UI + document review UI + section-level routing — idr-hitl-01..05"
+    - "publish: DOCX + PDF + HTML export + audit trail + evidence report — idr-publish-01..04"
+    - "security: firewall config review + security domain profile [Phase 2] — idr-security-01..04"
+    - "devops: IaC review + devops domain profile [Phase 3] — idr-devops-01..04"
+    - "standard: multi-domain composite profile + cross-domain context builder [Phase 5] — idr-standard-01..05"
+  epics:
+    - key: core
+      title: "Core Engine — session + upload + DIC integration + DB"
+      priority: critical
+    - key: network
+      title: "Network Domain — diagram analysis + config review + HITL reconciliation"
+      priority: critical
+    - key: writeguard
+      title: "WriteGuard Hard Gate — quality + style + classification"
+      priority: critical
+    - key: hitl
+      title: "HITL Workflow — conflict resolution + document review + section routing"
+      priority: critical
+    - key: publish
+      title: "Export & Publish — DOCX + PDF + HTML + audit trail"
+      priority: high
+    - key: security
+      title: "Security Domain — vendor-agnostic firewall config review [Phase 2]"
+      priority: high
+    - key: devops
+      title: "DevOps Domain — IaC review (Terraform, Ansible, CloudFormation) [Phase 3]"
+      priority: high
+    - key: standard
+      title: "Standard Guide — multi-domain composite + cross-domain HITL routing [Phase 5]"
+      priority: medium
+
+- key: nqe
+  name: "Forward Networks NQE Integration"
+  description: >-
+    NL-driven interface to Forward Networks NQE for non-technical security teams.
+    Covers advisory document ingestion (PDF/DOCX/email), device impact assessment
+    via NQL queries (live FWD + ICDEV fallback), digital twin pre-validation before
+    patching, remediation tracking with HITL gates, POAM generation, exception
+    registry, and full ATO evidence export. ACE coworker-driven implementation.
+  task_prefix: nqe-
+  default_open: true
+  briefs:
+  - 'infra: FWD API client + NQL translator (NL<->NQL) + IQE adapter nqe.* + 5 routes + seed queries -- nqe-infra-01..08'
+  - 'advisory: advisory_extractor (PDF/DOCX/email) + advisory.py + wizard UI + dual NQL validation -- nqe-adv-01..06'
+  - 'twin: remediation_simulator.py + NDC twin.py integration + FWD twin API + verdict gate -- nqe-twin-01..04'
+  - 'migration: migration_planner.py + per-device upgrade steps + Migration Hub page -- nqe-mig-01..04'
+  - 'fallback: FallbackNQEClient + NQL-to-IQE mapping + source badge UI -- nqe-fall-01..03'
+  - 'guardrails: transparency gate + dual-query cross-validation + HITL approval + audit log -- nqe-grd-01..05'
+  - 'history: advisory_history.html + remediation_tracker.py + POAM generator + exception registry -- nqe-hist-01..06'
+  - 'ato: full ATO evidence export (JSON+PDF+Excel) + classification markings + traceability chain -- nqe-ato-01..03'
+  epics:
+  - key: infra
+    title: "NQE Infrastructure -- FWD client + NQL translator + IQE adapter"
+    priority: critical
+  - key: advisory
+    title: "Security Advisory Workflow -- upload + extract + assess impact"
+    priority: critical
+  - key: twin
+    title: "Digital Twin Pre-Validation -- NDC + FWD twin simulation before patching"
+    priority: high
+  - key: migration
+    title: "Migration Hub -- per-device upgrade plans"
+    priority: high
+  - key: fallback
+    title: "Internal Fallback -- ICDEV NDC DB when FWD unavailable"
+    priority: high
+  - key: guardrails
+    title: "Guardrails -- transparency gate + HITL + audit trail"
+    priority: critical
+  - key: history
+    title: "Findings History -- remediation tracker + POAM + exception registry"
+    priority: high
+  - key: ato
+    title: "ATO Evidence Export -- full package PDF+Excel+JSON"
+    priority: high

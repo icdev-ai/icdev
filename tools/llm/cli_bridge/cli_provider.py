@@ -30,10 +30,9 @@ and the job keeps running, caching its result in ``cli_llm_jobs`` for reuse.
 import base64
 import os
 import shutil
-import tempfile
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 from tools.llm.provider import LLMProvider, LLMRequest, LLMResponse
 from tools.llm.router import LLMUnavailableError

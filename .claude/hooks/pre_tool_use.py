@@ -526,6 +526,8 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "usage_events",
         # ECR API Keys (migration 215) — keys are append-only; revocation sets revoked_at, never deletes (NIST AU-9)
         "api_keys",
+        # IDR — conflict resolution trail is append-only (resolution recorded in-place, rows never deleted — NIST AU)
+        "idr_conflicts",
     ]
 
     if tool_name == "Bash":

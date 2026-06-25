@@ -1,0 +1,222 @@
+{% extends "network/base.html" %}
+{% block title %}Conflict Resolution — Network Design Canvas{% endblock %}
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">HITL Conflict Resolution</h1>
+    <p class="page-subtitle">Detect and resolve IPAM overlaps, duplicate circuits, and cross-topology conflicts</p>
+  </div>
+  <div class="page-actions">
+    <a href="/network/" class="btn btn-secondary">Dashboard</a>
+    <button class="btn btn-primary" id="scan-btn" onclick="scanConflicts()">Scan for Conflicts</button>
+  </div>
+</div>
+
+<!-- Summary Bar -->
+<div id="summary-bar" class="stats-bar" style="display:none;"></div>
+
+<!-- Conflict List -->
+<section class="panel panel-wide" id="conflict-panel">
+  <div class="panel-header">
+    <h2 class="panel-title">Detected Conflicts</h2>
+    <span id="conflict-count" style="font-size:0.85rem;color:var(--text-dim);">Run a scan to detect conflicts</span>
+  </div>
+
+  <div id="conflict-list">
+    <div style="padding:2rem;text-align:center;color:var(--text-dim);">
+      Click <strong>Scan for Conflicts</strong> to begin HITL review.
+    </div>
+  </div>
+</section>
+
+<!-- Resolution Log -->
+<section class="panel panel-wide" id="resolution-log-panel" style="margin-top:1rem;display:none;">
+  <div class="panel-header">
+    <h2 class="panel-title">Resolution Log</h2>
+    <span id="resolved-count" style="font-size:0.85rem;color:var(--text-dim);"></span>
+  </div>
+  <div id="resolution-log"></div>
+</section>
+
+<style>
+  .badge { display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.75rem;font-weight:600; }
+  .badge-high { background:#e74c3c22;color:#e74c3c; }
+  .badge-medium { background:#f39c1222;color:#f39c12; }
+  .badge-low { background:#2ecc7122;color:#2ecc71; }
+  .badge-resolved { background:#27ae6022;color:#27ae60; }
+  .badge-acknowledged { background:#3498db22;color:#3498db; }
+  .conflict-card {
+    border-bottom:1px solid var(--border);
+    padding:1rem;
+    transition:background 0.15s;
+  }
+  .conflict-card:hover { background:var(--bg3); }
+  .conflict-card.resolved { opacity:0.55; }
+  .conflict-meta { display:flex;align-items:center;gap:8px;margin-bottom:6px; }
+  .conflict-detail { font-size:0.88rem;color:var(--text-dim);margin-bottom:0.5rem; }
+  .conflict-actions { display:flex;align-items:center;gap:8px;flex-wrap:wrap; }
+  .resolution-note { flex:1;min-width:180px;background:var(--bg3);border:1px solid var(--border);
+    color:var(--text);padding:5px 8px;border-radius:4px;font-size:0.82rem; }
+  .log-row { display:flex;align-items:center;gap:8px;padding:6px 1rem;border-bottom:1px solid var(--border-faint);font-size:0.85rem; }
+  .log-row:last-child { border-bottom:none; }
+  .btn-sm-ack { background:#3498db;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:0.78rem; }
+  .btn-sm-ack:hover { background:#2980b9; }
+  .btn-sm-resolve { background:#27ae60;color:#fff;border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:0.78rem; }
+  .btn-sm-resolve:hover { background:#219a52; }
+  .btn-sm-resolve:disabled,.btn-sm-ack:disabled { opacity:0.45;cursor:not-allowed; }
+  .scan-spinner { display:inline-block;width:14px;height:14px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin 0.6s linear infinite;vertical-align:middle;margin-right:4px; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const BASE = NC_BASE;
+let _scanData = null;
+const _resolutions = {};  // key -> {action, note, ts}
+
+function _conflictKey(c) {
+  return [c.type, c.detail].join('||');
+}
+
+function _sevBadge(sev) {
+  const cls = sev === 'high' ? 'badge-high' : sev === 'medium' ? 'badge-medium' : 'badge-low';
+  return `<span class="badge ${cls}">${sev.toUpperCase()}</span>`;
+}
+
+async function scanConflicts() {
+  const btn = document.getElementById('scan-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="scan-spinner"></span>Scanning...';
+  try {
+    const r = await fetch(BASE + '/api/conflicts');
+    if (!r.ok) { alert('Scan failed: ' + r.status); return; }
+    _scanData = await r.json();
+    renderConflicts(_scanData);
+  } catch (e) {
+    alert('Scan error: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Re-Scan';
+  }
+}
+
+function renderConflicts(data) {
+  const conflicts = data.conflicts || [];
+  const checked = data.checked || {};
+
+  // Summary bar
+  const highCount = conflicts.filter(c => c.severity === 'high').length;
+  const medCount  = conflicts.filter(c => c.severity === 'medium').length;
+  const resolvedCount = Object.values(_resolutions).filter(r => r.action === 'resolved').length;
+  const bar = document.getElementById('summary-bar');
+  bar.style.display = 'flex';
+  bar.innerHTML = `
+    <div class="stat-card"><div class="stat-value">${conflicts.length}</div><div class="stat-label">Total Conflicts</div></div>
+    <div class="stat-card"><div class="stat-value" style="color:#e74c3c">${highCount}</div><div class="stat-label">High Severity</div></div>
+    <div class="stat-card"><div class="stat-value" style="color:#f39c12">${medCount}</div><div class="stat-label">Medium Severity</div></div>
+    <div class="stat-card"><div class="stat-value" style="color:#27ae60">${resolvedCount}</div><div class="stat-label">Resolved</div></div>
+    <div class="stat-card"><div class="stat-value">${checked.ipam_blocks || 0}</div><div class="stat-label">IPAM Blocks</div></div>
+    <div class="stat-card"><div class="stat-value">${checked.circuits || 0}</div><div class="stat-label">Circuits</div></div>
+  `;
+
+  // Update count badge
+  document.getElementById('conflict-count').textContent =
+    conflicts.length === 0 ? 'No conflicts detected' : `${conflicts.length} conflict(s) found`;
+
+  const list = document.getElementById('conflict-list');
+  if (conflicts.length === 0) {
+    list.innerHTML = '<div style="padding:2rem;text-align:center;color:#27ae60;font-weight:600;">No conflicts detected — topology is clean.</div>';
+    return;
+  }
+
+  list.innerHTML = conflicts.map((c, i) => {
+    const key = _conflictKey(c);
+    const res = _resolutions[key];
+    const isResolved = res && res.action === 'resolved';
+    const isAcked = res && res.action === 'acknowledged';
+    const cardClass = isResolved ? 'conflict-card resolved' : 'conflict-card';
+    const statusBadge = isResolved
+      ? '<span class="badge badge-resolved">RESOLVED</span>'
+      : isAcked
+        ? '<span class="badge badge-acknowledged">ACKNOWLEDGED</span>'
+        : '';
+    return `
+<div class="${cardClass}" id="conflict-${i}">
+  <div class="conflict-meta">
+    <span class="badge" style="background:var(--bg3);color:var(--text);text-transform:uppercase;letter-spacing:0.5px;font-size:0.72rem;">${c.type}</span>
+    ${_sevBadge(c.severity)}
+    ${statusBadge}
+  </div>
+  <div class="conflict-detail">${escHtml(c.detail)}</div>
+  <div class="conflict-actions">
+    <input class="resolution-note" type="text" id="note-${i}" placeholder="Resolution note (optional)" ${isResolved ? 'disabled' : ''} />
+    <button class="btn-sm-ack" onclick="resolve(${i}, 'acknowledged')" ${isResolved || isAcked ? 'disabled' : ''}>Acknowledge</button>
+    <button class="btn-sm-resolve" onclick="resolve(${i}, 'resolved')" ${isResolved ? 'disabled' : ''}>Mark Resolved</button>
+  </div>
+  ${res ? `<div style="margin-top:6px;font-size:0.78rem;color:var(--text-dim);">
+    <strong>${res.action === 'resolved' ? 'Resolved' : 'Acknowledged'}</strong> at ${res.ts}${res.note ? ' — ' + escHtml(res.note) : ''}
+  </div>` : ''}
+</div>`;
+  }).join('');
+}
+
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.appendChild(document.createTextNode(s || ''));
+  return d.innerHTML;
+}
+
+async function resolve(index, action) {
+  const conflicts = (_scanData || {}).conflicts || [];
+  const c = conflicts[index];
+  if (!c) return;
+  const note = (document.getElementById('note-' + index) || {}).value || '';
+  const key = _conflictKey(c);
+
+  try {
+    const r = await fetch(BASE + '/api/conflicts/resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conflict_type: c.type, detail: c.detail, severity: c.severity, action, note }),
+    });
+    if (!r.ok) { alert('Error: ' + (await r.json()).error); return; }
+    const data = await r.json();
+    _resolutions[key] = { action, note, ts: data.resolved_at || new Date().toISOString() };
+    renderConflicts(_scanData);
+    renderResolutionLog();
+  } catch (e) {
+    alert('Error: ' + e.message);
+  }
+}
+
+async function renderResolutionLog() {
+  try {
+    const r = await fetch(BASE + '/api/conflicts/resolutions');
+    if (!r.ok) return;
+    const data = await r.json();
+    const entries = data.resolutions || [];
+    if (entries.length === 0) return;
+
+    const panel = document.getElementById('resolution-log-panel');
+    panel.style.display = 'block';
+    document.getElementById('resolved-count').textContent = `${entries.length} action(s)`;
+
+    document.getElementById('resolution-log').innerHTML = entries.map(e => `
+<div class="log-row">
+  <span class="badge ${e.action === 'resolved' ? 'badge-resolved' : 'badge-acknowledged'}">${e.action.toUpperCase()}</span>
+  <span class="badge" style="background:var(--bg3);color:var(--text);font-size:0.72rem;">${e.conflict_type}</span>
+  <span style="color:var(--text-dim);flex:1;font-size:0.82rem;">${escHtml(e.detail)}</span>
+  ${e.note ? `<span style="font-size:0.78rem;color:var(--text);">${escHtml(e.note)}</span>` : ''}
+  <span style="font-size:0.75rem;color:var(--text-dim);white-space:nowrap;">${e.resolved_at || ''}</span>
+</div>`).join('');
+  } catch (e) { /* ignore */ }
+}
+
+// Auto-scan on page load
+document.addEventListener('DOMContentLoaded', async () => {
+  await scanConflicts();
+  await renderResolutionLog();
+});
+</script>
+{% endblock %}

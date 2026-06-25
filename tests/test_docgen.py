@@ -392,3 +392,158 @@ def test_context_builder_config_findings_flattened():
         }],
     )
     assert len(ctx["config_findings"]) == 2  # 1 security + 1 remediation
+
+
+# ─── Stage 6 WriteGuard hard blocking gate ────────────────────────────────────
+
+def test_stage6_check_gate_false_when_no_wg_result():
+    """stage6_check_gate returns False when wg_result_id is not set."""
+    from tools.docgen.session_manager import create_session
+    from tools.docgen.workflow import stage6_check_gate
+
+    session = create_session(title="WG Gate Check", domain="network")
+    assert not stage6_check_gate(session["id"])
+
+
+def test_stage6_check_gate_true_after_wg_result_set():
+    """stage6_check_gate returns True once wg_result_id is stored on the session."""
+    from tools.docgen.session_manager import create_session, set_field
+    from tools.docgen.workflow import stage6_check_gate
+
+    session = create_session(title="WG Gate Pass", domain="network")
+    set_field(session["id"], wg_result_id="wg-result-abc-123")
+    assert stage6_check_gate(session["id"])
+
+
+def test_stage6_writeguard_fixed_text_is_string_not_dict():
+    """Bug-fix: stage6_writeguard must return fixed_text as str, not a rewrite_content dict."""
+    from tools.docgen.session_manager import create_session
+    from tools.docgen.workflow import stage6_writeguard
+
+    rewrite_dict = {
+        "rewritten_text": "Fixed version of the doc.",
+        "changes_made": ["removed passive voice"],
+        "status": "ok",
+    }
+    quality_result = {
+        "overall_score": 55.0,
+        "passed": False,
+        "details": {},
+        "recommendations": [],
+    }
+
+    with (
+        patch("tools.pulse.writeguard.run_full_quality_check", return_value=quality_result),
+        patch("tools.pulse.writeguard.rewrite_content", return_value=rewrite_dict),
+    ):
+        session = create_session(title="WG Fix Type", domain="network")
+        result = stage6_writeguard(session["id"], "Draft doc.", "network", retry_count=0)
+
+    assert result["passed"] is False
+    # fixed_text must be a string, not the full rewrite_content dict
+    assert isinstance(result["fixed_text"], str)
+    assert result["fixed_text"] == "Fixed version of the doc."
+
+
+def test_stage6_writeguard_passes_on_high_score():
+    """stage6_writeguard passes when overall_score >= 70."""
+    from tools.docgen.session_manager import create_session
+    from tools.docgen.workflow import stage6_writeguard
+
+    quality_result = {
+        "overall_score": 82.0,
+        "passed": True,
+        "details": {},
+        "recommendations": [],
+    }
+
+    with patch("tools.pulse.writeguard.run_full_quality_check", return_value=quality_result):
+        session = create_session(title="WG High Score", domain="network")
+        result = stage6_writeguard(session["id"], "Excellent doc.", "network", retry_count=0)
+
+    assert result["passed"] is True
+    assert result["score"] == 82.0
+    assert result["fixed_text"] == "Excellent doc."
+
+
+def test_stage6_check_gate_false_after_advance_without_wg():
+    """stage6_check_gate remains False when session advances to stage 6 without WG result."""
+    from tools.docgen.session_manager import create_session, advance_stage
+    from tools.docgen.workflow import stage6_check_gate
+
+    session = create_session(title="Block Review", domain="network")
+    advance_stage(session["id"], 6, "writeguard")
+    # wg_result_id still not set — gate must block
+    assert not stage6_check_gate(session["id"])
+
+
+def test_stage6_check_gate_true_after_set_field():
+    """stage6_check_gate passes once wg_result_id is recorded via set_field."""
+    from tools.docgen.session_manager import create_session, advance_stage, set_field
+    from tools.docgen.workflow import stage6_check_gate
+
+    session = create_session(title="Allow Review", domain="network")
+    advance_stage(session["id"], 6, "writeguard")
+    set_field(session["id"], wg_result_id="wg-result-xyz")
+    assert stage6_check_gate(session["id"])
+
+
+def test_stage6_writeguard_returns_fail_with_fixed_text_and_not_blocked():
+    """stage6_writeguard on low score returns passed=False, blocked=False (retries left)."""
+    from tools.docgen.session_manager import create_session
+    from tools.docgen.workflow import stage6_writeguard, _WG_MAX_RETRIES
+
+    quality_result = {"overall_score": 45.0, "passed": False, "details": {}, "recommendations": []}
+    rewrite_dict = {"rewritten_text": "Better text here.", "changes_made": []}
+
+    session = create_session(title="WG Fail Retry", domain="network")
+
+    with (
+        patch("tools.pulse.writeguard.run_full_quality_check", return_value=quality_result),
+        patch("tools.pulse.writeguard.rewrite_content", return_value=rewrite_dict),
+    ):
+        result = stage6_writeguard(session["id"], "Short draft.", "network", retry_count=0)
+
+    assert result["passed"] is False
+    assert result["score"] == 45.0
+    assert isinstance(result["fixed_text"], str)
+    assert result["fixed_text"] == "Better text here."
+
+
+def test_stage6_writeguard_pass_sets_session_wg_result_id():
+    """Simulate what the blueprint route does: set_field on pass."""
+    from tools.docgen.session_manager import create_session, set_field, get_session
+    from tools.docgen.workflow import stage6_writeguard
+
+    quality_result = {"overall_score": 78.0, "passed": True, "details": {}, "recommendations": []}
+
+    session = create_session(title="WG Pass SetField", domain="network")
+
+    with patch("tools.pulse.writeguard.run_full_quality_check", return_value=quality_result):
+        result = stage6_writeguard(session["id"], "Well-written doc.", "network", retry_count=0)
+
+    assert result["passed"] is True
+    # Simulate what the route does on pass
+    set_field(session["id"], wg_result_id="wg-result-sim-001")
+    updated = get_session(session["id"])
+    assert updated.get("wg_result_id") == "wg-result-sim-001"
+
+
+def test_stage6_writeguard_blocked_at_max_retries():
+    """stage6_writeguard at max retries returns fixed_text = original doc (no more rewrites)."""
+    from tools.docgen.session_manager import create_session
+    from tools.docgen.workflow import stage6_writeguard, _WG_MAX_RETRIES
+
+    quality_result = {"overall_score": 30.0, "passed": False, "details": {}, "recommendations": []}
+
+    session = create_session(title="WG Blocked", domain="network")
+    original_text = "Poor quality text."
+
+    with patch("tools.pulse.writeguard.run_full_quality_check", return_value=quality_result):
+        result = stage6_writeguard(
+            session["id"], original_text, "network", retry_count=_WG_MAX_RETRIES
+        )
+
+    assert result["passed"] is False
+    # At max retries, no rewrite attempted — fixed_text is the original
+    assert result["fixed_text"] == original_text

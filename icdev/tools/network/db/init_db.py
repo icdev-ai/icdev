@@ -1924,6 +1924,51 @@ CREATE TABLE IF NOT EXISTS nc_phase_documents (
 );
 CREATE INDEX IF NOT EXISTS idx_nc_phase_docs_phase ON nc_phase_documents(phase_id);
 CREATE INDEX IF NOT EXISTS idx_nc_phase_docs_project ON nc_phase_documents(project_id);
+
+-- Diagram Analysis: uploaded diagrams and AI analysis results
+CREATE TABLE IF NOT EXISTS nc_diagram_uploads (
+    id              TEXT PRIMARY KEY,
+    filename        TEXT NOT NULL,
+    format          TEXT NOT NULL,
+    file_path       TEXT NOT NULL,
+    file_hash       TEXT NOT NULL,
+    page_count      INTEGER DEFAULT 1,
+    topology_id     TEXT,
+    uploaded_at     TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_diagram_analyses (
+    id                   TEXT PRIMARY KEY,
+    upload_id            TEXT NOT NULL REFERENCES nc_diagram_uploads(id),
+    industry             TEXT NOT NULL,
+    frameworks_json      TEXT DEFAULT '[]',
+    cloud_providers_json TEXT DEFAULT '[]',
+    topology_mode        TEXT DEFAULT 'unknown',
+    status               TEXT NOT NULL DEFAULT 'pending',
+    result_json          TEXT DEFAULT '{}',
+    created_at           TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at           TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_diagram_findings (
+    id              TEXT PRIMARY KEY,
+    analysis_id     TEXT NOT NULL REFERENCES nc_diagram_analyses(id),
+    tab             TEXT NOT NULL,
+    severity        TEXT NOT NULL DEFAULT 'info',
+    title           TEXT NOT NULL,
+    detail          TEXT,
+    remediation     TEXT,
+    references_json TEXT DEFAULT '[]',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS nc_diagram_exports (
+    id              TEXT PRIMARY KEY,
+    analysis_id     TEXT NOT NULL REFERENCES nc_diagram_analyses(id),
+    export_type     TEXT NOT NULL DEFAULT 'drawio',
+    file_path       TEXT NOT NULL,
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────

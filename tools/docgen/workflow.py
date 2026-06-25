@@ -210,7 +210,9 @@ def stage6_writeguard(
         passed = score >= _WG_MIN_SCORE
 
         if not passed and retry_count < _WG_MAX_RETRIES:
-            fixed_text = rewrite_content(doc_text, result)
+            # rewrite_content returns a dict; extract the actual rewritten text
+            rewrite_result = rewrite_content(doc_text, result)
+            fixed_text = rewrite_result.get("rewritten_text", doc_text)
             log.info(
                 "IDR WriteGuard: session=%s score=%.1f FAIL → auto-fix attempt %d",
                 session_id, score, retry_count + 1,
@@ -229,6 +231,14 @@ def stage6_writeguard(
     except Exception as exc:
         log.exception("IDR WriteGuard exception: session=%s", session_id)
         return {"passed": False, "score": 0, "result": {"error": str(exc)}, "fixed_text": doc_text}
+
+
+def stage6_check_gate(session_id: str) -> bool:
+    """Return True if WriteGuard has passed for this session (wg_result_id is set)."""
+    session = sm.get_session(session_id)
+    if not session:
+        return False
+    return bool(session.get("wg_result_id"))
 
 
 # ─── Stage 8: Publish all formats ─────────────────────────────────────────────

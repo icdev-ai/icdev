@@ -13910,7 +13910,8 @@ Planning rules:
         @bp.route("/api/diagram-upload", methods=["POST"])
         @nc_login_required
         def nc_api_diagram_upload():
-            """Upload a diagram file (PNG/JPG/PDF/draw.io/DOCX) and create an upload record."""
+            """Upload a diagram file (PNG/JPG/PDF/draw.io/DOCX), create an upload record,
+            and automatically run diagram_analysis.run_analysis() for the given industry."""
             from werkzeug.utils import secure_filename as _sfn
 
             if "file" not in request.files:
@@ -13936,6 +13937,9 @@ Planning rules:
                 page_count = _da_pdf_page_count(file_path)
 
             topology_id = request.form.get("topology_id") or None
+            industry = request.form.get("industry", "commercial")
+            if industry not in _DA_INDUSTRIES:
+                industry = "commercial"
 
             conn = get_connection()
             try:
@@ -13946,15 +13950,58 @@ Planning rules:
                     (upload_id, safe_name, fmt, str(file_path), file_hash, page_count, topology_id),
                 )
                 conn.commit()
+                _audit("DIAGRAM_UPLOADED", "diagram_upload", upload_id, f"format={fmt}, pages={page_count}")
+
+                # Auto-run analysis per upload
+                analysis_id = f"dax-{_uuid.uuid4().hex[:12]}"
+                conn.execute(
+                    "INSERT INTO nc_diagram_analyses (id, upload_id, industry, status) "
+                    "VALUES (%s, %s, %s, 'running')",
+                    (analysis_id, upload_id, industry),
+                )
+                conn.commit()
+
+                result = _da_run_analysis(upload_id, industry, conn)
+                cloud_ctx = result.get("cloud_context", {})
+                tabs = _da_enrich_with_attack(result.get("tabs", {}))
+
+                conn.execute(
+                    "UPDATE nc_diagram_analyses SET status='done', result_json=%s, "
+                    "cloud_providers_json=%s, topology_mode=%s, updated_at=CURRENT_TIMESTAMP "
+                    "WHERE id=%s",
+                    (
+                        json.dumps(tabs),
+                        json.dumps(cloud_ctx.get("providers", [])),
+                        cloud_ctx.get("mode", "unknown"),
+                        analysis_id,
+                    ),
+                )
+                _da_save_findings(conn, analysis_id, tabs)
+                conn.commit()
+                _audit("DIAGRAM_ANALYZED", "diagram_analysis", analysis_id, f"industry={industry}, mode={cloud_ctx.get('mode','unknown')}")
+            except Exception as exc:
+                logger.error("Diagram upload/analysis error: %s", exc)
+                try:
+                    conn.execute(
+                        "UPDATE nc_diagram_analyses SET status='error', updated_at=CURRENT_TIMESTAMP WHERE id=%s",
+                        (analysis_id,),
+                    )
+                    conn.commit()
+                except Exception:
+                    pass
+                return jsonify({"error": str(exc)}), 500
             finally:
                 conn.close()
 
-            _audit("DIAGRAM_UPLOADED", "diagram_upload", upload_id, f"format={fmt}, pages={page_count}")
             return jsonify({
                 "upload_id": upload_id,
                 "filename": safe_name,
                 "format": fmt,
                 "page_count": page_count,
+                "analysis_id": analysis_id,
+                "status": "done",
+                "cloud_context": cloud_ctx,
+                "tabs": tabs,
             }), 201
 
         @bp.route("/api/diagram-analysis/<upload_id>/analyze", methods=["POST"])

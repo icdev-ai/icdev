@@ -3672,3 +3672,32 @@ NETWORK_ONTOLOGY_MAP: dict[str, str] = {
 PARTNER_TYPES = ['isp', 'carrier', 'cloud', 'content', 'enterprise', 'ix']
 PARTNER_STATUSES = ['active', 'suspended', 'terminated']
 
+# ── Diagram Analysis Industries ──────────────────────────────────────────────
+# Keys match _INDUSTRY_LENS keys in diagram_analysis.py.
+DIAGRAM_ANALYSIS_INDUSTRIES = {
+    "dod_il4": {
+        "label": "DoD/IC — IL4 (CUI / FedRAMP High)",
+        "frameworks": ["nist_800_53", "cmmc_level_2", "fedramp_high", "il4", "cnssi_1253", "csa_ccm", "nist_800_144"],
+    },
+    "dod_il5": {
+        "label": "DoD/IC — IL5 (NIPR Secret-Enclave)",
+        "frameworks": ["nist_800_53", "cmmc_level_3", "fedramp_high", "il5", "cnssi_1253", "csa_ccm"],
+    },
+    "dod_il6": {
+        "label": "DoD/IC — IL6 SECRET",
+        "frameworks": ["nist_800_53", "il6", "cnssi_1253", "nsa_type1"],
+    },
+    "healthcare": {
+        "label": "Healthcare (HIPAA / HITRUST)",
+        "frameworks": ["hipaa", "hitrust", "nist_800_53", "csa_ccm"],
+    },
+    "financial": {
+        "label": "Financial (PCI-DSS / SOC 2)",
+        "frameworks": ["pci_dss", "soc2", "nist_800_53", "csa_ccm"],
+    },
+    "commercial": {
+        "label": "Commercial / Enterprise (ISO 27001)",
+        "frameworks": ["nist_800_53", "iso_27001", "owasp", "csa_ccm", "nist_800_144"],
+    },
+}
+
