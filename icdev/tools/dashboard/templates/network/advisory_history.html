@@ -1,0 +1,188 @@
+{% extends "network/base.html" %}
+{% block title %}Advisory History — Network Canvas{% endblock %}
+{% block content %}
+<style>
+.adv-filters { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; margin-bottom:1.2rem; }
+.adv-filters label { display:flex; flex-direction:column; gap:4px; font-size:0.8rem; color:var(--text-dim); }
+.adv-filters select, .adv-filters input[type="date"] { padding:5px 8px; border:1px solid var(--border); border-radius:4px; background:var(--bg-card); color:var(--text-primary); font-size:0.85rem; }
+.badge-sev { display:inline-block; padding:2px 8px; border-radius:10px; font-size:0.75rem; font-weight:600; text-transform:uppercase; }
+.badge-sev.critical { background:#3d0000; color:#ff6b6b; }
+.badge-sev.high { background:#3d1a00; color:#ff9a3d; }
+.badge-sev.medium { background:#3d3200; color:#ffd93d; }
+.badge-sev.low { background:#003d1a; color:#6bffb8; }
+.badge-sev.informational { background:#1a1a3d; color:#9ab4ff; }
+.badge-src { display:inline-block; padding:2px 7px; border-radius:4px; font-size:0.72rem; font-weight:600; background:var(--bg-hover); color:var(--text-dim); text-transform:uppercase; }
+.badge-hitl { display:inline-block; padding:2px 7px; border-radius:4px; font-size:0.72rem; font-weight:600; }
+.badge-hitl.approved { background:#003d1a; color:#6bffb8; }
+.badge-hitl.pending { background:#3d3200; color:#ffd93d; }
+.badge-hitl.rejected { background:#3d0000; color:#ff6b6b; }
+.prog-bar-wrap { width:80px; background:var(--bg-hover); border-radius:4px; height:8px; display:inline-block; vertical-align:middle; }
+.prog-bar-fill { height:8px; border-radius:4px; background:#22c55e; }
+.action-links a { font-size:0.78rem; color:var(--accent-blue); text-decoration:none; margin-right:8px; }
+.action-links a:hover { text-decoration:underline; }
+.empty-state { text-align:center; padding:60px 20px; color:var(--text-dim); }
+.empty-state svg { opacity:0.3; margin-bottom:1rem; }
+</style>
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Advisory History</h1>
+    <p class="page-subtitle">CVE advisories tracked across network devices</p>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-secondary" onclick="exportAdvisories()">Export CSV</button>
+  </div>
+</div>
+
+<!-- Filters -->
+<section class="panel panel-wide">
+  <div style="padding:1rem;">
+    <div class="adv-filters" id="filter-bar">
+      <label>Vendor
+        <select id="f-vendor" onchange="applyFilters()">
+          <option value="">All vendors</option>
+          {% for v in vendors %}<option value="{{ v }}">{{ v }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Severity
+        <select id="f-severity" onchange="applyFilters()">
+          <option value="">All severities</option>
+          <option value="critical">Critical</option>
+          <option value="high">High</option>
+          <option value="medium">Medium</option>
+          <option value="low">Low</option>
+          <option value="informational">Informational</option>
+        </select>
+      </label>
+      <label>Status
+        <select id="f-status" onchange="applyFilters()">
+          <option value="">All statuses</option>
+          <option value="open">Open</option>
+          <option value="in-progress">In Progress</option>
+          <option value="mitigated">Mitigated</option>
+          <option value="excepted">Excepted</option>
+          <option value="verified">Verified</option>
+        </select>
+      </label>
+      <label>Date From
+        <input type="date" id="f-date-from" onchange="applyFilters()">
+      </label>
+      <label>Date To
+        <input type="date" id="f-date-to" onchange="applyFilters()">
+      </label>
+      <label style="flex-direction:row;align-items:center;gap:6px;">
+        <input type="text" id="f-search" placeholder="Search CVE…" oninput="applyFilters()"
+          style="padding:5px 8px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:var(--text-primary);font-size:0.85rem;width:140px;">
+      </label>
+    </div>
+  </div>
+</section>
+
+<!-- Table -->
+<section class="panel panel-wide">
+  <div class="panel-header">
+    <h2 class="panel-title">Advisories <span id="row-count" style="font-size:0.8rem;color:var(--text-dim);font-weight:400;"></span></h2>
+  </div>
+  <div style="overflow-x:auto;">
+    <table class="data-table" id="adv-table">
+      <thead>
+        <tr>
+          <th>CVE ID</th>
+          <th>Vendor</th>
+          <th>Severity</th>
+          <th>Date</th>
+          <th>Total Devices</th>
+          <th>Impacted</th>
+          <th>Remediation Progress</th>
+          <th>Data Source</th>
+          <th>HITL Approval</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="adv-tbody">
+        {% if not advisories %}
+        <tr id="empty-row">
+          <td colspan="11">
+            <div class="empty-state">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+              </svg>
+              <div style="font-size:1rem;font-weight:600;margin-bottom:4px;">No advisories found</div>
+              <div style="font-size:0.85rem;">Advisories are ingested from NQE scans or added manually.</div>
+            </div>
+          </td>
+        </tr>
+        {% endif %}
+        {% for adv in advisories %}
+        <tr class="adv-row"
+            data-vendor="{{ adv.vendor|lower }}"
+            data-severity="{{ adv.severity }}"
+            data-status="{{ adv.status }}"
+            data-date="{{ adv.published_date or '' }}"
+            data-cve="{{ adv.cve_id|lower }}">
+          <td><strong>{{ adv.cve_id }}</strong></td>
+          <td>{{ adv.vendor or '—' }}</td>
+          <td><span class="badge-sev {{ adv.severity }}">{{ adv.severity }}</span></td>
+          <td>{{ (adv.published_date or '')[:10] or '—' }}</td>
+          <td style="text-align:right;">{{ adv.total_devices }}</td>
+          <td style="text-align:right;">{{ adv.impacted_devices }}</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:6px;">
+              <div class="prog-bar-wrap">
+                <div class="prog-bar-fill" style="width:{{ [adv.remediation_pct|round(0)|int, 100]|min }}%;"></div>
+              </div>
+              <span style="font-size:0.78rem;">{{ adv.remediation_pct|round(0)|int }}%</span>
+            </div>
+          </td>
+          <td><span class="badge-src">{{ adv.data_source }}</span></td>
+          <td><span class="badge-hitl {{ adv.hitl_status }}">{{ adv.hitl_status }}</span></td>
+          <td><span class="badge-sev {{ adv.status.replace('-', '') }}" style="background:var(--bg-hover);color:var(--text-dim);">{{ adv.status }}</span></td>
+          <td class="action-links">
+            <a href="/network/advisory-history/{{ adv.id }}/assessment">View Assessment</a>
+            <a href="/network/poam?advisory={{ adv.id }}">View POAM</a>
+            <a href="/network/exceptions/file?advisory={{ adv.id }}">File Exception</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+{% endblock %}
+{% block scripts %}
+<script>
+function applyFilters() {
+  const vendor = document.getElementById('f-vendor').value.toLowerCase();
+  const severity = document.getElementById('f-severity').value;
+  const status = document.getElementById('f-status').value;
+  const dateFrom = document.getElementById('f-date-from').value;
+  const dateTo = document.getElementById('f-date-to').value;
+  const search = document.getElementById('f-search').value.toLowerCase();
+  const rows = document.querySelectorAll('.adv-row');
+  let visible = 0;
+  rows.forEach(row => {
+    const m = (
+      (!vendor || row.dataset.vendor.includes(vendor)) &&
+      (!severity || row.dataset.severity === severity) &&
+      (!status || row.dataset.status === status) &&
+      (!dateFrom || row.dataset.date >= dateFrom) &&
+      (!dateTo || row.dataset.date <= dateTo) &&
+      (!search || row.dataset.cve.includes(search))
+    );
+    row.style.display = m ? '' : 'none';
+    if (m) visible++;
+  });
+  const empty = document.getElementById('empty-row');
+  if (empty) empty.style.display = visible === 0 ? '' : 'none';
+  document.getElementById('row-count').textContent = `(${visible} shown)`;
+}
+
+function exportAdvisories() {
+  window.location = '/network/api/advisories/export?format=csv';
+}
+
+document.addEventListener('DOMContentLoaded', () => applyFilters());
+</script>
+{% endblock %}

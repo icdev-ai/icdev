@@ -14228,6 +14228,212 @@ Planning rules:
             headers={"Content-Disposition": f"attachment; filename=ato-evidence-{advisory_id}.{ext}"},
         )
 
+    # ── NQE Translator ─────────────────────────────────────────────────────
+
+    @bp.route("/nqe-translator", methods=["GET"])
+    def nqe_translator_page():
+        """Render the NQE query translator UI."""
+        return render_template("network/nqe_translator.html", page_title="NQE Translator")
+
+    @bp.route("/api/nqe/translate", methods=["POST"])
+    def api_nqe_translate():
+        """Translate plain-English text to NQL.
+
+        Request: {"text": str, "context": dict (optional advisory context)}
+        Response: {"nql": str, "confidence": float, "source": str}
+        """
+        data = request.get_json(force=True, silent=True) or {}
+        text = (data.get("text") or "").strip()
+        if not text:
+            return jsonify({"error": "text is required"}), 400
+
+        context = data.get("context") or {}
+
+        try:
+            from tools.network.nql_translator import nl_to_nql
+            nql = nl_to_nql(text, context=context or None)
+        except Exception as exc:
+            logger.exception("NQE translate error")
+            return jsonify({"error": str(exc)}), 500
+
+        # Confidence heuristic: deterministic context path → high; LLM path → medium
+        if context and any(context.get(k) for k in ("vendor", "affected_models", "affected_versions")):
+            confidence = 0.92
+            source = "deterministic"
+        elif nql and nql.startswith("foreach"):
+            confidence = 0.70
+            source = "llm_translation"
+        else:
+            confidence = 0.50
+            source = "fallback"
+
+        # Audit log
+        try:
+            from tools.db.storage import get_canvas_connection
+            conn = get_canvas_connection("NC_STORAGE_BACKEND")
+            conn.execute(
+                "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, created_at) "
+                "VALUES (%s, %s, %s, NOW())",
+                ("translate", nql, False),
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
+        return jsonify({"nql": nql, "confidence": confidence, "source": source})
+
+    @bp.route("/api/nqe/explain", methods=["POST"])
+    def api_nqe_explain():
+        """Return a plain-English explanation of an NQL query.
+
+        Request: {"nql": str}
+        Response: {"explanation": str}
+        """
+        data = request.get_json(force=True, silent=True) or {}
+        nql = (data.get("nql") or "").strip()
+        if not nql:
+            return jsonify({"error": "nql is required"}), 400
+
+        try:
+            from tools.llm.router import LLMRouter
+            from tools.llm.provider import LLMRequest
+
+            prompt = (
+                "Explain this NQL (Network Query Language) query in plain English "
+                "for a non-technical network administrator. Be concise (2-3 sentences).\n\n"
+                f"NQL:\n{nql}"
+            )
+            router = LLMRouter()
+            req = LLMRequest(messages=[{"role": "user", "content": prompt}], max_tokens=150, temperature=0.2)
+            resp = router.invoke("nql_explain", req)
+            explanation = (resp.content or "").strip()
+        except ImportError:
+            explanation = _nql_heuristic_explain(nql)
+        except Exception:
+            explanation = _nql_heuristic_explain(nql)
+
+        return jsonify({"explanation": explanation})
+
+    @bp.route("/api/nqe/run", methods=["POST"])
+    def api_nqe_run():
+        """Execute an NQL query and return results.
+
+        Requires explicit user confirmation (call audit-log endpoint first
+        with user_confirmed=true — enforced by the UI transparency gate).
+
+        Request: {"nql": str, "network_id": str|null}
+        Response: {"rows": list, "columns": list, "total": int, "source": str}
+        """
+        data = request.get_json(force=True, silent=True) or {}
+        nql = (data.get("nql") or "").strip()
+        network_id = data.get("network_id") or None
+
+        if not nql:
+            return jsonify({"error": "nql is required"}), 400
+
+        try:
+            from tools.network.nqe_client import FallbackNQEClient
+
+            client = FallbackNQEClient()
+            result = client.run_query(nql, network_id=network_id)
+            rows = result.get("rows", [])
+            columns = list(rows[0].keys()) if rows else []
+
+            # Audit execution
+            try:
+                from tools.db.storage import get_canvas_connection
+                conn = get_canvas_connection("NC_STORAGE_BACKEND")
+                conn.execute(
+                    "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, row_count, created_at) "
+                    "VALUES (%s, %s, %s, %s, NOW())",
+                    ("run", nql, True, len(rows)),
+                )
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
+
+            return jsonify({
+                "rows": rows[:500],
+                "columns": columns,
+                "total": len(rows),
+                "source": result.get("source", "local"),
+            })
+        except Exception as exc:
+            logger.exception("NQE run error: nql=%r", nql)
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/nqe/collections", methods=["GET"])
+    def api_nqe_collections():
+        """Return the list of supported NQE collection paths.
+
+        Response: {"collections": [{"path": str, "description": str}]}
+        """
+        collections = [
+            {"path": "network.devices",          "description": "All network devices (hostname, OS, vendor, platform)"},
+            {"path": "network.interfaces",        "description": "Device interfaces with status and counters"},
+            {"path": "network.bgp_sessions",      "description": "BGP peering sessions and their state"},
+            {"path": "network.acls",              "description": "Access control lists and firewall rules"},
+            {"path": "network.paths",             "description": "End-to-end forwarding paths"},
+            {"path": "network.os_versions",       "description": "OS version inventory across all devices"},
+            {"path": "network.links",             "description": "Physical and logical links between nodes"},
+            {"path": "network.vlans",             "description": "VLAN definitions and membership"},
+            {"path": "network.prefixes",          "description": "IP prefix / subnet inventory"},
+            {"path": "network.ospf.neighbors",    "description": "OSPF adjacency table"},
+            {"path": "network.isis.adjacencies",  "description": "IS-IS adjacency table"},
+            {"path": "network.mpls.lsps",         "description": "MPLS label-switched paths"},
+        ]
+        return jsonify({"collections": collections})
+
+    @bp.route("/api/nqe/audit-log", methods=["POST"])
+    def api_nqe_audit_log():
+        """Append a transparency-gate audit event.
+
+        Request: {"action": str, "nql": str, "user_confirmed": bool}
+        Response: {"id": str, "recorded": true}
+        """
+        data = request.get_json(force=True, silent=True) or {}
+        action = (data.get("action") or "").strip()
+        nql = (data.get("nql") or "").strip()
+        user_confirmed = bool(data.get("user_confirmed", False))
+
+        if not action:
+            return jsonify({"error": "action is required"}), 400
+
+        row_id = None
+        try:
+            from tools.db.storage import get_canvas_connection
+            conn = get_canvas_connection("NC_STORAGE_BACKEND")
+            cur = conn.execute(
+                "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, created_at) "
+                "VALUES (%s, %s, %s, NOW()) RETURNING id",
+                (action, nql, user_confirmed),
+            )
+            row = cur.fetchone()
+            row_id = str(row[0] if isinstance(row, (list, tuple)) else row.get("id", "")) if row else None
+            conn.commit()
+            conn.close()
+        except Exception as exc:
+            logger.warning("NQE audit-log insert failed: %s", exc)
+
+        return jsonify({"id": row_id or "n/a", "recorded": True})
+
+    # ── NQE helpers ────────────────────────────────────────────────────────
+
+    def _nql_heuristic_explain(nql: str) -> str:
+        """Generate a simple heuristic explanation from NQL structure."""
+        import re as _re
+        nql = nql.strip()
+        m = _re.search(r"\bin\s+(network\.\S+)", nql, _re.I)
+        collection = m.group(1) if m else "network"
+        where_m = _re.search(r"\bwhere\s+(.+?)(?:\bselect\b|$)", nql, _re.I | _re.DOTALL)
+        where_clause = where_m.group(1).strip() if where_m else ""
+        base = f"Queries the '{collection}' collection"
+        if where_clause:
+            base += f" filtered by: {where_clause[:120]}"
+        return base + "."
+
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))
     return bp
