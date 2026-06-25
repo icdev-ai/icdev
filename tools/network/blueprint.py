@@ -14187,7 +14187,7 @@ Planning rules:
                             b["pos_x"], b["pos_y"],
                             b["width"], b["height"],
                             0,
-                            "",
+                            b.get("notes", ""),
                             now, now,
                         ),
                     )
