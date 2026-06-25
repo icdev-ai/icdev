@@ -107,6 +107,12 @@ components:
     - network.ai_decisions
     - network.partners
     - network.agreements_expiring
+    - nqe.devices
+    - nqe.interfaces
+    - nqe.bgp_sessions
+    - nqe.acls
+    - nqe.paths
+    - nqe.os_versions
   completeness:
     template: tools/dashboard/templates/network/page.html
     blueprint: true

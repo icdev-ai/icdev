@@ -1,0 +1,355 @@
+{% extends "network/base.html" %}
+{% block title %}NQE Translator — Network Design Canvas{% endblock %}
+
+{% block head %}
+<style>
+/* ── Page shell ────────────────────────────────────────────────── */
+.nqe-page { padding: 24px; max-width: 1200px; margin: 0 auto; }
+.nqe-header { margin-bottom: 24px; }
+.nqe-header h1 { font-size: 1.4rem; font-weight: 700; color: var(--text); margin: 0 0 4px; }
+.nqe-header p  { font-size: 0.82rem; color: var(--text-dim); margin: 0; }
+
+/* ── 3-panel layout ────────────────────────────────────────────── */
+.nqe-panels {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 16px;
+}
+@media (max-width: 900px) { .nqe-panels { grid-template-columns: 1fr; } }
+
+.nqe-panel {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.nqe-panel-title {
+  font-size: 0.78rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--text-dim); margin: 0;
+}
+.nqe-panel-icon { font-size: 1.1rem; margin-right: 6px; }
+
+/* ── Input panel ───────────────────────────────────────────────── */
+#nqe-query-box {
+  width: 100%; background: var(--bg3); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 10px 12px; font-size: 0.88rem; resize: vertical; min-height: 110px;
+  font-family: inherit; box-sizing: border-box;
+}
+#nqe-query-box:focus { outline: none; border-color: var(--accent); }
+.nqe-input-footer { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.nqe-collection-hint { font-size: 0.74rem; color: var(--text-dim); flex: 1; }
+
+/* ── NQL reveal panel ──────────────────────────────────────────── */
+.nqe-reveal-box {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
+  padding: 12px; font-family: monospace; font-size: 0.82rem;
+  color: #a5f3fc; white-space: pre-wrap; word-break: break-all; min-height: 80px;
+  position: relative;
+}
+.nqe-reveal-placeholder { color: var(--text-dim); font-style: italic; font-family: inherit; }
+
+/* ── Confidence badge ──────────────────────────────────────────── */
+.nqe-confidence-row { display: flex; align-items: center; gap: 10px; }
+.nqe-confidence-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: 20px; font-size: 0.74rem; font-weight: 700;
+}
+.nqe-confidence-badge.high   { background: #14532d; color: #4ade80; border: 1px solid #166534; }
+.nqe-confidence-badge.medium { background: #422006; color: #fb923c; border: 1px solid #7c2d12; }
+.nqe-confidence-badge.low    { background: #3b0764; color: #d8b4fe; border: 1px solid #6b21a8; }
+.nqe-source-badge {
+  font-size: 0.72rem; color: var(--text-dim);
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 4px; padding: 2px 7px;
+}
+
+/* ── Gate notice ───────────────────────────────────────────────── */
+.nqe-gate-notice {
+  background: #1a1a00; border: 1px solid #a16207; border-radius: 6px;
+  padding: 10px 12px; font-size: 0.78rem; color: #fde68a;
+  display: flex; gap: 8px; align-items: flex-start;
+}
+.nqe-gate-notice svg { flex-shrink: 0; margin-top: 1px; }
+
+/* ── Results panel ─────────────────────────────────────────────── */
+.nqe-result-meta { font-size: 0.74rem; color: var(--text-dim); min-height: 20px; }
+.nqe-result-table-wrap { overflow-x: auto; flex: 1; }
+.nqe-result-table {
+  width: 100%; border-collapse: collapse; font-size: 0.78rem;
+}
+.nqe-result-table th {
+  text-align: left; padding: 6px 8px; background: var(--bg3);
+  border-bottom: 2px solid var(--border); color: var(--text-dim);
+  font-weight: 700; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.04em;
+}
+.nqe-result-table td {
+  padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top;
+  color: var(--text); word-break: break-all;
+}
+.nqe-result-table tr:hover td { background: var(--bg3); }
+.nqe-empty { text-align: center; color: var(--text-dim); padding: 32px; font-size: 0.85rem; }
+
+/* ── Buttons ───────────────────────────────────────────────────── */
+.nqe-btn {
+  padding: 8px 16px; border-radius: 6px; font-size: 0.82rem;
+  font-weight: 600; cursor: pointer; border: none; transition: opacity 0.15s;
+}
+.nqe-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.nqe-btn-primary { background: var(--accent); color: #fff; }
+.nqe-btn-primary:hover:not(:disabled) { opacity: 0.85; }
+.nqe-btn-run { background: #166534; color: #4ade80; border: 1px solid #15803d; }
+.nqe-btn-run:hover:not(:disabled) { background: #15803d; }
+.nqe-btn-clear { background: transparent; color: var(--text-dim); border: 1px solid var(--border); }
+.nqe-btn-clear:hover { color: var(--text); }
+
+/* ── Spinner ───────────────────────────────────────────────────── */
+.nqe-spinner {
+  display: inline-block; width: 14px; height: 14px;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  border-radius: 50%; animation: nqe-spin 0.6s linear infinite; vertical-align: middle;
+}
+@keyframes nqe-spin { to { transform: rotate(360deg); } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="nqe-page">
+  <div class="nqe-header">
+    <h1><span class="nqe-panel-icon">🔍</span>NQE Query Translator</h1>
+    <p>Ask about your network in plain English — review the generated query before it runs.</p>
+  </div>
+
+  <div class="nqe-panels">
+
+    <!-- ── Panel 1: Input ──────────────────────────────────────────── -->
+    <div class="nqe-panel">
+      <p class="nqe-panel-title">① Ask a Question</p>
+      <textarea id="nqe-query-box" placeholder="e.g. Show all devices running IOS-XE&#10;or: Which BGP sessions are down?&#10;or: List interfaces with errors"></textarea>
+      <div class="nqe-input-footer">
+        <span class="nqe-collection-hint">Collections: devices · interfaces · bgp_sessions · acls · paths · os_versions</span>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="nqe-btn nqe-btn-primary" id="nqe-translate-btn" onclick="nqeTranslate()">
+          Translate to NQL
+        </button>
+        <button class="nqe-btn nqe-btn-clear" onclick="nqeClear()">Clear</button>
+      </div>
+    </div>
+
+    <!-- ── Panel 2: NQL reveal + transparency gate ─────────────────── -->
+    <div class="nqe-panel">
+      <p class="nqe-panel-title">② Review Query (Transparency Gate)</p>
+
+      <div class="nqe-gate-notice" id="nqe-gate-notice" style="display:none;">
+        <svg width="14" height="14" viewBox="0 0 20 20" fill="#fde68a"><path d="M10 2a8 8 0 100 16A8 8 0 0010 2zm1 11H9v-2h2v2zm0-4H9V6h2v3z"/></svg>
+        <span>Review the NQL query below. Queries never run automatically — click <strong>Run Query</strong> to confirm execution.</span>
+      </div>
+
+      <div class="nqe-reveal-box" id="nqe-nql-box">
+        <span class="nqe-reveal-placeholder">NQL query appears here after translation…</span>
+      </div>
+
+      <div class="nqe-confidence-row" id="nqe-confidence-row" style="display:none;">
+        <span id="nqe-confidence-badge" class="nqe-confidence-badge">—</span>
+        <span id="nqe-source-badge" class="nqe-source-badge">—</span>
+      </div>
+
+      <div style="display:flex;gap:8px;margin-top:4px;">
+        <button class="nqe-btn nqe-btn-run" id="nqe-run-btn" onclick="nqeRun()" disabled>
+          ▶ Run Query
+        </button>
+        <button class="nqe-btn nqe-btn-clear" id="nqe-explain-btn" onclick="nqeExplain()" disabled style="font-size:0.78rem;">
+          Explain
+        </button>
+      </div>
+
+      <div id="nqe-explain-box" style="display:none;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:10px 12px;font-size:0.8rem;color:var(--text);line-height:1.5;"></div>
+    </div>
+
+    <!-- ── Panel 3: Results ────────────────────────────────────────── -->
+    <div class="nqe-panel">
+      <p class="nqe-panel-title">③ Results</p>
+      <div class="nqe-result-meta" id="nqe-result-meta">No query run yet.</div>
+      <div class="nqe-result-table-wrap">
+        <div id="nqe-result-area" class="nqe-empty">Run a query to see results.</div>
+      </div>
+    </div>
+
+  </div><!-- /.nqe-panels -->
+</div><!-- /.nqe-page -->
+
+{% include "includes/iqe_query_widget.html" ignore missing %}
+
+<script>
+/* ── State ────────────────────────────────────────────────────────── */
+let _nqeCurrentNql = "";
+
+/* ── Translate ────────────────────────────────────────────────────── */
+async function nqeTranslate() {
+  const text = document.getElementById("nqe-query-box").value.trim();
+  if (!text) { nqeShowError("Please enter a question first."); return; }
+
+  nqeSetLoading(true);
+  nqeResetReveal();
+
+  try {
+    const resp = await fetch("/network/api/nqe/translate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "Translation failed");
+
+    _nqeCurrentNql = data.nql || "";
+    nqeShowReveal(data.nql, data.confidence, data.source);
+  } catch (err) {
+    nqeShowError(err.message);
+  } finally {
+    nqeSetLoading(false);
+  }
+}
+
+/* ── Run (explicit user confirmation) ────────────────────────────── */
+async function nqeRun() {
+  if (!_nqeCurrentNql) { nqeShowError("No NQL query to run."); return; }
+
+  // Log user confirmation (transparency gate audit trail)
+  await fetch("/network/api/nqe/audit-log", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "run", nql: _nqeCurrentNql, user_confirmed: true }),
+  }).catch(() => {});
+
+  document.getElementById("nqe-run-btn").disabled = true;
+  document.getElementById("nqe-result-meta").textContent = "Running…";
+  document.getElementById("nqe-result-area").innerHTML = '<div class="nqe-empty"><span class="nqe-spinner"></span> Querying…</div>';
+
+  try {
+    const resp = await fetch("/network/api/nqe/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nql: _nqeCurrentNql }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || "Query failed");
+    nqeRenderResults(data);
+  } catch (err) {
+    document.getElementById("nqe-result-meta").textContent = "Error: " + err.message;
+    document.getElementById("nqe-result-area").innerHTML = '<div class="nqe-empty" style="color:#f87171;">' + err.message + '</div>';
+  } finally {
+    document.getElementById("nqe-run-btn").disabled = false;
+  }
+}
+
+/* ── Explain ──────────────────────────────────────────────────────── */
+async function nqeExplain() {
+  if (!_nqeCurrentNql) return;
+  const box = document.getElementById("nqe-explain-box");
+  box.style.display = "block";
+  box.textContent = "Generating explanation…";
+  try {
+    const resp = await fetch("/network/api/nqe/explain", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nql: _nqeCurrentNql }),
+    });
+    const data = await resp.json();
+    box.textContent = data.explanation || "(No explanation available)";
+  } catch (err) {
+    box.textContent = "Error: " + err.message;
+  }
+}
+
+/* ── Clear ────────────────────────────────────────────────────────── */
+function nqeClear() {
+  document.getElementById("nqe-query-box").value = "";
+  _nqeCurrentNql = "";
+  nqeResetReveal();
+  document.getElementById("nqe-result-meta").textContent = "No query run yet.";
+  document.getElementById("nqe-result-area").innerHTML = '<div class="nqe-empty">Run a query to see results.</div>';
+  document.getElementById("nqe-explain-box").style.display = "none";
+}
+
+/* ── UI helpers ───────────────────────────────────────────────────── */
+function nqeSetLoading(on) {
+  const btn = document.getElementById("nqe-translate-btn");
+  btn.disabled = on;
+  btn.textContent = on ? "Translating…" : "Translate to NQL";
+}
+
+function nqeResetReveal() {
+  document.getElementById("nqe-nql-box").innerHTML = '<span class="nqe-reveal-placeholder">NQL query appears here after translation…</span>';
+  document.getElementById("nqe-gate-notice").style.display = "none";
+  document.getElementById("nqe-confidence-row").style.display = "none";
+  document.getElementById("nqe-run-btn").disabled = true;
+  document.getElementById("nqe-explain-btn").disabled = true;
+  document.getElementById("nqe-explain-box").style.display = "none";
+}
+
+function nqeShowReveal(nql, confidence, source) {
+  document.getElementById("nqe-nql-box").textContent = nql || "(empty query)";
+  document.getElementById("nqe-gate-notice").style.display = "flex";
+
+  // Confidence badge
+  const conf = parseFloat(confidence) || 0;
+  const badge = document.getElementById("nqe-confidence-badge");
+  badge.className = "nqe-confidence-badge " + (conf >= 0.75 ? "high" : conf >= 0.4 ? "medium" : "low");
+  badge.textContent = "Confidence: " + (conf * 100).toFixed(0) + "%";
+  document.getElementById("nqe-source-badge").textContent = "via: " + (source || "local");
+  document.getElementById("nqe-confidence-row").style.display = "flex";
+
+  document.getElementById("nqe-run-btn").disabled = false;
+  document.getElementById("nqe-explain-btn").disabled = false;
+}
+
+function nqeRenderResults(data) {
+  const rows = data.rows || [];
+  const total = data.total || rows.length;
+  document.getElementById("nqe-result-meta").textContent =
+    total + " row" + (total !== 1 ? "s" : "") + " • source: " + (data.source || "?");
+
+  if (!rows.length) {
+    document.getElementById("nqe-result-area").innerHTML = '<div class="nqe-empty">No results found.</div>';
+    return;
+  }
+
+  const cols = data.columns || Object.keys(rows[0] || {});
+  let html = '<table class="nqe-result-table"><thead><tr>';
+  cols.forEach(c => { html += "<th>" + escHtml(c) + "</th>"; });
+  html += "</tr></thead><tbody>";
+  rows.slice(0, 200).forEach(row => {
+    html += "<tr>";
+    cols.forEach(c => {
+      const v = row[c];
+      const disp = (v !== null && v !== undefined) ? (typeof v === "object" ? JSON.stringify(v) : String(v)) : "—";
+      html += "<td>" + escHtml(disp) + "</td>";
+    });
+    html += "</tr>";
+  });
+  html += "</tbody></table>";
+  if (rows.length > 200) {
+    html += '<div class="nqe-empty" style="margin-top:8px;">Showing first 200 of ' + total + ' rows.</div>';
+  }
+  document.getElementById("nqe-result-area").innerHTML = html;
+}
+
+function nqeShowError(msg) {
+  document.getElementById("nqe-result-meta").textContent = "Error";
+  document.getElementById("nqe-result-area").innerHTML = '<div class="nqe-empty" style="color:#f87171;">' + escHtml(msg) + '</div>';
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+/* ── Keyboard shortcut: Ctrl+Enter translates ─────────────────────── */
+document.getElementById("nqe-query-box").addEventListener("keydown", function(e) {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); nqeTranslate(); }
+});
+</script>
+{% endblock %}

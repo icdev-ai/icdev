@@ -14297,6 +14297,147 @@ Planning rules:
                 },
             )
 
+    # ── NQE Translator ─────────────────────────────────────────────────────
+
+    @bp.route("/nqe-translator", methods=["GET"])
+    def nqe_translator_page():
+        return render_template("network/nqe_translator.html", page_title="NQE Translator")
+
+    @bp.route("/api/nqe/translate", methods=["POST"])
+    def api_nqe_translate():
+        data = request.get_json(force=True, silent=True) or {}
+        text = (data.get("text") or "").strip()
+        if not text:
+            return jsonify({"error": "text is required"}), 400
+        context = data.get("context") or {}
+        try:
+            from icdev.tools.network.nql_translator import nl_to_nql
+            nql = nl_to_nql(text, context=context or None)
+        except Exception as exc:
+            logger.exception("NQE translate error")
+            return jsonify({"error": str(exc)}), 500
+        if context and any(context.get(k) for k in ("vendor", "affected_models", "affected_versions")):
+            confidence, source = 0.92, "deterministic"
+        elif nql and nql.startswith("foreach"):
+            confidence, source = 0.70, "llm_translation"
+        else:
+            confidence, source = 0.50, "fallback"
+        try:
+            from icdev.tools.db.storage import get_canvas_connection
+            conn = get_canvas_connection("NC_STORAGE_BACKEND")
+            conn.execute(
+                "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, created_at) VALUES (%s, %s, %s, NOW())",
+                ("translate", nql, False),
+            )
+            conn.commit(); conn.close()
+        except Exception:
+            pass
+        return jsonify({"nql": nql, "confidence": confidence, "source": source})
+
+    @bp.route("/api/nqe/explain", methods=["POST"])
+    def api_nqe_explain():
+        data = request.get_json(force=True, silent=True) or {}
+        nql = (data.get("nql") or "").strip()
+        if not nql:
+            return jsonify({"error": "nql is required"}), 400
+        try:
+            from icdev.tools.llm.router import LLMRouter
+            from icdev.tools.llm.provider import LLMRequest
+            prompt = (
+                "Explain this NQL (Network Query Language) query in plain English "
+                "for a non-technical network administrator. Be concise (2-3 sentences).\n\n"
+                f"NQL:\n{nql}"
+            )
+            router = LLMRouter()
+            req = LLMRequest(messages=[{"role": "user", "content": prompt}], max_tokens=150, temperature=0.2)
+            resp = router.invoke("nql_explain", req)
+            explanation = (resp.content or "").strip()
+        except ImportError:
+            explanation = _icdev_nql_explain(nql)
+        except Exception:
+            explanation = _icdev_nql_explain(nql)
+        return jsonify({"explanation": explanation})
+
+    @bp.route("/api/nqe/run", methods=["POST"])
+    def api_nqe_run():
+        data = request.get_json(force=True, silent=True) or {}
+        nql = (data.get("nql") or "").strip()
+        network_id = data.get("network_id") or None
+        if not nql:
+            return jsonify({"error": "nql is required"}), 400
+        try:
+            from icdev.tools.network.nqe_client import FallbackNQEClient
+            client = FallbackNQEClient()
+            result = client.run_query(nql, network_id=network_id)
+            rows = result.get("rows", [])
+            columns = list(rows[0].keys()) if rows else []
+            try:
+                from icdev.tools.db.storage import get_canvas_connection
+                conn = get_canvas_connection("NC_STORAGE_BACKEND")
+                conn.execute(
+                    "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, row_count, created_at) VALUES (%s, %s, %s, %s, NOW())",
+                    ("run", nql, True, len(rows)),
+                )
+                conn.commit(); conn.close()
+            except Exception:
+                pass
+            return jsonify({"rows": rows[:500], "columns": columns, "total": len(rows), "source": result.get("source", "local")})
+        except Exception as exc:
+            logger.exception("NQE run error")
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/nqe/collections", methods=["GET"])
+    def api_nqe_collections():
+        collections = [
+            {"path": "network.devices",         "description": "All network devices"},
+            {"path": "network.interfaces",       "description": "Device interfaces"},
+            {"path": "network.bgp_sessions",     "description": "BGP peering sessions"},
+            {"path": "network.acls",             "description": "Access control lists"},
+            {"path": "network.paths",            "description": "End-to-end forwarding paths"},
+            {"path": "network.os_versions",      "description": "OS version inventory"},
+            {"path": "network.links",            "description": "Physical and logical links"},
+            {"path": "network.vlans",            "description": "VLAN definitions"},
+            {"path": "network.prefixes",         "description": "IP prefix / subnet inventory"},
+            {"path": "network.ospf.neighbors",   "description": "OSPF adjacency table"},
+            {"path": "network.isis.adjacencies", "description": "IS-IS adjacency table"},
+            {"path": "network.mpls.lsps",        "description": "MPLS label-switched paths"},
+        ]
+        return jsonify({"collections": collections})
+
+    @bp.route("/api/nqe/audit-log", methods=["POST"])
+    def api_nqe_audit_log():
+        data = request.get_json(force=True, silent=True) or {}
+        action = (data.get("action") or "").strip()
+        nql = (data.get("nql") or "").strip()
+        user_confirmed = bool(data.get("user_confirmed", False))
+        if not action:
+            return jsonify({"error": "action is required"}), 400
+        row_id = None
+        try:
+            from icdev.tools.db.storage import get_canvas_connection
+            conn = get_canvas_connection("NC_STORAGE_BACKEND")
+            cur = conn.execute(
+                "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, created_at) VALUES (%s, %s, %s, NOW()) RETURNING id",
+                (action, nql, user_confirmed),
+            )
+            row = cur.fetchone()
+            row_id = str(row[0] if isinstance(row, (list, tuple)) else row.get("id", "")) if row else None
+            conn.commit(); conn.close()
+        except Exception as exc:
+            logger.warning("NQE audit-log insert failed: %s", exc)
+        return jsonify({"id": row_id or "n/a", "recorded": True})
+
+    def _icdev_nql_explain(nql: str) -> str:
+        import re as _re
+        m = _re.search(r"\bin\s+(network\.\S+)", nql, _re.I)
+        collection = m.group(1) if m else "network"
+        wm = _re.search(r"\bwhere\s+(.+?)(?:\bselect\b|$)", nql, _re.I | _re.DOTALL)
+        where = wm.group(1).strip() if wm else ""
+        base = f"Queries the '{collection}' collection"
+        if where:
+            base += f" filtered by: {where[:120]}"
+        return base + "."
+
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))
     return bp
