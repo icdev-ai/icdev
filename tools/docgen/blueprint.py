@@ -421,9 +421,17 @@ def api_resolve_conflict(conflict_id: str):
 
 @docgen_bp.route("/api/sessions/<session_id>/generate", methods=["POST"])
 def api_generate(session_id: str):
+    """Stage 4-5: synthesize context then generate document.
+
+    Request JSON (all optional):
+        use_ace (bool, default false): launch ACE multi-coworker generation
+            in addition to (or instead of) DIC DocGenerator.
+        role_ids (list[str]): ACE roles to spawn (default: technical_writer, network_engineer).
+        supplemental_text (str): extra context to inject into the query.
+    """
     from tools.docgen import session_manager as sm
     from tools.docgen.context_builder import build_context
-    from tools.docgen.workflow import stage3_check_gate, advance
+    from tools.docgen.workflow import stage3_check_gate, stage5_ace_generate, advance
 
     data = request.get_json(force=True, silent=True) or {}
 
@@ -442,6 +450,8 @@ def api_generate(session_id: str):
     uploads = sm.list_uploads(session_id)
     analyses = sm.list_analyses(session_id)
     supplemental = data.get("supplemental_text", "")
+    use_ace = bool(data.get("use_ace", False))
+    role_ids = data.get("role_ids") or None
 
     context = build_context(
         session=session,
@@ -450,9 +460,19 @@ def api_generate(session_id: str):
         supplemental_text=supplemental,
     )
 
+    # Enrich context with title/domain for ACE problem text.
+    context.setdefault("title", session.get("title", "Document"))
+    context.setdefault("domain", session.get("domain", "network"))
+    context.setdefault("doc_type", session.get("doc_type", "runbook"))
+    context.setdefault("classification", session.get("classification", "CUI"))
+
     advance(session_id, 4)
 
-    # Attempt DIC generation
+    ace_result: dict = {}
+    if use_ace:
+        ace_result = stage5_ace_generate(session_id, context, role_ids=role_ids)
+
+    # Attempt DIC generation (fallback / complement to ACE).
     doc_id = None
     try:
         from tools.document_intelligence.doc_generator import DocGenerator
@@ -485,6 +505,8 @@ def api_generate(session_id: str):
             "config_findings": len(context["config_findings"]),
         },
         "doc_id": doc_id,
+        "ace_instance_id": ace_result.get("instance_id"),
+        "ace_status": ace_result.get("status") if use_ace else None,
     })
 
 
