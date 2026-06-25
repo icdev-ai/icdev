@@ -19,6 +19,7 @@ Routes:
   GET  /docgen/api/sessions/<id>/conflicts  list conflicts
   POST /docgen/api/conflicts/<id>/resolve   resolve one conflict (HITL)
   POST /docgen/api/sessions/<id>/generate   Stage 5: trigger AI doc generation
+  POST /docgen/api/sessions/<id>/writeguard Stage 6 hard gate: run WriteGuard quality check
   GET  /docgen/api/sessions/<id>/artifacts  list published artifacts
   POST /docgen/api/iqe-query                IQE natural-language query
 """
@@ -26,6 +27,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import uuid
 
 from flask import Blueprint, jsonify, render_template, request
 
@@ -217,6 +219,18 @@ def api_advance_session(session_id: str):
             return jsonify({
                 "error": f"Cannot advance: {pending} conflicts pending HITL resolution.",
                 "pending_conflicts": pending,
+            }), 409
+
+    # Hard blocking gate: stage 6 (writeguard) → 7 (reviewing)
+    if to_stage == 7:
+        from tools.docgen.workflow import stage6_check_gate
+        if not stage6_check_gate(session_id):
+            return jsonify({
+                "error": (
+                    "Cannot advance to review: WriteGuard quality gate has not passed. "
+                    "Run POST /docgen/api/sessions/<id>/writeguard with the document text first."
+                ),
+                "gate": "writeguard",
             }), 409
 
     try:
@@ -472,6 +486,84 @@ def api_generate(session_id: str):
         },
         "doc_id": doc_id,
     })
+
+
+# ─── API — WriteGuard gate (Stage 6) ─────────────────────────────────────────
+
+@docgen_bp.route("/api/sessions/<session_id>/writeguard", methods=["POST"])
+def api_writeguard(session_id: str):
+    """Stage 6 hard blocking gate: run WriteGuard quality check on the generated document.
+
+    Request JSON:
+        {
+            "doc_text":    str,   generated document text to quality-check
+            "retry_count": int    optional; caller increments between auto-fix retries
+        }
+
+    Responses:
+        200  {"passed": true, "score": ..., "fixed_text": ..., "wg_result_id": ...}
+        409  {"passed": false, "score": ..., "fixed_text": ..., "blocked": bool,
+              "retry_count": ..., "message": "..."}  (gate failed)
+        400  validation error
+        404  session not found
+    """
+    from tools.docgen import session_manager as sm
+    from tools.docgen.workflow import stage6_writeguard, advance, _WG_MAX_RETRIES
+
+    data = request.get_json(force=True, silent=True) or {}
+    doc_text = data.get("doc_text", "")
+    retry_count = int(data.get("retry_count", 0))
+
+    if not doc_text.strip():
+        return jsonify({"error": "doc_text is required"}), 400
+
+    session = sm.get_session(session_id)
+    if not session:
+        return jsonify({"error": "not found"}), 404
+
+    gate = stage6_writeguard(
+        session_id=session_id,
+        doc_text=doc_text,
+        domain=session.get("domain", "network"),
+        retry_count=retry_count,
+    )
+
+    if gate["passed"]:
+        # Record that WG gate passed by setting wg_result_id on the session
+        wg_result_id = str(uuid.uuid4())
+        sm.set_field(session_id, wg_result_id=wg_result_id)
+        advance(session_id, 6)
+        logger.info(
+            "IDR WriteGuard gate PASSED: session=%s score=%.1f",
+            session_id, gate["score"],
+        )
+        return jsonify({
+            "passed": True,
+            "score": gate["score"],
+            "fixed_text": gate["fixed_text"],
+            "retry_count": retry_count,
+            "blocked": False,
+            "wg_result_id": wg_result_id,
+        })
+
+    blocked = retry_count >= _WG_MAX_RETRIES
+    logger.warning(
+        "IDR WriteGuard gate FAILED: session=%s score=%.1f retry=%d blocked=%s",
+        session_id, gate["score"], retry_count, blocked,
+    )
+    return jsonify({
+        "passed": False,
+        "score": gate["score"],
+        "fixed_text": gate.get("fixed_text", doc_text),
+        "retry_count": retry_count,
+        "blocked": blocked,
+        "message": (
+            "WriteGuard quality gate blocked after maximum retries — HITL review required."
+            if blocked else
+            f"Quality gate failed (score {gate['score']:.1f} < 70). "
+            f"fixed_text contains auto-corrected version for retry {retry_count + 1}/{_WG_MAX_RETRIES}."
+        ),
+    }), 409
 
 
 # ─── API — Artifacts ──────────────────────────────────────────────────────────

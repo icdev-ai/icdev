@@ -1012,3 +1012,10 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Diagram Analysis | tools\network\diagram_analysis.py | Auto-registered: network/diagram_analysis.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Domain Profiles | tools\docgen\domain_profiles.py | Auto-registered: docgen/domain_profiles.py | --json | JSON |
+| Docgen | tools\iqe\adapters\docgen.py | Auto-registered: adapters/docgen.py | --json | JSON |
