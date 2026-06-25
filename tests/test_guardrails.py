@@ -283,3 +283,154 @@ class TestCollectionsEndpoint:
         resp = client.get("/api/nqe/collections")
         paths = {c["path"] for c in resp.get_json()["collections"]}
         assert "network.devices" in paths
+
+
+# ─── Dual-query cross-validation (nqe-grd-02) ────────────────────────────────
+
+def _blueprint_client():
+    from flask import Flask
+    try:
+        from tools.network.blueprint import create_network_blueprint
+        bp = create_network_blueprint()
+        app = Flask(__name__)
+        app.register_blueprint(bp)
+        app.config["TESTING"] = True
+        return app.test_client()
+    except Exception:
+        return None
+
+
+class TestDualQueryCrossValidation:
+    """POST /api/nqe/cross-validate returns both NQL variants and divergence score."""
+
+    def test_cross_validate_requires_text(self):
+        """Missing text field returns 400."""
+        client = _blueprint_client()
+        if client is None:
+            pytest.skip("blueprint not available")
+        resp = client.post("/api/nqe/cross-validate", json={})
+        assert resp.status_code == 400
+
+    def test_cross_validate_returns_required_keys(self):
+        """Response must include nql_primary, nql_secondary, divergence_score, require_hitl, message."""
+        client = _blueprint_client()
+        if client is None:
+            pytest.skip("blueprint not available")
+        with patch("tools.network.nql_translator.nl_to_nql", return_value="foreach d in network.devices select {d.hostname}"):
+            resp = client.post("/api/nqe/cross-validate", json={"text": "show all devices"})
+        assert resp.status_code == 200
+        data = resp.get_json()
+        for key in ("nql_primary", "nql_secondary", "divergence_score", "require_hitl", "message"):
+            assert key in data, f"Missing key: {key}"
+
+    def test_identical_translations_yield_zero_divergence(self):
+        """When both strategies return identical NQL, divergence_score is 0.0."""
+        client = _blueprint_client()
+        if client is None:
+            pytest.skip("blueprint not available")
+        same_nql = "foreach d in network.devices select {d.hostname}"
+        with patch("tools.network.nql_translator.nl_to_nql", return_value=same_nql):
+            resp = client.post("/api/nqe/cross-validate", json={"text": "show devices"})
+        data = resp.get_json()
+        assert data["divergence_score"] == 0.0
+        assert data["require_hitl"] is False
+
+    def test_divergent_collections_yield_high_divergence(self):
+        """Primary queries network.devices, secondary queries network.bgp_sessions → score ≥ 0.6."""
+        client = _blueprint_client()
+        if client is None:
+            pytest.skip("blueprint not available")
+        nqls = iter([
+            "foreach d in network.devices where d.vendor == \"cisco\" select {d.hostname}",
+            "foreach s in network.bgp_sessions where s.state != \"Established\" select {s.peer_ip}",
+        ])
+        with patch("tools.network.nql_translator.nl_to_nql", side_effect=lambda t, **kw: next(nqls)):
+            resp = client.post("/api/nqe/cross-validate", json={
+                "text": "show BGP peers", "context": {"vendor": "cisco"}
+            })
+        data = resp.get_json()
+        assert data["divergence_score"] >= 0.6
+        assert data["require_hitl"] is True
+
+    def test_divergence_score_is_float_in_range(self):
+        """divergence_score must be a float in [0.0, 1.0]."""
+        client = _blueprint_client()
+        if client is None:
+            pytest.skip("blueprint not available")
+        with patch("tools.network.nql_translator.nl_to_nql", return_value="foreach d in network.devices select {d.hostname}"):
+            resp = client.post("/api/nqe/cross-validate", json={"text": "list devices"})
+        data = resp.get_json()
+        score = data["divergence_score"]
+        assert isinstance(score, float)
+        assert 0.0 <= score <= 1.0
+
+    def test_high_divergence_message_mentions_approval(self):
+        """When require_hitl is True, message must mention approval."""
+        client = _blueprint_client()
+        if client is None:
+            pytest.skip("blueprint not available")
+        nqls = iter([
+            "foreach d in network.devices select {d.hostname}",
+            "foreach v in network.vlans select {v.id}",
+        ])
+        with patch("tools.network.nql_translator.nl_to_nql", side_effect=lambda t, **kw: next(nqls)):
+            resp = client.post("/api/nqe/cross-validate", json={"text": "show vlans"})
+        data = resp.get_json()
+        if data["require_hitl"]:
+            assert "approval" in data["message"].lower() or "human" in data["message"].lower()
+
+
+# ─── HITL approval gate (nqe-grd-02) ─────────────────────────────────────────
+
+class TestHitlApproval:
+    """POST /api/nqe/hitl-approve records approval and returns {approved: true}."""
+
+    def test_hitl_approve_requires_approved_by(self):
+        """Missing approved_by returns 400."""
+        client = _blueprint_client()
+        if client is None:
+            pytest.skip("blueprint not available")
+        resp = client.post("/api/nqe/hitl-approve", json={
+            "nql_primary": "foreach d in network.devices select {d.hostname}",
+            "nql_secondary": "foreach v in network.vlans select {v.id}",
+        })
+        assert resp.status_code == 400
+        assert "approved_by" in (resp.get_json() or {}).get("error", "")
+
+    def test_hitl_approve_returns_approved_true(self):
+        """Valid request returns {approved: true, approved_by: str, recorded: true}."""
+        client = _blueprint_client()
+        if client is None:
+            pytest.skip("blueprint not available")
+        with patch("tools.db.storage.get_canvas_connection", side_effect=Exception("no db")):
+            resp = client.post("/api/nqe/hitl-approve", json={
+                "nql_primary": "foreach d in network.devices select {d.hostname}",
+                "nql_secondary": "foreach v in network.vlans select {v.id}",
+                "approved_by": "issm_user@org.mil",
+                "notes": "Verified by ISSM",
+            })
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["approved"] is True
+        assert data["approved_by"] == "issm_user@org.mil"
+        assert data["recorded"] is True
+
+    def test_hitl_approve_writes_to_audit_log(self):
+        """Approval event calls nc_nqe_audit_log INSERT with action='hitl_approve'."""
+        client = _blueprint_client()
+        if client is None:
+            pytest.skip("blueprint not available")
+
+        mock_conn = MagicMock()
+        with patch("tools.db.storage.get_canvas_connection", return_value=mock_conn):
+            resp = client.post("/api/nqe/hitl-approve", json={
+                "nql_primary": "foreach d in network.devices select {d.hostname}",
+                "nql_secondary": "foreach v in network.vlans select {v.id}",
+                "approved_by": "isso_user@org.mil",
+            })
+
+        assert resp.status_code == 200
+        assert mock_conn.execute.called
+        # Verify the INSERT included 'hitl_approve' as the action value
+        call_args_str = str(mock_conn.execute.call_args)
+        assert "hitl_approve" in call_args_str

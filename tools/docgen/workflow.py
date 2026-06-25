@@ -388,7 +388,15 @@ def stage8_publish(
     if ace_instance_id:
         try:
             from icdev.tools.ace.evidence_report import generate as _ev_generate
-            _ev_generate(ace_instance_id, fmt="json")
+            _ev_generate(
+                ace_instance_id,
+                fmt="json",
+                publish_meta={
+                    "idr_session_id": session_id,
+                    "artifact_count": len(artifacts),
+                    "formats": [a.get("format") for a in artifacts if a.get("format")],
+                },
+            )
         except Exception:
             log.debug(
                 "IDR evidence_report.generate skipped for ace_instance=%s",
