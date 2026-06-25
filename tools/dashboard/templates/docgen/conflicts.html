@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}IDR Conflicts — {{ session.title }} — ICDEV™{% endblock %}
 {% block content %}
-<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">{{ session.classification or 'CUI // SP-CTI' }}</div>
 
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
   <div>
