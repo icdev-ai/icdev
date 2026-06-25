@@ -57,6 +57,85 @@ def _safe(text: str) -> str:
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
+# Classification banner color map (R, G, B) tuples for background
+_CLS_COLORS: dict[str, tuple[int, int, int]] = {
+    "PUBLIC":          (13, 59, 30),
+    "UNCLASSIFIED":    (13, 59, 30),
+    "CUI":             (13, 43, 78),
+    "SECRET":          (62, 26, 0),
+    "TOP SECRET":      (59, 10, 10),
+    "TOP SECRET//SCI": (42, 10, 59),
+}
+
+
+def export_to_pdf(
+    content: str,
+    output_path: str,
+    title: str = "Document",
+    classification: str = "CUI",
+) -> None:
+    """Export plain text *content* to a classified PDF document at *output_path*.
+
+    Adds classification banners at the top and bottom of every page.
+    Falls back to an HTML file if fpdf2 is unavailable.
+    """
+    import pathlib
+
+    cls_upper = (classification or "CUI").upper()
+    bg_r, bg_g, bg_b = _CLS_COLORS.get(cls_upper, _CLS_COLORS["CUI"])
+
+    try:
+        from fpdf import FPDF
+
+        pdf = FPDF(orientation="P", unit="mm", format="A4")
+        pdf.set_auto_page_break(auto=True, margin=18)
+        pdf.set_margins(15, 15, 15)
+        pdf.add_page()
+
+        # ── Top banner ────────────────────────────────────────────────────────
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.set_fill_color(bg_r, bg_g, bg_b)
+        pdf.set_text_color(255, 255, 255)
+        pdf.cell(0, 6, f"  {_safe(classification)}", ln=True, fill=True)
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(4)
+
+        # ── Title ─────────────────────────────────────────────────────────────
+        pdf.set_font("Helvetica", "B", 16)
+        pdf.cell(0, 10, _safe(title), ln=True)
+        pdf.ln(4)
+
+        # ── Body ──────────────────────────────────────────────────────────────
+        pdf.set_font("Helvetica", "", 10)
+        for line in content.splitlines():
+            pdf.multi_cell(0, 5, _safe(line))
+
+        # ── Bottom banner on every page ───────────────────────────────────────
+        total = pdf.page
+        for pno in range(1, total + 1):
+            pdf.page = pno
+            pdf.set_y(-12)
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.set_fill_color(bg_r, bg_g, bg_b)
+            pdf.set_text_color(255, 255, 255)
+            pdf.cell(0, 5, f"  {_safe(classification)} | Page {pno} of {total}", ln=True, fill=True)
+        pdf.page = total
+
+        pathlib.Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+        pdf.output(output_path)
+        logger.info("IDR PDF export: path=%s classification=%s", output_path, classification)
+
+    except ImportError:
+        logger.warning("fpdf2 not installed — writing HTML fallback for IDR PDF: %s", output_path)
+        html_path = str(output_path).replace(".pdf", ".html")
+        pathlib.Path(html_path).write_text(
+            f"<!DOCTYPE html><html><head><title>{title}</title></head>"
+            f"<body><h2>{classification}</h2><h1>{title}</h1>"
+            f"<pre>{content}</pre><h2>{classification}</h2></body></html>",
+            encoding="utf-8",
+        )
+
+
 def export_phase_pdf(
     topo_name: str,
     phase_label: str,

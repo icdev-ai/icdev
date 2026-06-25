@@ -318,8 +318,8 @@ def stage8_publish(
 
     artifacts = []
     _try_export_html(session_id, doc_text, title, output_dir, classification, artifacts)
-    _try_export_docx(session_id, doc_text, title, output_dir, artifacts)
-    _try_export_pdf(session_id, doc_text, title, output_dir, artifacts)
+    _try_export_docx(session_id, doc_text, title, output_dir, classification, artifacts)
+    _try_export_pdf(session_id, doc_text, title, output_dir, classification, artifacts)
 
     sm.advance_stage(session_id, 8, "published")
 
@@ -342,12 +342,44 @@ def stage8_publish(
     return artifacts
 
 
+_CLS_BANNER_STYLES: dict[str, str] = {
+    "PUBLIC":          "background:#0d3b1e;color:#4caf50;border:2px solid #2e7d32",
+    "UNCLASSIFIED":    "background:#0d3b1e;color:#4caf50;border:2px solid #2e7d32",
+    "CUI":             "background:#0d2b4e;color:#4fc3f7;border:2px solid #1565c0",
+    "SECRET":          "background:#3e1a00;color:#ff9800;border:2px solid #e65100",
+    "TOP SECRET":      "background:#3b0a0a;color:#ef5350;border:2px solid #b71c1c",
+    "TOP SECRET//SCI": "background:#2a0a3b;color:#ce93d8;border:2px solid #6a1b9a",
+}
+
+
 def _try_export_html(session_id, text, title, out_dir, classification, artifacts):
     try:
         html_path = str(pathlib.Path(out_dir) / "document.html")
-        banner = f'<div class="classification-banner">{classification}</div>'
-        html = f"""<!DOCTYPE html><html><head><title>{title}</title></head><body>
-{banner}<h1>{title}</h1><div class="content">{text}</div></body></html>"""
+        cls_upper = (classification or "CUI").upper()
+        banner_style = _CLS_BANNER_STYLES.get(cls_upper, _CLS_BANNER_STYLES["CUI"])
+        banner_css = f"{banner_style};padding:6px 12px;font-size:13px;font-weight:bold;text-align:center;letter-spacing:1px;"
+        html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{title}</title>
+  <style>
+    body{{font-family:Arial,sans-serif;margin:0;padding:0;background:#fff;color:#111;}}
+    .cls-banner{{{banner_css}}}
+    .doc-body{{max-width:900px;margin:24px auto;padding:0 24px;}}
+    h1{{font-size:22px;border-bottom:2px solid #ccc;padding-bottom:8px;}}
+    .content{{line-height:1.7;white-space:pre-wrap;}}
+  </style>
+</head>
+<body>
+  <div class="cls-banner">{classification}</div>
+  <div class="doc-body">
+    <h1>{title}</h1>
+    <div class="content">{text}</div>
+  </div>
+  <div class="cls-banner">{classification}</div>
+</body>
+</html>"""
         pathlib.Path(html_path).write_text(html, encoding="utf-8")
         row = sm.add_artifact(session_id, "html", file_path=html_path)
         artifacts.append(row)
@@ -355,12 +387,14 @@ def _try_export_html(session_id, text, title, out_dir, classification, artifacts
         log.exception("IDR HTML export failed: session=%s", session_id)
 
 
-def _try_export_docx(session_id, text, title, out_dir, artifacts):
+def _try_export_docx(session_id, text, title, out_dir, classification, artifacts):
     try:
         from tools.presentations.generate_exec_doc import generate_docx
 
         docx_path = str(pathlib.Path(out_dir) / "document.docx")
-        generate_docx(title=title, content=text, output_path=docx_path)
+        # Wrap content with classification markings (header + footer lines)
+        marked_content = f"{classification}\n\n{text}\n\n{classification}"
+        generate_docx(title=title, content=marked_content, output_path=docx_path)
         row = sm.add_artifact(session_id, "docx", file_path=docx_path)
         artifacts.append(row)
     except ImportError:
@@ -369,12 +403,12 @@ def _try_export_docx(session_id, text, title, out_dir, artifacts):
         log.exception("IDR DOCX export failed: session=%s", session_id)
 
 
-def _try_export_pdf(session_id, text, title, out_dir, artifacts):
+def _try_export_pdf(session_id, text, title, out_dir, classification, artifacts):
     try:
         from tools.network.pdf_export import export_to_pdf
 
         pdf_path = str(pathlib.Path(out_dir) / "document.pdf")
-        export_to_pdf(content=text, output_path=pdf_path, title=title)
+        export_to_pdf(content=text, output_path=pdf_path, title=title, classification=classification)
         row = sm.add_artifact(session_id, "pdf", file_path=pdf_path)
         artifacts.append(row)
     except ImportError:
