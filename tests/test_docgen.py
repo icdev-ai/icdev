@@ -737,7 +737,11 @@ def test_stage8_publish_with_ace_instance_calls_evidence_report(tmp_path):
             output_dir=out_dir,
         )
 
-    ev_mock.assert_called_once_with("inst-idr-test", fmt="json")
+    ev_mock.assert_called_once()
+    call_kwargs = ev_mock.call_args
+    assert call_kwargs.args[0] == "inst-idr-test"
+    assert call_kwargs.kwargs.get("fmt") == "json"
+    assert "publish_meta" in call_kwargs.kwargs  # publish_meta added in 4bfb2a483
     assert isinstance(artifacts, list)
 
 
