@@ -14419,7 +14419,131 @@ Planning rules:
 
         return jsonify({"id": row_id or "n/a", "recorded": True})
 
+    @bp.route("/api/nqe/cross-validate", methods=["POST"])
+    def api_nqe_cross_validate():
+        """Dual-query cross-validation: translate using two strategies and compare.
+
+        Strategy A uses structured context (deterministic); strategy B is context-free
+        (LLM/fallback). A high divergence score means the two strategies disagree and
+        a human must review and approve before execution.
+
+        Request:  {"text": str, "context": dict (optional)}
+        Response: {
+            "nql_primary":      str,   # strategy A result
+            "nql_secondary":    str,   # strategy B result
+            "divergence_score": float, # 0.0 identical → 1.0 completely different
+            "require_hitl":     bool,  # True when divergence_score >= 0.6
+            "message":          str
+        }
+        """
+        data = request.get_json(force=True, silent=True) or {}
+        text = (data.get("text") or "").strip()
+        if not text:
+            return jsonify({"error": "text is required"}), 400
+
+        context = data.get("context") or {}
+
+        try:
+            from tools.network.nql_translator import nl_to_nql
+            nql_primary = nl_to_nql(text, context=context or None)
+            nql_secondary = nl_to_nql(text)  # context-free → always LLM/fallback
+        except Exception as exc:
+            logger.exception("NQE cross-validate translation error")
+            return jsonify({"error": str(exc)}), 500
+
+        divergence = _nql_divergence_score(nql_primary, nql_secondary)
+        require_hitl = divergence >= 0.6
+
+        if require_hitl:
+            message = (
+                f"The two translation strategies produced divergent queries "
+                f"(divergence {divergence:.0%}). Human approval is required before execution."
+            )
+        elif divergence >= 0.3:
+            message = (
+                f"Minor divergence detected ({divergence:.0%}). "
+                "Review both queries before running."
+            )
+        else:
+            message = "Both translation strategies agree. Safe to proceed."
+
+        return jsonify({
+            "nql_primary": nql_primary,
+            "nql_secondary": nql_secondary,
+            "divergence_score": divergence,
+            "require_hitl": require_hitl,
+            "message": message,
+        })
+
+    @bp.route("/api/nqe/hitl-approve", methods=["POST"])
+    def api_nqe_hitl_approve():
+        """Record a HITL approval for a cross-validated NQE query pair.
+
+        Request:  {"nql_primary": str, "nql_secondary": str, "approved_by": str, "notes": str}
+        Response: {"approved": true, "approved_by": str, "recorded": true}
+        """
+        data = request.get_json(force=True, silent=True) or {}
+        nql_primary = (data.get("nql_primary") or "").strip()
+        nql_secondary = (data.get("nql_secondary") or "").strip()
+        approved_by = (data.get("approved_by") or "").strip()
+        notes = (data.get("notes") or "").strip()
+
+        if not approved_by:
+            return jsonify({"error": "approved_by is required"}), 400
+
+        import json as _json
+        audit_payload = _json.dumps({
+            "nql_primary": nql_primary,
+            "nql_secondary": nql_secondary,
+            "notes": notes,
+        })
+
+        try:
+            from tools.db.storage import get_canvas_connection
+            conn = get_canvas_connection("NC_STORAGE_BACKEND")
+            conn.execute(
+                "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, created_at) "
+                "VALUES (%s, %s, %s, NOW())",
+                ("hitl_approve", audit_payload, True),
+            )
+            conn.commit()
+            conn.close()
+        except Exception as exc:
+            logger.warning("NQE hitl-approve audit insert failed: %s", exc)
+
+        return jsonify({"approved": True, "approved_by": approved_by, "recorded": True})
+
     # ── NQE helpers ────────────────────────────────────────────────────────
+
+    def _nql_divergence_score(nql_a: str, nql_b: str) -> float:
+        """Return divergence in [0.0, 1.0] between two NQL strings (Jaccard distance).
+
+        0.0 = identical, 1.0 = completely different.
+        Collection mismatch is boosted to ≥ 0.8 since different primary collections
+        almost certainly query different facts.
+        """
+        import re as _re
+
+        def _collection(nql):
+            m = _re.search(r"\bin\s+(network\.\S+)", nql, _re.I)
+            return m.group(1).lower() if m else ""
+
+        col_a = _collection(nql_a)
+        col_b = _collection(nql_b)
+
+        tok_a = set(_re.findall(r"[\w.]+", nql_a.lower()))
+        tok_b = set(_re.findall(r"[\w.]+", nql_b.lower()))
+
+        if not tok_a or not tok_b:
+            return 1.0
+
+        jaccard = len(tok_a & tok_b) / len(tok_a | tok_b)
+        divergence = 1.0 - jaccard
+
+        if col_a and col_b and col_a != col_b:
+            divergence = max(divergence, 0.8)
+
+        return round(divergence, 3)
 
     def _nql_heuristic_explain(nql: str) -> str:
         """Generate a simple heuristic explanation from NQL structure."""
