@@ -764,3 +764,305 @@ def test_stage8_publish_evidence_report_failure_does_not_abort(tmp_path):
         )
 
     assert isinstance(artifacts, list)
+
+
+# ─── idr-hitl-05 — stage5_ace_generate ──────────────────────────────────────
+
+class TestStage5AceGenerate:
+    """Tests for stage5_ace_generate() — multi-coworker doc generation."""
+
+    def _make_session(self):
+        from tools.docgen.session_manager import create_session
+        return create_session(title="ACE Doc Gen", domain="network")
+
+    def _make_context(self, session):
+        return {
+            "session_id": session["id"],
+            "query_string": "Generate network runbook",
+            "ace_roles": ["technical_writer", "network_engineer"],
+            "topology_summary": {"node_count": 5},
+            "config_findings": [],
+            "title": session["title"],
+            "domain": session["domain"],
+            "doc_type": session.get("doc_type", "runbook"),
+            "classification": session.get("classification", "CUI"),
+        }
+
+    def test_ace_generate_launches_instance(self):
+        """ACE controller launch called with correct trigger_ref == session_id."""
+        from tools.docgen.workflow import stage5_ace_generate
+        from unittest.mock import patch, MagicMock
+
+        session = self._make_session()
+        context = self._make_context(session)
+        fake_ctrl = MagicMock()
+        fake_ctrl.launch.return_value = "ace-abc123"
+
+        with patch("icdev.tools.ace.controller.ACEController.get_instance", return_value=fake_ctrl):
+            result = stage5_ace_generate(session["id"], context)
+
+        assert result["status"] == "launched"
+        assert result["instance_id"] == "ace-abc123"
+        fake_ctrl.launch.assert_called_once()
+        call_kwargs = fake_ctrl.launch.call_args
+        assert call_kwargs.kwargs["trigger_ref"] == session["id"]
+        assert call_kwargs.kwargs["trigger_source"] == "idr"
+
+    def test_ace_generate_stores_instance_id_on_session(self):
+        """ace_instance_id is persisted to idr_sessions after launch."""
+        from tools.docgen.workflow import stage5_ace_generate
+        from tools.docgen.session_manager import get_session
+        from unittest.mock import patch, MagicMock
+
+        session = self._make_session()
+        context = self._make_context(session)
+        fake_ctrl = MagicMock()
+        fake_ctrl.launch.return_value = "ace-stored-456"
+
+        with patch("icdev.tools.ace.controller.ACEController.get_instance", return_value=fake_ctrl):
+            stage5_ace_generate(session["id"], context)
+
+        updated = get_session(session["id"])
+        assert updated["ace_instance_id"] == "ace-stored-456"
+
+    def test_ace_generate_custom_roles(self):
+        """role_ids passed through to ACEController.launch."""
+        from tools.docgen.workflow import stage5_ace_generate
+        from unittest.mock import patch, MagicMock
+
+        session = self._make_session()
+        context = self._make_context(session)
+        fake_ctrl = MagicMock()
+        fake_ctrl.launch.return_value = "ace-roles-789"
+        custom_roles = ["technical_writer", "security_analyst"]
+
+        with patch("icdev.tools.ace.controller.ACEController.get_instance", return_value=fake_ctrl):
+            result = stage5_ace_generate(session["id"], context, role_ids=custom_roles)
+
+        assert result["status"] == "launched"
+        call_kwargs = fake_ctrl.launch.call_args
+        assert call_kwargs.kwargs["role_ids"] == custom_roles
+
+    def test_ace_generate_unavailable_on_import_error(self):
+        """ImportError on ACEController returns unavailable status gracefully."""
+        from tools.docgen.workflow import stage5_ace_generate
+        from unittest.mock import patch
+
+        session = self._make_session()
+        context = self._make_context(session)
+
+        with patch.dict("sys.modules", {"icdev.tools.ace.controller": None}):
+            result = stage5_ace_generate(session["id"], context)
+
+        assert result["status"] in ("unavailable", "error")
+        assert result["instance_id"] is None
+
+    def test_ace_generate_error_does_not_raise(self):
+        """Exceptions in ACEController are caught and returned as error status."""
+        from tools.docgen.workflow import stage5_ace_generate
+        from unittest.mock import patch, MagicMock
+
+        session = self._make_session()
+        context = self._make_context(session)
+        fake_ctrl = MagicMock()
+        fake_ctrl.launch.side_effect = RuntimeError("db connection failed")
+
+        with patch("icdev.tools.ace.controller.ACEController.get_instance", return_value=fake_ctrl):
+            result = stage5_ace_generate(session["id"], context)
+
+        assert result["status"] == "error"
+        assert result["instance_id"] is None
+
+
+class TestApiGenerateWithAce:
+    """Blueprint api_generate with use_ace=True / False."""
+
+    def _make_client(self):
+        from tools.docgen.blueprint import docgen_bp
+        from flask import Flask
+        app = Flask(__name__)
+        app.register_blueprint(docgen_bp)
+        app.config["TESTING"] = True
+        return app.test_client()
+
+    def _make_session(self):
+        from tools.docgen.session_manager import create_session
+        s = create_session(title="ACE Blueprint Test", domain="network")
+        return s
+
+    def test_generate_without_ace_returns_no_ace_fields(self):
+        """use_ace not set → ace_status is None in response."""
+        from unittest.mock import patch
+        client = self._make_client()
+        session = self._make_session()
+
+        with patch("tools.docgen.workflow.stage3_check_gate", return_value=True), \
+             patch("tools.docgen.context_builder.build_context", return_value={
+                 "session_id": session["id"], "query_string": "q",
+                 "ace_roles": [], "topology_summary": {"node_count": 0}, "config_findings": [],
+             }), \
+             patch("tools.docgen.workflow.advance"), \
+             patch.dict("sys.modules", {"tools.document_intelligence.doc_generator": None}):
+            resp = client.post(
+                f"/docgen/api/sessions/{session['id']}/generate",
+                json={},
+                content_type="application/json",
+            )
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["status"] == "generating"
+        assert body.get("ace_status") is None
+
+    def test_generate_with_use_ace_calls_stage5(self):
+        """use_ace=True → stage5_ace_generate called, ace_instance_id in response."""
+        from unittest.mock import patch, MagicMock
+        client = self._make_client()
+        session = self._make_session()
+        fake_ctrl = MagicMock()
+        fake_ctrl.launch.return_value = "ace-bp-test-001"
+
+        with patch("tools.docgen.workflow.stage3_check_gate", return_value=True), \
+             patch("tools.docgen.context_builder.build_context", return_value={
+                 "session_id": session["id"], "query_string": "q",
+                 "ace_roles": [], "topology_summary": {"node_count": 0}, "config_findings": [],
+             }), \
+             patch("tools.docgen.workflow.advance"), \
+             patch("icdev.tools.ace.controller.ACEController.get_instance", return_value=fake_ctrl), \
+             patch.dict("sys.modules", {"tools.document_intelligence.doc_generator": None}):
+            resp = client.post(
+                f"/docgen/api/sessions/{session['id']}/generate",
+                json={"use_ace": True},
+                content_type="application/json",
+            )
+
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["ace_status"] == "launched"
+        assert body["ace_instance_id"] == "ace-bp-test-001"
+
+
+# ─── Stage 8: Publish blueprint route tests ──────────────────────────────────
+
+class TestApiPublish:
+    """Blueprint route tests for POST /docgen/api/sessions/<id>/publish."""
+
+    def _make_client(self, tmp_path):
+        from tools.docgen.blueprint import docgen_bp
+        from flask import Flask
+        app = Flask(__name__, template_folder=str(tmp_path / "templates"))
+        app.register_blueprint(docgen_bp)
+        app.config["TESTING"] = True
+        return app.test_client()
+
+    def _make_session_with_wg(self):
+        from tools.docgen.session_manager import create_session, set_field, advance_stage
+        s = create_session(title="Publish Route Test", domain="network")
+        advance_stage(s["id"], 6, "writeguard")
+        set_field(s["id"], wg_result_id="wg-test-ready")
+        return s
+
+    def test_publish_route_returns_201_with_artifacts(self, tmp_path):
+        """POST /publish with WG gate passed returns 201 and artifact list."""
+        from unittest.mock import patch
+
+        client = self._make_client(tmp_path)
+        session = self._make_session_with_wg()
+
+        html_artifact = {
+            "id": "art-html-001", "session_id": session["id"],
+            "format": "html", "file_path": "/data/doc.html",
+            "published_at": "2026-01-01T00:00:00",
+        }
+
+        with patch("tools.docgen.workflow.stage8_publish", return_value=[html_artifact]) as mock_pub:
+            resp = client.post(
+                f"/docgen/api/sessions/{session['id']}/publish",
+                json={"doc_text": "<p>Test content</p>", "title": "Test Doc"},
+                content_type="application/json",
+            )
+
+        assert resp.status_code == 201
+        body = resp.get_json()
+        assert body["published"] is True
+        assert len(body["artifacts"]) == 1
+        assert body["artifacts"][0]["format"] == "html"
+        mock_pub.assert_called_once()
+
+    def test_publish_route_blocked_without_writeguard(self, tmp_path):
+        """POST /publish returns 409 when WriteGuard gate has not passed."""
+        from tools.docgen.session_manager import create_session
+
+        client = self._make_client(tmp_path)
+        session = create_session(title="No WG Session", domain="network")
+
+        resp = client.post(
+            f"/docgen/api/sessions/{session['id']}/publish",
+            json={"doc_text": "Some text"},
+            content_type="application/json",
+        )
+
+        assert resp.status_code == 409
+        body = resp.get_json()
+        assert body.get("gate") == "writeguard"
+
+    def test_publish_route_returns_404_for_missing_session(self, tmp_path):
+        """POST /publish returns 404 for nonexistent session_id."""
+        client = self._make_client(tmp_path)
+
+        resp = client.post(
+            "/docgen/api/sessions/nonexistent-session-xyz/publish",
+            json={"doc_text": "text"},
+            content_type="application/json",
+        )
+
+        assert resp.status_code == 404
+
+    def test_publish_html_export_writes_classification_banner(self, tmp_path):
+        """_try_export_html writes classification banner to the HTML file."""
+        from tools.docgen.workflow import _try_export_html
+        from tools.docgen.session_manager import create_session, add_artifact
+
+        session = create_session(title="HTML Banner Test", domain="network")
+        out_dir = str(tmp_path / "html_out")
+        import os; os.makedirs(out_dir, exist_ok=True)
+        artifacts = []
+
+        with __import__("unittest.mock", fromlist=["patch"]).patch(
+            "tools.docgen.session_manager.add_artifact",
+            side_effect=lambda sid, fmt, file_path=None: {
+                "id": "art-1", "session_id": sid, "format": fmt, "file_path": file_path
+            },
+        ):
+            _try_export_html(session["id"], "Document body text.", "My Title", out_dir, "CUI", artifacts)
+
+        assert len(artifacts) == 1
+        html_path = artifacts[0]["file_path"]
+        content = __import__("pathlib").Path(html_path).read_text(encoding="utf-8")
+        assert "CUI" in content
+        assert "My Title" in content
+        assert "Document body text." in content
+
+    def test_publish_with_multiple_artifacts(self, tmp_path):
+        """stage8_publish returning multiple formats all appear in response."""
+        from unittest.mock import patch
+
+        client = self._make_client(tmp_path)
+        session = self._make_session_with_wg()
+
+        multi_artifacts = [
+            {"id": "a1", "session_id": session["id"], "format": "html", "file_path": "/d/doc.html"},
+            {"id": "a2", "session_id": session["id"], "format": "pdf", "file_path": "/d/doc.pdf"},
+        ]
+
+        with patch("tools.docgen.workflow.stage8_publish", return_value=multi_artifacts):
+            resp = client.post(
+                f"/docgen/api/sessions/{session['id']}/publish",
+                json={"doc_text": "Content", "classification": "SECRET"},
+            )
+
+        assert resp.status_code == 201
+        body = resp.get_json()
+        formats = {a["format"] for a in body["artifacts"]}
+        assert "html" in formats
+        assert "pdf" in formats

@@ -192,6 +192,64 @@ def stage3_check_gate(session_id: str) -> bool:
     return pending == 0
 
 
+# ─── Stage 4-5: ACE multi-coworker doc generation ─────────────────────────────
+
+def stage5_ace_generate(
+    session_id: str,
+    context: dict[str, Any],
+    role_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    """Launch ACE multi-coworker doc generation (non-blocking).
+
+    Spawns an ACEController instance whose coworkers generate the document
+    sections in parallel (technical_writer, network_engineer, etc.).
+    Returns immediately with the instance_id so the caller can poll.
+
+    Args:
+        session_id: IDR session being generated.
+        context:    Unified context dict from context_builder.build_context().
+        role_ids:   Optional list of ACE role IDs to override defaults.
+
+    Returns:
+        {"instance_id": str, "status": "launched" | "unavailable"}
+    """
+    if role_ids is None:
+        role_ids = ["technical_writer", "network_engineer"]
+
+    problem_text = (
+        f"Generate a complete {context.get('doc_type', 'runbook')} document titled "
+        f"'{context.get('title', 'Network Documentation')}' for domain "
+        f"'{context.get('domain', 'network')}'.\n\n"
+        f"Classification: {context.get('classification', 'CUI')}\n\n"
+        f"Context summary:\n{context.get('query_string', '')[:2000]}"
+    )
+
+    try:
+        from icdev.tools.ace.controller import ACEController
+
+        ctrl = ACEController.get_instance()
+        instance_id = ctrl.launch(
+            problem_text=problem_text,
+            trigger_source="idr",
+            trigger_ref=session_id,
+            user_id="idr_workflow",
+            project_id=session_id,
+            role_ids=role_ids,
+        )
+        sm.set_field(session_id, ace_instance_id=instance_id)
+        log.info(
+            "IDR ACE generate launched: session=%s instance=%s roles=%s",
+            session_id, instance_id, role_ids,
+        )
+        return {"instance_id": instance_id, "status": "launched"}
+    except ImportError:
+        log.warning("ACEController not available — skipping ACE generation for session=%s", session_id)
+        return {"instance_id": None, "status": "unavailable"}
+    except Exception:
+        log.exception("IDR ACE generate failed: session=%s", session_id)
+        return {"instance_id": None, "status": "error"}
+
+
 # ─── Stage 6: WriteGuard gate ─────────────────────────────────────────────────
 
 def stage6_writeguard(
