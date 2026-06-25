@@ -613,3 +613,80 @@ def test_writeguard_loop_no_ace_regen_on_pass():
     assert result["passed"] is True
     assert result["ace_regen_needed"] is False
     assert result["blocked"] is False
+
+
+# ─── Blueprint route tests (WriteGuard API) ───────────────────────────────────
+
+@pytest.fixture()
+def _docgen_client(tmp_path):
+    """Minimal Flask test client with the docgen blueprint registered."""
+    from flask import Flask
+    from tools.docgen.blueprint import docgen_bp
+
+    app = Flask(__name__, template_folder=str(tmp_path / "templates"))
+    app.register_blueprint(docgen_bp)
+    app.config["TESTING"] = True
+    with app.test_client() as client:
+        yield client
+
+
+def test_api_writeguard_route_passes_and_sets_wg_result_id(_docgen_client):
+    """POST /docgen/api/sessions/<id>/writeguard returns 200 + wg_result_id on high score."""
+    from tools.docgen.session_manager import create_session
+
+    session = create_session(title="Route WG Pass", domain="network")
+    quality_result = {"overall_score": 85.0, "passed": True, "details": {}, "recommendations": []}
+
+    with patch("tools.pulse.writeguard.run_full_quality_check", return_value=quality_result):
+        resp = _docgen_client.post(
+            f"/docgen/api/sessions/{session['id']}/writeguard",
+            json={"doc_text": "Well written document text."},
+        )
+
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["passed"] is True
+    assert data["score"] == 85.0
+    assert data["ace_regen_triggered"] is False
+    assert data["wg_result_id"]  # non-empty UUID
+
+
+def test_api_writeguard_route_ace_regen_triggered_on_exhaustion(_docgen_client):
+    """POST writeguard returns 409 + ace_regen_triggered=True after max retries fail."""
+    from tools.docgen.session_manager import create_session
+
+    session = create_session(title="Route WG Block", domain="network")
+    quality_result = {"overall_score": 20.0, "passed": False, "details": {}, "recommendations": []}
+    rewrite_dict = {"rewritten_text": "Still poor.", "changes_made": []}
+
+    with (
+        patch("tools.pulse.writeguard.run_full_quality_check", return_value=quality_result),
+        patch("tools.pulse.writeguard.rewrite_content", return_value=rewrite_dict),
+    ):
+        resp = _docgen_client.post(
+            f"/docgen/api/sessions/{session['id']}/writeguard",
+            json={"doc_text": "Poor quality document."},
+        )
+
+    assert resp.status_code == 409
+    data = resp.get_json()
+    assert data["passed"] is False
+    assert data["ace_regen_triggered"] is True
+    assert data["blocked"] is True
+
+
+def test_api_advance_to_review_blocked_without_writeguard(_docgen_client):
+    """POST /advance with stage=7 returns 409 gate=writeguard if WG not passed."""
+    from tools.docgen.session_manager import create_session, advance_stage
+
+    session = create_session(title="Gate Block Test", domain="network")
+    advance_stage(session["id"], 6, "writeguard")  # at stage 6, no wg_result_id
+
+    resp = _docgen_client.post(
+        f"/docgen/api/sessions/{session['id']}/advance",
+        json={"stage": 7},
+    )
+
+    assert resp.status_code == 409
+    data = resp.get_json()
+    assert data.get("gate") == "writeguard"
