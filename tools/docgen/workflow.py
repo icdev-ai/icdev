@@ -322,6 +322,22 @@ def stage8_publish(
     _try_export_pdf(session_id, doc_text, title, output_dir, artifacts)
 
     sm.advance_stage(session_id, 8, "published")
+
+    # If this session was orchestrated by an ACE instance, generate an evidence
+    # report so the publish event is captured in the ace_audit_log trail.
+    session = sm.get_session(session_id)
+    ace_instance_id = session and session.get("ace_instance_id")
+    if ace_instance_id:
+        try:
+            from icdev.tools.ace.evidence_report import generate as _ev_generate
+            _ev_generate(ace_instance_id, fmt="json")
+        except Exception:
+            log.debug(
+                "IDR evidence_report.generate skipped for ace_instance=%s",
+                ace_instance_id,
+                exc_info=True,
+            )
+
     log.info("IDR published: session=%s artifacts=%d", session_id, len(artifacts))
     return artifacts
 

@@ -345,3 +345,47 @@ def blast_radius(
         "slo_risk": slo_risk,
         "impacted_systems": impacted,
     }
+
+
+def intent_validate(delta: dict, project_id: str | None = None) -> dict:
+    """Validate a proposed remediation action against the NDC digital twin.
+
+    Translates a remediation delta (device, action, from_version, to_version)
+    into a topology_delta and runs simulate_delta + blast_radius.
+
+    Returns a unified dict with verdict, intent_results, compliance_findings,
+    and impacted_systems suitable for consume by remediation_simulator.
+    """
+    device = delta.get("device", "")
+    action = delta.get("action", "")
+
+    topology_delta: dict = {
+        "add_devices": [],
+        "remove_devices": [],
+        "add_links": [],
+        "remove_links": [],
+        "acl_changes": [],
+    }
+    if action == "replace":
+        topology_delta["remove_devices"] = [{"id": device, "label": device, "type": "unknown"}]
+        topology_delta["add_devices"] = [{"id": device, "label": device, "type": "unknown"}]
+    elif action == "config_change":
+        topology_delta["acl_changes"] = [{"device": device, "rule": "permit any any"}]
+
+    sim_result = simulate_delta(project_id or "_intent_validate", topology_delta)
+
+    impacted_systems: list = []
+    if project_id:
+        try:
+            br = blast_radius(project_id, device, topology_delta=topology_delta)
+            impacted_systems = br.get("impacted_systems", [])
+        except Exception:
+            pass
+
+    return {
+        "verdict": sim_result["verdict"],
+        "simulation_id": sim_result["id"],
+        "intent_results": sim_result["intent_results"],
+        "compliance_findings": sim_result["compliance_findings"],
+        "impacted_systems": impacted_systems,
+    }

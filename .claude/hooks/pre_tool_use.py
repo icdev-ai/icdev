@@ -528,6 +528,14 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "api_keys",
         # IDR — conflict resolution trail is append-only (resolution recorded in-place, rows never deleted — NIST AU)
         "idr_conflicts",
+        # NQE / Forward Networks Integration (migration 220, 222 — NIST AU)
+        "nc_advisory_assessments",   # impact assessment results — proof chain for ATO
+        "nc_nqe_audit_log",          # every translate/run/approve action traced
+        "nc_remediation_status_log", # every status transition for remediation actions
+        "nc_poam_items",             # formal POAM entries (FedRAMP/DoD format)
+        "nc_poam_status_log",        # POAM milestone/status change log
+        "nc_exceptions",             # filed exceptions for unmitigated vulnerabilities
+        "nc_exception_approvals",    # AO/ISSO/ISSM approval chain for exceptions
     ]
 
     if tool_name == "Bash":
