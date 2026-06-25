@@ -372,6 +372,22 @@ function getCiscoStencil(type) {
   if (type.includes('endpoint-phone')) return CISCO_STENCILS['endpoint-phone'];
   if (type.includes('endpoint-iot') || type.includes('plc') || type.includes('rtu')) return CISCO_STENCILS['endpoint-iot'];
   if (type.includes('endpoint-camera') || type.includes('camera')) return CISCO_STENCILS['endpoint-camera'];
+  // CSP transit / interconnect / gateway → router stencil
+  if (type.includes('tgw') || type === 'aws-dx' || type === 'az-er' || type === 'azure-expressroute' ||
+      type === 'gcp-ic' || type === 'gcp-interconnect' || type === 'gcp-router' ||
+      type === 'oci-drg' || type === 'ibm-dl' || type === 'ibm-tg' ||
+      type === 'aws-r53' || type === 'gcp-dns' || type === 'az-dns') return CISCO_STENCILS['router'];
+  // CSP managed firewall / security → firewall stencil
+  if (type === 'aws-nfw' || type === 'aws-waf' || type === 'az-fw' || type === 'az-nsg' ||
+      type === 'gcp-armor' || type === 'oci-waf' || type === 'oci-nsg') return CISCO_STENCILS['firewall'];
+  // CSP load balancers → load-balancer stencil
+  if (type === 'aws-alb' || type === 'aws-nlb' || type === 'gcp-lb' || type === 'oci-lb' ||
+      type === 'ibm-lb' || type === 'az-appgw' || type === 'az-front') return CISCO_STENCILS['load-balancer'];
+  // CSP VPN gateways → router stencil
+  if (type === 'aws-vpn' || type === 'az-vpn-gw' || type === 'gcp-vpn' || type === 'ibm-vpn') return CISCO_STENCILS['router'];
+  // CSP VPC/VNet/VCN → cloud stencil
+  if (type === 'aws-vpc' || type === 'az-vnet' || type === 'gcp-vpc' || type === 'oci-vcn' ||
+      type === 'ibm-vpc' || type === 'dod-c2s-vpc' || type === 'dod-c2e-vnet' || type === 'cloud-region') return CISCO_STENCILS['cloud'];
   return null;
 }
 
@@ -1541,10 +1557,19 @@ function createNode(type, x, y, label, nodeId, configData) {
       } : { display: 'none' },
       stencilBody: stencil ? {
         d: stencil.body,
-        fill: config._fill || style.stroke,  // Use stroke color as stencil fill
+        // For custom-fill nodes (annotation/internet/legend):
+        //   - Stencils WITH detail lines (server, router, firewall): semi-transparent dark
+        //     overlay so the body shape creates a 3rd contrast layer (card bg → darker body
+        //     area → white detail strokes) matching the visual quality of standard nodes.
+        //   - Stencils WITHOUT detail (cloud): white fill so the closed shape is the icon.
+        // Standard NODE_STYLES nodes (no _fill) fall back to style.stroke as designed.
+        fill: config._fill
+          ? (stencil.detail ? 'rgba(0,0,0,0.25)' : '#ffffff')
+          : (config._stroke || style.stroke),
       } : { d: '' },
       stencilDetail: stencil ? {
         d: stencil.detail || '',
+        fill: 'none',
         stroke: '#ffffff',
         strokeWidth: 1.5,
       } : { d: '' },
@@ -4097,14 +4122,28 @@ function renderBoundaryZone(b) {
   zone.style.top = (b.pos_y * sx + ty) + 'px';
   zone.style.width = (b.width * sx) + 'px';
   zone.style.height = (b.height * sx) + 'px';
-  zone.style.borderColor = b.color;
-  zone.style.backgroundColor = b.color;
+  // Separate fill color (semi-transparent RGBA) from solid color used for border/badge.
+  // This lets the zone background be transparent enough to see nodes inside,
+  // while the dashed border and label badge use a solid color for legibility.
+  const fillColor = b.color || 'rgba(92,92,138,0.15)';
+  // Strip alpha from rgba(...) to get a solid rgb(...) for border and badge.
+  let solidColor = fillColor.replace(
+    /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)[^)]*\)/i, 'rgb($1,$2,$3)'
+  );
+  // Allow an explicit border_color override stored in the boundary notes JSON.
+  try {
+    const meta = JSON.parse(b.notes || '{}');
+    if (meta.border_color) solidColor = meta.border_color;
+  } catch (_) {}
+
+  zone.style.borderColor = solidColor;     // solid dashed border — clearly visible
+  zone.style.backgroundColor = fillColor;  // semi-transparent fill — nodes show through
   zone.style.setProperty('--fence-opacity', b.fill_opacity || 0.08);
 
-  // Classification label badge
+  // Classification label badge — solid background ensures white text contrast
   const badge = document.createElement('div');
   badge.className = 'boundary-label';
-  badge.style.backgroundColor = b.color;
+  badge.style.backgroundColor = solidColor;
   badge.textContent = b.label || b.classification;
   zone.appendChild(badge);
 

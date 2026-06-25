@@ -1027,13 +1027,81 @@ def generate_ndc_topology(tabs: dict, cloud_context: dict) -> dict:
 
     Returns {"graph_json": {"nodes": [...], "edges": [...]}, "boundaries": [...]}.
     Node types match the NDC Canvas icon set; boundary dicts match nc_boundaries schema.
+
+    Layout is fully data-driven — no component names are hardcoded. Labels, zone
+    names, and provider mappings are all derived from the analysis result. Node
+    positions are offset (350, 250) from the canvas origin so the user can pan
+    left/up without hitting the scroll boundary immediately.
     """
     inventory = tabs.get("inventory") or []
     topology = tabs.get("topology") or []
     security = tabs.get("security") or []
     mode = cloud_context.get("mode", "unknown")
 
-    # Highest severity affecting each component (for config annotation)
+    # ── Layout constants (easily adjusted without touching logic) ──────────────
+    ORIGIN_X = 350   # canvas x-offset — keeps content away from the left edge so the user can pan left
+    ORIGIN_Y = 250   # canvas y-offset — keeps content away from the top edge so the user can pan up
+    COL_GAP_X = 230  # horizontal gap between on-prem column and cloud columns
+    ROW_GAP_Y = 200  # vertical gap between node rows
+    NODE_W = 110     # nominal node width (for boundary box calculations)
+    NODE_H = 70      # nominal node height
+
+    # Zone fill colors (RGBA — semi-transparent so nodes inside remain visible).
+    # Tuple: (rgba_fill_color, solid_hex_for_border_and_badge).
+    # The solid_hex is stored in boundary["notes"] and used by renderBoundaryZone
+    # to give the dashed border and label badge strong contrast against white text.
+    _PROVIDER_COLORS = {
+        "aws":     ("rgba(212,84,26,0.15)",   "#d4541a"),
+        "azure":   ("rgba(0,120,212,0.15)",   "#0078d4"),
+        "gcp":     ("rgba(26,115,232,0.15)",  "#1a73e8"),
+        "oci":     ("rgba(199,70,52,0.15)",   "#c74634"),
+        "ibm":     ("rgba(31,87,164,0.15)",   "#1f57a4"),
+        "on_prem": ("rgba(139,69,19,0.15)",   "#8b4513"),
+    }
+    _DMZ_COLOR     = ("rgba(184,134,11,0.15)", "#b8860b")
+    _TRUSTED_COLOR = ("rgba(46,125,50,0.12)",  "#2e7d32")
+    _FILL_OPACITY  = 0.08   # CSS --fence-opacity for ::before overlay
+
+    # Finding annotation node fill colors (opaque — annotation nodes are regular graph elements)
+    _SEV_FILL = {
+        "critical": "#b71c1c",
+        "high":     "#e65100",
+        "medium":   "#f57f17",
+        "low":      "#558b2f",
+        "info":     "#1565c0",
+    }
+
+    # ── Color contrast V&V helpers ─────────────────────────────────────────────
+    def _to_rgb(h_str: str):
+        h = h_str.lstrip("#")
+        if len(h) == 3:
+            h = "".join(c * 2 for c in h)
+        if len(h) != 6:
+            return None
+        try:
+            return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+        except ValueError:
+            return None
+
+    def _fix_fill(hex_color: str) -> str:
+        """Ensure a node fill is visually distinct from boundary box borders.
+        Near-achromatic darks (chroma<40, total<140) look identical to black
+        dashed borders on-screen; a blue boost makes them clearly identifiable.
+        """
+        if not hex_color or not hex_color.startswith("#"):
+            return hex_color
+        rgb = _to_rgb(hex_color)
+        if rgb is None:
+            return hex_color
+        r, g, b = rgb
+        chroma = max(r, g, b) - min(r, g, b)
+        total = r + g + b
+        if chroma < 40 and total < 140:
+            b_new = min(255, b + 70)
+            return f"#{r:02x}{g:02x}{b_new:02x}"
+        return hex_color
+
+    # ── Severity map for highlighting affected nodes ───────────────────────────
     sev_map: dict = {}
     for finding in security:
         comp = (finding.get("affected_component") or "").strip().lower()
@@ -1049,101 +1117,242 @@ def generate_ndc_topology(tabs: dict, cloud_context: dict) -> dict:
                 return sev
         return "info"
 
-    def _map_type(label: str, comp_type: str) -> str:
+    def _map_type(label: str, comp_type: str, provider: str = "") -> str:
+        """Map component label + type string + cloud provider to an NDC Canvas node type.
+
+        Returns provider-specific types (e.g. aws-vpc, az-vnet) when the provider is known,
+        so the canvas renders CSP-branded colors and recognizable symbols (VPC, TGW, DX, etc.).
+        Falls back to generic types (router, firewall, server …) when no CSP match is found.
+        """
         text = (label + " " + comp_type).lower()
+        prov = (provider or "").lower().strip()
+
+        # ── AWS-specific types ─────────────────────────────────────────────────
+        if prov == "aws":
+            if any(k in text for k in ["transit gateway", "tgw", "transit gw"]):
+                return "aws-tgw"
+            if any(k in text for k in ["direct connect", "dxgw", "dx gateway", "directconnect"]):
+                return "aws-dx"
+            if any(k in text for k in ["network firewall", "nfw"]):
+                return "aws-nfw"
+            if any(k in text for k in ["waf", "web application firewall"]):
+                return "aws-waf"
+            if any(k in text for k in ["alb", "application load"]):
+                return "aws-alb"
+            if any(k in text for k in ["nlb", "network load"]):
+                return "aws-nlb"
+            if any(k in text for k in ["cloudfront", " cdn "]):
+                return "aws-cloudfront"
+            if any(k in text for k in ["route 53", "r53"]):
+                return "aws-r53"
+            if any(k in text for k in ["gateway endpoint", "vpc endpoint", "gw endpoint"]):
+                return "aws-gw-ep"
+            if any(k in text for k in ["site vpn", "aws vpn", "vpn connection"]):
+                return "aws-vpn"
+            if any(k in text for k in ["vpc", "virtual private cloud", "vdms", "vdss", "vdc",
+                                        "workload vpc", "compute vpc", "management vpc",
+                                        "shared services", "security vpc"]):
+                return "aws-vpc"
+
+        # ── Azure-specific types ───────────────────────────────────────────────
+        elif prov == "azure":
+            if any(k in text for k in ["expressroute", "express route", "er circuit"]):
+                return "az-er"
+            if any(k in text for k in ["azure firewall", "az fw", "azure fw"]):
+                return "az-fw"
+            if any(k in text for k in ["application gateway", "app gateway", "appgw"]):
+                return "az-appgw"
+            if any(k in text for k in ["virtual wan", "vwan"]):
+                return "az-vwan"
+            if any(k in text for k in ["front door", "frontdoor", "azure front door"]):
+                return "az-front"
+            if any(k in text for k in ["vpn gateway", "vpn gw", "azure vpn"]):
+                return "az-vpn-gw"
+            if any(k in text for k in ["bastion", "azure bastion"]):
+                return "az-bastion"
+            if any(k in text for k in ["nsg", "network security group"]):
+                return "az-nsg"
+            if any(k in text for k in ["vnet", "virtual network", "virtual data center"]):
+                return "az-vnet"
+
+        # ── GCP-specific types ─────────────────────────────────────────────────
+        elif prov == "gcp":
+            if any(k in text for k in ["interconnect", "cloud interconnect", "partner interconnect"]):
+                return "gcp-ic"
+            if any(k in text for k in ["cloud vpn", "ha vpn", "classic vpn"]):
+                return "gcp-vpn"
+            if any(k in text for k in ["cloud nat", "nat gateway"]):
+                return "gcp-nat"
+            if any(k in text for k in ["cloud armor", "armor", "ddos protection"]):
+                return "gcp-armor"
+            if any(k in text for k in ["cloud cdn", " cdn "]):
+                return "gcp-cdn"
+            if any(k in text for k in ["cloud load", "load balancer", "global lb", "glb", " lb "]):
+                return "gcp-lb"
+            if any(k in text for k in ["cloud router", "cloud routing"]):
+                return "gcp-router"
+            if any(k in text for k in ["vpc", "virtual private cloud", "shared vpc"]):
+                return "gcp-vpc"
+
+        # ── OCI-specific types ─────────────────────────────────────────────────
+        elif prov == "oci":
+            if any(k in text for k in ["dynamic routing gateway", "drg"]):
+                return "oci-drg"
+            if any(k in text for k in ["fastconnect", "fast connect"]):
+                return "oci-fc"
+            if any(k in text for k in ["load balancer", " lb "]):
+                return "oci-lb"
+            if any(k in text for k in ["waf", "web application"]):
+                return "oci-waf"
+            if any(k in text for k in ["nsg", "network security group"]):
+                return "oci-nsg"
+            if any(k in text for k in ["vcn", "virtual cloud network"]):
+                return "oci-vcn"
+
+        # ── IBM-specific types ─────────────────────────────────────────────────
+        elif prov == "ibm":
+            if any(k in text for k in ["direct link", "directlink"]):
+                return "ibm-dl"
+            if any(k in text for k in ["transit gateway", "transit gw"]):
+                return "ibm-tg"
+            if any(k in text for k in ["vpn", "vpn gateway"]):
+                return "ibm-vpn"
+            if any(k in text for k in ["load balancer", " lb "]):
+                return "ibm-lb"
+            if any(k in text for k in ["vpc", "virtual private cloud"]):
+                return "ibm-vpc"
+
+        # ── Generic / provider-agnostic fallback ───────────────────────────────
         if any(k in text for k in [
-            "firewall", "ngfw", "fw", "asa", "vdss", "security stack",
-            "iap", "internet access", "cap", "cloud access point", "bcap",
-            "inspection", "palo alto", "fortinet", "barracuda",
+            "firewall", "ngfw", "fw", "asa", "security stack",
+            "internet access", "cloud access point", "bcap",
+            "inspection", "palo alto", "fortinet", "barracuda", "checkpoint",
         ]):
             return "firewall"
-        if any(k in text for k in ["load balancer", "alb", "nlb", "elb", " lb ", "f5"]):
+        if any(k in text for k in ["load balancer", "alb", "nlb", "elb", " lb ", "f5", "haproxy"]):
             return "load-balancer"
         if any(k in text for k in ["switch", "fabric", "vlan", "nexus", "catalyst"]):
             return "switch-l3"
-        if any(k in text for k in ["vpn", "ipsec", "tunnel", "wireguard"]):
+        if any(k in text for k in ["vpn", "ipsec", "tunnel", "wireguard", "gre"]):
             return "vpn"
-        if any(k in text for k in ["encryptor", "type1", "type-1", "hsm", "kek"]):
+        if any(k in text for k in ["encryptor", "type1", "type-1", "hsm", "kek", "fips 140"]):
             return "type1-encryptor"
-        if any(k in text for k in ["niprnet", "nipr", "wan", "mpls", "router", "routing"]):
+        if any(k in text for k in ["router", "routing", "wan", "mpls", "bgp", "ospf"]):
             return "router"
         if any(k in text for k in [
-            "vpc", "vnet", "vcn", "vdms", "vdc", "virtual data center",
-            "workload vpc", "compute vpc", "management vpc",
+            "vpc", "vnet", "vcn", "virtual data center",
+            "workload vpc", "compute vpc", "management vpc", "shared services",
         ]):
             return "cloud"
-        if any(k in text for k in ["internet", "public network", "wan link"]):
+        if any(k in text for k in ["internet", "public network", "external network"]):
             return "cloud"
         return "server"
 
-    # Separate on-prem vs cloud inventory
-    on_prem = [i for i in inventory if (i.get("provider") or "on_prem") in ("on_prem", "unknown")]
-    cloud_inv = [i for i in inventory if (i.get("provider") or "on_prem") not in ("on_prem", "unknown", "")]
+    # ── Separate inventory by environment ─────────────────────────────────────
+    on_prem_providers = {"on_prem", "unknown", ""}
+    on_prem = [i for i in inventory if (i.get("provider") or "on_prem") in on_prem_providers]
+    cloud_inv = [i for i in inventory if (i.get("provider") or "on_prem") not in on_prem_providers]
 
-    # Sort cloud nodes: firewalls first (security boundary), then servers, then vpc/cloud
-    _type_order = {"firewall": 0, "router": 1, "load-balancer": 2, "server": 3, "cloud": 4}
+    # Sort cloud: boundary firewalls first, then active services, then passive VPCs
+    _type_order = {
+        "firewall": 0, "aws-nfw": 0, "aws-waf": 0, "az-fw": 0, "gcp-armor": 0,
+        "router": 1, "aws-tgw": 1, "aws-dx": 1, "az-er": 1, "gcp-ic": 1,
+        "load-balancer": 2, "aws-alb": 2, "aws-nlb": 2, "gcp-lb": 2,
+        "vpn": 3, "aws-vpn": 3, "az-vpn-gw": 3, "gcp-vpn": 3,
+        "server": 4,
+        "cloud": 5, "aws-vpc": 5, "az-vnet": 5, "gcp-vpc": 5, "oci-vcn": 5,
+    }
     cloud_inv_sorted = sorted(
         cloud_inv,
-        key=lambda i: _type_order.get(_map_type(i.get("component", ""), i.get("type", "")), 5),
+        key=lambda i: _type_order.get(
+            _map_type(i.get("component", ""), i.get("type", ""), i.get("provider", "")), 9
+        ),
     )
+
+    # ── Dynamic spacing ────────────────────────────────────────────────────────
+    n_op = max(len(on_prem), 1)
+    n_cl = max(len(cloud_inv_sorted), 1)
+    # Keep rows comfortably spaced; tighter when many nodes, looser when few
+    op_y_gap = max(130, min(ROW_GAP_Y, 900 // n_op))
+    cl_y_gap = max(130, min(ROW_GAP_Y, 900 // max(n_cl // 2 + 1, 1)))
 
     nodes = []
     op_node_ids: list = []
     cl_node_ids: list = []
     cl_by_provider: dict = {}
 
-    # Internet placeholder — add when untrusted zone or hybrid/cloud mode detected
+    # ── Internet placeholder ───────────────────────────────────────────────────
     has_internet_zone = any(
         z.get("trust_level") == "untrusted" or "internet" in z.get("zone", "").lower()
         for z in topology
     )
     if has_internet_zone or mode in ("hybrid", "cloud"):
-        inet_id = "n-internet"
+        # Derive internet zone label from topology (if available)
+        inet_zone = next(
+            (z.get("zone") for z in topology
+             if z.get("trust_level") == "untrusted" or "internet" in z.get("zone", "").lower()),
+            "Internet",
+        )
         nodes.append({
-            "id": inet_id, "label": "Internet", "type": "cloud",
-            "x": 80, "y": 260,
-            "config": {"provider": "public", "detail": "Public internet (untrusted)", "severity": "high"},
+            "id": "n-internet",
+            "label": inet_zone,
+            "type": "cloud",
+            "x": ORIGIN_X - 180,
+            "y": ORIGIN_Y + (n_op * op_y_gap) // 2,
+            "config": {
+                "provider": "public",
+                "detail": "Public internet (untrusted)",
+                "severity": "high",
+                "_fill": "#1565c0",   # deep blue — clearly identifiable, not near-black
+                "_stroke": "#42a5f5",
+                "_textColor": "#ffffff",
+            },
         })
 
-    # On-prem nodes: stacked vertically at x=280
+    # ── On-prem nodes ─────────────────────────────────────────────────────────
     for i, item in enumerate(on_prem):
         label = item.get("component", f"Node {i + 1}")
-        ntype = _map_type(label, item.get("type", ""))
+        ntype = _map_type(label, item.get("type", ""), item.get("provider", "on_prem"))
         nid = f"n-op-{i:02d}"
         nodes.append({
             "id": nid, "label": label, "type": ntype,
-            "x": 280, "y": 140 + i * 150,
+            "x": ORIGIN_X, "y": ORIGIN_Y + i * op_y_gap,
             "config": {
                 "provider": item.get("provider", "on_prem"),
                 "detail": item.get("detail", ""),
                 "count": item.get("count", 1),
                 "severity": _get_sev(label),
+                "_textColor": "#ffffff",
             },
         })
         op_node_ids.append(nid)
 
-    # Cloud nodes: 2-row grid starting at x=520
+    # ── Cloud nodes (2-row grid) ───────────────────────────────────────────────
+    cloud_x_start = ORIGIN_X + NODE_W + COL_GAP_X
     for i, item in enumerate(cloud_inv_sorted):
         label = item.get("component", f"Cloud Node {i + 1}")
-        ntype = _map_type(label, item.get("type", ""))
+        prov = item.get("provider", "aws")
+        ntype = _map_type(label, item.get("type", ""), prov)
         col = i // 2
         row = i % 2
         nid = f"n-cl-{i:02d}"
         prov = item.get("provider", "aws")
         nodes.append({
             "id": nid, "label": label, "type": ntype,
-            "x": 520 + col * 210, "y": 140 + row * 200,
+            "x": cloud_x_start + col * COL_GAP_X,
+            "y": ORIGIN_Y + row * cl_y_gap,
             "config": {
                 "provider": prov,
                 "detail": item.get("detail", ""),
                 "count": item.get("count", 1),
                 "severity": _get_sev(label),
+                "_textColor": "#ffffff",
             },
         })
         cl_node_ids.append(nid)
         cl_by_provider.setdefault(prov, []).append(nid)
 
-    # Generate edges
+    # ── Edges ─────────────────────────────────────────────────────────────────
     edges = []
     _eid = [0]
 
@@ -1151,9 +1360,8 @@ def generate_ndc_topology(tabs: dict, cloud_context: dict) -> dict:
         _eid[0] += 1
         edges.append({"id": f"e{_eid[0]:03d}", "source": src, "target": tgt, "label": label})
 
-    # Internet → first on-prem firewall (fallback: first on-prem node)
-    inet_nodes_list = [n for n in nodes if n["id"] == "n-internet"]
-    if inet_nodes_list and op_node_ids:
+    # Internet → first firewall on-prem (or first on-prem node)
+    if any(n["id"] == "n-internet" for n in nodes) and op_node_ids:
         first_fw = next(
             (nid for nid in op_node_ids
              if next((n["type"] for n in nodes if n["id"] == nid), "") == "firewall"),
@@ -1161,67 +1369,87 @@ def generate_ndc_topology(tabs: dict, cloud_context: dict) -> dict:
         )
         _add_edge("n-internet", first_fw, "WAN")
 
-    # Chain on-prem nodes in order
+    # Chain on-prem nodes sequentially
     for i in range(len(op_node_ids) - 1):
         _add_edge(op_node_ids[i], op_node_ids[i + 1])
 
-    # Last on-prem → first cloud node
+    # Handoff: last on-prem → first cloud node
     if op_node_ids and cl_node_ids:
         _add_edge(op_node_ids[-1], cl_node_ids[0])
 
-    # Chain cloud nodes: even-indexed form the main security path
+    # Cloud main path (even-indexed: row 0)
     even_cl = cl_node_ids[0::2]
     for i in range(len(even_cl) - 1):
         _add_edge(even_cl[i], even_cl[i + 1])
 
-    # Odd-indexed cloud nodes connect from the preceding even node (management/secondary path)
+    # Cloud secondary/management path (odd-indexed: row 1) branches from the row-0 peer
     for i, nid in enumerate(cl_node_ids):
         if i % 2 == 1:
             _add_edge(cl_node_ids[i - 1], nid, "mgmt")
 
-    # Build boundary box data (for nc_boundaries INSERT)
+    # ── Boundary boxes ─────────────────────────────────────────────────────────
     boundaries = []
+    _node_pos = {n["id"]: n for n in nodes}
 
+    def _bbox(node_ids: list, padding: int = 70) -> dict:
+        """Compute bounding box covering all listed nodes with padding."""
+        xs = [_node_pos[nid]["x"] for nid in node_ids if nid in _node_pos]
+        ys = [_node_pos[nid]["y"] for nid in node_ids if nid in _node_pos]
+        if not xs:
+            return {"pos_x": 0, "pos_y": 0, "width": 100, "height": 100}
+        return {
+            "pos_x": min(xs) - padding,
+            "pos_y": min(ys) - padding,
+            "width": max(xs) - min(xs) + NODE_W + padding * 2,
+            "height": max(ys) - min(ys) + NODE_H + padding * 2,
+        }
+
+    # On-prem boundary: derive label from the topology's trusted zone name if available
     if op_node_ids:
-        op_nodes_list = [n for n in nodes if n["id"] in op_node_ids]
-        ox = [n["x"] for n in op_nodes_list]
-        oy = [n["y"] for n in op_nodes_list]
+        trusted_zone = next(
+            (z.get("zone") for z in topology
+             if z.get("trust_level") == "trusted" and z.get("cloud_provider") in ("", None, "on_prem", "unknown")),
+            None,
+        )
+        op_label = trusted_zone if trusted_zone else "On-Premises"
+        fill_color, border_color = _PROVIDER_COLORS["on_prem"]
         boundaries.append({
-            "label": "On-Premises / NIPRNET",
+            "label": op_label,
             "classification": "cui",
-            "color": "rgba(200,80,30,0.22)",
-            "fill_opacity": 0.06,
-            "pos_x": min(ox) - 70,
-            "pos_y": min(oy) - 70,
-            "width": max(ox) - min(ox) + 170,
-            "height": max(oy) - min(oy) + 170,
+            "color": fill_color,
+            "fill_opacity": _FILL_OPACITY,
+            "notes": json.dumps({"border_color": border_color}),
             "node_ids": op_node_ids,
+            **_bbox(op_node_ids),
         })
 
+    # Cloud provider boundaries
     for prov, prov_ids in cl_by_provider.items():
-        prov_nodes_list = [n for n in nodes if n["id"] in prov_ids]
-        cx = [n["x"] for n in prov_nodes_list]
-        cy = [n["y"] for n in prov_nodes_list]
-        prov_label = {
-            "aws": "AWS Cloud",
-            "azure": "Azure Cloud",
-            "gcp": "Google Cloud Platform",
-            "oci": "Oracle Cloud Infrastructure",
+        fill_color, border_color = _PROVIDER_COLORS.get(prov, ("rgba(92,92,138,0.15)", "#5c5c8a"))
+        # Derive label from topology cloud_provider field if available
+        prov_zone_label = next(
+            (z.get("zone") for z in topology
+             if (z.get("cloud_provider") or "").lower() == prov.lower()
+             and z.get("trust_level") == "trusted"),
+            None,
+        )
+        _default_prov_names = {
+            "aws": "AWS Cloud", "azure": "Azure Cloud",
+            "gcp": "Google Cloud Platform", "oci": "Oracle Cloud Infrastructure",
             "ibm": "IBM Cloud",
-        }.get(prov, f"{prov.upper()} Cloud")
+        }
+        prov_label = prov_zone_label or _default_prov_names.get(prov, f"{prov.upper()} Cloud")
         boundaries.append({
             "label": prov_label,
             "classification": "public",
-            "color": "rgba(0,100,220,0.16)",
-            "fill_opacity": 0.05,
-            "pos_x": min(cx) - 70,
-            "pos_y": min(cy) - 70,
-            "width": max(cx) - min(cx) + 170,
-            "height": max(cy) - min(cy) + 170,
+            "color": fill_color,
+            "fill_opacity": _FILL_OPACITY,
+            "notes": json.dumps({"border_color": border_color}),
             "node_ids": prov_ids,
+            **_bbox(prov_ids),
         })
 
-    # Add DMZ sub-zones from topology analysis
+    # DMZ sub-zones from topology
     for zone in topology:
         if zone.get("trust_level") != "dmz":
             continue
@@ -1229,21 +1457,146 @@ def generate_ndc_topology(tabs: dict, cloud_context: dict) -> dict:
         if not zone_name:
             continue
         kw = zone_name.lower().split()[0]
-        zone_node_ids = [n["id"] for n in nodes if kw and kw in n["label"].lower()]
-        if zone_node_ids:
-            zn = [n for n in nodes if n["id"] in zone_node_ids]
-            zx = [n["x"] for n in zn]
-            zy = [n["y"] for n in zn]
+        zone_nids = [n["id"] for n in nodes if kw and kw in n["label"].lower()]
+        if zone_nids:
+            fill_color, border_color = _DMZ_COLOR
             boundaries.append({
                 "label": zone_name,
                 "classification": "cui",
-                "color": "rgba(200,160,0,0.18)",
-                "fill_opacity": 0.07,
-                "pos_x": min(zx) - 40,
-                "pos_y": min(zy) - 40,
-                "width": max(zx) - min(zx) + 140,
-                "height": max(zy) - min(zy) + 140,
-                "node_ids": zone_node_ids,
+                "color": fill_color,
+                "fill_opacity": _FILL_OPACITY,
+                "notes": json.dumps({"border_color": border_color}),
+                "node_ids": zone_nids,
+                **_bbox(zone_nids, padding=40),
+            })
+
+    # ── Finding annotation nodes (added AFTER boundaries so they stay outside bbox calc) ──
+    # Renders high/critical/medium findings as individual colored annotation nodes
+    # near the affected component, connected by a dashed edge. HITL can reposition them.
+    _FINDING_SEVS = {"critical", "high", "medium"}
+
+    # Build a full-label lookup (not truncated) for flexible matching
+    _all_main_nodes = [n for n in nodes if not n.get("config", {}).get("_annotation")]
+
+    def _find_affected_node(affected_comp: str):
+        """Match affected_component string to a node via substring or initials matching.
+        Works for both full names ('Internet Access Point') and abbreviations ('IAP').
+        """
+        if not affected_comp:
+            return None
+        aff = affected_comp.strip().lower()
+        best = None
+        for nd in _all_main_nodes:
+            lbl = nd["label"].lower()
+            # Substring match: "iap" is IN "internet access point (iap)"
+            if aff in lbl:
+                # Prefer shorter labels (more specific match)
+                if best is None or len(nd["label"]) < len(best["label"]):
+                    best = nd
+                    continue
+            # Initials/acronym match: "iap" == first letters of "internet access point"
+            tokens = [w for w in lbl.replace("(", " ").replace(")", " ").split() if w.isalpha()]
+            initials = "".join(t[0] for t in tokens)
+            if aff == initials or aff == initials[: len(aff)]:
+                if best is None:
+                    best = nd
+        return best
+
+    _finding_nodes: list = []
+    _used_sevs: set = set()      # severities that actually appear (drives legend filtering)
+    _placed_offsets: dict = {}   # track offset per anchor to avoid stacking annotations
+    for fi, finding in enumerate(security):
+        sev = finding.get("severity", "info")
+        if sev not in _FINDING_SEVS:
+            continue
+        _used_sevs.add(sev)
+        title = finding.get("title", "Unknown Finding")
+        affected = (finding.get("affected_component") or "").strip()
+        target_node = _find_affected_node(affected)
+
+        if target_node is None:
+            continue
+
+        ann_id = f"f-ann-{fi:02d}"
+        # Offset each annotation per anchor node so multiple findings don't stack
+        offset_count = _placed_offsets.get(target_node["id"], 0)
+        _placed_offsets[target_node["id"]] = offset_count + 1
+        ann_x = target_node["x"] + NODE_W + 30
+        ann_y = target_node["y"] - 90 - offset_count * 110
+        short = title[:28] + ("..." if len(title) > 28 else "")
+        ann_label = f"[{sev[:3].upper()}] {short}"
+
+        nodes.append({
+            "id": ann_id,
+            "label": ann_label,
+            "type": "server",
+            "x": ann_x,
+            "y": ann_y,
+            "config": {
+                "_fill": _SEV_FILL.get(sev, "#555"),
+                "_stroke": _SEV_FILL.get(sev, "#555"),
+                "_textColor": "#ffffff",
+                "_annotation": True,
+                "detail": finding.get("detail", ""),
+                "severity": sev,
+            },
+        })
+        _eid[0] += 1
+        edges.append({
+            "id": f"e{_eid[0]:03d}",
+            "source": ann_id,
+            "target": target_node["id"],
+            "label": "",
+            "config": {
+                "dashed": True,
+                "color": _SEV_FILL.get(sev, "#e94560"),
+            },
+        })
+        _finding_nodes.append(ann_id)
+
+    # ── Color contrast V&V pass — fix any near-black explicit fills ────────────
+    for _n in nodes:
+        _cfg = _n.get("config", {})
+        if "_fill" in _cfg:
+            _cfg["_fill"] = _fix_fill(_cfg["_fill"])
+        if "_stroke" in _cfg and _cfg.get("_annotation"):
+            _cfg["_stroke"] = _fix_fill(_cfg["_stroke"])
+
+    # ── Legend (only rendered when findings are present) ──────────────────────
+    # Only show severity rows for levels that actually appear in this diagram.
+    # Uses "cloud" node type so legend items are visually distinct from the
+    # "server"-type finding annotation nodes in the main diagram.
+    if _finding_nodes:
+        if cloud_inv_sorted:
+            _n_cols = ((len(cloud_inv_sorted) - 1) // 2) + 1
+        else:
+            _n_cols = 0
+        legend_x = ORIGIN_X + NODE_W + COL_GAP_X + _n_cols * COL_GAP_X + COL_GAP_X
+        legend_y = ORIGIN_Y
+        _sev_legend_rows = [
+            ("lgd-crit", "CRITICAL  (CAT I / P1)",  "critical", "#b71c1c"),
+            ("lgd-high", "HIGH  (CAT II / P2)",      "high",     "#e65100"),
+            ("lgd-med",  "MEDIUM  (CAT III / P3)",   "medium",   "#f57f17"),
+            ("lgd-low",  "LOW  (CAT IV / P4)",        "low",      "#558b2f"),
+        ]
+        _legend_items = [("lgd-hdr", "FINDING LEGEND", "#2c3e50")] + [
+            (lid, llabel, lfill)
+            for lid, llabel, lsev, lfill in _sev_legend_rows
+            if lsev in _used_sevs
+        ]
+        for li, (lid, llabel, lfill) in enumerate(_legend_items):
+            nodes.append({
+                "id": lid,
+                "label": llabel,
+                "type": "cloud",   # visually distinct from "server" finding annotation nodes
+                "x": legend_x,
+                "y": legend_y + li * 110,
+                "config": {
+                    "_fill": lfill,
+                    "_stroke": lfill,
+                    "_textColor": "#ffffff",
+                    "_annotation": True,
+                },
             })
 
     return {
