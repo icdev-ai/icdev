@@ -569,6 +569,57 @@ def api_writeguard(session_id: str):
     }), 409
 
 
+# ─── API — Publish (Stage 8) ─────────────────────────────────────────────────
+
+@docgen_bp.route("/api/sessions/<session_id>/publish", methods=["POST"])
+def api_publish(session_id: str):
+    """Stage 8: export approved document to HTML + PDF (+ DOCX if available).
+
+    Request JSON (all optional):
+        {"doc_text": str, "title": str, "classification": str}
+
+    If doc_text is omitted, the session title is used as a placeholder.
+    Returns list of idr_artifacts rows.
+    """
+    from tools.docgen import session_manager as sm
+    from tools.docgen.workflow import stage8_publish, stage6_check_gate
+
+    session = sm.get_session(session_id)
+    if not session:
+        return jsonify({"error": "not found"}), 404
+
+    # Require WriteGuard to have passed (wg_result_id set) before publishing.
+    if not stage6_check_gate(session_id):
+        return jsonify({
+            "error": (
+                "Cannot publish: WriteGuard quality gate has not passed. "
+                "Run POST /docgen/api/sessions/<id>/writeguard first."
+            ),
+            "gate": "writeguard",
+        }), 409
+
+    data = request.get_json(force=True, silent=True) or {}
+    doc_text = data.get("doc_text") or session.get("title", "Document")
+    title = data.get("title") or session.get("title", "Document")
+    classification = data.get("classification") or session.get("classification", "CUI")
+
+    try:
+        artifacts = stage8_publish(
+            session_id=session_id,
+            doc_text=doc_text,
+            title=title,
+            classification=classification,
+        )
+    except Exception:
+        logger.exception("IDR publish failed: session=%s", session_id)
+        return jsonify({"error": "Publish failed — check logs"}), 500
+
+    logger.info(
+        "IDR publish complete: session=%s artifacts=%d", session_id, len(artifacts)
+    )
+    return jsonify({"published": True, "artifacts": artifacts}), 201
+
+
 # ─── API — Artifacts ──────────────────────────────────────────────────────────
 
 @docgen_bp.route("/api/sessions/<session_id>/artifacts", methods=["GET"])
@@ -577,6 +628,31 @@ def api_list_artifacts(session_id: str):
 
     artifacts = sm.list_artifacts(session_id)
     return jsonify(artifacts)
+
+
+@docgen_bp.route("/api/sessions/<session_id>/artifacts/<artifact_id>/download", methods=["GET"])
+def api_download_artifact(session_id: str, artifact_id: str):
+    """Stream a published artifact file to the browser."""
+    import mimetypes
+    from flask import send_file, abort
+    from tools.docgen import session_manager as sm
+
+    artifact = sm.get_artifact(artifact_id)
+    if not artifact or artifact.get("session_id") != session_id:
+        abort(404)
+
+    file_path = artifact.get("file_path")
+    if not file_path or not pathlib.Path(file_path).is_file():
+        return jsonify({"error": "artifact file not found on disk"}), 404
+
+    mime, _ = mimetypes.guess_type(file_path)
+    mime = mime or "application/octet-stream"
+    return send_file(
+        pathlib.Path(file_path).resolve(),
+        mimetype=mime,
+        as_attachment=True,
+        download_name=pathlib.Path(file_path).name,
+    )
 
 
 # ─── IQE ─────────────────────────────────────────────────────────────────────

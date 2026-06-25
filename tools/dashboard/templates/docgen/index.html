@@ -164,6 +164,14 @@
         style="background:#1a3a6e;color:#7ab3f0;padding:7px 14px;border:1px solid #2a4a7e;border-radius:4px;font-size:12px;text-decoration:none;">
         👁 Review &amp; Approve
       </a>
+      <button onclick="triggerPublish()" style="background:#2d6a4f;color:#52c41a;padding:7px 14px;border:1px solid #3d8a60;border-radius:4px;cursor:pointer;font-size:12px;">
+        📤 Publish (PDF + HTML)
+      </button>
+      {% endif %}
+      {% if session.stage == 8 and session.status != 'published' %}
+      <button onclick="triggerPublish()" style="background:#2d6a4f;color:#52c41a;padding:7px 14px;border:1px solid #3d8a60;border-radius:4px;cursor:pointer;font-size:12px;">
+        📤 Re-Publish Exports
+      </button>
       {% endif %}
     </div>
     <div id="idr-action-status" style="color:#7ab3f0;font-size:12px;margin-top:8px;"></div>
@@ -187,7 +195,8 @@
       <h4 style="margin:0 0 8px;color:#52c41a;font-size:13px;">Published Artifacts</h4>
       {% for art in artifacts %}
       <div style="margin-bottom:8px;">
-        <a href="{{ art.file_path or '#' }}" style="color:#7ab3f0;font-size:12px;text-decoration:none;">
+        <a href="/docgen/api/sessions/{{ session.id }}/artifacts/{{ art.id }}/download"
+           style="color:#7ab3f0;font-size:12px;text-decoration:none;">
           📄 {{ art.format|upper }} — download
         </a>
         <div style="color:#5a6e8c;font-size:10px;">{{ art.published_at or '' }}</div>
@@ -302,6 +311,16 @@ function advanceStage(n) {
       if (d.error) { setStatus('Error: ' + d.error); return; }
       setTimeout(function(){location.reload();},800);
     }).catch(function(){setStatus('Advance failed.');});
+}
+
+function triggerPublish() {
+  setStatus('Publishing exports (PDF + HTML)…');
+  fetch('/docgen/api/sessions/' + SESSION_ID + '/publish', {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+    .then(function(r){return r.json();}).then(function(d){
+      if (d.error) { setStatus('Publish error: ' + d.error); return; }
+      setStatus('Published ' + (d.artifacts ? d.artifacts.length : 0) + ' artifact(s).');
+      setTimeout(function(){location.reload();},1500);
+    }).catch(function(){setStatus('Publish failed — check logs.');});
 }
 
 // File upload
