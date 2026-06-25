@@ -198,39 +198,95 @@ def stage6_writeguard(
     session_id: str,
     doc_text: str,
     domain: str,
-    retry_count: int = 0,
 ) -> dict[str, Any]:
-    """Run WriteGuard on *doc_text*.  Returns {passed, score, result, fixed_text}."""
+    """Run WriteGuard with an auto-fix loop (up to _WG_MAX_RETRIES rewrites).
+
+    Returns {passed, score, result, fixed_text, attempts, blocked, ace_regen_needed}.
+    On pass:  passed=True, ace_regen_needed=False.
+    On block: passed=False, blocked=True, ace_regen_needed=True (all retries used).
+    """
     get_writeguard_mode(domain)  # validates domain is known before attempting
     try:
         from tools.pulse.writeguard import run_full_quality_check, rewrite_content
 
-        result = run_full_quality_check(doc_text)
-        score = result.get("overall_score", 0)
-        passed = score >= _WG_MIN_SCORE
+        current_text = doc_text
+        last_result: dict[str, Any] = {}
+        last_score = 0.0
 
-        if not passed and retry_count < _WG_MAX_RETRIES:
-            # rewrite_content returns a dict; extract the actual rewritten text
-            rewrite_result = rewrite_content(doc_text, result)
-            fixed_text = rewrite_result.get("rewritten_text", doc_text)
+        # Run initial check then up to _WG_MAX_RETRIES rewrite-and-recheck cycles.
+        for attempt in range(_WG_MAX_RETRIES + 1):
+            last_result = run_full_quality_check(current_text)
+            last_score = float(last_result.get("overall_score", 0))
+
+            if last_score >= _WG_MIN_SCORE:
+                log.info(
+                    "IDR WriteGuard: session=%s score=%.1f PASS (attempt=%d)",
+                    session_id, last_score, attempt,
+                )
+                return {
+                    "passed": True,
+                    "score": last_score,
+                    "result": last_result,
+                    "fixed_text": current_text,
+                    "attempts": attempt,
+                    "blocked": False,
+                    "ace_regen_needed": False,
+                }
+
+            if attempt >= _WG_MAX_RETRIES:
+                break  # no more rewrites allowed
+
+            # Auto-fix: apply deterministic rewrites and re-check next iteration.
+            rewrite_result = rewrite_content(current_text, last_result)
+            fixed_text = rewrite_result.get("rewritten_text", current_text)
             log.info(
-                "IDR WriteGuard: session=%s score=%.1f FAIL → auto-fix attempt %d",
-                session_id, score, retry_count + 1,
+                "IDR WriteGuard: session=%s score=%.1f FAIL → auto-fix %d/%d",
+                session_id, last_score, attempt + 1, _WG_MAX_RETRIES,
             )
-            return {"passed": False, "score": score, "result": result, "fixed_text": fixed_text}
+            current_text = fixed_text
 
-        log.info(
-            "IDR WriteGuard: session=%s score=%.1f %s (retry=%d)",
-            session_id, score, "PASS" if passed else "BLOCKED", retry_count,
+        # All rewrite attempts exhausted — ACE regen required.
+        log.warning(
+            "IDR WriteGuard: session=%s score=%.1f BLOCKED after %d attempts → ACE regen needed",
+            session_id, last_score, _WG_MAX_RETRIES,
         )
-        return {"passed": passed, "score": score, "result": result, "fixed_text": doc_text}
+        return {
+            "passed": False,
+            "score": last_score,
+            "result": last_result,
+            "fixed_text": current_text,
+            "attempts": _WG_MAX_RETRIES,
+            "blocked": True,
+            "ace_regen_needed": True,
+        }
 
     except ImportError:
         log.warning("WriteGuard not available — gate bypassed (import error)")
-        return {"passed": True, "score": 100, "result": {}, "fixed_text": doc_text}
+        return {
+            "passed": True, "score": 100, "result": {}, "fixed_text": doc_text,
+            "attempts": 0, "blocked": False, "ace_regen_needed": False,
+        }
     except Exception as exc:
         log.exception("IDR WriteGuard exception: session=%s", session_id)
-        return {"passed": False, "score": 0, "result": {"error": str(exc)}, "fixed_text": doc_text}
+        return {
+            "passed": False, "score": 0, "result": {"error": str(exc)}, "fixed_text": doc_text,
+            "attempts": 0, "blocked": False, "ace_regen_needed": False,
+        }
+
+
+def stage6_trigger_ace_regen(session_id: str) -> dict[str, Any]:
+    """Kick the session back to stage 5 (generating) for ACE regeneration.
+
+    Called when WriteGuard is blocked after exhausting all auto-fix retries.
+    Clears wg_result_id so the gate re-arms for the regenerated document.
+    """
+    sm.set_field(session_id, wg_result_id=None)
+    log.warning(
+        "IDR ACE regen triggered: session=%s → rewinding to stage 5", session_id
+    )
+    return kickback(
+        session_id, 5, reason="WriteGuard blocked after max auto-fix retries — ACE regen"
+    )
 
 
 def stage6_check_gate(session_id: str) -> bool:

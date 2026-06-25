@@ -492,27 +492,27 @@ def api_generate(session_id: str):
 
 @docgen_bp.route("/api/sessions/<session_id>/writeguard", methods=["POST"])
 def api_writeguard(session_id: str):
-    """Stage 6 hard blocking gate: run WriteGuard quality check on the generated document.
+    """Stage 6 hard blocking gate: run WriteGuard with a server-side auto-fix loop.
+
+    The server runs up to _WG_MAX_RETRIES rewrite-and-recheck cycles internally.
+    If all attempts fail, ACE regeneration is triggered (session rewound to stage 5).
 
     Request JSON:
-        {
-            "doc_text":    str,   generated document text to quality-check
-            "retry_count": int    optional; caller increments between auto-fix retries
-        }
+        {"doc_text": str}   generated document text to quality-check
 
     Responses:
-        200  {"passed": true, "score": ..., "fixed_text": ..., "wg_result_id": ...}
+        200  {"passed": true, "score": ..., "fixed_text": ..., "wg_result_id": ...,
+              "attempts": int}
         409  {"passed": false, "score": ..., "fixed_text": ..., "blocked": bool,
-              "retry_count": ..., "message": "..."}  (gate failed)
+              "ace_regen_triggered": bool, "attempts": int, "message": str}
         400  validation error
         404  session not found
     """
     from tools.docgen import session_manager as sm
-    from tools.docgen.workflow import stage6_writeguard, advance, _WG_MAX_RETRIES
+    from tools.docgen.workflow import stage6_writeguard, stage6_trigger_ace_regen, advance
 
     data = request.get_json(force=True, silent=True) or {}
     doc_text = data.get("doc_text", "")
-    retry_count = int(data.get("retry_count", 0))
 
     if not doc_text.strip():
         return jsonify({"error": "doc_text is required"}), 400
@@ -525,43 +525,46 @@ def api_writeguard(session_id: str):
         session_id=session_id,
         doc_text=doc_text,
         domain=session.get("domain", "network"),
-        retry_count=retry_count,
     )
 
     if gate["passed"]:
-        # Record that WG gate passed by setting wg_result_id on the session
         wg_result_id = str(uuid.uuid4())
         sm.set_field(session_id, wg_result_id=wg_result_id)
         advance(session_id, 6)
         logger.info(
-            "IDR WriteGuard gate PASSED: session=%s score=%.1f",
-            session_id, gate["score"],
+            "IDR WriteGuard gate PASSED: session=%s score=%.1f attempts=%d",
+            session_id, gate["score"], gate.get("attempts", 0),
         )
         return jsonify({
             "passed": True,
             "score": gate["score"],
             "fixed_text": gate["fixed_text"],
-            "retry_count": retry_count,
+            "attempts": gate.get("attempts", 0),
             "blocked": False,
+            "ace_regen_triggered": False,
             "wg_result_id": wg_result_id,
         })
 
-    blocked = retry_count >= _WG_MAX_RETRIES
+    # Gate failed after all auto-fix attempts.
+    ace_regen_triggered = bool(gate.get("ace_regen_needed"))
+    if ace_regen_triggered:
+        stage6_trigger_ace_regen(session_id)
+
     logger.warning(
-        "IDR WriteGuard gate FAILED: session=%s score=%.1f retry=%d blocked=%s",
-        session_id, gate["score"], retry_count, blocked,
+        "IDR WriteGuard gate FAILED: session=%s score=%.1f attempts=%d ace_regen=%s",
+        session_id, gate["score"], gate.get("attempts", 0), ace_regen_triggered,
     )
     return jsonify({
         "passed": False,
         "score": gate["score"],
         "fixed_text": gate.get("fixed_text", doc_text),
-        "retry_count": retry_count,
-        "blocked": blocked,
+        "attempts": gate.get("attempts", 0),
+        "blocked": gate.get("blocked", False),
+        "ace_regen_triggered": ace_regen_triggered,
         "message": (
-            "WriteGuard quality gate blocked after maximum retries — HITL review required."
-            if blocked else
-            f"Quality gate failed (score {gate['score']:.1f} < 70). "
-            f"fixed_text contains auto-corrected version for retry {retry_count + 1}/{_WG_MAX_RETRIES}."
+            "WriteGuard blocked after maximum auto-fix attempts — ACE regeneration triggered."
+            if ace_regen_triggered else
+            f"Quality gate failed (score {gate['score']:.1f} < 70)."
         ),
     }), 409
 
