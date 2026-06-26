@@ -64,6 +64,13 @@ _COLLECTIONS = [
     "network.triage_queue",
     "network.patch_plans",
     "network.advisories",
+    # PNA — Predictive Network Analytics collections
+    "network.eol_predictions",
+    "network.bgp_predictions",
+    "network.compliance_drift",
+    "network.capacity_predictions",
+    "network.change_risk",
+    "network.supply_chain_risk",
 ]
 
 
@@ -214,6 +221,37 @@ class NDCAdapter(IQEAdapter):
                        ORDER BY created_at DESC LIMIT 1
                    )
                    ORDER BY a.created_at DESC LIMIT 200""",
+            )
+        # ── PNA — Predictive Network Analytics ────────────────────────────
+        elif collection == "network.eol_predictions":
+            rows = _fetch(
+                conn,
+                "SELECT * FROM nc_eol_predictions ORDER BY risk_score DESC LIMIT 200",
+            )
+        elif collection == "network.bgp_predictions":
+            rows = _fetch(
+                conn,
+                "SELECT * FROM nc_bgp_predictions ORDER BY stability_score ASC LIMIT 200",
+            )
+        elif collection == "network.compliance_drift":
+            rows = _fetch(
+                conn,
+                "SELECT * FROM nc_compliance_drift ORDER BY risk_score DESC LIMIT 200",
+            )
+        elif collection == "network.capacity_predictions":
+            rows = _fetch(
+                conn,
+                "SELECT * FROM nc_capacity_predictions ORDER BY risk_score DESC LIMIT 200",
+            )
+        elif collection == "network.change_risk":
+            rows = _fetch(
+                conn,
+                "SELECT * FROM nc_change_risk ORDER BY failure_probability DESC LIMIT 200",
+            )
+        elif collection == "network.supply_chain_risk":
+            rows = _fetch(
+                conn,
+                "SELECT * FROM nc_supply_chain_risk ORDER BY risk_score DESC LIMIT 100",
             )
         else:
             raise ValueError(

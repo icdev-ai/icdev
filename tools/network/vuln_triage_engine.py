@@ -153,9 +153,7 @@ def _compute_priority(adv: dict, asset_crit_norm: float, net_exp_norm: float) ->
 
 def _determine_status(score: float) -> tuple[str, int]:
     """Return (status, auto_approved) based on HITL thresholds."""
-    hitl_thresh = _hitl_threshold()
-    auto_thresh = _auto_approve_threshold()
-    if score < auto_thresh:
+    if score < _auto_approve_threshold():
         return "approved", 1
     return "pending", 0
 

@@ -539,6 +539,13 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         # PVM — Predictive Vulnerability Management (migration 221)
         "nc_vuln_predictions",       # time-series risk scores per CVE (NIST AU)
         "nc_patch_plans",            # AI-generated patch schedules (immutable once created)
+        # PNA — Predictive Network Analytics (migration 222)
+        "nc_eol_predictions",        # device end-of-life/support risk scores
+        "nc_bgp_predictions",        # BGP session instability forecasts
+        "nc_compliance_drift",       # STIG/compliance baseline drift predictions
+        "nc_capacity_predictions",   # bandwidth saturation forecasts
+        "nc_change_risk",            # pre-change failure probability scores
+        "nc_supply_chain_risk",      # vendor supply-chain risk aggregation
     ]
 
     if tool_name == "Bash":

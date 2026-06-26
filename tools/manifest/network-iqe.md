@@ -612,3 +612,129 @@ Registered via `register_pvm_routes(bp)` called from `tools/network/blueprint.py
 | `pvm_01_risk_trajectory.iqe` | Latest risk scores ordered by composite DESC |
 | `pvm_02_attack_surface.iqe` | Reachable attack surface entries by criticality |
 | `pvm_03_triage_queue.iqe` | Pending triage queue items ordered by rank |
+
+---
+
+## NDC — PNA: Predictive Network Analytics (pna-*)
+
+Six predictive models that forecast network health failures before they occur.
+
+### Device EOL Predictor (`tools/network/eol_predictor.py`)
+
+| Function | Purpose |
+|----------|---------|
+| `predict_eol_risk(network_id?)` | Run EOL prediction for all NQE devices vs 26-entry vendor EOL registry |
+| `get_eol_predictions(risk_tier?, limit)` | Query nc_eol_predictions, optional tier filter |
+| `get_eol_summary()` | Aggregate counts: total, by_tier, critical_count, already_eol_count |
+
+```bash
+python tools/network/eol_predictor.py --predict --json
+python tools/network/eol_predictor.py --predictions --tier critical --json
+python tools/network/eol_predictor.py --summary --json
+```
+
+### BGP Instability Predictor (`tools/network/bgp_predictor.py`)
+
+| Function | Purpose |
+|----------|---------|
+| `predict_bgp_stability(network_id?)` | Analyze BGP sessions, record events, compute flap-based stability scores |
+| `get_bgp_predictions(risk?, limit)` | Query nc_bgp_predictions ordered by stability_score ASC |
+| `get_bgp_summary()` | Aggregate: total_sessions, down_count, by_risk dict, avg_stability |
+
+```bash
+python tools/network/bgp_predictor.py --predict --json
+python tools/network/bgp_predictor.py --predictions --risk critical --json
+python tools/network/bgp_predictor.py --summary --json
+```
+
+### Compliance Drift Predictor (`tools/network/compliance_drift_predictor.py`)
+
+| Function | Purpose |
+|----------|---------|
+| `predict_compliance_drift(network_id?)` | Run 12-check STIG pattern scan, compute score drift vs last baseline |
+| `get_compliance_drift(device_name?, framework?, limit)` | Query nc_compliance_drift |
+| `get_compliance_summary()` | Aggregate: avg_compliance_score, critical_drift_count, by_framework |
+
+```bash
+python tools/network/compliance_drift_predictor.py --predict --json
+python tools/network/compliance_drift_predictor.py --drift --device rtr-01 --json
+python tools/network/compliance_drift_predictor.py --summary --json
+```
+
+### Capacity Exhaustion Predictor (`tools/network/capacity_predictor.py`)
+
+| Function | Purpose |
+|----------|---------|
+| `predict_capacity_exhaustion(network_id?)` | OLS trend over last 5 NQE counter samples → days_to_saturation |
+| `get_capacity_predictions(device_name?, min_risk, limit)` | Query nc_capacity_predictions |
+| `get_capacity_summary()` | Aggregate: saturating_within_30d, saturating_within_90d, avg_utilization |
+
+```bash
+python tools/network/capacity_predictor.py --predict --json
+python tools/network/capacity_predictor.py --predictions --min-risk 0.5 --json
+python tools/network/capacity_predictor.py --summary --json
+```
+
+### Change Failure Predictor (`tools/network/change_failure_predictor.py`)
+
+| Function | Purpose |
+|----------|---------|
+| `predict_change_failure(plan_id?)` | 5-factor failure probability: simulation + blast + concurrency + window + criticality |
+| `get_change_risks(risk_tier?, plan_id?, limit)` | Query nc_change_risk ordered by failure_probability DESC |
+| `get_change_risk_summary()` | Aggregate: critical_count, avg_failure_probability, by_tier dict |
+
+```bash
+python tools/network/change_failure_predictor.py --predict --json
+python tools/network/change_failure_predictor.py --risks --tier high --json
+python tools/network/change_failure_predictor.py --summary --json
+```
+
+### Supply Chain Risk Scorer (`tools/network/supply_chain_risk_scorer.py`)
+
+| Function | Purpose |
+|----------|---------|
+| `score_supply_chain_risk(network_id?)` | Vendor risk: NQE inventory × nc_advisories KEV/CVSS → 3-factor score |
+| `get_supply_chain_risks(vendor?, rating?, limit)` | Query nc_supply_chain_risk (latest per vendor) |
+| `get_supply_chain_summary()` | Aggregate: critical_vendors, total_kev_exposure, top_risk_vendors |
+
+```bash
+python tools/network/supply_chain_risk_scorer.py --score --json
+python tools/network/supply_chain_risk_scorer.py --risks --rating critical --json
+python tools/network/supply_chain_risk_scorer.py --summary --json
+```
+
+### PNA Routes (`tools/network/routes/pna.py`)
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/network/predictive-analytics` | GET | 6-panel PNA dashboard page |
+| `/api/network/predict/eol` | GET/POST | EOL predictions + trigger run |
+| `/api/network/predict/bgp` | GET/POST | BGP predictions + trigger run |
+| `/api/network/predict/compliance` | GET/POST | Compliance drift + trigger run |
+| `/api/network/predict/capacity` | GET/POST | Capacity predictions + trigger run |
+| `/api/network/predict/change` | GET/POST | Change risk predictions + trigger run |
+| `/api/network/predict/supply-chain` | GET/POST | Supply chain risk + trigger run |
+| `/api/network/predict/all` | POST | Run all 6 predictors and return aggregate |
+
+### PNA DB Tables (Migration 222)
+
+| Table | Type | Purpose |
+|-------|------|---------|
+| `nc_eol_predictions` | APPEND-ONLY | Device end-of-life risk per NQE scan |
+| `nc_bgp_events` | Mutable | Rolling BGP session up/down event log (pruned >90d) |
+| `nc_bgp_predictions` | APPEND-ONLY | BGP stability scores and flap forecasts |
+| `nc_compliance_drift` | APPEND-ONLY | STIG compliance scores and drift rates |
+| `nc_capacity_predictions` | APPEND-ONLY | Interface utilization trend and saturation date |
+| `nc_change_risk` | APPEND-ONLY | Change failure probability scores |
+| `nc_supply_chain_risk` | APPEND-ONLY | Vendor supply chain risk scores |
+
+### PNA IQE Seed Queries (`context/iqe/queries/network/`)
+
+| File | Purpose |
+|------|---------|
+| `pna_01_eol_risk.iqe` | Devices with EOL risk_score > 0.5 |
+| `pna_02_bgp_instability.iqe` | BGP sessions with stability_score < 0.75 |
+| `pna_03_compliance_drift.iqe` | Devices drifting from STIG baselines |
+| `pna_04_capacity_exhaustion.iqe` | Interfaces saturating within 90 days |
+| `pna_05_change_failure_risk.iqe` | Changes with failure_probability > 0.5 |
+| `pna_06_supply_chain_risk.iqe` | Vendors with risk_score > 0.25 |
