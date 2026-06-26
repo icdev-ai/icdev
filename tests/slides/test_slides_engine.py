@@ -316,7 +316,6 @@ class TestGraphicsGenerator:
 
     def test_gpt_image_2_request_shape(self, tmp_path):
         """Verify GPT-Image-2 request matches OpenAI Images API shape."""
-        import urllib.request
         from tools.slides.graphics_generator import GraphicsGenerator
         with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False):
             gen = GraphicsGenerator(output_dir=tmp_path)
