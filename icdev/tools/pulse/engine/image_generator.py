@@ -208,7 +208,9 @@ def main() -> None:
                 print(f"Prompt:    {result['prompt'][:100]}...")
         else:
             print(f"FAILED: {result.get('error', 'unknown')}")
-            sys.exit(1)
+
+    if not result.get("success"):
+        sys.exit(1)
 
 
 if __name__ == "__main__":

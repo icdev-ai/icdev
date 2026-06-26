@@ -11,7 +11,7 @@
 | Researcher | tools/pulse/engine/researcher.py | Web research engine — scrape DuckDuckGo for developer pain points across Reddit/SO/HN/LinkedIn/DEV.to | (library) — `research(topic)` | Research cache entries |
 | Topic Clusterer | tools/pulse/engine/topic_clusterer.py | Group related pain points into coherent article themes via TF-IDF keyword overlap (stdlib only) | (library) — `cluster_topics(items)` | Topic clusters |
 | SEO Optimizer | tools/pulse/engine/seo_optimizer.py | SEO optimization — title/meta tuning, keyword extraction, JSON-LD schema, YAML frontmatter | (library) — `optimize(post)` | SEO metadata |
-| Image Generator | tools/pulse/engine/image_generator.py | Local GPU-accelerated hero image generation via SDXL Turbo (optional, requires GPU) | (library) — `generate_image(prompt)` | Image file path |
+| Image Generator | tools/pulse/engine/image_generator.py | Hero image wrapper around the ICDEV-native `AssetGenerator`; prefers local SDXL Turbo when GPU is available, falls back to programmatic SVG in air-gap mode | (library) — `generate_image(prompt)`, `generate_hero_image(title)` | Image file path |
 | Video Finder | tools/pulse/engine/video_finder.py | YouTube/Vimeo video search for blog embeds — no API keys (web scraping + oEmbed) | (library) — `find_videos(query)` | Video URLs + metadata |
 | Video Generator | tools/pulse/engine/video_generator.py | Local GPU-accelerated video generation via LTX-Video 2B (optional, requires GPU) | (library) — `generate_video(prompt)` | Video file path |
 | WordPress Publisher | tools/pulse/engine/wordpress_publisher.py | Publish Pulse posts to WordPress (icdev.ai) via XML-RPC API | (library) — `publish(post)` | Published post URL |

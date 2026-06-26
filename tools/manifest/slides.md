@@ -9,7 +9,8 @@
 | `DeckEngine` | `tools/slides/engine.py` | Main orchestration DAG: gather/research → plan → generate → graphics → build → export |
 | `Orchestrator` | `tools/slides/orchestrator.py` | LLM-based outline planner; deck-type-specific prompts + general-occasion prompt |
 | `ContentAgent` | `tools/slides/content_agent.py` | Parallel per-slide content generation (bullets, notes, citations, visual context) |
-| `GraphicsGenerator` | `tools/slides/graphics_generator.py` | Theme+tone-aware image pipeline: LLM prompt → Ollama/DALL-E/Gemini/Pillow |
+| `GraphicsGenerator` | `tools/slides/graphics_generator.py` | Theme+tone-aware image pipeline: dispatches to the ICDEV-native `AssetGenerator` (SDXL/matplotlib/SVG) |
+| `AssetGenerator` | `tools/viz/asset_generator.py` | ICDEV-native unified media dispatcher for slides, pulse, and viz graphics; air-gap aware, cacheable, GPU/SVG fallbacks |
 | `PptxBuilder` | `tools/slides/pptx_builder.py` | python-pptx assembly with 8 themes + citation footer |
 | `ExportPDF` | `tools/slides/export_pdf.py` | fpdf2 PDF export (themed, air-gap safe) |
 | `ExportHTML` | `tools/slides/export_html.py` | Self-contained responsive HTML export |
