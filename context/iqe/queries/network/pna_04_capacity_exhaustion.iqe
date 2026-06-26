@@ -1,0 +1,10 @@
+# PNA-004: Capacity exhaustion — interfaces trending toward saturation within 90 days
+# Collection: network.capacity_predictions
+# Use: Capacity panel on /network/predictive-analytics, capacity planning,
+#      circuit upgrade prioritization, SLA breach prevention.
+
+foreach p in network.capacity_predictions
+where p.days_to_saturation != null and p.days_to_saturation < 90
+select p.device_name, p.interface_name, p.current_util_pct,
+       p.peak_util_pct, p.trend_slope, p.days_to_saturation,
+       p.saturation_date, p.risk_score, p.confidence, p.predicted_at

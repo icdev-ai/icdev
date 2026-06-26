@@ -1,0 +1,372 @@
+{# CUI // SP-CTI — Predictive Network Analytics Dashboard #}
+{% extends "network/base.html" %}
+{% block title %}Predictive Network Analytics — Network Design Canvas{% endblock %}
+{% block content %}
+
+<div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
+  <div>
+    <h1 class="page-title">Predictive Network Analytics</h1>
+    <p class="page-subtitle">Six Forward Networks NQE-powered predictive models: EOL, BGP instability, compliance drift, capacity, change failure &amp; supply chain risk</p>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <button class="btn btn-secondary" onclick="pnaRefreshAll()" id="btn-refresh-all">&#8635; Refresh All</button>
+    <button class="btn btn-primary" onclick="pnaRunAll()" id="btn-run-all">&#9654; Run All Predictions</button>
+  </div>
+</div>
+
+<!-- KPI bar -->
+<div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
+  <div class="panel" style="padding:10px 16px;flex:1;min-width:120px;text-align:center;">
+    <div style="font-size:24px;font-weight:700;color:#e53935;" id="kpi-eol">{{ eol_critical }}</div>
+    <div style="font-size:11px;color:var(--text-dim);">EOL Critical</div>
+  </div>
+  <div class="panel" style="padding:10px 16px;flex:1;min-width:120px;text-align:center;">
+    <div style="font-size:24px;font-weight:700;color:#f57c00;" id="kpi-bgp">{{ bgp_high }}</div>
+    <div style="font-size:11px;color:var(--text-dim);">BGP High Risk</div>
+  </div>
+  <div class="panel" style="padding:10px 16px;flex:1;min-width:120px;text-align:center;">
+    <div style="font-size:24px;font-weight:700;color:#f57c00;" id="kpi-compliance">{{ compliance_failing }}</div>
+    <div style="font-size:11px;color:var(--text-dim);">Compliance &lt;30d</div>
+  </div>
+  <div class="panel" style="padding:10px 16px;flex:1;min-width:120px;text-align:center;">
+    <div style="font-size:24px;font-weight:700;color:#fb8c00;" id="kpi-capacity">{{ capacity_saturating }}</div>
+    <div style="font-size:11px;color:var(--text-dim);">Capacity &lt;14d</div>
+  </div>
+  <div class="panel" style="padding:10px 16px;flex:1;min-width:120px;text-align:center;">
+    <div style="font-size:24px;font-weight:700;color:#e53935;" id="kpi-change">{{ change_high_risk }}</div>
+    <div style="font-size:11px;color:var(--text-dim);">High-Risk Changes</div>
+  </div>
+  <div class="panel" style="padding:10px 16px;flex:1;min-width:120px;text-align:center;">
+    <div style="font-size:24px;font-weight:700;color:#e53935;" id="kpi-scs">{{ supply_chain_critical }}</div>
+    <div style="font-size:11px;color:var(--text-dim);">Supply Chain Crit.</div>
+  </div>
+</div>
+
+<div id="pna-status" style="display:none;padding:10px 16px;border-radius:6px;margin-bottom:16px;background:var(--bg-card);border-left:4px solid var(--accent);">
+  <span id="pna-status-text"></span>
+</div>
+
+<!-- 2×3 grid of predictor panels -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+
+  <!-- 1. Device EOL Risk -->
+  <div class="panel">
+    <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+      <h2 class="panel-title">&#128197; Device EOL / EOS Risk</h2>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <span id="eol-stats" style="font-size:11px;color:var(--text-dim);"></span>
+        <button class="btn btn-sm btn-secondary" onclick="pnaRefresh('eol')">&#8635;</button>
+        <button class="btn btn-sm btn-primary" onclick="pnaRun('eol')">&#9654; Run</button>
+      </div>
+    </div>
+    <div style="padding:8px;overflow-x:auto;">
+      <div id="eol-spinner" class="pna-spinner" style="display:none;text-align:center;padding:20px;">Loading…</div>
+      <table class="data-table" id="eol-table" style="font-size:12px;width:100%;">
+        <thead><tr>
+          <th>Device</th><th>Vendor</th><th>OS Version</th><th>Days Left</th><th>Tier</th><th>Score</th>
+        </tr></thead>
+        <tbody id="eol-tbody"><tr><td colspan="6" style="text-align:center;color:var(--text-dim);">Click Run to load</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 2. BGP Instability -->
+  <div class="panel">
+    <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+      <h2 class="panel-title">&#128257; BGP Session Instability</h2>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <span id="bgp-stats" style="font-size:11px;color:var(--text-dim);"></span>
+        <button class="btn btn-sm btn-secondary" onclick="pnaRefresh('bgp')">&#8635;</button>
+        <button class="btn btn-sm btn-primary" onclick="pnaRun('bgp')">&#9654; Run</button>
+      </div>
+    </div>
+    <div style="padding:8px;overflow-x:auto;">
+      <div id="bgp-spinner" class="pna-spinner" style="display:none;text-align:center;padding:20px;">Loading…</div>
+      <table class="data-table" id="bgp-table" style="font-size:12px;width:100%;">
+        <thead><tr>
+          <th>Device</th><th>Peer IP</th><th>Flaps 24h</th><th>Flaps 7d</th><th>Stability</th><th>Risk</th>
+        </tr></thead>
+        <tbody id="bgp-tbody"><tr><td colspan="6" style="text-align:center;color:var(--text-dim);">Click Run to load</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 3. Compliance Drift -->
+  <div class="panel">
+    <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+      <h2 class="panel-title">&#128220; Compliance Drift</h2>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <span id="compliance-stats" style="font-size:11px;color:var(--text-dim);"></span>
+        <button class="btn btn-sm btn-secondary" onclick="pnaRefresh('compliance')">&#8635;</button>
+        <button class="btn btn-sm btn-primary" onclick="pnaRun('compliance')">&#9654; Run</button>
+      </div>
+    </div>
+    <div style="padding:8px;overflow-x:auto;">
+      <div id="compliance-spinner" class="pna-spinner" style="display:none;text-align:center;padding:20px;">Loading…</div>
+      <table class="data-table" id="compliance-table" style="font-size:12px;width:100%;">
+        <thead><tr>
+          <th>Device</th><th>Framework</th><th>Score</th><th>Drift/Day</th><th>Days Left</th><th>Risk</th>
+        </tr></thead>
+        <tbody id="compliance-tbody"><tr><td colspan="6" style="text-align:center;color:var(--text-dim);">Click Run to load</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 4. Capacity Exhaustion -->
+  <div class="panel">
+    <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+      <h2 class="panel-title">&#128200; Capacity Exhaustion</h2>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <span id="capacity-stats" style="font-size:11px;color:var(--text-dim);"></span>
+        <button class="btn btn-sm btn-secondary" onclick="pnaRefresh('capacity')">&#8635;</button>
+        <button class="btn btn-sm btn-primary" onclick="pnaRun('capacity')">&#9654; Run</button>
+      </div>
+    </div>
+    <div style="padding:8px;overflow-x:auto;">
+      <div id="capacity-spinner" class="pna-spinner" style="display:none;text-align:center;padding:20px;">Loading…</div>
+      <table class="data-table" id="capacity-table" style="font-size:12px;width:100%;">
+        <thead><tr>
+          <th>Device</th><th>Interface</th><th>Util%</th><th>Trend</th><th>Days to Sat.</th><th>Risk</th>
+        </tr></thead>
+        <tbody id="capacity-tbody"><tr><td colspan="6" style="text-align:center;color:var(--text-dim);">Click Run to load</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 5. Change Failure Risk -->
+  <div class="panel">
+    <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+      <h2 class="panel-title">&#9888; Change Failure Probability</h2>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <span id="change-stats" style="font-size:11px;color:var(--text-dim);"></span>
+        <button class="btn btn-sm btn-secondary" onclick="pnaRefresh('change')">&#8635;</button>
+        <button class="btn btn-sm btn-primary" onclick="pnaRun('change')">&#9654; Run</button>
+      </div>
+    </div>
+    <div style="padding:8px;overflow-x:auto;">
+      <div id="change-spinner" class="pna-spinner" style="display:none;text-align:center;padding:20px;">Loading…</div>
+      <table class="data-table" id="change-table" style="font-size:12px;width:100%;">
+        <thead><tr>
+          <th>Device / Change</th><th>Fail Prob.</th><th>Blast Radius</th><th>Window OK</th><th>Tier</th>
+        </tr></thead>
+        <tbody id="change-tbody"><tr><td colspan="5" style="text-align:center;color:var(--text-dim);">Click Run to load</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 6. Supply Chain Risk -->
+  <div class="panel">
+    <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+      <h2 class="panel-title">&#128279; Supply Chain Risk</h2>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <span id="scs-stats" style="font-size:11px;color:var(--text-dim);"></span>
+        <button class="btn btn-sm btn-secondary" onclick="pnaRefresh('scs')">&#8635;</button>
+        <button class="btn btn-sm btn-primary" onclick="pnaRun('scs')">&#9654; Run</button>
+      </div>
+    </div>
+    <div style="padding:8px;overflow-x:auto;">
+      <div id="scs-spinner" class="pna-spinner" style="display:none;text-align:center;padding:20px;">Loading…</div>
+      <table class="data-table" id="scs-table" style="font-size:12px;width:100%;">
+        <thead><tr>
+          <th>Vendor</th><th>Devices</th><th>CVEs</th><th>KEV Count</th><th>Risk Score</th><th>Rating</th>
+        </tr></thead>
+        <tbody id="scs-tbody"><tr><td colspan="6" style="text-align:center;color:var(--text-dim);">Click Run to load</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- IQE Query Widget -->
+{% include "includes/iqe_query_widget.html" %}
+
+<style>
+.pna-badge { display:inline-block; padding:2px 7px; border-radius:10px; font-size:11px; font-weight:600; }
+.pna-badge-critical { background:#fde8e8; color:#c62828; }
+.pna-badge-high     { background:#fff3e0; color:#e65100; }
+.pna-badge-medium   { background:#fffde7; color:#f57f17; }
+.pna-badge-low      { background:#e8f5e9; color:#2e7d32; }
+.pna-badge-ok       { background:#e8f5e9; color:#2e7d32; }
+.pna-badge-unknown  { background:#f5f5f5; color:#757575; }
+</style>
+
+<script>
+const PNA_ENDPOINTS = {
+  eol:        '/api/network/predict/eol',
+  bgp:        '/api/network/predict/bgp',
+  compliance: '/api/network/predict/compliance',
+  capacity:   '/api/network/predict/capacity',
+  change:     '/api/network/predict/change',
+  scs:        '/api/network/predict/supply-chain',
+};
+
+function _badge(tier) {
+  const t = (tier || 'unknown').toLowerCase();
+  const cls = ['critical','high','medium','low','ok'].includes(t) ? `pna-badge-${t}` : 'pna-badge-unknown';
+  return `<span class="pna-badge ${cls}">${tier || '—'}</span>`;
+}
+function _pct(v) { return v != null ? (parseFloat(v)*100).toFixed(0)+'%' : '—'; }
+function _score(v) { return v != null ? parseFloat(v).toFixed(3) : '—'; }
+function _days(v) { return v != null ? Math.round(parseFloat(v)) : '—'; }
+
+function _showStatus(msg, isErr) {
+  const el = document.getElementById('pna-status');
+  const txt = document.getElementById('pna-status-text');
+  txt.textContent = msg;
+  el.style.borderLeftColor = isErr ? '#e53935' : 'var(--accent)';
+  el.style.display = 'block';
+  if (!isErr) setTimeout(() => { el.style.display='none'; }, 4000);
+}
+
+function _spin(key, on) {
+  const s = document.getElementById(key+'-spinner');
+  if (s) s.style.display = on ? 'block' : 'none';
+}
+
+function _countByTier(rows, field) {
+  const counts = {};
+  (rows||[]).forEach(r => { const t=(r[field]||'unknown').toLowerCase(); counts[t]=(counts[t]||0)+1; });
+  return ['critical','high','medium','low'].filter(t=>counts[t]).map(t=>`${counts[t]} ${t}`).join(' · ') || '0';
+}
+
+// ── EOL ──────────────────────────────────────────────────────────────────
+function pnaRenderEol(rows) {
+  const tbody = document.getElementById('eol-tbody');
+  if (!rows || !rows.length) { tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--text-dim);">No predictions yet</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => `<tr>
+    <td>${r.device_name||'—'}</td>
+    <td>${r.vendor||'—'}</td>
+    <td>${r.os_version||'—'}</td>
+    <td>${_days(r.days_remaining)}</td>
+    <td>${_badge(r.risk_tier)}</td>
+    <td>${_score(r.risk_score)}</td>
+  </tr>`).join('');
+  document.getElementById('eol-stats').textContent = _countByTier(rows,'risk_tier');
+}
+
+// ── BGP ──────────────────────────────────────────────────────────────────
+function pnaRenderBgp(rows) {
+  const tbody = document.getElementById('bgp-tbody');
+  if (!rows || !rows.length) { tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--text-dim);">No predictions yet</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => `<tr>
+    <td>${r.device_name||'—'}</td>
+    <td>${r.peer_ip||'—'}</td>
+    <td>${r.flaps_24h??'—'}</td>
+    <td>${r.flaps_7d??'—'}</td>
+    <td>${_score(r.stability_score)}</td>
+    <td>${_badge(r.risk_tier)}</td>
+  </tr>`).join('');
+  document.getElementById('bgp-stats').textContent = _countByTier(rows,'risk_tier');
+}
+
+// ── Compliance ────────────────────────────────────────────────────────────
+function pnaRenderCompliance(rows) {
+  const tbody = document.getElementById('compliance-tbody');
+  if (!rows || !rows.length) { tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--text-dim);">No predictions yet</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => `<tr>
+    <td>${r.device_name||'—'}</td>
+    <td>${r.framework||'—'}</td>
+    <td>${_score(r.current_score)}</td>
+    <td>${r.drift_per_day!=null ? parseFloat(r.drift_per_day).toFixed(4) : '—'}</td>
+    <td>${_days(r.days_to_failure)}</td>
+    <td>${_badge(r.risk_tier)}</td>
+  </tr>`).join('');
+  document.getElementById('compliance-stats').textContent = _countByTier(rows,'risk_tier');
+}
+
+// ── Capacity ──────────────────────────────────────────────────────────────
+function pnaRenderCapacity(rows) {
+  const tbody = document.getElementById('capacity-tbody');
+  if (!rows || !rows.length) { tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--text-dim);">No predictions yet</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => `<tr>
+    <td>${r.device_name||'—'}</td>
+    <td>${r.interface_name||'—'}</td>
+    <td>${r.current_util_pct!=null ? parseFloat(r.current_util_pct).toFixed(1)+'%' : '—'}</td>
+    <td>${r.trend||'—'}</td>
+    <td>${_days(r.days_to_saturation)}</td>
+    <td>${_badge(r.risk_tier)}</td>
+  </tr>`).join('');
+  document.getElementById('capacity-stats').textContent = _countByTier(rows,'risk_tier');
+}
+
+// ── Change ────────────────────────────────────────────────────────────────
+function pnaRenderChange(rows) {
+  const tbody = document.getElementById('change-tbody');
+  if (!rows || !rows.length) { tbody.innerHTML='<tr><td colspan="5" style="text-align:center;color:var(--text-dim);">No predictions yet</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => `<tr>
+    <td>${r.device_name||r.change_request_id||'—'}</td>
+    <td>${_pct(r.failure_probability)}</td>
+    <td>${r.blast_radius_size??'—'}</td>
+    <td>${r.window_compliant!=null ? (r.window_compliant?'<span class="pna-badge pna-badge-ok">Yes</span>':'<span class="pna-badge pna-badge-high">No</span>') : '—'}</td>
+    <td>${_badge(r.risk_tier)}</td>
+  </tr>`).join('');
+  document.getElementById('change-stats').textContent = _countByTier(rows,'risk_tier');
+}
+
+// ── Supply Chain ──────────────────────────────────────────────────────────
+function pnaRenderScs(rows) {
+  const tbody = document.getElementById('scs-tbody');
+  if (!rows || !rows.length) { tbody.innerHTML='<tr><td colspan="6" style="text-align:center;color:var(--text-dim);">No predictions yet</td></tr>'; return; }
+  tbody.innerHTML = rows.map(r => `<tr>
+    <td>${r.vendor||'—'}</td>
+    <td>${r.model_count??'—'}</td>
+    <td>${r.cve_count??'—'}</td>
+    <td>${r.kev_count??'—'}</td>
+    <td>${_score(r.risk_score)}</td>
+    <td>${_badge(r.vendor_risk_rating)}</td>
+  </tr>`).join('');
+  document.getElementById('scs-stats').textContent = _countByTier(rows,'vendor_risk_rating');
+}
+
+const _RENDERERS = { eol: pnaRenderEol, bgp: pnaRenderBgp, compliance: pnaRenderCompliance, capacity: pnaRenderCapacity, change: pnaRenderChange, scs: pnaRenderScs };
+
+async function pnaRefresh(key) {
+  const ep = PNA_ENDPOINTS[key];
+  _spin(key, true);
+  try {
+    const r = await fetch(ep);
+    const data = await r.json();
+    _RENDERERS[key](Array.isArray(data) ? data : (data.predictions || data.rows || []));
+  } catch(e) { _showStatus('Fetch error for '+key+': '+e, true); }
+  finally { _spin(key, false); }
+}
+
+async function pnaRun(key) {
+  const ep = PNA_ENDPOINTS[key];
+  _spin(key, true);
+  _showStatus('Running '+key+' predictor…', false);
+  try {
+    await fetch(ep, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+    await pnaRefresh(key);
+    _showStatus(key+' prediction complete', false);
+  } catch(e) { _showStatus('Run error for '+key+': '+e, true); }
+  finally { _spin(key, false); }
+}
+
+async function pnaRefreshAll() {
+  for (const key of Object.keys(PNA_ENDPOINTS)) await pnaRefresh(key);
+}
+
+async function pnaRunAll() {
+  const btn = document.getElementById('btn-run-all');
+  btn.disabled = true; btn.textContent = 'Running…';
+  _showStatus('Running all 6 predictors…', false);
+  try {
+    const r = await fetch('/api/network/predict/all', {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+    const data = await r.json();
+    if (data.eol) pnaRenderEol(data.eol.predictions || []);
+    if (data.bgp) pnaRenderBgp(data.bgp.predictions || []);
+    if (data.compliance) pnaRenderCompliance(data.compliance.predictions || []);
+    if (data.capacity) pnaRenderCapacity(data.capacity.predictions || []);
+    if (data.change) pnaRenderChange(data.change.predictions || []);
+    if (data.supply_chain) pnaRenderScs(data.supply_chain.vendors || []);
+    _showStatus('All predictions complete', false);
+  } catch(e) { _showStatus('Run all error: '+e, true); }
+  finally { btn.disabled=false; btn.innerHTML='&#9654; Run All Predictions'; }
+}
+
+// Auto-load on page open
+document.addEventListener('DOMContentLoaded', pnaRefreshAll);
+</script>
+
+{% endblock %}
