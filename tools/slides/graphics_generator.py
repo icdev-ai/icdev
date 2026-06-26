@@ -2,10 +2,18 @@
 """Slide Graphics Generator — two-stage contextual image pipeline.
 
 Stage 1: LLM generates a rich, descriptive image prompt from slide content.
-Stage 2: Image generation API (Ollama cloud / DALL-E / Gemini / Pillow fallback).
+Stage 2: Image generation API (GPT-Image-2 / Imagen 4 / Ollama cloud / DALL-E / Gemini / Pillow fallback).
 
 Provider selection via SLIDES_IMAGE_PROVIDER env var or args/slides_config.yaml.
 Safe default: matplotlib (always available, air-gap safe).
+
+Recommended production providers (2026):
+  gpt_image_2  -> OpenAI GPT-Image-2  (best text rendering + prompt adherence)
+  imagen_4     -> Google Imagen 4     (enterprise scale, native 16:9, strong text)
+  dalle        -> OpenAI DALL-E 3     (legacy, kept for backwards compatibility)
+  gemini       -> Google Imagen 3     (legacy, kept for backwards compatibility)
+  ollama_cloud -> Ollama cloud image gen (e.g. SDXL / FLUX)
+  matplotlib   -> deterministic air-gap fallback
 """
 from __future__ import annotations
 
@@ -42,8 +50,8 @@ class GraphicsGenerator:
 
     def __init__(self, output_dir: Path | None = None):
         self._provider = os.environ.get("SLIDES_IMAGE_PROVIDER", "matplotlib").lower()
-        self._model = os.environ.get("SLIDES_IMAGE_MODEL", "sdxl:latest")
-        self._timeout = int(os.environ.get("SLIDES_IMAGE_TIMEOUT", "30"))
+        self._model = os.environ.get("SLIDES_IMAGE_MODEL", "")
+        self._timeout = int(os.environ.get("SLIDES_IMAGE_TIMEOUT", "60"))
         self._enabled = os.environ.get("SLIDES_IMAGE_ENABLED", "true").lower() in ("true", "1", "yes")
 
         root = Path(__file__).resolve().parents[3]
@@ -130,6 +138,10 @@ class GraphicsGenerator:
 
     def _call_image_api(self, prompt: str, title: str) -> bytes | None:
         """Dispatch to the configured image generation backend."""
+        if self._provider in ("gpt_image_2", "gpt-image-2", "gpt_image"):
+            return self._gpt_image_2_gen(prompt)
+        if self._provider == "imagen_4":
+            return self._imagen_4_gen(prompt)
         if self._provider == "ollama_cloud":
             return self._ollama_cloud_gen(prompt)
         if self._provider == "dalle":
@@ -138,12 +150,83 @@ class GraphicsGenerator:
             return self._gemini_gen(prompt)
         return None  # matplotlib fallback handled by caller
 
+    def _gpt_image_2_gen(self, prompt: str) -> bytes | None:
+        """Generate via OpenAI GPT-Image-2 (current state-of-the-art for text + diagrams)."""
+        import urllib.request
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+        if not api_key:
+            return None
+        model_id = self._model or "gpt-image-2"
+        payload = json.dumps({
+            "model": model_id,
+            "prompt": prompt,
+            "n": 1,
+            "size": "1024x576",
+            "response_format": "b64_json",
+            "quality": os.environ.get("SLIDES_IMAGE_QUALITY", "standard").lower(),
+        }).encode()
+        req = urllib.request.Request(
+            "https://api.openai.com/v1/images/generations",
+            data=payload,
+            headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=self._timeout) as resp:
+            data = json.loads(resp.read())
+        b64 = data["data"][0]["b64_json"]
+        return base64.b64decode(b64)
+
+    def _imagen_4_gen(self, prompt: str) -> bytes | None:
+        """Generate via Google Imagen 4 (enterprise, strong typography, native 16:9)."""
+        try:
+            from google import genai
+            from google.genai.types import GenerateImagesConfig, Image
+        except Exception:
+            return self._imagen_4_sdk_v1_gen(prompt)
+        api_key = os.environ.get("GOOGLE_API_KEY", "")
+        if not api_key:
+            return None
+        client = genai.Client(api_key=api_key)
+        model_id = self._model or "imagen-4.0-generate-001"
+        aspect = os.environ.get("SLIDES_IMAGE_ASPECT_RATIO", "16:9")
+        result = client.models.generate_images(
+            model=model_id,
+            prompt=prompt,
+            config=GenerateImagesConfig(
+                number_of_images=1,
+                aspect_ratio=aspect,
+            ),
+        )
+        images = getattr(result, "generated_images", None) or []
+        if images:
+            image = images[0].image
+            if hasattr(image, "png_bytes") and image.png_bytes:
+                return image.png_bytes
+        return None
+
+    def _imagen_4_sdk_v1_gen(self, prompt: str) -> bytes | None:
+        """Fallback using legacy google.generativeai SDK for older installs."""
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=os.environ.get("GOOGLE_API_KEY", ""))
+            model_id = self._model or "imagen-4.0-generate-001"
+            model = genai.ImageGenerationModel(model_id)
+            result = model.generate_images(
+                prompt=prompt, number_of_images=1, aspect_ratio="16:9"
+            )
+            if result.images:
+                return result.images[0]._pil_image.tobytes()  # type: ignore
+        except Exception:
+            pass
+        return None
+
     def _ollama_cloud_gen(self, prompt: str) -> bytes | None:
         """POST to Ollama cloud image generation endpoint."""
         import urllib.request
         base_url = os.environ.get("OLLAMA_CLOUD_BASE_URL", "https://ollama.com").rstrip("/")
+        model_id = self._model or "sdxl:latest"
         payload = json.dumps({
-            "model": self._model,
+            "model": model_id,
             "prompt": prompt,
             "stream": False,
         }).encode()
@@ -169,7 +252,7 @@ class GraphicsGenerator:
         return None
 
     def _dalle_gen(self, prompt: str) -> bytes | None:
-        """Generate via OpenAI DALL-E 3."""
+        """Generate via OpenAI DALL-E 3 (legacy)."""
         import urllib.request
         api_key = os.environ.get("OPENAI_API_KEY", "")
         if not api_key:
@@ -193,7 +276,7 @@ class GraphicsGenerator:
         return base64.b64decode(b64)
 
     def _gemini_gen(self, prompt: str) -> bytes | None:
-        """Generate via Gemini Imagen 3."""
+        """Generate via Gemini Imagen 3 (legacy)."""
         try:
             import google.generativeai as genai
             genai.configure(api_key=os.environ.get("GOOGLE_API_KEY", ""))
@@ -273,6 +356,17 @@ class GraphicsGenerator:
     def _save_image(self, img_bytes: bytes, title: str) -> str:
         """Save image bytes to a file. Returns absolute path."""
         slug = hashlib.sha256(title.encode()).hexdigest()[:12]
+        # Some legacy SDKs return raw RGBA bytes instead of PNG; wrap them.
+        if not img_bytes.startswith(b"\x89PNG"):
+            try:
+                from PIL import Image as PILImage
+                from io import BytesIO
+                pil = PILImage.open(BytesIO(img_bytes))
+                buf = BytesIO()
+                pil.save(buf, format="PNG")
+                img_bytes = buf.getvalue()
+            except Exception:
+                pass
         path = self._output_dir / f"slide_{slug}.png"
         path.write_bytes(img_bytes)
         return str(path)

@@ -401,7 +401,12 @@ def stage1_ingest_upload(
             path=file_path,
             collection_id=_get_collection_id(session_id),
         )
-        dic_doc_id = result.get("doc_id") if result else None
+        # IngestOutcome is a dataclass; fall back to dict .get() for compatibility
+        dic_doc_id = (
+            getattr(result, "doc_id", None)
+            if result and not isinstance(result, dict)
+            else (result.get("doc_id") if result else None)
+        )
         sm.set_upload_status(upload_id, "ingested", dic_doc_id=dic_doc_id)
         log.info("IDR ingest: upload=%s → dic_doc=%s", upload_id, dic_doc_id)
     except ImportError:
