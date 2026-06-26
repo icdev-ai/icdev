@@ -897,17 +897,24 @@ CREATE TABLE IF NOT EXISTS zig_maturity_scores (
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS slides_decks (
-    deck_id       INTEGER PRIMARY KEY AUTOINCREMENT,
-    title         TEXT NOT NULL,
-    deck_type     TEXT NOT NULL DEFAULT 'executive_overview',
-    theme         TEXT NOT NULL DEFAULT 'midnight_executive',
-    status        TEXT NOT NULL DEFAULT 'pending',
-    source_types  TEXT DEFAULT '[]',
-    pptx_path     TEXT,
-    slide_count   INTEGER DEFAULT 0,
-    error_message TEXT,
-    created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
-    completed_at  DATETIME
+    deck_id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    title           TEXT NOT NULL,
+    deck_type       TEXT NOT NULL DEFAULT 'executive_overview',
+    theme           TEXT NOT NULL DEFAULT 'midnight_executive',
+    tone            TEXT DEFAULT 'professional',
+    occasion        TEXT,
+    target_audience TEXT,
+    citation_style  TEXT DEFAULT 'inline_links',
+    output_formats  TEXT DEFAULT '["pptx"]',
+    status          TEXT NOT NULL DEFAULT 'pending',
+    source_types    TEXT DEFAULT '[]',
+    pptx_path       TEXT,
+    pdf_path        TEXT,
+    html_path       TEXT,
+    slide_count     INTEGER DEFAULT 0,
+    error_message   TEXT,
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    completed_at    DATETIME
 );
 CREATE TABLE IF NOT EXISTS slides_slides (
     slide_id      INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -917,6 +924,7 @@ CREATE TABLE IF NOT EXISTS slides_slides (
     title         TEXT NOT NULL,
     bullets       TEXT DEFAULT '[]',
     speaker_notes TEXT,
+    citations     TEXT DEFAULT '[]',
     image_path    TEXT,
     image_prompt  TEXT,
     created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -1511,6 +1519,8 @@ CREATE TABLE IF NOT EXISTS idr_sessions (
     suggested_classification TEXT,
     suggested_classification_confidence REAL,
     prior_docs_context TEXT,
+    last_source_hash TEXT,
+    source_hash_checked_at TEXT,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );

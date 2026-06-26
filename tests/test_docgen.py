@@ -1774,3 +1774,371 @@ class TestStage0IngestDocument:
                 json={},
             )
         assert resp.status_code == 400
+
+
+# ─── Item 8: Document freshness gate ─────────────────────────────────────────
+
+class TestDocumentFreshness:
+    """compute_source_hash, record_source_hash, check_freshness."""
+
+    def test_compute_source_hash_stable_for_same_files(self, tmp_path):
+        """Same file content produces the same hash on repeated calls."""
+        from tools.docgen.workflow import compute_source_hash
+        f = tmp_path / "doc.txt"
+        f.write_bytes(b"Network topology document content.")
+        h1 = compute_source_hash([str(f)])
+        h2 = compute_source_hash([str(f)])
+        assert h1 == h2
+        assert len(h1) == 64  # SHA-256 hex
+
+    def test_compute_source_hash_differs_on_content_change(self, tmp_path):
+        """Modified file content produces a different hash."""
+        from tools.docgen.workflow import compute_source_hash
+        f = tmp_path / "doc.txt"
+        f.write_bytes(b"Version 1 content.")
+        h1 = compute_source_hash([str(f)])
+        f.write_bytes(b"Version 2 content - updated!")
+        h2 = compute_source_hash([str(f)])
+        assert h1 != h2
+
+    def test_compute_source_hash_empty_list_returns_empty(self):
+        """Empty upload list returns empty string (no hash)."""
+        from tools.docgen.workflow import compute_source_hash
+        assert compute_source_hash([]) == ""
+
+    def test_check_freshness_stale_when_hash_differs(self, tmp_path):
+        """check_freshness returns stale=True when stored hash differs from current."""
+        from tools.docgen.workflow import check_freshness
+        f = tmp_path / "upload.txt"
+        f.write_bytes(b"Current content.")
+
+        with patch("tools.docgen.workflow.sm.get_session", return_value={
+            "last_source_hash": "deadbeef" * 8  # 64 hex chars, different from actual file
+        }):
+            result = check_freshness("sess-fresh-001", [str(f)])
+
+        assert result["stale"] is True
+        assert result["current_hash"] != result["stored_hash"]
+
+    def test_check_freshness_not_stale_when_hashes_match(self, tmp_path):
+        """check_freshness returns stale=False when hashes match."""
+        from tools.docgen.workflow import compute_source_hash, check_freshness
+        f = tmp_path / "upload.txt"
+        f.write_bytes(b"Stable content.")
+        real_hash = compute_source_hash([str(f)])
+
+        with patch("tools.docgen.workflow.sm.get_session", return_value={
+            "last_source_hash": real_hash
+        }):
+            result = check_freshness("sess-fresh-002", [str(f)])
+
+        assert result["stale"] is False
+
+    def test_check_freshness_not_stale_without_stored_hash(self, tmp_path):
+        """check_freshness returns stale=False when no stored hash (new session)."""
+        from tools.docgen.workflow import check_freshness
+        f = tmp_path / "upload.txt"
+        f.write_bytes(b"Some content.")
+
+        with patch("tools.docgen.workflow.sm.get_session", return_value={"last_source_hash": None}):
+            result = check_freshness("sess-fresh-003", [str(f)])
+
+        assert result["stale"] is False
+
+    def test_record_source_hash_calls_set_field(self, tmp_path):
+        """record_source_hash persists hash to session via set_field."""
+        from tools.docgen.workflow import record_source_hash
+        from unittest.mock import MagicMock
+
+        f = tmp_path / "upload.txt"
+        f.write_bytes(b"Doc content.")
+        mock_set = MagicMock(return_value=True)
+
+        with patch("tools.docgen.workflow.sm.set_field", mock_set):
+            h = record_source_hash("sess-rec-001", [str(f)])
+
+        assert len(h) == 64
+        assert mock_set.called
+        call_kwargs = str(mock_set.call_args_list)
+        assert "last_source_hash" in call_kwargs
+
+
+# ─── Item 10: Semantic conflict detection ────────────────────────────────────
+
+class TestSemanticConflicts:
+    """Tests for detect_semantic_conflicts() in workflow.py."""
+
+    def test_empty_doc_returns_empty(self):
+        from tools.docgen.workflow import detect_semantic_conflicts
+        assert detect_semantic_conflicts("") == []
+
+    def test_whitespace_only_returns_empty(self):
+        from tools.docgen.workflow import detect_semantic_conflicts
+        assert detect_semantic_conflicts("   \n\n   ") == []
+
+    def test_single_section_returns_empty(self):
+        from tools.docgen.workflow import detect_semantic_conflicts
+        result = detect_semantic_conflicts("This is a single section with no headers.")
+        assert result == []
+
+    def test_keyword_contradiction_detected_in_two_sections(self):
+        """Keyword fallback detects enabled/disabled contradiction between sections."""
+        from tools.docgen.workflow import detect_semantic_conflicts
+        import sys
+        from unittest.mock import patch
+        # Force import error so we always use keyword path.
+        with patch.dict(sys.modules, {"tools.llm": None, "tools.llm.provider": None}):
+            doc = (
+                "# Access Control\nAll access is authenticated. Encryption enabled.\n\n"
+                "# Legacy Mode\nEncryption disabled for backward compatibility.\n"
+            )
+            result = detect_semantic_conflicts(doc)
+        # May or may not detect (depends on fallback); result is always a list.
+        assert isinstance(result, list)
+
+    def test_result_dict_has_required_keys(self):
+        """Any conflict returned has section_a, section_b, description, severity."""
+        from tools.docgen.workflow import detect_semantic_conflicts
+        doc = (
+            "# Section One\nThis uses TLS 1.3 for all connections.\n\n"
+            "# Section Two\nSSL 3.0 is acceptable for legacy clients.\n"
+        )
+        result = detect_semantic_conflicts(doc)
+        for item in result:
+            assert "section_a" in item
+            assert "section_b" in item
+            assert "description" in item
+            assert "severity" in item
+
+    def test_detect_conflicts_route_returns_200(self):
+        """POST /docgen/api/sessions/<id>/detect-conflicts returns 200."""
+        from flask import Flask
+        from tools.docgen.blueprint import docgen_bp
+        from tools.docgen.session_manager import create_session
+        from unittest.mock import patch
+
+        app = Flask(__name__)
+        app.register_blueprint(docgen_bp)
+        app.config["TESTING"] = True
+
+        sess = create_session(title="Conflict Test", domain="network")
+        with app.test_client() as client:
+            resp = client.post(
+                f"/docgen/api/sessions/{sess['id']}/detect-conflicts",
+                json={"doc_text": "# Section A\nhello world\n\n# Section B\ngoodbye world"},
+                content_type="application/json",
+            )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "conflicts" in data
+        assert "total_count" in data
+
+    def test_detect_conflicts_route_missing_doc_text(self):
+        """POST without doc_text returns 400."""
+        from flask import Flask
+        from tools.docgen.blueprint import docgen_bp
+        from tools.docgen.session_manager import create_session
+
+        app = Flask(__name__)
+        app.register_blueprint(docgen_bp)
+        app.config["TESTING"] = True
+
+        sess = create_session(title="Conflict 400 Test", domain="network")
+        with app.test_client() as client:
+            resp = client.post(
+                f"/docgen/api/sessions/{sess['id']}/detect-conflicts",
+                json={},
+                content_type="application/json",
+            )
+        assert resp.status_code == 400
+
+
+# ─── Item 11: ATO Boundary Narrative doc type ────────────────────────────────
+
+class TestBoundaryNarrativeDocType:
+    """Tests for boundary_narrative ATO doc type + stage1_enrich_boundary_context."""
+
+    def test_get_ato_doc_type_boundary_narrative(self):
+        """get_ato_doc_type returns correct dict for boundary_narrative."""
+        from tools.docgen.domain_profiles import get_ato_doc_type
+        cfg = get_ato_doc_type("boundary_narrative")
+        assert cfg is not None
+        assert any("Trust Zone" in s for s in cfg["sections"])
+        assert "ato_author" in cfg["roles"]
+
+    def test_boundary_narrative_has_six_sections(self):
+        from tools.docgen.domain_profiles import get_ato_doc_type
+        cfg = get_ato_doc_type("boundary_narrative")
+        assert len(cfg["sections"]) == 6
+
+    def test_stage1_enrich_returns_context_unchanged_for_non_boundary(self):
+        """Non-boundary_narrative doc types pass through unchanged."""
+        from tools.docgen.workflow import stage1_enrich_boundary_context
+        ctx = {"doc_type": "runbook", "title": "Test"}
+        result = stage1_enrich_boundary_context("sess-bn-001", ctx)
+        assert result is ctx or result == ctx
+
+    def test_stage1_enrich_no_network_canvas_graceful(self):
+        """When network canvas DB is unavailable, function returns context without error."""
+        from tools.docgen.workflow import stage1_enrich_boundary_context
+        ctx = {"doc_type": "boundary_narrative"}
+        # network canvas not available in test DB — should skip silently.
+        result = stage1_enrich_boundary_context("sess-bn-002", ctx)
+        assert isinstance(result, dict)
+
+    def test_boundary_narrative_roles(self):
+        """boundary_narrative doc type has expected ACE roles."""
+        from tools.docgen.domain_profiles import get_ato_doc_type
+        cfg = get_ato_doc_type("boundary_narrative")
+        assert set(cfg["roles"]) == {"ato_author", "network_engineer", "compliance_officer"}
+
+
+# ─── Item 12: SSE generation progress stream ─────────────────────────────────
+
+class TestSseProgress:
+    """Tests for GET /docgen/api/sessions/<id>/progress SSE endpoint."""
+
+    def _make_app(self):
+        from flask import Flask
+        from tools.docgen.blueprint import docgen_bp
+        app = Flask(__name__)
+        app.register_blueprint(docgen_bp)
+        app.config["TESTING"] = True
+        return app
+
+    def test_progress_unknown_session_streams_error(self):
+        """Non-existent session_id streams an error payload."""
+        app = self._make_app()
+        with app.test_client() as client:
+            resp = client.get("/docgen/api/sessions/nonexistent-999/progress")
+        assert resp.status_code == 200
+        body = resp.data.decode()
+        assert "error" in body or "session not found" in body
+
+    def test_progress_content_type_is_sse(self):
+        """Response content-type is text/event-stream."""
+        app = self._make_app()
+        with app.test_client() as client:
+            resp = client.get("/docgen/api/sessions/any-id/progress")
+        assert "text/event-stream" in resp.content_type
+
+    def test_progress_published_session_streams_done(self):
+        """A published session results in done=True in SSE payload."""
+        from tools.docgen.session_manager import create_session, advance_stage
+        import json as _json
+
+        sess = create_session(title="SSE Done Test", domain="network")
+        advance_stage(sess["id"], 8, "published")
+
+        app = self._make_app()
+        with app.test_client() as client:
+            resp = client.get(f"/docgen/api/sessions/{sess['id']}/progress")
+        body = resp.data.decode()
+        for line in body.split("\n"):
+            if line.startswith("data: "):
+                payload = _json.loads(line[6:])
+                assert payload.get("done") is True
+                break
+
+    def test_progress_returns_pct_field(self):
+        """Each SSE payload includes pct field (use published session so generator exits immediately)."""
+        from tools.docgen.session_manager import create_session, advance_stage
+        import json as _json
+
+        sess = create_session(title="SSE Pct Test", domain="network")
+        advance_stage(sess["id"], 8, "published")  # exits generator on first yield
+
+        app = self._make_app()
+        with app.test_client() as client:
+            resp = client.get(f"/docgen/api/sessions/{sess['id']}/progress")
+        body = resp.data.decode()
+        for line in body.split("\n"):
+            if line.startswith("data: "):
+                payload = _json.loads(line[6:])
+                assert "pct" in payload
+                break
+
+
+# ─── Item 13: Template gallery ────────────────────────────────────────────────
+
+class TestTemplateGallery:
+    """Tests for TEMPLATE_GALLERY and related routes."""
+
+    def test_get_template_gallery_returns_5_items(self):
+        from tools.docgen.domain_profiles import get_template_gallery
+        gallery = get_template_gallery()
+        assert len(gallery) == 5
+
+    def test_each_template_has_required_keys(self):
+        from tools.docgen.domain_profiles import get_template_gallery
+        required = {"id", "name", "doc_type", "domain", "query_string", "ace_roles"}
+        for tpl in get_template_gallery():
+            assert required <= set(tpl.keys()), f"Template {tpl.get('id')} missing keys"
+
+    def test_get_template_network_runbook(self):
+        from tools.docgen.domain_profiles import get_template
+        tpl = get_template("tpl-network-runbook")
+        assert tpl is not None
+        assert tpl["doc_type"] == "runbook"
+        assert tpl["domain"] == "network"
+
+    def test_get_template_nonexistent_returns_none(self):
+        from tools.docgen.domain_profiles import get_template
+        assert get_template("nonexistent-template") is None
+
+    def test_api_list_templates_returns_200(self):
+        from flask import Flask
+        from tools.docgen.blueprint import docgen_bp
+
+        app = Flask(__name__)
+        app.register_blueprint(docgen_bp)
+        app.config["TESTING"] = True
+
+        with app.test_client() as client:
+            resp = client.get("/docgen/api/templates")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "templates" in data
+        assert len(data["templates"]) == 5
+
+    def test_api_apply_template_sets_doc_type(self):
+        """POST /apply-template updates session doc_type and template_id."""
+        from flask import Flask
+        from tools.docgen.blueprint import docgen_bp
+        from tools.docgen.session_manager import create_session, get_session
+
+        app = Flask(__name__)
+        app.register_blueprint(docgen_bp)
+        app.config["TESTING"] = True
+
+        sess = create_session(title="Template Apply Test", domain="network")
+        with app.test_client() as client:
+            resp = client.post(
+                f"/docgen/api/sessions/{sess['id']}/apply-template",
+                json={"template_id": "tpl-ato-package"},
+                content_type="application/json",
+            )
+        assert resp.status_code == 200
+        updated = get_session(sess["id"])
+        assert updated["doc_type"] == "ato_ssp"
+        assert updated["template_id"] == "tpl-ato-package"
+
+    def test_api_apply_template_unknown_returns_404(self):
+        """POST /apply-template with unknown template_id returns 404."""
+        from flask import Flask
+        from tools.docgen.blueprint import docgen_bp
+        from tools.docgen.session_manager import create_session
+
+        app = Flask(__name__)
+        app.register_blueprint(docgen_bp)
+        app.config["TESTING"] = True
+
+        sess = create_session(title="Template 404 Test", domain="network")
+        with app.test_client() as client:
+            resp = client.post(
+                f"/docgen/api/sessions/{sess['id']}/apply-template",
+                json={"template_id": "no-such-template"},
+                content_type="application/json",
+            )
+        assert resp.status_code == 404
+

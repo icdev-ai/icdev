@@ -19,7 +19,9 @@ from pathlib import Path
 from flask import Blueprint, jsonify, render_template, request, send_file
 
 from tools.slides.constants import (
-    DECK_TYPES, THEMES, SOURCE_TYPES, DEFAULT_THEME, DEFAULT_DECK_TYPE
+    DECK_TYPES, THEMES, TONES, CITATION_STYLES, OUTPUT_FORMATS,
+    SOURCE_TYPES, DEFAULT_THEME, DEFAULT_DECK_TYPE, DEFAULT_TONE,
+    DEFAULT_CITATION_STYLE, DEFAULT_OUTPUT_FORMATS,
 )
 from tools.slides.db.init_db import get_connection, init_db
 from tools.logging.icdev_logger import get_logger
@@ -87,9 +89,15 @@ def new_deck():
         "slides/new.html",
         deck_types=DECK_TYPES,
         themes=THEMES,
+        tones=TONES,
+        citation_styles=CITATION_STYLES,
+        output_formats=OUTPUT_FORMATS,
         source_types=SOURCE_TYPES,
         default_theme=DEFAULT_THEME,
         default_deck_type=DEFAULT_DECK_TYPE,
+        default_tone=DEFAULT_TONE,
+        default_citation_style=DEFAULT_CITATION_STYLE,
+        default_output_formats=DEFAULT_OUTPUT_FORMATS,
         env=os.environ,
     )
 
@@ -112,17 +120,26 @@ def detail(deck_id: int):
         slides = []
         for row in slides_rows:
             s = dict(row)
-            # Deserialize bullets JSON
-            if isinstance(s.get("bullets"), str):
-                try:
-                    s["bullets"] = json.loads(s["bullets"])
-                except Exception:
-                    s["bullets"] = []
+            # Deserialize JSON columns
+            for col in ("bullets", "citations"):
+                if isinstance(s.get(col), str):
+                    try:
+                        s[col] = json.loads(s[col])
+                    except Exception:
+                        s[col] = []
             slides.append(s)
     finally:
         conn.close()
 
-    return render_template("slides/detail.html", deck=deck, slides=slides)
+    # Deserialize deck JSON columns for the template
+    for col in ("source_types", "output_formats"):
+        if isinstance(deck.get(col), str):
+            try:
+                deck[col] = json.loads(deck[col])
+            except Exception:
+                deck[col] = []
+
+    return render_template("slides/detail.html", deck=deck, slides=slides, themes=THEMES, tones=TONES)
 
 
 # ── API Routes ───────────────────────────────────────────────────────────────
@@ -134,6 +151,11 @@ def api_generate():
     title = data.get("title", "ICDEV™ Presentation")
     deck_type = data.get("deck_type", DEFAULT_DECK_TYPE)
     theme = data.get("theme", DEFAULT_THEME)
+    tone = data.get("tone", DEFAULT_TONE)
+    occasion = data.get("occasion", "")
+    target_audience = data.get("target_audience", "")
+    citation_style = data.get("citation_style", DEFAULT_CITATION_STYLE)
+    output_formats = data.get("output_formats", list(DEFAULT_OUTPUT_FORMATS))
     sources = data.get("sources", ["icdev_capabilities", "canvases", "kanban"])
     max_slides = int(data.get("max_slides", 10))
     upload_text = data.get("upload_text", "")
@@ -143,6 +165,11 @@ def api_generate():
         title=title,
         deck_type=deck_type,
         theme=theme,
+        tone=tone,
+        occasion=occasion,
+        target_audience=target_audience,
+        citation_style=citation_style,
+        output_formats=output_formats,
         sources=sources,
         max_slides=max_slides,
         upload_text=upload_text,
@@ -154,6 +181,8 @@ def api_generate():
         "status": result.status,
         "slide_count": len(result.slides),
         "pptx_path": result.pptx_path,
+        "pdf_path": result.pdf_path,
+        "html_path": result.html_path,
         "error": result.error,
     }), (200 if result.status == "completed" else 500)
 
@@ -164,9 +193,13 @@ def api_revise(deck_id: int):
     data = request.get_json(silent=True) or {}
     slide_id = data.get("slide_id")
     feedback = data.get("feedback", "")
+    new_tone = data.get("tone")
+    new_theme = data.get("theme")
 
-    if not slide_id or not feedback:
-        return jsonify({"error": "slide_id and feedback required"}), 400
+    if not slide_id:
+        return jsonify({"error": "slide_id required"}), 400
+    if not feedback and not (new_tone or new_theme):
+        return jsonify({"error": "feedback, tone, or theme required"}), 400
 
     conn = _conn()
     try:
@@ -177,26 +210,33 @@ def api_revise(deck_id: int):
         if not row:
             return jsonify({"error": "Slide not found"}), 404
         slide = dict(row)
-        if isinstance(slide.get("bullets"), str):
-            try:
-                slide["bullets"] = json.loads(slide["bullets"])
-            except Exception:
-                slide["bullets"] = []
+        for col in ("bullets", "citations"):
+            if isinstance(slide.get(col), str):
+                try:
+                    slide[col] = json.loads(slide[col])
+                except Exception:
+                    slide[col] = []
     finally:
         conn.close()
 
+    tone = new_tone or slide.get("tone", "professional")
+    extra = ""
+    if new_tone or new_theme:
+        extra = f" (switch to {tone} tone and {new_theme or 'current'} theme)"
+
     from tools.slides.content_agent import revise_slide
-    revised = revise_slide(slide, feedback, raw_content={})
+    revised = revise_slide(slide, feedback + extra, raw_content={}, tone=tone)
 
     # Update DB
     conn = _conn()
     try:
         conn.execute(
-            "UPDATE slides_slides SET title=?, bullets=?, speaker_notes=? WHERE slide_id=?",
+            "UPDATE slides_slides SET title=?, bullets=?, speaker_notes=?, citations=? WHERE slide_id=?",
             (
                 revised.get("title", slide.get("title", "")),
                 json.dumps(revised.get("bullets", [])),
                 revised.get("speaker_notes", ""),
+                json.dumps(revised.get("citations", [])),
                 slide_id,
             ),
         )
@@ -207,13 +247,11 @@ def api_revise(deck_id: int):
     return jsonify({"slide": revised})
 
 
-@slides_bp.route("/api/<int:deck_id>/download")
-def api_download(deck_id: int):
-    """Serve the .pptx file for download."""
+def _serve_file(deck_id: int, column: str, mime: str, ext: str) -> Any:
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT title, pptx_path FROM slides_decks WHERE deck_id = ? AND status = 'completed'",
+            f"SELECT title, {column} FROM slides_decks WHERE deck_id = ? AND status = 'completed'",
             (deck_id,),
         ).fetchone()
     finally:
@@ -223,18 +261,100 @@ def api_download(deck_id: int):
         return jsonify({"error": "Deck not found or not completed"}), 404
 
     title = row["title"] if hasattr(row, "__getitem__") else row[0]
-    pptx_path = row["pptx_path"] if hasattr(row, "__getitem__") else row[1]
+    path = row[column] if hasattr(row, "__getitem__") else row[1]
 
-    if not pptx_path or not Path(pptx_path).exists():
-        return jsonify({"error": "PPTX file not found on disk"}), 404
+    if not path or not Path(path).exists():
+        return jsonify({"error": f"{ext.upper()} file not found on disk"}), 404
 
-    filename = f"ICDEV_{title[:40].replace(' ', '_')}.pptx"
-    return send_file(
-        pptx_path,
-        as_attachment=True,
-        download_name=filename,
-        mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    filename = f"ICDEV_{title[:40].replace(' ', '_')}.{ext}"
+    return send_file(path, as_attachment=True, download_name=filename, mimetype=mime)
+
+
+@slides_bp.route("/api/<int:deck_id>/download")
+def api_download(deck_id: int):
+    """Serve the .pptx file for download."""
+    return _serve_file(
+        deck_id, "pptx_path",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "pptx",
     )
+
+
+@slides_bp.route("/api/<int:deck_id>/download/pdf")
+def api_download_pdf(deck_id: int):
+    """Serve the .pdf file for download."""
+    return _serve_file(deck_id, "pdf_path", "application/pdf", "pdf")
+
+
+@slides_bp.route("/api/<int:deck_id>/download/html")
+def api_download_html(deck_id: int):
+    """Serve the .html file for download."""
+    return _serve_file(deck_id, "html_path", "text/html", "html")
+
+
+@slides_bp.route("/api/<int:deck_id>/regenerate-slide", methods=["POST"])
+def api_regenerate_slide(deck_id: int):
+    """Regenerate a single slide with optional tone/theme change."""
+    data = request.get_json(silent=True) or {}
+    slide_id = data.get("slide_id")
+    feedback = data.get("feedback", "")
+    new_tone = data.get("tone")
+    new_theme = data.get("theme")
+
+    if not slide_id:
+        return jsonify({"error": "slide_id required"}), 400
+
+    conn = _conn()
+    try:
+        row = conn.execute(
+            "SELECT * FROM slides_slides WHERE slide_id = ? AND deck_id = ?",
+            (slide_id, deck_id),
+        ).fetchone()
+        if not row:
+            return jsonify({"error": "Slide not found"}), 404
+        slide = dict(row)
+        for col in ("bullets", "citations"):
+            if isinstance(slide.get(col), str):
+                try:
+                    slide[col] = json.loads(slide[col])
+                except Exception:
+                    slide[col] = []
+    finally:
+        conn.close()
+
+    from tools.slides import content_agent
+    tone = new_tone or slide.get("tone", "professional")
+    if feedback:
+        extra = f" (switch to {tone} tone and {new_theme or 'current'} theme)" if (new_tone or new_theme) else ""
+        revised = content_agent.revise_slide(
+            slide, feedback + extra, raw_content={}, tone=tone
+        )
+    else:
+        revised = content_agent._generate_one(
+            title=slide.get("title", ""),
+            position=slide.get("position", 1),
+            raw_content={},
+            tone=tone,
+        )
+
+    # Update DB
+    conn = _conn()
+    try:
+        conn.execute(
+            "UPDATE slides_slides SET title=?, bullets=?, speaker_notes=?, citations=? WHERE slide_id=?",
+            (
+                revised.get("title", slide.get("title", "")),
+                json.dumps(revised.get("bullets", [])),
+                revised.get("speaker_notes", ""),
+                json.dumps(revised.get("citations", [])),
+                slide_id,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    return jsonify({"slide": revised})
 
 
 @slides_bp.route("/api/iqe-query", methods=["POST"])

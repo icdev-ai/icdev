@@ -536,6 +536,9 @@ def is_append_only_table_modification(tool_name: str, tool_input: dict) -> bool:
         "nc_poam_status_log",        # POAM milestone/status change log
         "nc_exceptions",             # filed exceptions for unmitigated vulnerabilities
         "nc_exception_approvals",    # AO/ISSO/ISSM approval chain for exceptions
+        # PVM — Predictive Vulnerability Management (migration 221)
+        "nc_vuln_predictions",       # time-series risk scores per CVE (NIST AU)
+        "nc_patch_plans",            # AI-generated patch schedules (immutable once created)
     ]
 
     if tool_name == "Bash":

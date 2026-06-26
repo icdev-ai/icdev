@@ -15,9 +15,9 @@ import json
 import re
 from typing import Any
 
-from tools.slides.constants import LLM_FN_OUTLINE, MIN_SLIDES, DEFAULT_MAX_SLIDES
+from tools.slides.constants import LLM_FN_OUTLINE, MIN_SLIDES, DEFAULT_MAX_SLIDES, TONE_STYLE_HINTS
 
-_SYSTEM_PROMPT = """You are a presentation architect for a US federal AI DevSecOps platform called ICDEV™.
+_ICDEV_SYSTEM_PROMPT = """You are a presentation architect for a US federal AI DevSecOps platform called ICDEV™.
 Your task: given raw content about ICDEV's capabilities, design a compelling slide deck outline.
 
 Rules:
@@ -27,6 +27,24 @@ Rules:
 - Skip generic slides like "Introduction" or "Q&A"
 - First slide: title/cover (e.g. "ICDEV™: A System That Builds Systems")
 - Last slide: call-to-action or next steps
+- Return ONLY a JSON array of strings. Example: ["Title One", "Title Two", "Title Three"]
+"""
+
+_GENERAL_SYSTEM_PROMPT = """You are a presentation architect for a general-purpose, occasion-aware slide deck.
+
+Topic/Title: {deck_title}
+Occasion: {occasion}
+Audience: {target_audience}
+Tone: {tone}
+Tone guidance: {tone_hint}
+
+Rules:
+- Return BETWEEN {min_slides} AND {max_slides} slide titles.
+- Each title: 3-8 words, clear and action-oriented.
+- Build a narrative arc that fits the occasion: hook → context → key points → takeaway → closing.
+- Skip generic slides like "Introduction" or "Q&A".
+- First slide: title/cover.
+- Last slide: closing or call-to-action appropriate to the occasion and audience.
 - Return ONLY a JSON array of strings. Example: ["Title One", "Title Two", "Title Three"]
 """
 
@@ -84,6 +102,9 @@ def plan_outline(
     raw_content: dict[str, Any],
     deck_title: str,
     deck_type: str = "executive_overview",
+    tone: str = "professional",
+    occasion: str = "",
+    target_audience: str = "",
     min_slides: int = MIN_SLIDES,
     max_slides: int = DEFAULT_MAX_SLIDES,
     previous_outline: list[str] | None = None,
@@ -94,6 +115,7 @@ def plan_outline(
     Falls back to a static outline if LLM is unavailable.
     """
     # Build content summary for LLM
+    is_general = deck_type == "general_presentation"
     content_parts: list[str] = [f"Deck Title: {deck_title}", f"Deck Type: {deck_type}", ""]
     for source_key, source_data in raw_content.items():
         if isinstance(source_data, dict) and "summary" in source_data:
@@ -103,7 +125,20 @@ def plan_outline(
 
     content_str = "\n".join(content_parts)
 
-    system = _SYSTEM_PROMPT.format(min_slides=min_slides, max_slides=max_slides)
+    if is_general:
+        tone_hint = TONE_STYLE_HINTS.get(tone, TONE_STYLE_HINTS["professional"])["writing"]
+        system = _GENERAL_SYSTEM_PROMPT.format(
+            deck_title=deck_title,
+            occasion=occasion or "general presentation",
+            target_audience=target_audience or "general audience",
+            tone=tone,
+            tone_hint=tone_hint,
+            min_slides=min_slides,
+            max_slides=max_slides,
+        )
+    else:
+        system = _ICDEV_SYSTEM_PROMPT.format(min_slides=min_slides, max_slides=max_slides)
+
     if previous_outline and feedback:
         user_msg = content_str + "\n" + _REVISION_SUFFIX.format(
             previous_outline=json.dumps(previous_outline),
@@ -136,13 +171,27 @@ def plan_outline(
         pass
 
     # Static fallback outline
-    return _static_outline(deck_type, deck_title, min_slides)
+    return _static_outline(deck_type, deck_title, min_slides, occasion, target_audience, tone)
 
 
-def _static_outline(deck_type: str, deck_title: str, min_slides: int) -> list[str]:
+def _static_outline(
+    deck_type: str, deck_title: str, min_slides: int,
+    occasion: str = "", target_audience: str = "", tone: str = "professional"
+) -> list[str]:
     """Return a static outline when LLM is unavailable."""
     base: list[str] = [deck_title]
-    if deck_type == "weekly_status":
+    if deck_type == "general_presentation":
+        base += [
+            "Why This Topic Matters Now",
+            "The Big Picture",
+            "Key Insights for " + (target_audience or "Your Audience"),
+            "Practical Takeaways",
+            "What Comes Next",
+        ]
+        if tone in ("fun", "creative", "adventurous"):
+            base[1] = "Setting the Scene"
+            base[4] = "Your Next Adventure"
+    elif deck_type == "weekly_status":
         base += [
             "This Week's Highlights",
             "Project Pipeline Status",

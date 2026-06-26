@@ -77,7 +77,19 @@ sources:
       - name: github_advisories
         api_url: https://api.github.com/advisories
         severity_filter: [critical, high]
+      - name: cisa_kev
+        api_url: https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json
+        description: "CISA Known Exploited Vulnerabilities Catalog — BOD 22-01 mandate"
+        severity_filter: [CRITICAL, HIGH, MEDIUM]
+        network_device_focus: true
+        scan_interval_hours: 6
+      - name: msrc
+        api_url: https://api.msrc.microsoft.com/cvrf/v2.0/updates
+        description: "Microsoft Security Response Center — monthly patch Tuesday feed"
+        severity_filter: [Critical, Important]
+        scan_interval_hours: 24
     ecosystems: [pip, npm, go, maven, nuget, cargo]
+    network_device_vendors: [cisco, juniper, palo_alto, fortinet, arista, f5, checkpoint]
     blockchain_keywords:
       - smart contract
       - solidity
@@ -140,7 +152,7 @@ sources:
     scan_interval_hours: 8
     platforms:
       - name: reddit
-        subreddits: [devops, netsec, sysadmin, kubernetes, golang, rust, blockchain, ethereum, defi, web3, solana]
+        subreddits: [devops, netsec, sysadmin, kubernetes, golang, rust, blockchain, ethereum, defi, web3, solana, cybersecurity, AskNetsec, blueteamsec, networking]
         sort: hot
         max_results: 30
         min_upvotes: 50

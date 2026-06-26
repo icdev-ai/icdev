@@ -233,7 +233,12 @@
       <div style="height:4px;background:#0a1525;border-radius:2px;overflow:hidden;margin-bottom:6px;">
         <div style="height:100%;background:#4f8ef7;width:{{ (s.stage / 8 * 100)|round(0)|int }}%;"></div>
       </div>
-      <div style="color:#5a6e8c;font-size:10px;">Stage {{ s.stage }}/8 · {{ s.created_at[:10] if s.created_at else '' }}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div style="color:#5a6e8c;font-size:10px;">Stage {{ s.stage }}/8 · {{ s.created_at[:10] if s.created_at else '' }}</div>
+        {% if s.get('freshness_stale') %}
+        <span title="Source files have changed since last generation" style="background:#5a1a00;color:#ffd666;font-size:9px;padding:1px 6px;border-radius:3px;border:1px solid #a05010;">STALE</span>
+        {% endif %}
+      </div>
     </div>
   </a>
   {% endfor %}

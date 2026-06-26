@@ -113,6 +113,18 @@ ATO_DOC_TYPES: dict[str, dict] = {
         ],
         "description": "Plan of Action and Milestones",
     },
+    "boundary_narrative": {
+        "roles": ["ato_author", "network_engineer", "compliance_officer"],
+        "sections": [
+            "System Name and Identifier",
+            "Authorization Boundary Description",
+            "Network Architecture Overview",
+            "Trust Zones and Segmentation",
+            "External Connections and Interfaces",
+            "Data Flows and Information Types",
+        ],
+        "description": "ATO System Boundary Description (FedRAMP SSP Section 9)",
+    },
 }
 
 
@@ -121,6 +133,87 @@ def get_ato_doc_type(doc_type: str | None) -> dict | None:
     if not doc_type:
         return None
     return ATO_DOC_TYPES.get(doc_type)
+
+
+# ─── Item 13: Template gallery ───────────────────────────────────────────────
+
+TEMPLATE_GALLERY: list[dict] = [
+    {
+        "id": "tpl-network-runbook",
+        "name": "Network Runbook",
+        "description": "Standard operating procedures for network infrastructure management",
+        "doc_type": "runbook",
+        "domain": "network",
+        "query_string": (
+            "Generate a comprehensive network runbook covering device roles, maintenance "
+            "procedures, escalation paths, and change management protocols."
+        ),
+        "ace_roles": ["network_engineer", "technical_writer"],
+        "icon": "net",
+    },
+    {
+        "id": "tpl-ir-playbook",
+        "name": "Incident Response Playbook",
+        "description": "Step-by-step IR procedures for network security incidents",
+        "doc_type": "playbook",
+        "domain": "security",
+        "query_string": (
+            "Generate a network incident response playbook covering detection, containment, "
+            "eradication, recovery, and lessons learned phases."
+        ),
+        "ace_roles": ["security_analyst", "technical_writer"],
+        "icon": "ir",
+    },
+    {
+        "id": "tpl-config-baseline",
+        "name": "Configuration Baseline",
+        "description": "Approved configuration standards for network devices",
+        "doc_type": "baseline",
+        "domain": "network",
+        "query_string": (
+            "Generate a configuration baseline document covering hardening standards, "
+            "approved configurations, deviation procedures, and compliance requirements."
+        ),
+        "ace_roles": ["network_engineer", "compliance_officer"],
+        "icon": "cfg",
+    },
+    {
+        "id": "tpl-ato-package",
+        "name": "ATO Evidence Package",
+        "description": "FedRAMP/DoD ATO package with SSP, POAM, and control narratives",
+        "doc_type": "ato_ssp",
+        "domain": "security",
+        "query_string": (
+            "Generate a FedRAMP ATO evidence package covering system boundary, "
+            "control implementations, POAM items, and continuous monitoring strategy."
+        ),
+        "ace_roles": ["compliance_officer", "ato_author", "technical_writer"],
+        "icon": "ato",
+    },
+    {
+        "id": "tpl-change-request",
+        "name": "Change Request",
+        "description": "Network change request with risk assessment and rollback plan",
+        "doc_type": "change_request",
+        "domain": "network",
+        "query_string": (
+            "Generate a network change request document covering change description, "
+            "risk assessment, implementation steps, rollback plan, and testing criteria."
+        ),
+        "ace_roles": ["network_engineer", "technical_writer"],
+        "icon": "cr",
+    },
+]
+
+
+def get_template_gallery() -> list[dict]:
+    """Return all pre-built document templates."""
+    return TEMPLATE_GALLERY
+
+
+def get_template(template_id: str) -> dict | None:
+    """Return a single template by id, or None if not found."""
+    return next((t for t in TEMPLATE_GALLERY if t["id"] == template_id), None)
 
 
 def resolve_all_reviewers(domain: str) -> list[dict[str, str]]:

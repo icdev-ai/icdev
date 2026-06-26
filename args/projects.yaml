@@ -11583,3 +11583,38 @@ projects:
   - key: ato
     title: "ATO Evidence Export -- full package PDF+Excel+JSON"
     priority: high
+- key: pvm
+  name: "PVM — Predictive Vulnerability Management"
+  description: "Forward Networks NQE-powered predictive modeling for network vulnerability
+    management. Time-series risk scoring, attack surface mapping, Bayesian triage,
+    and AI-assisted patch planning driven by the Innovation, Research, and Creative
+    engines. Builds on the completed NQE integration (migration 220) adding five new
+    tools and a unified /network/vulnerability-intelligence dashboard."
+  task_prefix: pvm-
+  default_open: true
+  briefs:
+  - 'eng: Run Research+Creative+Innovation engines for network security domain (pvm-eng-01..03)'
+  - 'pred: Time-series vulnerability risk predictor from NQE+advisory data (pvm-pred-01..04)'
+  - 'asm: NQE-driven attack surface mapping + Nessus correlation (pvm-asm-01..03)'
+  - 'tri: Bayesian vulnerability triage engine with HITL approval gate (pvm-tri-01..04)'
+  - 'pat: AI patch planning with twin simulation + maintenance windows (pvm-pat-01..03)'
+  - 'ui: Vulnerability intelligence dashboard (4-panel) + IQE integration (pvm-ui-01..04)'
+  epics:
+  - key: eng
+    title: Engine Configuration & Execution
+    priority: high
+  - key: pred
+    title: Predictive Risk Scoring
+    priority: high
+  - key: asm
+    title: Attack Surface Mapping
+    priority: high
+  - key: tri
+    title: Bayesian Triage Engine
+    priority: high
+  - key: pat
+    title: AI Patch Planning
+    priority: medium
+  - key: ui
+    title: Vulnerability Intelligence Dashboard
+    priority: medium
