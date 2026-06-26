@@ -72,7 +72,18 @@ GUIDED_ROLES    = {k for k, v in ROLES.items() if v["type"] == "guided"}
 # ---------------------------------------------------------------------------
 MISSION_TYPES = ["coding", "guided", "concept", "hybrid"]
 
-STEP_TYPES = ["coding", "configure", "verify", "reflect", "watch", "deploy", "design"]
+STEP_TYPES = [
+    "coding",           # write + run Python code
+    "configure",        # configure a system or API via wizard
+    "verify",           # inspect output, check results
+    "reflect",          # written reflection, no code
+    "watch",            # video or demo content
+    "deploy",           # deploy to an environment
+    "design",           # architecture or system design
+    "coworker",         # delegate to an ACE co-worker and review output
+    "docgen",           # generate a document artifact via DocGen
+    "agent_readiness",  # run 11-pillar readiness check on a target repo
+]
 
 # ---------------------------------------------------------------------------
 # XP multipliers
@@ -310,6 +321,52 @@ ACHIEVEMENTS = [
         "criteria_json": '{"type": "aadc_score_gte", "score": 90}',
         "rarity": "epic",
     },
+    # ACE Co-Worker
+    {
+        "slug": "ace_orchestrator",
+        "title": "ACE Orchestrator",
+        "description": "A 3-role ACE co-worker pipeline completed. You're building teams, not bots.",
+        "icon": "🤝",
+        "xp_bonus": 300,
+        "criteria_json": '{"type": "mission_complete", "mission_slug": "m-ace-03-multi-role-pipeline"}',
+        "rarity": "rare",
+    },
+    {
+        "slug": "docgen_author",
+        "title": "DocGen Author",
+        "description": "A DocGen portfolio artifact produced and linked to your profile. Documentation that writes itself.",
+        "icon": "📄",
+        "xp_bonus": 200,
+        "criteria_json": '{"type": "mission_complete", "mission_slug": "m-docgen-02-portfolio-artifact"}',
+        "rarity": "uncommon",
+    },
+    {
+        "slug": "readiness_champion",
+        "title": "Readiness Champion",
+        "description": "Agent readiness score ≥ 80% after remediation. Your repo is ready for production.",
+        "icon": "✅",
+        "xp_bonus": 250,
+        "criteria_json": '{"type": "readiness_score_gte", "score": 80}',
+        "rarity": "rare",
+    },
+    {
+        "slug": "governance_steward",
+        "title": "Governance Steward",
+        "description": "Full AI governance portfolio: inventory + model card + oversight plan + ethics review. OMB M-25-21 compliant.",
+        "icon": "⚖️",
+        "xp_bonus": 400,
+        "criteria_json": '{"type": "mission_complete", "mission_slug": "m-gov-capstone"}',
+        "rarity": "epic",
+    },
+    {
+        "slug": "gameday_champion",
+        "title": "GameDay Champion",
+        "description": "Top-10 finish in a GameDay tournament. You competed against AI and won.",
+        "icon": "🏆",
+        "xp_bonus": 500,
+        "criteria_json": '{"type": "gameday_top_n", "n": 10}',
+        "rarity": "epic",
+    },
 ]
 
 ACHIEVEMENT_BY_SLUG = {a["slug"]: a for a in ACHIEVEMENTS}
@@ -368,6 +425,20 @@ SKILL_NODES = [
     {"slug": "goal-author",    "title": "Goal Author",          "tier": 3, "role_filter": "all", "prereqs": ["tool-author"],   "pos": (12, 0)},
     {"slug": "blueprint",      "title": "Blueprint Builder",    "tier": 3, "role_filter": "all", "prereqs": ["goal-author"],   "pos": (13, 0)},
     {"slug": "child-app",      "title": "Child App Creator",    "tier": 3, "role_filter": "all", "prereqs": ["blueprint"],     "pos": (14, 0)},
+    # ACE Co-Worker branch (after multi-agent)
+    {"slug": "ace-roles",       "title": "ACE Roles & Delegation",  "tier": 2, "role_filter": "ai_developer,agent_developer,swe_arch", "prereqs": ["multi-agent"],   "pos": (6, 2)},
+    {"slug": "ace-patterns",    "title": "Creator-Verifier Pattern", "tier": 2, "role_filter": "ai_developer,agent_developer,swe_arch", "prereqs": ["ace-roles"],     "pos": (7, 2)},
+    {"slug": "ace-pipelines",   "title": "Multi-Role Pipeline",      "tier": 2, "role_filter": "ai_developer,agent_developer,swe_arch", "prereqs": ["ace-patterns"],  "pos": (8, 2)},
+    # DocGen branch (after workflow-build)
+    {"slug": "docgen-sessions", "title": "DocGen Session Lifecycle", "tier": 2, "role_filter": "isso,issm,swe_arch,dataops", "prereqs": ["workflow-build"],  "pos": (10, -2)},
+    {"slug": "docgen-portfolio","title": "DocGen Portfolio",          "tier": 2, "role_filter": "isso,issm,swe_arch,dataops", "prereqs": ["docgen-sessions"], "pos": (11, -2)},
+    # Agent Readiness branch (after stig-agent)
+    {"slug": "readiness-check", "title": "11-Pillar Readiness",     "tier": 2, "role_filter": "secops_eng,isso,swe_arch,devops", "prereqs": ["stig-agent"],      "pos": (9, -1)},
+    {"slug": "readiness-ci",    "title": "Readiness CI Gate",        "tier": 2, "role_filter": "secops_eng,isso,swe_arch,devops", "prereqs": ["readiness-check"], "pos": (10, -1)},
+    # AI Governance branch (after ato-ai)
+    {"slug": "ai-transparency",   "title": "AI Transparency",    "tier": 2, "role_filter": "ciso,issm,leadership,pm", "prereqs": ["ato-ai"],          "pos": (9, 5)},
+    {"slug": "ai-accountability", "title": "AI Accountability",  "tier": 2, "role_filter": "ciso,issm,leadership,pm", "prereqs": ["ai-transparency"], "pos": (10, 5)},
+    {"slug": "gov-intake",        "title": "Governance Intake",  "tier": 2, "role_filter": "ciso,issm,leadership,pm", "prereqs": ["ai-accountability"],"pos": (11, 5)},
 ]
 
 # ---------------------------------------------------------------------------

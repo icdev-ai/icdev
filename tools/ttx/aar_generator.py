@@ -179,6 +179,82 @@ def _collect_aadc_scores(conn, session_id: int, injects, teams: dict) -> list[di
     return results
 
 
+def generate_aar_via_docgen(session_data: dict, tournament_data: dict | None = None) -> dict:
+    """Generate AAR via DocGen workflow engine with fallback to direct generation.
+
+    Returns: {"content": str, "artifact_id": str | None, "via_docgen": bool}
+    """
+    import time
+    try:
+        import requests
+        base = "http://localhost:5050"
+
+        session_resp = requests.post(
+            f"{base}/api/docgen/sessions",
+            json={
+                "doc_type": "aar",
+                "source": {
+                    "type": "ttx_session",
+                    "session_id": session_data.get("session_id"),
+                    "scenario_name": session_data.get("scenario_name", "Unknown"),
+                    "teams": session_data.get("teams", []),
+                    "inject_count": session_data.get("inject_count", 0),
+                    "duration_minutes": session_data.get("duration_minutes", 60),
+                },
+                "template": "mil_aar_std",
+                "il_level": "IL4",
+            },
+            timeout=10,
+        )
+        if session_resp.status_code not in (200, 201):
+            raise ValueError(f"DocGen session create failed: {session_resp.status_code}")
+
+        docgen_session_id = session_resp.json().get("session_id")
+
+        workflow_resp = requests.post(
+            f"{base}/api/docgen/workflow/run",
+            json={
+                "session_id": docgen_session_id,
+                "workflow_config": {
+                    "doc_type": "aar",
+                    "sections": [
+                        "executive_summary", "timeline",
+                        "team_performance", "lessons_learned", "recommendations",
+                    ],
+                    "parallel": True,
+                    "template": "mil_aar_std",
+                },
+            },
+            timeout=10,
+        )
+        if workflow_resp.status_code not in (200, 201):
+            raise ValueError(f"DocGen workflow start failed: {workflow_resp.status_code}")
+
+        workflow_id = workflow_resp.json().get("workflow_id")
+
+        for _ in range(12):
+            time.sleep(5)
+            status_resp = requests.get(
+                f"{base}/api/docgen/workflow/{workflow_id}/status", timeout=5
+            )
+            if status_resp.json().get("status") in ("complete", "review"):
+                break
+
+        doc_resp = requests.get(
+            f"{base}/api/docgen/sessions/{docgen_session_id}/document", timeout=10
+        )
+        content = doc_resp.json().get("content", "")
+        artifact_id = doc_resp.json().get("artifact_id")
+
+        return {"content": content, "artifact_id": artifact_id, "via_docgen": True}
+
+    except Exception as exc:
+        log.info("DocGen AAR unavailable (%s); using direct generation", exc)
+        session_id = session_data.get("session_id")
+        content = generate_aar(session_id) if session_id else "# AAR\n*No session ID provided.*"
+        return {"content": content, "artifact_id": None, "via_docgen": False}
+
+
 def export_aar_pdf(session_id: int, output_path: Path | None = None) -> Path | None:
     """Export AAR as PDF using weasyprint if available."""
     try:
