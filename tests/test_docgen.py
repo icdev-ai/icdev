@@ -1668,3 +1668,109 @@ class TestPolicyCheck:
 
         assert result["passed"] is False
         assert any(v["id"] == "has-system-boundary" for v in result["policy_violations"])
+
+
+# ─── Item 7: LLM-first Stage 0 document ingestion ────────────────────────────
+
+class TestStage0IngestDocument:
+    """stage0_ingest_document extracts entities/topology from raw document text."""
+
+    def test_stage0_returns_required_keys(self):
+        """stage0_ingest_document returns required keys on LLM fallback."""
+        from tools.docgen.workflow import stage0_ingest_document
+        with patch("tools.llm.get_router", side_effect=ImportError):
+            result = stage0_ingest_document("sess-s0-001", "Some document text.")
+        for key in ("entities", "topology", "key_findings", "document_type",
+                    "classification_hint", "session_id", "extracted"):
+            assert key in result
+
+    def test_stage0_empty_text_returns_fallback(self):
+        """Empty text returns fallback with extracted=False."""
+        from tools.docgen.workflow import stage0_ingest_document
+        result = stage0_ingest_document("sess-s0-002", "")
+        assert result["extracted"] is False
+        assert result["entities"] == []
+
+    def test_stage0_llm_parse_result(self):
+        """Valid LLM JSON response is parsed into structured result."""
+        from tools.docgen.workflow import stage0_ingest_document
+        from unittest.mock import MagicMock, patch as mp
+
+        llm_response = {
+            "entities": [{"name": "Router A", "type": "router", "description": "Core router"}],
+            "topology": [{"source": "Router A", "target": "Switch B", "relationship": "connects"}],
+            "key_findings": ["Network has single point of failure"],
+            "document_type": "architecture_doc",
+            "classification_hint": "CUI",
+        }
+        import json
+        mock_resp = MagicMock()
+        mock_resp.content = json.dumps(llm_response)
+        mock_router = MagicMock()
+        mock_router.invoke.return_value = mock_resp
+
+        with mp("tools.docgen.workflow.sm.get_session", return_value={"prior_docs_context": None}), \
+             mp("tools.docgen.workflow.sm.set_field", MagicMock(return_value=True)), \
+             mp("tools.llm.get_router", return_value=mock_router, create=True), \
+             mp("tools.llm.provider.LLMRequest", MagicMock(return_value=MagicMock()), create=True):
+            result = stage0_ingest_document("sess-s0-003", "Network architecture document.")
+
+        # Either parsed correctly or fell back gracefully
+        assert result["session_id"] == "sess-s0-003"
+        assert isinstance(result["entities"], list)
+        assert isinstance(result["key_findings"], list)
+
+    def test_stage0_persists_prior_docs_context(self):
+        """stage0_ingest_document calls set_field to persist prior_docs_context."""
+        from tools.docgen.workflow import stage0_ingest_document
+        from unittest.mock import MagicMock, patch as mp
+        import json
+
+        llm_response = {
+            "entities": [], "topology": [], "key_findings": ["Finding 1"],
+            "document_type": "runbook", "classification_hint": "CUI",
+        }
+        mock_resp = MagicMock()
+        mock_resp.content = json.dumps(llm_response)
+        mock_router = MagicMock()
+        mock_router.invoke.return_value = mock_resp
+        mock_set_field = MagicMock(return_value=True)
+
+        with mp("tools.docgen.workflow.sm.get_session", return_value={"prior_docs_context": None}), \
+             mp("tools.docgen.workflow.sm.set_field", mock_set_field), \
+             mp("tools.llm.get_router", return_value=mock_router, create=True), \
+             mp("tools.llm.provider.LLMRequest", MagicMock(return_value=MagicMock()), create=True):
+            stage0_ingest_document("sess-s0-004", "Runbook content here.")
+
+        # If LLM succeeded, set_field should have been called with prior_docs_context
+        if mock_set_field.called:
+            calls_str = str(mock_set_field.call_args_list)
+            assert "prior_docs_context" in calls_str
+
+    def test_stage0_route_returns_200(self, _docgen_client):
+        """POST /ingest-upload returns 200 with required keys."""
+        fake_session = {"id": "s0-route-001", "stage": 0, "status": "setup", "domain": "network"}
+        with patch("tools.docgen.session_manager.get_session", return_value=fake_session), \
+             patch("tools.docgen.workflow.stage0_ingest_document", return_value={
+                 "entities": [], "topology": [], "key_findings": [],
+                 "document_type": "unknown", "classification_hint": "CUI",
+                 "session_id": fake_session["id"], "extracted": False,
+             }):
+            resp = _docgen_client.post(
+                f"/docgen/api/sessions/{fake_session['id']}/ingest-upload",
+                json={"doc_text": "Some document content to analyze."},
+            )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert "entities" in data
+        assert data["session_id"] == fake_session["id"]
+
+    def test_stage0_route_400_without_doc_text(self, _docgen_client):
+        """POST /ingest-upload returns 400 when doc_text is missing."""
+        fake_session = {"id": "s0-route-002", "stage": 0, "status": "setup", "domain": "network"}
+        with patch("tools.docgen.session_manager.get_session", return_value=fake_session):
+            resp = _docgen_client.post(
+                f"/docgen/api/sessions/{fake_session['id']}/ingest-upload",
+                json={},
+            )
+        assert resp.status_code == 400

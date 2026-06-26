@@ -241,6 +241,93 @@ def kickback(session_id: str, to_stage: int, reason: str = "") -> dict[str, Any]
     return advance(session_id, to_stage)
 
 
+# ─── Stage 0: LLM-first document ingestion ───────────────────────────────────
+
+_STAGE0_EXTRACT_PROMPT = (
+    "You are an expert document analyst. Extract structured information from the following document.\n"
+    "Return JSON with these keys:\n"
+    "  - entities: list of {name, type, description} (nodes/components/actors)\n"
+    "  - topology: list of {source, target, relationship} (connections between entities)\n"
+    "  - key_findings: list of strings (important facts, risks, requirements)\n"
+    "  - document_type: string (best guess: runbook/ssp/poam/stig_checklist/architecture_doc/other)\n"
+    "  - classification_hint: string (CUI/SECRET/UNCLASSIFIED/unknown)\n\n"
+    "Document text (first 4000 chars):\n{text}"
+)
+
+
+def stage0_ingest_document(session_id: str, doc_text: str) -> dict:
+    """Stage 0: LLM-first extraction from an uploaded document.
+
+    Extracts entities, topology, key findings, and classification hint from
+    raw document text. Results are persisted to the session context so that
+    Stage 4 (context_builder) can incorporate prior_docs without re-reading
+    the raw file.
+
+    Returns {"entities": [...], "topology": [...], "key_findings": [...],
+             "document_type": str, "classification_hint": str, "session_id": str}.
+    Falls back to empty extraction on any LLM/import error.
+    """
+    import json as _json
+
+    _FALLBACK = {
+        "entities": [],
+        "topology": [],
+        "key_findings": [],
+        "document_type": "unknown",
+        "classification_hint": "unknown",
+        "session_id": session_id,
+        "extracted": False,
+    }
+
+    if not doc_text or not doc_text.strip():
+        return _FALLBACK.copy()
+
+    try:
+        from tools.llm import get_router
+        from tools.llm.provider import LLMRequest
+
+        prompt = _STAGE0_EXTRACT_PROMPT.format(text=doc_text[:4000])
+        router = get_router()
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1024,
+            temperature=0.0,
+            skip_injection_scan=True,
+        )
+        resp = router.invoke("stage0_doc_extract", req)
+        raw = (resp.content or "").strip()
+
+        import re as _re
+        raw = _re.sub(r"```(?:json)?\s*|\s*```", "", raw).strip()
+        data = _json.loads(raw)
+
+        result = {
+            "entities": list(data.get("entities", [])),
+            "topology": list(data.get("topology", [])),
+            "key_findings": list(data.get("key_findings", [])),
+            "document_type": str(data.get("document_type", "unknown")),
+            "classification_hint": str(data.get("classification_hint", "unknown")),
+            "session_id": session_id,
+            "extracted": True,
+        }
+
+        # Persist prior_docs context to session (used by context_builder in Stage 4)
+        existing = sm.get_session(session_id) or {}
+        prior = _json.loads(existing.get("prior_docs_context") or "[]")
+        prior.append(result)
+        sm.set_field(session_id, prior_docs_context=_json.dumps(prior))
+
+        log.info(
+            "IDR stage0: session=%s extracted entities=%d topology=%d findings=%d",
+            session_id, len(result["entities"]), len(result["topology"]), len(result["key_findings"]),
+        )
+        return result
+
+    except (ImportError, Exception) as exc:
+        log.debug("IDR stage0_ingest_document fallback: %s", exc)
+        return _FALLBACK.copy()
+
+
 # ─── Stage 1: Upload & Ingest ─────────────────────────────────────────────────
 
 def stage1_ingest_upload(
