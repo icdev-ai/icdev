@@ -812,6 +812,10 @@ def analyze_from_file(file_path: str, domain: str = "network") -> dict:
         p.name, fmt,
         sum(len(v) for v in tabs.values() if isinstance(v, list)),
     )
+
+    # Generate remediation diagram from the security/compliance/remediate findings
+    remediation_diagram = generate_remediation_diagram(tabs, domain)
+
     return {
         "analysis_id": analysis_id,
         "tabs": tabs,
@@ -819,7 +823,78 @@ def analyze_from_file(file_path: str, domain: str = "network") -> dict:
         "industry": domain,
         "filename": p.name,
         "format": fmt,
+        "remediation_diagram": remediation_diagram,
     }
+
+
+def generate_remediation_diagram(tabs: dict, domain: str = "network") -> str:
+    """Generate a Mermaid diagram showing the remediated (fixed) network state.
+
+    Extracts security/compliance/remediate findings from *tabs* and asks the LLM
+    to produce a Mermaid flowchart that depicts the network AFTER all findings are
+    applied.  Returns a Mermaid code block string, or an empty string on failure.
+    """
+    # Collect all findings that carry remediation guidance
+    finding_lines: list[str] = []
+    for tab_key in ("security", "compliance", "remediate"):
+        for item in tabs.get(tab_key, []):
+            title = item.get("title") or item.get("component") or ""
+            detail = item.get("detail") or item.get("description") or ""
+            remediation = item.get("remediation") or ""
+            if title or remediation:
+                line = f"- [{tab_key.upper()}] {title}"
+                if remediation:
+                    line += f": {remediation}"
+                elif detail:
+                    line += f": {detail}"
+                finding_lines.append(line)
+
+    if not finding_lines:
+        return ""
+
+    findings_text = "\n".join(finding_lines[:40])  # cap to avoid token overrun
+
+    prompt = (
+        f"Domain: {domain}\n\n"
+        "The following security and compliance findings were detected in a network diagram:\n\n"
+        f"{findings_text}\n\n"
+        "Generate a Mermaid flowchart (```mermaid ... ```) that shows the REMEDIATED network "
+        "state — i.e. what the network should look like AFTER all findings above are resolved. "
+        "Use clear node labels and show trust zones, encryption, and authentication flows. "
+        "Only output the Mermaid code block, nothing else."
+    )
+
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+        import concurrent.futures
+
+        router = LLMRouter()
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1200,
+            temperature=0.1,
+            skip_injection_scan=True,
+        )
+        ex = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        fut = ex.submit(router.invoke, "document_qna", req)
+        try:
+            resp = fut.result(timeout=30)
+            raw = getattr(resp, "content", "") or ""
+            # Extract the mermaid code block if present
+            import re as _re
+            m = _re.search(r"```mermaid\s*([\s\S]+?)```", raw)
+            if m:
+                return "```mermaid\n" + m.group(1).strip() + "\n```"
+            return raw.strip()
+        except concurrent.futures.TimeoutError:
+            logger.warning("generate_remediation_diagram: LLM timeout")
+            return ""
+        finally:
+            ex.shutdown(wait=False)
+    except Exception as exc:
+        logger.warning("generate_remediation_diagram: %s", exc)
+        return ""
 
 
 # ── Findings Persistence ──────────────────────────────────────────────────────
