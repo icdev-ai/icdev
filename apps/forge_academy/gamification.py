@@ -200,10 +200,10 @@ def get_gameday_seed_bonus(user_id: int) -> float:
     Used by GameDay team_runner to give higher-XP learners slightly better starting stats.
     """
     try:
-        from tools.db.storage import get_connection
+        from icdev.tools.db.storage import get_connection
         conn = get_connection()
         row = conn.execute(
-            "SELECT xp FROM fa_users WHERE user_id = ?",
+            "SELECT xp FROM fa_users WHERE id = %s",
             (user_id,),
         ).fetchone()
         if row:

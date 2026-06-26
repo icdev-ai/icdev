@@ -55,6 +55,13 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
+# Ensure the repository root is importable regardless of how this script is
+# invoked (``python tools/workflow/coherence_checker.py`` adds the script
+# directory to sys.path, not the repo root).
+_repo_root = str(PROJECT_ROOT)
+if _repo_root not in sys.path:
+    sys.path.insert(0, _repo_root)
+
 # ---------------------------------------------------------------------------
 # Result types (follows claude_dir_validator.py pattern)
 # ---------------------------------------------------------------------------

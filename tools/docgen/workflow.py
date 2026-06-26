@@ -416,55 +416,85 @@ def stage1_ingest_upload(
 
 # ─── Stage 2: Domain Analysis ─────────────────────────────────────────────────
 
+def _run_analyzer(module_path: str, fn_name: str, file_path: str, domain: str) -> dict[str, Any]:
+    """Import module and call analyzer function with (file_path[, domain]) signature."""
+    import importlib
+
+    mod = importlib.import_module(module_path)
+    fn = getattr(mod, fn_name)
+    import inspect
+    sig = inspect.signature(fn)
+    # analyze_from_file accepts an optional domain kwarg; others take only file_path
+    if len(sig.parameters) >= 2:
+        return fn(file_path, domain)
+    return fn(file_path)
+
+
 def stage2_analyze_upload(
     session_id: str,
     upload_id: str,
     upload: dict[str, Any],
     session: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Run applicable analyzers for one upload. Returns list of idr_analyses rows created."""
+    """Run applicable analyzers for one upload. Returns list of idr_analyses rows created.
+
+    Routing by upload_type:
+      diagram   → profile.diagram_analyzer / diagram_analyzer_fn (analyze_from_file)
+      config    → profile.config_reviewer / config_reviewer_fn (review_config / review_firewall_config)
+      iac       → profile.iac_reviewer / iac_reviewer_fn (review_iac)
+      doc       → LLM entity/procedure extraction + mark analyzed
+      supplement → mark analyzed
+    """
     domain = session.get("domain", "network")
     profile = get_profile(domain)
     file_path = upload.get("file_path", "")
     upload_type = upload.get("upload_type", "")
     analyses_created: list[dict[str, Any]] = []
 
-    # Diagram analysis for diagram uploads
+    if not file_path:
+        log.warning("IDR stage2: upload %s has no file_path, skipping", upload_id)
+        sm.set_upload_status(upload_id, "analyzed")
+        return analyses_created
+
+    # ── Diagram analysis ──────────────────────────────────────────────────────
     if upload_type == "diagram":
         diag_mod_path = profile.get("diagram_analyzer")
-        diag_fn_name = profile.get("diagram_analyzer_fn")
+        diag_fn_name = profile.get("diagram_analyzer_fn", "analyze_from_file")
         if diag_mod_path and diag_fn_name:
             try:
-                import importlib
-                diag_mod = importlib.import_module(diag_mod_path)
-                diag_fn = getattr(diag_mod, diag_fn_name)
-                result = diag_fn(file_path)
-                result_ref_id = result.get("analysis_id") or result.get("id") or str(uuid.uuid4())
-                row = sm.add_analysis(
-                    session_id, upload_id, "diagram_analysis", result_ref_id
-                )
+                result = _run_analyzer(diag_mod_path, diag_fn_name, file_path, domain)
+                result_ref_id = result.get("analysis_id") or str(uuid.uuid4())
+                row = sm.add_analysis(session_id, upload_id, "diagram_analysis", result_ref_id)
                 analyses_created.append(row)
                 sm.set_upload_status(upload_id, "analyzed")
+                log.info(
+                    "IDR diagram analysis complete: upload=%s ref=%s",
+                    upload_id, result_ref_id,
+                )
             except Exception:
                 log.exception("IDR diagram analysis failed: upload=%s", upload_id)
                 sm.set_upload_status(upload_id, "error", error_msg="diagram_analysis failed")
+        else:
+            log.debug("No diagram analyzer configured for domain=%s", domain)
+            sm.set_upload_status(upload_id, "analyzed")
 
-    # Config review for config uploads
+    # ── Config review ─────────────────────────────────────────────────────────
     elif upload_type == "config":
         cfg_mod_path = profile.get("config_reviewer")
         cfg_fn_name = profile.get("config_reviewer_fn")
         if cfg_mod_path and cfg_fn_name:
             try:
-                import importlib
-                cfg_mod = importlib.import_module(cfg_mod_path)
-                cfg_fn = getattr(cfg_mod, cfg_fn_name)
-                result = cfg_fn(file_path)
-                result_ref_id = result.get("review_id") or result.get("id") or str(uuid.uuid4())
-                row = sm.add_analysis(
-                    session_id, upload_id, "config_review", result_ref_id
-                )
+                result = _run_analyzer(cfg_mod_path, cfg_fn_name, file_path, domain)
+                result_ref_id = result.get("review_id") or str(uuid.uuid4())
+                row = sm.add_analysis(session_id, upload_id, "config_review", result_ref_id)
                 analyses_created.append(row)
                 sm.set_upload_status(upload_id, "analyzed")
+                log.info(
+                    "IDR config review complete: upload=%s vendor=%s findings=%d",
+                    upload_id,
+                    result.get("vendor", "?"),
+                    len(result.get("security_compliance", [])),
+                )
             except Exception:
                 log.exception("IDR config review failed: upload=%s", upload_id)
                 sm.set_upload_status(upload_id, "error", error_msg="config_review failed")
@@ -472,22 +502,23 @@ def stage2_analyze_upload(
             log.debug("No config reviewer configured for domain=%s", domain)
             sm.set_upload_status(upload_id, "analyzed")
 
-    # IaC review for iac uploads
+    # ── IaC review ────────────────────────────────────────────────────────────
     elif upload_type == "iac":
         iac_mod_path = profile.get("iac_reviewer")
         iac_fn_name = profile.get("iac_reviewer_fn")
         if iac_mod_path and iac_fn_name:
             try:
-                import importlib
-                iac_mod = importlib.import_module(iac_mod_path)
-                iac_fn = getattr(iac_mod, iac_fn_name)
-                result = iac_fn(file_path)
-                result_ref_id = result.get("review_id") or result.get("id") or str(uuid.uuid4())
-                row = sm.add_analysis(
-                    session_id, upload_id, "iac_review", result_ref_id
-                )
+                result = _run_analyzer(iac_mod_path, iac_fn_name, file_path, domain)
+                result_ref_id = result.get("review_id") or str(uuid.uuid4())
+                row = sm.add_analysis(session_id, upload_id, "iac_review", result_ref_id)
                 analyses_created.append(row)
                 sm.set_upload_status(upload_id, "analyzed")
+                log.info(
+                    "IDR IaC review complete: upload=%s iac_type=%s risk=%s",
+                    upload_id,
+                    result.get("iac_type", "?"),
+                    result.get("risk_score", "?"),
+                )
             except Exception:
                 log.exception("IDR IaC review failed: upload=%s", upload_id)
                 sm.set_upload_status(upload_id, "error", error_msg="iac_review failed")
@@ -495,8 +526,24 @@ def stage2_analyze_upload(
             log.debug("No IaC reviewer configured for domain=%s", domain)
             sm.set_upload_status(upload_id, "analyzed")
 
+    # ── Doc / supplement — LLM entity extraction ──────────────────────────────
+    elif upload_type in ("doc", "supplement"):
+        try:
+            from tools.docgen.context_builder import _extract_text_from_file
+            doc_text = _extract_text_from_file(file_path)
+            if doc_text.strip():
+                extraction = stage0_ingest_document(session_id, doc_text[:8000])
+                entity_count = len(extraction.get("entities", []))
+                finding_count = len(extraction.get("key_findings", []))
+                log.info(
+                    "IDR doc extraction: upload=%s entities=%d findings=%d",
+                    upload_id, entity_count, finding_count,
+                )
+        except Exception as exc:
+            log.warning("IDR doc extraction skipped for %s: %s", upload_id, exc)
+        sm.set_upload_status(upload_id, "analyzed")
+
     else:
-        # doc / supplement — mark analyzed (DIC already ingested it)
         sm.set_upload_status(upload_id, "analyzed")
 
     return analyses_created
