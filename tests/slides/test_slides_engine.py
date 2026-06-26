@@ -286,61 +286,50 @@ class TestDeckEngine:
 # ── Graphics Generator ──────────────────────────────────────────────────────────
 
 class TestGraphicsGenerator:
-    def test_matplotlib_fallback_creates_png(self, tmp_path):
+    def test_generate_creates_native_asset(self, tmp_path):
+        """GraphicsGenerator.generate now delegates to the unified native dispatcher."""
         from tools.slides.graphics_generator import GraphicsGenerator
-        gen = GraphicsGenerator(output_dir=tmp_path)
-        path = gen._matplotlib_fallback("Test Slide", ["Bullet one", "Bullet two"], theme="midnight_executive")
+        with patch.dict(os.environ, {"SLIDES_IMAGE_PROVIDER": "slides_svg"}, clear=False):
+            gen = GraphicsGenerator(output_dir=tmp_path)
+            path = gen.generate(
+                title="Test Slide",
+                bullets=["Bullet one", "Bullet two"],
+                visual_context="a professional diagram",
+                theme="midnight_executive",
+                tone="professional",
+            )
         assert path is not None
         assert Path(path).exists()
-        assert Path(path).suffix == ".png"
+        assert Path(path).suffix in (".png", ".svg")
 
-    def test_save_image_wraps_raw_rgba_bytes(self, tmp_path):
+    def test_disabled_returns_none(self, tmp_path):
         from tools.slides.graphics_generator import GraphicsGenerator
-        gen = GraphicsGenerator(output_dir=tmp_path)
-        # Fake RGBA bytes (not a PNG)
-        from PIL import Image as PILImage
-        from io import BytesIO
-        img = PILImage.new("RGBA", (8, 8), (255, 0, 0, 255))
-        buf = BytesIO()
-        img.save(buf, format="PNG")
-        png_bytes = buf.getvalue()
-        path = gen._save_image(png_bytes, "RGBATest")
-        assert Path(path).exists()
-        assert Path(path).read_bytes().startswith(b"\x89PNG")
+        with patch.dict(os.environ, {"SLIDES_IMAGE_ENABLED": "false"}, clear=False):
+            gen = GraphicsGenerator(output_dir=tmp_path)
+            assert gen.generate("Title", []) is None
 
-    def test_provider_list_includes_new_backends(self):
+    def test_provider_list_includes_native_backends(self):
         from tools.slides.constants import IMAGE_PROVIDERS
-        assert "gpt_image_2" in IMAGE_PROVIDERS
-        assert "imagen_4" in IMAGE_PROVIDERS
         assert "matplotlib" in IMAGE_PROVIDERS
+        assert "ollama_cloud" in IMAGE_PROVIDERS
 
-    def test_gpt_image_2_request_shape(self, tmp_path):
-        """Verify GPT-Image-2 request matches OpenAI Images API shape."""
+    def test_cloud_providers_fall_back_in_air_gap_mode(self, tmp_path):
+        """A cloud-only provider env should fall back to native assets in air-gap mode."""
         from tools.slides.graphics_generator import GraphicsGenerator
-        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False):
-            gen = GraphicsGenerator(output_dir=tmp_path)
-            gen._provider = "gpt_image_2"
-            captured: dict = {}
-            class _FakeResp:
-                def __enter__(self): return self
-                def __exit__(self, *a): pass
-                def read(self): return json.dumps({"data": [{"b64_json": "aGVsbG8="}]}).encode()
-            def _fake_urlopen(req, **_kw):
-                captured["data"] = json.loads(req.data)
-                captured["headers"] = dict(req.header_items())
-                return _FakeResp()
-            with patch("urllib.request.urlopen", _fake_urlopen):
-                bytes_out = gen._call_image_api("a professional diagram", "Title")
-            assert bytes_out == b"hello"
-            assert captured["data"]["model"] == "gpt-image-2"
-            assert captured["data"]["size"] == "1024x576"
-            assert captured["data"]["response_format"] == "b64_json"
-            assert captured["data"]["quality"] == "standard"
-            assert "Authorization" in captured["headers"]
+        from tools.viz.asset_generator import is_air_gap_media_mode
 
-    def test_imagen_4_no_key_returns_none(self, tmp_path):
-        from tools.slides.graphics_generator import GraphicsGenerator
-        with patch.dict(os.environ, {"GOOGLE_API_KEY": ""}, clear=False):
+        env = {
+            "SLIDES_IMAGE_PROVIDER": "gpt_image_2",
+            "ICDEV_STORAGE_BACKEND": "sqlite",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            assert is_air_gap_media_mode() is True
             gen = GraphicsGenerator(output_dir=tmp_path)
-            gen._provider = "imagen_4"
-            assert gen._call_image_api("prompt", "Title") is None
+            path = gen.generate(
+                title="Air Gap Slide",
+                bullets=["Point one"],
+                visual_context="a diagram",
+                theme="midnight_executive",
+            )
+        assert path is not None
+        assert Path(path).exists()
