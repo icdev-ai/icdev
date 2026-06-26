@@ -1577,6 +1577,120 @@ CREATE TABLE IF NOT EXISTS idr_artifacts (
     tenant_id       TEXT,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
+-- PNA: Predictive Network Analytics (migration 222)
+CREATE TABLE IF NOT EXISTS nc_eol_predictions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_name TEXT NOT NULL,
+    vendor TEXT, model TEXT, os_version TEXT,
+    eos_date TEXT, eol_date TEXT, days_remaining INTEGER,
+    has_active_cves INTEGER NOT NULL DEFAULT 0,
+    active_cve_count INTEGER NOT NULL DEFAULT 0,
+    risk_score REAL NOT NULL DEFAULT 0.0,
+    risk_tier TEXT NOT NULL DEFAULT 'medium',
+    nqe_source TEXT NOT NULL DEFAULT 'local_mapping',
+    model_version TEXT NOT NULL DEFAULT '1.0',
+    predicted_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS nc_bgp_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_key TEXT NOT NULL,
+    device_name TEXT NOT NULL,
+    peer_ip TEXT NOT NULL,
+    peer_asn INTEGER,
+    event_type TEXT NOT NULL DEFAULT 'flap',
+    event_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS nc_bgp_predictions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_key TEXT NOT NULL,
+    device_name TEXT NOT NULL,
+    peer_ip TEXT NOT NULL,
+    peer_asn INTEGER,
+    stability_score REAL NOT NULL DEFAULT 1.0,
+    flap_count_24h INTEGER NOT NULL DEFAULT 0,
+    flap_count_7d INTEGER NOT NULL DEFAULT 0,
+    flap_risk TEXT NOT NULL DEFAULT 'low',
+    route_count INTEGER,
+    session_state TEXT,
+    predicted_outage_hrs REAL,
+    confidence REAL NOT NULL DEFAULT 0.4,
+    model_version TEXT NOT NULL DEFAULT '1.0',
+    predicted_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS nc_compliance_drift (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_name TEXT NOT NULL,
+    framework TEXT NOT NULL DEFAULT 'DISA_STIG',
+    last_compliant_score REAL,
+    current_score REAL NOT NULL DEFAULT 0.0,
+    drift_delta REAL NOT NULL DEFAULT 0.0,
+    drift_rate_per_day REAL,
+    failing_controls INTEGER NOT NULL DEFAULT 0,
+    critical_controls_failing INTEGER NOT NULL DEFAULT 0,
+    predicted_fail_date TEXT,
+    days_to_failure INTEGER,
+    risk_score REAL NOT NULL DEFAULT 0.0,
+    risk_tier TEXT NOT NULL DEFAULT 'medium',
+    assessed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS nc_capacity_predictions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_name TEXT NOT NULL,
+    interface_name TEXT NOT NULL,
+    interface_id TEXT,
+    current_util_pct REAL NOT NULL DEFAULT 0.0,
+    peak_util_pct REAL,
+    avg_util_pct_7d REAL,
+    trend_slope REAL NOT NULL DEFAULT 0.0,
+    days_to_saturation INTEGER,
+    saturation_date TEXT,
+    confidence REAL NOT NULL DEFAULT 0.4,
+    risk_score REAL NOT NULL DEFAULT 0.0,
+    risk_tier TEXT NOT NULL DEFAULT 'low',
+    nqe_source TEXT NOT NULL DEFAULT 'local_mapping',
+    model_version TEXT NOT NULL DEFAULT '1.0',
+    predicted_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS nc_change_risk (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    change_request_id TEXT NOT NULL DEFAULT 'auto',
+    device_name TEXT NOT NULL,
+    action_type TEXT,
+    failure_probability REAL NOT NULL DEFAULT 0.0,
+    blast_radius_size INTEGER NOT NULL DEFAULT 0,
+    concurrent_change_count INTEGER NOT NULL DEFAULT 0,
+    maintenance_window_compliant INTEGER NOT NULL DEFAULT 1,
+    device_criticality INTEGER NOT NULL DEFAULT 3,
+    risk_factors_json TEXT,
+    risk_tier TEXT NOT NULL DEFAULT 'low',
+    simulation_verdict TEXT,
+    model_version TEXT NOT NULL DEFAULT '1.0',
+    predicted_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS nc_supply_chain_risk (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    vendor TEXT NOT NULL,
+    device_count INTEGER NOT NULL DEFAULT 0,
+    model_count INTEGER NOT NULL DEFAULT 0,
+    cve_count INTEGER NOT NULL DEFAULT 0,
+    kev_count INTEGER NOT NULL DEFAULT 0,
+    critical_cve_count INTEGER NOT NULL DEFAULT 0,
+    high_cve_count INTEGER NOT NULL DEFAULT 0,
+    risk_score REAL NOT NULL DEFAULT 0.0,
+    vendor_risk_rating TEXT NOT NULL DEFAULT 'low',
+    top_cves_json TEXT,
+    nqe_device_sample_json TEXT,
+    model_version TEXT NOT NULL DEFAULT '1.0',
+    assessed_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
