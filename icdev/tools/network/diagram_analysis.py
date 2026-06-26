@@ -677,6 +677,134 @@ def run_analysis(upload_id: str, industry: str, conn) -> dict:
     return {"tabs": tabs, "cloud_context": cloud_context, "industry": industry}
 
 
+# ── IDR Entry Point (file-path based, no NDC DB required) ───────────────────
+
+def analyze_from_file(file_path: str, domain: str = "network") -> dict:
+    """IDR Stage 2 entry point: run diagram analysis from a raw file path.
+
+    Unlike run_analysis() (which requires an NDC nc_diagram_uploads record),
+    this function works directly with a file on disk.
+    Returns: {analysis_id, tabs, cloud_context, industry, filename}
+    """
+    analysis_id = str(uuid.uuid4())
+    p = Path(file_path)
+    if not p.is_file():
+        logger.warning("analyze_from_file: file not found: %s", file_path)
+        return {
+            "analysis_id": analysis_id,
+            "error": f"File not found: {file_path}",
+            "tabs": {},
+            "cloud_context": {},
+            "industry": domain,
+        }
+
+    file_bytes = p.read_bytes()
+    fmt = detect_format(p.name, file_bytes)
+
+    # Build a minimal upload-like dict for reuse of helpers
+    _upload_stub = {
+        "id": analysis_id,
+        "file_path": str(p),
+        "filename": p.name,
+        "format": fmt,
+    }
+
+    images: list[bytes] = []
+    graph_json = None
+    extra_context = ""
+
+    try:
+        if fmt in ("png", "jpg"):
+            images = [file_bytes]
+        elif fmt == "pdf":
+            images = extract_images_from_pdf(p)
+            if not images:
+                extra_context = extract_text_from_pdf(p)
+        elif fmt == "drawio":
+            parsed = parse_drawio_file(p)
+            graph_json = parsed["graph"]
+            images = parsed["images"]
+        elif fmt == "docx":
+            images = extract_images_from_docx(p)
+    except Exception as exc:
+        logger.warning("analyze_from_file image extraction failed: %s", exc)
+
+    vision_text = ""
+    if images:
+        try:
+            from tools.llm.router import LLMRouter
+            from tools.llm.provider import LLMRequest
+
+            router = LLMRouter()
+            quick_content = [
+                {"type": "text", "text": "Describe all network components, zones, and cloud providers visible in this diagram."},
+                {"type": "image_url", "image_url": {"url": _bytes_to_data_uri(images[0])}},
+            ]
+            quick_req = LLMRequest(
+                messages=[{"role": "user", "content": quick_content}],
+                max_tokens=600,
+                temperature=0.1,
+                skip_injection_scan=True,
+            )
+            resp = router.invoke("ndc_diagram_quick_scan", quick_req)
+            vision_text = getattr(resp, "content", "") or ""
+        except Exception as exc:
+            logger.warning("analyze_from_file quick vision scan failed: %s", exc)
+
+    if graph_json:
+        node_labels = " ".join((n.get("label") or "") for n in graph_json.get("nodes", []))
+        vision_text += " " + node_labels
+
+    cloud_context = detect_cloud_providers(graph_json, vision_text)
+    system_prompt = build_industry_prompt(domain, cloud_context)
+
+    tabs: dict = {}
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        router = LLMRouter()
+        all_images = images or []
+        chunks = [
+            all_images[i:i + _MAX_IMAGES_PER_CALL]
+            for i in range(0, max(len(all_images), 1), _MAX_IMAGES_PER_CALL)
+        ] or [[]]
+        total = len(chunks)
+        batch_results = []
+        for idx, chunk in enumerate(chunks):
+            ctx = extra_context + (f"\nBatch {idx + 1}/{total}." if total > 1 else "")
+            msgs = build_vision_messages(chunk, graph_json if idx == 0 else None, system_prompt, ctx)
+            budget = max(_TOKEN_BUDGET_BASE, _TOKEN_BUDGET_PER_IMAGE * max(len(chunk), 1))
+            req = LLMRequest(
+                messages=msgs,
+                max_tokens=budget,
+                temperature=0.2,
+                skip_injection_scan=True,
+            )
+            resp = router.invoke("ndc_diagram_analysis", req)
+            raw = getattr(resp, "content", "") or ""
+            batch_results.append(parse_analysis_response(raw))
+
+        tabs = _merge_tab_results(batch_results) if total > 1 else (batch_results[0] if batch_results else {})
+    except Exception as exc:
+        logger.error("analyze_from_file LLM call failed: %s", exc)
+        tabs = _fallback_analysis(_upload_stub, domain, cloud_context)
+
+    logger.info(
+        "analyze_from_file: file=%s fmt=%s findings=%d",
+        p.name, fmt,
+        sum(len(v) for v in tabs.values() if isinstance(v, list)),
+    )
+    return {
+        "analysis_id": analysis_id,
+        "tabs": tabs,
+        "cloud_context": cloud_context,
+        "industry": domain,
+        "filename": p.name,
+        "format": fmt,
+    }
+
+
 # ── Findings Persistence ──────────────────────────────────────────────────────
 
 def save_findings(conn, analysis_id: str, tabs: dict) -> None:

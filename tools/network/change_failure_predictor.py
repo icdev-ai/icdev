@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import json
-import logging
 from datetime import datetime, timezone
 from typing import Optional
 
+from tools.logging.icdev_logger import get_logger
 from tools.network.db.init_db import get_connection
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 _HITL_THRESHOLD = 0.65
 _AUTO_APPROVE_THRESHOLD = 0.25

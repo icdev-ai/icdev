@@ -207,7 +207,7 @@ def _apply_migrations(conn) -> None:
                     pass
         if is_pg:
             conn.execute(
-                "INSERT INTO slides_schema_migrations (version) VALUES (?)",
+                "INSERT INTO slides_schema_migrations (version) VALUES (%s)",
                 (version,),
             )
         current = version

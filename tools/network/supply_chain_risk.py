@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import json
-import logging
 from datetime import datetime, timezone
 
+from tools.logging.icdev_logger import get_logger
 from tools.network.db.init_db import get_connection
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 _NQE_DEVICES_QUERY = (
     "foreach device in network.devices select { "

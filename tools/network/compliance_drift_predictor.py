@@ -1,12 +1,12 @@
 """CUI // SP-CTI -- Compliance Drift Predictor (PNA module -- STIG-based)"""
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timezone
 
+from tools.logging.icdev_logger import get_logger
 from tools.network.db.init_db import get_connection
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 _FAIL_THRESHOLD = 0.70
 _NQE_QUERY = (

@@ -1,12 +1,12 @@
 ﻿"""CUI // SP-CTI -- Network Capacity Exhaustion Predictor (PNA module)"""
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timedelta, timezone
 
+from tools.logging.icdev_logger import get_logger
 from tools.network.db.init_db import get_connection
 
-log = logging.getLogger(__name__)
+log = get_logger(__name__)
 
 _NQE_INTERFACE_QUERY = (
     "foreach iface in network.interfaces select { "

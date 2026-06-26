@@ -1035,3 +1035,10 @@
 |------|------|-------------|-------|--------|
 | Nova Hook | tools\gameday\nova_hook.py | Auto-registered: gameday/nova_hook.py | --json | JSON |
 | Viz Reporter | tools\gameday\viz_reporter.py | Auto-registered: gameday/viz_reporter.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Iac Review | tools\devops\iac_review.py | Auto-registered: devops/iac_review.py | --json | JSON |
+| Firewall Config Review | tools\security\firewall_config_review.py | Auto-registered: security/firewall_config_review.py | --json | JSON |

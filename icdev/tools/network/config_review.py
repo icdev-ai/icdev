@@ -11,6 +11,7 @@ from CLI/headless workflows.
 from __future__ import annotations
 
 import json
+import pathlib
 import re
 import uuid
 import zlib
@@ -19,6 +20,82 @@ from typing import Any
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("icdev.network.config_review")
+
+_MAX_CONFIG_CHARS = 20_000  # cap config text to avoid LLM context explosion
+
+
+def _extract_hostname(config_text: str, vendor: str) -> str:
+    """Best-effort hostname extraction from config text."""
+    for pattern in (r"^hostname\s+(\S+)", r"^set system host-name\s+(\S+)"):
+        m = re.search(pattern, config_text, re.MULTILINE | re.IGNORECASE)
+        if m:
+            return m.group(1)
+    return ""
+
+
+def _call_llm_for_review(prompt: str) -> str:
+    """Call LLM router for config review; returns raw text or empty string."""
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        router = LLMRouter()
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2500,
+            temperature=0.1,
+            skip_injection_scan=True,
+        )
+        resp = router.invoke("ndc_config_review", req)
+        return getattr(resp, "content", "") or ""
+    except Exception as exc:
+        logger.warning("config_review LLM call failed: %s", exc)
+        return ""
+
+
+def review_config(file_path: str, role_key: str = "network_engineer") -> dict[str, Any]:
+    """Read a device config file and run a full LLM-based review.
+
+    Called by IDR Stage 2 for 'config' type uploads (network domain).
+    Returns a dict compatible with what workflow.py expects:
+        {review_id, vendor, hostname, security_compliance, optimization,
+         remediation, sample_template, explanation, topology_graph}
+    """
+    review_id = str(uuid.uuid4())
+
+    try:
+        config_text = pathlib.Path(file_path).read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:
+        logger.warning("review_config: cannot read %s: %s", file_path, exc)
+        result = _fallback_review(f"Cannot read file: {exc}", "unknown")
+        result["review_id"] = review_id
+        result["vendor"] = "unknown"
+        result["hostname"] = ""
+        return result
+
+    vendor = _detect_vendor(config_text)
+    hostname = _extract_hostname(config_text, vendor)
+
+    prompt = build_llm_prompt(
+        role_key=role_key,
+        config_text=config_text[:_MAX_CONFIG_CHARS],
+        vendor=vendor,
+        answers={},
+        hostname=hostname,
+    )
+
+    raw = _call_llm_for_review(prompt)
+    parsed = parse_review_response(raw, vendor)
+
+    logger.info(
+        "review_config: file=%s vendor=%s hostname=%s findings=%d",
+        pathlib.Path(file_path).name,
+        vendor,
+        hostname,
+        len(parsed.get("security_compliance", [])),
+    )
+
+    return {"review_id": review_id, "vendor": vendor, "hostname": hostname, **parsed}
 
 
 # Import constants lazily to avoid circular imports at module load time.
@@ -251,16 +328,10 @@ INSTRUCTIONS:
 
 
 def _repair_truncated_json(text: str) -> str:
-    """Close any open strings, arrays, and objects left by a truncated LLM response.
-
-    Walks the string character by character tracking open state so we can append
-    the minimum suffix that makes the JSON syntactically complete.  Not a full
-    JSON validator — just good enough to turn a cut-off response into something
-    json.loads can accept.
-    """
+    """Close any open strings, arrays, and objects left by a truncated LLM response."""
     in_string = False
     escape_next = False
-    depth_stack: list[str] = []  # '{' or '[' for each open container
+    depth_stack: list[str] = []
 
     for ch in text:
         if escape_next:
@@ -285,8 +356,7 @@ def _repair_truncated_json(text: str) -> str:
 
     suffix = ""
     if in_string:
-        suffix += '"'  # close the open string
-    # Close any open containers in reverse order.
+        suffix += '"'
     for opener in reversed(depth_stack):
         suffix += "}" if opener == "{" else "]"
     return text + suffix
@@ -295,16 +365,12 @@ def _repair_truncated_json(text: str) -> str:
 def parse_review_response(raw_text: str, vendor: str) -> dict[str, Any]:
     """Parse LLM response into the canonical review result structure.
 
-    If the response is not valid JSON or is missing required keys, fill in
-    deterministic fallbacks so the UI never crashes.
-
     Recovery order:
     1. Direct json.loads on extracted JSON block.
     2. Repair truncated JSON (close open strings/arrays/objects) and retry.
     3. Deterministic fallback.
     """
     content = raw_text or ""
-    # Prefer fenced code blocks; fall back to the largest {...} span.
     fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL)
     json_match = fence_match or re.search(r"\{.*\}", content, re.DOTALL)
     if not json_match:
@@ -312,14 +378,12 @@ def parse_review_response(raw_text: str, vendor: str) -> dict[str, Any]:
 
     candidate = fence_match.group(1) if fence_match else json_match.group()
 
-    data: dict[str, Any] | None = None
-    # Pass 1 — try as-is.
+    data: dict | None = None
     try:
         data = json.loads(candidate)
     except json.JSONDecodeError as exc:
         logger.warning("config_review JSON parse error (will attempt repair): %s", exc)
 
-    # Pass 2 — repair truncated output and retry.
     if data is None:
         try:
             data = json.loads(_repair_truncated_json(candidate))
@@ -328,7 +392,6 @@ def parse_review_response(raw_text: str, vendor: str) -> dict[str, Any]:
             logger.warning("config_review JSON repair failed: %s", exc2)
             return _fallback_review(f"JSON parse error: {exc2}", vendor)
 
-    # Normalize each section to a list.
     result = {
         "security_compliance": _as_list(data.get("security_compliance")),
         "optimization": _as_list(data.get("optimization")),
