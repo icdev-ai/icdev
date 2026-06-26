@@ -14106,7 +14106,7 @@ Planning rules:
 
         try:
             import openpyxl
-            from openpyxl.styles import Font, PatternFill, Alignment
+            from openpyxl.styles import Font, PatternFill
 
             wb = openpyxl.Workbook()
             wb.remove(wb.active)  # drop default blank sheet

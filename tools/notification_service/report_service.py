@@ -666,7 +666,6 @@ def _compute_regression_threshold(cfg: dict | None) -> float:
                 "  FROM canvas_assessments WHERE score IS NOT NULL"
                 ")"
             ).fetchone()
-            mean_s = float((row or {}).get("mean_s", 0.0) or 0.0)
             var_s = float((row or {}).get("var_s", 0.0) or 0.0)
             n = int((row or {}).get("n", 0) or 0)
             if n < min_samples:

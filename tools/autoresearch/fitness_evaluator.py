@@ -350,14 +350,23 @@ def evaluate_all(**kwargs) -> dict:
     }
 
 
+_DOMAIN_METRIC_NAMES: dict[str, str] = {
+    "compliance": "gate_pass_rate",
+    "code_quality": "maintainability_score",
+    "security": "inverse_vulnerability_density",
+    "rag_quality": "retrieval_relevance_at_5",
+    "pulse_quality": "writeguard_score",
+    "skill_quality": "assertion_pass_rate",
+    "marketplace_asset_quality": "marketplace_quality_score",
+    "proposal_quality": "proposal_quality_score",
+}
+
+
 def list_domains() -> dict:
-    """List available evaluation domains."""
+    """List available evaluation domains without invoking heavy tool pipelines."""
     return {
         "domains": [
-            {
-                "name": name,
-                "metric_name": evaluate(name).get("metric_name", "unknown"),
-            }
+            {"name": name, "metric_name": _DOMAIN_METRIC_NAMES.get(name, "unknown")}
             for name in EVALUATORS
         ],
         "count": len(EVALUATORS),

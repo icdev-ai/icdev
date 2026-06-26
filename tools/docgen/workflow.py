@@ -1041,6 +1041,12 @@ def _try_export_html(session_id, text, title, out_dir, classification, artifacts
         cls_upper = (classification or "CUI").upper()
         banner_style = _CLS_BANNER_STYLES.get(cls_upper, _CLS_BANNER_STYLES["CUI"])
         banner_css = f"{banner_style};padding:6px 12px;font-size:13px;font-weight:bold;text-align:center;letter-spacing:1px;"
+        try:
+            import markdown as _md
+            body_html = _md.markdown(text, extensions=["tables", "fenced_code"])
+        except Exception:
+            import html as _html
+            body_html = f"<pre>{_html.escape(text)}</pre>"
         html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1050,15 +1056,22 @@ def _try_export_html(session_id, text, title, out_dir, classification, artifacts
     body{{font-family:Arial,sans-serif;margin:0;padding:0;background:#fff;color:#111;}}
     .cls-banner{{{banner_css}}}
     .doc-body{{max-width:900px;margin:24px auto;padding:0 24px;}}
+    h1,h2,h3{{border-bottom:1px solid #e0e0e0;padding-bottom:4px;}}
     h1{{font-size:22px;border-bottom:2px solid #ccc;padding-bottom:8px;}}
-    .content{{line-height:1.7;white-space:pre-wrap;}}
+    .content{{line-height:1.7;}}
+    .content table{{border-collapse:collapse;width:100%;}}
+    .content th,.content td{{border:1px solid #ccc;padding:6px 10px;}}
+    .content th{{background:#f0f4f8;}}
+    .content ul,.content ol{{padding-left:20px;}}
+    .content code{{background:#f5f5f5;padding:2px 4px;border-radius:3px;}}
+    .content pre{{background:#f5f5f5;padding:12px;border-radius:4px;overflow-x:auto;}}
   </style>
 </head>
 <body>
   <div class="cls-banner">{classification}</div>
   <div class="doc-body">
     <h1>{title}</h1>
-    <div class="content">{text}</div>
+    <div class="content">{body_html}</div>
   </div>
   <div class="cls-banner">{classification}</div>
 </body>
