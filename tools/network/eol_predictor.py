@@ -1,11 +1,12 @@
 """CUI // SP-CTI -- EOL/EOS Predictive Risk Scorer (PNA module)"""
 from __future__ import annotations
 
-import logging
 from datetime import date, datetime, timezone
 from typing import Optional
 
-log = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+
+log = get_logger(__name__)
 
 # (vendor_lower_fragment, model_prefix) -> EOS date
 _EOS_REGISTRY = {

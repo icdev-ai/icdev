@@ -394,7 +394,7 @@ def _load_diagram_graph(result_ref_id: str | None) -> dict | None:
         from tools.db.storage import get_connection
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT graph_json FROM nc_diagram_analyses WHERE id=?", (result_ref_id,)
+                "SELECT graph_json FROM nc_diagram_analyses WHERE id=%s", (result_ref_id,)
             ).fetchone()
         if row and row["graph_json"]:
             return json.loads(row["graph_json"])

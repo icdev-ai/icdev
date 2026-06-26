@@ -7,10 +7,11 @@ to NOVA's ECHO layer as training signal for future co-worker improvement.
 from __future__ import annotations
 
 import json
-import logging
 from datetime import datetime, timezone
 
-_log = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+
+_log = get_logger(__name__)
 
 _SCORE_THRESHOLD = 75.0  # only persist artifacts scoring above this
 
