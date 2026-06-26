@@ -1,0 +1,10 @@
+# PNA-003: Compliance drift — devices drifting from DISA STIG baselines
+# Collection: network.compliance_drift
+# Use: Compliance drift panel on /network/predictive-analytics, continuous ATO monitoring,
+#      POAM auto-population for drifting controls, FISMA quarterly reporting.
+
+foreach p in network.compliance_drift
+where p.risk_score > 0.4
+select p.device_name, p.framework, p.current_score, p.drift_delta,
+       p.drift_rate_per_day, p.failing_controls, p.critical_controls_failing,
+       p.days_to_failure, p.risk_score, p.assessed_at

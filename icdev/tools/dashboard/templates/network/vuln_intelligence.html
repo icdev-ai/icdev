@@ -1,0 +1,431 @@
+{# CUI // SP-CTI — Vulnerability Intelligence Dashboard #}
+{% extends "network/base.html" %}
+{% block title %}Vulnerability Intelligence — Network Design Canvas{% endblock %}
+{% block content %}
+
+<div class="page-header" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
+  <div>
+    <h1 class="page-title">Vulnerability Intelligence</h1>
+    <p class="page-subtitle">Forward Networks NQE-powered predictive risk scoring, attack surface mapping, and patch planning</p>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <button class="btn btn-secondary" onclick="pvmMapSurface()">Map Attack Surface</button>
+    <button class="btn btn-secondary" onclick="pvmScoreTriage()">Score Triage</button>
+    <button class="btn btn-primary" onclick="pvmPredictRisks()">Predict Risks</button>
+  </div>
+</div>
+
+<!-- KPI bar -->
+<div style="display:flex;gap:16px;margin-bottom:20px;flex-wrap:wrap;">
+  <div class="panel" style="padding:12px 20px;flex:1;min-width:140px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:var(--accent);" id="kpi-advisories">{{ advisories_count }}</div>
+    <div style="font-size:12px;color:var(--text-dim);">Open Advisories</div>
+  </div>
+  <div class="panel" style="padding:12px 20px;flex:1;min-width:140px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:#f57c00;" id="kpi-triage">{{ pending_triage }}</div>
+    <div style="font-size:12px;color:var(--text-dim);">Pending HITL Triage</div>
+  </div>
+  <div class="panel" style="padding:12px 20px;flex:1;min-width:140px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;color:#43a047;" id="kpi-predictions">{{ open_predictions }}</div>
+    <div style="font-size:12px;color:var(--text-dim);">Risk Predictions</div>
+  </div>
+  <div class="panel" style="padding:12px 20px;flex:1;min-width:140px;text-align:center;">
+    <div style="font-size:28px;font-weight:700;" id="kpi-surface">—</div>
+    <div style="font-size:12px;color:var(--text-dim);">Attack Surface Entries</div>
+  </div>
+</div>
+
+<div id="pvm-status" style="display:none;padding:10px 16px;border-radius:6px;margin-bottom:16px;background:var(--bg-card);border-left:4px solid var(--accent);">
+  <span id="pvm-status-text"></span>
+</div>
+
+<!-- Row 1: Risk Trajectory (full width) -->
+<div class="panel" style="margin-bottom:16px;">
+  <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+    <h2 class="panel-title">Risk Trajectory — Top CVEs (30d/90d Forecast)</h2>
+    <button class="btn btn-sm btn-secondary" onclick="pvmLoadTrajectory()">Refresh</button>
+  </div>
+  <div style="padding:12px;height:280px;">
+    <canvas id="pvm-trajectory-chart"></canvas>
+  </div>
+</div>
+
+<!-- Row 2: Attack Surface + Triage Queue -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px;">
+
+  <!-- Attack Surface Heatmap -->
+  <div class="panel">
+    <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+      <h2 class="panel-title">Attack Surface</h2>
+      <div style="display:flex;gap:6px;">
+        <input type="text" id="asm-cve-filter" class="form-control" placeholder="Filter CVE..." style="width:130px;font-size:12px;">
+        <button class="btn btn-sm btn-secondary" onclick="pvmLoadSurface()">Load</button>
+      </div>
+    </div>
+    <div style="padding:8px;overflow-x:auto;max-height:320px;overflow-y:auto;">
+      <table class="data-table" style="font-size:12px;">
+        <thead>
+          <tr>
+            <th>Device</th>
+            <th>CVE</th>
+            <th>Sev</th>
+            <th>Reach</th>
+            <th>Score</th>
+          </tr>
+        </thead>
+        <tbody id="asm-table-body">
+          <tr><td colspan="5" style="text-align:center;color:var(--text-dim);padding:20px;">Click Map Attack Surface to populate</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Triage Queue -->
+  <div class="panel">
+    <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+      <h2 class="panel-title">Triage Queue</h2>
+      <select id="triage-status-filter" class="form-control" style="width:120px;font-size:12px;" onchange="pvmLoadTriage()">
+        <option value="">All</option>
+        <option value="pending" selected>Pending HITL</option>
+        <option value="approved">Approved</option>
+        <option value="deferred">Deferred</option>
+      </select>
+    </div>
+    <div style="padding:8px;overflow-x:auto;max-height:320px;overflow-y:auto;">
+      <table class="data-table" style="font-size:12px;">
+        <thead>
+          <tr>
+            <th>Adv ID</th>
+            <th>Priority</th>
+            <th>Rank</th>
+            <th>KEV</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="triage-table-body">
+          <tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:20px;">Click Score Triage to populate</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- Row 3: Patch Plan (full width) -->
+<div class="panel" style="margin-bottom:16px;">
+  <div class="panel-header" style="display:flex;justify-content:space-between;align-items:center;">
+    <h2 class="panel-title">Patch Plan</h2>
+    <div style="display:flex;gap:8px;">
+      <input type="text" id="patch-plan-approver" class="form-control" placeholder="Your email..." style="width:200px;font-size:12px;">
+      <button class="btn btn-sm btn-primary" onclick="pvmGeneratePlan()">Generate Plan</button>
+      <button class="btn btn-sm btn-secondary" onclick="pvmLoadPlans()">Refresh</button>
+    </div>
+  </div>
+  <div style="padding:8px;overflow-x:auto;max-height:300px;overflow-y:auto;">
+    <table class="data-table" style="font-size:12px;">
+      <thead>
+        <tr>
+          <th>Plan ID</th>
+          <th>Batch</th>
+          <th>Device</th>
+          <th>Action</th>
+          <th>Scheduled At</th>
+          <th>Sim Status</th>
+          <th>Risk ▼</th>
+        </tr>
+      </thead>
+      <tbody id="patch-table-body">
+        <tr><td colspan="7" style="text-align:center;color:var(--text-dim);padding:20px;">No patch plan generated yet</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- IQE Query Widget -->
+<div class="panel" style="margin-bottom:16px;">
+  <div class="panel-header"><h2 class="panel-title">Intelligence Query</h2></div>
+  <div style="padding:12px;">
+    {% include "includes/iqe_query_widget.html" %}
+  </div>
+</div>
+
+<style>
+  .pvm-score-high   { color: #e53935; font-weight: 700; }
+  .pvm-score-medium { color: #f57c00; font-weight: 600; }
+  .pvm-score-low    { color: #43a047; }
+  .pvm-kev-badge    { display:inline-block;padding:2px 7px;border-radius:10px;font-size:10px;font-weight:700;background:#e53935;color:#fff; }
+  .pvm-sim-pass     { color:#43a047;font-weight:600; }
+  .pvm-sim-warn     { color:#f57c00;font-weight:600; }
+  .pvm-sim-fail     { color:#e53935;font-weight:700; }
+  .pvm-sim-skip     { color:var(--text-dim); }
+  .btn-approve { padding:3px 8px;font-size:11px;background:#43a047;color:#fff;border:none;border-radius:4px;cursor:pointer; }
+  .btn-defer   { padding:3px 8px;font-size:11px;background:#78909c;color:#fff;border:none;border-radius:4px;cursor:pointer; }
+  .btn-approve:hover { background:#2e7d32; }
+  .btn-defer:hover   { background:#546e7a; }
+</style>
+
+<script>
+// ── Helpers ──────────────────────────────────────────────────────────────
+function pvmStatus(msg, err) {
+  const el = document.getElementById('pvm-status');
+  const txt = document.getElementById('pvm-status-text');
+  el.style.display = 'block';
+  el.style.borderLeftColor = err ? '#e53935' : 'var(--accent)';
+  txt.textContent = msg;
+}
+
+function pvmScoreClass(score) {
+  if (score >= 0.75) return 'pvm-score-high';
+  if (score >= 0.40) return 'pvm-score-medium';
+  return 'pvm-score-low';
+}
+
+function pvmSimClass(status) {
+  const map = { pass:'pvm-sim-pass', warn:'pvm-sim-warn', fail:'pvm-sim-fail', skipped:'pvm-sim-skip', pending:'pvm-sim-skip' };
+  return map[status] || 'pvm-sim-skip';
+}
+
+function pvmShortId(id) {
+  return id ? id.toString().slice(0, 8) + '…' : '—';
+}
+
+// ── Attack Surface ────────────────────────────────────────────────────────
+async function pvmMapSurface() {
+  pvmStatus('Mapping attack surface via NQE…');
+  try {
+    const r = await fetch('/api/nqe/attack-surface', { method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({}) });
+    const d = await r.json();
+    if (d.error) { pvmStatus('Error: ' + d.error, true); return; }
+    pvmStatus('Attack surface mapped: ' + (d.total_entries || 0) + ' entries.');
+    pvmLoadSurface();
+    document.getElementById('kpi-surface').textContent = d.total_entries || 0;
+  } catch(e) { pvmStatus('Request failed: ' + e, true); }
+}
+
+async function pvmLoadSurface() {
+  const cve = document.getElementById('asm-cve-filter').value.trim();
+  const url = '/api/nqe/attack-surface' + (cve ? '?cve_id=' + encodeURIComponent(cve) : '');
+  try {
+    const r = await fetch(url);
+    const rows = await r.json();
+    const tbody = document.getElementById('asm-table-body');
+    if (!Array.isArray(rows) || rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-dim);padding:16px;">No attack surface data</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.slice(0, 100).map(row => {
+      const sc = parseFloat(row.surface_score || 0).toFixed(2);
+      const cls = pvmScoreClass(parseFloat(row.surface_score || 0));
+      return `<tr>
+        <td title="${row.device_name}">${(row.device_name||'').slice(0,20)}</td>
+        <td><span style="font-family:monospace">${row.cve_id||'—'}</span></td>
+        <td>${row.exposure_type||'—'}</td>
+        <td>${row.reachable ? '✓' : '—'}</td>
+        <td class="${cls}">${sc}</td>
+      </tr>`;
+    }).join('');
+    document.getElementById('kpi-surface').textContent = rows.length;
+  } catch(e) { pvmStatus('Surface load error: ' + e, true); }
+}
+
+// ── Risk Trajectory ───────────────────────────────────────────────────────
+let _trajectoryChart = null;
+
+async function pvmPredictRisks() {
+  pvmStatus('Computing risk predictions for all open advisories…');
+  try {
+    const r = await fetch('/api/nqe/predict-risks', { method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({}) });
+    const d = await r.json();
+    if (d.error) { pvmStatus('Error: ' + d.error, true); return; }
+    const count = Array.isArray(d) ? d.length : (d.predicted || 0);
+    pvmStatus('Predictions computed: ' + count + ' advisories scored.');
+    document.getElementById('kpi-predictions').textContent = count;
+    pvmLoadTrajectory();
+  } catch(e) { pvmStatus('Prediction error: ' + e, true); }
+}
+
+async function pvmLoadTrajectory() {
+  try {
+    const r = await fetch('/api/nqe/top-risks?limit=8');
+    const topRisks = await r.json();
+    if (!Array.isArray(topRisks) || topRisks.length === 0) return;
+
+    const datasets = [];
+    const colors = ['#e53935','#f57c00','#43a047','#1976d2','#9c27b0','#00838f','#c62828','#4caf50'];
+
+    for (let i = 0; i < Math.min(topRisks.length, 8); i++) {
+      const risk = topRisks[i];
+      const tr = await fetch('/api/nqe/risk-trajectory/' + risk.advisory_id + '?limit=6').then(r => r.json()).catch(() => []);
+      const pts = Array.isArray(tr) ? tr.map(p => ({
+        x: (p.predicted_at || p.created_at || '').slice(0, 10),
+        y: parseFloat(p.risk_score_composite || 0)
+      })) : [];
+      if (pts.length > 0) {
+        datasets.push({
+          label: risk.cve_id || ('ADV-' + risk.advisory_id),
+          data: pts,
+          borderColor: colors[i % colors.length],
+          backgroundColor: colors[i % colors.length] + '22',
+          tension: 0.3,
+          fill: false
+        });
+      }
+    }
+
+    const ctx = document.getElementById('pvm-trajectory-chart').getContext('2d');
+    if (_trajectoryChart) _trajectoryChart.destroy();
+    _trajectoryChart = new Chart(ctx, {
+      type: 'line',
+      data: { datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        parsing: { xAxisKey: 'x', yAxisKey: 'y' },
+        scales: {
+          x: { type: 'category', title: { display: true, text: 'Date' } },
+          y: { min: 0, max: 1, title: { display: true, text: 'Composite Risk' } }
+        },
+        plugins: { legend: { position: 'right' } }
+      }
+    });
+  } catch(e) { console.error('Trajectory chart error:', e); }
+}
+
+// ── Triage Queue ──────────────────────────────────────────────────────────
+async function pvmScoreTriage() {
+  pvmStatus('Scoring advisories and building triage queue…');
+  try {
+    const r = await fetch('/api/nqe/score-triage', { method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({}) });
+    const d = await r.json();
+    if (d.error) { pvmStatus('Error: ' + d.error, true); return; }
+    pvmStatus('Triage scored: ' + (d.scored||0) + ' advisories, ' + (d.pending_hitl||0) + ' pending HITL.');
+    document.getElementById('kpi-triage').textContent = d.pending_hitl || 0;
+    pvmLoadTriage();
+  } catch(e) { pvmStatus('Score error: ' + e, true); }
+}
+
+async function pvmLoadTriage() {
+  const status = document.getElementById('triage-status-filter').value;
+  const url = '/api/nqe/triage-queue' + (status ? '?status=' + status : '');
+  try {
+    const r = await fetch(url);
+    const rows = await r.json();
+    const tbody = document.getElementById('triage-table-body');
+    if (!Array.isArray(rows) || rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-dim);padding:16px;">Queue empty</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.map(row => {
+      const sc = parseFloat(row.priority_score || 0).toFixed(3);
+      const cls = pvmScoreClass(parseFloat(row.priority_score || 0));
+      const kev = row.kev_exploited ? '<span class="pvm-kev-badge">KEV</span>' : '—';
+      const statusBadge = row.status === 'approved' ? '<span style="color:#43a047">✓ Approved</span>'
+                        : row.status === 'deferred'  ? '<span style="color:#78909c">Deferred</span>'
+                        : '<span style="color:#f57c00">Pending</span>';
+      const actions = (row.status === 'pending')
+        ? `<button class="btn-approve" onclick="pvmApprove(${row.advisory_id})">Approve</button>
+           <button class="btn-defer"   onclick="pvmDefer(${row.advisory_id})">Defer</button>`
+        : '—';
+      return `<tr>
+        <td>${row.advisory_id}</td>
+        <td class="${cls}">${sc}</td>
+        <td>${row.rank || '—'}</td>
+        <td>${kev}</td>
+        <td>${statusBadge}</td>
+        <td>${actions}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) { pvmStatus('Triage load error: ' + e, true); }
+}
+
+async function pvmApprove(advisoryId) {
+  const by = prompt('Approver email:', '');
+  if (!by) return;
+  try {
+    const r = await fetch('/api/nqe/triage-approve', { method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ advisory_id: advisoryId, approved_by: by }) });
+    const d = await r.json();
+    if (d.error) { pvmStatus('Approve error: ' + d.error, true); return; }
+    pvmStatus('Advisory ' + advisoryId + ' approved by ' + by + '.');
+    pvmLoadTriage();
+  } catch(e) { pvmStatus('Approve request failed: ' + e, true); }
+}
+
+async function pvmDefer(advisoryId) {
+  const by = prompt('Analyst email:', '');
+  if (!by) return;
+  try {
+    const r = await fetch('/api/nqe/triage-defer', { method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ advisory_id: advisoryId, approved_by: by }) });
+    const d = await r.json();
+    if (d.error) { pvmStatus('Defer error: ' + d.error, true); return; }
+    pvmStatus('Advisory ' + advisoryId + ' deferred.');
+    pvmLoadTriage();
+  } catch(e) { pvmStatus('Defer request failed: ' + e, true); }
+}
+
+// ── Patch Plan ────────────────────────────────────────────────────────────
+async function pvmGeneratePlan() {
+  const approvedBy = document.getElementById('patch-plan-approver').value.trim();
+  pvmStatus('Generating patch plan from approved triage queue…');
+  try {
+    const body = approvedBy ? { approved_by: approvedBy } : {};
+    const r = await fetch('/api/nqe/patch-plan', { method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body) });
+    const d = await r.json();
+    if (d.error) { pvmStatus('Plan error: ' + d.error, true); return; }
+    pvmStatus('Plan generated: ' + (d.batches||0) + ' batches, ' + (d.devices||0) + ' devices.');
+    pvmLoadPlans();
+  } catch(e) { pvmStatus('Plan request failed: ' + e, true); }
+}
+
+async function pvmLoadPlans() {
+  try {
+    const r = await fetch('/api/nqe/patch-plans');
+    const rows = await r.json();
+    const tbody = document.getElementById('patch-table-body');
+    if (!Array.isArray(rows) || rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-dim);padding:16px;">No patch plan generated yet</td></tr>';
+      return;
+    }
+    tbody.innerHTML = rows.slice(0, 200).map(row => {
+      const simCls = pvmSimClass(row.simulation_status || 'skipped');
+      const rr = parseFloat(row.risk_reduction || 0).toFixed(2);
+      const sched = (row.scheduled_at || '—').replace('T', ' ').slice(0, 16);
+      return `<tr>
+        <td title="${row.plan_id}">${pvmShortId(row.plan_id)}</td>
+        <td title="${row.batch_id}">${pvmShortId(row.batch_id)}</td>
+        <td>${row.device_name || '—'}</td>
+        <td>${row.action || 'patch'}</td>
+        <td>${sched}</td>
+        <td class="${simCls}">${row.simulation_status || '—'}</td>
+        <td>${rr}</td>
+      </tr>`;
+    }).join('');
+  } catch(e) { pvmStatus('Plan load error: ' + e, true); }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  // Load chart.js if not present
+  if (typeof Chart === 'undefined') {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js';
+    s.onload = () => pvmLoadTrajectory();
+    document.head.appendChild(s);
+  } else {
+    pvmLoadTrajectory();
+  }
+  pvmLoadSurface();
+  pvmLoadTriage();
+  pvmLoadPlans();
+});
+</script>
+{% endblock %}
