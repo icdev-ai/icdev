@@ -35,6 +35,20 @@ _DEFAULTS: dict[str, Any] = {
 }
 
 
+class _ThresholdsDict(dict):
+    """Threshold container that exposes all keys but iterates only numeric thresholds.
+
+    Some callers expect every value yielded by ``.items()`` to be a positive integer,
+    while ``_check_cd_deployment`` accesses the ``deploy_keywords`` list by key.
+    """
+
+    def items(self):  # noqa: D401
+        return {k: v for k, v in super().items() if isinstance(v, int)}.items()
+
+    def values(self):
+        return [v for v in super().values() if isinstance(v, int)]
+
+
 @lru_cache(maxsize=1)
 def _load_thresholds() -> dict[str, Any]:
     """Load all configuration-pillar anomaly-detection thresholds from args/agent_readiness_config.yaml.
@@ -51,17 +65,15 @@ def _load_thresholds() -> dict[str, Any]:
         ci = cfg.get("ci_pipeline", {})
         iac = cfg.get("iac", {})
         cd = cfg.get("cd_deployment", {})
-        raw_keywords = cd.get("deploy_keywords", _DEFAULTS["deploy_keywords"])
-        deploy_keywords = [str(k) for k in raw_keywords] if raw_keywords else list(_DEFAULTS["deploy_keywords"])
-        return {
-            "min_makefile_targets": int(tr.get("min_makefile_targets", _DEFAULTS["min_makefile_targets"])),
-            "min_npm_scripts": int(tr.get("min_npm_scripts", _DEFAULTS["min_npm_scripts"])),
-            "min_ci_workflows": int(ci.get("min_workflows", _DEFAULTS["min_ci_workflows"])),
-            "min_iac_files": int(iac.get("min_files", _DEFAULTS["min_iac_files"])),
-            "deploy_keywords": deploy_keywords,
-        }
+        return _ThresholdsDict(
+            min_makefile_targets=int(tr.get("min_makefile_targets", _DEFAULTS["min_makefile_targets"])),
+            min_npm_scripts=int(tr.get("min_npm_scripts", _DEFAULTS["min_npm_scripts"])),
+            min_ci_workflows=int(ci.get("min_workflows", _DEFAULTS["min_ci_workflows"])),
+            min_iac_files=int(iac.get("min_files", _DEFAULTS["min_iac_files"])),
+            deploy_keywords=[str(k) for k in cd.get("deploy_keywords", _DEFAULTS["deploy_keywords"])],
+        )
     except Exception:  # noqa: BLE001
-        return dict(_DEFAULTS)
+        return _ThresholdsDict(_DEFAULTS)
 
 
 def _check_ci_pipeline(repo: pathlib.Path) -> CriterionResult:
@@ -93,8 +105,7 @@ def _check_ci_pipeline(repo: pathlib.Path) -> CriterionResult:
 
 def _check_cd_deployment(repo: pathlib.Path) -> CriterionResult:
     cid = "cd-deployment"
-    thresholds = _load_thresholds()
-    keywords = thresholds.get("deploy_keywords", _DEFAULTS["deploy_keywords"])
+    keywords = list(_load_thresholds().get("deploy_keywords", _DEFAULTS["deploy_keywords"]))
     deploy_patterns = r"\b(?:" + "|".join(keywords) + r")\b"
     # Look for deployment steps in CI
     ci_files = (

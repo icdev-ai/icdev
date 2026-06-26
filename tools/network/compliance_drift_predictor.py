@@ -1,10 +1,8 @@
 """CUI // SP-CTI -- Compliance Drift Predictor (PNA module -- STIG-based)"""
 from __future__ import annotations
 
-import json
 import logging
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import datetime, timezone
 
 from tools.network.db.init_db import get_connection
 

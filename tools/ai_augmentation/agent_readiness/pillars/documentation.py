@@ -19,12 +19,12 @@ from tools.ai_augmentation.agent_readiness.pillars._base import (
 # ---------------------------------------------------------------------------
 # Anomaly-detection threshold loader
 # ---------------------------------------------------------------------------
-_ARGS_PATH = pathlib.Path(__file__).parents[5] / "args" / "agent_readiness_config.yaml"
+_ARGS_PATH = pathlib.Path(__file__).parents[4] / "args" / "agent_readiness_config.yaml"
 _DEFAULTS: dict[str, Any] = {
-    "min_readme_length": 80,
-    "docstring_sample_size": 20,
-    "min_jsdoc_count": 2,
-    "min_docstring_fraction": 0.333,
+    "readme_min_content_length": 80,
+    "inline_docs_sample_size": 20,
+    "min_jsdoc_files": 2,
+    "docstring_ratio_denominator": 3,
 }
 
 
@@ -40,12 +40,12 @@ def _load_thresholds() -> dict[str, Any]:
         data = yaml.safe_load(raw) or {}
         cfg = data.get("pillars", {}).get("documentation", {})
         readme = cfg.get("readme", {})
-        ds = cfg.get("docstrings", {})
+        ds = cfg.get("inline_docs", {})
         return {
-            "min_readme_length": int(readme.get("min_content_length", _DEFAULTS["min_readme_length"])),
-            "docstring_sample_size": int(ds.get("sample_size", _DEFAULTS["docstring_sample_size"])),
-            "min_jsdoc_count": int(ds.get("min_jsdoc_count", _DEFAULTS["min_jsdoc_count"])),
-            "min_docstring_fraction": float(ds.get("min_coverage_fraction", _DEFAULTS["min_docstring_fraction"])),
+            "readme_min_content_length": int(readme.get("min_content_length", _DEFAULTS["readme_min_content_length"])),
+            "inline_docs_sample_size": int(ds.get("sample_size", _DEFAULTS["inline_docs_sample_size"])),
+            "min_jsdoc_files": int(ds.get("min_jsdoc_files", _DEFAULTS["min_jsdoc_files"])),
+            "docstring_ratio_denominator": int(ds.get("docstring_ratio_denominator", _DEFAULTS["docstring_ratio_denominator"])),
         }
     except Exception:  # noqa: BLE001
         return dict(_DEFAULTS)
@@ -54,7 +54,7 @@ def _load_thresholds() -> dict[str, Any]:
 def _check_readme(repo: pathlib.Path) -> CriterionResult:
     cid = "readme-present"
     thresholds = _load_thresholds()
-    min_length = thresholds["min_readme_length"]
+    min_length = thresholds["readme_min_content_length"]
     found = _exists(repo, "README.md", "README.rst", "README.txt", "README")
     if found:
         content = _read(repo, found) or ""
@@ -102,9 +102,9 @@ def _check_api_docs(repo: pathlib.Path) -> CriterionResult:
 def _check_inline_docstrings(repo: pathlib.Path) -> CriterionResult:
     cid = "inline-docstrings"
     thresholds = _load_thresholds()
-    sample_size = thresholds["docstring_sample_size"]
-    min_jsdoc = thresholds["min_jsdoc_count"]
-    min_fraction = thresholds["min_docstring_fraction"]
+    sample_size = thresholds["inline_docs_sample_size"]
+    min_jsdoc = thresholds["min_jsdoc_files"]
+    ratio_denominator = thresholds["docstring_ratio_denominator"]
     py_files = _glob_files(repo, "**/*.py")
     if not py_files:
         ts_files = _glob_files(repo, "**/*.ts") + _glob_files(repo, "**/*.js")
@@ -123,7 +123,7 @@ def _check_inline_docstrings(repo: pathlib.Path) -> CriterionResult:
         if _search(f.read_text(encoding="utf-8", errors="replace"), r'""".*?"""', flags=0)
         or _search(f.read_text(encoding="utf-8", errors="replace"), r"'''.*?'''", flags=0)
     )
-    min_count = max(1, int(len(sample) * min_fraction))
+    min_count = max(1, len(sample) // ratio_denominator)
     if docstring_count >= min_count:
         return CriterionResult(cid, True, f"Docstrings found in {docstring_count}/{len(sample)} sampled Python files")
     return CriterionResult(cid, False, f"Low docstring coverage ({docstring_count}/{len(sample)} sampled files, min {min_count}).",

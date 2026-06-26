@@ -357,7 +357,7 @@ class TestCheckCat1Remediation:
 class TestStigCompliancePillarIntegration:
     def test_pillar_has_expected_criteria(self):
         ids = {c.id for c in PILLAR.criteria}
-        assert ids == {"stig-vids-in-code", "stig-in-docs", "stig-checklist", "cat1-remediation"}
+        assert ids == {"stig-vids-in-code", "stig-in-docs", "stig-checklist", "cat1-remediation", "external-stig-scanner"}
 
     def test_all_criteria_pass_with_full_fixture(self, tmp_path, monkeypatch):
         _disable_nlp(monkeypatch)

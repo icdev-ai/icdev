@@ -15,6 +15,7 @@ from tools.ai_augmentation.agent_readiness.pillars._base import (
     _glob_files,
     _read,
     _search,
+    get_anomaly_detector,
 )
 
 # ---------------------------------------------------------------------------
@@ -26,6 +27,8 @@ _DEFAULTS: dict[str, Any] = {
     "max_age_months": 6,
     # requirements.txt pin ratio below this is anomalously low for reproducible builds.
     "min_pin_ratio": 0.8,
+    # Legacy alias used by some test fixtures and older configs.
+    "min_pinned_ratio": 0.8,
 }
 
 
@@ -34,6 +37,7 @@ def _load_thresholds() -> dict[str, Any]:
     """Load dependencies-pillar anomaly-detection thresholds from args/agent_readiness_config.yaml.
 
     Falls back to hard-coded defaults if the config file is absent or malformed.
+    Accepts either ``min_pin_ratio`` or the legacy ``min_pinned_ratio`` key.
     """
     try:
         import yaml  # optional dep — present in all ICDEV environments
@@ -42,9 +46,14 @@ def _load_thresholds() -> dict[str, Any]:
         cfg = data.get("pillars", {}).get("dependencies", {})
         freshness = cfg.get("lock_file_freshness", {})
         pinned = cfg.get("pinned_versions", {})
+        pin_ratio = float(
+            pinned.get("min_pin_ratio",
+                       pinned.get("min_pinned_ratio", _DEFAULTS["min_pin_ratio"]))
+        )
         return {
             "max_age_months": int(freshness.get("max_age_months", _DEFAULTS["max_age_months"])),
-            "min_pin_ratio": float(pinned.get("min_pin_ratio", _DEFAULTS["min_pin_ratio"])),
+            "min_pin_ratio": pin_ratio,
+            "min_pinned_ratio": pin_ratio,
         }
     except Exception:  # noqa: BLE001
         return dict(_DEFAULTS)
@@ -93,7 +102,8 @@ def _check_lock_file_freshness(repo: pathlib.Path) -> CriterionResult:
 def _check_pinned_versions(repo: pathlib.Path) -> CriterionResult:
     cid = "pinned-versions"
     thresholds = _load_thresholds()
-    min_ratio = thresholds["min_pin_ratio"]
+    # Prefer the legacy key for backward compatibility with existing tests/fixtures.
+    min_ratio = thresholds.get("min_pinned_ratio", thresholds.get("min_pin_ratio", 0.8))
     req = _read(repo, "requirements.txt")
     if req:
         lines = [l.strip() for l in req.splitlines() if l.strip() and not l.startswith("#")]
@@ -101,7 +111,10 @@ def _check_pinned_versions(repo: pathlib.Path) -> CriterionResult:
             return CriterionResult(cid, True, "requirements.txt is empty; check skipped.", skipped=True)
         pinned = sum(1 for l in lines if "==" in l)
         ratio = pinned / len(lines)
-        if ratio >= min_ratio:
+        detector = get_anomaly_detector()
+        detector.observe("dependencies.pin_ratio", ratio)
+        effective_min = detector.suggest_threshold("dependencies.pin_ratio", min_ratio)
+        if ratio >= effective_min:
             return CriterionResult(cid, True, f"{pinned}/{len(lines)} requirements pinned with ==")
         return CriterionResult(
             cid, False,

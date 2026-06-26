@@ -398,9 +398,8 @@ def stage1_ingest_upload(
         from tools.document_intelligence.ingest_orchestrator import ingest_file
 
         result = ingest_file(
-            file_path=file_path,
+            path=file_path,
             collection_id=_get_collection_id(session_id),
-            metadata={"idr_session_id": session_id, "upload_id": upload_id},
         )
         dic_doc_id = result.get("doc_id") if result else None
         sm.set_upload_status(upload_id, "ingested", dic_doc_id=dic_doc_id)

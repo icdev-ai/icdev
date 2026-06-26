@@ -2,6 +2,7 @@
 """Shared types for the agent-readiness pillar system."""
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 import re
@@ -15,6 +16,17 @@ from typing import Any, Callable, Optional
 # ---------------------------------------------------------------------------
 _ARGS_PATH = pathlib.Path(__file__).parents[4] / "args" / "agent_readiness_config.yaml"
 
+# Decimal places used when rounding readiness percentages.
+SCORE_PRECISION = 4
+
+# Generic threshold below which a pillar score is considered anomalously low.
+_RULE_BASED_ANOMALY_THRESHOLD = 0.3
+
+# Default global thresholds for per-pillar anomaly flagging.
+_PILLAR_DEFAULTS: dict[str, Any] = {
+    "min_passing_threshold": _RULE_BASED_ANOMALY_THRESHOLD,
+}
+
 
 @lru_cache(maxsize=1)
 def _load_agent_readiness_config() -> dict:
@@ -25,6 +37,25 @@ def _load_agent_readiness_config() -> dict:
         return yaml.safe_load(raw) or {}
     except Exception:  # noqa: BLE001
         return {}
+
+
+@lru_cache(maxsize=1)
+def _load_pillar_thresholds() -> dict[str, Any]:
+    """Load global per-pillar thresholds from args/agent_readiness_config.yaml.
+
+    Falls back to _PILLAR_DEFAULTS when the file or key is absent/malformed.
+    """
+    try:
+        import yaml  # optional dep — present in all ICDEV environments
+        raw = _ARGS_PATH.read_text(encoding="utf-8")
+        data = yaml.safe_load(raw) or {}
+        cfg = data.get("pillars", {}).get("global", {})
+        merged = dict(_PILLAR_DEFAULTS)
+        if "min_passing_threshold" in cfg:
+            merged["min_passing_threshold"] = float(cfg["min_passing_threshold"])
+        return merged
+    except Exception:  # noqa: BLE001
+        return dict(_PILLAR_DEFAULTS)
 
 
 def load_pillar_config(pillar_key: str) -> dict[str, Any]:
@@ -199,6 +230,183 @@ def detect_score_anomalies(
     return reports
 
 
+# ---------------------------------------------------------------------------
+# Statistical helpers for adaptive anomaly detection
+# ---------------------------------------------------------------------------
+
+def _mean_std(values: list[float]) -> tuple[float, float]:
+    """Return population mean and population standard deviation for *values*."""
+    if not values:
+        return 0.0, 0.0
+    mean = sum(values) / len(values)
+    variance = sum((v - mean) ** 2 for v in values) / len(values)
+    return mean, variance ** 0.5
+
+
+class ThresholdAnomalyDetector:
+    """Adaptive threshold detector that learns normal ranges per metric.
+
+    Observations are kept in a rolling window. Once enough samples are collected,
+    ``suggest_threshold`` returns ``mean - sigma*std`` clamped to
+    ``[default*0.5, default*2.0]``. When samples are sparse the configured
+    default is returned unchanged.
+    """
+
+    MIN_SAMPLES = 5
+    WINDOW_SIZE = 100
+    _SIGMA = 1.5
+
+    def __init__(self, store_path: Optional[pathlib.Path | str] = None):
+        self._store_path = pathlib.Path(store_path) if store_path else None
+        self._data: dict[str, list[float]] = {}
+        self._load()
+
+    def observe(self, metric: str, value: float) -> None:
+        """Record one observation for *metric*, trimming to the rolling window."""
+        self._data.setdefault(metric, [])
+        self._data[metric].append(float(value))
+        if len(self._data[metric]) > self.WINDOW_SIZE:
+            self._data[metric] = self._data[metric][-self.WINDOW_SIZE :]
+
+    def stats(self, metric: str) -> dict[str, Any]:
+        """Return count, mean, min, max for *metric* (mean is None when empty)."""
+        values = self._data.get(metric, [])
+        if not values:
+            return {"n": 0, "mean": None, "min": None, "max": None}
+        mean, _ = _mean_std(values)
+        return {"n": len(values), "mean": mean, "min": min(values), "max": max(values)}
+
+    def suggest_threshold(self, metric: str, default: float) -> float:
+        """Return an adaptive threshold for *metric* or *default* when sparse."""
+        values = self._data.get(metric, [])
+        if len(values) < self.MIN_SAMPLES:
+            return float(default)
+        mean, std = _mean_std(values)
+        adaptive = mean - self._SIGMA * std
+        lower = default * 0.5
+        upper = default * 2.0
+        if adaptive < lower:
+            return lower
+        if adaptive > upper:
+            return upper
+        return adaptive
+
+    def is_anomaly(self, metric: str, value: float, default: float) -> bool:
+        """True when *value* is below the adaptive threshold for *metric*."""
+        threshold = self.suggest_threshold(metric, default)
+        return value < threshold
+
+    def flush(self) -> None:
+        """Persist observations to *store_path* if one was provided and dirty."""
+        if self._store_path is None:
+            return
+        if not self._data:
+            return
+        try:
+            self._store_path.write_text(json.dumps(self._data, default=list), encoding="utf-8")
+        except OSError:
+            pass
+
+    def _load(self) -> None:
+        if self._store_path is None or not self._store_path.exists():
+            return
+        try:
+            raw = self._store_path.read_text(encoding="utf-8")
+            loaded = json.loads(raw)
+            if isinstance(loaded, dict):
+                self._data = {k: [float(v) for v in vals] for k, vals in loaded.items() if isinstance(vals, list)}
+        except (OSError, json.JSONDecodeError, ValueError):
+            self._data = {}
+
+
+# Singleton detector instance used by pillar checks.
+_DETECTOR: Optional[ThresholdAnomalyDetector] = None
+
+
+def get_anomaly_detector(store_path: Optional[pathlib.Path | str] = None) -> ThresholdAnomalyDetector:
+    """Return the process-level singleton ``ThresholdAnomalyDetector``.
+
+    Creates it on first call; subsequent calls return the same instance.
+    """
+    global _DETECTOR
+    if _DETECTOR is None:
+        _DETECTOR = ThresholdAnomalyDetector(store_path=store_path)
+    return _DETECTOR
+
+
+# ---------------------------------------------------------------------------
+# High-level AnomalyDetector used by orchestration/CLI to flag readiness scores
+# ---------------------------------------------------------------------------
+
+_CRITICAL_PILLARS = {"security", "il-classification", "nist-controls", "stig-compliance", "append-only-audit"}
+
+
+class AnomalyDetector:
+    """Rule-based + optional LLM anomaly detector for pillar readiness scores.
+
+    The rule path flags any pillar whose percentage is below the generic
+    threshold, and critical pillars are flagged at a stricter threshold with
+    severity ``high``. When an LLM is available, ``_detect_with_llm`` is called
+    first; rule logic fills in any missing pillars and recovers from LLM
+    failures.
+    """
+
+    def __init__(self):
+        self._threshold = _RULE_BASED_ANOMALY_THRESHOLD
+        self._critical_threshold = 0.5
+
+    def detect(self, scores: dict[str, dict]) -> dict[str, dict]:
+        """Return an anomaly entry for every pillar in *scores*."""
+        if not scores:
+            return {}
+        try:
+            llm_result = self._detect_with_llm(scores)
+        except Exception:  # noqa: BLE001
+            llm_result = None
+
+        result: dict[str, dict] = {}
+        for pillar_id, score in scores.items():
+            pct = float(score.get("percentage", 0.0))
+            is_critical = pillar_id in _CRITICAL_PILLARS
+            threshold = self._critical_threshold if is_critical else self._threshold
+            is_anomaly = pct < threshold
+            if is_anomaly and is_critical:
+                severity = "high"
+            elif is_anomaly:
+                severity = "medium"
+            else:
+                severity = "low"
+            reason = (
+                f"Pillar '{pillar_id}' scored {pct:.{SCORE_PRECISION}%} — "
+                f"below anomaly threshold {threshold:.{SCORE_PRECISION}%}."
+                if is_anomaly
+                else f"Pillar '{pillar_id}' score {pct:.{SCORE_PRECISION}%} is within normal range."
+            )
+            entry: dict[str, Any] = {
+                "is_anomaly": is_anomaly,
+                "reason": reason,
+                "severity": severity,
+            }
+            if llm_result and isinstance(llm_result, dict) and pillar_id in llm_result:
+                llm_entry = llm_result[pillar_id]
+                if isinstance(llm_entry, dict):
+                    entry["is_anomaly"] = bool(llm_entry.get("is_anomaly", is_anomaly))
+                    entry["reason"] = str(llm_entry.get("reason", reason))
+                    entry["severity"] = str(llm_entry.get("severity", severity))
+            result[pillar_id] = entry
+        return result
+
+    def _detect_with_llm(self, scores: dict[str, dict]) -> Optional[dict]:
+        """Optional hook for LLM-driven anomaly detection.
+
+        Subclasses or monkeypatches can override this. The base implementation
+        raises ``LLMUnavailableError`` so the rule-based fallback always runs.
+        """
+        from tools.llm.router import LLMUnavailableError
+
+        raise LLMUnavailableError("LLM anomaly detection not configured")
+
+
 @dataclass
 class CriterionResult:
     criterion_id: str
@@ -245,11 +453,44 @@ class Pillar:
         evaluated = [r for r in results if not r.skipped]
         passed = sum(1 for r in evaluated if r.passed)
         total = len(evaluated)
+
+        # Precision is configurable via score.precision in YAML; default to SCORE_PRECISION.
+        cfg = _load_agent_readiness_config().get("score", {})
+        precision = int(cfg.get("precision", SCORE_PRECISION))
+        percentage = round(passed / total, precision) if total > 0 else 0.0
+
+        # Legacy anomaly keys driven by score.min_passing_percentage / score.critical_percentage.
+        min_pct = float(cfg.get("min_passing_percentage", 0.6))
+        critical_pct = float(cfg.get("critical_percentage", 0.4))
+        if critical_pct > min_pct:
+            critical_pct = min_pct
+
+        if total == 0:
+            anomaly = False
+            severity = "ok"
+        elif percentage < critical_pct:
+            anomaly = True
+            severity = "critical"
+        elif percentage < min_pct:
+            anomaly = True
+            severity = "warning"
+        else:
+            anomaly = False
+            severity = "ok"
+
+        # New-style anomalous flag driven by the global pillar threshold loader.
+        thresholds = _load_pillar_thresholds()
+        global_min = thresholds.get("min_passing_threshold", _RULE_BASED_ANOMALY_THRESHOLD)
+        anomalous = percentage < global_min
+
         return {
             "pillar_id": self.id,
             "passed": passed,
             "total": total,
-            "percentage": round(passed / total, 4) if total > 0 else 0.0,
+            "percentage": percentage,
+            "anomaly": anomaly,
+            "severity": severity,
+            "anomalous": anomalous,
         }
 
 
