@@ -751,7 +751,11 @@ def api_writeguard(session_id: str):
 
     if gate["passed"]:
         wg_result_id = str(uuid.uuid4())
-        sm.set_field(session_id, wg_result_id=wg_result_id)
+        sm.set_field(
+            session_id,
+            wg_result_id=wg_result_id,
+            final_doc_text=gate["fixed_text"],
+        )
         advance(session_id, 6)
         logger.info(
             "IDR WriteGuard gate PASSED: session=%s score=%.1f attempts=%d",
@@ -821,7 +825,11 @@ def api_publish(session_id: str):
         }), 409
 
     data = request.get_json(force=True, silent=True) or {}
-    doc_text = data.get("doc_text") or session.get("title", "Document")
+    doc_text = (
+        data.get("doc_text")
+        or session.get("final_doc_text")
+        or session.get("title", "Document")
+    )
     title = data.get("title") or session.get("title", "Document")
     classification = data.get("classification") or session.get("classification", "CUI")
 

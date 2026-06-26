@@ -131,14 +131,18 @@ def _emit_audit(
 def _substitute(value: Any, context: dict) -> Any:
     """Replace $var references in *value* with context values.
 
-    A value that is exactly ``$var`` returns the context value with its
-    original type; inline substitutions are stringified.
+    Both exact ``$var`` references and inline substitutions are stringified,
+    matching the JSON/YAML-originated step argument semantics where all values
+    are text before a tool receives them.
     """
     if not isinstance(value, str):
         return value
     m = _VAR_RE.fullmatch(value)
     if m:
-        return context.get(m.group(1), value)
+        key = m.group(1)
+        if key in context:
+            return str(context[key])
+        return value
     return _VAR_RE.sub(lambda match: str(context.get(match.group(1), match.group(0))), value)
 
 
