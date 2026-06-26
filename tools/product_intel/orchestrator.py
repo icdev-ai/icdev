@@ -12,6 +12,35 @@ from tools.product_intel.engine_registry import EngineRegistry
 _REQUIRED_RESULT_KEYS = {"run_id", "status", "engines_run", "engines_failed", "total_signals", "results"}
 
 
+def _ensure_table(conn) -> None:
+    """Create the product_intel_runs table idempotently if it is missing."""
+    try:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS product_intel_runs (
+                id                  TEXT PRIMARY KEY,
+                started_at          TEXT,
+                completed_at        TEXT,
+                engines_run         TEXT,
+                engines_failed      TEXT,
+                total_signals       INTEGER,
+                total_gaps          INTEGER,
+                total_dossiers      INTEGER,
+                federation_routes   INTEGER,
+                result_json         TEXT,
+                status              TEXT,
+                classification      TEXT DEFAULT 'CUI // SP-CTI'
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_pi_runs_started_at "
+            "ON product_intel_runs(started_at)"
+        )
+    except Exception:
+        pass
+
+
 class ProductIntelOrchestrator:
     def __init__(
         self,
@@ -64,8 +93,9 @@ class ProductIntelOrchestrator:
             "results": results,
         }
 
-        if not dry_run:
-            with get_connection(self._db_path) as conn:
+        with get_connection(self._db_path) as conn:
+            _ensure_table(conn)
+            if not dry_run:
                 conn.execute(
                     """INSERT INTO product_intel_runs
                        (id, started_at, completed_at, engines_run, engines_failed,

@@ -81,7 +81,7 @@ def _collect(instance_id: str) -> dict[str, Any]:
         # Instance metadata
         inst_row = conn.execute(
             "SELECT id, name, role_id, state, trust_tier, created_at, completed_at "
-            "FROM ace_instances WHERE id = %s",
+            "FROM ace_instances WHERE id = ?",
             (instance_id,),
         ).fetchone()
         if not inst_row:
@@ -95,7 +95,7 @@ def _collect(instance_id: str) -> dict[str, Any]:
         cw_rows = conn.execute(
             "SELECT id, role_id, display_name, state, trust_tier, assigned_step, "
             "last_active_at, created_at "
-            "FROM ace_coworkers WHERE instance_id = %s ORDER BY created_at",
+            "FROM ace_coworkers WHERE instance_id = ? ORDER BY created_at",
             (instance_id,),
         ).fetchall()
         coworkers = [
@@ -111,7 +111,7 @@ def _collect(instance_id: str) -> dict[str, Any]:
         audit_rows = conn.execute(
             "SELECT id, coworker_id, action, detail, actor, classification, "
             "control_refs, created_at "
-            "FROM ace_audit_log WHERE instance_id = %s ORDER BY created_at",
+            "FROM ace_audit_log WHERE instance_id = ? ORDER BY created_at",
             (instance_id,),
         ).fetchall()
 
@@ -131,7 +131,7 @@ def _collect(instance_id: str) -> dict[str, Any]:
         # Artifacts
         artifact_rows = conn.execute(
             "SELECT id, coworker_id, artifact_type, title, classification, created_at "
-            "FROM ace_artifacts WHERE instance_id = %s ORDER BY created_at",
+            "FROM ace_artifacts WHERE instance_id = ? ORDER BY created_at",
             (instance_id,),
         ).fetchall()
         artifacts = [

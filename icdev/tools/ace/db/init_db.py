@@ -177,6 +177,18 @@ CREATE TABLE IF NOT EXISTS ace_skill_candidates (
 );
 CREATE INDEX IF NOT EXISTS idx_ace_skill_candidates_status ON ace_skill_candidates(status);
 CREATE INDEX IF NOT EXISTS idx_ace_skill_candidates_role ON ace_skill_candidates(role_id);
+
+CREATE TABLE IF NOT EXISTS ace_sessions (
+    session_id            TEXT PRIMARY KEY,
+    instance_id           TEXT NOT NULL REFERENCES ace_instances(id) ON DELETE CASCADE,
+    conversation_history  TEXT NOT NULL DEFAULT '[]',
+    history_json          TEXT NOT NULL DEFAULT '[]',
+    resume_token          TEXT NOT NULL UNIQUE,
+    turn_count            INTEGER NOT NULL DEFAULT 0,
+    created_at            TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ace_sessions_instance ON ace_sessions(instance_id);
+CREATE INDEX IF NOT EXISTS idx_ace_sessions_token ON ace_sessions(resume_token);
 """
 
 # ---------------------------------------------------------------------------

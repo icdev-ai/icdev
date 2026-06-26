@@ -14559,6 +14559,25 @@ Planning rules:
         return base + "."
 
 
+    # ── Config Review ─────────────────────────────────────────────────────
+    @bp.route("/config-review")
+    def nc_config_review():
+        """Configuration Review Assistant — upload and AI-review device configs."""
+        return render_template("network/config_review.html")
+
+    # ── Diagram Analysis ──────────────────────────────────────────────────
+    @bp.route("/diagram-analysis")
+    def nc_diagram_analysis():
+        """Network Diagram Analysis — upload PNG/PDF/draw.io for AI analysis."""
+        return render_template("network/diagram_analysis.html")
+
+    # ── Migration Phases landing (alias → hub) ────────────────────────────
+    @bp.route("/migration-phases")
+    def nc_migration_phases_hub():
+        """Redirect bare /migration-phases to the Migration Hub."""
+        from flask import redirect, url_for
+        return redirect(url_for("network.migration_hub"))
+
     # ── PVM Predictive Vulnerability Management routes ────────────────────
     from tools.network.routes.pvm import register_pvm_routes
 

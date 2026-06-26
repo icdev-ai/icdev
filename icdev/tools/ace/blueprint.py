@@ -30,10 +30,11 @@ attached (see CLAUDE.md canvas DB guardrail).
 from __future__ import annotations
 
 import json
-import logging
-from tools.logging.icdev_logger import get_logger
 import os
+import uuid
 from typing import Any, Optional
+
+from tools.logging.icdev_logger import get_logger
 
 from flask import Blueprint, jsonify, render_template, request
 
@@ -367,6 +368,58 @@ def instance_detail(instance_id: str):
                 "artifacts": artifacts,
             }
         )
+
+
+@ace_bp.route("/<instance_id>/resume")
+def instance_resume(instance_id: str):
+    """Return conversation_history for a session identified by resume_token.
+
+    GET /coworker/<id>/resume?token=<resume_token>
+    Returns JSON: {session_id, conversation_history, turn_count}
+    """
+    token = (request.args.get("token") or "").strip()
+    if not token:
+        return jsonify({"error": "token required"}), 400
+
+    conn = None
+    try:
+        conn = _db()
+        session = _one(
+            conn.execute(
+                _q(
+                    conn,
+                    "SELECT session_id, conversation_history, turn_count "
+                    "FROM ace_sessions WHERE resume_token = ? AND instance_id = ?",
+                ),
+                (token, instance_id),
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace instance_resume read failed for %s: %s", instance_id, exc)
+        return jsonify({"error": "db error"}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+    if session is None:
+        return jsonify({"error": "session not found"}), 404
+
+    history = session["conversation_history"]
+    if isinstance(history, str):
+        try:
+            history = json.loads(history)
+        except (TypeError, ValueError):
+            history = []
+    if not isinstance(history, list):
+        history = []
+
+    return jsonify(
+        {
+            "session_id": session["session_id"],
+            "conversation_history": history,
+            "turn_count": session.get("turn_count") or len(history),
+        }
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -842,3 +895,207 @@ def api_ace_event_topics():
         return jsonify({"ok": True, "topics": topic_map})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
+
+
+@ace_api_bp.route("/<instance_id>/nova-state", methods=["GET"])
+def api_nova_state(instance_id: str):
+    """NOVA state snapshot for an instance: per-coworker trust, memory, improvements."""
+    from icdev.tools.ace.trust_calibrator import INITIAL_TRUST
+
+    cws: list[dict] = []
+    conn_ace = None
+    try:
+        conn_ace = _db()
+        cws = _rows(
+            conn_ace.execute(
+                _q(
+                    conn_ace,
+                    "SELECT id, role_id, display_name, state, trust_tier, "
+                    "assigned_step, last_active_at, created_at "
+                    "FROM ace_coworkers WHERE instance_id = ? ORDER BY created_at",
+                ),
+                (instance_id,),
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace nova-state: canvas read failed: %s", exc)
+    finally:
+        if conn_ace is not None:
+            conn_ace.close()
+
+    trust: dict[str, float] = {}
+    fact_counts: dict[str, int] = {}
+    improvements: list[dict] = []
+    conn_nova = None
+    try:
+        from icdev.tools.db.storage import get_connection
+
+        conn_nova = get_connection()
+        for r in _rows(
+            conn_nova.execute(
+                _q(
+                    conn_nova,
+                    "SELECT role_id, new_score FROM ace_trust_ledger "
+                    "ORDER BY recorded_at ASC",
+                )
+            )
+        ):
+            trust[r["role_id"]] = float(r["new_score"])
+        for r in _rows(
+            conn_nova.execute(
+                _q(
+                    conn_nova,
+                    "SELECT role_id, COUNT(*) AS n FROM ace_coworker_memory GROUP BY role_id",
+                )
+            )
+        ):
+            fact_counts[r["role_id"]] = int(r["n"])
+        improvements = [
+            {"task_type": r["task_type"], "improvement_text": r["improvement_text"]}
+            for r in _rows(
+                conn_nova.execute(
+                    _q(
+                        conn_nova,
+                        "SELECT task_type, improvement_text FROM agent_improvement_artifacts "
+                        "WHERE status = ? ORDER BY applied_at DESC LIMIT ?",
+                    ),
+                    ("applied", 20),
+                )
+            )
+        ]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace nova-state: nova read failed: %s", exc)
+    finally:
+        if conn_nova is not None:
+            conn_nova.close()
+
+    out: list[dict] = []
+    for cw in cws:
+        role = cw.get("role_id", "")
+        out.append(
+            {
+                "coworker_id": cw.get("id"),
+                "role_id": role,
+                "display_name": cw.get("display_name"),
+                "state": cw.get("state"),
+                "trust_tier": cw.get("trust_tier"),
+                "trust_score": float(trust.get(role, INITIAL_TRUST)),
+                "fact_count": int(fact_counts.get(role, 0)),
+                "recent_improvements": improvements,
+            }
+        )
+    return jsonify({"coworkers": out})
+
+
+# ---------------------------------------------------------------------------
+# Chat API — multi-turn session helper
+# ---------------------------------------------------------------------------
+
+_CHAT_INSTANCE_ID = "ace-chat"
+
+
+def _chat_ensure_instance(conn) -> None:
+    """Ensure the synthetic chat instance exists for session FK integrity."""
+    conn.execute(
+        _q(
+            conn,
+            "INSERT OR IGNORE INTO ace_instances (id, name, role_id, state) VALUES (?, ?, ?, ?)",
+        ),
+        (_CHAT_INSTANCE_ID, "ACE Chat", "chat", "active"),
+    )
+
+
+@ace_api_bp.route("/chat", methods=["POST"])
+def api_ace_chat():
+    """POST /api/ace/chat — multi-turn chat with persisted session history."""
+    body = request.get_json(silent=True) or {}
+    session_id = body.get("session_id")
+    user_message = body.get("user_message")
+    if not session_id or not isinstance(session_id, str):
+        return jsonify({"error": "session_id is required"}), 400
+    if not user_message or not isinstance(user_message, str):
+        return jsonify({"error": "user_message is required"}), 400
+
+    conn = None
+    try:
+        conn = _db()
+        _chat_ensure_instance(conn)
+
+        row = _one(
+            conn.execute(
+                _q(
+                    conn,
+                    "SELECT conversation_history, history_json, turn_count, resume_token "
+                    "FROM ace_sessions WHERE session_id = ? AND instance_id = ?",
+                ),
+                (session_id, _CHAT_INSTANCE_ID),
+            )
+        )
+
+        if row:
+            raw_history = row.get("history_json") or row.get("conversation_history") or "[]"
+            try:
+                history = json.loads(raw_history) if raw_history else []
+            except (TypeError, ValueError):
+                history = []
+            if not isinstance(history, list):
+                history = []
+            turn_count = int(row.get("turn_count", 0))
+            resume_token = row.get("resume_token") or f"rt-{uuid.uuid4().hex[:12]}"
+        else:
+            history = []
+            turn_count = 0
+            resume_token = f"rt-{uuid.uuid4().hex[:12]}"
+
+        history.append({"role": "user", "content": user_message})
+
+        assistant_message = ""
+        try:
+            from icdev.tools.llm.router import LLMRouter
+            from icdev.tools.llm.provider import LLMRequest
+
+            router = LLMRouter()
+            req = LLMRequest(
+                function="llm_generation",
+                messages=history,
+                model="claude-sonnet-4-6",
+                max_tokens=512,
+            )
+            resp = router.invoke("llm_generation", req)
+            assistant_message = getattr(resp, "content", "") or ""
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ace chat LLM call failed: %s", exc)
+            assistant_message = ""
+
+        if not assistant_message:
+            assistant_message = "ACE response to: " + user_message
+
+        history.append({"role": "assistant", "content": assistant_message})
+        turn_count += 1
+        history_json = json.dumps(history)
+
+        conn.execute(
+            _q(
+                conn,
+                "INSERT INTO ace_sessions (session_id, instance_id, conversation_history, history_json, resume_token, turn_count) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(session_id) DO UPDATE SET "
+                "  conversation_history = excluded.conversation_history, "
+                "  history_json = excluded.history_json, "
+                "  turn_count = excluded.turn_count",
+            ),
+            (session_id, _CHAT_INSTANCE_ID, history_json, history_json, resume_token, turn_count),
+        )
+        conn.commit()
+
+        return jsonify({
+            "session_id": session_id,
+            "turn_count": turn_count,
+            "assistant_message": assistant_message,
+        })
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace chat endpoint error: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn is not None:
+            conn.close()

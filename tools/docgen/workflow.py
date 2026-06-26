@@ -464,12 +464,17 @@ def stage2_analyze_upload(
             try:
                 result = _run_analyzer(diag_mod_path, diag_fn_name, file_path, domain)
                 result_ref_id = result.get("analysis_id") or str(uuid.uuid4())
-                row = sm.add_analysis(session_id, upload_id, "diagram_analysis", result_ref_id)
+                import json as _json
+                row = sm.add_analysis(
+                    session_id, upload_id, "diagram_analysis", result_ref_id,
+                    result_json=_json.dumps(result),
+                )
                 analyses_created.append(row)
                 sm.set_upload_status(upload_id, "analyzed")
                 log.info(
-                    "IDR diagram analysis complete: upload=%s ref=%s",
+                    "IDR diagram analysis complete: upload=%s ref=%s tabs=%s",
                     upload_id, result_ref_id,
+                    list((result.get("tabs") or {}).keys()),
                 )
             except Exception:
                 log.exception("IDR diagram analysis failed: upload=%s", upload_id)
@@ -486,7 +491,11 @@ def stage2_analyze_upload(
             try:
                 result = _run_analyzer(cfg_mod_path, cfg_fn_name, file_path, domain)
                 result_ref_id = result.get("review_id") or str(uuid.uuid4())
-                row = sm.add_analysis(session_id, upload_id, "config_review", result_ref_id)
+                import json as _json
+                row = sm.add_analysis(
+                    session_id, upload_id, "config_review", result_ref_id,
+                    result_json=_json.dumps(result),
+                )
                 analyses_created.append(row)
                 sm.set_upload_status(upload_id, "analyzed")
                 log.info(
@@ -510,7 +519,11 @@ def stage2_analyze_upload(
             try:
                 result = _run_analyzer(iac_mod_path, iac_fn_name, file_path, domain)
                 result_ref_id = result.get("review_id") or str(uuid.uuid4())
-                row = sm.add_analysis(session_id, upload_id, "iac_review", result_ref_id)
+                import json as _json
+                row = sm.add_analysis(
+                    session_id, upload_id, "iac_review", result_ref_id,
+                    result_json=_json.dumps(result),
+                )
                 analyses_created.append(row)
                 sm.set_upload_status(upload_id, "analyzed")
                 log.info(
