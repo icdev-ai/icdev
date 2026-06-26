@@ -22,7 +22,6 @@ from tools.viz.asset_generator import (
     AssetGenerator,
     AssetRequest,
     check_gpu as asset_check_gpu,
-    is_air_gap_media_mode,
 )
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent

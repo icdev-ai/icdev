@@ -28,6 +28,7 @@ profiles:
       - diagram
       - doc
       - config
+      - email
       - supplement
     example_doc_types:
       - runbook
