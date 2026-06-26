@@ -1504,9 +1504,12 @@ CREATE TABLE IF NOT EXISTS idr_sessions (
     ace_instance_id TEXT,
     topology_id     TEXT,
     wg_result_id    TEXT,
+    conflicts_resolved INTEGER DEFAULT 0,
     created_by      TEXT,
     tenant_id       TEXT,
     classification  TEXT DEFAULT 'CUI',
+    suggested_classification TEXT,
+    suggested_classification_confidence REAL,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );

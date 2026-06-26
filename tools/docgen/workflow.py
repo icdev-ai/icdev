@@ -23,7 +23,7 @@ from typing import Any
 
 from tools.logging.icdev_logger import get_logger
 from tools.docgen import session_manager as sm
-from tools.docgen.domain_profiles import get_profile, get_writeguard_mode
+from tools.docgen.domain_profiles import get_profile, get_writeguard_mode, get_ato_doc_type
 
 log = get_logger(__name__)
 
@@ -72,6 +72,9 @@ def _diff_scope_check(
     orig_secs = _split(original)
     prop_secs = _split(proposed)
     if not orig_secs:
+        return True
+    # Single-section documents have no "good" sections to protect; skip check.
+    if len(orig_secs) <= 1:
         return True
 
     failed = {(f or "").lower() for f in (failed_sections or [])}
@@ -315,14 +318,36 @@ def stage5_ace_generate(
     Returns:
         {"instance_id": str, "status": "launched" | "unavailable"}
     """
+    doc_type = context.get("doc_type", "runbook")
+    ato_config = get_ato_doc_type(doc_type)
+
+    # ATO doc types override roles and inject section structure (unless caller passed role_ids).
     if role_ids is None:
-        role_ids = ["technical_writer", "network_engineer"]
+        if ato_config:
+            role_ids = list(ato_config["roles"])
+        else:
+            role_ids = ["technical_writer", "network_engineer"]
+
+    sections_hint = ""
+    if ato_config:
+        sections_hint = f"Required sections: {', '.join(ato_config['sections'])}\n\n"
+
+    poam_hint = ""
+    if doc_type == "stig_checklist" and context.get("nqe_poam_items"):
+        import json as _json
+        items = context["nqe_poam_items"]
+        if isinstance(items, (list, dict)):
+            poam_hint = f"NQE POAM items:\n{_json.dumps(items, indent=2)[:4000]}\n\n"
+        else:
+            poam_hint = f"NQE POAM items:\n{str(items)[:4000]}\n\n"
 
     problem_text = (
-        f"Generate a complete {context.get('doc_type', 'runbook')} document titled "
+        f"{sections_hint}"
+        f"Generate a complete {doc_type} document titled "
         f"'{context.get('title', 'Network Documentation')}' for domain "
         f"'{context.get('domain', 'network')}'.\n\n"
         f"Classification: {context.get('classification', 'CUI')}\n\n"
+        f"{poam_hint}"
         f"Context summary:\n{context.get('query_string', '')[:_ACE_CONTEXT_MAX_CHARS]}"
     )
 
@@ -350,6 +375,91 @@ def stage5_ace_generate(
     except Exception:
         log.exception("IDR ACE generate failed: session=%s", session_id)
         return {"instance_id": None, "status": "error"}
+
+
+# ─── AI classification suggestion (Items 4 & 9) ──────────────────────────────
+
+_CLS_FALLBACK = {"classification": "CUI", "confidence": 0.5, "rationale": "default"}
+
+_CLS_SUGGEST_PROMPT = (
+    "You are a document classification assistant for a US federal government system.\n"
+    "Analyse the following document excerpt and determine the appropriate classification level.\n\n"
+    "Classification levels (ascending): PUBLIC, CUI, SECRET, TOP SECRET, TS//SCI\n\n"
+    "High-sensitivity indicators: SIPR, TS//SCI, SCI, SAP, SAR, NOFORN, IC system names, "
+    "NSA/NRO/NGA/CIA references, nuclear/weapons data.\n"
+    "SECRET indicators: SECRET markings, FOUO alongside sensitive ops, classified system configs.\n"
+    "CUI indicators: PII, ITAR, FOUO, pre-decisional budget, law enforcement, contractor proprietary.\n"
+    "PUBLIC: no controlled markings, fully releasable.\n\n"
+    "Respond in JSON only: {\"classification\": \"<level>\", \"confidence\": <0.0-1.0>, \"rationale\": \"<one sentence>\"}\n\n"
+    "Document excerpt:\n{text}"
+)
+
+
+def suggest_classification(text_sample: str) -> dict:
+    """Use LLM to suggest a classification level from document content.
+
+    Returns {"classification": str, "confidence": float, "rationale": str}.
+    Confidence < 0.85 means the UI should require human confirmation.
+    Falls back to CUI/0.5 on any error.
+    """
+    if not text_sample or not text_sample.strip():
+        return _CLS_FALLBACK.copy()
+
+    try:
+        from tools.llm import get_router
+        from tools.llm.provider import LLMRequest
+        import json as _json
+
+        prompt = _CLS_SUGGEST_PROMPT.format(text=text_sample[:3000])
+        router = get_router()
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=128,
+            temperature=0.0,
+            skip_injection_scan=True,
+        )
+        resp = router.invoke("classification_suggest", req)
+        raw = (resp.content or "").strip()
+
+        # Strip code fences if present
+        import re as _re
+        raw = _re.sub(r"```(?:json)?\s*|\s*```", "", raw).strip()
+
+        data = _json.loads(raw)
+        cls_level = str(data.get("classification", "CUI")).upper()
+        confidence = float(data.get("confidence", 0.5))
+        rationale = str(data.get("rationale", "LLM suggestion"))
+
+        # Clamp confidence
+        confidence = max(0.0, min(1.0, confidence))
+
+        return {"classification": cls_level, "confidence": confidence, "rationale": rationale}
+
+    except (ImportError, Exception) as exc:
+        log.debug("suggest_classification fallback: %s", exc)
+        return _CLS_FALLBACK.copy()
+
+
+def stage2_suggest_classification(session_id: str, text_sample: str) -> dict:
+    """Run LLM classification suggestion and persist result to session.
+
+    High-confidence (>=0.85) suggestions are written to session.suggested_classification
+    so Stage 1 UI can pre-populate the classification selector.
+    Always writes suggested_classification_confidence.
+
+    Returns the suggestion dict {"classification", "confidence", "rationale"}.
+    """
+    result = suggest_classification(text_sample)
+    confidence = result.get("confidence", 0.0)
+
+    if confidence >= 0.85:
+        sm.set_field(session_id, suggested_classification=result["classification"])
+        log.info(
+            "IDR classification pre-fill: session=%s cls=%s confidence=%.2f",
+            session_id, result["classification"], confidence,
+        )
+    sm.set_field(session_id, suggested_classification_confidence=confidence)
+    return result
 
 
 # ─── Stage 6: WriteGuard gate ─────────────────────────────────────────────────
