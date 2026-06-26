@@ -289,7 +289,9 @@ class TestGraphicsGenerator:
     def test_generate_creates_native_asset(self, tmp_path):
         """GraphicsGenerator.generate now delegates to the unified native dispatcher."""
         from tools.slides.graphics_generator import GraphicsGenerator
-        with patch.dict(os.environ, {"SLIDES_IMAGE_PROVIDER": "slides_svg"}, clear=False):
+        with patch.dict(os.environ, {"SLIDES_IMAGE_PROVIDER": "slides_svg"}, clear=False), patch(
+            "tools.viz.asset_generator._available_providers", return_value=["slides_svg"]
+        ):
             gen = GraphicsGenerator(output_dir=tmp_path)
             path = gen.generate(
                 title="Test Slide",
@@ -322,7 +324,9 @@ class TestGraphicsGenerator:
             "SLIDES_IMAGE_PROVIDER": "gpt_image_2",
             "ICDEV_STORAGE_BACKEND": "sqlite",
         }
-        with patch.dict(os.environ, env, clear=False):
+        with patch.dict(os.environ, env, clear=False), patch(
+            "tools.viz.asset_generator._available_providers", return_value=["slides_svg"]
+        ):
             assert is_air_gap_media_mode() is True
             gen = GraphicsGenerator(output_dir=tmp_path)
             path = gen.generate(
