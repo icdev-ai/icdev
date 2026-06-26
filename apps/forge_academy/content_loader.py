@@ -711,6 +711,28 @@ BUILTIN_MISSIONS = [
         "difficulty": "beginner", "estimated_minutes": 35,
         "prereqs": ["m10-tier1-capstone"],
     },
+    # ── TIER 2: NetOps — PNA Predictors ──────────────────────────────────────
+    {
+        "slug": "m-netops-pna-01",
+        "title": "Predictive Network Analytics",
+        "tagline": "6 ML predictors for proactive network management. BGP, capacity, compliance drift, supply chain.",
+        "tier": 2, "topic": "network", "role_filter": "netops,devops,sre",
+        "mission_type": "coding",
+        "xp_reward": 400, "order_idx": 5,
+        "difficulty": "advanced", "estimated_minutes": 45,
+        "prereqs": ["m10-tier1-capstone"],
+    },
+    # ── TIER 2: SRE — Observability & XAI ────────────────────────────────────
+    {
+        "slug": "m-sre-xai-01",
+        "title": "Observability & Explainable AI",
+        "tagline": "OTel traces + AgentSHAP + PROV-AGENT. Know exactly why your agent did what it did.",
+        "tier": 2, "topic": "observability", "role_filter": "sre,devops,secops_eng",
+        "mission_type": "coding",
+        "xp_reward": 400, "order_idx": 5,
+        "difficulty": "advanced", "estimated_minutes": 45,
+        "prereqs": ["m10-tier1-capstone"],
+    },
 ]
 
 # ---------------------------------------------------------------------------

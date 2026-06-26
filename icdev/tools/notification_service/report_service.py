@@ -13,9 +13,18 @@ from typing import Iterable
 
 from tools.db.storage import get_connection
 from .event_service import (
-    render_template, render_to_string, render_string,
-    send, sendmail, notify, emit, publish, dispatch, _now_iso,
+    render_template, render_to_string, send, sendmail, notify, emit, publish, dispatch, _now_iso,
 )
+
+# Narrative / digest limits and thresholds
+_NARRATIVE_MAX_TOKENS      = 512
+_NARRATIVE_TEMPERATURE     = 0.3
+_REGRESSION_SIGNIFICANCE_PTS = 3.0
+_GATE_ROWS_LIMIT           = 5
+_TOP_OPPS_ROADMAP_LIMIT    = 5
+_TOP_OPPS_SCAN_LIMIT       = 5
+_MODULE_ROWS_LIMIT         = 10
+_SUMMARISE_FINDINGS_COUNT  = 5
 
 CANVAS_REPORT_TEMPLATES = {
     "assessment_complete": (
@@ -327,7 +336,7 @@ def deliver_assessment_summary(
         # --- Render ---
         tmpl_str = ASSESSMENT_SUMMARY_TEMPLATES.get(framework, "Assessment: $framework ($project_id)")
         rendered = Template(tmpl_str).safe_substitute(vars_)
-        rendered_html = render_template(
+        _rendered_html = render_template(
             f"reports/{framework}_summary.html",
             framework=framework,
             project_id=project_id,
@@ -622,7 +631,49 @@ def _summarise_findings(findings_json: str | None) -> str:
         return "none"
     try:
         findings = json.loads(findings_json)
-        top = [f.get("title", "finding") for f in (findings[:3] if isinstance(findings, list) else [])]
+        top = [f.get("title", "finding") for f in (findings[:_SUMMARISE_FINDINGS_COUNT] if isinstance(findings, list) else [])]
         return "; ".join(top) or "none"
     except Exception:
         return "parse error"
+
+
+def _compute_regression_threshold(cfg: dict | None) -> float:
+    """Adaptive regression significance threshold from historical score deltas.
+
+    Config keys:
+      enabled: bool
+      min_samples: int
+      sigma_fraction: float
+      fallback_regression_pts: float
+      adaptive_bounds: {"regression_floor": float, "regression_ceil": float}
+    """
+    cfg = cfg or {}
+    if not cfg.get("enabled", True):
+        return float(cfg.get("fallback_regression_pts", _REGRESSION_SIGNIFICANCE_PTS))
+    min_samples = int(cfg.get("min_samples", 5))
+    fallback = float(cfg.get("fallback_regression_pts", _REGRESSION_SIGNIFICANCE_PTS))
+    sigma_fraction = float(cfg.get("sigma_fraction", 0.5))
+    bounds = cfg.get("adaptive_bounds", {}) or {}
+    floor = float(bounds.get("regression_floor", 0.5))
+    ceil = float(bounds.get("regression_ceil", 10.0))
+    try:
+        conn = get_connection()
+        try:
+            row = conn.execute(
+                "SELECT AVG(delta) as mean_s, AVG(delta*delta) - AVG(delta)*AVG(delta) as var_s, COUNT(*) as n "
+                "FROM ("
+                "  SELECT ABS(score - LAG(score) OVER (ORDER BY run_at)) as delta "
+                "  FROM canvas_assessments WHERE score IS NOT NULL"
+                ")"
+            ).fetchone()
+            var_s = float((row or {}).get("var_s", 0.0) or 0.0)
+            n = int((row or {}).get("n", 0) or 0)
+            if n < min_samples:
+                return fallback
+            std_dev = max(0.0, var_s) ** 0.5
+            threshold = sigma_fraction * std_dev
+            return max(floor, min(ceil, threshold))
+        finally:
+            conn.close()
+    except Exception:
+        return fallback

@@ -1,4 +1,4 @@
-# [TEMPLATE: CUI // SP-CTI]
+﻿# [TEMPLATE: CUI // SP-CTI]
 """ICDEV™ Network Design Canvas — Flask Blueprint integration.
 
 Fully self-contained Blueprint mounted at /network/ inside the ICDEV dashboard.
@@ -41,33 +41,6 @@ logger = get_logger("icdev.network")
 _NETWORK_DIR = Path(__file__).resolve().parent
 _ICDEV_ROOT = _NETWORK_DIR.parent.parent
 _TEMPLATE_DIR = _ICDEV_ROOT / "tools" / "dashboard" / "templates"
-
-# ── Config-review progress tracking ─────────────────────────────────────────────
-# In-memory progress store used by the SSE stream and by the HTTP poll fallback.
-# Keyed by review id; entries are short-lived and overwritten on re-analysis.
-_CR_PROGRESS: dict[str, dict] = {}
-
-
-def _cr_set_progress(review_id: str, phase: str, completed: int, total: int, status: str = "running", detail: str = "") -> None:
-    """Broadcast a progress event and cache it for HTTP polling fallback."""
-    payload = {
-        "operation_id": review_id,
-        "operation_type": "ndc_config_review",
-        "phase": phase,
-        "completed": completed,
-        "total": total,
-        "status": status,
-        "percent": round((completed / total) * 100, 1) if total > 0 else 0,
-        "detail": detail,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    }
-    _CR_PROGRESS[review_id] = payload
-    try:
-        from tools.dashboard.sse_manager import sse_manager
-
-        sse_manager.broadcast(payload, "progress")
-    except Exception:
-        pass
 
 # ── Import helper modules ──────────────────────────────────────────────────────
 from tools.network.constants import (  # noqa: E402
@@ -7853,6 +7826,59 @@ def create_network_blueprint():
             "checked": {"ipam_blocks": ipam_count, "circuits": circuit_count},
         })
 
+    @bp.route("/conflicts")
+    @nc_login_required
+    def nc_conflicts_page():
+        """HITL conflict resolution UI."""
+        return render_template("network/conflicts.html")
+
+    @bp.route("/api/conflicts/resolve", methods=["POST"])
+    @nc_login_required
+    def nc_api_conflicts_resolve():
+        """Record a HITL conflict resolution action."""
+        import uuid as _uuid
+        from datetime import datetime, timezone
+        data = request.get_json(force=True) or {}
+        conflict_type = str(data.get("conflict_type") or "").strip()
+        detail = str(data.get("detail") or "").strip()
+        severity = str(data.get("severity") or "medium").strip()
+        action = str(data.get("action") or "acknowledged").strip()
+        note = str(data.get("note") or "").strip()
+        if not conflict_type or not detail:
+            return jsonify({"error": "conflict_type and detail are required"}), 400
+        if action not in ("acknowledged", "resolved"):
+            return jsonify({"error": "action must be acknowledged or resolved"}), 400
+        if severity not in ("high", "medium", "low"):
+            severity = "medium"
+        resolved_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        row_id = str(_uuid.uuid4())
+        conn = get_connection()
+        try:
+            conn.execute(
+                "INSERT INTO nc_conflict_resolutions (id, conflict_type, detail, severity, action, note, resolved_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (row_id, conflict_type, detail, severity, action, note, resolved_at),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return jsonify({"ok": True, "id": row_id, "resolved_at": resolved_at})
+
+    @bp.route("/api/conflicts/resolutions", methods=["GET"])
+    @nc_login_required
+    def nc_api_conflicts_resolutions():
+        """Return all recorded conflict resolution actions, newest first."""
+        conn = get_connection()
+        try:
+            rows = conn.execute(
+                "SELECT id, conflict_type, detail, severity, action, note, resolved_at"
+                " FROM nc_conflict_resolutions ORDER BY resolved_at DESC LIMIT 200"
+            ).fetchall()
+        finally:
+            conn.close()
+        resolutions = [_row_to_dict(r) for r in rows]
+        return jsonify({"resolutions": resolutions})
+
     # ── Global Topology Canvas (JointJS read-only composite) ──────────────
     @bp.route("/global/canvas")
     @nc_login_required
@@ -13537,812 +13563,742 @@ Planning rules:
         """Document library — redirect to SOPs for now."""
         return redirect("/network/sops")
 
-    # ── Configuration Review Assistant ────────────────────────────────────
-    from tools.network.config_review import (
-        get_roles as _cr_get_roles,
-        get_questions as _cr_get_questions,
-        generate_guided_prompts as _cr_generate_prompts,
-        build_llm_prompt as _cr_build_prompt,
-        parse_review_response as _cr_parse_response,
-        compute_config_hash as _cr_config_hash,
-        generate_export_config as _cr_export_config,
-        generate_export_topology as _cr_export_topology,
-    )
-    from tools.network.config_parser import detect_vendor as _cr_detect_vendor
+    # ── Advisory History ───────────────────────────────────────────────────
 
-    @bp.route("/config-review")
+    @bp.route("/advisory-history")
     @nc_login_required
-    def nc_config_review_page():
-        """Role-based configuration review assistant."""
-        from tools.network.config_review import get_questions as _cr_get_questions
-        roles = _cr_get_roles()
-        questions_by_role = {k: _cr_get_questions(k) for k in roles}
+    def nc_advisory_history():
+        from tools.network.advisory import list_advisories, list_vendors
+        advisories = list_advisories(
+            vendor=request.args.get("vendor"),
+            severity=request.args.get("severity"),
+            status=request.args.get("status"),
+            date_from=request.args.get("date_from"),
+            date_to=request.args.get("date_to"),
+        )
+        vendors = list_vendors()
         return render_template(
-            "network/config_review.html",
-            roles=roles,
-            questions_by_role=questions_by_role,
-            classification_banner=NC_CONFIG.get("app", {}).get("classification", ""),
+            "network/advisory_history.html",
+            advisories=advisories,
+            vendors=vendors,
         )
 
-    @bp.route("/api/config-review", methods=["POST"])
+    @bp.route("/api/advisories/export")
     @nc_login_required
-    def nc_api_create_config_review():
-        """Create a new config review record.
+    def nc_api_advisories_export():
+        import csv
+        import io
+        from flask import Response
+        from tools.network.advisory import list_advisories
+        items = list_advisories()
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["CVE ID", "Vendor", "Severity", "Date", "Total Devices",
+                    "Impacted", "Remediation %", "Data Source", "HITL Status", "Status"])
+        for a in items:
+            w.writerow([
+                a.get("cve_id", ""), a.get("vendor", ""), a.get("severity", ""),
+                (a.get("published_date") or "")[:10], a.get("total_devices", 0),
+                a.get("impacted_devices", 0), a.get("remediation_pct", 0),
+                a.get("data_source", ""), a.get("hitl_status", ""), a.get("status", ""),
+            ])
+        return Response(buf.getvalue(), mimetype="text/csv",
+                        headers={"Content-Disposition": "attachment; filename=advisories.csv"})
 
-        Accepts multipart (file) or JSON (config_text). Returns review id,
-        detected vendor, role, and guided prompts.
-        """
+    # ── POAM ───────────────────────────────────────────────────────────────
+
+    @bp.route("/poam")
+    @nc_login_required
+    def nc_poam():
+        from tools.network.poam_generator import list_poam_items
+        from datetime import date
+        advisory_filter = request.args.get("advisory")
+        items = list_poam_items()
+        return render_template(
+            "network/poam.html",
+            items=items,
+            advisory_filter=advisory_filter,
+            today=date.today().isoformat(),
+        )
+
+    @bp.route("/api/poam/generate", methods=["POST"])
+    @nc_login_required
+    def nc_api_poam_generate():
+        from tools.network.poam_generator import generate_poam_item
         data = request.get_json(silent=True) or {}
-        config_text = ""
-        title = data.get("title", "Config Review")
-        role_key = data.get("role", "network_engineer")
-
-        if request.files and "file" in request.files:
-            f = request.files["file"]
-            if f.filename:
-                config_text = f.read().decode("utf-8", errors="replace")
-                if not title or title == "Config Review":
-                    title = f.filename
-        if not config_text:
-            config_text = data.get("config_text", "")
-
-        if not config_text.strip():
-            return jsonify({"error": "No configuration provided"}), 400
-
-        vendor = data.get("vendor") or _cr_detect_vendor(config_text) or "generic"
-        if role_key not in _cr_get_roles():
-            return jsonify({"error": f"Unknown role: {role_key}"}), 400
-
-        review_id = str(_uuid.uuid4())
-        created_at = datetime.now(timezone.utc).isoformat()
-        answers_json = json.dumps({})
-
-        conn = get_connection()
+        advisory_id = data.get("advisory_id", "")
         try:
+            item = generate_poam_item(advisory_id, data)
+            return jsonify({"ok": True, "item": item})
+        except Exception as exc:
+            logger.exception("POAM generate failed")
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/poam/export")
+    @nc_login_required
+    def nc_api_poam_export():
+        from flask import Response
+        from tools.network.poam_generator import export_poam
+        fmt = request.args.get("format", "csv")
+        content, mimetype = export_poam(fmt)
+        ext = "json" if fmt == "json" else "csv"
+        return Response(content, mimetype=mimetype,
+                        headers={"Content-Disposition": f"attachment; filename=poam.{ext}"})
+
+    # ── Exceptions ─────────────────────────────────────────────────────────
+
+    @bp.route("/exceptions")
+    @nc_login_required
+    def nc_exceptions():
+        from tools.network.exception_registry import list_exceptions
+        from datetime import date
+        exceptions = list_exceptions()
+        return render_template(
+            "network/exceptions.html",
+            exceptions=exceptions,
+            today=date.today().isoformat(),
+        )
+
+    @bp.route("/exceptions/file")
+    @nc_login_required
+    def nc_exceptions_file_form():
+        """Redirect to exceptions page with file modal open."""
+        return redirect("/network/exceptions?open_modal=file")
+
+    @bp.route("/api/exception/file", methods=["POST"])
+    @nc_login_required
+    def nc_api_exception_file():
+        from tools.network.exception_registry import file_exception
+        data = request.get_json(silent=True) or {}
+        try:
+            exc = file_exception(data)
+            return jsonify({"ok": True, "exception": exc})
+        except Exception as e:
+            logger.exception("Exception filing failed")
+            return jsonify({"error": str(e)}), 500
+
+    @bp.route("/api/exception/<exc_id>/approve", methods=["POST"])
+    @nc_login_required
+    def nc_api_exception_approve(exc_id):
+        from tools.network.exception_registry import approve_exception
+        data = request.get_json(silent=True) or {}
+        level = data.get("level", "")
+        approver = data.get("approver", "")
+        if not level or not approver:
+            return jsonify({"error": "level and approver are required"}), 400
+        try:
+            exc = approve_exception(exc_id, level, approver)
+            return jsonify({"ok": True, "exception": exc})
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        except Exception as e:
+            logger.exception("Exception approval failed")
+            return jsonify({"error": str(e)}), 500
+
+    # ── ATO Evidence Chain Export ──────────────────────────────────────────
+
+    def _gather_ato_evidence(advisory_id, conn):
+        """Collect all audit-chain rows for one advisory from available tables."""
+
+        def _q(sql, params=()):
+            try:
+                return [dict(r) for r in conn.execute(sql, params).fetchall()]
+            except Exception:
+                return []
+
+        def _q1(sql, params=()):
+            try:
+                row = conn.execute(sql, params).fetchone()
+                return dict(row) if row else None
+            except Exception:
+                return None
+
+        advisory = _q1("SELECT * FROM nc_advisories WHERE id = ?", (advisory_id,))
+
+        assessments = _q(
+            "SELECT * FROM nc_advisory_assessments WHERE advisory_id = ? ORDER BY created_at ASC",
+            (advisory_id,),
+        )
+
+        rem_actions = _q(
+            "SELECT * FROM nc_remediation_actions WHERE advisory_id = ? ORDER BY created_at ASC",
+            (advisory_id,),
+        )
+
+        rem_status_log: list = []
+        action_ids = [a.get("id") for a in rem_actions if a.get("id")]
+        if action_ids:
+            ph = ",".join("?" * len(action_ids))
+            rem_status_log = _q(
+                f"SELECT * FROM nc_remediation_status_log WHERE action_id IN ({ph}) ORDER BY created_at ASC",
+                action_ids,
+            )
+
+        poam_items = _q(
+            "SELECT * FROM nc_poam_items WHERE advisory_id = ? ORDER BY created_at ASC",
+            (advisory_id,),
+        )
+
+        poam_status_log: list = []
+        poam_ids = [p.get("id") for p in poam_items if p.get("id")]
+        if poam_ids:
+            ph = ",".join("?" * len(poam_ids))
+            poam_status_log = _q(
+                f"SELECT * FROM nc_poam_status_log WHERE poam_id IN ({ph}) ORDER BY created_at ASC",
+                poam_ids,
+            )
+
+        exceptions = _q(
+            "SELECT * FROM nc_exceptions WHERE advisory_id = ? ORDER BY created_at ASC",
+            (advisory_id,),
+        )
+
+        exception_approvals: list = []
+        exc_ids = [e.get("id") for e in exceptions if e.get("id")]
+        if exc_ids:
+            ph = ",".join("?" * len(exc_ids))
+            exception_approvals = _q(
+                f"SELECT * FROM nc_exception_approvals WHERE exception_id IN ({ph}) ORDER BY created_at ASC",
+                exc_ids,
+            )
+
+        audit_log = _q(
+            "SELECT * FROM nc_nqe_audit_log WHERE advisory_id = ? ORDER BY created_at ASC",
+            (advisory_id,),
+        )
+
+        return {
+            "advisory": advisory,
+            "assessments": assessments,
+            "remediation_actions": rem_actions,
+            "remediation_status_log": rem_status_log,
+            "poam_items": poam_items,
+            "poam_status_log": poam_status_log,
+            "exceptions": exceptions,
+            "exception_approvals": exception_approvals,
+            "audit_log": audit_log,
+        }
+
+    def _audit_ato_export(advisory_id, fmt, doc_hash):
+        """Append an audit-log entry for the export (best-effort; non-blocking)."""
+        try:
+            conn = get_connection()
             conn.execute(
-                "INSERT INTO nc_config_reviews (id, title, vendor, role_key, answers_json, config_text_hash, config_text, status, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (review_id, title, vendor, role_key, answers_json, _cr_config_hash(config_text), config_text, "draft", created_at, created_at),
+                """INSERT INTO nc_nqe_audit_log
+                   (session_id, user_session, action, input_text, result_summary,
+                    raw_response_hash, advisory_id, created_at)
+                   VALUES (?,?,?,?,?,?,?,?)""",
+                (
+                    session.get("session_id", ""),
+                    session.get("user", ""),
+                    "export",
+                    fmt,
+                    f"ATO evidence chain export (format={fmt})",
+                    doc_hash,
+                    advisory_id,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
             )
             conn.commit()
-        finally:
             conn.close()
-
-        prompts = _cr_generate_prompts(role_key, vendor)
-        _audit("CONFIG_REVIEW_CREATED", "config_review", review_id, f"vendor={vendor}, role={role_key}")
-        return jsonify({
-            "id": review_id,
-            "title": title,
-            "vendor": vendor,
-            "role": role_key,
-            "questions": _cr_get_questions(role_key),
-            "prompts": prompts,
-        })
-
-    @bp.route("/api/config-review/<review_id>/analyze", methods=["POST"])
-    @nc_login_required
-    def nc_api_analyze_config_review(review_id):
-        """Run the LLM review for a given review id."""
-        data = request.get_json(silent=True) or {}
-        answers = data.get("answers", {})
-        selected_prompt_title = data.get("prompt_title", "")
-
-        conn = get_connection()
-        try:
-            row = conn.execute("SELECT * FROM nc_config_reviews WHERE id=?", (review_id,)).fetchone()
-            if not row:
-                conn.close()
-                return jsonify({"error": "Review not found"}), 404
-            config_text = _row_to_dict(row).get("config_text", "") or ""
-            if not config_text:
-                conn.close()
-                return jsonify({"error": "Review not found"}), 404
-            review = _row_to_dict(row)
-            conn.execute("UPDATE nc_config_reviews SET status='analyzing', answers_json=? WHERE id=?", (json.dumps(answers), review_id))
-            conn.commit()
-        finally:
-            conn.close()
-
-        role_key = review["role_key"]
-        vendor = review["vendor"]
-        roles = _cr_get_roles()
-        role_label = roles.get(role_key, {}).get("label", role_key)
-
-        _cr_set_progress(review_id, "starting", 1, 7, "running", "Preparing review session...")
-
-        # Optional quick parsing to surface hostname if detectable.
-        hostname = ""
-        try:
-            from tools.network.config_import import import_config
-            import os
-            import tempfile
-
-            _cr_set_progress(review_id, "parsing", 2, 7, "running", "Parsing device hostname and interfaces...")
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".cfg", delete=False) as tf:
-                tf.write(config_text)
-                tf_path = tf.name
-            try:
-                device = import_config(tf_path)
-                hostname = device.get("hostname", "")
-            finally:
-                os.unlink(tf_path)
         except Exception:
             pass
 
-        _cr_set_progress(review_id, "building_prompt", 3, 7, "running", "Building role-specific review prompt...")
-        prompt = _cr_build_prompt(role_key, config_text, vendor, answers, hostname=hostname, selected_prompt_title=selected_prompt_title)
-
-        result = {}
-        llm_error = None
-        try:
-            from tools.llm.router import LLMRouter
-            from tools.llm.provider import LLMRequest
-            router = LLMRouter()
-            req = LLMRequest(
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=8000,
-                temperature=0.2,
-                skip_injection_scan=True,  # config text is the artifact under review, not an untrusted prompt
-                output_schema={"type": "object"},  # ask Ollama to emit valid JSON when supported
-            )
-            _cr_set_progress(review_id, "invoking_llm", 4, 7, "running", "Invoking AI model for configuration review...")
-            resp = router.invoke("ndc_config_review", req)
-            _cr_set_progress(review_id, "parsing_response", 5, 7, "running", "Parsing AI response into findings...")
-            result = _cr_parse_response(resp.content or "", vendor)
-        except Exception as exc:
-            logger.warning("Config review LLM error: %s", exc)
-            llm_error = str(exc)
-            result = _cr_parse_response("", vendor)
-            result["explanation"] = f"LLM unavailable: {llm_error}. Showing deterministic fallback."
-
-        # Persist findings.
-        _cr_set_progress(review_id, "persisting", 6, 7, "running", "Persisting findings and building report...")
-        conn = get_connection()
-        try:
-            result_json = json.dumps(result)
-            conn.execute(
-                "UPDATE nc_config_reviews SET status=?, result_json=?, updated_at=? WHERE id=?",
-                ("complete" if not llm_error else "error", result_json, datetime.now(timezone.utc).isoformat(), review_id),
-            )
-            # Clear old findings.
-            conn.execute("DELETE FROM nc_config_review_findings WHERE review_id=?", (review_id,))
-            for category in ("security_compliance", "optimization", "remediation"):
-                for item in result.get(category, []):
-                    finding_id = str(_uuid.uuid4())
-                    severity = item.get("severity", "info")
-                    if category == "optimization":
-                        severity = item.get("priority", "info")
-                    elif category == "remediation":
-                        severity = item.get("priority", "medium")
-                    conn.execute(
-                        "INSERT INTO nc_config_review_findings (id, review_id, category, severity, title, detail, remediation, sample_config_snippet, references_json) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (
-                            finding_id,
-                            review_id,
-                            category,
-                            severity,
-                            item.get("title", ""),
-                            item.get("detail", "") or item.get("description", ""),
-                            item.get("remediation", "") or item.get("recommendation", ""),
-                            item.get("sample_config_snippet", ""),
-                            json.dumps(item.get("references", [])),
-                        ),
-                    )
-            conn.commit()
-        finally:
-            conn.close()
-
-        _cr_set_progress(
-            review_id,
-            "complete" if not llm_error else "failed",
-            7,
-            7,
-            "completed" if not llm_error else "failed",
-            "Review complete." if not llm_error else f"Review failed: {llm_error}",
-        )
-
-        _audit("CONFIG_REVIEW_ANALYZED", "config_review", review_id, f"role={role_label}, vendor={vendor}")
-        return jsonify({"id": review_id, "status": "complete" if not llm_error else "error", "result": result})
-
-    @bp.route("/api/config-review/<review_id>/progress", methods=["GET"])
-    @nc_login_required
-    def nc_api_config_review_progress(review_id):
-        """Return current progress for a config review (HTTP polling fallback)."""
-        progress = _CR_PROGRESS.get(review_id, {
-            "operation_id": review_id,
-            "operation_type": "ndc_config_review",
-            "phase": "unknown",
-            "completed": 0,
-            "total": 7,
-            "status": "running",
-            "percent": 0,
-            "detail": "Waiting for review to start...",
+    def _ato_safe(text):
+        """Coerce to latin-1-safe string for fpdf2 core fonts."""
+        _MAP = str.maketrans({
+            "—": "-", "–": "-", "→": "->", "←": "<-",
+            "≥": ">=", "≤": "<=", "°": "deg", "•": "*",
+            "’": "'", "‘": "'", "“": '"', "”": '"',
+            "™": "(TM)", "®": "(R)", "©": "(c)",
+            "×": "x", "÷": "/",
         })
-        return jsonify(progress)
+        text = str(text).translate(_MAP)
+        return text.encode("latin-1", errors="replace").decode("latin-1")
 
-    @bp.route("/api/config-review/<review_id>", methods=["GET"])
-    @nc_login_required
-    def nc_api_get_config_review(review_id):
-        """Retrieve a persisted config review and its findings."""
-        conn = get_connection()
+    def _build_ato_pdf(evidence, advisory_id):
+        """Return PDF bytes (fpdf2) or HTML bytes (fallback) for the evidence package."""
+        _CLASSIFICATION = "CUI // SP-CTI"
+        adv = evidence.get("advisory") or {}
+        meta = evidence.get("_meta", {})
+
+        def _cui_banner(pdf):
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.set_fill_color(180, 30, 30)
+            pdf.set_text_color(255, 255, 255)
+            pdf.cell(0, 5, f"  {_CLASSIFICATION}", ln=True, fill=True)
+            pdf.set_text_color(0, 0, 0)
+
+        def _section_heading(pdf, title):
+            pdf.set_font("Helvetica", "B", 11)
+            pdf.set_fill_color(220, 230, 245)
+            pdf.set_text_color(20, 60, 120)
+            pdf.cell(0, 7, _ato_safe(title), ln=True, fill=True)
+            pdf.set_text_color(0, 0, 0)
+            pdf.ln(1)
+
+        def _kv_row(pdf, label, value):
+            pdf.set_font("Helvetica", "B", 8)
+            pdf.cell(60, 5, _ato_safe(str(label) + ":"), ln=False)
+            pdf.set_font("Helvetica", "", 8)
+            pdf.multi_cell(0, 5, _ato_safe(str(value)[:300]))
+
+        def _cui_footer_all(pdf):
+            total = pdf.page
+            for pno in range(1, total + 1):
+                pdf.page = pno
+                pdf.set_y(-12)
+                pdf.set_font("Helvetica", "B", 7)
+                pdf.set_fill_color(180, 30, 30)
+                pdf.set_text_color(255, 255, 255)
+                pdf.cell(0, 4,
+                         f"  {_CLASSIFICATION} | Page {pno} of {total} | ICDEV ATO Evidence Package",
+                         ln=True, fill=True)
+            pdf.page = total
+
         try:
-            row = conn.execute("SELECT * FROM nc_config_reviews WHERE id=?", (review_id,)).fetchone()
-            if not row:
-                conn.close()
-                return jsonify({"error": "Review not found"}), 404
-            review = _row_to_dict(row)
-            findings = [_row_to_dict(r) for r in conn.execute(
-                "SELECT * FROM nc_config_review_findings WHERE review_id=? ORDER BY created_at", (review_id,)
-            ).fetchall()]
-        finally:
-            conn.close()
+            from fpdf import FPDF
 
-        result = {}
-        if review.get("result_json"):
-            try:
-                result = json.loads(review["result_json"])
-            except json.JSONDecodeError:
-                pass
+            pdf = FPDF(orientation="P", unit="mm", format="A4")
+            pdf.set_auto_page_break(auto=True, margin=18)
+            pdf.set_margins(15, 20, 15)
 
-        return jsonify({
-            "review": review,
-            "findings": findings,
-            "result": result,
-        })
+            # ── Cover ─────────────────────────────────────────────────────
+            pdf.add_page()
+            _cui_banner(pdf)
+            pdf.ln(12)
+            pdf.set_font("Helvetica", "B", 20)
+            pdf.set_text_color(20, 60, 120)
+            pdf.cell(0, 12, "ATO Evidence Package", ln=True, align="C")
+            pdf.set_font("Helvetica", "B", 13)
+            pdf.set_text_color(50, 50, 50)
+            pdf.cell(0, 8, _ato_safe(f"Advisory ID: {advisory_id}  |  CVE: {adv.get('cve_id','N/A')}"), ln=True, align="C")
+            pdf.set_font("Helvetica", "", 11)
+            pdf.cell(0, 7, _ato_safe(f"Vendor: {adv.get('vendor','N/A')}  |  Severity: {str(adv.get('severity','N/A')).upper()}"), ln=True, align="C")
+            pdf.cell(0, 7, _ato_safe(f"Status: {adv.get('status','N/A')}"), ln=True, align="C")
+            pdf.ln(4)
+            pdf.set_font("Helvetica", "I", 8)
+            pdf.set_text_color(100, 100, 100)
+            pdf.cell(0, 5, _ato_safe(f"Exported: {meta.get('exported_at','')}"), ln=True, align="C")
+            pdf.cell(0, 5, _ato_safe(f"SHA-256: {meta.get('doc_hash_sha256','')}"), ln=True, align="C")
+            pdf.set_text_color(0, 0, 0)
 
-    @bp.route("/api/config-review/<review_id>/export-config", methods=["POST"])
-    @nc_login_required
-    def nc_api_export_review_config(review_id):
-        """Export a starter config from the review findings."""
-        conn = get_connection()
-        try:
-            row = conn.execute("SELECT vendor FROM nc_config_reviews WHERE id=?", (review_id,)).fetchone()
-            if not row:
-                conn.close()
-                return jsonify({"error": "Review not found"}), 404
-            vendor = row["vendor"]
-            findings = [_row_to_dict(r) for r in conn.execute(
-                "SELECT * FROM nc_config_review_findings WHERE review_id=?", (review_id,)
-            ).fetchall()]
-        finally:
-            conn.close()
+            # ── Sec 1: Advisory Record ─────────────────────────────────────
+            pdf.add_page()
+            _cui_banner(pdf)
+            pdf.ln(2)
+            _section_heading(pdf, "1. Advisory Record")
+            for label, key in [
+                ("CVE ID", "cve_id"), ("Vendor", "vendor"), ("Severity", "severity"),
+                ("Status", "status"), ("Published Date", "published_date"),
+                ("Total Devices", "total_devices"), ("Impacted Devices", "impacted_devices"),
+                ("Remediation %", "remediation_pct"), ("Data Source", "data_source"),
+                ("HITL Status", "hitl_status"), ("HITL Approved By", "hitl_approved_by"),
+                ("HITL Approved At", "hitl_approved_at"),
+                ("Source Doc Hash (SHA-256)", "source_doc_hash"),
+                ("Source Doc Format", "source_doc_format"),
+                ("Extraction Confidence", "extraction_confidence"),
+                ("Created", "created_at"), ("Updated", "updated_at"),
+            ]:
+                val = adv.get(key, "")
+                if val not in (None, "", 0):
+                    _kv_row(pdf, label, val)
+            if adv.get("description"):
+                pdf.ln(2)
+                pdf.set_font("Helvetica", "B", 8)
+                pdf.cell(0, 5, "Description:", ln=True)
+                pdf.set_font("Helvetica", "", 8)
+                pdf.multi_cell(0, 5, _ato_safe(str(adv["description"])[:1500]))
 
-        config_text = _cr_export_config(vendor, findings)
-        _audit("CONFIG_REVIEW_EXPORT_CONFIG", "config_review", review_id, f"vendor={vendor}")
-        return jsonify({"config": config_text, "vendor": vendor})
+            # ── Sec 2: Impact Assessments ──────────────────────────────────
+            for idx, asmt in enumerate(evidence.get("assessments", []), 1):
+                pdf.add_page()
+                _cui_banner(pdf)
+                pdf.ln(2)
+                _section_heading(pdf, f"2.{idx} Impact Assessment (ID: {asmt.get('id','')})")
+                for label, key in [
+                    ("Network ID", "network_id"), ("FWD Snapshot ID", "fwd_snapshot_id"),
+                    ("Data Source", "data_source"),
+                    ("NQL — Total Devices", "nql_total"), ("NQL — Impacted", "nql_impacted"),
+                    ("NQL — AI Generated", "nql_ai_generated"), ("NQL — Template Based", "nql_template_based"),
+                    ("Total Devices", "total_devices"), ("Impacted Count", "impacted_count"),
+                    ("Raw Response Hash (SHA-256)", "raw_response_hash"),
+                    ("AI Confidence", "ai_confidence"),
+                    ("Cross-Val Delta %", "cross_validation_delta_pct"),
+                    ("Cross-Val Warning", "cross_validation_warning"),
+                    ("HITL Approved By", "approved_by"), ("HITL Approved At", "approved_at"),
+                    ("Created", "created_at"),
+                ]:
+                    val = asmt.get(key, "")
+                    if val not in (None, ""):
+                        _kv_row(pdf, label, val)
 
-    @bp.route("/api/config-review/<review_id>/export-topology", methods=["POST"])
-    @nc_login_required
-    def nc_api_export_review_topology(review_id):
-        """Export a topology graph from the review findings."""
-        conn = get_connection()
-        try:
-            row = conn.execute("SELECT vendor, result_json FROM nc_config_reviews WHERE id=?", (review_id,)).fetchone()
-            if not row:
-                conn.close()
-                return jsonify({"error": "Review not found"}), 404
-            vendor = row["vendor"]
-            result = json.loads(row["result_json"] or "{}")
-            topology = _cr_export_topology(result.get("remediation", []), vendor)
-            # If the LLM returned a topology graph, use it instead.
-            if result.get("topology_graph") and result["topology_graph"].get("nodes"):
-                topology = result["topology_graph"]
-        finally:
-            conn.close()
+            # ── Sec 3: Remediation Actions ─────────────────────────────────
+            if evidence.get("remediation_actions"):
+                pdf.add_page()
+                _cui_banner(pdf)
+                pdf.ln(2)
+                _section_heading(pdf, "3. Remediation Actions")
+                for ra in evidence["remediation_actions"]:
+                    pdf.set_font("Helvetica", "BI", 9)
+                    pdf.cell(0, 6, _ato_safe(f"Action {ra.get('id','')[:24]}"), ln=True)
+                    for label, key in [
+                        ("Device ID", "device_id"), ("Action Type", "action_type"),
+                        ("Performed By", "performed_by"), ("Result", "result"),
+                        ("Notes", "notes"), ("Created", "created_at"),
+                    ]:
+                        val = ra.get(key, "")
+                        if val not in (None, ""):
+                            _kv_row(pdf, label, val)
+                    pdf.ln(2)
+                if evidence.get("remediation_status_log"):
+                    pdf.ln(2)
+                    _section_heading(pdf, "3a. Remediation Status Log")
+                    pdf.set_font("Helvetica", "", 8)
+                    for sl in evidence["remediation_status_log"]:
+                        pdf.cell(0, 5, _ato_safe(
+                            f"{sl.get('created_at','')} | action={sl.get('action_id','')} | "
+                            f"{sl.get('old_status','?')} -> {sl.get('new_status','')} | "
+                            f"by={sl.get('updated_by','')}"
+                        ), ln=True)
 
-        _audit("CONFIG_REVIEW_EXPORT_TOPOLOGY", "config_review", review_id, f"vendor={vendor}")
-        return jsonify({"graph": topology, "vendor": vendor})
+            # ── Sec 4: POAM Items ──────────────────────────────────────────
+            if evidence.get("poam_items"):
+                pdf.add_page()
+                _cui_banner(pdf)
+                pdf.ln(2)
+                _section_heading(pdf, "4. POAM Items")
+                for pi in evidence["poam_items"]:
+                    pdf.set_font("Helvetica", "BI", 9)
+                    pdf.cell(0, 6, _ato_safe(f"POAM {pi.get('poam_id', pi.get('id',''))}"), ln=True)
+                    for label, key in [
+                        ("CVE", "cve_id"), ("Weakness", "weakness"), ("Control ID", "control_id"),
+                        ("Severity", "severity"), ("Status", "status"),
+                        ("Scheduled Completion", "scheduled_completion"),
+                        ("Responsible Party", "responsible_party"),
+                        ("Twin Validated", "twin_validated"), ("Resources", "resources"),
+                    ]:
+                        val = pi.get(key, "")
+                        if val not in (None, "", 0):
+                            _kv_row(pdf, label, val)
+                    pdf.ln(2)
+                if evidence.get("poam_status_log"):
+                    pdf.ln(2)
+                    _section_heading(pdf, "4a. POAM Status Log")
+                    pdf.set_font("Helvetica", "", 8)
+                    for sl in evidence["poam_status_log"]:
+                        pdf.cell(0, 5, _ato_safe(
+                            f"{sl.get('created_at','')} | poam={sl.get('poam_id','')} | "
+                            f"{sl.get('old_status','?')} -> {sl.get('new_status','')} | "
+                            f"by={sl.get('updated_by','')}"
+                        ), ln=True)
 
-    @bp.route("/api/iqe-query", methods=["POST"])
-    @nc_login_required
-    def nc_api_config_review_iqe_query():
-        """Per-canvas IQE query endpoint for the Network Canvas.
+            # ── Sec 5: Exceptions ──────────────────────────────────────────
+            if evidence.get("exceptions"):
+                pdf.add_page()
+                _cui_banner(pdf)
+                pdf.ln(2)
+                _section_heading(pdf, "5. Exceptions")
+                for ex in evidence["exceptions"]:
+                    pdf.set_font("Helvetica", "BI", 9)
+                    pdf.cell(0, 6, _ato_safe(f"Device: {ex.get('device_name','')}  [{ex.get('status','')}]"), ln=True)
+                    for label, key in [
+                        ("Exception Type", "exception_type"), ("Risk Level", "risk_level"),
+                        ("Expiry Date", "expiry_date"), ("Justification", "justification"),
+                        ("ISSO Approved By", "isso_approved_by"), ("ISSO Approved At", "isso_approved_at"),
+                        ("ISSM Approved By", "issm_approved_by"), ("ISSM Approved At", "issm_approved_at"),
+                        ("AO Approved By", "ao_approved_by"), ("AO Approved At", "ao_approved_at"),
+                        ("Compensating Controls", "compensating_controls"),
+                        ("Risk Acceptance Level", "risk_acceptance_level"),
+                        ("Filed By", "filed_by"), ("Created", "created_at"),
+                    ]:
+                        val = ex.get(key, "")
+                        if val not in (None, "", 0):
+                            _kv_row(pdf, label, val)
+                    pdf.ln(2)
+                if evidence.get("exception_approvals"):
+                    pdf.ln(2)
+                    _section_heading(pdf, "5a. Exception Approval Chain")
+                    pdf.set_font("Helvetica", "", 8)
+                    for ap in evidence["exception_approvals"]:
+                        pdf.cell(0, 5, _ato_safe(
+                            f"{ap.get('created_at','')} | exc={ap.get('exception_id','')} | "
+                            f"{ap.get('approver_role','')} {ap.get('approver','')} -> "
+                            f"{ap.get('decision','')} | {ap.get('conditions','')}"
+                        ), ln=True)
 
-        Dispatches natural-language questions to the NDC IQE adapter.
+            # ── Sec 6: NQE Audit Trail ─────────────────────────────────────
+            if evidence.get("audit_log"):
+                pdf.add_page()
+                _cui_banner(pdf)
+                pdf.ln(2)
+                _section_heading(pdf, "6. NQE Audit Trail")
+                pdf.set_font("Helvetica", "", 8)
+                for entry in evidence["audit_log"]:
+                    pdf.cell(0, 5, _ato_safe(
+                        f"{entry.get('created_at','')} | {entry.get('action','')} | "
+                        f"{str(entry.get('result_summary',''))[:100]}"
+                    ), ln=True)
+
+            # ── Hash integrity page ────────────────────────────────────────
+            pdf.add_page()
+            _cui_banner(pdf)
+            pdf.ln(4)
+            _section_heading(pdf, "Document Integrity")
+            _kv_row(pdf, "Document SHA-256", meta.get("doc_hash_sha256", ""))
+            _kv_row(pdf, "Exported At", meta.get("exported_at", ""))
+            _kv_row(pdf, "Classification", meta.get("classification", ""))
+            pdf.ln(4)
+            pdf.set_font("Helvetica", "I", 8)
+            pdf.set_text_color(100, 100, 100)
+            pdf.multi_cell(0, 5,
+                "The SHA-256 hash above was computed over the canonical JSON serialization "
+                "of all evidence fields. Re-compute to verify document integrity.")
+
+            _cui_footer_all(pdf)
+            return bytes(pdf.output())
+
+        except ImportError:
+            logger.warning("fpdf2 not installed — generating HTML fallback for ATO PDF")
+            adv_rows = "".join(
+                f"<tr><th>{k}</th><td>{v}</td></tr>"
+                for k, v in (adv or {}).items()
+                if v not in (None, "")
+            )
+            return (
+                f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
+                f"<title>ATO Evidence — Advisory {advisory_id}</title>"
+                f"<style>body{{font-family:monospace;margin:2em}}"
+                f"table{{border-collapse:collapse;width:100%}}"
+                f"th,td{{border:1px solid #ccc;padding:4px 8px;text-align:left}}"
+                f"th{{background:#dde;width:220px}}"
+                f".cui{{background:#b41e1e;color:#fff;padding:4px 10px;font-weight:bold}}"
+                f"h2{{color:#1a3c78}}</style></head><body>"
+                f"<div class='cui'>CUI // SP-CTI</div>"
+                f"<h1>ATO Evidence Package — Advisory {advisory_id}</h1>"
+                f"<p>Exported: {meta.get('exported_at','')} | "
+                f"SHA-256: <code>{meta.get('doc_hash_sha256','')}</code></p>"
+                f"<h2>1. Advisory Record</h2><table>{adv_rows}</table>"
+                f"<p><em>Install fpdf2 for full multi-section PDF output.</em></p>"
+                f"<div class='cui'>CUI // SP-CTI</div></body></html>"
+            ).encode("utf-8")
+
+    def _build_ato_excel(evidence, advisory_id):
+        """Return (bytes, mimetype, extension) for Excel export.
+
+        Uses openpyxl when available; falls back to a ZIP archive of CSV sheets.
         """
-        from tools.iqe.nl_to_iqe import nl_to_iqe
-        from tools.iqe.parser import IQESyntaxError, parse
-        from tools.iqe.executor import execute_query
-        import tools.iqe.adapters.ndc  # noqa: F401
+        import csv
+        import io
+        import zipfile
 
-        data = request.get_json(silent=True) or {}
-        question = (data.get("question") or "").strip()
-        if not question:
-            return jsonify({"error": "question is required"}), 400
-
-        collections = [
-            "network.topologies",
-            "network.devices",
-            "network.config_reviews",
-            "network.config_review_findings",
-            "network.ai_decisions",
+        SHEETS = [
+            ("Advisory",            [evidence.get("advisory")] if evidence.get("advisory") else []),
+            ("Assessments",         evidence.get("assessments", [])),
+            ("RemediationActions",  evidence.get("remediation_actions", [])),
+            ("RemediationStatusLog",evidence.get("remediation_status_log", [])),
+            ("POAMItems",           evidence.get("poam_items", [])),
+            ("POAMStatusLog",       evidence.get("poam_status_log", [])),
+            ("Exceptions",          evidence.get("exceptions", [])),
+            ("ExceptionApprovals",  evidence.get("exception_approvals", [])),
+            ("AuditLog",            evidence.get("audit_log", [])),
         ]
-        translation = nl_to_iqe(question, collections)
-        iqe_str = translation.get("iqe", "")
-        explanation = translation.get("explanation", "")
-
-        if not data.get("execute", True):
-            return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation}), 200
 
         try:
-            ast = parse(iqe_str)
-            rows = execute_query(ast, None)
-            return jsonify({"ok": True, "iqe": iqe_str, "explanation": explanation, "results": rows, "row_count": len(rows)}), 200
-        except IQESyntaxError as exc:
-            return jsonify({"error": f"IQE syntax error: {exc}", "iqe": iqe_str}), 400
-        except Exception as exc:
-            logger.warning("Network IQE query error: %s", exc)
-            return jsonify({"error": str(exc), "iqe": iqe_str}), 500
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill
 
-    # ── Diagram Analysis ─────────────────────────────────────────────────────
-    try:
-        from tools.network.diagram_analysis import (
-            detect_format as _da_detect_format,
-            run_analysis as _da_run_analysis,
-            generate_drawio_export as _da_generate_drawio_export,
-            generate_html_report as _da_generate_html_report,
-            enrich_with_attack as _da_enrich_with_attack,
-            compute_file_hash as _da_compute_file_hash,
-            save_findings as _da_save_findings,
-            parse_drawio_file as _da_parse_drawio_file,
-            get_pdf_page_count as _da_pdf_page_count,
-            generate_ndc_topology as _da_generate_ndc_topology,
-            UPLOAD_DIR as _DA_UPLOAD_DIR,
-            EXPORT_DIR as _DA_EXPORT_DIR,
+            wb = openpyxl.Workbook()
+            wb.remove(wb.active)  # drop default blank sheet
+
+            _CUI_FILL = PatternFill("solid", fgColor="B41E1E")
+            _HEAD_FILL = PatternFill("solid", fgColor="DDE4F0")
+            _CUI_FONT = Font(bold=True, color="FFFFFF", size=9)
+            _HEAD_FONT = Font(bold=True, size=9)
+            _META = evidence.get("_meta", {})
+
+            for sheet_name, rows in SHEETS:
+                if not rows:
+                    continue
+                ws = wb.create_sheet(title=sheet_name[:31])
+                # CUI banner row
+                ws.append([f"CUI // SP-CTI | Advisory {advisory_id} | {_META.get('exported_at','')}"])
+                cui_cell = ws.cell(1, 1)
+                cui_cell.fill = _CUI_FILL
+                cui_cell.font = _CUI_FONT
+                ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max(len(rows[0]) if rows else 1, 1))
+                # Header row
+                headers = list(rows[0].keys()) if rows else []
+                ws.append(headers)
+                for col_idx, _ in enumerate(headers, 1):
+                    cell = ws.cell(2, col_idx)
+                    cell.fill = _HEAD_FILL
+                    cell.font = _HEAD_FONT
+                # Data rows
+                for row in rows:
+                    ws.append([str(v) if v is not None else "" for v in row.values()])
+                # Auto-width (capped)
+                for col in ws.columns:
+                    max_len = max((len(str(c.value or "")) for c in col), default=8)
+                    ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 60)
+
+            buf = io.BytesIO()
+            wb.save(buf)
+            return buf.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xlsx"
+
+        except ImportError:
+            # Fallback: ZIP of CSV files (can be opened sheet-by-sheet)
+            logger.info("openpyxl not installed — generating ZIP-of-CSVs fallback for ATO Excel")
+            zip_buf = io.BytesIO()
+            with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                for sheet_name, rows in SHEETS:
+                    if not rows:
+                        continue
+                    csv_buf = io.StringIO()
+                    writer = csv.DictWriter(csv_buf, fieldnames=list(rows[0].keys()))
+                    writer.writeheader()
+                    writer.writerows(rows)
+                    zf.writestr(f"{sheet_name}.csv", csv_buf.getvalue())
+            return zip_buf.getvalue(), "application/zip", "zip"
+
+    @bp.route("/api/advisory/<int:advisory_id>/export-ato", methods=["POST"])
+    @nc_login_required
+    def nc_api_advisory_export_ato(advisory_id: int):
+        """Export complete ATO evidence chain for one advisory.
+
+        Query param: format — json | pdf | excel (default: json)
+
+        Evidence chain:
+          1. nc_advisories row + source_doc_hash
+          2. nc_advisory_assessments (NQL queries, sha256 hashes, dual-query
+             reconciliation, HITL approval record)
+          3. nc_remediation_actions (all statuses)
+          4. nc_remediation_status_log
+          5. nc_poam_items + nc_poam_status_log
+          6. nc_exceptions + nc_exception_approvals + nc_nqe_audit_log
+        """
+        import hashlib
+        from flask import Response
+
+        fmt = request.args.get("format", "json").lower()
+        if fmt not in ("json", "pdf", "excel"):
+            return jsonify({"error": "format must be json, pdf, or excel"}), 400
+
+        conn = get_connection()
+        try:
+            evidence = _gather_ato_evidence(advisory_id, conn)
+        finally:
+            conn.close()
+
+        if evidence["advisory"] is None:
+            return jsonify({"error": f"Advisory {advisory_id} not found"}), 404
+
+        canonical = json.dumps(evidence, sort_keys=True, default=str)
+        doc_hash = hashlib.sha256(canonical.encode()).hexdigest()
+        evidence["_meta"] = {
+            "advisory_id": advisory_id,
+            "export_format": fmt,
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "doc_hash_sha256": doc_hash,
+            "classification": "CUI // SP-CTI",
+        }
+
+        _audit_ato_export(advisory_id, fmt, doc_hash)
+
+        if fmt == "json":
+            return Response(
+                json.dumps(evidence, indent=2, default=str),
+                mimetype="application/json",
+                headers={"Content-Disposition": f"attachment; filename=ato-evidence-{advisory_id}.json"},
+            )
+        if fmt == "pdf":
+            pdf_bytes = _build_ato_pdf(evidence, advisory_id)
+            mimetype = "application/pdf" if pdf_bytes[:4] == b"%PDF" else "text/html"
+            ext = "pdf" if mimetype == "application/pdf" else "html"
+            return Response(
+                pdf_bytes,
+                mimetype=mimetype,
+                headers={"Content-Disposition": f"attachment; filename=ato-evidence-{advisory_id}.{ext}"},
+            )
+        # excel
+        xl_bytes, mimetype, ext = _build_ato_excel(evidence, advisory_id)
+        return Response(
+            xl_bytes,
+            mimetype=mimetype,
+            headers={"Content-Disposition": f"attachment; filename=ato-evidence-{advisory_id}.{ext}"},
         )
-        from tools.network.constants import DIAGRAM_ANALYSIS_INDUSTRIES as _DA_INDUSTRIES
-        _DA_AVAILABLE = True
-    except ImportError as _da_err:
-        logger.warning("diagram_analysis module unavailable: %s", _da_err)
-        _DA_AVAILABLE = False
-
-    if _DA_AVAILABLE:
-        @bp.route("/diagram-analysis")
-        @nc_login_required
-        def nc_diagram_analysis_page():
-            """Diagram Analysis landing page."""
-            return render_template(
-                "network/diagram_analysis.html",
-                industries=_DA_INDUSTRIES,
-            )
-
-        @bp.route("/api/diagram-upload", methods=["POST"])
-        @nc_login_required
-        def nc_api_diagram_upload():
-            """Upload a diagram file (PNG/JPG/PDF/draw.io/DOCX), create an upload record,
-            and automatically run diagram_analysis.run_analysis() for the given industry."""
-            from werkzeug.utils import secure_filename as _sfn
-
-            if "file" not in request.files:
-                return jsonify({"error": "No file provided"}), 400
-            f = request.files["file"]
-            if not f.filename:
-                return jsonify({"error": "Empty filename"}), 400
-
-            safe_name = _sfn(f.filename)
-            file_bytes = f.read()
-            fmt = _da_detect_format(safe_name, file_bytes)
-            if fmt == "unknown":
-                return jsonify({"error": f"Unsupported file format: {safe_name}"}), 400
-
-            _DA_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-            upload_id = f"da-{_uuid.uuid4().hex[:12]}"
-            file_path = _DA_UPLOAD_DIR / f"{upload_id}_{safe_name}"
-            file_path.write_bytes(file_bytes)
-
-            file_hash = _da_compute_file_hash(file_bytes)
-            page_count = 1
-            if fmt == "pdf":
-                page_count = _da_pdf_page_count(file_path)
-
-            topology_id = request.form.get("topology_id") or None
-            industry = request.form.get("industry", "commercial")
-            if industry not in _DA_INDUSTRIES:
-                industry = "commercial"
-
-            conn = get_connection()
-            try:
-                conn.execute(
-                    "INSERT INTO nc_diagram_uploads "
-                    "(id, filename, format, file_path, file_hash, page_count, topology_id) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                    (upload_id, safe_name, fmt, str(file_path), file_hash, page_count, topology_id),
-                )
-                conn.commit()
-                _audit("DIAGRAM_UPLOADED", "diagram_upload", upload_id, f"format={fmt}, pages={page_count}")
-
-                # Auto-run analysis per upload
-                analysis_id = f"dax-{_uuid.uuid4().hex[:12]}"
-                conn.execute(
-                    "INSERT INTO nc_diagram_analyses (id, upload_id, industry, status) "
-                    "VALUES (%s, %s, %s, 'running')",
-                    (analysis_id, upload_id, industry),
-                )
-                conn.commit()
-
-                result = _da_run_analysis(upload_id, industry, conn)
-                cloud_ctx = result.get("cloud_context", {})
-                tabs = _da_enrich_with_attack(result.get("tabs", {}))
-
-                conn.execute(
-                    "UPDATE nc_diagram_analyses SET status='done', result_json=%s, "
-                    "cloud_providers_json=%s, topology_mode=%s, updated_at=CURRENT_TIMESTAMP "
-                    "WHERE id=%s",
-                    (
-                        json.dumps(tabs),
-                        json.dumps(cloud_ctx.get("providers", [])),
-                        cloud_ctx.get("mode", "unknown"),
-                        analysis_id,
-                    ),
-                )
-                _da_save_findings(conn, analysis_id, tabs)
-                conn.commit()
-                _audit("DIAGRAM_ANALYZED", "diagram_analysis", analysis_id, f"industry={industry}, mode={cloud_ctx.get('mode','unknown')}")
-            except Exception as exc:
-                logger.error("Diagram upload/analysis error: %s", exc)
-                try:
-                    conn.execute(
-                        "UPDATE nc_diagram_analyses SET status='error', updated_at=CURRENT_TIMESTAMP WHERE id=%s",
-                        (analysis_id,),
-                    )
-                    conn.commit()
-                except Exception:
-                    pass
-                return jsonify({"error": str(exc)}), 500
-            finally:
-                conn.close()
-
-            return jsonify({
-                "upload_id": upload_id,
-                "filename": safe_name,
-                "format": fmt,
-                "page_count": page_count,
-                "analysis_id": analysis_id,
-                "status": "done",
-                "cloud_context": cloud_ctx,
-                "tabs": tabs,
-            }), 201
-
-        @bp.route("/api/diagram-analysis/<upload_id>/analyze", methods=["POST"])
-        @nc_login_required
-        def nc_api_analyze_diagram(upload_id):
-            """Run AI diagram analysis for an uploaded diagram."""
-            data = request.get_json(silent=True) or {}
-            industry = data.get("industry", "commercial")
-            if industry not in _DA_INDUSTRIES:
-                return jsonify({"error": f"Unknown industry: {industry}"}), 400
-
-            analysis_id = f"dax-{_uuid.uuid4().hex[:12]}"
-            conn = get_connection()
-            try:
-                conn.execute(
-                    "INSERT INTO nc_diagram_analyses (id, upload_id, industry, status) "
-                    "VALUES (%s, %s, %s, 'running')",
-                    (analysis_id, upload_id, industry),
-                )
-                conn.commit()
-
-                result = _da_run_analysis(upload_id, industry, conn)
-                cloud_ctx = result.get("cloud_context", {})
-                tabs = _da_enrich_with_attack(result.get("tabs", {}))
-
-                conn.execute(
-                    "UPDATE nc_diagram_analyses SET status='done', result_json=%s, "
-                    "cloud_providers_json=%s, topology_mode=%s, updated_at=CURRENT_TIMESTAMP "
-                    "WHERE id=%s",
-                    (
-                        json.dumps(tabs),
-                        json.dumps(cloud_ctx.get("providers", [])),
-                        cloud_ctx.get("mode", "unknown"),
-                        analysis_id,
-                    ),
-                )
-                _da_save_findings(conn, analysis_id, tabs)
-                conn.commit()
-                _audit("DIAGRAM_ANALYZED", "diagram_analysis", analysis_id, f"industry={industry}, mode={cloud_ctx.get('mode','unknown')}")
-                return jsonify({
-                    "analysis_id": analysis_id,
-                    "status": "done",
-                    "cloud_context": cloud_ctx,
-                    "tabs": tabs,
-                }), 200
-
-            except Exception as exc:
-                logger.error("Diagram analysis error: %s", exc)
-                try:
-                    conn.execute(
-                        "UPDATE nc_diagram_analyses SET status='error', updated_at=CURRENT_TIMESTAMP WHERE id=%s",
-                        (analysis_id,),
-                    )
-                    conn.commit()
-                except Exception:
-                    pass
-                return jsonify({"error": str(exc), "analysis_id": analysis_id}), 500
-            finally:
-                conn.close()
-
-        @bp.route("/api/diagram-analysis/<analysis_id>", methods=["GET"])
-        @nc_login_required
-        def nc_api_get_diagram_analysis(analysis_id):
-            """Retrieve a persisted diagram analysis and its findings."""
-            conn = get_connection()
-            try:
-                row = conn.execute(
-                    "SELECT * FROM nc_diagram_analyses WHERE id=%s", (analysis_id,)
-                ).fetchone()
-                if not row:
-                    return jsonify({"error": "Analysis not found"}), 404
-                ana = dict(row)
-                ana["tabs"] = json.loads(ana.get("result_json") or "{}")
-                ana["cloud_providers"] = json.loads(ana.get("cloud_providers_json") or "[]")
-                findings = [
-                    dict(r) for r in conn.execute(
-                        "SELECT * FROM nc_diagram_findings WHERE analysis_id=%s ORDER BY "
-                        "CASE severity WHEN 'critical' THEN 0 WHEN 'high' THEN 1 "
-                        "WHEN 'medium' THEN 2 WHEN 'low' THEN 3 ELSE 4 END",
-                        (analysis_id,),
-                    ).fetchall()
-                ]
-            finally:
-                conn.close()
-            return jsonify({"analysis": ana, "findings": findings}), 200
-
-        @bp.route("/api/diagram-analysis/<analysis_id>/export-drawio", methods=["POST"])
-        @nc_login_required
-        def nc_api_export_diagram_drawio(analysis_id):
-            """Generate and stream an annotated draw.io XML file."""
-            from flask import Response as _Resp
-
-            conn = get_connection()
-            try:
-                row = conn.execute(
-                    "SELECT * FROM nc_diagram_analyses WHERE id=%s", (analysis_id,)
-                ).fetchone()
-                if not row:
-                    return jsonify({"error": "Analysis not found"}), 404
-                ana = dict(row)
-                upload_row = conn.execute(
-                    "SELECT * FROM nc_diagram_uploads WHERE id=%s", (ana["upload_id"],)
-                ).fetchone()
-            finally:
-                conn.close()
-
-            tabs = json.loads(ana.get("result_json") or "{}")
-            cloud_ctx = {
-                "providers": json.loads(ana.get("cloud_providers_json") or "[]"),
-                "mode": ana.get("topology_mode", "unknown"),
-                "has_on_prem": False,
-            }
-
-            original_graph = None
-            filename_stem = "diagram"
-            if upload_row:
-                up = dict(upload_row)
-                filename_stem = up.get("filename", "diagram").rsplit(".", 1)[0]
-                if up.get("format") == "drawio":
-                    try:
-                        parsed = _da_parse_drawio_file(Path(up["file_path"]))
-                        original_graph = parsed["graph"]
-                    except Exception:
-                        pass
-
-            drawio_xml = _da_generate_drawio_export(
-                {"tabs": tabs},
-                original_graph,
-                cloud_ctx,
-                ana.get("industry", "commercial"),
-                filename_stem,
-            )
-
-            _DA_EXPORT_DIR.mkdir(parents=True, exist_ok=True)
-            export_id = f"dex-{_uuid.uuid4().hex[:8]}"
-            export_path = _DA_EXPORT_DIR / f"{export_id}_{filename_stem}_remediated.drawio"
-            export_path.write_text(drawio_xml, encoding="utf-8")
-
-            conn2 = get_connection()
-            try:
-                conn2.execute(
-                    "INSERT INTO nc_diagram_exports (id, analysis_id, export_type, file_path) "
-                    "VALUES (%s, %s, 'drawio', %s)",
-                    (export_id, analysis_id, str(export_path)),
-                )
-                conn2.commit()
-            finally:
-                conn2.close()
-
-            _audit("DIAGRAM_EXPORT_DRAWIO", "diagram_export", analysis_id, f"export_id={export_id}")
-            return _Resp(
-                drawio_xml,
-                mimetype="application/xml",
-                headers={"Content-Disposition": f'attachment; filename="{filename_stem}_remediated.drawio"'},
-            )
-
-        @bp.route("/api/diagram-analysis/<analysis_id>/open-in-canvas", methods=["POST"])
-        @nc_login_required
-        def nc_api_diagram_open_in_canvas(analysis_id):
-            """Build a proper NDC topology from analysis tabs and open it in canvas."""
-            conn = get_connection()
-            try:
-                row = conn.execute(
-                    "SELECT * FROM nc_diagram_analyses WHERE id=%s", (analysis_id,)
-                ).fetchone()
-                if not row:
-                    return jsonify({"error": "Analysis not found"}), 404
-                ana = dict(row)
-                upload_row = conn.execute(
-                    "SELECT * FROM nc_diagram_uploads WHERE id=%s", (ana["upload_id"],)
-                ).fetchone()
-            finally:
-                conn.close()
-
-            tabs = json.loads(ana.get("result_json") or "{}")
-            cloud_ctx = {
-                "providers": json.loads(ana.get("cloud_providers_json") or "[]"),
-                "mode": ana.get("topology_mode", "unknown"),
-                "has_on_prem": any(
-                    (i.get("provider") or "on_prem") in ("on_prem", "unknown")
-                    for i in (tabs.get("inventory") or [])
-                ),
-            }
-
-            filename_stem = "diagram"
-            if upload_row:
-                filename_stem = dict(upload_row).get("filename", "diagram").rsplit(".", 1)[0]
-
-            # Build NDC-native topology with proper icon types, edges, and boundary boxes
-            ndc = _da_generate_ndc_topology(tabs, cloud_ctx)
-            graph_json = ndc["graph_json"]
-            boundaries = ndc.get("boundaries", [])
-
-            topo_id = str(_uuid.uuid4())
-            topo_name = f"Remediated — {filename_stem}"
-            now = _now()
-            conn3 = get_connection()
-            try:
-                conn3.execute(
-                    "INSERT INTO topologies "
-                    "(id, name, description, graph_json, classification, created_at, updated_at) "
-                    "VALUES (?,?,?,?,?,?,?)",
-                    (
-                        topo_id,
-                        topo_name,
-                        f"Auto-generated remediated topology from diagram analysis {analysis_id}",
-                        json.dumps(graph_json),
-                        "public",
-                        now,
-                        now,
-                    ),
-                )
-                # Insert boundary boxes so NDC Canvas renders security zones
-                for b in boundaries:
-                    bid = str(_uuid.uuid4())
-                    conn3.execute(
-                        "INSERT INTO nc_boundaries "
-                        "(id, topology_id, label, classification, color, fill_opacity, "
-                        "node_ids, stig_tags, pos_x, pos_y, width, height, snap_grid, notes, "
-                        "created_at, updated_at) "
-                        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                        (
-                            bid, topo_id,
-                            b["label"],
-                            b.get("classification", "public"),
-                            b.get("color", "rgba(100,100,200,0.15)"),
-                            b.get("fill_opacity", 0.06),
-                            json.dumps(b.get("node_ids", [])),
-                            json.dumps([]),
-                            b["pos_x"], b["pos_y"],
-                            b["width"], b["height"],
-                            0,
-                            b.get("notes", ""),
-                            now, now,
-                        ),
-                    )
-                conn3.commit()
-            finally:
-                conn3.close()
-
-            _audit("DIAGRAM_OPEN_IN_CANVAS", "topology", topo_id, f"analysis_id={analysis_id}")
-            return jsonify({
-                "topology_id": topo_id,
-                "canvas_url": f"/network/canvas/{topo_id}",
-                "name": topo_name,
-                "node_count": len(graph_json.get("nodes", [])),
-                "boundary_count": len(boundaries),
-            }), 201
-
-        @bp.route("/api/diagram-analysis/<analysis_id>/report.html", methods=["GET"])
-        @nc_login_required
-        def nc_api_diagram_report_html(analysis_id):
-            """Generate and stream a self-contained HTML report for sharing without dashboard access."""
-            from flask import Response as _Resp
-
-            conn = get_connection()
-            try:
-                row = conn.execute(
-                    "SELECT * FROM nc_diagram_analyses WHERE id=%s", (analysis_id,)
-                ).fetchone()
-                if not row:
-                    return jsonify({"error": "Analysis not found"}), 404
-                ana = dict(row)
-                upload_row = conn.execute(
-                    "SELECT filename FROM nc_diagram_uploads WHERE id=%s", (ana["upload_id"],)
-                ).fetchone()
-            finally:
-                conn.close()
-
-            tabs = json.loads(ana.get("result_json") or "{}")
-            cloud_ctx = {
-                "providers": json.loads(ana.get("cloud_providers_json") or "[]"),
-                "mode": ana.get("topology_mode", "unknown"),
-            }
-            filename = dict(upload_row).get("filename", "diagram") if upload_row else "diagram"
-            meta = {
-                "filename": filename,
-                "industry": ana.get("industry", "commercial"),
-                "topology_mode": ana.get("topology_mode", "unknown"),
-                "cloud_providers": json.loads(ana.get("cloud_providers_json") or "[]"),
-                "analysis_id": analysis_id,
-                "created_at": ana.get("created_at", ""),
-            }
-
-            html = _da_generate_html_report({"tabs": tabs, "cloud_context": cloud_ctx}, meta)
-            filename_stem = filename.rsplit(".", 1)[0]
-            return _Resp(
-                html,
-                mimetype="text/html",
-                headers={
-                    "Content-Disposition": f'attachment; filename="{filename_stem}_analysis_report.html"',
-                    "Content-Type": "text/html; charset=utf-8",
-                },
-            )
 
     # ── NQE Translator ─────────────────────────────────────────────────────
 
     @bp.route("/nqe-translator", methods=["GET"])
     def nqe_translator_page():
+        """Render the NQE query translator UI."""
         return render_template("network/nqe_translator.html", page_title="NQE Translator")
 
     @bp.route("/api/nqe/translate", methods=["POST"])
     def api_nqe_translate():
+        """Translate plain-English text to NQL.
+
+        Request: {"text": str, "context": dict (optional advisory context)}
+        Response: {"nql": str, "confidence": float, "source": str}
+        """
         data = request.get_json(force=True, silent=True) or {}
         text = (data.get("text") or "").strip()
         if not text:
             return jsonify({"error": "text is required"}), 400
+
         context = data.get("context") or {}
+
         try:
-            from icdev.tools.network.nql_translator import nl_to_nql
+            from tools.network.nql_translator import nl_to_nql
             nql = nl_to_nql(text, context=context or None)
         except Exception as exc:
             logger.exception("NQE translate error")
             return jsonify({"error": str(exc)}), 500
+
+        # Confidence heuristic: deterministic context path → high; LLM path → medium
         if context and any(context.get(k) for k in ("vendor", "affected_models", "affected_versions")):
-            confidence, source = 0.92, "deterministic"
+            confidence = 0.92
+            source = "deterministic"
         elif nql and nql.startswith("foreach"):
-            confidence, source = 0.70, "llm_translation"
+            confidence = 0.70
+            source = "llm_translation"
         else:
-            confidence, source = 0.50, "fallback"
+            confidence = 0.50
+            source = "fallback"
+
+        # Audit log
         try:
-            from icdev.tools.db.storage import get_canvas_connection
+            from tools.db.storage import get_canvas_connection
             conn = get_canvas_connection("NC_STORAGE_BACKEND")
             conn.execute(
-                "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, created_at) VALUES (%s, %s, %s, NOW())",
+                "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, created_at) "
+                "VALUES (%s, %s, %s, NOW())",
                 ("translate", nql, False),
             )
-            conn.commit(); conn.close()
+            conn.commit()
+            conn.close()
         except Exception:
             pass
+
         return jsonify({"nql": nql, "confidence": confidence, "source": source})
 
     @bp.route("/api/nqe/explain", methods=["POST"])
     def api_nqe_explain():
+        """Return a plain-English explanation of an NQL query.
+
+        Request: {"nql": str}
+        Response: {"explanation": str}
+        """
         data = request.get_json(force=True, silent=True) or {}
         nql = (data.get("nql") or "").strip()
         if not nql:
             return jsonify({"error": "nql is required"}), 400
+
         try:
-            from icdev.tools.llm.router import LLMRouter
-            from icdev.tools.llm.provider import LLMRequest
+            from tools.llm.router import LLMRouter
+            from tools.llm.provider import LLMRequest
+
             prompt = (
                 "Explain this NQL (Network Query Language) query in plain English "
                 "for a non-technical network administrator. Be concise (2-3 sentences).\n\n"
@@ -14353,103 +14309,164 @@ Planning rules:
             resp = router.invoke("nql_explain", req)
             explanation = (resp.content or "").strip()
         except ImportError:
-            explanation = _icdev_nql_explain(nql)
+            explanation = _nql_heuristic_explain(nql)
         except Exception:
-            explanation = _icdev_nql_explain(nql)
+            explanation = _nql_heuristic_explain(nql)
+
         return jsonify({"explanation": explanation})
 
     @bp.route("/api/nqe/run", methods=["POST"])
     def api_nqe_run():
+        """Execute an NQL query and return results.
+
+        Requires explicit user confirmation (call audit-log endpoint first
+        with user_confirmed=true — enforced by the UI transparency gate).
+
+        Request: {"nql": str, "network_id": str|null}
+        Response: {"rows": list, "columns": list, "total": int, "source": str}
+        """
         data = request.get_json(force=True, silent=True) or {}
         nql = (data.get("nql") or "").strip()
         network_id = data.get("network_id") or None
+
         if not nql:
             return jsonify({"error": "nql is required"}), 400
+
         try:
-            from icdev.tools.network.nqe_client import FallbackNQEClient
+            from tools.network.nqe_client import FallbackNQEClient
+
             client = FallbackNQEClient()
             result = client.run_query(nql, network_id=network_id)
             rows = result.get("rows", [])
             columns = list(rows[0].keys()) if rows else []
+
+            # Audit execution
             try:
-                from icdev.tools.db.storage import get_canvas_connection
+                from tools.db.storage import get_canvas_connection
                 conn = get_canvas_connection("NC_STORAGE_BACKEND")
                 conn.execute(
-                    "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, row_count, created_at) VALUES (%s, %s, %s, %s, NOW())",
+                    "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, row_count, created_at) "
+                    "VALUES (%s, %s, %s, %s, NOW())",
                     ("run", nql, True, len(rows)),
                 )
-                conn.commit(); conn.close()
+                conn.commit()
+                conn.close()
             except Exception:
                 pass
-            return jsonify({"rows": rows[:500], "columns": columns, "total": len(rows), "source": result.get("source", "local")})
+
+            return jsonify({
+                "rows": rows[:500],
+                "columns": columns,
+                "total": len(rows),
+                "source": result.get("source", "local"),
+            })
         except Exception as exc:
-            logger.exception("NQE run error")
+            logger.exception("NQE run error: nql=%r", nql)
             return jsonify({"error": str(exc)}), 500
 
     @bp.route("/api/nqe/collections", methods=["GET"])
     def api_nqe_collections():
+        """Return the list of supported NQE collection paths.
+
+        Response: {"collections": [{"path": str, "description": str}]}
+        """
         collections = [
-            {"path": "network.devices",         "description": "All network devices"},
-            {"path": "network.interfaces",       "description": "Device interfaces"},
-            {"path": "network.bgp_sessions",     "description": "BGP peering sessions"},
-            {"path": "network.acls",             "description": "Access control lists"},
-            {"path": "network.paths",            "description": "End-to-end forwarding paths"},
-            {"path": "network.os_versions",      "description": "OS version inventory"},
-            {"path": "network.links",            "description": "Physical and logical links"},
-            {"path": "network.vlans",            "description": "VLAN definitions"},
-            {"path": "network.prefixes",         "description": "IP prefix / subnet inventory"},
-            {"path": "network.ospf.neighbors",   "description": "OSPF adjacency table"},
-            {"path": "network.isis.adjacencies", "description": "IS-IS adjacency table"},
-            {"path": "network.mpls.lsps",        "description": "MPLS label-switched paths"},
+            {"path": "network.devices",          "description": "All network devices (hostname, OS, vendor, platform)"},
+            {"path": "network.interfaces",        "description": "Device interfaces with status and counters"},
+            {"path": "network.bgp_sessions",      "description": "BGP peering sessions and their state"},
+            {"path": "network.acls",              "description": "Access control lists and firewall rules"},
+            {"path": "network.paths",             "description": "End-to-end forwarding paths"},
+            {"path": "network.os_versions",       "description": "OS version inventory across all devices"},
+            {"path": "network.links",             "description": "Physical and logical links between nodes"},
+            {"path": "network.vlans",             "description": "VLAN definitions and membership"},
+            {"path": "network.prefixes",          "description": "IP prefix / subnet inventory"},
+            {"path": "network.ospf.neighbors",    "description": "OSPF adjacency table"},
+            {"path": "network.isis.adjacencies",  "description": "IS-IS adjacency table"},
+            {"path": "network.mpls.lsps",         "description": "MPLS label-switched paths"},
         ]
         return jsonify({"collections": collections})
 
     @bp.route("/api/nqe/audit-log", methods=["POST"])
     def api_nqe_audit_log():
+        """Append a transparency-gate audit event.
+
+        Request: {"action": str, "nql": str, "user_confirmed": bool}
+        Response: {"id": str, "recorded": true}
+        """
         data = request.get_json(force=True, silent=True) or {}
         action = (data.get("action") or "").strip()
         nql = (data.get("nql") or "").strip()
         user_confirmed = bool(data.get("user_confirmed", False))
+
         if not action:
             return jsonify({"error": "action is required"}), 400
+
         row_id = None
         try:
-            from icdev.tools.db.storage import get_canvas_connection
+            from tools.db.storage import get_canvas_connection
             conn = get_canvas_connection("NC_STORAGE_BACKEND")
             cur = conn.execute(
-                "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, created_at) VALUES (%s, %s, %s, NOW()) RETURNING id",
+                "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, created_at) "
+                "VALUES (%s, %s, %s, NOW()) RETURNING id",
                 (action, nql, user_confirmed),
             )
             row = cur.fetchone()
             row_id = str(row[0] if isinstance(row, (list, tuple)) else row.get("id", "")) if row else None
-            conn.commit(); conn.close()
+            conn.commit()
+            conn.close()
         except Exception as exc:
             logger.warning("NQE audit-log insert failed: %s", exc)
+
         return jsonify({"id": row_id or "n/a", "recorded": True})
 
     @bp.route("/api/nqe/cross-validate", methods=["POST"])
     def api_nqe_cross_validate():
-        """Dual-query cross-validation: translate using two strategies and compare."""
+        """Dual-query cross-validation: translate using two strategies and compare.
+
+        Strategy A uses structured context (deterministic); strategy B is context-free
+        (LLM/fallback). A high divergence score means the two strategies disagree and
+        a human must review and approve before execution.
+
+        Request:  {"text": str, "context": dict (optional)}
+        Response: {
+            "nql_primary":      str,   # strategy A result
+            "nql_secondary":    str,   # strategy B result
+            "divergence_score": float, # 0.0 identical → 1.0 completely different
+            "require_hitl":     bool,  # True when divergence_score >= 0.6
+            "message":          str
+        }
+        """
         data = request.get_json(force=True, silent=True) or {}
         text = (data.get("text") or "").strip()
         if not text:
             return jsonify({"error": "text is required"}), 400
+
         context = data.get("context") or {}
+
         try:
-            from icdev.tools.network.nql_translator import nl_to_nql
+            from tools.network.nql_translator import nl_to_nql
             nql_primary = nl_to_nql(text, context=context or None)
-            nql_secondary = nl_to_nql(text)
+            nql_secondary = nl_to_nql(text)  # context-free → always LLM/fallback
         except Exception as exc:
-            logger.exception("NQE cross-validate error")
+            logger.exception("NQE cross-validate translation error")
             return jsonify({"error": str(exc)}), 500
-        divergence = _icdev_nql_divergence_score(nql_primary, nql_secondary)
+
+        divergence = _nql_divergence_score(nql_primary, nql_secondary)
         require_hitl = divergence >= 0.6
+
         if require_hitl:
-            message = f"Divergent queries ({divergence:.0%}). Human approval required."
+            message = (
+                f"The two translation strategies produced divergent queries "
+                f"(divergence {divergence:.0%}). Human approval is required before execution."
+            )
         elif divergence >= 0.3:
-            message = f"Minor divergence ({divergence:.0%}). Review before running."
+            message = (
+                f"Minor divergence detected ({divergence:.0%}). "
+                "Review both queries before running."
+            )
         else:
-            message = "Both strategies agree. Safe to proceed."
+            message = "Both translation strategies agree. Safe to proceed."
+
         return jsonify({
             "nql_primary": nql_primary,
             "nql_secondary": nql_secondary,
@@ -14460,57 +14477,97 @@ Planning rules:
 
     @bp.route("/api/nqe/hitl-approve", methods=["POST"])
     def api_nqe_hitl_approve():
-        """Record HITL approval for a cross-validated NQE query pair."""
+        """Record a HITL approval for a cross-validated NQE query pair.
+
+        Request:  {"nql_primary": str, "nql_secondary": str, "approved_by": str, "notes": str}
+        Response: {"approved": true, "approved_by": str, "recorded": true}
+        """
         data = request.get_json(force=True, silent=True) or {}
         nql_primary = (data.get("nql_primary") or "").strip()
         nql_secondary = (data.get("nql_secondary") or "").strip()
         approved_by = (data.get("approved_by") or "").strip()
         notes = (data.get("notes") or "").strip()
+
         if not approved_by:
             return jsonify({"error": "approved_by is required"}), 400
+
         import json as _json
-        audit_payload = _json.dumps({"nql_primary": nql_primary, "nql_secondary": nql_secondary, "notes": notes})
+        audit_payload = _json.dumps({
+            "nql_primary": nql_primary,
+            "nql_secondary": nql_secondary,
+            "notes": notes,
+        })
+
         try:
-            from icdev.tools.db.storage import get_canvas_connection
+            from tools.db.storage import get_canvas_connection
             conn = get_canvas_connection("NC_STORAGE_BACKEND")
             conn.execute(
-                "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, created_at) VALUES (%s, %s, %s, NOW())",
+                "INSERT INTO nc_nqe_audit_log (action, nql_query, user_confirmed, created_at) "
+                "VALUES (%s, %s, %s, NOW())",
                 ("hitl_approve", audit_payload, True),
             )
-            conn.commit(); conn.close()
+            conn.commit()
+            conn.close()
         except Exception as exc:
-            logger.warning("NQE hitl-approve audit failed: %s", exc)
+            logger.warning("NQE hitl-approve audit insert failed: %s", exc)
+
         return jsonify({"approved": True, "approved_by": approved_by, "recorded": True})
 
-    def _icdev_nql_divergence_score(nql_a: str, nql_b: str) -> float:
-        """Return Jaccard divergence [0.0, 1.0] between two NQL strings."""
+    # ── NQE helpers ────────────────────────────────────────────────────────
+
+    def _nql_divergence_score(nql_a: str, nql_b: str) -> float:
+        """Return divergence in [0.0, 1.0] between two NQL strings (Jaccard distance).
+
+        0.0 = identical, 1.0 = completely different.
+        Collection mismatch is boosted to ≥ 0.8 since different primary collections
+        almost certainly query different facts.
+        """
         import re as _re
 
-        def _col(nql):
+        def _collection(nql):
             m = _re.search(r"\bin\s+(network\.\S+)", nql, _re.I)
             return m.group(1).lower() if m else ""
 
-        col_a, col_b = _col(nql_a), _col(nql_b)
+        col_a = _collection(nql_a)
+        col_b = _collection(nql_b)
+
         tok_a = set(_re.findall(r"[\w.]+", nql_a.lower()))
         tok_b = set(_re.findall(r"[\w.]+", nql_b.lower()))
+
         if not tok_a or not tok_b:
             return 1.0
+
         jaccard = len(tok_a & tok_b) / len(tok_a | tok_b)
-        divergence = round(1.0 - jaccard, 3)
+        divergence = 1.0 - jaccard
+
         if col_a and col_b and col_a != col_b:
             divergence = max(divergence, 0.8)
-        return divergence
 
-    def _icdev_nql_explain(nql: str) -> str:
+        return round(divergence, 3)
+
+    def _nql_heuristic_explain(nql: str) -> str:
+        """Generate a simple heuristic explanation from NQL structure."""
         import re as _re
+        nql = nql.strip()
         m = _re.search(r"\bin\s+(network\.\S+)", nql, _re.I)
         collection = m.group(1) if m else "network"
-        wm = _re.search(r"\bwhere\s+(.+?)(?:\bselect\b|$)", nql, _re.I | _re.DOTALL)
-        where = wm.group(1).strip() if wm else ""
+        where_m = _re.search(r"\bwhere\s+(.+?)(?:\bselect\b|$)", nql, _re.I | _re.DOTALL)
+        where_clause = where_m.group(1).strip() if where_m else ""
         base = f"Queries the '{collection}' collection"
-        if where:
-            base += f" filtered by: {where[:120]}"
+        if where_clause:
+            base += f" filtered by: {where_clause[:120]}"
         return base + "."
+
+
+    # ── PVM Predictive Vulnerability Management routes ────────────────────
+    from tools.network.routes.pvm import register_pvm_routes
+
+    register_pvm_routes(bp)
+
+    # ── PNA Predictive Network Analytics routes ───────────────────────────
+    from tools.network.routes.pna import register_pna_routes
+
+    register_pna_routes(bp)
 
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))

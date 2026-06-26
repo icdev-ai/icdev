@@ -9,7 +9,7 @@ from typing import Any
 
 import yaml
 
-_ROLES_DIR = Path(__file__).parent.parent.parent / "args" / "ace" / "roles"
+_ROLES_DIR = Path(__file__).parents[3] / "args" / "ace" / "roles"
 _REQUIRED_FIELDS = {"role_id", "steps", "trust_tier", "tool_permissions"}
 _CACHE_TTL = 60  # seconds
 
@@ -32,12 +32,13 @@ class RoleStep:
         if isinstance(raw, str):
             return cls(name=raw)
         if isinstance(raw, dict):
-            if "name" not in raw:
-                raise ValueError(f"Structured step missing 'name' field: {raw!r}")
+            name = raw.get("name") or raw.get("id")
+            if not name:
+                raise ValueError(f"Structured step missing 'name' or 'id' field: {raw!r}")
             return cls(
-                name=raw["name"],
+                name=str(name),
                 tool=raw.get("tool", ""),
-                params=dict(raw.get("params") or {}),
+                params=dict(raw.get("params") or raw.get("args") or {}),
                 condition=raw.get("condition"),
             )
         raise TypeError(f"Expected str or dict for step, got {type(raw)!r}")

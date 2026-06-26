@@ -14,11 +14,48 @@ doc_generator.generate_document() as supplemental evidence.
 """
 from __future__ import annotations
 
+import pathlib
 from typing import Any
 
 from tools.logging.icdev_logger import get_logger
 
 log = get_logger(__name__)
+
+_MAX_SOURCE_CHARS = 40_000  # ~10k tokens — cap per file to avoid context explosion
+
+
+def _extract_text_from_file(file_path: str) -> str:
+    """Best-effort text extraction from PDF, DOCX, or plain text files."""
+    p = pathlib.Path(file_path)
+    if not p.is_file():
+        return ""
+    suffix = p.suffix.lower()
+    try:
+        if suffix == ".pdf":
+            try:
+                import pypdf
+                reader = pypdf.PdfReader(str(p))
+                return "\n".join(page.extract_text() or "" for page in reader.pages)
+            except ImportError:
+                pass
+            try:
+                import pdfminer.high_level as _pm
+                return _pm.extract_text(str(p))
+            except ImportError:
+                pass
+            return ""
+        if suffix in (".docx", ".doc"):
+            try:
+                import docx as _docx
+                doc = _docx.Document(str(p))
+                return "\n".join(para.text for para in doc.paragraphs if para.text.strip())
+            except Exception:
+                return ""
+        # Plain text / markdown / yaml / json
+        return p.read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:
+        log.warning("IDR text extraction failed for %s: %s", file_path, exc)
+        return ""
 
 
 def build_context(
@@ -74,8 +111,24 @@ def build_context(
                 "status": analysis.get("status"),
             })
 
-    # 4. Supplemental notes block
-    supplemental_notes = (supplemental_text or "").strip()
+    # 4. Extract text from doc/supplement uploads and fold into supplemental notes
+    source_texts: list[str] = []
+    for up in (uploads or []):
+        if up.get("upload_type") in ("doc", "supplement") and up.get("file_path"):
+            raw = _extract_text_from_file(up["file_path"])
+            if raw.strip():
+                trimmed = raw[:_MAX_SOURCE_CHARS]
+                source_texts.append(
+                    f"--- Source: {up.get('filename', up['file_path'])} ---\n{trimmed}"
+                )
+                log.info(
+                    "IDR context: extracted %d chars from %s",
+                    len(trimmed), up.get("filename"),
+                )
+    source_block = "\n\n".join(source_texts)
+    supplemental_notes = "\n\n".join(
+        filter(None, [source_block, (supplemental_text or "").strip()])
+    )
 
     # 5. Template sections (WriteGuard template structure)
     template_sections: list[dict[str, Any]] = []
@@ -83,7 +136,7 @@ def build_context(
         template_sections = template_structure.get("sections", [])
 
     # 6. Build the natural-language query string for DIC search + ACE
-    query_string = _build_query(session, topology_summary, config_findings)
+    query_string = _build_query(session, topology_summary, config_findings, supplemental_notes)
 
     # 7. Evidence blocks — placeholders; DIC search happens in workflow.py
     evidence_blocks: list[dict[str, Any]] = []
@@ -149,6 +202,7 @@ def _build_query(
     session: dict[str, Any],
     topology_summary: dict[str, Any],
     config_findings: list[dict[str, Any]],
+    supplemental_notes: str = "",
 ) -> str:
     parts = [
         f"Generate a {session.get('doc_type', 'runbook')} for a {session.get('domain', 'network')} environment.",
@@ -166,4 +220,6 @@ def _build_query(
         if high_sev:
             parts.append(f"There are {len(high_sev)} high/critical findings from config review that must be addressed.")
     parts.append("Include operational procedures, risk mitigations, and remediation steps. Cite all facts.")
+    if supplemental_notes:
+        parts.append(f"\n\nSource document content:\n{supplemental_notes[:_MAX_SOURCE_CHARS]}")
     return " ".join(parts)
