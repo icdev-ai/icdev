@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import hashlib
 import os  # noqa: F401 — kept for legacy batch-path env override; do not remove (task-3bc9eb0918-cc4ea61c-d3)
+import json
 import re
 import sys
 from dataclasses import dataclass, field
@@ -661,6 +662,10 @@ _METADATA_MIN_CONFIDENCE = 0.70
 _METADATA_MAX_TAGS = 8
 _METADATA_TAG_MAX_LEN = 40
 
+# Date plausibility guardrails.
+_DATE_MIN_YEAR = 1900
+_DATE_MAX_YEAR_OFFSET = 50
+
 _METADATA_SYSTEM_PROMPT = (
     "You extract structured metadata for a single ingested document, for a "
     "document-management index. Use ONLY the provided text — never invent "
@@ -773,10 +778,12 @@ def _ai_metadata_extraction(text: str, filename: str) -> dict | None:
             except ValueError:
                 date_str = None
 
+        date_anomaly = _detect_date_anomaly(date_str) if date_str else None
         return {
             "document_type": doc_type,
             "tags": tags,
             "date": date_str,
+            "date_anomaly": date_anomaly,
             "confidence": round(confidence, 4),
         }
     except Exception:
@@ -1013,6 +1020,10 @@ _CLASSIFY_INPUT_CHARS = 6000
 # Below this confidence the whole suggestion is dropped for the manual path.
 _CLASSIFY_MIN_CONFIDENCE = 0.70
 
+# Width of the confidence band above the minimum that is considered "borderline"
+# by the anomaly detector. A result just above the floor is flagged for review.
+_CLASSIFY_BORDER_BAND = 0.05
+
 # Bound how large a taxonomy we will offer the model, and how many labels a
 # multi-label classification may return.
 _CLASSIFY_MAX_LABELS = 60
@@ -1171,6 +1182,40 @@ def _ai_classify_into_taxonomy(
         return {"labels": selected, "confidence": round(confidence, 4)}
     except Exception:
         return None
+
+
+def _detect_classify_anomaly(result, taxonomy) -> str | None:
+    """Surface quality signals from an automatic classification result.
+
+    Returns a short anomaly key when the result is suspect:
+
+    * ``max_labels_hit`` — the model returned exactly the allowed cap of labels,
+      suggesting it may be over-filing.
+    * ``borderline_confidence`` — confidence is at or inside the band just above
+      ``_CLASSIFY_MIN_CONFIDENCE``.
+    * ``trivial_taxonomy`` — the taxonomy only contains one usable label, so no
+      real choice was made.
+
+    Returns ``None`` for clean results, missing results, or malformed input.
+    """
+    if not isinstance(result, dict):
+        return None
+    labels = result.get("labels") or []
+    try:
+        confidence = float(result.get("confidence", 0.0))
+    except (TypeError, ValueError):
+        return None
+
+    normalized = _normalize_taxonomy(taxonomy)
+    if not labels or not normalized:
+        return None
+    if len(normalized) <= 1:
+        return "trivial_taxonomy"
+    if len(labels) >= _CLASSIFY_MAX_SELECTED:
+        return "max_labels_hit"
+    if confidence <= _CLASSIFY_MIN_CONFIDENCE + _CLASSIFY_BORDER_BAND:
+        return "borderline_confidence"
+    return None
 
 
 # --------------------------------------------------------------------------- #
@@ -1429,6 +1474,9 @@ def ingest_file(
     classify_taxonomy: list[str] | None = None,
     classify_multi_label: bool = False,
     extract_correspondence: bool = True,
+    detect_near_duplicates: bool = False,
+    detect_anomalies: bool = True,
+    workflow_custom_fields: list[dict] | None = None,
     conn=None,
     progress_cb=None,
 ) -> IngestOutcome:
@@ -1576,6 +1624,28 @@ def ingest_file(
         corr = _ai_extract_correspondence(text)
         if corr:
             ai_metadata = {**ai_metadata, "correspondence": corr}
+
+    # Metadata anomaly detection (best-effort): flag duplex-scan artifacts etc.
+    if detect_anomalies and text.strip():
+        anomaly = _ai_metadata_anomaly_detection(
+            Extraction(
+                text=text,
+                provider=extraction.provider,
+                content_type=extraction.content_type,
+                page_count=extraction.page_count,
+                title=extraction.title or ai_title or p.stem,
+            ),
+            p.name,
+        )
+        if anomaly:
+            ai_metadata = {**ai_metadata, "metadata_anomaly": anomaly}
+
+    # Workflow mutation proposals (best-effort): caller-supplied custom fields.
+    if workflow_custom_fields and text.strip():
+        _emit("workflow", "Proposing workflow mutations…", 9)
+        wm = _ai_propose_workflow_mutations(text, workflow_custom_fields)
+        if wm:
+            ai_metadata = {**ai_metadata, "workflow_mutations": wm}
 
     # ── Duplicate detection + bookkeeping ─────────────────────────────────────
     # Open a single DB connection (or reuse caller's) for dedup + writes.
@@ -1750,6 +1820,14 @@ def ingest_file(
             )
         conn.commit()
 
+        # Near-duplicate title detection (best-effort): compare this document's
+        # title against existing titles in the same collection.
+        if detect_near_duplicates:
+            title_for_dup = extraction.title or ai_title or p.stem
+            near = _detect_near_duplicate_titles(doc_id, title_for_dup, collection_id, conn)
+            if near:
+                ai_metadata = {**ai_metadata, "near_duplicates": near}
+
         # 5) KG bridge (best-effort). ingest_chunk reads rag_chunks by id, so this
         #    only finds content when embedding upserted the chunk above.
         _emit("kg_bridge", "Extracting entities and relationships…", 78)
@@ -1808,3 +1886,1411 @@ def ingest_file(
                 conn.close()
             except Exception:
                 pass
+
+
+# --------------------------------------------------------------------------- #
+# Anomaly / batch / import / lifecycle / workflow helpers
+# --------------------------------------------------------------------------- #
+
+# Consumer pre-validation (per-file) — env-controllable, no hardcoded floors.
+_CONSUMER_MIN_FILE_BYTES = 4
+_CONSUMER_MAX_FILENAME_LEN = 255
+
+# ZIP-based formats are skipped for MIME mismatch because their magic bytes are
+# identical to a generic ZIP archive (DOCX/XLSX/PPTX are all ZIP containers).
+_CONSUMER_MIME_SKIP_EXTENSIONS = {".zip", ".docx", ".xlsx", ".pptx"}
+_CONSUMER_EXTENSION_TO_MIME = {
+    ".pdf": "application/pdf",
+    ".txt": "text/plain",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".zip": "application/zip",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+}
+
+# Consumer outcome (post-ingest) thresholds.
+_OUTCOME_MIN_EMBED_RATIO = 0.5
+_OUTCOME_MAX_ERRORS = 5
+
+# Collection-level pipeline health thresholds.
+_CONSUMER_WARN_RATIO = 0.10
+_CONSUMER_CRITICAL_RATIO = 0.25
+_CONSUMER_MAX_QUEUE_DOCS = 500
+
+# Bulk import validation thresholds.
+_IMPORT_MAX_FILE_BYTES = 100 * 1024 * 1024
+_IMPORT_SIZE_IQR_FENCE = 1.5
+_IMPORT_MIN_CONTENT_CHARS = 20
+
+# LLM label-match criteria suggester.
+_LABEL_MATCH_MIN_CONFIDENCE = 0.70
+_LABEL_MATCH_MAX_KEYWORDS = 10
+
+# LLM workflow action parameter extractor.
+_ACTION_PARAMS_MIN_CONFIDENCE = 0.70
+_ACTION_PARAMS_MAX_ASSIGNMENTS = 10
+_ACTION_PARAMS_MAX_REMOVALS = 10
+_ALLOWED_ACTION_FIELDS = {
+    "correspondent",
+    "tag",
+    "document_type",
+    "storage_path",
+    "custom_field",
+}
+
+# Near-duplicate title detection.
+_NEAR_DUP_MIN_TOKENS = 5
+
+# Lifecycle assignment anomaly thresholds.
+_LIFECYCLE_MIN_CONFIDENCE = 0.70
+_LIFECYCLE_CONFIDENCE_EPSILON = 0.05
+_LIFECYCLE_MAX_ASSIGNMENTS = 10
+
+
+# --------------------------------------------------------------------------- #
+# Shared IQR fence helper
+# --------------------------------------------------------------------------- #
+
+def _median(values: list[float]) -> float:
+    n = len(values)
+    if n == 0:
+        return 0.0
+    if n % 2:
+        return values[n // 2]
+    return (values[n // 2 - 1] + values[n // 2]) / 2.0
+
+
+def _iqr_fences(values: list[float], fence: float = 1.5) -> tuple[float, float]:
+    """Return (lower, upper) Tukey fences for a numeric sample.
+
+    Samples with fewer than 4 values return infinite fences so that nothing is
+    flagged as anomalous.
+    """
+    if len(values) < 4:
+        return (float("-inf"), float("inf"))
+    s = sorted(float(v) for v in values)
+    n = len(s)
+    if n % 2:
+        lower = s[: n // 2]
+        upper = s[n // 2 + 1 :]
+    else:
+        lower = s[: n // 2]
+        upper = s[n // 2 :]
+    q1 = _median(lower)
+    q3 = _median(upper)
+    iqr = q3 - q1
+    return (q1 - fence * iqr, q3 + fence * iqr)
+
+
+# --------------------------------------------------------------------------- #
+# Batch ingest + processing-time anomaly detection
+# --------------------------------------------------------------------------- #
+
+def _detect_processing_time_anomalies(times: list[float], fence: float = 1.5) -> tuple[float, float]:
+    return _iqr_fences(times, fence)
+
+
+@dataclass
+class BatchIngestResult:
+    total: int = 0
+    succeeded: int = 0
+    failed: int = 0
+    per_file: list[dict] = field(default_factory=list)
+    anomalous_paths: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "total": self.total,
+            "succeeded": self.succeeded,
+            "failed": self.failed,
+            "per_file": list(self.per_file),
+            "anomalous_paths": list(self.anomalous_paths),
+        }
+
+
+def ingest_batch(
+    files: list,
+    collection_id: str,
+    *,
+    tenant_id: str | None = None,
+    classification: str | None = None,
+    embed: bool = False,
+    bridge_kg: bool = False,
+    summarize: bool = False,
+    clean_ocr: bool = False,
+    extract_metadata: bool = False,
+    extract_identifiers: bool = False,
+    classify_taxonomy: list[str] | None = None,
+    extract_correspondence: bool = False,
+    progress_cb=None,
+) -> BatchIngestResult:
+    """Ingest a list of files, recording per-file timing and anomaly flags."""
+    import time
+
+    result = BatchIngestResult()
+    if not files:
+        return result
+    times: list[float] = []
+    for i, path in enumerate(files):
+        p = Path(path)
+        start = time.monotonic()
+        try:
+            outcome = ingest_file(
+                str(p),
+                collection_id,
+                tenant_id=tenant_id,
+                classification=classification,
+                embed=embed,
+                bridge_kg=bridge_kg,
+                summarize=summarize,
+                clean_ocr=clean_ocr,
+                extract_metadata=extract_metadata,
+                extract_identifiers=extract_identifiers,
+                classify_taxonomy=classify_taxonomy,
+                extract_correspondence=extract_correspondence,
+            )
+            elapsed = time.monotonic() - start
+            times.append(elapsed)
+            entry = {
+                "path": str(p),
+                "ok": True,
+                "doc_id": outcome.doc_id,
+                "elapsed_s": round(elapsed, 4),
+                "anomalous": False,
+                "error": "",
+            }
+            result.succeeded += 1
+        except Exception as exc:
+            elapsed = time.monotonic() - start
+            times.append(elapsed)
+            entry = {
+                "path": str(p),
+                "ok": False,
+                "doc_id": "",
+                "elapsed_s": round(elapsed, 4),
+                "anomalous": False,
+                "error": str(exc),
+            }
+            result.failed += 1
+        result.per_file.append(entry)
+        result.total += 1
+        if progress_cb:
+            try:
+                progress_cb(i + 1, len(files), result.anomalous_paths)
+            except Exception:
+                pass
+
+    lo, hi = _detect_processing_time_anomalies(times)
+    for entry in result.per_file:
+        if entry["ok"] and entry["elapsed_s"] > hi:
+            entry["anomalous"] = True
+            result.anomalous_paths.append(entry["path"])
+    return result
+
+
+# --------------------------------------------------------------------------- #
+# Consumer file pre-validation anomaly
+# --------------------------------------------------------------------------- #
+
+def _detect_mime_from_header(path: Path) -> str | None:
+    """Best-effort MIME detection from file magic bytes."""
+    try:
+        with path.open("rb") as f:
+            header = f.read(16)
+    except Exception:
+        return None
+    if header.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if header.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if header.startswith(b"GIF87a") or header.startswith(b"GIF89a"):
+        return "image/gif"
+    if header.startswith(b"%PDF"):
+        return "application/pdf"
+    if header.startswith(b"PK\x03\x04"):
+        return "application/zip"
+    try:
+        header.decode("utf-8")
+        return "text/plain"
+    except UnicodeDecodeError:
+        return "application/octet-stream"
+
+
+def detect_consumer_file_anomaly(path) -> dict | None:
+    """Flag empty/corrupt files, oversized filenames, and MIME/extension mismatches."""
+    p = Path(path)
+    signals: list[str] = []
+    file_bytes = 0
+    try:
+        file_bytes = p.stat().st_size
+    except Exception:
+        signals.append("empty_or_corrupt: unable to read file")
+    else:
+        if file_bytes < _CONSUMER_MIN_FILE_BYTES:
+            signals.append(f"empty_or_corrupt: file is only {file_bytes} bytes")
+
+    if len(p.name) > _CONSUMER_MAX_FILENAME_LEN:
+        signals.append(
+            f"filename_too_long: {len(p.name)} chars exceeds {_CONSUMER_MAX_FILENAME_LEN}"
+        )
+
+    ext = p.suffix.lower()
+    expected_mime = _CONSUMER_EXTENSION_TO_MIME.get(ext)
+    if expected_mime and ext not in _CONSUMER_MIME_SKIP_EXTENSIONS:
+        detected = _detect_mime_from_header(p)
+        if detected and detected != expected_mime:
+            signals.append(
+                f"mime_extension_mismatch: expected {expected_mime}, got {detected}"
+            )
+
+    if signals:
+        return {
+            "source": "consumer_pre_validation",
+            "signals": signals,
+            "file_bytes": file_bytes,
+            "filename": p.name,
+        }
+    return None
+
+
+# --------------------------------------------------------------------------- #
+# Consumer outcome anomaly
+# --------------------------------------------------------------------------- #
+
+def detect_consumer_outcome_anomaly(
+    chunks: int,
+    chunks_embedded: int,
+    errors: list,
+    text_was_nonempty: bool,
+    embed_requested: bool = True,
+) -> dict | None:
+    """Detect post-ingest consumption problems (zero chunks, low embed rate, errors)."""
+    try:
+        signals: list[str] = []
+        if text_was_nonempty and chunks == 0:
+            signals.append("zero_chunks")
+        if embed_requested and chunks > 0:
+            ratio = chunks_embedded / chunks
+            if ratio < _OUTCOME_MIN_EMBED_RATIO:
+                signals.append(f"low_embed_rate: {chunks_embedded}/{chunks}")
+        if len(errors) > _OUTCOME_MAX_ERRORS:
+            signals.append(f"high_error_count: {len(errors)}")
+        if not signals:
+            return None
+        return {"source": "consumer_outcome_anomaly", "signals": signals}
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------- #
+# Collection-level pipeline health anomaly
+# --------------------------------------------------------------------------- #
+
+@dataclass
+class ConsumerHealthReport:
+    verdict: str
+    doc_count: int
+    outlier_count: int
+    backlog_warning: bool
+    collection_id: str = ""
+    outlier_fraction: float = 0.0
+    signals: list[str] = field(default_factory=list)
+    outlier_doc_ids: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "collection_id": self.collection_id,
+            "verdict": self.verdict,
+            "doc_count": self.doc_count,
+            "outlier_count": self.outlier_count,
+            "outlier_fraction": self.outlier_fraction,
+            "backlog_warning": self.backlog_warning,
+            "signals": list(self.signals),
+            "outlier_doc_ids": list(self.outlier_doc_ids),
+        }
+
+
+def detect_collection_anomalies(
+    collection_id: str, conn=None, limit: int = 100
+) -> ConsumerHealthReport | None:
+    """IQR-based outlier detection on page_count / byte_size for a collection."""
+    own = conn is None
+    if own:
+        conn = get_connection()
+    try:
+        try:
+            _ensure_schema(conn)
+        except Exception:
+            return None
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT doc_id, page_count, byte_size FROM dic_documents "
+            "WHERE collection_id = ? ORDER BY created_at DESC LIMIT ?",
+            (collection_id, limit),
+        )
+        rows = cur.fetchall()
+        if len(rows) < 4:
+            return None
+        doc_ids: list[str] = []
+        page_counts: list[int] = []
+        byte_sizes: list[int] = []
+        for row in rows:
+            if isinstance(row, dict):
+                doc_id = row.get("doc_id", "")
+                pc = row.get("page_count", 0)
+                bs = row.get("byte_size", 0)
+            elif hasattr(row, "__getitem__"):
+                doc_id = row[0]
+                pc = row[1]
+                bs = row[2]
+            else:
+                doc_id = getattr(row, "doc_id", "")
+                pc = getattr(row, "page_count", 0)
+                bs = getattr(row, "byte_size", 0)
+            doc_ids.append(doc_id)
+            page_counts.append(int(pc or 0))
+            byte_sizes.append(int(bs or 0))
+
+        pc_lo, pc_hi = _iqr_fences(page_counts)
+        bs_lo, bs_hi = _iqr_fences(byte_sizes)
+
+        outlier_doc_ids: list[str] = []
+        signals: list[str] = []
+        for i, doc_id in enumerate(doc_ids):
+            if page_counts[i] > pc_hi:
+                signals.append(f"page_count_high: {page_counts[i]}")
+                if doc_id not in outlier_doc_ids:
+                    outlier_doc_ids.append(doc_id)
+            if byte_sizes[i] > bs_hi:
+                signals.append(f"byte_size_high: {byte_sizes[i]}")
+                if doc_id not in outlier_doc_ids:
+                    outlier_doc_ids.append(doc_id)
+
+        outlier_count = len(outlier_doc_ids)
+        doc_count = len(rows)
+        backlog_warning = doc_count >= _CONSUMER_MAX_QUEUE_DOCS
+        if backlog_warning:
+            signals.append("backlog_warning")
+
+        ratio = outlier_count / doc_count if doc_count else 0.0
+        if ratio >= _CONSUMER_CRITICAL_RATIO or backlog_warning:
+            verdict = "critical"
+        elif ratio >= _CONSUMER_WARN_RATIO:
+            verdict = "degraded"
+        else:
+            verdict = "healthy"
+
+        return ConsumerHealthReport(
+            verdict=verdict,
+            outlier_count=outlier_count,
+            doc_count=doc_count,
+            backlog_warning=backlog_warning,
+            collection_id=collection_id,
+            outlier_fraction=ratio,
+            signals=signals,
+            outlier_doc_ids=outlier_doc_ids,
+        )
+    finally:
+        if own:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+# --------------------------------------------------------------------------- #
+# Bulk import validation
+# --------------------------------------------------------------------------- #
+
+@dataclass
+class ImportValidationResult:
+    path: str
+    accepted: bool
+    anomalous: bool
+    rejection_reason: str = ""
+
+
+@dataclass
+class ArchiveImportResult:
+    total: int
+    accepted: int
+    rejected: int
+    per_file: list[ImportValidationResult]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "total": self.total,
+            "accepted": self.accepted,
+            "rejected": self.rejected,
+            "per_file": [
+                {
+                    "path": r.path,
+                    "accepted": r.accepted,
+                    "anomalous": r.anomalous,
+                    "rejection_reason": r.rejection_reason,
+                }
+                for r in self.per_file
+            ],
+        }
+
+
+def _detect_file_size_anomalies(
+    sizes: list[float], fence: float = _IMPORT_SIZE_IQR_FENCE
+) -> tuple[float, float]:
+    return _iqr_fences(sizes, fence)
+
+
+def _llm_import_quality_check(text: str) -> tuple[str, str]:
+    """Best-effort LLM quality check for imported files.
+
+    Returns (status, detail). Default is clean; callers may override by
+    monkeypatching this function in tests.
+    """
+    return ("clean", "")
+
+
+def validate_import_documents(paths: list) -> ArchiveImportResult:
+    """Validate a list of file paths for import: size gate, content gate, IQR anomaly."""
+    total = len(paths)
+    accepted_paths: list[Path] = []
+    sizes: list[int] = []
+    per_file: list[ImportValidationResult] = []
+
+    for path in paths:
+        p = Path(path)
+        try:
+            size = p.stat().st_size
+        except Exception:
+            size = 0
+        if size > _IMPORT_MAX_FILE_BYTES:
+            per_file.append(
+                ImportValidationResult(
+                    path=str(p),
+                    accepted=False,
+                    anomalous=False,
+                    rejection_reason=f"exceeds_max_size: {size} bytes",
+                )
+            )
+            continue
+        accepted_paths.append(p)
+        sizes.append(size)
+
+    lo, hi = _detect_file_size_anomalies(sizes)
+    size_by_path = {str(p): s for p, s in zip(accepted_paths, sizes)}
+
+    for p in accepted_paths:
+        size = size_by_path[str(p)]
+        anomalous = size > hi
+        rejection_reason = ""
+        try:
+            text = p.read_text(encoding="utf-8", errors="replace")
+        except Exception:
+            text = ""
+        if len(text) < _IMPORT_MIN_CONTENT_CHARS:
+            anomalous = True
+            rejection_reason = "near_empty"
+        status, detail = _llm_import_quality_check(text)
+        if status != "clean":
+            anomalous = True
+            rejection_reason = detail or status
+        if anomalous and not rejection_reason:
+            rejection_reason = "anomalous"
+        per_file.append(
+            ImportValidationResult(
+                path=str(p),
+                accepted=True,
+                anomalous=anomalous,
+                rejection_reason=rejection_reason,
+            )
+        )
+
+    accepted = sum(1 for r in per_file if r.accepted)
+    rejected = total - accepted
+    return ArchiveImportResult(
+        total=total, accepted=accepted, rejected=rejected, per_file=per_file
+    )
+
+
+# --------------------------------------------------------------------------- #
+# LLM label-match criteria suggester
+# --------------------------------------------------------------------------- #
+
+_LABEL_MATCH_SYSTEM_PROMPT = (
+    "You suggest match criteria for a document-management label. "
+    "Given the label name and optional description, propose keywords, required "
+    "phrases, contextual signals, and a match mode (any/all/contextual). "
+    "Respond with a strict JSON object: "
+    '{"keywords": [...], "required_phrases": [...], "contextual_signals": [...], '
+    '"match_mode": "any|all|contextual", "confidence": 0..1}. '
+    "Ground every term in the provided label/description; never invent."
+)
+
+
+def _ai_suggest_label_match_criteria(
+    label_name: str, description: str | None = None
+) -> dict | None:
+    """Use an LLM to propose grounded label match criteria."""
+    text = (label_name or "").strip()
+    if not text:
+        return None
+    try:
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        ctx = f"Label: {label_name}\nDescription: {description or ''}"
+        req = LLMRequest(
+            messages=[{"role": "user", "content": ctx}],
+            system_prompt=_LABEL_MATCH_SYSTEM_PROMPT,
+            max_tokens=256,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("summarization", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        parsed = json.loads(raw[start : end + 1])
+        try:
+            confidence = float(parsed.get("confidence", 0.0))
+        except (TypeError, ValueError):
+            return None
+        if confidence < _LABEL_MATCH_MIN_CONFIDENCE:
+            return None
+
+        match_mode = str(parsed.get("match_mode") or "any").lower()
+        if match_mode not in {"any", "all", "contextual"}:
+            match_mode = "any"
+
+        haystack = (label_name + " " + (description or "")).casefold()
+
+        def _ground(items):
+            out: list[str] = []
+            seen: set[str] = set()
+            for item in items or []:
+                term = str(item).strip().lower()
+                if not term or term in seen:
+                    continue
+                seen.add(term)
+                if term in haystack:
+                    out.append(term)
+                if len(out) >= _LABEL_MATCH_MAX_KEYWORDS:
+                    break
+            return out
+
+        keywords = _ground(parsed.get("keywords"))
+        required = _ground(parsed.get("required_phrases"))
+        contextual = _ground(parsed.get("contextual_signals"))
+        if not keywords and not required and not contextual:
+            return None
+        return {
+            "keywords": keywords,
+            "required_phrases": required,
+            "contextual_signals": contextual,
+            "match_mode": match_mode,
+            "confidence": round(confidence, 4),
+            "origin": "ai_generated",
+        }
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------- #
+# LLM workflow action parameter extractor
+# --------------------------------------------------------------------------- #
+
+_WORKFLOW_ACTION_PARAMS_SYSTEM_PROMPT = (
+    "You extract structured parameters for a document-management workflow action. "
+    "Given an action description and optional document context, return a strict JSON "
+    "object: {\"action_type\": \"assignment|removal|notification|custom\", "
+    "\"assignments\": [{\"field\": \"...\", \"value\": \"...\"}], "
+    "\"removals\": [{\"field\": \"...\", \"value\": \"...\"}], "
+    "\"rationale\": \"...\", \"confidence\": 0..1}. "
+    "Only use field names and values that appear in the description/context. "
+    "A removal value of '*' means clear all values for that field."
+)
+
+
+def _ai_extract_workflow_action_params(
+    action_description: str,
+    doc_context: dict | None = None,
+    available_fields: list[str] | None = None,
+) -> dict | None:
+    """Use an LLM to extract grounded workflow action parameters."""
+    text = (action_description or "").strip()
+    if not text:
+        return None
+    try:
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        ctx_parts = [f"Action: {action_description}"]
+        if doc_context:
+            ctx_parts.append(
+                "Document context: " + json.dumps(doc_context, ensure_ascii=False)
+            )
+        if available_fields:
+            ctx_parts.append("Available fields: " + ", ".join(available_fields))
+        req = LLMRequest(
+            messages=[{"role": "user", "content": "\n".join(ctx_parts)}],
+            system_prompt=_WORKFLOW_ACTION_PARAMS_SYSTEM_PROMPT,
+            max_tokens=512,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("summarization", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        parsed = json.loads(raw[start : end + 1])
+        try:
+            confidence = float(parsed.get("confidence", 0.0))
+        except (TypeError, ValueError):
+            return None
+        if confidence < _ACTION_PARAMS_MIN_CONFIDENCE:
+            return None
+
+        action_type = str(parsed.get("action_type") or "custom").lower()
+        if action_type not in {"assignment", "removal", "notification", "custom"}:
+            action_type = "custom"
+
+        allowed = _ALLOWED_ACTION_FIELDS
+        if available_fields:
+            available = set(available_fields)
+            allowed = allowed & available
+
+        haystack = text.casefold()
+        if doc_context:
+            haystack += " " + " ".join(str(v) for v in doc_context.values()).casefold()
+
+        def _ground_field_items(items, cap: int):
+            out: list[dict] = []
+            seen: set[tuple[str, str]] = set()
+            for item in items or []:
+                field = str(item.get("field", "")).strip().lower()
+                value = str(item.get("value", "")).strip()
+                if not field:
+                    continue
+                if field not in allowed:
+                    continue
+                if not value:
+                    continue
+                if value != "*" and value.casefold() not in haystack:
+                    continue
+                key = (field, value.casefold())
+                if key in seen:
+                    continue
+                seen.add(key)
+                out.append({"field": field, "value": value})
+                if len(out) >= cap:
+                    break
+            return out
+
+        assignments = _ground_field_items(
+            parsed.get("assignments"), _ACTION_PARAMS_MAX_ASSIGNMENTS
+        )
+        removals = _ground_field_items(
+            parsed.get("removals"), _ACTION_PARAMS_MAX_REMOVALS
+        )
+
+        if not assignments and not removals and action_type not in {"notification", "custom"}:
+            return None
+
+        rationale = str(parsed.get("rationale") or "")[:300]
+        return {
+            "action_type": action_type,
+            "assignments": assignments,
+            "removals": removals,
+            "rationale": rationale,
+            "confidence": round(confidence, 4),
+            "origin": "ai_generated",
+        }
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------- #
+# Near-duplicate title detection
+# --------------------------------------------------------------------------- #
+
+def _tokenize(text: str) -> list[str]:
+    return [t for t in re.split(r"[^a-z0-9]+", text.lower()) if t]
+
+
+def _detect_near_duplicate_titles(
+    new_doc_id: str, title: str, collection_id: str, conn
+) -> list[dict]:
+    """Find existing titles in the collection that are unusually similar to ``title``.
+
+    Uses token-set Jaccard + IQR outlier detection. Returns a list of candidate
+    dicts sorted by descending similarity. DB errors and edge cases degrade to [].
+    """
+    if not title or not str(title).strip():
+        return []
+    tokens = set(_tokenize(str(title)))
+    if len(tokens) < _NEAR_DUP_MIN_TOKENS:
+        return []
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT doc_id, filename, title FROM dic_documents "
+            "WHERE collection_id = ? AND doc_id != ?",
+            (collection_id, new_doc_id),
+        )
+        rows = cur.fetchall()
+        candidates: list[dict] = []
+        scores: list[float] = []
+        for row in rows:
+            doc_id = row[0] if hasattr(row, "__getitem__") else row["doc_id"]
+            filename = row[1] if hasattr(row, "__getitem__") else row["filename"]
+            other_title = row[2] if hasattr(row, "__getitem__") else row["title"]
+            if not other_title:
+                continue
+            other_tokens = set(_tokenize(str(other_title)))
+            if not other_tokens:
+                continue
+            union = tokens | other_tokens
+            score = len(tokens & other_tokens) / len(union) if union else 0.0
+            candidates.append(
+                {
+                    "doc_id": doc_id,
+                    "filename": filename,
+                    "title": other_title,
+                    "similarity": round(score, 4),
+                }
+            )
+            scores.append(score)
+        if len(scores) < 2:
+            return []
+        lo, hi = _iqr_fences(scores)
+        results = [c for c in candidates if c["similarity"] > hi]
+        results.sort(key=lambda c: c["similarity"], reverse=True)
+        return results
+    except Exception:
+        return []
+
+
+# --------------------------------------------------------------------------- #
+# Lifecycle assignment anomaly detection
+# --------------------------------------------------------------------------- #
+
+def detect_lifecycle_assignment_anomaly(
+    assignments, rules_evaluated: int = 0
+) -> dict | None:
+    """Detect suspicious lifecycle auto-assignment patterns."""
+    try:
+        if not isinstance(assignments, list):
+            return None
+        signals: list[str] = []
+
+        if not assignments and rules_evaluated > 0:
+            signals.append(
+                f"no_assignments: {rules_evaluated} rules evaluated but none fired"
+            )
+
+        if len(assignments) > _LIFECYCLE_MAX_ASSIGNMENTS:
+            signals.append(
+                f"over_assignment: {len(assignments)} assignments exceed {_LIFECYCLE_MAX_ASSIGNMENTS}"
+            )
+
+        valid_scores: list[float] = []
+        for a in assignments:
+            if isinstance(a, dict) and "confidence" in a:
+                try:
+                    valid_scores.append(float(a["confidence"]))
+                except (TypeError, ValueError):
+                    pass
+        if len(valid_scores) >= 2:
+            if all(
+                abs(s - _LIFECYCLE_MIN_CONFIDENCE) <= _LIFECYCLE_CONFIDENCE_EPSILON
+                for s in valid_scores
+            ):
+                signals.append(
+                    "confidence_floor_hit: all assignments near minimum confidence"
+                )
+
+        if not signals:
+            return None
+        return {"source": "lifecycle_assignment_anomaly", "signals": signals}
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------- #
+# Date plausibility anomaly
+# --------------------------------------------------------------------------- #
+
+def _detect_date_anomaly(date_str: str | None) -> str | None:
+    """Signal implausible/invalid document dates."""
+    if not date_str or not isinstance(date_str, str):
+        return None
+    try:
+        d = datetime.strptime(date_str.strip(), "%Y-%m-%d")
+    except ValueError:
+        return "date_invalid_format"
+    if d.year < _DATE_MIN_YEAR:
+        return f"date_too_old:{d.year}"
+    max_year = datetime.now(timezone.utc).year + _DATE_MAX_YEAR_OFFSET
+    if d.year > max_year:
+        return f"date_too_future:{d.year}"
+    return None
+
+
+# --------------------------------------------------------------------------- #
+# Metadata anomaly detection (duplex-scan artifacts)
+# --------------------------------------------------------------------------- #
+
+_ANOMALY_MIN_CHARS_PER_PAGE = 10
+_ANOMALY_DUPLEX_CPP_RATIO = 3.0
+_ANOMALY_INPUT_CHARS = 2000
+
+_ANOMALY_SYSTEM_PROMPT = (
+    "You score document metadata anomalies for a document-management index. "
+    "Given one or more pre-computed anomaly signals, return a strict JSON object "
+    '{"score": 0..1, "verdict": "anomalous|suspicious|normal", "reason": "..."}. '
+    "Score high when the signals strongly indicate a real problem."
+)
+
+
+def _ai_metadata_anomaly_detection(extraction: Extraction, filename: str) -> dict | None:
+    """Flag scan/conversion artifacts such as duplex-scan blank pages."""
+    text = (extraction.text or "").strip()
+    page_count = extraction.page_count or 1
+    signals: list[str] = []
+    if page_count >= 4 and page_count % 2 == 0:
+        cpp = len(text) / page_count
+        floor = _ANOMALY_MIN_CHARS_PER_PAGE * _ANOMALY_DUPLEX_CPP_RATIO
+        if cpp < floor:
+            signals.append(
+                f"possible_duplex_artifact: pages={page_count}(even) cpp={cpp:.1f}<{floor:.1f}"
+            )
+    if not signals:
+        return None
+
+    llm_result: dict | None = None
+    if text:
+        try:
+            from tools.llm.provider import LLMRequest
+            from tools.llm.router import LLMRouter
+
+            snippet = text[:_ANOMALY_INPUT_CHARS]
+            req = LLMRequest(
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Filename: {filename}\nDocument excerpt:\n{snippet}\n\n"
+                            f"Signals: {signals}\n\nScore the anomaly."
+                        ),
+                    }
+                ],
+                system_prompt=_ANOMALY_SYSTEM_PROMPT,
+                max_tokens=128,
+                temperature=0.0,
+                skip_injection_scan=True,
+                classification="CUI",
+            )
+            resp = LLMRouter().invoke("anomaly_detection", req)
+            if resp and resp.content:
+                raw = resp.content.strip()
+                if raw.startswith("```"):
+                    raw = raw.strip("`")
+                    if raw.lower().startswith("json"):
+                        raw = raw[4:]
+                start, end = raw.find("{"), raw.rfind("}")
+                if start != -1 and end != -1 and end > start:
+                    llm_result = json.loads(raw[start : end + 1])
+        except Exception:
+            pass
+
+    score = 0.5
+    verdict = "suspicious"
+    reason = "llm_unavailable"
+    if isinstance(llm_result, dict):
+        try:
+            score = float(llm_result.get("score", score))
+        except (TypeError, ValueError):
+            pass
+        v = str(llm_result.get("verdict") or "").lower()
+        verdict = v if v in {"anomalous", "suspicious", "normal"} else "suspicious"
+        reason = str(llm_result.get("reason") or reason)
+    return {"score": score, "verdict": verdict, "reason": reason, "signals": signals}
+
+
+# --------------------------------------------------------------------------- #
+# Email ingestion anomaly detection
+# --------------------------------------------------------------------------- #
+
+_EMAIL_ANOMALY_MAX_ATTACHMENT_COUNT = 10
+_EMAIL_ANOMALY_MAX_ATTACHMENT_SIZE_MB = 25.0
+_EMAIL_ANOMALY_MAX_AGE_DAYS = 365
+_EMAIL_ANOMALY_MAX_SUBJECT_LEN = 500
+
+_EMAIL_ANOMALY_SYSTEM_PROMPT = (
+    "You score email ingestion anomalies. Given one or more pre-computed "
+    "signals, return a strict JSON object "
+    '{"score": 0..1, "verdict": "anomalous|suspicious|normal", "reason": "..."}. '
+    "Score high when the signals strongly indicate a real problem."
+)
+
+
+def _ai_email_ingestion_anomaly_detection(
+    correspondence: dict | None = None,
+    attachment_count: int = 0,
+    attachment_size_bytes: int = 0,
+    email_age_days: float | None = None,
+) -> dict | None:
+    """Detect suspicious email ingestion patterns before/after extraction."""
+    signals: list[str] = []
+    if attachment_count > _EMAIL_ANOMALY_MAX_ATTACHMENT_COUNT:
+        signals.append(
+            f"high_attachment_count:{attachment_count}>{_EMAIL_ANOMALY_MAX_ATTACHMENT_COUNT}"
+        )
+    max_size_bytes = int(_EMAIL_ANOMALY_MAX_ATTACHMENT_SIZE_MB * 1024 * 1024)
+    if attachment_size_bytes > max_size_bytes:
+        signals.append("large_attachments")
+    if email_age_days is not None and email_age_days > _EMAIL_ANOMALY_MAX_AGE_DAYS:
+        signals.append(f"stale_email:{email_age_days}>{_EMAIL_ANOMALY_MAX_AGE_DAYS}")
+    if correspondence:
+        subject = correspondence.get("subject") or ""
+        if len(subject) > _EMAIL_ANOMALY_MAX_SUBJECT_LEN:
+            signals.append(
+                f"long_subject:{len(subject)}>{_EMAIL_ANOMALY_MAX_SUBJECT_LEN}"
+            )
+        from_name = str(correspondence.get("from_name") or "").strip()
+        from_email = str(correspondence.get("from_email") or "").strip()
+        if not from_name and not from_email:
+            signals.append("missing_sender")
+    if not signals:
+        return None
+
+    llm_result: dict | None = None
+    try:
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        req = LLMRequest(
+            messages=[{"role": "user", "content": f"Email signals: {signals}"}],
+            system_prompt=_EMAIL_ANOMALY_SYSTEM_PROMPT,
+            max_tokens=128,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("anomaly_detection", req)
+        if resp and resp.content:
+            raw = resp.content.strip()
+            if raw.startswith("```"):
+                raw = raw.strip("`")
+                if raw.lower().startswith("json"):
+                    raw = raw[4:]
+            start, end = raw.find("{"), raw.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                llm_result = json.loads(raw[start : end + 1])
+    except Exception:
+        pass
+
+    score = 0.5
+    verdict = "suspicious"
+    reason = "llm_unavailable"
+    if isinstance(llm_result, dict):
+        try:
+            score = float(llm_result.get("score", score))
+        except (TypeError, ValueError):
+            pass
+        v = str(llm_result.get("verdict") or "").lower()
+        verdict = v if v in {"anomalous", "suspicious", "normal"} else "suspicious"
+        reason = str(llm_result.get("reason") or reason)
+    return {"score": score, "verdict": verdict, "reason": reason, "signals": signals}
+
+
+# --------------------------------------------------------------------------- #
+# Routing metadata extraction
+# --------------------------------------------------------------------------- #
+
+_ROUTING_INPUT_CHARS = 6000
+_ROUTING_MIN_CONFIDENCE = 0.70
+_ROUTING_MAX_KEYWORDS = 10
+_ROUTING_PRIORITIES = {"routine", "urgent", "immediate", "time_sensitive"}
+
+_ROUTING_SYSTEM_PROMPT = (
+    "You extract routing metadata for a single ingested document. "
+    "Given the document text, identify the originator (person), originator_org "
+    "(organization), routing_keywords, and priority. Respond with a strict JSON "
+    "object: {\"originator\": \"...\"|null, \"originator_org\": \"...\"|null, "
+    "\"routing_keywords\": [...], \"priority\": \"routine|urgent|immediate|time_sensitive\", "
+    "\"confidence\": 0..1}. Ground every value in the text; never invent."
+)
+
+
+def _ai_extract_routing_metadata(text: str, filename: str) -> dict | None:
+    """Propose routing metadata grounded in the document text."""
+    snippet = (text or "").strip()
+    if not snippet:
+        return None
+    snippet = snippet[:_ROUTING_INPUT_CHARS]
+    try:
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        req = LLMRequest(
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Filename: {filename}\nDocument text:\n{snippet}\n\n"
+                        "Produce the routing metadata JSON."
+                    ),
+                }
+            ],
+            system_prompt=_ROUTING_SYSTEM_PROMPT,
+            max_tokens=256,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("summarization", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        parsed = json.loads(raw[start : end + 1])
+        try:
+            confidence = float(parsed.get("confidence", 0.0))
+        except (TypeError, ValueError):
+            return None
+        if confidence < _ROUTING_MIN_CONFIDENCE:
+            return None
+
+        haystack = snippet.casefold()
+
+        def _grounded_token(s):
+            return str(s or "").strip().casefold()
+
+        originator = parsed.get("originator")
+        if originator and _grounded_token(originator) not in haystack:
+            originator = None
+        originator_org = parsed.get("originator_org")
+        if originator_org and _grounded_token(originator_org) not in haystack:
+            originator_org = None
+
+        keywords: list[str] = []
+        seen: set[str] = set()
+        for kw in parsed.get("routing_keywords") or []:
+            k = str(kw).strip()
+            if not k or k.lower() in seen:
+                continue
+            if k.lower() not in haystack:
+                continue
+            seen.add(k.lower())
+            keywords.append(k)
+            if len(keywords) >= _ROUTING_MAX_KEYWORDS:
+                break
+
+        priority = str(parsed.get("priority") or "routine").lower()
+        if priority not in _ROUTING_PRIORITIES:
+            priority = "routine"
+
+        return {
+            "originator": originator,
+            "originator_org": originator_org,
+            "routing_keywords": keywords,
+            "priority": priority,
+            "confidence": round(confidence, 4),
+            "origin": "ai_generated",
+        }
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------- #
+# Workflow mutation proposals
+# --------------------------------------------------------------------------- #
+
+_MUTATION_MAX_FIELDS = 20
+_MUTATION_MIN_CONFIDENCE = 0.70
+_MUTATION_FIELD_MIN_CONFIDENCE = 0.65
+_MUTATION_STORAGE_PATH_MAX_LEN = 260
+_MUTATION_STRING_MAX_LEN = 256
+_MUTATION_INT_MIN = 0
+_MUTATION_INT_MAX = 1_000_000_000
+
+_MUTATION_SYSTEM_PROMPT = (
+    "You propose workflow field mutations for a single ingested document. "
+    "Given the document text and a JSON schema of custom fields, return a strict "
+    "JSON object: {\"mutations\": [{\"field\": \"...\", \"value\": ..., \"confidence\": 0..1}], "
+    "\"storage_path\": \"...\"|null, \"confidence\": 0..1}. "
+    "Only propose values that appear in the text; never invent."
+)
+
+
+def _validate_mutation_value(value, field_def: dict, haystack: str):
+    """Validate and normalize a single proposed mutation value."""
+    ftype = field_def["type"]
+    if ftype == "string":
+        s = str(value).strip()
+        if len(s) > _MUTATION_STRING_MAX_LEN:
+            return None
+        norm = " ".join(s.split()).lower()
+        if norm and norm not in haystack:
+            return None
+        return s
+    if ftype == "boolean":
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            v = value.strip().lower()
+            if v in {"true", "yes", "1"}:
+                return True
+            if v in {"false", "no", "0"}:
+                return False
+        if isinstance(value, int) and value in (0, 1):
+            return bool(value)
+        return None
+    if ftype == "integer":
+        try:
+            if isinstance(value, bool):
+                raise ValueError
+            v = int(value)
+        except Exception:
+            return None
+        if v < _MUTATION_INT_MIN or v > _MUTATION_INT_MAX:
+            return None
+        return v
+    if ftype == "monetary":
+        try:
+            v = float(value)
+        except Exception:
+            return None
+        if v < 0:
+            return None
+        return v
+    if ftype == "date":
+        s = str(value).strip()
+        try:
+            datetime.strptime(s, "%Y-%m-%d")
+        except Exception:
+            return None
+        return s
+    if ftype == "select":
+        s = str(value).strip()
+        opts = {o.lower(): o for o in field_def.get("options", [])}
+        if s.lower() not in opts:
+            return None
+        return opts[s.lower()]
+    if ftype == "url":
+        s = str(value).strip()
+        if "://" not in s:
+            return None
+        alnum_haystack = re.sub(r"[^a-z0-9]", "", haystack)
+        core = re.sub(r"[^a-z0-9]", "", s.lower())
+        if core and core not in alnum_haystack:
+            return None
+        return s
+    return None
+
+
+def _ai_propose_workflow_mutations(text: str, fields: list[dict]) -> dict | None:
+    """Use an LLM to propose grounded mutations for caller-defined workflow fields."""
+    snippet = (text or "").strip()
+    if not snippet:
+        return None
+    valid_fields: list[dict] = []
+    seen_names: set[str] = set()
+    for f in fields or []:
+        if not isinstance(f, dict):
+            continue
+        name = str(f.get("name") or "").strip().lower()
+        ftype = str(f.get("type") or "").strip().lower()
+        if not name or ftype not in {
+            "string", "boolean", "integer", "monetary", "date", "select", "url",
+        }:
+            continue
+        if name in seen_names:
+            continue
+        seen_names.add(name)
+        options = [str(o).strip() for o in (f.get("options") or []) if str(o).strip()]
+        if ftype == "select" and not options:
+            continue
+        valid_fields.append({"name": name, "type": ftype, "options": options})
+    if not valid_fields:
+        return None
+    valid_fields = valid_fields[:_MUTATION_MAX_FIELDS]
+    haystack = snippet.casefold()
+    try:
+        from tools.llm.provider import LLMRequest
+        from tools.llm.router import LLMRouter
+
+        schema = json.dumps(valid_fields, ensure_ascii=False)
+        req = LLMRequest(
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Document text:\n{snippet[:4000]}\n\n"
+                        f"Fields schema:\n{schema}\n\n"
+                        "Propose the mutations JSON."
+                    ),
+                }
+            ],
+            system_prompt=_MUTATION_SYSTEM_PROMPT,
+            max_tokens=512,
+            temperature=0.0,
+            skip_injection_scan=True,
+            classification="CUI",
+        )
+        resp = LLMRouter().invoke("summarization", req)
+        if not resp or not resp.content:
+            return None
+        raw = resp.content.strip()
+        if raw.startswith("```"):
+            raw = raw.strip("`")
+            if raw.lower().startswith("json"):
+                raw = raw[4:]
+        start, end = raw.find("{"), raw.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        parsed = json.loads(raw[start : end + 1])
+        try:
+            overall = float(parsed.get("confidence", 0.0))
+        except (TypeError, ValueError):
+            return None
+        if overall < _MUTATION_MIN_CONFIDENCE:
+            return None
+
+        storage_path = str(parsed.get("storage_path") or "").strip()
+        if storage_path and len(storage_path) > _MUTATION_STORAGE_PATH_MAX_LEN:
+            storage_path = ""
+
+        field_map = {f["name"]: f for f in valid_fields}
+        mutations: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+        for m in parsed.get("mutations") or []:
+            if not isinstance(m, dict):
+                continue
+            fname = str(m.get("field") or "").strip().lower()
+            if fname not in field_map:
+                continue
+            try:
+                fconf = float(m.get("confidence", overall))
+            except (TypeError, ValueError):
+                fconf = overall
+            if fconf < _MUTATION_FIELD_MIN_CONFIDENCE:
+                continue
+            validated = _validate_mutation_value(m.get("value"), field_map[fname], haystack)
+            if validated is None:
+                continue
+            key = (fname, str(validated).lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            mutations.append(
+                {"field": fname, "value": validated, "confidence": round(fconf, 4)}
+            )
+
+        if not mutations and not storage_path:
+            return None
+        return {
+            "mutations": mutations,
+            "storage_path": storage_path or None,
+            "confidence": round(overall, 4),
+            "origin": "ai_generated",
+        }
+    except Exception:
+        return None
+
+
+# --------------------------------------------------------------------------- #
+# Identifier anomaly detection
+# --------------------------------------------------------------------------- #
+
+def _detect_identifier_anomaly(items: list[dict]) -> str | None:
+    """Surface quality signals from a list of extracted identifiers."""
+    if not items:
+        return None
+    if len(items) >= _IDENTIFIER_MAX_ITEMS:
+        return "cap_hit"
+    if len(items) < 2:
+        return None
+    confs = [float(i.get("confidence", 0.0)) for i in items]
+    first = round(confs[0], 3)
+    if all(round(c, 3) == first for c in confs):
+        return "uniform_confidence"
+    if any(c >= 1.0 for c in confs):
+        return "over_confidence"
+    return None
+
+
+# --------------------------------------------------------------------------- #
+# Re-enrichment (post-update metadata refresh)
+# --------------------------------------------------------------------------- #
+
+def re_enrich_metadata(
+    doc_id: str,
+    *,
+    extract_identifiers: bool = True,
+    extract_correspondence: bool = True,
+) -> dict | None:
+    """Refresh AI metadata proposals for an already-ingested document."""
+    conn = get_connection()
+    try:
+        _ensure_schema(conn)
+        row = conn.execute(
+            "SELECT doc_id, filename FROM dic_documents WHERE doc_id = ?",
+            (doc_id,),
+        ).fetchone()
+        if not row:
+            return None
+        filename = row[1] if hasattr(row, "__getitem__") else row.get("filename", "")
+        chunk_rows = conn.execute(
+            "SELECT rc.content FROM rag_chunks rc "
+            "JOIN dic_chunk_links dcl ON dcl.rag_chunk_id = rc.id "
+            "WHERE dcl.doc_id = ? ORDER BY dcl.chunk_index",
+            (doc_id,),
+        ).fetchall()
+        chunks: list[str] = []
+        for r in chunk_rows:
+            content = r[0] if hasattr(r, "__getitem__") else r.get("content", "")
+            chunks.append(content)
+        text = "\n".join(chunks)
+        proposals: dict = {}
+        if text.strip():
+            md = _ai_metadata_extraction(text, filename or "")
+            if md:
+                proposals.update(md)
+            if extract_identifiers:
+                ids = _ai_extract_identifiers(text)
+                if ids:
+                    proposals["identifiers"] = ids
+            if extract_correspondence:
+                corr = _ai_extract_correspondence(text)
+                if corr:
+                    proposals["correspondence"] = corr
+        return {"doc_id": doc_id, "filename": filename, "proposals": proposals}
+    finally:
+        conn.close()

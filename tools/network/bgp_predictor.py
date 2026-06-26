@@ -195,8 +195,9 @@ def predict_bgp_stability(session_key=None, network_id=None):
 
 
 def record_bgp_event(device_name, peer_ip, event_type, peer_asn=None):
+    from tools.network.db.init_db import get_connection as _gc
     s_key = f"{peer_ip}|{device_name}"
-    with get_connection() as conn:
+    with _gc() as conn:
         conn.execute(
             """
             INSERT INTO nc_bgp_events
@@ -210,7 +211,8 @@ def record_bgp_event(device_name, peer_ip, event_type, peer_asn=None):
 
 
 def get_bgp_predictions(device_name=None, flap_risk=None, limit=50):
-    with get_connection() as conn:
+    from tools.network.db.init_db import get_connection as _gc
+    with _gc() as conn:
         where, params = [], []
         if device_name:
             where.append("device_name = ?")
@@ -227,7 +229,8 @@ def get_bgp_predictions(device_name=None, flap_risk=None, limit=50):
 
 
 def get_bgp_summary():
-    with get_connection() as conn:
+    from tools.network.db.init_db import get_connection as _gc
+    with _gc() as conn:
         cur = conn.execute(
             "SELECT flap_risk, COUNT(DISTINCT session_key) FROM nc_bgp_predictions GROUP BY flap_risk"
         )

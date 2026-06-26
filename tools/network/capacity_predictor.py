@@ -221,7 +221,8 @@ def predict_capacity_exhaustion(device_name=None, network_id=None):
 
 
 def get_capacity_predictions(device_name=None, risk_tier=None, limit=50):
-    with get_connection() as conn:
+    from tools.network.db.init_db import get_connection as _gc
+    with _gc() as conn:
         where, params = [], []
         if device_name:
             where.append("device_name = ?")
@@ -238,7 +239,8 @@ def get_capacity_predictions(device_name=None, risk_tier=None, limit=50):
 
 
 def get_capacity_summary():
-    with get_connection() as conn:
+    from tools.network.db.init_db import get_connection as _gc
+    with _gc() as conn:
         cur = conn.execute(
             "SELECT risk_tier, COUNT(*) FROM nc_capacity_predictions GROUP BY risk_tier"
         )

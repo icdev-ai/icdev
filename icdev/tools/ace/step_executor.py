@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import logging
 import re
 import time
 from dataclasses import dataclass, field
@@ -10,6 +11,8 @@ from typing import Any
 
 from icdev.tools.daemon.base import TrustKernelBase
 from icdev.tools.db.storage import get_connection
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -120,17 +123,29 @@ def _emit_audit(
             ),
         )
         conn.commit()
-    except Exception:
+    except Exception as exc:
+        logger.debug("ace_audit_log write failed: %s", exc)
         pass  # audit must never crash the caller
+
+
+def _substitute(value: Any, context: dict) -> Any:
+    """Replace $var references in *value* with context values.
+
+    A value that is exactly ``$var`` returns the context value with its
+    original type; inline substitutions are stringified.
+    """
+    if not isinstance(value, str):
+        return value
+    m = _VAR_RE.fullmatch(value)
+    if m:
+        return context.get(m.group(1), value)
+    return _VAR_RE.sub(lambda match: str(context.get(match.group(1), match.group(0))), value)
 
 
 def _substitute_vars(value: Any, context: dict) -> Any:
     """Recursively replace $var references with context values."""
     if isinstance(value, str):
-        def _replace(m: re.Match) -> str:
-            return str(context.get(m.group(1), m.group(0)))
-
-        return _VAR_RE.sub(_replace, value)
+        return _substitute(value, context)
     if isinstance(value, dict):
         return {k: _substitute_vars(v, context) for k, v in value.items()}
     if isinstance(value, list):
@@ -146,11 +161,17 @@ def _resolve_tool(dotted: str) -> Any:
     """Import a callable from a dotted path (``module.submod.func``)."""
     parts = dotted.rsplit(".", 1)
     if len(parts) != 2:
+        logger.error("Cannot resolve tool path: %r", dotted)
         raise ImportError(f"Cannot resolve tool path: {dotted!r}")
     module_path, attr = parts
-    mod = importlib.import_module(module_path)
-    obj = getattr(mod, attr)
+    try:
+        mod = importlib.import_module(module_path)
+        obj = getattr(mod, attr)
+    except Exception as exc:
+        logger.error("Failed to resolve tool %r: %s: %s", dotted, type(exc).__name__, exc)
+        raise
     if not callable(obj):
+        logger.error("Tool %r is not callable", dotted)
         raise TypeError(f"{dotted!r} is not callable")
     return obj
 
@@ -180,6 +201,42 @@ def _eval_condition(condition: str, context: dict) -> bool:
         return bool(result)
     except Exception:
         return False
+
+
+def normalise_step(raw_step: Any) -> dict[str, Any]:
+    """Convert a dict, dataclass, or bare step name into a canonical step dict.
+
+    Dicts pass through unchanged. Dataclass instances expose ``name``,
+    ``tool``, ``params``, and ``condition``. Bare strings/ints become an
+    LLM-invoke step so that role YAMLs can list simple step names.
+    """
+    if isinstance(raw_step, dict):
+        return raw_step
+
+    if hasattr(raw_step, "__dataclass_fields__"):
+        step_id: str = getattr(raw_step, "name", str(raw_step))
+        tool: str = getattr(raw_step, "tool", "") or ""
+        params: dict = getattr(raw_step, "params", {}) or {}
+        condition: str | None = getattr(raw_step, "condition", None)
+        step: dict[str, Any] = {
+            "id": step_id,
+            "tool": tool or "icdev.tools.ace.llm_step.invoke",
+            "args": dict(params),
+        }
+        if condition is not None:
+            step["condition"] = condition
+        if not tool:
+            step["args"]["step_name"] = step_id
+            step["output_var"] = f"{step_id}_result"
+        return step
+
+    step_name = str(raw_step)
+    return {
+        "id": step_name,
+        "tool": "icdev.tools.ace.llm_step.invoke",
+        "args": {"step_name": step_name},
+        "output_var": f"{step_name}_result",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +277,8 @@ class StepExecutor:
             ToolPermissionDeniedError: tool not in ``spec.tool_permissions``.
             TrustKernelDeniedError: trust kernel rejected the step.
         """
+        step = normalise_step(step)
+
         step_id: str = step.get("id", "unknown")
         tool_path: str = step.get("tool", "")
         raw_args: dict = step.get("args") or {}
@@ -243,7 +302,7 @@ class StepExecutor:
 
         # 2. Verify tool is whitelisted in spec
         if tool_path not in spec.tool_permissions:
-            err = f"Tool '{tool_path}' not in spec.tool_permissions for '{spec.name}'"
+            err = f"Tool '{tool_path}' not in spec.tool_permissions for '{getattr(spec, 'name', 'ace-coworker')}'"
             _emit_audit(
                 step_id=step_id,
                 tool=tool_path,
@@ -279,6 +338,7 @@ class StepExecutor:
                 result = self._run_built_in(tool_path, resolved_args, spec, context)
             except Exception as exc:
                 err = f"{type(exc).__name__}: {exc}"
+                logger.error("Built-in step %r failed: %s", tool_path, err)
                 _emit_audit(
                     step_id=step_id,
                     tool=tool_path,
@@ -297,6 +357,7 @@ class StepExecutor:
                 result = fn(**resolved_args)
             except Exception as exc:
                 err = f"{type(exc).__name__}: {exc}"
+                logger.error("Step %r failed: %s", step_id, err)
                 _emit_audit(
                     step_id=step_id,
                     tool=tool_path,
@@ -326,6 +387,27 @@ class StepExecutor:
         )
 
         return result
+
+    @staticmethod
+    def _audit(step: dict, spec: CoWorkerSpec, event_type: str, detail: str) -> None:
+        """Best-effort audit hook that tests may patch.
+
+        Production code uses the module-level :func:`_emit_audit` directly;
+        this static method exists so the existing test suite can intercept
+        audit calls without changing call sites.
+        """
+        try:
+            _emit_audit(
+                step_id=step.get("id", "unknown"),
+                tool=step.get("tool", ""),
+                trust_tier=getattr(spec, "trust_tier", "green"),
+                success=event_type in {"step_executed", "step_complete"},
+                skipped=False,
+                error=detail if event_type in {"step_failed", "import_error"} else None,
+                duration_ms=0.0,
+            )
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # Built-in step dispatch

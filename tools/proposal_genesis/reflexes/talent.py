@@ -72,18 +72,42 @@ def _get_recent_signals(days: int = 30) -> List[Dict]:
         conn.close()
 
 
+def _count_by_competitor(signals: List[Dict]) -> Dict[str, int]:
+    """Tally signals per competitor_name."""
+    counts: Dict[str, int] = {}
+    for sig in signals:
+        name = sig.get("competitor_name", "unknown")
+        counts[name] = counts.get(name, 0) + 1
+    return counts
+
+
 def _compute_velocity(signals: List[Dict]) -> Dict[str, Any]:
     """Compute hiring velocity metrics per competitor."""
     if not signals:
         return {"competitors": {}, "total_signals": 0}
 
-    competitor_counts: Dict[str, int] = {}
+    competitor_counts = _count_by_competitor(signals)
     clearance_counts: Dict[str, int] = {}
     skill_counts: Dict[str, int] = {}
 
     for sig in signals:
         name = sig.get("competitor_name", "unknown")
-        competitor_counts[name] = competitor_counts.get(name, 0) + 1
+
+        if sig.get("clearance_required"):
+            clearance_counts[name] = clearance_counts.get(name, 0) + 1
+
+        # Parse skill tags (stored as comma-separated or JSON)
+        tags = sig.get("skill_tags") or ""
+        if tags.startswith("["):
+            try:
+                tag_list = json.loads(tags)
+            except (json.JSONDecodeError, ValueError):
+                tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+        else:
+            tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+
+        for tag in tag_list:
+            skill_counts[tag.lower()] = skill_counts.get(tag.lower(), 0) + 1
 
         if sig.get("clearance_required"):
             clearance_counts[name] = clearance_counts.get(name, 0) + 1
@@ -113,6 +137,36 @@ def _compute_velocity(signals: List[Dict]) -> Dict[str, Any]:
         "top_skills": dict(top_skills),
         "total_signals": len(signals),
     }
+
+
+def _compute_surge_threshold(
+    competitor_counts: Dict[str, int],
+    cfg: Dict[str, Any],
+) -> float:
+    """Compute an adaptive hiring-surge threshold from competitor counts.
+
+    Uses mean + zscore * stddev when enough competitors are present, otherwise
+    falls back to the static ``fallback_surge_count``. The result is floored by
+    ``min_absolute_surge``.
+    """
+    enabled = cfg.get("enabled", True)
+    if not enabled:
+        return float(cfg.get("fallback_surge_count", _SURGE_COUNT_THRESHOLD))
+
+    min_samples = int(cfg.get("min_samples", _MIN_SURGE_SAMPLES))
+    zscore = float(cfg.get("velocity_threshold_zscore", _DEFAULT_ZSCORE))
+    min_abs = int(cfg.get("min_absolute_surge", _SURGE_COUNT_THRESHOLD))
+    fallback = float(cfg.get("fallback_surge_count", _SURGE_COUNT_THRESHOLD))
+
+    counts = list(competitor_counts.values())
+    n = len(counts)
+    if n < min_samples:
+        return fallback
+
+    mean = sum(counts) / n
+    stddev = math.sqrt(sum((c - mean) ** 2 for c in counts) / n) if n > 0 else 0.0
+    threshold = mean + zscore * stddev
+    return max(float(min_abs), threshold)
 
 
 def _detect_surges(
@@ -192,13 +246,21 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
     Returns standard reflex result dict.
     """
     lookback_days = config.get("talent_lookback_days", _LOOKBACK_DAYS)
-    surge_threshold = config.get("talent_surge_threshold", _SURGE_COUNT_THRESHOLD)
     zscore_threshold = config.get("velocity_threshold_zscore", _DEFAULT_ZSCORE)
+
+    # Anomaly-detection config (legacy top-level keys merge into sub-config)
+    anomaly_cfg: Dict[str, Any] = dict(config.get("anomaly_detection", {}) or {})
+    if "talent_surge_threshold" in config:
+        anomaly_cfg.setdefault("fallback_surge_count", config["talent_surge_threshold"])
+    if "velocity_threshold_zscore" in config:
+        anomaly_cfg.setdefault("velocity_threshold_zscore", zscore_threshold)
 
     signals = _get_recent_signals(days=lookback_days)
     velocity = _compute_velocity(signals)
+    competitor_counts = velocity.get("competitors", {})
+    surge_threshold = _compute_surge_threshold(competitor_counts, anomaly_cfg)
     surges = _detect_surges(
-        signals, threshold=surge_threshold, zscore_threshold=zscore_threshold
+        signals, threshold=int(surge_threshold), zscore_threshold=zscore_threshold
     )
 
     # Audit
@@ -238,6 +300,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             "signals_analyzed": len(signals),
             "lookback_days": lookback_days,
             "zscore_threshold": zscore_threshold,
+            "surge_threshold": surge_threshold,
             "top_competitors": velocity.get("competitors", {}),
             "top_skills": velocity.get("top_skills", {}),
             "clearance_heavy_hiring": velocity.get("clearance_heavy", {}),

@@ -16,8 +16,8 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from tools.observability import configure_tracer
-from tools.observability.sqlite_tracer import SQLiteTracer
+from icdev.tools.observability import configure_tracer
+from icdev.tools.observability.sqlite_tracer import SQLiteTracer
 
 
 @pytest.fixture

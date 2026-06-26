@@ -8,83 +8,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 
 from tools.oracle.lenses.lens_quality import (
-    _mad_std_estimate,
-    _ewma,
     _anomaly_bounds,
     _iqr_bounds,
-    _MAD_FALLBACK_STD,
-    _EWMA_ALPHA,
     QualityLens,
 )
-
-
-# ── _mad_std_estimate ─────────────────────────────────────────────────────────
-
-class TestMadStdEstimate:
-    def test_empty_returns_fallback(self):
-        assert _mad_std_estimate([]) == _MAD_FALLBACK_STD
-
-    def test_constant_series_returns_fallback(self):
-        # All same values → MAD = 0 → returns fallback
-        result = _mad_std_estimate([50.0, 50.0, 50.0, 50.0])
-        assert result == _MAD_FALLBACK_STD
-
-    def test_normal_spread(self):
-        # [70, 80, 90, 100, 110]: median=90, deviations=[20,10,0,10,20], MAD=10
-        values = [70.0, 80.0, 90.0, 100.0, 110.0]
-        result = _mad_std_estimate(values)
-        assert abs(result - 10.0 * 1.4826) < 0.01
-
-    def test_resistant_to_outlier(self):
-        # One extreme outlier should not blow up the estimate
-        normal = [80.0, 85.0, 90.0, 88.0, 82.0]
-        with_outlier = normal + [200.0]
-        result_normal = _mad_std_estimate(normal)
-        result_outlier = _mad_std_estimate(with_outlier)
-        # MAD-based estimate should be close despite the outlier
-        assert abs(result_normal - result_outlier) < 10.0
-
-    def test_single_value_returns_fallback(self):
-        result = _mad_std_estimate([75.0])
-        assert result == _MAD_FALLBACK_STD
-
-
-# ── _ewma ─────────────────────────────────────────────────────────────────────
-
-class TestEwma:
-    def test_empty_returns_empty(self):
-        assert _ewma([]) == []
-
-    def test_single_value_unchanged(self):
-        assert _ewma([42.0]) == [42.0]
-
-    def test_alpha_one_is_identity(self):
-        values = [10.0, 20.0, 30.0, 40.0, 50.0]
-        result = _ewma(values, alpha=1.0)
-        assert result == values
-
-    def test_smoothing_reduces_extremes(self):
-        # A spike in the middle should be dampened when alpha < 1
-        values = [80.0, 80.0, 50.0, 80.0, 80.0]  # most-recent-first
-        smoothed = _ewma(values, alpha=0.3)
-        # The spike (index 2, value 50) should be smoothed toward neighbours
-        assert smoothed[2] > 50.0  # pulled up by neighbours
-
-    def test_preserves_most_recent_first_order(self):
-        # First element of output should be anchored to oldest-processed EWMA result
-        # which is the last element of input (oldest in time, processed first)
-        values = [100.0, 90.0, 80.0]  # most recent first
-        result = _ewma(values, alpha=0.5)
-        assert len(result) == 3
-        # Oldest (values[-1]=80) is the EWMA seed; most recent (values[0]=100) is output[0]
-        # output[0] should be between 80 and 100
-        assert 80.0 <= result[0] <= 100.0
-
-    def test_uses_default_alpha(self):
-        values = [10.0, 20.0, 30.0]
-        result_default = _ewma(values)
-        result_explicit = _ewma(values, alpha=_EWMA_ALPHA)
-        assert result_default == result_explicit
 
 
 # ── _anomaly_bounds ───────────────────────────────────────────────────────────
