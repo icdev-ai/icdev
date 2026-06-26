@@ -152,6 +152,22 @@ These 6 paths adopted `SandboxExecutor` in Phase 72 (D-SEC-11):
   - `guard_result()` never returns row data to callers — only `{derived, action, throttled, events_written}`.
 - **Revisit if:** a future rule type adds a `custom_expr` field that evaluates arbitrary expressions, or if result rows are ever rendered as HTML without escaping.
 
+### Gap 15 — PNA Predictive Network Analytics (`tools/network/`)
+
+**Modules:** `tools/network/eol_predictor.py`, `tools/network/bgp_predictor.py`, `tools/network/compliance_drift_predictor.py`, `tools/network/capacity_predictor.py`, `tools/network/change_failure_predictor.py`, `tools/network/supply_chain_risk_scorer.py`
+
+**Ingress path:** Each predictor queries Forward Networks NQE via `FallbackNQEClient` (network device inventory, BGP sessions, interface utilization). All returned data is structured (dicts/lists of primitive values — strings, ints, floats). No config text beyond STIG-check pattern matching. The compliance drift predictor reads device config text to match STIG check patterns (regex-free string containment checks; no `eval()`). Vendor names and model strings from NQE are looked up in static registry dicts — no dynamic dispatch.
+
+- **Decision:** **bypass-documented**
+- **Rationale:** No `exec()`, `eval()`, `subprocess`, `os.system`, or `os.popen` anywhere in any of the 6 modules. NQE responses are treated as opaque data structures — field values are used in arithmetic (risk scoring), string comparisons (STIG checks), and parameterized SQL inserts. Config text in compliance drift is matched via `str.__contains__` (no regex compilation from untrusted input). All DB writes use parameterized queries with `?` placeholders; no string-interpolated SQL.
+- **Guardrails:**
+  - `FallbackNQEClient` returns dict/list structures — no code execution of NQE results.
+  - STIG check lambdas compare against fixed string literals (first-party `args/` definitions equivalent): no dynamic pattern injection.
+  - All 6 prediction tables are append-only (in `APPEND_ONLY_TABLES` in `pre_tool_use.py`).
+  - Parameterized SQL throughout — no f-string SQL with untrusted values.
+  - `nc_bgp_events` (the mutable rolling log) uses 90-day prune via `DELETE WHERE ... >= datetime(...)` — no user-supplied date expressions.
+- **Revisit if:** NQE response fields are ever passed to `eval()`, `exec()`, or `subprocess`; or if config text matching is upgraded to regex with user-supplied patterns.
+
 ## Coherence rule
 
 The `sandbox_coverage` rule in `tools/workflow/coherence_checker.py` enforces:
