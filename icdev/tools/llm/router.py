@@ -1730,7 +1730,7 @@ class LLMRouter:
 
         # D286: Create trace span for LLM invocation
         try:
-            from tools.observability import get_tracer
+            from icdev.tools.observability import get_tracer
 
             tracer = get_tracer()
         except ImportError:

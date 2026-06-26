@@ -4,8 +4,8 @@
 from tools.ai_augmentation.engine import (
     _FALLBACK_ANOMALY_THRESHOLDS,
     _load_anomaly_thresholds,
-    detect_score_anomalies,
 )
+from tools.aiify.engine import detect_score_anomalies
 
 
 class TestFallbackThresholds:
@@ -73,22 +73,22 @@ class TestDetectScoreAnomalies:
         # v=0.9, f=0.2 → delta=0.7 > default 0.50
         rows = [self._score(1, 0.9, 0.2, 0.3)]
         anomalies = detect_score_anomalies(rows)
-        reasons = [a["reason"] for a in anomalies]
-        assert "value_feasibility_delta" in reasons
+        reasons = [a["anomaly_type"] for a in anomalies]
+        assert "value_feasibility_imbalance" in reasons
 
     def test_below_floor_flagged(self):
         # risk_score = 0.01 < floor 0.05
         rows = [self._score(2, 0.6, 0.6, 0.01)]
         anomalies = detect_score_anomalies(rows)
-        reasons = [a["reason"] for a in anomalies]
-        assert "component_below_floor" in reasons
+        reasons = [a["anomaly_type"] for a in anomalies]
+        assert "component_outlier_low" in reasons
 
     def test_above_ceiling_flagged(self):
         # value_score = 0.99 > ceiling 0.95
         rows = [self._score(3, 0.99, 0.6, 0.3)]
         anomalies = detect_score_anomalies(rows)
-        reasons = [a["reason"] for a in anomalies]
-        assert "component_above_ceiling" in reasons
+        reasons = [a["anomaly_type"] for a in anomalies]
+        assert "component_outlier_high" in reasons
 
     def test_custom_thresholds_respected(self):
         custom = {
@@ -99,8 +99,8 @@ class TestDetectScoreAnomalies:
         # delta=0.15 > 0.10 custom threshold
         rows = [self._score(4, 0.60, 0.45, 0.3)]
         anomalies = detect_score_anomalies(rows, thresholds=custom)
-        reasons = [a["reason"] for a in anomalies]
-        assert "value_feasibility_delta" in reasons
+        reasons = [a["anomaly_type"] for a in anomalies]
+        assert "value_feasibility_imbalance" in reasons
 
     def test_anomaly_includes_opportunity_id(self):
         rows = [self._score(99, 0.9, 0.2, 0.3)]

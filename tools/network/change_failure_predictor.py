@@ -128,44 +128,44 @@ def _insert_change_risk(conn, rec: dict) -> None:
 
 
 def predict_change_failure(plan_id=None):
-    with get_connection() as conn:
+    conn = get_connection()
+    try:
+        where = ""
+        params = []
+        if plan_id:
+            where = "WHERE plan_id = ?"
+            params.append(plan_id)
+        cur = conn.execute(
+            f"SELECT * FROM nc_patch_plans {where} ORDER BY created_at DESC LIMIT 200",
+            params,
+        )
         try:
-            where = ""
-            params = []
-            if plan_id:
-                where = "WHERE plan_id = ?"
-                params.append(plan_id)
-            cur = conn.execute(
-                f"SELECT * FROM nc_patch_plans {where} ORDER BY created_at DESC LIMIT 200",
-                params,
-            )
-            try:
-                cols = [c[0] for c in cur.description]
-                plan_rows = [dict(zip(cols, r)) for r in cur.fetchall()]
-            except Exception:
-                plan_rows = [dict(r) if hasattr(r, "keys") else {} for r in cur.fetchall()]
+            cols = [c[0] for c in cur.description]
+            plan_rows = [dict(zip(cols, r)) for r in cur.fetchall()]
+        except Exception:
+            plan_rows = [dict(r) if hasattr(r, "keys") else {} for r in cur.fetchall()]
+    except Exception as exc:
+        log.warning("Failed to query nc_patch_plans: %s", exc)
+        plan_rows = []
+
+    if not plan_rows:
+        return {"scored": 0, "warning": "No patch plans found to score."}
+
+    scored = []
+    for row in plan_rows:
+        try:
+            result = _score_plan_row(conn, row)
+            result["change_request_id"] = row.get("plan_id", "auto")
+            result["action_type"] = row.get("action")
+            result["simulation_verdict"] = row.get("simulation_status")
+            result["predicted_at"] = datetime.now(timezone.utc).isoformat()
+            _insert_change_risk(conn, result)
+            conn.commit()
+            scored.append(result)
         except Exception as exc:
-            log.warning("Failed to query nc_patch_plans: %s", exc)
-            plan_rows = []
+            log.warning("Failed to score plan row: %s", exc)
 
-        if not plan_rows:
-            return {"scored": 0, "warning": "No patch plans found to score."}
-
-        scored = []
-        for row in plan_rows:
-            try:
-                result = _score_plan_row(conn, row)
-                result["change_request_id"] = row.get("plan_id", "auto")
-                result["action_type"] = row.get("action")
-                result["simulation_verdict"] = row.get("simulation_status")
-                result["predicted_at"] = datetime.now(timezone.utc).isoformat()
-                _insert_change_risk(conn, result)
-                conn.commit()
-                scored.append(result)
-            except Exception as exc:
-                log.warning("Failed to score plan row: %s", exc)
-
-        return {"scored": len(scored), "results": scored}
+    return {"scored": len(scored), "results": scored}
 
 
 def score_change_risk(change_request_id: str, device_name: str, action_type=None,
@@ -192,45 +192,45 @@ def score_change_risk(change_request_id: str, device_name: str, action_type=None
 
 
 def get_change_risks(device_name=None, risk_tier=None, limit=50):
-    with get_connection() as conn:
-        where, params = [], []
-        if device_name:
-            where.append("device_name = ?")
-            params.append(device_name)
-        if risk_tier:
-            where.append("risk_tier = ?")
-            params.append(risk_tier)
-        clause = ("WHERE " + " AND ".join(where)) if where else ""
-        sql = f"SELECT * FROM nc_change_risk {clause} ORDER BY failure_probability DESC LIMIT ?"
-        params.append(limit)
-        cur = conn.execute(sql, params)
-        try:
-            cols = [c[0] for c in cur.description]
-            return [dict(zip(cols, row)) for row in cur.fetchall()]
-        except Exception:
-            rows = cur.fetchall()
-            return [dict(r) if hasattr(r, "keys") else {} for r in rows]
+    conn = get_connection()
+    where, params = [], []
+    if device_name:
+        where.append("device_name = ?")
+        params.append(device_name)
+    if risk_tier:
+        where.append("risk_tier = ?")
+        params.append(risk_tier)
+    clause = ("WHERE " + " AND ".join(where)) if where else ""
+    sql = f"SELECT * FROM nc_change_risk {clause} ORDER BY failure_probability DESC LIMIT ?"
+    params.append(limit)
+    cur = conn.execute(sql, params)
+    try:
+        cols = [c[0] for c in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    except Exception:
+        rows = cur.fetchall()
+        return [dict(r) if hasattr(r, "keys") else {} for r in rows]
 
 
 def get_change_risk_summary():
-    with get_connection() as conn:
-        try:
-            cur = conn.execute(
-                "SELECT risk_tier, COUNT(*) FROM nc_change_risk GROUP BY risk_tier"
-            )
-            by_tier = {row[0]: row[1] for row in cur.fetchall()}
-        except Exception:
-            by_tier = {}
+    conn = get_connection()
+    try:
+        cur = conn.execute(
+            "SELECT risk_tier, COUNT(*) FROM nc_change_risk GROUP BY risk_tier"
+        )
+        by_tier = {row[0]: row[1] for row in cur.fetchall()}
+    except Exception:
+        by_tier = {}
 
-        try:
-            cur = conn.execute("SELECT AVG(failure_probability) FROM nc_change_risk")
-            row = cur.fetchone()
-            avg_prob = round(row[0], 4) if row and row[0] else 0.0
-        except Exception:
-            avg_prob = 0.0
+    try:
+        cur = conn.execute("SELECT AVG(failure_probability) FROM nc_change_risk")
+        row = cur.fetchone()
+        avg_prob = round(row[0], 4) if row and row[0] else 0.0
+    except Exception:
+        avg_prob = 0.0
 
-        return {
-            "total_changes": sum(by_tier.values()),
-            "by_tier": by_tier,
-            "avg_failure_probability": avg_prob,
-        }
+    return {
+        "total_changes": sum(by_tier.values()),
+        "by_tier": by_tier,
+        "avg_failure_probability": avg_prob,
+    }

@@ -46,6 +46,10 @@ _FALLBACK_ANOMALY_THRESHOLDS = {
         "p3_min_score": 0.30,
     },
     "priority_high_min_score": 0.70,
+    # Score anomaly detection thresholds (mirrors args/aac_config.yaml)
+    "value_feasibility_max_delta": 0.50,
+    "component_outlier_floor": 0.05,
+    "component_outlier_ceiling": 0.95,
 }
 
 

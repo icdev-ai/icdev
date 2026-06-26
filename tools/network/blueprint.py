@@ -14564,6 +14564,11 @@ Planning rules:
 
     register_pvm_routes(bp)
 
+    # ── PNA Predictive Network Analytics routes ───────────────────────────
+    from tools.network.routes.pna import register_pna_routes
+
+    register_pna_routes(bp)
+
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))
     return bp

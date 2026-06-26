@@ -99,6 +99,15 @@ def _ai_event_narrative(event_kind: str, facts: dict) -> str | None:
 # Notification channel registry (extensible via args/notification_config.yaml)
 # ---------------------------------------------------------------------------
 
+# Narrative / digest limits used by event-driven notifications and tests
+_NARRATIVE_MAX_TOKENS  = 512
+_NARRATIVE_TEMPERATURE = 0.3
+_TASK_AUDIT_LIMIT      = 5
+_GENESIS_REFLEX_LIMIT  = 5
+_AIIFY_TOP_OPPS_LIMIT  = 5
+_KANBAN_DIGEST_LIMIT   = 10
+_ORACLE_HORIZON_FALLBACK = 24
+
 CHANNEL_REGISTRY = {
     "email":   "smtp",
     "slack":   "webhook",

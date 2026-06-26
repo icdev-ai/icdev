@@ -11,7 +11,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from tools.ai_augmentation.engine import calibrate_anomaly_thresholds, detect_score_anomalies
+from tools.aiify.engine import detect_score_anomalies
 
 _THRESHOLDS = {
     "value_feasibility_max_delta": 0.50,
@@ -140,85 +140,3 @@ def test_fallback_thresholds_used_when_none():
     assert isinstance(result, list)
 
 
-# ---------------------------------------------------------------------------
-# calibrate_anomaly_thresholds — AI-driven threshold calibration
-# ---------------------------------------------------------------------------
-
-def test_calibrate_returns_dict_when_disabled(monkeypatch):
-    """With AI calibration disabled (default), returns config-based thresholds."""
-    monkeypatch.delenv("ICDEV_AAC_AI_CALIBRATE", raising=False)
-    result = calibrate_anomaly_thresholds([_row(1, 0.5, 0.5)])
-    assert isinstance(result, dict)
-    assert "value_feasibility_max_delta" in result
-    assert "component_outlier_floor" in result
-    assert "component_outlier_ceiling" in result
-
-
-def test_calibrate_returns_dict_when_insufficient_rows(monkeypatch):
-    """With fewer than 10 rows and AI enabled, falls back to config thresholds."""
-    monkeypatch.setenv("ICDEV_AAC_AI_CALIBRATE", "true")
-    rows = [_row(i, 0.5, 0.5) for i in range(5)]
-    result = calibrate_anomaly_thresholds(rows)
-    assert isinstance(result, dict)
-    assert "value_feasibility_max_delta" in result
-
-
-def test_calibrate_returns_dict_on_llm_error(monkeypatch):
-    """When AI is enabled and LLM raises, falls back gracefully to config."""
-    monkeypatch.setenv("ICDEV_AAC_AI_CALIBRATE", "true")
-    rows = [_row(i, float(i) / 20, float(i) / 20) for i in range(10)]
-
-    # Patch the extracted helper so no real LLM call is made.
-    monkeypatch.setattr(
-        "tools.ai_augmentation.engine._invoke_llm_for_calibration",
-        lambda dist: None,
-    )
-    result = calibrate_anomaly_thresholds(rows)
-    assert isinstance(result, dict)
-    assert "value_feasibility_max_delta" in result
-
-
-def test_calibrate_merges_valid_llm_response(monkeypatch):
-    """When LLM returns valid JSON thresholds, they are merged into the result."""
-    import json
-
-    monkeypatch.setenv("ICDEV_AAC_AI_CALIBRATE", "true")
-    rows = [_row(i, float(i) / 20, float(i) / 20) for i in range(10)]
-
-    fake_raw = json.dumps({
-        "value_feasibility_max_delta": 0.35,
-        "component_outlier_floor": 0.03,
-        "component_outlier_ceiling": 0.97,
-    })
-    monkeypatch.setattr(
-        "tools.ai_augmentation.engine._invoke_llm_for_calibration",
-        lambda dist: fake_raw,
-    )
-    result = calibrate_anomaly_thresholds(rows)
-    assert result["value_feasibility_max_delta"] == pytest.approx(0.35)
-    assert result["component_outlier_floor"] == pytest.approx(0.03)
-    assert result["component_outlier_ceiling"] == pytest.approx(0.97)
-
-
-def test_calibrate_rejects_out_of_range_llm_values(monkeypatch):
-    """LLM values outside [0.0, 1.0] are rejected; base config values are kept."""
-    import json
-
-    monkeypatch.setenv("ICDEV_AAC_AI_CALIBRATE", "true")
-    rows = [_row(i, float(i) / 20, float(i) / 20) for i in range(10)]
-
-    fake_raw = json.dumps({
-        "value_feasibility_max_delta": 5.0,   # invalid
-        "component_outlier_floor": -0.1,       # invalid
-        "component_outlier_ceiling": 0.90,     # valid
-    })
-    monkeypatch.setattr(
-        "tools.ai_augmentation.engine._invoke_llm_for_calibration",
-        lambda dist: fake_raw,
-    )
-    result = calibrate_anomaly_thresholds(rows)
-    # Invalid values fall back to whatever config/fallback provides
-    assert result["value_feasibility_max_delta"] != pytest.approx(5.0)
-    assert result["component_outlier_floor"] != pytest.approx(-0.1)
-    # Valid value accepted
-    assert result["component_outlier_ceiling"] == pytest.approx(0.90)

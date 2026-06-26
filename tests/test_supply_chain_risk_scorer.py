@@ -30,7 +30,7 @@ def _make_conn(fetchall_rows=None, fetchone_val=None):
     cursor.description = [("c1",), ("c2",)]
     conn.execute.return_value = cursor
     conn.close = MagicMock()
-    conn.__enter__ = lambda s: s
+    conn.__enter__ = MagicMock(return_value=conn)
     conn.__exit__ = MagicMock(return_value=False)
     return conn
 
