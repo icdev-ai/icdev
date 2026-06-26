@@ -2,32 +2,21 @@
 """Slide Graphics Generator — two-stage contextual image pipeline.
 
 Stage 1: LLM generates a rich, descriptive image prompt from slide content.
-Stage 2: Image generation API (GPT-Image-2 / Imagen 4 / Ollama cloud / DALL-E / Gemini / Pillow fallback).
+Stage 2: Unified ICDEV-native asset generator (SDXL Turbo / matplotlib / SVG).
 
-Provider selection via SLIDES_IMAGE_PROVIDER env var or args/slides_config.yaml.
-Safe default: matplotlib (always available, air-gap safe).
+Provider selection via SLIDES_IMAGE_PROVIDER env var is normalized and passed
+through to the asset generator.  Cloud providers are intentionally not used in
+native-only mode; they fall back to the deterministic ICDEV-native pipeline.
 
-Recommended production providers (2026):
-  gpt_image_2  -> OpenAI GPT-Image-2  (best text rendering + prompt adherence)
-  imagen_4     -> Google Imagen 4     (enterprise scale, native 16:9, strong text)
-  dalle        -> OpenAI DALL-E 3     (legacy, kept for backwards compatibility)
-  gemini       -> Google Imagen 3     (legacy, kept for backwards compatibility)
-  ollama_cloud -> Ollama cloud image gen (e.g. SDXL / FLUX)
-  matplotlib   -> deterministic air-gap fallback
+Safe default: matplotlib/SVG (always available, air-gap safe).
 """
 from __future__ import annotations
 
-import base64
-import hashlib
-import io
-import json
 import os
 from pathlib import Path
+from typing import Optional
 
-from tools.slides.constants import (
-    LLM_FN_VIZ_PROMPT, THEME_PALETTES, DEFAULT_THEME, TONE_STYLE_HINTS,
-    IMAGE_PROVIDERS,
-)
+from tools.viz.asset_generator import AssetGenerator, AssetRequest
 
 _DEFAULT_STYLE_HINT = (
     "professional corporate illustration, dark navy blue and gold color palette, "
@@ -48,332 +37,98 @@ Rules:
 """
 
 
+def _style_hint(theme: str = "", tone: str = "") -> str:
+    """Compose a style hint from theme palette and tone."""
+    from tools.slides.constants import TONE_STYLE_HINTS, THEME_PALETTES
+
+    parts = []
+    if tone:
+        tone_hint = TONE_STYLE_HINTS.get(tone, TONE_STYLE_HINTS["professional"])
+        parts.append(tone_hint["visual"])
+    palette = THEME_PALETTES.get(theme)
+    if palette:
+        bg_hex = "#{:02x}{:02x}{:02x}".format(*palette["bg"])
+        accent_hex = "#{:02x}{:02x}{:02x}".format(*palette["accent"])
+        parts.append(f"color palette: background {bg_hex}, accent {accent_hex}")
+    if not parts:
+        return _DEFAULT_STYLE_HINT
+    return "; ".join(parts) + "; no text labels, no words, high quality, 16:9 aspect ratio"
+
+
+def _build_visual_prompt(title: str, bullets: list[str], visual_context: str, theme: str = "", tone: str = "") -> Optional[str]:
+    """Use LLM to generate a descriptive image prompt."""
+    style_hint = _style_hint(theme, tone)
+    if visual_context:
+        base = f"{visual_context}, {style_hint}"
+    else:
+        base = f"{title}, {style_hint}"
+
+    user_msg = (
+        f"Slide title: {title}\n"
+        f"Bullets: {'; '.join(bullets[:3])}\n"
+        "Write an image generation prompt for this slide."
+    )
+    system_prompt = _VIZ_SYSTEM_TEMPLATE.format(style_hint=style_hint)
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        router = LLMRouter()
+        request = LLMRequest(
+            messages=[{"role": "user", "content": user_msg}],
+            system_prompt=system_prompt,
+            max_tokens=200,
+            temperature=0.4,
+            agent_id="slides-visual-prompt",
+            classification="CUI",
+            effort="low",
+            skip_injection_scan=True,
+        )
+        from tools.slides.constants import LLM_FN_VIZ_PROMPT
+        response = router.invoke(LLM_FN_VIZ_PROMPT, request)
+        prompt = (response.content or "").strip().strip('"\'')
+        if len(prompt) > 20:
+            return prompt
+    except Exception:
+        pass
+    return base
+
+
 class GraphicsGenerator:
-    """Two-stage graphics generation: visual prompt → image API → file."""
+    """Two-stage graphics generation: visual prompt → unified asset generator."""
 
     def __init__(self, output_dir: Path | None = None):
-        raw_provider = os.environ.get("SLIDES_IMAGE_PROVIDER", "matplotlib").lower()
-        # Normalise hyphenated variants to the canonical constant form.
-        self._provider = raw_provider.replace("-", "_")
-        if self._provider not in IMAGE_PROVIDERS:
-            self._provider = "matplotlib"
-        self._model = os.environ.get("SLIDES_IMAGE_MODEL", "")
-        self._timeout = int(os.environ.get("SLIDES_IMAGE_TIMEOUT", "60"))
+        raw_provider = os.environ.get("SLIDES_IMAGE_PROVIDER", "matplotlib").lower().replace("-", "_")
+        # Normalize cloud/non-native names to native equivalents where possible.
+        provider_map = {
+            "ollama_cloud": "pulse_sdxl",
+            "ollama": "pulse_sdxl",
+            "sdxl": "pulse_sdxl",
+            "matplotlib": "slides_matplotlib",
+            "svg": "slides_svg",
+        }
+        self._provider = provider_map.get(raw_provider, raw_provider)
         self._enabled = os.environ.get("SLIDES_IMAGE_ENABLED", "true").lower() in ("true", "1", "yes")
-
-        root = Path(__file__).resolve().parents[3]
-        self._output_dir = output_dir or (root / "tools" / "presentations" / "slides" / "images")
-        self._output_dir.mkdir(parents=True, exist_ok=True)
+        self._generator = AssetGenerator(output_dir=output_dir)
 
     def generate(self, title: str, bullets: list[str], visual_context: str = "", theme: str = "", tone: str = "") -> str | None:
         """Generate an image for a slide. Returns absolute file path or None on skip."""
         if not self._enabled:
             return None
 
-        # Stage 1: generate a rich image prompt
-        prompt = self._build_visual_prompt(title, bullets, visual_context, theme, tone)
+        prompt = _build_visual_prompt(title, bullets, visual_context, theme, tone)
         if not prompt:
             return None
 
-        # Stage 2: call the image generation backend
-        try:
-            img_bytes = self._call_image_api(prompt, title)
-        except Exception:
-            img_bytes = None
-
-        if img_bytes:
-            return self._save_image(img_bytes, title)
-
-        # Fallback: programmatic matplotlib graphic
-        return self._matplotlib_fallback(title, bullets, theme, tone)
-
-    # ── Stage 1: Visual Prompt Generation ────────────────────────────────────
-
-    def _style_hint(self, theme: str = "", tone: str = "") -> str:
-        """Compose a style hint from theme palette and tone."""
-        parts = []
-        if tone:
-            tone_hint = TONE_STYLE_HINTS.get(tone, TONE_STYLE_HINTS["professional"])
-            parts.append(tone_hint["visual"])
-        palette = THEME_PALETTES.get(theme)
-        if palette:
-            bg_hex = "#{:02x}{:02x}{:02x}".format(*palette["bg"])
-            accent_hex = "#{:02x}{:02x}{:02x}".format(*palette["accent"])
-            parts.append(f"color palette: background {bg_hex}, accent {accent_hex}")
-        if not parts:
-            return _DEFAULT_STYLE_HINT
-        return "; ".join(parts) + "; no text labels, no words, high quality, 16:9 aspect ratio"
-
-    def _build_visual_prompt(self, title: str, bullets: list[str], visual_context: str, theme: str = "", tone: str = "") -> str:
-        """Use LLM to generate a descriptive image prompt."""
-        style_hint = self._style_hint(theme, tone)
-        if visual_context:
-            base = f"{visual_context}, {style_hint}"
-        else:
-            base = f"{title}, {style_hint}"
-
-        user_msg = (
-            f"Slide title: {title}\n"
-            f"Bullets: {'; '.join(bullets[:3])}\n"
-            "Write an image generation prompt for this slide."
-        )
-        system_prompt = _VIZ_SYSTEM_TEMPLATE.format(style_hint=style_hint)
-        try:
-            from tools.llm.router import LLMRouter
-            from tools.llm.provider import LLMRequest
-
-            router = LLMRouter()
-            request = LLMRequest(
-                messages=[{"role": "user", "content": user_msg}],
-                system_prompt=system_prompt,
-                max_tokens=200,
-                temperature=0.4,
-                agent_id="slides-visual-prompt",
-                classification="CUI",
-                effort="low",
-                skip_injection_scan=True,
-            )
-            response = router.invoke(LLM_FN_VIZ_PROMPT, request)
-            prompt = (response.content or "").strip().strip('"\'')
-            if len(prompt) > 20:
-                return prompt
-        except Exception:
-            pass
-        return base
-
-    # ── Stage 2: Image Generation Backends ───────────────────────────────────
-
-    def _call_image_api(self, prompt: str, title: str) -> bytes | None:
-        """Dispatch to the configured image generation backend."""
-        if self._provider in ("gpt_image_2", "gpt_image"):
-            return self._gpt_image_2_gen(prompt)
-        if self._provider == "imagen_4":
-            return self._imagen_4_gen(prompt)
-        if self._provider == "ollama_cloud":
-            return self._ollama_cloud_gen(prompt)
-        if self._provider == "dalle":
-            return self._dalle_gen(prompt)
-        if self._provider == "gemini":
-            return self._gemini_gen(prompt)
-        return None  # matplotlib fallback handled by caller
-
-    def _gpt_image_2_gen(self, prompt: str) -> bytes | None:
-        """Generate via OpenAI GPT-Image-2 (current state-of-the-art for text + diagrams)."""
-        import urllib.request
-        api_key = os.environ.get("OPENAI_API_KEY", "")
-        if not api_key:
-            return None
-        model_id = self._model or "gpt-image-2"
-        payload = json.dumps({
-            "model": model_id,
-            "prompt": prompt,
-            "n": 1,
-            "size": "1024x576",
-            "response_format": "b64_json",
-            "quality": os.environ.get("SLIDES_IMAGE_QUALITY", "standard").lower(),
-        }).encode()
-        req = urllib.request.Request(
-            "https://api.openai.com/v1/images/generations",
-            data=payload,
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=self._timeout) as resp:
-            data = json.loads(resp.read())
-        b64 = data["data"][0]["b64_json"]
-        return base64.b64decode(b64)
-
-    def _imagen_4_gen(self, prompt: str) -> bytes | None:
-        """Generate via Google Imagen 4 (enterprise, strong typography, native 16:9)."""
-        try:
-            from google import genai
-            from google.genai.types import GenerateImagesConfig
-        except Exception:
-            return self._imagen_4_sdk_v1_gen(prompt)
-        api_key = os.environ.get("GOOGLE_API_KEY", "")
-        if not api_key:
-            return None
-        client = genai.Client(api_key=api_key)
-        model_id = self._model or "imagen-4.0-generate-001"
-        aspect = os.environ.get("SLIDES_IMAGE_ASPECT_RATIO", "16:9")
-        result = client.models.generate_images(
-            model=model_id,
+        req = AssetRequest(
+            context="slides",
+            title=title,
+            bullets=bullets,
+            visual_context=visual_context,
             prompt=prompt,
-            config=GenerateImagesConfig(
-                number_of_images=1,
-                aspect_ratio=aspect,
-            ),
+            theme=theme,
+            tone=tone,
+            preferred_providers=[self._provider] if self._provider else [],
         )
-        images = getattr(result, "generated_images", None) or []
-        if images:
-            image = images[0].image
-            if hasattr(image, "png_bytes") and image.png_bytes:
-                return image.png_bytes
-        return None
-
-    def _imagen_4_sdk_v1_gen(self, prompt: str) -> bytes | None:
-        """Fallback using legacy google.generativeai SDK for older installs."""
-        try:
-            import google.generativeai as genai
-            genai.configure(api_key=os.environ.get("GOOGLE_API_KEY", ""))
-            model_id = self._model or "imagen-4.0-generate-001"
-            model = genai.ImageGenerationModel(model_id)
-            result = model.generate_images(
-                prompt=prompt, number_of_images=1, aspect_ratio="16:9"
-            )
-            if result.images:
-                return result.images[0]._pil_image.tobytes()  # type: ignore
-        except Exception:
-            pass
-        return None
-
-    def _ollama_cloud_gen(self, prompt: str) -> bytes | None:
-        """POST to Ollama cloud image generation endpoint."""
-        import urllib.request
-        base_url = os.environ.get("OLLAMA_CLOUD_BASE_URL", "https://ollama.com").rstrip("/")
-        model_id = self._model or "sdxl:latest"
-        payload = json.dumps({
-            "model": model_id,
-            "prompt": prompt,
-            "stream": False,
-        }).encode()
-        req = urllib.request.Request(
-            f"{base_url}/v1/images/generations",
-            data=payload,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {os.environ.get('OLLAMA_API_KEY', '')}",
-            },
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=self._timeout) as resp:
-            data = json.loads(resp.read())
-        # OpenAI-compatible response: data[0].b64_json or data[0].url
-        if "data" in data and data["data"]:
-            item = data["data"][0]
-            if "b64_json" in item:
-                return base64.b64decode(item["b64_json"])
-            if "url" in item:
-                with urllib.request.urlopen(item["url"], timeout=self._timeout) as r:
-                    return r.read()
-        return None
-
-    def _dalle_gen(self, prompt: str) -> bytes | None:
-        """Generate via OpenAI DALL-E 3 (legacy)."""
-        import urllib.request
-        api_key = os.environ.get("OPENAI_API_KEY", "")
-        if not api_key:
-            return None
-        payload = json.dumps({
-            "model": "dall-e-3",
-            "prompt": prompt,
-            "n": 1,
-            "size": "1024x576",
-            "response_format": "b64_json",
-        }).encode()
-        req = urllib.request.Request(
-            "https://api.openai.com/v1/images/generations",
-            data=payload,
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {api_key}"},
-            method="POST",
-        )
-        with urllib.request.urlopen(req, timeout=self._timeout) as resp:
-            data = json.loads(resp.read())
-        b64 = data["data"][0]["b64_json"]
-        return base64.b64decode(b64)
-
-    def _gemini_gen(self, prompt: str) -> bytes | None:
-        """Generate via Gemini Imagen 3 (legacy)."""
-        try:
-            import google.generativeai as genai
-            genai.configure(api_key=os.environ.get("GOOGLE_API_KEY", ""))
-            model = genai.ImageGenerationModel("imagen-3.0-generate-001")
-            result = model.generate_images(prompt=prompt, number_of_images=1, aspect_ratio="16:9")
-            if result.images:
-                return result.images[0]._pil_image.tobytes()  # type: ignore
-        except Exception:
-            pass
-        return None
-
-    # ── Pillow/matplotlib Fallback ────────────────────────────────────────────
-
-    def _matplotlib_fallback(self, title: str, bullets: list[str], theme: str = "", tone: str = "") -> str | None:
-        """Generate a programmatic themed graphic using matplotlib."""
-        try:
-            import matplotlib
-            matplotlib.use("Agg")
-            import matplotlib.pyplot as plt
-            import matplotlib.patches as mpatches
-            import numpy as np
-
-            palette = THEME_PALETTES.get(theme) or THEME_PALETTES[DEFAULT_THEME]
-            bg_hex = "#{:02x}{:02x}{:02x}".format(*palette["bg"])
-            accent_hex = "#{:02x}{:02x}{:02x}".format(*palette["accent"])
-            text_hex = "#{:02x}{:02x}{:02x}".format(*palette["text"])
-
-            fig, ax = plt.subplots(figsize=(10.24, 5.76), facecolor=bg_hex)
-            ax.set_facecolor(bg_hex)
-            ax.set_xlim(0, 10)
-            ax.set_ylim(0, 6)
-            ax.axis("off")
-
-            # Accent bar
-            ax.add_patch(mpatches.FancyBboxPatch(
-                (0, 5.7), 10, 0.3, boxstyle="square,pad=0",
-                facecolor=accent_hex, linewidth=0
-            ))
-
-            # Abstract background shapes
-            rng = np.random.default_rng(abs(hash(title)) % (2**31))
-            for _ in range(6):
-                cx, cy = rng.uniform(1, 9), rng.uniform(0.5, 5)
-                r = rng.uniform(0.3, 1.2)
-                alpha = rng.uniform(0.05, 0.2)
-                circle = plt.Circle((cx, cy), r, color=accent_hex, alpha=alpha)
-                ax.add_patch(circle)
-
-            # Connection lines
-            pts = [(rng.uniform(2, 8), rng.uniform(1, 4)) for _ in range(5)]
-            for i in range(len(pts) - 1):
-                ax.plot(
-                    [pts[i][0], pts[i+1][0]], [pts[i][1], pts[i+1][1]],
-                    color=accent_hex, alpha=0.3, linewidth=1.5
-                )
-            # Node dots
-            for px, py in pts:
-                ax.plot(px, py, "o", color=accent_hex, markersize=8, alpha=0.7)
-
-            # Title text
-            short_title = title[:50] + ("…" if len(title) > 50 else "")
-            ax.text(
-                5, 2.5, short_title, ha="center", va="center",
-                color=text_hex, fontsize=13, fontweight="bold",
-                wrap=True, family="monospace",
-            )
-
-            buf = io.BytesIO()
-            fig.savefig(buf, format="png", dpi=96, bbox_inches="tight", facecolor=bg_hex)
-            plt.close(fig)
-            buf.seek(0)
-            img_bytes = buf.read()
-            return self._save_image(img_bytes, title)
-        except Exception:
-            return None
-
-    def _save_image(self, img_bytes: bytes, title: str) -> str:
-        """Save image bytes to a file. Returns absolute path."""
-        slug = hashlib.sha256(title.encode()).hexdigest()[:12]
-        # Some legacy SDKs return raw RGBA bytes instead of PNG; wrap them.
-        if not img_bytes.startswith(b"\x89PNG"):
-            try:
-                from PIL import Image as PILImage
-                from io import BytesIO
-                pil = PILImage.open(BytesIO(img_bytes))
-                buf = BytesIO()
-                pil.save(buf, format="PNG")
-                img_bytes = buf.getvalue()
-            except Exception:
-                pass
-        path = self._output_dir / f"slide_{slug}.png"
-        path.write_bytes(img_bytes)
-        return str(path)
+        result = self._generator.generate(req)
+        return result.get("path") if result.get("success") else None
