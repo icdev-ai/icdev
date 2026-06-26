@@ -149,6 +149,77 @@ def _append_compliance_stamp(doc_text: str, classification: str) -> str:
     return doc_text + "\n" + "\n".join(lines)
 
 
+# ─── Item 3: OKB policy gate ─────────────────────────────────────────────────
+
+_POLICY_DIR = pathlib.Path(__file__).resolve().parents[2] / "context" / "docgen" / "policies"
+
+
+def policy_check(doc_text: str, doc_type: str | None, classification: str | None) -> dict:
+    """Machine-checkable OKB policy gate for WriteGuard.
+
+    Loads YAML constraint file for *doc_type* (falls back to default.yaml),
+    evaluates each constraint against *doc_text*, and returns a result dict:
+
+        {
+            "passed": bool,
+            "violations": [{"id": str, "description": str, "required": bool}],
+            "warnings": [{"id": str, "description": str}],
+        }
+
+    A constraint with ``required: true`` that fails makes ``passed`` False.
+    A constraint with ``negate: true`` matches when the pattern is ABSENT.
+    Falls back to pass=True/no violations on any load/parse error.
+    """
+    import re as _re
+    import yaml as _yaml
+
+    def _load_constraints(dt: str | None) -> list[dict]:
+        candidates = [dt or "default", "default"] if dt and dt != "default" else ["default"]
+        for name in candidates:
+            p = _POLICY_DIR / f"{name}.yaml"
+            if p.exists():
+                try:
+                    raw = _yaml.safe_load(p.read_text(encoding="utf-8"))
+                    return list(raw.get("constraints", []))
+                except Exception:
+                    pass
+        return []
+
+    try:
+        constraints = _load_constraints(doc_type)
+    except Exception:
+        return {"passed": True, "violations": [], "warnings": []}
+
+    violations: list[dict] = []
+    warnings: list[dict] = []
+
+    for c in constraints:
+        cid = c.get("id", "?")
+        desc = c.get("description", "")
+        pattern = c.get("pattern", "")
+        required = bool(c.get("required", False))
+        negate = bool(c.get("negate", False))
+
+        try:
+            matched = bool(_re.search(pattern, doc_text, _re.MULTILINE))
+        except Exception:
+            continue
+
+        triggered = (not matched) if (not negate) else matched
+        if triggered:
+            entry = {"id": cid, "description": desc, "required": required}
+            if required:
+                violations.append(entry)
+            else:
+                warnings.append(entry)
+
+    return {
+        "passed": len(violations) == 0,
+        "violations": violations,
+        "warnings": warnings,
+    }
+
+
 # ─── Stage transitions ────────────────────────────────────────────────────────
 
 def advance(session_id: str, to_stage: int) -> dict[str, Any]:
@@ -476,6 +547,11 @@ def stage6_writeguard(
     On block: passed=False, blocked=True, ace_regen_needed=True (all retries used).
     """
     get_writeguard_mode(domain)  # validates domain is known before attempting
+    # Resolve doc_type and classification for the OKB policy gate.
+    _session = sm.get_session(session_id) or {}
+    _doc_type = _session.get("doc_type")
+    _classification = _session.get("classification", "CUI")
+
     try:
         from tools.pulse.writeguard import run_full_quality_check, rewrite_content
 
@@ -489,18 +565,29 @@ def stage6_writeguard(
             last_score = float(last_result.get("overall_score", 0))
 
             if last_score >= _WG_MIN_SCORE:
+                # OKB policy gate — only for ATO doc types with YAML constraints.
+                # Regular doc types (runbook, etc.) skip the policy gate entirely.
+                from tools.docgen.domain_profiles import get_ato_doc_type as _gat
+                _ato_cfg = _gat(_doc_type)
+                if _ato_cfg is not None:
+                    policy_result = policy_check(current_text, _doc_type, _classification)
+                else:
+                    policy_result = {"passed": True, "violations": [], "warnings": []}
                 log.info(
-                    "IDR WriteGuard: session=%s score=%.1f PASS (attempt=%d)",
+                    "IDR WriteGuard: session=%s score=%.1f PASS (attempt=%d) policy=%s",
                     session_id, last_score, attempt,
+                    "PASS" if policy_result["passed"] else "FAIL",
                 )
                 return {
-                    "passed": True,
+                    "passed": policy_result["passed"],
                     "score": last_score,
                     "result": last_result,
                     "fixed_text": current_text,
                     "attempts": attempt,
-                    "blocked": False,
+                    "blocked": not policy_result["passed"],
                     "ace_regen_needed": False,
+                    "policy_violations": policy_result["violations"],
+                    "policy_warnings": policy_result["warnings"],
                 }
 
             if attempt >= _WG_MAX_RETRIES:
@@ -543,6 +630,8 @@ def stage6_writeguard(
             "attempts": _WG_MAX_RETRIES,
             "blocked": True,
             "ace_regen_needed": True,
+            "policy_violations": [],
+            "policy_warnings": [],
         }
 
     except ImportError:
@@ -550,12 +639,14 @@ def stage6_writeguard(
         return {
             "passed": True, "score": 100, "result": {}, "fixed_text": doc_text,
             "attempts": 0, "blocked": False, "ace_regen_needed": False,
+            "policy_violations": [], "policy_warnings": [],
         }
     except Exception as exc:
         log.exception("IDR WriteGuard exception: session=%s", session_id)
         return {
             "passed": False, "score": 0, "result": {"error": str(exc)}, "fixed_text": doc_text,
             "attempts": 0, "blocked": False, "ace_regen_needed": False,
+            "policy_violations": [], "policy_warnings": [],
         }
 
 

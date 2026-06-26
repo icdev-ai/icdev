@@ -1556,3 +1556,115 @@ class TestStage2SuggestClassification:
 
         assert result["classification"] == "CUI"
         assert result["confidence"] == 0.75
+
+
+# ─── Item 3: OKB policy gate ─────────────────────────────────────────────────
+
+class TestPolicyCheck:
+    """policy_check evaluates YAML constraint files against doc text."""
+
+    def test_policy_check_returns_required_keys(self):
+        """policy_check returns dict with passed, violations, warnings."""
+        from tools.docgen.workflow import policy_check
+        result = policy_check("CUI document with some content.", "default", "CUI")
+        for key in ("passed", "violations", "warnings"):
+            assert key in result
+
+    def test_default_policy_passes_with_classification_marking(self):
+        """Doc with CUI marking passes default policy's cls-marking constraint."""
+        from tools.docgen.workflow import policy_check
+        doc = "CUI\n\n## Overview\nThis document covers network topology.\n\n## Summary\nAll done."
+        result = policy_check(doc, "default", "CUI")
+        assert result["passed"] is True
+        # no required violations
+        required_violations = [v for v in result["violations"] if v.get("required")]
+        assert len(required_violations) == 0
+
+    def test_default_policy_fails_without_classification_marking(self):
+        """Doc without any classification marking fails the cls-marking required constraint."""
+        from tools.docgen.workflow import policy_check
+        doc = "This is a document without any classification marking at all."
+        result = policy_check(doc, "default", None)
+        assert result["passed"] is False
+        violation_ids = [v["id"] for v in result["violations"]]
+        assert "cls-marking" in violation_ids
+
+    def test_policy_check_no_placeholder_blocks_tbd(self):
+        """[TBD] in document triggers no-placeholder required constraint."""
+        from tools.docgen.workflow import policy_check
+        doc = "CUI\n\n## Overview\nThe topology is [TBD] pending review."
+        result = policy_check(doc, "default", "CUI")
+        assert result["passed"] is False
+        violation_ids = [v["id"] for v in result["violations"]]
+        assert "no-placeholder" in violation_ids
+
+    def test_ato_ssp_policy_checks_system_boundary(self):
+        """ato_ssp policy requires 'system boundary' section."""
+        from tools.docgen.workflow import policy_check
+        doc = "CUI\n\n## Overview\nFedRAMP system overview without boundary info."
+        result = policy_check(doc, "ato_ssp", "CUI")
+        assert result["passed"] is False
+        ids = [v["id"] for v in result["violations"]]
+        assert "has-system-boundary" in ids
+
+    def test_ato_ssp_policy_passes_complete_doc(self):
+        """Complete ato_ssp document passes all required constraints."""
+        from tools.docgen.workflow import policy_check
+        doc = (
+            "CUI\n\n## System Overview\nFedRAMP authorized system.\n\n"
+            "## System Boundary\nAll components within the ATO boundary.\n\n"
+            "## Control Implementation\nAC-1: Implemented via IAM policies.\n\n"
+            "## Continuous Monitoring\nMonitoring via SIEM."
+        )
+        result = policy_check(doc, "ato_ssp", "CUI")
+        required_violations = [v for v in result["violations"] if v.get("required")]
+        assert len(required_violations) == 0
+
+    def test_unknown_doc_type_falls_back_to_default(self):
+        """Unknown doc_type falls back to default.yaml constraints."""
+        from tools.docgen.workflow import policy_check
+        # Should use default.yaml: passes if has CUI marking
+        doc = "CUI classified content here."
+        result = policy_check(doc, "some_unknown_type", "CUI")
+        assert result["passed"] is True
+
+    def test_policy_check_graceful_on_missing_policy_file(self, tmp_path):
+        """policy_check returns pass when policy dir doesn't exist."""
+        from tools.docgen.workflow import policy_check
+        import tools.docgen.workflow as wf_module
+        real_dir = wf_module._POLICY_DIR
+        wf_module._POLICY_DIR = tmp_path / "nonexistent"
+        try:
+            result = policy_check("Any text.", "ato_ssp", "CUI")
+        finally:
+            wf_module._POLICY_DIR = real_dir
+        assert result["passed"] is True  # graceful fallback
+
+    def test_stage6_writeguard_includes_policy_keys(self):
+        """stage6_writeguard result always includes policy_violations and policy_warnings."""
+        from tools.docgen.workflow import stage6_writeguard
+        quality_result = {"overall_score": 85.0, "passed": True, "details": {}, "recommendations": []}
+
+        with patch("tools.pulse.writeguard.run_full_quality_check", return_value=quality_result), \
+             patch("tools.docgen.workflow.sm.get_session", return_value={
+                 "doc_type": "runbook", "classification": "CUI"
+             }):
+            result = stage6_writeguard("sess-001", "Good document content.", "network")
+
+        assert "policy_violations" in result
+        assert "policy_warnings" in result
+
+    def test_stage6_writeguard_ato_ssp_policy_gate_blocks_incomplete(self):
+        """stage6_writeguard with ato_ssp doc_type fails policy if system boundary missing."""
+        from tools.docgen.workflow import stage6_writeguard
+        quality_result = {"overall_score": 85.0, "passed": True, "details": {}, "recommendations": []}
+        doc = "CUI\n## Overview\nThis document describes the system but omits the required perimeter."
+
+        with patch("tools.pulse.writeguard.run_full_quality_check", return_value=quality_result), \
+             patch("tools.docgen.workflow.sm.get_session", return_value={
+                 "doc_type": "ato_ssp", "classification": "CUI"
+             }):
+            result = stage6_writeguard("sess-002", doc, "compliance")
+
+        assert result["passed"] is False
+        assert any(v["id"] == "has-system-boundary" for v in result["policy_violations"])

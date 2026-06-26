@@ -1,0 +1,20 @@
+# OKB Policy Constraints — default doc type
+# Each constraint: id, description, pattern (regex on doc text), required (bool)
+# required: true → violation is a BLOCK (policy_check returns False)
+# required: false → violation is a WARNING only
+constraints:
+  - id: cls-marking
+    description: "Document must contain a classification marking (CUI, SECRET, or UNCLASSIFIED)"
+    pattern: "\\b(CUI|SECRET|UNCLASSIFIED|FOUO|SBU)\\b"
+    required: true
+
+  - id: no-placeholder
+    description: "Document must not contain bare placeholder tokens"
+    pattern: "\\[TBD\\]|\\[TODO\\]|\\[PLACEHOLDER\\]|\\[INSERT"
+    required: true
+    negate: true
+
+  - id: has-summary
+    description: "Document should include a summary or overview section"
+    pattern: "(?i)(summary|overview|introduction|background)"
+    required: false
