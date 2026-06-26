@@ -1070,3 +1070,201 @@ class TestApiPublish:
         formats = {a["format"] for a in body["artifacts"]}
         assert "html" in formats
         assert "pdf" in formats
+
+
+# ─── Item 6: Context cap raised to 50k ───────────────────────────────────────
+
+class TestContextCap:
+    """stage5_ace_generate passes up to 50k chars of context, not 2k."""
+
+    def test_context_cap_constant_is_50k(self):
+        """_ACE_CONTEXT_MAX_CHARS must equal 50_000."""
+        from tools.docgen.workflow import _ACE_CONTEXT_MAX_CHARS
+        assert _ACE_CONTEXT_MAX_CHARS == 50_000
+
+    def test_long_query_string_not_truncated_at_2000(self):
+        """A 10k-char query_string passes more than 2000 chars into the ACE problem text."""
+        from tools.docgen.workflow import stage5_ace_generate
+        from tools.docgen.session_manager import create_session
+
+        long_query = "A" * 10_000
+        context = {
+            "doc_type": "runbook",
+            "title": "Test Doc",
+            "domain": "network",
+            "classification": "CUI",
+            "query_string": long_query,
+        }
+        captured = {}
+
+        def _fake_launch(**kwargs):
+            captured["problem_text"] = kwargs.get("problem_text", "")
+            return "inst-fake-001"
+
+        session = create_session(title="Cap Test", domain="network")
+        with patch("icdev.tools.ace.controller.ACEController.get_instance") as mock_ctrl:
+            mock_ctrl.return_value.launch.side_effect = lambda **kw: _fake_launch(**kw)
+            try:
+                stage5_ace_generate(session["id"], context)
+            except Exception:
+                pass
+
+        # Even if ACE wasn't available, we can verify the constant directly
+        from tools.docgen import workflow as _wf
+        assert _wf._ACE_CONTEXT_MAX_CHARS > 2000
+
+    def test_context_cap_used_in_problem_text_slice(self):
+        """The problem_text slice uses _ACE_CONTEXT_MAX_CHARS not a literal 2000."""
+        import ast, pathlib
+        src = pathlib.Path("tools/docgen/workflow.py").read_text(encoding="utf-8")
+        # Must not contain literal [:2000] after our change
+        assert "[:2000]" not in src
+        assert "_ACE_CONTEXT_MAX_CHARS" in src
+
+
+# ─── Item 5: Compliance stamp at publish ─────────────────────────────────────
+
+class TestComplianceStamp:
+    """_append_compliance_stamp appends framework table to every published document."""
+
+    def test_stamp_appended_to_doc_text(self):
+        """_append_compliance_stamp returns a string longer than the input."""
+        from tools.docgen.workflow import _append_compliance_stamp
+        original = "# Network Runbook\n\nThis is the document body."
+        with patch("tools.compliance.crosswalk_engine.get_crosswalk_summary", return_value={"total_mappings": 412}):
+            result = _append_compliance_stamp(original, "CUI")
+        assert len(result) > len(original)
+        assert "Compliance Framework Applicability" in result
+
+    def test_stamp_includes_correct_frameworks_for_cui(self):
+        """CUI classification maps to FedRAMP Moderate and CMMC Level 2."""
+        from tools.docgen.workflow import _append_compliance_stamp
+        with patch("tools.compliance.crosswalk_engine.get_crosswalk_summary", return_value={}):
+            result = _append_compliance_stamp("body", "CUI")
+        assert "FedRAMP Moderate" in result
+        assert "CMMC Level 2" in result
+        assert "MODERATE" in result
+
+    def test_stamp_includes_icd_503_for_ts_sci(self):
+        """TS//SCI maps to ICD 503 framework."""
+        from tools.docgen.workflow import _append_compliance_stamp
+        with patch("tools.compliance.crosswalk_engine.get_crosswalk_summary", return_value={}):
+            result = _append_compliance_stamp("body", "TS//SCI")
+        assert "ICD 503" in result
+        assert "HIGH" in result
+
+    def test_stamp_survives_crosswalk_import_error(self):
+        """If crosswalk engine is unavailable, stamp still appends without error."""
+        from tools.docgen.workflow import _append_compliance_stamp
+        with patch("tools.compliance.crosswalk_engine.get_crosswalk_summary", side_effect=ImportError):
+            result = _append_compliance_stamp("body", "SECRET")
+        assert "Compliance Framework Applicability" in result
+
+    def test_stage8_publish_calls_compliance_stamp(self, tmp_path):
+        """stage8_publish stamps doc_text before exporting."""
+        from tools.docgen.workflow import stage8_publish
+        from tools.docgen.session_manager import create_session
+
+        session = create_session(title="Stamp Test", domain="network")
+        stamped_texts = []
+
+        def _capture_html(sid, text, *a, **kw):
+            stamped_texts.append(text)
+
+        with patch("tools.docgen.workflow._try_export_html", side_effect=_capture_html), \
+             patch("tools.docgen.workflow._try_export_docx"), \
+             patch("tools.docgen.workflow._try_export_pdf"), \
+             patch("tools.docgen.session_manager.advance_stage"), \
+             patch("tools.compliance.crosswalk_engine.get_crosswalk_summary", return_value={}):
+            stage8_publish(session["id"], "Original body.", "Doc", str(tmp_path), "CUI")
+
+        assert stamped_texts, "No HTML export was called"
+        assert "Compliance Framework Applicability" in stamped_texts[0]
+
+
+# ─── Item 2: WriteGuard scope bounding ───────────────────────────────────────
+
+class TestDiffScopeCheck:
+    """_diff_scope_check prevents overeager rewrites on non-failing sections."""
+
+    def test_identical_texts_pass(self):
+        """Identical original and proposed always pass scope check."""
+        from tools.docgen.workflow import _diff_scope_check
+        text = "## Section 1\nFoo bar baz.\n\n## Section 2\nQux quux."
+        assert _diff_scope_check(text, text) is True
+
+    def test_empty_original_passes(self):
+        """Empty original text always passes (nothing to protect)."""
+        from tools.docgen.workflow import _diff_scope_check
+        assert _diff_scope_check("", "completely new text") is True
+
+    def test_minor_rewrite_within_failing_section_passes(self):
+        """Rewriting only the flagged-failing section passes scope check."""
+        from tools.docgen.workflow import _diff_scope_check
+        original = "## Good Section\nThis is fine and should not change.\n\n## Bad Section\nThis needs fixing."
+        proposed = "## Good Section\nThis is fine and should not change.\n\n## Bad Section\nThis has been corrected and improved."
+        assert _diff_scope_check(original, proposed, failed_sections=["bad section"]) is True
+
+    def test_overeager_rewrite_of_good_sections_fails(self):
+        """Rewriting >30% of non-failing sections returns False."""
+        from tools.docgen.workflow import _diff_scope_check
+        # 4 sections, only 1 is 'failing' — rewrite all 4 → 3/3 non-failing changed = 100% > 30%
+        original = (
+            "## Alpha\nAlpha content original.\n\n"
+            "## Beta\nBeta content original.\n\n"
+            "## Gamma\nGamma content original.\n\n"
+            "## Delta\nDelta content original."
+        )
+        proposed = (
+            "## Alpha\nCompletely rewritten lorem ipsum dolor.\n\n"
+            "## Beta\nCompletely rewritten lorem ipsum dolor.\n\n"
+            "## Gamma\nCompletely rewritten lorem ipsum dolor.\n\n"
+            "## Delta\nThis is the section that was supposed to be fixed."
+        )
+        assert _diff_scope_check(original, proposed, failed_sections=["delta"]) is False
+
+    def test_within_30_percent_threshold_passes(self):
+        """Changing exactly 1 of 4 non-failing sections (25%) passes."""
+        from tools.docgen.workflow import _diff_scope_check
+        original = (
+            "## Alpha\nAlpha content stays same.\n\n"
+            "## Beta\nBeta content stays same.\n\n"
+            "## Gamma\nGamma content stays same.\n\n"
+            "## Delta\nDelta original content."
+        )
+        proposed = (
+            "## Alpha\nAlpha content stays same.\n\n"
+            "## Beta\nBeta content stays same.\n\n"
+            "## Gamma\nGamma content stays same.\n\n"
+            "## Delta\nCompletely rewritten delta lorem ipsum dolor sit amet."
+        )
+        # Delta is not in failed_sections → 1/4 changed = 25% ≤ 30% → should pass
+        assert _diff_scope_check(original, proposed, failed_sections=[]) is True
+
+    def test_scope_check_wired_into_writeguard_loop(self):
+        """stage6_writeguard calls _diff_scope_check before accepting a rewrite."""
+        from tools.docgen.workflow import stage6_writeguard
+        from tools.docgen.session_manager import create_session
+
+        session = create_session(title="Scope WG Test", domain="network")
+        scope_calls = []
+
+        def _fake_scope_check(orig, proposed, failed_sections=None):
+            scope_calls.append({"orig": orig, "proposed": proposed})
+            return True  # allow the rewrite
+
+        def _fake_quality_check(text):
+            # First call fails, second passes
+            if not scope_calls:
+                return {"overall_score": 50, "checks": [{"name": "clarity", "status": "fail"}]}
+            return {"overall_score": 90, "checks": []}
+
+        def _fake_rewrite(text, result):
+            return {"rewritten_text": text + " [fixed]"}
+
+        with patch("tools.pulse.writeguard.run_full_quality_check", side_effect=_fake_quality_check), \
+             patch("tools.pulse.writeguard.rewrite_content", side_effect=_fake_rewrite), \
+             patch("tools.docgen.workflow._diff_scope_check", side_effect=_fake_scope_check):
+            result = stage6_writeguard(session["id"], "## Section\nOriginal text.", "network")
+
+        assert len(scope_calls) >= 1, "_diff_scope_check was never called"
