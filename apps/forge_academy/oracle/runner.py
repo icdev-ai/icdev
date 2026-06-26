@@ -13,8 +13,18 @@ from .lens_learner_risk import LensLearnerRisk
 from .lens_skill_gap import LensSkillGap
 from .lens_aadc_readiness import LensAADCReadiness
 from .lens_staleness_detector import LensStalenesssDetector
+from .lens_ace_skill_gap import ACESkillGapLens
+from .lens_agent_readiness import AgentReadinessLens
 
-_LENSES = [LensLearnerRisk, LensContentQuality, LensSkillGap, LensAADCReadiness, LensStalenesssDetector]
+_LENSES = [
+    LensLearnerRisk,
+    LensContentQuality,
+    LensSkillGap,
+    LensAADCReadiness,
+    LensStalenesssDetector,
+    ACESkillGapLens,
+    AgentReadinessLens,
+]
 _CONVERGENCE_MIN_LENSES = 2
 
 
