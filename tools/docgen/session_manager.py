@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
 from tools.db.storage import get_connection
+
+_IS_PG = os.environ.get("ICDEV_STORAGE_BACKEND", "sqlite").lower() == "postgresql"
 
 
 # ─── Sessions ────────────────────────────────────────────────────────────────
@@ -119,16 +122,30 @@ def add_upload(
     upload_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc).isoformat()
     with get_connection() as conn:
-        conn.execute(
-            """
-            INSERT INTO idr_uploads
-              (id, session_id, filename, upload_type, file_path, file_hash,
-               status, tenant_id, uploaded_at)
-            VALUES (?,?,?,?,?,?,'pending',?,?)
-            """,
-            (upload_id, session_id, filename, upload_type,
-             file_path, file_hash, tenant_id, now),
-        )
+        if _IS_PG:
+            # PG table created by DIC canvas — upload_id is PK, collection_id NOT NULL
+            conn.execute(
+                """
+                INSERT INTO idr_uploads
+                  (upload_id, id, session_id, collection_id, filename, upload_type,
+                   file_path, filepath, file_hash, status, tenant_id, uploaded_at,
+                   created_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'pending',%s,%s,%s)
+                """,
+                (upload_id, upload_id, session_id, session_id, filename, upload_type,
+                 file_path, file_path, file_hash, tenant_id, now, now),
+            )
+        else:
+            conn.execute(
+                """
+                INSERT INTO idr_uploads
+                  (id, session_id, filename, upload_type, file_path, file_hash,
+                   status, tenant_id, uploaded_at)
+                VALUES (?,?,?,?,?,?,'pending',?,?)
+                """,
+                (upload_id, session_id, filename, upload_type,
+                 file_path, file_hash, tenant_id, now),
+            )
         conn.commit()
     return get_upload(upload_id)
 
