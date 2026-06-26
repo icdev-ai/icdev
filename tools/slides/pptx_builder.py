@@ -99,6 +99,24 @@ def _footer(slide, n: int, palette: dict, text: str = "ICDEV™  ·  A System Th
          str(n), size=9, color=dark, align=PP_ALIGN.RIGHT)
 
 
+def _citation_footer(slide, palette: dict, citations: list[dict]) -> None:
+    """Render short source citations at the bottom of a content slide."""
+    if not citations:
+        return
+    subtext = _rgb(palette, "subtext")
+    lines = []
+    for i, src in enumerate(citations[:3], start=1):
+        title = (src.get("title") or "Source")[:60]
+        url = src.get("url", "")
+        line = f"[{i}] {title}"
+        if url:
+            line += f" — {url[:80]}"
+        lines.append(line)
+    text = " | ".join(lines)
+    _box(slide, LM, H - Inches(0.58), CW, Inches(0.26),
+         text, size=7, color=subtext, wrap=True)
+
+
 def _notes(slide, text: str) -> None:
     tf = slide.notes_slide.notes_text_frame
     tf.text = text
@@ -177,6 +195,7 @@ def _build_content_slide(
     else:
         _add_bullets(s, bullets, Inches(0.24), Inches(0.85), CW, palette)
 
+    _citation_footer(s, palette, slide_data.get("citations", []))
     _footer(s, n, palette)
     notes_text = slide_data.get("speaker_notes", "")
     if notes_text:

@@ -58,6 +58,12 @@ _COLLECTIONS = [
     "network.diagram_uploads",
     "network.diagram_analyses",
     "network.diagram_findings",
+    # PVM — Predictive Vulnerability Management collections
+    "network.vuln_predictions",
+    "network.attack_surface",
+    "network.triage_queue",
+    "network.patch_plans",
+    "network.advisories",
 ]
 
 
@@ -172,6 +178,43 @@ class NDCAdapter(IQEAdapter):
                 "ORDER BY f.created_at DESC"
             )
             rows = _fetch(conn, sql)
+        # ── PVM — Predictive Vulnerability Management ─────────────────────
+        elif collection == "network.vuln_predictions":
+            rows = _fetch(
+                conn,
+                "SELECT * FROM nc_vuln_predictions ORDER BY risk_score_composite DESC LIMIT 200",
+            )
+        elif collection == "network.attack_surface":
+            rows = _fetch(
+                conn,
+                "SELECT * FROM nc_attack_surface ORDER BY surface_score DESC LIMIT 500",
+            )
+        elif collection == "network.triage_queue":
+            rows = _fetch(
+                conn,
+                "SELECT * FROM nc_triage_queue ORDER BY rank ASC NULLS LAST",
+            )
+        elif collection == "network.patch_plans":
+            rows = _fetch(
+                conn,
+                "SELECT * FROM nc_patch_plans ORDER BY scheduled_at ASC LIMIT 500",
+            )
+        elif collection == "network.advisories":
+            rows = _fetch(
+                conn,
+                """SELECT a.*,
+                          aa.impacted_count,
+                          aa.cross_validation_delta_pct,
+                          aa.approved_by AS assessment_approved_by,
+                          aa.created_at AS assessment_date
+                   FROM nc_advisories a
+                   LEFT JOIN nc_advisory_assessments aa ON aa.id = (
+                       SELECT id FROM nc_advisory_assessments
+                       WHERE advisory_id = a.id
+                       ORDER BY created_at DESC LIMIT 1
+                   )
+                   ORDER BY a.created_at DESC LIMIT 200""",
+            )
         else:
             raise ValueError(
                 f"NDCAdapter: unknown collection {collection!r}. "

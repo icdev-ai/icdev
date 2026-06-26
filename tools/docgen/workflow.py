@@ -149,6 +149,64 @@ def _append_compliance_stamp(doc_text: str, classification: str) -> str:
     return doc_text + "\n" + "\n".join(lines)
 
 
+# ─── Item 8: Document freshness gate ────────────────────────────────────────
+
+def compute_source_hash(upload_paths: list[str]) -> str:
+    """Return a stable SHA-256 hash of the content of all upload files.
+
+    Files are sorted by path before hashing to ensure determinism.
+    Returns a hex string, or empty string if no paths provided or all files missing.
+    """
+    import hashlib
+
+    if not upload_paths:
+        return ""
+
+    h = hashlib.sha256()
+    any_read = False
+    for path in sorted(upload_paths):
+        p = pathlib.Path(path)
+        try:
+            h.update(p.read_bytes())
+            any_read = True
+        except (OSError, IOError):
+            pass
+    return h.hexdigest() if any_read else ""
+
+
+def record_source_hash(session_id: str, upload_paths: list[str]) -> str:
+    """Compute and persist the source hash for a session's uploads.
+
+    Call this after all uploads are ingested (end of Stage 1).
+    Returns the hash string.
+    """
+    from datetime import datetime, timezone
+
+    h = compute_source_hash(upload_paths)
+    if h:
+        sm.set_field(
+            session_id,
+            last_source_hash=h,
+            source_hash_checked_at=datetime.now(timezone.utc).isoformat(),
+        )
+        log.info("IDR freshness: session=%s hash=%s", session_id, h[:12])
+    return h
+
+
+def check_freshness(session_id: str, upload_paths: list[str]) -> dict:
+    """Compare current upload hash against the stored last_source_hash.
+
+    Returns {"stale": bool, "current_hash": str, "stored_hash": str}.
+    stale=True means uploads have changed since the document was last generated.
+    stale=False if no stored hash (new session) or hashes match.
+    """
+    session = sm.get_session(session_id) or {}
+    stored = session.get("last_source_hash") or ""
+    current = compute_source_hash(upload_paths)
+    stale = bool(stored and current and stored != current)
+    return {"stale": stale, "current_hash": current, "stored_hash": stored}
+
+
 # ─── Item 3: OKB policy gate ─────────────────────────────────────────────────
 
 _POLICY_DIR = pathlib.Path(__file__).resolve().parents[2] / "context" / "docgen" / "policies"
@@ -445,6 +503,117 @@ def stage2_analyze_upload(
     return analyses_created
 
 
+# ─── Item 10: Semantic conflict detection ────────────────────────────────────
+
+# Keyword contradiction pairs for fallback when LLM is unavailable.
+_CONTRADICTION_PAIRS: list[tuple[str, str]] = [
+    ("encryption enabled", "encryption disabled"),
+    ("encryption required", "encryption not required"),
+    ("sha-256", "md5"),
+    ("fips 140", "non-fips"),
+    ("allow", "deny"),
+    ("enabled", "disabled"),
+    ("required", "not required"),
+    ("encrypted", "plaintext"),
+    ("tls 1.3", "tls 1.0"),
+    ("tls 1.2", "ssl 3"),
+    ("authenticated", "unauthenticated"),
+    ("authorized", "unauthorized"),
+]
+
+
+def detect_semantic_conflicts(doc_text: str) -> list[dict]:
+    """Detect cross-section contradictions using LLM or keyword fallback.
+
+    Splits the document into sections (up to 6) and checks each pair for
+    contradictions.  Returns a list of conflict dicts:
+        {"section_a": str, "section_b": str, "description": str,
+         "severity": "warning" | "error"}
+
+    Caps at 15 section pairs (C(6,2)=15).  Returns [] on any exception.
+    """
+    import re as _re
+
+    if not doc_text or not doc_text.strip():
+        return []
+
+    # Split on markdown headers.
+    raw_parts = _re.split(r"\n#{1,3}\s+", doc_text)
+    sections = [p.strip() for p in raw_parts if p.strip()]
+    if len(sections) <= 1:
+        return []
+
+    # Cap to first 6 sections to keep pairs ≤ 15.
+    sections = sections[:6]
+    conflicts: list[dict] = []
+
+    _llm_available = True
+    try:
+        from tools.llm import get_router as _get_router
+        from tools.llm.provider import LLMRequest as _LLMRequest
+    except ImportError:
+        _llm_available = False
+
+    for i in range(len(sections)):
+        for j in range(i + 1, len(sections)):
+            sec_a = sections[i]
+            sec_b = sections[j]
+
+            if _llm_available:
+                try:
+                    router = _get_router()
+                    prompt = (
+                        "Do the following two document sections contradict each other? "
+                        "Return JSON only: {\"contradicts\": true/false, \"description\": \"...\"}.\n\n"
+                        f"Section A (first 600 chars):\n{sec_a[:600]}\n\n"
+                        f"Section B (first 600 chars):\n{sec_b[:600]}"
+                    )
+                    req = _LLMRequest(
+                        messages=[{"role": "user", "content": prompt}],
+                        max_tokens=128,
+                        temperature=0.0,
+                        skip_injection_scan=True,
+                    )
+                    resp = router.invoke("detect_semantic_conflicts", req)
+                    raw = (resp.content or "").strip()
+                    raw = _re.sub(r"```(?:json)?\s*|\s*```", "", raw).strip()
+                    import json as _json
+                    data = _json.loads(raw)
+                    if data.get("contradicts"):
+                        conflicts.append({
+                            "section_a": sec_a[:120],
+                            "section_b": sec_b[:120],
+                            "description": str(data.get("description", "Contradiction detected")),
+                            "severity": "error",
+                        })
+                    continue
+                except Exception:
+                    _llm_available = False  # fall through to keyword fallback
+
+            # Keyword fallback
+            combined_a = sec_a.lower()
+            combined_b = sec_b.lower()
+            for kw_a, kw_b in _CONTRADICTION_PAIRS:
+                if kw_a in combined_a and kw_b in combined_b:
+                    conflicts.append({
+                        "section_a": sec_a[:120],
+                        "section_b": sec_b[:120],
+                        "description": f"Potential contradiction: '{kw_a}' vs '{kw_b}'",
+                        "severity": "warning",
+                    })
+                    break
+                if kw_b in combined_a and kw_a in combined_b:
+                    conflicts.append({
+                        "section_a": sec_a[:120],
+                        "section_b": sec_b[:120],
+                        "description": f"Potential contradiction: '{kw_b}' vs '{kw_a}'",
+                        "severity": "warning",
+                    })
+                    break
+
+    return conflicts
+
+
 # ─── Stage 3: Conflict check ──────────────────────────────────────────────────
 
 def stage3_check_gate(session_id: str) -> bool:
@@ -453,6 +622,42 @@ def stage3_check_gate(session_id: str) -> bool:
     if pending > 0:
         log.info("IDR stage-3 gate BLOCKED: session=%s pending_conflicts=%d", session_id, pending)
     return pending == 0
+
+
+# ─── Item 11: ATO boundary context enrichment ────────────────────────────────
+
+def stage1_enrich_boundary_context(session_id: str, context: dict) -> dict:
+    """Enrich context for boundary_narrative doc type with trust zone data.
+
+    If context["doc_type"] == "boundary_narrative", queries the network canvas
+    for VLAN/segment/firewall/DMZ nodes and injects them as trust_zone_summary.
+    Silently skips on any DB/import error.  Returns context (modified or original).
+    """
+    if context.get("doc_type") != "boundary_narrative":
+        return context
+
+    if context.get("trust_zone_summary"):
+        return context  # already enriched
+
+    try:
+        from tools.network.db.init_db import get_connection as _nc_conn
+        conn = _nc_conn()
+        rows = conn.execute(
+            "SELECT label, node_type, cidr FROM nc_nodes "
+            "WHERE node_type IN ('vlan', 'segment', 'firewall', 'dmz') LIMIT 50"
+        ).fetchall()
+        trust_zones = [
+            {"label": r["label"], "node_type": r["node_type"], "cidr": r.get("cidr", "")}
+            for r in rows
+        ]
+        context["trust_zone_summary"] = trust_zones
+        log.info(
+            "IDR boundary enrich: session=%s trust_zones=%d", session_id, len(trust_zones)
+        )
+    except Exception as exc:
+        log.debug("IDR boundary enrich skipped: %s", exc)
+
+    return context
 
 
 # ─── Stage 4-5: ACE multi-coworker doc generation ─────────────────────────────
@@ -477,6 +682,11 @@ def stage5_ace_generate(
         {"instance_id": str, "status": "launched" | "unavailable"}
     """
     doc_type = context.get("doc_type", "runbook")
+
+    # Enrich boundary_narrative context with trust zone data from network canvas.
+    if doc_type == "boundary_narrative" and not context.get("trust_zone_summary"):
+        context = stage1_enrich_boundary_context(session_id, context)
+
     ato_config = get_ato_doc_type(doc_type)
 
     # ATO doc types override roles and inject section structure (unless caller passed role_ids).

@@ -1,0 +1,10 @@
+# PVM-002: Attack surface — reachable devices with CVE exposure
+# Collection: network.attack_surface
+# Use: attack surface heatmap on /network/vulnerability-intelligence,
+#      prioritizing which CVE-device pairs need immediate attention.
+
+foreach s in network.attack_surface
+where s.reachable == 1
+where s.criticality >= 3
+select s.device_name, s.ip, s.cve_id, s.exposure_type,
+       s.criticality, s.surface_score, s.nqe_source, s.assessed_at

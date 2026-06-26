@@ -1,0 +1,10 @@
+# PVM-003: Vulnerability triage queue — pending HITL items ordered by priority rank
+# Collection: network.triage_queue
+# Use: triage queue HITL table on /network/vulnerability-intelligence,
+#      analyst review workflow, approve/defer decision support.
+
+foreach t in network.triage_queue
+where t.status == "pending"
+select t.advisory_id, t.priority_score, t.rank, t.kev_exploited,
+       t.asset_criticality_norm, t.network_exposure_norm, t.temporal_urgency,
+       t.status, t.auto_approved, t.created_at

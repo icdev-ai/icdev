@@ -49,9 +49,22 @@ docgen_bp = Blueprint(
 def index():
     from tools.docgen import session_manager as sm
     from tools.docgen.domain_profiles import list_profiles
+    from tools.docgen.workflow import check_freshness
 
     sessions = sm.list_sessions(limit=20)
     profiles = list_profiles()
+
+    # Annotate sessions with freshness_stale for UI badge.
+    # Only checks published sessions with a stored source hash (avoids DB churn for drafts).
+    for s in sessions:
+        if s.get("last_source_hash") and s.get("status") in ("published", "reviewing"):
+            uploads = sm.list_uploads(s["id"])
+            paths = [u["file_path"] for u in uploads if u.get("file_path")]
+            fresh = check_freshness(s["id"], paths)
+            s["freshness_stale"] = fresh["stale"]
+        else:
+            s["freshness_stale"] = False
+
     return render_template(
         "docgen/index.html",
         sessions=sessions,
@@ -512,6 +525,132 @@ def api_generate(session_id: str):
         "ace_status": ace_result.get("status") if use_ace else None,
         "doc_type_config": ato_cfg,
     })
+
+
+# ─── API — Item 10: Semantic conflict detection ──────────────────────────────
+
+@docgen_bp.route("/api/sessions/<session_id>/detect-conflicts", methods=["POST"])
+def api_detect_conflicts(session_id: str):
+    """Detect semantic cross-section conflicts in document text.
+
+    Request JSON: {"doc_text": str}
+    Response: {"conflicts": list, "semantic_count": int, "total_count": int}
+    """
+    from tools.docgen import session_manager as sm
+    from tools.docgen.workflow import detect_semantic_conflicts
+
+    session = sm.get_session(session_id)
+    if not session:
+        return jsonify({"error": "not found"}), 404
+
+    data = request.get_json(force=True, silent=True) or {}
+    doc_text = (data.get("doc_text") or "").strip()
+    if not doc_text:
+        return jsonify({"error": "doc_text is required"}), 400
+
+    conflicts = detect_semantic_conflicts(doc_text)
+    semantic_count = len([c for c in conflicts if c.get("severity") == "error"])
+    return jsonify({
+        "conflicts": conflicts,
+        "semantic_count": semantic_count,
+        "total_count": len(conflicts),
+    })
+
+
+# ─── API — Item 12: SSE generation progress stream ────────────────────────────
+
+@docgen_bp.route("/api/sessions/<session_id>/progress")
+def api_session_progress(session_id: str):
+    """SSE stream of generation progress for a session."""
+    from flask import Response, stream_with_context
+    import json as _json
+    import time as _time
+
+    def generate():
+        for _ in range(60):  # max 60 polls (60s at 1s interval)
+            from tools.docgen import session_manager as _sm
+            session = _sm.get_session(session_id)
+            if not session:
+                yield f"data: {_json.dumps({'error': 'session not found'})}\n\n"
+                return
+
+            stage = session.get("stage", 0)
+            status = session.get("status", "unknown")
+            ace_id = session.get("ace_instance_id")
+            ace_state = None
+
+            if ace_id:
+                try:
+                    from tools.db.storage import get_canvas_connection
+                    conn = get_canvas_connection("ACE_STORAGE_BACKEND")
+                    row = conn.execute(
+                        "SELECT state FROM ace_instances WHERE id = %s", (ace_id,)
+                    ).fetchone()
+                    ace_state = dict(row)["state"] if row else None
+                    conn.close()
+                except Exception:
+                    pass
+
+            pct = min(100, stage * 12)  # 8 stages → ~12% each
+            payload = {
+                "stage": stage,
+                "status": status,
+                "pct": pct,
+                "ace_state": ace_state,
+                "done": status in ("published", "failed"),
+            }
+            yield f"data: {_json.dumps(payload)}\n\n"
+
+            if payload["done"]:
+                return
+            _time.sleep(1)
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ─── API — Item 13: Template gallery ──────────────────────────────────────────
+
+@docgen_bp.route("/api/templates", methods=["GET"])
+def api_list_templates():
+    """Return the pre-built document template gallery."""
+    from tools.docgen.domain_profiles import get_template_gallery
+    return jsonify({"templates": get_template_gallery()})
+
+
+@docgen_bp.route("/api/sessions/<session_id>/apply-template", methods=["POST"])
+def api_apply_template(session_id: str):
+    """Apply a template's fields to a session (pre-populates Stage 1 context).
+
+    Request JSON: {"template_id": str}
+    Response: updated session dict
+    """
+    from tools.docgen import session_manager as sm
+    from tools.docgen.domain_profiles import get_template
+
+    session = sm.get_session(session_id)
+    if not session:
+        return jsonify({"error": "not found"}), 404
+
+    data = request.get_json(force=True, silent=True) or {}
+    template_id = (data.get("template_id") or "").strip()
+    if not template_id:
+        return jsonify({"error": "template_id is required"}), 400
+
+    tpl = get_template(template_id)
+    if not tpl:
+        return jsonify({"error": f"template '{template_id}' not found"}), 404
+
+    sm.set_field(
+        session_id,
+        doc_type=tpl["doc_type"],
+        template_id=template_id,
+    )
+    updated = sm.get_session(session_id)
+    return jsonify(updated)
 
 
 # ─── API — Stage 0: LLM-first document ingestion (Item 7) ───────────────────

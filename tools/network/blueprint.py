@@ -1,4 +1,4 @@
-# [TEMPLATE: CUI // SP-CTI]
+﻿# [TEMPLATE: CUI // SP-CTI]
 """ICDEV™ Network Design Canvas — Flask Blueprint integration.
 
 Fully self-contained Blueprint mounted at /network/ inside the ICDEV dashboard.
@@ -14557,6 +14557,12 @@ Planning rules:
         if where_clause:
             base += f" filtered by: {where_clause[:120]}"
         return base + "."
+
+
+    # ── PVM Predictive Vulnerability Management routes ────────────────────
+    from tools.network.routes.pvm import register_pvm_routes
+
+    register_pvm_routes(bp)
 
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))

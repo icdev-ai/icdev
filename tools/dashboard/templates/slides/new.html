@@ -8,119 +8,263 @@
 
 <div class="page-header">
     <h1>Generate New Slide Deck</h1>
-    <p class="subtitle">Choose your content sources, theme, and deck type — ICDEV™ will generate a professional PPTX presentation.</p>
+    <p class="subtitle">A 3-step wizard for occasion-aware, AI-researched presentations.</p>
 </div>
 
-<form id="generate-form" style="max-width:800px;">
-    <div class="card" style="margin-bottom:20px;">
-        <div class="card-header"><h3 style="margin:0;">Deck Settings</h3></div>
-        <div class="card-body">
-            <div class="form-group">
-                <label class="form-label">Presentation Title</label>
-                <input type="text" id="title" class="form-control" value="ICDEV™ Platform Overview"
-                       placeholder="e.g. ICDEV™ Platform Overview" required>
-            </div>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px;">
-                <div class="form-group">
-                    <label class="form-label">Deck Type</label>
-                    <select id="deck_type" class="form-control">
-                        {% for dt in deck_types %}
-                        <option value="{{ dt }}" {% if dt == default_deck_type %}selected{% endif %}>
-                            {{ dt | replace('_', ' ') | title }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">Theme</label>
-                    <select id="theme" class="form-control">
-                        {% for t in themes %}
-                        <option value="{{ t }}" {% if t == default_theme %}selected{% endif %}>
-                            {{ t | replace('_', ' ') | title }}
-                        </option>
-                        {% endfor %}
-                    </select>
-                </div>
-            </div>
-            <div class="form-group" style="margin-top:16px;">
-                <label class="form-label">Max Slides</label>
-                <input type="range" id="max_slides" min="5" max="16" value="10"
-                       oninput="document.getElementById('slides-val').textContent=this.value">
-                <span id="slides-val" style="font-weight:600; margin-left:8px;">10</span> slides
-            </div>
+<form id="generate-form" style="max-width:900px;">
+    <!-- Step nav -->
+    <div style="display:flex; gap:8px; margin-bottom:20px;">
+        <div class="step-dot active" data-step="1" style="flex:1; text-align:center; padding:10px; border-radius:8px; background:var(--bg-secondary); border:1px solid var(--border-color);">
+            <div style="font-weight:700;">1. Topic & Occasion</div>
+            <div style="font-size:11px; color:var(--text-secondary);">What it's about</div>
+        </div>
+        <div class="step-dot" data-step="2" style="flex:1; text-align:center; padding:10px; border-radius:8px; background:var(--bg-secondary); border:1px solid var(--border-color);">
+            <div style="font-weight:700;">2. Tone & Style</div>
+            <div style="font-size:11px; color:var(--text-secondary);">Voice & theme</div>
+        </div>
+        <div class="step-dot" data-step="3" style="flex:1; text-align:center; padding:10px; border-radius:8px; background:var(--bg-secondary); border:1px solid var(--border-color);">
+            <div style="font-weight:700;">3. Layout & Output</div>
+            <div style="font-size:11px; color:var(--text-secondary);">Formats & sources</div>
         </div>
     </div>
 
-    <div class="card" style="margin-bottom:20px;">
-        <div class="card-header"><h3 style="margin:0;">Content Sources</h3></div>
-        <div class="card-body">
-            <p style="color:var(--text-secondary); font-size:13px; margin-bottom:16px;">
-                Select which ICDEV™ live data sources to pull content from.
-                All sources produce contextually relevant slide content automatically.
-            </p>
-            <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px,1fr)); gap:10px;">
-                {% for src in source_types %}
-                {% if src != 'upload' %}
-                <label class="source-card" style="display:flex; align-items:flex-start; gap:10px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; padding:12px; cursor:pointer;">
-                    <input type="checkbox" name="sources" value="{{ src }}"
-                           {% if src in ['icdev_capabilities', 'canvases', 'kanban'] %}checked{% endif %}
-                           style="margin-top:2px;">
+    <!-- Step 1 -->
+    <div class="wizard-step" data-step="1">
+        <div class="card" style="margin-bottom:20px;">
+            <div class="card-header"><h3 style="margin:0;">Topic & Occasion</h3></div>
+            <div class="card-body">
+                <div class="form-group">
+                    <label class="form-label">Presentation Title</label>
+                    <input type="text" id="title" class="form-control" value="ICDEV™ Platform Overview"
+                           placeholder="e.g. AI Adoption in Healthcare" required>
+                </div>
+                <div class="form-group" style="margin-top:16px;">
+                    <label class="form-label">Occasion / Scenario</label>
+                    <input type="text" id="occasion" class="form-control"
+                           placeholder="e.g. board pitch, all-hands, wedding toast, training session">
+                </div>
+                <div class="form-group" style="margin-top:16px;">
+                    <label class="form-label">Target Audience</label>
+                    <input type="text" id="target_audience" class="form-control"
+                           placeholder="e.g. C-suite executives, new hires, investors, patients">
+                </div>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px;">
+                    <div class="form-group">
+                        <label class="form-label">Deck Type</label>
+                        <select id="deck_type" class="form-control" onchange="onDeckTypeChange()">
+                            {% for dt in deck_types %}
+                            <option value="{{ dt }}" {% if dt == default_deck_type %}selected{% endif %}>
+                                {{ dt | replace('_', ' ') | title }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Max Slides</label>
+                        <input type="range" id="max_slides" min="5" max="16" value="10"
+                               oninput="document.getElementById('slides-val').textContent=this.value">
+                        <span id="slides-val" style="font-weight:600; margin-left:8px;">10</span> slides
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div style="display:flex; justify-content:flex-end;">
+            <button type="button" class="btn btn-primary" onclick="goStep(2)">Next →</button>
+        </div>
+    </div>
+
+    <!-- Step 2 -->
+    <div class="wizard-step" data-step="2" style="display:none;">
+        <div class="card" style="margin-bottom:20px;">
+            <div class="card-header"><h3 style="margin:0;">Tone & Visual Style</h3></div>
+            <div class="card-body">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                    <div class="form-group">
+                        <label class="form-label">Tone</label>
+                        <select id="tone" class="form-control">
+                            {% for t in tones %}
+                            <option value="{{ t }}" {% if t == 'professional' %}selected{% endif %}>
+                                {{ t | replace('_', ' ') | title }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Theme Palette</label>
+                        <select id="theme" class="form-control">
+                            {% for t in themes %}
+                            <option value="{{ t }}" {% if t == default_theme %}selected{% endif %}>
+                                {{ t | replace('_', ' ') | title }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div id="tone-hint" style="margin-top:16px; padding:12px; background:var(--bg-secondary); border-radius:8px; font-size:13px; color:var(--text-secondary);">
+                    Select a tone to see how it shapes writing and visuals.
+                </div>
+            </div>
+        </div>
+        <div style="display:flex; justify-content:space-between;">
+            <button type="button" class="btn btn-secondary" onclick="goStep(1)">← Back</button>
+            <button type="button" class="btn btn-primary" onclick="goStep(3)">Next →</button>
+        </div>
+    </div>
+
+    <!-- Step 3 -->
+    <div class="wizard-step" data-step="3" style="display:none;">
+        <div class="card" style="margin-bottom:20px;">
+            <div class="card-header"><h3 style="margin:0;">Output Formats</h3></div>
+            <div class="card-body">
+                <p style="color:var(--text-secondary); font-size:13px; margin-bottom:12px;">
+                    Choose which export formats to generate. PPTX is always produced.
+                </p>
+                <div style="display:flex; flex-wrap:wrap; gap:12px;">
+                    {% for fmt in output_formats %}
+                    <label style="display:flex; align-items:center; gap:8px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; padding:10px 14px; cursor:pointer;">
+                        <input type="checkbox" name="output_formats" value="{{ fmt }}" {% if fmt == 'pptx' %}checked disabled{% endif %}>
+                        <span style="font-size:13px; font-weight:600;">{{ fmt | upper }}</span>
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom:20px;">
+            <div class="card-header"><h3 style="margin:0;">Citations</h3></div>
+            <div class="card-body">
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px;">
+                    <div class="form-group">
+                        <label class="form-label">Citation Style</label>
+                        <select id="citation_style" class="form-control">
+                            {% for cs in citation_styles %}
+                            <option value="{{ cs }}" {% if cs == 'inline_link' %}selected{% endif %}>
+                                {{ cs | replace('_', ' ') | title }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom:20px;" id="internal-sources-card">
+            <div class="card-header"><h3 style="margin:0;">ICDEV™ Content Sources</h3></div>
+            <div class="card-body">
+                <p style="color:var(--text-secondary); font-size:13px; margin-bottom:16px;">
+                    Select which ICDEV™ live data sources to pull content from.
+                </p>
+                <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(200px,1fr)); gap:10px;">
+                    {% for src in source_types %}
+                    {% if src != 'upload' %}
+                    <label class="source-card" style="display:flex; align-items:flex-start; gap:10px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; padding:12px; cursor:pointer;">
+                        <input type="checkbox" name="sources" value="{{ src }}"
+                               {% if src in ['icdev_capabilities', 'canvases', 'kanban'] %}checked{% endif %}
+                               style="margin-top:2px;">
+                        <div>
+                            <div style="font-weight:600; font-size:13px;">{{ src | replace('_', ' ') | title }}</div>
+                            <div style="font-size:11px; color:var(--text-secondary); margin-top:2px;">
+                                {% if src == 'icdev_capabilities' %}Core platform capabilities + feature domains{% endif %}
+                                {% if src == 'canvases' %}Active design canvases + descriptions{% endif %}
+                                {% if src == 'child_apps' %}Showcase + child application catalog{% endif %}
+                                {% if src == 'kanban' %}Project epics + task burndown{% endif %}
+                                {% if src == 'genesis' %}Genesis reflex run summaries{% endif %}
+                            </div>
+                        </div>
+                    </label>
+                    {% endif %}
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom:20px;">
+            <div class="card-header"><h3 style="margin:0;">Graphics</h3></div>
+            <div class="card-body">
+                <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+                    <input type="checkbox" id="enable_graphics" checked>
                     <div>
-                        <div style="font-weight:600; font-size:13px;">{{ src | replace('_', ' ') | title }}</div>
-                        <div style="font-size:11px; color:var(--text-secondary); margin-top:2px;">
-                            {% if src == 'icdev_capabilities' %}Core platform capabilities + feature domains{% endif %}
-                            {% if src == 'canvases' %}Active design canvases + descriptions{% endif %}
-                            {% if src == 'child_apps' %}Showcase + child application catalog{% endif %}
-                            {% if src == 'kanban' %}Project epics + task burndown{% endif %}
-                            {% if src == 'genesis' %}Genesis reflex run summaries{% endif %}
+                        <div style="font-weight:600;">Generate contextual images per slide</div>
+                        <div style="font-size:12px; color:var(--text-secondary);">
+                            Uses {{ 'Ollama cloud' if env.SLIDES_IMAGE_PROVIDER == 'ollama_cloud' else (env.SLIDES_IMAGE_PROVIDER|default('matplotlib'))|title }} image generation.
+                            Fallback: programmatic themed diagram.
                         </div>
                     </div>
                 </label>
-                {% endif %}
-                {% endfor %}
             </div>
+        </div>
 
-            <!-- Optional: text upload -->
-            <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--border-color);">
-                <label class="form-label">Additional Context (optional)</label>
+        <div class="card" style="margin-bottom:20px;">
+            <div class="card-header"><h3 style="margin:0;">Additional Context (optional)</h3></div>
+            <div class="card-body">
                 <textarea id="upload_text" class="form-control" rows="4"
-                          placeholder="Paste any additional context, requirements, or document text to include in slide generation…"></textarea>
+                          placeholder="Paste any extra context, requirements, or document text to include in the deck…"></textarea>
             </div>
         </div>
-    </div>
 
-    <div class="card" style="margin-bottom:20px;">
-        <div class="card-header"><h3 style="margin:0;">Graphics</h3></div>
-        <div class="card-body">
-            <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
-                <input type="checkbox" id="enable_graphics" checked>
-                <div>
-                    <div style="font-weight:600;">Generate contextual images per slide</div>
-                    <div style="font-size:12px; color:var(--text-secondary);">
-                        Uses {{ 'Ollama cloud' if env.SLIDES_IMAGE_PROVIDER == 'ollama_cloud' else (env.SLIDES_IMAGE_PROVIDER|default('matplotlib'))|title }} image generation.
-                        Fallback: programmatic navy/gold diagram.
-                    </div>
-                </div>
-            </label>
+        <div id="progress" style="display:none; margin-bottom:16px;">
+            <div style="background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; padding:20px; text-align:center;">
+                <div class="spinner" style="margin:0 auto 12px;"></div>
+                <div id="progress-msg" style="color:var(--text-secondary);">Generating your deck — researching, planning outline, writing slides…</div>
+            </div>
         </div>
-    </div>
 
-    <div id="progress" style="display:none; margin-bottom:16px;">
-        <div style="background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; padding:20px; text-align:center;">
-            <div class="spinner" style="margin:0 auto 12px;"></div>
-            <div id="progress-msg" style="color:var(--text-secondary);">Generating your deck — pulling sources, planning outline, generating slides…</div>
+        <div id="error-msg" style="display:none;" class="alert alert-danger"></div>
+
+        <div style="display:flex; justify-content:space-between; gap:12px;">
+            <button type="button" class="btn btn-secondary" onclick="goStep(2)">← Back</button>
+            <button type="submit" class="btn btn-primary" id="submit-btn">Generate Deck ✨</button>
+            <a href="/slides" class="btn btn-secondary">Cancel</a>
         </div>
-    </div>
-
-    <div id="error-msg" style="display:none;" class="alert alert-danger"></div>
-
-    <div style="display:flex; gap:12px;">
-        <button type="submit" class="btn btn-primary" id="submit-btn">Generate Deck ✨</button>
-        <a href="/slides" class="btn btn-secondary">Cancel</a>
     </div>
 </form>
 
 <script>
+var TONE_HINTS = {
+    'professional': 'Formal, concise language; neutral imagery; suitable for business and government contexts.',
+    'visionary': 'Big-picture, inspiring, future-oriented; dramatic visuals and aspirational phrasing.',
+    'casual': 'Conversational and approachable; friendly icons and light colors.',
+    'playful': 'Witty, energetic, maybe emoji-friendly; bold shapes and bright palettes.',
+    'authoritative': 'Data-driven, confident, decisive; charts, strong contrast, minimal fluff.',
+    'warm': 'Empathetic, human-centered, story-led; soft tones and inclusive imagery.',
+    'dramatic': 'High stakes, bold claims, cinematic visuals; strong color contrast.',
+    'minimal': 'Sparse copy, lots of whitespace, single-word emphasis; monochrome or muted palettes.',
+    'fun_fiesta': 'Party energy, celebratory, colorful; confetti-bright palette and lively language.',
+    'adventurous_outdoor': 'Rugged, exploratory, action-oriented; earth tones and outdoor scenes.'
+};
+
+function goStep(n) {
+    document.querySelectorAll('.wizard-step').forEach(function(el) { el.style.display = 'none'; });
+    document.querySelectorAll('.step-dot').forEach(function(el) {
+        el.classList.toggle('active', parseInt(el.dataset.step) === n);
+        el.style.background = parseInt(el.dataset.step) === n ? 'var(--accent-color)' : 'var(--bg-secondary)';
+        el.style.color = parseInt(el.dataset.step) === n ? '#fff' : 'var(--text-primary)';
+    });
+    document.querySelector('.wizard-step[data-step="' + n + '"]').style.display = '';
+    updateToneHint();
+}
+
+function updateToneHint() {
+    var tone = document.getElementById('tone').value;
+    document.getElementById('tone-hint').textContent = TONE_HINTS[tone] || 'Select a tone to see how it shapes writing and visuals.';
+}
+
+document.getElementById('tone').addEventListener('change', updateToneHint);
+
+function onDeckTypeChange() {
+    var dt = document.getElementById('deck_type').value;
+    var card = document.getElementById('internal-sources-card');
+    if (dt === 'general_presentation') {
+        card.style.display = 'none';
+        document.querySelectorAll('input[name=sources]').forEach(function(cb) { cb.checked = false; });
+    } else {
+        card.style.display = '';
+        document.querySelectorAll('input[name="sources"]').forEach(function(cb) {
+            if (['icdev_capabilities','canvases','kanban'].indexOf(cb.value) !== -1) cb.checked = true;
+        });
+    }
+}
+
 document.getElementById('generate-form').addEventListener('submit', async function(e) {
     e.preventDefault();
     var btn = document.getElementById('submit-btn');
@@ -133,12 +277,18 @@ document.getElementById('generate-form').addEventListener('submit', async functi
     errorMsg.style.display = 'none';
 
     var sources = Array.from(document.querySelectorAll('input[name=sources]:checked')).map(i => i.value);
+    var outputFormats = Array.from(document.querySelectorAll('input[name=output_formats]:checked')).map(i => i.value);
 
     var payload = {
         title: document.getElementById('title').value,
+        occasion: document.getElementById('occasion').value,
+        target_audience: document.getElementById('target_audience').value,
         deck_type: document.getElementById('deck_type').value,
+        tone: document.getElementById('tone').value,
         theme: document.getElementById('theme').value,
         max_slides: parseInt(document.getElementById('max_slides').value),
+        citation_style: document.getElementById('citation_style').value,
+        output_formats: outputFormats,
         sources: sources,
         upload_text: document.getElementById('upload_text').value,
     };
@@ -167,5 +317,9 @@ document.getElementById('generate-form').addEventListener('submit', async functi
         progress.style.display = 'none';
     }
 });
+
+updateToneHint();
+onDeckTypeChange();
+goStep(1);
 </script>
 {% endblock %}

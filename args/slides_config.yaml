@@ -40,6 +40,29 @@ graphics:
   # Images go into output_dir/images/
   images_subdir: "images"
 
+# ── Research ─────────────────────────────────────────────────────────────────
+research:
+  # Provider used when ICDEV is not air-gapped
+  connected_provider: web_search
+  # Fallback when is_airgap() is true (local LLM + RAG/KG only)
+  airgap_fallback: rag_kg_local_llm
+  max_results: 10
+  # seconds to cache a research query result
+  cache_ttl_minutes: 60
+  # Default citation style for general presentations
+  default_citation_style: inline_links
+
+# ── Export Formats ────────────────────────────────────────────────────────────
+export_formats:
+  available:
+    - pptx
+    - pdf
+    - html
+  default:
+    - pptx
+    - pdf
+    - html
+
 # ── Themes ──────────────────────────────────────────────────────────────────
 themes:
   default: midnight_executive
@@ -47,6 +70,11 @@ themes:
     - midnight_executive
     - govcon_proposal
     - compliance_briefing
+    - fun_fiesta
+    - creative_aurora
+    - adventurous_outdoor
+    - minimal_mono
+    - bold_neon
 
 # ── Source Connectors ───────────────────────────────────────────────────────
 sources:
@@ -84,9 +112,21 @@ genesis_reflex:
   default_theme: midnight_executive
   max_slides: 10
 
+# ── Tones ────────────────────────────────────────────────────────────────────
+tones:
+  default: professional
+  available:
+    - professional
+    - fun
+    - creative
+    - adventurous
+    - minimal
+    - bold
+
 # ── LLM Routing Functions ────────────────────────────────────────────────────
 llm:
   outline_function: slides_outline_planning
   content_function: slides_content_generation
   revision_function: slides_content_revision
   viz_prompt_function: slides_visual_prompt
+  research_function: slides_topic_research

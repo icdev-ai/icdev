@@ -7,3 +7,5 @@ ALTER TABLE idr_sessions ADD COLUMN IF NOT EXISTS conflicts_resolved BOOLEAN DEF
 ALTER TABLE idr_sessions ADD COLUMN IF NOT EXISTS suggested_classification TEXT;
 ALTER TABLE idr_sessions ADD COLUMN IF NOT EXISTS suggested_classification_confidence REAL;
 ALTER TABLE idr_sessions ADD COLUMN IF NOT EXISTS prior_docs_context TEXT;
+ALTER TABLE idr_sessions ADD COLUMN IF NOT EXISTS last_source_hash TEXT;
+ALTER TABLE idr_sessions ADD COLUMN IF NOT EXISTS source_hash_checked_at TIMESTAMP;

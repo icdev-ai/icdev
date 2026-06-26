@@ -22,8 +22,9 @@ class TestSlidesConstants:
 
     def test_themes_not_empty(self):
         from tools.slides.constants import THEMES
-        assert len(THEMES) == 3
+        assert len(THEMES) == 8
         assert "midnight_executive" in THEMES
+        assert "fun_fiesta" in THEMES
 
     def test_check_constraints_are_strings(self):
         from tools.slides.constants import CHECK_DECK_TYPE, CHECK_DECK_STATUS, CHECK_THEME
