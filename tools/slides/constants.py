@@ -98,9 +98,11 @@ THEMES: list[str] = [
 
 # ── Image Providers ───────────────────────────────────────────────────────────
 IMAGE_PROVIDERS: list[str] = [
-    "ollama_cloud",   # Ollama cloud image gen model (e.g. sdxl)
-    "dalle",          # OpenAI DALL-E 3
-    "gemini",         # Gemini Imagen 3
+    "gpt_image_2",    # OpenAI GPT-Image-2 — best text + professional diagrams
+    "imagen_4",       # Google Imagen 4 — enterprise scale, native 16:9, typography
+    "ollama_cloud",   # Ollama cloud image gen model (e.g. sdxl / flux)
+    "dalle",          # OpenAI DALL-E 3 (legacy)
+    "gemini",         # Gemini Imagen 3 (legacy)
     "matplotlib",     # Programmatic fallback — always available
 ]
 

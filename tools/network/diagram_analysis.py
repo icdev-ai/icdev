@@ -746,10 +746,16 @@ def analyze_from_file(file_path: str, domain: str = "network") -> dict:
                 temperature=0.1,
                 skip_injection_scan=True,
             )
-            resp = router.invoke("ndc_diagram_quick_scan", quick_req)
-            vision_text = getattr(resp, "content", "") or ""
-        except Exception as exc:
-            logger.warning("analyze_from_file quick vision scan failed: %s", exc)
+            import concurrent.futures as _cf
+            with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
+                _fut = _ex.submit(router.invoke, "ndc_diagram_quick_scan", quick_req)
+                try:
+                    resp = _fut.result(timeout=20)
+                    vision_text = getattr(resp, "content", "") or ""
+                except _cf.TimeoutError:
+                    pass  # quick-scan timed out — proceed without vision text
+        except Exception:
+            pass  # quick-scan unavailable — proceed without vision text
 
     if graph_json:
         node_labels = " ".join((n.get("label") or "") for n in graph_json.get("nodes", []))
@@ -760,8 +766,11 @@ def analyze_from_file(file_path: str, domain: str = "network") -> dict:
 
     tabs: dict = {}
     try:
+        import concurrent.futures
         from tools.llm.router import LLMRouter
         from tools.llm.provider import LLMRequest
+
+        _LLM_TIMEOUT = 45  # seconds per batch — guards against CLI-bridge hang
 
         router = LLMRouter()
         all_images = images or []
@@ -781,13 +790,17 @@ def analyze_from_file(file_path: str, domain: str = "network") -> dict:
                 temperature=0.2,
                 skip_injection_scan=True,
             )
-            resp = router.invoke("ndc_diagram_analysis", req)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _ex:
+                _fut = _ex.submit(router.invoke, "ndc_diagram_analysis", req)
+                try:
+                    resp = _fut.result(timeout=_LLM_TIMEOUT)
+                except concurrent.futures.TimeoutError:
+                    raise TimeoutError("ndc_diagram_analysis timeout")
             raw = getattr(resp, "content", "") or ""
             batch_results.append(parse_analysis_response(raw))
 
         tabs = _merge_tab_results(batch_results) if total > 1 else (batch_results[0] if batch_results else {})
-    except Exception as exc:
-        logger.error("analyze_from_file LLM call failed: %s", exc)
+    except Exception:
         tabs = _fallback_analysis(_upload_stub, domain, cloud_context)
 
     logger.info(

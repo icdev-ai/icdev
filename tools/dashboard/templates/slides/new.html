@@ -186,8 +186,19 @@
                     <div>
                         <div style="font-weight:600;">Generate contextual images per slide</div>
                         <div style="font-size:12px; color:var(--text-secondary);">
-                            Uses {{ 'Ollama cloud' if env.SLIDES_IMAGE_PROVIDER == 'ollama_cloud' else (env.SLIDES_IMAGE_PROVIDER|default('matplotlib'))|title }} image generation.
-                            Fallback: programmatic themed diagram.
+                            {% set provider = env.SLIDES_IMAGE_PROVIDER|default('matplotlib') %}
+                            {% set provider_label = {
+                                'gpt_image_2': 'OpenAI GPT-Image-2',
+                                'gpt-image-2': 'OpenAI GPT-Image-2',
+                                'gpt_image': 'OpenAI GPT-Image',
+                                'imagen_4': 'Google Imagen 4',
+                                'ollama_cloud': 'Ollama cloud',
+                                'dalle': 'OpenAI DALL-E 3',
+                                'gemini': 'Google Imagen 3',
+                                'matplotlib': 'programmatic fallback'
+                            }.get(provider, provider|title) %}
+                            Uses {{ provider_label }} image generation.
+                            {% if provider == 'matplotlib' %}No cloud API required.{% else %}Fallback: programmatic themed diagram.{% endif %}
                         </div>
                     </div>
                 </label>

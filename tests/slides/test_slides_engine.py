@@ -5,6 +5,7 @@ Tests the core pipeline components without requiring LLM calls or DB connections
 Uses mocks for LLM router and DB.
 """
 import json
+import os
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -280,3 +281,67 @@ class TestDeckEngine:
         assert result.status == "completed"
         assert len(result.slides) == 3
         assert result.pptx_path.endswith(".pptx")
+
+
+# ── Graphics Generator ──────────────────────────────────────────────────────────
+
+class TestGraphicsGenerator:
+    def test_matplotlib_fallback_creates_png(self, tmp_path):
+        from tools.slides.graphics_generator import GraphicsGenerator
+        gen = GraphicsGenerator(output_dir=tmp_path)
+        path = gen._matplotlib_fallback("Test Slide", ["Bullet one", "Bullet two"], theme="midnight_executive")
+        assert path is not None
+        assert Path(path).exists()
+        assert Path(path).suffix == ".png"
+
+    def test_save_image_wraps_raw_rgba_bytes(self, tmp_path):
+        from tools.slides.graphics_generator import GraphicsGenerator
+        gen = GraphicsGenerator(output_dir=tmp_path)
+        # Fake RGBA bytes (not a PNG)
+        from PIL import Image as PILImage
+        from io import BytesIO
+        img = PILImage.new("RGBA", (8, 8), (255, 0, 0, 255))
+        buf = BytesIO()
+        img.save(buf, format="PNG")
+        png_bytes = buf.getvalue()
+        path = gen._save_image(png_bytes, "RGBATest")
+        assert Path(path).exists()
+        assert Path(path).read_bytes().startswith(b"\x89PNG")
+
+    def test_provider_list_includes_new_backends(self):
+        from tools.slides.constants import IMAGE_PROVIDERS
+        assert "gpt_image_2" in IMAGE_PROVIDERS
+        assert "imagen_4" in IMAGE_PROVIDERS
+        assert "matplotlib" in IMAGE_PROVIDERS
+
+    def test_gpt_image_2_request_shape(self, tmp_path):
+        """Verify GPT-Image-2 request matches OpenAI Images API shape."""
+        import urllib.request
+        from tools.slides.graphics_generator import GraphicsGenerator
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "test-key"}, clear=False):
+            gen = GraphicsGenerator(output_dir=tmp_path)
+            gen._provider = "gpt_image_2"
+            captured: dict = {}
+            class _FakeResp:
+                def __enter__(self): return self
+                def __exit__(self, *a): pass
+                def read(self): return json.dumps({"data": [{"b64_json": "aGVsbG8="}]}).encode()
+            def _fake_urlopen(req, **_kw):
+                captured["data"] = json.loads(req.data)
+                captured["headers"] = dict(req.header_items())
+                return _FakeResp()
+            with patch("urllib.request.urlopen", _fake_urlopen):
+                bytes_out = gen._call_image_api("a professional diagram", "Title")
+            assert bytes_out == b"hello"
+            assert captured["data"]["model"] == "gpt-image-2"
+            assert captured["data"]["size"] == "1024x576"
+            assert captured["data"]["response_format"] == "b64_json"
+            assert captured["data"]["quality"] == "standard"
+            assert "Authorization" in captured["headers"]
+
+    def test_imagen_4_no_key_returns_none(self, tmp_path):
+        from tools.slides.graphics_generator import GraphicsGenerator
+        with patch.dict(os.environ, {"GOOGLE_API_KEY": ""}, clear=False):
+            gen = GraphicsGenerator(output_dir=tmp_path)
+            gen._provider = "imagen_4"
+            assert gen._call_image_api("prompt", "Title") is None
