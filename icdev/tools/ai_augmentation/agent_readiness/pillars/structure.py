@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import pathlib
+from functools import lru_cache
+
+# Config path exposed for tests and threshold overrides.
+_ARGS_PATH = pathlib.Path(__file__).parents[4] / "args" / "agent_readiness_config.yaml"
 
 from tools.ai_augmentation.agent_readiness.pillars._base import (
     Criterion,
@@ -11,13 +15,22 @@ from tools.ai_augmentation.agent_readiness.pillars._base import (
     _exists,
     _read,
     _search,
-    load_pillar_config,
 )
 
 
+_DEFAULTS: dict = {"min_gitignore_lines": 5}
+
+
+@lru_cache(maxsize=1)
 def _load_thresholds() -> dict:
-    cfg = load_pillar_config("structure").get("gitignore", {})
-    return {"min_gitignore_lines": int(cfg.get("min_lines", 5))}
+    try:
+        import yaml  # optional dep — present in all ICDEV environments
+        raw = _ARGS_PATH.read_text(encoding="utf-8")
+        data = yaml.safe_load(raw) or {}
+        cfg = data.get("pillars", {}).get("structure", {}).get("gitignore", {})
+        return {"min_gitignore_lines": int(cfg.get("min_lines", _DEFAULTS["min_gitignore_lines"]))}
+    except Exception:  # noqa: BLE001
+        return dict(_DEFAULTS)
 
 
 def _check_gitignore(repo: pathlib.Path) -> CriterionResult:
