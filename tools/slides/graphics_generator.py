@@ -24,7 +24,10 @@ import json
 import os
 from pathlib import Path
 
-from tools.slides.constants import LLM_FN_VIZ_PROMPT, THEME_PALETTES, DEFAULT_THEME, TONE_STYLE_HINTS
+from tools.slides.constants import (
+    LLM_FN_VIZ_PROMPT, THEME_PALETTES, DEFAULT_THEME, TONE_STYLE_HINTS,
+    IMAGE_PROVIDERS,
+)
 
 _DEFAULT_STYLE_HINT = (
     "professional corporate illustration, dark navy blue and gold color palette, "
@@ -49,7 +52,11 @@ class GraphicsGenerator:
     """Two-stage graphics generation: visual prompt → image API → file."""
 
     def __init__(self, output_dir: Path | None = None):
-        self._provider = os.environ.get("SLIDES_IMAGE_PROVIDER", "matplotlib").lower()
+        raw_provider = os.environ.get("SLIDES_IMAGE_PROVIDER", "matplotlib").lower()
+        # Normalise hyphenated variants to the canonical constant form.
+        self._provider = raw_provider.replace("-", "_")
+        if self._provider not in IMAGE_PROVIDERS:
+            self._provider = "matplotlib"
         self._model = os.environ.get("SLIDES_IMAGE_MODEL", "")
         self._timeout = int(os.environ.get("SLIDES_IMAGE_TIMEOUT", "60"))
         self._enabled = os.environ.get("SLIDES_IMAGE_ENABLED", "true").lower() in ("true", "1", "yes")
@@ -138,7 +145,7 @@ class GraphicsGenerator:
 
     def _call_image_api(self, prompt: str, title: str) -> bytes | None:
         """Dispatch to the configured image generation backend."""
-        if self._provider in ("gpt_image_2", "gpt-image-2", "gpt_image"):
+        if self._provider in ("gpt_image_2", "gpt_image"):
             return self._gpt_image_2_gen(prompt)
         if self._provider == "imagen_4":
             return self._imagen_4_gen(prompt)
@@ -180,7 +187,7 @@ class GraphicsGenerator:
         """Generate via Google Imagen 4 (enterprise, strong typography, native 16:9)."""
         try:
             from google import genai
-            from google.genai.types import GenerateImagesConfig, Image
+            from google.genai.types import GenerateImagesConfig
         except Exception:
             return self._imagen_4_sdk_v1_gen(prompt)
         api_key = os.environ.get("GOOGLE_API_KEY", "")
