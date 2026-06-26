@@ -18,14 +18,14 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
+sys.path.insert(0, str(BASE_DIR))
+
 from tools.viz.asset_generator import (
     AssetGenerator,
     AssetRequest,
     check_gpu as asset_check_gpu,
 )
-
-BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
-sys.path.insert(0, str(BASE_DIR))
 
 # Default storage directory for generated images
 DEFAULT_IMAGE_DIR = BASE_DIR / "data" / "pulse" / "images"
