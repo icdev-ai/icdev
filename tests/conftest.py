@@ -1510,6 +1510,7 @@ CREATE TABLE IF NOT EXISTS idr_sessions (
     classification  TEXT DEFAULT 'CUI',
     suggested_classification TEXT,
     suggested_classification_confidence REAL,
+    prior_docs_context TEXT,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );

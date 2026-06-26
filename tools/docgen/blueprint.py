@@ -514,6 +514,35 @@ def api_generate(session_id: str):
     })
 
 
+# ─── API — Stage 0: LLM-first document ingestion (Item 7) ───────────────────
+
+@docgen_bp.route("/api/sessions/<session_id>/ingest-upload", methods=["POST"])
+def api_ingest_upload(session_id: str):
+    """Stage 0: Submit raw document text for LLM extraction.
+
+    Request JSON: {"doc_text": str}   (plain text content of the uploaded file)
+    Response: {
+        "entities": [...], "topology": [...], "key_findings": [...],
+        "document_type": str, "classification_hint": str,
+        "extracted": bool, "session_id": str
+    }
+    """
+    from tools.docgen import session_manager as sm
+    from tools.docgen.workflow import stage0_ingest_document
+
+    session = sm.get_session(session_id)
+    if not session:
+        return jsonify({"error": "not found"}), 404
+
+    data = request.get_json(force=True, silent=True) or {}
+    doc_text = (data.get("doc_text") or "").strip()
+    if not doc_text:
+        return jsonify({"error": "doc_text is required"}), 400
+
+    result = stage0_ingest_document(session_id, doc_text)
+    return jsonify(result)
+
+
 # ─── API — AI classification suggestion (Items 4 & 9) ────────────────────────
 
 @docgen_bp.route("/api/sessions/<session_id>/suggest-classification", methods=["POST"])
