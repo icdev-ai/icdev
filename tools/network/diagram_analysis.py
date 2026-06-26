@@ -747,13 +747,15 @@ def analyze_from_file(file_path: str, domain: str = "network") -> dict:
                 skip_injection_scan=True,
             )
             import concurrent.futures as _cf
-            with _cf.ThreadPoolExecutor(max_workers=1) as _ex:
-                _fut = _ex.submit(router.invoke, "ndc_diagram_quick_scan", quick_req)
-                try:
-                    resp = _fut.result(timeout=20)
-                    vision_text = getattr(resp, "content", "") or ""
-                except _cf.TimeoutError:
-                    pass  # quick-scan timed out — proceed without vision text
+            _ex = _cf.ThreadPoolExecutor(max_workers=1)
+            _fut = _ex.submit(router.invoke, "ndc_diagram_quick_scan", quick_req)
+            try:
+                resp = _fut.result(timeout=20)
+                vision_text = getattr(resp, "content", "") or ""
+            except _cf.TimeoutError:
+                pass  # quick-scan timed out — proceed without vision text
+            finally:
+                _ex.shutdown(wait=False)  # don't block on CLI-bridge poll thread
         except Exception:
             pass  # quick-scan unavailable — proceed without vision text
 
@@ -790,12 +792,14 @@ def analyze_from_file(file_path: str, domain: str = "network") -> dict:
                 temperature=0.2,
                 skip_injection_scan=True,
             )
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _ex:
-                _fut = _ex.submit(router.invoke, "ndc_diagram_analysis", req)
-                try:
-                    resp = _fut.result(timeout=_LLM_TIMEOUT)
-                except concurrent.futures.TimeoutError:
-                    raise TimeoutError("ndc_diagram_analysis timeout")
+            _ex2 = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+            _fut = _ex2.submit(router.invoke, "ndc_diagram_analysis", req)
+            try:
+                resp = _fut.result(timeout=_LLM_TIMEOUT)
+            except concurrent.futures.TimeoutError:
+                raise TimeoutError("ndc_diagram_analysis timeout")
+            finally:
+                _ex2.shutdown(wait=False)  # don't block on CLI-bridge poll thread
             raw = getattr(resp, "content", "") or ""
             batch_results.append(parse_analysis_response(raw))
 
