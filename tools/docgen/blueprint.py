@@ -496,6 +496,9 @@ def api_generate(session_id: str):
     if doc_id:
         sm.set_field(session_id, dic_collection_id=context["session_id"])
 
+    from tools.docgen.domain_profiles import get_ato_doc_type as _get_ato
+    ato_cfg = _get_ato(context.get("doc_type"))
+
     return jsonify({
         "status": "generating",
         "context_summary": {
@@ -507,7 +510,34 @@ def api_generate(session_id: str):
         "doc_id": doc_id,
         "ace_instance_id": ace_result.get("instance_id"),
         "ace_status": ace_result.get("status") if use_ace else None,
+        "doc_type_config": ato_cfg,
     })
+
+
+# ─── API — AI classification suggestion (Items 4 & 9) ────────────────────────
+
+@docgen_bp.route("/api/sessions/<session_id>/suggest-classification", methods=["POST"])
+def api_suggest_classification(session_id: str):
+    """Suggest classification level from a document text sample.
+
+    Request JSON: {"text_sample": str}
+    Response: {"classification": str, "confidence": float, "rationale": str, "requires_confirmation": bool}
+    """
+    from tools.docgen import session_manager as sm
+    from tools.docgen.workflow import stage2_suggest_classification
+
+    session = sm.get_session(session_id)
+    if not session:
+        return jsonify({"error": "not found"}), 404
+
+    data = request.get_json(force=True, silent=True) or {}
+    text_sample = (data.get("text_sample") or "").strip()
+    if not text_sample:
+        return jsonify({"error": "text_sample is required"}), 400
+
+    result = stage2_suggest_classification(session_id, text_sample)
+    result["requires_confirmation"] = result.get("confidence", 0.0) < 0.85
+    return jsonify(result)
 
 
 # ─── API — WriteGuard gate (Stage 6) ─────────────────────────────────────────

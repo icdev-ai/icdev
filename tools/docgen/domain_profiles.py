@@ -88,6 +88,41 @@ def get_iac_reviewer(domain: str) -> tuple[str | None, str | None]:
     return prof.get("iac_reviewer"), prof.get("iac_reviewer_fn")
 
 
+ATO_DOC_TYPES: dict[str, dict] = {
+    "ato_ssp": {
+        "roles": ["compliance_officer", "ato_author", "technical_writer"],
+        "sections": [
+            "System Overview", "System Boundary", "Data Flows",
+            "Control Implementation", "Continuous Monitoring",
+        ],
+        "description": "FedRAMP System Security Plan",
+    },
+    "stig_checklist": {
+        "roles": ["compliance_officer", "network_engineer"],
+        "sections": [
+            "Executive Summary", "STIG Findings", "Open Items",
+            "POAM Integration", "Remediation Roadmap",
+        ],
+        "description": "DISA STIG Compliance Gap Report",
+    },
+    "poam": {
+        "roles": ["compliance_officer", "ato_author"],
+        "sections": [
+            "Weakness Description", "Detection Source", "Scheduled Completion",
+            "Responsible Party", "Resources Required",
+        ],
+        "description": "Plan of Action and Milestones",
+    },
+}
+
+
+def get_ato_doc_type(doc_type: str | None) -> dict | None:
+    """Return the ATO doc type config for *doc_type*, or None if not an ATO type."""
+    if not doc_type:
+        return None
+    return ATO_DOC_TYPES.get(doc_type)
+
+
 def resolve_all_reviewers(domain: str) -> list[dict[str, str]]:
     """Return a flat list of all (type, module, fn) reviewers for a domain.
 
