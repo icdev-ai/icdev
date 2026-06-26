@@ -39,6 +39,10 @@ def _sqlite_env(monkeypatch, tmp_path):
         status TEXT DEFAULT 'setup', dic_collection_id TEXT, ace_instance_id TEXT,
         topology_id TEXT, wg_result_id TEXT, created_by TEXT, tenant_id TEXT,
         classification TEXT DEFAULT 'CUI',
+        conflicts_resolved INTEGER DEFAULT 0,
+        suggested_classification TEXT, suggested_classification_confidence REAL,
+        prior_docs_context TEXT, last_source_hash TEXT, source_hash_checked_at TEXT,
+        final_doc_text TEXT,
         created_at TEXT DEFAULT CURRENT_TIMESTAMP, updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS idr_uploads (
@@ -50,7 +54,8 @@ def _sqlite_env(monkeypatch, tmp_path):
     CREATE TABLE IF NOT EXISTS idr_analyses (
         id TEXT PRIMARY KEY, session_id TEXT NOT NULL, upload_id TEXT NOT NULL,
         analysis_type TEXT NOT NULL, result_ref_id TEXT NOT NULL, status TEXT DEFAULT 'done',
-        error_msg TEXT, tenant_id TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        error_msg TEXT, tenant_id TEXT, result_json TEXT, confidence_score REAL,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS idr_conflicts (
         id TEXT PRIMARY KEY, session_id TEXT NOT NULL, node_label TEXT NOT NULL,
@@ -62,7 +67,8 @@ def _sqlite_env(monkeypatch, tmp_path):
     CREATE TABLE IF NOT EXISTS idr_artifacts (
         id TEXT PRIMARY KEY, session_id TEXT NOT NULL, dic_doc_id TEXT,
         dic_version_id TEXT, format TEXT NOT NULL, file_path TEXT, wg_result_id TEXT,
-        published_at TEXT, tenant_id TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        published_at TEXT, tenant_id TEXT, flagged_sections TEXT,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
     """)
     conn.commit()

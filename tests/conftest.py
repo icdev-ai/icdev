@@ -1521,6 +1521,7 @@ CREATE TABLE IF NOT EXISTS idr_sessions (
     prior_docs_context TEXT,
     last_source_hash TEXT,
     source_hash_checked_at TEXT,
+    final_doc_text  TEXT,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP,
     updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -1547,6 +1548,8 @@ CREATE TABLE IF NOT EXISTS idr_analyses (
     status          TEXT NOT NULL DEFAULT 'done',
     error_msg       TEXT,
     tenant_id       TEXT,
+    result_json     TEXT,
+    confidence_score REAL,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE TABLE IF NOT EXISTS idr_conflicts (
@@ -1575,6 +1578,7 @@ CREATE TABLE IF NOT EXISTS idr_artifacts (
     wg_result_id    TEXT,
     published_at    TEXT,
     tenant_id       TEXT,
+    flagged_sections TEXT,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
