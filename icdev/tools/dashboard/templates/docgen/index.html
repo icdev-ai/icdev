@@ -1,17 +1,38 @@
 {% extends "base.html" %}
 {% block title %}Doc Regeneration — ICDEV™{% endblock %}
 {% block content %}
-<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">CUI // SP-CTI</div>
+<div class="cui-banner" style="background:#1a1a2e;border:1px solid #e94560;padding:4px 12px;font-size:11px;color:#e94560;text-align:center;margin-bottom:12px;">{{ (session.classification if session and session.classification) or 'CUI // SP-CTI' }}</div>
 
 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
   <div>
     <h2 style="margin:0;color:#eaeaea;font-size:20px;letter-spacing:.3px;">🔄 Intelligent Doc Regeneration</h2>
     <p style="color:#7a8cb0;font-size:12px;margin:4px 0 0;">Upload multi-team diagrams &amp; configs → AI reconciles → WriteGuard-gated document · HITL-approved · full audit trail</p>
   </div>
-  <button onclick="document.getElementById('new-session-modal').style.display='flex'"
+  <button onclick="openTemplateGallery()"
     style="background:#0f3460;color:#7ab3f0;padding:8px 16px;border:1px solid #1e3a6e;border-radius:5px;cursor:pointer;font-size:13px;">
     + New Regeneration
   </button>
+</div>
+
+<!-- Template gallery modal (Step 1) -->
+<div id="template-gallery-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:9998;align-items:center;justify-content:center;">
+  <div style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:10px;padding:28px;width:760px;max-width:95vw;max-height:88vh;overflow-y:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;">
+      <h3 style="margin:0;color:#eaeaea;font-size:16px;">Choose a Starting Point</h3>
+      <button onclick="document.getElementById('template-gallery-modal').style.display='none'"
+        style="background:none;border:none;color:#7a8cb0;font-size:18px;cursor:pointer;line-height:1;">✕</button>
+    </div>
+    <div id="tpl-gallery-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-bottom:16px;">
+      <!-- populated by JS -->
+      <div style="color:#7a8cb0;font-size:12px;text-align:center;padding:20px;">Loading templates…</div>
+    </div>
+    <div style="border-top:1px solid #1e3a6e;padding-top:14px;text-align:center;">
+      <button onclick="openBlankSession()"
+        style="background:#1a2a3a;color:#7a8cb0;padding:8px 20px;border:1px solid #2a3a4a;border-radius:5px;cursor:pointer;font-size:13px;">
+        Start Blank Session
+      </button>
+    </div>
+  </div>
 </div>
 
 <!-- Workflow stages legend -->
@@ -40,6 +61,12 @@
       </option>
       {% endfor %}
     </select>
+    <!-- Template badge (shown when a template was picked) -->
+    <div id="ns-tpl-badge" style="display:none;background:#0f3460;border:1px solid #1e5a8e;border-radius:5px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#7ab3f0;">
+      <span id="ns-tpl-icon"></span> <strong id="ns-tpl-name"></strong>
+      <button onclick="clearTemplate()" style="float:right;background:none;border:none;color:#7a8cb0;cursor:pointer;font-size:11px;padding:0;">✕ Clear</button>
+      <div id="ns-tpl-desc" style="color:#5a7aa0;font-size:11px;margin-top:3px;clear:both;"></div>
+    </div>
     <label style="color:#7a8cb0;font-size:12px;display:block;margin-bottom:4px;">Document Type</label>
     <select id="ns-doctype" style="width:100%;box-sizing:border-box;background:#050d1f;border:1px solid #1a3560;color:#b8d0e8;padding:8px 10px;border-radius:4px;font-size:13px;margin-bottom:16px;">
       <option value="runbook">Runbook</option>
@@ -47,6 +74,11 @@
       <option value="migration_plan">Migration Plan</option>
       <option value="assessment">Assessment</option>
       <option value="standard_guide">Standard Guide</option>
+      <option value="ato_ssp">ATO / SSP</option>
+      <option value="stig_checklist">STIG Checklist</option>
+      <option value="poam">POAM</option>
+      <option value="boundary_narrative">Boundary Narrative</option>
+      <option value="change_request">Change Request</option>
     </select>
     <div style="display:flex;gap:8px;justify-content:flex-end;">
       <button onclick="document.getElementById('new-session-modal').style.display='none'"
@@ -164,6 +196,14 @@
         style="background:#1a3a6e;color:#7ab3f0;padding:7px 14px;border:1px solid #2a4a7e;border-radius:4px;font-size:12px;text-decoration:none;">
         👁 Review &amp; Approve
       </a>
+      <button onclick="triggerPublish()" style="background:#2d6a4f;color:#52c41a;padding:7px 14px;border:1px solid #3d8a60;border-radius:4px;cursor:pointer;font-size:12px;">
+        📤 Publish (PDF + HTML)
+      </button>
+      {% endif %}
+      {% if session.stage == 8 and session.status != 'published' %}
+      <button onclick="triggerPublish()" style="background:#2d6a4f;color:#52c41a;padding:7px 14px;border:1px solid #3d8a60;border-radius:4px;cursor:pointer;font-size:12px;">
+        📤 Re-Publish Exports
+      </button>
       {% endif %}
     </div>
     <div id="idr-action-status" style="color:#7ab3f0;font-size:12px;margin-top:8px;"></div>
@@ -187,7 +227,8 @@
       <h4 style="margin:0 0 8px;color:#52c41a;font-size:13px;">Published Artifacts</h4>
       {% for art in artifacts %}
       <div style="margin-bottom:8px;">
-        <a href="{{ art.file_path or '#' }}" style="color:#7ab3f0;font-size:12px;text-decoration:none;">
+        <a href="/docgen/api/sessions/{{ session.id }}/artifacts/{{ art.id }}/download"
+           style="color:#7ab3f0;font-size:12px;text-decoration:none;">
           📄 {{ art.format|upper }} — download
         </a>
         <div style="color:#5a6e8c;font-size:10px;">{{ art.published_at or '' }}</div>
@@ -224,7 +265,12 @@
       <div style="height:4px;background:#0a1525;border-radius:2px;overflow:hidden;margin-bottom:6px;">
         <div style="height:100%;background:#4f8ef7;width:{{ (s.stage / 8 * 100)|round(0)|int }}%;"></div>
       </div>
-      <div style="color:#5a6e8c;font-size:10px;">Stage {{ s.stage }}/8 · {{ s.created_at[:10] if s.created_at else '' }}</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <div style="color:#5a6e8c;font-size:10px;">Stage {{ s.stage }}/8 · {{ s.created_at[:10] if s.created_at else '' }}</div>
+        {% if s.get('freshness_stale') %}
+        <span title="Source files have changed since last generation" style="background:#5a1a00;color:#ffd666;font-size:9px;padding:1px 6px;border-radius:3px;border:1px solid #a05010;">STALE</span>
+        {% endif %}
+      </div>
     </div>
   </a>
   {% endfor %}
@@ -246,7 +292,72 @@
 
 <script>
 var SESSION_ID = "{{ session.id if session else '' }}";
+var _selectedTemplate = null;
 
+// ── Template gallery ────────────────────────────────────────────────────────
+function openTemplateGallery() {
+  document.getElementById('template-gallery-modal').style.display = 'flex';
+  var grid = document.getElementById('tpl-gallery-grid');
+  grid.innerHTML = '<div style="color:#7a8cb0;font-size:12px;text-align:center;padding:20px;">Loading…</div>';
+  fetch('/docgen/api/templates')
+    .then(function(r) { return r.json(); })
+    .then(function(data) {
+      var templates = data.templates || [];
+      if (!templates.length) { grid.innerHTML = '<div style="color:#7a8cb0;font-size:12px;padding:20px;">No templates found.</div>'; return; }
+      grid.innerHTML = '';
+      templates.forEach(function(tpl) {
+        var card = document.createElement('div');
+        card.style.cssText = 'background:#16213e;border:1px solid #1e3a6e;border-radius:8px;padding:16px;cursor:pointer;transition:border-color .2s;';
+        card.onmouseover = function() { this.style.borderColor = '#4f8ef7'; };
+        card.onmouseout  = function() { this.style.borderColor = '#1e3a6e'; };
+        card.innerHTML =
+          '<div style="font-size:24px;margin-bottom:8px;">' + (tpl.icon || '📄') + '</div>' +
+          '<div style="color:#eaeaea;font-size:13px;font-weight:600;margin-bottom:4px;">' + tpl.name + '</div>' +
+          '<div style="color:#5a7aa0;font-size:11px;margin-bottom:10px;">' + tpl.description + '</div>' +
+          '<span style="background:#1e3a6e;color:#7ab3f0;font-size:10px;padding:2px 7px;border-radius:3px;">' + tpl.doc_type + '</span>' +
+          '<span style="background:#1a2a3a;color:#7a8cb0;font-size:10px;padding:2px 7px;border-radius:3px;margin-left:4px;">' + tpl.domain + '</span>';
+        card.onclick = function() { selectTemplate(tpl); };
+        grid.appendChild(card);
+      });
+    })
+    .catch(function() { grid.innerHTML = '<div style="color:#e94560;font-size:12px;padding:20px;">Failed to load templates.</div>'; });
+}
+
+function selectTemplate(tpl) {
+  _selectedTemplate = tpl;
+  document.getElementById('template-gallery-modal').style.display = 'none';
+  // pre-fill confirm modal
+  var titleEl = document.getElementById('ns-title');
+  if (!titleEl.value.trim()) titleEl.value = tpl.name + ' — ' + new Date().toISOString().slice(0,10);
+  var domEl = document.getElementById('ns-domain');
+  for (var i = 0; i < domEl.options.length; i++) {
+    if (domEl.options[i].value === tpl.domain) { domEl.selectedIndex = i; break; }
+  }
+  var dtEl = document.getElementById('ns-doctype');
+  for (var j = 0; j < dtEl.options.length; j++) {
+    if (dtEl.options[j].value === tpl.doc_type) { dtEl.selectedIndex = j; break; }
+  }
+  // show badge
+  document.getElementById('ns-tpl-icon').textContent = tpl.icon || '📄';
+  document.getElementById('ns-tpl-name').textContent = tpl.name;
+  document.getElementById('ns-tpl-desc').textContent = tpl.description;
+  document.getElementById('ns-tpl-badge').style.display = 'block';
+  document.getElementById('new-session-modal').style.display = 'flex';
+}
+
+function openBlankSession() {
+  _selectedTemplate = null;
+  document.getElementById('template-gallery-modal').style.display = 'none';
+  document.getElementById('ns-tpl-badge').style.display = 'none';
+  document.getElementById('new-session-modal').style.display = 'flex';
+}
+
+function clearTemplate() {
+  _selectedTemplate = null;
+  document.getElementById('ns-tpl-badge').style.display = 'none';
+}
+
+// ── Session creation ────────────────────────────────────────────────────────
 function createSession() {
   var title = document.getElementById('ns-title').value.trim();
   var domain = document.getElementById('ns-domain').value;
@@ -260,8 +371,18 @@ function createSession() {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({title: title, domain: domain, doc_type: docType})
   }).then(function(r) { return r.json(); }).then(function(d) {
-    if (d.id) { window.location.href = '/docgen/' + d.id; }
-    else { errEl.textContent = d.error || 'Failed.'; errEl.style.display = 'block'; document.getElementById('ns-create-btn').disabled = false; }
+    if (!d.id) { errEl.textContent = d.error || 'Failed.'; errEl.style.display = 'block'; document.getElementById('ns-create-btn').disabled = false; return; }
+    // apply template if one was selected
+    if (_selectedTemplate) {
+      fetch('/docgen/api/sessions/' + d.id + '/apply-template', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({template_id: _selectedTemplate.id})
+      }).then(function() { window.location.href = '/docgen/' + d.id; })
+        .catch(function() { window.location.href = '/docgen/' + d.id; });
+    } else {
+      window.location.href = '/docgen/' + d.id;
+    }
   }).catch(function() { errEl.textContent = 'Network error.'; errEl.style.display = 'block'; document.getElementById('ns-create-btn').disabled = false; });
 }
 
@@ -302,6 +423,16 @@ function advanceStage(n) {
       if (d.error) { setStatus('Error: ' + d.error); return; }
       setTimeout(function(){location.reload();},800);
     }).catch(function(){setStatus('Advance failed.');});
+}
+
+function triggerPublish() {
+  setStatus('Publishing exports (PDF + HTML)…');
+  fetch('/docgen/api/sessions/' + SESSION_ID + '/publish', {method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+    .then(function(r){return r.json();}).then(function(d){
+      if (d.error) { setStatus('Publish error: ' + d.error); return; }
+      setStatus('Published ' + (d.artifacts ? d.artifacts.length : 0) + ' artifact(s).');
+      setTimeout(function(){location.reload();},1500);
+    }).catch(function(){setStatus('Publish failed — check logs.');});
 }
 
 // File upload

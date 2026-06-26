@@ -17,7 +17,61 @@ DECK_TYPES: list[str] = [
     "compliance_briefing",   # ATO / FedRAMP / CMMC status
     "weekly_status",         # Genesis auto-generated weekly status
     "custom",                # User-defined free-form deck
+    "general_presentation",  # Open-ended topic/occasion deck
 ]
+
+# ── Tones / Styles ────────────────────────────────────────────────────────────
+TONES: list[str] = [
+    "professional",  # Polished, corporate, clear
+    "fun",           # Light, playful, conversational
+    "creative",      # Imaginative, story-driven
+    "adventurous",   # Energetic, bold, inspiring action
+    "minimal",       # Sparse, refined, essential
+    "bold",          # Direct, high-contrast, commanding
+]
+
+# ── Citation Styles ───────────────────────────────────────────────────────────
+CITATION_STYLES: list[str] = [
+    "apa",
+    "mla",
+    "chicago",
+    "inline_links",
+]
+
+# ── Output Formats ────────────────────────────────────────────────────────────
+OUTPUT_FORMATS: list[str] = [
+    "pptx",
+    "pdf",
+    "html",
+]
+
+# ── Tone-driven writing + visual style hints ─────────────────────────────────
+TONE_STYLE_HINTS: dict[str, dict[str, str]] = {
+    "professional": {
+        "writing": "polished, concise, and authoritative; avoid slang and hyperbole",
+        "visual": "clean corporate illustration, neutral palette, minimalist isometric diagrams",
+    },
+    "fun": {
+        "writing": "light, playful, conversational; use relatable examples and a warm voice",
+        "visual": "friendly flat illustrations, rounded shapes, warm accent colors, occasional whimsy",
+    },
+    "creative": {
+        "writing": "imaginative, story-driven, metaphor-rich; invite curiosity",
+        "visual": "vibrant gradients, flowing organic shapes, artistic collage style",
+    },
+    "adventurous": {
+        "writing": "energetic, inspiring action; use vivid verbs and outdoor/exploration metaphors",
+        "visual": "dynamic compositions, nature textures, bold horizons, dramatic lighting",
+    },
+    "minimal": {
+        "writing": "ultra-concise, essential, no filler; one idea per bullet",
+        "visual": "lots of negative space, thin line art, monochrome with a single accent",
+    },
+    "bold": {
+        "writing": "direct, confident, high-impact; short punchy statements",
+        "visual": "high-contrast color blocks, oversized shapes, daring typography-inspired graphics",
+    },
+}
 
 # ── Slide Types ───────────────────────────────────────────────────────────────
 SLIDE_TYPES: list[str] = [
@@ -32,9 +86,14 @@ SLIDE_TYPES: list[str] = [
 
 # ── Themes ────────────────────────────────────────────────────────────────────
 THEMES: list[str] = [
-    "midnight_executive",   # NAVY/GOLD — default, matches ICDEV dashboard
-    "govcon_proposal",      # NAVY/SILVER — GovCon pitches
-    "compliance_briefing",  # NAVY/GREEN — ATO/FedRAMP status decks
+    "midnight_executive",     # NAVY/GOLD — default, matches ICDEV dashboard
+    "govcon_proposal",        # NAVY/SILVER — GovCon pitches
+    "compliance_briefing",    # NAVY/GREEN — ATO/FedRAMP status decks
+    "fun_fiesta",             # CORAL/TEAL/CREAM — playful social decks
+    "creative_aurora",        # PURPLE/MAGENTA/MINT — artistic, imaginative
+    "adventurous_outdoor",    # FOREST/CLAY/SKY — energetic, nature-inspired
+    "minimal_mono",           # WHITE/CHARCOAL — stark, essential
+    "bold_neon",              # BLACK/LIME/PINK — high-contrast, commanding
 ]
 
 # ── Image Providers ───────────────────────────────────────────────────────────
@@ -102,14 +161,67 @@ PALETTE_COMPLIANCE = {
     "dark":    (0x1A, 0x5C, 0x36),
 }
 
+# Fun / social theme
+PALETTE_FUN_FIESTA = {
+    "bg":      (0x2A, 0x1A, 0x3E),   # deep plum
+    "accent":  (0xFF, 0x7A, 0x59),   # coral
+    "text":    (0xFF, 0xFB, 0xF0),   # cream
+    "subtext": (0xB8, 0xF2, 0xE6),   # soft teal
+    "dark":    (0x1E, 0x14, 0x2E),   # darker plum
+}
+
+# Creative / imaginative theme
+PALETTE_CREATIVE_AURORA = {
+    "bg":      (0x1A, 0x10, 0x3A),   # deep indigo
+    "accent":  (0xD9, 0x2B, 0x85),   # magenta
+    "text":    (0xF5, 0xFF, 0xFA),   # mint-white
+    "subtext": (0xA0, 0xE0, 0xD0),   # seafoam
+    "dark":    (0x12, 0x0A, 0x28),   # darker indigo
+}
+
+# Adventurous / outdoor theme
+PALETTE_ADVENTUROUS_OUTDOOR = {
+    "bg":      (0x1A, 0x2F, 0x23),   # deep forest
+    "accent":  (0xD9, 0x7D, 0x48),   # clay/orange
+    "text":    (0xF4, 0xF9, 0xFF),   # pale sky
+    "subtext": (0xA8, 0xD0, 0xE6),   # sky blue
+    "dark":    (0x12, 0x22, 0x18),   # darker forest
+}
+
+# Minimal / monochrome theme
+PALETTE_MINIMAL_MONO = {
+    "bg":      (0xFF, 0xFF, 0xFF),   # white
+    "accent":  (0x33, 0x33, 0x33),   # charcoal
+    "text":    (0x22, 0x22, 0x22),   # near black
+    "subtext": (0x66, 0x66, 0x66),   # gray
+    "dark":    (0xF2, 0xF2, 0xF2),   # light gray
+}
+
+# Bold / neon theme
+PALETTE_BOLD_NEON = {
+    "bg":      (0x0D, 0x0D, 0x0D),   # black
+    "accent":  (0xCC, 0xFF, 0x00),   # electric lime
+    "text":    (0xFF, 0xFF, 0xFF),   # white
+    "subtext": (0xFF, 0x33, 0x99),   # hot pink
+    "dark":    (0x1A, 0x1A, 0x1A),   # dark gray
+}
+
 THEME_PALETTES: dict[str, dict] = {
-    "midnight_executive": PALETTE_MIDNIGHT,
-    "govcon_proposal":    PALETTE_GOVCON,
-    "compliance_briefing": PALETTE_COMPLIANCE,
+    "midnight_executive":    PALETTE_MIDNIGHT,
+    "govcon_proposal":       PALETTE_GOVCON,
+    "compliance_briefing":   PALETTE_COMPLIANCE,
+    "fun_fiesta":            PALETTE_FUN_FIESTA,
+    "creative_aurora":       PALETTE_CREATIVE_AURORA,
+    "adventurous_outdoor":   PALETTE_ADVENTUROUS_OUTDOOR,
+    "minimal_mono":          PALETTE_MINIMAL_MONO,
+    "bold_neon":             PALETTE_BOLD_NEON,
 }
 
 # ── Defaults ───────────────────────────────────────────────────────────────────
-DEFAULT_THEME       = "midnight_executive"
-DEFAULT_DECK_TYPE   = "executive_overview"
-DEFAULT_MAX_SLIDES  = 12
-MIN_SLIDES          = 5
+DEFAULT_THEME        = "midnight_executive"
+DEFAULT_DECK_TYPE    = "executive_overview"
+DEFAULT_TONE         = "professional"
+DEFAULT_CITATION_STYLE = "inline_links"
+DEFAULT_OUTPUT_FORMATS = ["pptx"]
+DEFAULT_MAX_SLIDES   = 12
+MIN_SLIDES           = 5

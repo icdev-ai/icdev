@@ -12,6 +12,12 @@
         <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:6px;">
             <span class="badge badge-info">{{ deck.deck_type | replace('_', ' ') | title }}</span>
             <span class="badge">{{ deck.theme | replace('_', ' ') | title }}</span>
+            {% if deck.tone %}
+            <span class="badge badge-secondary">{{ deck.tone | replace('_', ' ') | title }} Tone</span>
+            {% endif %}
+            {% if deck.occasion %}
+            <span class="badge badge-warning">{{ deck.occasion | truncate(40) }}</span>
+            {% endif %}
             {% if deck.status == 'completed' or deck.status == 'auto' %}
             <span class="badge badge-success">{{ deck.status | title }}</span>
             {% elif deck.status == 'failed' %}
@@ -21,10 +27,21 @@
             {% endif %}
             <span style="color:var(--text-secondary); font-size:13px;">{{ deck.slide_count }} slides</span>
         </div>
+        {% if deck.target_audience %}
+        <div style="margin-top:8px; font-size:13px; color:var(--text-secondary);">
+            Audience: {{ deck.target_audience }}
+        </div>
+        {% endif %}
     </div>
     <div style="display:flex; gap:8px; flex-wrap:wrap;">
         {% if deck.status in ('completed', 'auto') %}
-        <a href="/slides/api/{{ deck.deck_id }}/download" class="btn btn-primary">↓ Download PPTX</a>
+        <a href="/slides/api/{{ deck.deck_id }}/download" class="btn btn-primary">↓ PPTX</a>
+        {% if 'pdf' in deck.output_formats %}
+        <a href="/slides/api/{{ deck.deck_id }}/download/pdf" class="btn btn-secondary">↓ PDF</a>
+        {% endif %}
+        {% if 'html' in deck.output_formats %}
+        <a href="/slides/api/{{ deck.deck_id }}/download/html" class="btn btn-secondary">↓ HTML</a>
+        {% endif %}
         {% endif %}
         <a href="/slides/new" class="btn btn-secondary">+ New Deck</a>
     </div>
@@ -41,7 +58,7 @@
     <h3 style="margin-bottom:16px;">Slides ({{ slides | length }})</h3>
 
     {% if slides %}
-    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(320px,1fr)); gap:16px;">
+    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(340px,1fr)); gap:16px;">
         {% for slide in slides %}
         <div class="slide-card" id="slide-{{ slide.slide_id }}"
              style="background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; overflow:hidden;">
@@ -56,7 +73,6 @@
                 </span>
             </div>
 
-            <!-- Slide image (if generated) -->
             {% if slide.image_path and slide.image_path | e %}
             <div style="background:#0A1628; text-align:center; padding:8px;">
                 <img src="/slides/api/image?path={{ slide.image_path | urlencode }}"
@@ -77,6 +93,24 @@
                     {% endfor %}
                 </ul>
                 {% endif %}
+
+                {% if slide.citations %}
+                <details style="margin-top:12px;">
+                    <summary style="font-size:12px; color:var(--text-secondary); cursor:pointer;">Sources ({{ slide.citations | length }})</summary>
+                    <ul style="font-size:11px; color:var(--text-secondary); margin-top:6px; padding-left:18px;">
+                        {% for cite in slide.citations %}
+                        <li>
+                            {% if cite.url %}
+                            <a href="{{ cite.url }}" target="_blank" rel="noopener noreferrer">{{ cite.title or cite.url }}</a>
+                            {% else %}
+                            {{ cite.title or cite.source or cite.text or 'Source' }}
+                            {% endif %}
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </details>
+                {% endif %}
+
                 {% if slide.speaker_notes %}
                 <details style="margin-top:10px;">
                     <summary style="font-size:12px; color:var(--text-secondary); cursor:pointer;">Speaker notes</summary>
@@ -87,7 +121,7 @@
                 {% endif %}
             </div>
 
-            <!-- HITL Revision UI -->
+            <!-- HITL Revision / Regenerate UI -->
             <div style="padding:0 16px 14px;" class="revision-panel" id="revise-panel-{{ slide.slide_id }}">
                 <div style="display:flex; gap:6px; margin-top:8px;">
                     <input type="text" class="form-control form-control-sm"
@@ -100,6 +134,23 @@
                     </button>
                 </div>
                 <div id="revise-status-{{ slide.slide_id }}" style="font-size:11px; color:var(--text-secondary); margin-top:4px; display:none;"></div>
+                <div style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border-color);">
+                    <div style="font-size:11px; font-weight:600; color:var(--text-secondary); margin-bottom:6px;">Regenerate with new tone/theme</div>
+                    <div style="display:flex; gap:6px;">
+                        <select class="form-control form-control-sm" id="tone-{{ slide.slide_id }}" style="font-size:12px;">
+                            {% for t in tones %}
+                            <option value="{{ t }}" {% if t == (deck.tone or 'professional') %}selected{% endif %}>{{ t | replace('_', ' ') | title }}</option>
+                            {% endfor %}
+                        </select>
+                        <select class="form-control form-control-sm" id="theme-{{ slide.slide_id }}" style="font-size:12px;">
+                            {% for th in themes %}
+                            <option value="{{ th }}" {% if th == deck.theme %}selected{% endif %}>{{ th | replace('_', ' ') | title }}</option>
+                            {% endfor %}
+                        </select>
+                        <button class="btn btn-sm btn-primary" onclick="regenerateSlide({{ deck.deck_id }}, {{ slide.slide_id }})">Regen</button>
+                    </div>
+                    <div id="regen-status-{{ slide.slide_id }}" style="font-size:11px; color:var(--text-secondary); margin-top:4px; display:none;"></div>
+                </div>
             </div>
         </div>
         {% endfor %}
@@ -131,6 +182,29 @@ async function reviseSlide(deckId, slideId) {
         if (data.slide) {
             statusEl.textContent = '✓ Revised — refresh to see changes.';
             document.getElementById('feedback-' + slideId).value = '';
+        } else {
+            statusEl.textContent = 'Error: ' + (data.error || 'unknown');
+        }
+    } catch(err) {
+        statusEl.textContent = 'Network error: ' + err.message;
+    }
+}
+
+async function regenerateSlide(deckId, slideId) {
+    var tone = document.getElementById('tone-' + slideId).value;
+    var theme = document.getElementById('theme-' + slideId).value;
+    var statusEl = document.getElementById('regen-status-' + slideId);
+    statusEl.textContent = 'Regenerating…';
+    statusEl.style.display = '';
+    try {
+        var resp = await fetch('/slides/api/' + deckId + '/regenerate-slide', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({slide_id: slideId, tone: tone, theme: theme}),
+        });
+        var data = await resp.json();
+        if (data.slide) {
+            statusEl.textContent = '✓ Regenerated — refresh to see changes.';
         } else {
             statusEl.textContent = 'Error: ' + (data.error || 'unknown');
         }

@@ -3011,3 +3011,39 @@ python -c "from tools.innovation.innovation_manager import stage_discover; print
 # Weekly DIC digest reflex (manual trigger)
 python -c "from tools.genesis.reflexes.dic_digest import run; print(run({}, None))"
 ```
+
+---
+
+## Network Canvas — PVM (Predictive Vulnerability Management)
+
+```bash
+# Risk Predictor
+python tools/network/vuln_predictor.py --predict <advisory_id> --json
+python tools/network/vuln_predictor.py --predict-all --json
+python tools/network/vuln_predictor.py --trajectory <advisory_id> [--limit 10] --json
+python tools/network/vuln_predictor.py --top-risks [--limit 20] --json
+
+# Attack Surface Mapper
+python tools/network/attack_surface_mapper.py --map [--network-id <id>] --json
+python tools/network/attack_surface_mapper.py --surface [--cve CVE-XXXX-XXXX] [--device <name>] [--min-score 0.5] --json
+python tools/network/attack_surface_mapper.py --summary --json
+
+# Vulnerability Triage Engine
+python tools/network/vuln_triage_engine.py --score [--advisory-ids 1,2,3] --json
+python tools/network/vuln_triage_engine.py --queue [--status pending] --json
+python tools/network/vuln_triage_engine.py --approve <advisory_id> --by analyst@example.com --json
+python tools/network/vuln_triage_engine.py --defer  <advisory_id> --by analyst@example.com --json
+
+# AI Patch Planner
+python tools/network/patch_planner.py --create-plan [--approved-by EMAIL] --json
+python tools/network/patch_planner.py --plans [--plan-id <uuid>] [--advisory-id <id>] --json
+python tools/network/patch_planner.py --plan-summary <plan_id> --json
+
+# PVM Dashboard
+# http://localhost:5050/network/vulnerability-intelligence
+
+# PVM IQE Seed Queries
+python tools/iqe/cli.py --file context/iqe/queries/network/pvm_01_risk_trajectory.iqe --adapter ndc --json
+python tools/iqe/cli.py --file context/iqe/queries/network/pvm_02_attack_surface.iqe   --adapter ndc --json
+python tools/iqe/cli.py --file context/iqe/queries/network/pvm_03_triage_queue.iqe     --adapter ndc --json
+```

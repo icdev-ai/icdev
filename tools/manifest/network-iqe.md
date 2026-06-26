@@ -491,3 +491,124 @@ Include with:
 | `context/iqe/queries/migration/` | 5 | MC |
 | `context/iqe/queries/aadc/` | 5 | AADC |
 | `context/iqe/queries/aimc/` | 3 | AIMC |
+
+---
+
+## NDC — PVM: Predictive Vulnerability Management (pvm-*)
+
+### Vulnerability Risk Predictor (`tools/network/vuln_predictor.py`)
+
+4-weight composite risk predictor for CVE advisories. Reads `nc_advisories` + `nc_advisory_assessments`, writes APPEND-ONLY to `nc_vuln_predictions`.
+
+| Function | Returns | Notes |
+|----------|---------|-------|
+| `predict_advisory_risk(advisory_id)` | dict | Scores and persists one advisory |
+| `predict_all_open_advisories()` | list[dict] | Scores all open/in_progress advisories |
+| `get_risk_trajectory(advisory_id, limit)` | list[dict] | Historical prediction rows ASC |
+| `get_top_risks(limit)` | list[dict] | Latest prediction per advisory DESC |
+| `_compute_scores(advisory, assessments)` | dict | Pure formula: cvss×0.35 + exploit×0.30 + lag×0.20 + trend×0.15 |
+
+**Exploit weight tiers:** exploited_in_wild=1 → 1.0; cvss≥7 → 0.5; else → 0.1
+**Confidence:** 0 assessments → 0.30; 1 → 0.40; 2 → 0.60; 3+ → 0.85
+**Model version constant:** `MODEL_VERSION = "1.0"`
+**APPEND-ONLY table:** `nc_vuln_predictions`
+
+### Attack Surface Mapper (`tools/network/attack_surface_mapper.py`)
+
+Cross-correlates Forward Networks NQE device inventory with Nessus/ACAS scan findings and CVE advisories.
+
+| Function | Returns | Notes |
+|----------|---------|-------|
+| `map_attack_surface(network_id)` | dict | Full NQE+Nessus+advisory-model-match pass |
+| `get_attack_surface(cve_id, device_name, min_score, limit)` | list[dict] | Filter `nc_attack_surface` |
+| `get_surface_summary()` | dict | Counts: total, reachable, critical, by_criticality |
+| `_surface_score(cvss, reachable, bgp_exposed)` | float | cvss/10×0.5 + reachable×0.3 + bgp_exposed×0.2 |
+| `_criticality_from_cvss(cvss)` | int | 9+ → 5; 7+ → 4; 5+ → 3; 3+ → 2; else → 1 |
+
+**UPSERT key:** `(device_name, cve_id)` in `nc_attack_surface`
+**NQE queries:** `network.devices[config]`, `network.interfaces[ip]`, `network.bgp.sessions[down]`
+
+### Vulnerability Triage Engine (`tools/network/vuln_triage_engine.py`)
+
+4-factor priority scoring with Bayesian reranking and HITL gates.
+
+| Function | Returns | Notes |
+|----------|---------|-------|
+| `score_advisories(advisory_ids)` | dict | Score + Bayesian rank; returns {scored, auto_approved, pending_hitl, queue} |
+| `get_triage_queue(status, limit)` | list[dict] | Filter `nc_triage_queue` by status |
+| `approve_advisory(advisory_id, approved_by)` | dict | Sets status=approved; audits triage_approve |
+| `defer_advisory(advisory_id, approved_by)` | dict | Sets status=deferred; audits triage_approve |
+| `_compute_priority(adv, asset_crit_norm, net_exp_norm)` | (float, dict) | Formula + rationale |
+| `_determine_status(score)` | (str, int) | <0.40 → auto-approved; ≥0.75 → HITL pending |
+
+**Priority formula:** kev×0.40 + criticality×0.25 + exposure×0.20 + urgency×0.15
+**HITL thresholds:** from `args/network_canvas_config.yaml` under `pvm:` section
+**Bayesian reranking:** `tools.intelligence.bayesian_teacher.optimal_compliance_order()` with fallback
+
+### AI Patch Planner (`tools/network/patch_planner.py`)
+
+Reads approved triage items, clusters by site, finds maintenance windows, simulates blast radius, writes APPEND-ONLY patch plans.
+
+| Function | Returns | Notes |
+|----------|---------|-------|
+| `create_patch_plan(approved_by)` | dict | {plan_id, batches, devices, plan[]} |
+| `get_patch_plans(plan_id, advisory_id, limit)` | list[dict] | Filter `nc_patch_plans` |
+| `get_plan_summary(plan_id)` | dict | Aggregates: batches, devices, by_simulation_status, risk_reduction_total |
+| `_site_from_device(name)` | str | First segment split by '-' or '.' |
+| `_find_next_window(conn, site, after_utc)` | dict|None | Projects recurrence forward past after_utc |
+| `_run_simulation(device_name)` | dict | Calls `remediation_simulator.simulate_remediation(-1)`; degrades to skipped |
+
+**Clustering:** by site prefix → one batch per site cluster per advisory
+**risk_reduction:** priority_score × surface_score
+**APPEND-ONLY table:** `nc_patch_plans`
+**Audit action:** `plan_create`
+
+### PVM Routes (`tools/network/routes/pvm.py`)
+
+Registered via `register_pvm_routes(bp)` called from `tools/network/blueprint.py`.
+
+| Route | Method | Purpose |
+|-------|--------|---------|
+| `/network/vulnerability-intelligence` | GET | 4-panel PVM dashboard page |
+| `/network/api/pvm/predict/<id>` | POST | Predict risk for one advisory |
+| `/network/api/pvm/predict-all` | POST | Predict all open advisories |
+| `/network/api/pvm/trajectory/<id>` | GET | Risk trajectory for one advisory |
+| `/network/api/pvm/top-risks` | GET | Top-N advisories by composite risk |
+| `/network/api/pvm/map-surface` | POST | Run attack surface mapping pass |
+| `/network/api/pvm/attack-surface` | GET | Query attack surface (filters: cve, device, min_score) |
+| `/network/api/pvm/surface-summary` | GET | Aggregate attack surface counts |
+| `/network/api/pvm/score-advisories` | POST | Score + triage advisories |
+| `/network/api/pvm/triage-queue` | GET | Get triage queue (filter by status) |
+| `/network/api/pvm/approve/<id>` | POST | Approve advisory for patch scheduling |
+| `/network/api/pvm/defer/<id>` | POST | Defer advisory |
+| `/network/api/pvm/create-plan` | POST | Create patch plan |
+| `/network/api/pvm/plans` | GET | List patch plans |
+| `/network/api/pvm/plan-summary/<plan_id>` | GET | Plan aggregate summary |
+
+### PVM DB Tables (Migration 221)
+
+| Table | Type | Notes |
+|-------|------|-------|
+| `nc_vuln_predictions` | APPEND-ONLY | model_version, risk_score_composite/30d/90d, trend, confidence |
+| `nc_attack_surface` | UPSERT | (device_name, cve_id) unique; surface_score, reachable, criticality |
+| `nc_triage_queue` | INSERT OR REPLACE | advisory_id unique; priority_score, rank, status, rationale_json |
+| `nc_patch_plans` | APPEND-ONLY | plan_id+batch_id+device_name; risk_reduction, simulation_status |
+| `nc_maintenance_windows` | CRUD | site, start_utc, end_utc, recurrence, blackout_days_json |
+
+### PVM IQE Collections (in `tools/iqe/adapters/ndc.py`)
+
+| Collection | Source Table | Notes |
+|-----------|-------------|-------|
+| `network.vuln_predictions` | `nc_vuln_predictions` | Ordered by risk_score_composite DESC |
+| `network.attack_surface` | `nc_attack_surface` | Ordered by surface_score DESC |
+| `network.triage_queue` | `nc_triage_queue` | Ordered by rank ASC |
+| `network.patch_plans` | `nc_patch_plans` | Ordered by created_at DESC |
+| `network.advisories` | `nc_advisories` | All advisory metadata |
+
+### PVM IQE Seed Queries (`context/iqe/queries/network/`)
+
+| File | Purpose |
+|------|---------|
+| `pvm_01_risk_trajectory.iqe` | Latest risk scores ordered by composite DESC |
+| `pvm_02_attack_surface.iqe` | Reachable attack surface entries by criticality |
+| `pvm_03_triage_queue.iqe` | Pending triage queue items ordered by rank |

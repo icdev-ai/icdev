@@ -27,9 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from datetime import datetime, timezone
-from typing import Any
 
 from tools.logging.icdev_logger import get_logger
 from tools.network.db.init_db import get_connection
@@ -141,7 +139,7 @@ def _compute_scores(advisory: dict, assessments: list[dict]) -> dict:
     risk_90d = min(1.0, composite * (1.0 + accel * 0.25))
 
     # confidence from assessment history depth
-    confidence = _CONFIDENCE_MAP.get(min(len(assessments), 2), 0.85)
+    confidence = _CONFIDENCE_MAP.get(len(assessments), 0.85)
 
     latest_assessment_id = assessments[-1]["id"] if assessments else None
 
