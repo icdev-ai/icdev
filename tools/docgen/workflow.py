@@ -544,6 +544,23 @@ def stage2_analyze_upload(
             log.debug("No IaC reviewer configured for domain=%s", domain)
             sm.set_upload_status(upload_id, "analyzed")
 
+    # ── Email — extract body text and run entity extraction ───────────────────
+    elif upload_type == "email":
+        try:
+            from tools.docgen.context_builder import _extract_email
+            email_text = _extract_email(file_path)
+            if email_text.strip():
+                extraction = stage0_ingest_document(session_id, email_text[:8000])
+                log.info(
+                    "IDR email extraction: upload=%s entities=%d findings=%d",
+                    upload_id,
+                    len(extraction.get("entities", [])),
+                    len(extraction.get("key_findings", [])),
+                )
+        except Exception as exc:
+            log.warning("IDR email extraction skipped for %s: %s", upload_id, exc)
+        sm.set_upload_status(upload_id, "analyzed")
+
     # ── Doc / supplement — LLM entity extraction ──────────────────────────────
     elif upload_type in ("doc", "supplement"):
         try:

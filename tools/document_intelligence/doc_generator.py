@@ -253,7 +253,11 @@ def _cot_generate(
 def _cod_compress(text: str, heading: str, *, function: str = "document_qna") -> str:
     """Apply Chain-of-Density compression to long sections (>_COD_WORD_THRESHOLD words).
 
-    Returns the compressed text, or the original if CoD is unavailable.
+    Uses Chain-of-Thought (reasoner→critic→synthesizer) so the synthesizer step
+    produces actual compressed prose — not Chain-of-Debate which produces
+    argument evaluations rather than transformed text.
+
+    Returns the compressed text, or the original if compression is unavailable.
     """
     if len(text.split()) <= _COD_WORD_THRESHOLD:
         return text
@@ -268,15 +272,23 @@ def _cod_compress(text: str, heading: str, *, function: str = "document_qna") ->
         orchestrator = ChainOrchestrator()
         compress_prompt = (
             f"Compress the following '{heading}' section to be denser and more concise "
-            f"without losing any factual claims or citation references:\n\n{text[:4000]}"
+            f"without losing any factual claims or citation references. "
+            f"Output ONLY the compressed section text — no meta-commentary, no evaluation, "
+            f"no preamble:\n\n{text[:4000]}"
         )
         req = LLMRequest(
             messages=[{"role": "user", "content": compress_prompt}],
             max_tokens=1500,
             skip_injection_scan=True,
         )
-        result = orchestrator.invoke_chain_of_debate(function, req)
+        # Use CoT (not CoD): the synthesizer step produces actual transformed output.
+        # CoD produces argument evaluations, not compressed prose.
+        result = orchestrator.invoke_chain_of_thought(function, req)
         compressed = result.content.strip() if result and result.content else None
+        # Strip any residual chain-marker artifacts from prompt templates
+        if compressed:
+            import re
+            compressed = re.sub(r"\[ARGUMENT\]|\[JUDGMENT\]|\[SYNTHESIS\]", "", compressed).strip()
         if compressed and len(compressed) > 100:
             logger.info(
                 "doc_generator: CoD compressed '%s' from %d → %d words",

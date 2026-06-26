@@ -150,10 +150,29 @@ def review_page(session_id: str):
     if not session:
         return render_template("errors/404.html"), 404
     artifacts = sm.list_artifacts(session_id)
+    analyses = sm.list_analyses(session_id)
+
+    # Extract remediation diagrams from diagram_analysis result_json
+    remediation_diagrams: list[str] = []
+    for a in analyses:
+        if a.get("analysis_type") != "diagram_analysis":
+            continue
+        raw_json = a.get("result_json")
+        if raw_json:
+            try:
+                stored = json.loads(raw_json)
+                rdiag = stored.get("remediation_diagram", "")
+                if rdiag and rdiag.strip():
+                    remediation_diagrams.append(rdiag.strip())
+            except Exception:
+                pass
+
     return render_template(
         "docgen/review.html",
         session=session,
         artifacts=artifacts,
+        analyses=analyses,
+        remediation_diagrams=remediation_diagrams,
         page_title=f"IDR Review — {session.get('title', session_id)}",
     )
 
