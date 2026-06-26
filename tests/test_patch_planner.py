@@ -274,9 +274,17 @@ def test_create_patch_plan_simulation_fallback_on_import_error():
 
 
 def test_create_patch_plan_audit_log_written():
-    """plan_create action written to nc_nqe_audit_log."""
+    """plan_create action written to nc_nqe_audit_log when devices are planned."""
     audit_calls = []
-    conn = _make_plan_conn(queue_rows=[])
+    queue = [{
+        "tq_id": 1, "advisory_id": 1, "priority_score": 0.7, "rank": 1,
+        "cve_id": "CVE-2025-0001", "vendor": "cisco", "remediation_guidance": None,
+    }]
+    devices = [
+        {"device_name": "chi-rtr-01", "ip": "10.9.0.1", "criticality": 4, "surface_score": 0.6,
+         "advisory_id": 1, "cve_id": "CVE-2025-0001"},
+    ]
+    conn = _make_plan_conn(queue_rows=queue, device_rows=devices)
     orig = conn.execute.side_effect
 
     def _track(sql, params=None):
@@ -286,7 +294,10 @@ def test_create_patch_plan_audit_log_written():
 
     conn.execute.side_effect = _track
 
-    with patch("tools.network.patch_planner.get_connection", return_value=conn):
+    with (
+        patch("tools.network.patch_planner.get_connection", return_value=conn),
+        patch("tools.network.patch_planner._run_simulation", return_value={"simulation_status": "skipped", "blast_radius_json": "[]"}),
+    ):
         from tools.network.patch_planner import create_patch_plan
         create_patch_plan()
 

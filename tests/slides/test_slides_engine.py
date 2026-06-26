@@ -114,6 +114,36 @@ class TestContentAgentParser:
         assert len(result["bullets"]) > 0
 
 
+# ── Research Connector ──────────────────────────────────────────────────────────
+
+class TestResearchConnector:
+    def test_research_airgap_returns_summary(self):
+        from unittest.mock import patch
+        from tools.slides.research_connector import research_topic
+        with patch(
+            "tools.slides.research_connector._llm_research",
+            return_value={"summary": "Air-gap summary.", "sources": [{"title": "KG Node", "url": "/kg/1"}]},
+        ):
+            result = research_topic(
+                "sustainable aviation", occasion="keynote", target_audience="analysts", airgap=True
+            )
+        assert result["summary"] == "Air-gap summary."
+        assert result["sources"]
+        assert result["citation_style"] == "inline_links"
+
+    def test_format_citations_inline_links(self):
+        from tools.slides.research_connector import format_citations
+        sources = [{"title": "Example", "url": "https://example.com"}]
+        citations = format_citations(sources, "inline_links")
+        assert "Example" in citations[0]
+        assert "https://example.com" in citations[0]
+
+    def test_inline_citations_short(self):
+        from tools.slides.research_connector import inline_citations
+        sources = [{"title": "Example", "url": "https://example.com"}]
+        assert inline_citations(sources) == ["[1](https://example.com)"]
+
+
 # ── Source Connectors ─────────────────────────────────────────────────────────
 
 class TestCanvasSource:
@@ -182,6 +212,34 @@ class TestPptxBuilder:
         assert Path(path).exists()
         assert Path(path).suffix == ".pptx"
         assert Path(path).stat().st_size > 1000
+
+
+class TestExports:
+    def test_export_pdf_creates_file(self, tmp_path):
+        from tools.slides import export_pdf
+        slides = [
+            {"title": "Title", "slide_type": "title", "bullets": [], "speaker_notes": ""},
+            {"title": "Content", "slide_type": "content", "bullets": ["A", "B"], "speaker_notes": "Notes."},
+        ]
+        path = export_pdf.build_pdf(slides, theme="fun_fiesta", title="PDF Test", output_dir=tmp_path)
+        assert Path(path).exists()
+        assert Path(path).suffix == ".pdf"
+        assert Path(path).stat().st_size > 100
+
+    def test_export_html_creates_file(self, tmp_path):
+        from tools.slides import export_html
+        slides = [
+            {"title": "Title", "slide_type": "title", "bullets": [], "speaker_notes": ""},
+            {"title": "Content", "slide_type": "content", "bullets": ["A", "B"], "speaker_notes": "Notes."},
+        ]
+        path = export_html.build_html(
+            slides, theme="creative_aurora", title="HTML Test", output_dir=tmp_path,
+            deck_meta={"occasion": "demo", "tone": "visionary", "target_audience": "execs"},
+        )
+        assert Path(path).exists()
+        assert Path(path).suffix == ".html"
+        html_text = Path(path).read_text(encoding="utf-8")
+        assert " visionary " in html_text or 'tone&quot;' in html_text or "execs" in html_text
 
 
 # ── Engine (mocked) ───────────────────────────────────────────────────────────

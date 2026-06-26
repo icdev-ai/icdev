@@ -65,8 +65,10 @@ def _subnet_from_ip(ip: str) -> str:
 def _action_from_guidance(guidance: str | None) -> str:
     if not guidance:
         return "patch"
-    first = guidance.strip().split()[0].lower()
-    return first if first else "patch"
+    words = guidance.strip().split()
+    if not words:
+        return "patch"
+    return words[0].lower()
 
 
 def _days_ahead(days: int) -> str:

@@ -23,8 +23,10 @@ def decks_adapter(conn: Any) -> list[dict]:
     canvas = _canvas_conn()
     try:
         cur = canvas.execute(
-            "SELECT deck_id, title, deck_type, theme, status, slide_count, "
-            "source_types, created_at, completed_at "
+            "SELECT deck_id, title, deck_type, theme, tone, occasion, "
+            "target_audience, citation_style, output_formats, status, "
+            "slide_count, source_types, pptx_path, pdf_path, html_path, "
+            "created_at, completed_at "
             "FROM slides_decks ORDER BY created_at DESC"
         )
         cols = [d[0] for d in cur.description]
@@ -41,8 +43,8 @@ def slides_adapter(conn: Any) -> list[dict]:
     try:
         cur = canvas.execute(
             "SELECT s.slide_id, s.deck_id, d.title as deck_title, "
-            "s.position, s.slide_type, s.title, s.speaker_notes, "
-            "s.image_path, s.created_at "
+            "s.position, s.slide_type, s.title, s.bullets, s.speaker_notes, "
+            "s.citations, s.image_path, s.created_at "
             "FROM slides_slides s "
             "JOIN slides_decks d ON d.deck_id = s.deck_id "
             "ORDER BY s.deck_id DESC, s.position"

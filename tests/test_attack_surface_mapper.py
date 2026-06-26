@@ -107,16 +107,18 @@ def test_build_device_map_bgp_exposed_flag():
     assert dmap["10.0.0.1"]["bgp_exposed"] is True
 
 
-def test_build_device_map_unknown_device_skipped():
-    """Devices without ip or name are silently dropped."""
+def test_build_device_map_fallback_name_used():
+    """Devices with no name/hostname/ip fall back to key 'unknown'."""
     from tools.network.attack_surface_mapper import _build_device_map
     nqe = {
-        "devices": [{}],  # no name, no ip
+        "devices": [{}],  # no name, no ip — falls back to "unknown"
         "interfaces": [],
         "bgp_down": [],
     }
     dmap = _build_device_map(nqe)
-    assert len(dmap) == 0
+    # Code uses 'unknown' as fallback name; entry IS added (not dropped)
+    assert "unknown" in dmap
+    assert dmap["unknown"]["name"] == "unknown"
 
 
 # ---------------------------------------------------------------------------

@@ -7434,6 +7434,79 @@ RESOURCE_REGISTRY = {
             },
         },
     },
+    # ── PVM — Predictive Vulnerability Management (NDC) ──────────────────────
+    "pvm_predict_risk": {
+        "category": "network",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_pvm_predict_risk",
+        "description": "Compute composite risk score for a single CVE advisory using 4-weight formula (cvss×0.35 + exploit×0.30 + patch_lag×0.20 + trend×0.15). Writes to nc_vuln_predictions (APPEND-ONLY).",
+        "input_schema": {
+            "type": "object",
+            "required": ["advisory_id"],
+            "properties": {
+                "advisory_id": {"type": "integer", "description": "nc_advisories.id to score"},
+            },
+        },
+    },
+    "pvm_predict_all": {
+        "category": "network",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_pvm_predict_all",
+        "description": "Score all open/in_progress advisories in nc_advisories. Returns list of prediction dicts ordered by risk_score_composite DESC.",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    "pvm_top_risks": {
+        "category": "network",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_pvm_top_risks",
+        "description": "Return latest risk prediction per advisory, ordered by composite risk score descending.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "default": 20, "description": "Max predictions to return"},
+            },
+        },
+    },
+    "pvm_map_attack_surface": {
+        "category": "network",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_pvm_map_attack_surface",
+        "description": "Correlate Forward Networks NQE device inventory with CVE advisories and Nessus findings. UPSERTs nc_attack_surface rows with surface_score = cvss×0.5 + reachable×0.3 + bgp_exposed×0.2.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "network_id": {"type": "string", "description": "Optional network_id filter for NQE queries"},
+            },
+        },
+    },
+    "pvm_score_triage": {
+        "category": "network",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_pvm_score_triage",
+        "description": "4-factor Bayesian triage scoring for CVE advisories: kev×0.40 + criticality×0.25 + exposure×0.20 + urgency×0.15. Auto-approves score < 0.40; HITL gate for score >= 0.75.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "advisory_ids": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "Advisory IDs to score; empty/omit = all open advisories",
+                },
+            },
+        },
+    },
+    "pvm_create_patch_plan": {
+        "category": "network",
+        "module": "tools.mcp.gap_handlers",
+        "handler": "handle_pvm_create_patch_plan",
+        "description": "Cluster approved advisories by site, schedule maintenance windows, simulate blast radius, write APPEND-ONLY patch plans to nc_patch_plans.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "approved_by": {"type": "string", "description": "Email/name of approver for audit trail"},
+            },
+        },
+    },
 }
 
 

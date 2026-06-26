@@ -16,22 +16,22 @@ import json
 import os
 from pathlib import Path
 
-from tools.slides.constants import LLM_FN_VIZ_PROMPT
+from tools.slides.constants import LLM_FN_VIZ_PROMPT, THEME_PALETTES, DEFAULT_THEME, TONE_STYLE_HINTS
 
-_STYLE_HINT = (
+_DEFAULT_STYLE_HINT = (
     "professional corporate illustration, dark navy blue and gold color palette, "
     "minimalist isometric or flat design style, no text labels, no words, "
     "high quality, 16:9 aspect ratio"
 )
 
-_VIZ_SYSTEM = """You are a visual director for a federal AI platform presentation.
+_VIZ_SYSTEM_TEMPLATE = """You are a visual director for a presentation slide.
 Given a slide title and bullet points, write a single detailed image generation prompt
 for a professional illustration that visually represents the slide's content.
 
 Rules:
 - Describe a concrete visual scene or diagram (NOT a photo of people)
-- Use: dark navy blue background, gold accents, clean minimalist style
-- Reference the specific technical domain (network diagrams, security shields, document flows, etc.)
+- Use this style/palette guidance: {style_hint}
+- Reference the specific subject matter when relevant
 - NO text, labels, or words in the image
 - Return ONLY the image prompt as plain text, no JSON, no quotes
 """
@@ -50,13 +50,13 @@ class GraphicsGenerator:
         self._output_dir = output_dir or (root / "tools" / "presentations" / "slides" / "images")
         self._output_dir.mkdir(parents=True, exist_ok=True)
 
-    def generate(self, title: str, bullets: list[str], visual_context: str = "") -> str | None:
+    def generate(self, title: str, bullets: list[str], visual_context: str = "", theme: str = "", tone: str = "") -> str | None:
         """Generate an image for a slide. Returns absolute file path or None on skip."""
         if not self._enabled:
             return None
 
         # Stage 1: generate a rich image prompt
-        prompt = self._build_visual_prompt(title, bullets, visual_context)
+        prompt = self._build_visual_prompt(title, bullets, visual_context, theme, tone)
         if not prompt:
             return None
 
@@ -70,22 +70,39 @@ class GraphicsGenerator:
             return self._save_image(img_bytes, title)
 
         # Fallback: programmatic matplotlib graphic
-        return self._matplotlib_fallback(title, bullets)
+        return self._matplotlib_fallback(title, bullets, theme, tone)
 
     # ── Stage 1: Visual Prompt Generation ────────────────────────────────────
 
-    def _build_visual_prompt(self, title: str, bullets: list[str], visual_context: str) -> str:
+    def _style_hint(self, theme: str = "", tone: str = "") -> str:
+        """Compose a style hint from theme palette and tone."""
+        parts = []
+        if tone:
+            tone_hint = TONE_STYLE_HINTS.get(tone, TONE_STYLE_HINTS["professional"])
+            parts.append(tone_hint["visual"])
+        palette = THEME_PALETTES.get(theme)
+        if palette:
+            bg_hex = "#{:02x}{:02x}{:02x}".format(*palette["bg"])
+            accent_hex = "#{:02x}{:02x}{:02x}".format(*palette["accent"])
+            parts.append(f"color palette: background {bg_hex}, accent {accent_hex}")
+        if not parts:
+            return _DEFAULT_STYLE_HINT
+        return "; ".join(parts) + "; no text labels, no words, high quality, 16:9 aspect ratio"
+
+    def _build_visual_prompt(self, title: str, bullets: list[str], visual_context: str, theme: str = "", tone: str = "") -> str:
         """Use LLM to generate a descriptive image prompt."""
+        style_hint = self._style_hint(theme, tone)
         if visual_context:
-            base = f"{visual_context}, {_STYLE_HINT}"
+            base = f"{visual_context}, {style_hint}"
         else:
-            base = f"{title}, {_STYLE_HINT}"
+            base = f"{title}, {style_hint}"
 
         user_msg = (
             f"Slide title: {title}\n"
             f"Bullets: {'; '.join(bullets[:3])}\n"
             "Write an image generation prompt for this slide."
         )
+        system_prompt = _VIZ_SYSTEM_TEMPLATE.format(style_hint=style_hint)
         try:
             from tools.llm.router import LLMRouter
             from tools.llm.provider import LLMRequest
@@ -93,7 +110,7 @@ class GraphicsGenerator:
             router = LLMRouter()
             request = LLMRequest(
                 messages=[{"role": "user", "content": user_msg}],
-                system_prompt=_VIZ_SYSTEM,
+                system_prompt=system_prompt,
                 max_tokens=200,
                 temperature=0.4,
                 agent_id="slides-visual-prompt",
@@ -190,7 +207,7 @@ class GraphicsGenerator:
 
     # ── Pillow/matplotlib Fallback ────────────────────────────────────────────
 
-    def _matplotlib_fallback(self, title: str, bullets: list[str]) -> str | None:
+    def _matplotlib_fallback(self, title: str, bullets: list[str], theme: str = "", tone: str = "") -> str | None:
         """Generate a programmatic themed graphic using matplotlib."""
         try:
             import matplotlib
@@ -199,48 +216,53 @@ class GraphicsGenerator:
             import matplotlib.patches as mpatches
             import numpy as np
 
-            fig, ax = plt.subplots(figsize=(10.24, 5.76), facecolor="#0A1628")
-            ax.set_facecolor("#0A1628")
+            palette = THEME_PALETTES.get(theme) or THEME_PALETTES[DEFAULT_THEME]
+            bg_hex = "#{:02x}{:02x}{:02x}".format(*palette["bg"])
+            accent_hex = "#{:02x}{:02x}{:02x}".format(*palette["accent"])
+            text_hex = "#{:02x}{:02x}{:02x}".format(*palette["text"])
+
+            fig, ax = plt.subplots(figsize=(10.24, 5.76), facecolor=bg_hex)
+            ax.set_facecolor(bg_hex)
             ax.set_xlim(0, 10)
             ax.set_ylim(0, 6)
             ax.axis("off")
 
-            # Gold accent bar
+            # Accent bar
             ax.add_patch(mpatches.FancyBboxPatch(
                 (0, 5.7), 10, 0.3, boxstyle="square,pad=0",
-                facecolor="#C8A951", linewidth=0
+                facecolor=accent_hex, linewidth=0
             ))
 
-            # Abstract background shapes (themed to content)
+            # Abstract background shapes
             rng = np.random.default_rng(abs(hash(title)) % (2**31))
             for _ in range(6):
                 cx, cy = rng.uniform(1, 9), rng.uniform(0.5, 5)
                 r = rng.uniform(0.3, 1.2)
                 alpha = rng.uniform(0.05, 0.2)
-                circle = plt.Circle((cx, cy), r, color="#C8A951", alpha=alpha)
+                circle = plt.Circle((cx, cy), r, color=accent_hex, alpha=alpha)
                 ax.add_patch(circle)
 
-            # Connection lines (network-style)
+            # Connection lines
             pts = [(rng.uniform(2, 8), rng.uniform(1, 4)) for _ in range(5)]
             for i in range(len(pts) - 1):
                 ax.plot(
                     [pts[i][0], pts[i+1][0]], [pts[i][1], pts[i+1][1]],
-                    color="#C8A951", alpha=0.3, linewidth=1.5
+                    color=accent_hex, alpha=0.3, linewidth=1.5
                 )
             # Node dots
             for px, py in pts:
-                ax.plot(px, py, "o", color="#C8A951", markersize=8, alpha=0.7)
+                ax.plot(px, py, "o", color=accent_hex, markersize=8, alpha=0.7)
 
             # Title text
             short_title = title[:50] + ("…" if len(title) > 50 else "")
             ax.text(
                 5, 2.5, short_title, ha="center", va="center",
-                color="#E0E6F0", fontsize=13, fontweight="bold",
+                color=text_hex, fontsize=13, fontweight="bold",
                 wrap=True, family="monospace",
             )
 
             buf = io.BytesIO()
-            fig.savefig(buf, format="png", dpi=96, bbox_inches="tight", facecolor="#0A1628")
+            fig.savefig(buf, format="png", dpi=96, bbox_inches="tight", facecolor=bg_hex)
             plt.close(fig)
             buf.seek(0)
             img_bytes = buf.read()

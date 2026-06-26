@@ -9,7 +9,7 @@
 <div class="page-header" style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;">
     <div>
         <h1>Slide Deck Generator</h1>
-        <p class="subtitle">Agentic PPTX generation from ICDEV™ live data — canvases, kanban, genesis, and capabilities</p>
+        <p class="subtitle">Agentic PPTX generation from ICDEV™ live data or any topic — AI-researched, themed, and citable.</p>
     </div>
     <a href="/slides/new" class="btn btn-primary">+ Generate New Deck</a>
 </div>
@@ -54,7 +54,7 @@
                 <tr>
                     <th>Title</th>
                     <th>Type</th>
-                    <th>Theme</th>
+                    <th>Tone / Theme</th>
                     <th>Slides</th>
                     <th>Status</th>
                     <th>Created</th>
@@ -64,9 +64,17 @@
             <tbody>
             {% for deck in decks %}
                 <tr data-status="{{ deck.status }}">
-                    <td><a href="/slides/{{ deck.deck_id }}">{{ deck.title | truncate(60) }}</a></td>
+                    <td>
+                        <a href="/slides/{{ deck.deck_id }}">{{ deck.title | truncate(60) }}</a>
+                        {% if deck.occasion %}
+                        <div style="font-size:11px; color:var(--text-secondary);">{{ deck.occasion | truncate(50) }}</div>
+                        {% endif %}
+                    </td>
                     <td><span class="badge badge-info">{{ deck.deck_type | replace('_', ' ') | title }}</span></td>
-                    <td>{{ deck.theme | replace('_', ' ') | title }}</td>
+                    <td>
+                        <span class="badge badge-secondary">{{ (deck.tone or 'professional') | replace('_', ' ') | title }}</span>
+                        <span class="badge">{{ deck.theme | replace('_', ' ') | title }}</span>
+                    </td>
                     <td>{{ deck.slide_count }}</td>
                     <td>
                         {% if deck.status == 'completed' %}
@@ -82,7 +90,7 @@
                         {% endif %}
                     </td>
                     <td>{{ deck.created_at.strftime('%Y-%m-%d %H:%M') if deck.created_at else '—' }}</td>
-                    <td>
+                    <td style="white-space:nowrap;">
                         <a href="/slides/{{ deck.deck_id }}" class="btn btn-sm btn-secondary">View</a>
                         {% if deck.status in ('completed', 'auto') %}
                         <a href="/slides/api/{{ deck.deck_id }}/download" class="btn btn-sm btn-primary">↓ PPTX</a>
@@ -96,7 +104,7 @@
         <div style="padding:48px; text-align:center; color:var(--text-secondary);">
             <div style="font-size:48px; margin-bottom:12px;">🎨</div>
             <div style="font-size:18px; font-weight:600; margin-bottom:8px;">No decks yet</div>
-            <div style="margin-bottom:20px;">Generate your first ICDEV™ slide deck from live data.</div>
+            <div style="margin-bottom:20px;">Generate your first ICDEV™ slide deck from live data or any topic.</div>
             <a href="/slides/new" class="btn btn-primary">Generate New Deck</a>
         </div>
         {% endif %}

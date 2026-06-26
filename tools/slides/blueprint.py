@@ -16,6 +16,8 @@ import json
 import os
 from pathlib import Path
 
+from typing import Any
+
 from flask import Blueprint, jsonify, render_template, request, send_file
 
 from tools.slides.constants import (

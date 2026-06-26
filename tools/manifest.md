@@ -1019,3 +1019,12 @@
 |------|------|-------------|-------|--------|
 | Domain Profiles | tools\docgen\domain_profiles.py | Auto-registered: docgen/domain_profiles.py | --json | JSON |
 | Docgen | tools\iqe\adapters\docgen.py | Auto-registered: adapters/docgen.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Advisory Extractor | tools\network\advisory_extractor.py | Auto-registered: network/advisory_extractor.py | --json | JSON |
+| Exception Registry | tools\network\exception_registry.py | Auto-registered: network/exception_registry.py | --json | JSON |
+| Nqe Client | tools\network\nqe_client.py | Auto-registered: network/nqe_client.py | --json | JSON |
+| Nql Translator | tools\network\nql_translator.py | Auto-registered: network/nql_translator.py | --json | JSON |
