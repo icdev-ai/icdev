@@ -1028,3 +1028,10 @@
 | Exception Registry | tools\network\exception_registry.py | Auto-registered: network/exception_registry.py | --json | JSON |
 | Nqe Client | tools\network\nqe_client.py | Auto-registered: network/nqe_client.py | --json | JSON |
 | Nql Translator | tools\network\nql_translator.py | Auto-registered: network/nql_translator.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Nova Hook | tools\gameday\nova_hook.py | Auto-registered: gameday/nova_hook.py | --json | JSON |
+| Viz Reporter | tools\gameday\viz_reporter.py | Auto-registered: gameday/viz_reporter.py | --json | JSON |

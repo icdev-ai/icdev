@@ -11,6 +11,7 @@ from CLI/headless workflows.
 from __future__ import annotations
 
 import json
+import pathlib
 import re
 import uuid
 import zlib
@@ -19,6 +20,82 @@ from typing import Any
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("icdev.network.config_review")
+
+_MAX_CONFIG_CHARS = 20_000  # cap config text to avoid LLM context explosion
+
+
+def _extract_hostname(config_text: str, vendor: str) -> str:
+    """Best-effort hostname extraction from config text."""
+    for pattern in (r"^hostname\s+(\S+)", r"^set system host-name\s+(\S+)"):
+        m = re.search(pattern, config_text, re.MULTILINE | re.IGNORECASE)
+        if m:
+            return m.group(1)
+    return ""
+
+
+def _call_llm_for_review(prompt: str) -> str:
+    """Call LLM router for config review; returns raw text or empty string."""
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        router = LLMRouter()
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2500,
+            temperature=0.1,
+            skip_injection_scan=True,
+        )
+        resp = router.invoke("ndc_config_review", req)
+        return getattr(resp, "content", "") or ""
+    except Exception as exc:
+        logger.warning("config_review LLM call failed: %s", exc)
+        return ""
+
+
+def review_config(file_path: str, role_key: str = "network_engineer") -> dict[str, Any]:
+    """Read a device config file and run a full LLM-based review.
+
+    Called by IDR Stage 2 for 'config' type uploads (network domain).
+    Returns a dict compatible with what workflow.py expects:
+        {review_id, vendor, hostname, security_compliance, optimization,
+         remediation, sample_template, explanation, topology_graph}
+    """
+    review_id = str(uuid.uuid4())
+
+    try:
+        config_text = pathlib.Path(file_path).read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:
+        logger.warning("review_config: cannot read %s: %s", file_path, exc)
+        result = _fallback_review(f"Cannot read file: {exc}", "unknown")
+        result["review_id"] = review_id
+        result["vendor"] = "unknown"
+        result["hostname"] = ""
+        return result
+
+    vendor = _detect_vendor(config_text)
+    hostname = _extract_hostname(config_text, vendor)
+
+    prompt = build_llm_prompt(
+        role_key=role_key,
+        config_text=config_text[:_MAX_CONFIG_CHARS],
+        vendor=vendor,
+        answers={},
+        hostname=hostname,
+    )
+
+    raw = _call_llm_for_review(prompt)
+    parsed = parse_review_response(raw, vendor)
+
+    logger.info(
+        "review_config: file=%s vendor=%s hostname=%s findings=%d",
+        pathlib.Path(file_path).name,
+        vendor,
+        hostname,
+        len(parsed.get("security_compliance", [])),
+    )
+
+    return {"review_id": review_id, "vendor": vendor, "hostname": hostname, **parsed}
 
 
 # Import constants lazily to avoid circular imports at module load time.

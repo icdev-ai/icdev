@@ -43,9 +43,9 @@ Categories:
     system_graph (3)
     intelligence (3)
     integrity (2)
-    nova (5)
+    nova (8)
 
-Total: 275 tools, 6 resources
+Total: 278 tools, 6 resources
 """
 
 TOOL_REGISTRY = {
@@ -6725,6 +6725,61 @@ TOOL_REGISTRY = {
             "Read-only — use nova_record_trust_event to update scores."
         ),
         "input_schema": {"type": "object", "properties": {}},
+    },
+    # ============================================================
+    # NOVA — Skill Generator (adapt-hermes-04)
+    # ============================================================
+    "nova_analyze_patterns": {
+        "category": "nova",
+        "module": "tools.nova.skill_generator",
+        "handler": "analyze_patterns",
+        "description": (
+            "Scan session history for repeated command patterns that suggest a missing "
+            "ICDEV™ skill. Returns list of {pattern, count, category, example} dicts "
+            "sorted by frequency. Part of Hermes adaptation (adapt-hermes-04)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "default": 50, "description": "Max patterns to return"},
+                "min_count": {"type": "integer", "default": 2, "description": "Minimum occurrences to surface"},
+            },
+        },
+    },
+    "nova_generate_skill": {
+        "category": "nova",
+        "module": "tools.nova.skill_generator",
+        "handler": "generate_skill_spec",
+        "description": (
+            "Generate an ICDEV™ skill specification markdown for a given command pattern. "
+            "Uses scanner-tier LLM when available; falls back to structured template. "
+            "Queues result in agent_improvement_artifacts for SELA Continuous Harness "
+            "evaluation (adapt-hermes-04). Set dry_run=true to preview without DB write."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "pattern": {"type": "string", "description": "Command pattern to auto-skill (e.g. 'python tools/memory/hybrid_search.py')"},
+                "category": {"type": "string", "default": "general", "description": "Pattern category tag"},
+                "dry_run": {"type": "boolean", "default": False, "description": "Preview without queuing to DB"},
+            },
+            "required": ["pattern"],
+        },
+    },
+    "nova_list_skill_queue": {
+        "category": "nova",
+        "module": "tools.nova.skill_generator",
+        "handler": "list_queued",
+        "description": (
+            "List pending auto-generated skill specs in agent_improvement_artifacts "
+            "awaiting Continuous Harness SELA evaluation (adapt-hermes-04)."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "limit": {"type": "integer", "default": 20, "description": "Max entries to return"},
+            },
+        },
     },
 }
 
