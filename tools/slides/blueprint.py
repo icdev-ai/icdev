@@ -27,6 +27,7 @@ from tools.slides.constants import (
 )
 from tools.slides.db.init_db import get_connection, init_db
 from tools.logging.icdev_logger import get_logger
+from tools.db.storage import sql_placeholder
 
 logger = get_logger(__name__)
 
@@ -58,6 +59,11 @@ def _init():
 
 def _conn():
     return get_connection()
+
+
+def _ph(conn):
+    """Return the SQL placeholder token for the active backend."""
+    return sql_placeholder(conn)
 
 
 # ── Page Routes ──────────────────────────────────────────────────────────────
@@ -109,14 +115,14 @@ def detail(deck_id: int):
     conn = _conn()
     try:
         deck = conn.execute(
-            "SELECT * FROM slides_decks WHERE deck_id = ?", (deck_id,)
+            f"SELECT * FROM slides_decks WHERE deck_id = {_ph(conn)}", (deck_id,)
         ).fetchone()
         if not deck:
             return render_template("slides/index.html", decks=[], error="Deck not found"), 404
         deck = dict(deck)
 
         slides_rows = conn.execute(
-            "SELECT * FROM slides_slides WHERE deck_id = ? ORDER BY position",
+            f"SELECT * FROM slides_slides WHERE deck_id = {_ph(conn)} ORDER BY position",
             (deck_id,),
         ).fetchall()
         slides = []
@@ -206,7 +212,7 @@ def api_revise(deck_id: int):
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT * FROM slides_slides WHERE slide_id = ? AND deck_id = ?",
+            f"SELECT * FROM slides_slides WHERE slide_id = {_ph(conn)} AND deck_id = {_ph(conn)}",
             (slide_id, deck_id),
         ).fetchone()
         if not row:
@@ -233,7 +239,7 @@ def api_revise(deck_id: int):
     conn = _conn()
     try:
         conn.execute(
-            "UPDATE slides_slides SET title=?, bullets=?, speaker_notes=?, citations=? WHERE slide_id=?",
+            f"UPDATE slides_slides SET title={_ph(conn)}, bullets={_ph(conn)}, speaker_notes={_ph(conn)}, citations={_ph(conn)} WHERE slide_id={_ph(conn)}",
             (
                 revised.get("title", slide.get("title", "")),
                 json.dumps(revised.get("bullets", [])),
@@ -253,7 +259,7 @@ def _serve_file(deck_id: int, column: str, mime: str, ext: str) -> Any:
     conn = _conn()
     try:
         row = conn.execute(
-            f"SELECT title, {column} FROM slides_decks WHERE deck_id = ? AND status = 'completed'",
+            f"SELECT title, {column} FROM slides_decks WHERE deck_id = {_ph(conn)} AND status = 'completed'",
             (deck_id,),
         ).fetchone()
     finally:
@@ -309,7 +315,7 @@ def api_regenerate_slide(deck_id: int):
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT * FROM slides_slides WHERE slide_id = ? AND deck_id = ?",
+            f"SELECT * FROM slides_slides WHERE slide_id = {_ph(conn)} AND deck_id = {_ph(conn)}",
             (slide_id, deck_id),
         ).fetchone()
         if not row:
@@ -343,7 +349,7 @@ def api_regenerate_slide(deck_id: int):
     conn = _conn()
     try:
         conn.execute(
-            "UPDATE slides_slides SET title=?, bullets=?, speaker_notes=?, citations=? WHERE slide_id=?",
+            f"UPDATE slides_slides SET title={_ph(conn)}, bullets={_ph(conn)}, speaker_notes={_ph(conn)}, citations={_ph(conn)} WHERE slide_id={_ph(conn)}",
             (
                 revised.get("title", slide.get("title", "")),
                 json.dumps(revised.get("bullets", [])),
@@ -357,6 +363,38 @@ def api_regenerate_slide(deck_id: int):
         conn.close()
 
     return jsonify({"slide": revised})
+
+
+@slides_bp.route("/api/asset-smoke", methods=["POST"])
+def api_asset_smoke():
+    """Lightweight smoke test for the ICDEV-native asset generator.
+
+    Exercises the shared AssetGenerator (used by GraphicsGenerator) with the
+    deterministic slides_svg provider so E2E tests can verify the media pipeline
+    end-to-end without GPU/cloud keys or LLM calls.
+    """
+    data = request.get_json(silent=True) or {}
+    title = data.get("title", "Smoke Test Slide")
+    bullets = data.get("bullets", [])
+    theme = data.get("theme", "midnight_executive")
+
+    try:
+        from tools.viz.asset_generator import generate_for_slide
+        from pathlib import Path
+        from tempfile import gettempdir
+
+        output_path = str(Path(gettempdir()) / f"slides_asset_smoke_{int(__import__('time').time())}.svg")
+        result = generate_for_slide(
+            title=title,
+            bullets=bullets,
+            theme=theme,
+            output_path=output_path,
+            preferred_providers=["slides_svg"],
+        )
+        return jsonify(result)
+    except Exception as exc:
+        logger.exception("asset-smoke failed")
+        return jsonify({"success": False, "error": str(exc)}), 500
 
 
 @slides_bp.route("/api/iqe-query", methods=["POST"])
