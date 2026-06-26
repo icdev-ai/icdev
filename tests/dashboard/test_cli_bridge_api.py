@@ -28,6 +28,7 @@ from tools.dashboard.api.cli_bridge_api import (  # noqa: E402
     register_cli_bridge,
     run_cli_bridge_prompt,
 )
+from tools.llm.cli_bridge import activate  # noqa: E402
 from tools.llm.cli_bridge.activate import (  # noqa: E402
     CLI_MODEL_NAME,
     apply_cli_bridge_override,
@@ -110,10 +111,10 @@ def test_apply_override_true_idempotent_when_already_first():
 # ────────────────────────────────────────────────────────────────────────────
 
 
-def test_override_beats_env_force_enable(monkeypatch):
-    """Override=False bypasses the bridge even with ICDEV_CLI_BRIDGE=1."""
-    monkeypatch.setenv("ICDEV_CLI_BRIDGE", "1")
-    assert cli_bridge_enabled() is True  # env force-enable, no override
+def test_override_beats_should_enable_force_enable(monkeypatch):
+    """Override=False bypasses the bridge even when should_enable() is True."""
+    monkeypatch.setattr(activate, "should_enable", lambda: True)
+    assert cli_bridge_enabled() is True  # auto-detect says enable, no override
     token = cli_bridge_override(False)
     try:
         assert cli_bridge_enabled() is False
@@ -122,8 +123,9 @@ def test_override_beats_env_force_enable(monkeypatch):
     assert cli_bridge_enabled() is True  # restored after reset
 
 
-def test_override_beats_env_force_disable(monkeypatch):
-    monkeypatch.setenv("ICDEV_CLI_BRIDGE", "0")
+def test_override_beats_should_enable_force_disable(monkeypatch):
+    """Override=True enables the bridge even when should_enable() is False."""
+    monkeypatch.setattr(activate, "should_enable", lambda: False)
     assert cli_bridge_enabled() is False
     token = cli_bridge_override(True)
     try:
@@ -144,7 +146,10 @@ def _make_app(monkeypatch):
     sees: the override value, the resolved enabled flag, and the chain that
     LLMRouter.invoke() would walk (claude-cli stripped/kept accordingly).
     """
-    monkeypatch.setenv("ICDEV_CLI_BRIDGE", "1")  # bridge force-ENABLED globally
+    # Simulate a global auto-detect state that says the bridge should be enabled
+    # (equivalent to the old ICDEV_CLI_BRIDGE=1 default).  The env var itself is
+    # no longer consulted by cli_bridge_enabled().
+    monkeypatch.setattr(activate, "should_enable", lambda: True)
     app = Flask(__name__)
     register_cli_bridge(app)
 
@@ -183,13 +188,13 @@ def test_header_overrides_cookie(monkeypatch):
     assert data["chain"][0] == CLI_MODEL_NAME
 
 
-def test_no_cookie_defers_to_env(monkeypatch):
+def test_no_cookie_defers_to_auto_detect(monkeypatch):
     app = _make_app(monkeypatch)
     client = app.test_client()
     resp = client.get("/_probe")
     data = resp.get_json()
     assert data["override"] is None  # no toggle → no override
-    assert data["enabled"] is True  # defers to ICDEV_CLI_BRIDGE=1
+    assert data["enabled"] is True  # defers to should_enable() auto-detect
     assert data["chain"][0] == CLI_MODEL_NAME
 
 

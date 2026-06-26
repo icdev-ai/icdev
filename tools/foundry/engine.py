@@ -398,7 +398,7 @@ def _recent_vv_fail_rate(conn: Any, window: int = 10) -> Optional[dict]:
     """
     try:
         rows = conn.execute(
-            "SELECT outcome FROM foundry_outcomes ORDER BY id DESC LIMIT %s",
+            "SELECT outcome FROM foundry_outcomes ORDER BY id DESC LIMIT ?",
             (window,),
         ).fetchall()
     except Exception as exc:  # noqa: BLE001
@@ -477,8 +477,8 @@ def _ensure_hitl_circuit_card(
                 (id, title, description, task_type, priority, status,
                  hitl_stage, dispatch_source, created_at, updated_at,
                  tenant_id, classification)
-            VALUES (%s, %s, %s, 'hitl', 'critical', 'backlog',
-                    'circuit_breaker', 'foundry_circuit_breaker', %s, %s, %s, %s)
+            VALUES (?, ?, ?, 'hitl', 'critical', 'backlog',
+                    'circuit_breaker', 'foundry_circuit_breaker', ?, ?, ?, ?)
             """,
             (
                 card_id,
@@ -746,7 +746,7 @@ def status(*, conn: Any = None, limit: int = 10) -> dict:
         try:
             cur = conn.execute(
                 "SELECT id, cycle_at, harvested, concepts_proposed, concepts_approved, "
-                "tasks_emitted, status FROM foundry_runs ORDER BY id DESC LIMIT %s",
+                "tasks_emitted, status FROM foundry_runs ORDER BY id DESC LIMIT ?",
                 (int(limit),),
             )
             cols = ["id", "cycle_at", "harvested", "concepts_proposed",

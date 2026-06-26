@@ -208,6 +208,7 @@ reflexes:
     days_ahead: 14
     max_generations_per_run: 10
     stale_threshold_days: 90
+    goveval_gate_threshold: 0.5
     success_metric:
       name: cdrls_generated
       threshold: 0
