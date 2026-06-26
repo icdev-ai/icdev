@@ -588,3 +588,20 @@ scanner then runs against the *staged copy as data* — the target is read, hash
   - HITL at Stage 3 (conflict resolution) and Stage 7 (document review) block auto-publish.
   - WriteGuard hard gate (Stage 6) blocks low-quality content.
 - **Revisit if:** analyst/reviewer module paths are ever accepted from user request payloads, or if generated document content is auto-published without HITL.
+
+
+---
+
+## tools/network/ — PVM Predictive Vulnerability Management
+
+- **Files:** `tools/network/vuln_predictor.py`, `tools/network/attack_surface_mapper.py`, `tools/network/vuln_triage_engine.py`, `tools/network/patch_planner.py`, `tools/network/routes/pvm.py`
+- **Risk:** Reads CVE advisory data from internal network canvas DB (`nc_advisories`, `nc_advisory_assessments`), NQE device inventory from Forward Networks (trusted internal API), and Nessus scan results from the same internal DB. Accepts `network_id` (string), `advisory_ids` (list of ints), and `approved_by` (email string) from dashboard users. No content is executed, parsed as code, or written to the filesystem.
+- **Decision:** **trusted-first-party**
+- **Rationale:** All external data enters via trusted internal sources (network canvas DB, Forward Networks NQE API, Nessus ACAS). User-supplied inputs (`network_id`, `advisory_ids`, `approved_by`) are stored as metadata or used as DB query parameters — never executed. NQE queries are fixed NQL strings defined in source code (not user-supplied). DB writes are append-only (`nc_vuln_predictions`, `nc_patch_plans`) or upsert (`nc_attack_surface`, `nc_triage_queue`). No `exec()`, `eval()`, `subprocess`, dynamic import, or template rendering of user content occurs.
+- **Guardrails:**
+  - DB queries parameterized (no string interpolation of user input into SQL).
+  - NQL strings are compile-time constants, not user-provided.
+  - HITL gate blocks auto-scheduling: priority ≥ 0.75 requires human approval.
+  - `approved_by` field is stored as metadata only; no downstream code execution.
+  - APPEND-ONLY tables (`nc_vuln_predictions`, `nc_patch_plans`) enforced by `APPEND_ONLY_TABLES` in `.claude/hooks/pre_tool_use.py`.
+- **Revisit if:** users are ever allowed to supply custom NQL queries, if advisory data is fetched from untrusted external URLs, or if `approved_by` is used to trigger downstream privilege escalation.

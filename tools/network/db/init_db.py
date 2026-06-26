@@ -2120,6 +2120,7 @@ CREATE TABLE IF NOT EXISTS nc_attack_surface (
     exposure_type   TEXT NOT NULL DEFAULT 'unknown'
                         CHECK(exposure_type IN ('network','local','combined','unknown')),
     reachable       INTEGER NOT NULL DEFAULT 0 CHECK(reachable IN (0,1)),
+    bgp_exposed     INTEGER NOT NULL DEFAULT 0 CHECK(bgp_exposed IN (0,1)),
     criticality     INTEGER NOT NULL DEFAULT 3 CHECK(criticality BETWEEN 1 AND 5),
     surface_score   REAL NOT NULL CHECK(surface_score BETWEEN 0.0 AND 1.0),
     nqe_source      TEXT NOT NULL DEFAULT 'local_mapping'
@@ -2195,6 +2196,167 @@ CREATE TABLE IF NOT EXISTS nc_patch_plans (
 CREATE INDEX IF NOT EXISTS idx_nc_patch_plans_plan_id   ON nc_patch_plans(plan_id);
 CREATE INDEX IF NOT EXISTS idx_nc_patch_plans_advisory  ON nc_patch_plans(advisory_id);
 CREATE INDEX IF NOT EXISTS idx_nc_patch_plans_scheduled ON nc_patch_plans(scheduled_at);
+
+-- ── Migration 222: PNA — Predictive Network Analytics ─────────────────────────
+
+-- Device end-of-life / end-of-support risk predictions (APPEND-ONLY)
+CREATE TABLE IF NOT EXISTS nc_eol_predictions (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_name         TEXT NOT NULL,
+    vendor              TEXT,
+    model               TEXT,
+    os_version          TEXT,
+    eos_date            TEXT,
+    eol_date            TEXT,
+    days_remaining      INTEGER,
+    has_active_cves     INTEGER NOT NULL DEFAULT 0 CHECK(has_active_cves IN (0,1)),
+    active_cve_count    INTEGER NOT NULL DEFAULT 0,
+    risk_score          REAL NOT NULL CHECK(risk_score BETWEEN 0.0 AND 1.0),
+    risk_tier           TEXT NOT NULL DEFAULT 'medium'
+                            CHECK(risk_tier IN ('critical','high','medium','low')),
+    nqe_source          TEXT NOT NULL DEFAULT 'local_mapping'
+                            CHECK(nqe_source IN ('nqe_api','local_mapping','local_heuristic','static_registry')),
+    model_version       TEXT NOT NULL DEFAULT '1.0',
+    predicted_at        TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_nc_eol_predictions_device   ON nc_eol_predictions(device_name);
+CREATE INDEX IF NOT EXISTS idx_nc_eol_predictions_risk     ON nc_eol_predictions(risk_score DESC);
+CREATE INDEX IF NOT EXISTS idx_nc_eol_predictions_eos_date ON nc_eol_predictions(eos_date ASC);
+CREATE INDEX IF NOT EXISTS idx_nc_eol_predictions_vendor   ON nc_eol_predictions(vendor);
+
+-- BGP session event log — rolling window, pruned after 90 days (MUTABLE)
+CREATE TABLE IF NOT EXISTS nc_bgp_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_key TEXT NOT NULL,
+    device_name TEXT NOT NULL,
+    peer_ip     TEXT NOT NULL,
+    peer_asn    INTEGER,
+    event_type  TEXT NOT NULL CHECK(event_type IN ('up','down','flap','reset','timeout')),
+    event_at    TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at  TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_nc_bgp_events_session ON nc_bgp_events(session_key, event_at DESC);
+CREATE INDEX IF NOT EXISTS idx_nc_bgp_events_device  ON nc_bgp_events(device_name, event_at DESC);
+CREATE INDEX IF NOT EXISTS idx_nc_bgp_events_type    ON nc_bgp_events(event_type, event_at DESC);
+
+-- BGP session instability forecasts (APPEND-ONLY)
+CREATE TABLE IF NOT EXISTS nc_bgp_predictions (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_key          TEXT NOT NULL,
+    device_name          TEXT NOT NULL,
+    peer_ip              TEXT NOT NULL,
+    peer_asn             INTEGER,
+    stability_score      REAL NOT NULL CHECK(stability_score BETWEEN 0.0 AND 1.0),
+    flap_count_24h       INTEGER NOT NULL DEFAULT 0,
+    flap_count_7d        INTEGER NOT NULL DEFAULT 0,
+    flap_risk            TEXT NOT NULL DEFAULT 'low'
+                             CHECK(flap_risk IN ('critical','high','medium','low')),
+    route_count          INTEGER,
+    session_state        TEXT,
+    predicted_outage_hrs REAL,
+    confidence           REAL NOT NULL CHECK(confidence BETWEEN 0.0 AND 1.0),
+    model_version        TEXT NOT NULL DEFAULT '1.0',
+    predicted_at         TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at           TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_nc_bgp_predictions_session ON nc_bgp_predictions(session_key, predicted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_nc_bgp_predictions_device  ON nc_bgp_predictions(device_name);
+CREATE INDEX IF NOT EXISTS idx_nc_bgp_predictions_risk    ON nc_bgp_predictions(stability_score ASC);
+
+-- STIG/compliance baseline drift predictions (APPEND-ONLY)
+CREATE TABLE IF NOT EXISTS nc_compliance_drift (
+    id                        INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_name               TEXT NOT NULL,
+    framework                 TEXT NOT NULL,
+    last_compliant_score      REAL CHECK(last_compliant_score BETWEEN 0.0 AND 1.0),
+    current_score             REAL NOT NULL CHECK(current_score BETWEEN 0.0 AND 1.0),
+    drift_delta               REAL NOT NULL,
+    drift_rate_per_day        REAL,
+    failing_controls          INTEGER NOT NULL DEFAULT 0,
+    critical_controls_failing INTEGER NOT NULL DEFAULT 0,
+    predicted_fail_date       TEXT,
+    days_to_failure           INTEGER,
+    risk_score                REAL NOT NULL CHECK(risk_score BETWEEN 0.0 AND 1.0),
+    risk_tier                 TEXT NOT NULL DEFAULT 'medium'
+                                  CHECK(risk_tier IN ('critical','high','medium','low')),
+    assessed_at               TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at                TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_nc_compliance_drift_device    ON nc_compliance_drift(device_name, assessed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_nc_compliance_drift_framework ON nc_compliance_drift(framework);
+CREATE INDEX IF NOT EXISTS idx_nc_compliance_drift_risk      ON nc_compliance_drift(risk_score DESC);
+
+-- Bandwidth / capacity exhaustion forecasts (APPEND-ONLY)
+CREATE TABLE IF NOT EXISTS nc_capacity_predictions (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_name         TEXT NOT NULL,
+    interface_name      TEXT NOT NULL,
+    interface_id        TEXT,
+    current_util_pct    REAL NOT NULL CHECK(current_util_pct BETWEEN 0.0 AND 100.0),
+    peak_util_pct       REAL CHECK(peak_util_pct BETWEEN 0.0 AND 100.0),
+    avg_util_pct_7d     REAL,
+    trend_slope         REAL NOT NULL,
+    days_to_saturation  INTEGER,
+    saturation_date     TEXT,
+    confidence          REAL NOT NULL CHECK(confidence BETWEEN 0.0 AND 1.0),
+    risk_score          REAL NOT NULL CHECK(risk_score BETWEEN 0.0 AND 1.0),
+    risk_tier           TEXT NOT NULL DEFAULT 'low'
+                            CHECK(risk_tier IN ('critical','high','medium','low')),
+    nqe_source          TEXT NOT NULL DEFAULT 'local_mapping',
+    model_version       TEXT NOT NULL DEFAULT '1.0',
+    predicted_at        TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_nc_capacity_predictions_device      ON nc_capacity_predictions(device_name, interface_name, predicted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_nc_capacity_predictions_saturation  ON nc_capacity_predictions(days_to_saturation ASC);
+CREATE INDEX IF NOT EXISTS idx_nc_capacity_predictions_risk        ON nc_capacity_predictions(risk_score DESC);
+
+-- Pre-change failure probability scoring (APPEND-ONLY)
+CREATE TABLE IF NOT EXISTS nc_change_risk (
+    id                           INTEGER PRIMARY KEY AUTOINCREMENT,
+    change_request_id            TEXT NOT NULL,
+    device_name                  TEXT NOT NULL,
+    action_type                  TEXT,
+    failure_probability          REAL NOT NULL CHECK(failure_probability BETWEEN 0.0 AND 1.0),
+    blast_radius_size            INTEGER NOT NULL DEFAULT 0,
+    concurrent_change_count      INTEGER NOT NULL DEFAULT 0,
+    maintenance_window_compliant INTEGER NOT NULL DEFAULT 1 CHECK(maintenance_window_compliant IN (0,1)),
+    device_criticality           INTEGER NOT NULL DEFAULT 3 CHECK(device_criticality BETWEEN 1 AND 5),
+    risk_factors_json            TEXT,
+    risk_tier                    TEXT NOT NULL DEFAULT 'medium'
+                                     CHECK(risk_tier IN ('critical','high','medium','low')),
+    simulation_verdict           TEXT,
+    model_version                TEXT NOT NULL DEFAULT '1.0',
+    predicted_at                 TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at                   TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_nc_change_risk_change_request ON nc_change_risk(change_request_id);
+CREATE INDEX IF NOT EXISTS idx_nc_change_risk_device         ON nc_change_risk(device_name, predicted_at DESC);
+CREATE INDEX IF NOT EXISTS idx_nc_change_risk_probability    ON nc_change_risk(failure_probability DESC);
+
+-- Vendor supply-chain risk aggregation (APPEND-ONLY)
+CREATE TABLE IF NOT EXISTS nc_supply_chain_risk (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    vendor                TEXT NOT NULL,
+    device_count          INTEGER NOT NULL DEFAULT 0,
+    model_count           INTEGER NOT NULL DEFAULT 0,
+    cve_count             INTEGER NOT NULL DEFAULT 0,
+    kev_count             INTEGER NOT NULL DEFAULT 0,
+    critical_cve_count    INTEGER NOT NULL DEFAULT 0,
+    high_cve_count        INTEGER NOT NULL DEFAULT 0,
+    risk_score            REAL NOT NULL CHECK(risk_score BETWEEN 0.0 AND 1.0),
+    vendor_risk_rating    TEXT NOT NULL DEFAULT 'medium'
+                              CHECK(vendor_risk_rating IN ('critical','high','medium','low')),
+    top_cves_json         TEXT,
+    nqe_device_sample_json TEXT,
+    model_version         TEXT NOT NULL DEFAULT '1.0',
+    assessed_at           TEXT DEFAULT CURRENT_TIMESTAMP,
+    created_at            TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_nc_supply_chain_risk_vendor ON nc_supply_chain_risk(vendor, assessed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_nc_supply_chain_risk_score  ON nc_supply_chain_risk(risk_score DESC);
+CREATE INDEX IF NOT EXISTS idx_nc_supply_chain_risk_kev    ON nc_supply_chain_risk(kev_count DESC);
 """
 
 # ── Template seeds ────────────────────────────────────────────────────────────

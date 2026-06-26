@@ -11618,3 +11618,38 @@ projects:
   - key: ui
     title: Vulnerability Intelligence Dashboard
     priority: medium
+- key: pna
+  name: "PNA — Predictive Network Analytics"
+  description: "Six Forward Networks NQE-powered predictive models extending PVM: device
+    EOL/EOS scoring, BGP instability forecasting, compliance drift detection, network
+    capacity exhaustion, change failure probability, and supply chain risk scoring.
+    Each model follows the pvm-pred pattern (NQE query → deterministic formula →
+    append-only predictions table → API route → dashboard panel)."
+  task_prefix: pna-
+  default_open: true
+  briefs:
+  - 'eol: Device EOL/EOS prediction from NQE OS versions + vendor EOL registry (pna-eol-01..04)'
+  - 'bgp: BGP session instability forecasting from NQE flap history (pna-bgp-01..04)'
+  - 'cmp: Compliance drift prediction vs DISA STIG baselines (pna-cmp-01..04)'
+  - 'cap: Network capacity exhaustion forecasting from interface counters (pna-cap-01..04)'
+  - 'chg: Change failure probability scoring for pending change requests (pna-chg-01..04)'
+  - 'scs: Supply chain risk scoring by vendor/model from CISA KEV + NQE inventory (pna-scs-01..04)'
+  epics:
+  - key: eol
+    title: EOL/EOS Prediction — Device end-of-support risk scoring
+    priority: high
+  - key: bgp
+    title: BGP Instability — Session flap and routing failure forecast
+    priority: high
+  - key: cmp
+    title: Compliance Drift — STIG baseline deviation prediction
+    priority: high
+  - key: cap
+    title: Capacity Exhaustion — Bandwidth saturation forecasting
+    priority: medium
+  - key: chg
+    title: Change Failure — Pre-change risk probability scoring
+    priority: medium
+  - key: scs
+    title: Supply Chain Risk — Vendor/model CVE risk aggregation
+    priority: medium

@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import uuid
 from datetime import datetime, timezone
 
 from tools.logging.icdev_logger import get_logger
@@ -159,17 +160,19 @@ def _compute_scores(advisory: dict, assessments: list[dict]) -> dict:
     }
 
 
-def _write_prediction(conn, scores: dict) -> int:
+def _write_prediction(conn, scores: dict) -> str:
     """Insert into nc_vuln_predictions and return new row id."""
     now = _now()
-    cur = conn.execute(
+    row_id = str(uuid.uuid4())
+    conn.execute(
         """INSERT INTO nc_vuln_predictions
-           (advisory_id, assessment_id, risk_score_composite, risk_score_30d,
+           (id, advisory_id, assessment_id, risk_score_composite, risk_score_30d,
             risk_score_90d, trend, confidence, cvss_base, exploit_weight,
             patch_lag_norm, impacted_trend, model_version, predicted_at, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         (
-            scores["advisory_id"],
+            row_id,
+            str(scores["advisory_id"]),
             scores["assessment_id"],
             scores["risk_score_composite"],
             scores["risk_score_30d"],
@@ -186,7 +189,7 @@ def _write_prediction(conn, scores: dict) -> int:
         ),
     )
     conn.commit()
-    return cur.lastrowid
+    return row_id
 
 
 def _validate_baseline(scores: dict) -> None:
@@ -297,7 +300,7 @@ def get_top_risks(limit: int = 20) -> list[dict]:
         rows = conn.execute(
             """SELECT p.*, a.cve_id, a.vendor, a.severity
                FROM nc_vuln_predictions p
-               JOIN nc_advisories a ON a.id = p.advisory_id
+               JOIN nc_advisories a ON a.id = CAST(p.advisory_id AS INTEGER)
                WHERE p.id IN (
                    SELECT MAX(id) FROM nc_vuln_predictions GROUP BY advisory_id
                )
