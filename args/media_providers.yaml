@@ -1,0 +1,20 @@
+# ICDEV native media provider priority
+# Air-gap mode automatically removes non-native providers.
+providers:
+  priority:
+    - pulse_sdxl      # local GPU SDXL Turbo (requires CUDA >= 6 GB VRAM + diffusers)
+    - slides_matplotlib  # deterministic matplotlib-themed graphic
+    - slides_svg      # zero-dependency SVG fallback
+
+# Optional per-provider settings
+pulse_sdxl:
+  model_id: stabilityai/sdxl-turbo
+  steps: 4
+  guidance_scale: 0.0
+
+slides_matplotlib:
+  dpi: 96
+
+slides_svg:
+  width: 1024
+  height: 576

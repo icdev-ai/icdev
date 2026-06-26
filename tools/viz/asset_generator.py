@@ -83,6 +83,7 @@ class AssetRequest:
     title: str = ""
     bullets: List[str] = field(default_factory=list)
     visual_context: str = ""
+    prompt: str = ""  # optional LLM-generated image prompt (SDXL prefers this)
     category: str = ""
     topic: str = ""
     theme: str = ""
@@ -92,6 +93,8 @@ class AssetRequest:
     output_path: Optional[str] = None
     prefer_gpu: bool = True
     seed: Optional[int] = None
+    steps: Optional[int] = None
+    guidance_scale: Optional[float] = None
     preferred_providers: List[str] = field(default_factory=list)
     # Structured data payloads — used by viz_kernel provider when available.
     chart_json: Optional[Dict[str, Any]] = None
@@ -131,6 +134,32 @@ def _gpu_available() -> bool:
         return total >= 6 * 1024**3
     except Exception:
         return False
+
+
+def check_gpu() -> Dict[str, Any]:
+    """Return detailed GPU health information for SDXL Turbo."""
+    result: Dict[str, Any] = {
+        "cuda_available": False,
+        "device_name": None,
+        "vram_total_gb": 0.0,
+        "vram_free_gb": 0.0,
+        "sdxl_turbo_compatible": False,
+    }
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            result["cuda_available"] = True
+            result["device_name"] = torch.cuda.get_device_name(0)
+            props = torch.cuda.get_device_properties(0)
+            total = getattr(props, "total_memory", None) or getattr(props, "total_mem", 0)
+            free = total - torch.cuda.memory_allocated(0)
+            result["vram_total_gb"] = round(total / (1024**3), 1)
+            result["vram_free_gb"] = round(free / (1024**3), 1)
+            result["sdxl_turbo_compatible"] = result["vram_total_gb"] >= 6.0
+    except ImportError:
+        pass
+    return result
 
 
 def _available_providers() -> List[str]:
@@ -175,6 +204,7 @@ def _cache_key(req: AssetRequest) -> str:
     h.update(req.title.encode("utf-8"))
     h.update(";".join(req.bullets).encode("utf-8"))
     h.update(req.visual_context.encode("utf-8"))
+    h.update(req.prompt.encode("utf-8"))
     h.update(req.category.encode("utf-8"))
     h.update(req.topic.encode("utf-8"))
     h.update(req.theme.encode("utf-8"))
@@ -278,7 +308,7 @@ class AssetGenerator:
 
     def _provider_sdxl(self, req: AssetRequest, cache_key: str) -> Dict[str, Any]:
         start = time.time()
-        prompt = _build_image_prompt(req.title, req.category, req.topic)
+        prompt = req.prompt or _build_image_prompt(req.title, req.category, req.topic)
 
         width = (req.width // 8) * 8
         height = (req.height // 8) * 8
@@ -312,8 +342,8 @@ class AssetGenerator:
 
             result = _pipeline_cache(
                 prompt=prompt,
-                num_inference_steps=DEFAULT_STEPS,
-                guidance_scale=DEFAULT_GUIDANCE,
+                num_inference_steps=req.steps if req.steps is not None else DEFAULT_STEPS,
+                guidance_scale=req.guidance_scale if req.guidance_scale is not None else DEFAULT_GUIDANCE,
                 width=width,
                 height=height,
                 generator=generator,
