@@ -190,7 +190,7 @@ def index():
                 _q(
                     conn,
                     "SELECT id, name, role_id, state, trust_tier, created_at, updated_at "
-                    "FROM ace_instances ORDER BY created_at DESC LIMIT ?",
+                    "FROM ace_instances ORDER BY created_at DESC LIMIT %s",
                 ),
                 (_DEFAULT_LIMIT,),
             )
@@ -347,7 +347,7 @@ def instance_detail(instance_id: str):
                     conn,
                     "SELECT id, name, role_id, state, trust_tier, config_json, "
                     "result_json, created_at, updated_at, completed_at "
-                    "FROM ace_instances WHERE id = ?",
+                    "FROM ace_instances WHERE id = %s",
                 ),
                 (instance_id,),
             )
@@ -443,7 +443,7 @@ def instance_resume(instance_id: str):
                 _q(
                     conn,
                     "SELECT session_id, conversation_history, turn_count "
-                    "FROM ace_sessions WHERE resume_token = %s AND instance_id = ?",
+                    "FROM ace_sessions WHERE resume_token = %s AND instance_id = %s",
                 ),
                 (token, instance_id),
             )
@@ -632,7 +632,7 @@ def api_messages(instance_id: str):
         if after:
             ref = _one(
                 conn.execute(
-                    _q(conn, "SELECT created_at FROM ace_messages WHERE id = ?"),
+                    _q(conn, "SELECT created_at FROM ace_messages WHERE id = %s"),
                     (after,),
                 )
             )
@@ -945,7 +945,7 @@ def api_evals_list():
             _q(conn, f"SELECT session_id, outcome, done, turns_used, efficiency_score, "
                f"tool_error_rate, total_cost_usd, reasoning_coverage, plan_stated, "
                f"scope_violations, graded_at, grading_version "
-               f"FROM agent_evals {where} ORDER BY graded_at DESC LIMIT %s OFFSET ?"),
+               f"FROM agent_evals {where} ORDER BY graded_at DESC LIMIT %s OFFSET %s"),
             params + (limit, offset),
         ))
     except Exception as exc:  # noqa: BLE001
@@ -1156,7 +1156,7 @@ def api_coworker_stats(coworker_id: str):
         conn = _db()
         msg_row = _one(
             conn.execute(
-                _q(conn, "SELECT COUNT(*) AS n FROM ace_messages WHERE coworker_id = ?"),
+                _q(conn, "SELECT COUNT(*) AS n FROM ace_messages WHERE coworker_id = %s"),
                 (coworker_id,),
             )
         )
@@ -1184,7 +1184,7 @@ def api_coworker_stats(coworker_id: str):
             conn.execute(
                 _q(
                     conn,
-                    "SELECT DISTINCT instance_id FROM ace_messages WHERE coworker_id = ?",
+                    "SELECT DISTINCT instance_id FROM ace_messages WHERE coworker_id = %s",
                 ),
                 (coworker_id,),
             )
