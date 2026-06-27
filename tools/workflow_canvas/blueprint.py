@@ -750,7 +750,7 @@ Return a JSON object with this exact structure:
 Rules:
 - Extract ALL steps/tasks/requirements found in the document
 - checklist_items should be concrete, verbatim items from the document
-- form_fields capture data that must be submitted at this step
+- form_fields: REQUIRED — provide 2-5 meaningful data fields that the assignee must fill in to complete this step. Never leave form_fields empty.
 - assignee_role/reviewer_role/approver_role are human job titles (e.g. "Provider", "Network Director")
 - dependencies lists step ids that must complete first (first step has empty [])
 - Aim for 5-15 steps covering the full process
@@ -823,15 +823,21 @@ Process Document:
         workflow_desc = (workflow_def.get("workflow_description") or "").strip()
         industry = (workflow_def.get("industry") or "General").strip()
 
-        # Create a WFC form for each step that has form_fields
+        _DEFAULT_STEP_FIELDS = [
+            {"label": "Submission Notes", "type": "textarea", "required": False},
+            {"label": "Completed By", "type": "text", "required": True},
+            {"label": "Completion Date", "type": "date", "required": True},
+        ]
+
+        # Create a WFC form for each step (always — use defaults if LLM omitted fields)
         step_form_ids: dict[str, str] = {}
         for step in steps:
-            raw_fields = step.get("form_fields") or []
+            raw_fields = _validate_fields(step.get("form_fields") or [])
             if not raw_fields:
-                continue
+                raw_fields = list(_DEFAULT_STEP_FIELDS)
             form_result = create_form(
                 name=f"{workflow_name} — {step.get('title') or step['id']}",
-                fields=_validate_fields(raw_fields),
+                fields=raw_fields,
                 description=step.get("description", ""),
                 created_by="processify",
                 status="draft",
@@ -940,6 +946,27 @@ Process Document:
             "forms_created": len(step_form_ids),
             "kanban_tasks": len(kanban_ids),
         })
+
+    @bp.route("/api/workflows/<workflow_id>/task-status")
+    def api_workflow_task_status(workflow_id):
+        """Return kanban task statuses for a workflow (matched by processify ID prefix)."""
+        from tools.db.storage import get_connection, sql_placeholder
+        conn = get_connection()
+        ph = sql_placeholder(conn)
+        prefix = f"processify-{workflow_id[:8]}-%"
+        rows = conn.execute(
+            f"""SELECT id, title, status, updated_at
+                FROM kanban_tasks
+                WHERE id LIKE {ph}
+                ORDER BY id""",
+            (prefix,),
+        ).fetchall()
+        conn.close()
+        tasks = [{"id": r[0], "title": r[1], "status": r[2], "updated_at": str(r[3])} for r in rows]
+        total = len(tasks)
+        done = sum(1 for t in tasks if t["status"] in ("done", "failed"))
+        return jsonify({"tasks": tasks, "total": total, "done": done,
+                        "complete": total > 0 and done == total})
 
     @bp.route("/api/workflows/cleanup-processify", methods=["POST"])
     def api_cleanup_processify_tasks():

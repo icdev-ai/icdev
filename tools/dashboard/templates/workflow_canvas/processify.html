@@ -136,7 +136,19 @@
       <div id="result-meta" style="font-size:0.88rem;color:#86efac;margin-bottom:20px;display:flex;gap:16px;flex-wrap:wrap"></div>
 
       <!-- Stats row -->
-      <div id="result-stats" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:24px"></div>
+      <div id="result-stats" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-bottom:16px"></div>
+
+      <!-- Task progress panel -->
+      <div id="task-progress-panel" style="margin-top:4px;margin-bottom:20px;display:none">
+        <div style="font-size:0.8rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#86efac;margin-bottom:8px">
+          Workflow Task Progress
+          <span id="task-progress-pct" style="font-weight:400;margin-left:8px;color:#d1fae5"></span>
+        </div>
+        <div style="background:rgba(255,255,255,0.08);border-radius:4px;height:6px;margin-bottom:10px">
+          <div id="task-progress-bar" style="height:6px;border-radius:4px;background:#10b981;width:0%;transition:width 0.4s"></div>
+        </div>
+        <div id="task-list" style="display:flex;flex-direction:column;gap:4px;max-height:200px;overflow-y:auto"></div>
+      </div>
 
       <!-- Action buttons -->
       <div style="display:flex;gap:10px;flex-wrap:wrap">
@@ -453,6 +465,58 @@ function showResult(wfDef, workflowId, saveData, kanbanData, coworkerCount) {
     '</div>';
   }).join('');
   document.getElementById('result-steps-panel').innerHTML = stepHtml;
+
+  /* Start kanban task progress polling */
+  startTaskProgressPolling(workflowId);
+}
+
+/* ── Task progress polling ── */
+var _taskPollTimer = null;
+
+function startTaskProgressPolling(workflowId) {
+  stopTaskProgressPolling();
+  var panel = document.getElementById('task-progress-panel');
+  panel.style.display = 'block';
+  _pollTaskStatus(workflowId);
+  _taskPollTimer = setInterval(function() { _pollTaskStatus(workflowId); }, 5000);
+}
+
+function stopTaskProgressPolling() {
+  if (_taskPollTimer) { clearInterval(_taskPollTimer); _taskPollTimer = null; }
+  var panel = document.getElementById('task-progress-panel');
+  if (panel) panel.style.display = 'none';
+}
+
+async function _pollTaskStatus(workflowId) {
+  try {
+    var resp = await fetch('/workflow-canvas/api/workflows/' + workflowId + '/task-status');
+    if (!resp.ok) return;
+    var data = await resp.json();
+    var total = data.total || 0;
+    var done  = data.done  || 0;
+    var pct   = total > 0 ? Math.round(done / total * 100) : 0;
+
+    document.getElementById('task-progress-pct').textContent =
+      done + ' / ' + total + ' done (' + pct + '%)';
+    document.getElementById('task-progress-bar').style.width = pct + '%';
+
+    var STATUS_COLOR = {
+      done: '#10b981', in_progress: '#3b82f6', failed: '#ef4444',
+      backlog: '#6b7280', scheduled: '#f59e0b', suggested: '#8b5cf6'
+    };
+    var taskHtml = (data.tasks || []).map(function(t) {
+      var color = STATUS_COLOR[t.status] || '#6b7280';
+      return '<div style="display:flex;align-items:center;gap:8px;font-size:0.78rem;padding:3px 0">' +
+        '<span style="width:8px;height:8px;border-radius:50%;background:' + color + ';flex-shrink:0"></span>' +
+        '<span style="color:var(--text-secondary);min-width:80px;flex-shrink:0">' + esc(t.status) + '</span>' +
+        '<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(t.title || t.id) + '</span>' +
+      '</div>';
+    }).join('');
+    document.getElementById('task-list').innerHTML = taskHtml || '<span style="color:var(--text-secondary);font-size:0.78rem">No tasks yet…</span>';
+
+    /* Stop polling once all complete */
+    if (data.complete && total > 0) stopTaskProgressPolling();
+  } catch(e) { /* silent — polling is best-effort */ }
 }
 
 /* ── Show error ── */
@@ -498,6 +562,7 @@ async function cleanupPriorRuns() {
 
 /* ── Reset ── */
 function resetToIntent() {
+  stopTaskProgressPolling();
   workflowDef = null; pendingFile = null;
   document.getElementById('dz-icon').textContent = '📄';
   document.getElementById('dz-label').textContent = 'Drop file or click to browse';

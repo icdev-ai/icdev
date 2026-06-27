@@ -1111,7 +1111,7 @@ def create_network_blueprint():
         # Migration phases with linked SOPs and parsed steps
         migration_phases_raw = [
             _row_to_dict(r) for r in conn.execute(
-                "SELECT * FROM nc_migration_phases WHERE project_id=? ORDER BY phase_num",
+                "SELECT * FROM nc_migration_phases WHERE project_id={_ph} ORDER BY phase_num",
                 (proj_id,)
             ).fetchall()
         ]
@@ -1123,7 +1123,7 @@ def create_network_blueprint():
                               s.rollback AS sop_rollback, s.escalation
                        FROM nc_phase_documents pd
                        LEFT JOIN ndc_sops s ON s.sop_id = pd.doc_id
-                       WHERE pd.phase_id = ?
+                       WHERE pd.phase_id = {_ph}
                        ORDER BY pd.display_order""",
                     (mphase['id'],)
                 ).fetchall()
@@ -9466,10 +9466,11 @@ Rules:
                     tgt_model = tgt_candidates[0] if tgt_candidates else "Target Device"
                     migration_session_id = "nmig-" + _uuid.uuid4().hex[:12]
                     with get_connection() as _mc:
+                        _ph = sql_placeholder(_mc)
                         _mc.execute(
-                            "INSERT INTO mc_net_sessions "
-                            "(id, src_model, tgt_model, src_device_name, tgt_device_name, created_at, updated_at) "
-                            "VALUES (?,?,?,?,?,?,?)",
+                            f"INSERT INTO mc_net_sessions "
+                            f"(id, src_model, tgt_model, src_device_name, tgt_device_name, created_at, updated_at) "
+                            f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                             (migration_session_id, src_model, tgt_model,
                              src_model, tgt_model,
                              datetime.utcnow().isoformat(), datetime.utcnow().isoformat()),
@@ -9487,10 +9488,11 @@ Rules:
                 _short = (description[:120] + "…") if len(description) > 120 else description
                 _hist_gj = json.dumps(graph_json) if graph_json else None
                 with get_connection() as _hc:
+                    _ph = sql_placeholder(_hc)
                     _hc.execute(
-                        "INSERT INTO nc_ai_history "
-                        "(id, description, short_desc, node_count, edge_count, provider, is_migration, graph_json, created_at) "
-                        "VALUES (?,?,?,?,?,?,?,?,?)",
+                        f"INSERT INTO nc_ai_history "
+                        f"(id, description, short_desc, node_count, edge_count, provider, is_migration, graph_json, created_at) "
+                        f"VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})",
                         (_hist_id, description, _short,
                          len(graph_json["nodes"]), len(graph_json["edges"]),
                          used_provider, int(is_migration), _hist_gj,
@@ -10784,7 +10786,7 @@ Respond with ONLY this JSON (no other text):
                 "INSERT INTO showcase_demo_runs "
                 "(run_id, audience, scenarios_json, status, result_json, "
                 "scenarios_passed, scenarios_total, elapsed_ms, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (run_id, audience, json.dumps(scenarios or "all"),
                  status, json.dumps(result_payload, default=str),
                  passed, total, elapsed_ms,
@@ -10824,7 +10826,7 @@ Respond with ONLY this JSON (no other text):
                 "SELECT run_id, audience, scenarios_json, status, result_json, scenarios_passed, "
                 "scenarios_total, elapsed_ms, created_at "
                 "FROM showcase_demo_runs WHERE audience IN ('exec','tech','engineer') "
-                "ORDER BY created_at DESC LIMIT ?",
+                "ORDER BY created_at DESC LIMIT %s",
                 (limit,),
             ).fetchall()
             conn.close()
@@ -11662,10 +11664,11 @@ Respond with ONLY this JSON (no other text):
         sha = hashlib.sha256(pcap_bytes).hexdigest()
         expiry = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
         now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        _ph = sql_placeholder(conn)
         conn.execute(
-            """UPDATE nc_packet_captures
-               SET status='complete', size_bytes=?, sha256=?, expiry_at=?,
-                   stopped_at=?, pcap_data=?
+            f"""UPDATE nc_packet_captures
+               SET status='complete', size_bytes={_ph}, sha256={_ph}, expiry_at={_ph},
+                   stopped_at={_ph}, pcap_data={_ph}
                WHERE id={_ph}""",
             (len(pcap_bytes), sha, expiry, now, pcap_bytes, cap_id),
         )
@@ -11689,19 +11692,20 @@ Respond with ONLY this JSON (no other text):
 
         # If no lab_run provided, auto-create a stub run for this topology
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         if not lab_run_id:
             lab_run_id = str(_uuid.uuid4())
             conn.execute(
-                """INSERT INTO nc_lab_runs (id, topology_id, name, backend, status, started_at)
-                   VALUES (?, ?, ?, 'stub', 'running', ?)""",
+                f"""INSERT INTO nc_lab_runs (id, topology_id, name, backend, status, started_at)
+                   VALUES ({_ph}, {_ph}, {_ph}, 'stub', 'running', {_ph})""",
                 (lab_run_id, topo_id, f"Auto-run {now[:10]}", now),
             )
 
         conn.execute(
-            """INSERT INTO nc_packet_captures
+            f"""INSERT INTO nc_packet_captures
                (id, link_id, lab_run_id, topology_id, src_label, dst_label,
                 protocol, status, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'running', ?)""",
+               VALUES ({_ph}, {_ph}, {_ph}, {_ph}, {_ph}, {_ph}, {_ph}, 'running', {_ph})""",
             (
                 cap_id,
                 link_id,
@@ -13482,7 +13486,7 @@ Planning rules:
             project = dict(project_row)
 
             phases = [dict(r) for r in conn.execute(
-                "SELECT * FROM nc_migration_phases WHERE project_id=? ORDER BY phase_num",
+                "SELECT * FROM nc_migration_phases WHERE project_id={_ph} ORDER BY phase_num",
                 (project_id,),
             ).fetchall()]
 
@@ -13497,7 +13501,7 @@ Planning rules:
 
             snapshots = [dict(r) for r in conn.execute(
                 "SELECT id, phase_id, label, created_at FROM nc_topology_snapshots "
-                "WHERE topo_id=? ORDER BY created_at DESC",
+                "WHERE topo_id={_ph} ORDER BY created_at DESC",
                 (topo_id,),
             ).fetchall()] if topo_id else []
 
@@ -13522,7 +13526,7 @@ Planning rules:
                 placeholders = ",".join("?" * len(phase_ids))
                 flow_rows = conn.execute(
                     f"SELECT id, name, source_zone, destination_zone, classification, phase_id "
-                    f"FROM nc_traffic_flows WHERE topology_id=? AND phase_id IN ({placeholders})",
+                    f"FROM nc_traffic_flows WHERE topology_id={_ph} AND phase_id IN ({placeholders})",
                     [topo_id] + phase_ids,
                 ).fetchall()
                 for r in flow_rows:
