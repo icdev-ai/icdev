@@ -35,7 +35,7 @@ _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from tools.db.storage import get_connection, sql_placeholder
+from tools.db.storage import get_connection, get_canvas_connection, sql_placeholder
 from tools.logging.icdev_logger import get_logger
 from tools.workflow_canvas.constants import (
     EXPORT_FORMATS,
@@ -137,7 +137,7 @@ def _ensure_init() -> None:
     except Exception as exc:
         logger.warning("wfc: studio DB init error: %s", exc)
     try:
-        conn = get_connection()
+        conn = get_canvas_connection("ICDEV_WFC_ENABLED")
         is_pg = hasattr(conn, 'server_version') or 'psycopg2' in type(conn).__module__
         migration_sql = _WFC_MIGRATION_PG if is_pg else _WFC_MIGRATION_SQLITE
         # Execute each statement separately (executescript is SQLite-only)
@@ -173,7 +173,7 @@ def create_wfc_blueprint() -> Blueprint:
         return sql_placeholder(conn)
 
     def _get_branding(entity_type: str, entity_id: str) -> dict:
-        conn = get_connection()
+        conn = get_canvas_connection("ICDEV_WFC_ENABLED")
         try:
             ph = _ph(conn)
             row = conn.execute(
@@ -195,7 +195,7 @@ def create_wfc_blueprint() -> Blueprint:
             conn.close()
 
     def _save_branding(entity_type: str, entity_id: str, data: dict) -> None:
-        conn = get_connection()
+        conn = get_canvas_connection("ICDEV_WFC_ENABLED")
         try:
             ph = _ph(conn)
             existing = conn.execute(
@@ -482,10 +482,17 @@ Industry context: {industry or 'General'}
 Form description: {description}"""
 
         try:
-            from tools.llm.router import LLMRouter
+            from tools.llm.router import LLMRouter, LLMRequest
             router = LLMRouter()
-            result = router.invoke("form_generation", prompt)
-            raw = (result or {}).get("content") or (result or {}).get("text") or str(result or "")
+            req = LLMRequest(function_id="form_generation", prompt=prompt)
+            result = router.invoke("form_generation", req)
+            # Result may be LLMResponse object, dict, or string
+            if hasattr(result, "content"):
+                raw = result.content or ""
+            elif isinstance(result, dict):
+                raw = result.get("content") or result.get("text") or result.get("response") or str(result)
+            else:
+                raw = str(result or "")
             import re
             # Extract JSON array from the response
             match = re.search(r"\[[\s\S]*\]", raw)
@@ -531,6 +538,7 @@ Form description: {description}"""
             fields=data.get("fields", []),
             description=data.get("description", ""),
             created_by=data.get("created_by", "user"),
+            status=data.get("status", "draft"),
         )
         # Save branding if provided
         if data.get("branding"):

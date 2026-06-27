@@ -585,10 +585,13 @@ def create_form(
     *,
     description: str = "",
     created_by: str = "studio",
+    status: str = "draft",
 ) -> dict:
     form_id = _new_id("frm")
     schema = _fields_to_json_schema(fields)
     schema["_fields"] = fields  # Store original field defs for UI reconstruction
+    _valid = {"draft", "published", "archived"}
+    safe_status = status if status in _valid else "draft"
 
     conn = get_connection()
     try:
@@ -596,8 +599,8 @@ def create_form(
             """INSERT INTO studio_forms
                (form_id, name, description, schema_json, created_by,
                 created_at, updated_at, status)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 'draft')""",
-            (form_id, name, description, json.dumps(schema), created_by, _now_iso(), _now_iso()),
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (form_id, name, description, json.dumps(schema), created_by, _now_iso(), _now_iso(), safe_status),
         )
         conn.commit()
         return {"status": "ok", "form_id": form_id, "schema": schema}

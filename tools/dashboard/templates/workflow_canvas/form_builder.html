@@ -15,25 +15,25 @@
   </div>
 
   <!-- Action bar -->
-  <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
     <input id="form-name-input" type="text" value="{{ form.name if form else '' }}" placeholder="Form name…"
-           style="font-size:1.1rem;font-weight:600;padding:6px 10px;border:1px solid var(--border-color);border-radius:6px;min-width:220px">
-    <button class="btn btn-primary" onclick="saveForm()">💾 Save</button>
+           style="font-size:1rem;font-weight:600;padding:6px 10px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-secondary);color:var(--text-primary);flex:1;min-width:150px">
+    <button style="padding:7px 16px;background:#1d72ff;color:#fff;border:none;border-radius:6px;font-size:0.9rem;cursor:pointer;white-space:nowrap" onclick="saveForm()">💾 Save</button>
     {% if not is_new %}
     <div style="position:relative;display:inline-block">
-      <button class="btn btn-secondary" onclick="toggleExportMenu()">📤 Export ▾</button>
+      <button style="padding:7px 14px;background:var(--bg-secondary);color:var(--text-primary);border:1px solid var(--border-color);border-radius:6px;font-size:0.9rem;cursor:pointer;white-space:nowrap" onclick="toggleExportMenu()">📤 Export ▾</button>
       <div id="export-menu" style="display:none;position:absolute;top:110%;left:0;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:6px;min-width:180px;z-index:999;box-shadow:0 4px 12px rgba(0,0,0,.15)">
         {% for fmt in export_formats %}
-        <div style="padding:10px 14px;cursor:pointer;hover:background:var(--bg-secondary)"
+        <div style="padding:10px 14px;cursor:pointer"
              onmouseenter="this.style.background='var(--bg-secondary)'"
              onmouseleave="this.style.background=''"
              onclick="exportForm('{{ fmt.id }}')">{{ fmt.label }}</div>
         {% endfor %}
       </div>
     </div>
-    <button class="btn btn-danger" onclick="deleteForm()">🗑 Delete</button>
+    <button style="padding:7px 14px;background:#c0392b;color:#fff;border:none;border-radius:6px;font-size:0.9rem;cursor:pointer;white-space:nowrap" onclick="deleteForm()">🗑 Delete</button>
     {% endif %}
-    <select id="status-select" style="padding:6px 10px;border-radius:6px;border:1px solid var(--border-color)">
+    <select id="status-select" style="padding:7px 10px;border-radius:6px;border:1px solid var(--border-color);background:var(--bg-secondary);color:var(--text-primary);white-space:nowrap">
       <option value="draft" {{ 'selected' if not form or form.status=='draft' }}>Draft</option>
       <option value="published" {{ 'selected' if form and form.status=='published' }}>Published</option>
       <option value="archived" {{ 'selected' if form and form.status=='archived' }}>Archived</option>
@@ -76,13 +76,13 @@
       <div style="margin-top:16px;font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary);margin-bottom:8px">Templates</div>
         {% for tpl in templates %}
         <div class="tpl-card" data-industry="{{ tpl.industry|default('All') }}" data-category="{{ tpl.category }}"
+             data-tpl-id="{{ tpl.id }}"
              style="padding:8px 10px;border-radius:6px;margin-bottom:4px;background:var(--bg-primary);border:1px solid var(--border-color);cursor:pointer;font-size:0.82rem"
-             onclick="loadTemplate({{ tpl|tojson }})">
+             onclick="loadTemplateById(this.dataset.tplId)">
           <div style="font-weight:600">{{ tpl.name }}</div>
           <div style="color:var(--text-secondary);font-size:0.75rem">{{ tpl.fields|length }} fields · {{ tpl.category }}</div>
         </div>
         {% endfor %}
-      </div>
     </div>
 
     <!-- Center: Drop zone canvas -->
@@ -156,6 +156,11 @@ const FORM_ID = {{ ('"' ~ form.form_id ~ '"') | safe if form else 'null' }};
 const IS_NEW = {{ 'true' if is_new else 'false' }};
 let fields = {{ (form._fields | tojson) if form and form._fields else '[]' }};
 let selectedIdx = null;
+const TEMPLATES_DATA = {{ templates | tojson }};
+function loadTemplateById(id) {
+  const tpl = TEMPLATES_DATA.find(t => t.id === id);
+  if (tpl) loadTemplate(tpl);
+}
 
 // ── Render ────────────────────────────────────────────────────────────────────
 function render() {
@@ -288,7 +293,9 @@ async function generateFromDescription() {
 function loadTemplate(tpl) {
   if (fields.length > 0 && !confirm('Replace current fields with template "' + tpl.name + '"?')) return;
   fields = tpl.fields.map((f,i) => Object.assign({id:'f'+(Date.now()+i)}, f));
-  document.getElementById('form-name-input').value = tpl.name;
+  // Only auto-fill name if the field is empty
+  const nameInput = document.getElementById('form-name-input');
+  if (!nameInput.value.trim()) nameInput.value = tpl.name;
   selectedIdx = null;
   render();
   updatePropsPanel();
