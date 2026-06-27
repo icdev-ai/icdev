@@ -12,6 +12,7 @@ ships unchanged when the LLM is unavailable. See ``_ai_digest_narrative``.
 from __future__ import annotations
 
 import pathlib
+from datetime import datetime, timedelta, timezone
 
 import yaml
 
@@ -331,11 +332,12 @@ def send_zig_maturity_report(recipient: str, ai_narrative: bool = False) -> dict
 def send_poam_due_soon_digest(recipient: str, days_ahead: int = 30, ai_narrative: bool = False) -> dict:
     """Fetch upcoming POA&M deadlines, render digest, and deliver."""
     conn = get_connection()
+    due_limit = (datetime.now(timezone.utc) + timedelta(days=days_ahead)).date().isoformat()
     due_items = conn.execute(
         "SELECT id, title, severity, due_date, owner, status, "
         "CAST(julianday(due_date) - julianday('now') AS INTEGER) as days_left "
         "FROM poam_items WHERE status='open' "
-        "AND due_date <= DATE('now', '+? days') ORDER BY due_date", (days_ahead,)
+        "AND due_date <= %s ORDER BY due_date", (due_limit,)
     ).fetchall()
     overdue = conn.execute(
         "SELECT COUNT(*) as cnt FROM poam_items WHERE status='open' AND due_date < DATE('now')"
@@ -366,14 +368,15 @@ def send_poam_due_soon_digest(recipient: str, days_ahead: int = 30, ai_narrative
 def send_audit_trail_summary(recipient: str, since_hours: int = 24, ai_narrative: bool = False) -> dict:
     """Fetch recent audit trail events, render activity summary, and deliver."""
     conn = get_connection()
+    since = (datetime.now(timezone.utc) - timedelta(hours=since_hours)).isoformat()
     events = conn.execute(
         "SELECT resource_type, event, actor, COUNT(*) as cnt "
-        "FROM audit_trail WHERE created_at >= datetime('now', '-? hours') "
-        "GROUP BY resource_type, event, actor ORDER BY cnt DESC LIMIT 20", (since_hours,)
+        "FROM audit_trail WHERE created_at >= %s "
+        "GROUP BY resource_type, event, actor ORDER BY cnt DESC LIMIT 20", (since,)
     ).fetchall()
     actors = conn.execute(
         "SELECT actor, COUNT(*) as cnt FROM audit_trail "
-        "WHERE created_at >= datetime('now', '-? hours') GROUP BY actor ORDER BY cnt DESC", (since_hours,)
+        "WHERE created_at >= %s GROUP BY actor ORDER BY cnt DESC", (since,)
     ).fetchall()
     conn.close()
     total_events = sum(int(e["cnt"]) for e in events)

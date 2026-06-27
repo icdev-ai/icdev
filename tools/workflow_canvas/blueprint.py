@@ -60,7 +60,7 @@ from tools.studio.form_builder import (
 
 logger = get_logger(__name__)
 
-_INIT_DONE = False  # reset to re-run chain table migration
+_INIT_DONE = False  # reset to re-run chain table migration (added handoff_brief column)
 
 
 def _now_iso() -> str:
@@ -119,12 +119,14 @@ CREATE TABLE IF NOT EXISTS wfc_chain_phases (
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','active','in_progress','complete')),
     unlock_threshold INTEGER NOT NULL DEFAULT 100,
     handoff_checklist TEXT NOT NULL DEFAULT '[]',
+    handoff_brief TEXT,
     style_fingerprint TEXT,
     regen_artifact_path TEXT,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(chain_id, phase_number)
 );
+ALTER TABLE wfc_chain_phases ADD COLUMN IF NOT EXISTS handoff_brief TEXT;
 CREATE TABLE IF NOT EXISTS wfc_branding (
     id               TEXT PRIMARY KEY,
     entity_type      TEXT NOT NULL CHECK(entity_type IN ('form','workflow')),
@@ -175,6 +177,7 @@ CREATE TABLE IF NOT EXISTS wfc_chain_phases (
     status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','active','in_progress','complete')),
     unlock_threshold INTEGER NOT NULL DEFAULT 100,
     handoff_checklist TEXT NOT NULL DEFAULT '[]',
+    handoff_brief TEXT,
     style_fingerprint TEXT,
     regen_artifact_path TEXT,
     created_at TEXT DEFAULT (datetime('now')),
