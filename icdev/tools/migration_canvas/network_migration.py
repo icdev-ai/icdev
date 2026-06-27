@@ -2344,7 +2344,7 @@ def build_topology(session_id: str, refresh: bool = False) -> dict[str, Any]:
     iface_y = 60
     for iface in ifaces:
         name = iface.get("name", "")
-        if not name or name == "lo0":
+        if not name or name.startswith("lo0"):
             continue
         in_id = f"topo-iface-{session_id}-{name.replace('/', '-').replace(':', '_')}"
         ip = iface.get("ip", "") or ""
