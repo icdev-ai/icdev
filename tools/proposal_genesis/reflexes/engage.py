@@ -534,7 +534,7 @@ def update_account(account_id: str, **fields) -> Dict[str, Any]:
     conn = get_connection()
     try:
         cur = conn.execute(
-            f"UPDATE pg_crm_accounts SET {set_clause} WHERE id = ?",
+            f"UPDATE pg_crm_accounts SET {set_clause} WHERE id = %s",
             values,  # nosec B608 — columns from hardcoded allowlist
         )
         conn.commit()
@@ -675,7 +675,7 @@ def update_contact(contact_id: str, **fields) -> Dict[str, Any]:
     conn = get_connection()
     try:
         cur = conn.execute(
-            f"UPDATE pg_crm_contacts SET {set_clause} WHERE id = ?",
+            f"UPDATE pg_crm_contacts SET {set_clause} WHERE id = %s",
             values,  # nosec B608 — columns from hardcoded allowlist
         )
         conn.commit()

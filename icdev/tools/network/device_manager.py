@@ -70,7 +70,7 @@ def upsert_device(topology_id: str, node_id: str, conn=None, **kwargs) -> dict:
             values.append(now)
             values.append(device_id)
             conn.execute(
-                f"UPDATE ni_devices SET {', '.join(updates)} WHERE id = ?",  # nosec B608 — column names from hardcoded allowlist
+                f"UPDATE ni_devices SET {', '.join(updates)} WHERE id = %s",  # nosec B608 — column names from hardcoded allowlist
                 values,
             )
             conn.commit()

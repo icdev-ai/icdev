@@ -159,7 +159,7 @@ def update_incident(
         if updates:
             params.append(incident_id)
             conn.execute(
-                f"UPDATE ai_incident_log SET {', '.join(updates)} WHERE id = ?",  # nosec B608 -- table/column names are internal constants, not user input
+                f"UPDATE ai_incident_log SET {', '.join(updates)} WHERE id = %s",  # nosec B608 -- table/column names are internal constants, not user input
                 params,
             )
             conn.commit()

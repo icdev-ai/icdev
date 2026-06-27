@@ -152,7 +152,7 @@ class EUAIActClassifier(BaseAssessor):
             cols = [c[1] for c in conn.execute(f"PRAGMA table_info({table})").fetchall()]
             if "project_id" in cols:
                 row = conn.execute(
-                    f"SELECT COUNT(*) FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
+                    f"SELECT COUNT(*) FROM {table} WHERE project_id = %s",  # nosec B608 -- table/column names are internal constants, not user input
                     (project_id,),
                 ).fetchone()
             else:

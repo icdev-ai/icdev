@@ -89,7 +89,7 @@ def get_phase_completions(phase: str, target_id: str = "icdev-self") -> dict:
         placeholders = ",".join("?" * len(act_ids))
         completions = conn.execute(
             f"SELECT status FROM zig_activity_completions "
-            f"WHERE activity_id IN ({placeholders}) AND target_id=?",
+            f"WHERE activity_id IN ({placeholders}) AND target_id=%s",
             act_ids + [target_id],
         ).fetchall()
 

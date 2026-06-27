@@ -81,7 +81,7 @@ def verify_completeness(project_id: str, db_path: Path = None) -> dict:
     placeholders = ",".join(["?"] * len(required_events))
     c.execute(
         f"SELECT event_type, COUNT(*) FROM audit_trail "  # nosec B608
-        f"WHERE project_id = ? AND event_type IN ({placeholders}) "
+        f"WHERE project_id = %s AND event_type IN ({placeholders}) "
         "GROUP BY event_type",
         (project_id, *required_events),
     )

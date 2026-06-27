@@ -273,7 +273,7 @@ def update_vehicle(vehicle_name: str, **fields: Any) -> dict[str, Any]:
     set_clause = ", ".join(f"{k} = ?" for k in updates)
     values = list(updates.values()) + [vehicle_name]
     conn.execute(
-        f"UPDATE procurement_vehicles SET {set_clause} WHERE vehicle_name = ?",
+        f"UPDATE procurement_vehicles SET {set_clause} WHERE vehicle_name = %s",
         values,
     )
     conn.commit()

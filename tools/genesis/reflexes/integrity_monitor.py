@@ -134,7 +134,7 @@ def _high_risk_signatures(conn: Any, assessment_id: int) -> Dict[str, Dict[str, 
     rows = conn.execute(
         f"SELECT finding_type, severity, file_path, line, detail "
         f"FROM integrity_findings "
-        f"WHERE assessment_id = ? AND finding_type IN ({placeholders})",
+        f"WHERE assessment_id = %s AND finding_type IN ({placeholders})",
         (assessment_id, *HIGH_RISK_FINDING_TYPES),
     ).fetchall()
     out: Dict[str, Dict[str, Any]] = {}
@@ -181,7 +181,7 @@ def _open_card_exists(conn: Any, title: str) -> bool:
     placeholders = ", ".join("?" * len(_OPEN_STATUSES))
     try:
         row = conn.execute(
-            f"SELECT 1 FROM kanban_tasks WHERE title = ? AND status IN ({placeholders}) LIMIT 1",
+            f"SELECT 1 FROM kanban_tasks WHERE title = %s AND status IN ({placeholders}) LIMIT 1",
             (title, *_OPEN_STATUSES),
         ).fetchone()
         return row is not None

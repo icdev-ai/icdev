@@ -222,7 +222,7 @@ def update_todo(
         params.append(task_id)
 
         conn.execute(
-            f"UPDATE kanban_tasks SET {', '.join(sets)} WHERE id = ?",  # nosec B608 — sets list built from hardcoded column names
+            f"UPDATE kanban_tasks SET {', '.join(sets)} WHERE id = %s",  # nosec B608 — sets list built from hardcoded column names
             tuple(params),
         )
         conn.commit()

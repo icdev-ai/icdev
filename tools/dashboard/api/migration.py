@@ -145,7 +145,7 @@ def list_assessments():
             f"recommended_strategy, cost_estimate_hours, risk_score, "
             f"timeline_weeks, ato_impact, tech_debt_reduction, assessed_at "
             f"FROM migration_assessments{where_sql} "
-            f"ORDER BY assessed_at DESC LIMIT ? OFFSET ?",
+            f"ORDER BY assessed_at DESC LIMIT %s OFFSET %s",
             params + [per_page, (page - 1) * per_page],
         ).fetchall()
 
@@ -229,7 +229,7 @@ def list_plans():
             f"estimated_hours, actual_hours, start_date, target_date, "
             f"completion_date, created_at, updated_at "
             f"FROM migration_plans{where_sql} "
-            f"ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f"ORDER BY created_at DESC LIMIT %s OFFSET %s",
             params + [per_page, (page - 1) * per_page],
         ).fetchall()
 

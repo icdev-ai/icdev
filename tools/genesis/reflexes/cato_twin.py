@@ -266,7 +266,7 @@ def _pull_framework_controls(conn, project_id: str, framework: str) -> List[Dict
                        COALESCE(evidence_ref, NULL)       AS evidence_ref,
                        COALESCE(score, 0.0)               AS score
                 FROM {table}
-               WHERE project_id = ?
+               WHERE project_id = %s
                ORDER BY assessed_at DESC""",
             (project_id,),
         ).fetchall()

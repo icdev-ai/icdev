@@ -738,7 +738,7 @@ def get_framework_coverage(
         f"""SELECT n.id, n.label, n.properties
             FROM kg_nodes n
             JOIN kg_edges e ON e.source_id = n.id
-            WHERE e.graph_id = ?
+            WHERE e.graph_id = %s
               AND e.target_id IN ({placeholders})
               AND e.relationship = 'satisfies'
               AND n.entity_type = 'control'""",  # nosec B608 -- table/column names are internal constants, not user input

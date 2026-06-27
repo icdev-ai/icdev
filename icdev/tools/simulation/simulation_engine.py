@@ -118,7 +118,7 @@ def _safe_count(conn, table, project_id):
     """Return row count for a table filtered by project_id, 0 if table missing."""
     try:
         row = conn.execute(
-            f"SELECT COUNT(*) AS cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT COUNT(*) AS cnt FROM {table} WHERE project_id = %s",  # nosec B608 -- table/column names are internal constants, not user input
             (project_id,),
         ).fetchone()
         return row["cnt"] if row else 0

@@ -74,8 +74,8 @@ def approve_exception(exc_id: int | str, level: str, approver: str) -> dict:
     try:
         conn.execute(
             f"""UPDATE nc_exceptions
-                SET {col_flag}=1, {col_by}=?, {col_at}=?, status=?, updated_at=?
-                WHERE id=?""",
+                SET {col_flag}=1, {col_by}=%s, {col_at}=%s, status=%s, updated_at=%s
+                WHERE id=%s""",
             (approver, now, new_status, now, exc_id),
         )
         conn.commit()

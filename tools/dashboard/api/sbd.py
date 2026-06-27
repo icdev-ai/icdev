@@ -178,7 +178,7 @@ def sbd_assessments():
             f"SELECT id, project_id, assessment_date, assessor, domain, requirement_id, "  # nosec B608 -- table/column names are internal constants, not user input
             f"status, evidence_description, evidence_path, automation_result, "
             f"cisa_commitment, notes, created_at, updated_at "
-            f"FROM sbd_assessments {where} ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+            f"FROM sbd_assessments {where} ORDER BY updated_at DESC LIMIT %s OFFSET %s",
             params + [per_page, offset],
         ).fetchall()
 

@@ -144,7 +144,7 @@ def save_design(design_id: str, graph: dict, name: str | None = None,
             params.append(classification)
         params.append(design_id)
 
-        conn.execute(f"UPDATE aiml_designs SET {', '.join(updates)} WHERE id=?", params)
+        conn.execute(f"UPDATE aiml_designs SET {', '.join(updates)} WHERE id=%s", params)
         conn.execute(
             "INSERT INTO aiml_audit (design_id, action, detail) VALUES (%s,%s,%s)",
             (design_id, "save", f"Graph saved ({len(graph.get('nodes',[]))} nodes)"),

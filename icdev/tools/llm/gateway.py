@@ -649,7 +649,7 @@ def get_audit_log(filters: Optional[Dict] = None, limit: int = 50) -> List[Dict]
         params.append(limit)
 
         rows = conn.execute(
-            f"SELECT * FROM llm_gateway_audit{where} ORDER BY id DESC LIMIT ?",  # nosec B608
+            f"SELECT * FROM llm_gateway_audit{where} ORDER BY id DESC LIMIT %s",  # nosec B608
             params,
         ).fetchall()
 

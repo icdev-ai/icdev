@@ -173,7 +173,7 @@ def list_artifacts():
             f"SELECT id, plan_id, artifact_type, file_path, description, "  # nosec B608 -- table/column names are internal constants, not user input
             f"created_at FROM migration_artifacts "
             f"WHERE {base_where} ORDER BY created_at DESC "
-            f"LIMIT ? OFFSET ?",
+            f"LIMIT %s OFFSET %s",
             query_params,
         ).fetchall()
 

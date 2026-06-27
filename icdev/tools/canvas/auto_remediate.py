@@ -73,7 +73,7 @@ def _load_findings_from_db(canvas_key: str, design_id: str) -> list[dict[str, An
     try:
         conn = get_connection(str(db_path))
         row = conn.execute(
-            f"SELECT findings_json FROM {table_name} WHERE design_id = ? ORDER BY created_at DESC LIMIT 1",  # noqa: S608
+            f"SELECT findings_json FROM {table_name} WHERE design_id = %s ORDER BY created_at DESC LIMIT 1",  # noqa: S608
             (design_id,),
         ).fetchone()
         conn.close()

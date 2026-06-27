@@ -292,7 +292,7 @@ class ToolChainValidator:
             for severity in ("critical", "high", "medium"):
                 row = conn.execute(
                     f"SELECT COUNT(*) FROM tool_chain_events "  # nosec B608 -- table/column names are internal constants, not user input
-                    f"WHERE {where} AND severity = ? AND created_at >= ?",
+                    f"WHERE {where} AND severity = %s AND created_at >= %s",
                     params + [severity, cutoff],
                 ).fetchone()
                 count = row[0] if row else 0

@@ -231,7 +231,7 @@ def update_risk(risk_id, data):
         updates["updated_at"] = _now()
         set_clause = ", ".join(f"{k} = ?" for k in updates)
         conn.execute(
-            f"UPDATE cpmp_risks SET {set_clause} WHERE id = ?",
+            f"UPDATE cpmp_risks SET {set_clause} WHERE id = %s",
             list(updates.values()) + [risk_id],
         )
         _audit(conn, "update_risk", f"id={risk_id} fields={list(updates)}")

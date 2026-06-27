@@ -195,7 +195,7 @@ def update_milestone(milestone_id, data):
         updates["updated_at"] = _now()
         set_clause = ", ".join(f"{k} = ?" for k in updates)
         conn.execute(
-            f"UPDATE cpmp_milestones SET {set_clause} WHERE id = ?",
+            f"UPDATE cpmp_milestones SET {set_clause} WHERE id = %s",
             list(updates.values()) + [milestone_id],
         )
         _audit(conn, "update_milestone", f"id={milestone_id} fields={list(updates)}")

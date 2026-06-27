@@ -409,7 +409,7 @@ def mi_api_wishlist_update(item_id):
     set_clause = ", ".join(f"{k}=?" for k in cols)
     conn = _get_conn()
     try:
-        conn.execute(f"UPDATE mi_wishlist SET {set_clause} WHERE id=?", [*cols.values(), item_id])
+        conn.execute(f"UPDATE mi_wishlist SET {set_clause} WHERE id=%s", [*cols.values(), item_id])
         conn.commit()
     finally:
         conn.close()

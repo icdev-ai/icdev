@@ -428,7 +428,7 @@ def update_allocation(
 
     conn = _get_conn()
     conn.execute(
-        f"UPDATE cpmp_budget_allocations SET {', '.join(updates)} WHERE id = ?",
+        f"UPDATE cpmp_budget_allocations SET {', '.join(updates)} WHERE id = %s",
         params,
     )
     conn.commit()

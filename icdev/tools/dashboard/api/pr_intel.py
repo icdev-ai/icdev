@@ -179,7 +179,7 @@ def list_reports():
             f"security_findings, compliance_impacts, overall_status, "
             f"classification, created_at "
             f"FROM pr_intelligence_reports{where} "
-            f"ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f"ORDER BY created_at DESC LIMIT %s OFFSET %s",
             params + [per_page, offset],
         ).fetchall()
 

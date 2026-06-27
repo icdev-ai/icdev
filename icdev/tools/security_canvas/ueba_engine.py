@@ -181,7 +181,7 @@ def correlate_cross_pillar(entity_id: str) -> dict[str, Any]:
             try:
                 r = conn.execute(
                     f"SELECT AVG({col}) as avg_risk FROM {table} "  # nosec B608 -- whitelist from CROSS_PILLAR_SOURCES
-                    f"WHERE {key}=? AND created_at >= datetime('now','-7 days')",  # nosec B608
+                    f"WHERE {key}=%s AND created_at >= datetime('now','-7 days')",  # nosec B608
                     (entity_id,),
                 ).fetchone()
                 if r and r["avg_risk"] is not None:

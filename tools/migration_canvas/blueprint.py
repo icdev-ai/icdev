@@ -903,7 +903,7 @@ def create_migration_blueprint():
         set_clause = ", ".join(f"{k}=?" for k in fields)
         with get_connection() as conn:
             conn.execute(
-                f"UPDATE mc_net_sessions SET {set_clause}, updated_at=? WHERE id=?",  # nosec B608
+                f"UPDATE mc_net_sessions SET {set_clause}, updated_at=%s WHERE id=%s",  # nosec B608
                 list(fields.values()) + [now_isoformat(), sid],
             )
             conn.commit()
@@ -937,13 +937,13 @@ def create_migration_blueprint():
             if vendor:
                 rows = conn.execute(
                     f"SELECT {_CATALOG_COLS} FROM nc_hardware_profiles "  # nosec B608
-                    "WHERE LOWER(vendor)=LOWER(?) AND device_type=? ORDER BY vendor, model",
+                    "WHERE LOWER(vendor)=LOWER(%s) AND device_type=%s ORDER BY vendor, model",
                     (vendor, device_type),
                 ).fetchall()
             else:
                 rows = conn.execute(
                     f"SELECT {_CATALOG_COLS} FROM nc_hardware_profiles "  # nosec B608
-                    "WHERE device_type=? ORDER BY vendor, model",
+                    "WHERE device_type=%s ORDER BY vendor, model",
                     (device_type,),
                 ).fetchall()
         return jsonify({"devices": [_row_to_dict(r) for r in rows]})
@@ -1497,7 +1497,7 @@ def create_migration_blueprint():
             if existing:
                 set_clause = ", ".join(f"{k}=?" for k in fields)
                 conn.execute(
-                    f"UPDATE mc_net_erb_metadata SET {set_clause}, updated_at=? WHERE session_id=?",  # nosec B608
+                    f"UPDATE mc_net_erb_metadata SET {set_clause}, updated_at=%s WHERE session_id=%s",  # nosec B608
                     list(fields.values()) + [now_isoformat(), sid],
                 )
             else:
@@ -2187,7 +2187,7 @@ def create_migration_blueprint():
             set_clause = ", ".join(f"{k}=?" for k in updates)
             vals = list(updates.values()) + [sid]
             conn = get_connection()
-            conn.execute(f"UPDATE mc_srv_sessions SET {set_clause} WHERE id=?", vals)  # nosec B608 – cols from hardcoded allowlist; values parameterized
+            conn.execute(f"UPDATE mc_srv_sessions SET {set_clause} WHERE id=%s", vals)  # nosec B608 – cols from hardcoded allowlist; values parameterized
             conn.commit()
             conn.close()
             return jsonify({"ok": True})
@@ -2207,9 +2207,9 @@ def create_migration_blueprint():
             ]
             for tbl in tables:
                 if tbl == "mc_srv_sessions":
-                    conn.execute(f"DELETE FROM {tbl} WHERE id=?", (sid,))  # nosec B608 – tbl from hardcoded list above
+                    conn.execute(f"DELETE FROM {tbl} WHERE id=%s", (sid,))  # nosec B608 – tbl from hardcoded list above
                 else:
-                    conn.execute(f"DELETE FROM {tbl} WHERE session_id=?", (sid,))  # nosec B608 – tbl from hardcoded list above
+                    conn.execute(f"DELETE FROM {tbl} WHERE session_id=%s", (sid,))  # nosec B608 – tbl from hardcoded list above
             conn.commit()
             conn.close()
             _audit(None, "srv_delete_session", sid)
@@ -3234,7 +3234,7 @@ def create_migration_blueprint():
         set_clause = ", ".join(f"{k}=?" for k in updates)
         vals = list(updates.values()) + [app_id]
         with get_connection() as db:
-            db.execute(f"UPDATE mc_app_inventory SET {set_clause} WHERE id=?", vals)  # nosec B608 – cols from hardcoded allowlist; values parameterized
+            db.execute(f"UPDATE mc_app_inventory SET {set_clause} WHERE id=%s", vals)  # nosec B608 – cols from hardcoded allowlist; values parameterized
         _audit(app_id, "APP_UPDATED", str(list(updates.keys())))
         return jsonify({"ok": True})
 
@@ -3557,7 +3557,7 @@ def create_migration_blueprint():
         set_clause = ", ".join(f"{k}=?" for k in updates)
         vals = list(updates.values()) + [dm_id]
         with get_connection() as db:
-            db.execute(f"UPDATE mc_data_migration SET {set_clause} WHERE id=?", vals)  # nosec B608 – cols from hardcoded updates dict; values parameterized
+            db.execute(f"UPDATE mc_data_migration SET {set_clause} WHERE id=%s", vals)  # nosec B608 – cols from hardcoded updates dict; values parameterized
         return jsonify({"ok": True})
 
     # ── ServiceNow CMDB Import ───────────────────────────────────────────────

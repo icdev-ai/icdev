@@ -816,7 +816,7 @@ def generate_anti_corruption_layer(app_id, service_boundary, db_path=None):
             f"FROM legacy_dependencies d "
             f"JOIN legacy_components cs ON d.source_component_id = cs.id "
             f"JOIN legacy_components ct ON d.target_component_id = ct.id "
-            f"WHERE d.legacy_app_id = ? "
+            f"WHERE d.legacy_app_id = %s "
             f"AND d.source_component_id IN ({placeholders}) "
             f"AND d.target_component_id NOT IN ({placeholders})",
             (app_id, *members, *members),
@@ -831,7 +831,7 @@ def generate_anti_corruption_layer(app_id, service_boundary, db_path=None):
             f"FROM legacy_dependencies d "
             f"JOIN legacy_components cs ON d.source_component_id = cs.id "
             f"JOIN legacy_components ct ON d.target_component_id = ct.id "
-            f"WHERE d.legacy_app_id = ? "
+            f"WHERE d.legacy_app_id = %s "
             f"AND d.target_component_id IN ({placeholders}) "
             f"AND d.source_component_id NOT IN ({placeholders})",
             (app_id, *members, *members),

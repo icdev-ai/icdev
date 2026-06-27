@@ -80,7 +80,7 @@ def get_decisions(
         params.append(limit)
         with get_connection() as conn:
             rows = conn.execute(
-                f"SELECT * FROM canvas_ai_decisions {where} ORDER BY created_at DESC LIMIT ?",  # nosec B608
+                f"SELECT * FROM canvas_ai_decisions {where} ORDER BY created_at DESC LIMIT %s",  # nosec B608
                 params,
             ).fetchall()
         return [dict(r) for r in rows]

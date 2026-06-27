@@ -55,7 +55,7 @@ def update_tournament(tournament_id: int, **fields) -> None:
     set_clause = ", ".join(f"{k} = ?" for k in cols)
     conn = get_connection()
     conn.execute(
-        f"UPDATE gd_ai_tournaments SET {set_clause} WHERE id = ?",
+        f"UPDATE gd_ai_tournaments SET {set_clause} WHERE id = %s",
         (*cols.values(), tournament_id),
     )
     conn.commit()
@@ -155,7 +155,7 @@ def update_round(round_id: int, **fields) -> None:
     set_clause = ", ".join(f"{k} = ?" for k in cols)
     conn = get_connection()
     conn.execute(
-        f"UPDATE gd_ai_rounds SET {set_clause} WHERE id = ?",
+        f"UPDATE gd_ai_rounds SET {set_clause} WHERE id = %s",
         (*cols.values(), round_id),
     )
     conn.commit()

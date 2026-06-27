@@ -370,7 +370,7 @@ def update_theme(theme_id, **kwargs):
     params.append(_now())
     params.append(theme_id)
 
-    conn.execute(f"UPDATE pg_win_themes SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
+    conn.execute(f"UPDATE pg_win_themes SET {', '.join(sets)} WHERE id = %s", params)  # nosec B608 -- table/column names are internal constants, not user input
     _audit(conn, "update_theme", f"Updated theme {theme_id}: {list(kwargs.keys())}")
     conn.commit()
     conn.close()

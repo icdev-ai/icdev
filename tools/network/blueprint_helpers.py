@@ -104,7 +104,7 @@ def nc_login_required(f):
 
 
 def _crud_list(conn, table, order_by="created_at DESC", limit=100):
-    rows = conn.execute(f"SELECT * FROM [{table}] ORDER BY {order_by} LIMIT ?", (limit,)).fetchall()  # noqa: S608, E501
+    rows = conn.execute(f"SELECT * FROM [{table}] ORDER BY {order_by} LIMIT %s", (limit,)).fetchall()  # noqa: S608, E501
     return [_row_to_dict(r) for r in rows]
 
 
@@ -117,7 +117,7 @@ def _crud_create(conn, table, data):
 
 
 def _crud_delete(conn, table, row_id):
-    conn.execute(f"DELETE FROM [{table}] WHERE id = ?", (row_id,))  # noqa: S608
+    conn.execute(f"DELETE FROM [{table}] WHERE id = %s", (row_id,))  # noqa: S608
     conn.commit()
     return {"deleted": row_id}
 

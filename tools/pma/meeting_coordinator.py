@@ -307,7 +307,7 @@ def update_action_item(item_id: str, data: Dict[str, Any], conn=None) -> Dict[st
         set_clause = ", ".join(f"{k} = ?" for k in updates)
         values = list(updates.values()) + [item_id]
         conn.execute(
-            f"UPDATE pma_action_items SET {set_clause} WHERE id = ?", values
+            f"UPDATE pma_action_items SET {set_clause} WHERE id = %s", values
         )
         conn.commit()
 

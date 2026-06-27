@@ -210,7 +210,7 @@ def scan_findings():
 
         # Paginated results
         rows = conn.execute(
-            f"{union_sql} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f"{union_sql} ORDER BY created_at DESC LIMIT %s OFFSET %s",
             params_select + [per_page, offset],
         ).fetchall()
 

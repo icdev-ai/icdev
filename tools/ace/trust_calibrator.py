@@ -125,7 +125,7 @@ def get_trust_score(role_id: str) -> float:
         # Fall back to ledger — PG has µs precision so recorded_at DESC is stable
         _order = "recorded_at DESC" if _is_pg else "recorded_at DESC, rowid DESC"
         row = conn.execute(
-            f"SELECT new_score FROM ace_trust_ledger WHERE role_id = ? ORDER BY {_order} LIMIT 1",
+            f"SELECT new_score FROM ace_trust_ledger WHERE role_id = %s ORDER BY {_order} LIMIT 1",
             (role_id,),
         ).fetchone()
         if row:

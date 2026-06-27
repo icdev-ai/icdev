@@ -59,7 +59,7 @@ def list_traces():
             FROM otel_spans {where}
             GROUP BY trace_id, project_id
             ORDER BY first_span DESC
-            LIMIT ? OFFSET ?
+            LIMIT %s OFFSET %s
         """,  # nosec B608 -- table/column names are internal constants, not user input
             params + (limit, offset),
         ).fetchall()
@@ -168,7 +168,7 @@ def list_entities():
         params = (project_id,) if project_id else ()
 
         entities = conn.execute(
-            f"SELECT * FROM prov_entities {where} ORDER BY created_at DESC LIMIT ?",  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT * FROM prov_entities {where} ORDER BY created_at DESC LIMIT %s",  # nosec B608 -- table/column names are internal constants, not user input
             params + (limit,),
         ).fetchall()
 
@@ -195,7 +195,7 @@ def list_activities():
         params = (project_id,) if project_id else ()
 
         activities = conn.execute(
-            f"SELECT * FROM prov_activities {where} ORDER BY created_at DESC LIMIT ?",  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT * FROM prov_activities {where} ORDER BY created_at DESC LIMIT %s",  # nosec B608 -- table/column names are internal constants, not user input
             params + (limit,),
         ).fetchall()
 
@@ -222,7 +222,7 @@ def list_relations():
         params = (project_id,) if project_id else ()
 
         relations = conn.execute(
-            f"SELECT * FROM prov_relations {where} ORDER BY created_at DESC LIMIT ?",  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT * FROM prov_relations {where} ORDER BY created_at DESC LIMIT %s",  # nosec B608 -- table/column names are internal constants, not user input
             params + (limit,),
         ).fetchall()
 

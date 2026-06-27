@@ -290,7 +290,7 @@ def list_tasks():
         )
         if status_filter:
             rows = conn.execute(
-                f"{select}WHERE kt.status = ? ORDER BY {order}",  # nosec B608
+                f"{select}WHERE kt.status = %s ORDER BY {order}",  # nosec B608
                 (status_filter,),
             ).fetchall()
         else:
@@ -662,7 +662,7 @@ def update_task(task_id):
         vals.append(task_id)
 
         conn.execute(
-            f"UPDATE kanban_tasks SET {', '.join(sets)} WHERE id = ?",  # nosec B608 -- table/column names are internal constants, not user input
+            f"UPDATE kanban_tasks SET {', '.join(sets)} WHERE id = %s",  # nosec B608 -- table/column names are internal constants, not user input
             tuple(vals),
         )
         conn.commit()
@@ -1300,7 +1300,7 @@ def promote_all_suggested():
         # Batch update by IDs (safe cap at 1000 per existing bulk_move limit)
         ph = ",".join(["?"] * len(eligible_ids))
         conn.execute(
-            f"UPDATE kanban_tasks SET status = 'backlog', updated_at = ? "  # nosec B608
+            f"UPDATE kanban_tasks SET status = 'backlog', updated_at = %s "  # nosec B608
             f"WHERE id IN ({ph})",
             (now, *eligible_ids),
         )

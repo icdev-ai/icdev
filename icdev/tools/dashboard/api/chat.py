@@ -574,7 +574,7 @@ def _seed_canvas_artifacts(use_case: dict, session_id: str, tenant_id: str) -> l
                 with _gc(db_path=str(canvas_db_path)) as cconn:
                     cconn.set_security_context(None)  # rls-bypass: canvas seeding; tenant isolation at API boundary
                     row = cconn.execute(
-                        f"SELECT name FROM {safe_tmpl_table} WHERE name = ? LIMIT 1",  # nosec B608 — table name validated by _safe_table_name
+                        f"SELECT name FROM {safe_tmpl_table} WHERE name = %s LIMIT 1",  # nosec B608 — table name validated by _safe_table_name
                         (tmpl_name,)
                     ).fetchone()
                     if row:
@@ -602,7 +602,7 @@ def _seed_canvas_artifacts(use_case: dict, session_id: str, tenant_id: str) -> l
                 with _gc(db_path=str(canvas_db_path)) as cconn:
                     cconn.set_security_context(None)  # rls-bypass: canvas seeding; tenant isolation at API boundary
                     row = cconn.execute(
-                        f"SELECT name FROM {safe_snip_table} WHERE name = ? LIMIT 1",  # nosec B608 — table name validated by _safe_table_name
+                        f"SELECT name FROM {safe_snip_table} WHERE name = %s LIMIT 1",  # nosec B608 — table name validated by _safe_table_name
                         (snip_name,)
                     ).fetchone()
                     if row:

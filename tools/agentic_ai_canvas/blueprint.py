@@ -410,7 +410,7 @@ _DESIGN_CHILD_TABLES = [
 
 def _delete_design_cascade(conn, design_id: str) -> None:
     for tbl in _DESIGN_CHILD_TABLES:
-        conn.execute(f"DELETE FROM {tbl} WHERE design_id=?", (design_id,))  # nosec B608
+        conn.execute(f"DELETE FROM {tbl} WHERE design_id=%s", (design_id,))  # nosec B608
     conn.execute("DELETE FROM aadc_designs WHERE id=%s", (design_id,))
 
 
@@ -1369,7 +1369,7 @@ def update_risk(design_id: str, risk_id: str):
     set_clause = ", ".join(f"{f}=?" for f in updates)
     conn = _conn()
     conn.execute(
-        f"UPDATE aadc_risk_items SET {set_clause}, updated_at=? WHERE id=? AND design_id=?",
+        f"UPDATE aadc_risk_items SET {set_clause}, updated_at=%s WHERE id=%s AND design_id=%s",
         list(updates.values()) + [_utcnow(), risk_id, design_id],
     )
     conn.commit()

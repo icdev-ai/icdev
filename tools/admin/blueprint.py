@@ -171,7 +171,7 @@ def create_admin_blueprint() -> Blueprint | None:
                     f"SELECT id, event_type, actor, tenant_id, component_key, "
                     f"profile_name, details, classification, recorded_at "
                     f"FROM component_audit_log {where_sql} "
-                    f"ORDER BY recorded_at DESC LIMIT ? OFFSET ?",
+                    f"ORDER BY recorded_at DESC LIMIT %s OFFSET %s",
                     params + [limit, offset],
                 ).fetchall()
             return jsonify({
@@ -206,7 +206,7 @@ def create_admin_blueprint() -> Blueprint | None:
                     f"SELECT id, tenant_id, principal_type, principal_id, canvas_name, "
                     f"access_level, granted_by, granted_at, expires_at, revoked_at "
                     f"FROM canvas_access_grants {where_sql} "
-                    f"ORDER BY granted_at DESC LIMIT ? OFFSET ?",
+                    f"ORDER BY granted_at DESC LIMIT %s OFFSET %s",
                     params + [limit, offset],
                 ).fetchall()
             return jsonify({
@@ -312,7 +312,7 @@ def create_admin_blueprint() -> Blueprint | None:
         try:
             with get_connection() as conn:
                 cur = conn.execute(
-                    f"UPDATE sso_providers SET {set_clause} WHERE id = ? AND tenant_id = ?",
+                    f"UPDATE sso_providers SET {set_clause} WHERE id = %s AND tenant_id = %s",
                     params,
                 )
                 conn.commit()

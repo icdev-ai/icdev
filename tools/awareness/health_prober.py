@@ -217,7 +217,7 @@ def _load_component_nodes(
         placeholders = ",".join(["?"] * len(entity_types))
         rows = conn.execute(
             f"SELECT id, label, entity_type, properties FROM kg_nodes "
-            f"WHERE graph_id = ? AND entity_type IN ({placeholders})",  # nosec B608
+            f"WHERE graph_id = %s AND entity_type IN ({placeholders})",  # nosec B608
             tuple([GRAPH_ID] + entity_types),
         ).fetchall()
     else:

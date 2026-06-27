@@ -214,7 +214,7 @@ def create_ccc_blueprint() -> Blueprint:
             set_clause = ", ".join(f"{k}=?" for k in updates)
             vals = list(updates.values()) + [circuit_id]
             try:
-                conn.execute(f"UPDATE ccc_circuits SET {set_clause} WHERE circuit_id=?", vals)
+                conn.execute(f"UPDATE ccc_circuits SET {set_clause} WHERE circuit_id=%s", vals)
             except Exception:
                 set_clause = ", ".join(f"{k}=%s" for k in updates)
                 conn.execute(f"UPDATE ccc_circuits SET {set_clause} WHERE circuit_id=%s", vals)

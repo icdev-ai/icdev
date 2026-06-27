@@ -2345,7 +2345,7 @@ def update_collection_requirement(requirement_id):
             set_clause = ", ".join(f"{k} = ?" for k in updates)
             values = list(updates.values()) + [requirement_id]
             conn.execute(
-                f"UPDATE cpmp_collection_requirements SET {set_clause} WHERE id = ?",
+                f"UPDATE cpmp_collection_requirements SET {set_clause} WHERE id = %s",
                 values,
             )
             conn.commit()

@@ -59,7 +59,7 @@ def collect_evidence(
         try:
             audit_rows = conn.execute(
                 f"SELECT id, action, resource, recorded_at FROM audit_trail "
-                f"WHERE tenant_id = ?{since_clause} ORDER BY recorded_at DESC LIMIT 5000",
+                f"WHERE tenant_id = %s{since_clause} ORDER BY recorded_at DESC LIMIT 5000",
                 (tenant_id,),
             ).fetchall()
         except Exception:

@@ -132,7 +132,7 @@ def list_changes():
             f"assignment_group, assigned_to, start_date, end_date, approval, close_code, "
             f"project_id, migration_plan_id, sync_status, created_at, updated_at "
             f"FROM servicenow_change_tickets{where_sql} "
-            f"ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+            f"ORDER BY updated_at DESC LIMIT %s OFFSET %s",
             params + [per_page, (page - 1) * per_page],
         ).fetchall()
 
@@ -433,7 +433,7 @@ def link_change(ticket_id):
         params.append(ticket_id)
 
         conn.execute(
-            f"UPDATE servicenow_change_tickets SET {', '.join(updates)} WHERE id = ?",
+            f"UPDATE servicenow_change_tickets SET {', '.join(updates)} WHERE id = %s",
             params,
         )
         conn.commit()

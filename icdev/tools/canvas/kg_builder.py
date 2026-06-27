@@ -98,7 +98,7 @@ def _read_graph_json(canvas_key: str, design_id: str) -> dict:
     conn = get_connection(str(db_path))
     try:
         row = conn.execute(
-            f"SELECT graph_json FROM [{table}] WHERE id = ?",  # noqa: S608  # nosec B608
+            f"SELECT graph_json FROM [{table}] WHERE id = %s",  # noqa: S608  # nosec B608
             (design_id,),
         ).fetchone()
         if row is None:

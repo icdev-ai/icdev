@@ -160,7 +160,7 @@ def _count_project_records(conn: sqlite3.Connection, table_name: str, project_id
         return {"table": table_name, "exists": True, "count": count, "latest": latest}
 
     row = conn.execute(
-        f"SELECT COUNT(*) FROM {table_name} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
+        f"SELECT COUNT(*) FROM {table_name} WHERE project_id = %s",  # nosec B608 -- table/column names are internal constants, not user input
         (project_id,),
     ).fetchone()
     count = row[0]
@@ -170,7 +170,7 @@ def _count_project_records(conn: sqlite3.Connection, table_name: str, project_id
     for ts_col in ["created_at", "collected_at", "assessed_at", "timestamp"]:
         if ts_col in cols:
             ts_row = conn.execute(
-                f"SELECT MAX({ts_col}) FROM {table_name} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
+                f"SELECT MAX({ts_col}) FROM {table_name} WHERE project_id = %s",  # nosec B608 -- table/column names are internal constants, not user input
                 (project_id,),
             ).fetchone()
             latest = ts_row[0] if ts_row else None

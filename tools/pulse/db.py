@@ -262,7 +262,7 @@ def update_row(table: str, row_id: str, data: dict[str, Any]):
     values.append(row_id)
 
     with get_connection() as conn:
-        conn.execute(f"UPDATE {table} SET {set_clause} WHERE id = ?", values)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE {table} SET {set_clause} WHERE id = %s", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
 
 
@@ -283,7 +283,7 @@ def get_row(table: str, row_id: str) -> dict | None:
     """Get a single row by id."""
     table = _resolve_table(table)
     with get_connection() as conn:
-        row = conn.execute(f"SELECT * FROM {table} WHERE id = ?", (row_id,)).fetchone()  # nosec B608 -- table/column names are internal constants, not user input
+        row = conn.execute(f"SELECT * FROM {table} WHERE id = %s", (row_id,)).fetchone()  # nosec B608 -- table/column names are internal constants, not user input
         return dict(row) if row else None
 
 

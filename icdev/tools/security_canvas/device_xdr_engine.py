@@ -115,7 +115,7 @@ def correlate_xdr(entity: str) -> dict[str, Any]:
         for domain, (table, key) in XDR_DOMAINS.items():
             try:
                 r = conn.execute(
-                    f"SELECT COUNT(*) FROM {table} WHERE {key}=? "  # nosec B608 -- whitelist from XDR_DOMAINS
+                    f"SELECT COUNT(*) FROM {table} WHERE {key}=%s "  # nosec B608 -- whitelist from XDR_DOMAINS
                     f"AND created_at >= datetime('now','-7 days')",  # nosec B608
                     (entity,),
                 ).fetchone()

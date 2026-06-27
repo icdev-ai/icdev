@@ -43,7 +43,7 @@ def _resolve_project_id(explicit: str = None) -> str:
 def _safe_count(conn, table, project_id=None):
     try:
         if project_id:
-            row = conn.execute(f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?", (project_id,)).fetchone()  # nosec B608 -- table/column names are internal constants, not user input
+            row = conn.execute(f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = %s", (project_id,)).fetchone()  # nosec B608 -- table/column names are internal constants, not user input
         else:
             row = conn.execute(f"SELECT COUNT(*) as cnt FROM {table}").fetchone()  # nosec B608 -- table/column names are internal constants, not user input
         return row["cnt"] if row else 0
@@ -159,11 +159,11 @@ def get_stats():
             for tbl in assessment_tables:
                 try:
                     total = conn.execute(
-                        f"SELECT COUNT(DISTINCT requirement_id) as cnt FROM {tbl} WHERE project_id = ?",
+                        f"SELECT COUNT(DISTINCT requirement_id) as cnt FROM {tbl} WHERE project_id = %s",
                         (pid,),  # nosec B608 -- table/column names are internal constants, not user input
                     ).fetchone()
                     satisfied = conn.execute(
-                        f"SELECT COUNT(DISTINCT requirement_id) as cnt FROM {tbl} WHERE project_id = ? AND status IN ('satisfied', 'partially_satisfied')",  # nosec B608 -- table/column names are internal constants, not user input
+                        f"SELECT COUNT(DISTINCT requirement_id) as cnt FROM {tbl} WHERE project_id = %s AND status IN ('satisfied', 'partially_satisfied')",  # nosec B608 -- table/column names are internal constants, not user input
                         (pid,),
                     ).fetchone()
                     if total and total["cnt"] > 0:

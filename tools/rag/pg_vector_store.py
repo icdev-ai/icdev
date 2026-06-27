@@ -234,11 +234,11 @@ class PgVectorStore(VectorStoreProvider):
                 f"""
                 SELECT id, content, source_type, source_id, source_table,
                        chunk_index, metadata, tier, classification,
-                       1 - (embedding_vec <=> ?::vector) AS score
+                       1 - (embedding_vec <=> %s::vector) AS score
                 FROM rag_chunks
                 WHERE {where_clause}
-                ORDER BY embedding_vec <=> ?::vector
-                LIMIT ?
+                ORDER BY embedding_vec <=> %s::vector
+                LIMIT %s
             """,
                 params,
             ).fetchall()  # nosec B608 — where_clause from hardcoded parts
@@ -310,29 +310,29 @@ class PgVectorStore(VectorStoreProvider):
                 WITH vector_ranked AS (
                     SELECT id, content, source_type, source_id, source_table,
                            chunk_index, metadata, tier, classification,
-                           1 - (embedding_vec <=> ?::vector) AS vec_score,
-                           ROW_NUMBER() OVER (ORDER BY embedding_vec <=> ?::vector) AS vec_rank
+                           1 - (embedding_vec <=> %s::vector) AS vec_score,
+                           ROW_NUMBER() OVER (ORDER BY embedding_vec <=> %s::vector) AS vec_rank
                     FROM rag_chunks
                     WHERE {where_clause}
                 ),
                 fts_ranked AS (
                     SELECT id,
-                           ts_rank(content_tsv, plainto_tsquery('english', ?)) AS fts_score,
+                           ts_rank(content_tsv, plainto_tsquery('english', %s)) AS fts_score,
                            ROW_NUMBER() OVER (
-                               ORDER BY ts_rank(content_tsv, plainto_tsquery('english', ?)) DESC
+                               ORDER BY ts_rank(content_tsv, plainto_tsquery('english', %s)) DESC
                            ) AS fts_rank
                     FROM rag_chunks
-                    WHERE content_tsv @@ plainto_tsquery('english', ?)
+                    WHERE content_tsv @@ plainto_tsquery('english', %s)
                 )
                 SELECT v.id, v.content, v.source_type, v.source_id, v.source_table,
                        v.chunk_index, v.metadata, v.tier, v.classification,
                        v.vec_score,
                        COALESCE(f.fts_score, 0) AS fts_score,
-                       (1.0 / (? + v.vec_rank)) + COALESCE(1.0 / (? + f.fts_rank), 0) AS rrf_score
+                       (1.0 / (%s + v.vec_rank)) + COALESCE(1.0 / (%s + f.fts_rank), 0) AS rrf_score
                 FROM vector_ranked v
                 LEFT JOIN fts_ranked f ON v.id = f.id
                 ORDER BY rrf_score DESC
-                LIMIT ?
+                LIMIT %s
             """,
                 params,
             ).fetchall()  # nosec B608

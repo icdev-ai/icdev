@@ -1003,7 +1003,7 @@ def update_question(q_id):
         sets = ", ".join(f"{k} = ?" for k in updates)
         vals = list(updates.values()) + [now_isoformat(), q_id]
         conn.execute(
-            f"UPDATE proposal_questions SET {sets}, updated_at = ? WHERE id = ?",  # nosec B608 -- column names validated against allowlist above
+            f"UPDATE proposal_questions SET {sets}, updated_at = %s WHERE id = %s",  # nosec B608 -- column names validated against allowlist above
             vals,
         )
         _audit(conn, "update_question", f"question={q_id}, fields={list(updates.keys())}")
@@ -1055,7 +1055,7 @@ def change_question_status(q_id):
             extra_vals = [now]
 
         conn.execute(
-            f"UPDATE proposal_questions SET status = ?, updated_at = ?{extra_fields} WHERE id = ?",  # nosec B608 -- table/column names are internal constants, not user input
+            f"UPDATE proposal_questions SET status = %s, updated_at = %s{extra_fields} WHERE id = %s",  # nosec B608 -- table/column names are internal constants, not user input
             [new_status, now] + extra_vals + [q_id],
         )
 
