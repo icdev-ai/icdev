@@ -1,0 +1,28 @@
+role_id: peering_coordinator
+display_name: Peering Coordinator
+description: AI co-worker for Federal Network Peering Agreement — Peering Request
+  Initiation
+version: '1.0'
+source: generated
+trust_tier: yellow
+default_count: 1
+max_instances: 2
+steps:
+- analyze
+- execute
+- report
+llm_function: task_decomposition
+tool_permissions:
+- Read
+- Grep
+- Glob
+genesis_reflex: maintain
+communication:
+  protocol: a2a
+  listen_topics: []
+  emit_topics:
+  - task.completed
+personality:
+  domain: Peering Coordinator
+  supported_verticals:
+  - enterprise
