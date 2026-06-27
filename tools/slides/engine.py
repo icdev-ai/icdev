@@ -47,6 +47,7 @@ class DeckRequest:
     enable_graphics: bool = True
     enable_rich_diagrams: bool = False
     audience_mode: str | None = None
+    output_language: str = "English"
 
 
 @dataclass
@@ -68,16 +69,51 @@ class DeckEngine:
     """Main orchestration engine for slide deck generation."""
 
     def run(self, req: DeckRequest) -> DeckResult:
-        """Run the full generation pipeline."""
+        """Run the full generation pipeline synchronously."""
         deck_id = self._create_deck_record(req)
+        return self._run_phases(req, deck_id)
+
+    def run_async(self, req: DeckRequest) -> int | None:
+        """Create the deck record and start generation in a background thread.
+
+        Returns deck_id immediately so the caller can poll /api/<deck_id>/status.
+        """
+        import threading
+        deck_id = self._create_deck_record(req)
+        t = threading.Thread(target=self._run_phases, args=(req, deck_id), daemon=True)
+        t.start()
+        return deck_id
+
+    def _set_phase(self, deck_id: int | None, phase: str) -> None:
+        """Update the deck status column to a phase label for progress polling."""
+        if deck_id is None:
+            return
+        try:
+            from tools.slides.db.init_db import get_connection
+            conn = get_connection()
+            try:
+                conn.execute(
+                    "UPDATE slides_decks SET status=? WHERE deck_id=?",
+                    (phase, deck_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception:
+            pass
+
+    def _run_phases(self, req: DeckRequest, deck_id: int | None) -> DeckResult:
+        """Internal: run all phases with phase status updates."""
         pdf_path = ""
         html_path = ""
 
         try:
             # Phase 1: Gather
+            self._set_phase(deck_id, "gathering")
             raw = self._gather(req)
 
             # Phase 2: Plan outline
+            self._set_phase(deck_id, "planning")
             from tools.slides import orchestrator
             outline = orchestrator.plan_outline(
                 raw_content=raw,
@@ -90,9 +126,11 @@ class DeckEngine:
                 max_slides=req.max_slides,
                 enable_rich_diagrams=req.enable_rich_diagrams,
                 audience_mode=req.audience_mode,
+                output_language=req.output_language,
             )
 
             # Phase 3: Generate content (parallel)
+            self._set_phase(deck_id, "generating")
             from tools.slides import content_agent
             slides = content_agent.generate_all(
                 outline, raw,
@@ -100,13 +138,16 @@ class DeckEngine:
                 citation_style=req.citation_style,
                 enable_rich_diagrams=req.enable_rich_diagrams,
                 theme=req.theme,
+                output_language=req.output_language,
             )
 
             # Phase 4: Graphics (parallel, optional)
             if req.enable_graphics and os.environ.get("SLIDES_IMAGE_ENABLED", "true").lower() in ("true", "1", "yes"):
+                self._set_phase(deck_id, "graphics")
                 slides = self._generate_graphics(slides, theme=req.theme, tone=req.tone)
 
             # Phase 5: Build PPTX
+            self._set_phase(deck_id, "building")
             from tools.slides import pptx_builder
             pptx_path = ""
             if "pptx" in req.output_formats:

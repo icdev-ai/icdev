@@ -106,6 +106,12 @@ def build_html(
     .print-only {{ display: none; }}
     .slide-mermaid {{ padding: 16px 32px; overflow-x: auto; }}
     .slide-mermaid pre {{ background: rgba(255,255,255,0.05); border-radius: 8px; padding: 16px; }}
+    .slide-table {{ padding: 16px 32px; overflow-x: auto; }}
+    .slide-table table {{ width: 100%; border-collapse: collapse; font-size: 16px; }}
+    .slide-table th {{ background: var(--dark); color: var(--accent); font-weight: 700; padding: 10px 16px; text-align: left; border-bottom: 2px solid var(--accent); }}
+    .slide-table td {{ color: var(--text); padding: 9px 16px; border-bottom: 1px solid rgba(255,255,255,0.08); }}
+    .slide-table tr:last-child td {{ border-bottom: none; }}
+    .slide-table tfoot td {{ background: var(--dark); color: var(--accent); font-weight: 700; border-top: 2px solid var(--accent); padding: 10px 16px; }}
     .slide-placeholder {{
         margin: 24px 32px; padding: 24px; border-radius: 8px;
         background: rgba(255,255,255,0.05); border: 2px dashed rgba(255,255,255,0.2);
@@ -163,6 +169,23 @@ def build_html(
                 )
             else:
                 rich_body = '<div class="slide-placeholder">✏️ Hand-drawn diagram — open the web presentation viewer to experience this slide.</div>'
+        elif slide_type == "table":
+            tbl = bullets if isinstance(bullets, dict) else {}
+            headers = tbl.get("headers", [])
+            rows = tbl.get("rows", [])
+            footer = tbl.get("footer", [])
+            if headers or rows:
+                thead = "<thead><tr>" + "".join(f"<th>{html.escape(str(h))}</th>" for h in headers) + "</tr></thead>"
+                tbody_rows = "".join(
+                    "<tr>" + "".join(f"<td>{html.escape(str(c))}</td>" for c in row) + "</tr>"
+                    for row in rows
+                )
+                tfoot = ""
+                if footer:
+                    tfoot = "<tfoot><tr>" + "".join(f"<td>{html.escape(str(c))}</td>" for c in footer) + "</tr></tfoot>"
+                rich_body = f'<div class="slide-table"><table>{thead}<tbody>{tbody_rows}</tbody>{tfoot}</table></div>'
+            else:
+                rich_body = '<div class="slide-placeholder">Table data not available.</div>'
 
         bullets_html = ""
         if not rich_body and bullets:

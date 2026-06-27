@@ -128,6 +128,7 @@ def plan_outline(
     feedback: str | None = None,
     enable_rich_diagrams: bool = False,
     audience_mode: str | None = None,
+    output_language: str = "English",
 ) -> list[str]:
     """Call LLM to produce a slide title outline.
 
@@ -170,6 +171,10 @@ def plan_outline(
     # Inject rich diagram type hint
     if enable_rich_diagrams:
         system += _RICH_DIAGRAM_HINT
+
+    # Inject language instruction when non-English
+    if output_language and output_language.lower() != "english":
+        system += f"\n\nIMPORTANT: Write all slide titles in {output_language}."
 
     if previous_outline and feedback:
         user_msg = content_str + "\n" + _REVISION_SUFFIX.format(

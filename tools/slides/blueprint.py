@@ -21,7 +21,7 @@ from typing import Any
 from flask import Blueprint, jsonify, render_template, request, send_file
 
 from tools.slides.constants import (
-    DECK_TYPES, THEMES, TONES, CITATION_STYLES, OUTPUT_FORMATS,
+    DECK_TYPES, SLIDE_TYPES, THEMES, TONES, CITATION_STYLES, OUTPUT_FORMATS,
     SOURCE_TYPES, DEFAULT_THEME, DEFAULT_DECK_TYPE, DEFAULT_TONE,
     DEFAULT_CITATION_STYLE, DEFAULT_OUTPUT_FORMATS,
     AUDIENCE_MODES, AUDIENCE_MODE_HINTS, PITCH_TEMPLATES,
@@ -74,7 +74,7 @@ def index():
     conn = _conn()
     try:
         rows = conn.execute(
-            "SELECT deck_id, title, deck_type, theme, status, slide_count, "
+            "SELECT deck_id, title, deck_type, theme, tone, occasion, status, slide_count, "
             "created_at, completed_at FROM slides_decks ORDER BY created_at DESC LIMIT 50"
         ).fetchall()
         decks = [dict(row) for row in rows]
@@ -161,7 +161,7 @@ def detail(deck_id: int):
                 except Exception:
                     slide[col] = None
 
-    return render_template("slides/detail.html", deck=deck, slides=slides, themes=THEMES, tones=TONES)
+    return render_template("slides/detail.html", deck=deck, slides=slides, themes=THEMES, tones=TONES, slide_types=SLIDE_TYPES)
 
 
 @slides_bp.route("/<int:deck_id>/present")
@@ -224,7 +224,7 @@ def present(deck_id: int):
 
 @slides_bp.route("/api/generate", methods=["POST"])
 def api_generate():
-    """Trigger deck generation. Runs synchronously (returns when done)."""
+    """Trigger deck generation asynchronously. Returns deck_id immediately; poll /api/<id>/status."""
     data = request.get_json(silent=True) or {}
     title = data.get("title", "ICDEV™ Presentation")
     deck_type = data.get("deck_type", DEFAULT_DECK_TYPE)
@@ -239,6 +239,7 @@ def api_generate():
     upload_text = data.get("upload_text", "")
     enable_rich_diagrams = bool(data.get("enable_rich_diagrams", False))
     audience_mode = data.get("audience_mode") or None
+    output_language = data.get("output_language", "English") or "English"
 
     from tools.slides.engine import DeckEngine, DeckRequest
     req = DeckRequest(
@@ -255,18 +256,57 @@ def api_generate():
         upload_text=upload_text,
         enable_rich_diagrams=enable_rich_diagrams,
         audience_mode=audience_mode,
+        output_language=output_language,
     )
-    result = DeckEngine().run(req)
+    deck_id = DeckEngine().run_async(req)
 
     return jsonify({
-        "deck_id": result.deck_id,
-        "status": result.status,
-        "slide_count": len(result.slides),
-        "pptx_path": result.pptx_path,
-        "pdf_path": result.pdf_path,
-        "html_path": result.html_path,
-        "error": result.error,
-    }), (200 if result.status == "completed" else 500)
+        "deck_id": deck_id,
+        "status": "running",
+    }), 202
+
+
+@slides_bp.route("/api/<int:deck_id>/status", methods=["GET"])
+def api_deck_status(deck_id: int):
+    """Poll generation progress. Returns {status, phase_label, done, slide_count}."""
+    conn = _conn()
+    try:
+        row = conn.execute(
+            f"SELECT status, slide_count FROM slides_decks WHERE deck_id = {_ph(conn)}",
+            (deck_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not row:
+        return jsonify({"error": "Deck not found"}), 404
+
+    row = dict(row)
+    status = row.get("status", "running")
+    slide_count = row.get("slide_count") or 0
+
+    _PHASE_LABELS: dict[str, str] = {
+        "running":    "Preparing…",
+        "gathering":  "Gathering data from sources…",
+        "planning":   "Planning slide outline…",
+        "generating": "Writing slide content…",
+        "graphics":   "Generating images…",
+        "building":   "Building PPTX & exports…",
+        "completed":  "Complete!",
+        "failed":     "Generation failed",
+        "auto":       "Complete (auto-generated)",
+    }
+    label = _PHASE_LABELS.get(status, status.replace("_", " ").title())
+    done = status in ("completed", "auto", "failed")
+
+    return jsonify({
+        "deck_id": deck_id,
+        "status": status,
+        "phase_label": label,
+        "done": done,
+        "slide_count": slide_count,
+        "error": status == "failed",
+    })
 
 
 @slides_bp.route("/api/<int:deck_id>/revise", methods=["POST"])
@@ -437,6 +477,105 @@ def api_regenerate_slide(deck_id: int):
         conn.close()
 
     return jsonify({"slide": revised})
+
+
+@slides_bp.route("/api/<int:deck_id>/slides/<int:slide_id>", methods=["PUT"])
+def api_update_slide(deck_id: int, slide_id: int):
+    """Inline slide editor — update a slide's content, type, and speaker notes."""
+    data = request.get_json(silent=True) or {}
+
+    conn = _conn()
+    try:
+        row = conn.execute(
+            f"SELECT * FROM slides_slides WHERE slide_id = {_ph(conn)} AND deck_id = {_ph(conn)}",
+            (slide_id, deck_id),
+        ).fetchone()
+        if not row:
+            return jsonify({"ok": False, "error": "Slide not found"}), 404
+    finally:
+        conn.close()
+
+    # Build update payload
+    title = data.get("title", "")
+    slide_type = data.get("slide_type", "content")
+    position = data.get("position")
+    speaker_notes = data.get("speaker_notes", "")
+
+    # Serialize bullets / table dict / other JSON content
+    bullets_raw = data.get("bullets", [])
+    if isinstance(bullets_raw, (dict, list)):
+        bullets_json = json.dumps(bullets_raw)
+    else:
+        bullets_json = json.dumps([])
+
+    mermaid_code = data.get("mermaid_code") or None
+    three_scene_config = data.get("three_scene_config")
+    excalidraw_elements = data.get("excalidraw_elements")
+
+    three_json = json.dumps(three_scene_config) if three_scene_config is not None else None
+    exc_json = json.dumps(excalidraw_elements) if excalidraw_elements is not None else None
+
+    conn = _conn()
+    try:
+        ph = _ph(conn)
+        sets = [
+            f"title={ph}",
+            f"slide_type={ph}",
+            f"bullets={ph}",
+            f"speaker_notes={ph}",
+            f"mermaid_code={ph}",
+            f"three_scene_config={ph}",
+            f"excalidraw_elements={ph}",
+        ]
+        params = [
+            title, slide_type, bullets_json, speaker_notes,
+            mermaid_code, three_json, exc_json,
+        ]
+        if position is not None:
+            sets.append(f"position={ph}")
+            params.append(int(position))
+        params.append(slide_id)
+        conn.execute(
+            f"UPDATE slides_slides SET {', '.join(sets)} WHERE slide_id={ph}",
+            params,
+        )
+        conn.commit()
+    except Exception as exc:
+        logger.exception("api_update_slide failed")
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    finally:
+        conn.close()
+
+    return jsonify({"ok": True, "slide_id": slide_id, "deck_id": deck_id})
+
+
+@slides_bp.route("/api/<int:deck_id>/slides/<int:slide_id>", methods=["DELETE"])
+def api_delete_slide(deck_id: int, slide_id: int):
+    """Delete a single slide from a deck."""
+    conn = _conn()
+    try:
+        row = conn.execute(
+            f"SELECT slide_id FROM slides_slides WHERE slide_id = {_ph(conn)} AND deck_id = {_ph(conn)}",
+            (slide_id, deck_id),
+        ).fetchone()
+        if not row:
+            return jsonify({"ok": False, "error": "Slide not found"}), 404
+        conn.execute(
+            f"DELETE FROM slides_slides WHERE slide_id = {_ph(conn)}",
+            (slide_id,),
+        )
+        # Update slide_count on deck
+        conn.execute(
+            f"UPDATE slides_decks SET slide_count = (SELECT COUNT(*) FROM slides_slides WHERE deck_id = {_ph(conn)}) WHERE deck_id = {_ph(conn)}",
+            (deck_id, deck_id),
+        )
+        conn.commit()
+    except Exception as exc:
+        logger.exception("api_delete_slide failed")
+        return jsonify({"ok": False, "error": str(exc)}), 500
+    finally:
+        conn.close()
+    return jsonify({"ok": True, "slide_id": slide_id, "deck_id": deck_id})
 
 
 @slides_bp.route("/api/asset-smoke", methods=["POST"])
