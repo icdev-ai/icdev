@@ -160,6 +160,17 @@ class TestChatPreResponseRetrieval:
         assert 'role' in src[max(0, mem_search_pos - 2000):mem_search_pos], \
             "memory retrieval must be guarded by role check"
 
+    def test_chat_manager_saves_exchange_to_episodic_after_reply(self):
+        """tools/dashboard/chat_manager.py must write the exchange to episodic memory (A-4)."""
+        src = (BASE_DIR / "tools" / "dashboard" / "chat_manager.py").read_text(encoding="utf-8")
+        assert "A-4" in src, "chat_manager.py must contain the A-4 episodic save block"
+        assert "_mem_write_a4" in src or "write_to_db" in src, \
+            "chat_manager.py must call write_to_db for the post-exchange episodic save"
+        # Verify it's after the db_complete_task call (not before)
+        complete_pos = src.find("_db_complete_task")
+        a4_pos = src.find("A-4")
+        assert a4_pos > complete_pos, "A-4 save must come after _db_complete_task"
+
     def test_memory_retrieval_is_non_fatal(self):
         """Memory injection errors must be caught — never bubble up to the LLM call."""
         src = (BASE_DIR / "tools" / "dashboard" / "chat_manager.py").read_text(encoding="utf-8")

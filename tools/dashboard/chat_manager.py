@@ -1293,6 +1293,21 @@ class ChatManager:
                     },
                 )
 
+                # A-4 — Episodic memory: save this exchange so future retrieval has it
+                try:
+                    from tools.memory.memory_write import write_to_db as _mem_write_a4
+                    _user_q = msg.get("content", "")
+                    _mem_write_a4(
+                        content=f"User: {_user_q[:400]} | Assistant: {response[:400]}",
+                        entry_type="event",
+                        importance=3,
+                        source="hook",
+                        tier="episodic",
+                        session_ref=context_id,
+                    )
+                except Exception:
+                    pass
+
             except Exception as exc:
                 logger.error("Error processing message in %s: %s", context_id, exc)
                 ctx.turn_number += 1
