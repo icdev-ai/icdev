@@ -1,4 +1,4 @@
-﻿# [TEMPLATE: CUI // SP-CTI]
+# [TEMPLATE: CUI // SP-CTI]
 """ICDEV™ Network Design Canvas — Flask Blueprint integration.
 
 Fully self-contained Blueprint mounted at /network/ inside the ICDEV dashboard.

@@ -750,6 +750,18 @@ def api_artifacts(instance_id: str):
     return jsonify({"artifacts": items, "count": len(items)})
 
 
+@ace_api_bp.route("/<instance_id>/hitl/pending", methods=["GET"])
+def api_hitl_pending(instance_id: str):
+    """List pending mid-turn HITL checkpoint requests for an instance."""
+    try:
+        from icdev.tools.llm.agent_hitl import get_pending_hitl
+        items = get_pending_hitl(instance_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace hitl/pending failed for %s: %s", instance_id, exc)
+        items = []
+    return jsonify({"items": items, "count": len(items)})
+
+
 @ace_api_bp.route("/<instance_id>/abort", methods=["POST"])
 def api_abort(instance_id: str):
     """Signal all coworkers to stop; marks the instance ``cancelled``.

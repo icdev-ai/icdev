@@ -32,6 +32,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from tools.logging.icdev_logger import get_logger
+from tools.db.storage import sql_placeholder
 
 logger = get_logger(__name__)
 
@@ -63,10 +64,12 @@ def _ensure_tables(conn) -> None:
             score       REAL NOT NULL,
             threshold   REAL NOT NULL,
             decision    TEXT NOT NULL,
-            detail      TEXT,
-            classification TEXT DEFAULT 'CUI',
+            detail      TEXT NOT NULL,
             created_at  TEXT NOT NULL
         );
+
+        CREATE INDEX IF NOT EXISTS idx_aadc_confidence_design
+            ON aadc_confidence_events(design_id, created_at);
 
         CREATE TABLE IF NOT EXISTS aadc_gate_configs (
             design_id           TEXT PRIMARY KEY,
@@ -82,10 +85,11 @@ def _audit_event(conn, design_id: str, node_id: Optional[str],
                  score: float, threshold: float, decision: str, detail: str) -> str:
     """Append a confidence gate decision to aadc_confidence_events."""
     eid = f"cg-{uuid.uuid4().hex[:10]}"
+    placeholders = ",".join([sql_placeholder(conn)] * 8)
     conn.execute(
         "INSERT INTO aadc_confidence_events "
         "(id, design_id, node_id, score, threshold, decision, detail, created_at) "
-        f"VALUES ({"","".join([sql_placeholder(conn)]*8)""})",
+        f"VALUES ({placeholders})",
         (eid, design_id, node_id, score, threshold, decision, detail,
          datetime.now(timezone.utc).isoformat()),
     )
@@ -96,7 +100,6 @@ def _audit_event(conn, design_id: str, node_id: Optional[str],
 # ---------------------------------------------------------------------------
 # Gate configuration
 # ---------------------------------------------------------------------------
-
 def get_config(design_id: str) -> dict:
     """Return the confidence gate configuration for a design.
 
@@ -150,9 +153,10 @@ def update_config(design_id: str, threshold: float,
         conn = _get_conn()
         try:
             _ensure_tables(conn)
+            placeholders = ",".join([sql_placeholder(conn)] * 4)
             conn.execute(
                 "INSERT INTO aadc_gate_configs (design_id, threshold, low_confidence_action, updated_at) "
-                f"VALUES ({"","".join([sql_placeholder(conn)]*4)""}) "
+                f"VALUES ({placeholders}) "
                 "ON CONFLICT(design_id) DO UPDATE SET "
                 "  threshold=excluded.threshold, "
                 "  low_confidence_action=excluded.low_confidence_action, "
@@ -171,193 +175,3 @@ def update_config(design_id: str, threshold: float,
         "threshold": threshold,
         "low_confidence_action": low_confidence_action,
     }
-
-
-# ---------------------------------------------------------------------------
-# Core gate evaluation
-# ---------------------------------------------------------------------------
-
-def evaluate(
-    design_id: str,
-    output_text: str,
-    score: float,
-    *,
-    threshold: Optional[float] = None,
-    node_id: Optional[str] = None,
-) -> dict:
-    """Evaluate a confidence score against the gate threshold.
-
-    Args:
-        design_id:   AADC design ID (e.g. 'aadc-400a241d').
-        output_text: LLM-generated draft text being evaluated.
-        score:       Confidence score in [0.0, 1.0].  Callers derive this from
-                     LLM token probabilities, a meta-prompt self-rating, citation
-                     coverage, or any domain-appropriate signal.
-        threshold:   Override the persisted threshold for this call.  Defaults
-                     to the design's configured threshold (or DEFAULT_THRESHOLD).
-        node_id:     ID of the confidence-threshold node in the design graph
-                     (used for audit correlation).
-
-    Returns:
-        dict with keys:
-            decision        : "proceed" | "escalate" | "block"
-            allowed         : True when decision == "proceed"
-            score           : float — the supplied confidence score
-            threshold       : float — the threshold applied
-            output_text_len : int — length of the evaluated text (not stored)
-            event_id        : str — audit event ID
-            detail          : str — human-readable rationale
-    """
-    if not 0.0 <= score <= 1.0:
-        raise ValueError(f"score must be 0.0–1.0, got {score}")
-
-    cfg = get_config(design_id)
-    effective_threshold = threshold if threshold is not None else cfg["threshold"]
-    low_action = cfg["low_confidence_action"]
-
-    if score >= effective_threshold:
-        decision = "proceed"
-        allowed = True
-        detail = (
-            f"Confidence {score:.2f} >= threshold {effective_threshold:.2f} — "
-            "routing to output-validator."
-        )
-    else:
-        decision = low_action  # "escalate" | "block" | "retry"
-        allowed = False
-        detail = (
-            f"Confidence {score:.2f} < threshold {effective_threshold:.2f} — "
-            f"action: {low_action}.  Routing to HITL / human review."
-        )
-        logger.info(
-            "confidence_gate: LOW confidence for design %s (score=%.2f threshold=%.2f) → %s",
-            design_id, score, effective_threshold, low_action,
-        )
-
-    event_id = _write_event(design_id, node_id, score, effective_threshold,
-                            decision, detail)
-
-    return {
-        "decision": decision,
-        "allowed": allowed,
-        "score": score,
-        "threshold": effective_threshold,
-        "output_text_len": len(output_text),
-        "event_id": event_id,
-        "detail": detail,
-    }
-
-
-def _write_event(design_id: str, node_id: Optional[str], score: float,
-                 threshold: float, decision: str, detail: str) -> str:
-    """Write a gate event to the audit table.  Returns event ID."""
-    try:
-        conn = _get_conn()
-        try:
-            _ensure_tables(conn)
-            eid = _audit_event(conn, design_id, node_id, score, threshold,
-                               decision, detail)
-        finally:
-            conn.close()
-        return eid
-    except Exception as exc:
-        logger.warning("confidence_gate: event write failed: %s", exc)
-        return f"cg-mem-{uuid.uuid4().hex[:8]}"  # fallback in-memory ID
-
-
-# ---------------------------------------------------------------------------
-# Pipeline integration helper
-# ---------------------------------------------------------------------------
-
-def evaluate_pipeline_node(
-    design_id: str,
-    llm_output: dict,
-    *,
-    threshold: Optional[float] = None,
-    node_id: Optional[str] = None,
-) -> dict:
-    """Convenience wrapper for Agentic Research Pipeline node execution.
-
-    Extracts ``score`` from the LLM output dict (key ``confidence``) and
-    delegates to :func:`evaluate`.  Suitable for use in
-    ``tools/agentic_ai_canvas/workflow.py`` and the AADC execution engine.
-
-    Args:
-        design_id:   AADC design ID.
-        llm_output:  Dict returned by the Synthesis LLM step, expected to
-                     contain a ``confidence`` key (float 0–1).  Falls back to
-                     0.5 when absent so the gate degrades gracefully.
-        threshold:   Optional threshold override.
-        node_id:     Graph node ID for audit correlation.
-
-    Returns:
-        Same dict as :func:`evaluate` plus ``raw_llm_output`` (the full dict).
-    """
-    score = float(llm_output.get("confidence", 0.5))
-    text = str(llm_output.get("text", llm_output.get("content", "")))
-    result = evaluate(design_id, text, score, threshold=threshold, node_id=node_id)
-    result["raw_llm_output"] = llm_output
-    return result
-
-
-# ---------------------------------------------------------------------------
-# Assessment helper (used by agentic_engine.py)
-# ---------------------------------------------------------------------------
-
-def check_confidence_gate_path(nodes: list[dict], edges: list[dict]) -> list[dict]:
-    """Verify that every LLM node in the design has a confidence-threshold
-    downstream before the output-validator.
-
-    This enforces the canonical Agentic Research Pipeline safety pattern:
-        Synthesis LLM → Confidence Gate → Output Validator
-
-    Returns a list of findings (empty = all good).
-    """
-    findings: list[dict] = []
-    llm_ids = [n["id"] for n in nodes if n.get("type") in {"llm", "llm-local"}]
-    if not llm_ids:
-        return findings
-
-    adj: dict[str, set[str]] = {}
-    for e in edges:
-        adj.setdefault(e.get("source", ""), set()).add(e.get("target", ""))
-
-    node_map = {n["id"]: n for n in nodes}
-
-    def _reachable(start: str) -> set[str]:
-        seen: set[str] = set()
-        stack = [start]
-        while stack:
-            n = stack.pop()
-            if n in seen:
-                continue
-            seen.add(n)
-            stack.extend(adj.get(n, set()) - seen)
-        return seen
-
-    for lid in llm_ids:
-        reachable = _reachable(lid)
-        rt = {node_map.get(r, {}).get("type") for r in reachable}
-        has_gate = "confidence-threshold" in rt
-        has_validator = "output-validator" in rt
-        if has_validator and not has_gate:
-            findings.append({
-                "id": f"cg-missing-{lid[:8]}",
-                "framework": "NIST AI RMF",
-                "function": "MEASURE",
-                "category": "MEA-1",
-                "severity": "HIGH",
-                "title": "LLM output reaches validator without confidence gate",
-                "detail": (
-                    f"LLM node '{node_map.get(lid, {}).get('label', lid)}' routes "
-                    "directly to output-validator with no confidence-threshold node "
-                    "on the path.  NIST AI RMF MEA-1 requires hallucination bounding "
-                    "before output leaves the AI system."
-                ),
-                "recommendation": (
-                    "Insert a confidence-threshold node between the Synthesis LLM "
-                    "and the output-validator.  Configure threshold ≥ 0.70 and wire "
-                    "the low-confidence path to a hitl-gate."
-                ),
-            })
-    return findings

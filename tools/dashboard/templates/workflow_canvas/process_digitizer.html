@@ -143,7 +143,9 @@
         <a href="/kanban" style="padding:10px 20px;background:rgba(255,255,255,0.1);color:#86efac;border:1px solid #2d5a2d;border-radius:7px;text-decoration:none;font-size:0.9rem;font-weight:600">Open Kanban</a>
         <a href="/coworker" style="padding:10px 20px;background:rgba(255,255,255,0.1);color:#86efac;border:1px solid #2d5a2d;border-radius:7px;text-decoration:none;font-size:0.9rem;font-weight:600">View Coworkers</a>
         <button onclick="resetToIntent()" style="padding:10px 20px;background:rgba(255,255,255,0.07);color:#86efac;border:1px solid #2d5a2d;border-radius:7px;font-size:0.9rem;cursor:pointer">🚀 Launch Another</button>
+        <button id="btn-cleanup" onclick="cleanupPriorRuns()" style="padding:10px 20px;background:rgba(220,38,38,0.12);color:#fca5a5;border:1px solid rgba(220,38,38,0.3);border-radius:7px;font-size:0.9rem;cursor:pointer" title="Cancel all previous backlog tasks from test runs for this workflow">🗑 Clean Up Old Runs</button>
       </div>
+      <div id="cleanup-msg" style="margin-top:10px;font-size:0.82rem;color:#86efac;display:none"></div>
     </div>
 
     <!-- Error card (shown instead if something failed) -->
@@ -460,6 +462,37 @@ function showError(msg) {
   document.getElementById('error-msg').textContent = msg;
   // Hide success card if present
   document.querySelector('#result-screen > div:first-child').style.display = 'none';
+}
+
+/* ── Clean up prior test runs ── */
+async function cleanupPriorRuns() {
+  var btn = document.getElementById('btn-cleanup');
+  var msg = document.getElementById('cleanup-msg');
+  var wfName = workflowDef ? (workflowDef.workflow_name || '') : '';
+  if (!wfName) { alert('No workflow loaded — launch a process first.'); return; }
+  btn.disabled = true;
+  btn.textContent = '⏳ Cancelling…';
+  msg.style.display = 'none';
+  try {
+    var resp = await fetch('/workflow-canvas/api/workflows/cleanup-digitized', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({workflow_name: wfName, status_filter: ['backlog','in_progress']})
+    });
+    var data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    var n = data.cancelled || 0;
+    msg.textContent = n > 0
+      ? '✅ Cancelled ' + n + ' prior backlog task' + (n === 1 ? '' : 's') + ' for "' + wfName + '"'
+      : 'ℹ No active prior tasks found for "' + wfName + '"';
+    msg.style.display = 'block';
+  } catch(e) {
+    msg.textContent = '❌ ' + e.message;
+    msg.style.display = 'block';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🗑 Clean Up Old Runs';
+  }
 }
 
 /* ── Reset ── */

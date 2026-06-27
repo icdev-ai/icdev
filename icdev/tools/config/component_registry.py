@@ -759,7 +759,8 @@ def _has_route_decorator(blueprint_path: Path) -> bool:
     if not blueprint_path.exists():
         return False
     try:
-        tree = ast.parse(blueprint_path.read_text(encoding="utf-8"))
+        text = blueprint_path.read_text(encoding="utf-8-sig")
+        tree = ast.parse(text)
     except SyntaxError:
         return False
     for node in ast.walk(tree):

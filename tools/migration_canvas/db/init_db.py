@@ -11,7 +11,7 @@ import json
 import os
 from pathlib import Path
 
-from tools.db.storage import get_canvas_connection
+from tools.db.storage import get_canvas_connection, sql_placeholder
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]
 DB_PATH = _ICDEV_ROOT / "data" / "migration_canvas.db"
@@ -1875,40 +1875,41 @@ def init_db():
         _migrate_cam_tables(conn)
         _seed_cloud_instances(conn)
 
+        ph = sql_placeholder(conn)
         # Seed templates
         for tpl in SEED_TEMPLATES:
-            existing = conn.execute("SELECT id FROM mc_templates WHERE id=?", (tpl["id"],)).fetchone()
+            existing = conn.execute(f"SELECT id FROM mc_templates WHERE id={ph}", (tpl["id"],)).fetchone()
             if not existing:
                 conn.execute(
-                    "INSERT INTO mc_templates (id, name, category, description, graph_json, tags) VALUES (?,?,?,?,?,?)",
+                    f"INSERT INTO mc_templates (id, name, category, description, graph_json, tags) VALUES ({ph},{ph},{ph},{ph},{ph},{ph})",
                     (tpl["id"], tpl["name"], tpl["category"], tpl["description"], tpl["graph_json"], tpl["tags"]),
                 )
 
         # Seed snippets
         for snip in SEED_SNIPPETS:
-            existing = conn.execute("SELECT id FROM mc_snippets WHERE id=?", (snip["id"],)).fetchone()
+            existing = conn.execute(f"SELECT id FROM mc_snippets WHERE id={ph}", (snip["id"],)).fetchone()
             if not existing:
                 conn.execute(
-                    "INSERT INTO mc_snippets (id, name, category, description, graph_json, tags) VALUES (?,?,?,?,?,?)",
+                    f"INSERT INTO mc_snippets (id, name, category, description, graph_json, tags) VALUES ({ph},{ph},{ph},{ph},{ph},{ph})",
                     (snip["id"], snip["name"], snip["category"], snip["description"], snip["graph_json"], snip["tags"]),
                 )
 
         # Seed runbooks
         for rb in SEED_RUNBOOKS:
-            existing = conn.execute("SELECT id FROM mc_runbooks WHERE id=?", (rb["id"],)).fetchone()
+            existing = conn.execute(f"SELECT id FROM mc_runbooks WHERE id={ph}", (rb["id"],)).fetchone()
             if not existing:
                 conn.execute(
-                    "INSERT INTO mc_runbooks (id, title, trigger_event, severity, description, steps_json) VALUES (?,?,?,?,?,?)",
+                    f"INSERT INTO mc_runbooks (id, title, trigger_event, severity, description, steps_json) VALUES ({ph},{ph},{ph},{ph},{ph},{ph})",
                     (rb["id"], rb["title"], rb["trigger_event"], rb["severity"], rb["description"], rb["steps_json"]),
                 )
 
         # Seed SOPs
         for sop in SEED_SOPS:
-            existing = conn.execute("SELECT id FROM mc_sops WHERE id=?", (sop["id"],)).fetchone()
+            existing = conn.execute(f"SELECT id FROM mc_sops WHERE id={ph}", (sop["id"],)).fetchone()
             if not existing:
                 conn.execute(
-                    "INSERT INTO mc_sops (id, title, sop_type, description, purpose, scope, "
-                    "nist_controls, steps, approval_status) VALUES (?,?,?,?,?,?,?,?,?)",
+                    f"INSERT INTO mc_sops (id, title, sop_type, description, purpose, scope, "
+                    f"nist_controls, steps, approval_status) VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})",
                     (sop["id"], sop["title"], sop["sop_type"], sop["description"],
                      sop["purpose"], sop["scope"], sop["nist_controls"], sop["steps"], "draft"),
                 )
