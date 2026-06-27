@@ -65,9 +65,10 @@ def generate(instance_id: str, fmt: str = "ssp") -> dict[str, Any] | str:
 
 def _collect(instance_id: str) -> dict[str, Any]:
     """Load all evidence rows for the instance and return a structured dict."""
-    from icdev.tools.db.storage import get_canvas_connection
+    from icdev.tools.db.storage import get_canvas_connection, sql_placeholder
 
     conn = get_canvas_connection(_DB_ENV)
+    _ph = sql_placeholder(conn)
     try:
         # Resolve "latest"
         if instance_id == "latest":
@@ -80,8 +81,8 @@ def _collect(instance_id: str) -> dict[str, Any]:
 
         # Instance metadata
         inst_row = conn.execute(
-            "SELECT id, name, role_id, state, trust_tier, created_at, completed_at "
-            "FROM ace_instances WHERE id = ?",
+            f"SELECT id, name, role_id, state, trust_tier, created_at, completed_at "
+            f"FROM ace_instances WHERE id = {_ph}",
             (instance_id,),
         ).fetchone()
         if not inst_row:
