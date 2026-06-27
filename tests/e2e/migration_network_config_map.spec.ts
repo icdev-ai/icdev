@@ -74,6 +74,13 @@ test.describe('Network Migration Wizard — Config Mapping Lifecycle', () => {
     await page.locator('#tgt-device-name').fill('core-rtr-01-new');
     await page.locator('#src-site').fill('DC1');
 
+    // Step 1 — COA: describe engineer context and answer a questionnaire toggle.
+    await page.locator('#engineer-context').fill(
+      'Replacement is layer-2 only; all IGP happens downstream and is not under my control. Maintenance window is tight.'
+    );
+    await page.locator('#coa-questionnaire').waitFor({ state: 'visible' });
+    await page.locator('.coa-question').filter({ hasText: 'spare ports' }).locator('button.coa-no').click();
+
     await page.screenshot({
       path: `${SCREENSHOT_DIR}/mig_net_02_devices.png`,
       fullPage: true,
@@ -88,6 +95,24 @@ test.describe('Network Migration Wizard — Config Mapping Lifecycle', () => {
     // The wizard may redirect to a real session id or stay on /new; both are OK if config import UI appears.
     const afterCreateText = await page.textContent('body');
     expect(afterCreateText).toContain('Step 2 — Config / Diagram Import');
+
+    // Step 1 COA recommendation should default to side-by-side parallel.
+    const sessionId = url.split('/').pop() || '';
+    if (sessionId && sessionId.startsWith('nmig')) {
+      const recResponse = await page.request.get(
+        `/migration-canvas/api/network-migration/${sessionId}/recommend-coa`
+      );
+      expect(recResponse.ok()).toBeTruthy();
+      const rec = await recResponse.json();
+      expect(rec.recommended).toBe('coa_a');
+
+      const qsResponse = await page.request.get(
+        `/migration-canvas/api/network-migration/${sessionId}/coa-questions`
+      );
+      expect(qsResponse.ok()).toBeTruthy();
+      const questions = await qsResponse.json();
+      expect(questions.length).toBe(6);
+    }
 
     await page.screenshot({
       path: `${SCREENSHOT_DIR}/mig_net_03_step2.png`,
