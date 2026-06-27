@@ -354,3 +354,45 @@ class TestSiblingCoordination:
         ro_set = _build_read_only_set(tools)
         assert "read_result" in ro_set
         assert "post_result" not in ro_set
+
+
+# ---------------------------------------------------------------------------
+# Namespace inheritance in spawn_agent
+# ---------------------------------------------------------------------------
+
+
+class TestNamespaceInheritanceInSpawnAgent:
+    """spawn_agent inherits the parent namespace by default; explicit override wins."""
+
+    def _make_reg(self, ns: str):
+        from icdev.tools.ace.agent_tools import AgentToolRegistry
+
+        class FakeSpec:
+            coworker_id = "cw-ns"
+            trust_tier = "green"
+            folder_access: list = []
+            icdev_tools: list = []
+            coordination_namespace = ns
+
+        return AgentToolRegistry(FakeSpec(), instance_id="inst-ns")
+
+    def test_registry_stores_spec_namespace(self):
+        reg = self._make_reg("parent-ns")
+        assert reg._coordination_namespace == "parent-ns"
+
+    def test_registry_falls_back_to_instance_id_when_no_spec_ns(self):
+        from icdev.tools.ace.agent_tools import AgentToolRegistry
+
+        class SpecNoNs:
+            coworker_id = "cw-y"
+            trust_tier = "green"
+            folder_access: list = []
+            icdev_tools: list = []
+
+        reg = AgentToolRegistry(SpecNoNs(), instance_id="fallback-inst")
+        assert reg._coordination_namespace == "fallback-inst"
+
+    def test_spawn_agent_schema_has_coordination_namespace_param(self):
+        from icdev.tools.ace.agent_tools import _SCHEMAS
+        props = _SCHEMAS["spawn_agent"]["function"]["parameters"]["properties"]
+        assert "coordination_namespace" in props

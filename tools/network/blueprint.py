@@ -1026,7 +1026,7 @@ def create_network_blueprint():
         # ── P1: Activity feed from nc_audit ───────────────────────────────
         topo_ids = [t["id"] for t in topos]
         if topo_ids:
-            placeholders = ",".join("?" for _ in topo_ids)
+            placeholders = ",".join(_ph for _ in topo_ids)
             activity = [
                 _row_to_dict(r)
                 for r in conn.execute(
@@ -2444,10 +2444,10 @@ def create_network_blueprint():
                 fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if "tags" in data:
-            fields.append("tags=?")
+            fields.append(f"tags={_ph}")
             values.append(json.dumps(data["tags"]) if isinstance(data["tags"], list) else data["tags"])
         if "graph_json" in data:
-            fields.append("graph_json=?")
+            fields.append(f"graph_json={_ph}")
             values.append(
                 json.dumps(data["graph_json"]) if isinstance(data["graph_json"], dict) else data["graph_json"]
             )
@@ -3275,7 +3275,7 @@ def create_network_blueprint():
             except Exception:
                 cmds = {}
             cmds.update(data["commands"])
-            fields.append("commands_json=?")
+            fields.append(f"commands_json={_ph}")
             values.append(json.dumps(cmds))
         if fields:
             values.append(pid)
@@ -4246,7 +4246,7 @@ def create_network_blueprint():
             locs = data["locations"]
             if isinstance(locs, list):
                 locs = json.dumps(locs)
-            fields.append("locations=?")
+            fields.append(f"locations={_ph}")
             values.append(locs)
         if fields:
             fields.append("updated_at={_ph}")
@@ -5070,7 +5070,7 @@ def create_network_blueprint():
                 fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if new_ring and old and new_ring != old[0]:
-            fields.append("moved_from=?")
+            fields.append(f"moved_from={_ph}")
             values.append(old[0])
         if fields:
             fields.append("updated_at={_ph}")
@@ -5954,7 +5954,7 @@ def create_network_blueprint():
         _ph = sql_placeholder(conn)
 
         if device_ips:
-            placeholders = ",".join("?" for _ in device_ips)
+            placeholders = ",".join(_ph for _ in device_ips)
             rows = conn.execute(
                 f"SELECT * FROM nc_routing_entries "  # nosec B608
                 f"WHERE device_ip IN ({placeholders}) "
