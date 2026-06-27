@@ -36,7 +36,7 @@ from typing import Any, Optional
 
 from tools.logging.icdev_logger import get_logger
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, Response, jsonify, render_template, request
 
 # Module-level import — must not raise at startup.  controller.py imports only the
 # stdlib at module scope, so this is safe and gives the blueprint a stable handle.
@@ -59,88 +59,6 @@ _IQE_COLLECTIONS = ["ace.coworkers", "ace.sessions", "ace.suggestions"]
 # --------------------------------------------------------------------------- #
 # Connection + row helpers (backend-agnostic, canvas RLS-free)
 # --------------------------------------------------------------------------- #
-
-
-def _parse_turns(messages: list) -> list:
-    """Convert raw Anthropic-format messages into structured turn dicts."""
-    turns: list = []
-    i = 0
-    while i < len(messages):
-        msg = messages[i]
-        role = msg.get("role", "")
-        if role == "user":
-            content = msg.get("content", "")
-            if isinstance(content, str):
-                user_text = content
-            elif isinstance(content, list):
-                user_text = None
-                results_by_id: dict = {}
-                for block in content:
-                    if isinstance(block, dict) and block.get("type") == "tool_result":
-                        tid = block.get("tool_use_id", "")
-                        results_by_id[tid] = {
-                            "result": _block_text(block.get("content", "")),
-                            "is_error": bool(block.get("is_error", False)),
-                        }
-                if results_by_id:
-                    if turns:
-                        for tc in turns[-1].get("tool_calls", []):
-                            tid = tc.get("_id", "")
-                            if tid in results_by_id:
-                                tc.update(results_by_id[tid])
-                    i += 1
-                    continue
-            else:
-                user_text = str(content) if content else None
-
-            asst_msg = messages[i + 1] if i + 1 < len(messages) and messages[i + 1].get("role") == "assistant" else None
-            asst_text = ""
-            tool_calls: list = []
-            if asst_msg is not None:
-                asst_content = asst_msg.get("content", "")
-                if isinstance(asst_content, str):
-                    asst_text = asst_content
-                elif isinstance(asst_content, list):
-                    for block in asst_content:
-                        if not isinstance(block, dict):
-                            continue
-                        btype = block.get("type", "")
-                        if btype == "text":
-                            asst_text += block.get("text", "")
-                        elif btype == "tool_use":
-                            tool_calls.append({
-                                "_id": block.get("id", ""),
-                                "name": block.get("name", ""),
-                                "input": block.get("input", {}),
-                                "result": None,
-                                "is_error": False,
-                            })
-
-            turns.append({"user_input": user_text, "assistant_text": asst_text.strip(), "tool_calls": tool_calls})
-            i += 2 if asst_msg is not None else 1
-        else:
-            i += 1
-
-    for turn in turns:
-        for tc in turn.get("tool_calls", []):
-            tc.pop("_id", None)
-    return turns
-
-
-def _block_text(content) -> str:
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = []
-        for block in content:
-            if isinstance(block, dict) and block.get("type") == "text":
-                parts.append(block.get("text", ""))
-            elif isinstance(block, str):
-                parts.append(block)
-        return "".join(parts)
-    return str(content) if content else ""
-
-
 def _db():
     """A canvas connection — NO RLS predicate (ace_* tables lack the columns)."""
     from icdev.tools.db.storage import get_canvas_connection
@@ -752,7 +670,11 @@ def api_artifacts(instance_id: str):
 
 @ace_api_bp.route("/<instance_id>/hitl/pending", methods=["GET"])
 def api_hitl_pending(instance_id: str):
-    """List pending mid-turn HITL checkpoint requests for an instance."""
+    """List pending mid-turn HITL checkpoint requests for an instance.
+
+    Returns ``{items: [...], count: N}`` — each item has tool_name, tool_input_json,
+    coworker_id, detail, created_at.  Use ``POST /<id>/hitl`` to approve/reject.
+    """
     try:
         from icdev.tools.llm.agent_hitl import get_pending_hitl
         items = get_pending_hitl(instance_id)
@@ -777,9 +699,59 @@ def api_abort(instance_id: str):
     return jsonify({"instance_id": instance_id, "state": "cancelled", "aborted": True})
 
 
+@ace_api_bp.route("/<instance_id>/hitl", methods=["POST"])
+def api_hitl_resolve(instance_id: str):
+    """Resolve or reject a pending HITL gate for a coworker.
+
+    Body: {coworker_id, detail, approved}
+    Approved=true inserts a hitl_resolved audit row so the paused coworker
+    thread resumes.  Approved=false inserts hitl_rejected and the thread
+    stops after the next poll cycle.
+    """
+    data = request.get_json(silent=True) or {}
+    coworker_id = (data.get("coworker_id") or "").strip()
+    detail = (data.get("detail") or "").strip()
+    approved = bool(data.get("approved", True))
+    if not coworker_id or not detail:
+        return jsonify({"error": "coworker_id and detail are required"}), 400
+    try:
+        from icdev.tools.ace.coworker_thread import HITLGate
+        from icdev.tools.db.storage import get_canvas_connection
+        from datetime import datetime, timezone as _tz
+
+        if approved:
+            HITLGate.resolve(coworker_id, detail, instance_id)
+        else:
+            now = datetime.now(_tz.utc).isoformat(timespec="seconds")
+            conn = get_canvas_connection("ICDEV_ACE_DB_URL")
+            try:
+                conn.execute(
+                    "INSERT INTO ace_audit_log "
+                    "(instance_id, coworker_id, action, detail, actor, created_at) "
+                    "VALUES (?, ?, 'hitl_rejected', ?, 'hitl_gate', ?)",
+                    (instance_id, coworker_id, detail, now),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        return jsonify({
+            "instance_id": instance_id,
+            "coworker_id": coworker_id,
+            "resolved": True,
+            "approved": approved,
+        })
+    except Exception as exc:
+        logger.warning("ace hitl resolve failed for %s/%s: %s", instance_id, coworker_id, exc)
+        return jsonify({"error": str(exc)}), 500
+
+
 @ace_api_bp.route("/sessions", methods=["GET"])
 def api_sessions_list():
-    """Paginated list of agent_loop_sessions with summary stats."""
+    """Paginated list of agent_loop_sessions with summary stats.
+
+    Query params: limit, offset, subtype (result_subtype filter),
+    coworker_id, instance_id.
+    """
     from icdev.tools.llm.agent_loop_session import list_sessions
 
     limit = _int_arg("limit", _DEFAULT_LIMIT, lo=1, hi=_MAX_LIMIT)
@@ -800,7 +772,11 @@ def api_sessions_list():
 
 @ace_api_bp.route("/sessions/<session_id>", methods=["GET"])
 def api_session_detail(session_id: str):
-    """Full session detail: metadata + parsed turn-by-turn replay."""
+    """Full session detail: metadata + parsed turn-by-turn replay.
+
+    Returns ``turns_parsed`` — a list of structured turn dicts, each with
+    ``user_input`` (str), ``assistant_text`` (str), and ``tool_calls`` (list).
+    """
     from icdev.tools.llm.agent_loop_session import get_session_metadata, load_session
 
     meta = get_session_metadata(session_id)
@@ -809,7 +785,103 @@ def api_session_detail(session_id: str):
 
     messages = load_session(session_id)
     turns_parsed = _parse_turns(messages)
+
     return jsonify({**meta, "turns_parsed": turns_parsed})
+
+
+def _parse_turns(messages: list[dict]) -> list[dict]:
+    """Convert raw Anthropic-format messages into structured turn dicts.
+
+    Each turn is: {user_input, assistant_text, tool_calls: [{name, input, result, is_error}]}.
+    Tool calls from the assistant message are paired with their results from the
+    subsequent user message (tool_result content blocks).
+    """
+    turns: list[dict] = []
+    i = 0
+    while i < len(messages):
+        msg = messages[i]
+        role = msg.get("role", "")
+
+        if role == "user":
+            content = msg.get("content", "")
+            if isinstance(content, str):
+                user_text = content
+            elif isinstance(content, list):
+                # May be tool_result blocks — defer to assistant turn handling
+                user_text = None
+                results_by_id: dict[str, dict] = {}
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "tool_result":
+                        tid = block.get("tool_use_id", "")
+                        results_by_id[tid] = {
+                            "result": _block_text(block.get("content", "")),
+                            "is_error": bool(block.get("is_error", False)),
+                        }
+                if results_by_id:
+                    # These belong to the previous turn's tool calls — patch them in.
+                    if turns:
+                        for tc in turns[-1].get("tool_calls", []):
+                            tid = tc.get("_id", "")
+                            if tid in results_by_id:
+                                tc.update(results_by_id[tid])
+                    i += 1
+                    continue
+            else:
+                user_text = str(content) if content else None
+
+            # Peek at the next assistant message.
+            asst_msg = messages[i + 1] if i + 1 < len(messages) and messages[i + 1].get("role") == "assistant" else None
+            asst_text = ""
+            tool_calls: list[dict] = []
+            if asst_msg is not None:
+                asst_content = asst_msg.get("content", "")
+                if isinstance(asst_content, str):
+                    asst_text = asst_content
+                elif isinstance(asst_content, list):
+                    for block in asst_content:
+                        if not isinstance(block, dict):
+                            continue
+                        btype = block.get("type", "")
+                        if btype == "text":
+                            asst_text += block.get("text", "")
+                        elif btype == "tool_use":
+                            tool_calls.append({
+                                "_id": block.get("id", ""),
+                                "name": block.get("name", ""),
+                                "input": block.get("input", {}),
+                                "result": None,
+                                "is_error": False,
+                            })
+
+            turns.append({
+                "user_input": user_text,
+                "assistant_text": asst_text.strip(),
+                "tool_calls": tool_calls,
+            })
+            i += 2 if asst_msg is not None else 1
+        else:
+            i += 1
+
+    # Strip internal _id from serialized output.
+    for turn in turns:
+        for tc in turn.get("tool_calls", []):
+            tc.pop("_id", None)
+    return turns
+
+
+def _block_text(content) -> str:
+    """Extract text from a tool_result content value (str or list of blocks)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(block.get("text", ""))
+            elif isinstance(block, str):
+                parts.append(block)
+        return "".join(parts)
+    return str(content) if content else ""
 
 
 @ace_api_bp.route("/profiles", methods=["GET"])
@@ -900,6 +972,116 @@ def api_profiles_delete(role_id: str):
     except Exception as exc:
         logger.warning("ace profiles delete failed: %s", exc)
         return jsonify({"error": str(exc)}), 500
+
+
+@ace_api_bp.route("/coworkers/<coworker_id>/stats", methods=["GET"])
+def api_coworker_stats(coworker_id: str):
+    """Per-coworker usage stats: message count, tool calls, sessions.
+
+    GET /api/ace/coworkers/<coworker_id>/stats
+    Returns: {coworker_id, message_count, tool_call_count, session_count,
+              last_active, instances: [instance_id, ...]}
+    """
+    conn = None
+    try:
+        conn = _db()
+        msg_row = _one(
+            conn.execute(
+                _q(conn, "SELECT COUNT(*) AS n FROM ace_messages WHERE coworker_id = ?"),
+                (coworker_id,),
+            )
+        )
+        tool_row = _one(
+            conn.execute(
+                _q(
+                    conn,
+                    "SELECT COUNT(*) AS n FROM ace_audit_log "
+                    "WHERE coworker_id = ? AND action = 'agent_turn'",
+                ),
+                (coworker_id,),
+            )
+        )
+        last_row = _one(
+            conn.execute(
+                _q(
+                    conn,
+                    "SELECT MAX(created_at) AS last_active FROM ace_messages "
+                    "WHERE coworker_id = ?",
+                ),
+                (coworker_id,),
+            )
+        )
+        inst_rows = _rows(
+            conn.execute(
+                _q(
+                    conn,
+                    "SELECT DISTINCT instance_id FROM ace_messages WHERE coworker_id = ?",
+                ),
+                (coworker_id,),
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace coworker_stats failed for %s: %s", coworker_id, exc)
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+    session_count = 0
+    try:
+        from icdev.tools.llm.agent_loop_session import list_sessions
+        sr = list_sessions(coworker_id=coworker_id, limit=1000)
+        session_count = sr.get("total", 0)
+    except Exception:
+        pass
+
+    return jsonify({
+        "coworker_id": coworker_id,
+        "message_count": (msg_row or {}).get("n", 0),
+        "tool_call_count": (tool_row or {}).get("n", 0),
+        "session_count": session_count,
+        "last_active": (last_row or {}).get("last_active"),
+        "instances": [r["instance_id"] for r in inst_rows],
+    })
+
+
+@ace_api_bp.route("/<instance_id>/stream", methods=["GET"])
+def api_stream(instance_id: str):
+    """Server-Sent Events stream for live agent events on *instance_id*.
+
+    GET /api/ace/<instance_id>/stream
+    Each SSE message is: data: {json}\n\n
+    Events: agent_turn, loop_done
+    The connection closes after 60 s of inactivity (no events).
+    """
+    from icdev.tools.ace import event_bus as _eb
+    import json as _json
+
+    timeout = float(request.args.get("timeout", 25))
+
+    def _generate():
+        q = _eb.subscribe(instance_id)
+        try:
+            while True:
+                event = _eb.drain(instance_id, q, timeout=timeout)
+                if event is None:
+                    # Keep-alive ping so browsers don't close the connection.
+                    yield ": ping\n\n"
+                    continue
+                yield f"data: {_json.dumps(event)}\n\n"
+                if event.get("type") == "loop_done":
+                    break
+        finally:
+            _eb.unsubscribe(instance_id, q)
+
+    return Response(
+        _generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @ace_api_bp.route("/iqe-query", methods=["POST"])

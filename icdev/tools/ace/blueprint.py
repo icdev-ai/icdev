@@ -36,7 +36,7 @@ from typing import Any, Optional
 
 from tools.logging.icdev_logger import get_logger
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, Response, jsonify, render_template, request
 
 # Module-level import — must not raise at startup.  controller.py imports only the
 # stdlib at module scope, so this is safe and gives the blueprint a stable handle.
@@ -972,6 +972,116 @@ def api_profiles_delete(role_id: str):
     except Exception as exc:
         logger.warning("ace profiles delete failed: %s", exc)
         return jsonify({"error": str(exc)}), 500
+
+
+@ace_api_bp.route("/coworkers/<coworker_id>/stats", methods=["GET"])
+def api_coworker_stats(coworker_id: str):
+    """Per-coworker usage stats: message count, tool calls, sessions.
+
+    GET /api/ace/coworkers/<coworker_id>/stats
+    Returns: {coworker_id, message_count, tool_call_count, session_count,
+              last_active, instances: [instance_id, ...]}
+    """
+    conn = None
+    try:
+        conn = _db()
+        msg_row = _one(
+            conn.execute(
+                _q(conn, "SELECT COUNT(*) AS n FROM ace_messages WHERE coworker_id = ?"),
+                (coworker_id,),
+            )
+        )
+        tool_row = _one(
+            conn.execute(
+                _q(
+                    conn,
+                    "SELECT COUNT(*) AS n FROM ace_audit_log "
+                    "WHERE coworker_id = ? AND action = 'agent_turn'",
+                ),
+                (coworker_id,),
+            )
+        )
+        last_row = _one(
+            conn.execute(
+                _q(
+                    conn,
+                    "SELECT MAX(created_at) AS last_active FROM ace_messages "
+                    "WHERE coworker_id = ?",
+                ),
+                (coworker_id,),
+            )
+        )
+        inst_rows = _rows(
+            conn.execute(
+                _q(
+                    conn,
+                    "SELECT DISTINCT instance_id FROM ace_messages WHERE coworker_id = ?",
+                ),
+                (coworker_id,),
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace coworker_stats failed for %s: %s", coworker_id, exc)
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+    session_count = 0
+    try:
+        from icdev.tools.llm.agent_loop_session import list_sessions
+        sr = list_sessions(coworker_id=coworker_id, limit=1000)
+        session_count = sr.get("total", 0)
+    except Exception:
+        pass
+
+    return jsonify({
+        "coworker_id": coworker_id,
+        "message_count": (msg_row or {}).get("n", 0),
+        "tool_call_count": (tool_row or {}).get("n", 0),
+        "session_count": session_count,
+        "last_active": (last_row or {}).get("last_active"),
+        "instances": [r["instance_id"] for r in inst_rows],
+    })
+
+
+@ace_api_bp.route("/<instance_id>/stream", methods=["GET"])
+def api_stream(instance_id: str):
+    """Server-Sent Events stream for live agent events on *instance_id*.
+
+    GET /api/ace/<instance_id>/stream
+    Each SSE message is: data: {json}\n\n
+    Events: agent_turn, loop_done
+    The connection closes after 60 s of inactivity (no events).
+    """
+    from icdev.tools.ace import event_bus as _eb
+    import json as _json
+
+    timeout = float(request.args.get("timeout", 25))
+
+    def _generate():
+        q = _eb.subscribe(instance_id)
+        try:
+            while True:
+                event = _eb.drain(instance_id, q, timeout=timeout)
+                if event is None:
+                    # Keep-alive ping so browsers don't close the connection.
+                    yield ": ping\n\n"
+                    continue
+                yield f"data: {_json.dumps(event)}\n\n"
+                if event.get("type") == "loop_done":
+                    break
+        finally:
+            _eb.unsubscribe(instance_id, q)
+
+    return Response(
+        _generate(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @ace_api_bp.route("/iqe-query", methods=["POST"])
