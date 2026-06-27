@@ -257,6 +257,41 @@ def _is_safe_serialization_module(file_path: Optional[str]) -> bool:
     return any(normalised.endswith(m) for m in _SAFE_SERIALIZATION_MODULES)
 
 
+def _load_safe_dynamic_import_modules() -> frozenset[str]:
+    """Load the known_safe_dynamic_import_modules allowlist from integrity_config.yaml.
+
+    Returns module paths (forward-slash, repo-relative) whose 'dynamic_code'
+    unauthorized_capability findings are suppressed in Mode A self-scans.
+    Covers modules that use importlib.import_module / __import__ for legitimate
+    platform purposes (e.g. backward-compat namespace shims, plugin registries,
+    optional-dependency probing) where the attribute/module name is bounded by
+    the interpreter protocol or a static registry — not user input.
+    Only affects ICDEV's own tools/ tree; external artifacts are unaffected.
+    The stronger taint-link rule (dynamic_code with obfuscated_input) still fires
+    regardless of this list.
+    """
+    try:
+        data = _load_config()
+        return frozenset(data.get("known_safe_dynamic_import_modules") or [])
+    except Exception:
+        return frozenset()
+
+
+_SAFE_DYNAMIC_IMPORT_MODULES: frozenset[str] = _load_safe_dynamic_import_modules()
+
+
+def _is_safe_dynamic_import_module(file_path: Optional[str]) -> bool:
+    """True when ``file_path`` matches an entry in known_safe_dynamic_import_modules.
+
+    Normalises separators so ``build\\lib\\icdev\\tools\\__init__.py`` matches the
+    config's ``tools/__init__.py`` regardless of OS or build-artifact prefix.
+    """
+    if not file_path:
+        return False
+    normalised = file_path.replace("\\", "/")
+    return any(normalised.endswith(m) for m in _SAFE_DYNAMIC_IMPORT_MODULES)
+
+
 def _load_platform_authorized_capabilities() -> frozenset[str]:
     """Load the platform_authorized_capabilities list from integrity_config.yaml.
 
@@ -1055,6 +1090,13 @@ def _unauthorized_findings(records: list[dict], allowed: set[str]) -> list[dict]
         # Skip serialization findings for modules that only pickle internal-only
         # artifacts (e.g. ML models trained and loaded within the platform).
         if cap == "serialization" and _is_safe_serialization_module(rec.get("file_path")):
+            continue
+        # Skip dynamic_code findings for modules whose importlib usage is bounded
+        # by the interpreter attribute protocol or a static registry — not user input.
+        # Covers backward-compat namespace shims (tools/__init__.py), plugin registries,
+        # and optional-dependency probers listed in known_safe_dynamic_import_modules.
+        # The stronger taint-link rule (obfuscated_input flag) is unaffected.
+        if cap == "dynamic_code" and _is_safe_dynamic_import_module(rec.get("file_path")):
             continue
         key = (rec.get("file_path"), cap)
         if key not in groups:
