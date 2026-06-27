@@ -26,6 +26,7 @@ def session_id(tmp_path, monkeypatch):
 
 
 def test_save_and_context(session_id):
+    context = "Replacement is layer 2 only. Downstream OSPF/BGP is not under my control. We have a very tight maintenance window with no time for parallel validation."
     before = nm.get_coa_questions(session_id)
     print("BEFORE", [(q["question_key"], q["user_answer"]) for q in before])
     nm.save_coa_answers(
@@ -33,8 +34,17 @@ def test_save_and_context(session_id):
         {
             "spare_ports_available": 0,
             "same_mgmt_vlan_ok": 0,
+            "igp_controlled": 0,
+            "tight_maintenance_window": 1,
+            "l2_only_replacement": 1,
+            "rollback_familiar": 0,
         },
     )
     after = nm.get_coa_questions(session_id)
-    print("AFTER", [(q["question_key"], q["user_answer"]) for q in after])
-    assert any(q["question_key"] == "spare_ports_available" and q["user_answer"] == 0 for q in after)
+    print("AFTER save", [(q["question_key"], q["user_answer"]) for q in after])
+    with init_db_mod.get_connection() as conn:
+        conn.execute("UPDATE mc_net_sessions SET engineer_context=? WHERE id=?", (context, session_id))
+        conn.commit()
+    final = nm.get_coa_questions(session_id)
+    print("AFTER context", [(q["question_key"], q["user_answer"]) for q in final])
+    assert any(q["question_key"] == "spare_ports_available" and q["user_answer"] == 0 for q in final)
