@@ -170,6 +170,184 @@ def _is_safe_process_exec_module(file_path: Optional[str]) -> bool:
     return any(normalised.endswith(m) for m in _SAFE_PROCESS_EXEC_MODULES)
 
 
+def _load_safe_crypto_modules() -> frozenset[str]:
+    """Load the known_safe_crypto_modules allowlist from integrity_config.yaml.
+
+    Returns module paths (forward-slash, repo-relative) whose 'crypto'
+    unauthorized_capability findings are suppressed in Mode A self-scans.
+    Only affects ICDEV's own tools/ tree; external artifacts are unaffected.
+    """
+    try:
+        data = _load_config()
+        return frozenset(data.get("known_safe_crypto_modules") or [])
+    except Exception:
+        return frozenset()
+
+
+_SAFE_CRYPTO_MODULES: frozenset[str] = _load_safe_crypto_modules()
+
+
+def _is_safe_crypto_module(file_path: Optional[str]) -> bool:
+    """True when ``file_path`` matches an entry in known_safe_crypto_modules.
+
+    Normalises separators so ``tools\\gateway\\adapters\\botframework_base.py``
+    matches the config's ``tools/gateway/adapters/botframework_base.py`` regardless
+    of OS.
+    """
+    if not file_path:
+        return False
+    normalised = file_path.replace("\\", "/")
+    return any(normalised.endswith(m) for m in _SAFE_CRYPTO_MODULES)
+
+
+def _load_safe_obfuscation_modules() -> frozenset[str]:
+    """Load the known_safe_obfuscation_modules allowlist from integrity_config.yaml.
+
+    Returns module paths (forward-slash, repo-relative) whose 'obfuscation'
+    unauthorized_capability findings are suppressed in Mode A self-scans.
+    Covers base64 encoding used for HTTP Basic Auth headers, binary data transport
+    (images, SAML, JWT, VSDX export), signing operations, and security detection.
+    Only affects ICDEV's own tools/ tree; external artifacts are unaffected.
+    """
+    try:
+        data = _load_config()
+        return frozenset(data.get("known_safe_obfuscation_modules") or [])
+    except Exception:
+        return frozenset()
+
+
+_SAFE_OBFUSCATION_MODULES: frozenset[str] = _load_safe_obfuscation_modules()
+
+
+def _is_safe_obfuscation_module(file_path: Optional[str]) -> bool:
+    """True when ``file_path`` matches an entry in known_safe_obfuscation_modules.
+
+    Normalises separators so ``tools\\auth\\saml.py`` matches the config's
+    ``tools/auth/saml.py`` regardless of OS.
+    """
+    if not file_path:
+        return False
+    normalised = file_path.replace("\\", "/")
+    return any(normalised.endswith(m) for m in _SAFE_OBFUSCATION_MODULES)
+
+
+def _load_safe_serialization_modules() -> frozenset[str]:
+    """Load the known_safe_serialization_modules allowlist from integrity_config.yaml.
+
+    Returns module paths whose 'serialization' unauthorized_capability findings are
+    suppressed. Covers modules that pickle/marshal internal-only artifacts (e.g. ML
+    models trained and loaded exclusively within the platform — never from untrusted
+    input). Only affects ICDEV's own tools/ tree.
+    """
+    try:
+        data = _load_config()
+        return frozenset(data.get("known_safe_serialization_modules") or [])
+    except Exception:
+        return frozenset()
+
+
+_SAFE_SERIALIZATION_MODULES: frozenset[str] = _load_safe_serialization_modules()
+
+
+def _is_safe_serialization_module(file_path: Optional[str]) -> bool:
+    """True when ``file_path`` matches an entry in known_safe_serialization_modules."""
+    if not file_path:
+        return False
+    normalised = file_path.replace("\\", "/")
+    return any(normalised.endswith(m) for m in _SAFE_SERIALIZATION_MODULES)
+
+
+def _load_safe_dynamic_import_modules() -> frozenset[str]:
+    """Load the known_safe_dynamic_import_modules allowlist from integrity_config.yaml.
+
+    Returns module paths (forward-slash, repo-relative) whose 'dynamic_code'
+    unauthorized_capability findings are suppressed in Mode A self-scans.
+    Covers modules that use importlib.import_module / __import__ for legitimate
+    platform purposes (e.g. backward-compat namespace shims, plugin registries,
+    optional-dependency probing) where the attribute/module name is bounded by
+    the interpreter protocol or a static registry — not user input.
+    Only affects ICDEV's own tools/ tree; external artifacts are unaffected.
+    The stronger taint-link rule (dynamic_code with obfuscated_input) still fires
+    regardless of this list.
+    """
+    try:
+        data = _load_config()
+        return frozenset(data.get("known_safe_dynamic_import_modules") or [])
+    except Exception:
+        return frozenset()
+
+
+_SAFE_DYNAMIC_IMPORT_MODULES: frozenset[str] = _load_safe_dynamic_import_modules()
+
+
+def _is_safe_dynamic_import_module(file_path: Optional[str]) -> bool:
+    """True when ``file_path`` matches an entry in known_safe_dynamic_import_modules.
+
+    Normalises separators so ``build\\lib\\icdev\\tools\\__init__.py`` matches the
+    config's ``tools/__init__.py`` regardless of OS or build-artifact prefix.
+    """
+    if not file_path:
+        return False
+    normalised = file_path.replace("\\", "/")
+    return any(normalised.endswith(m) for m in _SAFE_DYNAMIC_IMPORT_MODULES)
+
+
+def _load_platform_authorized_capabilities() -> frozenset[str]:
+    """Load the platform_authorized_capabilities list from integrity_config.yaml.
+
+    Returns capability-type strings that are universally authorized across the
+    ICDEV platform and therefore suppressed in Mode A self-scans without needing
+    a per-module entry in a known_safe_* list.  Only affects ICDEV's own tools/
+    tree; external-artifact assessments are unaffected.
+
+    Intended for low-risk capabilities used pervasively for legitimate platform
+    operations (e.g. 'crypto' for content fingerprinting and data integrity) where
+    per-module allowlist entries would be impractical.  The stronger
+    dangerous_api co-presence rule (dynamic_code + obfuscation taint) still fires
+    regardless of this list.
+    """
+    try:
+        data = _load_config()
+        return frozenset(data.get("platform_authorized_capabilities") or [])
+    except Exception:
+        return frozenset()
+
+
+_PLATFORM_AUTHORIZED_CAPABILITIES: frozenset[str] = _load_platform_authorized_capabilities()
+
+
+def _load_safe_colocation_files() -> frozenset[str]:
+    """Load the known_safe_colocation_files allowlist from integrity_config.yaml.
+
+    Files listed here are exempt from the WEAKER dynamic_code+obfuscation
+    co-presence sub-rule (dynamic code and base64 present in the same file but
+    in completely unrelated functions). The STRONGER taint-link sub-rule
+    (obfuscated_input flag — direct ``exec(b64decode(payload))`` pattern) still
+    fires for all files regardless of this list.
+
+    Use for files where dynamic import (optional-dependency probing via
+    importlib/``__import__``) and base64 (image encoding, protocol decode, etc.)
+    co-exist in unrelated, non-interacting functions — the two capabilities are
+    incidentally present but not linked into a backdoor shape.
+    """
+    try:
+        data = _load_config()
+        return frozenset(data.get("known_safe_colocation_files") or [])
+    except Exception:
+        return frozenset()
+
+
+_SAFE_COLOCATION_FILES: frozenset[str] = _load_safe_colocation_files()
+
+
+def _is_safe_colocation_file(file_path: Optional[str]) -> bool:
+    """True when ``file_path`` is exempt from the co-presence sub-rule only."""
+    if not file_path:
+        return False
+    normalised = file_path.replace("\\", "/")
+    return any(normalised.endswith(m) for m in _SAFE_COLOCATION_FILES)
+
+
 # --------------------------------------------------------------------------- #
 # Severity derivation — capability inherent risk -> integrity_findings.severity
 # --------------------------------------------------------------------------- #
@@ -341,14 +519,18 @@ def _intrinsic_findings(records: list[dict]) -> list[dict]:
         dyn = by_file[fp]["dynamic_code"]
         obf = by_file[fp]["obfuscation"]
         tainted = [r for r in dyn if (r.get("evidence") or {}).get("obfuscated_input")]
-        # Fire on a direct decode->exec taint link, or on plain co-presence of
-        # dynamic code and obfuscation in the same file.
-        if not (tainted or (dyn and obf)):
+        # Fire on a direct decode->exec taint link (strongest signal — always fires),
+        # or on plain co-presence of dynamic code and obfuscation in the same file.
+        # Co-presence is suppressed for files in known_safe_colocation_files where
+        # the two capabilities are in unrelated functions (e.g. importlib probing
+        # optional deps alongside base64 image encoding) — the taint check still fires.
+        co_present = dyn and obf and not _is_safe_colocation_file(fp)
+        if not (tainted or co_present):
             continue
         signals = []
         if tainted:
             signals.append("dynamic_code(obfuscated_input)")
-        if dyn and obf:
+        if co_present:
             signals.append("dynamic_code+obfuscation co-located")
         anchor = _earliest_line(tainted or dyn or obf)
         findings.append(
@@ -889,9 +1071,32 @@ def _unauthorized_findings(records: list[dict], allowed: set[str]) -> list[dict]
         cap = rec.get("capability_type")
         if not cap or cap in allowed:
             continue
+        # Skip capabilities that are globally authorized for the platform
+        # (platform_authorized_capabilities in integrity_config.yaml).
+        if cap in _PLATFORM_AUTHORIZED_CAPABILITIES:
+            continue
         # Skip filesystem findings for ICDEV's own first-party modules that are
         # authorized by known_safe_filesystem_modules in integrity_config.yaml.
         if cap == "filesystem" and _is_safe_filesystem_module(rec.get("file_path")):
+            continue
+        # Skip crypto findings for ICDEV's own first-party modules that are
+        # authorized by known_safe_crypto_modules in integrity_config.yaml.
+        if cap == "crypto" and _is_safe_crypto_module(rec.get("file_path")):
+            continue
+        # Skip obfuscation findings (base64 encoding for HTTP auth, binary data
+        # transport, SAML, signing, etc.) for modules in known_safe_obfuscation_modules.
+        if cap == "obfuscation" and _is_safe_obfuscation_module(rec.get("file_path")):
+            continue
+        # Skip serialization findings for modules that only pickle internal-only
+        # artifacts (e.g. ML models trained and loaded within the platform).
+        if cap == "serialization" and _is_safe_serialization_module(rec.get("file_path")):
+            continue
+        # Skip dynamic_code findings for modules whose importlib usage is bounded
+        # by the interpreter attribute protocol or a static registry — not user input.
+        # Covers backward-compat namespace shims (tools/__init__.py), plugin registries,
+        # and optional-dependency probers listed in known_safe_dynamic_import_modules.
+        # The stronger taint-link rule (obfuscated_input flag) is unaffected.
+        if cap == "dynamic_code" and _is_safe_dynamic_import_module(rec.get("file_path")):
             continue
         key = (rec.get("file_path"), cap)
         if key not in groups:
