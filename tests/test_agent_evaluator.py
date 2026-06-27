@@ -427,16 +427,25 @@ class TestGradeOutputQuality:
         assert "error" in result
 
     def test_llm_failure_returns_error_dict(self, monkeypatch):
-        import icdev.tools.ace.evaluator as _m
-        # Monkeypatch LLMRouter to raise
         import sys
         import types
-        fake_tools = types.ModuleType("tools.llm.router")
+        # Patch both canonical and legacy namespaces
         class _FakeRouter:
             def invoke(self, *a, **kw):
                 raise RuntimeError("no LLM in test")
-        fake_tools.LLMRouter = _FakeRouter
-        monkeypatch.setitem(sys.modules, "tools.llm.router", fake_tools)
+        class _CrossGraderViolation(RuntimeError):
+            pass
+        for mod_name in ("tools.llm.router", "icdev.tools.llm.router"):
+            fake_mod = types.ModuleType(mod_name)
+            fake_mod.LLMRouter = _FakeRouter
+            fake_mod.CrossGraderViolation = _CrossGraderViolation
+            monkeypatch.setitem(sys.modules, mod_name, fake_mod)
+        for mod_name in ("tools.llm.provider", "icdev.tools.llm.provider"):
+            fake_prov = types.ModuleType(mod_name)
+            class _LLMRequest:
+                def __init__(self, **kw): pass
+            fake_prov.LLMRequest = _LLMRequest
+            monkeypatch.setitem(sys.modules, mod_name, fake_prov)
 
         from icdev.tools.ace.evaluator import EvalResult, grade_output_quality
         er = EvalResult(session_id="g3")
@@ -503,3 +512,114 @@ class TestEvalRunner:
         )
         # Should handle gracefully with an error, not raise
         assert isinstance(result.error, str)
+
+
+# ---------------------------------------------------------------------------
+# Tests — judge prompt upgrade (expert persona + confidence calibration)
+# ---------------------------------------------------------------------------
+
+class TestGradePromptUpgrade:
+    """Verify the upgraded _JUDGE_PROMPT template and grade_output_quality() output."""
+
+    def _mock_router(self, monkeypatch, response_json: str, model_id: str = "claude-sonnet-4-6"):
+        """Inject a fake LLMRouter that returns a fixed JSON string."""
+        import sys
+        import types
+
+        fake_router_mod = types.ModuleType("icdev.tools.llm.router")
+
+        class _FakeResponse:
+            content = response_json
+            def __init__(self):
+                self.model_id = model_id
+
+        class _CrossGraderViolation(RuntimeError):
+            pass
+
+        class _FakeRouter:
+            def invoke(self, fn, req, **kw):
+                exclude = kw.get("exclude_model_ids") or []
+                if model_id in exclude:
+                    raise _CrossGraderViolation(f"grader {model_id!r} excluded")
+                return _FakeResponse()
+
+        fake_router_mod.LLMRouter = _FakeRouter
+        fake_router_mod.CrossGraderViolation = _CrossGraderViolation
+        monkeypatch.setitem(sys.modules, "icdev.tools.llm.router", fake_router_mod)
+        monkeypatch.setitem(sys.modules, "tools.llm.router", fake_router_mod)
+        return _CrossGraderViolation
+
+    def _mock_provider(self, monkeypatch):
+        import sys
+        import types
+        fake = types.ModuleType("icdev.tools.llm.provider")
+        class _LLMRequest:
+            def __init__(self, **kw):
+                for k, v in kw.items():
+                    setattr(self, k, v)
+        fake.LLMRequest = _LLMRequest
+        monkeypatch.setitem(sys.modules, "icdev.tools.llm.provider", fake)
+        monkeypatch.setitem(sys.modules, "tools.llm.provider", fake)
+
+    def test_judge_prompt_contains_expert_persona(self):
+        from icdev.tools.ace.evaluator import _JUDGE_PROMPT
+        assert "senior AI systems evaluator" in _JUDGE_PROMPT
+        assert "10,000+" in _JUDGE_PROMPT
+
+    def test_judge_prompt_contains_confidence_labels(self):
+        from icdev.tools.ace.evaluator import _JUDGE_PROMPT
+        for label in ("HIGH", "MEDIUM", "LOW", "UNKNOWN"):
+            assert label in _JUDGE_PROMPT
+
+    def test_judge_prompt_contains_rules_block(self):
+        from icdev.tools.ace.evaluator import _JUDGE_PROMPT
+        assert "RULES" in _JUDGE_PROMPT
+        assert "Identical tool call repeated" in _JUDGE_PROMPT
+        assert "faithfulness" in _JUDGE_PROMPT
+
+    def test_judge_prompt_contains_evidence_structure(self):
+        from icdev.tools.ace.evaluator import _JUDGE_PROMPT
+        assert "evidence" in _JUDGE_PROMPT
+        assert "what" in _JUDGE_PROMPT
+        assert "so_what" in _JUDGE_PROMPT
+        assert "now_what" in _JUDGE_PROMPT
+
+    def test_grade_returns_confidence_fields(self, monkeypatch):
+        """grade_output_quality() passes confidence fields through from LLM response."""
+        self._mock_provider(monkeypatch)
+        good_json = json.dumps({
+            "faithfulness": 0.9, "faithfulness_confidence": "HIGH",
+            "completeness": 0.85, "completeness_confidence": "MEDIUM",
+            "reasoning_quality": 0.8, "reasoning_quality_confidence": "HIGH",
+            "cod_quality": 0.5, "cod_quality_confidence": "UNKNOWN",
+            "error_adaptation": 0.7, "error_adaptation_confidence": "LOW",
+            "overall": 0.82,
+            "flags": [],
+            "evidence": {
+                "what": "Agent completed all 3 tasks in 4 turns.",
+                "so_what": "Efficient execution with no wasted turns.",
+                "now_what": "NO ACTION REQUIRED",
+            },
+            "reasoning": "High-quality session with clear reasoning.",
+        })
+        self._mock_router(monkeypatch, good_json)
+
+        from icdev.tools.ace.evaluator import EvalResult, grade_output_quality
+        er = EvalResult(session_id="g-conf-1")
+        result = grade_output_quality(er, user_prompt="Do X", final_content="Done X.")
+
+        assert result.get("faithfulness_confidence") == "HIGH"
+        assert result.get("completeness_confidence") == "MEDIUM"
+        assert "evidence" in result
+        assert result["evidence"]["now_what"] == "NO ACTION REQUIRED"
+        assert "grader_model_id" in result
+
+    def test_cross_grader_violation_raised_when_same_model(self, monkeypatch):
+        """grade_output_quality() raises CrossGraderViolation when grader == session model."""
+        self._mock_provider(monkeypatch)
+        CrossGraderViolation = self._mock_router(monkeypatch, "{}", model_id="claude-sonnet-4-6")
+
+        from icdev.tools.ace.evaluator import EvalResult, grade_output_quality
+        er = EvalResult(session_id="g-cross-1", model_id="claude-sonnet-4-6")
+        with pytest.raises(CrossGraderViolation):
+            grade_output_quality(er, user_prompt="Do X", final_content="Done X.")

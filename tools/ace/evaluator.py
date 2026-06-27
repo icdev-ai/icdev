@@ -435,17 +435,32 @@ def get_eval(session_id: str):
 # Phase 2: LLM-as-judge (opt-in)
 # ---------------------------------------------------------------------------
 
-_JUDGE_PROMPT = """You are an expert evaluator of AI agent task performance.
+_JUDGE_PROMPT = """You are a senior AI systems evaluator with experience grading 10,000+ agentic sessions across enterprise software development, security analysis, and research workflows. You think in signal-to-noise ratios: an agent that wastes turns is not just slow, it is consuming budget that could have been progress.
 
-Grade the following agent session on these dimensions (each 0.0-1.0):
-- faithfulness: Does the final output accurately address the original user request?
-- completeness: Does the output cover all key aspects of the request?
-- reasoning_quality: Was the agent's step-by-step reasoning clear, relevant, and grounded? (0.0 if no reasoning present)
-- cod_quality: If the reasoning style is Chain-of-Draft (concise reasoning before action), is the draft appropriately brief yet complete? Score 0.5 if unknown/N/A.
-- error_adaptation: When tool errors occurred, did the agent adapt its approach or blindly retry?
-- overall: Overall quality score.
+Grade the following agent session. For each scored dimension (0.0-1.0) also assign a confidence label:
+  HIGH    = directly observable in the provided session data
+  MEDIUM  = estimated from partial signals or inferred from patterns
+  LOW     = directional only — limited data to judge
+  UNKNOWN = key data missing; do not guess
 
-Return ONLY valid JSON: {{"faithfulness": float, "completeness": float, "reasoning_quality": float, "cod_quality": float, "error_adaptation": float, "overall": float, "reasoning": "one-sentence explanation"}}
+DIMENSIONS:
+1. faithfulness       — Does the final output accurately address the original user request? No hallucinated claims, no ignored requirements.
+2. completeness       — Does the output cover all key aspects of the request? Partial completion is not full credit.
+3. reasoning_quality  — Was reasoning clear, relevant, and grounded before each action? Score 0.0 if no reasoning present.
+4. cod_quality        — If Chain-of-Draft style: is draft appropriately concise yet complete? Score 0.5 if style is N/A or unknown.
+5. error_adaptation   — After tool errors, did the agent adapt its approach or blindly retry the same call?
+6. overall            — Weighted quality score integrating all above dimensions plus efficiency context.
+
+RULES — these anti-patterns must lower the relevant score:
+- Identical tool call repeated 3+ times with same inputs → lower error_adaptation
+- Final response ignores an explicitly stated requirement → lower faithfulness
+- No text before the first tool call in a multi-step task → lower reasoning_quality
+- Agent declared done but final output contains explicit TODOs or unfilled placeholders → lower completeness
+- Reasoning text is only trivial filler ("let me check", "I'll do this") with no analytical content → lower reasoning_quality
+- Final output contradicts tool results visible in the session → lower faithfulness
+
+Return ONLY valid JSON matching this schema exactly:
+{{"faithfulness": float, "faithfulness_confidence": "HIGH"|"MEDIUM"|"LOW"|"UNKNOWN", "completeness": float, "completeness_confidence": "HIGH"|"MEDIUM"|"LOW"|"UNKNOWN", "reasoning_quality": float, "reasoning_quality_confidence": "HIGH"|"MEDIUM"|"LOW"|"UNKNOWN", "cod_quality": float, "cod_quality_confidence": "HIGH"|"MEDIUM"|"LOW"|"UNKNOWN", "error_adaptation": float, "error_adaptation_confidence": "HIGH"|"MEDIUM"|"LOW"|"UNKNOWN", "overall": float, "flags": ["<anti-pattern triggered or empty>"], "evidence": {{"what": "<one sentence finding with specific values>", "so_what": "<consequence or impact>", "now_what": "<specific action or NO ACTION REQUIRED>"}}, "reasoning": "<one sentence overall summary>"}}
 
 USER REQUEST:
 {user_prompt}
@@ -524,9 +539,12 @@ def grade_output_quality(
         response = router.invoke(
             llm_function,
             LLMRequest(
-                system_prompt="You are a precise AI evaluator. Return only valid JSON.",
+                system_prompt=(
+                    "You are a precise AI systems evaluator. "
+                    "Return only valid JSON — no prose, no markdown fences, no extra keys."
+                ),
                 messages=[{"role": "user", "content": prompt}],
-                max_tokens=512,
+                max_tokens=768,
                 temperature=0.0,
             ),
             **invoke_kwargs,
