@@ -118,6 +118,17 @@
   </div>
   <div id="eval-container"></div>
   <div id="suggestions-container"></div>
+  <div id="compare-section" style="margin-top:16px;">
+    <button onclick="showCompareWidget()" style="background:transparent;color:#7a8cb0;border:1px solid #2a2a4a;padding:6px 14px;border-radius:5px;cursor:pointer;font-size:12px;">Compare with baseline session…</button>
+    <div id="compare-widget" style="display:none;margin-top:10px;border:1px solid var(--border-color,#2a2a4a);border-radius:6px;padding:16px;background:var(--bg-secondary,#1a1a2e);">
+      <div style="margin-bottom:10px;font-weight:600;font-size:14px;">Session Comparison</div>
+      <div style="display:flex;gap:8px;margin-bottom:12px;">
+        <input id="compare-baseline-input" type="text" placeholder="Baseline session ID…" style="flex:1;background:#0f0f1e;border:1px solid #2a2a4a;color:#e2e8f0;padding:6px 10px;border-radius:4px;font-size:12px;">
+        <button onclick="runCompare()" style="background:#3498db;color:#fff;border:none;padding:6px 14px;border-radius:4px;cursor:pointer;font-size:12px;">Compare</button>
+      </div>
+      <div id="compare-output"></div>
+    </div>
+  </div>
 
 </div>
 
@@ -397,7 +408,77 @@ function renderSuggestions(suggestions) {
   return '<div style="border:1px solid var(--border-color,#2a2a4a);border-radius:6px;padding:18px;background:var(--bg-secondary,#1a1a2e);margin-top:16px;">' +
     '<div style="font-size:15px;font-weight:600;margin-bottom:14px;">Improvement Suggestions</div>' +
     items +
+    '<div style="margin-top:14px;text-align:right;">' +
+      '<button id="rerun-btn" onclick="rerun()" style="background:#2ecc71;color:#fff;border:none;padding:8px 18px;border-radius:5px;cursor:pointer;font-weight:600;">Apply Suggestions &amp; Re-run</button>' +
+    '</div>' +
   '</div>';
+}
+
+async function rerun() {
+  var btn = document.getElementById('rerun-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Launching…'; }
+  try {
+    var res = await fetch('/api/ace/sessions/' + SESSION_ID + '/rerun', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({apply_suggestions: true})
+    });
+    var data = await res.json();
+    if (data.error) { alert('Re-run failed: ' + data.error); return; }
+    var dest = data.new_instance_id || data.new_session_id;
+    if (dest) window.location.href = '/coworker/live/' + dest;
+  } catch(e) {
+    alert('Re-run failed: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Apply Suggestions & Re-run'; }
+  }
+}
+
+function showCompareWidget() {
+  var w = document.getElementById('compare-widget');
+  if (w) w.style.display = (w.style.display === 'none' ? '' : 'none');
+}
+
+async function runCompare() {
+  var inp = document.getElementById('compare-baseline-input');
+  var baseline = (inp && inp.value || '').trim();
+  if (!baseline) { alert('Enter a baseline session ID'); return; }
+  var out = document.getElementById('compare-output');
+  if (out) out.innerHTML = '<em style="color:#7a8cb0;">Loading…</em>';
+  try {
+    var res = await fetch('/api/ace/sessions/' + SESSION_ID + '/eval/compare?baseline=' + encodeURIComponent(baseline));
+    var data = await res.json();
+    if (data.error) { if (out) out.innerHTML = '<span style="color:#e74c3c;">' + esc(data.error) + '</span>'; return; }
+    if (out) out.innerHTML = renderCompare(data);
+  } catch(e) {
+    if (out) out.innerHTML = '<span style="color:#e74c3c;">' + esc(e.message) + '</span>';
+  }
+}
+
+function renderCompare(data) {
+  var rows = (data.fields || []).map(function(f) {
+    var color = f.improved === true ? '#2ecc71' : f.improved === false ? '#e74c3c' : '#7a8cb0';
+    var arrow = f.improved === true ? '▲' : f.improved === false ? '▼' : '—';
+    var delta = f.delta !== null && f.delta !== undefined ? (f.delta > 0 ? '+' : '') + f.delta : '';
+    return '<tr>' +
+      '<td style="padding:5px 8px;font-size:12px;color:var(--text-secondary,#7a8cb0);">' + esc(f.name) + '</td>' +
+      '<td style="padding:5px 8px;font-size:12px;text-align:right;">' + esc(String(f.a_value)) + '</td>' +
+      '<td style="padding:5px 8px;font-size:12px;text-align:right;">' + esc(String(f.b_value)) + '</td>' +
+      '<td style="padding:5px 8px;font-size:12px;text-align:right;color:' + color + ';">' + arrow + ' ' + esc(delta) + '</td>' +
+    '</tr>';
+  }).join('');
+  var badge = data.overall_improved
+    ? '<span style="color:#2ecc71;font-weight:700;">Overall: IMPROVED ▲</span>'
+    : '<span style="color:#e74c3c;font-weight:700;">Overall: REGRESSED ▼</span>';
+  return '<div style="font-size:13px;margin-bottom:8px;">' + badge +
+    ' &nbsp;(' + (data.improvements||0) + ' improved, ' + (data.regressions||0) + ' regressed)</div>' +
+    '<table style="width:100%;border-collapse:collapse;">' +
+    '<thead><tr>' +
+    '<th style="text-align:left;padding:5px 8px;font-size:11px;color:#7a8cb0;">Field</th>' +
+    '<th style="text-align:right;padding:5px 8px;font-size:11px;color:#7a8cb0;">Baseline</th>' +
+    '<th style="text-align:right;padding:5px 8px;font-size:11px;color:#7a8cb0;">This run</th>' +
+    '<th style="text-align:right;padding:5px 8px;font-size:11px;color:#7a8cb0;">Delta</th>' +
+    '</tr></thead><tbody>' + rows + '</tbody></table>';
 }
 
 document.addEventListener('DOMContentLoaded', loadSession);
