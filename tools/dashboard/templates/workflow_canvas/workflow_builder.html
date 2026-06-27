@@ -17,7 +17,7 @@
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
     <input id="wf-name-input" type="text" value="{{ workflow.name if workflow else '' }}" placeholder="Workflow name…"
            style="font-size:1.1rem;font-weight:600;padding:6px 10px;border:1px solid var(--border-color);border-radius:6px;min-width:220px">
-    <button class="btn btn-primary" onclick="saveWorkflow()">💾 Save</button>
+    <button style="padding:7px 16px;background:#1d72ff;color:#fff;border:none;border-radius:6px;font-size:0.9rem;cursor:pointer;white-space:nowrap" onclick="saveWorkflow()">💾 Save</button>
     {% if not is_new %}
     <div style="position:relative;display:inline-block">
       <button class="btn btn-secondary" onclick="toggleExportMenu()">📤 Export ▾</button>
