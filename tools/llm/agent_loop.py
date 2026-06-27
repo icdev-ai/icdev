@@ -60,6 +60,7 @@ from __future__ import annotations
 
 import concurrent.futures as _futures
 import json
+import math
 import threading
 import uuid as _uuid
 from dataclasses import dataclass, field
@@ -128,6 +129,9 @@ class ResultSubtype:
 
     error_consecutive_tool_failures = "error_consecutive_tool_failures"
     """Every tool call in each of N consecutive turns returned an error."""
+
+    error_stalled = "error_stalled"
+    """No novel successful tool call for ``stall_threshold`` consecutive turns."""
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +245,10 @@ def _load_budget_defaults() -> dict[str, Any]:
             defaults["tool_timeout_seconds"] = float(budgets["tool_timeout_seconds"])
         if "tool_result_max_chars" in budgets:
             defaults["tool_result_max_chars"] = int(budgets["tool_result_max_chars"])
+        if "llm_call_timeout_seconds" in budgets:
+            defaults["llm_call_timeout_seconds"] = float(budgets["llm_call_timeout_seconds"])
+        if "stall_threshold" in budgets:
+            defaults["stall_threshold"] = int(budgets["stall_threshold"])
     except Exception as exc:
         logger.debug("agent_loop: failed to load budget defaults: %s", exc)
     return defaults
@@ -454,6 +462,8 @@ def run_agent_loop(
     resume_session_id: str | None = None,
     tool_result_max_chars: int | None = None,
     max_consecutive_errors: int | None = 3,
+    llm_call_timeout_seconds: float | None = None,
+    stall_threshold: int | None = None,
 ) -> AgentLoopResult:
     """Run an agentic LLM loop with native tool use until the task is done.
 
@@ -555,6 +565,12 @@ def run_agent_loop(
         tool_timeout_seconds = budget_defaults["tool_timeout_seconds"]
     if tool_result_max_chars is None and "tool_result_max_chars" in budget_defaults:
         tool_result_max_chars = budget_defaults["tool_result_max_chars"]
+    if llm_call_timeout_seconds is None and "llm_call_timeout_seconds" in budget_defaults:
+        llm_call_timeout_seconds = budget_defaults["llm_call_timeout_seconds"]
+    if stall_threshold is None and "stall_threshold" in budget_defaults:
+        stall_threshold = int(budget_defaults["stall_threshold"])
+    if stall_threshold is None:
+        stall_threshold = 3
     # max_consecutive_errors: Python default=3, None=explicitly disabled.
     # Do NOT load from budget_defaults — None must mean "disable", not "use config".
 
@@ -596,18 +612,60 @@ def run_agent_loop(
     # Single executor shared across all turns for parallel read-only tool execution
     # and per-tool timeouts on sequential tools.
     _consecutive_all_error_turns = 0
+    # Loop control state — controls 2, 3, 5.
+    _budget_pressure_injected = False
+    _call_counts: dict[str, int] = {}
+    _DUPLICATE_WARN_THRESHOLD = 3
+    _DUPLICATE_ERROR_THRESHOLD = 5
+    _last_progress_turn: int = -1
+    _seen_call_keys: set[str] = set()
     with _futures.ThreadPoolExecutor(max_workers=16) as executor:
         for turn in range(max_iterations):
             if stop_event is not None and stop_event.is_set():
                 break
 
-            # Compress message history when it is approaching the model context window.
+            # Control 5: Stall detector — abort if no novel successful call for N turns.
+            if _last_progress_turn >= 0 and (turn - _last_progress_turn) >= stall_threshold:
+                logger.warning(
+                    "agent_loop: stall detected — no novel successful tool call for %d turns"
+                    " (last_progress_turn=%d, current_turn=%d)",
+                    turn - _last_progress_turn, _last_progress_turn, turn,
+                )
+                result.result_subtype = ResultSubtype.error_stalled
+                result.truncated = True
+                break
+
+            # Control 2: Budget pressure — inject 'N turns remaining' in last 20% of budget.
+            _turns_remaining = max_iterations - turn
+            _pressure_threshold = max(1, math.ceil(max_iterations * 0.2))
+            if not _budget_pressure_injected and 0 < _turns_remaining <= _pressure_threshold:
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        f"[System] You have {_turns_remaining} turn(s) remaining. "
+                        "If the task is not complete, call done() now with partial results "
+                        "and a clear description of what remains to be done."
+                    ),
+                })
+                _budget_pressure_injected = True
+
+            # Control 4: Compress message history; notify model when compression occurred.
+            _pre_compress_len = len(messages)
             messages = _maybe_compress_messages(
                 messages,
                 context_window_tokens=context_window_tokens,
                 compression_budget_tokens=compression_budget_tokens,
                 compression_events=result.compression_events,
             )
+            if len(messages) < _pre_compress_len:
+                messages.append({
+                    "role": "user",
+                    "content": (
+                        "[System] Your conversation history was compressed to fit the context window. "
+                        "Prior work has been summarized above. The current task and any completed "
+                        "steps are preserved in the summary. Continue from the current state."
+                    ),
+                })
             result.messages = messages
 
             request = LLMRequest(
@@ -619,7 +677,22 @@ def run_agent_loop(
                 effort=effort,
             )
             try:
-                response = router.invoke(llm_function, request)
+                # Control 1: LLM call timeout — wraps the blocking invoke call.
+                if llm_call_timeout_seconds:
+                    _llm_fut = executor.submit(router.invoke, llm_function, request)
+                    try:
+                        response = _llm_fut.result(timeout=llm_call_timeout_seconds)
+                    except _futures.TimeoutError:
+                        logger.error(
+                            "agent_loop: LLM call timed out after %.0fs (turn %d/%d)",
+                            llm_call_timeout_seconds, turn + 1, max_iterations,
+                        )
+                        result.result_subtype = ResultSubtype.error_during_execution
+                        result.truncated = True
+                        result.truncation_reason = "error_during_execution"
+                        break
+                else:
+                    response = router.invoke(llm_function, request)
             except Exception as exc:
                 logger.error("agent_loop: LLM invocation failed on turn %d: %s", turn, exc)
                 result.truncated = True
@@ -750,6 +823,35 @@ def run_agent_loop(
                 out_text, is_error, err_msg = tc_results.get(
                     i, ("Tool execution failed (no result captured).", True, "no result captured")
                 )
+
+                # Controls 3 & 5: duplicate-call detection and stall tracking.
+                _call_key = f"{tc_name}:{json.dumps(tc_input, sort_keys=True, default=str)}"
+                _call_counts[_call_key] = _call_counts.get(_call_key, 0) + 1
+                _call_n = _call_counts[_call_key]
+                if out_text is not DONE and out_text != DONE:
+                    if _call_n >= _DUPLICATE_ERROR_THRESHOLD:
+                        # Control 3: block the call outright — force a new approach.
+                        out_text = (
+                            f"[Loop guard] Tool '{tc_name}' has been called {_call_n} times with "
+                            f"identical inputs. Blocking to prevent an infinite loop. "
+                            f"You must try a fundamentally different approach."
+                        )
+                        is_error = True
+                        err_msg = f"duplicate-blocked:{_call_key}"
+                    elif _call_n >= _DUPLICATE_WARN_THRESHOLD and not is_error:
+                        # Control 3: prepend a warning but still return the result.
+                        out_text = (
+                            f"[Loop guard] Warning: '{tc_name}' called with identical inputs "
+                            f"{_call_n} time(s). If this is not advancing the task, try a "
+                            f"different approach.\n\n"
+                        ) + out_text
+
+                # Control 5: update stall tracker on novel successful calls.
+                if not is_error and out_text is not DONE and out_text != DONE:
+                    if _call_key not in _seen_call_keys:
+                        _seen_call_keys.add(_call_key)
+                        _last_progress_turn = turn
+
                 entry: dict[str, Any] = {
                     "turn": turn,
                     "name": tc_name,

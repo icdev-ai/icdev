@@ -1286,7 +1286,7 @@ class TestLoopControls:
         assert "Warning" in third
 
     def test_duplicate_blocked_on_fifth_repeat(self):
-        """Fifth identical call is blocked: is_error=True, result contains '[Loop guard]'."""
+        """Fifth identical call is blocked: is_error=True, error field has duplicate-blocked marker."""
         calls = [
             [{"id": f"c{i}", "name": "read", "input": {"path": "dup.py"}}]
             for i in range(5)
@@ -1303,7 +1303,7 @@ class TestLoopControls:
         assert len(read_log) == 5
         fifth = read_log[4]
         assert fifth["error"] is not None
-        assert "[Loop guard]" in fifth["result"]
+        assert "duplicate-blocked" in fifth["error"]
 
     def test_different_inputs_not_flagged_as_duplicate(self):
         """Same tool, different inputs each turn → no Loop guard warnings."""
@@ -1333,20 +1333,25 @@ class TestLoopControls:
         import icdev.tools.llm.agent_loop as _al
 
         call_n = [0]
-        original = _al._maybe_compress_messages
 
         def fake_compress(msgs, **kw):
             call_n[0] += 1
-            if call_n[0] == 1:
-                return msgs[:1]  # simulate compression: drop most messages
-            return original(msgs, **kw)
+            # Fire on the second call (turn 1), when messages has grown past the
+            # initial single-item state, so truncation actually reduces length.
+            if call_n[0] == 2 and len(msgs) > 1:
+                return msgs[:1]  # simulate compression: keep only first message
+            return msgs
 
         monkeypatch.setattr(_al, "_maybe_compress_messages", fake_compress)
-        router = ScriptedRouter(["done"])
+        # Turn 0: one tool call builds up messages; turn 1: fake compression fires.
+        router = ScriptedRouter([
+            [{"id": "c1", "name": "echo", "input": {}}],
+            "done",
+        ])
         result = run_agent_loop(
             router, system_prompt="s", user_prompt="u",
             tools=[_tool("echo")], tool_handlers={"echo": lambda i, s: "x"},
-            max_iterations=3,
+            max_iterations=5,
         )
         notice = [
             m for m in result.messages
