@@ -14808,6 +14808,236 @@ Planning rules:
 
     register_pna_routes(bp)
 
+    # ══════════════════════════════════════════════════════════════════════
+    # Federal Network Peering — IP Address Space & Routing Policy (Step 3)
+    # ══════════════════════════════════════════════════════════════════════
+
+    @bp.route("/api/ip-space-definitions", methods=["POST"])
+    @nc_login_required
+    def nc_api_create_ip_space_definition():
+        from tools.network.ip_address_space import create_ip_space_definition
+        data = request.get_json(force=True) or {}
+        required = ("initiating_party_name", "responding_party_name")
+        missing = [f for f in required if not data.get(f)]
+        if missing:
+            return jsonify({"error": f"Missing required fields: {missing}"}), 400
+        conn = get_connection()
+        try:
+            result = create_ip_space_definition(
+                conn,
+                initiating_party_name=data["initiating_party_name"],
+                responding_party_name=data["responding_party_name"],
+                initiating_party_org=data.get("initiating_party_org", ""),
+                responding_party_org=data.get("responding_party_org", ""),
+                peering_request_id=data.get("peering_request_id"),
+                asn_exchange_id=data.get("asn_exchange_id"),
+                initial_prefixes=data.get("initial_prefixes"),
+            )
+            _audit("CREATE", "ip_space_definition", result["definition_id"], conn)
+            return jsonify({"ok": True, "definition": result}), 201
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/ip-space-definitions", methods=["GET"])
+    @nc_login_required
+    def nc_api_list_ip_space_definitions():
+        from tools.network.ip_address_space import list_ip_space_definitions
+        conn = get_connection()
+        try:
+            return jsonify(list_ip_space_definitions(
+                conn,
+                workflow_id=request.args.get("workflow_id"),
+                status=request.args.get("status"),
+                peering_request_id=request.args.get("peering_request_id"),
+                limit=min(int(request.args.get("limit", 100)), 500),
+            ))
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/ip-space-definitions/<did>", methods=["GET"])
+    @nc_login_required
+    def nc_api_get_ip_space_definition(did):
+        from tools.network.ip_address_space import get_ip_space_definition
+        conn = get_connection()
+        try:
+            rec = get_ip_space_definition(conn, did)
+            if not rec:
+                return jsonify({"error": f"Definition {did} not found"}), 404
+            return jsonify(rec)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/ip-space-definitions/<did>/prefixes", methods=["POST"])
+    @nc_login_required
+    def nc_api_add_ip_space_prefix(did):
+        from tools.network.ip_address_space import add_prefix
+        data = request.get_json(force=True) or {}
+        if not data.get("prefix"):
+            return jsonify({"error": "prefix is required"}), 400
+        conn = get_connection()
+        try:
+            result = add_prefix(
+                conn, did,
+                prefix=data["prefix"],
+                party_role=data.get("party_role", "initiating"),
+                prefix_type=data.get("prefix_type", "aggregate"),
+                description=data.get("description", ""),
+                is_customer_prefix=bool(data.get("is_customer_prefix", False)),
+            )
+            _audit("ADD_PREFIX", "ip_space_definition", did, conn)
+            return jsonify({"ok": True, "definition": result})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/ip-space-definitions/<did>/prefixes/<int:idx>", methods=["DELETE"])
+    @nc_login_required
+    def nc_api_remove_ip_space_prefix(did, idx):
+        from tools.network.ip_address_space import remove_prefix
+        conn = get_connection()
+        try:
+            result = remove_prefix(conn, did, idx)
+            _audit("REMOVE_PREFIX", "ip_space_definition", did, conn)
+            return jsonify({"ok": True, "definition": result})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/ip-space-definitions/<did>/routing-policy", methods=["PUT"])
+    @nc_login_required
+    def nc_api_set_ip_space_routing_policy(did):
+        from tools.network.ip_address_space import set_routing_policy
+        data = request.get_json(force=True) or {}
+        conn = get_connection()
+        try:
+            result = set_routing_policy(
+                conn, did,
+                max_prefixes_initiating=data.get("max_prefixes_initiating"),
+                max_prefixes_responding=data.get("max_prefixes_responding"),
+                min_prefix_length_v4=data.get("min_prefix_length_v4"),
+                max_prefix_length_v4=data.get("max_prefix_length_v4"),
+                min_prefix_length_v6=data.get("min_prefix_length_v6"),
+                max_prefix_length_v6=data.get("max_prefix_length_v6"),
+                accepted_communities=data.get("accepted_communities"),
+                rejected_communities=data.get("rejected_communities"),
+                local_preference=data.get("local_preference"),
+                med=data.get("med"),
+                no_export=data.get("no_export"),
+                prefix_filter_action=data.get("prefix_filter_action"),
+                notes=data.get("notes"),
+            )
+            _audit("SET_ROUTING_POLICY", "ip_space_definition", did, conn)
+            return jsonify({"ok": True, "definition": result})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/ip-space-definitions/<did>/submit", methods=["POST"])
+    @nc_login_required
+    def nc_api_submit_ip_space_definition(did):
+        from tools.network.ip_address_space import submit_definition
+        conn = get_connection()
+        try:
+            result = submit_definition(conn, did)
+            _audit("SUBMIT", "ip_space_definition", did, conn)
+            return jsonify({"ok": True, "definition": result})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/ip-space-definitions/<did>/acknowledge", methods=["POST"])
+    @nc_login_required
+    def nc_api_acknowledge_ip_space_definition(did):
+        from tools.network.ip_address_space import acknowledge_definition
+        conn = get_connection()
+        try:
+            result = acknowledge_definition(conn, did)
+            _audit("ACKNOWLEDGE", "ip_space_definition", did, conn)
+            return jsonify({"ok": True, "definition": result})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/ip-space-definitions/<did>/approve", methods=["POST"])
+    @nc_login_required
+    def nc_api_approve_ip_space_definition(did):
+        from tools.network.ip_address_space import approve_definition
+        data = request.get_json(force=True) or {}
+        party_role = data.get("party_role")
+        if not party_role:
+            return jsonify({"error": "party_role is required"}), 400
+        conn = get_connection()
+        try:
+            result = approve_definition(conn, did,
+                                        party_role=party_role,
+                                        notes=data.get("notes", ""))
+            _audit("APPROVE", "ip_space_definition", did, conn)
+            return jsonify({"ok": True, "definition": result})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/ip-space-definitions/<did>/reject", methods=["POST"])
+    @nc_login_required
+    def nc_api_reject_ip_space_definition(did):
+        from tools.network.ip_address_space import reject_definition
+        data = request.get_json(force=True) or {}
+        conn = get_connection()
+        try:
+            result = reject_definition(conn, did, reason=data.get("reason", ""))
+            _audit("REJECT", "ip_space_definition", did, conn)
+            return jsonify({"ok": True, "definition": result})
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/ip-space-definitions/<did>/document", methods=["GET"])
+    @nc_login_required
+    def nc_api_ip_space_definition_document(did):
+        from tools.network.ip_address_space import generate_definition_document
+        conn = get_connection()
+        try:
+            doc = generate_definition_document(conn, did)
+            fmt = request.args.get("format", "text")
+            if fmt == "json":
+                return jsonify({"ok": True, "definition_id": did, "document": doc})
+            return doc, 200, {"Content-Type": "text/plain; charset=utf-8"}
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 404
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
     # ── Done ───────────────────────────────────────────────────────────────
     logger.info("Network Design Canvas Blueprint created (%d routes)", len(bp.deferred_functions))
     return bp

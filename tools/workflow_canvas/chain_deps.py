@@ -36,6 +36,10 @@ def ensure_table(conn) -> None:
     try:
         conn.execute("SELECT 1 FROM wfc_chain_deps LIMIT 1")
     except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         is_pg = hasattr(conn, "autocommit")
         ddl = _DDL_PG if is_pg else _DDL_SQLITE
         for stmt in ddl.strip().split(";"):
