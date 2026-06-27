@@ -40,6 +40,16 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CONFIG_PATH = BASE_DIR / "args" / "llm_config.yaml"
 
 
+class CrossGraderViolation(RuntimeError):
+    """Raised when no provider is available that isn't excluded by cross-grader constraint.
+
+    The cross-grader constraint prevents the same LLM that ran an agent session
+    from grading its own output.  Pass ``exclude_model_ids`` to
+    :meth:`LLMRouter.invoke` to enforce it; this exception fires when every
+    chain entry is in the exclusion list.
+    """
+
+
 class LLMUnavailableError(RuntimeError):
     """Raised when no LLM provider in the routing chain can serve a request.
 
@@ -1584,7 +1594,13 @@ class LLMRouter:
 
         return 0.0
 
-    def invoke(self, function: str, request: LLMRequest) -> LLMResponse:
+    def invoke(
+        self,
+        function: str,
+        request: LLMRequest,
+        *,
+        exclude_model_ids: list[str] | None = None,
+    ) -> LLMResponse:
         """Resolve provider for function and invoke with fallback.
 
         Walks the full fallback chain: if the first provider fails at
@@ -1594,6 +1610,11 @@ class LLMRouter:
         Args:
             function: ICDEV™ function name (e.g. 'code_generation', 'nlq_sql').
             request: Vendor-agnostic LLM request.
+            exclude_model_ids: Optional list of ``model_id`` strings to skip.
+                Used by the cross-grader constraint to prevent the same LLM
+                that ran an agent session from grading its own output.
+                Raises :class:`CrossGraderViolation` if all chain entries
+                are excluded.
 
         Returns:
             LLMResponse.
@@ -1604,6 +1625,8 @@ class LLMRouter:
                 ``except RuntimeError`` blocks remain compatible. Callers
                 that need to degrade to deterministic behavior should
                 catch ``LLMUnavailableError`` specifically.
+            CrossGraderViolation: If ``exclude_model_ids`` is set and every
+                chain entry is excluded.
         """
         # Explicit no-LLM mode: short-circuit before any probing or budget
         # checks so deterministic-only environments don't pay the network
@@ -1736,6 +1759,10 @@ class LLMRouter:
         except ImportError:
             tracer = None
 
+        # Cross-grader: track how many entries are excluded so we can raise correctly.
+        _excluded_count = 0
+        _chain_total = len(chain)
+
         for model_name in chain:
             model_cfg = self._get_model_config(model_name)
             if not model_cfg:
@@ -1745,6 +1772,15 @@ class LLMRouter:
             if provider is None:
                 continue
             model_id = model_cfg.get("model_id", "")
+
+            # Cross-grader enforcement: skip models in the exclusion list.
+            if exclude_model_ids and model_id in exclude_model_ids:
+                logger.debug(
+                    "router: skipping model %r (function=%r) — excluded by cross-grader constraint",
+                    model_id, function,
+                )
+                _excluded_count += 1
+                continue
 
             # D286: Span with GenAI semantic conventions
             span = None
@@ -1861,6 +1897,16 @@ class LLMRouter:
                 # RL: record failure so this model's Q-value decreases
                 self._get_rl_router().record_outcome(function, model_name, success=False)
                 continue
+
+        # If every chain entry was excluded, raise CrossGraderViolation instead of
+        # LLMUnavailableError so callers can distinguish the two failure modes.
+        if exclude_model_ids and _excluded_count > 0 and last_error is None:
+            raise CrossGraderViolation(
+                "Cross-grader violation: all {} model(s) in the '{}' chain are "
+                "excluded by cross-grader constraint (exclude_model_ids={!r}). "
+                "Add a different-tier model to the '{}' routing chain in "
+                "args/llm_config.yaml.".format(_chain_total, function, exclude_model_ids, function)
+            )
 
         raise LLMUnavailableError(
             "All providers in chain {} failed for function '{}'. Last error: {}".format(chain, function, last_error),

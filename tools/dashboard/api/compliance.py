@@ -4,7 +4,7 @@ Flask Blueprint for compliance API.
 Queries ssp_documents, poam_items, stig_findings, sbom_records.
 """
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, sql_placeholder
 from flask import Blueprint, jsonify, request
 
 from tools.dashboard.config import DB_PATH
@@ -45,6 +45,7 @@ def list_ssp():
 def list_poam():
     """List POAM items, optionally filtered by project_id and/or status."""
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         project_id = request.args.get("project_id")
         status = request.args.get("status")
@@ -52,10 +53,10 @@ def list_poam():
         query = "SELECT * FROM poam_items WHERE 1=1"
         params = []
         if project_id:
-            query += " AND project_id = ?"
+            query += f" AND project_id = {ph}"
             params.append(project_id)
         if status:
-            query += " AND status = ?"
+            query += f" AND status = {ph}"
             params.append(status)
         query += " ORDER BY severity, created_at DESC"
 
@@ -69,6 +70,7 @@ def list_poam():
 def list_stig():
     """List STIG findings, optionally filtered by project_id and/or status."""
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         project_id = request.args.get("project_id")
         status = request.args.get("status")
@@ -76,10 +78,10 @@ def list_stig():
         query = "SELECT * FROM stig_findings WHERE 1=1"
         params = []
         if project_id:
-            query += " AND project_id = ?"
+            query += f" AND project_id = {ph}"
             params.append(project_id)
         if status:
-            query += " AND status = ?"
+            query += f" AND status = {ph}"
             params.append(status)
         query += " ORDER BY severity, created_at DESC"
 
