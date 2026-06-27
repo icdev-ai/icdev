@@ -95,6 +95,9 @@ REFLEX_NAMES = [
     "academy_reflex",
     "e2e_runner",
     "qa_agent_reflex",  # 6-hour QA coverage gap sweep + E2E sweep scheduling
+    "coherence_to_kanban_reflex",  # diffs coherence violations → files kanban bug tasks
+    "flaky_tracker_reflex",         # ingests pytest XML → files [FLAKY] kanban tasks
+    "dep_health_reflex",            # pip check + pip-audit → files [DEP-HEALTH] kanban tasks
     "log_triage",
     "inspect_adapt",
     "cpmp_monitor",

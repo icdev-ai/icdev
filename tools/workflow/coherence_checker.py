@@ -3085,7 +3085,10 @@ def check_blueprint_imports() -> CoherenceCheck:
     """
     import subprocess as _sp
 
-    blueprint_files = sorted((PROJECT_ROOT / "tools").rglob("blueprint.py"))
+    blueprint_files = sorted(
+        list((PROJECT_ROOT / "tools").rglob("blueprint.py"))
+        + list((PROJECT_ROOT / "icdev" / "tools").rglob("blueprint.py"))
+    )
     failures: List[str] = []
 
     for bp_file in blueprint_files:
@@ -4116,6 +4119,139 @@ def check_profile_sync(changed_files: Optional[List[Path]] = None) -> CoherenceC
 
 
 # ---------------------------------------------------------------------------
+# Template Variable Parity Check (OPT-CC-02)
+# ---------------------------------------------------------------------------
+
+def check_template_variable_parity() -> "CoherenceCheck":
+    """Detect Jinja2 template variables used in templates but not passed by render_template().
+
+    Scans blueprint.py files for render_template() calls, extracts keyword
+    arguments, then compares against {{ var }} references in the template.
+    Variables used in the template but absent from the call-site are potential
+    UndefinedError failures at runtime.
+
+    Conservative: skips calls that use **kwargs (dynamic), and excludes
+    Flask/Jinja2 built-in globals to avoid false positives.
+    """
+    import ast as _ast
+    import re as _re
+
+    # Names always injected by Flask/Jinja2 without explicit passing
+    _BUILTINS = frozenset({
+        "g", "request", "session", "config", "current_user", "url_for",
+        "get_flashed_messages", "range", "lipsum", "dict", "namespace",
+        "loop", "super", "caller", "True", "False", "None",
+        "csrf_token", "now", "static",
+        # Common ICDEV context processors
+        "active_alerts", "nav_links", "unseen_release", "icdev_version",
+        "active_toggles", "current_tenant", "security_context",
+    })
+
+    _TEMPLATES_DIR = PROJECT_ROOT / "tools" / "dashboard" / "templates"
+    violations: List[str] = []
+
+    def _extract_render_calls(src: str):
+        """Return [(template_name, frozenset(kwargs))] from a blueprint source."""
+        calls = []
+        try:
+            tree = _ast.parse(src)
+        except SyntaxError:
+            return calls
+        for node in _ast.walk(tree):
+            if not isinstance(node, _ast.Call):
+                continue
+            func = node.func
+            is_rt = (
+                (isinstance(func, _ast.Name) and func.id == "render_template")
+                or (isinstance(func, _ast.Attribute) and func.attr == "render_template")
+            )
+            if not is_rt or not node.args:
+                continue
+            first = node.args[0]
+            if not isinstance(first, _ast.Constant) or not isinstance(first.value, str):
+                continue
+            template_name = first.value
+            # Skip calls with **kwargs — dynamic context, can't analyse statically
+            if any(kw.arg is None for kw in node.keywords):
+                continue
+            kwargs = frozenset(kw.arg for kw in node.keywords if kw.arg)
+            calls.append((template_name, kwargs))
+        return calls
+
+    def _find_template_vars(template_src: str) -> set:
+        """Extract first-level identifiers from {{ var }}, {% if var %}, {% for x in var %}."""
+        found = set()
+        # {{ identifier }} or {{ identifier.attr }} or {{ identifier | filter }}
+        for m in _re.finditer(r'\{\{-?\s*([a-zA-Z_][a-zA-Z0-9_]*)', template_src):
+            found.add(m.group(1))
+        # {% if/elif var %}, {% for x in var %}, {% set x = var %}
+        for m in _re.finditer(
+            r'\{%-?\s+(?:if|elif|for\s+\w+\s+in)\s+([a-zA-Z_][a-zA-Z0-9_]*)',
+            template_src
+        ):
+            found.add(m.group(1))
+        return found - _BUILTINS
+
+    # Search both namespaces
+    for bp_dir in [PROJECT_ROOT / "tools", PROJECT_ROOT / "icdev" / "tools"]:
+        for bp_file in sorted(bp_dir.rglob("blueprint.py")):
+            # Skip test fixtures
+            if "test" in str(bp_file).lower() or "__pycache__" in str(bp_file):
+                continue
+            try:
+                src = bp_file.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                continue
+
+            calls = _extract_render_calls(src)
+            for template_name, kwargs in calls:
+                tmpl_path = _TEMPLATES_DIR / template_name
+                if not tmpl_path.exists():
+                    continue
+                try:
+                    tmpl_src = tmpl_path.read_text(encoding="utf-8", errors="replace")
+                except Exception:
+                    continue
+
+                template_vars = _find_template_vars(tmpl_src)
+                # Strip {% include %} vars — included templates have their own context
+                # Only flag top-level vars that are not in kwargs
+                missing_vars = template_vars - kwargs
+                if missing_vars:
+                    rel_bp = str(bp_file.relative_to(PROJECT_ROOT))
+                    violations.append(
+                        f"{rel_bp} → {template_name}: undefined {sorted(missing_vars)}"
+                    )
+
+    if violations:
+        return CoherenceCheck(
+            check_id="template_variable_parity",
+            check_name="Template Variable Parity",
+            status="warn",  # warn not fail — some vars come from context processors
+            expected=["All render_template() kwargs match template {{ var }} references"],
+            actual=violations,
+            missing=violations,
+            extra=[],
+            message=(
+                f"{len(violations)} render_template() call(s) may pass missing template "
+                "variables — potential UndefinedError at runtime. "
+                "Verify that missing vars are provided by a @app.context_processor."
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="template_variable_parity",
+        check_name="Template Variable Parity",
+        status="pass",
+        expected=["All render_template() kwargs match template {{ var }} references"],
+        actual=[],
+        missing=[],
+        extra=[],
+        message="No template variable parity issues detected.",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Canvas RLS Bypass Check (OPT-CC-01)
 # ---------------------------------------------------------------------------
 
@@ -4215,6 +4351,7 @@ CHECK_REGISTRY = {
     "mcp_security": check_mcp_security,
     "security_context": check_security_context,
     "canvas_rls_bypass": check_canvas_rls_bypass,
+    "template_variable_parity": check_template_variable_parity,
     "log_standard": check_log_standard_compliance,
     "nav_route_parity": check_nav_route_parity,
     "blueprint_imports": check_blueprint_imports,
@@ -4259,6 +4396,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "mcp_security": "skip",  # scanner module creation requires human judgment
     "security_context": "skip",  # RLS bypass documentation and wiring fixes require human judgment
     "canvas_rls_bypass": "skip",  # get_canvas_connection() migration requires human judgment per canvas
+    "template_variable_parity": "skip",  # undefined vars may come from context processors — human must verify
     "canvas_placeholder_style": "skip",  # SQL placeholder fixes require human judgment (search+replace in SQL strings)
     "runtime_placeholder_style": "skip",  # SQL placeholder fixes require human judgment (search+replace in SQL strings)
     "ace_yaml_listen_topics": "skip",  # YAML restructuring requires human judgment

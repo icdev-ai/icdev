@@ -455,6 +455,41 @@ reflexes:
       threshold: 0
       operator: gte
 
+  coherence_to_kanban_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    interval_seconds: 21600
+    description: "Diff coherence check results against baseline; file [COHERENCE] kanban bug tasks for new violations only"
+    success_metric:
+      name: tasks_created
+      threshold: 0
+      operator: gte
+
+  flaky_tracker_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 12h"
+    interval_seconds: 43200
+    threshold: 0.15
+    min_runs: 5
+    description: "Ingest pytest JUnit XML results; file [FLAKY] kanban bug tasks for tests with fail_rate >= 15%"
+    success_metric:
+      name: total_flaky
+      threshold: 0
+      operator: gte
+
+  dep_health_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 24h"
+    interval_seconds: 86400
+    description: "pip check + pip-audit (if available) + outdated scan; file [DEP-HEALTH] kanban tasks for critical/high findings"
+    success_metric:
+      name: filed_tasks
+      threshold: 0
+      operator: gte
+
   cpmp_monitor:
     enabled: true
     risk_tier: yellow
