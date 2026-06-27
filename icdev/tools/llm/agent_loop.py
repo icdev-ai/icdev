@@ -189,6 +189,8 @@ class AgentLoopResult:
     """User ID for cost attribution (set via run_agent_loop parameter)."""
     trace_id: str = ""
     """Correlation ID threaded through memory writes, evals, and OTel spans (migration 229)."""
+    output_redacted: bool = False
+    """True when output_redactor replaced PII/credentials in final_content (IL4/IL5)."""
 
 
 # Type aliases for callback hooks.
