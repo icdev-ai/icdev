@@ -52,6 +52,7 @@ def compute_content_hash(content: str) -> str:
 def write_to_db(
     content, entry_type, importance=5, user_id=None, tenant_id=None, source="manual",
     classification="CUI", compartment="", tier="episodic", session_ref=None,
+    trace_id=None,
 ):
     """Write memory entry with SHA-256 dedup upsert (D179).
 
@@ -60,7 +61,8 @@ def write_to_db(
     Args:
         tier: Memory tier — 'episodic' (dated events), 'semantic' (durable facts),
               'procedural' (instructions/skills). Added by migration 226.
-        session_ref: agent_loop_sessions.session_id that produced this entry (optional).
+        session_ref: agent_loop_sessions.session_id that produced this entry.
+        trace_id: OTel span / agent_loop correlation ID (migration 229).
 
     Returns:
         dict: {id, status ('inserted'|'duplicate_merged'), fingerprint}
@@ -93,23 +95,38 @@ def write_to_db(
         return {"id": existing[0], "status": "duplicate_merged", "fingerprint": fingerprint}
 
     _tier = tier if tier in VALID_TIERS else "episodic"
-    # tier and session_ref columns added by migration 226; fall back gracefully
+    # tier, session_ref columns added by migration 226; trace_id by migration 229.
+    # Fall back gracefully when migration is not yet applied.
     try:
         c.execute(
             "INSERT INTO memory_entries "
             "(content, type, importance, content_hash, user_id, tenant_id, source, "
-            "decay_weight, classification, compartment, tier, session_ref) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            "decay_weight, classification, compartment, tier, session_ref, trace_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
             (content, entry_type, importance, fingerprint, user_id, tenant_id, source,
-             1.0, classification, compartment, _tier, session_ref),
+             1.0, classification, compartment, _tier, session_ref, trace_id),
         )
     except Exception:
-        # Migration 226 not yet applied — insert without new columns
-        c.execute(
-            "INSERT INTO memory_entries (content, type, importance, content_hash, user_id, tenant_id, source, decay_weight, classification, compartment) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
-            (content, entry_type, importance, fingerprint, user_id, tenant_id, source, 1.0, classification, compartment),
-        )
+        try:
+            # trace_id column missing (migration 229 not yet applied)
+            c.execute(
+                "INSERT INTO memory_entries "
+                "(content, type, importance, content_hash, user_id, tenant_id, source, "
+                "decay_weight, classification, compartment, tier, session_ref) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                (content, entry_type, importance, fingerprint, user_id, tenant_id, source,
+                 1.0, classification, compartment, _tier, session_ref),
+            )
+        except Exception:
+            # Migration 226 also not yet applied
+            c.execute(
+                "INSERT INTO memory_entries "
+                "(content, type, importance, content_hash, user_id, tenant_id, source, "
+                "decay_weight, classification, compartment) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                (content, entry_type, importance, fingerprint, user_id, tenant_id, source,
+                 1.0, classification, compartment),
+            )
     returning = c.fetchone()
     entry_id = returning[0] if returning else None
     conn.commit()

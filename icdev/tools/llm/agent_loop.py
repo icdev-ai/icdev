@@ -187,6 +187,8 @@ class AgentLoopResult:
     """Tenant ID for cost attribution (set via run_agent_loop parameter)."""
     user_id: str = ""
     """User ID for cost attribution (set via run_agent_loop parameter)."""
+    trace_id: str = ""
+    """Correlation ID threaded through memory writes, evals, and OTel spans (migration 229)."""
 
 
 # Type aliases for callback hooks.
@@ -645,6 +647,9 @@ def run_agent_loop(
     # Assign a unique session ID so callers can persist and resume this loop.
     session_id = str(_uuid.uuid4())
 
+    # Correlation ID: threads this loop run through memory writes, evals, and OTel spans.
+    trace_id = str(_uuid.uuid4())
+
     # Resume: if a prior session ID is given, load its message history instead
     # of starting fresh. Falls back to a new conversation if the session is not
     # found or the DB is unavailable.
@@ -691,6 +696,7 @@ def run_agent_loop(
     result.parent_session_id = parent_session_id
     result.tenant_id = tenant_id
     result.user_id = user_id
+    result.trace_id = trace_id
 
     response: Any = None
 

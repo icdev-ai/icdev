@@ -28,6 +28,7 @@ MEMORY_FILE = BASE_DIR / "memory" / "MEMORY.md"
 LOGS_DIR = BASE_DIR / "memory" / "logs"
 VALID_TYPES = ("fact", "preference", "event", "insight", "task", "relationship", "thinking")
 VALID_SOURCES = ("manual", "hook", "thinking", "auto")
+VALID_TIERS = ("procedural", "episodic", "semantic")
 MEMORY_SECTIONS = (
     "user_preferences",
     "key_facts",
@@ -49,12 +50,18 @@ def compute_content_hash(content: str) -> str:
 
 
 def write_to_db(
-    content, entry_type, importance, user_id=None, tenant_id=None, source="manual",
-    classification="CUI", compartment=""
+    content, entry_type, importance=5, user_id=None, tenant_id=None, source="manual",
+    classification="CUI", compartment="", tier="episodic", session_ref=None,
+    trace_id=None,
 ):
     """Write memory entry with SHA-256 dedup upsert (D179).
 
     Normalizes content before hashing so case/whitespace variants deduplicate.
+
+    Args:
+        tier: Memory tier — 'episodic', 'semantic', 'procedural' (migration 226).
+        session_ref: agent_loop_sessions.session_id that produced this entry.
+        trace_id: OTel span / agent_loop correlation ID (migration 229).
 
     Returns:
         dict: {id, status ('inserted'|'duplicate_merged'), fingerprint}
@@ -86,11 +93,35 @@ def write_to_db(
         conn.close()
         return {"id": existing[0], "status": "duplicate_merged", "fingerprint": fingerprint}
 
-    c.execute(
-        "INSERT INTO memory_entries (content, type, importance, content_hash, user_id, tenant_id, source, decay_weight, classification, compartment) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
-        (content, entry_type, importance, fingerprint, user_id, tenant_id, source, 1.0, classification, compartment),
-    )
+    _tier = tier if tier in VALID_TIERS else "episodic"
+    try:
+        c.execute(
+            "INSERT INTO memory_entries "
+            "(content, type, importance, content_hash, user_id, tenant_id, source, "
+            "decay_weight, classification, compartment, tier, session_ref, trace_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+            (content, entry_type, importance, fingerprint, user_id, tenant_id, source,
+             1.0, classification, compartment, _tier, session_ref, trace_id),
+        )
+    except Exception:
+        try:
+            c.execute(
+                "INSERT INTO memory_entries "
+                "(content, type, importance, content_hash, user_id, tenant_id, source, "
+                "decay_weight, classification, compartment, tier, session_ref) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                (content, entry_type, importance, fingerprint, user_id, tenant_id, source,
+                 1.0, classification, compartment, _tier, session_ref),
+            )
+        except Exception:
+            c.execute(
+                "INSERT INTO memory_entries "
+                "(content, type, importance, content_hash, user_id, tenant_id, source, "
+                "decay_weight, classification, compartment) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                (content, entry_type, importance, fingerprint, user_id, tenant_id, source,
+                 1.0, classification, compartment),
+            )
     returning = c.fetchone()
     entry_id = returning[0] if returning else None
     conn.commit()

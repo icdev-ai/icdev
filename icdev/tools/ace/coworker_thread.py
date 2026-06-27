@@ -532,6 +532,7 @@ class CoWorkerThread(threading.Thread):
                         source="hook",
                         tier="episodic",
                         session_ref=loop_result.session_id,
+                        trace_id=getattr(loop_result, "trace_id", None) or None,
                     )
             except Exception as _exc:
                 logger.debug("ace: episodic memory save failed for %s: %s", _coworker_id, _exc)

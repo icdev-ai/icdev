@@ -1390,6 +1390,28 @@ class ChatManager:
                 if _check_inception_needed(ctx, user_content):
                     system_content += "\n" + _INCEPTION_INSTRUCTION + "\n"
 
+                # --- Episodic/semantic memory retrieval (A-5) ---
+                try:
+                    from tools.memory.hybrid_search import search as _mem_search
+                    _chat_top_k = 3
+                    try:
+                        import yaml as _yaml
+                        import os as _os
+                        _cfg_path = _os.path.join(_os.path.dirname(__file__), "..", "..", "args", "llm_config.yaml")
+                        with open(_cfg_path, encoding="utf-8") as _f:
+                            _lcfg = _yaml.safe_load(_f)
+                        _chat_top_k = int(_lcfg.get("agent_loop", {}).get("memory", {}).get("chat_top_k", 3))
+                    except Exception:
+                        pass
+                    _mem_hits = _mem_search(user_content, limit=_chat_top_k, tier="episodic|semantic")
+                    if _mem_hits:
+                        mem_block = "\n\n[Retrieved Memory]\n"
+                        for h in _mem_hits:
+                            mem_block += f"  - [{h['type']}] {h['content'][:300]}\n"
+                        system_content += mem_block
+                except Exception:
+                    pass
+
             if system_content:
                 conversation.append({"role": "system", "content": system_content})
 
