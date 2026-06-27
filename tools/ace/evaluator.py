@@ -72,6 +72,8 @@ class EvalResult:
     graded_at: str = ""
     grading_version: str = _GRADING_VERSION
     reasoning_style: str = ""
+    model_id: str = ""
+    """LLM model_id that ran this session — used by cross-grader enforcement."""
 
 
 # ---------------------------------------------------------------------------
@@ -463,15 +465,27 @@ def grade_output_quality(
     *,
     user_prompt: str = "",
     final_content: str = "",
-    llm_function: str = "code_generation",
+    session_text: str = "",
+    llm_function: str = "agent_eval_grading",
+    exclude_model_id: str | None = None,
 ) -> dict:
     """LLM-as-judge grading of agent output quality.
 
     Returns a dict with keys: faithfulness, completeness, reasoning_quality,
-    cod_quality, error_adaptation, overall, reasoning.
+    cod_quality, error_adaptation, overall, reasoning, grader_model_id.
 
     The result is NOT automatically persisted — caller decides whether to
     save via ``save_eval()``.
+
+    Cross-grader enforcement:
+        ``llm_function`` defaults to ``"agent_eval_grading"``, a routing chain
+        that starts with tier-2 models (claude-sonnet, gpt-4o) — different from
+        the ``code_generation`` chain used by the agent loop.
+
+        Pass ``exclude_model_id`` (typically ``EvalResult.model_id``) to hard-
+        block the session's own model from grading its output.  If the grading
+        router would select the excluded model anyway, :class:`CrossGraderViolation`
+        is raised.
     """
     if isinstance(eval_result_or_session_id, str):
         er = get_eval(eval_result_or_session_id)
@@ -480,24 +494,33 @@ def grade_output_quality(
     else:
         er = eval_result_or_session_id
 
-    if not user_prompt or not final_content:
+    # session_text is a convenience alias for final_content
+    effective_content = final_content or session_text
+
+    if not user_prompt or not effective_content:
         return {
-            "error": "user_prompt and final_content are required for LLM grading",
+            "error": "user_prompt and final_content (or session_text) are required for LLM grading",
             "overall": 0.0,
         }
 
+    # Auto-populate exclude_model_id from EvalResult if not explicitly passed
+    effective_exclude = exclude_model_id or (er.model_id if er.model_id else None)
+
     prompt = _JUDGE_PROMPT.format(
         user_prompt=user_prompt[:1000],
-        final_content=final_content[:2000],
+        final_content=effective_content[:2000],
         reasoning_style=er.reasoning_style or "unknown",
         error_tool_calls=er.error_tool_calls,
         turns_used=er.turns_used,
     )
 
     try:
-        from tools.llm.router import LLMRouter
+        from tools.llm.router import LLMRouter, CrossGraderViolation
         from tools.llm.provider import LLMRequest
         router = LLMRouter()
+        invoke_kwargs: dict = {}
+        if effective_exclude:
+            invoke_kwargs["exclude_model_ids"] = [effective_exclude]
         response = router.invoke(
             llm_function,
             LLMRequest(
@@ -506,7 +529,18 @@ def grade_output_quality(
                 max_tokens=512,
                 temperature=0.0,
             ),
+            **invoke_kwargs,
         )
+        grader_model_id = getattr(response, "model_id", "") or ""
+
+        # Hard cross-grader assertion: if the grader picked the same model anyway, reject.
+        if effective_exclude and grader_model_id and grader_model_id == effective_exclude:
+            raise CrossGraderViolation(
+                f"Cross-grader violation: grader model {grader_model_id!r} is the same "
+                f"as the evaluated session's model. Grading is invalid. "
+                f"Add a different-tier model to the '{llm_function}' routing chain."
+            )
+
         raw = (response.content or "").strip()
         start = raw.find("{")
         end = raw.rfind("}") + 1
@@ -514,6 +548,9 @@ def grade_output_quality(
             grade = json.loads(raw[start:end])
         else:
             grade = {"error": "invalid JSON from judge", "overall": 0.0}
+        grade["grader_model_id"] = grader_model_id
+    except CrossGraderViolation:
+        raise  # re-raise — callers must handle this explicitly
     except Exception as exc:
         logger.warning("evaluator: LLM judge failed: %s", exc)
         grade = {"error": str(exc), "overall": 0.0}

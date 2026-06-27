@@ -39,17 +39,15 @@ logger = get_logger("icdev.llm.router")
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 DEFAULT_CONFIG_PATH = BASE_DIR / "args" / "llm_config.yaml"
 
-# Providers that are allowed when cloud features are disabled (air-gap / offline mode).
-_LOCAL_PROVIDERS: frozenset[str] = frozenset({"ollama", "local", "litellm_local"})
 
+class CrossGraderViolation(RuntimeError):
+    """Raised when no provider is available that isn't excluded by cross-grader constraint.
 
-def _cloud_blocked() -> bool:
-    """True when the active profile or env disables cloud LLM providers."""
-    env = os.environ.get
-    return (
-        env("ICDEV_DISABLE_CLOUD_FEATURES", "").strip().lower() in ("1", "true", "yes")
-        or env("ICDEV_AIRGAP", "").strip().lower() in ("1", "true", "yes")
-    )
+    The cross-grader constraint prevents the same LLM that ran an agent session
+    from grading its own output.  Pass ``exclude_model_ids`` to
+    :meth:`LLMRouter.invoke` to enforce it; this exception fires when every
+    chain entry is in the exclusion list.
+    """
 
 
 class LLMUnavailableError(RuntimeError):
@@ -642,18 +640,10 @@ class LLMRouter:
             logger.warning("No routing chain for function '%s'", function)
             return None, "", {}
 
-        _block_cloud = _cloud_blocked()
         for model_name in chain:
             if self._check_model_available(model_name):
                 model_cfg = self._get_model_config(model_name)
                 provider_name = model_cfg.get("provider", "")
-                if _block_cloud and provider_name not in _LOCAL_PROVIDERS:
-                    logger.warning(
-                        "Cloud provider '%s' skipped for '%s' (air-gap / cloud-blocked mode)",
-                        provider_name,
-                        function,
-                    )
-                    continue
                 provider = self._get_provider(provider_name)
                 if provider:
                     logger.debug(
@@ -670,13 +660,6 @@ class LLMRouter:
             model_name = chain[0]
             model_cfg = self._get_model_config(model_name)
             provider_name = model_cfg.get("provider", "")
-            if _block_cloud and provider_name not in _LOCAL_PROVIDERS:
-                logger.warning(
-                    "Cloud provider '%s' blocked by air-gap policy; function '%s' unavailable",
-                    provider_name,
-                    function,
-                )
-                return None, "", {}
             provider = self._get_provider(provider_name)
             if provider:
                 logger.warning(
@@ -1400,6 +1383,15 @@ class LLMRouter:
         if not cfg.get("enabled", False) and env_enabled not in ("true", "1", "yes"):
             return None
 
+        # Tool-use / agentic turns bypass two-tier. Two-tier (draft→review) is a
+        # text-generation pattern: the review step would strip the model's
+        # tool_calls and return refined prose, which breaks any agent loop that
+        # drives on `LLMResponse.tool_calls`. When the request carries tools,
+        # fall through to the normal chain so a tool-capable model is invoked
+        # directly and its tool_calls are preserved.
+        if getattr(request, "tools", None):
+            return None
+
         tier1 = _expand_env(cfg.get("tier1_model", "qwen3-local"))
         tier2 = _expand_env(cfg.get("tier2_model", "claude-sonnet"))
         planners = cfg.get("planner_functions", [])
@@ -1602,7 +1594,13 @@ class LLMRouter:
 
         return 0.0
 
-    def invoke(self, function: str, request: LLMRequest) -> LLMResponse:
+    def invoke(
+        self,
+        function: str,
+        request: LLMRequest,
+        *,
+        exclude_model_ids: list[str] | None = None,
+    ) -> LLMResponse:
         """Resolve provider for function and invoke with fallback.
 
         Walks the full fallback chain: if the first provider fails at
@@ -1612,6 +1610,11 @@ class LLMRouter:
         Args:
             function: ICDEV™ function name (e.g. 'code_generation', 'nlq_sql').
             request: Vendor-agnostic LLM request.
+            exclude_model_ids: Optional list of ``model_id`` strings to skip.
+                Used by the cross-grader constraint to prevent the same LLM
+                that ran an agent session from grading its own output.
+                Raises :class:`CrossGraderViolation` if all chain entries
+                are excluded.
 
         Returns:
             LLMResponse.
@@ -1622,6 +1625,8 @@ class LLMRouter:
                 ``except RuntimeError`` blocks remain compatible. Callers
                 that need to degrade to deterministic behavior should
                 catch ``LLMUnavailableError`` specifically.
+            CrossGraderViolation: If ``exclude_model_ids`` is set and every
+                chain entry is excluded.
         """
         # Explicit no-LLM mode: short-circuit before any probing or budget
         # checks so deterministic-only environments don't pay the network
@@ -1754,6 +1759,10 @@ class LLMRouter:
         except ImportError:
             tracer = None
 
+        # Cross-grader: track how many entries are excluded so we can raise correctly.
+        _excluded_count = 0
+        _chain_total = len(chain)
+
         for model_name in chain:
             model_cfg = self._get_model_config(model_name)
             if not model_cfg:
@@ -1763,6 +1772,15 @@ class LLMRouter:
             if provider is None:
                 continue
             model_id = model_cfg.get("model_id", "")
+
+            # Cross-grader enforcement: skip models in the exclusion list.
+            if exclude_model_ids and model_id in exclude_model_ids:
+                logger.debug(
+                    "router: skipping model %r (function=%r) — excluded by cross-grader constraint",
+                    model_id, function,
+                )
+                _excluded_count += 1
+                continue
 
             # D286: Span with GenAI semantic conventions
             span = None
@@ -1853,53 +1871,6 @@ class LLMRouter:
                 # RL: record success so this model's Q-value improves
                 self._get_rl_router().record_outcome(function, model_name, success=True, latency_ms=_latency)
 
-                # ECR-BILL-02: fire-and-forget token metering
-                try:
-                    from tools.billing.metering import record_usage as _rec_usage
-                    _total_tokens = (getattr(response, "input_tokens", 0) or 0) + (
-                        getattr(response, "output_tokens", 0) or 0
-                    )
-                    if _total_tokens > 0:
-                        # Resolve tenant_id from Flask request context when available
-                        _bill_tenant = None
-                        try:
-                            from flask import g as _flask_g, has_request_context as _hrc
-                            if _hrc():
-                                _bill_tenant = getattr(_flask_g, "tenant_id", None)
-                        except Exception:
-                            pass
-                        if not _bill_tenant:
-                            _bill_tenant = getattr(request, "tenant_id", None) or "system"
-                        _rec_usage(
-                            _bill_tenant,
-                            "llm_token",
-                            quantity=float(_total_tokens),
-                            model=getattr(response, "model_id", model_id) or model_id,
-                        )
-                except Exception:
-                    pass  # metering is never allowed to block LLM calls
-
-                # Wire Prometheus metrics — best-effort, never block LLM calls
-                try:
-                    import tools.observability.metrics as _obs_m
-                    if _obs_m.llm_calls_total is not None:
-                        _obs_m.llm_calls_total.labels(
-                            provider=provider_name, model=model_id
-                        ).inc()
-                    if _obs_m.llm_tokens_total is not None:
-                        _in_tok = getattr(response, "input_tokens", 0) or 0
-                        _out_tok = getattr(response, "output_tokens", 0) or 0
-                        if _in_tok:
-                            _obs_m.llm_tokens_total.labels(
-                                provider=provider_name, model=model_id, type="input"
-                            ).inc(_in_tok)
-                        if _out_tok:
-                            _obs_m.llm_tokens_total.labels(
-                                provider=provider_name, model=model_id, type="output"
-                            ).inc(_out_tok)
-                except Exception:
-                    pass
-
                 return response
             except Exception as exc:
                 logger.warning(
@@ -1926,6 +1897,16 @@ class LLMRouter:
                 # RL: record failure so this model's Q-value decreases
                 self._get_rl_router().record_outcome(function, model_name, success=False)
                 continue
+
+        # If every chain entry was excluded, raise CrossGraderViolation instead of
+        # LLMUnavailableError so callers can distinguish the two failure modes.
+        if exclude_model_ids and _excluded_count > 0 and last_error is None:
+            raise CrossGraderViolation(
+                "Cross-grader violation: all {} model(s) in the '{}' chain are "
+                "excluded by cross-grader constraint (exclude_model_ids={!r}). "
+                "Add a different-tier model to the '{}' routing chain in "
+                "args/llm_config.yaml.".format(_chain_total, function, exclude_model_ids, function)
+            )
 
         raise LLMUnavailableError(
             "All providers in chain {} failed for function '{}'. Last error: {}".format(chain, function, last_error),

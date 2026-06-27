@@ -1062,6 +1062,24 @@ def api_session_eval_compare(session_id: str):
     return jsonify(result)
 
 
+@ace_api_bp.route("/evals/trends", methods=["GET"])
+def api_evals_trends():
+    """GET /api/ace/evals/trends?days=30&role=&bucket=week
+
+    Returns aggregated eval score trends over time.
+    """
+    try:
+        from icdev.tools.ace.evaluator import get_eval_trends
+        days = int(request.args.get("days", 30))
+        role = (request.args.get("role") or "").strip() or None
+        bucket = request.args.get("bucket", "week")
+        data = get_eval_trends(days=days, role=role, bucket=bucket)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace eval trends failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+    return jsonify({"trends": data, "days": days, "bucket": bucket})
+
+
 @ace_api_bp.route("/evals", methods=["GET"])
 def api_evals_list():
     """List all stored eval results.
