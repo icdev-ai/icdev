@@ -1058,15 +1058,21 @@ def api_stream(instance_id: str):
     import json as _json
 
     timeout = float(request.args.get("timeout", 25))
+    # max_pings=0 means unlimited; use a small positive value in tests to bound
+    # the generator when no events are expected (e.g. ?max_pings=1).
+    max_pings = int(request.args.get("max_pings", 0))
 
     def _generate():
         q = _eb.subscribe(instance_id)
+        ping_count = 0
         try:
             while True:
                 event = _eb.drain(instance_id, q, timeout=timeout)
                 if event is None:
-                    # Keep-alive ping so browsers don't close the connection.
                     yield ": ping\n\n"
+                    ping_count += 1
+                    if max_pings and ping_count >= max_pings:
+                        break
                     continue
                 yield f"data: {_json.dumps(event)}\n\n"
                 if event.get("type") == "loop_done":

@@ -468,6 +468,14 @@ function showResult(wfDef, workflowId, saveData, kanbanData, coworkerCount) {
 
   /* Start kanban task progress polling */
   startTaskProgressPolling(workflowId);
+
+  /* Persist result so Back-button navigation restores the screen */
+  try {
+    sessionStorage.setItem('processify_result', JSON.stringify({
+      wfDef: wfDef, workflowId: workflowId,
+      saveData: saveData, kanbanData: kanbanData, coworkerCount: coworkerCount
+    }));
+  } catch(e) { /* storage quota exceeded — best-effort */ }
 }
 
 /* ── Task progress polling ── */
@@ -563,6 +571,7 @@ async function cleanupPriorRuns() {
 /* ── Reset ── */
 function resetToIntent() {
   stopTaskProgressPolling();
+  sessionStorage.removeItem('processify_result');
   workflowDef = null; pendingFile = null;
   document.getElementById('dz-icon').textContent = '📄';
   document.getElementById('dz-label').textContent = 'Drop file or click to browse';
@@ -635,5 +644,17 @@ function toggleResultDetails() {
   panel.style.display = open ? 'none' : 'block';
   arrow.textContent = open ? '▶' : '▼';
 }
+
+/* ── Restore result screen after Back-button navigation ── */
+window.addEventListener('DOMContentLoaded', function() {
+  try {
+    var saved = sessionStorage.getItem('processify_result');
+    if (!saved) return;
+    var s = JSON.parse(saved);
+    if (!s || !s.wfDef || !s.workflowId) return;
+    workflowDef = s.wfDef;
+    showResult(s.wfDef, s.workflowId, s.saveData || {}, s.kanbanData || {}, s.coworkerCount || 0);
+  } catch(e) { /* corrupted storage — ignore */ }
+});
 </script>
 {% endblock %}

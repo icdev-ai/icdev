@@ -11061,7 +11061,7 @@ Respond with ONLY this JSON (no other text):
         params = []
         for col in ("name", "description", "pattern", "fields_json", "separator", "max_length", "case_rule", "example"):
             if col in data:
-                updates.append(f"{col} = ?")
+                updates.append(f"{col} = {_ph}")
                 params.append(data[col])
         if updates:
             params.append(cid)
