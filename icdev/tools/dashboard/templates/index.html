@@ -826,7 +826,7 @@ function refreshDashboard() {
     // Refresh charts (re-trigger the chart loader in the scripts block)
     if (window._loadCharts) window._loadCharts();
     // Refresh monitor tiles
-    if (window.renderSandboxTile) window.renderSandboxTile();
+    if (window.renderAceMonitorTile) window.renderAceMonitorTile();
     if (window.renderOracleTile) window.renderOracleTile();
     if (window.renderMcpTile) window.renderMcpTile();
     if (window.renderCacheTile) window.renderCacheTile();
@@ -968,10 +968,12 @@ document.addEventListener('DOMContentLoaded', function() {
             Loading…
         </div>
     </div>
-    <!-- OPT-57: Sandbox liveness tile -->
+    <!-- ACE & Agent Loop monitor tile -->
     <div class="card" style="padding: 20px;">
-        <div class="card-label">Sandbox</div>
-        <div id="tile-sandbox" style="min-height: 140px; font-size: 13px; color: var(--text-dim);">
+        <div class="card-label">Agent Loop &amp; Coworkers
+            <span class="help-icon" title="Active ACE instances, HITL queue, 24h agent loop runs and cost">?</span>
+        </div>
+        <div id="tile-ace-monitor" style="min-height: 140px; font-size: 13px; color: var(--text-dim);">
             Loading…
         </div>
     </div>
@@ -1008,48 +1010,48 @@ document.addEventListener('DOMContentLoaded', function() {
 </details>
 
 <script>
-// OPT-57: Sandbox liveness tile renderer
+// ACE & Agent Loop monitor tile
 (function () {
-    function renderSandboxTile() {
-        fetch('/api/sandbox/liveness').then(function (r) {
+    function renderAceMonitorTile() {
+        fetch('/api/ace/monitor-summary').then(function (r) {
             if (!r.ok) throw new Error('HTTP ' + r.status);
             return r.json();
         }).then(function (d) {
-            var el = document.getElementById('tile-sandbox');
+            var el = document.getElementById('tile-ace-monitor');
             if (!el) return;
-            var status = d.status || 'unknown';
-            var color = status === 'healthy' ? '#22c55e'
-                      : status === 'smoke_failed' ? '#f59e0b'
-                      : '#ef4444';
-            var label = status === 'healthy' ? 'OK'
-                      : status === 'smoke_failed' ? 'Smoke failed'
-                      : status === 'degraded' ? 'Degraded'
-                      : 'Unknown';
-            var runtime = (d.health && d.health.runtime) || 'none';
-            var probeAt = d.probe_at ? new Date(d.probe_at) : null;
-            var ageStr = '';
-            if (probeAt) {
-                var hrs = Math.max(0, (Date.now() - probeAt.getTime()) / 3600000);
-                ageStr = hrs < 1 ? '<1h ago' : Math.floor(hrs) + 'h ago';
-            } else {
-                ageStr = 'never';
-            }
+            var active = d.active_instances || 0;
+            var hitl = d.hitl_pending || 0;
+            var sessions = d.sessions_24h || 0;
+            var cost = typeof d.cost_24h_usd === 'number' ? d.cost_24h_usd : 0;
+            var rate = d.success_rate_24h;
+            var dotColor = active > 0 ? '#22c55e' : 'var(--text-dim)';
+            var hitlHtml = hitl > 0
+                ? '<span style="background:#f59e0b; color:#000; border-radius:4px; padding:1px 6px; font-size:11px; margin-left:8px;">'
+                  + '⚠ ' + hitl + ' HITL</span>'
+                : '';
+            var rateStr = rate != null ? (Math.round(rate * 100) + '% ok') : '—';
+            var costStr = '$' + cost.toFixed(3);
             el.innerHTML =
-                '<div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">'
-                + '<span style="width:10px; height:10px; border-radius:50%; background:' + color + '; display:inline-block;"></span>'
-                + '<span style="font-size:16px; font-weight:600; color:var(--text-primary);">' + label + '</span>'
+                '<div style="display:flex; align-items:center; gap:8px; margin-bottom:10px;">'
+                + '<span style="width:10px; height:10px; border-radius:50%; background:' + dotColor + '; display:inline-block; flex-shrink:0;"></span>'
+                + '<span style="font-size:15px; font-weight:600; color:var(--text-primary);">'
+                + active + ' active</span>'
+                + hitlHtml
                 + '</div>'
-                + '<div>Runtime: <span style="color:var(--text-primary);">' + runtime + '</span></div>'
-                + '<div>Last probe: <span style="color:var(--text-primary);">' + ageStr + '</span></div>'
-                + '<div>Smoke: <span style="color:var(--text-primary);">' + (d.smoke_passed ? 'ok' : 'fail') + '</span></div>'
-                + '<div style="margin-top:8px;"><a href="/sandbox" class="btn" style="font-size:11px; padding:3px 10px;">View log</a></div>';
+                + '<div style="margin-bottom:4px;">24h runs: <span style="color:var(--text-primary);">' + sessions + '</span>'
+                + ' &nbsp;·&nbsp; cost: <span style="color:var(--text-primary);">' + costStr + '</span>'
+                + ' &nbsp;·&nbsp; <span style="color:var(--text-primary);">' + rateStr + '</span></div>'
+                + '<div style="margin-top:10px; display:flex; gap:8px;">'
+                + '<a href="/coworker" class="btn" style="font-size:11px; padding:3px 10px;">Coworkers →</a>'
+                + '<a href="/coworker/sessions" class="btn" style="font-size:11px; padding:3px 10px;">Sessions →</a>'
+                + '</div>';
         }).catch(function () {
-            var el = document.getElementById('tile-sandbox');
-            if (el) el.innerHTML = '<div style="color:var(--text-dim);">Sandbox status unavailable</div>';
+            var el = document.getElementById('tile-ace-monitor');
+            if (el) el.innerHTML = '<div style="color:var(--text-dim);">Agent monitor unavailable</div>';
         });
     }
-    document.addEventListener('DOMContentLoaded', renderSandboxTile);
-    window.renderSandboxTile = renderSandboxTile;
+    document.addEventListener('DOMContentLoaded', renderAceMonitorTile);
+    window.renderAceMonitorTile = renderAceMonitorTile;
 })();
 
 // Oracle Insights tile renderer

@@ -1065,3 +1065,10 @@
 | Tool | File | Description | Input | Output |
 |------|------|-------------|-------|--------|
 | Technical Legal Review | tools\network\technical_legal_review.py | Auto-registered: network/technical_legal_review.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Output Redactor | tools\llm\output_redactor.py | Auto-registered: llm/output_redactor.py | --json | JSON |
+| Role Cost Caps | tools\llm\role_cost_caps.py | Auto-registered: llm/role_cost_caps.py | --json | JSON |

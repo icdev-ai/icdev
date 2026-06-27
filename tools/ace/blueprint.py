@@ -1213,6 +1213,75 @@ def _block_text(content) -> str:
     return str(content) if content else ""
 
 
+@ace_api_bp.route("/monitor-summary", methods=["GET"])
+def api_monitor_summary():
+    """Home-page monitor tile: active instances, HITL queue, 24h agent loop stats."""
+    from datetime import datetime, timedelta, timezone
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).strftime(
+        "%Y-%m-%d %H:%M:%S"
+    )
+    conn = None
+    try:
+        conn = _db()
+        cur = conn.cursor()
+
+        # Active ACE instances
+        ph = ", ".join(["?"] * len(_ACTIVE_STATES))
+        cur.execute(
+            _q(conn, f"SELECT COUNT(*) FROM ace_instances WHERE state IN ({ph})"),
+            list(_ACTIVE_STATES),
+        )
+        active_instances = (cur.fetchone() or [0])[0] or 0
+
+        # HITL items awaiting human review
+        cur.execute(
+            _q(conn, "SELECT COUNT(*) FROM agent_hitl_pending WHERE status = ?"),
+            ["pending"],
+        )
+        hitl_pending = (cur.fetchone() or [0])[0] or 0
+
+        # Agent loop sessions in the last 24 h
+        cur.execute(
+            _q(
+                conn,
+                "SELECT COUNT(*), SUM(total_cost_usd),"
+                " SUM(CASE WHEN result_subtype = ? THEN 1 ELSE 0 END)"
+                " FROM agent_loop_sessions WHERE created_at >= ?",
+            ),
+            ["success", cutoff],
+        )
+        row = cur.fetchone() or (0, 0.0, 0)
+        sessions_24h = int(row[0] or 0)
+        cost_24h_usd = float(row[1] or 0.0)
+        success_count = int(row[2] or 0)
+        success_rate_24h = (
+            round(success_count / sessions_24h, 3) if sessions_24h > 0 else None
+        )
+
+        # Most recent session timestamp
+        cur.execute("SELECT MAX(created_at) FROM agent_loop_sessions")
+        last_row = cur.fetchone()
+        last_session_at = last_row[0] if last_row else None
+
+        return jsonify(
+            {
+                "active_instances": active_instances,
+                "hitl_pending": hitl_pending,
+                "sessions_24h": sessions_24h,
+                "cost_24h_usd": round(cost_24h_usd, 4),
+                "success_rate_24h": success_rate_24h,
+                "last_session_at": last_session_at,
+            }
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace monitor-summary failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 @ace_api_bp.route("/profiles", methods=["GET"])
 def api_profiles_list():
     """List all coworker profiles (both built-in and generated)."""
