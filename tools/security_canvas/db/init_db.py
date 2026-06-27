@@ -1570,14 +1570,16 @@ def _seed_zig(conn):
             print("[init_db] WARNING: Could not import ZIG constants — skipping ZIG seed.")
             return
 
-    # Seed pillars
+    ph = "%s" if _SC_BACKEND == "postgresql" else "?"
+
+    # Seed pillars — batch existence check in Python (avoids per-row ? placeholder warnings)
+    existing_slugs = {r[0] for r in conn.execute("SELECT slug FROM zig_pillars").fetchall()}
     p_added = 0
     for p in ZIG_PILLARS:
-        exists = conn.execute("SELECT 1 FROM zig_pillars WHERE slug=?", (p["slug"],)).fetchone()
-        if not exists:
+        if p["slug"] not in existing_slugs:
             conn.execute(
                 "INSERT INTO zig_pillars (slug, name, full_name, pillar_weight, icon, color, csi_url, description, ficam_components) "
-                "VALUES (?,?,?,?,?,?,?,?,?)",
+                f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})",
                 (p["slug"], p["name"], p.get("full_name", p["name"]),
                  p.get("pillar_weight", 0.143),
                  p.get("icon", "shield"), p.get("color", "#6366f1"),
@@ -1588,14 +1590,14 @@ def _seed_zig(conn):
     if p_added:
         conn.commit()
 
-    # Seed capabilities
+    # Seed capabilities — batch existence check in Python
+    existing_cap_ids = {r[0] for r in conn.execute("SELECT id FROM zig_capabilities").fetchall()}
     c_added = 0
     for c in ZIG_CAPABILITIES:
-        exists = conn.execute("SELECT 1 FROM zig_capabilities WHERE id=?", (c["id"],)).fetchone()
-        if not exists:
+        if c["id"] not in existing_cap_ids:
             conn.execute(
                 "INSERT INTO zig_capabilities (id, pillar_slug, title, phase, maturity_level, description, nist_controls) "
-                "VALUES (?,?,?,?,?,?,?)",
+                f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph})",
                 (c["id"], c["pillar"], c["title"], c["phase"], c["maturity_level"],
                  c.get("description", ""), json.dumps(c.get("nist_controls", []))),
             )
@@ -1603,14 +1605,14 @@ def _seed_zig(conn):
     if c_added:
         conn.commit()
 
-    # Seed activities
+    # Seed activities — batch existence check in Python
+    existing_act_ids = {r[0] for r in conn.execute("SELECT id FROM zig_activities").fetchall()}
     a_added = 0
     for a in ZIG_ACTIVITIES:
-        exists = conn.execute("SELECT 1 FROM zig_activities WHERE id=?", (a["id"],)).fetchone()
-        if not exists:
+        if a["id"] not in existing_act_ids:
             conn.execute(
                 "INSERT INTO zig_activities (id, capability_id, phase, title, description, nist_control_ref) "
-                "VALUES (?,?,?,?,?,?)",
+                f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph})",
                 (a["id"], a["capability_id"], a["phase"], a["title"],
                  a.get("description", ""), a.get("nist_control_ref", "")),
             )
@@ -1706,16 +1708,16 @@ def init_db():
         except Exception:
             pass  # column already exists
 
-        # Seed templates (upsert — inserts new templates even if some already exist)
-        cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM sc_templates")
-        count = cur.fetchone()[0]
+        ph = "%s" if _SC_BACKEND == "postgresql" else "?"
+
+        # Seed templates — batch existence check in Python
+        count = conn.execute("SELECT COUNT(*) FROM sc_templates").fetchone()[0]
+        existing_tmpl_ids = {r[0] for r in conn.execute("SELECT id FROM sc_templates").fetchall()}
         added = 0
         for t in TEMPLATES:
-            cur.execute("SELECT 1 FROM sc_templates WHERE id=?", (t["id"],))
-            if not cur.fetchone():
+            if t["id"] not in existing_tmpl_ids:
                 conn.execute(
-                    "INSERT INTO sc_templates (id, name, category, description, graph_json, tags) VALUES (?,?,?,?,?,?)",
+                    f"INSERT INTO sc_templates (id, name, category, description, graph_json, tags) VALUES ({ph},{ph},{ph},{ph},{ph},{ph})",
                     (t["id"], t["name"], t["category"], t["description"], t["graph_json"], t["tags"]),
                 )
                 added += 1
@@ -1725,14 +1727,14 @@ def init_db():
         else:
             print(f"[init_db] All {count} templates up to date.")
 
-        # Seed snippets
+        # Seed snippets — batch existence check in Python
         snip_count = conn.execute("SELECT COUNT(*) FROM sc_snippets").fetchone()[0]
+        existing_snip_ids = {r[0] for r in conn.execute("SELECT id FROM sc_snippets").fetchall()}
         snip_added = 0
         for s in SNIPPETS:
-            exists = conn.execute("SELECT 1 FROM sc_snippets WHERE id=?", (s["id"],)).fetchone()
-            if not exists:
+            if s["id"] not in existing_snip_ids:
                 conn.execute(
-                    "INSERT INTO sc_snippets (id, name, category, description, graph_json, tags) VALUES (?,?,?,?,?,?)",
+                    f"INSERT INTO sc_snippets (id, name, category, description, graph_json, tags) VALUES ({ph},{ph},{ph},{ph},{ph},{ph})",
                     (s["id"], s["name"], s["category"], s["description"], s["graph_json"], s["tags"]),
                 )
                 snip_added += 1
