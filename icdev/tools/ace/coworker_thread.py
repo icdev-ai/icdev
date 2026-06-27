@@ -410,6 +410,15 @@ class CoWorkerThread(threading.Thread):
         if soul:
             system_prompt += f"\n{soul}\n"
 
+        # Co-learning: inject role-specific improvement suggestions from prior sessions.
+        try:
+            from icdev.tools.llm.co_learning_store import build_system_prompt_patch as _build_colearn_patch
+            _colearn_patch = _build_colearn_patch(self.spec.role_id)
+            if _colearn_patch:
+                system_prompt = system_prompt + "\n\n" + _colearn_patch
+        except Exception:
+            pass  # non-fatal
+
         problem_text = self._ace_context.get("problem_text", "")
         user_prompt = (
             f"INSTANCE: {self.instance_id}\n"
@@ -489,6 +498,7 @@ class CoWorkerThread(threading.Thread):
         # on_stop hook: audit result_subtype + save session for resume.
         # ----------------------------------------------------------------
         _coworker_id = self.spec.coworker_id
+        _role_id = self.spec.role_id
         _instance_id = self.instance_id
         _system_prompt_ref = system_prompt
 
@@ -526,6 +536,13 @@ class CoWorkerThread(threading.Thread):
             except Exception as _exc:
                 logger.debug("ace: episodic memory save failed for %s: %s", _coworker_id, _exc)
 
+            # Co-learning: persist improvement suggestions so next session benefits.
+            try:
+                from icdev.tools.llm.co_learning_store import auto_record_from_loop_result as _colearn_record
+                _colearn_record(loop_result.session_id, _role_id, loop_result)
+            except Exception as _exc:
+                logger.debug("ace: co-learning record failed for %s: %s", _coworker_id, _exc)
+
             try:
                 from icdev.tools.ace import event_bus as _eb
                 _eb.publish(_instance_id, {
@@ -556,6 +573,9 @@ class CoWorkerThread(threading.Thread):
                 max_cost_usd=max_cost_usd,
                 context_window_tokens=context_window_tokens,
                 compression_budget_tokens=compression_budget_tokens,
+                parent_session_id=getattr(self, "_parent_session_id", ""),
+                tenant_id=getattr(self, "tenant_id", ""),
+                user_id=getattr(self, "user_id", ""),
             )
         except AgentLoopUnsupported as exc:
             # Provider can't do native tool use — fall back to step mode with audit.

@@ -177,6 +177,16 @@ class AgentLoopResult:
     total_cost_usd: float = 0.0
     compression_events: list[dict[str, Any]] = field(default_factory=list)
     truncation_reason: str = ""
+    model_id: str = ""
+    """model_id from the first successful LLM response — used by cross-grader enforcement."""
+    provider: str = ""
+    """provider name from the first successful LLM response."""
+    parent_session_id: str = ""
+    """Parent session UUID when this loop was spawned by another agent loop (distributed tracing)."""
+    tenant_id: str = ""
+    """Tenant ID for cost attribution (set via run_agent_loop parameter)."""
+    user_id: str = ""
+    """User ID for cost attribution (set via run_agent_loop parameter)."""
 
 
 # Type aliases for callback hooks.
@@ -249,9 +259,43 @@ def _load_budget_defaults() -> dict[str, Any]:
             defaults["llm_call_timeout_seconds"] = float(budgets["llm_call_timeout_seconds"])
         if "stall_threshold" in budgets:
             defaults["stall_threshold"] = int(budgets["stall_threshold"])
+        mem_cfg = raw.get("agent_loop", {}).get("memory", {})
+        if "enabled" in mem_cfg:
+            defaults["memory_enabled"] = bool(mem_cfg["enabled"])
+        if "top_k" in mem_cfg:
+            defaults["memory_top_k"] = int(mem_cfg["top_k"])
+        if "tier" in mem_cfg:
+            defaults["memory_tier"] = str(mem_cfg["tier"])
     except Exception as exc:
         logger.debug("agent_loop: failed to load budget defaults: %s", exc)
     return defaults
+
+
+def _retrieve_memory_context(user_prompt: str, top_k: int, tier: str) -> str:
+    """Retrieve relevant memory and format as a context block for the system prompt.
+
+    Called once before the first LLM turn. Returns empty string on any error
+    so the loop degrades gracefully when the memory system is unavailable.
+    """
+    if not user_prompt or top_k <= 0:
+        return ""
+    try:
+        from tools.memory.hybrid_search import search as _mem_search
+        results = _mem_search(user_prompt, limit=top_k, tier=tier or "episodic|semantic")
+        if not results:
+            return ""
+        lines = ["## Retrieved Memory Context"]
+        for r in results:
+            content = (r.get("content") or "").strip()
+            if content:
+                entry_type = r.get("type", "event")
+                lines.append(f"- [{entry_type}] {content[:400]}")
+        if len(lines) <= 1:
+            return ""
+        return "\n".join(lines)
+    except Exception as exc:
+        logger.debug("agent_loop: memory retrieval failed: %s", exc)
+        return ""
 
 
 def _maybe_compress_messages(
@@ -464,6 +508,13 @@ def run_agent_loop(
     max_consecutive_errors: int | None = 3,
     llm_call_timeout_seconds: float | None = None,
     stall_threshold: int | None = None,
+    memory_enabled: bool | None = None,
+    memory_top_k: int | None = None,
+    memory_tier: str | None = None,
+    parent_session_id: str = "",
+    tenant_id: str = "",
+    user_id: str = "",
+    sanitize_tool_results: bool = True,
 ) -> AgentLoopResult:
     """Run an agentic LLM loop with native tool use until the task is done.
 
@@ -574,6 +625,20 @@ def run_agent_loop(
     # max_consecutive_errors: Python default=3, None=explicitly disabled.
     # Do NOT load from budget_defaults — None must mean "disable", not "use config".
 
+    # Resolve memory injection config from args/llm_config.yaml.
+    if memory_enabled is None:
+        memory_enabled = budget_defaults.get("memory_enabled", True)
+    if memory_top_k is None:
+        memory_top_k = budget_defaults.get("memory_top_k", 5)
+    if memory_tier is None:
+        memory_tier = budget_defaults.get("memory_tier", "episodic|semantic")
+
+    # Inject retrieved memory into system_prompt before the first turn.
+    if memory_enabled and not resume_session_id:
+        _mem_ctx = _retrieve_memory_context(user_prompt, memory_top_k, memory_tier)
+        if _mem_ctx:
+            system_prompt = system_prompt + "\n\n" + _mem_ctx
+
     # Build set of read-only tool names for parallel execution.
     _read_only_tools = _build_read_only_set(tools)
 
@@ -584,28 +649,48 @@ def run_agent_loop(
     # of starting fresh. Falls back to a new conversation if the session is not
     # found or the DB is unavailable.
     messages: list[dict[str, Any]]
+    _checkpoint_start_turn = 0
     if resume_session_id:
+        # Try new session_store checkpoint first (richer: turn_number + cost tracking).
+        _ckpt_data = None
         try:
-            from icdev.tools.llm.agent_loop_session import load_session as _load_session
-            prior = _load_session(resume_session_id)
-        except Exception as _exc:
-            logger.warning("agent_loop: could not load session %s: %s", resume_session_id, _exc)
-            prior = []
-        if prior:
-            messages = list(prior)
+            from icdev.tools.llm.session_store import load_checkpoint as _load_ckpt
+            _ckpt_data = _load_ckpt(resume_session_id)
+        except Exception as _ckpt_exc:
+            logger.debug("agent_loop: session_store checkpoint load failed: %s", _ckpt_exc)
+        if _ckpt_data and _ckpt_data.get("messages"):
+            messages = list(_ckpt_data["messages"])
+            _checkpoint_start_turn = _ckpt_data.get("turn_number", 0)
             logger.info(
-                "agent_loop: resuming session %s → %s (%d prior messages)",
-                resume_session_id,
-                session_id,
-                len(messages),
+                "agent_loop: resumed session %s from turn %d (%d messages) via session_store",
+                resume_session_id, _checkpoint_start_turn, len(messages),
             )
         else:
-            messages = [{"role": "user", "content": user_prompt}]
+            # Fallback to legacy agent_loop_session table.
+            try:
+                from icdev.tools.llm.agent_loop_session import load_session as _load_session
+                prior = _load_session(resume_session_id)
+            except Exception as _exc:
+                logger.warning("agent_loop: could not load session %s: %s", resume_session_id, _exc)
+                prior = []
+            if prior:
+                messages = list(prior)
+                logger.info(
+                    "agent_loop: resuming session %s → %s (%d prior messages)",
+                    resume_session_id,
+                    session_id,
+                    len(messages),
+                )
+            else:
+                messages = [{"role": "user", "content": user_prompt}]
     else:
         messages = [{"role": "user", "content": user_prompt}]
 
     tool_call_log: list[dict[str, Any]] = []
     result = AgentLoopResult(messages=messages, session_id=session_id)
+    result.parent_session_id = parent_session_id
+    result.tenant_id = tenant_id
+    result.user_id = user_id
 
     response: Any = None
 
@@ -706,6 +791,11 @@ def run_agent_loop(
             result.total_input_tokens += getattr(response, "input_tokens", 0) or 0
             result.total_output_tokens += getattr(response, "output_tokens", 0) or 0
             result.total_cost_usd += getattr(response, "cost_usd", 0.0) or 0.0
+            # Cross-grader: capture model/provider from first successful LLM response.
+            if not result.model_id:
+                result.model_id = getattr(response, "model_id", "") or ""
+            if not result.provider:
+                result.provider = getattr(response, "provider", "") or ""
 
             # No tool calls → LLM ended the turn with a final answer.
             tool_calls = getattr(response, "tool_calls", None) or []
@@ -852,6 +942,22 @@ def run_agent_loop(
                         _seen_call_keys.add(_call_key)
                         _last_progress_turn = turn
 
+                # Sanitize tool result for prompt injection before appending to history.
+                if sanitize_tool_results and not is_error and out_text is not DONE and out_text != DONE:
+                    try:
+                        from icdev.tools.llm.tool_result_sanitizer import sanitize as _san, load_config as _san_cfg
+                        _san_config = _san_cfg()
+                        _san_result = _san(
+                            tc_name,
+                            out_text,
+                            mode=_san_config.get("mode", "warn"),
+                            max_chars=_san_config.get("max_result_chars", 32768),
+                        )
+                        if _san_result.flagged:
+                            out_text = _san_result.sanitized_text
+                    except Exception:
+                        pass  # non-fatal
+
                 entry: dict[str, Any] = {
                     "turn": turn,
                     "name": tc_name,
@@ -889,6 +995,23 @@ def run_agent_loop(
 
             if on_turn is not None:
                 on_turn(turn, response, messages)
+
+            # Checkpoint at end of each turn for session resumption.
+            try:
+                from icdev.tools.llm.session_store import save_checkpoint as _save_ckpt
+                _save_ckpt(
+                    session_id,
+                    turn,
+                    messages,
+                    parent_session_id=parent_session_id,
+                    model_id=result.model_id,
+                    provider=result.provider,
+                    input_tokens=result.total_input_tokens,
+                    output_tokens=result.total_output_tokens,
+                    cost_usd=result.total_cost_usd,
+                )
+            except Exception:
+                pass  # non-fatal
 
             # Hard budget check after executing all tools this turn.
             if max_total_tokens is not None and (
@@ -1025,6 +1148,14 @@ def run_agent_loop(
                     break
 
     result.messages = messages
+
+    # Delete checkpoint on clean completion — avoids stale checkpoints accumulating.
+    if result.done and not result.truncated:
+        try:
+            from icdev.tools.llm.session_store import delete_checkpoint as _del_ckpt
+            _del_ckpt(session_id)
+        except Exception:
+            pass  # non-fatal
 
     # Fire on_stop hook regardless of exit reason.
     if on_stop is not None:

@@ -181,6 +181,12 @@ class AgentLoopResult:
     """model_id from the first successful LLM response — used by cross-grader enforcement."""
     provider: str = ""
     """provider name from the first successful LLM response."""
+    parent_session_id: str = ""
+    """Parent session UUID when this loop was spawned by another agent loop (distributed tracing)."""
+    tenant_id: str = ""
+    """Tenant ID for cost attribution (set via run_agent_loop parameter)."""
+    user_id: str = ""
+    """User ID for cost attribution (set via run_agent_loop parameter)."""
 
 
 # Type aliases for callback hooks.
@@ -505,6 +511,10 @@ def run_agent_loop(
     memory_enabled: bool | None = None,
     memory_top_k: int | None = None,
     memory_tier: str | None = None,
+    parent_session_id: str = "",
+    tenant_id: str = "",
+    user_id: str = "",
+    sanitize_tool_results: bool = True,
 ) -> AgentLoopResult:
     """Run an agentic LLM loop with native tool use until the task is done.
 
@@ -639,28 +649,48 @@ def run_agent_loop(
     # of starting fresh. Falls back to a new conversation if the session is not
     # found or the DB is unavailable.
     messages: list[dict[str, Any]]
+    _checkpoint_start_turn = 0
     if resume_session_id:
+        # Try new session_store checkpoint first (richer: turn_number + cost tracking).
+        _ckpt_data = None
         try:
-            from icdev.tools.llm.agent_loop_session import load_session as _load_session
-            prior = _load_session(resume_session_id)
-        except Exception as _exc:
-            logger.warning("agent_loop: could not load session %s: %s", resume_session_id, _exc)
-            prior = []
-        if prior:
-            messages = list(prior)
+            from icdev.tools.llm.session_store import load_checkpoint as _load_ckpt
+            _ckpt_data = _load_ckpt(resume_session_id)
+        except Exception as _ckpt_exc:
+            logger.debug("agent_loop: session_store checkpoint load failed: %s", _ckpt_exc)
+        if _ckpt_data and _ckpt_data.get("messages"):
+            messages = list(_ckpt_data["messages"])
+            _checkpoint_start_turn = _ckpt_data.get("turn_number", 0)
             logger.info(
-                "agent_loop: resuming session %s → %s (%d prior messages)",
-                resume_session_id,
-                session_id,
-                len(messages),
+                "agent_loop: resumed session %s from turn %d (%d messages) via session_store",
+                resume_session_id, _checkpoint_start_turn, len(messages),
             )
         else:
-            messages = [{"role": "user", "content": user_prompt}]
+            # Fallback to legacy agent_loop_session table.
+            try:
+                from icdev.tools.llm.agent_loop_session import load_session as _load_session
+                prior = _load_session(resume_session_id)
+            except Exception as _exc:
+                logger.warning("agent_loop: could not load session %s: %s", resume_session_id, _exc)
+                prior = []
+            if prior:
+                messages = list(prior)
+                logger.info(
+                    "agent_loop: resuming session %s → %s (%d prior messages)",
+                    resume_session_id,
+                    session_id,
+                    len(messages),
+                )
+            else:
+                messages = [{"role": "user", "content": user_prompt}]
     else:
         messages = [{"role": "user", "content": user_prompt}]
 
     tool_call_log: list[dict[str, Any]] = []
     result = AgentLoopResult(messages=messages, session_id=session_id)
+    result.parent_session_id = parent_session_id
+    result.tenant_id = tenant_id
+    result.user_id = user_id
 
     response: Any = None
 
@@ -912,6 +942,22 @@ def run_agent_loop(
                         _seen_call_keys.add(_call_key)
                         _last_progress_turn = turn
 
+                # Sanitize tool result for prompt injection before appending to history.
+                if sanitize_tool_results and not is_error and out_text is not DONE and out_text != DONE:
+                    try:
+                        from icdev.tools.llm.tool_result_sanitizer import sanitize as _san, load_config as _san_cfg
+                        _san_config = _san_cfg()
+                        _san_result = _san(
+                            tc_name,
+                            out_text,
+                            mode=_san_config.get("mode", "warn"),
+                            max_chars=_san_config.get("max_result_chars", 32768),
+                        )
+                        if _san_result.flagged:
+                            out_text = _san_result.sanitized_text
+                    except Exception:
+                        pass  # non-fatal
+
                 entry: dict[str, Any] = {
                     "turn": turn,
                     "name": tc_name,
@@ -949,6 +995,23 @@ def run_agent_loop(
 
             if on_turn is not None:
                 on_turn(turn, response, messages)
+
+            # Checkpoint at end of each turn for session resumption.
+            try:
+                from icdev.tools.llm.session_store import save_checkpoint as _save_ckpt
+                _save_ckpt(
+                    session_id,
+                    turn,
+                    messages,
+                    parent_session_id=parent_session_id,
+                    model_id=result.model_id,
+                    provider=result.provider,
+                    input_tokens=result.total_input_tokens,
+                    output_tokens=result.total_output_tokens,
+                    cost_usd=result.total_cost_usd,
+                )
+            except Exception:
+                pass  # non-fatal
 
             # Hard budget check after executing all tools this turn.
             if max_total_tokens is not None and (
@@ -1085,6 +1148,14 @@ def run_agent_loop(
                     break
 
     result.messages = messages
+
+    # Delete checkpoint on clean completion — avoids stale checkpoints accumulating.
+    if result.done and not result.truncated:
+        try:
+            from icdev.tools.llm.session_store import delete_checkpoint as _del_ckpt
+            _del_ckpt(session_id)
+        except Exception:
+            pass  # non-fatal
 
     # Fire on_stop hook regardless of exit reason.
     if on_stop is not None:

@@ -103,7 +103,7 @@ class HITLGate:
                 pending_rows = conn.execute(
                     """SELECT id, detail, created_at
                        FROM ace_audit_log
-                       WHERE coworker_id = %s AND action = 'hitl_pending'
+                       WHERE coworker_id = ? AND action = 'hitl_pending'
                        ORDER BY created_at DESC""",
                     (coworker_id,),
                 ).fetchall()
@@ -113,7 +113,7 @@ class HITLGate:
 
                 resolved_rows = conn.execute(
                     """SELECT detail FROM ace_audit_log
-                       WHERE coworker_id = %s AND action = 'hitl_resolved'""",
+                       WHERE coworker_id = ? AND action = 'hitl_resolved'""",
                     (coworker_id,),
                 ).fetchall()
                 resolved_details = {r[0] for r in resolved_rows}
@@ -146,7 +146,7 @@ class HITLGate:
                 conn.execute(
                     "INSERT INTO ace_audit_log "
                     "(instance_id, coworker_id, action, detail, actor, created_at) "
-                    "VALUES (%s, %s, 'hitl_resolved', %s, 'hitl_gate', %s)",
+                    "VALUES (?, ?, 'hitl_resolved', ?, 'hitl_gate', ?)",
                     (instance_id, coworker_id, detail, now),
                 )
                 conn.commit()
@@ -410,6 +410,15 @@ class CoWorkerThread(threading.Thread):
         if soul:
             system_prompt += f"\n{soul}\n"
 
+        # Co-learning: inject role-specific improvement suggestions from prior sessions.
+        try:
+            from icdev.tools.llm.co_learning_store import build_system_prompt_patch as _build_colearn_patch
+            _colearn_patch = _build_colearn_patch(self.spec.role_id)
+            if _colearn_patch:
+                system_prompt = system_prompt + "\n\n" + _colearn_patch
+        except Exception:
+            pass  # non-fatal
+
         problem_text = self._ace_context.get("problem_text", "")
         user_prompt = (
             f"INSTANCE: {self.instance_id}\n"
@@ -489,6 +498,7 @@ class CoWorkerThread(threading.Thread):
         # on_stop hook: audit result_subtype + save session for resume.
         # ----------------------------------------------------------------
         _coworker_id = self.spec.coworker_id
+        _role_id = self.spec.role_id
         _instance_id = self.instance_id
         _system_prompt_ref = system_prompt
 
@@ -510,6 +520,28 @@ class CoWorkerThread(threading.Thread):
                 )
             except Exception as _exc:
                 logger.debug("ace: session save failed for %s: %s", _coworker_id, _exc)
+
+            # Save episodic memory entry for this completed agent run.
+            try:
+                if loop_result.done and loop_result.final_content:
+                    from tools.memory.memory_write import write_to_db as _mem_write
+                    _mem_write(
+                        content=f"[ACE:{_coworker_id}] {loop_result.final_content[:800]}",
+                        entry_type="event",
+                        importance=min(10, max(1, loop_result.turns)),
+                        source="hook",
+                        tier="episodic",
+                        session_ref=loop_result.session_id,
+                    )
+            except Exception as _exc:
+                logger.debug("ace: episodic memory save failed for %s: %s", _coworker_id, _exc)
+
+            # Co-learning: persist improvement suggestions so next session benefits.
+            try:
+                from icdev.tools.llm.co_learning_store import auto_record_from_loop_result as _colearn_record
+                _colearn_record(loop_result.session_id, _role_id, loop_result)
+            except Exception as _exc:
+                logger.debug("ace: co-learning record failed for %s: %s", _coworker_id, _exc)
 
             try:
                 from icdev.tools.ace import event_bus as _eb
@@ -541,6 +573,9 @@ class CoWorkerThread(threading.Thread):
                 max_cost_usd=max_cost_usd,
                 context_window_tokens=context_window_tokens,
                 compression_budget_tokens=compression_budget_tokens,
+                parent_session_id=getattr(self, "_parent_session_id", ""),
+                tenant_id=getattr(self, "tenant_id", ""),
+                user_id=getattr(self, "user_id", ""),
             )
         except AgentLoopUnsupported as exc:
             # Provider can't do native tool use — fall back to step mode with audit.
@@ -615,7 +650,7 @@ class CoWorkerThread(threading.Thread):
                 conn.execute(
                     "INSERT INTO ace_messages "
                     "(id, instance_id, coworker_id, message_type, role, content, metadata_json) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
                     (
                         str(_uuid.uuid4()),
                         self.instance_id,
@@ -833,7 +868,7 @@ class CoWorkerThread(threading.Thread):
                 conn.execute(
                     "INSERT INTO kanban_tasks "
                     "(id, title, description, task_type, priority, status, created_at, updated_at) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         card_id,
                         f"HITL Review: ACE compliance gap — {self.spec.coworker_id}",
@@ -872,7 +907,7 @@ class CoWorkerThread(threading.Thread):
             conn = get_canvas_connection(_DB_ENV)
             try:
                 conn.execute(
-                    "UPDATE ace_coworkers SET state = %s, last_active_at = %s WHERE id = %s",
+                    "UPDATE ace_coworkers SET state = ?, last_active_at = ? WHERE id = ?",
                     (state, now, self.spec.coworker_id),
                 )
                 conn.commit()
@@ -889,7 +924,7 @@ class CoWorkerThread(threading.Thread):
             conn = get_canvas_connection(_DB_ENV)
             try:
                 conn.execute(
-                    "UPDATE ace_coworkers SET assigned_step = %s WHERE id = %s",
+                    "UPDATE ace_coworkers SET assigned_step = ? WHERE id = ?",
                     (step_id, self.spec.coworker_id),
                 )
                 conn.commit()
@@ -1049,7 +1084,7 @@ class CoWorkerThread(threading.Thread):
                 conn.execute(
                     "INSERT INTO ace_skill_candidates "
                     "(id, role_id, source_role, instance_id, candidate_yaml, trust_tier, status, created_at) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, 'pending', %s)",
+                    "VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)",
                     (candidate_id, candidate_role_id, role_id, self.instance_id, candidate_yaml, self.spec.trust_tier, now),
                 )
                 conn.commit()
