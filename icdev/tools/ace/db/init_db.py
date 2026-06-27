@@ -211,7 +211,7 @@ def init() -> None:
             )
             conn.commit()
         except Exception:
-            pass  # column already exists — safe to ignore
+            conn.rollback()  # column already exists — reset aborted PG txn
     finally:
         conn.close()
 
