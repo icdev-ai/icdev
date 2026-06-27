@@ -13,9 +13,9 @@ Routes:
   GET  /workflow-canvas/workflows/<id>/edit  Edit workflow
   GET  /workflow-canvas/templates            Template library
 
-  GET  /workflow-canvas/digitize                         Process Digitizer page
-  POST /workflow-canvas/api/workflows/digitize           Extract + AI-structure a process document
-  POST /workflow-canvas/api/workflows/save-digitized     Save digitized workflow (creates forms + DAG)
+  GET  /workflow-canvas/processify                       Process-Ify page
+  POST /workflow-canvas/api/workflows/processify         Extract + AI-structure a process document
+  POST /workflow-canvas/api/workflows/save-processify    Save processified workflow (creates forms + DAG)
   POST /workflow-canvas/api/forms/<id>/export/<fmt>      Download form as pptx|pdf|docx
   POST /workflow-canvas/api/workflows/<id>/export/<fmt>  Download workflow as pptx|pdf|docx
   GET  /workflow-canvas/api/branding/<type>/<id>        Get branding
@@ -71,8 +71,8 @@ def _new_id(prefix: str = "wfc") -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
 
 
-def _cancel_prior_digitize_tasks(workflow_name: str) -> int:
-    """Cancel non-terminal process_digitizer tasks for *workflow_name*. Returns count."""
+def _cancel_prior_processify_tasks(workflow_name: str) -> int:
+    """Cancel non-terminal processify tasks for *workflow_name*. Returns count."""
     from tools.db.storage import get_connection, sql_placeholder
     try:
         conn = get_connection()
@@ -81,7 +81,7 @@ def _cancel_prior_digitize_tasks(workflow_name: str) -> int:
         cur = conn.execute(
             f"""UPDATE kanban_tasks
                 SET status = 'done', updated_at = {ph}
-                WHERE dispatch_source = 'process_digitizer'
+                WHERE dispatch_source = 'processify'
                   AND status NOT IN ('done', 'cancelled')
                   AND title LIKE {ph}""",
             (_now_iso(), title_prefix),
@@ -485,12 +485,12 @@ def create_wfc_blueprint() -> Blueprint:
             all_templates=FORM_TEMPLATES,
         )
 
-    # ── Process Digitizer page ────────────────────────────────────────────
+    # ── Process-Ify page ──────────────────────────────────────────────────
 
-    @bp.route("/digitize")
-    def digitize():
+    @bp.route("/processify")
+    def processify():
         return render_template(
-            "workflow_canvas/process_digitizer.html",
+            "workflow_canvas/processify.html",
             industry_categories=INDUSTRY_CATEGORIES,
         )
 
@@ -664,8 +664,8 @@ Form description: {text}"""
                 return role
         return "doc_reviewer"
 
-    @bp.route("/api/workflows/digitize", methods=["POST"])
-    def api_digitize_workflow():
+    @bp.route("/api/workflows/processify", methods=["POST"])
+    def api_processify_workflow():
         """Upload a process document and AI-convert it into a structured workflow definition."""
         import re
         import tempfile
@@ -799,19 +799,19 @@ Process Document:
             workflow_def["source_name"] = source_name
             return jsonify({"status": "ok", "workflow": workflow_def})
         except Exception as exc:
-            logger.error("wfc digitize error: %s", exc)
+            logger.error("wfc processify error: %s", exc)
             return jsonify({"error": str(exc)}), 500
 
-    @bp.route("/api/workflows/save-digitized", methods=["POST"])
-    def api_save_digitized_workflow():
-        """Persist a digitized workflow: creates per-step WFC forms + workflow record."""
+    @bp.route("/api/workflows/save-processify", methods=["POST"])
+    def api_save_processify_workflow():
+        """Persist a Process-Ify workflow: creates per-step WFC forms + workflow record."""
         try:
-            return _do_save_digitized()
+            return _do_save_processify()
         except Exception as exc:
-            logger.error("wfc save-digitized error: %s", exc, exc_info=True)
+            logger.error("wfc save-processify error: %s", exc, exc_info=True)
             return jsonify({"error": str(exc)}), 500
 
-    def _do_save_digitized():
+    def _do_save_processify():
         import yaml as _yaml
         data = request.get_json(force=True) or {}
         workflow_def = data.get("workflow") or {}
@@ -833,7 +833,7 @@ Process Document:
                 name=f"{workflow_name} — {step.get('title') or step['id']}",
                 fields=_validate_fields(raw_fields),
                 description=step.get("description", ""),
-                created_by="process_digitizer",
+                created_by="processify",
                 status="draft",
             )
             if form_result.get("form_id"):
@@ -876,7 +876,7 @@ Process Document:
                      created_by, created_at, updated_at, version, shared)
                     VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})""",
                 (workflow_id, workflow_name, workflow_desc, workflow_yaml,
-                 industry, "process_digitizer", _now_iso(), _now_iso(), 1, 0),
+                 industry, "processify", _now_iso(), _now_iso(), 1, 0),
             )
             conn.commit()
         finally:
@@ -911,27 +911,27 @@ Process Document:
 
                 # "replace": cancel prior process_digitizer tasks for the same workflow name
                 if conflict_mode == "replace":
-                    _cancel_prior_digitize_tasks(workflow_name)
+                    _cancel_prior_processify_tasks(workflow_name)
 
                 task_specs = []
                 for step in steps:
                     deps = step.get("dependencies", [])
                     task_specs.append({
-                        "id": f"digitize-{wfl_prefix}-{step['id']}",
+                        "id": f"processify-{wfl_prefix}-{step['id']}",
                         "title": f"{workflow_name}: {step.get('title') or step['id']}",
                         "description": step.get("description", ""),
                         "task_type": "build",
                         "priority": "medium",
                         "status": "backlog",
-                        "depends_on_task_id": f"digitize-{wfl_prefix}-{deps[0]}" if deps else None,
-                        "dispatch_source": "process_digitizer",
+                        "depends_on_task_id": f"processify-{wfl_prefix}-{deps[0]}" if deps else None,
+                        "dispatch_source": "processify",
                     })
                 kanban_ids = create_tasks(task_specs)
             except Exception as exc:
                 logger.warning("wfc: kanban seeding failed: %s", exc)
 
         logger.info(
-            "wfc: saved digitized workflow %s — %d steps, %d forms, %d kanban tasks",
+            "wfc: saved processify workflow %s — %d steps, %d forms, %d kanban tasks",
             workflow_id, len(steps), len(step_form_ids), len(kanban_ids),
         )
         return jsonify({
@@ -941,9 +941,9 @@ Process Document:
             "kanban_tasks": len(kanban_ids),
         })
 
-    @bp.route("/api/workflows/cleanup-digitized", methods=["POST"])
-    def api_cleanup_digitized_tasks():
-        """Cancel process_digitizer kanban tasks, optionally filtered by workflow_name.
+    @bp.route("/api/workflows/cleanup-processify", methods=["POST"])
+    def api_cleanup_processify_tasks():
+        """Cancel processify kanban tasks, optionally filtered by workflow_name.
 
         Body (all optional):
           workflow_name  — only cancel tasks for this workflow (title LIKE "name:%")
@@ -964,7 +964,7 @@ Process Document:
                 cur = conn.execute(
                     f"""UPDATE kanban_tasks
                         SET status = 'done', updated_at = {ph}
-                        WHERE dispatch_source = 'process_digitizer'
+                        WHERE dispatch_source = 'processify'
                           AND status IN ({placeholders})
                           AND title LIKE {ph}""",
                     base_params + [f"{wf_name}:%"],
@@ -973,17 +973,17 @@ Process Document:
                 cur = conn.execute(
                     f"""UPDATE kanban_tasks
                         SET status = 'done', updated_at = {ph}
-                        WHERE dispatch_source = 'process_digitizer'
+                        WHERE dispatch_source = 'processify'
                           AND status IN ({placeholders})""",
                     base_params,
                 )
             n = cur.rowcount if cur else 0
             conn.commit()
             conn.close()
-            logger.info("wfc: cleanup-digitized cancelled %d task(s) (filter=%r)", n, wf_name or "*")
+            logger.info("wfc: cleanup-processify cancelled %d task(s) (filter=%r)", n, wf_name or "*")
             return jsonify({"cancelled": n})
         except Exception as exc:
-            logger.error("wfc: cleanup-digitized error: %s", exc, exc_info=True)
+            logger.error("wfc: cleanup-processify error: %s", exc, exc_info=True)
             return jsonify({"error": str(exc)}), 500
 
     @bp.route("/api/workflows/ensure-roles", methods=["POST"])

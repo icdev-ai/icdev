@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Process Digitizer — ICDEV™{% endblock %}
+{% block title %}Process-Ify — ICDEV™{% endblock %}
 
 {% block content %}
 {% from "includes/classification_macros.html" import design_classification_banner %}
@@ -11,9 +11,9 @@
   <div id="intent-screen">
     <div style="margin-bottom:28px">
       <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:4px">
-        <a href="/workflow-canvas/">Workflow &amp; Forms</a> / Process Digitizer
+        <a href="/workflow-canvas/">Workflow &amp; Forms</a> / Process-Ify
       </div>
-      <h1 style="margin:0 0 8px;font-size:1.6rem;font-weight:700">Process Digitizer</h1>
+      <h1 style="margin:0 0 8px;font-size:1.6rem;font-weight:700">Process-Ify</h1>
       <p style="margin:0;font-size:0.95rem;color:var(--text-secondary);line-height:1.5">
         Drop any process document and AI converts it into a live, tracked workflow — with assigned roles, step forms, and AI coworkers enforcing every step.
       </p>
@@ -128,7 +128,7 @@
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
         <div style="font-size:2.2rem">✅</div>
         <div>
-          <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#86efac;margin-bottom:2px">Process Is Live</div>
+          <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#86efac;margin-bottom:2px">Process Is Live ✨</div>
           <h2 id="result-name" style="margin:0;font-size:1.3rem;font-weight:700;color:#fff"></h2>
         </div>
       </div>
@@ -309,7 +309,7 @@ async function launchProcess() {
     /* Steps 1+2 together — digitize call does both */
     setStep(2, 'running', '');
 
-    var digitizeResp = await fetch('/workflow-canvas/api/workflows/digitize', {method:'POST', body:formData});
+    var digitizeResp = await fetch('/workflow-canvas/api/workflows/processify', {method:'POST', body:formData});
     var digitizeData = await digitizeResp.json();
     if (digitizeData.error) throw new Error('Digitize: ' + digitizeData.error);
 
@@ -324,7 +324,7 @@ async function launchProcess() {
     /* Steps 3+4: Save workflow + forms + kanban in one call */
     setStep(3, 'running');
     setStep(4, 'running', '');
-    var saveResp = await fetch('/workflow-canvas/api/workflows/save-digitized', {
+    var saveResp = await fetch('/workflow-canvas/api/workflows/save-processify', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({workflow: workflowDef, create_kanban_tasks: true})
@@ -398,9 +398,9 @@ async function launchCoworkers(wfDef, workflowId) {
         'For each step, verify: checklist items are complete, required approvals are captured, and form fields are submitted. ' +
         'Steps: ' + stepSummary + '. Workflow ID: ' + workflowId,
       role_ids: roleIds,
-      trigger_source: 'process_digitizer',
+      trigger_source: 'processify',
       trigger_ref: workflowId,
-      user_id: 'process_digitizer',
+      user_id: 'processify',
       project_id: workflowId
     })
   });
@@ -475,7 +475,7 @@ async function cleanupPriorRuns() {
   btn.textContent = '⏳ Cancelling…';
   msg.style.display = 'none';
   try {
-    var resp = await fetch('/workflow-canvas/api/workflows/cleanup-digitized', {
+    var resp = await fetch('/workflow-canvas/api/workflows/cleanup-processify', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
       body: JSON.stringify({workflow_name: wfName, status_filter: ['backlog', 'in_progress', 'scheduled']})

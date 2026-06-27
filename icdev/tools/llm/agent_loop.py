@@ -236,6 +236,8 @@ def _load_budget_defaults() -> dict[str, Any]:
             defaults["max_cost_usd"] = float(budgets["max_cost_usd"])
         if "tool_timeout_seconds" in budgets:
             defaults["tool_timeout_seconds"] = float(budgets["tool_timeout_seconds"])
+        if "tool_result_max_chars" in budgets:
+            defaults["tool_result_max_chars"] = int(budgets["tool_result_max_chars"])
     except Exception as exc:
         logger.debug("agent_loop: failed to load budget defaults: %s", exc)
     return defaults
@@ -392,6 +394,18 @@ def _tool_result_message(
 # ---------------------------------------------------------------------------
 
 
+def _truncate_tool_result(text: str, max_chars: int | None) -> str:
+    """Truncate a tool result to *max_chars* with a notice appended."""
+    if max_chars is None or len(text) <= max_chars:
+        return text
+    keep = max(0, max_chars - 80)
+    notice = (
+        f"\n[tool_result truncated: {len(text)} chars total, "
+        f"showing first {keep} — pass max_results or a narrower scope to reduce output]"
+    )
+    return text[:keep] + notice
+
+
 def _build_read_only_set(tools: list[dict[str, Any]]) -> set[str]:
     """Return the set of tool names marked ``is_read_only`` in their schema."""
     read_only: set[str] = set()
@@ -435,6 +449,7 @@ def run_agent_loop(
     output_schema: dict[str, Any] | None = None,
     max_structured_output_retries: int = 3,
     resume_session_id: str | None = None,
+    tool_result_max_chars: int | None = None,
 ) -> AgentLoopResult:
     """Run an agentic LLM loop with native tool use until the task is done.
 
@@ -498,6 +513,11 @@ def run_agent_loop(
             table and used as the starting conversation instead of a fresh
             ``user_prompt`` message. This lets a loop resume after a budget hit,
             ``max_iterations`` truncation, or process restart.
+        tool_result_max_chars: Maximum characters for any single tool result returned
+            to the LLM. Results exceeding this limit are truncated with a notice.
+            ``None`` means no truncation (default). Loaded from
+            ``args/llm_config.yaml`` ``agent_loop.budgets.tool_result_max_chars``
+            when not explicitly set.
 
     Returns:
         :class:`AgentLoopResult`.
@@ -524,6 +544,8 @@ def run_agent_loop(
         compression_budget_tokens = int(context_window_tokens * 0.75)
     if tool_timeout_seconds is None and "tool_timeout_seconds" in budget_defaults:
         tool_timeout_seconds = budget_defaults["tool_timeout_seconds"]
+    if tool_result_max_chars is None and "tool_result_max_chars" in budget_defaults:
+        tool_result_max_chars = budget_defaults["tool_result_max_chars"]
 
     # Build set of read-only tool names for parallel execution.
     _read_only_tools = _build_read_only_set(tools)
@@ -727,9 +749,13 @@ def run_agent_loop(
                         _tool_result_message(tc_id, out_text, tool_name=tc_name, is_error=True)
                     )
                 else:
-                    entry["result"] = out_text
+                    entry["result"] = out_text  # untruncated for session replay
                     tool_call_log.append(entry)
-                    messages.append(_tool_result_message(tc_id, out_text, tool_name=tc_name))
+                    messages.append(_tool_result_message(
+                        tc_id,
+                        _truncate_tool_result(out_text, tool_result_max_chars),
+                        tool_name=tc_name,
+                    ))
 
                 # Fire post-tool-use hook (observe only, cannot block at this stage).
                 if on_post_tool_use is not None:

@@ -1149,6 +1149,7 @@ agent_loop:
     compression_budget_tokens: 48000
     max_cost_usd: 5.00
     tool_timeout_seconds: 30
+    tool_result_max_chars: 4000
 
 # -----------------------------------------------------------------------
 # Response Cache + Context Caching (D-CACHE-1 through D-CACHE-10)
