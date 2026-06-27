@@ -107,7 +107,7 @@ def _create_degradation_card(
         conn.execute(
             """
             INSERT INTO kanban_tasks
-                (id, title, description, status, priority, source, created_at, updated_at)
+                (id, title, description, status, priority, dispatch_source, created_at, updated_at)
             VALUES (%s, %s, %s, 'backlog', %s, 'harness_reflex', %s, %s)
             """,
             (
@@ -144,7 +144,7 @@ def _create_review_card() -> None:
         conn.execute(
             """
             INSERT INTO kanban_tasks
-                (id, title, description, status, priority, source, created_at, updated_at)
+                (id, title, description, status, priority, dispatch_source, created_at, updated_at)
             VALUES (%s, %s, %s, 'backlog', 'high', 'harness_reflex', %s, %s)
             """,
             (
@@ -195,7 +195,7 @@ def _create_meta_review_card(meta_result: dict) -> None:
         conn.execute(
             """
             INSERT INTO kanban_tasks
-                (id, title, description, status, priority, source, created_at, updated_at)
+                (id, title, description, status, priority, dispatch_source, created_at, updated_at)
             VALUES (%s, %s, %s, 'backlog', 'high', 'harness_reflex', %s, %s)
             """,
             (task_id, title, body, _utcnow(), _utcnow()),

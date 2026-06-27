@@ -2561,6 +2561,16 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
     except Exception:
         pass  # SSE is best-effort
 
+    # Harness co-learning: record task outcomes so eval_harness can compute
+    # precision/recall and fire degradation cards when metrics slip.
+    if new_status in ("done", "token_exhausted", "failed") and prior_status not in ("done", "token_exhausted", "failed"):
+        try:
+            from tools.genesis.harness.eval_harness import record_outcome
+            actual = "resolved" if new_status == "done" else "failed"
+            record_outcome(task_id, actual)
+        except Exception as _ho_exc:
+            logger.debug("harness record_outcome skipped for %s: %s", task_id, _ho_exc)
+
 
 def _detect_orphan_done_tasks() -> list[dict]:
     """Find done tasks whose parent isn't done and roll them back.

@@ -462,7 +462,6 @@ def debt_controls():
 def expiring_atos():
     """ATOs expiring within N days."""
     conn = _get_db()
-    ph = sql_placeholder(conn)
     try:
         if not _table_exists(conn, "cssp_certifications"):
             return jsonify({"expiring": [], "total": 0})

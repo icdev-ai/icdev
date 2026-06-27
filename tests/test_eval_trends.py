@@ -44,7 +44,12 @@ class TestGetEvalTrends:
             get_eval_trends(days=9999)
 
         assert calls, "execute should have been called"
-        assert calls[0][0] == "-365 days"
+        # cutoff is now computed in Python as an ISO timestamp, capped at 365 days back
+        import re
+        cutoff_str = calls[0][0]
+        assert re.match(r"\d{4}-\d{2}-\d{2}T", cutoff_str), (
+            f"Expected ISO timestamp cutoff, got: {cutoff_str!r}"
+        )
 
     def test_bad_bucket_falls_back_to_week(self):
         from icdev.tools.ace.evaluator import get_eval_trends
@@ -153,7 +158,7 @@ class TestApiEvalsTrends:
         if app is None:
             return
         with app.test_client() as client:
-            with patch("icdev.tools.ace.evaluator.get_eval_trends", return_value=[]) as mock_fn:
+            with patch("icdev.tools.ace.evaluator.get_eval_trends", return_value=[]):
                 resp = client.get("/api/ace/evals/trends")
                 assert resp.status_code == 200
                 data = json.loads(resp.data)
