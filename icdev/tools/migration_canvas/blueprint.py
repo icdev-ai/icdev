@@ -1261,6 +1261,34 @@ def create_migration_blueprint():
         _audit(sid, "coa_selected", coa)
         return jsonify(result)
 
+    @bp.route("/api/network-migration/<sid>/topology", methods=["GET", "POST"])
+    @mdc_login_required
+    def mc_net_api_topology(sid):
+        """GET returns stored topology JSON; POST rebuilds/refreshes it."""
+        if request.method == "POST":
+            try:
+                result = _nm.build_topology(sid, refresh=True)
+                _audit(sid, "topology_refreshed", f"nodes={len(result.get('graph_json', {}).get('nodes', []))}")
+                return jsonify(result)
+            except ValueError as exc:
+                return jsonify({"error": str(exc)}), 404
+            except Exception as exc:
+                logger.exception("Topology build failed for %s", sid)
+                return jsonify({"error": str(exc)}), 500
+        # GET
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT topology_json, topology_neighbors_json FROM mc_net_sessions WHERE id=?", (sid,)
+            ).fetchone()
+        if not row:
+            return jsonify({"error": "Session not found"}), 404
+        return jsonify({
+            "session_id": sid,
+            "graph_json": json.loads(row[0] or "{}"),
+            "neighbors": json.loads(row[1] or "[]"),
+            "source": "stored",
+        })
+
     # ── Config mapping (AI-assisted, HITL-reviewed) ───────────────────────────
 
     @bp.route("/api/network-migration/<sid>/config-map/questions", methods=["GET"])

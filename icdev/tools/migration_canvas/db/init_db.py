@@ -545,6 +545,19 @@ CREATE TABLE IF NOT EXISTS mc_net_parallel_timelines (
     created_at           TEXT DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_mc_net_timeline_session ON mc_net_parallel_timelines(session_id);
+
+CREATE TABLE IF NOT EXISTS mc_net_topology_neighbors (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES mc_net_sessions(id) ON DELETE CASCADE,
+    neighbor_name   TEXT DEFAULT '',
+    neighbor_ip     TEXT DEFAULT '',
+    relationship    TEXT DEFAULT '',
+    source_interface TEXT DEFAULT '',
+    is_discovered   INTEGER DEFAULT 0,
+    notes           TEXT DEFAULT '',
+    created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_net_topo_neighbor_session ON mc_net_topology_neighbors(session_id);
 """
 
 
