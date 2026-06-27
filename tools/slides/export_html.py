@@ -7,8 +7,8 @@ Usage:
 """
 from __future__ import annotations
 
-import hashlib
 import html
+import zlib
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -304,7 +304,7 @@ document.addEventListener('DOMContentLoaded', function() {
     out_dir = output_dir or _OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    slug = hashlib.sha256(title.encode()).hexdigest()[:8]
+    slug = format(zlib.crc32(title.encode()) & 0xFFFFFFFF, "08x")
     out_path = out_dir / f"{ts}_{slug}.html"
     out_path.write_text(html_doc, encoding="utf-8")
     return str(out_path)
