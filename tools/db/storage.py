@@ -18,6 +18,7 @@ PostgreSQL SQL so existing code works without changes:
     - GROUP_CONCAT → string_agg
     - GLOB → ~ (regex)
     - last_insert_rowid() → lastval()
+    - %s → ? (reverse, for SQLite fallback when runtime uses psycopg2 style)
 
 Configuration:
     ICDEV_STORAGE_BACKEND=postgresql|sqlite  (default: postgresql)
@@ -167,13 +168,78 @@ def get_fts5_tables() -> dict[str, list[str]]:
     return dict(FTS5_TABLES)
 
 
-def translate_sql(sql: str, backend: str = "postgresql") -> str:
-    """Translate SQLite SQL to PostgreSQL SQL.
+def _translate_pg_to_sqlite(sql: str) -> str:
+    """Translate PostgreSQL-style %s placeholders to SQLite-style ?.
 
-    For SQLite backend, returns SQL unchanged.
+    Only converts bare %s parameter placeholders outside SQL string literals,
+    identifiers, and comments. This lets runtime modules write psycopg2-native
+    %s placeholders while keeping the SQLite fallback functional.
+    """
+    out: list[str] = []
+    i = 0
+    n = len(sql)
+    while i < n:
+        ch = sql[i]
+        # Single-quoted SQL string literal (handle '' escape)
+        if ch == "'":
+            j = i + 1
+            while j < n:
+                if sql[j] == "'":
+                    if j + 1 < n and sql[j + 1] == "'":
+                        j += 2
+                        continue
+                    break
+                j += 1
+            out.append(sql[i : j + 1])
+            i = j + 1
+            continue
+        # Double-quoted SQL identifier (handle "" escape)
+        if ch == '"':
+            j = i + 1
+            while j < n:
+                if sql[j] == '"':
+                    if j + 1 < n and sql[j + 1] == '"':
+                        j += 2
+                        continue
+                    break
+                j += 1
+            out.append(sql[i : j + 1])
+            i = j + 1
+            continue
+        # Line comment
+        if ch == "-" and i + 1 < n and sql[i + 1] == "-":
+            j = i + 2
+            while j < n and sql[j] != "\n":
+                j += 1
+            out.append(sql[i:j])
+            i = j
+            continue
+        # Block comment
+        if ch == "/" and i + 1 < n and sql[i + 1] == "*":
+            j = i + 2
+            while j < n - 1 and not (sql[j] == "*" and sql[j + 1] == "/"):
+                j += 1
+            out.append(sql[i : j + 2])
+            i = j + 2
+            continue
+        # Bare %s parameter placeholder
+        if ch == "%" and i + 1 < n and sql[i + 1] == "s":
+            out.append("?")
+            i += 2
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def translate_sql(sql: str, backend: str = "postgresql") -> str:
+    """Translate SQL between SQLite and PostgreSQL dialects.
+
+    PostgreSQL path: SQLite → PostgreSQL (?, datetime(), etc.).
+    SQLite path:    PostgreSQL → SQLite (%s → ?).
     """
     if backend == "sqlite":
-        return sql
+        return _translate_pg_to_sqlite(sql)
 
     original = sql
 

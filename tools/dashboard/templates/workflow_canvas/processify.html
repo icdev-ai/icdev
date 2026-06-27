@@ -72,6 +72,10 @@
         🚀 Launch Process
       </button>
       <span style="font-size:0.8rem;color:var(--text-secondary)">AI handles the rest</span>
+      <label title="Skip Kanban task creation (faster, useful when Kanban is busy)" style="display:flex;align-items:center;gap:5px;font-size:0.78rem;color:var(--text-secondary);cursor:pointer;margin-left:8px;white-space:nowrap">
+        <input type="checkbox" id="skip-kanban-chk" style="width:14px;height:14px;accent-color:#f59e0b">
+        Skip Kanban tasks
+      </label>
     </div>
 
     <!-- Quick examples -->
@@ -426,7 +430,7 @@ async function launchProcess() {
     var saveResp = await fetch('/workflow-canvas/api/workflows/save-processify', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({workflow: workflowDef, create_kanban_tasks: true, source_doc_text: sourceDocText})
+      body: JSON.stringify({workflow: workflowDef, create_kanban_tasks: !document.getElementById('skip-kanban-chk').checked, source_doc_text: sourceDocText})
     });
     saveData = await saveResp.json();
     if (saveData.error) throw new Error('Save: ' + saveData.error);
@@ -853,7 +857,7 @@ async function launchChain() {
         // Save the workflow
         var sResp = await fetch('/workflow-canvas/api/workflows/save-processify', {
           method:'POST', headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({workflow: pData.workflow, create_kanban_tasks: true, source_doc_text: pData.source_doc_text || ''})
+          body: JSON.stringify({workflow: pData.workflow, create_kanban_tasks: !document.getElementById('skip-kanban-chk').checked, source_doc_text: pData.source_doc_text || ''})
         });
         var sData = await sResp.json();
         if (sData.error) throw new Error('Phase ' + (i+1) + ' save: ' + sData.error);
