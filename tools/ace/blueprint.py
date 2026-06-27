@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import uuid
 from typing import Any, Optional
 
@@ -68,12 +67,7 @@ def _db():
 
 
 def _q(conn, sql: str) -> str:
-    """Normalize SQL for the active canvas backend.
-
-    Source code uses ``%s`` (psycopg2 style). On SQLite we translate those
-    back to ``?`` and keep SQLite-specific constructs intact. On PostgreSQL
-    we translate SQLite-isms like ``INSERT OR IGNORE`` to ``ON CONFLICT``.
-    """
+    """Translate ``?`` placeholders to ``%s`` for the PostgreSQL backend."""
     declared = getattr(conn, "_backend", None)
     if declared:
         is_pg = str(declared).lower().startswith(("postgre", "pg"))
@@ -83,13 +77,7 @@ def _q(conn, sql: str) -> str:
             "postgres",
             "pg",
         )
-    if not is_pg:
-        return sql.replace("%s", "?")
-    # PG branch: translate INSERT OR IGNORE → ON CONFLICT DO NOTHING
-    sql = re.sub(r"INSERT\s+OR\s+IGNORE\s+INTO\b", "INSERT INTO", sql, flags=re.IGNORECASE)
-    if re.search(r"INSERT\s+INTO\b", sql, re.IGNORECASE) and "ON CONFLICT" not in sql.upper():
-        sql = sql.rstrip().rstrip(";") + " ON CONFLICT DO NOTHING"
-    return sql
+    return sql.replace("?", "%s") if is_pg else sql
 
 
 def _rows(cur) -> list[dict]:
@@ -190,7 +178,7 @@ def index():
                 _q(
                     conn,
                     "SELECT id, name, role_id, state, trust_tier, created_at, updated_at "
-                    "FROM ace_instances ORDER BY created_at DESC LIMIT %s",
+                    "FROM ace_instances ORDER BY created_at DESC LIMIT ?",
                 ),
                 (_DEFAULT_LIMIT,),
             )
@@ -331,6 +319,16 @@ def evals_page():
         return jsonify({"page": "evals"})
 
 
+@ace_bp.route("/evals/trends")
+def evals_trends_page():
+    """Eval score trending — time-bucketed aggregation chart."""
+    try:
+        return render_template("ace/trends.html")
+    except Exception as exc:  # noqa: BLE001
+        logger.info("ace/trends.html unavailable (%s); JSON fallback", exc)
+        return jsonify({"page": "evals/trends"})
+
+
 @ace_bp.route("/<instance_id>")
 def instance_detail(instance_id: str):
     """Single instance: header, coworkers, message timeline, artifacts."""
@@ -347,7 +345,7 @@ def instance_detail(instance_id: str):
                     conn,
                     "SELECT id, name, role_id, state, trust_tier, config_json, "
                     "result_json, created_at, updated_at, completed_at "
-                    "FROM ace_instances WHERE id = %s",
+                    "FROM ace_instances WHERE id = ?",
                 ),
                 (instance_id,),
             )
@@ -365,7 +363,7 @@ def instance_detail(instance_id: str):
                         conn,
                         "SELECT id, role_id, display_name, state, trust_tier, "
                         "assigned_step, last_active_at FROM ace_coworkers "
-                        "WHERE instance_id = %s ORDER BY created_at ASC",
+                        "WHERE instance_id = ? ORDER BY created_at ASC",
                     ),
                     (instance_id,),
                 )
@@ -375,7 +373,7 @@ def instance_detail(instance_id: str):
                     _q(
                         conn,
                         "SELECT id, coworker_id, message_type, role, content, "
-                        "created_at FROM ace_messages WHERE instance_id = %s "
+                        "created_at FROM ace_messages WHERE instance_id = ? "
                         "ORDER BY created_at ASC, id ASC",
                     ),
                     (instance_id,),
@@ -387,7 +385,7 @@ def instance_detail(instance_id: str):
                         conn,
                         "SELECT id, coworker_id, artifact_type, title, classification, "
                         "content_json, content_md, created_at FROM ace_artifacts "
-                        "WHERE instance_id = %s ORDER BY created_at DESC",
+                        "WHERE instance_id = ? ORDER BY created_at DESC",
                     ),
                     (instance_id,),
                 )
@@ -443,7 +441,7 @@ def instance_resume(instance_id: str):
                 _q(
                     conn,
                     "SELECT session_id, conversation_history, turn_count "
-                    "FROM ace_sessions WHERE resume_token = %s AND instance_id = %s",
+                    "FROM ace_sessions WHERE resume_token = ? AND instance_id = ?",
                 ),
                 (token, instance_id),
             )
@@ -552,7 +550,7 @@ def api_launch():
                 conn.execute(
                     _q(conn,
                        "INSERT INTO coworker_dic_contexts (id, instance_id, collection_id) "
-                       "VALUES (%s, %s, %s)"),
+                       "VALUES (?, ?, ?)"),
                     (_uuid.uuid4().hex, instance_id, col_id),
                 )
             conn.commit()
@@ -578,7 +576,7 @@ def api_instances():
         where = ""
         params: list[Any] = []
         if state:
-            where = "WHERE state = %s"
+            where = "WHERE state = ?"
             params.append(state)
         total_row = _one(
             conn.execute(
@@ -593,7 +591,7 @@ def api_instances():
                     conn,
                     "SELECT id, name, role_id, state, trust_tier, created_at, updated_at, "
                     f"completed_at FROM ace_instances {where} "
-                    "ORDER BY created_at DESC LIMIT %s OFFSET %s",
+                    "ORDER BY created_at DESC LIMIT ? OFFSET ?",
                 ),
                 tuple(params) + (limit, offset),
             )
@@ -632,7 +630,7 @@ def api_messages(instance_id: str):
         if after:
             ref = _one(
                 conn.execute(
-                    _q(conn, "SELECT created_at FROM ace_messages WHERE id = %s"),
+                    _q(conn, "SELECT created_at FROM ace_messages WHERE id = ?"),
                     (after,),
                 )
             )
@@ -645,9 +643,9 @@ def api_messages(instance_id: str):
                     _q(
                         conn,
                         "SELECT id, coworker_id, message_type, role, content, created_at "
-                        "FROM ace_messages WHERE instance_id = %s "
-                        "AND (created_at > %s OR (created_at = %s AND id > %s)) "
-                        "ORDER BY created_at ASC, id ASC LIMIT %s",
+                        "FROM ace_messages WHERE instance_id = ? "
+                        "AND (created_at > ? OR (created_at = ? AND id > ?)) "
+                        "ORDER BY created_at ASC, id ASC LIMIT ?",
                     ),
                     (instance_id, after_ts, after_ts, after, limit),
                 )
@@ -658,8 +656,8 @@ def api_messages(instance_id: str):
                     _q(
                         conn,
                         "SELECT id, coworker_id, message_type, role, content, created_at "
-                        "FROM ace_messages WHERE instance_id = %s "
-                        "ORDER BY created_at ASC, id ASC LIMIT %s",
+                        "FROM ace_messages WHERE instance_id = ? "
+                        "ORDER BY created_at ASC, id ASC LIMIT ?",
                     ),
                     (instance_id, limit),
                 )
@@ -686,7 +684,7 @@ def api_artifacts(instance_id: str):
                     conn,
                     "SELECT id, coworker_id, artifact_type, title, classification, "
                     "content_json, content_md, created_at FROM ace_artifacts "
-                    "WHERE instance_id = %s ORDER BY created_at DESC",
+                    "WHERE instance_id = ? ORDER BY created_at DESC",
                 ),
                 (instance_id,),
             )
@@ -760,7 +758,7 @@ def api_hitl_resolve(instance_id: str):
                 conn.execute(
                     "INSERT INTO ace_audit_log "
                     "(instance_id, coworker_id, action, detail, actor, created_at) "
-                    "VALUES (%s, %s, 'hitl_rejected', %s, 'hitl_gate', %s)",
+                    "VALUES (?, ?, 'hitl_rejected', ?, 'hitl_gate', ?)",
                     (instance_id, coworker_id, detail, now),
                 )
                 conn.commit()
@@ -920,6 +918,150 @@ def api_session_eval_post(session_id: str):
     }), 201
 
 
+@ace_api_bp.route("/sessions/<session_id>/eval/suggestions", methods=["GET"])
+def api_session_eval_suggestions(session_id: str):
+    """Return rule-based improvement suggestions for a session.
+
+    GET /api/ace/sessions/<session_id>/eval/suggestions
+    First loads the stored eval (if any); if none exists, scores on-the-fly.
+    Returns: {session_id, suggestions: [{issue, suggestion, field, severity}],
+              eval_summary: {outcome, efficiency_score, reasoning_coverage, tool_error_rate}}
+    """
+    try:
+        from icdev.tools.ace.evaluator import get_eval, score_session, suggest_improvements
+        er = get_eval(session_id)
+        if er is None:
+            er = score_session(session_id)
+        if er.outcome == "not_found":
+            return jsonify({"error": f"session not found: {session_id}"}), 404
+        suggestions = suggest_improvements(er)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace eval suggestions failed for %s: %s", session_id, exc)
+        return jsonify({"error": str(exc)}), 500
+
+    return jsonify({
+        "session_id": session_id,
+        "suggestions": suggestions,
+        "eval_summary": {
+            "outcome": er.outcome,
+            "done": er.done,
+            "efficiency_score": er.efficiency_score,
+            "reasoning_coverage": er.reasoning_coverage,
+            "tool_error_rate": er.tool_error_rate,
+            "scope_violations": er.scope_violations,
+            "plan_stated": er.plan_stated,
+            "turns_used": er.turns_used,
+            "max_iterations": er.max_iterations,
+        },
+    })
+
+
+@ace_api_bp.route("/sessions/<session_id>/rerun", methods=["POST"])
+def api_session_rerun(session_id: str):
+    """Launch a new coworker session based on a prior session's config.
+
+    Reads the original problem_text and role_ids from the source instance,
+    optionally prepends improvement suggestions to the problem_text, then
+    launches a new ACE run.
+
+    POST body (all optional):
+        apply_suggestions: bool  (default true)
+        extra_prompt:      str   appended after the patched problem_text
+
+    Returns: {new_instance_id, source_session_id, source_instance_id,
+              patched_prompt_preview: str (first 300 chars)}
+    """
+    data = request.get_json(silent=True) or {}
+    apply_sugg = bool(data.get("apply_suggestions", True))
+    extra_prompt = (data.get("extra_prompt") or "").strip()
+
+    # 1. Resolve source instance from the session
+    from icdev.tools.llm.agent_loop_session import get_session_metadata
+    meta = get_session_metadata(session_id)
+    if meta is None:
+        return jsonify({"error": f"session not found: {session_id}"}), 404
+
+    source_instance_id = meta.get("instance_id") or ""
+
+    # 2. Load original launch config from ace_instances
+    problem_text = ""
+    role_ids: list[str] = []
+    if source_instance_id:
+        try:
+            conn = _db()
+            row = conn.execute(
+                _q(conn, "SELECT config_json FROM ace_instances WHERE id = ?"),
+                (source_instance_id,),
+            ).fetchone()
+            conn.close()
+            if row:
+                cfg = _decode_json(row[0] if isinstance(row, (list, tuple)) else row.get("config_json", ""))
+                problem_text = cfg.get("problem_text", "")
+                role_ids = cfg.get("role_ids") or []
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ace rerun: failed to load source config for %s: %s", source_instance_id, exc)
+
+    # 3. Apply suggestions as a guidance prefix to problem_text
+    if apply_sugg:
+        try:
+            from icdev.tools.ace.evaluator import get_eval, score_session, suggest_improvements, apply_suggestions_to_prompt
+            er = get_eval(session_id) or score_session(session_id)
+            suggestions = suggest_improvements(er)
+            if suggestions:
+                guidance = apply_suggestions_to_prompt("", suggestions)
+                if guidance.strip():
+                    problem_text = guidance + (problem_text or "(re-run with improvements)")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ace rerun: suggest_improvements failed for %s: %s", session_id, exc)
+
+    if extra_prompt:
+        problem_text = (problem_text or "") + "\n\n" + extra_prompt
+
+    if not problem_text.strip():
+        return jsonify({"error": "could not reconstruct problem_text from source session"}), 422
+
+    # 4. Launch new run
+    try:
+        new_instance_id = ACEController.get_instance().launch(
+            problem_text=problem_text,
+            trigger_source="rerun",
+            trigger_ref=session_id,
+            user_id="dashboard",
+            role_ids=role_ids or None,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace rerun: launch failed for source %s: %s", session_id, exc)
+        return jsonify({"error": str(exc)}), 500
+
+    return jsonify({
+        "new_instance_id": new_instance_id,
+        "source_session_id": session_id,
+        "source_instance_id": source_instance_id,
+        "patched_prompt_preview": problem_text[:300],
+    }), 202
+
+
+@ace_api_bp.route("/sessions/<session_id>/eval/compare", methods=["GET"])
+def api_session_eval_compare(session_id: str):
+    """Compare this session's eval against a baseline session.
+
+    GET /api/ace/sessions/<id>/eval/compare?baseline=<other_session_id>
+
+    Returns field-by-field deltas and overall_improved flag.
+    baseline is session A; current session_id is session B.
+    """
+    baseline_id = (request.args.get("baseline") or "").strip()
+    if not baseline_id:
+        return jsonify({"error": "baseline query param required"}), 400
+    try:
+        from icdev.tools.ace.evaluator import compare_evals
+        result = compare_evals(baseline_id, session_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace eval compare failed %s vs %s: %s", baseline_id, session_id, exc)
+        return jsonify({"error": str(exc)}), 500
+    return jsonify(result)
+
+
 @ace_api_bp.route("/evals", methods=["GET"])
 def api_evals_list():
     """List all stored eval results.
@@ -937,7 +1079,7 @@ def api_evals_list():
     try:
         from icdev.tools.db.storage import get_canvas_connection
         conn = get_canvas_connection("ACE_DB_PATH")
-        where = "WHERE outcome = %s" if outcome else ""
+        where = "WHERE outcome = ?" if outcome else ""
         params: tuple = (outcome,) if outcome else ()
         cnt = _one(conn.execute(_q(conn, f"SELECT COUNT(*) AS n FROM agent_evals {where}"), params))
         total = (cnt or {}).get("n", 0)
@@ -945,7 +1087,7 @@ def api_evals_list():
             _q(conn, f"SELECT session_id, outcome, done, turns_used, efficiency_score, "
                f"tool_error_rate, total_cost_usd, reasoning_coverage, plan_stated, "
                f"scope_violations, graded_at, grading_version "
-               f"FROM agent_evals {where} ORDER BY graded_at DESC LIMIT %s OFFSET %s"),
+               f"FROM agent_evals {where} ORDER BY graded_at DESC LIMIT ? OFFSET ?"),
             params + (limit, offset),
         ))
     except Exception as exc:  # noqa: BLE001
@@ -1110,7 +1252,7 @@ def api_profiles_preview():
 def api_profiles_generate():
     """Create and persist a new coworker profile.
 
-    Body: {name, description%s, spec?}
+    Body: {name, description?, spec?}
     If spec is provided (from a prior /preview call) it is used as-is,
     skipping a second LLM call.  Returns {role_id, files_written}.
     """
@@ -1156,7 +1298,7 @@ def api_coworker_stats(coworker_id: str):
         conn = _db()
         msg_row = _one(
             conn.execute(
-                _q(conn, "SELECT COUNT(*) AS n FROM ace_messages WHERE coworker_id = %s"),
+                _q(conn, "SELECT COUNT(*) AS n FROM ace_messages WHERE coworker_id = ?"),
                 (coworker_id,),
             )
         )
@@ -1165,7 +1307,7 @@ def api_coworker_stats(coworker_id: str):
                 _q(
                     conn,
                     "SELECT COUNT(*) AS n FROM ace_audit_log "
-                    "WHERE coworker_id = %s AND action = 'agent_turn'",
+                    "WHERE coworker_id = ? AND action = 'agent_turn'",
                 ),
                 (coworker_id,),
             )
@@ -1175,7 +1317,7 @@ def api_coworker_stats(coworker_id: str):
                 _q(
                     conn,
                     "SELECT MAX(created_at) AS last_active FROM ace_messages "
-                    "WHERE coworker_id = %s",
+                    "WHERE coworker_id = ?",
                 ),
                 (coworker_id,),
             )
@@ -1184,7 +1326,7 @@ def api_coworker_stats(coworker_id: str):
             conn.execute(
                 _q(
                     conn,
-                    "SELECT DISTINCT instance_id FROM ace_messages WHERE coworker_id = %s",
+                    "SELECT DISTINCT instance_id FROM ace_messages WHERE coworker_id = ?",
                 ),
                 (coworker_id,),
             )
@@ -1374,7 +1516,7 @@ def api_nova_state(instance_id: str):
                     conn_ace,
                     "SELECT id, role_id, display_name, state, trust_tier, "
                     "assigned_step, last_active_at, created_at "
-                    "FROM ace_coworkers WHERE instance_id = %s ORDER BY created_at",
+                    "FROM ace_coworkers WHERE instance_id = ? ORDER BY created_at",
                 ),
                 (instance_id,),
             )
@@ -1419,7 +1561,7 @@ def api_nova_state(instance_id: str):
                     _q(
                         conn_nova,
                         "SELECT task_type, improvement_text FROM agent_improvement_artifacts "
-                        "WHERE status = %s ORDER BY applied_at DESC LIMIT %s",
+                        "WHERE status = ? ORDER BY applied_at DESC LIMIT ?",
                     ),
                     ("applied", 20),
                 )
@@ -1461,7 +1603,7 @@ def _chat_ensure_instance(conn) -> None:
     conn.execute(
         _q(
             conn,
-            "INSERT OR IGNORE INTO ace_instances (id, name, role_id, state) VALUES (%s, %s, %s, %s)",
+            "INSERT OR IGNORE INTO ace_instances (id, name, role_id, state) VALUES (?, ?, ?, ?)",
         ),
         (_CHAT_INSTANCE_ID, "ACE Chat", "chat", "active"),
     )
@@ -1488,7 +1630,7 @@ def api_ace_chat():
                 _q(
                     conn,
                     "SELECT conversation_history, history_json, turn_count, resume_token "
-                    "FROM ace_sessions WHERE session_id = %s AND instance_id = %s",
+                    "FROM ace_sessions WHERE session_id = ? AND instance_id = ?",
                 ),
                 (session_id, _CHAT_INSTANCE_ID),
             )
@@ -1540,7 +1682,7 @@ def api_ace_chat():
             _q(
                 conn,
                 "INSERT INTO ace_sessions (session_id, instance_id, conversation_history, history_json, resume_token, turn_count) "
-                "VALUES (%s, %s, %s, %s, %s, %s) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(session_id) DO UPDATE SET "
                 "  conversation_history = excluded.conversation_history, "
                 "  history_json = excluded.history_json, "
