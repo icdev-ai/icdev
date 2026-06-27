@@ -29,6 +29,7 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 from tools.db.storage import get_connection  # noqa: E402
+from icdev.tools.forecast.timesfm_adapter import forecast as _run_forecast, get_job as _get_forecast_job  # noqa: E402
 
 from flask import (
     Flask,
@@ -3534,6 +3535,65 @@ def create_app(testing: bool = False) -> Flask:
                 unresolved_failures=0,
                 health_status="unknown",
             )
+        finally:
+            conn.close()
+
+    @app.route("/monitoring/forecast")
+    def monitoring_forecast_page():
+        """Time-series forecasting page using TimesFM."""
+        conn = _get_db()
+        try:
+            recent_jobs = conn.execute(
+                "SELECT id, source, context, input_rows, status, created_at, completed_at "
+                "FROM forecast_jobs ORDER BY created_at DESC LIMIT 20"
+            ).fetchall()
+            from icdev.tools.forecast.timesfm_adapter import health as _forecast_health
+
+            model_status = _forecast_health()
+            return render_template(
+                "monitoring/forecast.html",
+                recent_jobs=[dict(r) for r in recent_jobs],
+                model_status=model_status,
+            )
+        except Exception as exc:
+            get_logger(__name__).error("monitoring_forecast_page DB error: %s", exc)
+            return render_template(
+                "monitoring/forecast.html",
+                recent_jobs=[],
+                model_status={"available": False, "error": str(exc)},
+            )
+        finally:
+            conn.close()
+
+    @app.route("/api/forecast", methods=["POST"])
+    def api_forecast():
+        """Run a TimesFM forecast job."""
+        try:
+            payload = flask_request.get_json(force=True)
+            if not isinstance(payload, dict):
+                return jsonify({"error": "JSON object required"}), 400
+            result = _run_forecast(payload)
+            return jsonify(result), 200
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        except RuntimeError as exc:
+            return jsonify({"error": str(exc), "available": False}), 503
+        except Exception as exc:
+            get_logger(__name__).error("api_forecast error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
+    @app.route("/api/forecast/<job_id>")
+    def api_forecast_status(job_id):
+        """Fetch a forecast job by ID."""
+        conn = _get_db()
+        try:
+            row = _get_forecast_job(conn, job_id)
+            if row is None:
+                return jsonify({"error": "job not found"}), 404
+            return jsonify(row), 200
+        except Exception as exc:
+            get_logger(__name__).error("api_forecast_status error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
         finally:
             conn.close()
 
