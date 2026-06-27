@@ -257,6 +257,30 @@ def _is_safe_serialization_module(file_path: Optional[str]) -> bool:
     return any(normalised.endswith(m) for m in _SAFE_SERIALIZATION_MODULES)
 
 
+def _load_platform_authorized_capabilities() -> frozenset[str]:
+    """Load the platform_authorized_capabilities list from integrity_config.yaml.
+
+    Returns capability-type strings that are universally authorized across the
+    ICDEV platform and therefore suppressed in Mode A self-scans without needing
+    a per-module entry in a known_safe_* list.  Only affects ICDEV's own tools/
+    tree; external-artifact assessments are unaffected.
+
+    Intended for low-risk capabilities used pervasively for legitimate platform
+    operations (e.g. 'crypto' for content fingerprinting and data integrity) where
+    per-module allowlist entries would be impractical.  The stronger
+    dangerous_api co-presence rule (dynamic_code + obfuscation taint) still fires
+    regardless of this list.
+    """
+    try:
+        data = _load_config()
+        return frozenset(data.get("platform_authorized_capabilities") or [])
+    except Exception:
+        return frozenset()
+
+
+_PLATFORM_AUTHORIZED_CAPABILITIES: frozenset[str] = _load_platform_authorized_capabilities()
+
+
 def _load_safe_colocation_files() -> frozenset[str]:
     """Load the known_safe_colocation_files allowlist from integrity_config.yaml.
 
@@ -1011,6 +1035,10 @@ def _unauthorized_findings(records: list[dict], allowed: set[str]) -> list[dict]
     for rec in records:
         cap = rec.get("capability_type")
         if not cap or cap in allowed:
+            continue
+        # Skip capabilities that are globally authorized for the platform
+        # (platform_authorized_capabilities in integrity_config.yaml).
+        if cap in _PLATFORM_AUTHORIZED_CAPABILITIES:
             continue
         # Skip filesystem findings for ICDEV's own first-party modules that are
         # authorized by known_safe_filesystem_modules in integrity_config.yaml.
