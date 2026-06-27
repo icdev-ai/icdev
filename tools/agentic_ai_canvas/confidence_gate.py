@@ -85,7 +85,7 @@ def _audit_event(conn, design_id: str, node_id: Optional[str],
     conn.execute(
         "INSERT INTO aadc_confidence_events "
         "(id, design_id, node_id, score, threshold, decision, detail, created_at) "
-        "VALUES (?,?,?,?,?,?,?,?)",
+        f"VALUES ({"","".join([sql_placeholder(conn)]*8)""})",
         (eid, design_id, node_id, score, threshold, decision, detail,
          datetime.now(timezone.utc).isoformat()),
     )
@@ -108,7 +108,7 @@ def get_config(design_id: str) -> dict:
             _ensure_tables(conn)
             row = conn.execute(
                 "SELECT threshold, low_confidence_action FROM aadc_gate_configs "
-                "WHERE design_id = ?", (design_id,)
+                f"WHERE design_id = {sql_placeholder(conn)}", (design_id,)
             ).fetchone()
         finally:
             conn.close()
@@ -152,7 +152,7 @@ def update_config(design_id: str, threshold: float,
             _ensure_tables(conn)
             conn.execute(
                 "INSERT INTO aadc_gate_configs (design_id, threshold, low_confidence_action, updated_at) "
-                "VALUES (?,?,?,?) "
+                f"VALUES ({"","".join([sql_placeholder(conn)]*4)""}) "
                 "ON CONFLICT(design_id) DO UPDATE SET "
                 "  threshold=excluded.threshold, "
                 "  low_confidence_action=excluded.low_confidence_action, "
