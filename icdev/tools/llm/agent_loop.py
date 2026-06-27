@@ -177,6 +177,10 @@ class AgentLoopResult:
     total_cost_usd: float = 0.0
     compression_events: list[dict[str, Any]] = field(default_factory=list)
     truncation_reason: str = ""
+    model_id: str = ""
+    """model_id from the first successful LLM response — used by cross-grader enforcement."""
+    provider: str = ""
+    """provider name from the first successful LLM response."""
 
 
 # Type aliases for callback hooks.
@@ -706,6 +710,11 @@ def run_agent_loop(
             result.total_input_tokens += getattr(response, "input_tokens", 0) or 0
             result.total_output_tokens += getattr(response, "output_tokens", 0) or 0
             result.total_cost_usd += getattr(response, "cost_usd", 0.0) or 0.0
+            # Cross-grader: capture model/provider from first successful LLM response.
+            if not result.model_id:
+                result.model_id = getattr(response, "model_id", "") or ""
+            if not result.provider:
+                result.provider = getattr(response, "provider", "") or ""
 
             # No tool calls → LLM ended the turn with a final answer.
             tool_calls = getattr(response, "tool_calls", None) or []
