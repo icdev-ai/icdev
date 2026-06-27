@@ -114,11 +114,7 @@ soul:
 communication:
   protocol: a2a
   listen_topics:
-    - task.assigned                   # from kanban dispatcher
-    - spec.approved                   # from product_manager role
-    - test.failed                     # triggers debugging-and-error-recovery
-    - security.finding                # from SIPA / security-auditor persona
-    - pr.review.requested             # from git workflow
+    - task.assigned                   # bootstrap only — reactive topics handled by role steps / sub-persona triggers
   emit_topics:
     - spec.drafted                    # → product_manager for review
     - task.completed                  # → kanban

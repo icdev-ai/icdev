@@ -156,6 +156,7 @@ python tools/iqe/cli.py --file context/iqe/queries/network/09_stig_open_findings
 | TFW narrative generator | `tools/network/narrative_generator.py` | Traffic Flow Walkthrough narratives — per-persona LLM narratives + deterministic detail_json (CSP detection, multi-CSP hops, classification overlay, NIST 800-53 pre-population). CLI: `--flow-id <id> --json` |
 | NDC Digital Twin | tools/network/twin.py | Network digital twin: topology snapshot capture, intent rule validation against deltas, and blast-radius impact analysis for network nodes/links with fuzzy node resolution | `take_snapshot()`, `simulate_delta()`, `blast_radius()` (library) | Snapshot/delta/impact dicts |
 | NDC Stencil Routes | tools/network/routes/stencils.py | Flask Blueprint registering 8 REST endpoints for Visio stencil catalog, upload, import-by-URL, library CRUD, and shape icon serving on NDC network canvas | `register_stencil_routes(bp)` (library) | HTTP responses |
+| Federal Peering Request | tools/network/federal_peering_request.py | Peering request initiation (Step 1 of `digitize-wfl-7f07`) for federal network interconnection: creates a `federal_peering_requests` record with initiating/responding operator, peering type, proposed interconnection points, and workflow status. | `create_peering_request(...)` (library) | Peering request dict |
 
 ---
 

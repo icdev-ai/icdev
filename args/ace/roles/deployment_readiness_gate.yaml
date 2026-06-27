@@ -20,8 +20,7 @@ steps:
 communication:
   protocol: a2a
   listen_topics:
-  - task.assigned
-  - deploy.requested
+  - task.assigned              # bootstrap only — reactive dispatch handled by role steps
   emit_topics:
   - deploy.readiness.verdict
   - deploy.blocked

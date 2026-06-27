@@ -7,7 +7,7 @@ maps each artifact to its source skill file, uses LLM Router to generate a
 targeted patch, and writes the improved skill file. Creates a low-priority kanban
 review card for each update so a human can audit before the next cycle uses it.
 
-Based on the GEPA (Genetic Evolution via Prompt Artifacts) pattern from Hermes:
+Implements the GEPA (Genetic Evolution via Prompt Artifacts) optimization pattern:
   execution trace → reflexion artifact → skill patch → improved skill file
 
 Usage:

@@ -797,7 +797,7 @@ Process Document:
                 step.setdefault("dependencies", [])
             workflow_def["steps"] = steps
             workflow_def["source_name"] = source_name
-            return jsonify({"status": "ok", "workflow": workflow_def})
+            return jsonify({"status": "ok", "workflow": workflow_def, "source_doc_text": text})
         except Exception as exc:
             logger.error("wfc processify error: %s", exc)
             return jsonify({"error": str(exc)}), 500
@@ -872,6 +872,8 @@ Process Document:
             "steps": yaml_steps,
         }, default_flow_style=False, allow_unicode=True)
 
+        source_doc_text = (data.get("source_doc_text") or "")[:50000]  # cap at 50k chars
+
         workflow_id = _new_id("wfl")
         conn = get_connection()
         try:
@@ -879,10 +881,12 @@ Process Document:
             conn.execute(
                 f"""INSERT INTO studio_workflows
                     (workflow_id, name, description, template_yaml, category,
-                     created_by, created_at, updated_at, version, shared)
-                    VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})""",
+                     created_by, created_at, updated_at, version, shared,
+                     source_doc_text)
+                    VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})""",
                 (workflow_id, workflow_name, workflow_desc, workflow_yaml,
-                 industry, "processify", _now_iso(), _now_iso(), 1, 0),
+                 industry, "processify", _now_iso(), _now_iso(), 1, 0,
+                 source_doc_text or None),
             )
             conn.commit()
         finally:
@@ -1201,5 +1205,244 @@ Process Document:
         except Exception as exc:
             result = {"answer": str(exc), "sources": []}
         return jsonify(result)
+
+    # ── Doc Regen routes ──────────────────────────────────────────────────────
+
+    @bp.route("/api/workflows/<workflow_id>/regen-doc", methods=["POST"])
+    def api_regen_workflow_doc(workflow_id: str):
+        """Start background doc regeneration for a single processified workflow."""
+        data = request.get_json(force=True) or {}
+        fmt = data.get("format", "all")
+        try:
+            from tools.workflow_canvas.doc_regenerator import start_regen_workflow
+            job_id = start_regen_workflow(workflow_id, output_format=fmt)
+            return jsonify({"status": "ok", "job_id": job_id})
+        except Exception as exc:
+            logger.error("regen-doc error: %s", exc, exc_info=True)
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/regen-jobs/<job_id>/status")
+    def api_regen_job_status(job_id: str):
+        """Poll regen job status and retrieve download info when done."""
+        from tools.workflow_canvas.doc_regenerator import get_job_status
+        job = get_job_status(job_id)
+        if not job:
+            return jsonify({"error": "job not found"}), 404
+        return jsonify(job)
+
+    @bp.route("/api/regen-jobs/<job_id>/download/<filename>")
+    def api_regen_download(job_id: str, filename: str):
+        """Download a regenerated artifact file."""
+        import os
+        from flask import send_file
+        from tools.workflow_canvas.doc_regenerator import get_job_status
+        job = get_job_status(job_id)
+        if not job or job.get("status") != "done":
+            return jsonify({"error": "job not ready"}), 404
+        artifact_dir = job.get("artifact_dir", "")
+        file_path = os.path.join(artifact_dir, filename)
+        if not os.path.isfile(file_path):
+            return jsonify({"error": "file not found"}), 404
+        return send_file(file_path, as_attachment=True, download_name=filename)
+
+    # ── Process Chain CRUD ────────────────────────────────────────────────────
+
+    @bp.route("/api/workflows/chains", methods=["POST"])
+    def api_create_chain():
+        """Create a new process chain."""
+        data = request.get_json(force=True) or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "name required"}), 400
+        chain_id = _new_id("chn")
+        conn = get_connection()
+        try:
+            ph = _ph(conn)
+            conn.execute(
+                f"""INSERT INTO wfc_process_chains
+                    (id, name, description, industry, status, created_by, created_at, updated_at)
+                    VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})""",
+                (chain_id, name, data.get("description", ""), data.get("industry", "General"),
+                 "draft", "processify", _now_iso(), _now_iso()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return jsonify({"status": "ok", "chain_id": chain_id, "name": name})
+
+    @bp.route("/api/workflows/chains", methods=["GET"])
+    def api_list_chains():
+        conn = get_connection()
+        try:
+            ph = _ph(conn)
+            rows = conn.execute(
+                "SELECT id, name, description, industry, status, created_at FROM wfc_process_chains ORDER BY created_at DESC"
+            ).fetchall()
+        finally:
+            conn.close()
+        return jsonify({"chains": [dict(r) for r in rows]})
+
+    @bp.route("/api/workflows/chains/<chain_id>", methods=["GET"])
+    def api_get_chain(chain_id: str):
+        conn = get_connection()
+        try:
+            ph = _ph(conn)
+            chain = conn.execute(
+                f"SELECT * FROM wfc_process_chains WHERE id = {ph}", (chain_id,)
+            ).fetchone()
+            if not chain:
+                return jsonify({"error": "chain not found"}), 404
+            phases = conn.execute(
+                f"SELECT * FROM wfc_chain_phases WHERE chain_id = {ph} ORDER BY phase_number",
+                (chain_id,),
+            ).fetchall()
+        finally:
+            conn.close()
+        return jsonify({"chain": dict(chain), "phases": [dict(p) for p in phases]})
+
+    @bp.route("/api/workflows/chains/<chain_id>/phases", methods=["POST"])
+    def api_add_chain_phase(chain_id: str):
+        """Add a phase to a process chain."""
+        data = request.get_json(force=True) or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "name required"}), 400
+        conn = get_connection()
+        try:
+            ph = _ph(conn)
+            # Auto-number: find max phase_number for this chain
+            row = conn.execute(
+                f"SELECT MAX(phase_number) FROM wfc_chain_phases WHERE chain_id = {ph}", (chain_id,)
+            ).fetchone()
+            next_num = (row[0] or 0) + 1
+            phase_id = _new_id("phs")
+            conn.execute(
+                f"""INSERT INTO wfc_chain_phases
+                    (id, chain_id, phase_number, name, team_name, team_role,
+                     workflow_ids, status, unlock_threshold, handoff_checklist, created_at, updated_at)
+                    VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})""",
+                (phase_id, chain_id, next_num, name,
+                 data.get("team_name", ""), data.get("team_role", ""),
+                 "[]", "pending", data.get("unlock_threshold", 100), "[]",
+                 _now_iso(), _now_iso()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return jsonify({"status": "ok", "phase_id": phase_id, "phase_number": next_num})
+
+    @bp.route("/api/workflows/chains/<chain_id>/phases/<phase_id>/processify", methods=["POST"])
+    def api_processify_chain_phase(chain_id: str, phase_id: str):
+        """Processify a document for a specific chain phase and link the workflow."""
+        data = request.get_json(force=True) or {}
+        workflow_id = (data.get("workflow_id") or "").strip()
+        if not workflow_id:
+            return jsonify({"error": "workflow_id required — run processify first and pass the result"}), 400
+
+        conn = get_connection()
+        try:
+            ph = _ph(conn)
+            row = conn.execute(
+                f"SELECT workflow_ids FROM wfc_chain_phases WHERE id = {ph} AND chain_id = {ph}",
+                (phase_id, chain_id),
+            ).fetchone()
+            if not row:
+                return jsonify({"error": "phase not found"}), 404
+            import json as _json
+            wf_ids = _json.loads(row[0] or "[]")
+            if workflow_id not in wf_ids:
+                wf_ids.append(workflow_id)
+            conn.execute(
+                f"UPDATE wfc_chain_phases SET workflow_ids = {ph}, status = 'in_progress', "
+                f"updated_at = {ph} WHERE id = {ph}",
+                (_json.dumps(wf_ids), _now_iso(), phase_id),
+            )
+            # Activate chain if still draft
+            conn.execute(
+                f"UPDATE wfc_process_chains SET status = 'active', updated_at = {ph} "
+                f"WHERE id = {ph} AND status = 'draft'",
+                (_now_iso(), chain_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return jsonify({"status": "ok", "phase_id": phase_id, "workflow_ids": wf_ids})
+
+    @bp.route("/api/workflows/chains/<chain_id>/progress", methods=["GET"])
+    def api_chain_progress(chain_id: str):
+        """Return progress across all phases of a chain."""
+        conn = get_connection()
+        try:
+            ph = _ph(conn)
+            chain = conn.execute(
+                f"SELECT * FROM wfc_process_chains WHERE id = {ph}", (chain_id,)
+            ).fetchone()
+            if not chain:
+                return jsonify({"error": "chain not found"}), 404
+            phases = [
+                dict(r) for r in conn.execute(
+                    f"SELECT * FROM wfc_chain_phases WHERE chain_id = {ph} ORDER BY phase_number",
+                    (chain_id,),
+                ).fetchall()
+            ]
+        finally:
+            conn.close()
+
+        import json as _json
+        phase_progress = []
+        for p in phases:
+            wf_ids = _json.loads(p.get("workflow_ids") or "[]")
+            # Check kanban task completion for these workflows
+            total_tasks = 0
+            done_tasks = 0
+            for wf_id in wf_ids:
+                prefix = f"processify-{wf_id[:8]}-%"
+                conn2 = get_connection()
+                try:
+                    t_ph = _ph(conn2)
+                    t_rows = conn2.execute(
+                        f"SELECT status FROM kanban_tasks WHERE id LIKE {t_ph}", (prefix,)
+                    ).fetchall()
+                finally:
+                    conn2.close()
+                total_tasks += len(t_rows)
+                done_tasks += sum(1 for r in t_rows if r[0] in ("done", "failed"))
+            pct = round(done_tasks / total_tasks * 100) if total_tasks > 0 else 0
+            phase_progress.append({
+                "phase_id": p["id"],
+                "phase_number": p["phase_number"],
+                "name": p["name"],
+                "team_name": p.get("team_name", ""),
+                "status": p["status"],
+                "workflow_count": len(wf_ids),
+                "total_tasks": total_tasks,
+                "done_tasks": done_tasks,
+                "completion_pct": pct,
+                "can_regen": pct > 0,
+            })
+
+        total_phases = len(phases)
+        complete_phases = sum(1 for p in phase_progress if p["completion_pct"] == 100)
+        return jsonify({
+            "chain": dict(chain),
+            "phases": phase_progress,
+            "total_phases": total_phases,
+            "complete_phases": complete_phases,
+            "overall_pct": round(complete_phases / total_phases * 100) if total_phases else 0,
+        })
+
+    @bp.route("/api/chains/<chain_id>/regen-doc", methods=["POST"])
+    def api_regen_chain_doc(chain_id: str):
+        """Start background doc regen for a chain (full e2e) or a single phase."""
+        data = request.get_json(force=True) or {}
+        phase_id = data.get("phase_id")  # None → full chain
+        fmt = data.get("format", "all")
+        try:
+            from tools.workflow_canvas.doc_regenerator import start_regen_chain
+            job_id = start_regen_chain(chain_id, phase_id=phase_id, output_format=fmt)
+            return jsonify({"status": "ok", "job_id": job_id})
+        except Exception as exc:
+            logger.error("regen-chain-doc error: %s", exc, exc_info=True)
+            return jsonify({"error": str(exc)}), 500
 
     return bp
