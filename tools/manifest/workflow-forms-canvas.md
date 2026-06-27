@@ -22,6 +22,14 @@ canvas with enterprise branding, form-to-workflow integration, and multi-format 
 | `tools/workflow_canvas/process_code.py` | Process-code generator / exporter for rendered workflows |
 | `tools/workflow_canvas/template_library.py` | WFC industry template library loader and schema bootstrap |
 | `tools/workflow_canvas/workflow_diff.py` | Workflow diff / comparison utility across versions |
+| `tools/workflow_canvas/conformance_checker.py` | Process conformance checker against expected workflow definition |
+| `tools/workflow_canvas/handoff_wizard.py` | Phase handoff ceremony brief generator |
+| `tools/workflow_canvas/multi_source_synthesizer.py` | Multi-source workflow synthesizer (merges multiple workflow definitions) |
+| `tools/workflow_canvas/process_as_code.py` | Process-as-code YAML export / import for chains |
+| `tools/workflow_canvas/process_coach.py` | AI process coach for individual workflow steps |
+| `tools/workflow_canvas/reverse_processify.py` | Reverse process-ify — reconstruct as-executed document from kanban run |
+| `tools/workflow_canvas/reverse_regen.py` | Reverse document regeneration from a workflow definition |
+| `tools/workflow_canvas/sla_checker.py` | SLA gate enforcement / status checker for workflows |
 | `args/component_registry.yaml` | Canvas registration under key: wfc |
 
 ## Routes

@@ -1003,12 +1003,14 @@ class StorageCursor:
             compartments = getattr(ctx, "compartments", frozenset()) or frozenset()
             lac_labels = {c for c in compartments if c.upper().startswith("LAC_")} or None
             coi_tags = {c for c in compartments if c.upper().startswith("COI_")} or None
+            ph = "%s" if getattr(self, "_backend", "sqlite") == "postgresql" else "?"
             new_sql, extra, n_before = inject_row_predicate(
                 sql,
                 tenant_id=tenant_id,
                 classifications=classifications,
                 lac_labels=lac_labels,
                 coi_tags=coi_tags,
+                placeholder=ph,
             )
             if extra:
                 # n_before == -1  → UPDATE/DELETE: APPEND extra_params after all existing params.

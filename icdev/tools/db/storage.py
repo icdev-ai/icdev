@@ -758,7 +758,7 @@ def _write_rls_audit(table_name: str, tenant_id: Optional[str]) -> None:
         _ac = _sq.connect(os.environ.get("ICDEV_DB_PATH", DB_PATH), timeout=5)
         _ac.execute(
             "INSERT INTO rls_audit (table_name, action, tenant_id, details, recorded_at)"
-            " VALUES (?, ?, ?, ?, ?)",
+            " VALUES (%s, %s, %s, %s, %s)",
             (table_name, "rls_filter", tenant_id, "{}", datetime.now(timezone.utc).isoformat()),
         )
         _ac.commit()
@@ -776,7 +776,7 @@ def _write_column_audit(table_name: str, role: str, masked_cols: list) -> None:
         _ac = _sq.connect(os.environ.get("ICDEV_DB_PATH", DB_PATH), timeout=5)
         _ac.execute(
             "INSERT INTO column_mask_audit (table_name, role, masked_columns, recorded_at)"
-            " VALUES (?, ?, ?, ?)",
+            " VALUES (%s, %s, %s, %s)",
             (table_name, role, _js.dumps(masked_cols), datetime.now(timezone.utc).isoformat()),
         )
         _ac.commit()
@@ -1003,12 +1003,14 @@ class StorageCursor:
             compartments = getattr(ctx, "compartments", frozenset()) or frozenset()
             lac_labels = {c for c in compartments if c.upper().startswith("LAC_")} or None
             coi_tags = {c for c in compartments if c.upper().startswith("COI_")} or None
+            ph = "%s" if getattr(self, "_backend", "sqlite") == "postgresql" else "?"
             new_sql, extra, n_before = inject_row_predicate(
                 sql,
                 tenant_id=tenant_id,
                 classifications=classifications,
                 lac_labels=lac_labels,
                 coi_tags=coi_tags,
+                placeholder=ph,
             )
             if extra:
                 # n_before == -1  → UPDATE/DELETE: APPEND extra_params after all existing params.
@@ -1366,7 +1368,7 @@ def _attach_flask_security_context(conn: "StorageConnection") -> None:
         pass
 
 
-def _resolve_zone_dsn_env() -> "str | None":
+def _resolve_zone_dsn_env() -> str | None:
     """Return the pg_dsn_env value for the active ICDEV_DATA_ZONE, or None.
 
     When ICDEV_DATA_ZONE is set, look up the zone row in data_residency_zones
@@ -1399,6 +1401,7 @@ def _resolve_zone_dsn_env() -> "str | None":
                 dbname=os.environ.get("ICDEV_PG_DATABASE", "icdev"),
                 connect_timeout=_pg_timeout, options=_pg_options,
                 cursor_factory=psycopg2.extras.RealDictCursor,
+                **ssl_kwargs,
             )
         with conn:
             with conn.cursor() as cur:

@@ -1845,6 +1845,28 @@ Process Document:
             return jsonify({"error": str(exc)}), 500
 
     # ── pif-tasks-01: Role-Based My-Tasks Portal ──────────────────────────────
+    @bp.route("/api/my-tasks")
+    def api_my_tasks():
+        role = request.args.get("role", "")
+        try:
+            conn = get_connection()
+            ph = sql_placeholder(conn)
+            if role:
+                tasks = conn.execute(
+                    f"SELECT id, title, status, priority, assignee_role, updated_at FROM kanban_tasks WHERE assignee_role = {ph} AND status != {ph} ORDER BY updated_at DESC LIMIT 200",
+                    (role, "done"),
+                ).fetchall()
+            else:
+                tasks = conn.execute(
+                    f"SELECT id, title, status, priority, assignee_role, updated_at FROM kanban_tasks WHERE status != {ph} ORDER BY updated_at DESC LIMIT 200",
+                    ("done",),
+                ).fetchall()
+            conn.close()
+            return jsonify({"tasks": [dict(t) if hasattr(t, "keys") else {} for t in tasks]})
+        except Exception as exc:
+            logger.error("api-my-tasks error: %s", exc, exc_info=True)
+            return jsonify({"error": str(exc)}), 500
+
     @bp.route("/my-tasks")
     def page_my_tasks():
         role = request.args.get("role", "")

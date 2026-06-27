@@ -191,6 +191,7 @@ def inject_row_predicate(
     lac_column: str = "lac_label",
     coi_tags: Optional[Set[str]] = None,
     coi_column: str = "coi_tag",
+    placeholder: str = "?",
 ) -> Tuple[str, Tuple[Any, ...], int]:
     """Inject tenant, classification, LAC, and COI predicates into a SQL string.
 
@@ -227,7 +228,7 @@ def inject_row_predicate(
 
     # Tenant predicate
     if tenant_id is not None:
-        extra_clauses.append(f"{tenant_column} = ?")
+        extra_clauses.append(f"{tenant_column} = {placeholder}")
         extra_params.append(tenant_id)
     else:
         logger.debug("inject_row_predicate called with tenant_id=None; tenant filter skipped")
@@ -236,7 +237,7 @@ def inject_row_predicate(
     # visible (unclassified data is world-readable within the tenant).
     # Only rows that have a non-empty classification must match the caller's level.
     if classifications:
-        placeholders = ", ".join(["?"] * len(classifications))
+        placeholders = ", ".join([placeholder] * len(classifications))
         sorted_classes = sorted(classifications)
         extra_clauses.append(
             f"({classification_column} IS NULL OR {classification_column} = '' "
@@ -246,14 +247,14 @@ def inject_row_predicate(
     elif classification:
         extra_clauses.append(
             f"({classification_column} IS NULL OR {classification_column} = '' "
-            f"OR {classification_column} = ?)"
+            f"OR {classification_column} = {placeholder})"
         )
         extra_params.append(classification)
 
     # LAC predicate — NULL means world-readable within tenant+classification.
     if lac_labels:
         sorted_lac = sorted(lac_labels)
-        placeholders = ", ".join(["?"] * len(sorted_lac))
+        placeholders = ", ".join([placeholder] * len(sorted_lac))
         extra_clauses.append(
             f"({lac_column} IS NULL OR {lac_column} IN ({placeholders}))"
         )
@@ -262,7 +263,7 @@ def inject_row_predicate(
     # COI predicate — NULL means accessible to all within tenant+classification.
     if coi_tags:
         sorted_coi = sorted(coi_tags)
-        placeholders = ", ".join(["?"] * len(sorted_coi))
+        placeholders = ", ".join([placeholder] * len(sorted_coi))
         extra_clauses.append(
             f"({coi_column} IS NULL OR {coi_column} IN ({placeholders}))"
         )
