@@ -2161,7 +2161,7 @@ async function convertConfig(silent=false) {
 }
 
 function renderDiff(data) {
-  const srcLines = (data.source || '').split('\n');
+  const srcLines = (data.source_config || '').split('\n');
   const diffLines = data.diff || [];
 
   // Build source pane (always line-by-line plain)
