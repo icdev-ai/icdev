@@ -34,7 +34,7 @@
           <div id="dz-label" style="font-weight:600;font-size:0.9rem;margin-bottom:4px">Drop file or click to browse</div>
           <div style="font-size:0.78rem;color:var(--text-secondary)">PDF · DOCX · PNG · JPG · TXT</div>
           <input type="file" id="file-input" accept=".pdf,.docx,.png,.jpg,.jpeg,.txt"
-                 style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none"
+                 style="position:absolute;left:-9999px;width:0;height:0;opacity:0"
                  onchange="handleFileSelect(this.files[0])">
         </div>
       </div>

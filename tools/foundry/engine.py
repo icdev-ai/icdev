@@ -63,6 +63,7 @@ except Exception:  # pragma: no cover - yaml is a core dep but stay defensive
     _HAS_YAML = False
 
 from tools.foundry.db.init_db import _is_pg, init_db
+from tools.db.storage import sql_placeholder
 from tools.logging.icdev_logger import get_logger
 
 logger = get_logger("icdev.foundry.engine")

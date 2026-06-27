@@ -131,7 +131,7 @@ def evaluate(
         decision = DEFAULT_LOW_ACTION
 
     allowed = decision == "proceed"
-    detail_msg = f"score={score}, threshold={threshold}"
+    detail_msg = f"score={score:.2f}, threshold={threshold:.2f}"
     audit_detail = f"{detail_msg}; {(output_text or '')[:400]}"
 
     try:
