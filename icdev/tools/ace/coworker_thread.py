@@ -438,6 +438,20 @@ class CoWorkerThread(threading.Thread):
         max_iter = int(getattr(role, "max_iterations", 12))
         max_total_tokens = getattr(role, "agent_max_total_tokens", None)
         max_cost_usd = getattr(role, "agent_max_cost_usd", None)
+        # Per-role cost cap from args/llm_config.yaml → agent_loop.role_cost_caps.
+        # Takes the more restrictive of the role YAML cap and the config cap.
+        try:
+            from icdev.tools.llm.role_cost_caps import get_cap_for_role as _get_cap
+            _config_cap = _get_cap(self.spec.role_id)
+            if _config_cap is not None:
+                max_cost_usd = min(max_cost_usd, _config_cap) if max_cost_usd is not None else _config_cap
+                logger.info(
+                    "coworker: cost cap $%.2f applied for role=%s",
+                    max_cost_usd,
+                    self.spec.role_id,
+                )
+        except Exception:
+            pass  # non-fatal; proceed without config cap
         context_window_tokens = getattr(role, "agent_context_window_tokens", None)
         compression_budget_tokens = getattr(role, "agent_compression_budget_tokens", None)
         llm_function = getattr(self.spec, "llm_function", "") or "code_generation"
