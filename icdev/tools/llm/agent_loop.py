@@ -253,9 +253,43 @@ def _load_budget_defaults() -> dict[str, Any]:
             defaults["llm_call_timeout_seconds"] = float(budgets["llm_call_timeout_seconds"])
         if "stall_threshold" in budgets:
             defaults["stall_threshold"] = int(budgets["stall_threshold"])
+        mem_cfg = raw.get("agent_loop", {}).get("memory", {})
+        if "enabled" in mem_cfg:
+            defaults["memory_enabled"] = bool(mem_cfg["enabled"])
+        if "top_k" in mem_cfg:
+            defaults["memory_top_k"] = int(mem_cfg["top_k"])
+        if "tier" in mem_cfg:
+            defaults["memory_tier"] = str(mem_cfg["tier"])
     except Exception as exc:
         logger.debug("agent_loop: failed to load budget defaults: %s", exc)
     return defaults
+
+
+def _retrieve_memory_context(user_prompt: str, top_k: int, tier: str) -> str:
+    """Retrieve relevant memory and format as a context block for the system prompt.
+
+    Called once before the first LLM turn. Returns empty string on any error
+    so the loop degrades gracefully when the memory system is unavailable.
+    """
+    if not user_prompt or top_k <= 0:
+        return ""
+    try:
+        from tools.memory.hybrid_search import search as _mem_search
+        results = _mem_search(user_prompt, limit=top_k, tier=tier or "episodic|semantic")
+        if not results:
+            return ""
+        lines = ["## Retrieved Memory Context"]
+        for r in results:
+            content = (r.get("content") or "").strip()
+            if content:
+                entry_type = r.get("type", "event")
+                lines.append(f"- [{entry_type}] {content[:400]}")
+        if len(lines) <= 1:
+            return ""
+        return "\n".join(lines)
+    except Exception as exc:
+        logger.debug("agent_loop: memory retrieval failed: %s", exc)
+        return ""
 
 
 def _maybe_compress_messages(
@@ -468,6 +502,9 @@ def run_agent_loop(
     max_consecutive_errors: int | None = 3,
     llm_call_timeout_seconds: float | None = None,
     stall_threshold: int | None = None,
+    memory_enabled: bool | None = None,
+    memory_top_k: int | None = None,
+    memory_tier: str | None = None,
 ) -> AgentLoopResult:
     """Run an agentic LLM loop with native tool use until the task is done.
 
@@ -577,6 +614,20 @@ def run_agent_loop(
         stall_threshold = 3
     # max_consecutive_errors: Python default=3, None=explicitly disabled.
     # Do NOT load from budget_defaults — None must mean "disable", not "use config".
+
+    # Resolve memory injection config from args/llm_config.yaml.
+    if memory_enabled is None:
+        memory_enabled = budget_defaults.get("memory_enabled", True)
+    if memory_top_k is None:
+        memory_top_k = budget_defaults.get("memory_top_k", 5)
+    if memory_tier is None:
+        memory_tier = budget_defaults.get("memory_tier", "episodic|semantic")
+
+    # Inject retrieved memory into system_prompt before the first turn.
+    if memory_enabled and not resume_session_id:
+        _mem_ctx = _retrieve_memory_context(user_prompt, memory_top_k, memory_tier)
+        if _mem_ctx:
+            system_prompt = system_prompt + "\n\n" + _mem_ctx
 
     # Build set of read-only tool names for parallel execution.
     _read_only_tools = _build_read_only_set(tools)

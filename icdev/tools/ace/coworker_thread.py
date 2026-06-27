@@ -511,6 +511,21 @@ class CoWorkerThread(threading.Thread):
             except Exception as _exc:
                 logger.debug("ace: session save failed for %s: %s", _coworker_id, _exc)
 
+            # Save episodic memory entry for this completed agent run.
+            try:
+                if loop_result.done and loop_result.final_content:
+                    from tools.memory.memory_write import write_to_db as _mem_write
+                    _mem_write(
+                        content=f"[ACE:{_coworker_id}] {loop_result.final_content[:800]}",
+                        entry_type="event",
+                        importance=min(10, max(1, loop_result.turns)),
+                        source="hook",
+                        tier="episodic",
+                        session_ref=loop_result.session_id,
+                    )
+            except Exception as _exc:
+                logger.debug("ace: episodic memory save failed for %s: %s", _coworker_id, _exc)
+
             try:
                 from icdev.tools.ace import event_bus as _eb
                 _eb.publish(_instance_id, {

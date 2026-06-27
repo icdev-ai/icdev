@@ -1161,6 +1161,11 @@ agent_loop:
     max_consecutive_errors: 3
     llm_call_timeout_seconds: 90
     stall_threshold: 3
+  memory:
+    enabled: true       # inject retrieved memory into system prompt before first turn
+    top_k: 5            # max memory entries to retrieve per agent run
+    chat_top_k: 3       # max entries to retrieve per chat turn
+    tier: "episodic|semantic"  # which tiers to search
 
 # -----------------------------------------------------------------------
 # Response Cache + Context Caching (D-CACHE-1 through D-CACHE-10)
