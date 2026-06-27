@@ -1179,6 +1179,16 @@ agent_loop:
     tier: "episodic|semantic"  # which tiers to search
 
 # -----------------------------------------------------------------------
+# Tool Result Sanitizer — Prompt Injection Defense
+# -----------------------------------------------------------------------
+# Scans tool output text before it is appended to the agent message history.
+# mode: warn = log only; strip = redact matched fragments; block = replace entire result.
+tool_result_sanitizer:
+  mode: warn                # warn | strip | block
+  max_result_chars: 32768   # truncate before scanning (DoS guard)
+  patterns: []              # additional regex patterns appended to the 18 core patterns
+
+# -----------------------------------------------------------------------
 # Response Cache + Context Caching (D-CACHE-1 through D-CACHE-10)
 # Two-level: response_cache = deterministic KV store for full responses
 # (PostgreSQL-native with SQLite fallback); context_cache = provider-level
