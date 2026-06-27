@@ -1042,3 +1042,5 @@
 |------|------|-------------|-------|--------|
 | Iac Review | tools\devops\iac_review.py | Auto-registered: devops/iac_review.py | --json | JSON |
 | Firewall Config Review | tools\security\firewall_config_review.py | Auto-registered: security/firewall_config_review.py | --json | JSON |
+
+- [Workflow Forms Canvas (WFC)](manifest/workflow-forms-canvas.md)

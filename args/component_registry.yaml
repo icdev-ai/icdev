@@ -1440,3 +1440,48 @@ components:
     iqe_adapter: true
     nav_link: true
     seed_queries: context/iqe/queries/docgen/
+- key: wfc
+  kind: canvas
+  cli_name: workflow-forms
+  display_name: Workflow & Forms
+  description: >-
+    Drag-and-drop form builder and visual workflow pipeline designer with
+    enterprise branding (logo, header, footer, colors) and multi-format export
+    (PPT, PDF, DOCX). Forms can be embedded as intake checkpoints in workflows.
+  env_flag: ICDEV_WFC_ENABLED
+  default_enabled: true
+  module: tools.workflow_canvas.blueprint
+  blueprint_attr: create_wfc_blueprint
+  url_prefix: /workflow-canvas
+  min_il: IL4
+  default_roles:
+    - developer
+    - analyst
+    - technical_writer
+  nav:
+    section: Build
+    label: Workflow & Forms
+    links:
+      - label: Dashboard
+        href: /workflow-canvas/
+      - label: Form Builder
+        href: /workflow-canvas/forms
+      - label: Workflow Designer
+        href: /workflow-canvas/workflows
+      - label: Template Library
+        href: /workflow-canvas/templates
+  iqe:
+    adapter_module: tools.iqe.adapters.wfc
+    collections:
+      - wfc.forms
+      - wfc.workflows
+      - wfc.templates
+      - wfc.submissions
+  completeness:
+    template: tools/dashboard/templates/workflow_canvas/page.html
+    blueprint: true
+    constants: tools/workflow_canvas/constants.py
+    db_migration: tools/workflow_canvas/db/migrations
+    iqe_adapter: true
+    nav_link: true
+    seed_queries: context/iqe/queries/workflow_canvas/

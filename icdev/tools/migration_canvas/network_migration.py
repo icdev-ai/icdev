@@ -1827,6 +1827,272 @@ def _update_kg(session_id: str, design_id: str | None = None) -> None:
 
 
 # ---------------------------------------------------------------------------
+# NMCE Phase 3: COA selection, topology, and SOP-aware recommendation
+# ---------------------------------------------------------------------------
+
+_DEFAULT_COA_QUESTIONS = [
+    {
+        "key": "spare_ports_available",
+        "text": "Do you have spare ports / VLANs to connect the replacement device alongside the existing one?",
+        "default_answer": 1,
+        "coa_a_weight": 1.0,
+        "coa_b_weight": 0.3,
+        "coa_c_weight": -0.2,
+    },
+    {
+        "key": "same_mgmt_vlan_ok",
+        "text": "Can the replacement device be placed on the same management VLAN as the existing device?",
+        "default_answer": 1,
+        "coa_a_weight": 0.8,
+        "coa_b_weight": 0.4,
+        "coa_c_weight": 0.0,
+    },
+    {
+        "key": "igp_controlled",
+        "text": "Is the downstream IGP (OSPF/IS-IS/BGP) under your control and reachable for adjacency testing?",
+        "default_answer": 1,
+        "coa_a_weight": 0.7,
+        "coa_b_weight": 0.5,
+        "coa_c_weight": -0.1,
+    },
+    {
+        "key": "tight_maintenance_window",
+        "text": "Is the maintenance window too short to run parallel validation?",
+        "default_answer": 0,
+        "coa_a_weight": -0.6,
+        "coa_b_weight": -0.2,
+        "coa_c_weight": 0.8,
+    },
+    {
+        "key": "l2_only_replacement",
+        "text": "Is the replacement device operating strictly at Layer 2 (no IGP routing on the device)?",
+        "default_answer": 0,
+        "coa_a_weight": 0.4,
+        "coa_b_weight": 0.2,
+        "coa_c_weight": 0.6,
+    },
+    {
+        "key": "rollback_familiar",
+        "text": "Is the team familiar with a fast rollback to the existing device if the cutover fails?",
+        "default_answer": 1,
+        "coa_a_weight": 0.5,
+        "coa_b_weight": 0.6,
+        "coa_c_weight": 0.3,
+    },
+]
+
+
+def seed_coa_questions(session_id: str) -> None:
+    """Create default COA questions for a session if they don't already exist."""
+    existing_keys: set = set()
+    with _mc_conn() as conn:
+        for row in conn.execute(
+            "SELECT question_key FROM mc_net_coa_questions WHERE session_id=?", (session_id,)
+        ).fetchall():
+            existing_keys.add(row[0])
+    for q in _DEFAULT_COA_QUESTIONS:
+        if q["key"] in existing_keys:
+            continue
+        with _mc_conn() as conn:
+            conn.execute(
+                """INSERT INTO mc_net_coa_questions
+                   (id, session_id, question_key, question_text, default_answer, user_answer,
+                    coa_a_weight, coa_b_weight, coa_c_weight)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (
+                    str(uuid.uuid4()),
+                    session_id,
+                    q["key"],
+                    q["text"],
+                    q.get("default_answer"),
+                    q.get("default_answer"),
+                    q.get("coa_a_weight", 0),
+                    q.get("coa_b_weight", 0),
+                    q.get("coa_c_weight", 0),
+                ),
+            )
+            conn.commit()
+
+
+def get_coa_questions(session_id: str) -> list[dict]:
+    """Return COA questions for a session, seeding defaults first."""
+    seed_coa_questions(session_id)
+    with _mc_conn() as conn:
+        rows = conn.execute(
+            "SELECT * FROM mc_net_coa_questions WHERE session_id=? ORDER BY question_key",
+            (session_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def save_coa_answers(session_id: str, answers: dict[str, int | bool | None]) -> list[dict]:
+    """Persist user answers and return updated questions."""
+    with _mc_conn() as conn:
+        for key, ans in answers.items():
+            if ans is None:
+                continue
+            val = 1 if ans else 0 if isinstance(ans, bool) else int(ans)
+            conn.execute(
+                "UPDATE mc_net_coa_questions SET user_answer=? WHERE session_id=? AND question_key=?",
+                (val, session_id, key),
+            )
+        conn.commit()
+    return get_coa_questions(session_id)
+
+
+def _score_coa_from_answers(questions: list[dict]) -> dict[str, float]:
+    """Score each COA from yes/no answers using question weights."""
+    scores = {"coa_a": 0.0, "coa_b": 0.0, "coa_c": 0.0}
+    for q in questions:
+        ans = q.get("user_answer")
+        if ans is None:
+            ans = q.get("default_answer", 1)
+        direction = 1.0 if ans else -1.0
+        scores["coa_a"] += direction * (q.get("coa_a_weight") or 0)
+        scores["coa_b"] += direction * (q.get("coa_b_weight") or 0)
+        scores["coa_c"] += direction * (q.get("coa_c_weight") or 0)
+    return scores
+
+
+def _detect_context_signals(context: str) -> dict[str, bool]:
+    """Rule-based signal extraction from free-text engineer context."""
+    text = (context or "").lower()
+    signals = {
+        "l2_only": any(t in text for t in [
+            "layer 2", "layer2", "layer-2", "l2 ", "l2-only", "strictly l2", "no routing", "downstream igp"
+        ]),
+        "no_igp_control": any(t in text for t in [
+            "not under my control", "not controlled", "downstream", "another team", "provider managed"
+        ]),
+        "tight_window": any(t in text for t in [
+            "tight window", "tight maintenance", "short window", "no time", "limited maintenance",
+            "brief outage", "maintenance window too short"
+        ]),
+        "spare_ports": any(t in text for t in [
+            "spare port", "available port", "extra port", "same vlan", "parallel connection"
+        ]),
+    }
+    return signals
+
+
+def _adjust_scores_from_context(scores: dict[str, float], context: str) -> dict[str, float]:
+    """Apply rule-based context adjustments to COA scores."""
+    signals = _detect_context_signals(context)
+    if signals["l2_only"]:
+        scores["coa_a"] += 0.5
+        scores["coa_b"] += 0.2
+        scores["coa_c"] += 0.7
+    if signals["no_igp_control"]:
+        scores["coa_a"] += 0.6
+        scores["coa_b"] += 0.1
+        scores["coa_c"] -= 0.3
+    if signals["tight_window"]:
+        scores["coa_a"] -= 0.5
+        scores["coa_b"] -= 0.1
+        scores["coa_c"] += 0.7
+    if signals["spare_ports"]:
+        scores["coa_a"] += 0.4
+        scores["coa_b"] += 0.2
+    return scores
+
+
+def recommend_coa(session_id: str) -> dict[str, Any]:
+    """Recommend a COA based on parsed config, yes/no answers, and free-text context."""
+    questions = get_coa_questions(session_id)
+    scores = _score_coa_from_answers(questions)
+
+    with _mc_conn() as conn:
+        row = conn.execute(
+            "SELECT engineer_context, src_config_raw FROM mc_net_sessions WHERE id=?", (session_id,)
+        ).fetchone()
+    context = (row[0] if row else "") or ""
+    src_config_raw = (row[1] if row else "") or ""
+
+    scores = _adjust_scores_from_context(scores, context)
+
+    # Config-derived signals
+    parsed = parse_source_config(src_config_raw) if src_config_raw else {}
+    if parsed.get("bgp_neighbors") or parsed.get("ospf_areas") or parsed.get("isis_nets"):
+        # If IGP is present, side-by-side validation is more valuable.
+        scores["coa_a"] += 0.2
+        scores["coa_b"] += 0.1
+    if (parsed.get("raw_interface_count") or 0) <= 2:
+        # Very small device: cold cutover is more practical.
+        scores["coa_c"] += 0.3
+
+    # Normalize to 0-1 range
+    def _norm(v: float) -> float:
+        return max(0.0, min(1.0, (v + 2.0) / 4.0))
+
+    normalized = {k: _norm(v) for k, v in scores.items()}
+    recommended = max(normalized, key=normalized.get)
+
+    # Build rationale
+    coa_names = {
+        "coa_a": "Side-by-Side Parallel (safe default)",
+        "coa_b": "Warm Cutover",
+        "coa_c": "Cold Cutover",
+    }
+    rationale = (
+        f"Recommended '{coa_names[recommended]}' based on your answers and context. "
+        f"Scores: COA-A {normalized['coa_a']:.0%}, COA-B {normalized['coa_b']:.0%}, "
+        f"COA-C {normalized['coa_c']:.0%}."
+    )
+
+    # Optional LLM enhancement for rationale text
+    try:
+        from tools.llm.router import LLMRouter, LLMRequest
+        router = LLMRouter()
+        prompt = (
+            "You are a network migration engineer. Given these COA scores and context, "
+            "write one concise paragraph explaining why the recommended COA is best "
+            "and what the engineer should watch out for."
+            f"\nContext: {context}\n"
+            f"Scores: COA-A={normalized['coa_a']:.2f}, COA-B={normalized['coa_b']:.2f}, COA-C={normalized['coa_c']:.2f}\n"
+            f"Recommended: {recommended}"
+        )
+        resp = router.invoke("recommendation", LLMRequest(prompt=prompt, max_tokens=200))
+        if resp and resp.content:
+            rationale = resp.content.strip()[:1000]
+    except Exception as exc:
+        logger.debug("LLM COA rationale skipped: %s", exc)
+
+    # Persist recommendation
+    with _mc_conn() as conn:
+        conn.execute(
+            "UPDATE mc_net_sessions SET recommended_coa=?, coa_rationale=? WHERE id=?",
+            (recommended, rationale, session_id),
+        )
+        conn.commit()
+
+    return {
+        "recommended": recommended,
+        "rationale": rationale,
+        "scores": normalized,
+        "questions": questions,
+        "context_signals": _detect_context_signals(context),
+    }
+
+
+def select_coa(session_id: str, coa: str, context: str = "") -> dict[str, Any]:
+    """Persist engineer-selected COA and refresh recommendation if context changed."""
+    if coa not in ("coa_a", "coa_b", "coa_c"):
+        raise ValueError(f"Invalid COA: {coa}")
+    with _mc_conn() as conn:
+        if context:
+            conn.execute(
+                "UPDATE mc_net_sessions SET selected_coa=?, engineer_context=? WHERE id=?",
+                (coa, context, session_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE mc_net_sessions SET selected_coa=? WHERE id=?", (coa, session_id)
+            )
+        conn.commit()
+    return recommend_coa(session_id)
+
+
+# ---------------------------------------------------------------------------
 # NMCE Phase 2: Inventory, Config Loading, AI, Protocol Planning, Timeline
 # ---------------------------------------------------------------------------
 

@@ -320,7 +320,7 @@ class DeckEngine:
                         req.title, req.deck_type, req.theme, req.tone,
                         req.occasion, req.target_audience, req.citation_style,
                         output_formats_json, source_types_json,
-                        1 if req.enable_rich_diagrams else 0,
+                        bool(req.enable_rich_diagrams),
                         req.audience_mode,
                     ),
                 )
@@ -329,7 +329,9 @@ class DeckEngine:
                 return int(row[0]) if row else None
             finally:
                 conn.close()
-        except Exception:
+        except Exception as e:
+            import traceback
+            print(f"[slides] _create_deck_record error: {e}\n{traceback.format_exc()}")
             return None
 
     def _update_deck_record(

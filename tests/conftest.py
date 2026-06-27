@@ -1700,6 +1700,47 @@ CREATE TABLE IF NOT EXISTS nc_supply_chain_risk (
     assessed_at TEXT DEFAULT CURRENT_TIMESTAMP,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS studio_forms (
+    form_id     TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    description TEXT,
+    schema_json TEXT NOT NULL,
+    created_by  TEXT,
+    created_at  TEXT DEFAULT (datetime('now')),
+    updated_at  TEXT DEFAULT (datetime('now')),
+    version     INTEGER DEFAULT 1,
+    status      TEXT DEFAULT 'draft'
+);
+CREATE TABLE IF NOT EXISTS studio_form_submissions (
+    submission_id TEXT PRIMARY KEY,
+    form_id       TEXT NOT NULL REFERENCES studio_forms(form_id),
+    data_json     TEXT NOT NULL,
+    submitted_by  TEXT,
+    submitted_at  TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS wfc_branding (
+    id               TEXT PRIMARY KEY,
+    entity_type      TEXT NOT NULL,
+    entity_id        TEXT NOT NULL,
+    org_name         TEXT,
+    logo_data        TEXT,
+    primary_color    TEXT DEFAULT '#1a365d',
+    secondary_color  TEXT DEFAULT '#c8a951',
+    header_html      TEXT,
+    footer_html      TEXT,
+    show_classification INTEGER DEFAULT 1,
+    created_at       TEXT DEFAULT (datetime('now')),
+    updated_at       TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS wfc_workflow_form_nodes (
+    id                   TEXT PRIMARY KEY,
+    workflow_id          TEXT NOT NULL,
+    node_key             TEXT NOT NULL,
+    form_id              TEXT NOT NULL,
+    node_label           TEXT,
+    required_before_next INTEGER DEFAULT 1,
+    created_at           TEXT DEFAULT (datetime('now'))
+);
 """
 
 

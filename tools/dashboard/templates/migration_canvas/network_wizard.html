@@ -248,6 +248,21 @@
 .chip-skipped { background: #3a3a3a; color: #7a8cb0; }
 .chip-total { background: #16213e; color: #eaeaea; border: 1px solid #1e3a6e; }
 
+/* ── Step 1 — COA questionnaire & recommendation ─────────────── */
+.coa-panel { background: #0d1b2e; border: 1px solid #1e3a6e; border-radius: 6px; padding: 14px; margin: 14px 0; }
+.coa-panel h4 { margin: 0 0 10px; font-size: 13px; color: #27ae60; }
+.coa-question { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #1a2d4a; font-size: 12px; color: #eaeaea; }
+.coa-question:last-child { border-bottom: none; }
+.coa-question-text { flex: 1; }
+.coa-toggle { display: flex; gap: 6px; }
+.coa-toggle button { padding: 4px 14px; border-radius: 4px; border: 1px solid #1e3a6e; background: #0a1624; color: #7a8cb0; cursor: pointer; font-size: 12px; }
+.coa-toggle button.active-yes { background: #1a5e2d; color: #27ae60; border-color: #27ae60; }
+.coa-toggle button.active-no { background: #3d1515; color: #e74c3c; border-color: #e74c3c; }
+.coa-recommendation { background: #16213e; border: 1px solid #1e3a6e; border-radius: 6px; padding: 14px; margin: 14px 0; }
+.coa-recommendation h4 { margin: 0 0 8px; font-size: 13px; color: #27ae60; }
+.coa-recommendation p { margin: 0 0 6px; font-size: 12px; color: #eaeaea; line-height: 1.4; }
+.coa-recommendation .scores { font-size: 11px; color: #7a8cb0; margin-bottom: 10px; }
+
 /* ── Step 6 — Enhanced diff ───────────────────────────────────── */
 .diff-stats-bar { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; background: #0d1b2e; border: 1px solid #1e3a6e; border-radius: 6px; padding: 8px 14px; flex-wrap: wrap; }
 .diff-stat { font-size: 12px; font-weight: 600; }
@@ -417,6 +432,31 @@
         <div>
           <label>Site / Location</label>
           <input type="text" id="src-site" placeholder="e.g. DC1-CAGE3">
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-top:14px">
+        <label>Engineer Context <span style="font-size:11px;color:#7a8cb0">(free text — describe constraints, downstream IGP control, L2-only role, etc.)</span></label>
+        <textarea id="engineer-context" rows="3" placeholder="Example: replacement is layer-2 only; all OSPF/BGP happens downstream on switches not under my control. We have spare ports and a 4-hour maintenance window."></textarea>
+      </div>
+
+      <div class="coa-panel" id="coa-questionnaire" style="display:none">
+        <h4 style="margin:0 0 10px;font-size:13px;color:#27ae60">Course of Action Questionnaire</h4>
+        <p style="font-size:12px;color:#7a8cb0;margin:0 0 12px">Answer yes/no to refine the recommended migration strategy.</p>
+        <div id="coa-questions-list"></div>
+      </div>
+
+      <div class="coa-recommendation" id="coa-recommendation-card" style="display:none">
+        <h4>Recommended Course of Action</h4>
+        <div id="coa-recommendation-body"></div>
+        <div id="coa-override" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-primary" id="coa-accept-btn" onclick="acceptRecommendedCOA()">Use Recommendation</button>
+          <button class="btn btn-secondary" onclick="showCOAOverride()">Override…</button>
+        </div>
+        <div id="coa-override-options" style="display:none;margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn btn-secondary" onclick="selectCOA('coa_a')">Side-by-Side Parallel</button>
+          <button class="btn btn-secondary" onclick="selectCOA('coa_b')">Warm Cutover</button>
+          <button class="btn btn-secondary" onclick="selectCOA('coa_c')">Cold Cutover</button>
         </div>
       </div>
 
@@ -1380,18 +1420,146 @@ async function createSession() {
   const tgtModel = document.getElementById('tgt-model').value;
   if (!srcModel || !tgtModel) { toast('Select source and target models', true); return; }
   try {
+    const selectedCOA = window.__selectedCOA || '';
     const data = await api('POST', '/api/network-migration', {
       src_model: srcModel,
       tgt_model: tgtModel,
       src_device_name: document.getElementById('src-device-name').value,
       tgt_device_name: document.getElementById('tgt-device-name').value,
       src_site: document.getElementById('src-site').value,
+      engineer_context: document.getElementById('engineer-context').value,
+      selected_coa: selectedCOA,
     });
     _sid = data.id;
     toast('Session created: ' + _sid);
     goStep(2);
     history.replaceState(null, '', '/migration-canvas/network-migration/' + _sid);
   } catch(e) { toast('Create session failed: ' + e.message, true); }
+}
+
+// ── STEP 1 — COA questionnaire and recommendation ─────────────────
+let _coaQuestions = [];
+window.__selectedCOA = '';
+
+function renderCOAQuestions(questions) {
+  _coaQuestions = questions || [];
+  const container = document.getElementById('coa-questions-list');
+  container.innerHTML = '';
+  questions.forEach(q => {
+    const div = document.createElement('div');
+    div.className = 'coa-question';
+    div.dataset.key = q.question_key;
+    div.innerHTML = `
+      <span class="coa-question-text">${escapeHtml(q.question_text)}</span>
+      <div class="coa-toggle">
+        <button class="coa-yes ${q.user_answer === 1 ? 'active-yes' : ''}" onclick="setCOAAnswer('${q.question_key}', 1)">Yes</button>
+        <button class="coa-no ${q.user_answer === 0 ? 'active-no' : ''}" onclick="setCOAAnswer('${q.question_key}', 0)">No</button>
+      </div>`;
+    container.appendChild(div);
+  });
+  document.getElementById('coa-questionnaire').style.display = 'block';
+}
+
+function setCOAAnswer(key, val) {
+  const q = _coaQuestions.find(x => x.question_key === key);
+  if (q) q.user_answer = val;
+  const row = document.querySelector(`.coa-question[data-key="${key}"]`);
+  if (row) {
+    row.querySelector('.coa-yes').classList.toggle('active-yes', val === 1);
+    row.querySelector('.coa-no').classList.toggle('active-no', val === 0);
+  }
+  refreshCOARecommendation();
+}
+
+function collectCOAAnswers() {
+  const answers = {};
+  _coaQuestions.forEach(q => {
+    if (q.user_answer !== null && q.user_answer !== undefined) {
+      answers[q.question_key] = q.user_answer;
+    }
+  });
+  return answers;
+}
+
+async function refreshCOARecommendation() {
+  if (!_sid) return;
+  try {
+    const result = await api('POST', `/api/network-migration/${_sid}/coa-questions`, {
+      answers: collectCOAAnswers(),
+    });
+    renderCOARecommendation(result);
+  } catch(e) { toast('COA recommendation refresh failed: ' + e.message, true); }
+}
+
+function renderCOARecommendation(result) {
+  const coaNames = {
+    coa_a: 'Side-by-Side Parallel',
+    coa_b: 'Warm Cutover',
+    coa_c: 'Cold Cutover',
+  };
+  const rec = result.recommended || 'coa_a';
+  const rationale = result.rationale || '';
+  const scores = result.scores || {};
+  const body = document.getElementById('coa-recommendation-body');
+  body.innerHTML = `
+    <p><strong>${escapeHtml(coaNames[rec] || rec)}</strong></p>
+    <p>${escapeHtml(rationale)}</p>
+    <div class="scores">COA-A ${(scores.coa_a||0).toFixed(0)}% · COA-B ${(scores.coa_b||0).toFixed(0)}% · COA-C ${(scores.coa_c||0).toFixed(0)}%</div>`;
+  document.getElementById('coa-recommendation-card').style.display = 'block';
+  window.__recommendedCOA = rec;
+}
+
+function acceptRecommendedCOA() {
+  const rec = window.__recommendedCOA || 'coa_a';
+  selectCOA(rec);
+}
+
+function showCOAOverride() {
+  document.getElementById('coa-override').style.display = 'none';
+  document.getElementById('coa-override-options').style.display = 'flex';
+}
+
+async function selectCOA(coa) {
+  window.__selectedCOA = coa;
+  if (_sid) {
+    try {
+      const result = await api('POST', `/api/network-migration/${_sid}/select-coa`, {
+        coa,
+        engineer_context: document.getElementById('engineer-context').value,
+      });
+      renderCOARecommendation(result);
+      toast(`Course of action set to ${coa.toUpperCase()}`);
+    } catch(e) { toast('COA selection failed: ' + e.message, true); }
+  } else {
+    // No session yet: just mark UI state; will be persisted on Create Session.
+    const fake = { recommended: coa, rationale: 'Manual override selected before session creation.', scores: {} };
+    renderCOARecommendation(fake);
+    toast(`Course of action set to ${coa.toUpperCase()}`);
+  }
+  document.getElementById('coa-override-options').style.display = 'none';
+  document.getElementById('coa-override').style.display = 'flex';
+}
+
+async function loadCOAQuestionnaire() {
+  if (!_sid) {
+    // Seed default UI questions locally before session exists.
+    const defaults = [
+      { question_key:'spare_ports_available', question_text:'Do you have spare ports / VLANs to connect the replacement device alongside the existing one?', user_answer:1 },
+      { question_key:'same_mgmt_vlan_ok', question_text:'Can the replacement device be placed on the same management VLAN as the existing device?', user_answer:1 },
+      { question_key:'igp_controlled', question_text:'Is the downstream IGP (OSPF/IS-IS/BGP) under your control and reachable for adjacency testing?', user_answer:1 },
+      { question_key:'tight_maintenance_window', question_text:'Is the maintenance window too short to run parallel validation?', user_answer:0 },
+      { question_key:'l2_only_replacement', question_text:'Is the replacement device operating strictly at Layer 2 (no IGP routing on the device)?', user_answer:0 },
+      { question_key:'rollback_familiar', question_text:'Is the team familiar with a fast rollback to the existing device if the cutover fails?', user_answer:1 },
+    ];
+    renderCOAQuestions(defaults);
+    return;
+  }
+  try {
+    const questions = await api('GET', `/api/network-migration/${_sid}/coa-questions`);
+    renderCOAQuestions(questions);
+    const rec = await api('GET', `/api/network-migration/${_sid}/recommend-coa`);
+    renderCOARecommendation(rec);
+  } catch(e) { toast('Could not load COA questionnaire: ' + e.message, true); }
 }
 
 // ── STEP 2 — Import tab toggle ─────────────────────────────────────
@@ -2553,7 +2721,10 @@ function escapeHtml(s) {
       document.getElementById('src-device-name').value = sess.src_device_name || '';
       document.getElementById('tgt-device-name').value = sess.tgt_device_name || '';
       document.getElementById('src-site').value = sess.src_site || '';
+      document.getElementById('engineer-context').value = sess.engineer_context || '';
+      if (sess.selected_coa) window.__selectedCOA = sess.selected_coa;
       onModelChange();
+      await loadCOAQuestionnaire();
       // Load port map if exists
       await loadPortMap();
       // Determine which step to resume at
@@ -2579,6 +2750,7 @@ function escapeHtml(s) {
     } catch(e) { goStep(1); }
   } else {
     goStep(1);
+    loadCOAQuestionnaire();
   }
   // Update readiness score in sidebar
   if (_sid) {

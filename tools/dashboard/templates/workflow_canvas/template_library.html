@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Template Library — ICDEV™{% endblock %}
+
+{% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner('CUI') }}
+
+<div class="page-container" style="padding:24px">
+
+  <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:12px">
+    <a href="/workflow-canvas/">Workflow &amp; Forms</a> / Template Library
+  </div>
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:12px">
+    <h1 style="margin:0;font-size:1.5rem">Template Library</h1>
+    <a href="/workflow-canvas/forms/new" class="btn btn-primary">Build Custom Form →</a>
+  </div>
+
+  <!-- Industry tabs -->
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px">
+    {% for cat in industry_categories %}
+    <button onclick="filterIndustry('{{ cat }}')"
+            class="industry-tab"
+            data-cat="{{ cat }}"
+            style="padding:6px 14px;border-radius:20px;font-size:0.82rem;border:1px solid var(--border-color);cursor:pointer;background:{{ 'var(--accent-blue)' if cat == industry else 'var(--bg-secondary)' }};color:{{ 'white' if cat == industry else 'var(--text-primary)' }}">
+      {{ cat }}
+    </button>
+    {% endfor %}
+  </div>
+
+  <!-- Template grid -->
+  <div id="template-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">
+    {% for tpl in all_templates %}
+    <div class="tpl-card"
+         data-industry="{{ tpl.industry|default('All') }}"
+         data-category="{{ tpl.category }}"
+         style="background:var(--bg-secondary);border-radius:10px;padding:18px;border:1px solid var(--border-color)">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px">
+        <h3 style="margin:0;font-size:1rem">{{ tpl.name }}</h3>
+        <span style="font-size:0.75rem;background:var(--bg-primary);padding:2px 8px;border-radius:4px;border:1px solid var(--border-color);color:var(--text-secondary)">{{ tpl.industry|default(tpl.category) }}</span>
+      </div>
+      {% if tpl.description %}
+      <p style="font-size:0.85rem;color:var(--text-secondary);margin:0 0 12px">{{ tpl.description }}</p>
+      {% endif %}
+      <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:12px">{{ tpl.fields|length }} fields</div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-primary btn-sm" onclick="useTemplate({{ tpl|tojson }})">Use Template</button>
+        <button class="btn btn-ghost btn-sm" onclick="previewTemplate({{ tpl|tojson }})">Preview</button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+</div>
+
+<!-- Preview modal -->
+<div id="preview-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;align-items:center;justify-content:center">
+  <div style="background:var(--bg-primary);border-radius:10px;padding:24px;max-width:500px;width:90%;max-height:80vh;overflow-y:auto">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+      <h2 id="modal-title" style="margin:0;font-size:1.1rem"></h2>
+      <button onclick="closeModal()" style="background:none;border:none;font-size:1.2rem;cursor:pointer;color:var(--text-secondary)">✕</button>
+    </div>
+    <div id="modal-fields"></div>
+    <div style="margin-top:16px;display:flex;gap:8px">
+      <button class="btn btn-primary" id="modal-use-btn">Use This Template</button>
+      <button class="btn btn-ghost" onclick="closeModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let currentFilter = '{{ industry }}';
+let currentPreviewTpl = null;
+
+function filterIndustry(cat) {
+  currentFilter = cat;
+  document.querySelectorAll('.industry-tab').forEach(el => {
+    const active = el.dataset.cat === cat;
+    el.style.background = active ? 'var(--accent-blue)' : 'var(--bg-secondary)';
+    el.style.color = active ? 'white' : 'var(--text-primary)';
+  });
+  document.querySelectorAll('.tpl-card').forEach(el => {
+    if (cat === 'All') { el.style.display=''; return; }
+    const match = el.dataset.industry === cat || el.dataset.category.includes(cat.toLowerCase().split('/')[0]);
+    el.style.display = match ? '' : 'none';
+  });
+}
+
+function useTemplate(tpl) {
+  sessionStorage.setItem('wfc_prefill_template', JSON.stringify(tpl));
+  window.location.href = '/workflow-canvas/forms/new?tpl=' + encodeURIComponent(tpl.id);
+}
+
+function previewTemplate(tpl) {
+  currentPreviewTpl = tpl;
+  document.getElementById('modal-title').textContent = tpl.name + ' (' + tpl.fields.length + ' fields)';
+  document.getElementById('modal-fields').innerHTML = tpl.fields.map(f =>
+    '<div style="padding:8px 0;border-bottom:1px solid var(--border-color);display:flex;align-items:center;justify-content:space-between">' +
+    '<span style="font-size:0.9rem">' + escHtml(f.label||f.id) + (f.required?' <span style="color:#ef4444">*</span>':'') + '</span>' +
+    '<span style="font-size:0.75rem;color:var(--text-secondary)">' + (f.type||'text') + '</span></div>'
+  ).join('');
+  document.getElementById('modal-use-btn').onclick = () => useTemplate(tpl);
+  const modal = document.getElementById('preview-modal');
+  modal.style.display = 'flex';
+}
+
+function closeModal() { document.getElementById('preview-modal').style.display='none'; }
+document.getElementById('preview-modal').addEventListener('click', e => { if (e.target===e.currentTarget) closeModal(); });
+
+function escHtml(s) { const d=document.createElement('div');d.textContent=s;return d.innerHTML; }
+
+// Pre-apply filter from URL
+filterIndustry(currentFilter);
+</script>
+{% endblock %}

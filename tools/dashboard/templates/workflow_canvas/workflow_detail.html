@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}{{ workflow.name }} — ICDEV™{% endblock %}
+
+{% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner('CUI') }}
+
+<div class="page-container" style="padding:24px">
+
+  <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:12px">
+    <a href="/workflow-canvas/">Workflow &amp; Forms</a> /
+    <a href="/workflow-canvas/workflows">Workflows</a> /
+    {{ workflow.name }}
+  </div>
+
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px;flex-wrap:wrap;gap:12px">
+    <div>
+      <h1 style="margin:0;font-size:1.5rem">{{ workflow.name }}</h1>
+      {% if workflow.description %}
+      <p style="margin:4px 0 0;color:var(--text-secondary)">{{ workflow.description }}</p>
+      {% endif %}
+      <div style="margin-top:6px;font-size:0.8rem;color:var(--text-secondary)">
+        {{ workflow.category or 'custom' }} · v{{ workflow.version }}
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <a href="/workflow-canvas/workflows/{{ workflow.workflow_id }}/edit" class="btn btn-primary">✏️ Edit</a>
+      <div style="position:relative">
+        <button class="btn btn-secondary" onclick="toggleExportMenu()">📤 Export ▾</button>
+        <div id="export-menu" style="display:none;position:absolute;top:110%;right:0;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:6px;min-width:200px;z-index:999;box-shadow:0 4px 12px rgba(0,0,0,.15)">
+          {% for fmt in export_formats %}
+          <div style="padding:10px 14px;cursor:pointer"
+               onmouseenter="this.style.background='var(--bg-secondary)'"
+               onmouseleave="this.style.background=''"
+               onclick="exportWorkflow('{{ fmt.id }}')">{{ fmt.label }}</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Run history -->
+  <h2 style="font-size:1rem;margin:0 0 12px">Execution History ({{ runs|length }})</h2>
+  {% if runs %}
+  <div style="overflow-x:auto;margin-bottom:24px">
+    <table style="width:100%;border-collapse:collapse;font-size:0.85rem">
+      <thead>
+        <tr style="border-bottom:2px solid var(--border-color)">
+          <th style="text-align:left;padding:8px">Run ID</th>
+          <th style="text-align:left;padding:8px">Status</th>
+          <th style="text-align:left;padding:8px">Started</th>
+          <th style="text-align:left;padding:8px">Triggered By</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in runs %}
+        <tr style="border-bottom:1px solid var(--border-color)">
+          <td style="padding:8px;font-family:monospace;font-size:0.78rem">{{ run.run_id }}</td>
+          <td style="padding:8px"><span class="badge badge-{{ 'success' if run.status=='completed' else 'danger' if run.status=='failed' else 'neutral' }}">{{ run.status }}</span></td>
+          <td style="padding:8px">{{ run.started_at[:19] if run.started_at else '—' }}</td>
+          <td style="padding:8px">{{ run.triggered_by or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="color:var(--text-secondary);font-size:0.9rem;margin-bottom:24px">No executions yet.</div>
+  {% endif %}
+
+</div>
+
+<script>
+const WF_ID = '{{ workflow.workflow_id }}';
+
+function toggleExportMenu() {
+  const m = document.getElementById('export-menu');
+  m.style.display = m.style.display === 'none' ? 'block' : 'none';
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('#export-menu') && !e.target.matches('[onclick*="toggleExportMenu"]')) {
+    const m = document.getElementById('export-menu');
+    if (m) m.style.display = 'none';
+  }
+});
+
+async function exportWorkflow(fmt) {
+  const resp = await fetch('/workflow-canvas/api/workflows/' + WF_ID + '/export/' + fmt, {method:'POST'});
+  if (!resp.ok) { const d = await resp.json(); alert(d.error || 'Export failed'); return; }
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = '{{ workflow.name|lower|replace(" ","_") }}.' + fmt;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+</script>
+{% endblock %}

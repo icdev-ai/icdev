@@ -208,8 +208,12 @@ def _apply_migrations(conn) -> None:
                 try:
                     conn.execute(stmt)
                 except Exception:
-                    # Idempotent migrations tolerate already-present columns.
-                    pass
+                    # Idempotent — tolerate already-present columns/constraints.
+                    # Rollback so PostgreSQL transaction does not stay in aborted state.
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
         if is_pg:
             conn.execute(
                 "INSERT INTO slides_schema_migrations (version) VALUES (%s)",
