@@ -411,7 +411,7 @@
 
             <!-- ── Studio ────────────────────────────────────────────────────── -->
             <li class="nav-dropdown">
-                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if '/studio' in request.path %}active{% endif %}" style="color:var(--accent-blue-light);">Studio ▾</a>
+                <a href="javascript:void(0)" class="nav-dropdown-trigger {% if '/studio' in request.path or '/workflow-canvas' in request.path %}active{% endif %}" style="color:var(--accent-blue-light);">Studio ▾</a>
                 <ul class="nav-dropdown-menu">
                     <li><a href="/studio/app-builder">App Builder</a></li>
                     <li><a href="/studio/workflows">Workflow Builder</a></li>
@@ -422,6 +422,11 @@
                     {% if not airgap_mode %}
                     <li><a href="/studio/marketplace">Marketplace</a></li>
                     {% endif %}
+                    <li class="nav-dropdown-divider"></li>
+                    <li class="nav-section-label">Workflow Canvas</li>
+                    <li><a href="/workflow-canvas/forms">Form Builder</a></li>
+                    <li><a href="/workflow-canvas/workflows">Workflow Designer</a></li>
+                    <li><a href="/workflow-canvas/templates">Template Library</a></li>
                 </ul>
             </li>
 

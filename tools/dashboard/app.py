@@ -2026,21 +2026,15 @@ def create_app(testing: bool = False) -> Flask:
 
         theme_pref = flask_request.cookies.get("icdev_theme", "dark")
 
-        # ECR-CL-02: unseen-release badge — compare brand.version to last seen
+        # ECR-CL-02: unseen-release badge — compare brand.version to cookie-stored last seen
         _unseen_release = False
-        _uid = flask_session.get("user_id")
-        if _uid:
-            try:
-                _cached_seen = flask_session.get("_seen_version")
-                if _cached_seen is None:
-                    from tools.auth.onboarding import get_last_seen_version as _get_lsv
-                    _cached_seen = _get_lsv(_uid)
-                    flask_session["_seen_version"] = _cached_seen or ""
-                from tools.dashboard.brand import get_brand as _get_brand_ctx
-                _bv = _get_brand_ctx().get("version", "")
-                _unseen_release = bool(_bv) and (_cached_seen or "") != _bv
-            except Exception:
-                pass
+        try:
+            from tools.dashboard.brand import get_brand as _get_brand_ctx
+            _bv = _get_brand_ctx().get("version", "")
+            _seen_ver = flask_request.cookies.get("icdev_seen_version", "")
+            _unseen_release = bool(_bv) and _seen_ver != _bv
+        except Exception:
+            pass
 
         return {
             "cui_banner_top": CUI_BANNER_TOP,
@@ -2605,19 +2599,15 @@ def create_app(testing: bool = False) -> Flask:
     # ---- ECR-CL-02: Mark current version as seen ----
     @app.route("/api/user/prefs/seen-version", methods=["PATCH"])
     def api_user_prefs_seen_version():
-        user_id = flask_session.get("user_id")
-        if not user_id:
-            return jsonify({"error": "unauthenticated"}), 401
         try:
-            from tools.auth.onboarding import set_last_seen_version as _set_seen
             from tools.dashboard.brand import get_brand as _get_brand_sv
             _brand_ver = _get_brand_sv().get("version", "")
-            _set_seen(user_id, _brand_ver)
-            flask_session["_seen_version"] = _brand_ver
         except Exception as _exc:
             app.logger.warning("seen-version PATCH failed: %s", _exc)
             return jsonify({"error": str(_exc)}), 500
-        return jsonify({"ok": True, "seen_version": _brand_ver})
+        resp = jsonify({"ok": True, "seen_version": _brand_ver})
+        resp.set_cookie("icdev_seen_version", _brand_ver, max_age=31536000, samesite="Lax")
+        return resp
 
     # ---- Convenience JSON routes that match the spec ----
 
