@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}My Process Tasks — Process-Ify{% endblock %}
+{% block content %}
+<div style="max-width:960px;margin:0 auto;padding:24px">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+    <h2 style="margin:0;font-size:1.4rem;color:var(--text-primary)">My Process Tasks</h2>
+    <span style="font-size:0.82rem;color:var(--text-secondary);background:var(--surface-2);padding:2px 8px;border-radius:12px">
+      {{ tasks|length }} active
+    </span>
+    <a href="/workflow-canvas/processify" style="margin-left:auto;font-size:0.82rem;color:var(--accent)">
+      &larr; Back to Process-Ify
+    </a>
+  </div>
+
+  <!-- Role filter -->
+  <form method="get" action="/workflow-canvas/my-tasks" style="margin-bottom:16px;display:flex;gap:8px;align-items:center">
+    <label style="font-size:0.85rem;color:var(--text-secondary)">Filter by role:</label>
+    <input type="text" name="role" value="{{ role_filter }}"
+           placeholder="e.g. Network Engineer, Compliance Officer"
+           style="flex:1;max-width:320px;padding:6px 10px;border:1px solid var(--border-color);border-radius:6px;background:var(--surface-2);color:var(--text-primary);font-size:0.85rem">
+    <button type="submit"
+            style="padding:6px 14px;background:var(--accent);color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.85rem">
+      Filter
+    </button>
+    {% if role_filter %}
+    <a href="/workflow-canvas/my-tasks"
+       style="font-size:0.82rem;color:var(--text-secondary);padding:6px 10px;border:1px solid var(--border-color);border-radius:6px;text-decoration:none">
+      Clear
+    </a>
+    {% endif %}
+  </form>
+
+  {% if not tasks %}
+  <div style="text-align:center;padding:60px 20px;color:var(--text-secondary)">
+    <div style="font-size:2.5rem;margin-bottom:12px">✓</div>
+    <div style="font-size:1rem;font-weight:600">No active process tasks</div>
+    <div style="font-size:0.85rem;margin-top:6px">All caught up{% if role_filter %} for role "{{ role_filter }}"{% endif %}.</div>
+  </div>
+  {% else %}
+  <div style="display:flex;flex-direction:column;gap:8px">
+    {% for task in tasks %}
+    <div style="background:var(--surface-2);border:1px solid var(--border-color);border-radius:8px;padding:14px 16px;
+                border-left:4px solid {% if task.priority == 'high' %}#ef4444{% elif task.priority == 'medium' %}#f59e0b{% else %}#6b7280{% endif %}">
+      <div style="display:flex;align-items:flex-start;gap:10px">
+        <div style="flex:1">
+          <div style="font-size:0.9rem;font-weight:600;color:var(--text-primary);margin-bottom:4px">
+            {{ task.title }}
+          </div>
+          {% if task.description %}
+          <div style="font-size:0.8rem;color:var(--text-secondary);line-height:1.5;margin-bottom:6px">
+            {{ task.description[:200] }}{% if task.description|length > 200 %}…{% endif %}
+          </div>
+          {% endif %}
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <span style="font-size:0.75rem;padding:2px 7px;border-radius:10px;
+                         background:{% if task.status == 'in_progress' %}rgba(245,158,11,0.15){% elif task.status == 'review' %}rgba(99,102,241,0.15){% else %}rgba(107,114,128,0.1){% endif %};
+                         color:{% if task.status == 'in_progress' %}#f59e0b{% elif task.status == 'review' %}#6366f1{% else %}#6b7280{% endif %}">
+              {{ task.status|replace('_',' ')|title }}
+            </span>
+            <span style="font-size:0.75rem;color:var(--text-secondary)">
+              {{ task.priority|title }} priority
+            </span>
+            <span style="font-size:0.75rem;color:var(--text-secondary)">
+              Updated {{ task.updated_at[:10] if task.updated_at else '—' }}
+            </span>
+            <span style="font-size:0.72rem;font-family:monospace;color:var(--text-secondary)">
+              {{ task.id }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

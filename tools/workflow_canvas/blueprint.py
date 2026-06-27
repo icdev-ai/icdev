@@ -1501,4 +1501,664 @@ Process Document:
             logger.error("regen-chain-doc error: %s", exc, exc_info=True)
             return jsonify({"error": str(exc)}), 500
 
+    # ── pif-bpmn-01: BPMN 2.0 Export ──────────────────────────────────────────
+    @bp.route("/api/workflows/<workflow_id>/bpmn")
+    def api_workflow_bpmn(workflow_id: str):
+        import yaml
+        try:
+            conn = get_connection()
+            ph = sql_placeholder(conn)
+            row = conn.execute(
+                f"SELECT * FROM studio_workflows WHERE workflow_id = {ph}", (workflow_id,)
+            ).fetchone()
+            conn.close()
+            if not row:
+                return jsonify({"error": "not found"}), 404
+            row_dict = dict(row) if hasattr(row, "keys") else {}
+            wf = yaml.safe_load(row_dict.get("template_yaml") or "{}") or {}
+            from tools.workflow_canvas.bpmn_export import workflow_to_bpmn
+            xml_str = workflow_to_bpmn(wf)
+            from flask import Response
+            return Response(
+                xml_str, mimetype="application/xml",
+                headers={"Content-Disposition": f'attachment; filename="workflow_{workflow_id[:8]}.bpmn"'},
+            )
+        except Exception as exc:
+            logger.error("bpmn export error: %s", exc, exc_info=True)
+            return jsonify({"error": str(exc)}), 500
+
+    # ── pif-diff-01: Process Version Diff ─────────────────────────────────────
+    @bp.route("/api/workflows/diff", methods=["POST"])
+    def api_workflow_diff():
+        data = request.get_json(force=True) or {}
+        id_a = data.get("workflow_id_a")
+        id_b = data.get("workflow_id_b")
+        if not id_a or not id_b:
+            return jsonify({"error": "workflow_id_a and workflow_id_b required"}), 400
+        try:
+            from tools.workflow_canvas.workflow_diff import diff_workflow_ids
+            result = diff_workflow_ids(id_a, id_b)
+            return jsonify(result)
+        except Exception as exc:
+            logger.error("workflow diff error: %s", exc, exc_info=True)
+            return jsonify({"error": str(exc)}), 500
+
+    # ── pif-roi-01: Process ROI Calculator ────────────────────────────────────
+    @bp.route("/api/chains/<chain_id>/roi")
+    def api_chain_roi(chain_id: str):
+        try:
+            from tools.workflow_canvas.roi_calculator import chain_roi_from_db
+            result = chain_roi_from_db(chain_id)
+            return jsonify(result)
+        except Exception as exc:
+            logger.error("chain roi error: %s", exc, exc_info=True)
+            return jsonify({"error": str(exc)}), 500
+
+    # ── pif-sim-01: Live Chain Simulation ────────────────────────────────────
+    @bp.route("/api/chains/<chain_id>/simulate")
+    def api_chain_simulate(chain_id: str):
+        try:
+            from tools.workflow_canvas.chain_simulator import simulate_chain_from_db
+            result = simulate_chain_from_db(chain_id)
+            return jsonify(result)
+        except Exception as exc:
+            logger.error("chain simulate error: %s", exc, exc_info=True)
+            return jsonify({"error": str(exc)}), 500
+
+    # ── pif-lib-01: Process Template Library ─────────────────────────────────
+    @bp.route("/api/templates")
+    def api_templates_list():
+        data = request.args
+        try:
+            from tools.workflow_canvas.template_library import search_templates, ensure_table
+            cc = get_canvas_connection("ICDEV_WFC_ENABLED")
+            ensure_table(cc)
+            rows = search_templates(
+                cc,
+                query=data.get("q", ""),
+                industry=data.get("industry", ""),
+                doc_type=data.get("doc_type", ""),
+            )
+            cc.close()
+            return jsonify({"templates": rows})
+        except Exception as exc:
+            logger.error("templates list error: %s", exc, exc_info=True)
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/templates", methods=["POST"])
+    def api_templates_save():
+        data = request.get_json(force=True) or {}
+        workflow_id = data.get("workflow_id")
+        name = data.get("name") or ""
+        if not workflow_id or not name:
+            return jsonify({"error": "workflow_id and name required"}), 400
+        try:
+            import yaml
+            conn = get_connection()
+            ph = sql_placeholder(conn)
+            row = conn.execute(
+                f"SELECT * FROM studio_workflows WHERE workflow_id = {ph}", (workflow_id,)
+            ).fetchone()
+            conn.close()
+            if not row:
+                return jsonify({"error": "workflow not found"}), 404
+            row_dict = dict(row) if hasattr(row, "keys") else {}
+            wf = yaml.safe_load(row_dict.get("template_yaml") or "{}") or {}
+            from tools.workflow_canvas.template_library import save_template, ensure_table
+            cc = get_canvas_connection("ICDEV_WFC_ENABLED")
+            ensure_table(cc)
+            tid = save_template(
+                cc, name=name, workflow=wf,
+                industry=data.get("industry", ""),
+                doc_type=data.get("doc_type", ""),
+            )
+            cc.close()
+            return jsonify({"status": "ok", "template_id": tid})
+        except Exception as exc:
+            logger.error("save template error: %s", exc, exc_info=True)
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/templates/<template_id>")
+    def api_template_get(template_id: str):
+        try:
+            from tools.workflow_canvas.template_library import ensure_table, increment_usage
+            cc = get_canvas_connection("ICDEV_WFC_ENABLED")
+            ensure_table(cc)
+            ph = sql_placeholder(cc)
+            row = cc.execute(
+                f"SELECT * FROM wfc_template_library WHERE id = {ph}", (template_id,)
+            ).fetchone()
+            if not row:
+                cc.close()
+                return jsonify({"error": "not found"}), 404
+            increment_usage(cc, template_id)
+            cc.close()
+            row_dict = dict(row) if hasattr(row, "keys") else {}
+            return jsonify(row_dict)
+        except Exception as exc:
+            logger.error("get template error: %s", exc, exc_info=True)
+            return jsonify({"error": str(exc)}), 500
+
+    # ── pif-synth-01: Multi-Source Synthesis ──────────────────────────────────
+    @bp.route("/api/workflows/synthesize", methods=["POST"])
+    def api_workflows_synthesize():
+        data = request.get_json(force=True) or {}
+        texts = data.get("texts") or []
+        if not texts or len(texts) < 2:
+            return jsonify({"error": "provide at least 2 texts to synthesize"}), 400
+        try:
+            from tools.workflow_canvas.multi_source_synth import synthesize_workflows
+            llm_router = None
+            try:
+                from tools.llm.router import LLMRouter
+                llm_router = LLMRouter()
+            except Exception:
+                pass
+            result = synthesize_workflows(texts, llm_router=llm_router)
+            return jsonify(result)
+        except Exception as exc:
+            logger.error("synthesize error: %s", exc, exc_info=True)
+            return jsonify({"error": str(exc)}), 500
+
+    # ── pif-handoff-01: Handoff Ceremony Wizard ───────────────────────────────
+    @bp.route("/api/chains/<chain_id>/phases/<phase_id>/handoff", methods=["POST"])
+    def api_phase_handoff(chain_id: str, phase_id: str):
+        try:
+            cc = get_canvas_connection("ICDEV_WFC_ENABLED")
+            cc_ph = sql_placeholder(cc)
+            chain_row = cc.execute(
+                f"SELECT * FROM wfc_process_chains WHERE id = {cc_ph}", (chain_id,)
+            ).fetchone()
+            phase_row = cc.execute(
+                f"SELECT * FROM wfc_chain_phases WHERE id = {cc_ph}", (phase_id,)
+            ).fetchone()
+            # Look for next phase
+            phase_num = (dict(phase_row) if hasattr(phase_row, "keys") else {}).get("phase_number") or 0
+            next_phase_row = cc.execute(
+                f"SELECT * FROM wfc_chain_phases WHERE chain_id = {cc_ph} AND phase_number = {cc_ph}",
+                (chain_id, phase_num + 1),
+            ).fetchone()
+            cc.close()
+            if not chain_row or not phase_row:
+                return jsonify({"error": "chain or phase not found"}), 404
+
+            conn = get_connection()
+            ph = sql_placeholder(conn)
+            tasks = conn.execute(
+                f"SELECT * FROM kanban_tasks WHERE status = {ph} AND description LIKE {ph}",
+                ("done", f"%{phase_id}%"),
+            ).fetchall()
+            conn.close()
+
+            from tools.workflow_canvas.handoff_wizard import generate_handoff_brief, save_handoff_brief
+            llm_router = None
+            try:
+                from tools.llm.router import LLMRouter
+                llm_router = LLMRouter()
+            except Exception:
+                pass
+            brief = generate_handoff_brief(
+                chain=dict(chain_row) if hasattr(chain_row, "keys") else {},
+                phase=dict(phase_row) if hasattr(phase_row, "keys") else {},
+                completed_tasks=[dict(t) if hasattr(t, "keys") else {} for t in tasks],
+                next_phase=dict(next_phase_row) if (next_phase_row and hasattr(next_phase_row, "keys")) else None,
+                llm_router=llm_router,
+            )
+            save_handoff_brief(None, phase_id, brief)
+            return jsonify({"status": "ok", "brief": brief})
+        except Exception as exc:
+            logger.error("handoff brief error: %s", exc, exc_info=True)
+            return jsonify({"error": str(exc)}), 500
+
+    # ── pif-rev-01: Reverse Process-Ify ───────────────────────────────────────
+    @bp.route("/api/workflows/<workflow_id>/reverse-regen", methods=["POST"])
+    def api_workflow_reverse_regen(workflow_id: str):
+        try:
+            from tools.workflow_canvas.reverse_regen import reverse_regen_from_db
+            doc = reverse_regen_from_db(workflow_id)
+            return jsonify({"status": "ok", "document": doc})
+        except Exception as exc:
+            logger.error("reverse regen error: %s", exc, exc_info=True)
+            return jsonify({"error": str(exc)}), 500
+
+    # ── pif-dep-01: Cross-Chain Dependency Graph ───────────────────────────────
+    @bp.route("/api/chains/<chain_id>/dependencies")
+    def api_chain_deps_get(chain_id: str):
+        try:
+            from tools.workflow_canvas.chain_deps import get_dependencies, check_blockers, ensure_table
+            cc = get_canvas_connection("ICDEV_WFC_ENABLED")
+            ensure_table(cc)
+            deps = get_dependencies(cc, chain_id)
+            blockers = check_blockers(cc, chain_id)
+            cc.close()
+            return jsonify({"dependencies": deps, "blockers": blockers})
+        except Exception as exc:
+            logger.error("chain deps get error: %s", exc, exc_info=True)
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/chains/<chain_id>/dependencies", methods=["POST"])
+    def api_chain_deps_add(chain_id: str):
+        data = request.get_json(force=True) or {}
+        upstream_chain = data.get("depends_on_chain_id")
+        if not upstream_chain:
+            return jsonify({"error": "depends_on_chain_id required"}), 400
+        try:
+            from tools.workflow_canvas.chain_deps import add_dependency, ensure_table
+            cc = get_canvas_connection("ICDEV_WFC_ENABLED")
+            ensure_table(cc)
+            dep_id = add_dependency(
+                cc, chain_id=chain_id,
+                phase_number=data.get("phase_number"),
+                depends_on_chain_id=upstream_chain,
+                depends_on_phase=data.get("depends_on_phase"),
+                note=data.get("note", ""),
+            )
+            cc.close()
+            return jsonify({"status": "ok", "dep_id": dep_id})
+        except Exception as exc:
+            logger.error("chain deps add error: %s", exc, exc_info=True)
+            return jsonify({"error": str(exc)}), 500
+
+    # ── pif-code-01: Process as Code (YAML export/import) ─────────────────────
+    @bp.route("/api/chains/<chain_id>/export-yaml")
+    def api_chain_export_yaml(chain_id: str):
+        try:
+            from tools.workflow_canvas.process_code import export_chain_yaml_from_db
+            yaml_str = export_chain_yaml_from_db(chain_id)
+            from flask import Response
+            return Response(
+                yaml_str, mimetype="text/yaml",
+                headers={"Content-Disposition": f'attachment; filename="chain_{chain_id[:8]}.yaml"'},
+            )
+        except Exception as exc:
+            logger.error("export yaml error: %s", exc, exc_info=True)
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/chains/import-yaml", methods=["POST"])
+    def api_chain_import_yaml():
+        try:
+            raw = request.get_data(as_text=True)
+            if not raw:
+                data = request.get_json(force=True) or {}
+                raw = data.get("yaml") or ""
+            if not raw:
+                return jsonify({"error": "yaml body required"}), 400
+            from tools.workflow_canvas.process_code import import_chain_yaml
+            conn = get_connection()
+            chain_id = import_chain_yaml(raw, conn)
+            return jsonify({"status": "ok", "chain_id": chain_id})
+        except Exception as exc:
+            logger.error("import yaml error: %s", exc, exc_info=True)
+            return jsonify({"error": str(exc)}), 500
+
+    # ── pif-conf-01: Process Conformance Checking ─────────────────────────────
+    @bp.route("/api/workflows/<workflow_id>/conformance")
+    def api_workflow_conformance(workflow_id: str):
+        try:
+            from tools.workflow_canvas.conformance_checker import check_conformance_from_db
+            result = check_conformance_from_db(workflow_id)
+            return jsonify(result)
+        except Exception as exc:
+            logger.error("conformance error: %s", exc, exc_info=True)
+            return jsonify({"error": str(exc)}), 500
+
+    # ── pif-sla-01: SLA Gate Enforcement ─────────────────────────────────────
+    @bp.route("/api/workflows/<workflow_id>/sla-status")
+    def api_workflow_sla(workflow_id: str):
+        try:
+            from tools.workflow_canvas.sla_checker import check_sla_from_db
+            result = check_sla_from_db(workflow_id)
+            return jsonify(result)
+        except Exception as exc:
+            logger.error("sla check error: %s", exc, exc_info=True)
+            return jsonify({"error": str(exc)}), 500
+
+    # ── pif-coach-01: AI Process Coach ───────────────────────────────────────
+    @bp.route("/api/workflows/<workflow_id>/steps/<int:step_n>/coach")
+    def api_step_coach(workflow_id: str, step_n: int):
+        try:
+            from tools.workflow_canvas.process_coach import coach_from_db
+            result = coach_from_db(workflow_id, step_n)
+            return jsonify(result)
+        except Exception as exc:
+            logger.error("coach error: %s", exc, exc_info=True)
+            return jsonify({"error": str(exc)}), 500
+
+    # ── pif-tasks-01: Role-Based My-Tasks Portal ──────────────────────────────
+    @bp.route("/my-tasks")
+    def page_my_tasks():
+        role = request.args.get("role", "")
+        try:
+            conn = get_connection()
+            ph = sql_placeholder(conn)
+            if role:
+                tasks = conn.execute(
+                    f"SELECT * FROM kanban_tasks WHERE assignee_role = {ph} AND status != {ph} ORDER BY updated_at DESC LIMIT 200",
+                    (role, "done"),
+                ).fetchall()
+            else:
+                tasks = conn.execute(
+                    f"SELECT * FROM kanban_tasks WHERE status != {ph} ORDER BY updated_at DESC LIMIT 200",
+                    ("done",),
+                ).fetchall()
+            # Gather distinct roles for filter dropdown
+            roles_rows = conn.execute(
+                "SELECT DISTINCT assignee_role FROM kanban_tasks WHERE assignee_role IS NOT NULL AND assignee_role != '' ORDER BY assignee_role"
+            ).fetchall()
+            conn.close()
+            tasks_list = [dict(t) if hasattr(t, "keys") else {} for t in tasks]
+            roles_list = [r[0] for r in roles_rows]
+        except Exception as exc:
+            logger.error("my-tasks error: %s", exc, exc_info=True)
+            tasks_list, roles_list = [], []
+        return render_template(
+            "workflow_canvas/my_tasks.html",
+            tasks=tasks_list,
+            roles=roles_list,
+            current_role=role,
+        )
+
+    # ── BPMN 2.0 Export ──────────────────────────────────────────────────
+    @bp.route("/api/workflows/<workflow_id>/bpmn", methods=["GET"])
+    def api_workflow_bpmn(workflow_id: str):
+        """Export a workflow as BPMN 2.0 XML."""
+        import yaml as _yaml
+        conn = get_connection()
+        ph = _ph(conn)
+        row = conn.execute(
+            f"SELECT * FROM studio_workflows WHERE workflow_id={ph}", (workflow_id,)
+        ).fetchone()
+        conn.close()
+        if not row:
+            return jsonify({"error": "not found"}), 404
+        try:
+            wf_data = _yaml.safe_load(dict(row).get("template_yaml") or "{}") or {}
+        except Exception:
+            wf_data = {}
+        from tools.workflow_canvas.bpmn_export import workflow_to_bpmn
+        xml_str = workflow_to_bpmn(wf_data)
+        return xml_str, 200, {"Content-Type": "application/xml; charset=utf-8",
+                              "Content-Disposition": f"attachment; filename={workflow_id}.bpmn"}
+
+    # ── Workflow Version Diff ─────────────────────────────────────────────
+    @bp.route("/api/workflows/diff", methods=["POST"])
+    def api_workflow_diff():
+        """Diff two workflows by ID. Body: {id_a, id_b}."""
+        data = request.get_json(force=True) or {}
+        id_a = data.get("id_a")
+        id_b = data.get("id_b")
+        if not id_a or not id_b:
+            return jsonify({"error": "id_a and id_b required"}), 400
+        try:
+            from tools.workflow_canvas.workflow_diff import diff_workflow_ids
+            result = diff_workflow_ids(id_a, id_b)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ── Chain ROI Calculator ──────────────────────────────────────────────
+    @bp.route("/api/workflows/chains/<chain_id>/roi", methods=["GET"])
+    def api_chain_roi(chain_id: str):
+        """Compute ROI metrics for a chain."""
+        try:
+            from tools.workflow_canvas.roi_calculator import chain_roi_from_db
+            result = chain_roi_from_db(chain_id)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ── Chain Simulator ───────────────────────────────────────────────────
+    @bp.route("/api/workflows/chains/<chain_id>/simulate", methods=["GET"])
+    def api_chain_simulate(chain_id: str):
+        """Estimate timeline for a chain via critical-path simulation."""
+        try:
+            from tools.workflow_canvas.chain_simulator import simulate_chain_from_db
+            result = simulate_chain_from_db(chain_id)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ── Process Conformance Checking ──────────────────────────────────────
+    @bp.route("/api/workflows/<workflow_id>/conformance", methods=["GET"])
+    def api_workflow_conformance(workflow_id: str):
+        """Check workflow execution conformance against expected definition."""
+        try:
+            from tools.workflow_canvas.conformance_checker import check_conformance
+            result = check_conformance(workflow_id)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ── SLA Status ────────────────────────────────────────────────────────
+    @bp.route("/api/workflows/<workflow_id>/sla-status", methods=["GET"])
+    def api_workflow_sla(workflow_id: str):
+        """Return SLA status for all steps of a workflow."""
+        try:
+            from tools.workflow_canvas.sla_checker import check_workflow_sla
+            result = check_workflow_sla(workflow_id)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ── AI Process Coach ──────────────────────────────────────────────────
+    @bp.route("/api/workflows/<workflow_id>/steps/<int:step_index>/coach", methods=["GET"])
+    def api_step_coach(workflow_id: str, step_index: int):
+        """Return AI coaching for a specific workflow step."""
+        try:
+            from tools.workflow_canvas.process_coach import get_step_coaching
+            result = get_step_coaching(workflow_id, step_index)
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ── Handoff Ceremony Wizard ───────────────────────────────────────────
+    @bp.route("/api/workflows/chains/<chain_id>/phases/<phase_id>/handoff", methods=["POST"])
+    def api_phase_handoff(chain_id: str, phase_id: str):
+        """Generate and store a handoff brief for a completing phase."""
+        try:
+            from tools.workflow_canvas.handoff_wizard import generate_handoff_brief
+            brief = generate_handoff_brief(chain_id, phase_id)
+            return jsonify({"status": "ok", "brief": brief})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ── Multi-Source Synthesis ────────────────────────────────────────────
+    @bp.route("/api/workflows/synthesize", methods=["POST"])
+    def api_synthesize_workflows():
+        """Synthesize N workflow IDs into one unified workflow. Body: {workflow_ids: [...]}."""
+        import yaml as _yaml
+        data = request.get_json(force=True) or {}
+        wf_ids = data.get("workflow_ids", [])
+        if not wf_ids or len(wf_ids) < 2:
+            return jsonify({"error": "At least 2 workflow_ids required"}), 400
+        conn = get_connection()
+        ph = _ph(conn)
+        wf_dicts = []
+        for wf_id in wf_ids:
+            row = conn.execute(
+                f"SELECT * FROM studio_workflows WHERE workflow_id={ph}", (wf_id,)
+            ).fetchone()
+            if row:
+                try:
+                    wf_data = _yaml.safe_load(dict(row).get("template_yaml") or "{}") or {}
+                    wf_data["_source_id"] = wf_id
+                    wf_dicts.append(wf_data)
+                except Exception:
+                    pass
+        conn.close()
+        if not wf_dicts:
+            return jsonify({"error": "No valid workflows found"}), 404
+        try:
+            from tools.workflow_canvas.multi_source_synthesizer import synthesize_workflows
+            result = synthesize_workflows(wf_dicts)
+            return jsonify({"status": "ok", "workflow": result})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ── Reverse Process-Ify ───────────────────────────────────────────────
+    @bp.route("/api/workflows/<workflow_id>/reverse-regen", methods=["POST"])
+    def api_reverse_processify(workflow_id: str):
+        """Reconstruct as-executed document from a completed kanban run."""
+        try:
+            from tools.workflow_canvas.reverse_processify import reverse_processify
+            doc_text = reverse_processify(workflow_id)
+            return jsonify({"status": "ok", "document": doc_text})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ── Process Template Library ──────────────────────────────────────────
+    @bp.route("/api/workflows/templates", methods=["GET"])
+    def api_list_templates():
+        """List workflow templates. Query params: industry, doc_type, q."""
+        conn = get_canvas_connection("ICDEV_WFC_ENABLED")
+        try:
+            from tools.workflow_canvas.template_library import search_templates
+            results = search_templates(
+                conn,
+                query=request.args.get("q", ""),
+                industry=request.args.get("industry", ""),
+                doc_type=request.args.get("doc_type", ""),
+            )
+            return jsonify({"templates": results})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/workflows/templates", methods=["POST"])
+    def api_save_template():
+        """Save a workflow as a reusable template. Body: {workflow_id, name, doc_type}."""
+        import yaml as _yaml
+        data = request.get_json(force=True) or {}
+        wf_id = data.get("workflow_id")
+        if not wf_id:
+            return jsonify({"error": "workflow_id required"}), 400
+        reg_conn = get_connection()
+        ph = _ph(reg_conn)
+        row = reg_conn.execute(
+            f"SELECT * FROM studio_workflows WHERE workflow_id={ph}", (wf_id,)
+        ).fetchone()
+        reg_conn.close()
+        if not row:
+            return jsonify({"error": "workflow not found"}), 404
+        try:
+            wf_data = _yaml.safe_load(dict(row).get("template_yaml") or "{}") or {}
+        except Exception:
+            wf_data = {}
+        conn = get_canvas_connection("ICDEV_WFC_ENABLED")
+        try:
+            from tools.workflow_canvas.template_library import save_template
+            tid = save_template(
+                conn,
+                name=data.get("name") or wf_data.get("workflow_name") or dict(row).get("name") or "Template",
+                workflow=wf_data,
+                industry=wf_data.get("industry", ""),
+                doc_type=data.get("doc_type", ""),
+            )
+            return jsonify({"status": "ok", "template_id": tid})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    # ── Chain Dependencies ────────────────────────────────────────────────
+    @bp.route("/api/workflows/chains/<chain_id>/dependencies", methods=["GET"])
+    def api_chain_deps_list(chain_id: str):
+        """List dependencies for a chain."""
+        conn = get_canvas_connection("ICDEV_WFC_ENABLED")
+        try:
+            from tools.workflow_canvas.chain_deps import get_dependencies, check_blockers
+            deps = get_dependencies(conn, chain_id)
+            blockers = check_blockers(conn, chain_id)
+            return jsonify({"dependencies": deps, "blockers": blockers})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    @bp.route("/api/workflows/chains/<chain_id>/dependencies", methods=["POST"])
+    def api_chain_deps_add(chain_id: str):
+        """Add a dependency. Body: {depends_on_chain_id, phase_number?, depends_on_phase?, note?}."""
+        data = request.get_json(force=True) or {}
+        upstream = data.get("depends_on_chain_id")
+        if not upstream:
+            return jsonify({"error": "depends_on_chain_id required"}), 400
+        conn = get_canvas_connection("ICDEV_WFC_ENABLED")
+        try:
+            from tools.workflow_canvas.chain_deps import add_dependency
+            dep_id = add_dependency(
+                conn, chain_id,
+                data.get("phase_number"),
+                upstream,
+                data.get("depends_on_phase"),
+                data.get("note", ""),
+            )
+            return jsonify({"status": "ok", "dep_id": dep_id})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            conn.close()
+
+    # ── Process as Code ───────────────────────────────────────────────────
+    @bp.route("/api/workflows/chains/<chain_id>/export-yaml", methods=["GET"])
+    def api_chain_export_yaml(chain_id: str):
+        """Export a chain as a YAML spec file."""
+        try:
+            from tools.workflow_canvas.process_as_code import export_chain_yaml
+            yaml_text = export_chain_yaml(chain_id)
+            return yaml_text, 200, {
+                "Content-Type": "application/x-yaml; charset=utf-8",
+                "Content-Disposition": f"attachment; filename=chain-{chain_id}.yaml",
+            }
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/workflows/chains/import-yaml", methods=["POST"])
+    def api_chain_import_yaml():
+        """Import a chain from a YAML spec. Body: {yaml_text} or multipart file."""
+        if request.content_type and "multipart" in request.content_type:
+            f = request.files.get("file")
+            yaml_text = f.read().decode("utf-8") if f else ""
+        else:
+            data = request.get_json(force=True) or {}
+            yaml_text = data.get("yaml_text", "")
+        if not yaml_text:
+            return jsonify({"error": "yaml_text or file required"}), 400
+        try:
+            from tools.workflow_canvas.process_as_code import import_chain_yaml
+            chain_id = import_chain_yaml(yaml_text)
+            return jsonify({"status": "ok", "chain_id": chain_id})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+
+    # ── My-Tasks Portal ───────────────────────────────────────────────────
+    @bp.route("/my-tasks", methods=["GET"])
+    def my_tasks_page():
+        """Role-based task portal showing all active processify tasks."""
+        role_filter = request.args.get("role", "")
+        conn = get_connection()
+        ph = _ph(conn)
+        if role_filter:
+            tasks = conn.execute(
+                f"""SELECT id, title, description, status, priority, updated_at
+                    FROM kanban_tasks
+                    WHERE id LIKE 'processify-%' AND status != 'done'
+                    AND (description LIKE {ph} OR title LIKE {ph})
+                    ORDER BY priority DESC, updated_at DESC LIMIT 100""",
+                (f"%{role_filter}%", f"%{role_filter}%"),
+            ).fetchall()
+        else:
+            tasks = conn.execute(
+                """SELECT id, title, description, status, priority, updated_at
+                   FROM kanban_tasks
+                   WHERE id LIKE 'processify-%' AND status != 'done'
+                   ORDER BY priority DESC, updated_at DESC LIMIT 100"""
+            ).fetchall()
+        conn.close()
+        return render_template(
+            "workflow_canvas/my_tasks.html",
+            tasks=[dict(t) for t in tasks],
+            role_filter=role_filter,
+        )
+
     return bp
