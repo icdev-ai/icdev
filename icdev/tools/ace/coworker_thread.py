@@ -431,7 +431,52 @@ class CoWorkerThread(threading.Thread):
         max_cost_usd = getattr(role, "agent_max_cost_usd", None)
         context_window_tokens = getattr(role, "agent_context_window_tokens", None)
         compression_budget_tokens = getattr(role, "agent_compression_budget_tokens", None)
+        llm_function = getattr(self.spec, "llm_function", "") or "code_generation"
         self._audit("agent_loop_start", f"tools={tool_inventory} max_iter={max_iter}")
+
+        # ----------------------------------------------------------------
+        # Trust-tier pre-tool hook (Task #1)
+        # Block write/exec tools before the handler is invoked when the
+        # co-worker is not green-tier, giving the LLM a clear permission
+        # message rather than a TrustKernelDeniedError traceback.
+        # ----------------------------------------------------------------
+        _WRITE_EXEC_TOOLS: frozenset[str] = frozenset({"write_file", "run_tool"})
+        _trust_tier = self.spec.trust_tier
+
+        def _trust_pre_hook(name: str, inp: dict) -> "str | None":
+            if name in _WRITE_EXEC_TOOLS and _trust_tier != "green":
+                return (
+                    f"Permission denied: '{name}' requires green trust tier; "
+                    f"this co-worker is trust_tier={_trust_tier!r}. "
+                    "Use a read-only tool or request promotion to green tier."
+                )
+            return None
+
+        # ----------------------------------------------------------------
+        # on_stop hook: audit result_subtype + save session for resume.
+        # ----------------------------------------------------------------
+        _coworker_id = self.spec.coworker_id
+        _instance_id = self.instance_id
+        _system_prompt_ref = system_prompt
+
+        def _on_stop_hook(loop_result: Any) -> None:
+            self._audit(
+                "agent_loop_subtype",
+                f"result_subtype={loop_result.result_subtype} "
+                f"session_id={loop_result.session_id}",
+            )
+            # Persist session for potential resume.
+            try:
+                from icdev.tools.llm.agent_loop_session import save_session
+                save_session(
+                    loop_result,
+                    instance_id=_instance_id,
+                    coworker_id=_coworker_id,
+                    llm_function=llm_function,
+                    system_prompt=_system_prompt_ref,
+                )
+            except Exception as _exc:
+                logger.debug("ace: session save failed for %s: %s", _coworker_id, _exc)
 
         try:
             result = run_agent_loop(
@@ -440,10 +485,12 @@ class CoWorkerThread(threading.Thread):
                 user_prompt=user_prompt,
                 tools=tools,
                 tool_handlers=tool_handlers,
-                llm_function=getattr(self.spec, "llm_function", "") or "code_generation",
+                llm_function=llm_function,
                 max_iterations=max_iter,
                 stop_event=self._stop_event,
                 on_turn=self._on_agent_turn,
+                on_pre_tool_use=_trust_pre_hook,
+                on_stop=_on_stop_hook,
                 max_total_tokens=max_total_tokens,
                 max_cost_usd=max_cost_usd,
                 context_window_tokens=context_window_tokens,
@@ -468,9 +515,10 @@ class CoWorkerThread(threading.Thread):
         self._audit(
             "agent_loop_complete",
             f"done={result.done} truncated={result.truncated} turns={result.turns} "
-            f"tool_calls={len(result.tool_call_log)}",
+            f"tool_calls={len(result.tool_call_log)} subtype={result.result_subtype} "
+            f"session_id={result.session_id}",
         )
-        detail = "agent loop done" if result.done else "agent loop truncated (max_iterations)"
+        detail = "agent loop done" if result.done else f"agent loop truncated ({result.result_subtype})"
         self._finish_done(role, detail=detail)
 
     def _on_agent_turn(self, turn: int, response: Any, messages: list[dict[str, Any]]) -> None:

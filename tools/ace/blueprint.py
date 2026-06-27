@@ -59,6 +59,88 @@ _IQE_COLLECTIONS = ["ace.coworkers", "ace.sessions", "ace.suggestions"]
 # --------------------------------------------------------------------------- #
 # Connection + row helpers (backend-agnostic, canvas RLS-free)
 # --------------------------------------------------------------------------- #
+
+
+def _parse_turns(messages: list) -> list:
+    """Convert raw Anthropic-format messages into structured turn dicts."""
+    turns: list = []
+    i = 0
+    while i < len(messages):
+        msg = messages[i]
+        role = msg.get("role", "")
+        if role == "user":
+            content = msg.get("content", "")
+            if isinstance(content, str):
+                user_text = content
+            elif isinstance(content, list):
+                user_text = None
+                results_by_id: dict = {}
+                for block in content:
+                    if isinstance(block, dict) and block.get("type") == "tool_result":
+                        tid = block.get("tool_use_id", "")
+                        results_by_id[tid] = {
+                            "result": _block_text(block.get("content", "")),
+                            "is_error": bool(block.get("is_error", False)),
+                        }
+                if results_by_id:
+                    if turns:
+                        for tc in turns[-1].get("tool_calls", []):
+                            tid = tc.get("_id", "")
+                            if tid in results_by_id:
+                                tc.update(results_by_id[tid])
+                    i += 1
+                    continue
+            else:
+                user_text = str(content) if content else None
+
+            asst_msg = messages[i + 1] if i + 1 < len(messages) and messages[i + 1].get("role") == "assistant" else None
+            asst_text = ""
+            tool_calls: list = []
+            if asst_msg is not None:
+                asst_content = asst_msg.get("content", "")
+                if isinstance(asst_content, str):
+                    asst_text = asst_content
+                elif isinstance(asst_content, list):
+                    for block in asst_content:
+                        if not isinstance(block, dict):
+                            continue
+                        btype = block.get("type", "")
+                        if btype == "text":
+                            asst_text += block.get("text", "")
+                        elif btype == "tool_use":
+                            tool_calls.append({
+                                "_id": block.get("id", ""),
+                                "name": block.get("name", ""),
+                                "input": block.get("input", {}),
+                                "result": None,
+                                "is_error": False,
+                            })
+
+            turns.append({"user_input": user_text, "assistant_text": asst_text.strip(), "tool_calls": tool_calls})
+            i += 2 if asst_msg is not None else 1
+        else:
+            i += 1
+
+    for turn in turns:
+        for tc in turn.get("tool_calls", []):
+            tc.pop("_id", None)
+    return turns
+
+
+def _block_text(content) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(block.get("text", ""))
+            elif isinstance(block, str):
+                parts.append(block)
+        return "".join(parts)
+    return str(content) if content else ""
+
+
 def _db():
     """A canvas connection — NO RLS predicate (ace_* tables lack the columns)."""
     from icdev.tools.db.storage import get_canvas_connection
@@ -275,6 +357,28 @@ def trust_leaderboard():
     except Exception as exc:  # noqa: BLE001
         logger.info("ace/trust.html unavailable (%s); JSON fallback", exc)
         return jsonify({"rows": rows, "count": len(rows)})
+
+
+@ace_bp.route("/sessions")
+def sessions_list():
+    """Agent session replay — list of all saved agent_loop_sessions."""
+    try:
+        return render_template("ace/sessions.html")
+    except Exception as exc:  # noqa: BLE001
+        logger.info("ace/sessions.html unavailable (%s); JSON fallback", exc)
+        from icdev.tools.llm.agent_loop_session import list_sessions
+        return jsonify(list_sessions(limit=50))
+
+
+@ace_bp.route("/sessions/<session_id>")
+def session_detail(session_id: str):
+    """Agent session replay — turn-by-turn detail view for one session."""
+    try:
+        return render_template("ace/session_detail.html", session_id=session_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("ace/session_detail.html unavailable (%s); JSON fallback", exc)
+        from icdev.tools.llm.agent_loop_session import get_session_metadata
+        return jsonify(get_session_metadata(session_id) or {"error": "not found"})
 
 
 @ace_bp.route("/<instance_id>")
@@ -659,6 +763,41 @@ def api_abort(instance_id: str):
         logger.warning("ace abort failed for %s: %s", instance_id, exc)
         return jsonify({"error": str(exc)}), 500
     return jsonify({"instance_id": instance_id, "state": "cancelled", "aborted": True})
+
+
+@ace_api_bp.route("/sessions", methods=["GET"])
+def api_sessions_list():
+    """Paginated list of agent_loop_sessions with summary stats."""
+    from icdev.tools.llm.agent_loop_session import list_sessions
+
+    limit = _int_arg("limit", _DEFAULT_LIMIT, lo=1, hi=_MAX_LIMIT)
+    offset = _int_arg("offset", 0, lo=0, hi=10_000_000)
+    subtype = (request.args.get("subtype") or "").strip()
+    coworker_id = (request.args.get("coworker_id") or "").strip()
+    instance_id = (request.args.get("instance_id") or "").strip()
+
+    result = list_sessions(
+        limit=limit,
+        offset=offset,
+        result_subtype=subtype,
+        coworker_id=coworker_id,
+        instance_id=instance_id,
+    )
+    return jsonify({**result, "limit": limit, "offset": offset})
+
+
+@ace_api_bp.route("/sessions/<session_id>", methods=["GET"])
+def api_session_detail(session_id: str):
+    """Full session detail: metadata + parsed turn-by-turn replay."""
+    from icdev.tools.llm.agent_loop_session import get_session_metadata, load_session
+
+    meta = get_session_metadata(session_id)
+    if meta is None:
+        return jsonify({"error": f"session not found: {session_id}"}), 404
+
+    messages = load_session(session_id)
+    turns_parsed = _parse_turns(messages)
+    return jsonify({**meta, "turns_parsed": turns_parsed})
 
 
 @ace_api_bp.route("/profiles", methods=["GET"])

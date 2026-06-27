@@ -29,8 +29,14 @@ from __future__ import annotations
 import threading
 from typing import Any, Callable
 
-from icdev.tools.llm.agent_loop import DONE
+from icdev.tools.llm.agent_loop import DONE, AgentLoopUnsupported, run_agent_loop
 from tools.logging.icdev_logger import get_logger
+
+# Module-level LLMRouter reference so _spawn_agent can be monkeypatched in tests.
+try:
+    from tools.llm.router import LLMRouter
+except Exception:  # noqa: BLE001
+    LLMRouter = None  # type: ignore[assignment,misc]
 
 logger = get_logger("icdev.ace.agent_tools")
 
@@ -44,8 +50,10 @@ ToolHandler = Callable[[dict[str, Any], "threading.Event | None"], str]
 _SCHEMAS: dict[str, dict[str, Any]] = {
     "read_file": {
         "type": "function",
+        "is_read_only": True,
         "function": {
             "name": "read_file",
+            "is_read_only": True,
             "description": "Read a UTF-8 text file within the role's declared folder_access scopes. Returns the file contents.",
             "parameters": {
                 "type": "object",
@@ -73,8 +81,10 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "list_files": {
         "type": "function",
+        "is_read_only": True,
         "function": {
             "name": "list_files",
+            "is_read_only": True,
             "description": "List files in a directory within the role's declared folder_access scopes. Returns one path per line.",
             "parameters": {
                 "type": "object",
@@ -121,6 +131,50 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
                     },
                 },
                 "required": ["summary"],
+            },
+        },
+    },
+    "spawn_agent": {
+        "type": "function",
+        "function": {
+            "name": "spawn_agent",
+            "description": (
+                "Spawn a sub-agent to handle an isolated subtask. The sub-agent runs "
+                "its own agent loop with a scoped toolset and returns a summary. Only "
+                "the final answer is returned — the sub-agent's conversation history "
+                "does not accumulate in the parent's context. Use this to delegate "
+                "independent subtasks (e.g. 'read all files in dir X and summarise', "
+                "'run tool Y and return parsed output')."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "task": {
+                        "type": "string",
+                        "description": "Full task description for the sub-agent.",
+                    },
+                    "role": {
+                        "type": "string",
+                        "description": (
+                            "Optional system prompt / persona for the sub-agent. "
+                            "Defaults to a generic helpful sub-agent role."
+                        ),
+                    },
+                    "tools": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": (
+                            "Tool names to give the sub-agent. Must be a subset of "
+                            "the parent's available tools (read_file, list_files, "
+                            "write_file, run_tool, done). Defaults to read-only tools."
+                        ),
+                    },
+                    "max_iterations": {
+                        "type": "integer",
+                        "description": "Max LLM turns for the sub-agent (default 6, max 20).",
+                    },
+                },
+                "required": ["task"],
             },
         },
     },
@@ -209,6 +263,8 @@ class AgentToolRegistry:
             return self._run_tool
         if name == "done":
             return self._done
+        if name == "spawn_agent":
+            return self._spawn_agent
         return None
 
     # ------------------------------------------------------------------
@@ -278,3 +334,69 @@ class AgentToolRegistry:
         self.done_summary = summary  # type: ignore[attr-defined]
         self.done_changed_files = list(changed)  # type: ignore[attr-defined]
         return DONE
+
+    def _spawn_agent(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
+        """Spawn a child agent loop for an isolated subtask.
+
+        The child runs :func:`run_agent_loop` with a scoped toolset and the
+        same file-access and trust-tier constraints as the parent. Only the
+        child's ``final_content`` is returned to the parent — the full child
+        conversation history is discarded to keep the parent's context small.
+        """
+        task = (inp.get("task") or "").strip()
+        if not task:
+            return "spawn_agent error: 'task' is required."
+
+        role_prompt = (inp.get("role") or "").strip() or (
+            "You are a helpful sub-agent. Complete the task using the available "
+            "tools, then call done with a summary of what you accomplished."
+        )
+        sub_tool_names = list(inp.get("tools") or ["read_file", "list_files", "done"])
+        max_iter = min(int(inp.get("max_iterations") or 6), 20)
+
+        sub_tools, sub_handlers = self.build(sub_tool_names)
+        if not sub_tools:
+            return "spawn_agent error: no valid tools resolved for sub-agent."
+
+        try:
+            router = LLMRouter()
+        except Exception as exc:
+            return f"spawn_agent error: could not create router — {exc}"
+
+        logger.info(
+            "agent_tools: spawning sub-agent for %s — task=%r tools=%s max_iter=%d",
+            self._coworker_id,
+            task[:120],
+            list(sub_handlers.keys()),
+            max_iter,
+        )
+
+        try:
+            # Use the module-level run_agent_loop (patchable in tests).
+            child = run_agent_loop(
+                router,
+                system_prompt=role_prompt,
+                user_prompt=task,
+                tools=sub_tools,
+                tool_handlers=sub_handlers,
+                max_iterations=max_iter,
+                stop_event=stop,
+            )
+        except AgentLoopUnsupported as exc:
+            return f"spawn_agent error: provider does not support tool use — {exc}"
+        except Exception as exc:
+            return f"spawn_agent error: {type(exc).__name__}: {exc}"
+
+        status = "done" if child.done else f"truncated ({child.result_subtype})"
+        header = (
+            f"[sub-agent: {status} | turns={child.turns} | "
+            f"tools_called={len(child.tool_call_log)} | "
+            f"session={child.session_id}]"
+        )
+        body = child.final_content or "(no output)"
+        logger.info(
+            "agent_tools: sub-agent completed for %s — %s",
+            self._coworker_id,
+            status,
+        )
+        return f"{header}\n{body}"

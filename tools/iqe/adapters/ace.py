@@ -98,6 +98,25 @@ def messages_adapter(conn: Any) -> list[dict]:
         c.close()
 
 
+def sessions_adapter(conn: Any) -> list[dict]:
+    """Return rows from agent_loop_sessions (migration 220)."""
+    c = _canvas_conn(conn)
+    try:
+        cur = c.execute(
+            "SELECT session_id, instance_id, coworker_id, llm_function, "
+            "result_subtype, turns, total_input_tokens, total_output_tokens, "
+            "total_cost_usd, created_at "
+            "FROM agent_loop_sessions ORDER BY created_at DESC LIMIT 500"
+        )
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]
+    except Exception:
+        return []
+    finally:
+        c.close()
+
+
 register_collection("ace.instances", instances_adapter)
 register_collection("ace.coworkers", coworkers_adapter)
 register_collection("ace.messages", messages_adapter)
+register_collection("ace.sessions", sessions_adapter)
