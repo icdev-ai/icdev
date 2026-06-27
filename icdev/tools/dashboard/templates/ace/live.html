@@ -1,0 +1,255 @@
+<!-- CUI // SP-CTI — ACE Agent Loop Live Monitor -->
+{% extends "base.html" %}
+{% block title %}Live: {{ instance_id[:12] }} — Co-Worker Engine — ICDEV™{% endblock %}
+
+{% block content %}
+<style>
+  .live-page { padding: 20px 28px; max-width: 960px; }
+
+  .live-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 18px;
+  }
+  .live-title { font-size: 18px; font-weight: 700; font-family: monospace; }
+  .status-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600;
+  }
+  .status-connecting { background: rgba(243,156,18,.15); color: #f39c12; border: 1px solid rgba(243,156,18,.4); }
+  .status-running    { background: rgba(39,174,96,.15);  color: #27ae60; border: 1px solid rgba(39,174,96,.4); }
+  .status-done       { background: rgba(74,158,255,.15); color: #4a9eff; border: 1px solid rgba(74,158,255,.4); }
+  .status-error      { background: rgba(231,76,60,.15);  color: #e74c3c; border: 1px solid rgba(231,76,60,.4); }
+
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot-connecting { background: #f39c12; animation: pulse 1.4s infinite; }
+  .dot-running    { background: #27ae60; animation: pulse 1.4s infinite; }
+  .dot-done       { background: #4a9eff; }
+  .dot-error      { background: #e74c3c; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; } 50% { opacity: .35; }
+  }
+
+  .counters {
+    display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px;
+  }
+  .counter-card {
+    padding: 10px 16px; border-radius: 6px; min-width: 90px;
+    background: var(--bg-secondary, #1a1a2e);
+    border: 1px solid var(--border-color, #2a2a4a);
+    text-align: center;
+  }
+  .counter-card .c-label { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--text-secondary, #7a8cb0); }
+  .counter-card .c-value { font-size: 20px; font-weight: 700; margin-top: 3px; }
+
+  .feed-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 10px;
+  }
+  .feed-title { font-size: 14px; font-weight: 600; }
+  .feed-clear { font-size: 12px; color: var(--text-secondary, #7a8cb0); cursor: pointer; }
+  .feed-clear:hover { color: var(--text-primary, #e2e8f0); }
+
+  #event-feed {
+    border: 1px solid var(--border-color, #2a2a4a); border-radius: 6px;
+    background: var(--bg-primary, #0f0f23); padding: 10px;
+    min-height: 200px; max-height: 520px; overflow-y: auto;
+    font-family: monospace; font-size: 12px;
+  }
+  .feed-empty { text-align: center; padding: 40px; color: var(--text-secondary, #7a8cb0); font-size: 13px; font-family: inherit; }
+
+  .event-row {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 6px 8px; border-radius: 4px; margin-bottom: 4px;
+    border-left: 3px solid transparent;
+  }
+  .event-row:hover { background: rgba(255,255,255,.03); }
+  .event-tool     { border-left-color: #4a9eff; }
+  .event-error    { border-left-color: #e74c3c; background: rgba(231,76,60,.05); }
+  .event-done     { border-left-color: #27ae60; }
+
+  .event-ts { color: var(--text-secondary, #7a8cb0); font-size: 10px; white-space: nowrap; padding-top: 1px; }
+  .event-body { flex: 1; min-width: 0; }
+  .event-tool-name { color: #4a9eff; font-weight: 700; }
+  .event-error-tag { color: #e74c3c; font-size: 10px; font-weight: 700; margin-left: 6px; text-transform: uppercase; }
+  .event-preview { color: var(--text-secondary, #7a8cb0); margin-top: 2px; font-size: 11px; white-space: pre-wrap; word-break: break-all; max-height: 60px; overflow: hidden; }
+  .event-done-text { color: #27ae60; font-weight: 600; }
+
+  .actions { margin-top: 16px; display: flex; gap: 10px; flex-wrap: wrap; }
+  .btn {
+    padding: 8px 18px; border-radius: 5px; font-size: 13px; font-weight: 600;
+    border: none; cursor: pointer; text-decoration: none; display: inline-block;
+  }
+  .btn-secondary { background: var(--bg-secondary, #1a1a2e); color: var(--text-primary, #e2e8f0); border: 1px solid var(--border-color, #2a2a4a); }
+  .btn-secondary:hover { background: var(--bg-tertiary, #252540); }
+
+  .breadcrumbs { font-size: 12px; color: var(--text-secondary, #7a8cb0); margin-bottom: 16px; }
+  .breadcrumbs a { color: var(--accent-color, #4a9eff); text-decoration: none; }
+  .breadcrumbs a:hover { text-decoration: underline; }
+  .breadcrumbs .separator { margin: 0 6px; }
+</style>
+
+<div class="live-page">
+  <div class="breadcrumbs">
+    <a href="/">Home</a>
+    <span class="separator">/</span>
+    <a href="/coworker">Co-Worker Engine</a>
+    <span class="separator">/</span>
+    <a href="/coworker/{{ instance_id }}">{{ instance_id[:12] }}</a>
+    <span class="separator">/</span>
+    <span>Live</span>
+  </div>
+
+  <div class="live-header">
+    <div>
+      <div class="live-title">Live: {{ instance_id }}</div>
+    </div>
+    <div>
+      <span id="status-badge" class="status-badge status-connecting">
+        <span id="status-dot" class="dot dot-connecting"></span>
+        <span id="status-text">Connecting…</span>
+      </span>
+    </div>
+  </div>
+
+  <div class="counters">
+    <div class="counter-card">
+      <div class="c-label">Turns</div>
+      <div class="c-value" id="cnt-turns">0</div>
+    </div>
+    <div class="counter-card">
+      <div class="c-label">Tool Calls</div>
+      <div class="c-value" id="cnt-tools">0</div>
+    </div>
+    <div class="counter-card">
+      <div class="c-label">Errors</div>
+      <div class="c-value" id="cnt-errors" style="color:#e74c3c;">0</div>
+    </div>
+    <div class="counter-card">
+      <div class="c-label">Events</div>
+      <div class="c-value" id="cnt-events">0</div>
+    </div>
+  </div>
+
+  <div class="feed-header">
+    <div class="feed-title">Event Feed</div>
+    <span class="feed-clear" onclick="clearFeed()">Clear</span>
+  </div>
+  <div id="event-feed">
+    <div class="feed-empty" id="feed-empty">Waiting for events…</div>
+  </div>
+
+  <div class="actions">
+    <a href="/coworker/{{ instance_id }}" class="btn btn-secondary">← Instance Detail</a>
+    <a href="/coworker/sessions" class="btn btn-secondary">Sessions</a>
+  </div>
+</div>
+
+<script>
+var INSTANCE_ID = {{ instance_id | tojson }};
+var cntTurns = 0, cntTools = 0, cntErrors = 0, cntEvents = 0;
+var es = null;
+
+function nowTs() {
+  return new Date().toLocaleTimeString('en-US', {hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit'});
+}
+
+function esc(s) {
+  if (!s) return '';
+  return s.toString().replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function setStatus(state, text) {
+  var badge = document.getElementById('status-badge');
+  var dot = document.getElementById('status-dot');
+  var label = document.getElementById('status-text');
+  badge.className = 'status-badge status-' + state;
+  dot.className = 'dot dot-' + state;
+  label.textContent = text;
+}
+
+function updateCounter(id, val) {
+  document.getElementById(id).textContent = val;
+}
+
+function clearFeed() {
+  var feed = document.getElementById('event-feed');
+  feed.innerHTML = '<div class="feed-empty" id="feed-empty">Feed cleared.</div>';
+}
+
+function appendEvent(rowClass, ts, bodyHtml) {
+  var feed = document.getElementById('event-feed');
+  var empty = document.getElementById('feed-empty');
+  if (empty) empty.remove();
+
+  var row = document.createElement('div');
+  row.className = 'event-row ' + rowClass;
+  row.innerHTML = '<div class="event-ts">' + esc(ts) + '</div><div class="event-body">' + bodyHtml + '</div>';
+  feed.appendChild(row);
+  feed.scrollTop = feed.scrollHeight;
+
+  cntEvents++;
+  updateCounter('cnt-events', cntEvents);
+}
+
+function handleEvent(evt) {
+  var ts = nowTs();
+  if (evt.type === 'tool_call') {
+    cntTools++;
+    updateCounter('cnt-tools', cntTools);
+    if (evt.is_error) {
+      cntErrors++;
+      updateCounter('cnt-errors', cntErrors);
+    }
+    var errTag = evt.is_error ? '<span class="event-error-tag">ERROR</span>' : '';
+    var preview = evt.result_preview
+      ? '<div class="event-preview">' + esc(evt.result_preview) + '</div>'
+      : '';
+    appendEvent(evt.is_error ? 'event-error' : 'event-tool', ts,
+      '<span class="event-tool-name">' + esc(evt.tool) + '</span>' + errTag + preview);
+  } else if (evt.type === 'loop_done') {
+    var subtype = evt.result_subtype || (evt.done ? 'success' : 'unknown');
+    appendEvent('event-done', ts,
+      '<span class="event-done-text">Loop done: ' + esc(subtype) + ' (' + (evt.turns || 0) + ' turns)</span>');
+    setStatus(evt.done ? 'done' : 'error', evt.done ? 'Done: ' + subtype : 'Error: ' + subtype);
+    if (es) { es.close(); es = null; }
+  } else if (evt.type === 'connected') {
+    setStatus('running', 'Running');
+    appendEvent('event-tool', ts, '<span style="color:var(--text-secondary,#7a8cb0);">Connected to stream</span>');
+  }
+}
+
+function startStream() {
+  setStatus('connecting', 'Connecting…');
+  var url = '/api/ace/' + INSTANCE_ID + '/stream';
+  es = new EventSource(url);
+
+  es.onmessage = function(e) {
+    try {
+      var evt = JSON.parse(e.data);
+      handleEvent(evt);
+      if (evt.type === 'tool_call' || (evt.type === 'loop_done' && evt.turns)) {
+        var t = parseInt(evt.turns || 0);
+        if (t > cntTurns) { cntTurns = t; updateCounter('cnt-turns', cntTurns); }
+      }
+    } catch(ex) { /* ignore malformed events */ }
+  };
+
+  es.onopen = function() {
+    setStatus('running', 'Running');
+  };
+
+  es.onerror = function() {
+    if (es && es.readyState === EventSource.CLOSED) {
+      setStatus('done', 'Stream closed');
+    } else {
+      setStatus('error', 'Connection error');
+      if (es) { es.close(); es = null; }
+    }
+  };
+}
+
+document.addEventListener('DOMContentLoaded', startStream);
+window.addEventListener('beforeunload', function() { if (es) es.close(); });
+</script>
+{% endblock %}
