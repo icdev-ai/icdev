@@ -32,7 +32,7 @@ def create_session(
             INSERT INTO idr_sessions
               (id, title, domain, doc_type, template_id, stage, status,
                created_by, tenant_id, classification, created_at, updated_at)
-            VALUES (?,?,?,?,?,0,'setup',?,?,?,?,?)
+            VALUES (%s,%s,%s,%s,%s,0,'setup',%s,%s,%s,%s,%s)
             """,
             (session_id, title, domain, doc_type, template_id,
              created_by, tenant_id, classification, now, now),
@@ -44,7 +44,7 @@ def create_session(
 def get_session(session_id: str) -> dict[str, Any] | None:
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM idr_sessions WHERE id = ?", (session_id,)
+            "SELECT * FROM idr_sessions WHERE id = %s", (session_id,)
         ).fetchone()
     if row is None:
         return None
@@ -75,7 +75,7 @@ def advance_stage(session_id: str, new_stage: int, new_status: str) -> bool:
     now = datetime.now(timezone.utc).isoformat()
     with get_connection() as conn:
         cur = conn.execute(
-            "UPDATE idr_sessions SET stage=?, status=?, updated_at=? WHERE id=?",
+            "UPDATE idr_sessions SET stage=%s, status=%s, updated_at=%s WHERE id=%s",
             (new_stage, new_status, now, session_id),
         )
         conn.commit()
@@ -102,7 +102,7 @@ def fail_session(session_id: str, error_msg: str | None = None) -> bool:
     now = datetime.now(timezone.utc).isoformat()
     with get_connection() as conn:
         cur = conn.execute(
-            "UPDATE idr_sessions SET status='failed', updated_at=? WHERE id=?",
+            "UPDATE idr_sessions SET status='failed', updated_at=%s WHERE id=%s",
             (now, session_id),
         )
         conn.commit()
@@ -141,7 +141,7 @@ def add_upload(
                 INSERT INTO idr_uploads
                   (id, session_id, filename, upload_type, file_path, file_hash,
                    status, tenant_id, uploaded_at)
-                VALUES (?,?,?,?,?,?,'pending',?,?)
+                VALUES (%s,%s,%s,%s,%s,%s,'pending',%s,%s)
                 """,
                 (upload_id, session_id, filename, upload_type,
                  file_path, file_hash, tenant_id, now),
@@ -153,7 +153,7 @@ def add_upload(
 def get_upload(upload_id: str) -> dict[str, Any] | None:
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM idr_uploads WHERE id = ?", (upload_id,)
+            "SELECT * FROM idr_uploads WHERE id = %s", (upload_id,)
         ).fetchone()
     return dict(row) if row else None
 
@@ -161,7 +161,7 @@ def get_upload(upload_id: str) -> dict[str, Any] | None:
 def list_uploads(session_id: str) -> list[dict[str, Any]]:
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT * FROM idr_uploads WHERE session_id = ? ORDER BY uploaded_at",
+            "SELECT * FROM idr_uploads WHERE session_id = %s ORDER BY uploaded_at",
             (session_id,),
         ).fetchall()
     return [dict(r) for r in rows]
@@ -206,7 +206,7 @@ def add_analysis(
             INSERT INTO idr_analyses
               (id, session_id, upload_id, analysis_type, result_ref_id,
                status, tenant_id, created_at, result_json)
-            VALUES (?,?,?,?,?,'done',?,?,?)
+            VALUES (%s,%s,%s,%s,%s,'done',%s,%s,%s)
             """,
             (analysis_id, session_id, upload_id, analysis_type,
              result_ref_id, tenant_id, now, result_json),
@@ -214,7 +214,7 @@ def add_analysis(
         conn.commit()
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM idr_analyses WHERE id=?", (analysis_id,)
+            "SELECT * FROM idr_analyses WHERE id=%s", (analysis_id,)
         ).fetchone()
     return dict(row)
 
@@ -222,7 +222,7 @@ def add_analysis(
 def list_analyses(session_id: str) -> list[dict[str, Any]]:
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT * FROM idr_analyses WHERE session_id=? ORDER BY created_at",
+            "SELECT * FROM idr_analyses WHERE session_id=%s ORDER BY created_at",
             (session_id,),
         ).fetchall()
     return [dict(r) for r in rows]
@@ -249,7 +249,7 @@ def add_conflict(
               (id, session_id, node_label, conflict_type,
                source_a, source_a_value, source_b, source_b_value,
                tenant_id, created_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """,
             (
                 conflict_id, session_id, node_label, conflict_type,
@@ -263,7 +263,7 @@ def add_conflict(
         conn.commit()
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM idr_conflicts WHERE id=?", (conflict_id,)
+            "SELECT * FROM idr_conflicts WHERE id=%s", (conflict_id,)
         ).fetchone()
     return dict(row)
 
@@ -279,8 +279,8 @@ def resolve_conflict(
         cur = conn.execute(
             """
             UPDATE idr_conflicts
-            SET resolution=?, resolved_by=?, resolution_notes=?, resolved_at=?
-            WHERE id=? AND resolved_at IS NULL
+            SET resolution=%s, resolved_by=%s, resolution_notes=%s, resolved_at=%s
+            WHERE id=%s AND resolved_at IS NULL
             """,
             (resolution, resolved_by, resolution_notes, now, conflict_id),
         )
@@ -302,7 +302,7 @@ def list_conflicts(session_id: str, pending_only: bool = False) -> list[dict[str
 def pending_conflict_count(session_id: str) -> int:
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT COUNT(*) AS n FROM idr_conflicts WHERE session_id=? AND resolved_at IS NULL",
+            "SELECT COUNT(*) AS n FROM idr_conflicts WHERE session_id=%s AND resolved_at IS NULL",
             (session_id,),
         ).fetchone()
     return int(row["n"]) if row else 0
@@ -327,7 +327,7 @@ def add_artifact(
             INSERT INTO idr_artifacts
               (id, session_id, dic_doc_id, dic_version_id, format,
                file_path, wg_result_id, published_at, tenant_id, created_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """,
             (
                 artifact_id, session_id, dic_doc_id, dic_version_id,
@@ -337,7 +337,7 @@ def add_artifact(
         conn.commit()
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM idr_artifacts WHERE id=?", (artifact_id,)
+            "SELECT * FROM idr_artifacts WHERE id=%s", (artifact_id,)
         ).fetchone()
     return dict(row)
 
@@ -345,7 +345,7 @@ def add_artifact(
 def get_artifact(artifact_id: str) -> dict[str, Any] | None:
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM idr_artifacts WHERE id=?", (artifact_id,)
+            "SELECT * FROM idr_artifacts WHERE id=%s", (artifact_id,)
         ).fetchone()
     return dict(row) if row else None
 
@@ -353,7 +353,7 @@ def get_artifact(artifact_id: str) -> dict[str, Any] | None:
 def list_artifacts(session_id: str) -> list[dict[str, Any]]:
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT * FROM idr_artifacts WHERE session_id=? ORDER BY created_at",
+            "SELECT * FROM idr_artifacts WHERE session_id=%s ORDER BY created_at",
             (session_id,),
         ).fetchall()
     return [dict(r) for r in rows]

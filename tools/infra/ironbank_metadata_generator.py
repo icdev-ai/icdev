@@ -196,7 +196,7 @@ def generate_hardening_manifest(
     try:
         conn = _get_connection(db)
         row = conn.execute(
-            "SELECT name, status FROM projects WHERE id = ?",
+            "SELECT name, status FROM projects WHERE id = %s",
             (project_id,),
         ).fetchone()
         if row:

@@ -151,7 +151,7 @@ def _get_connection(db_path=None):
 
 def _get_project(conn, project_id):
     """Load project record from the projects table."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found in database.")
     return dict(row)
@@ -172,7 +172,7 @@ def _get_controls(conn, project_id):
                   cc.description AS control_description
            FROM project_controls pc
            LEFT JOIN compliance_controls cc ON pc.control_id = cc.id
-           WHERE pc.project_id = ?
+           WHERE pc.project_id = %s
            ORDER BY pc.control_id""",
         (project_id,),
     ).fetchall()
@@ -183,7 +183,7 @@ def _get_poam_items(conn, project_id):
     """Load POA&M items for a project, ordered by severity."""
     rows = conn.execute(
         """SELECT * FROM poam_items
-           WHERE project_id = ?
+           WHERE project_id = %s
            ORDER BY
              CASE severity
                WHEN 'critical' THEN 1
@@ -213,7 +213,7 @@ def _get_findings(conn, project_id):
                   evidence_description, evidence_path, notes,
                   assessment_date, assessor
            FROM fedramp_assessments
-           WHERE project_id = ?
+           WHERE project_id = %s
            ORDER BY control_id""",
         (project_id,),
     ).fetchall()
@@ -225,7 +225,7 @@ def _get_findings(conn, project_id):
                   evidence_description, evidence_path, notes,
                   nist_171_id, assessment_date, assessor
            FROM cmmc_assessments
-           WHERE project_id = ?
+           WHERE project_id = %s
            ORDER BY practice_id""",
         (project_id,),
     ).fetchall()
@@ -237,7 +237,7 @@ def _get_findings(conn, project_id):
                   description, check_content, fix_text, status,
                   comments, target_type, assessed_by, assessed_at
            FROM stig_findings
-           WHERE project_id = ?
+           WHERE project_id = %s
            ORDER BY severity, finding_id""",
         (project_id,),
     ).fetchall()
@@ -250,7 +250,7 @@ def _get_findings(conn, project_id):
                       evidence_description, evidence_path, notes,
                       assessment_date, assessor
                FROM cssp_assessments
-               WHERE project_id = ?
+               WHERE project_id = %s
                ORDER BY requirement_id""",
             (project_id,),
         ).fetchall()
@@ -265,7 +265,7 @@ def _get_findings(conn, project_id):
                       evidence_description, evidence_path, notes,
                       assessment_date, assessor
                FROM sbd_assessments
-               WHERE project_id = ?
+               WHERE project_id = %s
                ORDER BY requirement_id""",
             (project_id,),
         ).fetchall()
@@ -280,7 +280,7 @@ def _get_sbom_records(conn, project_id):
     """Load SBOM records for a project."""
     rows = conn.execute(
         """SELECT * FROM sbom_records
-           WHERE project_id = ?
+           WHERE project_id = %s
            ORDER BY generated_at DESC""",
         (project_id,),
     ).fetchall()
@@ -299,7 +299,7 @@ def _store_oscal_artifact(conn, project_id, artifact_type, file_path, file_hash,
                (project_id, artifact_type, oscal_version, format,
                 file_path, file_hash, schema_valid, validation_errors,
                 generated_at, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 artifact_type,
@@ -325,7 +325,7 @@ def _log_audit(conn, project_id, action, details):
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details,
                 affected_files, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "oscal_generated",

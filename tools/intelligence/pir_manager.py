@@ -77,7 +77,7 @@ def get_pir(pir_id: str) -> Optional[Dict[str, Any]]:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT * FROM sg_pir_requirements WHERE id = ?", (pir_id,)
+            "SELECT * FROM sg_pir_requirements WHERE id = %s", (pir_id,)
         ).fetchone()
         return _row(row) if row else None
     finally:
@@ -133,7 +133,7 @@ def create_pir(
             """INSERT INTO sg_pir_requirements
                (id, pir_type, topic, description, collection_priority,
                 status, tasked_to, due_by, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 pir_id, pir_type, topic.strip(), description,
                 collection_priority, "active", tasked_to, due_by, now, now,

@@ -104,7 +104,7 @@ def _collect_build_evidence(project_id: str, conn) -> dict:
     try:
         # Check for pipeline audit records (build_process_documented)
         row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM devsecops_pipeline_audit WHERE project_id = ?",
+            "SELECT COUNT(*) as cnt FROM devsecops_pipeline_audit WHERE project_id = %s",
             (project_id,),
         ).fetchone()
         if row and row["cnt"] > 0:
@@ -112,7 +112,7 @@ def _collect_build_evidence(project_id: str, conn) -> dict:
 
         # Check for SBOM records (version_controlled_source)
         row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM sbom_records WHERE project_id = ?",
+            "SELECT COUNT(*) as cnt FROM sbom_records WHERE project_id = %s",
             (project_id,),
         ).fetchone()
         if row and row["cnt"] > 0:
@@ -120,7 +120,7 @@ def _collect_build_evidence(project_id: str, conn) -> dict:
 
         # Check for devsecops profile (build_service_authenticated)
         row = conn.execute(
-            "SELECT active_stages FROM devsecops_profiles WHERE project_id = ?",
+            "SELECT active_stages FROM devsecops_profiles WHERE project_id = %s",
             (project_id,),
         ).fetchone()
         if row:
@@ -132,7 +132,7 @@ def _collect_build_evidence(project_id: str, conn) -> dict:
 
         # Check for K8s deployment evidence (ephemeral_environment, isolated_builds)
         row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM audit_trail WHERE project_id = ? AND event_type LIKE '%deploy%'",
+            "SELECT COUNT(*) as cnt FROM audit_trail WHERE project_id = %s AND event_type LIKE '%deploy%'",
             (project_id,),
         ).fetchone()
         if row and row["cnt"] > 0:
@@ -141,7 +141,7 @@ def _collect_build_evidence(project_id: str, conn) -> dict:
 
         # Check for attestation verification (hermetic_builds)
         row = conn.execute(
-            "SELECT COUNT(*) as cnt FROM devsecops_pipeline_audit WHERE project_id = ? AND stage = 'image_signing'",
+            "SELECT COUNT(*) as cnt FROM devsecops_pipeline_audit WHERE project_id = %s AND stage = 'image_signing'",
             (project_id,),
         ).fetchone()
         if row and row["cnt"] > 0:
@@ -190,7 +190,7 @@ def generate_slsa_provenance(
         if conn:
             try:
                 rows = conn.execute(
-                    "SELECT * FROM sbom_records WHERE project_id = ? ORDER BY created_at DESC LIMIT 5",
+                    "SELECT * FROM sbom_records WHERE project_id = %s ORDER BY created_at DESC LIMIT 5",
                     (project_id,),
                 ).fetchall()
                 for row in rows:
@@ -246,7 +246,7 @@ def generate_slsa_provenance(
         if conn:
             try:
                 rows = conn.execute(
-                    "SELECT * FROM sbom_records WHERE project_id = ? ORDER BY created_at DESC LIMIT 1",
+                    "SELECT * FROM sbom_records WHERE project_id = %s ORDER BY created_at DESC LIMIT 1",
                     (project_id,),
                 ).fetchall()
                 for row in rows:
@@ -332,7 +332,7 @@ def generate_vex_document(
                 # Check vulnerability records
                 rows = conn.execute(
                     """SELECT * FROM vulnerability_records
-                       WHERE project_id = ?
+                       WHERE project_id = %s
                        ORDER BY severity DESC, created_at DESC
                        LIMIT 100""",
                     (project_id,),
@@ -361,7 +361,7 @@ def generate_vex_document(
                 # Check CVE triage records
                 rows = conn.execute(
                     """SELECT * FROM cve_triage
-                       WHERE project_id = ?
+                       WHERE project_id = %s
                        ORDER BY cvss_score DESC
                        LIMIT 50""",
                     (project_id,),

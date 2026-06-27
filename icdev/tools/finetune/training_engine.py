@@ -38,7 +38,7 @@ def _get_db(db_path: Optional[Path] = None) -> sqlite3.Connection:
 def _record_event(conn: sqlite3.Connection, job_id: str, event_type: str, details: str = "{}") -> None:
     """Record a training job event (append-only, D6)."""
     conn.execute(
-        "INSERT INTO ft_training_job_events (job_id, event_type, details, created_at) VALUES (?, ?, ?, ?)",
+        "INSERT INTO ft_training_job_events (job_id, event_type, details, created_at) VALUES (%s, %s, %s, %s)",
         (job_id, event_type, details, now_iso()),
     )
 
@@ -100,7 +100,7 @@ def create_training_job(
                 lora_rank, learning_rate, epochs, batch_size, max_seq_length,
                 gpu_count, distributed, output_dir, classification,
                 tenant_id, project_id, created_by, created_at)
-               VALUES (?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, 'pending', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 job_id,
                 dataset_id,
@@ -131,7 +131,7 @@ def create_training_job(
         export_result = export_jsonl(dataset_id, export_path, approved_only=True, db_path=db_path)
         if not export_result.get("success"):
             conn.execute(
-                "UPDATE ft_training_jobs SET status = 'failed', error_message = ? WHERE id = ?",
+                "UPDATE ft_training_jobs SET status = 'failed', error_message = %s WHERE id = %s",
                 (f"Dataset export failed: {export_result.get('error', '')}", job_id),
             )
             _record_event(conn, job_id, "failed", json.dumps({"reason": "dataset_export_failed"}))
@@ -140,7 +140,7 @@ def create_training_job(
 
         # Update status to preparing
         conn.execute(
-            "UPDATE ft_training_jobs SET status = 'preparing', started_at = ? WHERE id = ?",
+            "UPDATE ft_training_jobs SET status = 'preparing', started_at = %s WHERE id = %s",
             (now, job_id),
         )
         _record_event(conn, job_id, "started")
@@ -167,7 +167,7 @@ def create_training_job(
 
         if status.status == "failed":
             conn.execute(
-                "UPDATE ft_training_jobs SET status = 'failed', error_message = ? WHERE id = ?",
+                "UPDATE ft_training_jobs SET status = 'failed', error_message = %s WHERE id = %s",
                 (status.error, job_id),
             )
             _record_event(conn, job_id, "failed", json.dumps({"error": status.error}))
@@ -175,7 +175,7 @@ def create_training_job(
             return {"success": False, "error": status.error, "job_id": job_id}
 
         conn.execute(
-            "UPDATE ft_training_jobs SET status = 'training' WHERE id = ?",
+            "UPDATE ft_training_jobs SET status = 'training' WHERE id = %s",
             (job_id,),
         )
         conn.commit()
@@ -202,7 +202,7 @@ def get_job_status(
     """Get current status of a training job."""
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM ft_training_jobs WHERE id = ?", (job_id,)).fetchone()
+        row = conn.execute("SELECT * FROM ft_training_jobs WHERE id = %s", (job_id,)).fetchone()
         if not row:
             return {"success": False, "error": f"Job not found: {job_id}"}
 
@@ -216,7 +216,7 @@ def get_job_status(
                 if live_status.status != job["status"]:
                     # Update DB with latest status
                     conn.execute(
-                        "UPDATE ft_training_jobs SET status = ?, loss_history = ? WHERE id = ?",
+                        "UPDATE ft_training_jobs SET status = %s, loss_history = %s WHERE id = %s",
                         (live_status.status, json.dumps(live_status.loss_history), job_id),
                     )
                     conn.commit()
@@ -230,7 +230,7 @@ def get_job_status(
 
         # Get event history
         events = conn.execute(
-            "SELECT * FROM ft_training_job_events WHERE job_id = ? ORDER BY created_at DESC LIMIT 20",
+            "SELECT * FROM ft_training_job_events WHERE job_id = %s ORDER BY created_at DESC LIMIT 20",
             (job_id,),
         ).fetchall()
         job["events"] = [dict(e) for e in events]
@@ -249,7 +249,7 @@ def cancel_job(
     """Cancel a running training job."""
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM ft_training_jobs WHERE id = ?", (job_id,)).fetchone()
+        row = conn.execute("SELECT * FROM ft_training_jobs WHERE id = %s", (job_id,)).fetchone()
         if not row:
             return {"success": False, "error": f"Job not found: {job_id}"}
 
@@ -260,7 +260,7 @@ def cancel_job(
         canceled = provider.cancel_training(job_id)
 
         conn.execute(
-            "UPDATE ft_training_jobs SET status = 'canceled', completed_at = ? WHERE id = ?",
+            "UPDATE ft_training_jobs SET status = 'canceled', completed_at = %s WHERE id = %s",
             (now_iso(), job_id),
         )
         _record_event(conn, job_id, "canceled")

@@ -64,7 +64,7 @@ def get_lifecycle(design_id: str, conn) -> dict:
     Return current lifecycle state + full transition history for a design.
     """
     rows = conn.execute(
-        "SELECT * FROM aadc_lifecycle_states WHERE design_id=? ORDER BY created_at ASC",
+        "SELECT * FROM aadc_lifecycle_states WHERE design_id=%s ORDER BY created_at ASC",
         (design_id,),
     ).fetchall()
 
@@ -95,7 +95,7 @@ def transition(design_id: str, to_state: str, actor: str, reason: str, conn) -> 
         return {"ok": False, "error": f"Unknown state: {to_state}"}
 
     rows = conn.execute(
-        "SELECT to_state FROM aadc_lifecycle_states WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+        "SELECT to_state FROM aadc_lifecycle_states WHERE design_id=%s ORDER BY created_at DESC LIMIT 1",
         (design_id,),
     ).fetchone()
     current = dict(rows)["to_state"] if rows else "DRAFT"
@@ -106,7 +106,7 @@ def transition(design_id: str, to_state: str, actor: str, reason: str, conn) -> 
     import uuid
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
-        "INSERT INTO aadc_lifecycle_states (id,design_id,from_state,to_state,actor,reason,created_at) VALUES (?,?,?,?,?,?,?)",
+        "INSERT INTO aadc_lifecycle_states (id,design_id,from_state,to_state,actor,reason,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
         (str(uuid.uuid4()), design_id, current, to_state, actor or "system", reason or "", now),
     )
     conn.commit()

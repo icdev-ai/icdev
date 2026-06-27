@@ -138,7 +138,7 @@ def _check_teaming_cmmc(
     conn = get_connection()
     try:
         partners = conn.execute(
-            "SELECT id, partner_name, role, cmmc_level, sprs_score FROM pg_teaming_workshare WHERE opportunity_id = ?",
+            "SELECT id, partner_name, role, cmmc_level, sprs_score FROM pg_teaming_workshare WHERE opportunity_id = %s",
             (opp_id,),
         ).fetchall()
     except Exception:
@@ -189,7 +189,7 @@ def _check_ai_clause_compliance(opp_id: str) -> Dict[str, Any]:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT clause_id, clause_title, compliance_status FROM pg_ai_clause_compliance WHERE opportunity_id = ?",
+            "SELECT clause_id, clause_title, compliance_status FROM pg_ai_clause_compliance WHERE opportunity_id = %s",
             (opp_id,),
         ).fetchall()
     except Exception:
@@ -259,7 +259,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         conn.execute(
             "INSERT INTO pg_proposal_genesis_audit "
             "(id, event_type, reflex_name, risk_tier, details, success, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
                 _generate_id("pgaudit"),
                 "cmmc_validation",

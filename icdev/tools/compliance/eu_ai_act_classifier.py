@@ -142,7 +142,7 @@ class EUAIActClassifier(BaseAssessor):
         try:
             # Check table exists
             row = conn.execute(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s",
                 (table,),
             ).fetchone()
             if row[0] == 0:

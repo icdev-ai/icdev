@@ -28,12 +28,12 @@ def _table_exists(conn, name):
     try:
         if getattr(conn, "_backend", "sqlite") == "postgresql":
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
                 (name,),
             ).fetchone()
             return row is not None
         row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
             (name,),
         ).fetchone()
         return row is not None
@@ -294,7 +294,7 @@ def plan_detail(plan_id):
             "migration_approach, total_tasks, completed_tasks, status, "
             "estimated_hours, actual_hours, start_date, target_date, "
             "completion_date, created_at, updated_at "
-            "FROM migration_plans WHERE id = ?",
+            "FROM migration_plans WHERE id = %s",
             (plan_id,),
         ).fetchone()
 
@@ -330,7 +330,7 @@ def plan_detail(plan_id):
                 "SELECT id, task_type, title, description, priority, status, "
                 "pi_number, assigned_to, estimated_hours, actual_hours, "
                 "output_path, created_at, completed_at "
-                "FROM migration_tasks WHERE plan_id = ? ORDER BY created_at",
+                "FROM migration_tasks WHERE plan_id = %s ORDER BY created_at",
                 (plan_id,),
             ).fetchall():
                 tasks.append(
@@ -357,7 +357,7 @@ def plan_detail(plan_id):
             for r in conn.execute(
                 "SELECT id, task_id, artifact_type, file_path, file_hash, "
                 "description, created_at "
-                "FROM migration_artifacts WHERE plan_id = ? ORDER BY created_at",
+                "FROM migration_artifacts WHERE plan_id = %s ORDER BY created_at",
                 (plan_id,),
             ).fetchall():
                 artifacts.append(
@@ -380,7 +380,7 @@ def plan_detail(plan_id):
                 "tasks_in_progress, tasks_blocked, components_migrated, "
                 "components_remaining, apis_migrated, tables_migrated, "
                 "test_coverage, compliance_score, hours_spent, notes, created_at "
-                "FROM migration_progress WHERE plan_id = ? "
+                "FROM migration_progress WHERE plan_id = %s "
                 "ORDER BY created_at DESC LIMIT 1",
                 (plan_id,),
             ).fetchone()
@@ -432,7 +432,7 @@ def plan_progress(plan_id):
             "tasks_in_progress, tasks_blocked, components_migrated, "
             "components_remaining, apis_migrated, tables_migrated, "
             "test_coverage, compliance_score, hours_spent, notes, created_at "
-            "FROM migration_progress WHERE plan_id = ? ORDER BY created_at",
+            "FROM migration_progress WHERE plan_id = %s ORDER BY created_at",
             (plan_id,),
         ).fetchall()
 

@@ -682,3 +682,212 @@ def suggest_improvements(eval_result: EvalResult) -> list[dict]:
     _order = {_SEVERITY_HIGH: 0, _SEVERITY_MEDIUM: 1, _SEVERITY_LOW: 2}
     suggestions.sort(key=lambda s: _order.get(s["severity"], 3))
     return suggestions
+
+
+# ---------------------------------------------------------------------------
+# Apply suggestions to a prompt
+# ---------------------------------------------------------------------------
+
+
+def apply_suggestions_to_prompt(system_prompt: str, suggestions: list[dict]) -> str:
+    """Prepend high/medium severity suggestion text to a system prompt.
+
+    Only includes suggestions whose ``field`` is ``"system_prompt"``.
+    Returns the original prompt unchanged if no matching suggestions exist.
+    """
+    patches = [
+        s["suggestion"]
+        for s in suggestions
+        if s.get("field") == "system_prompt" and s.get("severity") in ("high", "medium")
+    ]
+    if not patches:
+        return system_prompt
+    patch_block = "\n".join(f"- {p}" for p in patches)
+    prefix = f"[Improvement guidance from prior run]\n{patch_block}\n\n"
+    return prefix + (system_prompt or "")
+
+
+# ---------------------------------------------------------------------------
+# Before/after comparison
+# ---------------------------------------------------------------------------
+
+
+def compare_evals(session_a: str, session_b: str) -> dict:
+    """Compare two EvalResult objects field by field.
+
+    Returns a dict with:
+        session_a, session_b, outcome_a, outcome_b,
+        fields: [{name, a_value, b_value, delta, improved, higher_is_better}]
+        improvements: int, regressions: int, overall_improved: bool
+    """
+    ea = get_eval(session_a) or score_session(session_a)
+    eb = get_eval(session_b) or score_session(session_b)
+
+    _NUMERIC_FIELDS = [
+        ("efficiency_score", True),
+        ("reasoning_coverage", True),
+        ("tool_error_rate", False),
+        ("tool_precision", True),
+        ("avg_reasoning_chars", True),
+        ("turns_used", False),
+        ("scope_violations", False),
+        ("trust_denials", False),
+    ]
+    _BOOL_FIELDS = ["plan_stated", "has_error_recovery_reasoning"]
+
+    fields: list[dict] = []
+    improvements = 0
+    regressions = 0
+
+    for fname, higher_is_better in _NUMERIC_FIELDS:
+        va = getattr(ea, fname, None)
+        vb = getattr(eb, fname, None)
+        if va is None or vb is None:
+            continue
+        delta = (vb - va) if isinstance(vb, (int, float)) else None
+        if delta is not None:
+            improved: bool | None = (delta > 0) if higher_is_better else (delta < 0)
+        else:
+            improved = None
+        if improved is True:
+            improvements += 1
+        elif improved is False:
+            regressions += 1
+        fields.append({
+            "name": fname,
+            "a_value": round(va, 3) if isinstance(va, float) else va,
+            "b_value": round(vb, 3) if isinstance(vb, float) else vb,
+            "delta": round(delta, 3) if delta is not None else None,
+            "improved": improved,
+            "higher_is_better": higher_is_better,
+        })
+
+    for fname in _BOOL_FIELDS:
+        va = getattr(ea, fname, None)
+        vb = getattr(eb, fname, None)
+        imp: bool | None = (bool(vb) and not bool(va)) if va is not None and vb is not None else None
+        if imp is True:
+            improvements += 1
+        elif imp is False:
+            regressions += 1
+        fields.append({
+            "name": fname,
+            "a_value": va,
+            "b_value": vb,
+            "delta": None,
+            "improved": imp,
+            "higher_is_better": True,
+        })
+
+    return {
+        "session_a": session_a,
+        "session_b": session_b,
+        "outcome_a": ea.outcome,
+        "outcome_b": eb.outcome,
+        "fields": fields,
+        "improvements": improvements,
+        "regressions": regressions,
+        "overall_improved": improvements > regressions,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Eval score trending (time-bucketed aggregation)
+# ---------------------------------------------------------------------------
+
+
+def get_eval_trends(
+    days: int = 30,
+    role: str | None = None,
+    bucket: str = "week",
+) -> list[dict]:
+    """Aggregate eval scores over time, grouped by time bucket and optionally by role.
+
+    Args:
+        days:   How many days back to look (default 30, max 365).
+        role:   Filter to a specific coworker role (None = all roles).
+        bucket: Time bucket — 'day' | 'week' | 'month' (default 'week').
+
+    Returns a list of dicts ordered by period ascending:
+        [{period, role, count, avg_efficiency, avg_reasoning_coverage,
+          avg_tool_error_rate, pct_done}]
+    """
+    days = min(int(days), 365)
+    bucket = bucket if bucket in ("day", "week", "month") else "week"
+
+    conn = _get_conn()
+    if conn is None:
+        return []
+    try:
+        cursor = conn.cursor()
+
+        if bucket == "day":
+            trunc_expr = "date(graded_at)"
+        elif bucket == "week":
+            trunc_expr = "date(graded_at, 'weekday 0', '-6 days')"
+        else:
+            trunc_expr = "strftime('%Y-%m-01', graded_at)"
+
+        role_filter = "AND s.role = ?" if role else ""
+        params: list = [f"-{days} days"]
+        if role:
+            params.append(role)
+
+        try:
+            cursor.execute(
+                f"""
+                SELECT
+                    {trunc_expr} AS period,
+                    COALESCE(s.role, 'unknown') AS role,
+                    COUNT(*) AS count,
+                    AVG(e.efficiency_score) AS avg_efficiency,
+                    AVG(e.reasoning_coverage) AS avg_reasoning_coverage,
+                    AVG(e.tool_error_rate) AS avg_tool_error_rate,
+                    SUM(CASE WHEN e.done = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS pct_done
+                FROM agent_evals e
+                LEFT JOIN ace_sessions s ON s.session_id = e.session_id
+                WHERE e.graded_at >= datetime('now', ?)
+                {role_filter}
+                GROUP BY period, role
+                ORDER BY period ASC
+                """,
+                params,
+            )
+            rows = cursor.fetchall()
+            col_names = [d[0] for d in cursor.description]
+        except Exception:
+            cursor.execute(
+                f"""
+                SELECT
+                    {trunc_expr} AS period,
+                    'all' AS role,
+                    COUNT(*) AS count,
+                    AVG(efficiency_score) AS avg_efficiency,
+                    AVG(reasoning_coverage) AS avg_reasoning_coverage,
+                    AVG(tool_error_rate) AS avg_tool_error_rate,
+                    SUM(CASE WHEN done = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS pct_done
+                FROM agent_evals
+                WHERE graded_at >= datetime('now', ?)
+                GROUP BY period
+                ORDER BY period ASC
+                """,
+                [f"-{days} days"],
+            )
+            rows = cursor.fetchall()
+            col_names = [d[0] for d in cursor.description]
+
+        results = []
+        for row in rows:
+            d = dict(zip(col_names, row))
+            results.append({
+                "period": d.get("period", ""),
+                "role": d.get("role", "all"),
+                "count": int(d.get("count", 0)),
+                "avg_efficiency": round(float(d.get("avg_efficiency") or 0), 3),
+                "avg_reasoning_coverage": round(float(d.get("avg_reasoning_coverage") or 0), 3),
+                "avg_tool_error_rate": round(float(d.get("avg_tool_error_rate") or 0), 3),
+                "pct_done": round(float(d.get("pct_done") or 0), 1),
+            })
+        return results
+    finally:
+        conn.close()

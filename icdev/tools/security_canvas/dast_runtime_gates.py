@@ -101,7 +101,7 @@ def run_dast_scan(application: str, target_url: str = "",
             conn.execute(
                 "INSERT INTO zig_dast_scans "
                 "(application, scan_type, check_id, check_name, passed, severity, scanned_at) "
-                "VALUES (?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
                 (application, "dast", check_id, meta["name"], int(passed), meta["severity"], now),
             )
         conn.commit()
@@ -135,7 +135,7 @@ def run_runtime_check(application: str, posture: dict | None = None) -> dict[str
             conn.execute(
                 "INSERT INTO zig_dast_scans "
                 "(application, scan_type, check_id, check_name, passed, severity, scanned_at) "
-                "VALUES (?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
                 (application, "runtime", check_id, meta["name"], int(passed), meta["severity"], now),
             )
         conn.commit()
@@ -175,7 +175,7 @@ def evaluate_gate(application: str, dast_findings: dict | None = None,
         conn.execute(
             "INSERT INTO zig_dast_gate_results "
             "(application, gate_status, dast_score, runtime_score, cat1_failures, blockers_json, evaluated_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (application, gate_status, dast["dast_score"], runtime["runtime_score"],
              dast["cat1_failures"], json.dumps(blockers), now),
         )

@@ -236,7 +236,7 @@ def log_column_mask(
         conn.execute(
             """
             INSERT INTO column_mask_audit (table_name, role, masked_columns, recorded_at)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
             """,
             (
                 table,

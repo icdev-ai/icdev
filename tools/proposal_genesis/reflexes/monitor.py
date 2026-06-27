@@ -132,7 +132,7 @@ def _get_latest_evm(contract_id: str) -> Optional[Dict]:
                    planned_value, earned_value, actual_cost,
                    budget_at_completion
             FROM cpmp_evm_periods
-            WHERE contract_id = ?
+            WHERE contract_id = %s
             ORDER BY period_date DESC
             LIMIT 1
         """,
@@ -243,10 +243,10 @@ def _get_overdue_deliverables(contract_id: str) -> List[Dict]:
             SELECT id, cdrl_number, title, deliverable_type,
                    due_date, status, days_overdue
             FROM cpmp_deliverables
-            WHERE contract_id = ?
+            WHERE contract_id = %s
             AND status NOT IN ('accepted', 'submitted', 'government_review')
             AND due_date IS NOT NULL
-            AND due_date <= ?
+            AND due_date <= %s
             ORDER BY due_date ASC
         """,
             (contract_id, now),
@@ -267,11 +267,11 @@ def _get_upcoming_deliverables(contract_id: str, days: int = _UPCOMING_WINDOW_DA
             SELECT id, cdrl_number, title, deliverable_type,
                    due_date, status
             FROM cpmp_deliverables
-            WHERE contract_id = ?
+            WHERE contract_id = %s
             AND status IN ('not_started', 'in_progress', 'draft_complete')
             AND due_date IS NOT NULL
             AND due_date > date('now')
-            AND due_date <= date('now', '+' || ? || ' days')
+            AND due_date <= date('now', '+' || %s || ' days')
             ORDER BY due_date ASC
         """,
             (contract_id, days),
@@ -343,7 +343,7 @@ def _get_open_negative_events(contract_id: str) -> List[Dict]:
                    corrective_action_status, corrective_action_due,
                    cpars_impact, created_at
             FROM cpmp_negative_events
-            WHERE contract_id = ?
+            WHERE contract_id = %s
             AND corrective_action_status IN ('open', 'in_progress')
             ORDER BY severity DESC, created_at DESC
         """,
@@ -482,7 +482,7 @@ def _store_monitoring_result(contract_id: str, health: Dict, cpars_prediction: D
             "INSERT INTO pg_proposal_genesis_audit "
             "(id, event_type, reflex_name, risk_tier, opportunity_id, "
             "details, success, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 _generate_id("pgaudit"),
                 "contract_monitored",

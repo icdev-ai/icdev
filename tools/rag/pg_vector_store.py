@@ -103,7 +103,7 @@ class PgVectorStore(VectorStoreProvider):
                            source_table, chunk_index, total_chunks, metadata,
                            tier, tenant_id, project_id, classification
                     FROM rag_chunks
-                    WHERE content_hash = ?
+                    WHERE content_hash = %s
                     LIMIT 1
                     """,
                     (content_hash,),
@@ -146,7 +146,7 @@ class PgVectorStore(VectorStoreProvider):
                     continue
                 # Dedup by content_hash
                 existing = conn.execute(
-                    "SELECT id FROM rag_chunks WHERE content_hash = ?",
+                    "SELECT id FROM rag_chunks WHERE content_hash = %s",
                     (chunk.content_hash,),
                 ).fetchone()
                 if existing:
@@ -164,7 +164,7 @@ class PgVectorStore(VectorStoreProvider):
                          source_type, source_id, source_table, chunk_index,
                          total_chunks, metadata, tier, tenant_id, project_id,
                          classification)
-                    VALUES (?, ?, ?, ?, ?::vector, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s::vector, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                     (
                         chunk.chunk_id,
@@ -364,7 +364,7 @@ class PgVectorStore(VectorStoreProvider):
         try:
             deleted = 0
             for cid in chunk_ids:
-                conn.execute("DELETE FROM rag_chunks WHERE id = ?", (cid,))
+                conn.execute("DELETE FROM rag_chunks WHERE id = %s", (cid,))
                 deleted += 1
             conn.commit()
             return deleted
@@ -376,7 +376,7 @@ class PgVectorStore(VectorStoreProvider):
         try:
             if filters and filters.get("source_type"):
                 row = conn.execute(
-                    "SELECT COUNT(*) FROM rag_chunks WHERE source_type = ?",
+                    "SELECT COUNT(*) FROM rag_chunks WHERE source_type = %s",
                     (filters["source_type"],),
                 ).fetchone()
             else:

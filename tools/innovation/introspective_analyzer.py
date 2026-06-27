@@ -156,7 +156,7 @@ def _audit(event_type, actor, action, details=None, project_id=None):
 
 
 def _table_exists(conn, name):
-    return conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone()[0] > 0
+    return conn.execute("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s", (name,)).fetchone()[0] > 0
 
 
 def _sig_id():
@@ -196,7 +196,7 @@ def analyze_failed_self_heals(db_path=None):
                FROM self_healing_events she
                LEFT JOIN knowledge_patterns kp ON she.pattern_id = kp.id
                WHERE she.outcome IN ('escalated','failure')
-                  OR (kp.confidence IS NOT NULL AND kp.confidence < ?)
+                  OR (kp.confidence IS NOT NULL AND kp.confidence < %s)
                ORDER BY she.created_at DESC LIMIT 100""",
             (DEFAULT_CONFIDENCE_CEILING,),
         ).fetchall()
@@ -326,13 +326,13 @@ def analyze_unused_tools(db_path=None, days=None):
         used = {
             row["event_type"]
             for row in conn.execute(
-                "SELECT DISTINCT event_type FROM audit_trail WHERE created_at >= ?", (cutoff,)
+                "SELECT DISTINCT event_type FROM audit_trail WHERE created_at >= %s", (cutoff,)
             ).fetchall()
         }
         for evt in TOOL_EVENT_TYPES:
             if evt not in used:
                 row = conn.execute(
-                    "SELECT COUNT(*) AS c, MAX(created_at) AS lu FROM audit_trail WHERE event_type=?", (evt,)
+                    "SELECT COUNT(*) AS c, MAX(created_at) AS lu FROM audit_trail WHERE event_type=%s", (evt,)
                 ).fetchone()
                 r["findings"].append(
                     {
@@ -433,7 +433,7 @@ def analyze_nlq_gaps(db_path=None, min_occurrences=None):
                       MIN(created_at) AS fa, MAX(created_at) AS la,
                       GROUP_CONCAT(DISTINCT actor) AS actors
                FROM nlq_queries WHERE result_count=0 OR status='error'
-               GROUP BY nq HAVING COUNT(*) >= ? ORDER BY cnt DESC LIMIT 50""",
+               GROUP BY nq HAVING COUNT(*) >= %s ORDER BY cnt DESC LIMIT 50""",
             (mo,),
         ).fetchall()
         for row in rows:
@@ -479,7 +479,7 @@ def analyze_knowledge_gaps(db_path=None):
                       confidence, occurrence_count, auto_healable, last_occurrence
                FROM knowledge_patterns
                WHERE remediation IS NULL OR remediation='' OR remediation='{}'
-                  OR confidence < ?
+                  OR confidence < %s
                ORDER BY occurrence_count DESC LIMIT 50""",
             (DEFAULT_CONFIDENCE_CEILING,),
         ).fetchall()
@@ -682,7 +682,7 @@ def generate_introspective_signals(analysis_results, db_path=None):
         for sig in signals:
             try:
                 if conn.execute(
-                    "SELECT id FROM innovation_signals WHERE content_hash=?", (sig["content_hash"],)
+                    "SELECT id FROM innovation_signals WHERE content_hash=%s", (sig["content_hash"],)
                 ).fetchone():
                     duplicates += 1
                     continue
@@ -690,7 +690,7 @@ def generate_introspective_signals(analysis_results, db_path=None):
                     """INSERT INTO innovation_signals
                        (id, source, source_type, title, description, url,
                         metadata, community_score, content_hash, discovered_at, status, category)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,'new',NULL)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'new',NULL)""",
                     (
                         sig["id"],
                         sig["source"],

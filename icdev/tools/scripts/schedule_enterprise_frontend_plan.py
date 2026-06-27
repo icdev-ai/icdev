@@ -326,7 +326,7 @@ def enqueue() -> dict:
         for suffix, title, task_type, priority, description in SUBTASKS:
             tid = PREFIX + suffix
             existing = cur.execute(
-                "SELECT id, status FROM kanban_tasks WHERE id = ?", (tid,),
+                "SELECT id, status FROM kanban_tasks WHERE id = %s", (tid,),
             ).fetchone()
             if existing:
                 skipped.append(tid)
@@ -336,7 +336,7 @@ def enqueue() -> dict:
                 "INSERT INTO kanban_tasks "
                 "(id, title, description, task_type, priority, status, "
                 "depends_on_task_id, dispatch_source, created_at, updated_at, scheduled_at) "
-                "VALUES (?, ?, ?, ?, ?, 'scheduled', ?, 'manual_plan', ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, 'scheduled', %s, 'manual_plan', %s, %s, %s)",
                 (tid, title, description, task_type, priority, parent, now, now, now),
             )
             inserted.append(tid)

@@ -87,7 +87,7 @@ def _already_discovered(title: str) -> bool:
     """Check if a similar challenge was already discovered."""
     conn = get_connection()
     try:
-        row = conn.execute("SELECT COUNT(*) c FROM appforge_challenges WHERE title = ?", (title,)).fetchone()
+        row = conn.execute("SELECT COUNT(*) c FROM appforge_challenges WHERE title = %s", (title,)).fetchone()
         return row["c"] > 0
     except Exception:
         return False
@@ -285,7 +285,7 @@ def run(config: Dict[str, Any], trust) -> Dict[str, Any]:
             conn.execute(
                 "INSERT OR IGNORE INTO appforge_challenges "
                 "(challenge_id, vertical, title, description, pain_points, source, score, status, discovered_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, 'discovered', ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, 'discovered', %s)",
                 (
                     cid,
                     ch["vertical"],

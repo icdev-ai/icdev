@@ -261,7 +261,7 @@ def _insert_prediction(conn: Any, finding: Dict[str, Any]) -> Optional[str]:
 
     try:
         existing = conn.execute(
-            "SELECT outcome FROM oracle_predictions WHERE id = ?", (pred_id,)
+            "SELECT outcome FROM oracle_predictions WHERE id = %s", (pred_id,)
         ).fetchone()
         if existing:
             # Re-raise if already promoted/dismissed; re-insert if dismissed > 30 days ago
@@ -285,7 +285,7 @@ def _insert_prediction(conn: Any, finding: Dict[str, Any]) -> Optional[str]:
             "(id, lens_id, lens_name, prediction_text, confidence, "
             " created_at, subject_type, subject_id, prediction_type, "
             " severity, horizon_days, evidence_json, classification) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 pred_id,
                 "internal_awareness",

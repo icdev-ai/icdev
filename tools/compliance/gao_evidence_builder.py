@@ -242,7 +242,7 @@ def build_evidence(project_id: str, db_path: Path = DB_PATH) -> Dict:
         try:
             drift = conn.execute(
                 """SELECT COUNT(*) as cnt FROM ai_telemetry
-                   WHERE project_id = ? AND event_type = 'drift_detected'""",
+                   WHERE project_id = %s AND event_type = 'drift_detected'""",
                 (project_id,),
             ).fetchone()
             drift_count = drift["cnt"] if drift else 0

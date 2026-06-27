@@ -205,7 +205,7 @@ class AgentOutputValidator:
                    (id, project_id, agent_id, tool_name, violation_type,
                     severity, details_json, output_hash, action_taken,
                     classification, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI', ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'CUI', %s)""",
                 (
                     entry_id,
                     project_id,

@@ -37,7 +37,7 @@ def _conn():
 
 def _table_exists(conn, name):
     return bool(conn.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s", (name,)
     ).fetchone())
 
 
@@ -253,7 +253,7 @@ def run(project_id: str = "default") -> dict:
                 """INSERT INTO mc_assessments
                    (id, design_id, assessment_type, findings_json, score, grade,
                     cat1_findings, cat2_findings, cat3_findings, readiness_score, created_at)
-                   VALUES (?, ?, 'validation', ?, ?, ?, ?, ?, 0, ?, ?)""",
+                   VALUES (%s, %s, 'validation', %s, %s, %s, %s, %s, 0, %s, %s)""",
                 (
                     f"val-{uuid.uuid4().hex[:10]}",
                     design_id,

@@ -412,7 +412,7 @@ def score_pain_point(pain_point_id, db_path=None):
 
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM creative_pain_points WHERE id = ?", (pain_point_id,)).fetchone()
+        row = conn.execute("SELECT * FROM creative_pain_points WHERE id = %s", (pain_point_id,)).fetchone()
         if not row:
             raise ValueError(f"Pain point not found: {pain_point_id}")
 
@@ -454,7 +454,7 @@ def score_pain_point(pain_point_id, db_path=None):
                 competitor_ids, keyword_fingerprint, keywords, severity,
                 status, composite_score, score_breakdown,
                 first_seen, last_seen, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scored', ?, ?, ?, ?, 'CUI')""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'scored', %s, %s, %s, %s, 'CUI')""",
             (
                 new_id,
                 pain_point.get("title", ""),
@@ -687,7 +687,7 @@ def identify_feature_gaps(db_path=None):
             """SELECT * FROM creative_pain_points
                WHERE status = 'scored'
                AND composite_score IS NOT NULL
-               AND composite_score >= ?
+               AND composite_score >= %s
                ORDER BY last_seen ASC""",
             (suggest_threshold,),
         ).fetchall()
@@ -707,7 +707,7 @@ def identify_feature_gaps(db_path=None):
 
             # Check if a feature gap already exists for this pain point
             existing = conn.execute(
-                "SELECT id FROM creative_feature_gaps WHERE pain_point_id = ?",
+                "SELECT id FROM creative_feature_gaps WHERE pain_point_id = %s",
                 (pp_id,),
             ).fetchone()
             if existing:
@@ -793,7 +793,7 @@ def identify_feature_gaps(db_path=None):
                     requested_by_count, competitor_coverage,
                     gap_score, market_demand, signal_ids,
                     status, metadata, discovered_at, classification)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'identified', '{}', ?, 'CUI')""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'identified', '{}', %s, 'CUI')""",
                 (
                     fg_id,
                     pp_id,

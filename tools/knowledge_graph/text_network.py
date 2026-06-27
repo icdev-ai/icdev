@@ -475,7 +475,7 @@ def extract_entities_and_relationships(text, project_id, graph_name=None):
 
     conn.execute(
         "INSERT INTO kg_graphs (id, project_id, name, description, metadata, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
         (
             graph_id,
             project_id,
@@ -495,7 +495,7 @@ def extract_entities_and_relationships(text, project_id, graph_name=None):
         node_id = _kg_id()
         node_map[label] = node_id
         conn.execute(
-            "INSERT INTO kg_nodes (id, graph_id, label, entity_type, properties, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO kg_nodes (id, graph_id, label, entity_type, properties, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
             (node_id, graph_id, label, etype, "{}", now),
         )
 
@@ -511,7 +511,7 @@ def extract_entities_and_relationships(text, project_id, graph_name=None):
         edge_id = _kg_id()
         conn.execute(
             "INSERT INTO kg_edges (id, graph_id, source_id, target_id, relationship, weight, properties, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (edge_id, graph_id, src_id, tgt_id, rel_type, 1.0, "{}", now),
         )
         edge_records.append(
@@ -528,7 +528,7 @@ def extract_entities_and_relationships(text, project_id, graph_name=None):
     entity_count = len(raw_entities)
     edge_count = len(edge_records)
     conn.execute(
-        "UPDATE kg_graphs SET entity_count = ?, edge_count = ?, updated_at = ? WHERE id = ?",
+        "UPDATE kg_graphs SET entity_count = %s, edge_count = %s, updated_at = %s WHERE id = %s",
         (entity_count, edge_count, now, graph_id),
     )
 
@@ -564,7 +564,7 @@ def get_graph(graph_id):
     conn = _get_db()
     _ensure_tables(conn)
 
-    row = conn.execute("SELECT * FROM kg_graphs WHERE id = ?", (graph_id,)).fetchone()
+    row = conn.execute("SELECT * FROM kg_graphs WHERE id = %s", (graph_id,)).fetchone()
     if not row:
         conn.close()
         return {"status": "error", "message": f"Graph {graph_id} not found."}
@@ -575,7 +575,7 @@ def get_graph(graph_id):
         dict(r)
         for r in conn.execute(
             "SELECT id, label, entity_type, properties, centrality, created_at "
-            "FROM kg_nodes WHERE graph_id = ? ORDER BY entity_type, label",
+            "FROM kg_nodes WHERE graph_id = %s ORDER BY entity_type, label",
             (graph_id,),
         ).fetchall()
     ]
@@ -588,7 +588,7 @@ def get_graph(graph_id):
             "FROM kg_edges e "
             "JOIN kg_nodes s ON e.source_id = s.id "
             "JOIN kg_nodes t ON e.target_id = t.id "
-            "WHERE e.graph_id = ? ORDER BY e.relationship",
+            "WHERE e.graph_id = %s ORDER BY e.relationship",
             (graph_id,),
         ).fetchall()
     ]
@@ -623,7 +623,7 @@ def search_nodes(query, project_id=None):
             "       g.id AS graph_id, g.project_id, g.name AS graph_name "
             "FROM kg_nodes n "
             "JOIN kg_graphs g ON n.graph_id = g.id "
-            "WHERE n.label LIKE ? AND g.project_id = ? "
+            "WHERE n.label LIKE %s AND g.project_id = %s "
             "ORDER BY n.centrality DESC, n.label "
             "LIMIT 100",
             (like_pat, project_id),
@@ -634,7 +634,7 @@ def search_nodes(query, project_id=None):
             "       g.id AS graph_id, g.project_id, g.name AS graph_name "
             "FROM kg_nodes n "
             "JOIN kg_graphs g ON n.graph_id = g.id "
-            "WHERE n.label LIKE ? "
+            "WHERE n.label LIKE %s "
             "ORDER BY n.centrality DESC, n.label "
             "LIMIT 100",
             (like_pat,),

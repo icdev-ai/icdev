@@ -101,12 +101,12 @@ def index():
                 try:
                     from tools.aiify.engine import _build_summary
                     opps_for_scan = [dict(r) for r in conn.execute(
-                        "SELECT pattern_type, ai_paradigm FROM aiify_opportunities WHERE scan_id = ?",
+                        "SELECT pattern_type, ai_paradigm FROM aiify_opportunities WHERE scan_id = %s",
                         (scan["scan_id"],),
                     ).fetchall()]
                     summary = _build_summary(scan["input_ref"], opps_for_scan)
                     conn.execute(
-                        "UPDATE aiify_scans SET project_summary = ? WHERE scan_id = ?",
+                        "UPDATE aiify_scans SET project_summary = %s WHERE scan_id = %s",
                         (summary, scan["scan_id"]),
                     )
                     scan["project_summary"] = summary
@@ -127,13 +127,13 @@ def index():
                 "s.composite_score, s.value_score "
                 "FROM aiify_opportunities o "
                 "LEFT JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id "
-                "WHERE o.scan_id = ? ORDER BY s.composite_score DESC",
+                "WHERE o.scan_id = %s ORDER BY s.composite_score DESC",
                 (latest_id,)
             ).fetchall()]
 
             rm = conn.execute(
                 "SELECT roadmap_id, title, phases, total_effort_days "
-                "FROM aiify_roadmaps WHERE scan_id = ? ORDER BY created_at DESC LIMIT 1",
+                "FROM aiify_roadmaps WHERE scan_id = %s ORDER BY created_at DESC LIMIT 1",
                 (latest_id,)
             ).fetchone()
             if rm:
@@ -172,13 +172,13 @@ def api_delete_scan(scan_id: int):
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT scan_id FROM aiify_scans WHERE scan_id = ?", (scan_id,)
+            "SELECT scan_id FROM aiify_scans WHERE scan_id = %s", (scan_id,)
         ).fetchone()
         if not row:
             return jsonify({"error": "not found"}), 404
         # CASCADE FK constraints handle opportunities → scores and roadmaps.
         # audit_log rows are SET NULL (preserved for audit trail).
-        conn.execute("DELETE FROM aiify_scans WHERE scan_id = ?", (scan_id,))
+        conn.execute("DELETE FROM aiify_scans WHERE scan_id = %s", (scan_id,))
         conn.commit()
         return jsonify({"deleted": scan_id})
     finally:
@@ -440,7 +440,7 @@ def api_get_scan(scan_id: int):
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT * FROM aiify_scans WHERE scan_id = ?", (scan_id,)
+            "SELECT * FROM aiify_scans WHERE scan_id = %s", (scan_id,)
         ).fetchone()
         if not row:
             return jsonify({"error": "not found"}), 404
@@ -452,13 +452,13 @@ def api_get_scan(scan_id: int):
             "s.verdict, s.ai_readiness, s.rationale, s.pros, s.cons, s.category "
             "FROM aiify_opportunities o "
             "LEFT JOIN aiify_scores s ON s.opportunity_id = o.opportunity_id "
-            "WHERE o.scan_id = ? ORDER BY s.composite_score DESC",
+            "WHERE o.scan_id = %s ORDER BY s.composite_score DESC",
             (scan_id,)
         ).fetchall()]
 
         rm = conn.execute(
             "SELECT roadmap_id, title, phases, total_effort_days "
-            "FROM aiify_roadmaps WHERE scan_id = ? ORDER BY created_at DESC LIMIT 1",
+            "FROM aiify_roadmaps WHERE scan_id = %s ORDER BY created_at DESC LIMIT 1",
             (scan_id,)
         ).fetchone()
         roadmap = None
@@ -495,7 +495,7 @@ def api_send_to_kanban():
             conn = _conn()
             try:
                 rm = conn.execute(
-                    "SELECT roadmap_id FROM aiify_roadmaps WHERE scan_id = ? ORDER BY created_at DESC LIMIT 1",
+                    "SELECT roadmap_id FROM aiify_roadmaps WHERE scan_id = %s ORDER BY created_at DESC LIMIT 1",
                     (scan_id,),
                 ).fetchone()
                 if rm:
@@ -509,7 +509,7 @@ def api_send_to_kanban():
     conn = _conn()
     try:
         rm = conn.execute(
-            "SELECT scan_id, phases FROM aiify_roadmaps WHERE roadmap_id = ?",
+            "SELECT scan_id, phases FROM aiify_roadmaps WHERE roadmap_id = %s",
             (roadmap_id,),
         ).fetchone()
         if not rm:
@@ -527,7 +527,7 @@ def api_send_to_kanban():
                 prd_key = f"{roadmap_id}:{phase_id}"
                 row = aiify.execute(
                     "SELECT decision FROM aiify_hitl_decisions "
-                    "WHERE source_type='prd' AND source_id=?",
+                    "WHERE source_type='prd' AND source_id=%s",
                     (prd_key,),
                 ).fetchone()
                 if row and row["decision"] == "reject":
@@ -591,7 +591,7 @@ def api_send_to_kanban():
 
             # ── Epic task ────────────────────────────────────────────────────
             epic_id = f"aiify-{short_id}-{ph_key.lower()}-epic"
-            if icdev_conn.execute("SELECT id FROM kanban_tasks WHERE id = ?", (epic_id,)).fetchone():
+            if icdev_conn.execute("SELECT id FROM kanban_tasks WHERE id = %s", (epic_id,)).fetchone():
                 skipped += 1
             else:
                 subtitle = label.split("—")[1].strip() if "—" in label else label
@@ -604,7 +604,7 @@ def api_send_to_kanban():
                 icdev_conn.execute(
                     "INSERT INTO kanban_tasks "
                     "(id, title, description, task_type, priority, status, executor_type, depends_on_task_id) "
-                    "VALUES (?,?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                     (epic_id, epic_title, epic_desc, "chore", priority, "backlog", "claude_cli",
                      prev_epic_id if phase_id == "all" else None),
                 )
@@ -653,14 +653,14 @@ def api_send_to_kanban():
 
                 for suffix, step_name, dep_id, step_title in steps:
                     child_id = f"{base_id}-{suffix}"
-                    if icdev_conn.execute("SELECT id FROM kanban_tasks WHERE id = ?", (child_id,)).fetchone():
+                    if icdev_conn.execute("SELECT id FROM kanban_tasks WHERE id = %s", (child_id,)).fetchone():
                         skipped += 1
                         continue
                     child_desc = json.dumps({**base_desc_data, "step": step_name, "depends_on": dep_id})
                     icdev_conn.execute(
                         "INSERT INTO kanban_tasks "
                         "(id, title, description, task_type, priority, status, executor_type, depends_on_task_id) "
-                        "VALUES (?,?,?,?,?,?,?,?)",
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                         (child_id, f"[{step_name}] {step_title[:90]}", child_desc,
                          "build", child_priority, "backlog", "claude_cli", dep_id),
                     )
@@ -673,7 +673,7 @@ def api_send_to_kanban():
     conn = _conn()
     try:
         conn.execute(
-            "INSERT INTO aiify_audit_log (event_type, scan_id, actor, detail) VALUES (?, ?, ?, ?)",
+            "INSERT INTO aiify_audit_log (event_type, scan_id, actor, detail) VALUES (%s, %s, %s, %s)",
             ("kanban_promoted", scan_id, "user",
              json.dumps({"roadmap_id": roadmap_id, "phase_id": phase_id,
                          "created": created, "skipped": skipped, "epics": epics})),
@@ -703,7 +703,7 @@ def api_generate_prd():
             conn = _conn()
             try:
                 rm = conn.execute(
-                    "SELECT roadmap_id FROM aiify_roadmaps WHERE scan_id = ? ORDER BY created_at DESC LIMIT 1",
+                    "SELECT roadmap_id FROM aiify_roadmaps WHERE scan_id = %s ORDER BY created_at DESC LIMIT 1",
                     (scan_id,),
                 ).fetchone()
                 if rm:
@@ -717,14 +717,14 @@ def api_generate_prd():
     conn = _conn()
     try:
         rm = conn.execute(
-            "SELECT scan_id, title, phases FROM aiify_roadmaps WHERE roadmap_id = ?",
+            "SELECT scan_id, title, phases FROM aiify_roadmaps WHERE roadmap_id = %s",
             (roadmap_id,),
         ).fetchone()
         if not rm:
             return jsonify({"error": "roadmap not found"}), 404
 
         scan = conn.execute(
-            "SELECT input_ref, project_summary, total_files, total_loc FROM aiify_scans WHERE scan_id = ?",
+            "SELECT input_ref, project_summary, total_files, total_loc FROM aiify_scans WHERE scan_id = %s",
             (rm["scan_id"],),
         ).fetchone()
         scan_dict = dict(scan) if scan else {}
@@ -747,7 +747,7 @@ def api_generate_prd():
         all_opportunities = [
             dict(r) for r in conn.execute(
                 "SELECT opportunity_id, module_path, function_name, pattern_type, ai_paradigm, "
-                "il_recommended_model FROM aiify_opportunities WHERE scan_id = ?",
+                "il_recommended_model FROM aiify_opportunities WHERE scan_id = %s",
                 (rm["scan_id"],),
             ).fetchall()
         ]
@@ -783,7 +783,7 @@ def api_generate_prd():
             ).fetchall():
                 hitl[(row["source_type"], str(row["source_id"]))] = row["decision"]
             prd_row = aiify.execute(
-                "SELECT decision FROM aiify_hitl_decisions WHERE source_type='prd' AND source_id=?",
+                "SELECT decision FROM aiify_hitl_decisions WHERE source_type='prd' AND source_id=%s",
                 (prd_key,),
             ).fetchone()
             if prd_row:
@@ -907,13 +907,13 @@ def api_prd_dry_run():
     conn = _conn()
     try:
         rm = conn.execute(
-            "SELECT scan_id, title, phases FROM aiify_roadmaps WHERE roadmap_id = ?",
+            "SELECT scan_id, title, phases FROM aiify_roadmaps WHERE roadmap_id = %s",
             (roadmap_id,),
         ).fetchone()
         if not rm:
             return jsonify({"error": "roadmap not found"}), 404
         scan = conn.execute(
-            "SELECT input_ref, project_summary, total_files, total_loc FROM aiify_scans WHERE scan_id = ?",
+            "SELECT input_ref, project_summary, total_files, total_loc FROM aiify_scans WHERE scan_id = %s",
             (rm["scan_id"],),
         ).fetchone()
         scan_dict = dict(scan) if scan else {}
@@ -959,7 +959,7 @@ def api_prd_dry_run():
                 if row["decision"] == "accept":
                     hitl_accepted += 1
             prd_row = aiify.execute(
-                "SELECT decision FROM aiify_hitl_decisions WHERE source_type='prd' AND source_id=?",
+                "SELECT decision FROM aiify_hitl_decisions WHERE source_type='prd' AND source_id=%s",
                 (prd_key,),
             ).fetchone()
             if prd_row:
@@ -1211,18 +1211,18 @@ def api_hitl_decision():
     conn = _conn()
     try:
         conn.execute(
-            "DELETE FROM aiify_hitl_decisions WHERE source_type=? AND source_id=?",
+            "DELETE FROM aiify_hitl_decisions WHERE source_type=%s AND source_id=%s",
             (source_type, source_id),
         )
         if decision != "clear":
             conn.execute(
                 "INSERT INTO aiify_hitl_decisions "
                 "(source_type, source_id, phase_id, decision, reason) "
-                "VALUES (?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s)",
                 (source_type, source_id, phase_id, decision, reason),
             )
         conn.execute(
-            "INSERT INTO aiify_audit_log (event_type, actor, detail) VALUES (?,?,?)",
+            "INSERT INTO aiify_audit_log (event_type, actor, detail) VALUES (%s,%s,%s)",
             (
                 "hitl_decision",
                 "user",

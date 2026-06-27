@@ -175,7 +175,7 @@ def _log_audit_event(conn, project_id, action, details, affected_files=None):
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details,
                 affected_files, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "siem_config_generated",

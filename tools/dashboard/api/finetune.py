@@ -95,12 +95,12 @@ def get_dataset(dataset_id):
     """Get dataset details with example count."""
     try:
         conn = _get_db()
-        ds = conn.execute("SELECT * FROM ft_datasets WHERE id = ?", (dataset_id,)).fetchone()
+        ds = conn.execute("SELECT * FROM ft_datasets WHERE id = %s", (dataset_id,)).fetchone()
         if not ds:
             conn.close()
             return jsonify({"error": "Dataset not found"}), 404
         examples = conn.execute(
-            "SELECT * FROM ft_dataset_examples WHERE dataset_id = ? ORDER BY id DESC LIMIT 100",
+            "SELECT * FROM ft_dataset_examples WHERE dataset_id = %s ORDER BY id DESC LIMIT 100",
             (dataset_id,),
         ).fetchall()
         conn.close()
@@ -141,12 +141,12 @@ def get_job(job_id):
     """Get training job details with events."""
     try:
         conn = _get_db()
-        job = conn.execute("SELECT * FROM ft_training_jobs WHERE id = ?", (job_id,)).fetchone()
+        job = conn.execute("SELECT * FROM ft_training_jobs WHERE id = %s", (job_id,)).fetchone()
         if not job:
             conn.close()
             return jsonify({"error": "Job not found"}), 404
         events = conn.execute(
-            "SELECT * FROM ft_training_job_events WHERE job_id = ? ORDER BY created_at DESC",
+            "SELECT * FROM ft_training_job_events WHERE job_id = %s ORDER BY created_at DESC",
             (job_id,),
         ).fetchall()
         conn.close()
@@ -183,16 +183,16 @@ def get_model(model_id):
     """Get model version details with evaluations and promotion history."""
     try:
         conn = _get_db()
-        model = conn.execute("SELECT * FROM ft_model_versions WHERE id = ?", (model_id,)).fetchone()
+        model = conn.execute("SELECT * FROM ft_model_versions WHERE id = %s", (model_id,)).fetchone()
         if not model:
             conn.close()
             return jsonify({"error": "Model not found"}), 404
         evals = conn.execute(
-            "SELECT * FROM ft_evaluations WHERE model_version_id = ? ORDER BY evaluated_at DESC",
+            "SELECT * FROM ft_evaluations WHERE model_version_id = %s ORDER BY evaluated_at DESC",
             (model_id,),
         ).fetchall()
         promotions = conn.execute(
-            "SELECT * FROM ft_promotion_log WHERE model_version_id = ? ORDER BY created_at DESC",
+            "SELECT * FROM ft_promotion_log WHERE model_version_id = %s ORDER BY created_at DESC",
             (model_id,),
         ).fetchall()
         conn.close()
@@ -272,7 +272,7 @@ def list_hyperparam_results():
         conn = _get_db()
         if search_id:
             rows = conn.execute(
-                "SELECT * FROM ft_hyperparam_results WHERE search_id = ? ORDER BY composite_score DESC",
+                "SELECT * FROM ft_hyperparam_results WHERE search_id = %s ORDER BY composite_score DESC",
                 (search_id,),
             ).fetchall()
         else:
@@ -320,9 +320,9 @@ def label_example(dataset_id, example_id):
         conn = _get_db()
         conn.execute(
             """UPDATE ft_dataset_examples
-               SET quality_score = ?, compliance_score = ?, relevance_score = ?,
-                   approved = ?, labeled_by = ?, labeled_at = CURRENT_TIMESTAMP
-               WHERE id = ? AND dataset_id = ?""",
+               SET quality_score = %s, compliance_score = %s, relevance_score = %s,
+                   approved = %s, labeled_by = %s, labeled_at = CURRENT_TIMESTAMP
+               WHERE id = %s AND dataset_id = %s""",
             (quality, compliance, relevance, approved, labeled_by, example_id, dataset_id),
         )
         conn.commit()
@@ -348,8 +348,8 @@ def batch_label(dataset_id):
         for eid in example_ids:
             conn.execute(
                 """UPDATE ft_dataset_examples
-                   SET approved = ?, labeled_by = ?, labeled_at = CURRENT_TIMESTAMP
-                   WHERE id = ? AND dataset_id = ?""",
+                   SET approved = %s, labeled_by = %s, labeled_at = CURRENT_TIMESTAMP
+                   WHERE id = %s AND dataset_id = %s""",
                 (approved, labeled_by, eid, dataset_id),
             )
         conn.commit()
@@ -412,7 +412,7 @@ def get_trajectory(traj_id):
     try:
         conn = _get_db()
         row = conn.execute(
-            "SELECT * FROM ft_trajectories WHERE id = ?", (traj_id,)
+            "SELECT * FROM ft_trajectories WHERE id = %s", (traj_id,)
         ).fetchone()
         if not row:
             conn.close()
@@ -422,7 +422,7 @@ def get_trajectory(traj_id):
             """SELECT step_index, tool_name, tool_input, tool_output,
                       status, duration_ms, span_id, created_at
                FROM ft_trajectory_steps
-               WHERE trajectory_id = ?
+               WHERE trajectory_id = %s
                ORDER BY step_index ASC""",
             (traj_id,),
         ).fetchall()

@@ -138,7 +138,7 @@ def handle_rag_chunk_info(arguments: Dict[str, Any]) -> Dict[str, Any]:
                     "SELECT id, content, content_hash, source_type, source_id, "
                     "source_table, chunk_index, total_chunks, metadata, tier, "
                     "tenant_id, project_id, classification, created_at "
-                    "FROM rag_chunks WHERE id = ?",
+                    "FROM rag_chunks WHERE id = %s",
                     (chunk_id,),
                 ).fetchone()
                 conn.close()
@@ -191,7 +191,7 @@ def handle_rag_delete_source(arguments: Dict[str, Any]) -> Dict[str, Any]:
         ids = [
             row[0]
             for row in conn.execute(
-                "SELECT id FROM rag_chunks WHERE source_type = ?",
+                "SELECT id FROM rag_chunks WHERE source_type = %s",
                 (source_type,),
             ).fetchall()
         ]

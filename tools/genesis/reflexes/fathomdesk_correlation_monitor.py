@@ -199,7 +199,7 @@ def run(context: dict, session) -> dict:
                 continue
 
             row = conn.execute(
-                "SELECT direction FROM ad_signals WHERE ticker = ? "
+                "SELECT direction FROM ad_signals WHERE ticker = %s "
                 "AND status = 'approved' ORDER BY created_at DESC LIMIT 1",
                 (lead,),
             ).fetchone()
@@ -210,7 +210,7 @@ def run(context: dict, session) -> dict:
             lagging = []
             for lag in lag_tickers[:4]:
                 lag_row = conn.execute(
-                    "SELECT direction FROM ad_signals WHERE ticker = ? "
+                    "SELECT direction FROM ad_signals WHERE ticker = %s "
                     "AND status = 'approved' ORDER BY created_at DESC LIMIT 1",
                     (lag,),
                 ).fetchone()
@@ -276,7 +276,7 @@ def _check_cooldown(conn, key: str, hours: int) -> bool:
     try:
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
         row = conn.execute(
-            "SELECT value FROM ad_reflex_cooldowns WHERE key = ? AND value > ?",
+            "SELECT value FROM ad_reflex_cooldowns WHERE key = %s AND value > %s",
             (key, cutoff),
         ).fetchone()
         return row is None
@@ -294,7 +294,7 @@ def _mark_cooldown(conn, key: str, now: datetime):
             )
         """)
         conn.execute(
-            "INSERT OR REPLACE INTO ad_reflex_cooldowns (key, value) VALUES (?, ?)",
+            "INSERT OR REPLACE INTO ad_reflex_cooldowns (key, value) VALUES (%s, %s)",
             (key, now.isoformat()),
         )
         conn.commit()

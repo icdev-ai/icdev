@@ -440,7 +440,7 @@ def _uc_load_all(tenant_id: str = "") -> list:
             _uc_init_table(conn)
             # tenant_id='' sentinel matches both tenant-specific and global overrides
             rows = conn.execute(
-                "SELECT * FROM use_case_overrides WHERE tenant_id = ? OR tenant_id = ''",
+                "SELECT * FROM use_case_overrides WHERE tenant_id = %s OR tenant_id = ''",
                 (tenant_id,)
             ).fetchall()
             for row in rows:
@@ -584,7 +584,7 @@ def _seed_canvas_artifacts(use_case: dict, session_id: str, tenant_id: str) -> l
                                 mconn.execute(
                                     "INSERT INTO canvas_instances "
                                     "(id, session_id, tenant_id, canvas, artifact_type, artifact_name, created_at) "
-                                    "VALUES (?, ?, ?, ?, 'template', ?, ?)",
+                                    "VALUES (%s, %s, %s, %s, 'template', %s, %s)",
                                     (instance_id, session_id, tenant_id, canvas_key, tmpl_name,
                                      datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
                                 )
@@ -612,7 +612,7 @@ def _seed_canvas_artifacts(use_case: dict, session_id: str, tenant_id: str) -> l
                                 mconn.execute(
                                     "INSERT INTO canvas_instances "
                                     "(id, session_id, tenant_id, canvas, artifact_type, artifact_name, created_at) "
-                                    "VALUES (?, ?, ?, ?, 'snippet', ?, ?)",
+                                    "VALUES (%s, %s, %s, %s, 'snippet', %s, %s)",
                                     (instance_id, session_id, tenant_id, canvas_key, snip_name,
                                      datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
                                 )
@@ -713,7 +713,7 @@ def create_use_case():
                      is_user_created, created_by, created_at,
                      template_requirements, category, tenant_id,
                      canvas_seeds, workflow_steps)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,1,%s,%s,%s,%s,%s,%s,%s)
             """, (
                 use_case_id, label,
                 body.get("description"), body.get("icon", "⚙"),
@@ -787,7 +787,7 @@ def import_use_cases():
                     skipped.append({"id": uc_id, "reason": "conflicts with YAML base use case"})
                     continue
                 existing = conn.execute(
-                    "SELECT is_user_created FROM use_case_overrides WHERE id=?", (uc_id,)
+                    "SELECT is_user_created FROM use_case_overrides WHERE id=%s", (uc_id,)
                 ).fetchone()
                 if existing and not overwrite:
                     skipped.append({"id": uc_id, "reason": "already exists"})
@@ -808,7 +808,7 @@ def import_use_cases():
                          is_user_created, created_by, created_at,
                          template_requirements, category, tenant_id,
                          canvas_seeds, workflow_steps)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?,?,?)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,1,%s,%s,%s,%s,%s,%s,%s)
                     ON CONFLICT(id) DO UPDATE SET
                         label=excluded.label, description=excluded.description,
                         icon=excluded.icon, badge=excluded.badge,
@@ -879,7 +879,7 @@ def create_chain():
                 INSERT INTO use_case_chains
                     (id, tenant_id, name, use_case_ids, merged_requirements,
                      status, created_at, created_by)
-                VALUES (?,?,?,?,?,'draft',?,?)
+                VALUES (%s,%s,%s,%s,%s,'draft',%s,%s)
             """, (
                 chain_id, tenant_id, name,
                 _json.dumps(uc_ids),
@@ -909,7 +909,7 @@ def list_chains():
             conn.set_security_context(None)  # rls-bypass: use_case_chains has no classification column
             _chain_init_table(conn)
             rows = conn.execute(
-                "SELECT * FROM use_case_chains WHERE tenant_id = ? OR tenant_id = '' ORDER BY created_at DESC",
+                "SELECT * FROM use_case_chains WHERE tenant_id = %s OR tenant_id = '' ORDER BY created_at DESC",
                 (tenant_id,)
             ).fetchall()
             for row in rows:
@@ -946,7 +946,7 @@ def activate_chain(chain_id):
             conn.set_security_context(None)  # rls-bypass: use_case_chains has no classification column
             _chain_init_table(conn)
             row = conn.execute(
-                "SELECT * FROM use_case_chains WHERE id=?", (chain_id,)
+                "SELECT * FROM use_case_chains WHERE id=%s", (chain_id,)
             ).fetchone()
             if not row:
                 return jsonify({"error": "Chain not found"}), 404
@@ -993,7 +993,7 @@ def activate_chain(chain_id):
                             INSERT OR IGNORE INTO intake_requirements
                                 (session_id, requirement_type, priority, raw_text,
                                  acceptance_criteria, source_document, status)
-                            VALUES (?,?,?,?,?,?,?)
+                            VALUES (%s,%s,%s,%s,%s,%s,%s)
                         """, (
                             context_id,
                             req.get("type", "functional"),
@@ -1025,7 +1025,7 @@ def activate_chain(chain_id):
             conn.set_security_context(None)  # rls-bypass: use_case_chains has no classification column
             _chain_init_table(conn)
             conn.execute(
-                "UPDATE use_case_chains SET status='active', linked_session_id=?, updated_at=? WHERE id=?",
+                "UPDATE use_case_chains SET status='active', linked_session_id=%s, updated_at=%s WHERE id=%s",
                 (context_id, now, chain_id)
             )
             conn.commit()
@@ -1056,7 +1056,7 @@ def get_use_case(use_case_id):
         with _gc() as conn:
             _uc_init_table(conn)
             row = conn.execute(
-                "SELECT * FROM use_case_overrides WHERE id = ?", (use_case_id,)
+                "SELECT * FROM use_case_overrides WHERE id = %s", (use_case_id,)
             ).fetchone()
     except Exception:
         pass
@@ -1079,13 +1079,13 @@ def delete_use_case(use_case_id):
         with _gc() as conn:
             _uc_init_table(conn)
             row = conn.execute(
-                "SELECT is_user_created FROM use_case_overrides WHERE id=?", (use_case_id,)
+                "SELECT is_user_created FROM use_case_overrides WHERE id=%s", (use_case_id,)
             ).fetchone()
             if not row:
                 return jsonify({"error": "Use case not found"}), 404
             if not row["is_user_created"]:
                 return jsonify({"error": "Use case is not user-created — use DELETE /use-cases/<id>/override to reset overrides"}), 400
-            conn.execute("DELETE FROM use_case_overrides WHERE id=?", (use_case_id,))
+            conn.execute("DELETE FROM use_case_overrides WHERE id=%s", (use_case_id,))
             conn.commit()
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
@@ -1145,7 +1145,7 @@ def workflow_step(use_case_id):
     try:
         with _gc() as conn:
             row = conn.execute(
-                "SELECT extra_context FROM chat_contexts WHERE id=?", (context_id,)
+                "SELECT extra_context FROM chat_contexts WHERE id=%s", (context_id,)
             ).fetchone()
             if not row:
                 return jsonify({"error": "Chat context not found"}), 404
@@ -1158,7 +1158,7 @@ def workflow_step(use_case_id):
             extra["uc_workflow_step"] = step
             extra["uc_id"] = use_case_id
             conn.execute(
-                "UPDATE chat_contexts SET extra_context=? WHERE id=?",
+                "UPDATE chat_contexts SET extra_context=%s WHERE id=%s",
                 (_json.dumps(extra), context_id)
             )
             conn.commit()
@@ -1196,7 +1196,7 @@ def update_use_case(use_case_id):
                      boost_threshold,system_prompt,seed_message,
                      canvas_wiring,quick_actions,updated_at,updated_by,
                      fast_track,skip_requirement_types,user_config,tenant_id)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT(id) DO UPDATE SET
                     label=excluded.label, description=excluded.description,
                     icon=excluded.icon, badge=excluded.badge,
@@ -1241,13 +1241,13 @@ def reset_use_case(use_case_id):
         with _gc() as conn:
             _uc_init_table(conn)
             row = conn.execute(
-                "SELECT is_user_created FROM use_case_overrides WHERE id=?", (use_case_id,)
+                "SELECT is_user_created FROM use_case_overrides WHERE id=%s", (use_case_id,)
             ).fetchone()
             if row and row["is_user_created"]:
                 return jsonify({
                     "error": "Cannot reset a user-created use case via /override — use DELETE /use-cases/<id> instead"
                 }), 400
-            conn.execute("DELETE FROM use_case_overrides WHERE id=?", (use_case_id,))
+            conn.execute("DELETE FROM use_case_overrides WHERE id=%s", (use_case_id,))
             conn.commit()
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
@@ -1534,7 +1534,7 @@ def standalone_app(use_case_id):
         with _gc() as conn:
             _uc_init_table(conn)
             row = conn.execute(
-                "SELECT * FROM use_case_overrides WHERE id = ?", (use_case_id,)
+                "SELECT * FROM use_case_overrides WHERE id = %s", (use_case_id,)
             ).fetchone()
     except Exception:
         pass

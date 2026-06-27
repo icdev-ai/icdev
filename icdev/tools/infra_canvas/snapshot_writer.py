@@ -119,7 +119,7 @@ def write_snapshot(
             """
             INSERT INTO idc_twin_snapshots
                 (id, source, graph_json, node_count, classification, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s)
             """,
             (snapshot_id, source, graph_json, node_count, classification, created_at),
         )
@@ -163,7 +163,7 @@ def write_violations(
                 """
                 INSERT INTO idc_twin_violations
                     (id, snapshot_id, rule_id, title, severity, category, detail, classification, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     vid,

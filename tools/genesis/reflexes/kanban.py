@@ -78,7 +78,7 @@ def _count_pending_prompts() -> int:
         count = 0
         for pf in prompt_files:
             task_id = pf.stem  # stem IS the task ID (e.g. "sg-import-ds-vault" or "task-abc123")
-            row = conn.execute("SELECT status FROM kanban_tasks WHERE id = ?", (task_id,)).fetchone()
+            row = conn.execute("SELECT status FROM kanban_tasks WHERE id = %s", (task_id,)).fetchone()
             if row and dict(row)["status"] == "in_progress":
                 count += 1
             elif row and dict(row)["status"] in ("backlog", "scheduled", "token_exhausted"):
@@ -394,7 +394,7 @@ def _get_task_timeout(task_id: str) -> int:
     try:
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT description, task_type, max_runtime_seconds FROM kanban_tasks WHERE id = ?",
+                "SELECT description, task_type, max_runtime_seconds FROM kanban_tasks WHERE id = %s",
                 (task_id,),
             ).fetchone()
         d = dict(row) if row else {}
@@ -1375,7 +1375,7 @@ def _push_branch_and_open_pr(task_id: str, commit_summary: str) -> str | None:
     try:
         with get_connection() as _tc:
             _row = _tc.execute(
-                "SELECT title FROM kanban_tasks WHERE id = ?", (task_id,)
+                "SELECT title FROM kanban_tasks WHERE id = %s", (task_id,)
             ).fetchone()
             if _row and _row[0]:
                 pr_title = _row[0][:72]
@@ -1468,9 +1468,9 @@ def _cleanup_worktree(task_id: str):
             if _pr_flow and _pr_url:
                 _ds_conn.execute(
                     "UPDATE kanban_tasks SET "
-                    "files_changed = ?, lines_added = ?, lines_removed = ?, "
-                    "branch_name = ?, commit_summary = ?, executor_url = ? "
-                    "WHERE id = ?",
+                    "files_changed = %s, lines_added = %s, lines_removed = %s, "
+                    "branch_name = %s, commit_summary = %s, executor_url = %s "
+                    "WHERE id = %s",
                     (
                         diff_stats["files_changed"], diff_stats["lines_added"], diff_stats["lines_removed"],
                         f"kanban/{task_id}", _commit_summary or None,
@@ -1481,9 +1481,9 @@ def _cleanup_worktree(task_id: str):
             else:
                 _ds_conn.execute(
                     "UPDATE kanban_tasks SET "
-                    "files_changed = ?, lines_added = ?, lines_removed = ?, "
-                    "branch_name = ?, commit_summary = ? "
-                    "WHERE id = ?",
+                    "files_changed = %s, lines_added = %s, lines_removed = %s, "
+                    "branch_name = %s, commit_summary = %s "
+                    "WHERE id = %s",
                     (
                         diff_stats["files_changed"], diff_stats["lines_added"], diff_stats["lines_removed"],
                         f"kanban/{task_id}", _commit_summary or None,
@@ -1576,7 +1576,7 @@ def _phase_complete(prefix: str, phase: str) -> tuple[bool, list[str]]:
         try:
             rows = conn.execute(
                 "SELECT id, status FROM kanban_tasks "
-                "WHERE id LIKE ? AND status != 'done'",
+                "WHERE id LIKE %s AND status != 'done'",
                 (pattern,),
             ).fetchall()
         finally:
@@ -1709,7 +1709,7 @@ def _get_due_tasks() -> list:
             "  AND (kt.updated_at IS NULL "
             "       OR kt.updated_at <= datetime('now', '-2 minutes')) "
             "  AND (kt.last_failure_reason IS NULL "
-            "       OR kt.last_failure_reason NOT LIKE ?) "
+            "       OR kt.last_failure_reason NOT LIKE %s) "
             f"  AND {dep_clause} "  # nosec B608
             "ORDER BY "
             "CASE WHEN kt.depends_on_task_id IS NOT NULL THEN 0 ELSE 1 END, "
@@ -1807,7 +1807,7 @@ def _decompose_batch_tasks(tasks: list, conn: Any) -> list:
             # but don't dispatch (prevents phantom completion)
             try:
                 conn.execute(
-                    "UPDATE kanban_tasks SET status = ?, updated_at = ? WHERE id = ?",
+                    "UPDATE kanban_tasks SET status = %s, updated_at = %s WHERE id = %s",
                     ("decomposed", _utcnow_iso(), task["id"]),
                 )
                 conn.commit()
@@ -1868,7 +1868,7 @@ def _decompose_batch_tasks(tasks: list, conn: Any) -> list:
                     "(id, title, description, task_type, priority, status, "
                     " executor_type, source_prediction_id, created_at, updated_at, "
                     " trace_id, span_id) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         child_id, child_title, child_desc, parent_type,
                         parent_priority, "backlog", "claude_cli",
@@ -1891,7 +1891,7 @@ def _decompose_batch_tasks(tasks: list, conn: Any) -> list:
         # Mark parent batch as decomposed (never dispatch)
         try:
             conn.execute(
-                "UPDATE kanban_tasks SET status = ?, updated_at = ? WHERE id = ?",
+                "UPDATE kanban_tasks SET status = %s, updated_at = %s WHERE id = %s",
                 ("decomposed", _utcnow_iso(), task["id"]),
             )
             conn.commit()
@@ -1961,7 +1961,7 @@ def _decompose_phase_exit_gates(tasks: list, conn: Any) -> list:
             continue
         # Skip if sub-tasks already exist
         existing = conn.execute(
-            "SELECT id FROM kanban_tasks WHERE id LIKE ?",
+            "SELECT id FROM kanban_tasks WHERE id LIKE %s",
             (f"{task_id}-1-%",),
         ).fetchone()
         if existing:
@@ -1993,7 +1993,7 @@ def _decompose_phase_exit_gates(tasks: list, conn: Any) -> list:
                     " scheduled_at, created_at, updated_at, "
                     " executor_type, depends_on_task_id, dispatch_source, failure_count, "
                     " trace_id, span_id) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         child_id, child_title, desc,
                         task.get("task_type") or "test",
@@ -2012,8 +2012,8 @@ def _decompose_phase_exit_gates(tasks: list, conn: Any) -> list:
             # Mark parent gate as 'done' (decomposed marker — mirrors F-gate pattern)
             try:
                 conn.execute(
-                    "UPDATE kanban_tasks SET status = ?, updated_at = ?, "
-                    "completed_at = ?, last_failure_reason = ? WHERE id = ?",
+                    "UPDATE kanban_tasks SET status = %s, updated_at = %s, "
+                    "completed_at = %s, last_failure_reason = %s WHERE id = %s",
                     (
                         "done", now, now,
                         "AUTO-DECOMPOSED into 5 sub-tasks (codelens|coherence|e2e|pytest|companion) "
@@ -2062,7 +2062,7 @@ def _record_failure_and_maybe_flag(task_id: str, reason: str) -> str:
         conn = get_connection()
         try:
             row = conn.execute(
-                "SELECT failure_count FROM kanban_tasks WHERE id = ?", (task_id,)
+                "SELECT failure_count FROM kanban_tasks WHERE id = %s", (task_id,)
             ).fetchone()
             prev = 0
             if row:
@@ -2072,8 +2072,8 @@ def _record_failure_and_maybe_flag(task_id: str, reason: str) -> str:
 
             reason_short = (reason or "")[:500]
             conn.execute(
-                "UPDATE kanban_tasks SET failure_count = ?, "
-                "last_failure_reason = ?, last_failure_at = ? WHERE id = ?",
+                "UPDATE kanban_tasks SET failure_count = %s, "
+                "last_failure_reason = %s, last_failure_at = %s WHERE id = %s",
                 (new_count, reason_short, now, task_id),
             )
             conn.commit()
@@ -2083,15 +2083,15 @@ def _record_failure_and_maybe_flag(task_id: str, reason: str) -> str:
             # it up first and its dependents can be unblocked sooner.
             blocked_dep_rows = conn.execute(
                 "SELECT id FROM kanban_tasks "
-                "WHERE depends_on_task_id = ? "
+                "WHERE depends_on_task_id = %s "
                 "  AND status NOT IN ('done','decomposed')",
                 (task_id,),
             ).fetchall()
             blocked_dep_ids = [dict(r)["id"] for r in blocked_dep_rows]
             if blocked_dep_ids:
                 conn.execute(
-                    "UPDATE kanban_tasks SET priority = 'critical', updated_at = ? "
-                    "WHERE id = ?",
+                    "UPDATE kanban_tasks SET priority = 'critical', updated_at = %s "
+                    "WHERE id = %s",
                     (now, task_id),
                 )
                 logger.warning(
@@ -2158,7 +2158,7 @@ def _record_status_transition(
             conn.execute(
                 "INSERT INTO kanban_status_transitions "
                 "(id, task_id, from_status, to_status, actor, reason, recorded_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (
                     "kst-" + _secrets.token_hex(6),
                     task_id, from_status, to_status, actor, reason,
@@ -2189,7 +2189,7 @@ def _parent_is_done(task_id: str) -> tuple[bool, str | None]:
                 "SELECT t.depends_on_task_id, p.status AS parent_status "
                 "FROM kanban_tasks t "
                 "LEFT JOIN kanban_tasks p ON p.id = t.depends_on_task_id "
-                "WHERE t.id = ?",
+                "WHERE t.id = %s",
                 (task_id,),
             ).fetchone()
             if not row:
@@ -2208,7 +2208,7 @@ def _parent_is_done(task_id: str) -> tuple[bool, str | None]:
                 "SELECT d.depends_on_id, p.status "
                 "FROM kanban_task_deps d "
                 "JOIN kanban_tasks p ON p.id = d.depends_on_id "
-                "WHERE d.task_id = ? AND p.status NOT IN ('done', 'decomposed')",
+                "WHERE d.task_id = %s AND p.status NOT IN ('done', 'decomposed')",
                 (task_id,),
             ).fetchone()
         if unmet:
@@ -2277,7 +2277,7 @@ def _auto_close_decomposed_parent(child_task_id: str, actor: str = "scheduler") 
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT source_prediction_id, depends_on_task_id FROM kanban_tasks WHERE id = ?",
+            "SELECT source_prediction_id, depends_on_task_id FROM kanban_tasks WHERE id = %s",
             (child_task_id,),
         ).fetchone()
         if not row:
@@ -2289,8 +2289,8 @@ def _auto_close_decomposed_parent(child_task_id: str, actor: str = "scheduler") 
             # --- Path 1: source_prediction_id linkage (batch-decomposed tasks) ---
             parent_row = conn.execute(
                 "SELECT id FROM kanban_tasks "
-                "WHERE source_prediction_id = ? AND status = 'decomposed' "
-                "  AND id <> ? LIMIT 1",
+                "WHERE source_prediction_id = %s AND status = 'decomposed' "
+                "  AND id <> %s LIMIT 1",
                 (sp, child_task_id),
             ).fetchone()
             if not parent_row:
@@ -2299,7 +2299,7 @@ def _auto_close_decomposed_parent(child_task_id: str, actor: str = "scheduler") 
 
             open_count = conn.execute(
                 "SELECT COUNT(*) AS n FROM kanban_tasks "
-                "WHERE source_prediction_id = ? AND id <> ? "
+                "WHERE source_prediction_id = %s AND id <> %s "
                 "  AND status IN ('backlog', 'scheduled', 'in_progress', "
                 "                 'suggested', 'needs_decomposition', 'dispatched')",
                 (sp, parent_id),
@@ -2324,7 +2324,7 @@ def _auto_close_decomposed_parent(child_task_id: str, actor: str = "scheduler") 
                 return None
 
             parent_status_row = conn.execute(
-                "SELECT id FROM kanban_tasks WHERE id = ? AND status = 'decomposed'",
+                "SELECT id FROM kanban_tasks WHERE id = %s AND status = 'decomposed'",
                 (parent_id,),
             ).fetchone()
             if not parent_status_row:
@@ -2332,7 +2332,7 @@ def _auto_close_decomposed_parent(child_task_id: str, actor: str = "scheduler") 
 
             open_siblings = conn.execute(
                 "SELECT COUNT(*) AS n FROM kanban_tasks "
-                "WHERE depends_on_task_id = ? AND id <> ? "
+                "WHERE depends_on_task_id = %s AND id <> %s "
                 "  AND status IN ('backlog', 'scheduled', 'in_progress', "
                 "                 'suggested', 'needs_decomposition', 'dispatched')",
                 (parent_id, child_task_id),
@@ -2342,8 +2342,8 @@ def _auto_close_decomposed_parent(child_task_id: str, actor: str = "scheduler") 
 
         now = _utcnow_iso()
         conn.execute(
-            "UPDATE kanban_tasks SET status = 'done', completed_at = ?, "
-            "updated_at = ? WHERE id = ? AND status = 'decomposed'",
+            "UPDATE kanban_tasks SET status = 'done', completed_at = %s, "
+            "updated_at = %s WHERE id = %s AND status = 'decomposed'",
             (now, now, parent_id),
         )
         # Audit-trail bypass row so guard-22 stays consistent: the parent
@@ -2352,7 +2352,7 @@ def _auto_close_decomposed_parent(child_task_id: str, actor: str = "scheduler") 
         conn.execute(
             "INSERT INTO kanban_verifications "
             "(task_id, verified_at, result, reason, dispatch_source) "
-            "VALUES (?, ?, 'bypassed', ?, ?)",
+            "VALUES (%s, %s, 'bypassed', %s, %s)",
             (parent_id, now,
              f"Auto-closed by _auto_close_decomposed_parent ({linkage}): "
              f"last child {child_task_id} completed, all siblings done",
@@ -2401,7 +2401,7 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
     try:
         # Look up current status for audit + cascade logic
         row = conn.execute(
-            "SELECT status FROM kanban_tasks WHERE id = ?", (task_id,),
+            "SELECT status FROM kanban_tasks WHERE id = %s", (task_id,),
         ).fetchone()
         prior_status = dict(row)["status"] if row else None
 
@@ -2487,7 +2487,7 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
         if prior_status == "done" and new_status != "done":
             desc_rows = conn.execute(
                 "SELECT id FROM kanban_tasks "
-                "WHERE depends_on_task_id = ? "
+                "WHERE depends_on_task_id = %s "
                 "  AND status IN ('in_progress', 'backlog', 'scheduled')",
                 (task_id,),
             ).fetchall()
@@ -2498,8 +2498,8 @@ def _move_task(task_id: str, new_status: str, actor: str = "scheduler",
                 conn.execute(
                     "UPDATE kanban_tasks SET status='backlog', "
                     "scheduled_at=NULL, "
-                    "updated_at=?, failure_count=0, "
-                    "last_failure_reason=?, last_failure_at=NULL "
+                    "updated_at=%s, failure_count=0, "
+                    "last_failure_reason=%s, last_failure_at=NULL "
                     f"WHERE id IN ({placeholders})",  # nosec B608
                     (now, f"cascade: parent {task_id} demoted from done", *rolled_back),
                 )
@@ -2831,7 +2831,7 @@ def _fetch_verification_details(task_id: str) -> Dict[str, Any]:
                 "bandit_issues, coherence_passed, e2e_ran, e2e_passed, "
                 "companion_synced, claimed_paths, existing_paths, git_commits "
                 "FROM kanban_verifications "
-                "WHERE task_id = ? ORDER BY verified_at DESC LIMIT 1",
+                "WHERE task_id = %s ORDER BY verified_at DESC LIMIT 1",
                 (task_id,),
             ).fetchone()
             return dict(row) if row else {}
@@ -2876,7 +2876,7 @@ def _queue_alert_locally(
                 conn.execute(
                     "INSERT INTO kanban_alert_queue "
                     "(task_id, event, severity, title, body, reason, actor, created_at, retry_count) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         task_id,
                         event,
@@ -2963,7 +2963,7 @@ def _send_notification(task: dict, event: str = "in_progress"):
                 "INSERT INTO notifications "
                 "(id, title, message, severity, source, "
                 "created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s)",
                 (
                     f"notif-kanban-{task['id']}-{event}-{_utcnow_iso()[:19]}",
                     title,
@@ -3225,7 +3225,7 @@ def _get_retry_coaching(task_id: str) -> str:
         try:
             row = conn.execute(
                 "SELECT failure_count, last_failure_reason, last_failure_at "
-                "FROM kanban_tasks WHERE id = ?", (task_id,),
+                "FROM kanban_tasks WHERE id = %s", (task_id,),
             ).fetchone()
             if not row:
                 return ""
@@ -3279,7 +3279,7 @@ def _get_parent_handoff(task_id: str) -> Optional[str]:
             "       p.last_run_summary, p.last_run_metadata, p.title "
             "FROM kanban_tasks kt "
             "LEFT JOIN kanban_tasks p ON p.id = kt.depends_on_task_id "
-            "WHERE kt.id = ?",
+            "WHERE kt.id = %s",
             (task_id,),
         ).fetchone()
         if not row:
@@ -3558,7 +3558,7 @@ def _dispatch_gitlab(task_id: str, task_desc: str, task_type: str) -> bool:
         try:
             with get_connection() as conn:
                 conn.execute(
-                    "UPDATE kanban_tasks SET execution_id = ?, executor_url = ?, updated_at = ? WHERE id = ?",
+                    "UPDATE kanban_tasks SET execution_id = %s, executor_url = %s, updated_at = %s WHERE id = %s",
                     (pipeline_id, pipeline_web_url, datetime.now(timezone.utc).isoformat(), task_id),
                 )
         except Exception as _db_exc:
@@ -3638,7 +3638,7 @@ def _dispatch_github_actions(task_id: str, task_desc: str, task_type: str) -> bo
         try:
             with get_connection() as conn:
                 conn.execute(
-                    "UPDATE kanban_tasks SET execution_id = ?, executor_url = ?, updated_at = ? WHERE id = ?",
+                    "UPDATE kanban_tasks SET execution_id = %s, executor_url = %s, updated_at = %s WHERE id = %s",
                     (run_id, run_url, datetime.now(timezone.utc).isoformat(), task_id),
                 )
         except Exception as _db_exc:
@@ -3721,7 +3721,7 @@ def _poll_github_actions_completions() -> None:
                         if task_id in (_run.get("display_title") or _run.get("name") or ""):
                             run_id = str(_run["id"])
                             _conn.execute(
-                                "UPDATE kanban_tasks SET execution_id=?, executor_url=? WHERE id=?",
+                                "UPDATE kanban_tasks SET execution_id=%s, executor_url=%s WHERE id=%s",
                                 (run_id, _run.get("html_url", ""), task_id),
                             )
                             _conn.commit()
@@ -3841,7 +3841,7 @@ def _detect_and_queue_ci_failures() -> None:
             task_id = f"ci-fix-{run_id}"
 
             # Guard 3: dedup — skip if a fix task for this run already exists
-            if _conn.execute("SELECT 1 FROM kanban_tasks WHERE id=?", (task_id,)).fetchone():
+            if _conn.execute("SELECT 1 FROM kanban_tasks WHERE id=%s", (task_id,)).fetchone():
                 continue
 
             # Fetch failed job logs for error context
@@ -3895,8 +3895,8 @@ def _detect_and_queue_ci_failures() -> None:
                     "INSERT OR IGNORE INTO kanban_tasks "
                     "(id, title, description, priority, task_type, status, "
                     " executor_type, tags, created_at, updated_at) "
-                    "VALUES (?, ?, ?, 'high', 'fix', 'backlog', 'claude_cli', "
-                    "        'ci_autofix', ?, ?)",
+                    "VALUES (%s, %s, %s, 'high', 'fix', 'backlog', 'claude_cli', "
+                    "        'ci_autofix', %s, %s)",
                     (_task_id := task_id, _title, error_ctx[:8000], now.isoformat(), now.isoformat()),
                 )
                 _conn.commit()
@@ -4047,7 +4047,7 @@ def _set_executor_type(task_id: str, executor_type: str) -> None:
     try:
         with get_connection() as conn:
             conn.execute(
-                "UPDATE kanban_tasks SET executor_type = ? WHERE id = ?",
+                "UPDATE kanban_tasks SET executor_type = %s WHERE id = %s",
                 (executor_type, task_id),
             )
     except Exception as exc:
@@ -4059,7 +4059,7 @@ def _get_executor_type(task_id: str) -> str | None:
     try:
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT executor_type FROM kanban_tasks WHERE id = ?",
+                "SELECT executor_type FROM kanban_tasks WHERE id = %s",
                 (task_id,),
             ).fetchone()
         return row[0] if row else None
@@ -4115,7 +4115,7 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
             conn = get_connection()
             conn.execute(
                 "UPDATE kanban_tasks SET status = 'token_exhausted', "
-                "last_failure_reason = ?, updated_at = ? WHERE id = ?",
+                "last_failure_reason = %s, updated_at = %s WHERE id = %s",
                 (
                     f"Circuit breaker: failure_count {_task_failures} >= max_retries {_task_max_retries}",
                     _utcnow_iso(),
@@ -4241,8 +4241,8 @@ def _dispatch_to_claude(task: dict, prompt_path: str):
             try:
                 with get_connection() as _conn:
                     _conn.execute(
-                        "UPDATE kanban_tasks SET last_failure_reason = ?, "
-                        "updated_at = ? WHERE id = ?",
+                        "UPDATE kanban_tasks SET last_failure_reason = %s, "
+                        "updated_at = %s WHERE id = %s",
                         (_no_exec_reason, _utcnow_iso(), task_id),
                     )
             except Exception as _lfr_exc:
@@ -4346,7 +4346,7 @@ def _is_dangerous_task(task_id: str) -> bool:
     try:
         with get_connection() as _c:
             row = _c.execute(
-                "SELECT task_type, description FROM kanban_tasks WHERE id = ?",
+                "SELECT task_type, description FROM kanban_tasks WHERE id = %s",
                 (task_id,),
             ).fetchone()
     except Exception:
@@ -4520,7 +4520,7 @@ def _run_verify_checks(task_id, claude_output):
     try:
         with get_connection() as _c0b:
             _r0b = _c0b.execute(
-                "SELECT description, task_type FROM kanban_tasks WHERE id = ?",
+                "SELECT description, task_type FROM kanban_tasks WHERE id = %s",
                 (task_id,),
             ).fetchone()
         _desc0b = ((_r0b["description"] or "").lower() if _r0b else "")
@@ -4568,7 +4568,7 @@ def _run_verify_checks(task_id, claude_output):
         try:
             # Primary signal: metadata flag on the task row — cheapest check.
             _bypass_meta = _c0c.execute(
-                "SELECT completed_via_bypass FROM kanban_tasks WHERE id = ?",
+                "SELECT completed_via_bypass FROM kanban_tasks WHERE id = %s",
                 (task_id,),
             ).fetchone()
             if _bypass_meta and _bypass_meta["completed_via_bypass"]:
@@ -4579,7 +4579,7 @@ def _run_verify_checks(task_id, claude_output):
             # Secondary signal: verification row written by the move-to-done API.
             _brow = _c0c.execute(
                 "SELECT reason FROM kanban_verifications "
-                "WHERE task_id = ? AND result = 'bypassed' "
+                "WHERE task_id = %s AND result = 'bypassed' "
                 "ORDER BY verified_at DESC LIMIT 1",
                 (task_id,),
             ).fetchone()
@@ -4692,7 +4692,7 @@ def _run_verify_checks(task_id, claude_output):
         try:
             with get_connection() as _c3:
                 _r3 = _c3.execute(
-                    "SELECT task_type FROM kanban_tasks WHERE id = ?", (task_id,)
+                    "SELECT task_type FROM kanban_tasks WHERE id = %s", (task_id,)
                 ).fetchone()
             _tt = (_r3["task_type"] or "").lower() if _r3 else ""
         except Exception:
@@ -4718,7 +4718,7 @@ def _run_verify_checks(task_id, claude_output):
         try:
             with get_connection() as _c:
                 _row = _c.execute(
-                    "SELECT description, task_type FROM kanban_tasks WHERE id = ?", (task_id,)
+                    "SELECT description, task_type FROM kanban_tasks WHERE id = %s", (task_id,)
                 ).fetchone()
             task_desc = (_row["description"] or "").lower() if _row else ""
             task_type = (_row["task_type"] or "").lower() if _row else ""
@@ -4914,7 +4914,7 @@ def _run_verify_checks(task_id, claude_output):
         try:
             with get_connection() as _c_sd:
                 _r_sd = _c_sd.execute(
-                    "SELECT description FROM kanban_tasks WHERE id = ?", (task_id,)
+                    "SELECT description FROM kanban_tasks WHERE id = %s", (task_id,)
                 ).fetchone()
             _scan_desc = ((_r_sd["description"] or "").lower() if _r_sd else "")
         except Exception:
@@ -5006,7 +5006,7 @@ def _write_verification_log(task_id: str, verified: bool, reason: str) -> None:
 
             # guard-23: read dispatch_source from task row (set at dispatch time)
             source_row = conn.execute(
-                "SELECT dispatch_source FROM kanban_tasks WHERE id = ?", (task_id,)
+                "SELECT dispatch_source FROM kanban_tasks WHERE id = %s", (task_id,)
             ).fetchone()
             dispatch_source = (
                 dict(source_row).get("dispatch_source") if source_row else None
@@ -5015,7 +5015,7 @@ def _write_verification_log(task_id: str, verified: bool, reason: str) -> None:
             conn.execute(
                 "INSERT INTO kanban_verifications "
                 "(id, task_id, verified_at, result, reason, dispatch_source) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s)",
                 (
                     verification_id, task_id,
                     datetime.now(timezone.utc).isoformat(),
@@ -5033,7 +5033,7 @@ def _tag_task_source(task_id: str, source: str) -> None:
         conn = get_connection()
         try:
             conn.execute(
-                "UPDATE kanban_tasks SET dispatch_source = ? WHERE id = ?",
+                "UPDATE kanban_tasks SET dispatch_source = %s WHERE id = %s",
                 (source, task_id),
             )
             conn.commit()
@@ -5083,7 +5083,7 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
     try:
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT title, description FROM kanban_tasks WHERE id = ?",
+                "SELECT title, description FROM kanban_tasks WHERE id = %s",
                 (task_id,),
             ).fetchone()
         if not row:
@@ -5371,12 +5371,12 @@ def _verify_task_specific(task_id: str) -> Tuple[bool, str]:
                 if _pg:
                     check = conn.execute(
                         "SELECT 1 FROM information_schema.tables "
-                        "WHERE table_schema = 'public' AND table_name = ?",
+                        "WHERE table_schema = 'public' AND table_name = %s",
                         (table_name,),
                     ).fetchone()
                 else:
                     check = conn.execute(
-                        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = %s",
                         (table_name,),
                     ).fetchone()
             if not check:
@@ -5466,11 +5466,11 @@ def _update_verification_metrics(task_id: str, metrics: Dict[str, Any]) -> None:
         with get_connection() as conn:
             conn.execute(
                 "UPDATE kanban_verifications SET "
-                "codelens_passed = ?, ruff_issues = ?, bandit_issues = ?, "
-                "pytest_passed = ?, coherence_passed = ?, "
-                "e2e_ran = ?, e2e_passed = ?, companion_synced = ? "
-                "WHERE task_id = ? AND id = ("
-                "  SELECT id FROM kanban_verifications WHERE task_id = ? "
+                "codelens_passed = %s, ruff_issues = %s, bandit_issues = %s, "
+                "pytest_passed = %s, coherence_passed = %s, "
+                "e2e_ran = %s, e2e_passed = %s, companion_synced = %s "
+                "WHERE task_id = %s AND id = ("
+                "  SELECT id FROM kanban_verifications WHERE task_id = %s "
                 "  ORDER BY verified_at DESC LIMIT 1)",
                 (
                     1 if metrics.get("codelens_passed") else 0 if metrics.get("codelens_passed") is False else None,
@@ -5722,7 +5722,7 @@ def _promote_stale_suggested() -> None:
             ).isoformat()
             rows = conn.execute(
                 "SELECT id, failure_count, last_failure_reason FROM kanban_tasks "
-                "WHERE status = 'suggested' AND updated_at < ?",
+                "WHERE status = 'suggested' AND updated_at < %s",
                 (cutoff,),
             ).fetchall()
             promoted = []
@@ -5734,10 +5734,10 @@ def _promote_stale_suggested() -> None:
                 if fc >= 5 or "hard-quarantine" in reason or "hitl" in reason:
                     continue  # genuinely quarantined — leave for human review
                 conn.execute(
-                    "UPDATE kanban_tasks SET status='scheduled', scheduled_at=?, "
-                    "updated_at=?, failure_count=0, "
+                    "UPDATE kanban_tasks SET status='scheduled', scheduled_at=%s, "
+                    "updated_at=%s, failure_count=0, "
                     "last_failure_reason='decay-promoted: re-queued after 48 h in suggested' "
-                    "WHERE id=?",
+                    "WHERE id=%s",
                     (now_iso, now_iso, d["id"]),
                 )
                 promoted.append(d["id"])
@@ -5795,7 +5795,7 @@ def _revive_quarantined_suggested(conn: Any) -> None:
     rows = conn.execute(
         "SELECT id, failure_count, last_failure_reason, depends_on_task_id "
         "FROM kanban_tasks "
-        "WHERE status = 'suggested' AND updated_at < ?",
+        "WHERE status = 'suggested' AND updated_at < %s",
         (cooldown_cutoff,),
     ).fetchall()
 
@@ -5815,14 +5815,14 @@ def _revive_quarantined_suggested(conn: Any) -> None:
         dep = d.get("depends_on_task_id")
         if dep:
             prow = conn.execute(
-                "SELECT status FROM kanban_tasks WHERE id = ?", (dep,)
+                "SELECT status FROM kanban_tasks WHERE id = %s", (dep,)
             ).fetchone()
             if not prow or dict(prow).get("status") not in ("done", "decomposed"):
                 continue  # still blocked — leave quarantined
 
         # How many times have we already auto-revived this task?
         rc_row = conn.execute(
-            "SELECT revive_count, hitl_alerted FROM kanban_task_revivals WHERE task_id = ?",
+            "SELECT revive_count, hitl_alerted FROM kanban_task_revivals WHERE task_id = %s",
             (tid,),
         ).fetchone()
         revive_count = (dict(rc_row).get("revive_count") if rc_row else 0) or 0
@@ -5833,8 +5833,8 @@ def _revive_quarantined_suggested(conn: Any) -> None:
             if not hitl_alerted:
                 held.append(tid)
                 conn.execute(
-                    "UPDATE kanban_task_revivals SET hitl_alerted = 1, updated_at = ? "
-                    "WHERE task_id = ?",
+                    "UPDATE kanban_task_revivals SET hitl_alerted = 1, updated_at = %s "
+                    "WHERE task_id = %s",
                     (now_iso, tid),
                 )
             continue
@@ -5843,8 +5843,8 @@ def _revive_quarantined_suggested(conn: Any) -> None:
         new_rc = revive_count + 1
         conn.execute(
             "UPDATE kanban_tasks SET status = 'backlog', failure_count = 0, "
-            "last_failure_reason = ?, updated_at = ? "
-            "WHERE id = ? AND status = 'suggested'",
+            "last_failure_reason = %s, updated_at = %s "
+            "WHERE id = %s AND status = 'suggested'",
             (
                 f"auto-revive {new_rc}/{MAX_AUTO_REVIVE}: deps satisfied + cooled down, "
                 "re-queued to backlog for another attempt.",
@@ -5855,15 +5855,15 @@ def _revive_quarantined_suggested(conn: Any) -> None:
         # Upsert the revival counter (works on both SQLite and PostgreSQL).
         if rc_row:
             conn.execute(
-                "UPDATE kanban_task_revivals SET revive_count = ?, last_revived_at = ?, "
-                "updated_at = ? WHERE task_id = ?",
+                "UPDATE kanban_task_revivals SET revive_count = %s, last_revived_at = %s, "
+                "updated_at = %s WHERE task_id = %s",
                 (new_rc, now_iso, now_iso, tid),
             )
         else:
             conn.execute(
                 "INSERT INTO kanban_task_revivals "
                 "(task_id, revive_count, last_revived_at, hitl_alerted, updated_at) "
-                "VALUES (?, ?, ?, 0, ?)",
+                "VALUES (%s, %s, %s, 0, %s)",
                 (tid, new_rc, now_iso, now_iso),
             )
         revived.append(tid)
@@ -5934,8 +5934,8 @@ def _unblock_dep_chain(conn: Any) -> None:
                 continue
             conn.execute(
                 "UPDATE kanban_tasks SET status = 'backlog', failure_count = 0, "
-                "last_failure_reason = ?, updated_at = ? "
-                "WHERE id = ? AND status = 'suggested'",
+                "last_failure_reason = %s, updated_at = %s "
+                "WHERE id = %s AND status = 'suggested'",
                 (
                     f"dep-chain-unblock: child waiting in backlog, revived from suggested (fc was {fc})",
                     now_iso,
@@ -5964,7 +5964,7 @@ def _check_acceptance_criteria(task_id: str, output_text: str) -> tuple:
     try:
         conn = get_connection()
         row = conn.execute(
-            "SELECT acceptance_criteria FROM kanban_tasks WHERE id = ?",
+            "SELECT acceptance_criteria FROM kanban_tasks WHERE id = %s",
             (task_id,),
         ).fetchone()
         if not row:
@@ -6022,7 +6022,7 @@ def _fire_task_subscriptions(task_id: str, event: str) -> None:
         conn = get_connection()
         rows = conn.execute(
             "SELECT id, channel, target, events FROM kanban_task_subscriptions "
-            "WHERE task_id = ?",
+            "WHERE task_id = %s",
             (task_id,),
         ).fetchall()
     except Exception:
@@ -6152,7 +6152,7 @@ def _reclaim_zombie_tasks() -> None:
             "FROM kanban_tasks "
             "WHERE status = 'in_progress' "
             "  AND last_heartbeat_at IS NOT NULL "
-            "  AND last_heartbeat_at < datetime('now', ? || ' hours')",
+            "  AND last_heartbeat_at < datetime('now', %s || ' hours')",
             (f"-{silence_hours}",),
         ).fetchall()
         if not rows:
@@ -6171,10 +6171,10 @@ def _reclaim_zombie_tasks() -> None:
                 conn.execute(
                     "UPDATE kanban_tasks "
                     "SET failure_count = failure_count + 1, "
-                    "    last_failure_reason = ?, "
-                    "    last_failure_at = ?, "
-                    "    updated_at = ? "
-                    "WHERE id = ?",
+                    "    last_failure_reason = %s, "
+                    "    last_failure_at = %s, "
+                    "    updated_at = %s "
+                    "WHERE id = %s",
                     (
                         f"Zombie reclaim: no heartbeat for >{silence_hours}h",
                         _utcnow_iso(),
@@ -6225,8 +6225,8 @@ def _had_recent_success(task_id: str, within_minutes: int = 30) -> bool:
         conn = get_connection()
         row = conn.execute(
             "SELECT id FROM kanban_status_transitions "
-            "WHERE task_id = ? AND to_status = 'done' "
-            "  AND recorded_at > datetime('now', ? || ' minutes')",
+            "WHERE task_id = %s AND to_status = 'done' "
+            "  AND recorded_at > datetime('now', %s || ' minutes')",
             (task_id, f"-{within_minutes}"),
         ).fetchone()
         return row is not None
@@ -6271,7 +6271,7 @@ def _reap_stale_in_progress() -> None:
 
             # Fetch updated_at separately to get the real timestamp
             ts_row = conn.execute(
-                "SELECT updated_at FROM kanban_tasks WHERE id = ?", (tid,)
+                "SELECT updated_at FROM kanban_tasks WHERE id = %s", (tid,)
             ).fetchone()
             if not ts_row:
                 continue
@@ -6329,7 +6329,7 @@ def _reap_stale_in_progress() -> None:
             # reap would bring fc to ≥5, escalate to 'suggested' for HITL
             # review instead of infinite backlog retry (fc≥5 quarantine).
             fc_row = conn.execute(
-                "SELECT COALESCE(failure_count, 0) FROM kanban_tasks WHERE id = ?",
+                "SELECT COALESCE(failure_count, 0) FROM kanban_tasks WHERE id = %s",
                 (tid,),
             ).fetchone()
             new_fc = (fc_row[0] if fc_row else 0) + 1
@@ -6347,12 +6347,12 @@ def _reap_stale_in_progress() -> None:
             )
             conn.execute(
                 "UPDATE kanban_tasks SET "
-                "  status = ?, "
+                "  status = %s, "
                 "  failure_count = COALESCE(failure_count, 0) + 1, "
-                "  last_failure_reason = ?, "
-                "  last_failure_at = ?, "
-                "  updated_at = ? "
-                "WHERE id = ? AND status = 'in_progress'",
+                "  last_failure_reason = %s, "
+                "  last_failure_at = %s, "
+                "  updated_at = %s "
+                "WHERE id = %s AND status = 'in_progress'",
                 (next_status, reason, now_iso, now_iso, tid),
             )
             reaped.append((tid, next_status, reason))
@@ -6419,7 +6419,7 @@ def _startup_recover_stale_in_progress() -> None:
                 continue  # external executor — GitHub Actions runs independently
             conn.execute(
                 "UPDATE kanban_tasks SET status='backlog', "
-                "last_failure_reason=?, updated_at=? WHERE id=?",
+                "last_failure_reason=%s, updated_at=%s WHERE id=%s",
                 (reason, now_iso, tid),
             )
             print(f"  Kanban: startup-recovery reset {tid} in_progress -> backlog")
@@ -6471,7 +6471,7 @@ def _check_completed():
                 try:
                     with get_connection() as _stc:
                         _str = _stc.execute(
-                            "SELECT description, task_type FROM kanban_tasks WHERE id = ?",
+                            "SELECT description, task_type FROM kanban_tasks WHERE id = %s",
                             (task_id,),
                         ).fetchone()
                     _stdesc = ((_str["description"] or "").lower() if _str else "")
@@ -6517,7 +6517,7 @@ def _check_completed():
                 try:
                     with get_connection() as _done_chk:
                         _done_row = _done_chk.execute(
-                            "SELECT status FROM kanban_tasks WHERE id = ?", (task_id,),
+                            "SELECT status FROM kanban_tasks WHERE id = %s", (task_id,),
                         ).fetchone()
                     if _done_row and dict(_done_row)["status"] == "done":
                         logger.info(
@@ -6540,8 +6540,8 @@ def _check_completed():
                         _fc_conn.execute(
                             "UPDATE kanban_tasks SET "
                             "failure_count = COALESCE(failure_count, 0) + 1, "
-                            "last_failure_reason = ?, last_failure_at = ? "
-                            "WHERE id = ? AND status != 'done'",
+                            "last_failure_reason = %s, last_failure_at = %s "
+                            "WHERE id = %s AND status != 'done'",
                             (_timeout_reason, _fc_now, task_id),
                         )
                 except Exception as _fc_exc:
@@ -6572,7 +6572,7 @@ def _check_completed():
                     try:
                         with get_connection() as _bo_conn:
                             _bo_conn.execute(
-                                "UPDATE kanban_tasks SET scheduled_at = ? WHERE id = ?",
+                                "UPDATE kanban_tasks SET scheduled_at = %s WHERE id = %s",
                                 (_backoff_at, task_id),
                             )
                     except Exception as _bo_exc:
@@ -6586,7 +6586,7 @@ def _check_completed():
                 try:
                     with get_connection() as task_conn:
                         row = task_conn.execute(
-                            "SELECT title FROM kanban_tasks WHERE id = ?",
+                            "SELECT title FROM kanban_tasks WHERE id = %s",
                             (task_id,),
                         ).fetchone()
                     if row:
@@ -6643,7 +6643,7 @@ def _check_completed():
             try:
                 with get_connection() as task_conn:
                     row = task_conn.execute(
-                        "SELECT title, task_type, priority FROM kanban_tasks WHERE id = ?",
+                        "SELECT title, task_type, priority FROM kanban_tasks WHERE id = %s",
                         (task_id,),
                     ).fetchone()
                 if row:
@@ -7220,7 +7220,7 @@ def _is_chain_blocker(task_id: str) -> bool:
         conn = get_connection()
         try:
             row = conn.execute(
-                "SELECT 1 FROM kanban_tasks WHERE depends_on_task_id = ? LIMIT 1",
+                "SELECT 1 FROM kanban_tasks WHERE depends_on_task_id = %s LIMIT 1",
                 (task_id,),
             ).fetchone()
             return row is not None
@@ -7241,10 +7241,10 @@ def _reset_to_backlog(task_id: str, reason: str = "") -> None:
     try:
         conn.execute(
             "UPDATE kanban_tasks SET status = 'backlog', "
-            "last_failure_reason = ?, "
+            "last_failure_reason = %s, "
             # Back-date updated_at so the 10-min cooldown passes immediately
             "updated_at = datetime('now', '-11 minutes') "
-            "WHERE id = ? AND status = 'needs_decomposition'",
+            "WHERE id = %s AND status = 'needs_decomposition'",
             (reason[:500] if reason else None, task_id),
         )
         conn.commit()
@@ -7502,7 +7502,7 @@ def _decompose_one_task(task: dict, ai_narrative: bool = False) -> dict:
     try:
         # Mark parent decomposed first
         conn.execute(
-            "UPDATE kanban_tasks SET status = 'decomposed', updated_at = ? WHERE id = ?",
+            "UPDATE kanban_tasks SET status = 'decomposed', updated_at = %s WHERE id = %s",
             (now, tid),
         )
 
@@ -7530,7 +7530,7 @@ def _decompose_one_task(task: dict, ai_narrative: bool = False) -> dict:
                 "INSERT OR IGNORE INTO kanban_tasks "
                 "(id, title, description, priority, task_type, status, "
                 " executor_type, depends_on_task_id, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, 'backlog', 'claude_cli', ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, 'backlog', 'claude_cli', %s, %s, %s)",
                 (child_id, sub_title, sub_desc, sub_pri, sub_type, dep, now, now),
             )
             inserted.append(child_id)
@@ -7718,7 +7718,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             try:
                 with get_connection() as task_conn:
                     row = task_conn.execute(
-                        "SELECT status FROM kanban_tasks WHERE id = ?", (tid,),
+                        "SELECT status FROM kanban_tasks WHERE id = %s", (tid,),
                     ).fetchone()
                 if row and dict(row)["status"] not in ("in_progress", "scheduled"):
                     # Task was completed/moved externally — clean up. The
@@ -7780,10 +7780,10 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     with get_connection() as _fc_conn:
                         _fc_conn.execute(
                             "UPDATE kanban_tasks SET "
-                            "  last_failure_reason = ?, "
-                            "  last_failure_at = ?, "
-                            "  updated_at = ? "
-                            "WHERE id = ?",
+                            "  last_failure_reason = %s, "
+                            "  last_failure_at = %s, "
+                            "  updated_at = %s "
+                            "WHERE id = %s",
                             (reason, now_iso, now_iso, tid),
                         )
                 except Exception as _fc_exc:
@@ -7806,7 +7806,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     with get_connection() as _tc:
                         _tr = _tc.execute(
                             "SELECT title, task_type, priority FROM kanban_tasks "
-                            "WHERE id = ?", (tid,),
+                            "WHERE id = %s", (tid,),
                         ).fetchone()
                     if _tr:
                         _tr_d = dict(_tr)

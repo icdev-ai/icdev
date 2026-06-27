@@ -71,7 +71,7 @@ class OMBM2521Assessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM ai_use_case_inventory
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -83,7 +83,7 @@ class OMBM2521Assessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM ai_use_case_inventory
-                           WHERE project_id = ? AND responsible_official IS NOT NULL
+                           WHERE project_id = %s AND responsible_official IS NOT NULL
                            AND responsible_official != ''""",
                         (project_id,),
                     ).fetchone()
@@ -96,7 +96,7 @@ class OMBM2521Assessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM ai_use_case_inventory
-                           WHERE project_id = ? AND risk_level IS NOT NULL
+                           WHERE project_id = %s AND risk_level IS NOT NULL
                            AND risk_level != ''""",
                         (project_id,),
                     ).fetchone()
@@ -122,7 +122,7 @@ class OMBM2521Assessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM ai_telemetry
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -134,7 +134,7 @@ class OMBM2521Assessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM ai_oversight_plans
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -146,7 +146,7 @@ class OMBM2521Assessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM ai_accountability_appeals
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -158,7 +158,7 @@ class OMBM2521Assessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM ai_caio_registry
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -170,7 +170,7 @@ class OMBM2521Assessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM ai_reassessment_schedule
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -182,7 +182,7 @@ class OMBM2521Assessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM ai_incident_log
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:

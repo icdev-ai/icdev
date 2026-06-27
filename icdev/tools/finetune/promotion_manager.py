@@ -64,7 +64,7 @@ def check_promotion_eligibility(
     conn = _get_db(db_path)
     try:
         mv = conn.execute(
-            "SELECT * FROM ft_model_versions WHERE id = ?",
+            "SELECT * FROM ft_model_versions WHERE id = %s",
             (model_version_id,),
         ).fetchone()
         if not mv:
@@ -84,7 +84,7 @@ def check_promotion_eligibility(
             current = conn.execute(
                 """SELECT mv.eval_perplexity FROM ft_active_models am
                    JOIN ft_model_versions mv ON am.model_version_id = mv.id
-                   WHERE am.function_name = ? AND am.deactivated_at IS NULL""",
+                   WHERE am.function_name = %s AND am.deactivated_at IS NULL""",
                 (function_name,),
             ).fetchone()
             if current and current["eval_perplexity"] > 0 and mv["eval_perplexity"] > 0:
@@ -170,7 +170,7 @@ def auto_promote(
                 """INSERT INTO ft_promotion_log
                    (model_version_id, action, function_name, eval_score_summary,
                     reason, actor, tenant_id, project_id, created_at)
-                   VALUES (?, 'auto_promoted', ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, 'auto_promoted', %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     model_version_id,
                     function_name,
@@ -226,7 +226,7 @@ def force_promote(
                 """INSERT INTO ft_promotion_log
                    (model_version_id, action, function_name,
                     reason, actor, tenant_id, project_id, created_at)
-                   VALUES (?, 'override_promoted', ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, 'override_promoted', %s, %s, %s, %s, %s, %s)""",
                 (
                     model_version_id,
                     function_name,

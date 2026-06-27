@@ -72,14 +72,14 @@ def _get_tenant_tier(tenant_id):
     conn = _get_conn()
     try:
         row = conn.execute(
-            "SELECT tier FROM subscriptions WHERE tenant_id = ? AND status = 'active' ORDER BY created_at DESC LIMIT 1",
+            "SELECT tier FROM subscriptions WHERE tenant_id = %s AND status = 'active' ORDER BY created_at DESC LIMIT 1",
             (tenant_id,),
         ).fetchone()
         if row:
             return row["tier"] if hasattr(row, "keys") else row[0]
         # Fallback to tenant table tier
         row = conn.execute(
-            "SELECT tier FROM tenants WHERE id = ?",
+            "SELECT tier FROM tenants WHERE id = %s",
             (tenant_id,),
         ).fetchone()
         if row:
@@ -157,7 +157,7 @@ def store_tenant_llm_key(
             "INSERT INTO tenant_llm_keys "
             "(id, tenant_id, provider, encrypted_key, key_label, key_prefix, "
             "status, created_by, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (key_id, tenant_id, provider, encrypted, key_label or provider, key_prefix, "active", created_by, now, now),
         )
         conn.commit()
@@ -204,7 +204,7 @@ def list_tenant_llm_keys(tenant_id):
         rows = conn.execute(
             "SELECT id, provider, key_label, key_prefix, status, "
             "created_by, created_at, updated_at "
-            "FROM tenant_llm_keys WHERE tenant_id = ? "
+            "FROM tenant_llm_keys WHERE tenant_id = %s "
             "ORDER BY created_at DESC",
             (tenant_id,),
         ).fetchall()
@@ -227,8 +227,8 @@ def revoke_tenant_llm_key(tenant_id, key_id):
     conn = _get_conn()
     try:
         cursor = conn.execute(
-            "UPDATE tenant_llm_keys SET status = 'revoked', updated_at = ? "
-            "WHERE id = ? AND tenant_id = ? AND status = 'active'",
+            "UPDATE tenant_llm_keys SET status = 'revoked', updated_at = %s "
+            "WHERE id = %s AND tenant_id = %s AND status = 'active'",
             (now, key_id, tenant_id),
         )
         conn.commit()
@@ -261,7 +261,7 @@ def get_active_key_for_provider(tenant_id, provider):
     try:
         row = conn.execute(
             "SELECT encrypted_key FROM tenant_llm_keys "
-            "WHERE tenant_id = ? AND provider = ? AND status = 'active' "
+            "WHERE tenant_id = %s AND provider = %s AND status = 'active' "
             "ORDER BY created_at DESC LIMIT 1",
             (tenant_id, provider),
         ).fetchone()

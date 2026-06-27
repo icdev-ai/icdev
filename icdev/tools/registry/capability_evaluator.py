@@ -307,7 +307,7 @@ class CapabilityEvaluator:
                 """INSERT INTO capability_evaluations
                    (id, capability_id, capability_name, score, dimensions_json,
                     outcome, rationale, evaluator, source_type, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     result["evaluation_id"],
                     result["capability_id"],

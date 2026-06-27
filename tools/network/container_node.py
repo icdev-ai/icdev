@@ -176,7 +176,7 @@ def create_container_node(
             """
             INSERT INTO ndc_container_nodes
                 (node_id, design_id, name, node_type, image, properties, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 node_id,
@@ -208,7 +208,7 @@ def list_container_nodes(
             """
             SELECT node_id, design_id, name, node_type, image, properties, created_at
               FROM ndc_container_nodes
-             WHERE design_id = ?
+             WHERE design_id = %s
              ORDER BY created_at ASC
             """,
             (design_id,),

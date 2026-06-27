@@ -281,7 +281,7 @@ def _log_event(
         conn.execute(
             """INSERT INTO db_forge_sandbox_log
                (connector_id, sandbox_type, event_type, details, duration_ms, logged_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (
                 connector_id,
                 sandbox_type,

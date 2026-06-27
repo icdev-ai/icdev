@@ -65,7 +65,7 @@ def _get_db():
 def _audit(conn, event_type, action, details, opportunity_id=None):
     conn.execute(
         "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, project_id, session_id) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
         (
             _gen_id("aud"),
             _now(),
@@ -123,7 +123,7 @@ def _retrieve_knowledge_base(query, limit=3):
     try:
         rows = conn.execute(
             "SELECT id, title, content, category FROM pg_proposal_knowledge_base "
-            "WHERE content LIKE ? OR title LIKE ? ORDER BY created_at DESC LIMIT ?",
+            "WHERE content LIKE %s OR title LIKE %s ORDER BY created_at DESC LIMIT %s",
             (f"%{query}%", f"%{query}%", limit),
         ).fetchall()
     except Exception:
@@ -150,7 +150,7 @@ def _retrieve_pulse(query, limit=3):
     try:
         rows = conn.execute(
             "SELECT id, title, body_markdown FROM pulse_posts "
-            "WHERE body_markdown LIKE ? OR title LIKE ? ORDER BY created_at DESC LIMIT ?",
+            "WHERE body_markdown LIKE %s OR title LIKE %s ORDER BY created_at DESC LIMIT %s",
             (f"%{query}%", f"%{query}%", limit),
         ).fetchall()
     except Exception:
@@ -193,7 +193,7 @@ def _retrieve_rag(query, limit=3):
     conn = _get_db()
     try:
         rows = conn.execute(
-            "SELECT chunk_id, content, source_table FROM rag_chunks WHERE content LIKE ? LIMIT ?",
+            "SELECT chunk_id, content, source_table FROM rag_chunks WHERE content LIKE %s LIMIT %s",
             (f"%{query}%", limit),
         ).fetchall()
     except Exception:

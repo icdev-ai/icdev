@@ -66,7 +66,7 @@ def _get_applicable_frameworks(project_id, db_path=None):
             rows = conn.execute(
                 """SELECT framework_id, source, confirmed
                    FROM framework_applicability
-                   WHERE project_id = ?""",
+                   WHERE project_id = %s""",
                 (project_id,),
             ).fetchall()
             return [dict(r) for r in rows]
@@ -142,7 +142,7 @@ def assess_all(
         try:
             rows = conn.execute(
                 """SELECT control_id, implementation_status
-                   FROM project_controls WHERE project_id = ?""",
+                   FROM project_controls WHERE project_id = %s""",
                 (project_id,),
             ).fetchall()
             nist_impl = {r["control_id"].upper(): r["implementation_status"] for r in rows}
@@ -263,7 +263,7 @@ def get_minimal_controls(
         try:
             rows = conn.execute(
                 """SELECT control_id, implementation_status
-                   FROM project_controls WHERE project_id = ?""",
+                   FROM project_controls WHERE project_id = %s""",
                 (project_id,),
             ).fetchall()
             implemented = set(r["control_id"].upper() for r in rows if r["implementation_status"] == "implemented")

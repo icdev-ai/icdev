@@ -38,7 +38,7 @@ def list_policies(domain_id: str | None = None) -> list[dict]:
     with get_connection() as conn:
         if domain_id:
             rows = conn.execute(
-                "SELECT * FROM dm_opa_policies WHERE domain_id=? ORDER BY name",
+                "SELECT * FROM dm_opa_policies WHERE domain_id=%s ORDER BY name",
                 (domain_id,),
             ).fetchall()
         else:
@@ -51,7 +51,7 @@ def list_policies(domain_id: str | None = None) -> list[dict]:
 def get_policy(policy_id: str) -> dict | None:
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM dm_opa_policies WHERE id=?", (policy_id,)
+            "SELECT * FROM dm_opa_policies WHERE id=%s", (policy_id,)
         ).fetchone()
     return dict(row) if row else None
 
@@ -83,12 +83,12 @@ def update_policy(policy_id: str, data: dict) -> dict | None:
     now = _now()
     with get_connection() as conn:
         existing = conn.execute(
-            "SELECT * FROM dm_opa_policies WHERE id=?", (policy_id,)
+            "SELECT * FROM dm_opa_policies WHERE id=%s", (policy_id,)
         ).fetchone()
         if not existing:
             return None
         conn.execute(
-            "UPDATE dm_opa_policies SET name=?, domain_id=?, rego_text=?, policy_path=?, enabled=?, updated_at=? WHERE id=?",
+            "UPDATE dm_opa_policies SET name=%s, domain_id=%s, rego_text=%s, policy_path=%s, enabled=%s, updated_at=%s WHERE id=%s",
             (
                 data.get("name", existing["name"]),
                 data.get("domain_id", existing["domain_id"]),
@@ -100,13 +100,13 @@ def update_policy(policy_id: str, data: dict) -> dict | None:
             ),
         )
         conn.commit()
-        row = conn.execute("SELECT * FROM dm_opa_policies WHERE id=?", (policy_id,)).fetchone()
+        row = conn.execute("SELECT * FROM dm_opa_policies WHERE id=%s", (policy_id,)).fetchone()
     return dict(row) if row else None
 
 
 def delete_policy(policy_id: str) -> bool:
     with get_connection() as conn:
-        cur = conn.execute("DELETE FROM dm_opa_policies WHERE id=?", (policy_id,))
+        cur = conn.execute("DELETE FROM dm_opa_policies WHERE id=%s", (policy_id,))
         conn.commit()
     return cur.rowcount > 0
 
@@ -165,7 +165,7 @@ def _log_audit(user_attrs: dict, resource: dict, result: dict) -> None:
         with get_connection() as conn:
             conn.execute(
                 "INSERT INTO dm_policy_audit_log (id, policy_id, user, resource, decision, reason, method, classification, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     _uid(),
                     result.get("policy_id") or "",
@@ -237,10 +237,10 @@ def compute_governance_score(domain_id: str | None = None) -> dict:
     with get_connection() as conn:
         if domain_id:
             total = conn.execute(
-                "SELECT count(*) FROM dm_domains WHERE id=?", (domain_id,)
+                "SELECT count(*) FROM dm_domains WHERE id=%s", (domain_id,)
             ).fetchone()[0]
             with_policy = conn.execute(
-                "SELECT count(DISTINCT domain_id) FROM dm_opa_policies WHERE enabled=1 AND domain_id=?",
+                "SELECT count(DISTINCT domain_id) FROM dm_opa_policies WHERE enabled=1 AND domain_id=%s",
                 (domain_id,),
             ).fetchone()[0]
         else:
@@ -277,7 +277,7 @@ def compute_governance_score(domain_id: str | None = None) -> dict:
 def get_policy_audit_log(domain_id: str | None = None, limit: int = 50) -> list[dict]:
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT * FROM dm_policy_audit_log ORDER BY created_at DESC LIMIT ?",
+            "SELECT * FROM dm_policy_audit_log ORDER BY created_at DESC LIMIT %s",
             (limit,),
         ).fetchall()
     return [dict(r) for r in rows]

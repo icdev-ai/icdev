@@ -114,7 +114,7 @@ def _persist_sso_session(provider_id: str, result: dict) -> None:
     with storage.get_connection() as conn:
         conn.execute(
             "INSERT INTO sso_sessions (id, tenant_id, provider_id, name_id) "
-            "VALUES (?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s)",
             (sid, "default", provider_id, result.get("name_id")),
         )
         conn.commit()

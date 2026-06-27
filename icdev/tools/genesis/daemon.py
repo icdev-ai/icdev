@@ -263,7 +263,7 @@ class GenesisDaemon(DaemonBase):
                 INSERT INTO genesis_audit
                     (id, event_type, reflex_name, risk_tier, details, success,
                      duration_ms, metric_name, metric_value, gkp_id, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
                 (
                     audit_id,
@@ -420,7 +420,7 @@ class GenesisDaemon(DaemonBase):
                 INSERT INTO agent_a2a_tasks
                     (id, reflex_name, skill_id, agent_url, task_id, status,
                      input_data, error, submitted_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     record_id,
@@ -684,7 +684,7 @@ def _log_audit(
             INSERT INTO genesis_audit
                 (id, event_type, reflex_name, risk_tier, details, success,
                  duration_ms, metric_name, metric_value, gkp_id, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 audit_id,

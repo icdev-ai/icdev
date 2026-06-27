@@ -127,7 +127,7 @@ def generate_attestation(hostname: str, device_id: str = "",
         conn.execute(
             "INSERT INTO zig_device_attestations "
             "(device_id, hostname, attestation_token, trust_score, claims_json, verdict, nonce, expires_at, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (device_id, hostname, token, trust_score, json.dumps(claims), verdict, nonce, expires_at, now_iso),
         )
         conn.commit()

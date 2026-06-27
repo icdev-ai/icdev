@@ -140,7 +140,7 @@ def create_worksheet(
             "(id, theater, operation_name, mission, enemy_situation, terrain_weather, "
             " troops_available, time_available, civil_considerations, auto_populated, "
             " created_by, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (ws_id, theater, operation_name, mission, enemy_situation, terrain_weather,
              troops_available, time_available, civil_considerations,
              1 if auto_populated else 0, created_by, now, now),
@@ -187,7 +187,7 @@ def list_worksheets(theater: str = "", limit: int = 20) -> list[dict]:
         else:
             rows = conn.execute(
                 "SELECT id, theater, operation_name, created_by, created_at "  # nosec B608
-                "FROM sg_mett_tc ORDER BY created_at DESC LIMIT ?",
+                "FROM sg_mett_tc ORDER BY created_at DESC LIMIT %s",
                 (limit,),
             ).fetchall()
         cols = ("id", "theater", "operation_name", "created_by", "created_at")

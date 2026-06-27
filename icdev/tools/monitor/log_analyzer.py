@@ -849,7 +849,7 @@ def _record_findings(project_id: str, analysis: dict, db_path: Path = None) -> N
             conn.execute(
                 """INSERT INTO metric_snapshots
                    (project_id, metric_name, metric_value, labels, source, collected_at)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
                 (
                     project_id,
                     metric_name,

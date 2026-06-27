@@ -107,14 +107,14 @@ def score_readiness(session_id: str, db_path=None) -> dict:
     """Calculate multi-dimensional readiness score for a session."""
     conn = _get_connection(db_path)
 
-    session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+    session = conn.execute("SELECT * FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
     if not session:
         conn.close()
         raise ValueError(f"Session '{session_id}' not found.")
 
     session_data = dict(session)
     reqs = conn.execute(
-        "SELECT * FROM intake_requirements WHERE session_id = ? AND status IN ('draft', 'clarified', 'validated', 'approved', 'decomposed')",
+        "SELECT * FROM intake_requirements WHERE session_id = %s AND status IN ('draft', 'clarified', 'validated', 'approved', 'decomposed')",
         (session_id,),
     ).fetchall()
     reqs = [dict(r) for r in reqs]
@@ -144,7 +144,7 @@ def score_readiness(session_id: str, db_path=None) -> dict:
     amb_count = session_data.get("ambiguity_count", 0)
     flagged = context.get("flagged_ambiguities", [])
     turn_row = conn.execute(
-        "SELECT COUNT(*) as cnt FROM intake_conversation WHERE session_id = ? AND role = 'customer'",
+        "SELECT COUNT(*) as cnt FROM intake_conversation WHERE session_id = %s AND role = 'customer'",
         (session_id,),
     ).fetchone()
     turn_count = turn_row["cnt"] if turn_row else 0
@@ -176,7 +176,7 @@ def score_readiness(session_id: str, db_path=None) -> dict:
             # Persist detected frameworks back to session context
             try:
                 conn.execute(
-                    "UPDATE intake_sessions SET context_summary = ? WHERE id = ?",
+                    "UPDATE intake_sessions SET context_summary = %s WHERE id = %s",
                     (json.dumps(context), session_id),
                 )
             except Exception:
@@ -202,7 +202,7 @@ def score_readiness(session_id: str, db_path=None) -> dict:
     project_id = session_data.get("project_id", "")
     try:
         devsecops_profile = conn.execute(
-            "SELECT maturity_level FROM devsecops_profiles WHERE project_id = ? ORDER BY created_at DESC LIMIT 1",
+            "SELECT maturity_level FROM devsecops_profiles WHERE project_id = %s ORDER BY created_at DESC LIMIT 1",
             (project_id,),
         ).fetchone()
         if devsecops_profile:
@@ -221,7 +221,7 @@ def score_readiness(session_id: str, db_path=None) -> dict:
             conn.execute(
                 """INSERT INTO devsecops_profiles
                    (id, project_id, maturity_level, active_stages, stage_configs, detected_at, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                 (profile_id, project_id, "level_2_managed", json.dumps(["sast", "sca"]), json.dumps({}), now, now, now),
             )
             devsecops_readiness = 0.4
@@ -257,7 +257,7 @@ def score_readiness(session_id: str, db_path=None) -> dict:
 
     # Get turn number for tracking
     last_turn = conn.execute(
-        "SELECT MAX(turn_number) as mt FROM intake_conversation WHERE session_id = ?", (session_id,)
+        "SELECT MAX(turn_number) as mt FROM intake_conversation WHERE session_id = %s", (session_id,)
     ).fetchone()
     turn_num = last_turn["mt"] if last_turn else 0
 
@@ -267,7 +267,7 @@ def score_readiness(session_id: str, db_path=None) -> dict:
            (session_id, turn_number, overall_score, completeness, clarity,
             feasibility, compliance, testability, gap_count, ambiguity_count,
             requirement_count)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (
             session_id,
             turn_num,
@@ -286,8 +286,8 @@ def score_readiness(session_id: str, db_path=None) -> dict:
     # Update session
     conn.execute(
         """UPDATE intake_sessions
-           SET readiness_score = ?, readiness_breakdown = ?, updated_at = ?
-           WHERE id = ?""",
+           SET readiness_score = %s, readiness_breakdown = %s, updated_at = %s
+           WHERE id = %s""",
         (
             round(overall, 4),
             json.dumps(
@@ -353,7 +353,7 @@ def get_score_trend(session_id: str, db_path=None) -> dict:
         """SELECT turn_number, overall_score, completeness, clarity,
                   feasibility, compliance, testability, requirement_count, scored_at
            FROM readiness_scores
-           WHERE session_id = ?
+           WHERE session_id = %s
            ORDER BY scored_at""",
         (session_id,),
     ).fetchall()

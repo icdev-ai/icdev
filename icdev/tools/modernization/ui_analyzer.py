@@ -543,7 +543,7 @@ def store_ui_analysis(
         cursor = conn.cursor()
         # Fetch current metadata
         cursor.execute(
-            "SELECT metadata FROM legacy_apps WHERE app_id = ? AND project_id = ?",
+            "SELECT metadata FROM legacy_apps WHERE app_id = %s AND project_id = %s",
             (app_id, project_id),
         )
         row = cursor.fetchone()
@@ -566,7 +566,7 @@ def store_ui_analysis(
         }
 
         cursor.execute(
-            "UPDATE legacy_apps SET metadata = ? WHERE app_id = ? AND project_id = ?",
+            "UPDATE legacy_apps SET metadata = %s WHERE app_id = %s AND project_id = %s",
             (json.dumps(existing_meta, default=str), app_id, project_id),
         )
         conn.commit()

@@ -366,9 +366,9 @@ def _upsert_conflict_rows(conn, rows: list[dict], source: str) -> tuple[int, int
                  actor1, technique_ids, threat_actor, malware_family,
                  confidence, metadata_json)
             VALUES
-                (?, 'cyber_op', ?, ?, ?, ?,
-                 ?, ?, ?, ?,
-                 ?, ?)
+                (%s, 'cyber_op', %s, %s, %s, %s,
+                 %s, %s, %s, %s,
+                 %s, %s)
             """,
             (
                 row["id"],
@@ -403,11 +403,11 @@ def _write_kg(
     _ensure_kg_tables(conn)
 
     conn.execute(
-        "DELETE FROM canvas_kg_nodes WHERE canvas = ? AND design_id = ?",
+        "DELETE FROM canvas_kg_nodes WHERE canvas = %s AND design_id = %s",
         (_KG_CANVAS, bundle_id),
     )
     conn.execute(
-        "DELETE FROM canvas_kg_edges WHERE canvas = ? AND design_id = ?",
+        "DELETE FROM canvas_kg_edges WHERE canvas = %s AND design_id = %s",
         (_KG_CANVAS, bundle_id),
     )
 
@@ -417,7 +417,7 @@ def _write_kg(
             conn.execute(
                 "INSERT OR IGNORE INTO canvas_kg_nodes "
                 "(id, canvas, design_id, node_id, node_type, label, metadata_json, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     node["id"],
                     node["canvas"],
@@ -438,7 +438,7 @@ def _write_kg(
             conn.execute(
                 "INSERT OR IGNORE INTO canvas_kg_edges "
                 "(id, canvas, design_id, source_id, target_id, edge_type, metadata_json, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     edge["id"],
                     edge["canvas"],

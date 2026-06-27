@@ -89,7 +89,7 @@ def get_trace(trace_id: str):
         conn = _get_db()
         spans = conn.execute(
             """SELECT * FROM otel_spans
-               WHERE trace_id = ?
+               WHERE trace_id = %s
                ORDER BY start_time ASC""",
             (trace_id,),
         ).fetchall()
@@ -302,7 +302,7 @@ def get_shap(trace_id: str):
     try:
         conn = _get_db()
         rows = conn.execute(
-            "SELECT * FROM shap_attributions WHERE trace_id = ? ORDER BY shapley_value DESC",
+            "SELECT * FROM shap_attributions WHERE trace_id = %s ORDER BY shapley_value DESC",
             (trace_id,),
         ).fetchall()
         conn.close()

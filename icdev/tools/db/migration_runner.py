@@ -354,7 +354,7 @@ class MigrationRunner:
             # Both such migrations are individually idempotent; recording one
             # version row is sufficient.
             conn.execute(
-                "INSERT OR IGNORE INTO schema_migrations (version, name, checksum, execution_time_ms) VALUES (?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO schema_migrations (version, name, checksum, execution_time_ms) VALUES (%s, %s, %s, %s)",
                 (version, name, migration.get("checksum", ""), elapsed_ms),
             )
             conn.commit()
@@ -429,7 +429,7 @@ class MigrationRunner:
 
             # Mark as rolled back (append-only — don't delete the row)
             conn.execute(
-                "UPDATE schema_migrations SET rolled_back_at = datetime('now') WHERE version = ?",
+                "UPDATE schema_migrations SET rolled_back_at = datetime('now') WHERE version = %s",
                 (version,),
             )
             conn.commit()
@@ -668,7 +668,7 @@ class MigrationRunner:
             conn.execute(
                 "INSERT OR IGNORE INTO schema_migrations "
                 "(version, name, checksum, execution_time_ms, applied_by) "
-                "VALUES (?, ?, ?, 0, 'icdev-migrate (mark-applied)')",
+                "VALUES (%s, %s, %s, 0, 'icdev-migrate (mark-applied)')",
                 (version, migration["name"], migration.get("checksum", "")),
             )
             conn.commit()

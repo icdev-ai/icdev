@@ -82,7 +82,7 @@ def _check_ta_expiration(opp_id: str) -> List[Dict]:
             """
             SELECT id, partner_name, ta_expiration_date, ta_status
             FROM pg_teaming_workshare
-            WHERE opportunity_id = ?
+            WHERE opportunity_id = %s
             AND ta_expiration_date IS NOT NULL
         """,
             (opp_id,),
@@ -132,7 +132,7 @@ def _check_oci_risks(opp_id: str) -> List[Dict]:
             """
             SELECT tw.partner_name, tw.oci_risk_flag, tw.oci_mitigation
             FROM pg_teaming_workshare tw
-            WHERE tw.opportunity_id = ?
+            WHERE tw.opportunity_id = %s
             AND tw.oci_risk_flag = 1
         """,
             (opp_id,),
@@ -161,7 +161,7 @@ def _check_workshare_gaps(opp_id: str) -> Dict[str, Any]:
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT id, partner_name, role, workshare_pct FROM pg_teaming_workshare WHERE opportunity_id = ?",
+            "SELECT id, partner_name, role, workshare_pct FROM pg_teaming_workshare WHERE opportunity_id = %s",
             (opp_id,),
         ).fetchall()
     except Exception:
@@ -242,7 +242,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
         conn.execute(
             "INSERT INTO pg_proposal_genesis_audit "
             "(id, event_type, reflex_name, risk_tier, details, success, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
                 _generate_id("pgaudit"),
                 "team_check",

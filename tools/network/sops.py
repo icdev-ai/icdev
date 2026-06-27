@@ -78,7 +78,7 @@ def _log_action(conn: sqlite3.Connection, sop_id: str, actor: str,
                 action: str, comment: str = "") -> None:
     conn.execute(
         "INSERT INTO ndc_sop_approval_log (id, sop_id, actor, action, comment, timestamp) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s)",
         (f"log-{uuid.uuid4().hex[:10]}", sop_id, actor, action, comment, _now()),
     )
 
@@ -105,7 +105,7 @@ def create_sop(title: str, category: str, description: str, steps: list,
             "INSERT INTO ndc_sops (sop_id, title, category, version, status, "
             "description, prerequisites, steps, validation, rollback, escalation, "
             "classification, author, csp, created_at, updated_at) "
-            "VALUES (?, ?, ?, 1, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, 1, 'draft', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 sop_id, title, category, description or "",
                 _dumps(prerequisites or []),
@@ -129,7 +129,7 @@ def get_sop(sop_id: str) -> dict:
     conn = _get_conn()
     try:
         row = conn.execute(
-            "SELECT * FROM ndc_sops WHERE sop_id = ?", (sop_id,)
+            "SELECT * FROM ndc_sops WHERE sop_id = %s", (sop_id,)
         ).fetchone()
         if not row:
             return {}
@@ -219,7 +219,7 @@ def delete_sop(sop_id: str, actor: str = "system") -> dict:
         return {"ok": False, "error": "cannot_delete_approved_sop"}
     conn = _get_conn()
     try:
-        conn.execute("DELETE FROM ndc_sops WHERE sop_id = ?", (sop_id,))
+        conn.execute("DELETE FROM ndc_sops WHERE sop_id = %s", (sop_id,))
         _log_action(conn, sop_id, actor, "deleted", "Draft SOP deleted")
         conn.commit()
     finally:
@@ -240,7 +240,7 @@ def submit_for_review(sop_id: str, reviewer: str, submitted_by: str) -> dict:
     conn = _get_conn()
     try:
         conn.execute(
-            "UPDATE ndc_sops SET status='review', reviewer=?, updated_at=? WHERE sop_id=?",
+            "UPDATE ndc_sops SET status='review', reviewer=%s, updated_at=%s WHERE sop_id=%s",
             (reviewer, _now(), sop_id),
         )
         _log_action(conn, sop_id, submitted_by, "submitted",
@@ -262,8 +262,8 @@ def approve_sop(sop_id: str, approver: str, comment: str = "") -> dict:
     conn = _get_conn()
     try:
         conn.execute(
-            "UPDATE ndc_sops SET status='approved', approver=?, approved_at=?, updated_at=? "
-            "WHERE sop_id=?",
+            "UPDATE ndc_sops SET status='approved', approver=%s, approved_at=%s, updated_at=%s "
+            "WHERE sop_id=%s",
             (approver, now, now, sop_id),
         )
         _log_action(conn, sop_id, approver, "approved", comment or "Approved")
@@ -285,7 +285,7 @@ def reject_sop(sop_id: str, approver: str, comment: str) -> dict:
     conn = _get_conn()
     try:
         conn.execute(
-            "UPDATE ndc_sops SET status='draft', updated_at=? WHERE sop_id=?",
+            "UPDATE ndc_sops SET status='draft', updated_at=%s WHERE sop_id=%s",
             (_now(), sop_id),
         )
         _log_action(conn, sop_id, approver, "rejected", comment)
@@ -305,7 +305,7 @@ def deprecate_sop(sop_id: str, actor: str, comment: str = "") -> dict:
     conn = _get_conn()
     try:
         conn.execute(
-            "UPDATE ndc_sops SET status='deprecated', updated_at=? WHERE sop_id=?",
+            "UPDATE ndc_sops SET status='deprecated', updated_at=%s WHERE sop_id=%s",
             (_now(), sop_id),
         )
         _log_action(conn, sop_id, actor, "deprecated", comment or "Deprecated")
@@ -321,7 +321,7 @@ def get_approval_history(sop_id: str) -> list:
     try:
         rows = conn.execute(
             "SELECT id, sop_id, actor, action, comment, timestamp "
-            "FROM ndc_sop_approval_log WHERE sop_id=? ORDER BY timestamp ASC",
+            "FROM ndc_sop_approval_log WHERE sop_id=%s ORDER BY timestamp ASC",
             (sop_id,),
         ).fetchall()
         return [dict(r) for r in rows]

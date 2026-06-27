@@ -139,7 +139,7 @@ def demo_status():
             rows = conn.execute(
                 "SELECT run_id, status, started_at, completed_at, summary_json "
                 "FROM studio_workflow_runs "
-                "WHERE workflow_id = ? ORDER BY started_at DESC LIMIT 5",
+                "WHERE workflow_id = %s ORDER BY started_at DESC LIMIT 5",
                 (_WORKFLOW_ID,),
             ).fetchall()
             runs = [dict(r) for r in rows]

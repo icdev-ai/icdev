@@ -131,7 +131,7 @@ def write_snapshot(
                 """INSERT INTO compliance_twin_snapshots
                    (snapshot_id, project_id, framework, control_id,
                     implementation_status, evidence_ref, score, assessor, notes)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (snapshot_id, project_id, framework, cid, status,
                  evidence_ref, score, assessor, notes),
             )
@@ -172,7 +172,7 @@ def write_snapshot(
                 """INSERT INTO compliance_twin_violations
                    (snapshot_id, project_id, framework, control_id,
                     violation_type, severity, details)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                 (
                     vrow["snapshot_id"], vrow["project_id"], vrow["framework"],
                     vrow["control_id"], vrow["violation_type"], vrow["severity"],
@@ -190,7 +190,7 @@ def write_snapshot(
                 started_at, completed_at, total_controls,
                 satisfied, partially_satisfied, not_satisfied,
                 not_applicable, not_assessed)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 snapshot_id, framework, project_id, triggered_by,
                 started_at, completed_at, len(controls),
@@ -216,7 +216,7 @@ def get_latest_snapshot_id(project_id: str, framework: str, conn=None) -> Option
     try:
         row = conn.execute(
             """SELECT snapshot_id FROM compliance_twin_runs
-               WHERE project_id = ? AND framework = ?
+               WHERE project_id = %s AND framework = %s
                ORDER BY started_at DESC LIMIT 1""",
             (project_id, framework),
         ).fetchone()

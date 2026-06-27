@@ -252,7 +252,7 @@ def _register_innovation_signals(opp_rows: list[dict], score_rows: list[dict], s
                 signal_id = f"aac-{scan_id}-{opp_id}"
                 # Skip if already registered
                 existing = conn.execute(
-                    "SELECT id FROM innovation_signals WHERE id = ?", (signal_id,)
+                    "SELECT id FROM innovation_signals WHERE id = %s", (signal_id,)
                 ).fetchone()
                 if existing:
                     continue
@@ -260,7 +260,7 @@ def _register_innovation_signals(opp_rows: list[dict], score_rows: list[dict], s
                     "INSERT INTO innovation_signals "
                     "(id, source, source_type, title, description, content_hash, "
                     "discovered_at, status, category, innovation_score) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         signal_id, "aac_opportunities", "internal_analysis",
                         title, description, content_hash,

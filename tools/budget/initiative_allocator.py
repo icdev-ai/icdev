@@ -240,7 +240,7 @@ def _log_event(
         """INSERT INTO cpmp_budget_tier_history
            (id, allocation_id, event_type, from_tier, to_tier, from_status, to_status,
             amount_usd, reason, actor, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (
             _gen_id("hist"),
             allocation_id,
@@ -288,7 +288,7 @@ def create_allocation(
 
     # Uniqueness check
     existing = conn.execute(
-        "SELECT id FROM cpmp_budget_allocations WHERE initiative_code = ? AND fiscal_year = ?",
+        "SELECT id FROM cpmp_budget_allocations WHERE initiative_code = %s AND fiscal_year = %s",
         (initiative_code, fiscal_year),
     ).fetchone()
     if existing:
@@ -304,7 +304,7 @@ def create_allocation(
            (id, initiative_code, title, fiscal_year, tier, allocated_usd, obligated_usd,
             available_usd, status, agency, contract_id, owner, justification,
             created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, 0.0, ?, 'active', ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, 0.0, %s, 'active', %s, %s, %s, %s, %s, %s)""",
         (
             alloc_id,
             initiative_code,
@@ -335,7 +335,7 @@ def create_allocation(
     conn.commit()
 
     row = conn.execute(
-        "SELECT * FROM cpmp_budget_allocations WHERE id = ?", (alloc_id,)
+        "SELECT * FROM cpmp_budget_allocations WHERE id = %s", (alloc_id,)
     ).fetchone()
     conn.close()
     return _row_to_dict(row)
@@ -344,7 +344,7 @@ def create_allocation(
 def get_allocation(allocation_id: str) -> Dict[str, Any]:
     conn = _get_conn()
     row = conn.execute(
-        "SELECT * FROM cpmp_budget_allocations WHERE id = ?", (allocation_id,)
+        "SELECT * FROM cpmp_budget_allocations WHERE id = %s", (allocation_id,)
     ).fetchone()
     conn.close()
     if not row:
@@ -440,7 +440,7 @@ def delete_allocation(allocation_id: str) -> Dict[str, Any]:
     """Soft-delete by setting status='cancelled' (append-only audit friendly)."""
     conn = _get_conn()
     existing = conn.execute(
-        "SELECT * FROM cpmp_budget_allocations WHERE id = ?", (allocation_id,)
+        "SELECT * FROM cpmp_budget_allocations WHERE id = %s", (allocation_id,)
     ).fetchone()
     if not existing:
         conn.close()
@@ -452,7 +452,7 @@ def delete_allocation(allocation_id: str) -> Dict[str, Any]:
             "de-obligate first."
         )
     conn.execute(
-        "UPDATE cpmp_budget_allocations SET status='cancelled', updated_at=? WHERE id = ?",
+        "UPDATE cpmp_budget_allocations SET status='cancelled', updated_at=%s WHERE id = %s",
         (_now_iso(), allocation_id),
     )
     _log_event(
@@ -503,7 +503,7 @@ def record_obligation(
     conn.execute(
         """INSERT INTO cpmp_budget_obligations
            (id, allocation_id, amount_usd, description, reference_id, recorded_by, recorded_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
         (obl_id, allocation_id, amount_usd, description, reference_id, recorded_by, now),
     )
 
@@ -518,8 +518,8 @@ def record_obligation(
 
     conn.execute(
         """UPDATE cpmp_budget_allocations
-           SET obligated_usd = ?, available_usd = ?, status = ?, updated_at = ?
-           WHERE id = ?""",
+           SET obligated_usd = %s, available_usd = %s, status = %s, updated_at = %s
+           WHERE id = %s""",
         (new_obligated, new_available, new_status, now, allocation_id),
     )
 
@@ -542,7 +542,7 @@ def record_obligation(
 def list_obligations(allocation_id: str) -> List[Dict[str, Any]]:
     conn = _get_conn()
     rows = conn.execute(
-        "SELECT * FROM cpmp_budget_obligations WHERE allocation_id = ? ORDER BY recorded_at",
+        "SELECT * FROM cpmp_budget_obligations WHERE allocation_id = %s ORDER BY recorded_at",
         (allocation_id,),
     ).fetchall()
     conn.close()
@@ -568,7 +568,7 @@ def transition_tier(
 
     conn = _get_conn()
     conn.execute(
-        "UPDATE cpmp_budget_allocations SET tier = ?, updated_at = ? WHERE id = ?",
+        "UPDATE cpmp_budget_allocations SET tier = %s, updated_at = %s WHERE id = %s",
         (target_tier, _now_iso(), allocation_id),
     )
     _log_event(
@@ -605,7 +605,7 @@ def transition_status(
 
     conn = _get_conn()
     conn.execute(
-        "UPDATE cpmp_budget_allocations SET status = ?, updated_at = ? WHERE id = ?",
+        "UPDATE cpmp_budget_allocations SET status = %s, updated_at = %s WHERE id = %s",
         (target, _now_iso(), allocation_id),
     )
     _log_event(
@@ -769,7 +769,7 @@ def get_initiative_history(allocation_id: str) -> List[Dict[str, Any]]:
     """Return audit history for an allocation (creation, transitions, obligations)."""
     conn = _get_conn()
     rows = conn.execute(
-        "SELECT * FROM cpmp_budget_tier_history WHERE allocation_id = ? ORDER BY created_at",
+        "SELECT * FROM cpmp_budget_tier_history WHERE allocation_id = %s ORDER BY created_at",
         (allocation_id,),
     ).fetchall()
     conn.close()

@@ -68,12 +68,12 @@ def _table_exists(conn, name):
     try:
         if getattr(conn, "_backend", "sqlite") == "postgresql":
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
                 (name,),
             ).fetchone()
             return row is not None
         row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
             (name,),
         ).fetchone()
         return row is not None
@@ -189,7 +189,7 @@ def strategy_comparison():
         if legacy_app_id and _table_exists(conn, "migration_assessments"):
             row = conn.execute(
                 "SELECT cost_estimate_hours, ato_impact, risk_score, timeline_weeks "
-                "FROM migration_assessments WHERE legacy_app_id = ? "
+                "FROM migration_assessments WHERE legacy_app_id = %s "
                 "ORDER BY assessed_at DESC LIMIT 1",
                 (legacy_app_id,),
             ).fetchone()

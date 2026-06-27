@@ -45,7 +45,7 @@ def _save_output(output_type: str, collection_id: str, tenant_id: str,
             """INSERT INTO dic_generated_outputs
                (id, output_type, collection_id, tenant_id, content_json, provider,
                 status, created_at, classification)
-               VALUES (?,?,?,?,?,?,'done',?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,'done',%s,%s)""",
             (output_id, output_type, collection_id, tenant_id,
              json.dumps(content), provider, _now(), "CUI"),
         )
@@ -122,9 +122,9 @@ def _get_chunks(collection_id: str, tenant_id: str, limit: int = 200,
                    FROM dic_chunk_links dcl
                    JOIN rag_chunks rc ON rc.id = dcl.rag_chunk_id
                    JOIN dic_documents dd ON dd.doc_id = dcl.doc_id
-                   WHERE dd.collection_id = ? AND dd.tenant_id = ? AND dcl.doc_id = ?
+                   WHERE dd.collection_id = %s AND dd.tenant_id = %s AND dcl.doc_id = %s
                    ORDER BY dcl.chunk_index
-                   LIMIT ?""",
+                   LIMIT %s""",
                 (collection_id, tenant_id, doc_id, limit),
             ).fetchall()
         else:
@@ -136,9 +136,9 @@ def _get_chunks(collection_id: str, tenant_id: str, limit: int = 200,
                    FROM dic_chunk_links dcl
                    JOIN rag_chunks rc ON rc.id = dcl.rag_chunk_id
                    JOIN dic_documents dd ON dd.doc_id = dcl.doc_id
-                   WHERE dd.collection_id = ? AND dd.tenant_id = ?
+                   WHERE dd.collection_id = %s AND dd.tenant_id = %s
                    ORDER BY dcl.doc_id, dcl.chunk_index
-                   LIMIT ?""",
+                   LIMIT %s""",
                 (collection_id, tenant_id, limit),
             ).fetchall()
         conn.close()
@@ -285,8 +285,8 @@ def _kg_entities_for_collection(collection_id: str, tenant_id: str,
             rows = conn.execute(
                 """SELECT DISTINCT n.label FROM kg_nodes n
                    JOIN kg_graphs g ON g.id = n.graph_id
-                   WHERE g.source_doc_id = ?
-                   ORDER BY n.centrality DESC NULLS LAST LIMIT ?""",
+                   WHERE g.source_doc_id = %s
+                   ORDER BY n.centrality DESC NULLS LAST LIMIT %s""",
                 (doc_id, limit),
             ).fetchall()
         else:
@@ -294,8 +294,8 @@ def _kg_entities_for_collection(collection_id: str, tenant_id: str,
                 """SELECT DISTINCT n.label FROM kg_nodes n
                    JOIN kg_graphs g ON g.id = n.graph_id
                    JOIN dic_documents d ON d.doc_id = g.source_doc_id
-                   WHERE d.collection_id = ? AND d.tenant_id = ?
-                   ORDER BY n.centrality DESC NULLS LAST LIMIT ?""",
+                   WHERE d.collection_id = %s AND d.tenant_id = %s
+                   ORDER BY n.centrality DESC NULLS LAST LIMIT %s""",
                 (collection_id, tenant_id, limit),
             ).fetchall()
         conn.close()
@@ -713,7 +713,7 @@ def _update_output(output_id: str, content: dict, provider: str) -> None:
     try:
         conn = _conn()
         conn.execute(
-            "UPDATE dic_generated_outputs SET content_json=?, provider=? WHERE id=?",
+            "UPDATE dic_generated_outputs SET content_json=%s, provider=%s WHERE id=%s",
             (json.dumps(content), provider, output_id),
         )
         conn.commit()
@@ -759,7 +759,7 @@ def enhance_with_llm(output_id: str, collection_id: str, tenant_id: str,
     try:
         conn = _conn()
         row = conn.execute(
-            "SELECT content_json FROM dic_generated_outputs WHERE id=?", (output_id,)
+            "SELECT content_json FROM dic_generated_outputs WHERE id=%s", (output_id,)
         ).fetchone()
         if row:
             existing = json.loads(row[0] or "{}")

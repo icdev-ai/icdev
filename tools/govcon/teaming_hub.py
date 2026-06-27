@@ -121,7 +121,7 @@ def _audit(conn, event_type, action, details, opp_id=None):
             "INSERT INTO audit_trail "
             "(id, timestamp, event_type, actor, "
             "action, details, project_id, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 _gen_id("aud"),
                 _now(),
@@ -140,7 +140,7 @@ def _audit(conn, event_type, action, details, opp_id=None):
                 "INSERT INTO audit_trail "
                 "(project_id, event_type, actor, "
                 "action, details, session_id) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s)",
                 (
                     opp_id,
                     event_type,
@@ -182,7 +182,7 @@ def add_partner(
 
     # Check if partner exists in global registry
     existing = conn.execute(
-        "SELECT id FROM pg_teaming_partners WHERE name = ?",
+        "SELECT id FROM pg_teaming_partners WHERE name = %s",
         (partner_name,),
     ).fetchone()
 
@@ -197,7 +197,7 @@ def add_partner(
             "past_performance, contract_vehicles, "
             "certifications, set_asides, status, "
             "created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 partner_id,
                 partner_name,
@@ -222,7 +222,7 @@ def add_partner(
         "ta_status, ta_expiry_date, oci_risk, "
         "socioeconomic_status, reliability_score, "
         "created_at, updated_at) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
         (
             ws_id,
             opportunity_id,
@@ -282,7 +282,7 @@ def score_partner(partner_id):
     conn = _get_db()
 
     row = conn.execute(
-        "SELECT * FROM pg_teaming_partners WHERE id = ?",
+        "SELECT * FROM pg_teaming_partners WHERE id = %s",
         (partner_id,),
     ).fetchone()
 
@@ -298,7 +298,7 @@ def score_partner(partner_id):
 
     # Find opportunity via workshare link
     ws = conn.execute(
-        "SELECT opportunity_id FROM pg_teaming_workshare WHERE partner_id = ? LIMIT 1",
+        "SELECT opportunity_id FROM pg_teaming_workshare WHERE partner_id = %s LIMIT 1",
         (partner_id,),
     ).fetchone()
     opp_id = None
@@ -307,7 +307,7 @@ def score_partner(partner_id):
         opp_id = ws["opportunity_id"] if isinstance(ws, dict) else ws[0]
         try:
             opp_row = conn.execute(
-                "SELECT * FROM proposal_opportunities WHERE id = ?",
+                "SELECT * FROM proposal_opportunities WHERE id = %s",
                 (opp_id,),
             ).fetchone()
             if opp_row:
@@ -321,7 +321,7 @@ def score_partner(partner_id):
     pp_score = 0.3
     try:
         awards = conn.execute(
-            "SELECT naics_code FROM govcon_awards WHERE awardee_name LIKE ?",
+            "SELECT naics_code FROM govcon_awards WHERE awardee_name LIKE %s",
             (f"%{partner_name}%",),
         ).fetchall()
         if awards:
@@ -339,7 +339,7 @@ def score_partner(partner_id):
     if opp:
         try:
             cnt_row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM govcon_awards WHERE awardee_name LIKE ? AND naics_code = ?",
+                "SELECT COUNT(*) as cnt FROM govcon_awards WHERE awardee_name LIKE %s AND naics_code = %s",
                 (f"%{partner_name}%", opp.get("naics_code") or ""),
             ).fetchone()
             if cnt_row:
@@ -354,7 +354,7 @@ def score_partner(partner_id):
     rel_score = 0.5
     try:
         prior = conn.execute(
-            "SELECT COUNT(*) as cnt FROM pg_teaming_workshare WHERE partner_id = ?",
+            "SELECT COUNT(*) as cnt FROM pg_teaming_workshare WHERE partner_id = %s",
             (partner_id,),
         ).fetchone()
         if prior:
@@ -391,7 +391,7 @@ def score_partner(partner_id):
     # 6. Socioeconomic fit
     socio_score = 0.5
     ws_rows = conn.execute(
-        "SELECT socioeconomic_status FROM pg_teaming_workshare WHERE partner_id = ?",
+        "SELECT socioeconomic_status FROM pg_teaming_workshare WHERE partner_id = %s",
         (partner_id,),
     ).fetchall()
     for wr in ws_rows:
@@ -408,7 +408,7 @@ def score_partner(partner_id):
     # Update reliability in workshare records
     now = _now()
     conn.execute(
-        "UPDATE pg_teaming_workshare SET reliability_score = ?, updated_at = ? WHERE partner_id = ?",
+        "UPDATE pg_teaming_workshare SET reliability_score = %s, updated_at = %s WHERE partner_id = %s",
         (composite, now, partner_id),
     )
 
@@ -450,7 +450,7 @@ def track_workshare(opportunity_id):
         "FROM pg_teaming_workshare ws "
         "LEFT JOIN pg_teaming_partners tp "
         "ON ws.partner_id = tp.id "
-        "WHERE ws.opportunity_id = ?",
+        "WHERE ws.opportunity_id = %s",
         (opportunity_id,),
     ).fetchall()
     conn.close()
@@ -525,7 +525,7 @@ def manage_ta_lifecycle(opportunity_id):
         "FROM pg_teaming_workshare ws "
         "LEFT JOIN pg_teaming_partners tp "
         "ON ws.partner_id = tp.id "
-        "WHERE ws.opportunity_id = ?",
+        "WHERE ws.opportunity_id = %s",
         (opportunity_id,),
     ).fetchall()
 
@@ -567,8 +567,8 @@ def manage_ta_lifecycle(opportunity_id):
             others = conn.execute(
                 "SELECT opportunity_id, ta_status "
                 "FROM pg_teaming_workshare "
-                "WHERE partner_id = ? "
-                "AND opportunity_id != ?",
+                "WHERE partner_id = %s "
+                "AND opportunity_id != %s",
                 (pid, opportunity_id),
             ).fetchall()
             for o in others:
@@ -646,7 +646,7 @@ def screen_oci(opportunity_id, partner_name):
     opp = None
     try:
         opp_row = conn.execute(
-            "SELECT * FROM proposal_opportunities WHERE id = ?",
+            "SELECT * FROM proposal_opportunities WHERE id = %s",
             (opportunity_id,),
         ).fetchone()
         if opp_row:
@@ -660,7 +660,7 @@ def screen_oci(opportunity_id, partner_name):
         if opp and opp.get("solicitation_number"):
             sol = opp["solicitation_number"]
             irow = conn.execute(
-                "SELECT COUNT(*) as cnt FROM govcon_awards WHERE awardee_name LIKE ? AND solicitation_number LIKE ?",
+                "SELECT COUNT(*) as cnt FROM govcon_awards WHERE awardee_name LIKE %s AND solicitation_number LIKE %s",
                 (f"%{partner_name}%", f"%{sol}%"),
             ).fetchone()
             if irow:
@@ -672,9 +672,9 @@ def screen_oci(opportunity_id, partner_name):
             arow = conn.execute(
                 "SELECT COUNT(*) as cnt "
                 "FROM govcon_awards "
-                "WHERE awardee_name LIKE ? "
-                "AND agency LIKE ? "
-                "AND naics_code = ?",
+                "WHERE awardee_name LIKE %s "
+                "AND agency LIKE %s "
+                "AND naics_code = %s",
                 (
                     f"%{partner_name}%",
                     f"%{opp['agency']}%",
@@ -704,8 +704,8 @@ def screen_oci(opportunity_id, partner_name):
         if opp and opp.get("agency"):
             adv = conn.execute(
                 "SELECT title FROM govcon_awards "
-                "WHERE awardee_name LIKE ? "
-                "AND agency LIKE ? "
+                "WHERE awardee_name LIKE %s "
+                "AND agency LIKE %s "
                 "AND (title LIKE '%advisory%' "
                 "OR title LIKE '%consulting%' "
                 "OR title LIKE '%evaluation%' "
@@ -738,8 +738,8 @@ def screen_oci(opportunity_id, partner_name):
             "ON ws.partner_id = tp.id "
             "LEFT JOIN proposal_opportunities po "
             "ON ws.opportunity_id = po.id "
-            "WHERE tp.name = ? "
-            "AND ws.opportunity_id != ? "
+            "WHERE tp.name = %s "
+            "AND ws.opportunity_id != %s "
             "AND po.status IN ("
             "'intake','bid_no_bid','go','writing')",
             (partner_name, opportunity_id),
@@ -781,11 +781,11 @@ def screen_oci(opportunity_id, partner_name):
     try:
         conn.execute(
             "UPDATE pg_teaming_workshare "
-            "SET oci_risk = ?, updated_at = ? "
-            "WHERE opportunity_id = ? "
+            "SET oci_risk = %s, updated_at = %s "
+            "WHERE opportunity_id = %s "
             "AND partner_id IN ("
             "SELECT id FROM pg_teaming_partners "
-            "WHERE name = ?)",
+            "WHERE name = %s)",
             (risk, _now(), opportunity_id, partner_name),
         )
     except Exception:
@@ -830,7 +830,7 @@ def get_team_status(opportunity_id):
         "FROM pg_teaming_workshare ws "
         "LEFT JOIN pg_teaming_partners tp "
         "ON ws.partner_id = tp.id "
-        "WHERE ws.opportunity_id = ?",
+        "WHERE ws.opportunity_id = %s",
         (opportunity_id,),
     ).fetchall()
     conn.close()

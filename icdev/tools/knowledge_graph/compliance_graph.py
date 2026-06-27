@@ -242,14 +242,14 @@ def build_compliance_graph(
     graph_id = f"kg-graph-{_content_hash(graph_key)}"
 
     # Upsert graph record
-    existing = conn.execute("SELECT id FROM kg_graphs WHERE id = ?", (graph_id,)).fetchone()
+    existing = conn.execute("SELECT id FROM kg_graphs WHERE id = %s", (graph_id,)).fetchone()
 
     if existing:
         # Clear existing nodes/edges for idempotent rebuild
-        conn.execute("DELETE FROM kg_edges WHERE graph_id = ?", (graph_id,))
-        conn.execute("DELETE FROM kg_nodes WHERE graph_id = ?", (graph_id,))
+        conn.execute("DELETE FROM kg_edges WHERE graph_id = %s", (graph_id,))
+        conn.execute("DELETE FROM kg_nodes WHERE graph_id = %s", (graph_id,))
         conn.execute(
-            "UPDATE kg_graphs SET updated_at = ? WHERE id = ?",
+            "UPDATE kg_graphs SET updated_at = %s WHERE id = %s",
             (timestamp, graph_id),
         )
     else:
@@ -257,7 +257,7 @@ def build_compliance_graph(
             """INSERT INTO kg_graphs (id, project_id, name, description,
                                       entity_count, edge_count, metadata,
                                       created_at, updated_at)
-               VALUES (?, ?, ?, ?, 0, 0, '{}', ?, ?)""",
+               VALUES (%s, %s, %s, %s, 0, 0, '{}', %s, %s)""",
             (
                 graph_id,
                 project_id,
@@ -279,7 +279,7 @@ def build_compliance_graph(
         conn.execute(
             """INSERT OR REPLACE INTO kg_nodes
                (id, graph_id, label, entity_type, properties, centrality, created_at)
-               VALUES (?, ?, ?, ?, ?, 0.0, ?)""",
+               VALUES (%s, %s, %s, %s, %s, 0.0, %s)""",
             (node_id, graph_id, f"{code} — {name}", "control_family", props, timestamp),
         )
 
@@ -312,7 +312,7 @@ def build_compliance_graph(
         conn.execute(
             """INSERT OR REPLACE INTO kg_nodes
                (id, graph_id, label, entity_type, properties, centrality, created_at)
-               VALUES (?, ?, ?, ?, ?, 0.0, ?)""",
+               VALUES (%s, %s, %s, %s, %s, 0.0, %s)""",
             (node_id, graph_id, label, "framework", props, timestamp),
         )
 
@@ -351,7 +351,7 @@ def build_compliance_graph(
         conn.execute(
             """INSERT OR REPLACE INTO kg_nodes
                (id, graph_id, label, entity_type, properties, centrality, created_at)
-               VALUES (?, ?, ?, ?, ?, 0.0, ?)""",
+               VALUES (%s, %s, %s, %s, %s, 0.0, %s)""",
             (ctrl_node_id, graph_id, f"{ctrl_id_str}: {title}", "control", props, timestamp),
         )
         node_count += 1
@@ -362,7 +362,7 @@ def build_compliance_graph(
         conn.execute(
             """INSERT OR REPLACE INTO kg_edges
                (id, graph_id, source_id, target_id, relationship, weight, properties, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, '{}', ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, '{}', %s)""",
             (bt_edge_id, graph_id, ctrl_node_id, fam_node_id, "belongs_to", 1.0, timestamp),
         )
         edge_count += 1
@@ -380,7 +380,7 @@ def build_compliance_graph(
                     """INSERT OR REPLACE INTO kg_edges
                        (id, graph_id, source_id, target_id, relationship,
                         weight, properties, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
                         sat_edge_id,
                         graph_id,
@@ -409,7 +409,7 @@ def build_compliance_graph(
                     """INSERT OR REPLACE INTO kg_edges
                        (id, graph_id, source_id, target_id, relationship,
                         weight, properties, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
                         sat_edge_id,
                         graph_id,
@@ -446,7 +446,7 @@ def build_compliance_graph(
                     """INSERT OR REPLACE INTO kg_edges
                        (id, graph_id, source_id, target_id, relationship,
                         weight, properties, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
                         ov_edge_id,
                         graph_id,
@@ -462,7 +462,7 @@ def build_compliance_graph(
 
     # Update graph counts
     conn.execute(
-        "UPDATE kg_graphs SET entity_count = ?, edge_count = ?, updated_at = ? WHERE id = ?",
+        "UPDATE kg_graphs SET entity_count = %s, edge_count = %s, updated_at = %s WHERE id = %s",
         (node_count, edge_count, timestamp, graph_id),
     )
     conn.commit()
@@ -527,7 +527,7 @@ def get_crosswalk_path(
 
     # Check source exists
     source_row = conn.execute(
-        "SELECT id, label, properties FROM kg_nodes WHERE id = ?",
+        "SELECT id, label, properties FROM kg_nodes WHERE id = %s",
         (source_node_id,),
     ).fetchone()
 
@@ -543,7 +543,7 @@ def get_crosswalk_path(
     target_node_ids = set()
     for tk in target_keys:
         tid = _fw_id(tk)
-        row = conn.execute("SELECT id FROM kg_nodes WHERE id = ?", (tid,)).fetchone()
+        row = conn.execute("SELECT id FROM kg_nodes WHERE id = %s", (tid,)).fetchone()
         if row:
             target_node_ids.add(tid)
 
@@ -556,7 +556,7 @@ def get_crosswalk_path(
         }
 
     # Find graph_id from source node
-    graph_id = conn.execute("SELECT graph_id FROM kg_nodes WHERE id = ?", (source_node_id,)).fetchone()
+    graph_id = conn.execute("SELECT graph_id FROM kg_nodes WHERE id = %s", (source_node_id,)).fetchone()
     if not graph_id:
         conn.close()
         return {"status": "error", "error": "Source node has no graph"}
@@ -565,7 +565,7 @@ def get_crosswalk_path(
     # Load all edges for this graph into adjacency list
     edges = conn.execute(
         """SELECT source_id, target_id, relationship, weight, properties
-           FROM kg_edges WHERE graph_id = ?""",
+           FROM kg_edges WHERE graph_id = %s""",
         (graph_id,),
     ).fetchall()
 
@@ -639,7 +639,7 @@ def get_crosswalk_path(
     path_nodes = []
     for nid in found_path:
         row = conn.execute(
-            "SELECT label, entity_type, properties FROM kg_nodes WHERE id = ?",
+            "SELECT label, entity_type, properties FROM kg_nodes WHERE id = %s",
             (nid,),
         ).fetchone()
         if row:
@@ -701,7 +701,7 @@ def get_framework_coverage(
     fw_node_ids = []
     for fk in fw_keys:
         fid = _fw_id(fk)
-        row = conn.execute("SELECT id, label FROM kg_nodes WHERE id = ?", (fid,)).fetchone()
+        row = conn.execute("SELECT id, label FROM kg_nodes WHERE id = %s", (fid,)).fetchone()
         if row:
             fw_node_ids.append({"id": fid, "label": dict(row)["label"]})
 
@@ -716,11 +716,11 @@ def get_framework_coverage(
     # Find the compliance-crosswalk graph
     if project_id:
         graph_row = conn.execute(
-            "SELECT id FROM kg_graphs WHERE name = ? AND project_id = ?",
+            "SELECT id FROM kg_graphs WHERE name = %s AND project_id = %s",
             (GRAPH_NAME, project_id),
         ).fetchone()
     else:
-        graph_row = conn.execute("SELECT id FROM kg_graphs WHERE name = ?", (GRAPH_NAME,)).fetchone()
+        graph_row = conn.execute("SELECT id FROM kg_graphs WHERE name = %s", (GRAPH_NAME,)).fetchone()
 
     if not graph_row:
         conn.close()

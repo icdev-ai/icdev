@@ -420,7 +420,7 @@ def _record_failures(conn: Any, failures_by_cat: Dict[str, List[Dict[str, Any]]]
                 conn.execute(
                     "INSERT INTO failure_log "
                     "(project_id, source, error_type, error_message, context, resolved, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, 0, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, 0, %s)",
                     (None, source, error_type, error_message, context, now),
                 )
                 conn.commit()
@@ -460,7 +460,7 @@ def _adaptive_min_fail(conn: Any, ad_cfg: Dict[str, Any], static_fallback: int) 
     cutoff = (datetime.now(timezone.utc) - timedelta(days=history_days)).strftime("%Y-%m-%dT%H:%M:%SZ")
     try:
         rows = conn.execute(
-            "SELECT created_at FROM failure_log WHERE source LIKE ? AND created_at > ?",
+            "SELECT created_at FROM failure_log WHERE source LIKE %s AND created_at > %s",
             (f"{SOURCE_PREFIX}:%", cutoff),
         ).fetchall()
     except Exception as exc:
@@ -505,7 +505,7 @@ def _firing_self_alerts(conn: Any) -> Dict[str, Dict[str, Any]]:
     try:
         rows = conn.execute(
             "SELECT id, source, title, severity FROM alerts "
-            "WHERE status = 'firing' AND source LIKE ?",
+            "WHERE status = 'firing' AND source LIKE %s",
             (f"{SOURCE_PREFIX}:%",),
         ).fetchall()
         for r in rows:
@@ -559,7 +559,7 @@ def _sync_alerts(
                 continue  # unchanged, nothing to do
             try:
                 conn.execute(
-                    "UPDATE alerts SET title = ?, description = ?, severity = ? WHERE id = ?",
+                    "UPDATE alerts SET title = %s, description = %s, severity = %s WHERE id = %s",
                     (title, description, meta["severity"], firing[source]["id"]),
                 )
                 conn.commit()
@@ -575,7 +575,7 @@ def _sync_alerts(
             conn.execute(
                 "INSERT INTO alerts "
                 "(project_id, severity, source, title, description, status, auto_healed, created_at) "
-                "VALUES (?, ?, ?, ?, ?, 'firing', ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, 'firing', %s, %s)",
                 (None, meta["severity"], source, title, description, False, now),
             )
             conn.commit()
@@ -594,7 +594,7 @@ def _sync_alerts(
             continue
         try:
             conn.execute(
-                "UPDATE alerts SET status = 'resolved', resolved_at = ? WHERE id = ?",
+                "UPDATE alerts SET status = 'resolved', resolved_at = %s WHERE id = %s",
                 (now, row["id"]),
             )
             conn.commit()

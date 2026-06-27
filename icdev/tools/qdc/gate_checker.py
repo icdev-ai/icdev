@@ -40,7 +40,7 @@ def run_gate_checks(project_id: str) -> dict:
         with get_connection() as conn:
             cur = conn.cursor()
             cur.execute(
-                "SELECT check_key, check_value FROM qdc_gate_checks WHERE project_id = ? ORDER BY created_at DESC LIMIT 20",
+                "SELECT check_key, check_value FROM qdc_gate_checks WHERE project_id = %s ORDER BY created_at DESC LIMIT 20",
                 (project_id,),
             )
             rows = cur.fetchall()

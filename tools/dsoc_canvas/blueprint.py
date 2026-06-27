@@ -155,7 +155,7 @@ def create_dsoc_blueprint() -> Blueprint:
             if action_f:
                 try:
                     rows = conn.execute(
-                        "SELECT * FROM dsoc_flowspec_rules WHERE action=? ORDER BY created_at DESC",
+                        "SELECT * FROM dsoc_flowspec_rules WHERE action=%s ORDER BY created_at DESC",
                         (action_f,)
                     ).fetchall()
                 except Exception:
@@ -337,7 +337,7 @@ def create_dsoc_blueprint() -> Blueprint:
             load = float(data["current_load_gbps"])
             try:
                 conn.execute(
-                    "UPDATE dsoc_scrubbing_centers SET current_load_gbps=? WHERE id=?",
+                    "UPDATE dsoc_scrubbing_centers SET current_load_gbps=%s WHERE id=%s",
                     (load, center_id)
                 )
             except Exception:
@@ -361,7 +361,7 @@ def create_dsoc_blueprint() -> Blueprint:
             if active_only.lower() in ("1", "true", "yes"):
                 try:
                     rows = conn.execute(
-                        "SELECT * FROM dsoc_threats WHERE is_active=? ORDER BY last_seen DESC",
+                        "SELECT * FROM dsoc_threats WHERE is_active=%s ORDER BY last_seen DESC",
                         (1,)
                     ).fetchall()
                 except Exception:
@@ -448,7 +448,7 @@ def create_dsoc_blueprint() -> Blueprint:
             ts = datetime.now(timezone.utc).strftime("%Y%m")
             try:
                 row = conn.execute(
-                    "SELECT COUNT(*) FROM dsoc_mitigations WHERE mitigation_number LIKE ?",
+                    "SELECT COUNT(*) FROM dsoc_mitigations WHERE mitigation_number LIKE %s",
                     (f"MIT-{ts}-%",)
                 ).fetchone()
             except Exception:
@@ -501,7 +501,7 @@ def create_dsoc_blueprint() -> Blueprint:
             ended = _now()
             try:
                 conn.execute(
-                    "UPDATE dsoc_mitigations SET status=?, ended_at=? WHERE id=?",
+                    "UPDATE dsoc_mitigations SET status=%s, ended_at=%s WHERE id=%s",
                     ("completed", ended, mitigation_id)
                 )
             except Exception:

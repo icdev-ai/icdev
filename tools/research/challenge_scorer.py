@@ -566,7 +566,7 @@ def _score_market_demand(challenge_data, signals, conn, config):
     # Get max signal count across all challenges in this session
     try:
         max_row = conn.execute(
-            "SELECT MAX(signal_count) as max_sc FROM research_challenges WHERE session_id = ?",
+            "SELECT MAX(signal_count) as max_sc FROM research_challenges WHERE session_id = %s",
             (session_id,),
         ).fetchone()
         max_signals = max_row["max_sc"] if max_row and max_row["max_sc"] else signal_count
@@ -628,7 +628,7 @@ def _score_regulatory_pressure(challenge_data, signals, conn, config):
     has_deadline = False
     try:
         reg_rows = conn.execute(
-            "SELECT enforcement_actions, deadline FROM research_regulatory_map WHERE challenge_id = ?",
+            "SELECT enforcement_actions, deadline FROM research_regulatory_map WHERE challenge_id = %s",
             (challenge_id,),
         ).fetchall()
         for rr in reg_rows:
@@ -751,7 +751,7 @@ def _score_icdev_readiness(challenge_data, signals, conn, config):
 
     try:
         cap_rows = conn.execute(
-            "SELECT coverage_score FROM research_capability_map WHERE challenge_id = ?",
+            "SELECT coverage_score FROM research_capability_map WHERE challenge_id = %s",
             (challenge_id,),
         ).fetchall()
     except Exception:
@@ -795,7 +795,7 @@ def _score_compliance_alignment(challenge_data, signals, conn, config):
 
     try:
         reg_rows = conn.execute(
-            "SELECT crosswalk_coverage, icdev_frameworks FROM research_regulatory_map WHERE challenge_id = ?",
+            "SELECT crosswalk_coverage, icdev_frameworks FROM research_regulatory_map WHERE challenge_id = %s",
             (challenge_id,),
         ).fetchall()
     except Exception:
@@ -857,7 +857,7 @@ def cluster_signals(session_id, db_path=None):
     conn = _get_db(db_path)
     try:
         rows = conn.execute(
-            "SELECT * FROM research_signals WHERE session_id = ? ORDER BY discovered_at ASC",
+            "SELECT * FROM research_signals WHERE session_id = %s ORDER BY discovered_at ASC",
             (session_id,),
         ).fetchall()
 
@@ -930,7 +930,7 @@ def cluster_signals(session_id, db_path=None):
 
                 # Check if challenge with this fingerprint already exists
                 existing = conn.execute(
-                    "SELECT id FROM research_challenges WHERE session_id = ? AND keyword_fingerprint = ?",
+                    "SELECT id FROM research_challenges WHERE session_id = %s AND keyword_fingerprint = %s",
                     (session_id, fingerprint),
                 ).fetchone()
                 if existing:
@@ -950,7 +950,7 @@ def cluster_signals(session_id, db_path=None):
                        (id, session_id, title, description, category,
                         signal_ids, signal_count, keyword_fingerprint, keywords,
                         status, first_seen, last_seen, classification)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, 'CUI')""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'new', %s, %s, 'CUI')""",
                     (
                         chal_id,
                         session_id,
@@ -1021,7 +1021,7 @@ def score_challenge(challenge_id, db_path=None):
 
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM research_challenges WHERE id = ?", (challenge_id,)).fetchone()
+        row = conn.execute("SELECT * FROM research_challenges WHERE id = %s", (challenge_id,)).fetchone()
         if not row:
             raise ValueError(f"Challenge not found: {challenge_id}")
 
@@ -1076,18 +1076,18 @@ def score_challenge(challenge_id, db_path=None):
         # UPDATE challenge row with scored results
         conn.execute(
             """UPDATE research_challenges
-               SET composite_score = ?,
-                   score_breakdown = ?,
-                   market_demand = ?,
-                   regulatory_pressure = ?,
-                   technical_complexity = ?,
-                   competitive_saturation = ?,
-                   icdev_readiness = ?,
-                   compliance_alignment = ?,
-                   severity = ?,
+               SET composite_score = %s,
+                   score_breakdown = %s,
+                   market_demand = %s,
+                   regulatory_pressure = %s,
+                   technical_complexity = %s,
+                   competitive_saturation = %s,
+                   icdev_readiness = %s,
+                   compliance_alignment = %s,
+                   severity = %s,
                    status = 'scored',
-                   last_seen = ?
-               WHERE id = ?""",
+                   last_seen = %s
+               WHERE id = %s""",
             (
                 composite,
                 json.dumps(score_breakdown),
@@ -1150,7 +1150,7 @@ def score_all_new(session_id=None, db_path=None):
         if session_id:
             rows = conn.execute(
                 """SELECT * FROM research_challenges
-                   WHERE status = 'new' AND session_id = ?
+                   WHERE status = 'new' AND session_id = %s
                    ORDER BY last_seen ASC""",
                 (session_id,),
             ).fetchall()
@@ -1249,7 +1249,7 @@ def get_top_challenges(session_id, limit=20, db_path=None):
     try:
         rows = conn.execute(
             """SELECT * FROM research_challenges
-               WHERE session_id = ?
+               WHERE session_id = %s
                AND composite_score IS NOT NULL
                ORDER BY last_seen ASC""",
             (session_id,),
@@ -1311,7 +1311,7 @@ def list_challenges(session_id, db_path=None):
     try:
         rows = conn.execute(
             """SELECT * FROM research_challenges
-               WHERE session_id = ?
+               WHERE session_id = %s
                ORDER BY CASE WHEN composite_score IS NULL THEN 1 ELSE 0 END, composite_score DESC, last_seen ASC""",
             (session_id,),
         ).fetchall()

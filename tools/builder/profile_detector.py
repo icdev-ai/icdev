@@ -560,7 +560,7 @@ def accept_detection(detection_id, accepted_by, db_path=None):
     conn = _get_connection(db_path)
     try:
         row = conn.execute(
-            "SELECT * FROM dev_profile_detections WHERE id = ?",
+            "SELECT * FROM dev_profile_detections WHERE id = %s",
             (detection_id,),
         ).fetchone()
 
@@ -571,7 +571,7 @@ def accept_detection(detection_id, accepted_by, db_path=None):
             return {"error": "Detection already accepted"}
 
         conn.execute(
-            "UPDATE dev_profile_detections SET accepted = 1, accepted_by = ?, accepted_at = ? WHERE id = ?",
+            "UPDATE dev_profile_detections SET accepted = 1, accepted_by = %s, accepted_at = %s WHERE id = %s",
             (accepted_by, datetime.now(timezone.utc).isoformat(), detection_id),
         )
         conn.commit()
@@ -606,7 +606,7 @@ def store_detection(detection_results, tenant_id=None, project_id=None, session_
         conn.execute(
             """INSERT INTO dev_profile_detections
                (id, tenant_id, project_id, session_id, repo_url, detected_at, detection_results)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 det_id,
                 tenant_id,

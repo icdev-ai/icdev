@@ -117,7 +117,7 @@ def _log_audit(conn, event_type, actor, action, project_id=None, details=None):
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 event_type,
@@ -161,7 +161,7 @@ def create_pi_migration_snapshot(plan_id, pi_number, snapshot_type="manual", not
     try:
         # -- Task status counts --
         rows = conn.execute(
-            "SELECT status, COUNT(*) as cnt FROM migration_tasks WHERE plan_id = ? GROUP BY status",
+            "SELECT status, COUNT(*) as cnt FROM migration_tasks WHERE plan_id = %s GROUP BY status",
             (plan_id,),
         ).fetchall()
 
@@ -177,14 +177,14 @@ def create_pi_migration_snapshot(plan_id, pi_number, snapshot_type="manual", not
         # -- Components migrated (extract_service tasks completed) --
         components_migrated = conn.execute(
             "SELECT COUNT(*) as cnt FROM migration_tasks "
-            "WHERE plan_id = ? AND task_type = 'extract_service' "
+            "WHERE plan_id = %s AND task_type = 'extract_service' "
             "AND status = 'completed'",
             (plan_id,),
         ).fetchone()["cnt"]
 
         # -- Get total components from legacy_components for plan's app --
         plan_row = conn.execute(
-            "SELECT legacy_app_id FROM migration_plans WHERE id = ?",
+            "SELECT legacy_app_id FROM migration_plans WHERE id = %s",
             (plan_id,),
         ).fetchone()
         legacy_app_id = plan_row["legacy_app_id"] if plan_row else None
@@ -192,7 +192,7 @@ def create_pi_migration_snapshot(plan_id, pi_number, snapshot_type="manual", not
         components_remaining = 0
         if legacy_app_id:
             total_comps = conn.execute(
-                "SELECT COUNT(*) as cnt FROM legacy_components WHERE legacy_app_id = ?",
+                "SELECT COUNT(*) as cnt FROM legacy_components WHERE legacy_app_id = %s",
                 (legacy_app_id,),
             ).fetchone()["cnt"]
             components_remaining = max(0, total_comps - components_migrated)
@@ -200,7 +200,7 @@ def create_pi_migration_snapshot(plan_id, pi_number, snapshot_type="manual", not
         # -- APIs migrated (create_api tasks completed) --
         apis_migrated = conn.execute(
             "SELECT COUNT(*) as cnt FROM migration_tasks "
-            "WHERE plan_id = ? AND task_type = 'create_api' "
+            "WHERE plan_id = %s AND task_type = 'create_api' "
             "AND status = 'completed'",
             (plan_id,),
         ).fetchone()["cnt"]
@@ -208,7 +208,7 @@ def create_pi_migration_snapshot(plan_id, pi_number, snapshot_type="manual", not
         # -- Tables migrated (migrate_schema tasks completed) --
         tables_migrated = conn.execute(
             "SELECT COUNT(*) as cnt FROM migration_tasks "
-            "WHERE plan_id = ? AND task_type = 'migrate_schema' "
+            "WHERE plan_id = %s AND task_type = 'migrate_schema' "
             "AND status = 'completed'",
             (plan_id,),
         ).fetchone()["cnt"]
@@ -216,7 +216,7 @@ def create_pi_migration_snapshot(plan_id, pi_number, snapshot_type="manual", not
         # -- Hours spent (sum of actual_hours from completed tasks) --
         hours_row = conn.execute(
             "SELECT COALESCE(SUM(actual_hours), 0) as total "
-            "FROM migration_tasks WHERE plan_id = ? AND status = 'completed'",
+            "FROM migration_tasks WHERE plan_id = %s AND status = 'completed'",
             (plan_id,),
         ).fetchone()
         hours_spent = hours_row["total"]
@@ -224,13 +224,13 @@ def create_pi_migration_snapshot(plan_id, pi_number, snapshot_type="manual", not
         # -- Test coverage estimate --
         total_test_tasks = conn.execute(
             "SELECT COUNT(*) as cnt FROM migration_tasks "
-            "WHERE plan_id = ? AND task_type IN ('write_tests', 'integration_test', 'e2e_test')",
+            "WHERE plan_id = %s AND task_type IN ('write_tests', 'integration_test', 'e2e_test')",
             (plan_id,),
         ).fetchone()["cnt"]
 
         completed_test_tasks = conn.execute(
             "SELECT COUNT(*) as cnt FROM migration_tasks "
-            "WHERE plan_id = ? AND task_type IN ('write_tests', 'integration_test', 'e2e_test') "
+            "WHERE plan_id = %s AND task_type IN ('write_tests', 'integration_test', 'e2e_test') "
             "AND status = 'completed'",
             (plan_id,),
         ).fetchone()["cnt"]
@@ -243,7 +243,7 @@ def create_pi_migration_snapshot(plan_id, pi_number, snapshot_type="manual", not
         compliance_score = 0.0
         latest_compliance = conn.execute(
             "SELECT compliance_score FROM migration_progress "
-            "WHERE plan_id = ? AND compliance_score > 0 "
+            "WHERE plan_id = %s AND compliance_score > 0 "
             "ORDER BY created_at DESC LIMIT 1",
             (plan_id,),
         ).fetchone()
@@ -253,13 +253,13 @@ def create_pi_migration_snapshot(plan_id, pi_number, snapshot_type="manual", not
             # Estimate: ratio of compliance-type tasks completed
             total_comp_tasks = conn.execute(
                 "SELECT COUNT(*) as cnt FROM migration_tasks "
-                "WHERE plan_id = ? AND task_type IN "
+                "WHERE plan_id = %s AND task_type IN "
                 "('compliance_check', 'stig_remediation', 'ssp_update', 'cui_marking')",
                 (plan_id,),
             ).fetchone()["cnt"]
             completed_comp_tasks = conn.execute(
                 "SELECT COUNT(*) as cnt FROM migration_tasks "
-                "WHERE plan_id = ? AND task_type IN "
+                "WHERE plan_id = %s AND task_type IN "
                 "('compliance_check', 'stig_remediation', 'ssp_update', 'cui_marking') "
                 "AND status = 'completed'",
                 (plan_id,),
@@ -277,7 +277,7 @@ def create_pi_migration_snapshot(plan_id, pi_number, snapshot_type="manual", not
                 apis_migrated, tables_migrated,
                 test_coverage, compliance_score,
                 hours_spent, notes, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 plan_id,
                 pi_number,
@@ -360,7 +360,7 @@ def get_migration_velocity(plan_id, db_path=None):
     conn = _get_db(db_path)
     try:
         rows = conn.execute(
-            "SELECT * FROM migration_progress WHERE plan_id = ? AND snapshot_type = 'pi_end' ORDER BY pi_number ASC",
+            "SELECT * FROM migration_progress WHERE plan_id = %s AND snapshot_type = 'pi_end' ORDER BY pi_number ASC",
             (plan_id,),
         ).fetchall()
     finally:
@@ -451,7 +451,7 @@ def get_migration_burndown(plan_id, db_path=None):
     try:
         # Current state from migration_plans
         plan_row = conn.execute(
-            "SELECT * FROM migration_plans WHERE id = ?",
+            "SELECT * FROM migration_plans WHERE id = %s",
             (plan_id,),
         ).fetchone()
         if not plan_row:
@@ -465,7 +465,7 @@ def get_migration_burndown(plan_id, db_path=None):
         snapshots = conn.execute(
             "SELECT pi_number, tasks_completed, tasks_total "
             "FROM migration_progress "
-            "WHERE plan_id = ? AND snapshot_type = 'pi_end' "
+            "WHERE plan_id = %s AND snapshot_type = 'pi_end' "
             "ORDER BY pi_number ASC",
             (plan_id,),
         ).fetchall()
@@ -576,12 +576,12 @@ def compare_pi_snapshots(plan_id, from_pi, to_pi, db_path=None):
     conn = _get_db(db_path)
     try:
         from_row = conn.execute(
-            "SELECT * FROM migration_progress WHERE plan_id = ? AND pi_number = ? ORDER BY created_at DESC LIMIT 1",
+            "SELECT * FROM migration_progress WHERE plan_id = %s AND pi_number = %s ORDER BY created_at DESC LIMIT 1",
             (plan_id, from_pi),
         ).fetchone()
 
         to_row = conn.execute(
-            "SELECT * FROM migration_progress WHERE plan_id = ? AND pi_number = ? ORDER BY created_at DESC LIMIT 1",
+            "SELECT * FROM migration_progress WHERE plan_id = %s AND pi_number = %s ORDER BY created_at DESC LIMIT 1",
             (plan_id, to_pi),
         ).fetchone()
     finally:
@@ -668,7 +668,7 @@ def assign_tasks_to_pi(plan_id, pi_number, task_ids, db_path=None):
         assigned = 0
         for tid in task_ids:
             cursor = conn.execute(
-                "UPDATE migration_tasks SET pi_number = ? WHERE id = ? AND plan_id = ?",
+                "UPDATE migration_tasks SET pi_number = %s WHERE id = %s AND plan_id = %s",
                 (pi_number, tid, plan_id),
             )
             assigned += cursor.rowcount
@@ -710,7 +710,7 @@ def get_pi_tasks(plan_id, pi_number, db_path=None):
             "SELECT id, title, task_type, priority, status, "
             "estimated_hours, actual_hours, assigned_to "
             "FROM migration_tasks "
-            "WHERE plan_id = ? AND pi_number = ? "
+            "WHERE plan_id = %s AND pi_number = %s "
             "ORDER BY priority ASC, title ASC",
             (plan_id, pi_number),
         ).fetchall()
@@ -774,7 +774,7 @@ def generate_pi_migration_report(plan_id, pi_number, output_dir=None, db_path=No
     conn = _get_db(db_path)
     try:
         plan_row = conn.execute(
-            "SELECT * FROM migration_plans WHERE id = ?",
+            "SELECT * FROM migration_plans WHERE id = %s",
             (plan_id,),
         ).fetchone()
     finally:
@@ -1002,7 +1002,7 @@ def check_pi_compliance_gate(plan_id, pi_number, db_path=None):
         # Get latest snapshot compliance score
         snap_row = conn.execute(
             "SELECT compliance_score FROM migration_progress "
-            "WHERE plan_id = ? AND pi_number = ? "
+            "WHERE plan_id = %s AND pi_number = %s "
             "ORDER BY created_at DESC LIMIT 1",
             (plan_id, pi_number),
         ).fetchone()
@@ -1012,7 +1012,7 @@ def check_pi_compliance_gate(plan_id, pi_number, db_path=None):
         # Check for critical blocked tasks
         blocked_critical = conn.execute(
             "SELECT COUNT(*) as cnt FROM migration_tasks "
-            "WHERE plan_id = ? AND pi_number = ? "
+            "WHERE plan_id = %s AND pi_number = %s "
             "AND status = 'blocked' AND priority IN (1, 'critical')",
             (plan_id, pi_number),
         ).fetchone()["cnt"]
@@ -1088,7 +1088,7 @@ def update_task_status(task_id, status, actual_hours=None, db_path=None):
     try:
         # Fetch current task
         task_row = conn.execute(
-            "SELECT * FROM migration_tasks WHERE id = ?",
+            "SELECT * FROM migration_tasks WHERE id = %s",
             (task_id,),
         ).fetchone()
         if not task_row:
@@ -1104,33 +1104,33 @@ def update_task_status(task_id, status, actual_hours=None, db_path=None):
         # Build update
         if actual_hours is not None and completed_at:
             conn.execute(
-                "UPDATE migration_tasks SET status = ?, actual_hours = ?, completed_at = ? WHERE id = ?",
+                "UPDATE migration_tasks SET status = %s, actual_hours = %s, completed_at = %s WHERE id = %s",
                 (status, actual_hours, completed_at, task_id),
             )
         elif actual_hours is not None:
             conn.execute(
-                "UPDATE migration_tasks SET status = ?, actual_hours = ? WHERE id = ?",
+                "UPDATE migration_tasks SET status = %s, actual_hours = %s WHERE id = %s",
                 (status, actual_hours, task_id),
             )
         elif completed_at:
             conn.execute(
-                "UPDATE migration_tasks SET status = ?, completed_at = ? WHERE id = ?",
+                "UPDATE migration_tasks SET status = %s, completed_at = %s WHERE id = %s",
                 (status, completed_at, task_id),
             )
         else:
             conn.execute(
-                "UPDATE migration_tasks SET status = ? WHERE id = ?",
+                "UPDATE migration_tasks SET status = %s WHERE id = %s",
                 (status, task_id),
             )
 
         # Update migration_plans completed_tasks count
         completed_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM migration_tasks WHERE plan_id = ? AND status = 'completed'",
+            "SELECT COUNT(*) as cnt FROM migration_tasks WHERE plan_id = %s AND status = 'completed'",
             (plan_id,),
         ).fetchone()["cnt"]
 
         conn.execute(
-            "UPDATE migration_plans SET completed_tasks = ?, updated_at = ? WHERE id = ?",
+            "UPDATE migration_plans SET completed_tasks = %s, updated_at = %s WHERE id = %s",
             (completed_count, _now_iso(), plan_id),
         )
 
@@ -1152,7 +1152,7 @@ def update_task_status(task_id, status, actual_hours=None, db_path=None):
 
         # Re-fetch updated task
         updated = conn.execute(
-            "SELECT * FROM migration_tasks WHERE id = ?",
+            "SELECT * FROM migration_tasks WHERE id = %s",
             (task_id,),
         ).fetchone()
 
@@ -1184,7 +1184,7 @@ def get_dashboard(plan_id, db_path=None):
     try:
         # Plan overview
         plan_row = conn.execute(
-            "SELECT * FROM migration_plans WHERE id = ?",
+            "SELECT * FROM migration_plans WHERE id = %s",
             (plan_id,),
         ).fetchone()
         if not plan_row:
@@ -1197,7 +1197,7 @@ def get_dashboard(plan_id, db_path=None):
         # Current PI: find the most recent pi_number in tasks
         current_pi_row = conn.execute(
             "SELECT pi_number, COUNT(*) as cnt FROM migration_tasks "
-            "WHERE plan_id = ? AND pi_number IS NOT NULL "
+            "WHERE plan_id = %s AND pi_number IS NOT NULL "
             "GROUP BY pi_number ORDER BY pi_number DESC LIMIT 1",
             (plan_id,),
         ).fetchone()
@@ -1208,7 +1208,7 @@ def get_dashboard(plan_id, db_path=None):
         if current_pi:
             pi_stats = conn.execute(
                 "SELECT status, COUNT(*) as cnt FROM migration_tasks "
-                "WHERE plan_id = ? AND pi_number = ? GROUP BY status",
+                "WHERE plan_id = %s AND pi_number = %s GROUP BY status",
                 (plan_id, current_pi),
             ).fetchall()
             total_assigned = 0
@@ -1225,7 +1225,7 @@ def get_dashboard(plan_id, db_path=None):
         # Blockers
         blockers = conn.execute(
             "SELECT id, title, priority FROM migration_tasks "
-            "WHERE plan_id = ? AND status = 'blocked' "
+            "WHERE plan_id = %s AND status = 'blocked' "
             "ORDER BY priority ASC LIMIT 5",
             (plan_id,),
         ).fetchall()

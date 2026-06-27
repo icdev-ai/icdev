@@ -101,7 +101,7 @@ class ProductIntelOrchestrator:
                        (id, started_at, completed_at, engines_run, engines_failed,
                         total_signals, total_gaps, total_dossiers, federation_routes,
                         result_json, status)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
                         run_id,
                         started_at,

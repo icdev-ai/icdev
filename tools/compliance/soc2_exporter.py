@@ -48,7 +48,7 @@ def _collect_coverage(tenant_id: str, framework: str = "soc2") -> dict[str, Any]
             rows = conn.execute(
                 "SELECT control_id, COUNT(*) as cnt, MAX(collected_at) as last_at "
                 "FROM evidence_items "
-                "WHERE tenant_id = ? AND framework = ? "
+                "WHERE tenant_id = %s AND framework = %s "
                 "GROUP BY control_id",
                 (tenant_id, framework),
             ).fetchall()

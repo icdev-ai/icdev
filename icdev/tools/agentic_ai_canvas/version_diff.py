@@ -31,14 +31,14 @@ def save_version(design_id: str, snapshot_json: str | dict, label: str | None = 
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT MAX(version_number) FROM aadc_versions WHERE design_id=?",
+            "SELECT MAX(version_number) FROM aadc_versions WHERE design_id=%s",
             (design_id,),
         ).fetchone()
         ver = (row[0] or 0) + 1
         conn.execute(
             "INSERT INTO aadc_versions "
             "(id, design_id, version_number, graph_json, change_summary, created_at) "
-            "VALUES (?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s)",
             (f"v-{_uid()}", design_id, ver, snapshot_json, label or "", _now()),
         )
         conn.commit()
@@ -53,7 +53,7 @@ def list_versions(design_id: str) -> list[dict]:
     try:
         rows = conn.execute(
             "SELECT id, design_id, version_number, change_summary, created_at "
-            "FROM aadc_versions WHERE design_id=? ORDER BY version_number DESC",
+            "FROM aadc_versions WHERE design_id=%s ORDER BY version_number DESC",
             (design_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -72,7 +72,7 @@ def diff_versions(design_id: str, v1: int, v2: int) -> dict:
         def _fetch(ver: int) -> dict | None:
             row = conn.execute(
                 "SELECT graph_json FROM aadc_versions "
-                "WHERE design_id=? AND version_number=?",
+                "WHERE design_id=%s AND version_number=%s",
                 (design_id, ver),
             ).fetchone()
             if row is None:

@@ -143,7 +143,7 @@ def _create_kanban_suggestion(orphans: List[Dict[str, Any]]) -> Optional[str]:
         conn.execute(
             "INSERT INTO tasks "
             "(id, title, description, status, task_type, priority, source, scheduled_at, created_at) "
-            "VALUES (?, ?, ?, 'suggested', 'chore', 'medium', 'aimc_orphan_refs', ?, ?)",
+            "VALUES (%s, %s, %s, 'suggested', 'chore', 'medium', 'aimc_orphan_refs', %s, %s)",
             (task_id, title, description, _utcnow_iso(), _utcnow_iso()),
         )
         conn.commit()

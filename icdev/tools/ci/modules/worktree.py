@@ -62,7 +62,7 @@ def _log_to_db(worktree: WorktreeInfo, status: str):
             """INSERT INTO ci_worktrees
                (worktree_name, task_id, issue_number, branch_name,
                 target_directory, classification, status, agent_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                ON CONFLICT(worktree_name) DO UPDATE SET
                    status = excluded.status,
                    completed_at = CASE WHEN excluded.status IN ('completed', 'failed', 'cleaned')
@@ -274,7 +274,7 @@ def get_worktree_status(worktree_name: str) -> dict:
     try:
         conn = get_connection()
         row = conn.execute(
-            "SELECT * FROM ci_worktrees WHERE worktree_name = ?",
+            "SELECT * FROM ci_worktrees WHERE worktree_name = %s",
             (worktree_name,),
         ).fetchone()
         if row:

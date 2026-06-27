@@ -69,7 +69,7 @@ def _audit(conn, action, details="", actor="govcon_api"):
         try:
             conn.execute(
                 "INSERT INTO audit_trail (created_at, event_type, actor, action, details, session_id) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s)",
                 (now_isoformat(), "govcon.api", actor, action, details, "govcon"),
             )
             conn.execute("RELEASE SAVEPOINT govcon_audit")
@@ -131,7 +131,7 @@ def list_sam_opportunities():
         # Enrich with linkage status
         for opp in opportunities:
             linked = conn.execute(
-                "SELECT id, status FROM proposal_opportunities WHERE solicitation_number = ?",
+                "SELECT id, status FROM proposal_opportunities WHERE solicitation_number = %s",
                 (opp.get("solicitation_number", ""),),
             ).fetchone()
             opp["linked_proposal_id"] = linked["id"] if linked else None
@@ -151,14 +151,14 @@ def import_sam_to_proposal(sam_opp_id):
     """
     conn = _get_db()
     try:
-        sam = conn.execute("SELECT * FROM sam_gov_opportunities WHERE id = ?", (sam_opp_id,)).fetchone()
+        sam = conn.execute("SELECT * FROM sam_gov_opportunities WHERE id = %s", (sam_opp_id,)).fetchone()
         if not sam:
             return jsonify({"error": "SAM.gov opportunity not found"}), 404
         sam = dict(sam)
 
         # Check if already linked
         existing = conn.execute(
-            "SELECT id FROM proposal_opportunities WHERE solicitation_number = ?",
+            "SELECT id FROM proposal_opportunities WHERE solicitation_number = %s",
             (sam.get("solicitation_number", ""),),
         ).fetchone()
         if existing:
@@ -175,7 +175,7 @@ def import_sam_to_proposal(sam_opp_id):
                (id, solicitation_number, title, agency, sub_agency, due_date,
                 naics_code, set_aside_type, rfp_url, proposal_type, status,
                 classification, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'other', 'intake', ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'other', 'intake', %s, %s, %s)""",
             (
                 prop_id,
                 sam.get("solicitation_number", ""),
@@ -194,14 +194,14 @@ def import_sam_to_proposal(sam_opp_id):
 
         # Link SAM record to proposal
         conn.execute(
-            "UPDATE sam_gov_opportunities SET proposal_opportunity_id = ? WHERE id = ?",
+            "UPDATE sam_gov_opportunities SET proposal_opportunity_id = %s WHERE id = %s",
             (prop_id, sam_opp_id),
         )
 
         # Record status change
         conn.execute(
             "INSERT INTO proposal_status_history (entity_type, entity_id, old_status, new_status, changed_by, reason) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s)",
             ("opportunity", prop_id, None, "intake", "govcon_api", f"Imported from SAM.gov: {sam_opp_id}"),
         )
 
@@ -351,7 +351,7 @@ def auto_populate_compliance(opp_id):
                 for item in result["matrix"]:
                     # Check if compliance item already exists
                     existing = conn.execute(
-                        "SELECT id FROM proposal_compliance_matrix WHERE opportunity_id = ? AND requirement_text = ?",
+                        "SELECT id FROM proposal_compliance_matrix WHERE opportunity_id = %s AND requirement_text = %s",
                         (opp_id, item["statement"][:200]),
                     ).fetchone()
                     if not existing:
@@ -362,7 +362,7 @@ def auto_populate_compliance(opp_id):
                                (id, opportunity_id, section_ref, requirement_text,
                                 requirement_type, compliance_status, response_summary,
                                 classification, created_at, updated_at)
-                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                             (
                                 _uuid(),
                                 opp_id,
@@ -451,7 +451,7 @@ def list_drafts(opp_id):
         for d in drafts:
             if d.get("shall_statement_id"):
                 shall = conn.execute(
-                    "SELECT statement_text, domain_category FROM rfp_shall_statements WHERE id = ?",
+                    "SELECT statement_text, domain_category FROM rfp_shall_statements WHERE id = %s",
                     (d["shall_statement_id"],),
                 ).fetchone()
                 if shall:
@@ -486,7 +486,7 @@ def approve_draft(draft_id):
         data = request.get_json(silent=True) or {}
         reviewer = data.get("reviewed_by", "govcon_api")
 
-        draft = conn.execute("SELECT * FROM proposal_section_drafts WHERE id = ?", (draft_id,)).fetchone()
+        draft = conn.execute("SELECT * FROM proposal_section_drafts WHERE id = %s", (draft_id,)).fetchone()
         if not draft:
             return jsonify({"error": "Draft not found"}), 404
         draft = dict(draft)
@@ -497,7 +497,7 @@ def approve_draft(draft_id):
                (id, section_id, opportunity_id, shall_statement_id, capability_ids,
                 draft_content, confidence, generation_model, knowledge_block_ids,
                 status, reviewed_by, reviewed_at, review_notes, created_at, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'approved', %s, %s, %s, %s, %s)""",
             (
                 _uuid(),
                 draft.get("section_id"),
@@ -519,15 +519,15 @@ def approve_draft(draft_id):
         # If section linked, update section content and advance status
         section_id = draft.get("section_id")
         if section_id:
-            section = conn.execute("SELECT status FROM proposal_sections WHERE id = ?", (section_id,)).fetchone()
+            section = conn.execute("SELECT status FROM proposal_sections WHERE id = %s", (section_id,)).fetchone()
             if section and section["status"] in ("not_started", "outlining"):
                 conn.execute(
-                    "UPDATE proposal_sections SET status = 'drafting', notes = ?, updated_at = ? WHERE id = ?",
+                    "UPDATE proposal_sections SET status = 'drafting', notes = %s, updated_at = %s WHERE id = %s",
                     (f"AI draft approved by {reviewer}", now_isoformat(), section_id),
                 )
                 conn.execute(
                     "INSERT INTO proposal_status_history (entity_type, entity_id, old_status, new_status, changed_by, reason) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
                     ("section", section_id, section["status"], "drafting", reviewer, "AI draft approved"),
                 )
 
@@ -546,7 +546,7 @@ def reject_draft(draft_id):
         data = request.get_json(silent=True) or {}
         reviewer = data.get("reviewed_by", "govcon_api")
 
-        draft = conn.execute("SELECT * FROM proposal_section_drafts WHERE id = ?", (draft_id,)).fetchone()
+        draft = conn.execute("SELECT * FROM proposal_section_drafts WHERE id = %s", (draft_id,)).fetchone()
         if not draft:
             return jsonify({"error": "Draft not found"}), 404
         draft = dict(draft)
@@ -557,7 +557,7 @@ def reject_draft(draft_id):
                (id, section_id, opportunity_id, shall_statement_id, capability_ids,
                 draft_content, confidence, generation_model, knowledge_block_ids,
                 status, reviewed_by, reviewed_at, review_notes, created_at, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'rejected', ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'rejected', %s, %s, %s, %s, %s)""",
             (
                 _uuid(),
                 draft.get("section_id"),
@@ -602,7 +602,7 @@ def rewrite_save_draft(draft_id):
 
         # Fetch original draft to inherit links
         orig = conn.execute(
-            "SELECT * FROM proposal_section_drafts WHERE id = ? ORDER BY created_at DESC LIMIT 1",
+            "SELECT * FROM proposal_section_drafts WHERE id = %s ORDER BY created_at DESC LIMIT 1",
             (draft_id,),
         ).fetchone()
         if not orig:
@@ -626,7 +626,7 @@ def rewrite_save_draft(draft_id):
                (id, section_id, opportunity_id, shall_statement_id, capability_ids,
                 draft_content, draft_method, confidence, generation_model, knowledge_block_ids,
                 status, reviewed_by, reviewed_at, review_notes, metadata, created_at, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'draft', %s, %s, %s, %s, %s, %s)""",
             (
                 new_id,
                 orig.get("section_id"),
@@ -945,7 +945,7 @@ def create_question(opp_id):
 
         # Get next question number
         row = conn.execute(
-            "SELECT MAX(question_number) as mx FROM proposal_questions WHERE opportunity_id = ?",
+            "SELECT MAX(question_number) as mx FROM proposal_questions WHERE opportunity_id = %s",
             (opp_id,),
         ).fetchone()
         next_num = (row["mx"] or 0) + 1
@@ -956,7 +956,7 @@ def create_question(opp_id):
             """INSERT INTO proposal_questions
                (id, opportunity_id, question_number, question_text, category, priority,
                 source, rfp_section_ref, status, created_by, classification, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, 'manual', ?, 'draft', ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, 'manual', %s, 'draft', %s, %s, %s, %s)""",
             (
                 q_id,
                 opp_id,
@@ -974,11 +974,11 @@ def create_question(opp_id):
 
         # Update question_count
         total = conn.execute(
-            "SELECT COUNT(*) as c FROM proposal_questions WHERE opportunity_id = ?",
+            "SELECT COUNT(*) as c FROM proposal_questions WHERE opportunity_id = %s",
             (opp_id,),
         ).fetchone()["c"]
         conn.execute(
-            "UPDATE proposal_opportunities SET question_count = ?, updated_at = ? WHERE id = ?",
+            "UPDATE proposal_opportunities SET question_count = %s, updated_at = %s WHERE id = %s",
             (total, now, opp_id),
         )
 
@@ -1026,7 +1026,7 @@ def change_question_status(q_id):
         if not new_status:
             return jsonify({"error": "status is required"}), 400
 
-        q = conn.execute("SELECT * FROM proposal_questions WHERE id = ?", (q_id,)).fetchone()
+        q = conn.execute("SELECT * FROM proposal_questions WHERE id = %s", (q_id,)).fetchone()
         if not q:
             return jsonify({"error": "Question not found"}), 404
 
@@ -1063,7 +1063,7 @@ def change_question_status(q_id):
         conn.execute(
             "INSERT INTO proposal_status_history "
             "(entity_type, entity_id, old_status, new_status, changed_by, reason) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s)",
             ("question", q_id, old_status, new_status, data.get("changed_by", "govcon_api"), data.get("notes", "")),
         )
 
@@ -1100,7 +1100,7 @@ def bulk_status_change(opp_id):
 
         for qid in question_ids:
             q = conn.execute(
-                "SELECT id, status FROM proposal_questions WHERE id = ? AND opportunity_id = ?",
+                "SELECT id, status FROM proposal_questions WHERE id = %s AND opportunity_id = %s",
                 (qid, opp_id),
             ).fetchone()
             if not q:
@@ -1113,13 +1113,13 @@ def bulk_status_change(opp_id):
                 continue
 
             conn.execute(
-                "UPDATE proposal_questions SET status = ?, updated_at = ? WHERE id = ?",
+                "UPDATE proposal_questions SET status = %s, updated_at = %s WHERE id = %s",
                 (new_status, now, qid),
             )
             conn.execute(
                 "INSERT INTO proposal_status_history "
                 "(entity_type, entity_id, old_status, new_status, changed_by, reason) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s)",
                 ("question", qid, old, new_status, changed_by, "Bulk status change"),
             )
             changed += 1
@@ -1351,7 +1351,7 @@ def compute_proposal_pwin(opp_id):
         conn = _get_db()
         try:
             row = conn.execute(
-                "SELECT estimated_value_low, estimated_value_high FROM proposal_opportunities WHERE id = ?",
+                "SELECT estimated_value_low, estimated_value_high FROM proposal_opportunities WHERE id = %s",
                 (opp_id,),
             ).fetchone()
             if row:
@@ -1375,7 +1375,7 @@ def compute_proposal_pwin(opp_id):
     conn = _get_db()
     try:
         conn.execute(
-            "UPDATE proposal_opportunities SET win_probability = ? WHERE id = ?",
+            "UPDATE proposal_opportunities SET win_probability = %s WHERE id = %s",
             (result["pwin_pct"], opp_id),
         )
         _audit(conn, "pwin.update_proposal", f"pwin={result['pwin_pct']}% → {opp_id}", opp_id)

@@ -3133,7 +3133,7 @@ def step_12_audit_and_registration(child_root: Path, blueprint: dict, db_path: P
                 "INSERT OR REPLACE INTO child_app_registry "
                 "(id, parent_project_id, child_name, child_path, blueprint_hash, "
                 "capabilities, agent_count, cloud_provider, callback_url, classification) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     str(uuid.uuid4()),
                     blueprint.get("fitness_scorecard", {}).get("project_id", ""),

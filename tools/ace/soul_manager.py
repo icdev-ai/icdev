@@ -78,9 +78,9 @@ def _prune_old_facts(conn, role: str) -> None:
                 DELETE FROM ace_coworker_memory
                 WHERE id IN (
                     SELECT id FROM ace_coworker_memory
-                    WHERE role_id = ?
+                    WHERE role_id = %s
                     ORDER BY created_at DESC, rowid DESC
-                    LIMIT -1 OFFSET ?
+                    LIMIT -1 OFFSET %s
                 )
                 """,
                 (role, MAX_MEMORY_FACTS),
@@ -110,7 +110,7 @@ def record_learning(
             """
             INSERT INTO ace_coworker_memory
                 (id, role_id, fact_type, content, confidence, source_task_id)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s)
             """,
             (fact_id, role, fact_type, content, confidence, source_task_id),
         )
@@ -131,9 +131,9 @@ def get_recent_learnings(role: str, limit: int = 10) -> list[dict[str, Any]]:
             """
             SELECT id, fact_type, content, confidence, source_task_id, created_at
               FROM ace_coworker_memory
-             WHERE role_id = ?
+             WHERE role_id = %s
              ORDER BY created_at DESC, rowid DESC
-             LIMIT ?
+             LIMIT %s
             """,
             (role, limit),
         ).fetchall()

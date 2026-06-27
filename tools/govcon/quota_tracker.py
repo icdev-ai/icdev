@@ -120,7 +120,7 @@ def _log_event(event_type: str, requests_made: int, daily_limit: int, details: s
             conn.execute(
                 "INSERT INTO sam_gov_quota_events "
                 "(id, event_type, date, requests_made, daily_limit, details, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (f"qe-{uuid4().hex[:12]}", event_type, _today(), requests_made, daily_limit, details, _now()),
             )
             conn.commit()
@@ -151,7 +151,7 @@ def check_quota(buffer: int | None = None) -> dict:
 
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT requests_made, daily_limit, last_429_reset FROM sam_gov_api_quota WHERE date = ?",
+            "SELECT requests_made, daily_limit, last_429_reset FROM sam_gov_api_quota WHERE date = %s",
             (today,),
         ).fetchone()
 
@@ -200,14 +200,14 @@ def increment_quota(count: int = 1) -> dict:
 
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT requests_made FROM sam_gov_api_quota WHERE date = ?",
+            "SELECT requests_made FROM sam_gov_api_quota WHERE date = %s",
             (today,),
         ).fetchone()
 
         if row:
             new_count = row["requests_made"] + count
             conn.execute(
-                "UPDATE sam_gov_api_quota SET requests_made = ?, updated_at = ? WHERE date = ?",
+                "UPDATE sam_gov_api_quota SET requests_made = %s, updated_at = %s WHERE date = %s",
                 (new_count, now, today),
             )
         else:
@@ -215,7 +215,7 @@ def increment_quota(count: int = 1) -> dict:
             conn.execute(
                 "INSERT INTO sam_gov_api_quota "
                 "(date, requests_made, daily_limit, buffer_remaining, updated_at) "
-                "VALUES (?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s)",
                 (today, new_count, daily_limit, buffer, now),
             )
         conn.commit()
@@ -270,7 +270,7 @@ def record_429(response_body: str | None = None, reset_time: str | None = None) 
 
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT requests_made FROM sam_gov_api_quota WHERE date = ?",
+            "SELECT requests_made FROM sam_gov_api_quota WHERE date = %s",
             (today,),
         ).fetchone()
 
@@ -278,8 +278,8 @@ def record_429(response_body: str | None = None, reset_time: str | None = None) 
 
         if row:
             conn.execute(
-                "UPDATE sam_gov_api_quota SET last_429_at = ?, last_429_reset = ?, "
-                "last_429_body = ?, updated_at = ? WHERE date = ?",
+                "UPDATE sam_gov_api_quota SET last_429_at = %s, last_429_reset = %s, "
+                "last_429_body = %s, updated_at = %s WHERE date = %s",
                 (now, parsed_reset, response_body, now, today),
             )
         else:
@@ -287,7 +287,7 @@ def record_429(response_body: str | None = None, reset_time: str | None = None) 
                 "INSERT INTO sam_gov_api_quota "
                 "(date, requests_made, daily_limit, buffer_remaining, "
                 "last_429_at, last_429_reset, last_429_body, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                 (today, 0, daily_limit, DEFAULT_BUFFER, now, parsed_reset, response_body, now),
             )
         conn.commit()
@@ -311,7 +311,7 @@ def get_status() -> dict:
 
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM sam_gov_api_quota WHERE date = ?",
+            "SELECT * FROM sam_gov_api_quota WHERE date = %s",
             (today,),
         ).fetchone()
 
@@ -384,7 +384,7 @@ def main():
         today = _today()
         with get_connection() as conn:
             conn.execute(
-                "DELETE FROM sam_gov_api_quota WHERE date = ?",
+                "DELETE FROM sam_gov_api_quota WHERE date = %s",
                 (today,),
             )
             conn.commit()

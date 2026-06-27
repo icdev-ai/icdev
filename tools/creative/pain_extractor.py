@@ -1039,7 +1039,7 @@ def merge_with_existing(new_pain_points, db_path=None):
                 """SELECT id, frequency, signal_ids, competitor_ids,
                           first_seen, keywords
                    FROM creative_pain_points
-                   WHERE keyword_fingerprint = ?
+                   WHERE keyword_fingerprint = %s
                    ORDER BY last_seen DESC LIMIT 1""",
                 (fingerprint,),
             ).fetchone()
@@ -1065,7 +1065,7 @@ def merge_with_existing(new_pain_points, db_path=None):
                        (id, title, description, category, frequency, signal_ids,
                         competitor_ids, keyword_fingerprint, keywords, severity,
                         status, first_seen, last_seen, classification)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, 'CUI')""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'new', %s, %s, 'CUI')""",
                     (
                         _pp_id(),
                         pp["title"],
@@ -1089,7 +1089,7 @@ def merge_with_existing(new_pain_points, db_path=None):
                        (id, title, description, category, frequency, signal_ids,
                         competitor_ids, keyword_fingerprint, keywords, severity,
                         status, first_seen, last_seen, classification)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'new', ?, ?, 'CUI')""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'new', %s, %s, 'CUI')""",
                     (
                         _pp_id(),
                         pp["title"],
@@ -1255,7 +1255,7 @@ def extract_from_signal(signal_id, db_path=None):
         row = conn.execute(
             """SELECT id, title, body, sentiment, competitor_id,
                       source, source_type, rating, upvotes, discovered_at
-               FROM creative_signals WHERE id = ?""",
+               FROM creative_signals WHERE id = %s""",
             (signal_id,),
         ).fetchone()
 

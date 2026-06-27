@@ -116,7 +116,7 @@ def inspect_egress(content: str, channel: str = "email") -> dict[str, Any]:
         conn.execute(
             "INSERT INTO zig_dlp_events "
             "(channel, action, detectors, classification, severity, content_hash, created_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (channel, action, json.dumps(matched), highest_class, highest_sev, content_hash, now),
         )
         conn.commit()
@@ -157,7 +157,7 @@ def protect_encrypt_in_use(data_ref: str, classification: str = "SECRET",
         conn.execute(
             "INSERT INTO zig_encrypt_in_use "
             "(data_ref, classification, enclave_type, envelope_id, status, created_at) "
-            "VALUES (?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s)",
             (data_ref, classification, enclave_type, envelope_id, "protected", now),
         )
         conn.commit()

@@ -49,7 +49,7 @@ def _get_connection(db_path=None):
 
 def _get_project_data(conn, project_id):
     """Load project record from database."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found in database.")
     return dict(row)
@@ -190,7 +190,7 @@ def _log_audit_event(conn, project_id, action, details, file_path):
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details,
                 affected_files, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "des_report_generated",
@@ -215,7 +215,7 @@ def _get_des_assessments(conn, project_id):
     """Retrieve all DES compliance results for a project."""
     rows = conn.execute(
         """SELECT * FROM des_compliance
-           WHERE project_id = ?
+           WHERE project_id = %s
            ORDER BY category, requirement_id""",
         (project_id,),
     ).fetchall()
@@ -590,7 +590,7 @@ def generate_des_report(project_id, output_path=None, db_path=None):
         try:
             report_count_row = conn.execute(
                 """SELECT COUNT(*) as cnt FROM audit_trail
-                   WHERE project_id = ? AND event_type = 'des_report_generated'""",
+                   WHERE project_id = %s AND event_type = 'des_report_generated'""",
                 (project_id,),
             ).fetchone()
             report_count = report_count_row["cnt"] if report_count_row else 0

@@ -879,7 +879,7 @@ class EnclaveScanner:
                 "(id, scan_mode, hostname, il_level, classification, il_confidence, "
                 " host_count, interface_count, boundary_segments, indicators, "
                 " scan_json, classification_banner, scanned_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     results["scan_id"],
                     results.get("scan_mode", "passive"),

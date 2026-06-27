@@ -443,7 +443,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
         try:
             if cor_email:
                 rows = conn.execute(
-                    "SELECT * FROM cpmp_contracts WHERE cor_email = ? ORDER BY created_at DESC",
+                    "SELECT * FROM cpmp_contracts WHERE cor_email = %s ORDER BY created_at DESC",
                     (cor_email,),
                 ).fetchall()
                 contracts = [dict(r) for r in rows]
@@ -500,7 +500,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             try:
                 conn.execute(
                     "INSERT INTO cpmp_cor_access_log (user_id, contract_id, action) "
-                    "VALUES (?, ?, ?)",
+                    "VALUES (%s, %s, %s)",
                     (
                         cor_email,
                         contract_id,
@@ -674,7 +674,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
         """Proposal Opportunity Detail — 6-tab view with sections, compliance, reviews."""
         conn = _get_db()
         try:
-            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = %s", (opp_id,)).fetchone()
             if not opp:
                 return render_template("404.html", message="Opportunity not found"), 404
             opp = dict(opp)
@@ -690,9 +690,9 @@ def _register_govcon_pages(app: "Flask", _get_db):
                        SELECT section_id, id, status,
                               ROW_NUMBER() OVER (PARTITION BY section_id ORDER BY created_at DESC) as rn
                        FROM proposal_section_drafts
-                       WHERE opportunity_id = ?
+                       WHERE opportunity_id = %s
                    ) latest_draft ON s.id = latest_draft.section_id AND latest_draft.rn = 1
-                   WHERE s.opportunity_id = ?
+                   WHERE s.opportunity_id = %s
                    ORDER BY v.volume_number, s.section_number""",
                     (opp_id, opp_id),
                 ).fetchall()
@@ -710,19 +710,19 @@ def _register_govcon_pages(app: "Flask", _get_db):
             volumes = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM proposal_volumes WHERE opportunity_id = ? ORDER BY volume_number", (opp_id,)
+                    "SELECT * FROM proposal_volumes WHERE opportunity_id = %s ORDER BY volume_number", (opp_id,)
                 ).fetchall()
             ]
             compliance_items = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM proposal_compliance_matrix WHERE opportunity_id = ?", (opp_id,)
+                    "SELECT * FROM proposal_compliance_matrix WHERE opportunity_id = %s", (opp_id,)
                 ).fetchall()
             ]
             reviews = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM proposal_reviews WHERE opportunity_id = ? ORDER BY scheduled_date", (opp_id,)
+                    "SELECT * FROM proposal_reviews WHERE opportunity_id = %s ORDER BY scheduled_date", (opp_id,)
                 ).fetchall()
             ]
             findings = [
@@ -730,7 +730,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 for r in conn.execute(
                     """SELECT f.*, r.review_type FROM proposal_review_findings f
                    JOIN proposal_reviews r ON f.review_id = r.id
-                   WHERE r.opportunity_id = ?""",
+                   WHERE r.opportunity_id = %s""",
                     (opp_id,),
                 ).fetchall()
             ]
@@ -778,7 +778,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 all_asgns = conn.execute(
                     """SELECT a.* FROM proposal_reviewer_assignments a
                        JOIN proposal_reviews r ON a.review_id = r.id
-                       WHERE r.opportunity_id = ? ORDER BY a.created_at DESC""",
+                       WHERE r.opportunity_id = %s ORDER BY a.created_at DESC""",
                     (opp_id,),
                 ).fetchall()
                 for a in all_asgns:
@@ -809,7 +809,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             questions = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM proposal_questions WHERE opportunity_id = ? ORDER BY question_number ASC",
+                    "SELECT * FROM proposal_questions WHERE opportunity_id = %s ORDER BY question_number ASC",
                     (opp_id,),
                 ).fetchall()
             ]
@@ -830,7 +830,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             amendments = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM proposal_amendments WHERE opportunity_id = ? ORDER BY version_number ASC",
+                    "SELECT * FROM proposal_amendments WHERE opportunity_id = %s ORDER BY version_number ASC",
                     (opp_id,),
                 ).fetchall()
             ]
@@ -838,7 +838,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             for q in questions:
                 if q.get("status") == "answered":
                     resp = conn.execute(
-                        "SELECT * FROM proposal_question_responses WHERE question_id = ? ORDER BY created_at DESC LIMIT 1",
+                        "SELECT * FROM proposal_question_responses WHERE question_id = %s ORDER BY created_at DESC LIMIT 1",
                         (q["id"],),
                     ).fetchone()
                     if resp:
@@ -873,13 +873,13 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 """SELECT s.*, v.volume_number, v.title as volume_title
                    FROM proposal_sections s
                    LEFT JOIN proposal_volumes v ON s.volume_id = v.id
-                   WHERE s.id = ? AND s.opportunity_id = ?""",
+                   WHERE s.id = %s AND s.opportunity_id = %s""",
                 (sec_id, opp_id),
             ).fetchone()
             if not section:
                 return render_template("404.html", message="Section not found"), 404
             section = dict(section)
-            opp = conn.execute("SELECT title FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+            opp = conn.execute("SELECT title FROM proposal_opportunities WHERE id = %s", (opp_id,)).fetchone()
             opp_title = opp["title"] if opp else "Unknown"
             from tools.dashboard.api.proposals import SECTION_TRANSITIONS
 
@@ -895,7 +895,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             # Latest draft for this section
             draft_row = conn.execute(
                 """SELECT * FROM proposal_section_drafts
-                   WHERE section_id = ?
+                   WHERE section_id = %s
                    ORDER BY created_at DESC LIMIT 1""", (sec_id,)
             ).fetchone()
             draft = None
@@ -924,7 +924,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             section["compliance_items"] = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM proposal_compliance_matrix WHERE proposal_section_id = ?", (sec_id,)
+                    "SELECT * FROM proposal_compliance_matrix WHERE proposal_section_id = %s", (sec_id,)
                 ).fetchall()
             ]
             section["findings"] = [
@@ -932,7 +932,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 for r in conn.execute(
                     """SELECT f.*, r.review_type FROM proposal_review_findings f
                    JOIN proposal_reviews r ON f.review_id = r.id
-                   WHERE f.section_id = ?""",
+                   WHERE f.section_id = %s""",
                     (sec_id,),
                 ).fetchall()
             ]
@@ -940,7 +940,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 """SELECT d.*, s.title as depends_on_title, s.status as depends_on_status
                    FROM proposal_section_dependencies d
                    JOIN proposal_sections s ON d.depends_on_section_id = s.id
-                   WHERE d.section_id = ?""",
+                   WHERE d.section_id = %s""",
                 (sec_id,),
             ).fetchall()
             dep_list = []
@@ -964,7 +964,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             section["history"] = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM proposal_status_history WHERE entity_id = ? ORDER BY created_at DESC", (sec_id,)
+                    "SELECT * FROM proposal_status_history WHERE entity_id = %s ORDER BY created_at DESC", (sec_id,)
                 ).fetchall()
             ]
             return render_template("proposals/section_detail.html", section=section, opp_title=opp_title, draft=draft)
@@ -990,7 +990,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             for row in raw_opps:
                 opp = dict(row)
                 reviews = conn.execute(
-                    "SELECT * FROM proposal_reviews WHERE opportunity_id = ?", (opp["id"],)
+                    "SELECT * FROM proposal_reviews WHERE opportunity_id = %s", (opp["id"],)
                 ).fetchall()
                 rev_map = {r["review_type"]: dict(r) for r in reviews}
                 opp["review_map"] = rev_map
@@ -1006,7 +1006,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 crit = conn.execute(
                     """SELECT COUNT(*) as cnt FROM proposal_review_findings f
                        JOIN proposal_reviews r ON f.review_id = r.id
-                       WHERE r.opportunity_id = ? AND f.severity = 'critical' AND f.status IN ('open','in_progress')""",
+                       WHERE r.opportunity_id = %s AND f.severity = 'critical' AND f.status IN ('open','in_progress')""",
                     (opp["id"],),
                 ).fetchone()
                 opp["critical_open"] = crit["cnt"] if crit else 0
@@ -1042,25 +1042,25 @@ def _register_govcon_pages(app: "Flask", _get_db):
         """Proposal Language Settings — glossary, wall of truth, taxonomy, style templates."""
         conn = _get_db()
         try:
-            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = %s", (opp_id,)).fetchone()
             if not opp:
                 return render_template("404.html", message="Opportunity not found"), 404
             opp = dict(opp)
             glossary = [
                 dict(r) for r in conn.execute(
-                    "SELECT * FROM wg_glossary WHERE scope = 'project' AND scope_id = ? AND is_active = 1 ORDER BY term_type, term",
+                    "SELECT * FROM wg_glossary WHERE scope = 'project' AND scope_id = %s AND is_active = 1 ORDER BY term_type, term",
                     (opp_id,),
                 ).fetchall()
             ]
             taxonomy = [
                 dict(r) for r in conn.execute(
-                    "SELECT * FROM proposal_taxonomy WHERE opportunity_id = ? AND is_active = 1 ORDER BY label",
+                    "SELECT * FROM proposal_taxonomy WHERE opportunity_id = %s AND is_active = 1 ORDER BY label",
                     (opp_id,),
                 ).fetchall()
             ]
             style_guides = [
                 dict(r) for r in conn.execute(
-                    "SELECT id, guide_name, version, created_at FROM wg_style_guides WHERE scope = 'project' AND scope_id = ? AND is_active = 1 ORDER BY guide_name",
+                    "SELECT id, guide_name, version, created_at FROM wg_style_guides WHERE scope = 'project' AND scope_id = %s AND is_active = 1 ORDER BY guide_name",
                     (opp_id,),
                 ).fetchall()
             ]
@@ -1080,7 +1080,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
         """Black-hat / PTW workspace — competitor intelligence + price-to-win (prop-cap-13)."""
         conn = _get_db()
         try:
-            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = %s", (opp_id,)).fetchone()
             if not opp:
                 return render_template("404.html", message="Opportunity not found"), 404
             opp = dict(opp)
@@ -1102,7 +1102,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
                 """)
                 conn.commit()
                 bh_rows = conn.execute(
-                    "SELECT * FROM proposal_blackhat_assessments WHERE opportunity_id = ? ORDER BY created_at DESC",
+                    "SELECT * FROM proposal_blackhat_assessments WHERE opportunity_id = %s ORDER BY created_at DESC",
                     (opp_id,),
                 ).fetchall()
                 assessments = [dict(r) for r in bh_rows]
@@ -1138,25 +1138,25 @@ def _register_govcon_pages(app: "Flask", _get_db):
         """Compliance gap drill-down — all not_addressed requirements (prop-cmp-10)."""
         conn = _get_db()
         try:
-            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opp_id,)).fetchone()
+            opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = %s", (opp_id,)).fetchone()
             if not opp:
                 return render_template("404.html", message="Opportunity not found"), 404
             opp = dict(opp)
             orphaned = conn.execute(
                 """SELECT * FROM proposal_compliance_matrix
-                   WHERE opportunity_id = ? AND (proposal_section_id IS NULL OR proposal_section_id = '')
+                   WHERE opportunity_id = %s AND (proposal_section_id IS NULL OR proposal_section_id = '')
                      AND compliance_status != 'not_applicable'
                    ORDER BY sort_order""",
                 (opp_id,),
             ).fetchall()
             orphaned = [dict(r) for r in orphaned]
             compliance_total = conn.execute(
-                "SELECT COUNT(*) as cnt FROM proposal_compliance_matrix WHERE opportunity_id = ?",
+                "SELECT COUNT(*) as cnt FROM proposal_compliance_matrix WHERE opportunity_id = %s",
                 (opp_id,),
             ).fetchone()["cnt"]
             sections = conn.execute(
                 """SELECT s.id, s.section_number, s.title FROM proposal_sections s
-                   WHERE s.opportunity_id = ? ORDER BY s.section_number""",
+                   WHERE s.opportunity_id = %s ORDER BY s.section_number""",
                 (opp_id,),
             ).fetchall()
             sections = [dict(s) for s in sections]
@@ -1294,7 +1294,7 @@ def _register_govcon_pages(app: "Flask", _get_db):
             min_frequency = 3
             try:
                 rows = conn.execute(
-                    "SELECT * FROM rfp_requirement_patterns WHERE frequency >= ? ORDER BY frequency DESC LIMIT 30",
+                    "SELECT * FROM rfp_requirement_patterns WHERE frequency >= %s ORDER BY frequency DESC LIMIT 30",
                     (min_frequency,),
                 ).fetchall()
                 patterns = [dict(r) for r in rows]
@@ -1797,8 +1797,8 @@ def create_app(testing: bool = False) -> Flask:
                     "SELECT id, title, message, severity, created_at "
                     "FROM notifications "
                     "WHERE source = 'genesis.kanban' "
-                    "  AND created_at > ? "
-                    "ORDER BY created_at DESC LIMIT ?",
+                    "  AND created_at > %s "
+                    "ORDER BY created_at DESC LIMIT %s",
                     (cutoff, limit),
                 ).fetchall()
             events = []
@@ -2125,7 +2125,7 @@ def create_app(testing: bool = False) -> Flask:
             _seed_conn.execute(
                 "INSERT OR IGNORE INTO intake_sessions "
                 "(id, customer_name, customer_org, session_status, classification, context_summary) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s)",
                 ("sess-9cc6891cb548", "E2E Test User", "ICDEV CI", "active", "CUI", "{}"),
             )
             _seed_conn.commit()
@@ -3096,7 +3096,7 @@ def create_app(testing: bool = False) -> Flask:
             # STIG by severity (donut)
             stig_sev = conn.execute(
                 "SELECT severity, status, COUNT(*) as cnt "
-                "FROM stig_findings WHERE project_id = ? "
+                "FROM stig_findings WHERE project_id = %s "
                 "GROUP BY severity, status",
                 (project_id,),
             ).fetchall()
@@ -3104,7 +3104,7 @@ def create_app(testing: bool = False) -> Flask:
             # POAM by severity (bar)
             poam_sev = conn.execute(
                 "SELECT severity, status, COUNT(*) as cnt "
-                "FROM poam_items WHERE project_id = ? "
+                "FROM poam_items WHERE project_id = %s "
                 "GROUP BY severity, status",
                 (project_id,),
             ).fetchall()
@@ -3112,7 +3112,7 @@ def create_app(testing: bool = False) -> Flask:
             # Deployment history (line — status over time)
             deploys = conn.execute(
                 "SELECT DATE(created_at) as day, status, COUNT(*) as cnt "
-                "FROM deployments WHERE project_id = ? "
+                "FROM deployments WHERE project_id = %s "
                 "GROUP BY DATE(created_at), status ORDER BY day",
                 (project_id,),
             ).fetchall()
@@ -3120,7 +3120,7 @@ def create_app(testing: bool = False) -> Flask:
             # Alert trend for project
             alerts = conn.execute(
                 "SELECT DATE(created_at) as day, severity, COUNT(*) as cnt "
-                "FROM alerts WHERE project_id = ? "
+                "FROM alerts WHERE project_id = %s "
                 "GROUP BY DATE(created_at), severity ORDER BY day",
                 (project_id,),
             ).fetchall()
@@ -3279,50 +3279,50 @@ def create_app(testing: bool = False) -> Flask:
         conn = _get_db()
         try:
             # Project info
-            project = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+            project = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
             if not project:
                 return render_template("404.html", message="Project not found"), 404
             project = dict(project)
 
             # SSP documents
             ssps = conn.execute(
-                "SELECT * FROM ssp_documents WHERE project_id = ? ORDER BY created_at DESC",
+                "SELECT * FROM ssp_documents WHERE project_id = %s ORDER BY created_at DESC",
                 (project_id,),
             ).fetchall()
 
             # POAM items
             poams = conn.execute(
-                "SELECT * FROM poam_items WHERE project_id = ? ORDER BY severity, created_at DESC",
+                "SELECT * FROM poam_items WHERE project_id = %s ORDER BY severity, created_at DESC",
                 (project_id,),
             ).fetchall()
 
             # STIG findings
             stigs = conn.execute(
-                "SELECT * FROM stig_findings WHERE project_id = ? ORDER BY severity, created_at DESC",
+                "SELECT * FROM stig_findings WHERE project_id = %s ORDER BY severity, created_at DESC",
                 (project_id,),
             ).fetchall()
 
             # SBOM records
             sboms = conn.execute(
-                "SELECT * FROM sbom_records WHERE project_id = ? ORDER BY generated_at DESC",
+                "SELECT * FROM sbom_records WHERE project_id = %s ORDER BY generated_at DESC",
                 (project_id,),
             ).fetchall()
 
             # Deployments
             deployments = conn.execute(
-                "SELECT * FROM deployments WHERE project_id = ? ORDER BY created_at DESC",
+                "SELECT * FROM deployments WHERE project_id = %s ORDER BY created_at DESC",
                 (project_id,),
             ).fetchall()
 
             # Audit trail
             audit_entries = conn.execute(
-                "SELECT * FROM audit_trail WHERE project_id = ? ORDER BY created_at DESC LIMIT 50",
+                "SELECT * FROM audit_trail WHERE project_id = %s ORDER BY created_at DESC LIMIT 50",
                 (project_id,),
             ).fetchall()
 
             # Alerts
             alerts = conn.execute(
-                "SELECT * FROM alerts WHERE project_id = ? ORDER BY created_at DESC LIMIT 20",
+                "SELECT * FROM alerts WHERE project_id = %s ORDER BY created_at DESC LIMIT 20",
                 (project_id,),
             ).fetchall()
 
@@ -3701,14 +3701,14 @@ def create_app(testing: bool = False) -> Flask:
             session = None
             session_err = None
             try:
-                session = conn.execute("SELECT * FROM intake_sessions WHERE id = ?", (session_id,)).fetchone()
+                session = conn.execute("SELECT * FROM intake_sessions WHERE id = %s", (session_id,)).fetchone()
             except Exception as exc:
                 session_err = str(exc)
                 app.logger.warning("chat_session: intake_sessions lookup failed for %s: %s", session_id, session_err)
             if not session:
                 # Fallback: try chat_contexts directly (session may exist as a standalone context)
                 try:
-                    ctx = conn.execute("SELECT * FROM chat_contexts WHERE id = ?", (session_id,)).fetchone()
+                    ctx = conn.execute("SELECT * FROM chat_contexts WHERE id = %s", (session_id,)).fetchone()
                     if ctx:
                         # Fabricate a minimal session dict so the template can render
                         ctx_d = dict(ctx)
@@ -3729,7 +3729,7 @@ def create_app(testing: bool = False) -> Flask:
             try:
                 messages = conn.execute(
                     "SELECT turn_number, role, content, content_type, created_at "
-                    "FROM intake_conversation WHERE session_id = ? ORDER BY turn_number",
+                    "FROM intake_conversation WHERE session_id = %s ORDER BY turn_number",
                     (session_id,),
                 ).fetchall()
             except Exception as exc:
@@ -3738,7 +3738,7 @@ def create_app(testing: bool = False) -> Flask:
             auto_context_id = None
             try:
                 ctx_row = conn.execute(
-                    "SELECT id FROM chat_contexts WHERE intake_session_id = ? LIMIT 1",
+                    "SELECT id FROM chat_contexts WHERE intake_session_id = %s LIMIT 1",
                     (session_id,),
                 ).fetchone()
                 if ctx_row:
@@ -3784,7 +3784,7 @@ def create_app(testing: bool = False) -> Flask:
         conn = _get_db()
         try:
             session = conn.execute(
-                "SELECT * FROM intake_sessions WHERE id = ?", (session_id,)
+                "SELECT * FROM intake_sessions WHERE id = %s", (session_id,)
             ).fetchone()
             if not session:
                 app.logger.warning("intake_requirements_view: session %s not found", session_id)
@@ -3792,13 +3792,13 @@ def create_app(testing: bool = False) -> Flask:
             session = dict(session)
 
             reqs = conn.execute(
-                "SELECT * FROM intake_requirements WHERE session_id = ? ORDER BY priority, created_at",
+                "SELECT * FROM intake_requirements WHERE session_id = %s ORDER BY priority, created_at",
                 (session_id,),
             ).fetchall()
             reqs = [dict(r) for r in reqs]
 
             readiness_row = conn.execute(
-                "SELECT readiness_score, readiness_breakdown FROM intake_sessions WHERE id = ?",
+                "SELECT readiness_score, readiness_breakdown FROM intake_sessions WHERE id = %s",
                 (session_id,),
             ).fetchone()
         finally:
@@ -3888,7 +3888,7 @@ def create_app(testing: bool = False) -> Flask:
         conn = _get_db()
         try:
             _sess_row = conn.execute(
-                "SELECT customer_name FROM intake_sessions WHERE id = ?", (session_id,)
+                "SELECT customer_name FROM intake_sessions WHERE id = %s", (session_id,)
             ).fetchone()
             session_customer = (_sess_row["customer_name"] if _sess_row else "") or ""
         except Exception:
@@ -4246,7 +4246,7 @@ def create_app(testing: bool = False) -> Flask:
                         "FROM proposal_section_drafts d "
                         "JOIN proposal_sections s ON d.section_id = s.id "
                         "JOIN proposal_opportunities o ON s.opportunity_id = o.id "
-                        "WHERE d.id = ? ORDER BY d.created_at DESC LIMIT 1",
+                        "WHERE d.id = %s ORDER BY d.created_at DESC LIMIT 1",
                         (sec_id,),
                     ).fetchone()
                     if row:
@@ -4254,7 +4254,7 @@ def create_app(testing: bool = False) -> Flask:
                         preload_title = row["opp_title"]
                 elif opp_id:
                     opp = conn.execute(
-                        "SELECT title FROM proposal_opportunities WHERE id = ?", (opp_id,)
+                        "SELECT title FROM proposal_opportunities WHERE id = %s", (opp_id,)
                     ).fetchone()
                     if opp:
                         preload_title = opp["title"]
@@ -4262,7 +4262,7 @@ def create_app(testing: bool = False) -> Flask:
                         "SELECT d.draft_content, s.title as section_title, s.section_number "
                         "FROM proposal_section_drafts d "
                         "JOIN proposal_sections s ON d.section_id = s.id "
-                        "WHERE s.opportunity_id = ? "
+                        "WHERE s.opportunity_id = %s "
                         "AND d.created_at = ("
                         "  SELECT MAX(d2.created_at) FROM proposal_section_drafts d2 "
                         "  WHERE d2.section_id = d.section_id"
@@ -4635,7 +4635,7 @@ def create_app(testing: bool = False) -> Flask:
         try:
             # Fetch job
             try:
-                job = conn.execute("SELECT * FROM translation_jobs WHERE id = ?", (job_id,)).fetchone()
+                job = conn.execute("SELECT * FROM translation_jobs WHERE id = %s", (job_id,)).fetchone()
                 job = dict(job) if job else None
             except Exception:
                 job = None
@@ -4649,7 +4649,7 @@ def create_app(testing: bool = False) -> Flask:
                     """SELECT unit_name, unit_kind, source_file, status,
                               source_complexity, target_complexity,
                               repair_count, candidate_selected, created_at
-                       FROM translation_units WHERE job_id = ?
+                       FROM translation_units WHERE job_id = %s
                        ORDER BY created_at""",
                     (job_id,),
                 ).fetchall()
@@ -4661,7 +4661,7 @@ def create_app(testing: bool = False) -> Flask:
             try:
                 validations = conn.execute(
                     """SELECT check_type, passed, score, findings, created_at
-                       FROM translation_validations WHERE job_id = ?
+                       FROM translation_validations WHERE job_id = %s
                        ORDER BY created_at""",
                     (job_id,),
                 ).fetchall()
@@ -4674,7 +4674,7 @@ def create_app(testing: bool = False) -> Flask:
                 deps = conn.execute(
                     """SELECT source_import, target_import, mapping_source,
                               confidence, domain
-                       FROM translation_dependency_mappings WHERE job_id = ?
+                       FROM translation_dependency_mappings WHERE job_id = %s
                        ORDER BY domain, source_import""",
                     (job_id,),
                 ).fetchall()
@@ -5025,7 +5025,7 @@ def create_app(testing: bool = False) -> Flask:
                     try:
                         total = conn.execute("SELECT COUNT(*) as cnt FROM project_controls").fetchone()["cnt"]
                         impl = conn.execute(
-                            "SELECT COUNT(*) as cnt FROM project_controls WHERE implementation_status = ?",
+                            "SELECT COUNT(*) as cnt FROM project_controls WHERE implementation_status = %s",
                             (val,),
                         ).fetchone()["cnt"]
                         result["frameworks"].append({"name": name, "total": total, "implemented": impl, "status": "Active"})
@@ -5135,10 +5135,10 @@ def create_app(testing: bool = False) -> Flask:
                     ).fetchone()[0]
                     for family, _ in NIST_FAMILIES:
                         total = sc.execute(
-                            "SELECT COUNT(*) FROM sc_controls WHERE control_family = ?", (family,)
+                            "SELECT COUNT(*) FROM sc_controls WHERE control_family = %s", (family,)
                         ).fetchone()[0]
                         impl = sc.execute(
-                            "SELECT COUNT(*) FROM sc_controls WHERE control_family = ?"
+                            "SELECT COUNT(*) FROM sc_controls WHERE control_family = %s"
                             " AND implementation_status IN ('implemented','tested')",
                             (family,),
                         ).fetchone()[0]
@@ -5316,12 +5316,12 @@ def create_app(testing: bool = False) -> Flask:
             with get_connection(db_path=str(DB_PATH)) as mc:
                 for family, _ in NIST_FAMILIES:
                     total = mc.execute(
-                        "SELECT COUNT(*) as cnt FROM project_controls WHERE control_id LIKE ?",
+                        "SELECT COUNT(*) as cnt FROM project_controls WHERE control_id LIKE %s",
                         (f"{family}-%",),
                     ).fetchone()["cnt"]
                     impl = mc.execute(
                         "SELECT COUNT(*) as cnt FROM project_controls"
-                        " WHERE control_id LIKE ? AND implementation_status = 'implemented'",
+                        " WHERE control_id LIKE %s AND implementation_status = 'implemented'",
                         (f"{family}-%",),
                     ).fetchone()["cnt"]
                     if total > 0:
@@ -5480,7 +5480,7 @@ def create_app(testing: bool = False) -> Flask:
             coas = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM coa_definitions WHERE simulation_scenario_id = ? ORDER BY coa_type",
+                    "SELECT * FROM coa_definitions WHERE simulation_scenario_id = %s ORDER BY coa_type",
                     (scenario_id,),
                 ).fetchall()
             ]
@@ -5495,7 +5495,7 @@ def create_app(testing: bool = False) -> Flask:
         try:
             conn = _get_db()
             conn.execute(
-                "UPDATE coa_definitions SET status = 'selected', selected_at = datetime('now') WHERE id = ?", (coa_id,)
+                "UPDATE coa_definitions SET status = 'selected', selected_at = datetime('now') WHERE id = %s", (coa_id,)
             )
             conn.commit()
             conn.close()
@@ -5508,7 +5508,7 @@ def create_app(testing: bool = False) -> Flask:
         """Reject a COA."""
         try:
             conn = _get_db()
-            conn.execute("UPDATE coa_definitions SET status = 'rejected' WHERE id = ?", (coa_id,))
+            conn.execute("UPDATE coa_definitions SET status = 'rejected' WHERE id = %s", (coa_id,))
             conn.commit()
             conn.close()
             return jsonify({"status": "rejected", "coa_id": coa_id})
@@ -6030,7 +6030,7 @@ def create_app(testing: bool = False) -> Flask:
             conn = _cmap_conn()
             _pg = getattr(conn, "_backend", "sqlite") == "postgresql"
             stats["total"] = (conn.execute(
-                "SELECT COUNT(*) AS n FROM kg_nodes WHERE graph_id = ?",
+                "SELECT COUNT(*) AS n FROM kg_nodes WHERE graph_id = %s",
                 (_COMPONENTS_MAP_GRAPH_ID,),
             ).fetchone() or {}).get("n", 0)
             if _pg:
@@ -6038,7 +6038,7 @@ def create_app(testing: bool = False) -> Flask:
                     "SELECT "
                     "SUM(CASE WHEN (properties::jsonb)->>'enabled' = 'false' THEN 1 ELSE 0 END) AS dis, "
                     "SUM(CASE WHEN (properties::jsonb)->>'enabled' != 'false' THEN 1 ELSE 0 END) AS en "
-                    "FROM kg_nodes WHERE graph_id = ?",
+                    "FROM kg_nodes WHERE graph_id = %s",
                     (_COMPONENTS_MAP_GRAPH_ID,),
                 ).fetchone() or {}
             else:
@@ -6046,7 +6046,7 @@ def create_app(testing: bool = False) -> Flask:
                     "SELECT "
                     "SUM(CASE WHEN json_extract(properties, '$.enabled') = 'false' THEN 1 ELSE 0 END) AS dis, "
                     "SUM(CASE WHEN json_extract(properties, '$.enabled') != 'false' THEN 1 ELSE 0 END) AS en "
-                    "FROM kg_nodes WHERE graph_id = ?",
+                    "FROM kg_nodes WHERE graph_id = %s",
                     (_COMPONENTS_MAP_GRAPH_ID,),
                 ).fetchone() or {}
             stats["enabled"] = int(row.get("en") or stats["total"])
@@ -6408,7 +6408,7 @@ def create_app(testing: bool = False) -> Flask:
             # component graph hasn't been indexed yet, and gives the
             # coherence_checker's api_wiring rule a visible DB call.
             _graph_row = conn.execute(
-                "SELECT COUNT(*) AS cnt FROM kg_nodes WHERE graph_id = ?",
+                "SELECT COUNT(*) AS cnt FROM kg_nodes WHERE graph_id = %s",
                 (_COMPONENTS_MAP_GRAPH_ID,),
             ).fetchone()
             graph_node_count = dict(_graph_row).get("cnt", 0) if _graph_row else 0
@@ -6545,7 +6545,7 @@ def create_app(testing: bool = False) -> Flask:
             # user_id. Keep user_id out of the INSERT entirely.
             conn.execute(
                 "INSERT INTO icdev_qa_sessions (id, title, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s)",
                 (session_id, title, now, now),
             )
             conn.commit()
@@ -6559,7 +6559,7 @@ def create_app(testing: bool = False) -> Flask:
         try:
             _ensure_ask_icdev_tables(conn)
             row = conn.execute(
-                "SELECT id, title, created_at, updated_at FROM icdev_qa_sessions WHERE id = ?",
+                "SELECT id, title, created_at, updated_at FROM icdev_qa_sessions WHERE id = %s",
                 (session_id,),
             ).fetchone()
             if not row:
@@ -6567,7 +6567,7 @@ def create_app(testing: bool = False) -> Flask:
             session = dict(row)
             rows = conn.execute(
                 "SELECT id, turn, role, content, citations_json, created_at "
-                "FROM icdev_qa_messages WHERE session_id = ? ORDER BY turn ASC",
+                "FROM icdev_qa_messages WHERE session_id = %s ORDER BY turn ASC",
                 (session_id,),
             ).fetchall()
             messages = []
@@ -6588,8 +6588,8 @@ def create_app(testing: bool = False) -> Flask:
         conn = _get_db()
         try:
             _ensure_ask_icdev_tables(conn)
-            conn.execute("DELETE FROM icdev_qa_messages WHERE session_id = ?", (session_id,))
-            conn.execute("DELETE FROM icdev_qa_sessions WHERE id = ?", (session_id,))
+            conn.execute("DELETE FROM icdev_qa_messages WHERE session_id = %s", (session_id,))
+            conn.execute("DELETE FROM icdev_qa_sessions WHERE id = %s", (session_id,))
             conn.commit()
             return jsonify({"deleted": session_id})
         finally:
@@ -6610,7 +6610,7 @@ def create_app(testing: bool = False) -> Flask:
             _ensure_ask_icdev_tables(conn)
             # Verify session exists
             session_row = conn.execute(
-                "SELECT id, title FROM icdev_qa_sessions WHERE id = ?",
+                "SELECT id, title FROM icdev_qa_sessions WHERE id = %s",
                 (session_id,),
             ).fetchone()
             if not session_row:
@@ -6619,7 +6619,7 @@ def create_app(testing: bool = False) -> Flask:
             # Get next turn number
             row = conn.execute(
                 "SELECT COALESCE(MAX(turn), -1) AS max_turn FROM icdev_qa_messages "
-                "WHERE session_id = ?",
+                "WHERE session_id = %s",
                 (session_id,),
             ).fetchone()
             next_turn = (dict(row).get("max_turn", -1) + 1) if row else 0
@@ -6631,7 +6631,7 @@ def create_app(testing: bool = False) -> Flask:
             conn.execute(
                 "INSERT INTO icdev_qa_messages "
                 "(id, session_id, turn, role, content, citations_json, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (user_msg_id, session_id, next_turn, "user", user_content, "{}", now),
             )
             conn.commit()
@@ -6689,7 +6689,7 @@ def create_app(testing: bool = False) -> Flask:
             conn.execute(
                 "INSERT INTO icdev_qa_messages "
                 "(id, session_id, turn, role, content, citations_json, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (
                     assistant_msg_id,
                     session_id,
@@ -6701,7 +6701,7 @@ def create_app(testing: bool = False) -> Flask:
                 ),
             )
             conn.execute(
-                "UPDATE icdev_qa_sessions SET updated_at = ? WHERE id = ?",
+                "UPDATE icdev_qa_sessions SET updated_at = %s WHERE id = %s",
                 (datetime.now(timezone.utc).isoformat(), session_id),
             )
             conn.commit()
@@ -6825,13 +6825,13 @@ def create_app(testing: bool = False) -> Flask:
         examples = []
         try:
             conn = _get_db()
-            row = conn.execute("SELECT * FROM ft_datasets WHERE id = ?", (dataset_id,)).fetchone()
+            row = conn.execute("SELECT * FROM ft_datasets WHERE id = %s", (dataset_id,)).fetchone()
             if row:
                 dataset = dict(row)
             examples = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM ft_dataset_examples WHERE dataset_id = ? ORDER BY id DESC LIMIT 200",
+                    "SELECT * FROM ft_dataset_examples WHERE dataset_id = %s ORDER BY id DESC LIMIT 200",
                     (dataset_id,),
                 ).fetchall()
             ]
@@ -6855,7 +6855,7 @@ def create_app(testing: bool = False) -> Flask:
                 examples = [
                     dict(r)
                     for r in conn.execute(
-                        "SELECT * FROM ft_dataset_examples WHERE dataset_id = ? ORDER BY id DESC LIMIT 200",
+                        "SELECT * FROM ft_dataset_examples WHERE dataset_id = %s ORDER BY id DESC LIMIT 200",
                         (selected_dataset_id,),
                     ).fetchall()
                 ]
@@ -6888,7 +6888,7 @@ def create_app(testing: bool = False) -> Flask:
         loss_history = []
         try:
             conn = _get_db()
-            row = conn.execute("SELECT * FROM ft_training_jobs WHERE id = ?", (job_id,)).fetchone()
+            row = conn.execute("SELECT * FROM ft_training_jobs WHERE id = %s", (job_id,)).fetchone()
             if row:
                 job = dict(row)
                 try:
@@ -6898,7 +6898,7 @@ def create_app(testing: bool = False) -> Flask:
             events = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM ft_training_job_events WHERE job_id = ? ORDER BY created_at DESC",
+                    "SELECT * FROM ft_training_job_events WHERE job_id = %s ORDER BY created_at DESC",
                     (job_id,),
                 ).fetchall()
             ]
@@ -6931,20 +6931,20 @@ def create_app(testing: bool = False) -> Flask:
         promotions = []
         try:
             conn = _get_db()
-            row = conn.execute("SELECT * FROM ft_model_versions WHERE id = ?", (model_id,)).fetchone()
+            row = conn.execute("SELECT * FROM ft_model_versions WHERE id = %s", (model_id,)).fetchone()
             if row:
                 model = dict(row)
             evaluations = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM ft_evaluations WHERE model_version_id = ? ORDER BY evaluated_at DESC",
+                    "SELECT * FROM ft_evaluations WHERE model_version_id = %s ORDER BY evaluated_at DESC",
                     (model_id,),
                 ).fetchall()
             ]
             promotions = [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT * FROM ft_promotion_log WHERE model_version_id = ? ORDER BY created_at DESC",
+                    "SELECT * FROM ft_promotion_log WHERE model_version_id = %s ORDER BY created_at DESC",
                     (model_id,),
                 ).fetchall()
             ]
@@ -7237,7 +7237,7 @@ def create_app(testing: bool = False) -> Flask:
         try:
             conn = _get_db()
             row = conn.execute(
-                "SELECT id, body_markdown, readability_score FROM pulse_posts WHERE id = ?",
+                "SELECT id, body_markdown, readability_score FROM pulse_posts WHERE id = %s",
                 (post_id,),
             ).fetchone()
             conn.close()
@@ -7258,8 +7258,8 @@ def create_app(testing: bool = False) -> Flask:
                     if result.get("status") == "evaluated":
                         conn2 = _get_db()
                         conn2.execute(
-                            "UPDATE pulse_posts SET judge_color = ?, judge_composite = ?, "
-                            "judge_combined = ? WHERE id = ?",
+                            "UPDATE pulse_posts SET judge_color = %s, judge_composite = %s, "
+                            "judge_combined = %s WHERE id = %s",
                             (
                                 result["color_rating"]["color"],
                                 result["composite_score"],
@@ -7464,7 +7464,7 @@ def create_app(testing: bool = False) -> Flask:
             permanent = flask_request.args.get("permanent", "false").lower() == "true"
             if permanent:
                 with _get_db() as conn:
-                    conn.execute("DELETE FROM pulse_posts WHERE id = ?", (post_id,))
+                    conn.execute("DELETE FROM pulse_posts WHERE id = %s", (post_id,))
                     conn.commit()
                 return jsonify({"status": "deleted", "post_id": post_id, "permanent": True})
             now = datetime.now(timezone.utc).isoformat()
@@ -8035,7 +8035,7 @@ def create_app(testing: bool = False) -> Flask:
             with _get_db() as conn:
                 if cap_slug:
                     rows = conn.execute(
-                        "SELECT * FROM pulse_capability_graph WHERE capability_slug = ? ORDER BY confidence DESC",
+                        "SELECT * FROM pulse_capability_graph WHERE capability_slug = %s ORDER BY confidence DESC",
                         (cap_slug,),
                     ).fetchall()
                 else:
@@ -8083,7 +8083,7 @@ def create_app(testing: bool = False) -> Flask:
 
         try:
             conn = _get_db()
-            row = conn.execute("SELECT hero_image_path FROM pulse_posts WHERE id = ?", (post_id,)).fetchone()
+            row = conn.execute("SELECT hero_image_path FROM pulse_posts WHERE id = %s", (post_id,)).fetchone()
             conn.close()
             if not row or not row["hero_image_path"]:
                 return "No image", 404
@@ -8103,7 +8103,7 @@ def create_app(testing: bool = False) -> Flask:
 
         try:
             conn = _get_db()
-            row = conn.execute("SELECT id, title, topic FROM pulse_posts WHERE id = ?", (post_id,)).fetchone()
+            row = conn.execute("SELECT id, title, topic FROM pulse_posts WHERE id = %s", (post_id,)).fetchone()
             conn.close()
             if not row:
                 return jsonify({"error": "Post not found"}), 404
@@ -8118,7 +8118,7 @@ def create_app(testing: bool = False) -> Flask:
                     if result.get("success"):
                         conn2 = _get_db()
                         conn2.execute(
-                            "UPDATE pulse_posts SET hero_image_path = ?, hero_image_method = ?, hero_image_prompt = ? WHERE id = ?",
+                            "UPDATE pulse_posts SET hero_image_path = %s, hero_image_method = %s, hero_image_prompt = %s WHERE id = %s",
                             (result["path"], result["method"], result.get("prompt", ""), pid),
                         )
                         conn2.commit()
@@ -8140,7 +8140,7 @@ def create_app(testing: bool = False) -> Flask:
         try:
             conn = _get_db()
             row = conn.execute(
-                "SELECT generated_video_path, generated_video_method FROM pulse_posts WHERE id = ?",
+                "SELECT generated_video_path, generated_video_method FROM pulse_posts WHERE id = %s",
                 (post_id,),
             ).fetchone()
             conn.close()
@@ -8166,7 +8166,7 @@ def create_app(testing: bool = False) -> Flask:
 
         try:
             conn = _get_db()
-            row = conn.execute("SELECT id, title, topic FROM pulse_posts WHERE id = ?", (post_id,)).fetchone()
+            row = conn.execute("SELECT id, title, topic FROM pulse_posts WHERE id = %s", (post_id,)).fetchone()
             conn.close()
             if not row:
                 return jsonify({"error": "Post not found"}), 404
@@ -8181,8 +8181,8 @@ def create_app(testing: bool = False) -> Flask:
                     if result.get("success"):
                         conn2 = _get_db()
                         conn2.execute(
-                            "UPDATE pulse_posts SET generated_video_path = ?, "
-                            "generated_video_method = ?, generated_video_duration = ? WHERE id = ?",
+                            "UPDATE pulse_posts SET generated_video_path = %s, "
+                            "generated_video_method = %s, generated_video_duration = %s WHERE id = %s",
                             (result["path"], result["method"], result.get("duration_sec", 0), pid),
                         )
                         conn2.commit()
@@ -8788,7 +8788,7 @@ def create_app(testing: bool = False) -> Flask:
                 conn.execute(
                     "INSERT INTO contact_submissions "
                     "(id, name, email, organization, role, interest, message, status, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         sub_id,
                         name,
@@ -8843,7 +8843,7 @@ def create_app(testing: bool = False) -> Flask:
         conn = _get_db()
         try:
             conn.execute(
-                "UPDATE contact_submissions SET status = ?, notes = ?, updated_at = ? WHERE id = ?",
+                "UPDATE contact_submissions SET status = %s, notes = %s, updated_at = %s WHERE id = %s",
                 (new_status, notes, now, lead_id),
             )
             conn.commit()
@@ -8905,7 +8905,7 @@ def create_app(testing: bool = False) -> Flask:
             try:
                 conn = _get_db()
                 row = conn.execute(
-                    "SELECT * FROM genesis_runs WHERE app_key = ? ORDER BY started_at DESC LIMIT 1",
+                    "SELECT * FROM genesis_runs WHERE app_key = %s ORDER BY started_at DESC LIMIT 1",
                     (app_key,),
                 ).fetchone()
                 conn.close()
@@ -8960,7 +8960,7 @@ def create_app(testing: bool = False) -> Flask:
                 conn = _get_db()
                 conn.execute(
                     "INSERT INTO audit_trail (event_type, action, details, created_at) "
-                    "VALUES (?, ?, ?, datetime('now'))",
+                    "VALUES (%s, %s, %s, datetime('now'))",
                     ("config_changed", f"genesis_reflex:{name}", json.dumps({"app": app_key, "reflex": name})),
                 )
                 conn.commit()
@@ -9041,12 +9041,12 @@ def create_app(testing: bool = False) -> Flask:
             try:
                 if status_filter:
                     rows = conn.execute(
-                        "SELECT * FROM genesis_gkp WHERE promotion_status = ? ORDER BY created_at DESC LIMIT ?",
+                        "SELECT * FROM genesis_gkp WHERE promotion_status = %s ORDER BY created_at DESC LIMIT %s",
                         (status_filter, limit),
                     ).fetchall()
                 else:
                     rows = conn.execute(
-                        "SELECT * FROM genesis_gkp ORDER BY created_at DESC LIMIT ?",
+                        "SELECT * FROM genesis_gkp ORDER BY created_at DESC LIMIT %s",
                         (limit,),
                     ).fetchall()
                 gkps = [dict(r) for r in rows]
@@ -9079,7 +9079,7 @@ def create_app(testing: bool = False) -> Flask:
         try:
             conn = _genesis_db(app_key)
             try:
-                row = conn.execute("SELECT * FROM genesis_gkp WHERE id = ?", (gkp_id,)).fetchone()
+                row = conn.execute("SELECT * FROM genesis_gkp WHERE id = %s", (gkp_id,)).fetchone()
                 if not row:
                     return jsonify({"error": "GKP not found"}), 404
                 return jsonify(dict(row))
@@ -9099,7 +9099,7 @@ def create_app(testing: bool = False) -> Flask:
                 conn = _genesis_db(app_key)
                 try:
                     conn.execute(
-                        "UPDATE genesis_gkp SET promotion_status = 'promoted', promoted_at = datetime('now') WHERE id = ?",
+                        "UPDATE genesis_gkp SET promotion_status = 'promoted', promoted_at = datetime('now') WHERE id = %s",
                         (gkp_id,),
                     )
                     conn.commit()
@@ -9139,7 +9139,7 @@ def create_app(testing: bool = False) -> Flask:
             try:
                 conn = _genesis_db(app_key)
                 try:
-                    conn.execute("UPDATE genesis_gkp SET promotion_status = 'rejected' WHERE id = ?", (gkp_id,))
+                    conn.execute("UPDATE genesis_gkp SET promotion_status = 'rejected' WHERE id = %s", (gkp_id,))
                     conn.commit()
                     return jsonify({"status": "rejected", "gkp_id": gkp_id, "reason": reason})
                 finally:
@@ -9379,12 +9379,12 @@ def create_app(testing: bool = False) -> Flask:
         try:
             if severity:
                 rows = conn.execute(
-                    "SELECT * FROM review_board_findings WHERE severity = ? ORDER BY created_at DESC LIMIT ?",
+                    "SELECT * FROM review_board_findings WHERE severity = %s ORDER BY created_at DESC LIMIT %s",
                     (severity, limit),
                 ).fetchall()
             else:
                 rows = conn.execute(
-                    "SELECT * FROM review_board_findings ORDER BY created_at DESC LIMIT ?",
+                    "SELECT * FROM review_board_findings ORDER BY created_at DESC LIMIT %s",
                     (limit,),
                 ).fetchall()
             return jsonify({"findings": [dict(r) for r in rows], "count": len(rows)})
@@ -9416,7 +9416,7 @@ def create_app(testing: bool = False) -> Flask:
                 conn = _get_db()
                 conn.execute(
                     "INSERT INTO audit_trail (event_type, action, details, created_at) "
-                    "VALUES (?, ?, ?, datetime('now'))",
+                    "VALUES (%s, %s, %s, datetime('now'))",
                     ("config_changed", f"review_board_reflex:{name}", json.dumps({"returncode": result.returncode})),
                 )
                 conn.commit()
@@ -9707,8 +9707,8 @@ def create_app(testing: bool = False) -> Flask:
                            MAX(created_at) AS indexed_at
                     FROM rag_chunks
                     WHERE source_type = 'chat_upload'
-                      AND (? = '' OR tenant_id = ?)
-                      AND (? = '' OR json_extract(metadata, '$.context_id') = ?)
+                      AND (%s = '' OR tenant_id = %s)
+                      AND (%s = '' OR json_extract(metadata, '$.context_id') = %s)
                     GROUP BY source_id
                     ORDER BY indexed_at DESC
                     LIMIT 50
@@ -9826,7 +9826,7 @@ def create_app(testing: bool = False) -> Flask:
             with get_connection() as _conn:
                 _uc_init_table(_conn)
                 _row = _conn.execute(
-                    "SELECT * FROM use_case_overrides WHERE id=?", (use_case_id,)
+                    "SELECT * FROM use_case_overrides WHERE id=%s", (use_case_id,)
                 ).fetchone()
         except Exception:
             _row = None
@@ -9849,7 +9849,7 @@ def create_app(testing: bool = False) -> Flask:
                         (id,label,description,icon,badge,agent_model,ricoas,
                          boost_threshold,system_prompt,seed_message,
                          canvas_wiring,quick_actions,updated_at,updated_by)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     ON CONFLICT(id) DO UPDATE SET
                         label=excluded.label, description=excluded.description,
                         icon=excluded.icon, badge=excluded.badge,
@@ -9884,7 +9884,7 @@ def create_app(testing: bool = False) -> Flask:
         try:
             with get_connection() as _conn:
                 _uc_init_table(_conn)
-                _conn.execute("DELETE FROM use_case_overrides WHERE id=?", (use_case_id,))
+                _conn.execute("DELETE FROM use_case_overrides WHERE id=%s", (use_case_id,))
                 _conn.commit()
         except Exception as _exc:
             return jsonify({"error": str(_exc)}), 500
@@ -10238,7 +10238,7 @@ def create_app(testing: bool = False) -> Flask:
 
             conn = _get_db()
             conn.cursor().execute(
-                "UPDATE openclaw_imports SET trust_score = MIN(1.0, MAX(0.0, trust_score + ?)), updated_at = datetime('now') WHERE id = ?",
+                "UPDATE openclaw_imports SET trust_score = MIN(1.0, MAX(0.0, trust_score + %s)), updated_at = datetime('now') WHERE id = %s",
                 (bump, import_id),
             )
             conn.commit()
@@ -10313,7 +10313,7 @@ def create_app(testing: bool = False) -> Flask:
 
             conn = _get_db()
             conn.cursor().execute(
-                "UPDATE openclaw_imports SET trust_score = ?, updated_at = datetime('now') WHERE id = ?",
+                "UPDATE openclaw_imports SET trust_score = %s, updated_at = datetime('now') WHERE id = %s",
                 (trust_score, import_id),
             )
             conn.commit()
@@ -10585,7 +10585,7 @@ def create_app(testing: bool = False) -> Flask:
             pattern = f"{prefix_esc}{ek_esc}-%"
             rows = conn.execute(
                 "SELECT status, COUNT(*) AS n FROM kanban_tasks "
-                "WHERE id LIKE ? ESCAPE '\\' GROUP BY status",
+                "WHERE id LIKE %s ESCAPE '\\' GROUP BY status",
                 (pattern,),
             ).fetchall()
             counts = {dict(r)["status"]: int(dict(r)["n"]) for r in rows}
@@ -10609,7 +10609,7 @@ def create_app(testing: bool = False) -> Flask:
             })
         in_flight_rows = conn.execute(
             "SELECT id, title, status, priority, updated_at "
-            "FROM kanban_tasks WHERE id LIKE ? ESCAPE '\\' "
+            "FROM kanban_tasks WHERE id LIKE %s ESCAPE '\\' "
             "  AND status IN ('in_progress','scheduled') "
             "ORDER BY updated_at DESC LIMIT 15",
             (f"{prefix_esc}%",),
@@ -10617,7 +10617,7 @@ def create_app(testing: bool = False) -> Flask:
         fail_rows = conn.execute(
             "SELECT id, title, status, failure_count, "
             "       last_failure_reason, updated_at "
-            "FROM kanban_tasks WHERE id LIKE ? ESCAPE '\\' "
+            "FROM kanban_tasks WHERE id LIKE %s ESCAPE '\\' "
             "  AND last_failure_reason IS NOT NULL "
             "ORDER BY updated_at DESC LIMIT 10",
             (f"{prefix_esc}%",),
@@ -10781,7 +10781,7 @@ def create_app(testing: bool = False) -> Flask:
                     "       last_failure_reason, updated_at "
                     "FROM kanban_tasks "
                     "WHERE last_failure_reason IS NOT NULL "
-                    "  AND updated_at > ? "
+                    "  AND updated_at > %s "
                     "  AND status IN ('backlog','failed','scheduled') "
                     "ORDER BY updated_at DESC LIMIT 10",
                     (cutoff_iso,),

@@ -102,7 +102,7 @@ def _load_tenant_artifact_config(tenant_id: str) -> dict:
     conn = get_platform_connection()
     try:
         row = conn.execute(
-            "SELECT artifact_config FROM tenants WHERE id = ?",
+            "SELECT artifact_config FROM tenants WHERE id = %s",
             (tenant_id,),
         ).fetchone()
         if not row:
@@ -556,9 +556,9 @@ def get_delivery_history(tenant_id: str, limit: int = 50) -> list:
             """SELECT id, tenant_id, event_type, action, details,
                       recorded_at
                FROM audit_platform
-               WHERE tenant_id = ? AND event_type = 'artifact.delivered'
+               WHERE tenant_id = %s AND event_type = 'artifact.delivered'
                ORDER BY recorded_at DESC
-               LIMIT ?""",
+               LIMIT %s""",
             (tenant_id, limit),
         ).fetchall()
 

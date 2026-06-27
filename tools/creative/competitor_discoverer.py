@@ -476,7 +476,7 @@ def store_competitors(competitors, domain, db_path=None):
                 continue
             # Dedup check
             existing = conn.execute(
-                "SELECT id FROM creative_competitors WHERE name=? AND source=?", (name, source)
+                "SELECT id FROM creative_competitors WHERE name=%s AND source=%s", (name, source)
             ).fetchone()
             if existing:
                 duplicates += 1
@@ -486,7 +486,7 @@ def store_competitors(competitors, domain, db_path=None):
                 "INSERT INTO creative_competitors "
                 "(id, name, domain, source, source_url, rating, review_count, "
                 "features, pricing_tier, status, metadata, discovered_at, classification) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     cid,
                     name,
@@ -517,7 +517,7 @@ def confirm_competitor(competitor_id, confirmed_by, db_path=None):
     """
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT id, status FROM creative_competitors WHERE id=?", (competitor_id,)).fetchone()
+        row = conn.execute("SELECT id, status FROM creative_competitors WHERE id=%s", (competitor_id,)).fetchone()
         if not row:
             return {"error": f"Competitor not found: {competitor_id}"}
         if row["status"] == "confirmed":
@@ -525,7 +525,7 @@ def confirm_competitor(competitor_id, confirmed_by, db_path=None):
         if row["status"] == "archived":
             return {"error": f"Cannot confirm archived competitor: {competitor_id}"}
         conn.execute(
-            "UPDATE creative_competitors SET status='confirmed', confirmed_at=?, confirmed_by=? WHERE id=?",
+            "UPDATE creative_competitors SET status='confirmed', confirmed_at=%s, confirmed_by=%s WHERE id=%s",
             (now_iso(), confirmed_by, competitor_id),
         )
         conn.commit()
@@ -546,13 +546,13 @@ def archive_competitor(competitor_id, db_path=None):
     """
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT id, status FROM creative_competitors WHERE id=?", (competitor_id,)).fetchone()
+        row = conn.execute("SELECT id, status FROM creative_competitors WHERE id=%s", (competitor_id,)).fetchone()
         if not row:
             return {"error": f"Competitor not found: {competitor_id}"}
         if row["status"] == "archived":
             return {"error": f"Competitor already archived: {competitor_id}"}
         conn.execute(
-            "UPDATE creative_competitors SET status='archived' WHERE id=?",
+            "UPDATE creative_competitors SET status='archived' WHERE id=%s",
             (competitor_id,),
         )
         conn.commit()
@@ -613,7 +613,7 @@ def refresh_competitor_features(competitor_id, db_path=None):
     conn = _get_db(db_path)
     try:
         row = conn.execute(
-            "SELECT id, name, source_url, source FROM creative_competitors WHERE id=?", (competitor_id,)
+            "SELECT id, name, source_url, source FROM creative_competitors WHERE id=%s", (competitor_id,)
         ).fetchone()
         if not row:
             return {"error": f"Competitor not found: {competitor_id}"}
@@ -627,7 +627,7 @@ def refresh_competitor_features(competitor_id, db_path=None):
 
         features = _extract_features_from_html(html)
         conn.execute(
-            "UPDATE creative_competitors SET features=? WHERE id=?",
+            "UPDATE creative_competitors SET features=%s WHERE id=%s",
             (json.dumps(features), competitor_id),
         )
         conn.commit()

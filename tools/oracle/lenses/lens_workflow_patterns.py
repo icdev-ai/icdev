@@ -424,7 +424,7 @@ class WorkflowPatternLens(BaseLens):
         rows = conn.execute(
             "SELECT event_type, actor, action, session_id, created_at "
             "FROM audit_trail "
-            "WHERE created_at >= ? "
+            "WHERE created_at >= %s "
             "ORDER BY session_id NULLS LAST, created_at ASC",
             (cutoff,),
         ).fetchall()
@@ -447,7 +447,7 @@ class WorkflowPatternLens(BaseLens):
             "FROM kanban_tasks "
             "WHERE status = 'done' "
             "ORDER BY created_at DESC "
-            "LIMIT ?",
+            "LIMIT %s",
             (_MAX_KANBAN_DONE,),
         ).fetchall()
         data["kanban_done"] = [dict(r) for r in rows]
@@ -458,7 +458,7 @@ class WorkflowPatternLens(BaseLens):
 
         failed = conn.execute(
             "SELECT actor, action FROM audit_trail "
-            "WHERE event_type = 'agent_task_failed' AND created_at >= ?",
+            "WHERE event_type = 'agent_task_failed' AND created_at >= %s",
             (cutoff,),
         ).fetchall()
         failed_set = {(r["actor"], r["action"]) for r in failed}
@@ -468,7 +468,7 @@ class WorkflowPatternLens(BaseLens):
 
         completed = conn.execute(
             "SELECT actor, action FROM audit_trail "
-            "WHERE event_type = 'agent_task_completed' AND created_at >= ?",
+            "WHERE event_type = 'agent_task_completed' AND created_at >= %s",
             (cutoff,),
         ).fetchall()
         completed_set = {(r["actor"], r["action"]) for r in completed}

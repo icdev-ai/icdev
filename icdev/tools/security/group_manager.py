@@ -61,7 +61,7 @@ def create_group(
             """
             INSERT INTO groups
               (id, tenant_id, name, description, classification, created_at, updated_at, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (group_id, tenant_id, name, description, classification, now, now, created_by),
         )
@@ -74,7 +74,7 @@ def get_group(group_id: str) -> Optional[dict]:
     """Return a group dict or None."""
     with _conn() as conn:
         row = conn.execute(
-            "SELECT * FROM groups WHERE id = ?", (group_id,)
+            "SELECT * FROM groups WHERE id = %s", (group_id,)
         ).fetchone()
     if not row:
         return None
@@ -89,7 +89,7 @@ def list_groups(tenant_id: str) -> list[dict]:
     """Return all active groups for a tenant."""
     with _conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM groups WHERE tenant_id = ? AND status = 'active'",
+            "SELECT * FROM groups WHERE tenant_id = %s AND status = 'active'",
             (tenant_id,),
         ).fetchall()
     return [dict(r) if hasattr(r, "keys") else {"id": r[0], "name": r[2]} for r in rows]
@@ -100,7 +100,7 @@ def disable_group(group_id: str) -> None:
     now = _now()
     with _conn() as conn:
         conn.execute(
-            "UPDATE groups SET status = 'disabled', updated_at = ? WHERE id = ?",
+            "UPDATE groups SET status = 'disabled', updated_at = %s WHERE id = %s",
             (now, group_id),
         )
         conn.commit()
@@ -116,7 +116,7 @@ def add_member(group_id: str, user_id: str, added_by: Optional[str] = None) -> N
         conn.execute(
             """
             INSERT OR IGNORE INTO group_members (group_id, user_id, added_at, added_by)
-            VALUES (?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s)
             """,
             (group_id, user_id, _now(), added_by),
         )
@@ -127,7 +127,7 @@ def remove_member(group_id: str, user_id: str) -> None:
     """Remove a user from a group."""
     with _conn() as conn:
         conn.execute(
-            "DELETE FROM group_members WHERE group_id = ? AND user_id = ?",
+            "DELETE FROM group_members WHERE group_id = %s AND user_id = %s",
             (group_id, user_id),
         )
         conn.commit()
@@ -137,7 +137,7 @@ def get_group_members(group_id: str) -> list[str]:
     """Return list of user_ids in a group."""
     with _conn() as conn:
         rows = conn.execute(
-            "SELECT user_id FROM group_members WHERE group_id = ?", (group_id,)
+            "SELECT user_id FROM group_members WHERE group_id = %s", (group_id,)
         ).fetchall()
     return [r[0] if isinstance(r, (tuple, list)) else r["user_id"] for r in rows]
 
@@ -150,7 +150,7 @@ def get_user_groups(user_id: str, tenant_id: str) -> list[dict]:
             SELECT g.id, g.name, g.classification
             FROM groups g
             JOIN group_members gm ON g.id = gm.group_id
-            WHERE gm.user_id = ? AND g.tenant_id = ? AND g.status = 'active'
+            WHERE gm.user_id = %s AND g.tenant_id = %s AND g.status = 'active'
             """,
             (user_id, tenant_id),
         ).fetchall()
@@ -181,7 +181,7 @@ def assign_role(
             """
             INSERT OR IGNORE INTO group_roles
               (group_id, role, canvas_scope, granted_at, granted_by)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s)
             """,
             (group_id, role, canvas_scope, _now(), granted_by),
         )
@@ -192,7 +192,7 @@ def revoke_role(group_id: str, role: str, canvas_scope: Optional[str] = None) ->
     """Revoke a role from a group."""
     with _conn() as conn:
         conn.execute(
-            "DELETE FROM group_roles WHERE group_id = ? AND role = ? AND canvas_scope IS ?",
+            "DELETE FROM group_roles WHERE group_id = %s AND role = %s AND canvas_scope IS %s",
             (group_id, role, canvas_scope),
         )
         conn.commit()
@@ -202,7 +202,7 @@ def get_group_roles(group_id: str) -> list[dict]:
     """Return all role assignments for a group."""
     with _conn() as conn:
         rows = conn.execute(
-            "SELECT role, canvas_scope, granted_at FROM group_roles WHERE group_id = ?",
+            "SELECT role, canvas_scope, granted_at FROM group_roles WHERE group_id = %s",
             (group_id,),
         ).fetchall()
     result = []
@@ -235,7 +235,7 @@ def resolve_effective_roles(
     try:
         with _conn() as conn:
             row = conn.execute(
-                "SELECT role FROM users WHERE id = ? AND tenant_id = ?",
+                "SELECT role FROM users WHERE id = %s AND tenant_id = %s",
                 (user_id, tenant_id),
             ).fetchone()
         if row:

@@ -56,7 +56,7 @@ def _audit(conn, action: str, details: str = "", actor: str = "option_tracker"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             ("hook_event_logged", actor, action, details, "option_tracker"),
         )
     except Exception:
@@ -68,7 +68,7 @@ def list_option_periods(contract_id: str) -> Dict[str, Any]:
     conn = _get_db()
     try:
         rows = conn.execute(
-            "SELECT * FROM cpmp_option_periods WHERE contract_id = ? ORDER BY option_number ASC",
+            "SELECT * FROM cpmp_option_periods WHERE contract_id = %s ORDER BY option_number ASC",
             (contract_id,),
         ).fetchall()
         options = []
@@ -104,7 +104,7 @@ def create_option_period(contract_id: str, data: Dict[str, Any]) -> Dict[str, An
     try:
         # Verify contract exists
         contract = conn.execute(
-            "SELECT id, contract_number FROM cpmp_contracts WHERE id = ?", (contract_id,)
+            "SELECT id, contract_number FROM cpmp_contracts WHERE id = %s", (contract_id,)
         ).fetchone()
         if not contract:
             return {"status": "error", "message": f"Contract {contract_id} not found"}
@@ -115,7 +115,7 @@ def create_option_period(contract_id: str, data: Dict[str, Any]) -> Dict[str, An
                (id, contract_id, option_number, description, period_start, period_end,
                 ceiling_value, exercise_deadline, exercise_notice_days,
                 status, classification, tenant_id, metadata)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'pending', %s, %s, %s)""",
             (
                 option_id,
                 contract_id,
@@ -142,7 +142,7 @@ def update_option_period(option_id: str, data: Dict[str, Any]) -> Dict[str, Any]
     """Update mutable fields on an option period."""
     conn = _get_db()
     try:
-        row = conn.execute("SELECT * FROM cpmp_option_periods WHERE id = ?", (option_id,)).fetchone()
+        row = conn.execute("SELECT * FROM cpmp_option_periods WHERE id = %s", (option_id,)).fetchone()
         if not row:
             return {"status": "error", "message": "Option period not found"}
 
@@ -169,7 +169,7 @@ def exercise_option(option_id: str, exercised_by: str = "system") -> Dict[str, A
     """Mark an option as exercised."""
     conn = _get_db()
     try:
-        row = conn.execute("SELECT * FROM cpmp_option_periods WHERE id = ?", (option_id,)).fetchone()
+        row = conn.execute("SELECT * FROM cpmp_option_periods WHERE id = %s", (option_id,)).fetchone()
         if not row:
             return {"status": "error", "message": "Option period not found"}
         if row["status"] != "pending":
@@ -177,8 +177,8 @@ def exercise_option(option_id: str, exercised_by: str = "system") -> Dict[str, A
 
         today = date.today().isoformat()
         conn.execute(
-            "UPDATE cpmp_option_periods SET status='exercised', exercised_date=?, exercised_by=?, "
-            "updated_at=datetime('now') WHERE id=?",
+            "UPDATE cpmp_option_periods SET status='exercised', exercised_date=%s, exercised_by=%s, "
+            "updated_at=datetime('now') WHERE id=%s",
             (today, exercised_by, option_id),
         )
         _audit(conn, "option_exercised", f"option_id={option_id} by={exercised_by}")
@@ -237,7 +237,7 @@ def ai_exercise_recommendation(option_id: str) -> Dict[str, Any]:
                       c.health, c.health_score, c.cpars_rating_current
                FROM cpmp_option_periods o
                JOIN cpmp_contracts c ON c.id = o.contract_id
-               WHERE o.id = ?""",
+               WHERE o.id = %s""",
             (option_id,),
         ).fetchone()
         if not row:
@@ -280,8 +280,8 @@ def ai_exercise_recommendation(option_id: str) -> Dict[str, Any]:
     try:
         ts = datetime.now(timezone.utc).isoformat()
         conn2.execute(
-            "UPDATE cpmp_option_periods SET ai_recommendation=?, ai_recommendation_ts=?, "
-            "updated_at=datetime('now') WHERE id=?",
+            "UPDATE cpmp_option_periods SET ai_recommendation=%s, ai_recommendation_ts=%s, "
+            "updated_at=datetime('now') WHERE id=%s",
             (narrative, ts, option_id),
         )
         conn2.commit()

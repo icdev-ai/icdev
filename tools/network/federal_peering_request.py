@@ -620,8 +620,8 @@ def _sync_to_pmc(
                             """INSERT OR IGNORE INTO peering_peers
                                    (id, asn, org_name, peer_type, policy, status,
                                     classification, created_at, updated_at)
-                               VALUES (?, ?, ?, 'public', 'selective', 'evaluation',
-                                       'CUI', ?, ?)""",
+                               VALUES (%s, %s, %s, 'public', 'selective', 'evaluation',
+                                       'CUI', %s, %s)""",
                             (peer_id, responding_asn, responding_org, now, now),
                         )
                         conn.commit()
@@ -643,7 +643,7 @@ def _sync_to_pmc(
                 """INSERT INTO peering_requests
                        (id, peer_id, request_type, status, contact_method,
                         proposed_speed, notes, classification, created_at, updated_at)
-                   VALUES (?, ?, 'new', 'pending', ?, ?, ?, 'CUI', ?, ?)""",
+                   VALUES (%s, %s, 'new', 'pending', %s, %s, %s, 'CUI', %s, %s)""",
                 (pmc_req_id, peer_id, contact_method,
                  proposed_speed, notes, now, now),
             )

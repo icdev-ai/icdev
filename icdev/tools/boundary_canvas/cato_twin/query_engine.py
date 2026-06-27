@@ -189,7 +189,7 @@ def run_query(iqe_string: str, conn=None) -> List[Dict[str, Any]]:
     try:
         # Check framework has any data
         exists = conn.execute(
-            "SELECT 1 FROM compliance_twin_runs WHERE framework = ? LIMIT 1",
+            "SELECT 1 FROM compliance_twin_runs WHERE framework = %s LIMIT 1",
             (framework,),
         ).fetchone()
         if not exists:

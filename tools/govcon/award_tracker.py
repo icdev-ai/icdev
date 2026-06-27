@@ -57,7 +57,7 @@ def _audit(conn, action, details="", actor="award_tracker"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (str(uuid.uuid4()), _now(), "govcon.award_tracking", actor, action, details, "govcon"),
         )
     except Exception:
@@ -144,7 +144,7 @@ def scan_awards():
 
             # Dedup by content hash
             chash = _content_hash(f"{award['solicitation_number']}|{award['awardee_name']}|{award['award_amount']}")
-            existing = conn.execute("SELECT id FROM govcon_awards WHERE content_hash = ?", (chash,)).fetchone()
+            existing = conn.execute("SELECT id FROM govcon_awards WHERE content_hash = %s", (chash,)).fetchone()
             if existing:
                 continue
 
@@ -157,7 +157,7 @@ def scan_awards():
                 "contract_type, period_of_performance, "
                 "description, content_hash, "
                 "metadata, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     award_id,
                     award.get("notice_id", ""),
@@ -246,7 +246,7 @@ def _register_competitor(conn, award):
     if not name:
         return
 
-    existing = conn.execute("SELECT id FROM creative_competitors WHERE name = ?", (name,)).fetchone()
+    existing = conn.execute("SELECT id FROM creative_competitors WHERE name = %s", (name,)).fetchone()
 
     if existing:
         return  # Already tracked
@@ -255,7 +255,7 @@ def _register_competitor(conn, award):
         conn.execute(
             "INSERT INTO creative_competitors "
             "(id, name, domain, source, description, website, status, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 str(uuid.uuid4()),
                 name,

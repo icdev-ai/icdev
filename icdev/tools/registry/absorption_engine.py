@@ -288,7 +288,7 @@ class AbsorptionEngine:
         try:
             # Fetch the learned behavior record
             row = conn.execute(
-                "SELECT * FROM child_learned_behaviors WHERE id = ?",
+                "SELECT * FROM child_learned_behaviors WHERE id = %s",
                 (capability_id,),
             ).fetchone()
 
@@ -401,7 +401,7 @@ class AbsorptionEngine:
         rows = conn.execute(
             """SELECT error_rate, collected_at
                FROM child_telemetry
-               WHERE child_id = ? AND collected_at >= ?
+               WHERE child_id = %s AND collected_at >= %s
                ORDER BY collected_at ASC""",
             (child_id, cutoff),
         ).fetchall()
@@ -460,7 +460,7 @@ class AbsorptionEngine:
         rows = conn.execute(
             """SELECT compliance_scores_json, collected_at
                FROM child_telemetry
-               WHERE child_id = ? AND collected_at >= ?
+               WHERE child_id = %s AND collected_at >= %s
                ORDER BY collected_at ASC""",
             (child_id, cutoff),
         ).fetchall()
@@ -589,7 +589,7 @@ class AbsorptionEngine:
         try:
             # Fetch the behavior record
             row = conn.execute(
-                "SELECT * FROM child_learned_behaviors WHERE id = ?",
+                "SELECT * FROM child_learned_behaviors WHERE id = %s",
                 (capability_id,),
             ).fetchone()
 
@@ -652,8 +652,8 @@ class AbsorptionEngine:
             now = _now()
             conn.execute(
                 """UPDATE child_learned_behaviors
-                   SET absorbed = 1, absorbed_at = ?
-                   WHERE id = ?""",
+                   SET absorbed = 1, absorbed_at = %s
+                   WHERE id = %s""",
                 (now, capability_id),
             )
 
@@ -663,8 +663,8 @@ class AbsorptionEngine:
                    (capability_name, genome_version, source_type, source_child_id,
                     target_child_id, propagation_status, initiated_by,
                     initiated_at, completed_at, classification)
-                   VALUES (?, ?, 'absorption', ?, 'parent-genome', 'success',
-                           ?, ?, ?, 'CUI')""",
+                   VALUES (%s, %s, 'absorption', %s, 'parent-genome', 'success',
+                           %s, %s, %s, 'CUI')""",
                 (
                     behavior.get("description", f"behavior-{capability_id}")[:200],
                     new_genome_version or "unversioned",
@@ -728,7 +728,7 @@ class AbsorptionEngine:
                    FROM child_learned_behaviors
                    WHERE evaluated = 1
                      AND absorbed = 0
-                     AND created_at <= ?
+                     AND created_at <= %s
                    ORDER BY confidence DESC, created_at ASC""",
                 (cutoff,),
             ).fetchall()
@@ -785,7 +785,7 @@ class AbsorptionEngine:
                    FROM propagation_log
                    WHERE source_type = 'absorption'
                    ORDER BY initiated_at DESC
-                   LIMIT ?""",
+                   LIMIT %s""",
                 (limit,),
             ).fetchall()
 

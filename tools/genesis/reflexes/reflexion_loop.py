@@ -34,7 +34,7 @@ def _create_amendment_card(task_type: str, artifact_id: str, score: float) -> No
     try:
         conn = _conn()
         row = conn.execute(
-            "SELECT id FROM kanban_tasks WHERE title = ? AND status NOT IN ('done','dismissed') LIMIT 1",
+            "SELECT id FROM kanban_tasks WHERE title = %s AND status NOT IN ('done','dismissed') LIMIT 1",
             (title,),
         ).fetchone()
         if row:
@@ -59,7 +59,7 @@ def _create_amendment_card(task_type: str, artifact_id: str, score: float) -> No
             """
             INSERT INTO kanban_tasks
                 (id, title, description, status, priority, source, created_at, updated_at)
-            VALUES (?, ?, ?, 'suggested', 'medium', 'reflexion_loop_reflex', ?, ?)
+            VALUES (%s, %s, %s, 'suggested', 'medium', 'reflexion_loop_reflex', %s, %s)
             """,
             (task_id, title, body, _utcnow(), _utcnow()),
         )

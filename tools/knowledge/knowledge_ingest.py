@@ -74,7 +74,7 @@ def ingest_pattern(
 
         # Check for existing pattern with same signature
         existing = conn.execute(
-            "SELECT id, occurrence_count FROM knowledge_patterns WHERE pattern_signature = ?",
+            "SELECT id, occurrence_count FROM knowledge_patterns WHERE pattern_signature = %s",
             (signature,),
         ).fetchone()
 
@@ -83,12 +83,12 @@ def ingest_pattern(
             conn.execute(
                 """UPDATE knowledge_patterns
                    SET occurrence_count = occurrence_count + 1,
-                       last_occurrence = ?,
-                       updated_at = ?,
-                       description = COALESCE(?, description),
-                       root_cause = COALESCE(?, root_cause),
-                       remediation = COALESCE(?, remediation)
-                   WHERE id = ?""",
+                       last_occurrence = %s,
+                       updated_at = %s,
+                       description = COALESCE(%s, description),
+                       root_cause = COALESCE(%s, root_cause),
+                       remediation = COALESCE(%s, remediation)
+                   WHERE id = %s""",
                 (now, now, description, root_cause, remediation, existing["id"]),
             )
             conn.commit()
@@ -104,7 +104,7 @@ def ingest_pattern(
                (pattern_type, pattern_signature, description, root_cause, remediation,
                 confidence, occurrence_count, last_occurrence, auto_healable,
                 created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, 1, %s, %s, %s, %s)""",
             (
                 pattern_type,
                 signature,
@@ -157,7 +157,7 @@ def ingest_failure(
             """INSERT INTO failure_log
                (project_id, source, error_type, error_message, stack_trace,
                 context, resolved, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, 0, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, 0, %s)""",
             (
                 project_id,
                 source,

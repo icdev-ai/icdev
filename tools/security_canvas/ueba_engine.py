@@ -87,7 +87,7 @@ def update_baseline(entity_id: str, features: dict) -> dict[str, Any]:
     try:
         _ensure_tables(conn)
         row = conn.execute(
-            "SELECT feature_means, feature_vars, sample_count FROM zig_ueba_baselines WHERE entity_id=?",
+            "SELECT feature_means, feature_vars, sample_count FROM zig_ueba_baselines WHERE entity_id=%s",
             (entity_id,),
         ).fetchone()
         if row:
@@ -109,7 +109,7 @@ def update_baseline(entity_id: str, features: dict) -> dict[str, Any]:
 
         conn.execute(
             """INSERT INTO zig_ueba_baselines (entity_id, feature_means, feature_vars, sample_count, updated_at)
-               VALUES (?,?,?,?,?)
+               VALUES (%s,%s,%s,%s,%s)
                ON CONFLICT(entity_id) DO UPDATE SET
                feature_means=excluded.feature_means, feature_vars=excluded.feature_vars,
                sample_count=excluded.sample_count, updated_at=excluded.updated_at""",
@@ -128,7 +128,7 @@ def detect_anomaly(entity_id: str, features: dict) -> dict[str, Any]:
     try:
         _ensure_tables(conn)
         row = conn.execute(
-            "SELECT feature_means, feature_vars, sample_count FROM zig_ueba_baselines WHERE entity_id=?",
+            "SELECT feature_means, feature_vars, sample_count FROM zig_ueba_baselines WHERE entity_id=%s",
             (entity_id,),
         ).fetchone()
         if not row or (row["sample_count"] or 0) < 3:
@@ -149,7 +149,7 @@ def detect_anomaly(entity_id: str, features: dict) -> dict[str, Any]:
         anomaly_score = round(min(1.0, max_z / 4.0), 4)  # normalize z to 0..1
         conn.execute(
             "INSERT INTO zig_ueba_anomalies (entity_id, anomaly_score, anomalous_features, features_json, created_at) "
-            "VALUES (?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s)",
             (entity_id, anomaly_score, json.dumps(anomalous), json.dumps(features), now),
         )
         conn.commit()
@@ -192,7 +192,7 @@ def correlate_cross_pillar(entity_id: str) -> dict[str, Any]:
         # UEBA anomaly contribution
         ueba = conn.execute(
             "SELECT AVG(anomaly_score) as a FROM zig_ueba_anomalies "
-            "WHERE entity_id=? AND created_at >= datetime('now','-7 days')",
+            "WHERE entity_id=%s AND created_at >= datetime('now','-7 days')",
             (entity_id,),
         ).fetchone()
         if ueba and ueba["a"] is not None:
@@ -211,7 +211,7 @@ def correlate_cross_pillar(entity_id: str) -> dict[str, Any]:
 
         conn.execute(
             "INSERT INTO zig_ueba_correlations (entity_id, composite_risk, pillar_signals, verdict, created_at) "
-            "VALUES (?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s)",
             (entity_id, composite, json.dumps(pillar_signals), verdict, now),
         )
         conn.commit()

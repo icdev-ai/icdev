@@ -202,7 +202,7 @@ def log_mac_violation(
             """
             INSERT INTO mac_violations
             (user_id, event_type, resource_classification, action, details, recorded_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s)
             """,
             (
                 user_id,

@@ -174,7 +174,7 @@ def get_connection(
     db = db_path or str(DB_PATH)
     try:
         conn = _get_conn(db)
-        row = conn.execute("SELECT * FROM db_connections WHERE id = ?", (connection_id,)).fetchone()
+        row = conn.execute("SELECT * FROM db_connections WHERE id = %s", (connection_id,)).fetchone()
         conn.close()
         if row:
             return dict(row)

@@ -77,7 +77,7 @@ def collect_evidence(
                         "INSERT INTO evidence_items "
                         "(id, control_id, framework, tenant_id, evidence_type, "
                         "source_table, source_row_id, summary, collected_at, collector) "
-                        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                         (
                             ev_id, ctrl_id, framework, tenant_id, "log",
                             "audit_trail", row_id,
@@ -120,7 +120,7 @@ def collect_evidence(
                         "INSERT INTO evidence_items "
                         "(id, control_id, framework, tenant_id, evidence_type, "
                         "source_table, source_row_id, summary, collected_at, collector) "
-                        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                         (
                             ev_id, ctrl_id, framework, tenant_id, "log",
                             "component_audit_log", row_id,

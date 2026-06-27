@@ -94,7 +94,7 @@ def _audit(action, entity_type, entity_id, details="", user_id=None):
     try:
         conn = get_connection()
         conn.execute(
-            "INSERT INTO pc_audit (action, entity_type, entity_id, details, user_id, ts) VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO pc_audit (action, entity_type, entity_id, details, user_id, ts) VALUES (%s, %s, %s, %s, %s, %s)",
             (action, entity_type, entity_id, details, user_id or session.get("user_id", "system"), now_isoformat()),
         )
         conn.commit()
@@ -370,7 +370,7 @@ def create_pipeline_blueprint():
     @pc_login_required
     def pc_edit_canvas(pipe_id):
         conn = get_connection()
-        row = conn.execute("SELECT * FROM pipelines WHERE id=?", (pipe_id,)).fetchone()
+        row = conn.execute("SELECT * FROM pipelines WHERE id=%s", (pipe_id,)).fetchone()
         conn.close()
         if not row:
             return redirect("/devops/canvas/new")
@@ -418,7 +418,7 @@ def create_pipeline_blueprint():
         conn = get_connection()
         conn.execute(
             "INSERT INTO pipelines (id, name, description, graph_json, classification, "
-            "target_csp, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+            "target_csp, created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 pipe_id,
                 name,
@@ -442,7 +442,7 @@ def create_pipeline_blueprint():
     @pc_login_required
     def pc_api_get(pipe_id):
         conn = get_connection()
-        row = conn.execute("SELECT * FROM pipelines WHERE id=?", (pipe_id,)).fetchone()
+        row = conn.execute("SELECT * FROM pipelines WHERE id=%s", (pipe_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -541,7 +541,7 @@ def create_pipeline_blueprint():
     def pc_api_delete(pipe_id):
         logger.info("Deleting pipeline: %s", pipe_id)
         conn = get_connection()
-        conn.execute("DELETE FROM pipelines WHERE id=?", (pipe_id,))
+        conn.execute("DELETE FROM pipelines WHERE id=%s", (pipe_id,))
         conn.commit()
         conn.close()
         _audit("DELETE", "pipeline", pipe_id, "")
@@ -573,7 +573,7 @@ def create_pipeline_blueprint():
     @pc_login_required
     def pc_api_get_template(tpl_id):
         conn = get_connection()
-        row = conn.execute("SELECT * FROM pc_templates WHERE id=?", (tpl_id,)).fetchone()
+        row = conn.execute("SELECT * FROM pc_templates WHERE id=%s", (tpl_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -588,7 +588,7 @@ def create_pipeline_blueprint():
     @pc_login_required
     def pc_api_load_template(tpl_id):
         conn = get_connection()
-        row = conn.execute("SELECT * FROM pc_templates WHERE id=?", (tpl_id,)).fetchone()
+        row = conn.execute("SELECT * FROM pc_templates WHERE id=%s", (tpl_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
@@ -596,7 +596,7 @@ def create_pipeline_blueprint():
         pipe_id = str(_uuid.uuid4())
         conn.execute(
             "INSERT INTO pipelines (id, name, description, graph_json, template_id, "
-            "created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+            "created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (
                 pipe_id,
                 f"{tpl['name']} (copy)",
@@ -635,7 +635,7 @@ def create_pipeline_blueprint():
     @pc_login_required
     def pc_api_get_snippet(snip_id):
         conn = get_connection()
-        row = conn.execute("SELECT * FROM pc_snippets WHERE id=?", (snip_id,)).fetchone()
+        row = conn.execute("SELECT * FROM pc_snippets WHERE id=%s", (snip_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -651,7 +651,7 @@ def create_pipeline_blueprint():
     def pc_api_load_snippet(snip_id):
         """Create a new pipeline from a snippet (like template load)."""
         conn = get_connection()
-        row = conn.execute("SELECT * FROM pc_snippets WHERE id=?", (snip_id,)).fetchone()
+        row = conn.execute("SELECT * FROM pc_snippets WHERE id=%s", (snip_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
@@ -659,7 +659,7 @@ def create_pipeline_blueprint():
         pipe_id = str(_uuid.uuid4())
         conn.execute(
             "INSERT INTO pipelines (id, name, description, graph_json, classification, "
-            "created_at, updated_at) VALUES (?,?,?,?,?,?,?)",
+            "created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (
                 pipe_id,
                 f"{snip['name']} (copy)",
@@ -721,7 +721,7 @@ def create_pipeline_blueprint():
         """Run analysis on a pipeline. Body: {analysis_type: "security_coverage"|"cost"|"execution_time"|"slsa"|"compliance"|"antipatterns"}."""
         logger.info("Analyzing pipeline %s", pipe_id)
         conn = get_connection()
-        row = conn.execute("SELECT graph_json FROM pipelines WHERE id=?", (pipe_id,)).fetchone()
+        row = conn.execute("SELECT graph_json FROM pipelines WHERE id=%s", (pipe_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -778,7 +778,7 @@ def create_pipeline_blueprint():
     @pc_login_required
     def pc_api_compliance_audit(pipe_id):
         conn = get_connection()
-        row = conn.execute("SELECT graph_json FROM pipelines WHERE id=?", (pipe_id,)).fetchone()
+        row = conn.execute("SELECT graph_json FROM pipelines WHERE id=%s", (pipe_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
@@ -792,7 +792,7 @@ def create_pipeline_blueprint():
         check_id = str(_uuid.uuid4())[:8]
         conn.execute(
             "INSERT INTO pc_compliance_checks (id, pipeline_id, check_type, passed, failed, findings_json, ran_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (
                 check_id,
                 pipe_id,
@@ -829,7 +829,7 @@ def create_pipeline_blueprint():
         conn = get_connection()
         rows = conn.execute(
             "SELECT id, version_num, label, created_by, notes, created_at "
-            "FROM pc_versions WHERE pipeline_id=? ORDER BY version_num DESC",
+            "FROM pc_versions WHERE pipeline_id=%s ORDER BY version_num DESC",
             (pipe_id,),
         ).fetchall()
         conn.close()
@@ -839,18 +839,18 @@ def create_pipeline_blueprint():
     @pc_login_required
     def pc_api_create_version(pipe_id):
         conn = get_connection()
-        row = conn.execute("SELECT graph_json FROM pipelines WHERE id=?", (pipe_id,)).fetchone()
+        row = conn.execute("SELECT graph_json FROM pipelines WHERE id=%s", (pipe_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
         max_ver = conn.execute(
-            "SELECT COALESCE(MAX(version_num), 0) FROM pc_versions WHERE pipeline_id=?", (pipe_id,)
+            "SELECT COALESCE(MAX(version_num), 0) FROM pc_versions WHERE pipeline_id=%s", (pipe_id,)
         ).fetchone()[0]
         data = request.get_json(force=True, silent=True) or {}
         ver_id = str(_uuid.uuid4())[:8]
         conn.execute(
             "INSERT INTO pc_versions (id, pipeline_id, version_num, label, graph_json, created_by, notes, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 ver_id,
                 pipe_id,
@@ -874,7 +874,7 @@ def create_pipeline_blueprint():
     @pc_login_required
     def pc_api_list_boundaries(pipe_id):
         conn = get_connection()
-        rows = conn.execute("SELECT * FROM pc_boundaries WHERE pipeline_id=?", (pipe_id,)).fetchall()
+        rows = conn.execute("SELECT * FROM pc_boundaries WHERE pipeline_id=%s", (pipe_id,)).fetchall()
         conn.close()
         return jsonify([row_to_dict(r) for r in rows])
 
@@ -887,7 +887,7 @@ def create_pipeline_blueprint():
         conn.execute(
             "INSERT INTO pc_boundaries (id, pipeline_id, label, classification, color, "
             "fill_opacity, node_ids, boundary_type, pos_x, pos_y, width, height) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 bid,
                 pipe_id,
@@ -911,7 +911,7 @@ def create_pipeline_blueprint():
     @pc_login_required
     def pc_api_delete_boundary(pipe_id, bid):
         conn = get_connection()
-        conn.execute("DELETE FROM pc_boundaries WHERE id=? AND pipeline_id=?", (bid, pipe_id))
+        conn.execute("DELETE FROM pc_boundaries WHERE id=%s AND pipeline_id=%s", (bid, pipe_id))
         conn.commit()
         conn.close()
         return jsonify({"deleted": True})
@@ -926,7 +926,7 @@ def create_pipeline_blueprint():
         """Export pipeline to various formats."""
         logger.info("Exporting pipeline %s", pipe_id)
         conn = get_connection()
-        row = conn.execute("SELECT * FROM pipelines WHERE id=?", (pipe_id,)).fetchone()
+        row = conn.execute("SELECT * FROM pipelines WHERE id=%s", (pipe_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -961,7 +961,7 @@ def create_pipeline_blueprint():
         """Validate generated IaC through the 5-layer pyramid."""
         logger.info("Validating IaC for pipeline %s", pipe_id)
         conn = get_connection()
-        row = conn.execute("SELECT * FROM pipelines WHERE id=?", (pipe_id,)).fetchone()
+        row = conn.execute("SELECT * FROM pipelines WHERE id=%s", (pipe_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -993,7 +993,7 @@ def create_pipeline_blueprint():
     def pc_api_fix_warnings(pipe_id):
         """Apply suggested auto-fixes to IaC warnings and re-validate."""
         conn = get_connection()
-        row = conn.execute("SELECT * FROM pipelines WHERE id=?", (pipe_id,)).fetchone()
+        row = conn.execute("SELECT * FROM pipelines WHERE id=%s", (pipe_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -1074,7 +1074,7 @@ def create_pipeline_blueprint():
         """Generate IaC deployment bundle."""
         logger.info("Generating deploy bundle for pipeline %s", pipe_id)
         conn = get_connection()
-        row = conn.execute("SELECT * FROM pipelines WHERE id=?", (pipe_id,)).fetchone()
+        row = conn.execute("SELECT * FROM pipelines WHERE id=%s", (pipe_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -1147,7 +1147,7 @@ def create_pipeline_blueprint():
         """Get heatmap data. Query: ?type=execution_time|findings|compliance|freshness"""
         heatmap_type = request.args.get("type", "execution_time")
         conn = get_connection()
-        row = conn.execute("SELECT graph_json FROM pipelines WHERE id=?", (pipe_id,)).fetchone()
+        row = conn.execute("SELECT graph_json FROM pipelines WHERE id=%s", (pipe_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -1182,7 +1182,7 @@ def create_pipeline_blueprint():
     def pc_api_list_crs(pipe_id):
         conn = get_connection()
         rows = conn.execute(
-            "SELECT * FROM pc_change_requests WHERE pipeline_id=? ORDER BY created_at DESC", (pipe_id,)
+            "SELECT * FROM pc_change_requests WHERE pipeline_id=%s ORDER BY created_at DESC", (pipe_id,)
         ).fetchall()
         conn.close()
         return jsonify([row_to_dict(r) for r in rows])
@@ -1195,7 +1195,7 @@ def create_pipeline_blueprint():
         conn = get_connection()
         conn.execute(
             "INSERT INTO pc_change_requests (id, pipeline_id, cr_number, cr_type, status, "
-            "markup_json, created_by, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            "markup_json, created_by, created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 cr_id,
                 pipe_id,
@@ -1258,7 +1258,7 @@ def create_pipeline_blueprint():
     @pc_login_required
     def pc_api_scorecard(pipe_id):
         conn = get_connection()
-        row = conn.execute("SELECT graph_json FROM pipelines WHERE id=?", (pipe_id,)).fetchone()
+        row = conn.execute("SELECT graph_json FROM pipelines WHERE id=%s", (pipe_id,)).fetchone()
         conn.close()
         if not row:
             return jsonify({"error": "Not found"}), 404
@@ -1473,7 +1473,7 @@ def create_pipeline_blueprint():
         from tools.pipeline.remediation import generate_remediation_plan
 
         conn = get_connection()
-        row = conn.execute("SELECT graph_json FROM pipelines WHERE id=?", (pipeline_id,)).fetchone()
+        row = conn.execute("SELECT graph_json FROM pipelines WHERE id=%s", (pipeline_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Not found"}), 404
@@ -1662,7 +1662,7 @@ def create_pipeline_blueprint():
     def pc_twin_page(pipe_id):
         """Pipeline Twin simulation UI for a specific pipeline."""
         conn = get_connection()
-        row = conn.execute("SELECT id, name, description FROM pipelines WHERE id=?", (pipe_id,)).fetchone()
+        row = conn.execute("SELECT id, name, description FROM pipelines WHERE id=%s", (pipe_id,)).fetchone()
         conn.close()
         if not row:
             return redirect("/devops/")
@@ -1766,7 +1766,7 @@ def create_pipeline_blueprint():
             return redirect(f"/devops/twin/{pipe_id}")
         conn = get_connection()
         row = conn.execute(
-            "SELECT id, name FROM pipelines WHERE id=?", (pipe_id,)
+            "SELECT id, name FROM pipelines WHERE id=%s", (pipe_id,)
         ).fetchone()
         conn.close()
         if not row:
@@ -1878,14 +1878,14 @@ def create_pipeline_blueprint():
             with _gc() as _conn:
                 if record_id:
                     rows = _conn.execute(
-                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='pdc' AND record_id=? "
-                        "ORDER BY created_at DESC LIMIT ?",
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='pdc' AND record_id=%s "
+                        "ORDER BY created_at DESC LIMIT %s",
                         (record_id, limit),
                     ).fetchall()
                 else:
                     rows = _conn.execute(
                         "SELECT * FROM canvas_ai_decisions WHERE canvas_type='pdc' "
-                        "ORDER BY created_at DESC LIMIT ?",
+                        "ORDER BY created_at DESC LIMIT %s",
                         (limit,),
                     ).fetchall()
             return jsonify({"ok": True, "canvas": "pdc", "decisions": [dict(r) for r in rows]})

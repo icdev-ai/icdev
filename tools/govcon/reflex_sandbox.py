@@ -196,7 +196,7 @@ def _audit(conn, action: str, details: str = "", reflex: str = "") -> None:
     try:
         conn.execute(
             "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, project_id, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 str(uuid.uuid4()),
                 _now(),
@@ -537,7 +537,7 @@ def audit_credential_usage(
             rows = conn.execute(
                 "SELECT id, agent_id, function, action, created_at "
                 "FROM credential_broker_log "
-                "WHERE agent_id = ? AND created_at >= ? "
+                "WHERE agent_id = %s AND created_at >= %s "
                 "ORDER BY created_at DESC",
                 (agent_pattern, cutoff),
             ).fetchall()
@@ -545,7 +545,7 @@ def audit_credential_usage(
             rows = conn.execute(
                 "SELECT id, agent_id, function, action, created_at "
                 "FROM credential_broker_log "
-                "WHERE agent_id LIKE 'proposal_genesis.%' AND created_at >= ? "
+                "WHERE agent_id LIKE 'proposal_genesis.%' AND created_at >= %s "
                 "ORDER BY created_at DESC",
                 (cutoff,),
             ).fetchall()
@@ -570,7 +570,7 @@ def audit_credential_usage(
             rows = conn.execute(
                 "SELECT id, role, action, created_at "
                 "FROM egress_policy_audit "
-                "WHERE role LIKE ? AND created_at >= ? "
+                "WHERE role LIKE %s AND created_at >= %s "
                 "ORDER BY created_at DESC",
                 (f"%{canonical}%", cutoff),
             ).fetchall()
@@ -578,7 +578,7 @@ def audit_credential_usage(
             rows = conn.execute(
                 "SELECT id, role, action, created_at "
                 "FROM egress_policy_audit "
-                "WHERE role LIKE '%proposal_genesis%' AND created_at >= ? "
+                "WHERE role LIKE '%proposal_genesis%' AND created_at >= %s "
                 "ORDER BY created_at DESC",
                 (cutoff,),
             ).fetchall()

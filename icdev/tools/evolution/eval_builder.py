@@ -99,10 +99,10 @@ def _load_kanban(skill_name: str, limit: int = 30) -> list[EvalExample]:
             """
             SELECT id, title, description, status, failure_count
               FROM kanban_tasks
-             WHERE (task_type = ? OR source LIKE ?)
+             WHERE (task_type = %s OR source LIKE %s)
                AND status IN ('done', 'failed', 'dismissed')
              ORDER BY updated_at DESC
-             LIMIT ?
+             LIMIT %s
             """,
             (skill_name, f"%{skill_name}%", limit),
         ).fetchall()

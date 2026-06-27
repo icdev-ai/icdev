@@ -67,7 +67,7 @@ class OWASPASIAssessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM prompt_injection_log
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -79,7 +79,7 @@ class OWASPASIAssessor(BaseAssessor):
                 try:
                     chain_rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM tool_chain_events
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if chain_rows and chain_rows["cnt"] > 0:
@@ -91,7 +91,7 @@ class OWASPASIAssessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM agent_trust_scores
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -103,7 +103,7 @@ class OWASPASIAssessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM ai_bom
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:
@@ -128,7 +128,7 @@ class OWASPASIAssessor(BaseAssessor):
                 try:
                     rows = conn.execute(
                         """SELECT COUNT(*) as cnt FROM audit_trail
-                           WHERE project_id = ?""",
+                           WHERE project_id = %s""",
                         (project_id,),
                     ).fetchone()
                     if rows and rows["cnt"] > 0:

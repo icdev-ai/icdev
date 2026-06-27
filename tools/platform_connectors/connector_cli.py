@@ -112,7 +112,7 @@ def _persist_result(conn, result) -> None:
             """
             INSERT INTO platform_connector_fetches
                 (id, platform, query, adapter, item_count, error, fetched_at, metadata)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 f"pcf-{uuid.uuid4().hex[:12]}",

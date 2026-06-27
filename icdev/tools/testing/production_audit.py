@@ -913,7 +913,7 @@ def check_ai_transparency_frameworks() -> AuditCheck:
         found_tables = []
         total_records = 0
         for tbl in assessment_tables:
-            exists = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (tbl,)).fetchone()
+            exists = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=%s", (tbl,)).fetchone()
             if exists:
                 cnt = conn.execute(f"SELECT COUNT(*) FROM {tbl}").fetchone()[0]  # nosec B608 -- table/column names are internal constants, not user input
                 if cnt > 0:
@@ -1364,7 +1364,7 @@ def check_dashboard_health() -> AuditCheck:
         key_hash = hashlib.sha256(key.encode()).hexdigest()
         conn.execute(
             "INSERT INTO dashboard_api_keys (id, user_id, key_hash, key_prefix, label, status) "
-            "VALUES ('audit-key', 'audit-user', ?, ?, 'audit', 'active')",
+            "VALUES ('audit-key', 'audit-user', %s, %s, 'audit', 'active')",
             (key_hash, key[:12]),
         )
         conn.commit()
@@ -2418,7 +2418,7 @@ def _store_report(report: AuditReport, categories: List[str]):
             """INSERT INTO production_audits
                (overall_pass, total_checks, passed, failed, warned, skipped,
                 blockers, warnings, categories_run, report_json, duration_ms)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 1 if report.overall_pass else 0,
                 report.total_checks,

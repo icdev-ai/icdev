@@ -130,7 +130,7 @@ def _feature_id(snapshot_date: str, idx: int, feat: dict) -> str:
 
 def _get_imported_dates(conn) -> set[str]:
     rows = conn.execute(
-        "SELECT DISTINCT snapshot_date FROM sg_conflict_events WHERE source = ?",
+        "SELECT DISTINCT snapshot_date FROM sg_conflict_events WHERE source = %s",
         (SOURCE,),
     ).fetchall()
     return {r[0] for r in rows}
@@ -143,7 +143,7 @@ def _date_range(start: date, end: date) -> list[str]:
 
 def _delete_snapshot(conn, snapshot_date: str) -> None:
     conn.execute(
-        "DELETE FROM sg_conflict_events WHERE snapshot_date = ? AND source = ?",
+        "DELETE FROM sg_conflict_events WHERE snapshot_date = %s AND source = %s",
         (snapshot_date, SOURCE),
     )
 
@@ -183,16 +183,16 @@ def _import_snapshot(conn, snapshot_date: str, fc: dict, dry_run: bool) -> dict:
                 continue
 
             existing = conn.execute(
-                "SELECT created_at FROM sg_conflict_events WHERE id = ?",
+                "SELECT created_at FROM sg_conflict_events WHERE id = %s",
                 (row_id,),
             ).fetchone()
 
             if existing:
                 conn.execute(
                     """UPDATE sg_conflict_events SET
-                       geometry_json=?, properties_json=?, description=?,
-                       metadata_json=?, snapshot_date=?
-                       WHERE id=?""",
+                       geometry_json=%s, properties_json=%s, description=%s,
+                       metadata_json=%s, snapshot_date=%s
+                       WHERE id=%s""",
                     (geom_json, props_json, name, json.dumps(metadata), snapshot_date, row_id),
                 )
                 updated += 1
@@ -203,7 +203,7 @@ def _import_snapshot(conn, snapshot_date: str, fc: dict, dry_run: bool) -> dict:
                         description, event_ts, metadata_json, created_at,
                         source, external_id, snapshot_date,
                         geometry_json, properties_json)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (
                         row_id,
                         EVENT_TYPE,
@@ -499,7 +499,7 @@ def incremental_import(
     """
     conn = get_connection()
     row = conn.execute(
-        "SELECT max(snapshot_date) FROM sg_conflict_events WHERE source = ?",
+        "SELECT max(snapshot_date) FROM sg_conflict_events WHERE source = %s",
         (SOURCE,),
     ).fetchone()
     conn.close()

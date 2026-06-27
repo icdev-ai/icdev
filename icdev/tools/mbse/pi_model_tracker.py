@@ -76,7 +76,7 @@ def _log_audit(conn, project_id, action, details):
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "model_snapshot",
@@ -107,21 +107,21 @@ def _compute_content_hash(project_id: str, conn) -> str:
 
     # Element IDs
     rows = conn.execute(
-        "SELECT id FROM sysml_elements WHERE project_id = ? ORDER BY id",
+        "SELECT id FROM sysml_elements WHERE project_id = %s ORDER BY id",
         (project_id,),
     ).fetchall()
     parts.extend(row["id"] for row in rows)
 
     # Relationship IDs (integer, cast to str)
     rows = conn.execute(
-        "SELECT id FROM sysml_relationships WHERE project_id = ? ORDER BY id",
+        "SELECT id FROM sysml_relationships WHERE project_id = %s ORDER BY id",
         (project_id,),
     ).fetchall()
     parts.extend(str(row["id"]) for row in rows)
 
     # Requirement IDs
     rows = conn.execute(
-        "SELECT id FROM doors_requirements WHERE project_id = ? ORDER BY id",
+        "SELECT id FROM doors_requirements WHERE project_id = %s ORDER BY id",
         (project_id,),
     ).fetchall()
     parts.extend(row["id"] for row in rows)
@@ -142,7 +142,7 @@ def _get_snapshot_data(project_id: str, conn) -> dict:
     # Element type breakdown
     rows = conn.execute(
         """SELECT element_type, COUNT(*) as cnt
-           FROM sysml_elements WHERE project_id = ?
+           FROM sysml_elements WHERE project_id = %s
            GROUP BY element_type ORDER BY cnt DESC""",
         (project_id,),
     ).fetchall()
@@ -151,7 +151,7 @@ def _get_snapshot_data(project_id: str, conn) -> dict:
     # Relationship type breakdown
     rows = conn.execute(
         """SELECT relationship_type, COUNT(*) as cnt
-           FROM sysml_relationships WHERE project_id = ?
+           FROM sysml_relationships WHERE project_id = %s
            GROUP BY relationship_type ORDER BY cnt DESC""",
         (project_id,),
     ).fetchall()
@@ -160,7 +160,7 @@ def _get_snapshot_data(project_id: str, conn) -> dict:
     # Requirement type breakdown
     rows = conn.execute(
         """SELECT requirement_type, COUNT(*) as cnt
-           FROM doors_requirements WHERE project_id = ?
+           FROM doors_requirements WHERE project_id = %s
            GROUP BY requirement_type ORDER BY cnt DESC""",
         (project_id,),
     ).fetchall()
@@ -169,7 +169,7 @@ def _get_snapshot_data(project_id: str, conn) -> dict:
     # Requirement status breakdown
     rows = conn.execute(
         """SELECT status, COUNT(*) as cnt
-           FROM doors_requirements WHERE project_id = ?
+           FROM doors_requirements WHERE project_id = %s
            GROUP BY status ORDER BY cnt DESC""",
         (project_id,),
     ).fetchall()
@@ -178,7 +178,7 @@ def _get_snapshot_data(project_id: str, conn) -> dict:
     # Thread link type breakdown
     rows = conn.execute(
         """SELECT link_type, COUNT(*) as cnt
-           FROM digital_thread_links WHERE project_id = ?
+           FROM digital_thread_links WHERE project_id = %s
            GROUP BY link_type ORDER BY cnt DESC""",
         (project_id,),
     ).fetchall()
@@ -186,12 +186,12 @@ def _get_snapshot_data(project_id: str, conn) -> dict:
 
     # Coverage: requirements linked via digital thread
     total_reqs = conn.execute(
-        "SELECT COUNT(*) as cnt FROM doors_requirements WHERE project_id = ?",
+        "SELECT COUNT(*) as cnt FROM doors_requirements WHERE project_id = %s",
         (project_id,),
     ).fetchone()["cnt"]
     linked_reqs = conn.execute(
         """SELECT COUNT(DISTINCT source_id) as cnt FROM digital_thread_links
-           WHERE project_id = ? AND source_type = 'doors_requirement'""",
+           WHERE project_id = %s AND source_type = 'doors_requirement'""",
         (project_id,),
     ).fetchone()["cnt"]
     data["coverage"] = {
@@ -205,7 +205,7 @@ def _get_snapshot_data(project_id: str, conn) -> dict:
     try:
         rows = conn.execute(
             """SELECT sync_status, COUNT(*) as cnt
-               FROM model_code_mappings WHERE project_id = ?
+               FROM model_code_mappings WHERE project_id = %s
                GROUP BY sync_status""",
             (project_id,),
         ).fetchall()
@@ -244,22 +244,22 @@ def create_pi_snapshot(
     try:
         # Count elements
         element_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM sysml_elements WHERE project_id = ?",
+            "SELECT COUNT(*) as cnt FROM sysml_elements WHERE project_id = %s",
             (project_id,),
         ).fetchone()["cnt"]
 
         relationship_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM sysml_relationships WHERE project_id = ?",
+            "SELECT COUNT(*) as cnt FROM sysml_relationships WHERE project_id = %s",
             (project_id,),
         ).fetchone()["cnt"]
 
         requirement_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM doors_requirements WHERE project_id = ?",
+            "SELECT COUNT(*) as cnt FROM doors_requirements WHERE project_id = %s",
             (project_id,),
         ).fetchone()["cnt"]
 
         thread_link_count = conn.execute(
-            "SELECT COUNT(*) as cnt FROM digital_thread_links WHERE project_id = ?",
+            "SELECT COUNT(*) as cnt FROM digital_thread_links WHERE project_id = %s",
             (project_id,),
         ).fetchone()["cnt"]
 
@@ -273,7 +273,7 @@ def create_pi_snapshot(
                (project_id, pi_number, snapshot_type, element_count,
                 relationship_count, requirement_count, thread_link_count,
                 content_hash, snapshot_data, notes)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 pi_number,
@@ -337,7 +337,7 @@ def compare_pi_snapshots(project_id: str, pi_from: str, pi_to: str, db_path=None
     try:
         snap_from = conn.execute(
             """SELECT * FROM model_snapshots
-               WHERE project_id = ? AND pi_number = ?
+               WHERE project_id = %s AND pi_number = %s
                ORDER BY created_at DESC LIMIT 1""",
             (project_id, pi_from),
         ).fetchone()
@@ -346,7 +346,7 @@ def compare_pi_snapshots(project_id: str, pi_from: str, pi_to: str, db_path=None
 
         snap_to = conn.execute(
             """SELECT * FROM model_snapshots
-               WHERE project_id = ? AND pi_number = ?
+               WHERE project_id = %s AND pi_number = %s
                ORDER BY created_at DESC LIMIT 1""",
             (project_id, pi_to),
         ).fetchone()
@@ -461,7 +461,7 @@ def get_model_velocity(project_id: str, db_path=None) -> dict:
             """SELECT pi_number, snapshot_type, element_count, relationship_count,
                       requirement_count, thread_link_count, created_at
                FROM model_snapshots
-               WHERE project_id = ?
+               WHERE project_id = %s
                ORDER BY created_at ASC""",
             (project_id,),
         ).fetchall()
@@ -582,13 +582,13 @@ def get_model_burndown(project_id: str, db_path=None) -> dict:
     try:
         # Current state
         total_requirements = conn.execute(
-            "SELECT COUNT(*) as cnt FROM doors_requirements WHERE project_id = ?",
+            "SELECT COUNT(*) as cnt FROM doors_requirements WHERE project_id = %s",
             (project_id,),
         ).fetchone()["cnt"]
 
         linked_requirements = conn.execute(
             """SELECT COUNT(DISTINCT source_id) as cnt FROM digital_thread_links
-               WHERE project_id = ? AND source_type = 'doors_requirement'""",
+               WHERE project_id = %s AND source_type = 'doors_requirement'""",
             (project_id,),
         ).fetchone()["cnt"]
 
@@ -599,7 +599,7 @@ def get_model_burndown(project_id: str, db_path=None) -> dict:
         rows = conn.execute(
             """SELECT pi_number, snapshot_data, created_at
                FROM model_snapshots
-               WHERE project_id = ?
+               WHERE project_id = %s
                ORDER BY created_at ASC""",
             (project_id,),
         ).fetchall()
@@ -677,7 +677,7 @@ def generate_pi_model_report(project_id: str, pi_number: str, db_path=None) -> s
         # Get the target snapshot
         snap_row = conn.execute(
             """SELECT * FROM model_snapshots
-               WHERE project_id = ? AND pi_number = ?
+               WHERE project_id = %s AND pi_number = %s
                ORDER BY created_at DESC LIMIT 1""",
             (project_id, pi_number),
         ).fetchone()
@@ -696,8 +696,8 @@ def generate_pi_model_report(project_id: str, pi_number: str, db_path=None) -> s
         # Find previous PI snapshot for comparison
         prev_snap = conn.execute(
             """SELECT * FROM model_snapshots
-               WHERE project_id = ? AND pi_number != ?
-               AND created_at < ?
+               WHERE project_id = %s AND pi_number != %s
+               AND created_at < %s
                ORDER BY created_at DESC LIMIT 1""",
             (project_id, pi_number, snap["created_at"]),
         ).fetchone()
@@ -709,7 +709,7 @@ def generate_pi_model_report(project_id: str, pi_number: str, db_path=None) -> s
         # PI compliance integration
         pi_compliance = conn.execute(
             """SELECT * FROM pi_compliance_tracking
-               WHERE project_id = ? AND pi_number = ?""",
+               WHERE project_id = %s AND pi_number = %s""",
             (project_id, pi_number),
         ).fetchone()
 
@@ -814,7 +814,7 @@ def generate_pi_model_report(project_id: str, pi_number: str, db_path=None) -> s
         lines.append("")
         all_snaps = conn.execute(
             """SELECT pi_number, element_count, requirement_count, thread_link_count
-               FROM model_snapshots WHERE project_id = ?
+               FROM model_snapshots WHERE project_id = %s
                ORDER BY created_at ASC""",
             (project_id,),
         ).fetchall()
@@ -958,7 +958,7 @@ def list_snapshots(project_id: str, db_path=None) -> list:
                       relationship_count, requirement_count, thread_link_count,
                       content_hash, notes, created_at
                FROM model_snapshots
-               WHERE project_id = ?
+               WHERE project_id = %s
                ORDER BY created_at ASC""",
             (project_id,),
         ).fetchall()

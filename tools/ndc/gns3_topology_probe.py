@@ -186,7 +186,7 @@ def _seed_db(topologies: list) -> list[str]:
                     """INSERT INTO ndc_topologies
                        (id, name, source, project_id, design_json, device_map,
                         ztp_status, created_at, updated_at)
-                       VALUES (?,?,?,?,?,?,?,?,?)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
                        ON CONFLICT(id) DO UPDATE SET
                          design_json=excluded.design_json,
                          device_map=excluded.device_map,

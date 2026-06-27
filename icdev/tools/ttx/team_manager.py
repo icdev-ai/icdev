@@ -42,12 +42,12 @@ def create_team(session_id: int, team_name: str) -> dict[str, Any]:
     conn.execute(
         """INSERT INTO ttx_teams
            (session_id, team_name, join_code, total_score, rank_pos, created_at)
-           VALUES (?, ?, ?, 0, 0, ?)""",
+           VALUES (%s, %s, %s, 0, 0, %s)""",
         (session_id, team_name, code, _now()),
     )
     conn.commit()
     row = conn.execute(
-        "SELECT * FROM ttx_teams WHERE session_id = ? AND join_code = ?",
+        "SELECT * FROM ttx_teams WHERE session_id = %s AND join_code = %s",
         (session_id, code),
     ).fetchone()
     return dict(row)
@@ -56,7 +56,7 @@ def create_team(session_id: int, team_name: str) -> dict[str, Any]:
 def get_team(team_id: int) -> dict[str, Any] | None:
     conn = get_connection()
     row = conn.execute(
-        "SELECT * FROM ttx_teams WHERE team_id = ?", (team_id,)
+        "SELECT * FROM ttx_teams WHERE team_id = %s", (team_id,)
     ).fetchone()
     return dict(row) if row else None
 
@@ -64,7 +64,7 @@ def get_team(team_id: int) -> dict[str, Any] | None:
 def get_team_by_code(team_code: str) -> dict[str, Any] | None:
     conn = get_connection()
     row = conn.execute(
-        "SELECT * FROM ttx_teams WHERE join_code = ?", (team_code.upper(),)
+        "SELECT * FROM ttx_teams WHERE join_code = %s", (team_code.upper(),)
     ).fetchone()
     return dict(row) if row else None
 
@@ -72,7 +72,7 @@ def get_team_by_code(team_code: str) -> dict[str, Any] | None:
 def list_teams(session_id: int) -> list[dict[str, Any]]:
     conn = get_connection()
     rows = conn.execute(
-        "SELECT * FROM ttx_teams WHERE session_id = ? ORDER BY rank_pos, created_at",
+        "SELECT * FROM ttx_teams WHERE session_id = %s ORDER BY rank_pos, created_at",
         (session_id,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -92,13 +92,13 @@ def add_member(
     conn.execute(
         """INSERT INTO ttx_team_members
            (team_id, player_name, role_id, persona_json, joined_at)
-           VALUES (?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s)""",
         (team_id, player_name, role_id, json.dumps(persona or {}), _now()),
     )
     conn.commit()
     row = conn.execute(
         """SELECT * FROM ttx_team_members
-           WHERE team_id = ? AND player_name = ?
+           WHERE team_id = %s AND player_name = %s
            ORDER BY joined_at DESC LIMIT 1""",
         (team_id, player_name),
     ).fetchone()
@@ -108,7 +108,7 @@ def add_member(
 def list_members(team_id: int) -> list[dict[str, Any]]:
     conn = get_connection()
     rows = conn.execute(
-        "SELECT * FROM ttx_team_members WHERE team_id = ? ORDER BY joined_at",
+        "SELECT * FROM ttx_team_members WHERE team_id = %s ORDER BY joined_at",
         (team_id,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -117,7 +117,7 @@ def list_members(team_id: int) -> list[dict[str, Any]]:
 def update_team_score(team_id: int, delta: int) -> None:
     conn = get_connection()
     conn.execute(
-        "UPDATE ttx_teams SET total_score = total_score + ? WHERE team_id = ?",
+        "UPDATE ttx_teams SET total_score = total_score + %s WHERE team_id = %s",
         (delta, team_id),
     )
     conn.commit()

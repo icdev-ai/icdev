@@ -113,7 +113,7 @@ def create_slo(service: str, name: str, slo_type: str, target: float, window_day
            (id, service_name, slo_name, slo_type, target_value, window_days,
             current_value, budget_remaining, burn_rate, status,
             alert_threshold_warning, alert_threshold_critical, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, NULL, 1.0, 0.0, 'healthy', ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, NULL, 1.0, 0.0, 'healthy', %s, %s, %s, %s)""",
         (
             slo_id,
             service,
@@ -165,7 +165,7 @@ def record_measurement(
     conn = get_connection()
     init_tables(conn)
 
-    row = conn.execute("SELECT * FROM sre_slos WHERE id = ?", (slo_id,)).fetchone()
+    row = conn.execute("SELECT * FROM sre_slos WHERE id = %s", (slo_id,)).fetchone()
     if not row:
         return {"status": "error", "message": f"SLO not found: {slo_id}"}
 
@@ -175,13 +175,13 @@ def record_measurement(
     conn.execute(
         """INSERT INTO sre_slo_measurements
            (id, slo_id, measured_value, timestamp, good_events, total_events, source)
-           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s)""",
         (measurement_id, slo_id, value, now, good_events, total_events, source),
     )
 
     # Update current_value on the SLO
     conn.execute(
-        "UPDATE sre_slos SET current_value = ?, updated_at = ? WHERE id = ?",
+        "UPDATE sre_slos SET current_value = %s, updated_at = %s WHERE id = %s",
         (value, now, slo_id),
     )
     conn.commit()
@@ -218,7 +218,7 @@ def calculate_burn_rate(slo_id: str) -> dict:
     conn = get_connection()
     init_tables(conn)
 
-    slo = conn.execute("SELECT * FROM sre_slos WHERE id = ?", (slo_id,)).fetchone()
+    slo = conn.execute("SELECT * FROM sre_slos WHERE id = %s", (slo_id,)).fetchone()
     if not slo:
         return {"status": "error", "message": f"SLO not found: {slo_id}"}
 
@@ -237,7 +237,7 @@ def calculate_burn_rate(slo_id: str) -> dict:
     measurements = conn.execute(
         """SELECT measured_value, good_events, total_events, timestamp
            FROM sre_slo_measurements
-           WHERE slo_id = ?
+           WHERE slo_id = %s
            ORDER BY timestamp DESC""",
         (slo_id,),
     ).fetchall()
@@ -316,8 +316,8 @@ def calculate_burn_rate(slo_id: str) -> dict:
     now = datetime.now(timezone.utc).isoformat()
     conn.execute(
         """UPDATE sre_slos
-           SET budget_remaining = ?, burn_rate = ?, status = ?, updated_at = ?
-           WHERE id = ?""",
+           SET budget_remaining = %s, burn_rate = %s, status = %s, updated_at = %s
+           WHERE id = %s""",
         (budget_remaining, burn_rate, slo_status, now, slo_id),
     )
     conn.commit()
@@ -376,7 +376,7 @@ def get_slo_dashboard() -> list:
 
         # Count measurements
         count = conn.execute(
-            "SELECT COUNT(*) FROM sre_slo_measurements WHERE slo_id = ?",
+            "SELECT COUNT(*) FROM sre_slo_measurements WHERE slo_id = %s",
             (entry["id"],),
         ).fetchone()[0]
         entry["measurement_count"] = count

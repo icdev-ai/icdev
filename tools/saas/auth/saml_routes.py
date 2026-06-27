@@ -65,7 +65,7 @@ def _resolve_tenant_id() -> Optional[str]:
             from tools.db.storage import get_connection
 
             conn = get_connection()
-            row = conn.execute("SELECT id FROM tenants WHERE slug = ?", (slug,)).fetchone()
+            row = conn.execute("SELECT id FROM tenants WHERE slug = %s", (slug,)).fetchone()
             conn.close()
             if row:
                 return row["id"]
@@ -81,7 +81,7 @@ def _get_tenant_info(tenant_id: str) -> Optional[dict]:
 
         conn = get_connection()
         row = conn.execute(
-            "SELECT id, slug, name, status, impact_level, tier, idp_config FROM tenants WHERE id = ?",
+            "SELECT id, slug, name, status, impact_level, tier, idp_config FROM tenants WHERE id = %s",
             (tenant_id,),
         ).fetchone()
         conn.close()
@@ -109,7 +109,7 @@ def _log_saml_event(
         conn.execute(
             """
             INSERT INTO audit_platform (tenant_id, user_id, event_type, action, details, ip_address, user_agent, recorded_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 tenant_id,
@@ -249,7 +249,7 @@ def saml_acs():
 
         conn = get_connection()
         conn.execute(
-            "UPDATE users SET last_login = ? WHERE id = ?",
+            "UPDATE users SET last_login = %s WHERE id = %s",
             (datetime.now(timezone.utc).isoformat(), user["user_id"]),
         )
         conn.commit()

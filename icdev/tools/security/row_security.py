@@ -391,12 +391,12 @@ def set_pg_session_vars(conn, tenant_id: Optional[str], classification: Optional
         try:
             conn.execute("SELECT set_config('app.tenant_id', %s, false)", (tenant_id,))
         except Exception:
-            conn.execute("SELECT set_config('app.tenant_id', ?, false)", (tenant_id,))
+            conn.execute("SELECT set_config('app.tenant_id', %s, false)", (tenant_id,))
     if classification is not None:
         try:
             conn.execute("SELECT set_config('app.classification', %s, false)", (classification,))
         except Exception:
-            conn.execute("SELECT set_config('app.classification', ?, false)", (classification,))
+            conn.execute("SELECT set_config('app.classification', %s, false)", (classification,))
 
 
 # ---------------------------------------------------------------------------
@@ -416,7 +416,7 @@ def log_rls_event(
         conn.execute(
             """
             INSERT INTO rls_audit (table_name, action, tenant_id, details, recorded_at)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s)
             """,
             (
                 table,

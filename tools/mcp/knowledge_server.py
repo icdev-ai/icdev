@@ -66,18 +66,18 @@ def handle_search_knowledge(args: dict) -> dict:
         if pattern_type:
             rows = conn.execute(
                 """SELECT * FROM knowledge_patterns
-                   WHERE (name LIKE ? OR description LIKE ? OR solution LIKE ?)
-                   AND pattern_type = ?
+                   WHERE (name LIKE %s OR description LIKE %s OR solution LIKE %s)
+                   AND pattern_type = %s
                    ORDER BY confidence DESC, use_count DESC
-                   LIMIT ?""",
+                   LIMIT %s""",
                 (f"%{query}%", f"%{query}%", f"%{query}%", pattern_type, limit),
             ).fetchall()
         else:
             rows = conn.execute(
                 """SELECT * FROM knowledge_patterns
-                   WHERE name LIKE ? OR description LIKE ? OR solution LIKE ?
+                   WHERE name LIKE %s OR description LIKE %s OR solution LIKE %s
                    ORDER BY confidence DESC, use_count DESC
-                   LIMIT ?""",
+                   LIMIT %s""",
                 (f"%{query}%", f"%{query}%", f"%{query}%", limit),
             ).fetchall()
 
@@ -134,7 +134,7 @@ def handle_add_pattern(args: dict) -> dict:
         cur = conn.execute(
             """INSERT INTO knowledge_patterns
                (name, pattern_type, description, detection_rule, solution, auto_healable, confidence)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (name, pattern_type, description, detection_rule, solution, auto_healable, confidence),
         )
         conn.commit()
@@ -168,7 +168,7 @@ def handle_get_recommendations(args: dict) -> dict:
         # Get recent failures for this project
         failures = conn.execute(
             """SELECT error_type, error_message, COUNT(*) as count
-               FROM failure_log WHERE project_id = ?
+               FROM failure_log WHERE project_id = %s
                GROUP BY error_type ORDER BY count DESC LIMIT 5""",
             (project_id,),
         ).fetchall()
@@ -178,7 +178,7 @@ def handle_get_recommendations(args: dict) -> dict:
             # Find matching patterns
             patterns = conn.execute(
                 """SELECT name, solution, confidence FROM knowledge_patterns
-                   WHERE pattern_type = ? OR description LIKE ?
+                   WHERE pattern_type = %s OR description LIKE %s
                    ORDER BY confidence DESC LIMIT 1""",
                 (f["error_type"], f"%{f['error_type']}%"),
             ).fetchall()
@@ -219,7 +219,7 @@ def handle_analyze_failure(args: dict) -> dict:
         # Search for matching patterns
         patterns = conn.execute(
             """SELECT * FROM knowledge_patterns
-               WHERE detection_rule LIKE ? OR description LIKE ?
+               WHERE detection_rule LIKE %s OR description LIKE %s
                ORDER BY confidence DESC LIMIT 3""",
             (f"%{error_message[:50]}%", f"%{error_message[:50]}%"),
         ).fetchall()
@@ -270,7 +270,7 @@ def handle_self_heal(args: dict) -> dict:
     conn = _get_db()
     try:
         # Check pattern confidence and auto_healable flag
-        pattern = conn.execute("SELECT * FROM knowledge_patterns WHERE id = ?", (pattern_id,)).fetchone()
+        pattern = conn.execute("SELECT * FROM knowledge_patterns WHERE id = %s", (pattern_id,)).fetchone()
 
         if not pattern:
             return {"error": f"Pattern not found: {pattern_id}"}
@@ -307,14 +307,14 @@ def handle_self_heal(args: dict) -> dict:
         conn.execute(
             """INSERT INTO self_healing_events
                (pattern_id, project_id, trigger_data, action_taken, status)
-               VALUES (?, ?, ?, ?, 'completed')""",
+               VALUES (%s, %s, %s, %s, 'completed')""",
             (pattern_id, project_id, "{}", pattern["solution"]),
         )
         conn.commit()
 
         # Increment pattern use count
         conn.execute(
-            "UPDATE knowledge_patterns SET use_count = use_count + 1 WHERE id = ?",
+            "UPDATE knowledge_patterns SET use_count = use_count + 1 WHERE id = %s",
             (pattern_id,),
         )
         conn.commit()

@@ -49,7 +49,7 @@ def _get_connection(db_path=None):
 
 def _get_project(conn, project_id):
     """Load project from DB. Raises ValueError if not found."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found")
     return dict(row)
@@ -236,7 +236,7 @@ def add_information_type(
              provisional_availability,
              adjusted_confidentiality, adjusted_integrity, adjusted_availability,
              adjustment_justification)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 type_id,
@@ -276,7 +276,7 @@ def remove_information_type(project_id, type_id, db_path=None):
     conn = _get_connection(db_path)
     try:
         result = conn.execute(
-            "DELETE FROM project_information_types WHERE project_id = ? AND information_type_id = ?",
+            "DELETE FROM project_information_types WHERE project_id = %s AND information_type_id = %s",
             (project_id, type_id),
         )
         conn.commit()
@@ -294,7 +294,7 @@ def list_information_types(project_id, db_path=None):
     conn = _get_connection(db_path)
     try:
         rows = conn.execute(
-            "SELECT * FROM project_information_types WHERE project_id = ? ORDER BY information_type_id",
+            "SELECT * FROM project_information_types WHERE project_id = %s ORDER BY information_type_id",
             (project_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -311,7 +311,7 @@ def get_categorization(project_id, db_path=None):
     try:
         row = conn.execute(
             """SELECT * FROM fips199_categorizations
-            WHERE project_id = ? AND status IN ('approved', 'draft')
+            WHERE project_id = %s AND status IN ('approved', 'draft')
             ORDER BY CASE status WHEN 'approved' THEN 1 ELSE 2 END,
                      categorization_date DESC
             LIMIT 1""",
@@ -368,7 +368,7 @@ def categorize_project(
         else:
             # Load assigned information types
             info_types = conn.execute(
-                "SELECT * FROM project_information_types WHERE project_id = ?",
+                "SELECT * FROM project_information_types WHERE project_id = %s",
                 (project_id,),
             ).fetchall()
             info_types = [dict(r) for r in info_types]
@@ -397,8 +397,8 @@ def categorize_project(
         # Supersede any existing draft/review categorizations
         conn.execute(
             """UPDATE fips199_categorizations SET status = 'superseded',
-               updated_at = ?
-            WHERE project_id = ? AND status IN ('draft', 'review')""",
+               updated_at = %s
+            WHERE project_id = %s AND status IN ('draft', 'review')""",
             (now, project_id),
         )
 
@@ -424,7 +424,7 @@ def categorize_project(
              integrity_impact, availability_impact, overall_categorization,
              categorization_method, justification, information_types_summary,
              cnssi_1253_applied, cnssi_overlay_ids, baseline_selected, status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft')""",
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'draft')""",
             (
                 project_id,
                 now,
@@ -446,11 +446,11 @@ def categorize_project(
         # Update project with categorization columns
         conn.execute(
             """UPDATE projects SET
-            fips199_confidentiality = ?, fips199_integrity = ?,
-            fips199_availability = ?, fips199_overall = ?,
-            fips199_categorization_id = ?,
-            nss_system = ?, updated_at = ?
-            WHERE id = ?""",
+            fips199_confidentiality = %s, fips199_integrity = %s,
+            fips199_availability = %s, fips199_overall = %s,
+            fips199_categorization_id = %s,
+            nss_system = %s, updated_at = %s
+            WHERE id = %s""",
             (
                 watermark["confidentiality"],
                 watermark["integrity"],
@@ -466,7 +466,7 @@ def categorize_project(
         # Link information types to this categorization
         if info_types:
             conn.execute(
-                "UPDATE project_information_types SET categorization_id = ? WHERE project_id = ?",
+                "UPDATE project_information_types SET categorization_id = %s WHERE project_id = %s",
                 (cat_id, project_id),
             )
 
@@ -474,7 +474,7 @@ def categorize_project(
         conn.execute(
             """INSERT INTO audit_trail
             (project_id, event_type, actor, action, details, classification)
-            VALUES (?, 'fips199_categorized', 'icdev-compliance-engine', ?, ?,
+            VALUES (%s, 'fips199_categorized', 'icdev-compliance-engine', %s, %s,
                     'CUI')""",
             (
                 project_id,
@@ -532,7 +532,7 @@ def evaluate_gate(project_id, db_path=None):
         project = _get_project(conn, project_id)
         cat = conn.execute(
             """SELECT * FROM fips199_categorizations
-            WHERE project_id = ? AND status IN ('approved', 'draft')
+            WHERE project_id = %s AND status IN ('approved', 'draft')
             ORDER BY categorization_date DESC LIMIT 1""",
             (project_id,),
         ).fetchone()
@@ -547,7 +547,7 @@ def evaluate_gate(project_id, db_path=None):
             if cat.get("status") == "draft":
                 findings.append("Categorization is still in draft status (not approved)")
             info_count = conn.execute(
-                "SELECT COUNT(*) FROM project_information_types WHERE project_id = ?",
+                "SELECT COUNT(*) FROM project_information_types WHERE project_id = %s",
                 (project_id,),
             ).fetchone()[0]
             if info_count == 0 and cat.get("categorization_method") == "information_type":

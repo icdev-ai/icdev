@@ -74,7 +74,7 @@ def _task_is_done(task_id: str) -> bool:
         from tools.db.storage import get_connection
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT status FROM kanban_tasks WHERE id = ?", (task_id,)
+                "SELECT status FROM kanban_tasks WHERE id = %s", (task_id,)
             ).fetchone()
         if row and dict(row).get("status") == "done":
             return True
@@ -106,7 +106,7 @@ def _task_exists(task_id: str) -> bool:
         from tools.db.storage import get_connection
         with get_connection() as conn:
             row = conn.execute(
-                "SELECT 1 FROM kanban_tasks WHERE id = ?", (task_id,)
+                "SELECT 1 FROM kanban_tasks WHERE id = %s", (task_id,)
             ).fetchone()
         return row is not None
     except Exception as exc:
@@ -524,7 +524,7 @@ def _create_diagnostic_card(source_task_id: str, reason: str,
                 "INSERT INTO kanban_tasks "
                 "(id, title, description, task_type, priority, status, "
                 " executor_type, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (new_id, title, body, "chore", "critical",
                  "suggested", "claude_cli", now, now),
             )
@@ -563,8 +563,8 @@ def _quarantine_task(task_id: str, diag_id: Optional[str], diag: Dict[str, Any])
     try:
         with get_connection() as conn:
             conn.execute(
-                "UPDATE kanban_tasks SET status = ?, "
-                "last_failure_reason = ?, updated_at = ? WHERE id = ?",
+                "UPDATE kanban_tasks SET status = %s, "
+                "last_failure_reason = %s, updated_at = %s WHERE id = %s",
                 ("suggested", annotation, now, task_id),
             )
             conn.commit()

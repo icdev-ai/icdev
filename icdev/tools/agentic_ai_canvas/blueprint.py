@@ -141,7 +141,7 @@ def index():
         for d in designs:
             row = conn.execute(
                 "SELECT score, nist_rmf_score, owasp_score FROM aadc_assessments "
-                "WHERE design_id=? ORDER BY created_at DESC LIMIT 1", (d["id"],)
+                "WHERE design_id=%s ORDER BY created_at DESC LIMIT 1", (d["id"],)
             ).fetchone()
             d["score"] = round(row["score"], 1) if row else None
     finally:
@@ -169,12 +169,12 @@ def edit_canvas(design_id: str):
         return new_canvas()
     conn = _conn()
     try:
-        row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+        row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
         if not row:
             return render_template("404.html"), 404
         design = dict(row)
         assessment_row = conn.execute(
-            "SELECT * FROM aadc_assessments WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+            "SELECT * FROM aadc_assessments WHERE design_id=%s ORDER BY created_at DESC LIMIT 1",
             (design_id,)
         ).fetchone()
         assessment = dict(assessment_row) if assessment_row else None
@@ -232,9 +232,9 @@ def snippets_library():
 def assessments_detail(design_id: str):
     conn = _conn()
     try:
-        design = _row(conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+        design = _row(conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone())
         assessments = [dict(r) for r in conn.execute(
-            "SELECT * FROM aadc_assessments WHERE design_id=? ORDER BY created_at DESC",
+            "SELECT * FROM aadc_assessments WHERE design_id=%s ORDER BY created_at DESC",
             (design_id,)
         ).fetchall()]
         for a in assessments:
@@ -250,9 +250,9 @@ def assessments_detail(design_id: str):
 def artifacts_view(design_id: str):
     conn = _conn()
     try:
-        design = _row(conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+        design = _row(conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone())
         artifacts = [dict(r) for r in conn.execute(
-            "SELECT * FROM aadc_artifacts WHERE design_id=? ORDER BY created_at DESC",
+            "SELECT * FROM aadc_artifacts WHERE design_id=%s ORDER BY created_at DESC",
             (design_id,)
         ).fetchall()]
     finally:
@@ -275,7 +275,7 @@ def create_design():
         conn.execute(
             "INSERT INTO aadc_designs "
             "(id, name, description, domain, classification, graph_json, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
             (did, data.get("name", "Untitled Design"),
              data.get("description", ""), data.get("domain", ""),
              data.get("classification", "CUI"),
@@ -292,7 +292,7 @@ def create_design():
 def get_design(design_id: str):
     conn = _conn()
     try:
-        row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+        row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "not found"}), 404
         return jsonify(dict(row))
@@ -310,31 +310,31 @@ def save_design(design_id: str):
     conn = _conn()
     try:
         existing = conn.execute(
-            "SELECT id FROM aadc_designs WHERE id=?", (design_id,)
+            "SELECT id FROM aadc_designs WHERE id=%s", (design_id,)
         ).fetchone()
         if not existing:
             conn.execute(
                 "INSERT INTO aadc_designs (id, name, description, domain, classification, "
-                "graph_json, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+                "graph_json, created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                 (design_id, data.get("name", "Untitled Design"),
                  data.get("description", ""), data.get("domain", ""),
                  data.get("classification", "CUI"), graph_json, now, now),
             )
         else:
             conn.execute(
-                "UPDATE aadc_designs SET name=?, description=?, domain=?, classification=?, "
-                "graph_json=?, updated_at=? WHERE id=?",
+                "UPDATE aadc_designs SET name=%s, description=%s, domain=%s, classification=%s, "
+                "graph_json=%s, updated_at=%s WHERE id=%s",
                 (data.get("name", "Untitled Design"), data.get("description", ""),
                  data.get("domain", ""), data.get("classification", "CUI"),
                  graph_json, now, design_id),
             )
         # Version snapshot
         ver = (conn.execute(
-            "SELECT MAX(version_number) FROM aadc_versions WHERE design_id=?", (design_id,)
+            "SELECT MAX(version_number) FROM aadc_versions WHERE design_id=%s", (design_id,)
         ).fetchone()[0] or 0) + 1
         conn.execute(
             "INSERT INTO aadc_versions (id, design_id, version_number, graph_json, created_at) "
-            "VALUES (?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s)",
             (f"v-{_uid()}", design_id, ver, graph_json, now),
         )
         conn.commit()
@@ -351,15 +351,15 @@ def save_design(design_id: str):
             "INSERT INTO aadc_assessments "
             "(id, design_id, score, nist_rmf_score, owasp_score, omb_compliant, "
             "autonomy_max, safety_impacting, rights_impacting, findings_json, atlas_threats, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (result["id"], design_id, result["score"], result["nist_rmf_score"],
              result["owasp_score"], result["omb_compliant"], result["autonomy_max"],
              result["safety_impacting"], result["rights_impacting"],
              result["findings_json"], result["atlas_threats"], result["created_at"]),
         )
         conn.execute(
-            "UPDATE aadc_designs SET autonomy_max=?, safety_impacting=?, rights_impacting=?, "
-            "hitl_required=?, updated_at=? WHERE id=?",
+            "UPDATE aadc_designs SET autonomy_max=%s, safety_impacting=%s, rights_impacting=%s, "
+            "hitl_required=%s, updated_at=%s WHERE id=%s",
             (result["autonomy_max"], result["safety_impacting"], result["rights_impacting"],
              1 if (result["safety_impacting"] or result["rights_impacting"]) else 0,
              now, design_id),
@@ -411,7 +411,7 @@ _DESIGN_CHILD_TABLES = [
 def _delete_design_cascade(conn, design_id: str) -> None:
     for tbl in _DESIGN_CHILD_TABLES:
         conn.execute(f"DELETE FROM {tbl} WHERE design_id=?", (design_id,))  # nosec B608
-    conn.execute("DELETE FROM aadc_designs WHERE id=?", (design_id,))
+    conn.execute("DELETE FROM aadc_designs WHERE id=%s", (design_id,))
 
 
 @aadc_bp.route("/api/designs/<design_id>", methods=["DELETE"])
@@ -442,7 +442,7 @@ def delete_all_designs():
 def run_assessment(design_id: str):
     conn = _conn()
     try:
-        row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+        row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "not found"}), 404
         d = dict(row)
@@ -465,7 +465,7 @@ def run_assessment(design_id: str):
             "INSERT INTO aadc_assessments "
             "(id, design_id, score, nist_rmf_score, owasp_score, omb_compliant, "
             "autonomy_max, safety_impacting, rights_impacting, findings_json, atlas_threats, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (result["id"], design_id, result["score"], result["nist_rmf_score"],
              result["owasp_score"], result["omb_compliant"], result["autonomy_max"],
              result["safety_impacting"], result["rights_impacting"],
@@ -496,7 +496,7 @@ def launch_design(design_id: str):
 
     conn = _conn()
     try:
-        row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+        row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "not found"}), 404
         d = dict(row)
@@ -512,7 +512,7 @@ def simulate_cot(design_id: str):
     """Run Chain of Thought reasoning over the design and return the trace."""
     conn = _conn()
     try:
-        row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+        row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "not found"}), 404
         d = dict(row)
@@ -568,7 +568,7 @@ def simulate_cod(design_id: str):
     """Run Chain of Debate over the design and return the debate transcript."""
     conn = _conn()
     try:
-        row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+        row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "not found"}), 404
         d = dict(row)
@@ -629,7 +629,7 @@ def list_templates():
     try:
         if category:
             rows = conn.execute(
-                "SELECT * FROM aadc_templates WHERE category=? ORDER BY name", (category,)
+                "SELECT * FROM aadc_templates WHERE category=%s ORDER BY name", (category,)
             ).fetchall()
         else:
             rows = conn.execute(
@@ -653,25 +653,25 @@ def apply_template(template_id: str, design_id: str):
     conn = _conn()
     try:
         tmpl = conn.execute(
-            "SELECT * FROM aadc_templates WHERE id=?", (template_id,)
+            "SELECT * FROM aadc_templates WHERE id=%s", (template_id,)
         ).fetchone()
         if not tmpl:
             return jsonify({"error": "template not found"}), 404
         t = dict(tmpl)
 
         existing = conn.execute(
-            "SELECT id FROM aadc_designs WHERE id=?", (design_id,)
+            "SELECT id FROM aadc_designs WHERE id=%s", (design_id,)
         ).fetchone()
         now = _utcnow()
         if existing:
             conn.execute(
-                "UPDATE aadc_designs SET graph_json=?, template_id=?, updated_at=? WHERE id=?",
+                "UPDATE aadc_designs SET graph_json=%s, template_id=%s, updated_at=%s WHERE id=%s",
                 (t["graph_json"], template_id, now, design_id),
             )
         else:
             conn.execute(
                 "INSERT INTO aadc_designs (id, name, graph_json, template_id, created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s)",
                 (design_id, t["name"], t["graph_json"], template_id, now, now),
             )
         conn.commit()
@@ -691,7 +691,7 @@ def save_as_template():
     try:
         if design_id:
             row = conn.execute(
-                "SELECT graph_json FROM aadc_designs WHERE id=?", (design_id,)
+                "SELECT graph_json FROM aadc_designs WHERE id=%s", (design_id,)
             ).fetchone()
             graph_json = row["graph_json"] if row else '{"nodes":[],"edges":[]}'
         else:
@@ -701,7 +701,7 @@ def save_as_template():
         conn.execute(
             "INSERT INTO aadc_templates "
             "(id, name, category, description, graph_json, tags, is_builtin, created_by, created_at) "
-            "VALUES (?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (tid, name, category, data.get("description", ""),
              graph_json, json.dumps(data.get("tags", [])),
              0, data.get("created_by", "user"), _utcnow()),
@@ -723,7 +723,7 @@ def list_snippets():
     try:
         if category:
             rows = conn.execute(
-                "SELECT * FROM aadc_snippets WHERE category=? ORDER BY name", (category,)
+                "SELECT * FROM aadc_snippets WHERE category=%s ORDER BY name", (category,)
             ).fetchall()
         else:
             rows = conn.execute(
@@ -748,13 +748,13 @@ def insert_snippet(snippet_id: str, design_id: str):
     conn = _conn()
     try:
         snp = conn.execute(
-            "SELECT * FROM aadc_snippets WHERE id=?", (snippet_id,)
+            "SELECT * FROM aadc_snippets WHERE id=%s", (snippet_id,)
         ).fetchone()
         if not snp:
             return jsonify({"error": "snippet not found"}), 404
 
         design_row = conn.execute(
-            "SELECT graph_json FROM aadc_designs WHERE id=?", (design_id,)
+            "SELECT graph_json FROM aadc_designs WHERE id=%s", (design_id,)
         ).fetchone()
         if not design_row:
             return jsonify({"error": "design not found"}), 404
@@ -785,7 +785,7 @@ def insert_snippet(snippet_id: str, design_id: str):
         design_graph["edges"] = design_graph.get("edges", []) + new_edges
 
         conn.execute(
-            "UPDATE aadc_designs SET graph_json=?, updated_at=? WHERE id=?",
+            "UPDATE aadc_designs SET graph_json=%s, updated_at=%s WHERE id=%s",
             (json.dumps(design_graph), _utcnow(), design_id),
         )
         conn.commit()
@@ -804,7 +804,7 @@ def list_artifacts(design_id: str):
     conn = _conn()
     try:
         rows = conn.execute(
-            "SELECT * FROM aadc_artifacts WHERE design_id=? ORDER BY created_at DESC",
+            "SELECT * FROM aadc_artifacts WHERE design_id=%s ORDER BY created_at DESC",
             (design_id,)
         ).fetchall()
         return jsonify({"artifacts": [dict(r) for r in rows]})
@@ -819,12 +819,12 @@ def generate_artifact(design_id: str):
 
     conn = _conn()
     try:
-        row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+        row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "not found"}), 404
         d = dict(row)
         assessment_row = conn.execute(
-            "SELECT * FROM aadc_assessments WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+            "SELECT * FROM aadc_assessments WHERE design_id=%s ORDER BY created_at DESC LIMIT 1",
             (design_id,)
         ).fetchone()
         assessment = dict(assessment_row) if assessment_row else {}
@@ -902,7 +902,7 @@ def generate_artifact(design_id: str):
     try:
         conn.execute(
             "INSERT INTO aadc_artifacts (id, design_id, artifact_type, title, content_json, content_md, created_at) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (aid, design_id, artifact_type, title, json.dumps(content), md, now),
         )
         conn.commit()
@@ -928,7 +928,7 @@ def export_pdf(design_id: str):
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT classification, name FROM aadc_designs WHERE id=?", (design_id,)
+            "SELECT classification, name FROM aadc_designs WHERE id=%s", (design_id,)
         ).fetchone()
         classification = row["classification"] if row else "CUI"
         design_name = (row["name"] if row else design_id) or design_id
@@ -970,7 +970,7 @@ def create_version(design_id: str):
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT graph_json FROM aadc_designs WHERE id=?", (design_id,)
+            "SELECT graph_json FROM aadc_designs WHERE id=%s", (design_id,)
         ).fetchone()
         if not row:
             return jsonify({"error": "design not found"}), 404
@@ -1021,7 +1021,7 @@ def create_checkpoint(design_id: str):
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT graph_json FROM aadc_designs WHERE id=?", (design_id,)
+            "SELECT graph_json FROM aadc_designs WHERE id=%s", (design_id,)
         ).fetchone()
         if not row:
             return jsonify({"error": "design not found"}), 404
@@ -1137,7 +1137,7 @@ def get_safety_redundancy(design_id: str):
     import json as _json
 
     conn = _conn()
-    row = _row(conn.execute("SELECT graph_json FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+    row = _row(conn.execute("SELECT graph_json FROM aadc_designs WHERE id=%s", (design_id,)).fetchone())
     conn.close()
     if not row:
         return jsonify({"error": "design not found"}), 404
@@ -1148,7 +1148,7 @@ def get_safety_redundancy(design_id: str):
     # Persist snapshot
     conn2 = _conn()
     conn2.execute(
-        "INSERT INTO aadc_safety_graphs (id, design_id, score, protected_count, unprotected_count, analysis_json) VALUES (?,?,?,?,?,?)",
+        "INSERT INTO aadc_safety_graphs (id, design_id, score, protected_count, unprotected_count, analysis_json) VALUES (%s,%s,%s,%s,%s,%s)",
         (_uid(), design_id, result["score"], len(result["protected_agents"]),
          len(result["unprotected_agents"]), _json.dumps(result)),
     )
@@ -1167,7 +1167,7 @@ def get_coordination_matrix(design_id: str):
     import json as _json
 
     conn = _conn()
-    row = _row(conn.execute("SELECT graph_json FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+    row = _row(conn.execute("SELECT graph_json FROM aadc_designs WHERE id=%s", (design_id,)).fetchone())
     conn.close()
     if not row:
         return jsonify({"error": "design not found"}), 404
@@ -1187,7 +1187,7 @@ def get_provenance(design_id: str):
     import json as _json
 
     conn = _conn()
-    row = _row(conn.execute("SELECT graph_json FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+    row = _row(conn.execute("SELECT graph_json FROM aadc_designs WHERE id=%s", (design_id,)).fetchone())
     conn.close()
     if not row:
         return jsonify({"error": "design not found"}), 404
@@ -1204,7 +1204,7 @@ def update_node_provenance(design_id: str, node_id: str):
 
     data = request.get_json(force=True, silent=True) or {}
     conn = _conn()
-    row = _row(conn.execute("SELECT graph_json FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+    row = _row(conn.execute("SELECT graph_json FROM aadc_designs WHERE id=%s", (design_id,)).fetchone())
     if not row:
         conn.close()
         return jsonify({"error": "design not found"}), 404
@@ -1228,7 +1228,7 @@ def update_node_provenance(design_id: str, node_id: str):
 
     graph["nodes"] = nodes
     conn.execute(
-        "UPDATE aadc_designs SET graph_json=?, updated_at=? WHERE id=?",
+        "UPDATE aadc_designs SET graph_json=%s, updated_at=%s WHERE id=%s",
         (_json.dumps(graph), _utcnow(), design_id),
     )
     conn.commit()
@@ -1250,7 +1250,7 @@ def run_simulation(design_id: str):
     input_payload = data.get("input_payload", {})
 
     conn = _conn()
-    row = _row(conn.execute("SELECT graph_json FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+    row = _row(conn.execute("SELECT graph_json FROM aadc_designs WHERE id=%s", (design_id,)).fetchone())
     if not row:
         conn.close()
         return jsonify({"error": "design not found"}), 404
@@ -1268,7 +1268,7 @@ def run_simulation(design_id: str):
         """INSERT INTO aadc_agent_simulations
            (id, design_id, start_node_id, input_payload, trace_json, decisions_json,
             status, steps_count, halted_by, halted_by_label)
-           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (sim_id, design_id, start_node_id, _json.dumps(input_payload),
          _json.dumps(result["trace"]), _json.dumps(result["decisions"]),
          result["status"], result["steps_count"],
@@ -1285,7 +1285,7 @@ def list_simulations(design_id: str):
     conn = _conn()
     rows = conn.execute(
         "SELECT id, start_node_id, status, steps_count, halted_by, halted_by_label, created_at "
-        "FROM aadc_agent_simulations WHERE design_id=? ORDER BY created_at DESC LIMIT 20",
+        "FROM aadc_agent_simulations WHERE design_id=%s ORDER BY created_at DESC LIMIT 20",
         (design_id,),
     ).fetchall()
     conn.close()
@@ -1299,9 +1299,9 @@ def list_simulations(design_id: str):
 @aadc_bp.route("/risks/<design_id>")
 def risks_page(design_id: str):
     conn = _conn()
-    design = _row(conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+    design = _row(conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone())
     risks = [dict(r) for r in conn.execute(
-        "SELECT * FROM aadc_risk_items WHERE design_id=? ORDER BY created_at DESC", (design_id,)
+        "SELECT * FROM aadc_risk_items WHERE design_id=%s ORDER BY created_at DESC", (design_id,)
     ).fetchall()]
     conn.close()
     if not design:
@@ -1320,7 +1320,7 @@ def risks_page(design_id: str):
 def list_risks(design_id: str):
     conn = _conn()
     rows = conn.execute(
-        "SELECT * FROM aadc_risk_items WHERE design_id=? ORDER BY created_at DESC", (design_id,)
+        "SELECT * FROM aadc_risk_items WHERE design_id=%s ORDER BY created_at DESC", (design_id,)
     ).fetchall()
     conn.close()
     items = [dict(r) for r in rows]
@@ -1338,7 +1338,7 @@ def create_risk(design_id: str):
         """INSERT INTO aadc_risk_items
            (id, design_id, title, description, risk_category, severity, likelihood,
             impact, status, owner, mitigation, finding_id, node_id, created_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (rid, design_id,
          data.get("title", "New Risk"),
          data.get("description", ""),
@@ -1380,7 +1380,7 @@ def update_risk(design_id: str, risk_id: str):
 @aadc_bp.route("/api/designs/<design_id>/risks/<risk_id>", methods=["DELETE"])
 def delete_risk(design_id: str, risk_id: str):
     conn = _conn()
-    conn.execute("DELETE FROM aadc_risk_items WHERE id=? AND design_id=?", (risk_id, design_id))
+    conn.execute("DELETE FROM aadc_risk_items WHERE id=%s AND design_id=%s", (risk_id, design_id))
     conn.commit()
     conn.close()
     return jsonify({"ok": True})
@@ -1393,7 +1393,7 @@ def import_findings_as_risks(design_id: str):
     from tools.agentic_ai_canvas.risk_register import finding_to_risk
 
     conn = _conn()
-    row = _row(conn.execute("SELECT findings_json FROM aadc_assessments WHERE design_id=? ORDER BY created_at DESC LIMIT 1", (design_id,)).fetchone())
+    row = _row(conn.execute("SELECT findings_json FROM aadc_assessments WHERE design_id=%s ORDER BY created_at DESC LIMIT 1", (design_id,)).fetchone())
     if not row:
         conn.close()
         return jsonify({"imported": 0, "message": "No assessment found"})
@@ -1401,7 +1401,7 @@ def import_findings_as_risks(design_id: str):
     findings = _json.loads(row.get("findings_json") or "[]")
     existing_fids = {
         r["finding_id"] for r in conn.execute(
-            "SELECT finding_id FROM aadc_risk_items WHERE design_id=?", (design_id,)
+            "SELECT finding_id FROM aadc_risk_items WHERE design_id=%s", (design_id,)
         ).fetchall()
     }
 
@@ -1417,7 +1417,7 @@ def import_findings_as_risks(design_id: str):
             """INSERT INTO aadc_risk_items
                (id, design_id, title, description, risk_category, severity, likelihood,
                 impact, status, owner, mitigation, finding_id, node_id, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (rid, design_id, risk["title"], risk["description"], risk["risk_category"],
              risk["severity"], risk["likelihood"], risk["impact"], risk["status"],
              risk["owner"], risk["mitigation"], risk["finding_id"], risk["node_id"], now, now),
@@ -1439,7 +1439,7 @@ def generate_threat_model(design_id: str):
     from tools.agentic_ai_canvas.threat_model import generate_threat_model as _gen
 
     conn = _conn()
-    row = _row(conn.execute("SELECT graph_json FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+    row = _row(conn.execute("SELECT graph_json FROM aadc_designs WHERE id=%s", (design_id,)).fetchone())
     if not row:
         conn.close()
         return jsonify({"error": "design not found"}), 404
@@ -1450,7 +1450,7 @@ def generate_threat_model(design_id: str):
     # Persist snapshot
     tm_id = _uid()
     conn.execute(
-        "INSERT INTO aadc_threat_models (id, design_id, stride_json, atlas_threats, threat_count, high_count) VALUES (?,?,?,?,?,?)",
+        "INSERT INTO aadc_threat_models (id, design_id, stride_json, atlas_threats, threat_count, high_count) VALUES (%s,%s,%s,%s,%s,%s)",
         (tm_id, design_id, _json.dumps(result["stride"]), _json.dumps(result["atlas"]),
          result["threat_count"], result["high_count"]),
     )
@@ -1466,7 +1466,7 @@ def get_latest_threat_model(design_id: str):
 
     conn = _conn()
     row = _row(conn.execute(
-        "SELECT * FROM aadc_threat_models WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+        "SELECT * FROM aadc_threat_models WHERE design_id=%s ORDER BY created_at DESC LIMIT 1",
         (design_id,),
     ).fetchone())
     conn.close()
@@ -1492,7 +1492,7 @@ def get_portfolio():
     assessments = []
     for d in designs:
         row = _row(conn.execute(
-            "SELECT * FROM aadc_assessments WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+            "SELECT * FROM aadc_assessments WHERE design_id=%s ORDER BY created_at DESC LIMIT 1",
             (d["id"],),
         ).fetchone())
         if row:
@@ -1512,12 +1512,12 @@ def export_oscal(design_id: str):
     from tools.agentic_ai_canvas.oscal_export import export_oscal_component
 
     conn = _conn()
-    design = _row(conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+    design = _row(conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone())
     if not design:
         conn.close()
         return jsonify({"error": "design not found"}), 404
     assessment = _row(conn.execute(
-        "SELECT * FROM aadc_assessments WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+        "SELECT * FROM aadc_assessments WHERE design_id=%s ORDER BY created_at DESC LIMIT 1",
         (design_id,),
     ).fetchone())
     conn.close()
@@ -1533,7 +1533,7 @@ def get_oscal_coverage(design_id: str):
     from tools.agentic_ai_canvas.oscal_export import get_control_coverage_summary
 
     conn = _conn()
-    row = _row(conn.execute("SELECT graph_json FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+    row = _row(conn.execute("SELECT graph_json FROM aadc_designs WHERE id=%s", (design_id,)).fetchone())
     conn.close()
     if not row:
         return jsonify({"error": "design not found"}), 404
@@ -1597,7 +1597,7 @@ def canvas_kanban_status(design_id: str):
 
     conn = _conn()
     row = _row(conn.execute(
-        "SELECT graph_json FROM aadc_designs WHERE id=?", (design_id,)
+        "SELECT graph_json FROM aadc_designs WHERE id=%s", (design_id,)
     ).fetchone())
     conn.close()
 
@@ -1627,7 +1627,7 @@ def canvas_kanban_status(design_id: str):
         result = {}
         for node_id, task_id in linked.items():
             t = mconn.execute(
-                "SELECT id, title, status FROM kanban_tasks WHERE id=? LIMIT 1",
+                "SELECT id, title, status FROM kanban_tasks WHERE id=%s LIMIT 1",
                 (task_id,),
             ).fetchone()
             if t:
@@ -1648,7 +1648,7 @@ def canvas_kanban_status(design_id: str):
 def ato_page(design_id: str):
     import json as _json
     conn = _conn()
-    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
     conn.close()
     if not row:
         return "Design not found", 404
@@ -1669,7 +1669,7 @@ def ato_page(design_id: str):
 def get_ato(design_id: str):
     import json as _json
     conn = _conn()
-    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
     if not row:
         conn.close()
         return jsonify({"error": "design not found"}), 404
@@ -1684,7 +1684,7 @@ def get_ato(design_id: str):
     try:
         conn.execute(
             """INSERT INTO aadc_ato_reports (id, design_id, score_pct, ato_ready, passed, failed, critical_failed, report_json, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (rid, design_id, s["score_pct"], 1 if s["ato_ready"] else 0,
              s["passed"], s["failed"], s["critical_failed"], _json.dumps(result), now),
         )
@@ -1699,7 +1699,7 @@ def get_ato(design_id: str):
 def get_regulatory(design_id: str):
     import json as _json
     conn = _conn()
-    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
     if not row:
         conn.close()
         return jsonify({"error": "design not found"}), 404
@@ -1707,7 +1707,7 @@ def get_regulatory(design_id: str):
     graph = _json.loads(design.get("graph_json") or '{"nodes":[],"edges":[]}')
     risks = [
         dict(r) for r in conn.execute(
-            "SELECT * FROM aadc_risk_items WHERE design_id=?", (design_id,)
+            "SELECT * FROM aadc_risk_items WHERE design_id=%s", (design_id,)
         ).fetchall()
     ]
     from tools.agentic_ai_canvas.regulatory_tracker import run_regulatory_analysis
@@ -1719,7 +1719,7 @@ def get_regulatory(design_id: str):
     try:
         conn.execute(
             """INSERT INTO aadc_regulatory_gaps (id, design_id, score_pct, compliant, gaps, critical_gaps, report_json, created_at)
-               VALUES (?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
             (rid, design_id, s["score_pct"], s["compliant"], s["gaps"], s["critical_gaps"], _json.dumps(result), now),
         )
         conn.commit()
@@ -1733,7 +1733,7 @@ def get_regulatory(design_id: str):
 def exec_summary_page(design_id: str):
     import json as _json
     conn = _conn()
-    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
     if not row:
         conn.close()
         return "Design not found", 404
@@ -1742,17 +1742,17 @@ def exec_summary_page(design_id: str):
     nodes = graph.get("nodes", [])
     assessment = None
     arow = conn.execute(
-        "SELECT * FROM aadc_assessments WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+        "SELECT * FROM aadc_assessments WHERE design_id=%s ORDER BY created_at DESC LIMIT 1",
         (design_id,),
     ).fetchone()
     if arow:
         assessment = dict(arow)
     risks = [dict(r) for r in conn.execute(
-        "SELECT * FROM aadc_risk_items WHERE design_id=?", (design_id,)
+        "SELECT * FROM aadc_risk_items WHERE design_id=%s", (design_id,)
     ).fetchall()]
     threat_model = None
     tmrow = conn.execute(
-        "SELECT * FROM aadc_threat_models WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+        "SELECT * FROM aadc_threat_models WHERE design_id=%s ORDER BY created_at DESC LIMIT 1",
         (design_id,),
     ).fetchone()
     if tmrow:
@@ -1777,7 +1777,7 @@ def exec_summary_page(design_id: str):
 def get_exec_summary(design_id: str):
     import json as _json
     conn = _conn()
-    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
     if not row:
         conn.close()
         return jsonify({"error": "design not found"}), 404
@@ -1786,17 +1786,17 @@ def get_exec_summary(design_id: str):
     nodes = graph.get("nodes", [])
     assessment = None
     arow = conn.execute(
-        "SELECT * FROM aadc_assessments WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+        "SELECT * FROM aadc_assessments WHERE design_id=%s ORDER BY created_at DESC LIMIT 1",
         (design_id,),
     ).fetchone()
     if arow:
         assessment = dict(arow)
     risks = [dict(r) for r in conn.execute(
-        "SELECT * FROM aadc_risk_items WHERE design_id=?", (design_id,)
+        "SELECT * FROM aadc_risk_items WHERE design_id=%s", (design_id,)
     ).fetchall()]
     threat_model = None
     tmrow = conn.execute(
-        "SELECT * FROM aadc_threat_models WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+        "SELECT * FROM aadc_threat_models WHERE design_id=%s ORDER BY created_at DESC LIMIT 1",
         (design_id,),
     ).fetchone()
     if tmrow:
@@ -1819,21 +1819,21 @@ def compare_designs_api():
     if not id_a or not id_b:
         return jsonify({"error": "design_a_id and design_b_id required"}), 400
     conn = _conn()
-    row_a = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (id_a,)).fetchone()
-    row_b = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (id_b,)).fetchone()
+    row_a = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (id_a,)).fetchone()
+    row_b = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (id_b,)).fetchone()
     if not row_a or not row_b:
         conn.close()
         return jsonify({"error": "one or both designs not found"}), 404
     design_a = dict(row_a)
     design_b = dict(row_b)
     ass_a = conn.execute(
-        "SELECT * FROM aadc_assessments WHERE design_id=? ORDER BY created_at DESC LIMIT 1", (id_a,)
+        "SELECT * FROM aadc_assessments WHERE design_id=%s ORDER BY created_at DESC LIMIT 1", (id_a,)
     ).fetchone()
     ass_b = conn.execute(
-        "SELECT * FROM aadc_assessments WHERE design_id=? ORDER BY created_at DESC LIMIT 1", (id_b,)
+        "SELECT * FROM aadc_assessments WHERE design_id=%s ORDER BY created_at DESC LIMIT 1", (id_b,)
     ).fetchone()
-    risks_a = [dict(r) for r in conn.execute("SELECT * FROM aadc_risk_items WHERE design_id=?", (id_a,)).fetchall()]
-    risks_b = [dict(r) for r in conn.execute("SELECT * FROM aadc_risk_items WHERE design_id=?", (id_b,)).fetchall()]
+    risks_a = [dict(r) for r in conn.execute("SELECT * FROM aadc_risk_items WHERE design_id=%s", (id_a,)).fetchall()]
+    risks_b = [dict(r) for r in conn.execute("SELECT * FROM aadc_risk_items WHERE design_id=%s", (id_b,)).fetchall()]
     conn.close()
     from tools.agentic_ai_canvas.design_compare import compare_designs
     result = compare_designs(
@@ -1855,7 +1855,7 @@ def compare_designs_api():
 def red_team_page(design_id: str):
     import json as _json
     conn = _conn()
-    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
     conn.close()
     if not row:
         return "Design not found", 404
@@ -1874,7 +1874,7 @@ def red_team_page(design_id: str):
 def get_red_team(design_id: str):
     import json as _json
     conn = _conn()
-    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
     if not row:
         conn.close()
         return jsonify({"error": "design not found"}), 404
@@ -1891,7 +1891,7 @@ def get_red_team(design_id: str):
             """INSERT INTO aadc_red_team_reports
                (id, design_id, overall_risk, applicable, unmitigated, critical_unmitigated,
                 avg_exploitability, report_json, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (rid, design_id, s["overall_risk"], s["applicable"], s["unmitigated"],
              s["critical_unmitigated"], s["avg_exploitability"], _json.dumps(result), now),
         )
@@ -1906,7 +1906,7 @@ def get_red_team(design_id: str):
 def get_lint(design_id: str):
     import json as _json
     conn = _conn()
-    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
     if not row:
         conn.close()
         return jsonify({"error": "design not found"}), 404
@@ -1922,7 +1922,7 @@ def get_lint(design_id: str):
         conn.execute(
             """INSERT INTO aadc_lint_reports
                (id, design_id, lint_score, total_issues, critical_issues, report_json, created_at)
-               VALUES (?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s)""",
             (rid, design_id, s["lint_score"], s["total"], s["critical"], _json.dumps(result), now),
         )
         conn.commit()
@@ -1936,7 +1936,7 @@ def get_lint(design_id: str):
 def get_accred_package(design_id: str):
     import json as _json
     conn = _conn()
-    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
     if not row:
         conn.close()
         return jsonify({"error": "design not found"}), 404
@@ -1947,18 +1947,18 @@ def get_accred_package(design_id: str):
 
     assessment = None
     arow = conn.execute(
-        "SELECT * FROM aadc_assessments WHERE design_id=? ORDER BY created_at DESC LIMIT 1", (design_id,)
+        "SELECT * FROM aadc_assessments WHERE design_id=%s ORDER BY created_at DESC LIMIT 1", (design_id,)
     ).fetchone()
     if arow:
         assessment = dict(arow)
 
     risks = [dict(r) for r in conn.execute(
-        "SELECT * FROM aadc_risk_items WHERE design_id=?", (design_id,)
+        "SELECT * FROM aadc_risk_items WHERE design_id=%s", (design_id,)
     ).fetchall()]
 
     threat_model = None
     tmrow = conn.execute(
-        "SELECT * FROM aadc_threat_models WHERE design_id=? ORDER BY created_at DESC LIMIT 1", (design_id,)
+        "SELECT * FROM aadc_threat_models WHERE design_id=%s ORDER BY created_at DESC LIMIT 1", (design_id,)
     ).fetchone()
     if tmrow:
         threat_model = dict(tmrow)
@@ -1997,7 +1997,7 @@ def get_accred_package(design_id: str):
 @aadc_bp.route("/patterns/<design_id>", methods=["GET"])
 def pattern_analysis_page(design_id: str):
     conn = _conn()
-    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
     if not row:
         conn.close()
         return "Design not found", 404
@@ -2017,7 +2017,7 @@ def pattern_analysis_page(design_id: str):
 def get_patterns_api(design_id: str):
     import json as _json
     conn = _conn()
-    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
     if not row:
         conn.close()
         return jsonify({"error": "design not found"}), 404
@@ -2032,7 +2032,7 @@ def get_patterns_api(design_id: str):
     rep_id = str(uuid.uuid4())
     try:
         conn.execute(
-            "INSERT INTO aadc_pattern_reports (id,design_id,dominant_pattern,pattern_json) VALUES (?,?,?,?)",
+            "INSERT INTO aadc_pattern_reports (id,design_id,dominant_pattern,pattern_json) VALUES (%s,%s,%s,%s)",
             (rep_id, design_id, result["dominant"], _json.dumps(result)),
         )
         conn.commit()
@@ -2045,7 +2045,7 @@ def get_patterns_api(design_id: str):
 @aadc_bp.route("/impact/<design_id>", methods=["GET"])
 def impact_analysis_page(design_id: str):
     conn = _conn()
-    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
     if not row:
         conn.close()
         return "Design not found", 404
@@ -2065,7 +2065,7 @@ def impact_analysis_page(design_id: str):
 def get_impact_api(design_id: str):
     import json as _json
     conn = _conn()
-    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
     if not row:
         conn.close()
         return jsonify({"error": "design not found"}), 404
@@ -2081,7 +2081,7 @@ def get_impact_api(design_id: str):
     try:
         s = result.get("summary", {})
         conn.execute(
-            "INSERT INTO aadc_impact_reports (id,design_id,resilience_score,spof_count,overall_risk_level,report_json) VALUES (?,?,?,?,?,?)",
+            "INSERT INTO aadc_impact_reports (id,design_id,resilience_score,spof_count,overall_risk_level,report_json) VALUES (%s,%s,%s,%s,%s,%s)",
             (rep_id, design_id, s.get("resilience_score", 100),
              len(s.get("spofs", [])), s.get("overall_risk_level", "LOW"),
              _json.dumps(result)),
@@ -2153,7 +2153,7 @@ def _load_all_gate_data(conn, design_id: str) -> tuple:
     """Load all analysis data needed for scorecard and deploy gate."""
     import json as _json
 
-    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
     if not row:
         return None, None, None, None, None, None, None, None
 
@@ -2164,14 +2164,14 @@ def _load_all_gate_data(conn, design_id: str) -> tuple:
 
     assessment = None
     arow = conn.execute(
-        "SELECT * FROM aadc_assessments WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+        "SELECT * FROM aadc_assessments WHERE design_id=%s ORDER BY created_at DESC LIMIT 1",
         (design_id,),
     ).fetchone()
     if arow:
         assessment = dict(arow)
 
     risks = [dict(r) for r in conn.execute(
-        "SELECT * FROM aadc_risk_items WHERE design_id=?", (design_id,)
+        "SELECT * FROM aadc_risk_items WHERE design_id=%s", (design_id,)
     ).fetchall()]
 
     from tools.agentic_ai_canvas.ato_readiness import run_ato_checklist
@@ -2221,7 +2221,7 @@ def get_scorecard_api(design_id: str):
     rep_id = str(uuid.uuid4())
     try:
         conn.execute(
-            "INSERT INTO aadc_scorecard_snapshots (id,design_id,overall_score,health,snapshot_json) VALUES (?,?,?,?,?)",
+            "INSERT INTO aadc_scorecard_snapshots (id,design_id,overall_score,health,snapshot_json) VALUES (%s,%s,%s,%s,%s)",
             (rep_id, design_id, sc["overall_score"], sc["health"], _json.dumps(sc)),
         )
         conn.commit()
@@ -2263,7 +2263,7 @@ def get_deploy_gate_api(design_id: str):
     rep_id = str(uuid.uuid4())
     try:
         conn.execute(
-            "INSERT INTO aadc_deploy_gates (id,design_id,verdict,blocker_count,warning_count,gate_json) VALUES (?,?,?,?,?,?)",
+            "INSERT INTO aadc_deploy_gates (id,design_id,verdict,blocker_count,warning_count,gate_json) VALUES (%s,%s,%s,%s,%s,%s)",
             (rep_id, design_id, gate["verdict"],
              len(gate["blockers"]), len(gate["warnings"]), _json.dumps(gate)),
         )
@@ -2352,7 +2352,7 @@ def get_findings_api():
 @aadc_bp.route("/lifecycle/<design_id>", methods=["GET"])
 def lifecycle_page(design_id: str):
     conn = _conn()
-    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
     if not row:
         conn.close()
         return "Design not found", 404
@@ -2366,7 +2366,7 @@ def lifecycle_page(design_id: str):
 @aadc_bp.route("/api/designs/<design_id>/lifecycle", methods=["GET"])
 def get_lifecycle_api(design_id: str):
     conn = _conn()
-    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
     if not row:
         conn.close()
         return jsonify({"error": "design not found"}), 404
@@ -2384,7 +2384,7 @@ def lifecycle_transition(design_id: str):
     actor = data.get("actor", "")
     reason = data.get("reason", "")
     conn = _conn()
-    row = conn.execute("SELECT id FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    row = conn.execute("SELECT id FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
     if not row:
         conn.close()
         return jsonify({"ok": False, "error": "design not found"}), 404
@@ -2397,7 +2397,7 @@ def lifecycle_transition(design_id: str):
 @aadc_bp.route("/review/<design_id>", methods=["GET"])
 def review_page(design_id: str):
     conn = _conn()
-    row = conn.execute("SELECT * FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    row = conn.execute("SELECT * FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
     if not row:
         conn.close()
         return "Design not found", 404
@@ -2411,7 +2411,7 @@ def review_page(design_id: str):
 @aadc_bp.route("/api/designs/<design_id>/review", methods=["GET"])
 def get_review_api(design_id: str):
     conn = _conn()
-    row = conn.execute("SELECT id FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    row = conn.execute("SELECT id FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
     if not row:
         conn.close()
         return jsonify({"error": "design not found"}), 404
@@ -2426,7 +2426,7 @@ def add_review_comment(design_id: str):
     from flask import request
     data = request.get_json(silent=True) or {}
     conn = _conn()
-    row = conn.execute("SELECT id FROM aadc_designs WHERE id=?", (design_id,)).fetchone()
+    row = conn.execute("SELECT id FROM aadc_designs WHERE id=%s", (design_id,)).fetchone()
     if not row:
         conn.close()
         return jsonify({"ok": False, "error": "design not found"}), 404
@@ -2541,7 +2541,7 @@ def apply_solution_pack(pack_id: str, design_id: str):
     conn = _conn()
     try:
         tmpl = conn.execute(
-            "SELECT * FROM aadc_templates WHERE id=? AND category='solution-pack'",
+            "SELECT * FROM aadc_templates WHERE id=%s AND category='solution-pack'",
             (pack_id,),
         ).fetchone()
         if not tmpl:
@@ -2549,19 +2549,19 @@ def apply_solution_pack(pack_id: str, design_id: str):
         t = dict(tmpl)
 
         existing = conn.execute(
-            "SELECT id FROM aadc_designs WHERE id=?", (design_id,)
+            "SELECT id FROM aadc_designs WHERE id=%s", (design_id,)
         ).fetchone()
         now = _utcnow()
         if existing:
             conn.execute(
-                "UPDATE aadc_designs SET graph_json=?, template_id=?, updated_at=? WHERE id=?",
+                "UPDATE aadc_designs SET graph_json=%s, template_id=%s, updated_at=%s WHERE id=%s",
                 (t["graph_json"], pack_id, now, design_id),
             )
         else:
             conn.execute(
                 "INSERT INTO aadc_designs "
                 "(id, name, description, graph_json, template_id, created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
                 (design_id, t["name"],
                  f"Created from Solution Pack: {t['name']}",
                  t["graph_json"], pack_id, now, now),
@@ -2569,7 +2569,7 @@ def apply_solution_pack(pack_id: str, design_id: str):
 
         # Seed risk register entries (skip if already seeded for this design)
         existing_risks = conn.execute(
-            "SELECT COUNT(*) FROM aadc_risk_items WHERE design_id=?", (design_id,)
+            "SELECT COUNT(*) FROM aadc_risk_items WHERE design_id=%s", (design_id,)
         ).fetchone()[0]
         risks_seeded = 0
         if existing_risks == 0:
@@ -2578,7 +2578,7 @@ def apply_solution_pack(pack_id: str, design_id: str):
                     "INSERT INTO aadc_risk_items "
                     "(id, design_id, title, description, risk_category, severity, "
                     "likelihood, impact, status, mitigation, created_at) "
-                    "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         f"risk-{_uid()}",
                         design_id,
@@ -2619,7 +2619,7 @@ def quickstart_recommend():
     try:
         row = conn.execute(
             "SELECT id, name, description, compliance_badges, autonomy_max, tags "
-            "FROM aadc_templates WHERE name=? AND category='solution-pack'",
+            "FROM aadc_templates WHERE name=%s AND category='solution-pack'",
             (pack_name,),
         ).fetchone()
         if not row:
@@ -2650,7 +2650,7 @@ def aadc_api_list_assessments(design_id):
             "SELECT id, design_id, score, nist_rmf_score, owasp_score, omb_compliant, "
             "autonomy_max, safety_impacting, rights_impacting, findings_json, atlas_threats, "
             "hitl_paths, created_at FROM aadc_assessments "
-            "WHERE design_id=? ORDER BY created_at DESC LIMIT ?",
+            "WHERE design_id=%s ORDER BY created_at DESC LIMIT %s",
             (design_id, limit),
         ).fetchall()
         assessments = [dict(r) for r in rows]
@@ -2667,19 +2667,19 @@ def aadc_api_cost_estimate(did):
         return jsonify({"error": "cost estimator not available"}), 503
     conn = _conn()
     try:
-        row = conn.execute("SELECT graph_json FROM aadc_designs WHERE id=?", (did,)).fetchone()
+        row = conn.execute("SELECT graph_json FROM aadc_designs WHERE id=%s", (did,)).fetchone()
         if not row:
             return jsonify({"error": "design not found"}), 404
         graph = json.loads(row["graph_json"] or '{"nodes":[],"edges":[]}')
         runs = request.json.get("runs_per_month", 1000) if request.is_json else 1000
         result = _estimate_cost(graph, runs_per_month=int(runs))
         conn.execute(
-            "DELETE FROM aadc_cost_estimates WHERE design_id=?", (did,)
+            "DELETE FROM aadc_cost_estimates WHERE design_id=%s", (did,)
         )
         conn.execute(
             "INSERT INTO aadc_cost_estimates "
             "(design_id, model_breakdown, total_per_run, total_monthly, runs_per_month, optimization_hints) "
-            "VALUES (?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s)",
             (
                 did,
                 json.dumps(result["model_breakdown"]),
@@ -2701,7 +2701,7 @@ def aadc_api_iac(did):
         return jsonify({"error": "IaC generator not available"}), 503
     conn = _conn()
     try:
-        row = conn.execute("SELECT name, graph_json FROM aadc_designs WHERE id=?", (did,)).fetchone()
+        row = conn.execute("SELECT name, graph_json FROM aadc_designs WHERE id=%s", (did,)).fetchone()
         if not row:
             return jsonify({"error": "design not found"}), 404
         name = row["name"] or did
@@ -2725,7 +2725,7 @@ def aadc_api_design_links(did):
     try:
         if request.method == "GET":
             rows = conn.execute(
-                "SELECT * FROM aadc_design_links WHERE src_design_id=? OR tgt_design_id=?",
+                "SELECT * FROM aadc_design_links WHERE src_design_id=%s OR tgt_design_id=%s",
                 (did, did),
             ).fetchall()
             return jsonify([dict(r) for r in rows])
@@ -2738,12 +2738,12 @@ def aadc_api_design_links(did):
         conn.execute(
             "INSERT OR REPLACE INTO aadc_design_links "
             "(src_design_id, tgt_design_id, link_type, link_label, auto_detected) "
-            "VALUES (?,?,?,?,0)",
+            "VALUES (%s,%s,%s,%s,0)",
             (did, tgt, link_type, label),
         )
         conn.commit()
         row = conn.execute(
-            "SELECT * FROM aadc_design_links WHERE src_design_id=? AND tgt_design_id=? AND link_type=?",
+            "SELECT * FROM aadc_design_links WHERE src_design_id=%s AND tgt_design_id=%s AND link_type=%s",
             (did, tgt, link_type),
         ).fetchone()
         return jsonify(dict(row)), 201
@@ -2756,7 +2756,7 @@ def aadc_api_design_link_delete(did, lid):
     conn = _conn()
     try:
         conn.execute(
-            "DELETE FROM aadc_design_links WHERE id=? AND src_design_id=?", (lid, did)
+            "DELETE FROM aadc_design_links WHERE id=%s AND src_design_id=%s", (lid, did)
         )
         conn.commit()
         return jsonify({"ok": True})
@@ -2945,7 +2945,7 @@ def ops_config_page(design_id: str):
     not_found = False
     try:
         conn = _conn()
-        row = _row(conn.execute("SELECT id, name FROM aadc_designs WHERE id=?", (design_id,)).fetchone())
+        row = _row(conn.execute("SELECT id, name FROM aadc_designs WHERE id=%s", (design_id,)).fetchone())
         conn.close()
         if row:
             design_name = row.get("name", design_id)
@@ -3015,7 +3015,7 @@ def run_research_pipeline(design_id: str):
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT id, name FROM aadc_designs WHERE id=?", (design_id,)
+            "SELECT id, name FROM aadc_designs WHERE id=%s", (design_id,)
         ).fetchone()
         if not row:
             return jsonify({"error": "design not found"}), 404
@@ -3090,7 +3090,7 @@ def run_research_agent(design_id: str):
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT id, name FROM aadc_designs WHERE id=?", (design_id,)
+            "SELECT id, name FROM aadc_designs WHERE id=%s", (design_id,)
         ).fetchone()
         if not row:
             return jsonify({"error": "design not found"}), 404
@@ -3166,14 +3166,14 @@ def aadc_api_ai_trace():
         with _gc() as _conn:
             if record_id:
                 rows = _conn.execute(
-                    "SELECT * FROM canvas_ai_decisions WHERE canvas_type='aadc' AND record_id=? "
-                    "ORDER BY created_at DESC LIMIT ?",
+                    "SELECT * FROM canvas_ai_decisions WHERE canvas_type='aadc' AND record_id=%s "
+                    "ORDER BY created_at DESC LIMIT %s",
                     (record_id, limit),
                 ).fetchall()
             else:
                 rows = _conn.execute(
                     "SELECT * FROM canvas_ai_decisions WHERE canvas_type='aadc' "
-                    "ORDER BY created_at DESC LIMIT ?",
+                    "ORDER BY created_at DESC LIMIT %s",
                     (limit,),
                 ).fetchall()
         return jsonify({"ok": True, "canvas": "aadc", "decisions": [dict(r) for r in rows]})

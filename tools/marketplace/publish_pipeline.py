@@ -444,7 +444,7 @@ def publish_asset(
         conn.execute(
             """INSERT INTO marketplace_reviews
                (id, asset_id, version_id, decision, submitted_at)
-               VALUES (?, ?, ?, 'pending', ?)""",
+               VALUES (%s, %s, %s, 'pending', %s)""",
             (review_id, asset_id, version_id, now_iso()),
         )
         conn.commit()
@@ -464,7 +464,7 @@ def publish_asset(
         # Update version status
         conn = get_connection(db_path=str(db_path) if db_path else None)
         conn.execute(
-            "UPDATE marketplace_versions SET status = 'published' WHERE id = ?",
+            "UPDATE marketplace_versions SET status = 'published' WHERE id = %s",
             (version_id,),
         )
         conn.commit()

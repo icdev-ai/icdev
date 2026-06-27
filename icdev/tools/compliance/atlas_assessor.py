@@ -110,7 +110,7 @@ class ATLASAssessor(BaseAssessor):
                 # Check agent_token_usage for recent AI telemetry
                 row = conn.execute(
                     """SELECT COUNT(*) as cnt FROM agent_token_usage
-                       WHERE project_id = ?
+                       WHERE project_id = %s
                        AND created_at >= datetime('now', '-30 days')""",
                     (project.get("id", ""),),
                 ).fetchone()

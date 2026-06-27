@@ -1355,7 +1355,7 @@ def import_xmi(project_id: str, file_path: str, db_path: str = None) -> Dict[str
                    (project_id, import_type, source_file, source_hash,
                     elements_imported, relationships_imported, errors,
                     error_details, status, imported_by, imported_at)
-                   VALUES (?, ?, ?, ?, 0, 0, ?, ?, 'failed', 'icdev-mbse-engine', ?)""",
+                   VALUES (%s, %s, %s, %s, 0, 0, %s, %s, 'failed', 'icdev-mbse-engine', %s)""",
                 (
                     project_id,
                     "xmi",
@@ -1414,7 +1414,7 @@ def import_xmi(project_id: str, file_path: str, db_path: str = None) -> Dict[str
                    (id, project_id, xmi_id, element_type, name, qualified_name,
                     parent_id, stereotype, description, properties,
                     diagram_type, source_file, source_hash, imported_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     el["id"],
                     project_id,
@@ -1444,7 +1444,7 @@ def import_xmi(project_id: str, file_path: str, db_path: str = None) -> Dict[str
                 """INSERT OR REPLACE INTO sysml_relationships
                    (project_id, source_element_id, target_element_id,
                     relationship_type, name, properties, source_file)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                 (
                     project_id,
                     rel["source_element_id"],
@@ -1466,7 +1466,7 @@ def import_xmi(project_id: str, file_path: str, db_path: str = None) -> Dict[str
            (project_id, import_type, source_file, source_hash,
             elements_imported, relationships_imported, errors,
             error_details, status, imported_by, imported_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'icdev-mbse-engine', ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 'icdev-mbse-engine', %s)""",
         (
             project_id,
             "xmi",
@@ -1530,7 +1530,7 @@ def get_import_summary(import_id: int, db_path: str = None) -> Dict[str, Any]:
     Returns the full row as a dict, or an error dict if not found.
     """
     conn = _get_connection(db_path)
-    row = conn.execute("SELECT * FROM model_imports WHERE id = ?", (import_id,)).fetchone()
+    row = conn.execute("SELECT * FROM model_imports WHERE id = %s", (import_id,)).fetchone()
     conn.close()
 
     if not row:

@@ -52,7 +52,7 @@ def get_capability_status_by_pillar(pillar_slug: str, target_id: str = "icdev-se
     try:
         caps = conn.execute(
             "SELECT id, title, phase, maturity_level, implementation_status, description, nist_controls "
-            "FROM zig_capabilities WHERE pillar_slug=? ORDER BY phase, maturity_level",
+            "FROM zig_capabilities WHERE pillar_slug=%s ORDER BY phase, maturity_level",
             (pillar_slug,),
         ).fetchall()
         result = []
@@ -61,8 +61,8 @@ def get_capability_status_by_pillar(pillar_slug: str, target_id: str = "icdev-se
             # Count activities
             acts = conn.execute(
                 "SELECT a.id, ac.status FROM zig_activities a "
-                "LEFT JOIN zig_activity_completions ac ON a.id=ac.activity_id AND ac.target_id=? "
-                "WHERE a.capability_id=?",
+                "LEFT JOIN zig_activity_completions ac ON a.id=ac.activity_id AND ac.target_id=%s "
+                "WHERE a.capability_id=%s",
                 (target_id, c["id"]),
             ).fetchall()
             cap["activity_count"] = len(acts)

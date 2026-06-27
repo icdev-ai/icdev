@@ -36,7 +36,7 @@ def gather(max_reflexes: int = 15, include_last_run: bool = True) -> dict[str, A
             rows = conn.execute(
                 "SELECT reflex_name, last_run_at, last_result, run_count, "
                 "consecutive_failures FROM genesis_reflex_state "
-                "ORDER BY last_run_at DESC LIMIT ?",
+                "ORDER BY last_run_at DESC LIMIT %s",
                 (max_reflexes,),
             ).fetchall()
             for row in rows:

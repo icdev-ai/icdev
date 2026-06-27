@@ -74,7 +74,7 @@ def _fetch_assessments(conn, advisory_id: int) -> list[dict]:
     rows = conn.execute(
         """SELECT id, advisory_id, impacted_count, created_at
            FROM nc_advisory_assessments
-           WHERE advisory_id = ?
+           WHERE advisory_id = %s
            ORDER BY created_at ASC
            LIMIT 3""",
         (advisory_id,),
@@ -169,7 +169,7 @@ def _write_prediction(conn, scores: dict) -> str:
            (id, advisory_id, assessment_id, risk_score_composite, risk_score_30d,
             risk_score_90d, trend, confidence, cvss_base, exploit_weight,
             patch_lag_norm, impacted_trend, model_version, predicted_at, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (
             row_id,
             str(scores["advisory_id"]),
@@ -217,7 +217,7 @@ def predict_advisory_risk(advisory_id: int) -> dict:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT * FROM nc_advisories WHERE id = ?", (advisory_id,)
+            "SELECT * FROM nc_advisories WHERE id = %s", (advisory_id,)
         ).fetchone()
         if row is None:
             return {"error": f"Advisory {advisory_id} not found", "advisory_id": advisory_id}
@@ -239,7 +239,7 @@ def predict_advisory_risk(advisory_id: int) -> dict:
         _validate_baseline(scores)
 
         pred_row = conn.execute(
-            "SELECT * FROM nc_vuln_predictions WHERE id = ?", (new_id,)
+            "SELECT * FROM nc_vuln_predictions WHERE id = %s", (new_id,)
         ).fetchone()
         result = dict(pred_row) if pred_row else scores
         result["cve_id"] = advisory.get("cve_id", "")
@@ -279,9 +279,9 @@ def get_risk_trajectory(advisory_id: int, limit: int = 10) -> list[dict]:
             """SELECT p.*, a.cve_id
                FROM nc_vuln_predictions p
                LEFT JOIN nc_advisories a ON a.id = p.advisory_id
-               WHERE p.advisory_id = ?
+               WHERE p.advisory_id = %s
                ORDER BY p.predicted_at ASC
-               LIMIT ?""",
+               LIMIT %s""",
             (advisory_id, limit),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -305,7 +305,7 @@ def get_top_risks(limit: int = 20) -> list[dict]:
                    SELECT MAX(id) FROM nc_vuln_predictions GROUP BY advisory_id
                )
                ORDER BY p.risk_score_composite DESC
-               LIMIT ?""",
+               LIMIT %s""",
             (limit,),
         ).fetchall()
         return [dict(r) for r in rows]

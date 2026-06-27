@@ -26,7 +26,7 @@ def gather(max_apps: int = 10) -> dict[str, Any]:
         try:
             rows = conn.execute(
                 "SELECT name, category, description, status FROM showcase_apps "
-                "WHERE status = 'published' ORDER BY created_at DESC LIMIT ?",
+                "WHERE status = 'published' ORDER BY created_at DESC LIMIT %s",
                 (max_apps,),
             ).fetchall()
             for row in rows:

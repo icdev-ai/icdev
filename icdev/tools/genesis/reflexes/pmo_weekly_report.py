@@ -341,7 +341,7 @@ def _push_kanban_task(snapshot: Dict[str, Any], narrative: str, report_date: str
             """INSERT INTO kanban_tasks
                (id, task_type, title, description, status, priority,
                 tags, dispatch_source, created_at, updated_at)
-               VALUES (?, ?, ?, ?, 'suggested', ?, ?, 'pmo_weekly_report', ?, ?)""",
+               VALUES (%s, %s, %s, %s, 'suggested', %s, %s, 'pmo_weekly_report', %s, %s)""",
             (
                 task_id_str,
                 "chore",

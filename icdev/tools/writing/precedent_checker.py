@@ -127,7 +127,7 @@ def record_decision(
             "INSERT INTO wg_board_decisions "
             "(id, board_type, topic_keywords, decision_verb, rationale, "
             "decided_by, source_document, classification) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (decision_id, board_type, kw_str, decision_verb, rationale,
              decided_by, source_document, "CUI"),
         )
@@ -158,7 +158,7 @@ def check_precedents(text: str, board_type: Optional[str] = None) -> Dict[str, A
             rows = conn.execute(
                 "SELECT id, board_type, topic_keywords, decision_verb, rationale, "
                 "decided_at, decided_by, source_document, classification "
-                "FROM wg_board_decisions WHERE board_type = ? "
+                "FROM wg_board_decisions WHERE board_type = %s "
                 "ORDER BY decided_at DESC",
                 (board_type,),
             ).fetchall()
@@ -214,15 +214,15 @@ def list_decisions(board_type: Optional[str] = None, limit: int = 50) -> List[Di
             rows = conn.execute(
                 "SELECT id, board_type, topic_keywords, decision_verb, rationale, "
                 "decided_at, decided_by, source_document, classification "
-                "FROM wg_board_decisions WHERE board_type = ? "
-                "ORDER BY decided_at DESC LIMIT ?",
+                "FROM wg_board_decisions WHERE board_type = %s "
+                "ORDER BY decided_at DESC LIMIT %s",
                 (board_type, limit),
             ).fetchall()
         else:
             rows = conn.execute(
                 "SELECT id, board_type, topic_keywords, decision_verb, rationale, "
                 "decided_at, decided_by, source_document, classification "
-                "FROM wg_board_decisions ORDER BY decided_at DESC LIMIT ?",
+                "FROM wg_board_decisions ORDER BY decided_at DESC LIMIT %s",
                 (limit,),
             ).fetchall()
     return [_row_to_dict(r) for r in rows]

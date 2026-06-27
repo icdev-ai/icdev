@@ -55,7 +55,7 @@ def _audit(conn, action, details="", actor="response_drafter"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (str(uuid.uuid4()), _now(), "govcon.response_draft", actor, action, details, "govcon"),
         )
     except Exception:
@@ -453,7 +453,7 @@ def draft_response(shall_id):
     conn = _get_db()
 
     # Load shall statement
-    stmt = conn.execute("SELECT * FROM rfp_shall_statements WHERE id = ?", (shall_id,)).fetchone()
+    stmt = conn.execute("SELECT * FROM rfp_shall_statements WHERE id = %s", (shall_id,)).fetchone()
 
     if not stmt:
         conn.close()
@@ -531,7 +531,7 @@ def draft_response(shall_id):
         "(id, opportunity_id, shall_statement_id, capability_ids, knowledge_block_ids, "
         "draft_content, draft_method, confidence_score, domain_category, "
         "status, reviewer_notes, created_at, updated_at, metadata) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             draft_id,
             opp_id,
@@ -576,7 +576,7 @@ def draft_all_for_opportunity(opportunity_id, method="auto"):
     """Draft responses for all shall statements of an opportunity."""
     conn = _get_db()
     stmts = conn.execute(
-        "SELECT id FROM rfp_shall_statements WHERE sam_opportunity_id = ?",
+        "SELECT id FROM rfp_shall_statements WHERE sam_opportunity_id = %s",
         (opportunity_id,),
     ).fetchall()
     conn.close()
@@ -635,7 +635,7 @@ def approve_draft(draft_id, reviewer="human", notes=""):
     conn = _get_db()
 
     # Verify draft exists and is in draft status
-    draft = conn.execute("SELECT * FROM proposal_section_drafts WHERE id = ?", (draft_id,)).fetchone()
+    draft = conn.execute("SELECT * FROM proposal_section_drafts WHERE id = %s", (draft_id,)).fetchone()
 
     if not draft:
         conn.close()
@@ -653,7 +653,7 @@ def approve_draft(draft_id, reviewer="human", notes=""):
         "(id, opportunity_id, shall_statement_id, capability_ids, knowledge_block_ids, "
         "draft_content, draft_method, confidence_score, domain_category, "
         "status, reviewer_notes, created_at, updated_at, metadata) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             approved_id,
             d["opportunity_id"],

@@ -228,7 +228,7 @@ class ToolChainValidator:
                    (id, project_id, agent_id, session_id, tool_name,
                     tool_sequence_json, rule_matched, severity, action,
                     context_json, classification, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'CUI', ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'CUI', %s)""",
                 (
                     entry_id,
                     project_id,

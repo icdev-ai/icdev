@@ -190,7 +190,7 @@ def record_risk_event(user_id: str, risk: RiskScore) -> None:
         conn.execute(_SESSION_RISK_TABLE_DDL)
         conn.execute(
             "INSERT INTO session_risk_log (id, user_id, event_type, risk_score, details, recorded_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s)",
             (
                 str(uuid.uuid4()),
                 user_id,

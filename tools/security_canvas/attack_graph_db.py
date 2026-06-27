@@ -44,7 +44,7 @@ def add_node(
         conn.execute(
             "INSERT INTO attack_graph_nodes "
             "(id, asset_id, classification, value, label, meta_json, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",  # nosec B608
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",  # nosec B608
             (
                 node_id,
                 asset_id,
@@ -63,7 +63,7 @@ def get_node(node_id: str) -> dict | None:
     """Return a single node by id, or None if not found."""
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM attack_graph_nodes WHERE id = ?",  # nosec B608
+            "SELECT * FROM attack_graph_nodes WHERE id = %s",  # nosec B608
             (node_id,),
         ).fetchone()
     return dict(row) if row else None
@@ -108,7 +108,7 @@ def add_edge(
         conn.execute(
             "INSERT INTO attack_graph_edges "
             "(id, src_node_id, dst_node_id, ttp_id, cost, prereqs_json, meta_json, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",  # nosec B608
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",  # nosec B608
             (
                 edge_id,
                 src_node_id,
@@ -128,7 +128,7 @@ def get_edge(edge_id: str) -> dict | None:
     """Return a single edge by id, or None if not found."""
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM attack_graph_edges WHERE id = ?",  # nosec B608
+            "SELECT * FROM attack_graph_edges WHERE id = %s",  # nosec B608
             (edge_id,),
         ).fetchone()
     return dict(row) if row else None

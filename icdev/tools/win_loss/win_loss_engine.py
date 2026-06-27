@@ -59,7 +59,7 @@ class WinLossEngine:
                     "INSERT INTO win_loss_analysis_runs"
                     " (id, run_at, outcomes_analyzed, patterns_found,"
                     "  top_win_features, top_loss_features, result_json)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    " VALUES (%s, %s, %s, %s, %s, %s, %s)",
                     (
                         run_id,
                         run_at,
@@ -75,7 +75,7 @@ class WinLossEngine:
                         "INSERT INTO win_loss_feature_impacts"
                         " (id, run_id, feature_tag, win_count, loss_count,"
                         "  win_rate, impact_score, analyzed_at)"
-                        " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        " VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                         (
                             str(uuid.uuid4()),
                             run_id,
@@ -92,7 +92,7 @@ class WinLossEngine:
                             "INSERT OR IGNORE INTO creative_feature_gaps"
                             " (id, feature_name, description, gap_score,"
                             "  signal_ids, discovered_at)"
-                            " VALUES (?, ?, ?, ?, ?, ?)",
+                            " VALUES (%s, %s, %s, %s, %s, %s)",
                             (
                                 str(uuid.uuid4()),
                                 p.feature_tag,

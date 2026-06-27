@@ -45,7 +45,7 @@ def save_checkpoint(design_id: str, graph_json: str | dict,
     try:
         conn.execute(
             "INSERT INTO aadc_checkpoints (id, design_id, node_id, label, graph_json, created_at) "
-            "VALUES (?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s)",
             (cid, design_id, node_id, label or f"Checkpoint {now[:10]}", graph_json, now),
         )
         conn.commit()
@@ -60,7 +60,7 @@ def list_checkpoints(design_id: str) -> list[dict]:
     try:
         rows = conn.execute(
             "SELECT id, design_id, node_id, label, created_at FROM aadc_checkpoints "
-            "WHERE design_id=? ORDER BY created_at DESC",
+            "WHERE design_id=%s ORDER BY created_at DESC",
             (design_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -73,7 +73,7 @@ def get_checkpoint(checkpoint_id: str) -> dict | None:
     conn = _conn()
     try:
         row = conn.execute(
-            "SELECT * FROM aadc_checkpoints WHERE id=?", (checkpoint_id,)
+            "SELECT * FROM aadc_checkpoints WHERE id=%s", (checkpoint_id,)
         ).fetchone()
         return dict(row) if row else None
     finally:
@@ -90,16 +90,16 @@ def restore_checkpoint(design_id: str, checkpoint_id: str) -> dict:
     conn = _conn()
     try:
         conn.execute(
-            "UPDATE aadc_designs SET graph_json=?, updated_at=? WHERE id=?",
+            "UPDATE aadc_designs SET graph_json=%s, updated_at=%s WHERE id=%s",
             (ckpt["graph_json"], now, design_id),
         )
         # Record restore as a new version snapshot
         ver = (conn.execute(
-            "SELECT MAX(version_number) FROM aadc_versions WHERE design_id=?", (design_id,)
+            "SELECT MAX(version_number) FROM aadc_versions WHERE design_id=%s", (design_id,)
         ).fetchone()[0] or 0) + 1
         conn.execute(
             "INSERT INTO aadc_versions (id, design_id, version_number, graph_json, created_at) "
-            "VALUES (?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s)",
             (f"v-{_uid()}", design_id, ver, ckpt["graph_json"], now),
         )
         conn.commit()
@@ -125,7 +125,7 @@ def fork_design(design_id: str, checkpoint_id: str, new_name: str) -> dict:
     try:
         # Copy the parent design metadata
         parent = conn.execute(
-            "SELECT domain, classification FROM aadc_designs WHERE id=?", (design_id,)
+            "SELECT domain, classification FROM aadc_designs WHERE id=%s", (design_id,)
         ).fetchone()
         domain = parent["domain"] if parent else ""
         classification = parent["classification"] if parent else "CUI"
@@ -133,7 +133,7 @@ def fork_design(design_id: str, checkpoint_id: str, new_name: str) -> dict:
         conn.execute(
             "INSERT INTO aadc_designs "
             "(id, name, description, domain, classification, graph_json, created_at, updated_at) "
-            "VALUES (?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
             (new_id, new_name,
              f"Forked from {design_id} at checkpoint {checkpoint_id[:8]}",
              domain, classification, ckpt["graph_json"], now, now),
@@ -141,7 +141,7 @@ def fork_design(design_id: str, checkpoint_id: str, new_name: str) -> dict:
         # Seed initial version
         conn.execute(
             "INSERT INTO aadc_versions (id, design_id, version_number, graph_json, created_at) "
-            "VALUES (?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s)",
             (f"v-{_uid()}", new_id, 1, ckpt["graph_json"], now),
         )
         conn.commit()
@@ -158,7 +158,7 @@ def delete_checkpoint(design_id: str, checkpoint_id: str) -> dict:
     conn = _conn()
     try:
         conn.execute(
-            "DELETE FROM aadc_checkpoints WHERE id=? AND design_id=?",
+            "DELETE FROM aadc_checkpoints WHERE id=%s AND design_id=%s",
             (checkpoint_id, design_id),
         )
         conn.commit()

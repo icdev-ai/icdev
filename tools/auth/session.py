@@ -12,7 +12,7 @@ def validate_sso_session(session_id: str) -> dict:
     with storage.get_connection() as conn:
         row = conn.execute(
             "SELECT id, tenant_id, provider_id, name_id, expires_at "
-            "FROM sso_sessions WHERE id = ?",
+            "FROM sso_sessions WHERE id = %s",
             (session_id,),
         ).fetchone()
     if row is None:

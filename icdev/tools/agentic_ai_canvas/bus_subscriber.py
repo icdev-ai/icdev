@@ -89,7 +89,7 @@ def _on_sdc_topology_saved(event_id: str, canvas_id: str, event_type: str, paylo
         conn = sdc_conn()
         try:
             row = conn.execute(
-                "SELECT graph_json, classification FROM security_designs WHERE id=?",
+                "SELECT graph_json, classification FROM security_designs WHERE id=%s",
                 (sdc_design_id,),
             ).fetchone()
         finally:
@@ -119,24 +119,24 @@ def _on_sdc_topology_saved(event_id: str, canvas_id: str, event_type: str, paylo
         conn = aadc_conn()
         try:
             designs = conn.execute(
-                "SELECT id FROM aadc_designs WHERE classification=?", (classification,)
+                "SELECT id FROM aadc_designs WHERE classification=%s", (classification,)
             ).fetchall()
             for design_row in designs:
                 design_id = design_row["id"] if isinstance(design_row, dict) else design_row[0]
                 artifact_id = str(uuid.uuid4())
                 conn.execute(
-                    "DELETE FROM aadc_artifacts WHERE design_id=? AND artifact_type=?",
+                    "DELETE FROM aadc_artifacts WHERE design_id=%s AND artifact_type=%s",
                     (design_id, "sdc_security_context"),
                 )
                 conn.execute(
                     "INSERT INTO aadc_artifacts (id, design_id, artifact_type, title, content_json, created_at) "
-                    "VALUES (?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s)",
                     (artifact_id, design_id, "sdc_security_context",
                      f"SDC Security Context ({sdc_design_id[:8]})", context_json, _now()),
                 )
                 conn.execute(
                     "INSERT INTO aadc_audit (id, design_id, action, detail, classification, created_at) "
-                    "VALUES (?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s)",
                     (str(uuid.uuid4()), design_id, "SDC_CONTEXT_SYNC",
                      f"sdc_design={sdc_design_id} controls={len(controls)}", classification, _now()),
                 )
@@ -167,7 +167,7 @@ def _on_odc_source_added(event_id: str, canvas_id: str, event_type: str, payload
         conn = odc_conn()
         try:
             row = conn.execute(
-                "SELECT graph_json, classification FROM observability_designs WHERE id=?",
+                "SELECT graph_json, classification FROM observability_designs WHERE id=%s",
                 (odc_design_id,),
             ).fetchone()
         finally:
@@ -201,24 +201,24 @@ def _on_odc_source_added(event_id: str, canvas_id: str, event_type: str, payload
         conn = aadc_conn()
         try:
             designs = conn.execute(
-                "SELECT id FROM aadc_designs WHERE classification=?", (classification,)
+                "SELECT id FROM aadc_designs WHERE classification=%s", (classification,)
             ).fetchall()
             for design_row in designs:
                 design_id = design_row["id"] if isinstance(design_row, dict) else design_row[0]
                 artifact_id = str(uuid.uuid4())
                 conn.execute(
-                    "DELETE FROM aadc_artifacts WHERE design_id=? AND artifact_type=?",
+                    "DELETE FROM aadc_artifacts WHERE design_id=%s AND artifact_type=%s",
                     (design_id, "odc_environment_sources"),
                 )
                 conn.execute(
                     "INSERT INTO aadc_artifacts (id, design_id, artifact_type, title, content_json, created_at) "
-                    "VALUES (?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s)",
                     (artifact_id, design_id, "odc_environment_sources",
                      f"ODC Environment Sources ({odc_design_id[:8]})", env_json, _now()),
                 )
                 conn.execute(
                     "INSERT INTO aadc_audit (id, design_id, action, detail, classification, created_at) "
-                    "VALUES (?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s)",
                     (str(uuid.uuid4()), design_id, "ODC_ENV_SYNC",
                      f"odc_design={odc_design_id} sources={len(sources)}", classification, _now()),
                 )
@@ -251,7 +251,7 @@ def _on_aimc_model_deprecated(event_id: str, canvas_id: str, event_type: str, pa
         try:
             refs = conn.execute(
                 "SELECT id, aadc_design_id, aadc_node_id, aimc_design_id "
-                "FROM aadc_aimc_model_refs WHERE aimc_model_id=?",
+                "FROM aadc_aimc_model_refs WHERE aimc_model_id=%s",
                 (model_id,),
             ).fetchall()
 
@@ -269,7 +269,7 @@ def _on_aimc_model_deprecated(event_id: str, canvas_id: str, event_type: str, pa
                 )
                 conn.execute(
                     "INSERT INTO aadc_audit (id, design_id, action, detail, classification, created_at) "
-                    "VALUES (?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s)",
                     (str(uuid.uuid4()), aadc_design_id, "AIMC_MODEL_DEPRECATED",
                      detail, "CUI", _now()),
                 )
@@ -285,7 +285,7 @@ def _on_aimc_model_deprecated(event_id: str, canvas_id: str, event_type: str, pa
                 })
                 conn.execute(
                     "INSERT INTO aadc_artifacts (id, design_id, artifact_type, title, content_json, created_at) "
-                    "VALUES (?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s)",
                     (str(uuid.uuid4()), aadc_design_id, "aimc_deprecated_model_ref",
                      f"Deprecated AIMC Model ({model_id[:8]})", artifact_content, _now()),
                 )

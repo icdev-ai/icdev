@@ -86,7 +86,7 @@ def start_session(
         cur = conn.cursor()
         # Collections where departing owner is the only member.
         cur.execute(
-            "SELECT collection_id FROM dic_team_access WHERE tenant_id = ? AND user_id = ? "
+            "SELECT collection_id FROM dic_team_access WHERE tenant_id = %s AND user_id = %s "
             "GROUP BY collection_id HAVING COUNT(*) = 1",
             (tenant_id, departing_owner_id),
         )
@@ -95,7 +95,7 @@ def start_session(
         # High-value docs in those collections (most chunks = most knowledge).
         for cid in solo_collections:
             cur.execute(
-                "SELECT doc_id, title FROM dic_documents WHERE collection_id = ? AND tenant_id = ? "
+                "SELECT doc_id, title FROM dic_documents WHERE collection_id = %s AND tenant_id = %s "
                 "ORDER BY (SELECT COUNT(*) FROM dic_chunk_links WHERE doc_id = dic_documents.doc_id) DESC LIMIT 5",
                 (cid, tenant_id),
             )
@@ -132,7 +132,7 @@ def start_session(
             "INSERT INTO dic_handoff_sessions "
             "(session_id, departing_owner_id, successor_owner_id, dest_collection_id, title, status, "
             "agenda_count, answered_count, generated_count, orphan_count, created_by, created_at, updated_at, tenant_id, classification) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (session_id, departing_owner_id, successor_owner_id, dest_collection_id, session.title,
              "open", len(agenda_topics), 0, 0, len(orphan_doc_ids), created_by, _now_utc(), _now_utc(), tenant_id, classification),
         )
@@ -141,7 +141,7 @@ def start_session(
             cur.execute(
                 "INSERT INTO dic_handoff_items "
                 "(item_id, session_id, item_kind, topic, prompt, status, created_at, updated_at, tenant_id, classification) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (item_id, session_id, "interview", topic,
                  f"What does {departing_owner_id} know about '{topic}' that {successor_owner_id} must capture?",
                  "pending", _now_utc(), _now_utc(), tenant_id, classification),
@@ -169,7 +169,7 @@ def answer_item(
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT session_id, topic, tenant_id, classification FROM dic_handoff_items WHERE item_id = ?",
+            "SELECT session_id, topic, tenant_id, classification FROM dic_handoff_items WHERE item_id = %s",
             (item_id,),
         )
         row = cur.fetchone()
@@ -182,13 +182,13 @@ def answer_item(
 
         # Update answer.
         cur.execute(
-            "UPDATE dic_handoff_items SET answer_text = ?, status = ?, updated_at = ? WHERE item_id = ?",
+            "UPDATE dic_handoff_items SET answer_text = %s, status = %s, updated_at = %s WHERE item_id = %s",
             (answer_text, "answered", _now_utc(), item_id),
         )
 
         # Update session answered_count.
         cur.execute(
-            "UPDATE dic_handoff_sessions SET answered_count = answered_count + 1, updated_at = ? WHERE session_id = ?",
+            "UPDATE dic_handoff_sessions SET answered_count = answered_count + 1, updated_at = %s WHERE session_id = %s",
             (_now_utc(), session_id),
         )
 
@@ -216,12 +216,12 @@ def answer_item(
                 pass
 
             cur.execute(
-                "UPDATE dic_handoff_items SET doc_id = ?, version_id = ?, verified = ?, abstained = ?, status = ?, updated_at = ? "
-                "WHERE item_id = ?",
+                "UPDATE dic_handoff_items SET doc_id = %s, version_id = %s, verified = %s, abstained = %s, status = %s, updated_at = %s "
+                "WHERE item_id = %s",
                 (doc_id, version_id, int(verified), int(abstained), "generated", _now_utc(), item_id),
             )
             cur.execute(
-                "UPDATE dic_handoff_sessions SET generated_count = generated_count + 1, updated_at = ? WHERE session_id = ?",
+                "UPDATE dic_handoff_sessions SET generated_count = generated_count + 1, updated_at = %s WHERE session_id = %s",
                 (_now_utc(), session_id),
             )
         except Exception as exc:
@@ -243,12 +243,12 @@ def close_session(session_id: str, closed_by: str = "system") -> dict:
     try:
         cur = conn.cursor()
         cur.execute(
-            "UPDATE dic_handoff_sessions SET status = ?, updated_at = ? WHERE session_id = ?",
+            "UPDATE dic_handoff_sessions SET status = %s, updated_at = %s WHERE session_id = %s",
             ("closed", _now_utc(), session_id),
         )
         # Reassign orphaned doc owners in team_access.
         cur.execute(
-            "SELECT successor_owner_id, dest_collection_id, orphan_count FROM dic_handoff_sessions WHERE session_id = ?",
+            "SELECT successor_owner_id, dest_collection_id, orphan_count FROM dic_handoff_sessions WHERE session_id = %s",
             (session_id,),
         )
         row = cur.fetchone()
@@ -261,7 +261,7 @@ def close_session(session_id: str, closed_by: str = "system") -> dict:
                 try:
                     cur.execute(
                         "INSERT INTO dic_team_access (access_id, collection_id, user_id, role, tenant_id) "
-                        "VALUES (?,?,?,?,?) ON CONFLICT DO NOTHING",
+                        "VALUES (%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
                         (_hid("access", dest_cid, successor, _now_utc()), dest_cid, successor, "admin", "default"),
                     )
                 except Exception:
@@ -280,7 +280,7 @@ def list_sessions(tenant_id: str = "default", limit: int = 50) -> list[dict]:
     try:
         cur = conn.cursor()
         cur.execute(
-            "SELECT * FROM dic_handoff_sessions WHERE tenant_id = ? ORDER BY created_at DESC LIMIT ?",
+            "SELECT * FROM dic_handoff_sessions WHERE tenant_id = %s ORDER BY created_at DESC LIMIT %s",
             (tenant_id, limit),
         )
         cols = [d[0] for d in cur.description]

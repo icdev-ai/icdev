@@ -98,7 +98,7 @@ class ProvRecorder:
                 """INSERT INTO prov_entities
                    (id, entity_type, label, content_hash, content, attributes,
                     trace_id, span_id, agent_id, project_id, classification)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     entity_id,
                     entity_type,
@@ -156,7 +156,7 @@ class ProvRecorder:
                 """INSERT INTO prov_activities
                    (id, activity_type, label, start_time, end_time, attributes,
                     trace_id, span_id, agent_id, project_id, classification)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     activity_id,
                     activity_type,
@@ -207,7 +207,7 @@ class ProvRecorder:
                 """INSERT INTO prov_relations
                    (relation_type, subject_id, object_id, attributes,
                     trace_id, project_id, classification)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                 (
                     relation_type,
                     subject_id,
@@ -260,7 +260,7 @@ class ProvRecorder:
 
                 if direction == "backward":
                     rows = conn.execute(
-                        "SELECT * FROM prov_relations WHERE subject_id = ?",
+                        "SELECT * FROM prov_relations WHERE subject_id = %s",
                         (current,),
                     ).fetchall()
                     for row in rows:
@@ -268,7 +268,7 @@ class ProvRecorder:
                         queue.append(row["object_id"])
                 else:
                     rows = conn.execute(
-                        "SELECT * FROM prov_relations WHERE object_id = ?",
+                        "SELECT * FROM prov_relations WHERE object_id = %s",
                         (current,),
                     ).fetchall()
                     for row in rows:

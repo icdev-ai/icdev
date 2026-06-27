@@ -110,7 +110,7 @@ def _parse_json_field(value):
 def _load_scenario(conn, scenario_id):
     """Load a scenario record or raise ValueError."""
     row = conn.execute(
-        "SELECT * FROM simulation_scenarios WHERE id = ?",
+        "SELECT * FROM simulation_scenarios WHERE id = %s",
         (scenario_id,),
     ).fetchone()
     if not row:
@@ -121,7 +121,7 @@ def _load_scenario(conn, scenario_id):
 def _load_scenario_results(conn, scenario_id):
     """Load all simulation results for a scenario."""
     rows = conn.execute(
-        "SELECT * FROM simulation_results WHERE scenario_id = ? ORDER BY dimension, metric_name",
+        "SELECT * FROM simulation_results WHERE scenario_id = %s ORDER BY dimension, metric_name",
         (scenario_id,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -130,7 +130,7 @@ def _load_scenario_results(conn, scenario_id):
 def _load_monte_carlo_runs(conn, scenario_id):
     """Load all Monte Carlo runs for a scenario."""
     rows = conn.execute(
-        "SELECT * FROM monte_carlo_runs WHERE scenario_id = ? ORDER BY dimension",
+        "SELECT * FROM monte_carlo_runs WHERE scenario_id = %s ORDER BY dimension",
         (scenario_id,),
     ).fetchall()
     return [dict(r) for r in rows]
@@ -178,7 +178,7 @@ def fork_scenario(scenario_id, new_name, additional_modifications=None, db_path=
                (id, project_id, session_id, scenario_name, scenario_type,
                 base_state, modifications, status, classification,
                 created_by, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 new_id,
                 source.get("project_id"),
@@ -241,7 +241,7 @@ def archive_scenario(scenario_id, db_path=None):
         now = _now_iso()
 
         conn.execute(
-            "UPDATE simulation_scenarios SET status = 'archived', completed_at = ? WHERE id = ?",
+            "UPDATE simulation_scenarios SET status = 'archived', completed_at = %s WHERE id = %s",
             (now, scenario_id),
         )
         conn.commit()
@@ -294,8 +294,8 @@ def delete_scenario(scenario_id, db_path=None):
         # Use 'archived' status (within CHECK constraint) to mark as removed
         conn.execute(
             """UPDATE simulation_scenarios
-               SET status = 'archived', modifications = ?, completed_at = ?
-               WHERE id = ?""",
+               SET status = 'archived', modifications = %s, completed_at = %s
+               WHERE id = %s""",
             (json.dumps(mods), now, scenario_id),
         )
         conn.commit()
@@ -477,7 +477,7 @@ def import_scenario(project_id, input_path, db_path=None):
                (id, project_id, session_id, scenario_name, scenario_type,
                 base_state, modifications, status, classification,
                 created_by, created_at, completed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 new_id,
                 project_id,
@@ -508,7 +508,7 @@ def import_scenario(project_id, input_path, db_path=None):
                    (scenario_id, dimension, metric_name, baseline_value,
                     simulated_value, delta, delta_pct, confidence, impact_tier,
                     details, visualizations, calculated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     new_id,
                     r.get("dimension"),
@@ -550,7 +550,7 @@ def import_scenario(project_id, input_path, db_path=None):
                     input_parameters, p10_value, p50_value, p80_value, p90_value,
                     mean_value, std_deviation, histogram_data, cdf_data,
                     confidence_intervals, run_duration_ms, completed_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     mc_new_id,
                     new_id,
@@ -621,7 +621,7 @@ def list_scenarios(project_id, include_archived=False, db_path=None):
                 """SELECT id, project_id, session_id, scenario_name, scenario_type,
                           status, classification, created_by, created_at, completed_at
                    FROM simulation_scenarios
-                   WHERE project_id = ?
+                   WHERE project_id = %s
                    ORDER BY created_at DESC""",
                 (project_id,),
             ).fetchall()
@@ -630,7 +630,7 @@ def list_scenarios(project_id, include_archived=False, db_path=None):
                 """SELECT id, project_id, session_id, scenario_name, scenario_type,
                           status, classification, created_by, created_at, completed_at
                    FROM simulation_scenarios
-                   WHERE project_id = ? AND status != 'archived'
+                   WHERE project_id = %s AND status != 'archived'
                    ORDER BY created_at DESC""",
                 (project_id,),
             ).fetchall()
@@ -641,7 +641,7 @@ def list_scenarios(project_id, include_archived=False, db_path=None):
             # Check for soft-delete flag
             # (We need modifications to detect soft-deleted scenarios)
             full_row = conn.execute(
-                "SELECT modifications FROM simulation_scenarios WHERE id = ?",
+                "SELECT modifications FROM simulation_scenarios WHERE id = %s",
                 (s["id"],),
             ).fetchone()
             if full_row:

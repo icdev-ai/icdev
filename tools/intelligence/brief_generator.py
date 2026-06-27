@@ -134,7 +134,7 @@ class BriefGenerator:
                 """INSERT INTO sg_intelligence_briefs
                    (id, brief_type, title, content_md, sio_confidence,
                     analyst_reviewed, created_at)
-                   VALUES (?, ?, ?, ?, ?, 0, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, 0, %s)""",
                 (brief_id, brief_type, title, content_md, sio_confidence, now),
             )
             conn.commit()

@@ -73,7 +73,7 @@ def create_backup(notes="", backup_type="manual"):
     conn = get_connection()
     conn.execute(
         "INSERT INTO nc_backups (id, backup_type, file_path, file_size_bytes, includes_json, notes, created_at) "
-        "VALUES (?,?,?,?,?,?,?)",
+        "VALUES (%s,%s,%s,%s,%s,%s,%s)",
         (backup_id, backup_type, str(zip_path), file_size, json.dumps(includes), notes, _now()),
     )
     conn.commit()
@@ -106,7 +106,7 @@ def list_backups():
 def restore_backup(backup_id):
     """Restore from a specific backup."""
     conn = get_connection()
-    row = conn.execute("SELECT * FROM nc_backups WHERE id=?", (backup_id,)).fetchone()
+    row = conn.execute("SELECT * FROM nc_backups WHERE id=%s", (backup_id,)).fetchone()
     conn.close()
     if not row:
         print(f"Backup not found: {backup_id}")

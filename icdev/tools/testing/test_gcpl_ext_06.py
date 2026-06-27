@@ -50,7 +50,7 @@ def seed_opp():
                (id, solicitation_number, title, agency, notice_type,
                 description, active, classification, content_hash,
                 first_seen, last_synced)
-               VALUES (?, ?, ?, ?, ?, ?, 'true', 'CUI', ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, 'true', 'CUI', %s, %s, %s)""",
             (
                 opp_id, sol_num,
                 "Test Cloud Migration RFP",
@@ -70,10 +70,10 @@ def cleanup(opp_id):
     conn = _get_db()
     try:
         conn.execute(
-            "DELETE FROM rfp_shall_statements WHERE sam_opportunity_id = ?", (opp_id,)
+            "DELETE FROM rfp_shall_statements WHERE sam_opportunity_id = %s", (opp_id,)
         )
         conn.execute(
-            "DELETE FROM sam_gov_opportunities WHERE id = ?", (opp_id,)
+            "DELETE FROM sam_gov_opportunities WHERE id = %s", (opp_id,)
         )
         conn.commit()
     finally:

@@ -419,8 +419,8 @@ def api_ticker_news(ticker):
             r[0] if not hasattr(r, "keys") else r["news_id"]
             for r in conn.execute(
                 "SELECT news_id FROM ad_news_impact_traces "
-                "WHERE ticker = ? "
-                "GROUP BY news_id ORDER BY MAX(traced_at) DESC LIMIT ?",
+                "WHERE ticker = %s "
+                "GROUP BY news_id ORDER BY MAX(traced_at) DESC LIMIT %s",
                 (t, limit * 2),
             ).fetchall()
         ]
@@ -431,9 +431,9 @@ def api_ticker_news(ticker):
         like_text = f'%{t}%'
         text_rows = conn.execute(
             "SELECT id FROM ad_news_items "
-            "WHERE mentioned_tickers::text LIKE ? "
-            "   OR title ILIKE ? OR summary ILIKE ? "
-            "ORDER BY ingested_at DESC LIMIT ?",
+            "WHERE mentioned_tickers::text LIKE %s "
+            "   OR title ILIKE %s OR summary ILIKE %s "
+            "ORDER BY ingested_at DESC LIMIT %s",
             (like_ticker, like_text, like_text, limit * 2),
         ).fetchall() if True else []
         text_ids = [r[0] if not hasattr(r, "keys") else r["id"] for r in text_rows]
@@ -472,7 +472,7 @@ def api_ticker_news(ticker):
         # Per-news impact score for this ticker (last 7 days)
         impact_rows = conn.execute(
             "SELECT news_id, impact_score FROM ad_news_impact_traces "
-            "WHERE ticker = ? AND traced_at >= ? ",
+            "WHERE ticker = %s AND traced_at >= %s ",
             (t, (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()),
         ).fetchall() if ordered_ids else []
         news_impact = {}
@@ -907,11 +907,11 @@ def api_overview():
         tid = _active_tenant_id()
         conn = get_conn()
         portfolio = conn.execute(
-            "SELECT * FROM ad_portfolios WHERE user_id=? AND tenant_id=? LIMIT 1",
+            "SELECT * FROM ad_portfolios WHERE user_id=%s AND tenant_id=%s LIMIT 1",
             (uid, tid),
         ).fetchone()
         positions = conn.execute(
-            "SELECT * FROM ad_positions WHERE portfolio_id=? AND qty > 0",
+            "SELECT * FROM ad_positions WHERE portfolio_id=%s AND qty > 0",
             (portfolio["id"],),
         ).fetchall()
         total_value = (dict(portfolio)["cash_balance"] if portfolio else 100000) + sum(dict(p)["market_value"] for p in positions)
@@ -1068,7 +1068,7 @@ def api_overview():
         holdings = []
         if strat:
             holdings = conn.execute(
-                "SELECT tier, COUNT(*) as cnt FROM ad_strategy_holdings WHERE run_id=? GROUP BY tier",
+                "SELECT tier, COUNT(*) as cnt FROM ad_strategy_holdings WHERE run_id=%s GROUP BY tier",
                 (dict(strat)["id"],)
             ).fetchall()
         conn.close()
@@ -1100,23 +1100,23 @@ def api_portfolio():
     conn = get_conn()
     # Phase 3+ multi-tenant: scope to active user + tenant
     portfolio = conn.execute(
-        "SELECT * FROM ad_portfolios WHERE user_id=? AND tenant_id=? LIMIT 1",
+        "SELECT * FROM ad_portfolios WHERE user_id=%s AND tenant_id=%s LIMIT 1",
         (uid, tid),
     ).fetchone()
     if not portfolio:
         conn.execute(
             "INSERT INTO ad_portfolios (id, user_id, tenant_id, name, cash_balance) "
-            "VALUES (?, ?, ?, 'Default', 100000.0)",
+            "VALUES (%s, %s, %s, 'Default', 100000.0)",
             (f"pf-{uid[:10]}", uid, tid),
         )
         conn.commit()
         portfolio = conn.execute(
-            "SELECT * FROM ad_portfolios WHERE user_id=? AND tenant_id=? LIMIT 1",
+            "SELECT * FROM ad_portfolios WHERE user_id=%s AND tenant_id=%s LIMIT 1",
             (uid, tid),
         ).fetchone()
 
     positions = conn.execute(
-        "SELECT * FROM ad_positions WHERE portfolio_id=? AND qty > 0",
+        "SELECT * FROM ad_positions WHERE portfolio_id=%s AND qty > 0",
         (portfolio["id"],),
     ).fetchall()
 
@@ -1216,15 +1216,15 @@ def _snapshot_portfolio_now() -> dict:
     try:
         existing = conn.execute(
             "SELECT id FROM ad_pf_daily_snapshots "
-            "WHERE user_id=? AND tenant_id=? AND snapshot_date=?",
+            "WHERE user_id=%s AND tenant_id=%s AND snapshot_date=%s",
             (uid, tid, today),
         ).fetchone()
         if existing:
             sid = existing[0] if not hasattr(existing, "keys") else existing["id"]
             conn.execute(
-                "UPDATE ad_pf_daily_snapshots SET cash_balance=?, positions_value=?, "
-                "total_value=?, positions_json=?, spy_price=?, created_at=? "
-                "WHERE id=? AND user_id=? AND tenant_id=?",
+                "UPDATE ad_pf_daily_snapshots SET cash_balance=%s, positions_value=%s, "
+                "total_value=%s, positions_json=%s, spy_price=%s, created_at=%s "
+                "WHERE id=%s AND user_id=%s AND tenant_id=%s",
                 (round(cash, 2), positions_value, round(total, 2),
                  json.dumps(positions_slim), spy_price,
                  datetime.now(timezone.utc).isoformat(), sid, uid, tid),
@@ -1233,7 +1233,7 @@ def _snapshot_portfolio_now() -> dict:
             conn.execute(
                 "INSERT INTO ad_pf_daily_snapshots "
                 "(id, user_id, tenant_id, snapshot_date, cash_balance, positions_value, "
-                "total_value, positions_json, spy_price, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "total_value, positions_json, spy_price, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (f"pfs-{_uuid.uuid4().hex[:12]}", uid, tid, today, round(cash, 2),
                  positions_value, round(total, 2),
                  json.dumps(positions_slim), spy_price,
@@ -1272,7 +1272,7 @@ def _fetch_snapshot_series(period: str):
     try:
         rows = conn.execute(
             "SELECT snapshot_date, total_value, spy_price "
-            "FROM ad_pf_daily_snapshots WHERE user_id=? AND tenant_id=? AND snapshot_date >= ? "
+            "FROM ad_pf_daily_snapshots WHERE user_id=%s AND tenant_id=%s AND snapshot_date >= %s "
             "ORDER BY snapshot_date ASC",
             (uid, tid, cutoff),
         ).fetchall()
@@ -1303,22 +1303,22 @@ def _current_portfolio():
     tid = _active_tenant_id()
     conn = get_conn()
     pf = conn.execute(
-        "SELECT * FROM ad_portfolios WHERE user_id=? AND tenant_id=? LIMIT 1",
+        "SELECT * FROM ad_portfolios WHERE user_id=%s AND tenant_id=%s LIMIT 1",
         (uid, tid),
     ).fetchone()
     if not pf:
         conn.execute(
             "INSERT INTO ad_portfolios (id, user_id, tenant_id, name, cash_balance) "
-            "VALUES (?, ?, ?, 'Default', 100000.0)",
+            "VALUES (%s, %s, %s, 'Default', 100000.0)",
             (f"pf-{uid[:10]}", uid, tid),
         )
         conn.commit()
         pf = conn.execute(
-            "SELECT * FROM ad_portfolios WHERE user_id=? AND tenant_id=? LIMIT 1",
+            "SELECT * FROM ad_portfolios WHERE user_id=%s AND tenant_id=%s LIMIT 1",
             (uid, tid),
         ).fetchone()
     rows = conn.execute(
-        "SELECT * FROM ad_positions WHERE portfolio_id=? AND qty > 0",
+        "SELECT * FROM ad_positions WHERE portfolio_id=%s AND qty > 0",
         (pf["id"],),
     ).fetchall()
     conn.close()
@@ -1651,19 +1651,19 @@ def api_watchlist_add(ticker):
         conn = get_conn()
         # Upsert: if it exists, just update notes + added_at
         exists = conn.execute(
-            "SELECT id FROM ad_watchlists WHERE user_id='default' AND ticker=? LIMIT 1",
+            "SELECT id FROM ad_watchlists WHERE user_id='default' AND ticker=%s LIMIT 1",
             (t,),
         ).fetchone()
         if exists:
             wid = exists[0] if not hasattr(exists, "keys") else exists["id"]
             conn.execute(
-                "UPDATE ad_watchlists SET notes=?, added_at=? WHERE id=?",
+                "UPDATE ad_watchlists SET notes=%s, added_at=%s WHERE id=%s",
                 (notes, datetime.now(timezone.utc).isoformat(), wid),
             )
         else:
             conn.execute(
                 "INSERT INTO ad_watchlists (id, user_id, ticker, notes, added_at) "
-                "VALUES (?, 'default', ?, ?, ?)",
+                "VALUES (%s, 'default', %s, %s, %s)",
                 (f"wl-{uuid.uuid4().hex[:12]}", t, notes, datetime.now(timezone.utc).isoformat()),
             )
         conn.commit()
@@ -1683,7 +1683,7 @@ def api_watchlist_remove(ticker):
         from tools.trading.db import get_conn
         conn = get_conn()
         conn.execute(
-            "DELETE FROM ad_watchlists WHERE user_id='default' AND ticker=?",
+            "DELETE FROM ad_watchlists WHERE user_id='default' AND ticker=%s",
             (t,),
         )
         conn.commit()
@@ -2402,7 +2402,7 @@ def api_analysis_run_detail(run_id):
 
     conn = get_conn()
     run = conn.execute(
-        "SELECT * FROM ad_analysis_runs WHERE id=?",
+        "SELECT * FROM ad_analysis_runs WHERE id=%s",
         (run_id,),
     ).fetchone()
     if not run:
@@ -2425,37 +2425,37 @@ def api_analysis_run_detail(run_id):
 
     # Fetch analyst reports
     reports = conn.execute(
-        "SELECT * FROM ad_analyst_reports WHERE run_id=?",
+        "SELECT * FROM ad_analyst_reports WHERE run_id=%s",
         (run_id,),
     ).fetchall()
 
     # Fetch debate record
     debate = conn.execute(
-        "SELECT * FROM ad_debate_records WHERE run_id=?",
+        "SELECT * FROM ad_debate_records WHERE run_id=%s",
         (run_id,),
     ).fetchone()
 
     # Fetch signal
     signal = conn.execute(
-        "SELECT * FROM ad_signals WHERE run_id=?",
+        "SELECT * FROM ad_signals WHERE run_id=%s",
         (run_id,),
     ).fetchone()
 
     # Fetch risk assessment
     risk = conn.execute(
-        "SELECT * FROM ad_risk_assessments WHERE run_id=?",
+        "SELECT * FROM ad_risk_assessments WHERE run_id=%s",
         (run_id,),
     ).fetchone()
 
     # Fetch trade decision
     decision = conn.execute(
-        "SELECT * FROM ad_trade_decisions WHERE run_id=?",
+        "SELECT * FROM ad_trade_decisions WHERE run_id=%s",
         (run_id,),
     ).fetchone()
 
     # Fetch macro context
     macro = conn.execute(
-        "SELECT * FROM ad_macro_context WHERE run_id=?",
+        "SELECT * FROM ad_macro_context WHERE run_id=%s",
         (run_id,),
     ).fetchone()
 
@@ -2469,13 +2469,13 @@ def api_analysis_run_detail(run_id):
             pass
 
     macro_sectors = conn.execute(
-        "SELECT * FROM ad_macro_sector_impact WHERE run_id=?",
+        "SELECT * FROM ad_macro_sector_impact WHERE run_id=%s",
         (run_id,),
     ).fetchall()
 
     # Fetch Pulse article
     article = conn.execute(
-        "SELECT * FROM ad_pulse_articles WHERE run_id=?",
+        "SELECT * FROM ad_pulse_articles WHERE run_id=%s",
         (run_id,),
     ).fetchone()
 
@@ -2628,7 +2628,7 @@ def api_compare_runs(run_id_a, run_id_b):
     results = {}
     for run_id in (run_id_a, run_id_b):
         run = conn.execute(
-            "SELECT * FROM ad_analysis_runs WHERE id=?",
+            "SELECT * FROM ad_analysis_runs WHERE id=%s",
             (run_id,),
         ).fetchone()
         if not run:
@@ -2643,11 +2643,11 @@ def api_compare_runs(run_id_a, run_id_b):
                 pass
 
         signal = conn.execute(
-            "SELECT * FROM ad_signals WHERE run_id=?",
+            "SELECT * FROM ad_signals WHERE run_id=%s",
             (run_id,),
         ).fetchone()
         macro = conn.execute(
-            "SELECT * FROM ad_macro_context WHERE run_id=?",
+            "SELECT * FROM ad_macro_context WHERE run_id=%s",
             (run_id,),
         ).fetchone()
 
@@ -3403,7 +3403,7 @@ def api_news_category_summary(cat: str):
         rows = conn.execute(
             """SELECT impact_level, net_direction, title
                FROM ad_news_items
-               WHERE category = ? AND published_at >= datetime('now', '-24 hours')
+               WHERE category = %s AND published_at >= datetime('now', '-24 hours')
                ORDER BY published_at DESC LIMIT 50""",
             (cat,),
         ).fetchall()
@@ -3657,13 +3657,13 @@ def api_value_screener():
                 FROM   ad_signals
                 ORDER  BY ticker, run_id DESC
             ) s ON s.ticker = q.ticker
-            WHERE  (f.pe_ratio       IS NULL OR f.pe_ratio       <= ?)
-              AND  (f.price_to_book  IS NULL OR f.price_to_book  <= ?)
-              AND  (f.fcf_yield      IS NULL OR f.fcf_yield      >= ?)
-              AND  (f.roe            IS NULL OR f.roe             >= ?)
-              AND  (f.debt_to_equity IS NULL OR f.debt_to_equity <= ?)
+            WHERE  (f.pe_ratio       IS NULL OR f.pe_ratio       <= %s)
+              AND  (f.price_to_book  IS NULL OR f.price_to_book  <= %s)
+              AND  (f.fcf_yield      IS NULL OR f.fcf_yield      >= %s)
+              AND  (f.roe            IS NULL OR f.roe             >= %s)
+              AND  (f.debt_to_equity IS NULL OR f.debt_to_equity <= %s)
             ORDER BY q.composite_quality_score DESC
-            LIMIT  ?
+            LIMIT  %s
             """,
             (max_pe, max_pb, min_fcf, min_roe, max_de, limit),
         ).fetchall()
@@ -3714,7 +3714,7 @@ def api_value_pe_nav():
               AND  roe IS NOT NULL
               AND  pe_ratio > 0
             ORDER BY pe_ratio
-            LIMIT  ?
+            LIMIT  %s
             """,
             (limit * 3,),
         ).fetchall()
@@ -3955,7 +3955,7 @@ def api_advisor_recommendation_details(rec_id: str):
     conn = get_conn()
     try:
         rec_row = conn.execute(
-            "SELECT * FROM ad_cis_recommendations WHERE id = ?", (rec_id,),
+            "SELECT * FROM ad_cis_recommendations WHERE id = %s", (rec_id,),
         ).fetchone()
         if not rec_row:
             return jsonify({"error": "not found"}), 404
@@ -3980,7 +3980,7 @@ def api_advisor_recommendation_details(rec_id: str):
         op_rows = conn.execute(
             "SELECT expert_key, expert_name, direction, conviction, reasoning, "
             "risk_profile, created_at FROM ad_expert_opinions "
-            "WHERE ticker = ? AND created_at >= ? AND created_at <= ? "
+            "WHERE ticker = %s AND created_at >= %s AND created_at <= %s "
             "ORDER BY created_at ASC",
             (rec["ticker"], low, high),
         ).fetchall()
@@ -4058,7 +4058,7 @@ def api_toggle_options_autotrade(rec_id):
         from tools.trading.db import get_conn as _gc
         conn = _gc()
         row = conn.execute(
-            "SELECT id, auto_trade_options FROM ad_cis_recommendations WHERE id = ?",
+            "SELECT id, auto_trade_options FROM ad_cis_recommendations WHERE id = %s",
             (rec_id,),
         ).fetchone()
         if not row:
@@ -4066,7 +4066,7 @@ def api_toggle_options_autotrade(rec_id):
             return jsonify({"error": "recommendation not found"}), 404
         new_val = 0 if row["auto_trade_options"] else 1
         conn.execute(
-            "UPDATE ad_cis_recommendations SET auto_trade_options = ? WHERE id = ?",
+            "UPDATE ad_cis_recommendations SET auto_trade_options = %s WHERE id = %s",
             (new_val, rec_id),
         )
         conn.commit()
@@ -4811,7 +4811,7 @@ def api_orders():
 
     conn = get_conn()
     rows = conn.execute(
-        "SELECT * FROM ad_orders WHERE user_id=? AND tenant_id=? "
+        "SELECT * FROM ad_orders WHERE user_id=%s AND tenant_id=%s "
         "ORDER BY created_at DESC LIMIT 50",
         (uid, tid),
     ).fetchall()
@@ -4913,11 +4913,11 @@ def api_risk():
 
     conn = get_conn()
     pf_row = conn.execute(
-        "SELECT id FROM ad_portfolios WHERE user_id=? AND tenant_id=? LIMIT 1",
+        "SELECT id FROM ad_portfolios WHERE user_id=%s AND tenant_id=%s LIMIT 1",
         (uid, tid),
     ).fetchone()
     positions = conn.execute(
-        "SELECT * FROM ad_positions WHERE portfolio_id=? AND qty > 0",
+        "SELECT * FROM ad_positions WHERE portfolio_id=%s AND qty > 0",
         (pf_row["id"] if pf_row else "",),
     ).fetchall() if pf_row else []
     # ad_signals is shared across users (market-wide signals — not per-user)
@@ -5015,7 +5015,7 @@ def api_strategist_run_detail(run_id):
     from tools.trading.db import get_conn
 
     conn = get_conn()
-    run = conn.execute("SELECT * FROM ad_strategy_runs WHERE id = ?", (run_id,)).fetchone()
+    run = conn.execute("SELECT * FROM ad_strategy_runs WHERE id = %s", (run_id,)).fetchone()
     if not run:
         return jsonify({"error": "Run not found"}), 404
     _cu = getattr(g, "current_user", None) or {}
@@ -5026,15 +5026,15 @@ def api_strategist_run_detail(run_id):
         return jsonify({"error": "Run not found"}), 404
 
     holdings = conn.execute(
-        "SELECT * FROM ad_strategy_holdings WHERE run_id = ? ORDER BY weight_pct DESC",
+        "SELECT * FROM ad_strategy_holdings WHERE run_id = %s ORDER BY weight_pct DESC",
         (run_id,),
     ).fetchall()
     allocations = conn.execute(
-        "SELECT * FROM ad_strategy_sector_allocation WHERE run_id = ? ORDER BY target_weight_pct DESC",
+        "SELECT * FROM ad_strategy_sector_allocation WHERE run_id = %s ORDER BY target_weight_pct DESC",
         (run_id,),
     ).fetchall()
     signals = conn.execute(
-        "SELECT * FROM ad_strategy_signals WHERE run_id = ? ORDER BY created_at DESC",
+        "SELECT * FROM ad_strategy_signals WHERE run_id = %s ORDER BY created_at DESC",
         (run_id,),
     ).fetchall()
 
@@ -8216,7 +8216,7 @@ def api_market_heatmap_export_csv():
             ir = conn.execute(
                 "SELECT ticker, SUM(impact_score) AS total, COUNT(*) AS traces "
                 "FROM ad_news_impact_traces "
-                "WHERE traced_at >= ? "
+                "WHERE traced_at >= %s "
                 "GROUP BY ticker",
                 (cutoff,),
             ).fetchall()

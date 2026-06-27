@@ -23,7 +23,7 @@ def _uid() -> str:
 
 def _audit(conn, action: str, domain_id: str = "", product_id: str = "", detail: str = "", user: str = "system"):
     conn.execute(
-        "INSERT INTO dm_audit (domain_id, product_id, user, action, detail) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO dm_audit (domain_id, product_id, user, action, detail) VALUES (%s, %s, %s, %s, %s)",
         (domain_id, product_id, user, action, detail),
     )
 
@@ -62,14 +62,14 @@ def create_domain(name: str, **kwargs) -> dict:
 def list_domains(status: str = "active") -> list:
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT * FROM dm_domains WHERE status = ? ORDER BY name", (status,)
+            "SELECT * FROM dm_domains WHERE status = %s ORDER BY name", (status,)
         ).fetchall()
     return [dict(r) for r in rows]
 
 
 def get_domain(domain_id: str) -> dict | None:
     with get_connection() as conn:
-        row = conn.execute("SELECT * FROM dm_domains WHERE id = ?", (domain_id,)).fetchone()
+        row = conn.execute("SELECT * FROM dm_domains WHERE id = %s", (domain_id,)).fetchone()
     return dict(row) if row else None
 
 
@@ -109,7 +109,7 @@ def list_products(domain_id: str | None = None) -> list:
     with get_connection() as conn:
         if domain_id:
             rows = conn.execute(
-                "SELECT * FROM dm_data_products WHERE domain_id = ? ORDER BY name", (domain_id,)
+                "SELECT * FROM dm_data_products WHERE domain_id = %s ORDER BY name", (domain_id,)
             ).fetchall()
         else:
             rows = conn.execute("SELECT * FROM dm_data_products ORDER BY name").fetchall()
@@ -139,7 +139,7 @@ def assess_domain_maturity(domain_id: str, maturity_level: int, scores: dict | N
             row,
         )
         conn.execute(
-            "UPDATE dm_domains SET maturity_level = ?, updated_at = ? WHERE id = ?",
+            "UPDATE dm_domains SET maturity_level = %s, updated_at = %s WHERE id = %s",
             (maturity_level, _now(), domain_id),
         )
         _audit(conn, "domain.maturity", domain_id=domain_id, detail=f"level={maturity_level} ({level_label})", user=kwargs.get("user", "system"))

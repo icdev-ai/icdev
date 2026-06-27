@@ -72,7 +72,7 @@ class EconomicSignalScorer:
             try:
                 rows = conn.execute(
                     "SELECT signal_type, value, metadata_json FROM sg_economic_signals "
-                    "WHERE theater_id = ? AND created_at >= ? ORDER BY signal_ts DESC",
+                    "WHERE theater_id = %s AND created_at >= %s ORDER BY signal_ts DESC",
                     (theater_id, cutoff),
                 ).fetchall()
             except Exception:
@@ -135,12 +135,12 @@ class MilitarySignalScorer:
             try:
                 mil_rows = conn.execute(
                     "SELECT composite_score, confidence FROM sg_military_signal_scores "
-                    "WHERE created_at >= ? ORDER BY created_at DESC LIMIT 20",
+                    "WHERE created_at >= %s ORDER BY created_at DESC LIMIT 20",
                     (cutoff,),
                 ).fetchall()
                 ghost_rows = conn.execute(
                     "SELECT confidence FROM sg_ghost_signals "
-                    "WHERE detected_at >= ? ORDER BY detected_at DESC LIMIT 50",
+                    "WHERE detected_at >= %s ORDER BY detected_at DESC LIMIT 50",
                     (cutoff,),
                 ).fetchall()
             except Exception:
@@ -193,7 +193,7 @@ class DiplomaticSignalScorer:
             try:
                 rows = conn.execute(
                     "SELECT status, weight, category FROM sg_iw_indicators "
-                    "WHERE theater = ? AND category IN ('diplomatic', 'political', 'economic')",
+                    "WHERE theater = %s AND category IN ('diplomatic', 'political', 'economic')",
                     (theater_id,),
                 ).fetchall()
             except Exception:
@@ -240,7 +240,7 @@ class InfrastructureScorer:
             try:
                 rows = conn.execute(
                     "SELECT signal_value, confidence FROM sg_infrastructure_signals "
-                    "WHERE computed_at >= ? ORDER BY computed_at DESC LIMIT 30",
+                    "WHERE computed_at >= %s ORDER BY computed_at DESC LIMIT 30",
                     (cutoff,),
                 ).fetchall()
             except Exception:
@@ -288,7 +288,7 @@ class InformationScorer:
                     "SELECT information_score, rhetoric_score, dehumanization_index, "
                     "cyber_recon_score, disinformation_surge "
                     "FROM sg_information_scores "
-                    "WHERE created_at >= ? ORDER BY created_at DESC LIMIT 10",
+                    "WHERE created_at >= %s ORDER BY created_at DESC LIMIT 10",
                     (cutoff,),
                 ).fetchall()
             except Exception:

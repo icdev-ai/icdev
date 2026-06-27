@@ -75,7 +75,7 @@ def create_schedule(
         conn.execute(
             """INSERT OR REPLACE INTO ai_reassessment_schedule
                (project_id, ai_system, frequency, next_due)
-               VALUES (?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s)""",
             (project_id, ai_system, frequency, next_due),
         )
         conn.commit()
@@ -99,7 +99,7 @@ def check_overdue(project_id: str, db_path: Path = DB_PATH) -> Dict:
         now = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         rows = conn.execute(
             """SELECT * FROM ai_reassessment_schedule
-               WHERE project_id = ? AND next_due < ?
+               WHERE project_id = %s AND next_due < %s
                ORDER BY next_due ASC""",
             (project_id, now),
         ).fetchall()
@@ -138,7 +138,7 @@ def complete_reassessment(
     try:
         _ensure_table(conn)
         row = conn.execute(
-            "SELECT * FROM ai_reassessment_schedule WHERE id = ?",
+            "SELECT * FROM ai_reassessment_schedule WHERE id = %s",
             (schedule_id,),
         ).fetchone()
         if not row:
@@ -152,8 +152,8 @@ def complete_reassessment(
 
         conn.execute(
             """UPDATE ai_reassessment_schedule
-               SET last_completed = ?, next_due = ?
-               WHERE id = ?""",
+               SET last_completed = %s, next_due = %s
+               WHERE id = %s""",
             (now, next_due, schedule_id),
         )
         conn.commit()
@@ -176,7 +176,7 @@ def get_schedule_summary(project_id: str, db_path: Path = DB_PATH) -> Dict:
         _ensure_table(conn)
         rows = conn.execute(
             """SELECT * FROM ai_reassessment_schedule
-               WHERE project_id = ? ORDER BY next_due ASC""",
+               WHERE project_id = %s ORDER BY next_due ASC""",
             (project_id,),
         ).fetchall()
 

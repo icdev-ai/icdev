@@ -353,7 +353,7 @@ def _insert_eei(node: dict[str, Any], inferred_date_iso: str, confidence: float)
                     "INSERT INTO sg_pir_requirements "
                     "(id, pir_type, topic, description, collection_priority, "
                     " status, created_at, updated_at) "
-                    "VALUES (?,?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                     (pir_id, "EEI", topic, description, 2, "active", now_iso, now_iso),
                 )
             conn.commit()

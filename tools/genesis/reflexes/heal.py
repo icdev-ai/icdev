@@ -154,7 +154,7 @@ def _action_reset_circuit_breaker(params: Dict) -> Tuple[bool, str]:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT circuit_breaker_open FROM genesis_reflex_state WHERE reflex_name = ?",
+            "SELECT circuit_breaker_open FROM genesis_reflex_state WHERE reflex_name = %s",
             (reflex_name,),
         ).fetchone()
         if not row:
@@ -166,8 +166,8 @@ def _action_reset_circuit_breaker(params: Dict) -> Tuple[bool, str]:
             """
             UPDATE genesis_reflex_state SET
                 consecutive_failures = 0, circuit_breaker_open = 0,
-                circuit_breaker_tripped_at = NULL, updated_at = ?
-            WHERE reflex_name = ?
+                circuit_breaker_tripped_at = NULL, updated_at = %s
+            WHERE reflex_name = %s
         """,
             (now, reflex_name),
         )
@@ -350,7 +350,7 @@ def _get_recent_failures(lookback_hours: int = 6) -> List[Dict[str, Any]]:
             SELECT id, event_type, details, created_at
             FROM audit_trail
             WHERE event_type LIKE 'error.%'
-            AND created_at > ?
+            AND created_at > %s
             ORDER BY created_at DESC
             LIMIT 50
         """,
@@ -378,7 +378,7 @@ def _get_healing_patterns(min_confidence: float = 0.7) -> List[Dict[str, Any]]:
             SELECT id, pattern_name, error_pattern, resolution_type,
                    resolution_action, confidence, success_count, failure_count
             FROM self_healing_patterns
-            WHERE confidence >= ?
+            WHERE confidence >= %s
             ORDER BY confidence DESC
             """,
             (min_confidence,),
@@ -514,7 +514,7 @@ def _record_healing_event(failure_id, pattern_id, action: str, success: bool) ->
             INSERT INTO self_healing_events
             (project_id, pattern_id, trigger_source, trigger_data, action_taken,
              outcome, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 "",
@@ -545,7 +545,7 @@ def _update_pattern_confidence(pattern_id, success: bool) -> None:
                 UPDATE self_healing_patterns
                 SET success_count = success_count + 1,
                     confidence = MIN(1.0, confidence + 0.02)
-                WHERE id = ?
+                WHERE id = %s
             """,
                 (pattern_id,),
             )
@@ -555,7 +555,7 @@ def _update_pattern_confidence(pattern_id, success: bool) -> None:
                 UPDATE self_healing_patterns
                 SET failure_count = failure_count + 1,
                     confidence = MAX(0.0, confidence - 0.05)
-                WHERE id = ?
+                WHERE id = %s
             """,
                 (pattern_id,),
             )

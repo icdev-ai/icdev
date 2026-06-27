@@ -230,7 +230,7 @@ def build_bundle(
             "INSERT OR IGNORE INTO bd_authorized_components "
             "(id, component_type, name, sha256_manifest, bundle_path, "
             " file_count, sbom_count, registered_by, status, created_at, updated_at) "
-            "VALUES (?, 'airgap_bundle', ?, ?, ?, ?, ?, 'icdev-airgap-engine', 'authorized', ?, ?)",
+            "VALUES (%s, 'airgap_bundle', %s, %s, %s, %s, %s, 'icdev-airgap-engine', 'authorized', %s, %s)",
             (
                 str(_uuid.uuid4()), out.name, manifest_sha, str(out),
                 len(artifacts), len(sboms),

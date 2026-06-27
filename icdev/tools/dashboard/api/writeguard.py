@@ -218,7 +218,7 @@ def get_modes():
         try:
             conn = get_connection()
             rows = conn.execute(
-                "SELECT guide_name, id FROM wg_style_guides WHERE scope='project' AND scope_id=? AND is_active=1 ORDER BY guide_name",
+                "SELECT guide_name, id FROM wg_style_guides WHERE scope='project' AND scope_id=%s AND is_active=1 ORDER BY guide_name",
                 (opp_id,),
             ).fetchall()
             for r in rows:
@@ -296,7 +296,7 @@ def create_glossary():
                (id, term, term_type, expansion, replacement, definition, domain,
                 scope, scope_id, case_sensitive, enforcement, source, approved_by,
                 created_by, created_at, is_active, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 entry_id,
                 data["term"],
@@ -327,7 +327,7 @@ def create_glossary():
 def get_glossary_entry(entry_id):
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM wg_glossary WHERE id = ?", (entry_id,)).fetchone()
+        row = conn.execute("SELECT * FROM wg_glossary WHERE id = %s", (entry_id,)).fetchone()
         if not row:
             return jsonify({"error": "Not found"}), 404
         return jsonify(dict(row))
@@ -340,7 +340,7 @@ def update_glossary_entry(entry_id):
     data = request.get_json(silent=True) or {}
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM wg_glossary WHERE id = ?", (entry_id,)).fetchone()
+        row = conn.execute("SELECT * FROM wg_glossary WHERE id = %s", (entry_id,)).fetchone()
         if not row:
             return jsonify({"error": "Not found"}), 404
         updatable = {
@@ -356,9 +356,9 @@ def update_glossary_entry(entry_id):
         }
         conn.execute(
             """UPDATE wg_glossary SET
-               term=?, term_type=?, expansion=?, replacement=?, definition=?,
-               domain=?, case_sensitive=?, enforcement=?, is_active=?
-               WHERE id=?""",
+               term=%s, term_type=%s, expansion=%s, replacement=%s, definition=%s,
+               domain=%s, case_sensitive=%s, enforcement=%s, is_active=%s
+               WHERE id=%s""",
             tuple(updatable[k] for k in [
                 "term", "term_type", "expansion", "replacement", "definition",
                 "domain", "case_sensitive", "enforcement", "is_active"
@@ -374,7 +374,7 @@ def update_glossary_entry(entry_id):
 def delete_glossary_entry(entry_id):
     conn = get_connection()
     try:
-        conn.execute("UPDATE wg_glossary SET is_active = 0 WHERE id = ?", (entry_id,))
+        conn.execute("UPDATE wg_glossary SET is_active = 0 WHERE id = %s", (entry_id,))
         conn.commit()
         return jsonify({"id": entry_id, "status": "deleted"})
     finally:
@@ -398,7 +398,7 @@ def list_taxonomy():
     conn = get_connection()
     try:
         rows = conn.execute(
-            "SELECT * FROM proposal_taxonomy WHERE opportunity_id = ? AND is_active = 1 ORDER BY label",
+            "SELECT * FROM proposal_taxonomy WHERE opportunity_id = %s AND is_active = 1 ORDER BY label",
             (opp_id,),
         ).fetchall()
         return jsonify({"entries": [dict(r) for r in rows]})
@@ -421,7 +421,7 @@ def create_taxonomy():
         conn.execute(
             """INSERT INTO proposal_taxonomy
                (id, opportunity_id, parent_id, label, description, weight, is_active, created_at, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 entry_id,
                 opp_id,
@@ -444,7 +444,7 @@ def create_taxonomy():
 def get_taxonomy_entry(entry_id):
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM proposal_taxonomy WHERE id = ?", (entry_id,)).fetchone()
+        row = conn.execute("SELECT * FROM proposal_taxonomy WHERE id = %s", (entry_id,)).fetchone()
         if not row:
             return jsonify({"error": "Not found"}), 404
         return jsonify(dict(row))
@@ -457,13 +457,13 @@ def update_taxonomy_entry(entry_id):
     data = request.get_json(silent=True) or {}
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM proposal_taxonomy WHERE id = ?", (entry_id,)).fetchone()
+        row = conn.execute("SELECT * FROM proposal_taxonomy WHERE id = %s", (entry_id,)).fetchone()
         if not row:
             return jsonify({"error": "Not found"}), 404
         conn.execute(
             """UPDATE proposal_taxonomy SET
-               label=?, description=?, weight=?, parent_id=?, is_active=?
-               WHERE id=?""",
+               label=%s, description=%s, weight=%s, parent_id=%s, is_active=%s
+               WHERE id=%s""",
             (
                 data.get("label", row["label"]),
                 data.get("description", row["description"]),
@@ -483,7 +483,7 @@ def update_taxonomy_entry(entry_id):
 def delete_taxonomy_entry(entry_id):
     conn = get_connection()
     try:
-        conn.execute("UPDATE proposal_taxonomy SET is_active = 0 WHERE id = ?", (entry_id,))
+        conn.execute("UPDATE proposal_taxonomy SET is_active = 0 WHERE id = %s", (entry_id,))
         conn.commit()
         return jsonify({"id": entry_id, "status": "deleted"})
     finally:

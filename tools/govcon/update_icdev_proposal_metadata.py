@@ -60,7 +60,7 @@ def update_metadata(dry_run: bool = False) -> dict:
     word_counts: dict[str, int] = {}
     for opp_id in opp_updates:
         row = conn.execute(
-            "SELECT SUM(LENGTH(draft_content)) as total_chars FROM proposal_section_drafts WHERE opportunity_id = ? AND status = 'approved'",
+            "SELECT SUM(LENGTH(draft_content)) as total_chars FROM proposal_section_drafts WHERE opportunity_id = %s AND status = 'approved'",
             (opp_id,),
         ).fetchone()
         total_chars = row["total_chars"] or 0
@@ -72,14 +72,14 @@ def update_metadata(dry_run: bool = False) -> dict:
     for opp_id, meta in opp_updates.items():
         if not dry_run:
             conn.execute(
-                "UPDATE proposal_opportunities SET status = ?, bid_decision_rationale = ? WHERE id = ?",
+                "UPDATE proposal_opportunities SET status = %s, bid_decision_rationale = %s WHERE id = %s",
                 (meta["status"], meta["bid_decision_rationale"], opp_id),
             )
             updated["opportunities"] += 1
 
             # Update volumes
             result = conn.execute(
-                "UPDATE proposal_volumes SET status = 'review', updated_at = ? WHERE opportunity_id = ?",
+                "UPDATE proposal_volumes SET status = 'review', updated_at = %s WHERE opportunity_id = %s",
                 (_utcnow_iso(), opp_id),
             )
             updated["volumes"] += result.rowcount if hasattr(result, "rowcount") else 0
@@ -91,13 +91,13 @@ def update_metadata(dry_run: bool = False) -> dict:
                 """
                 UPDATE proposal_sections
                 SET status = 'gold_team_review',
-                    current_word_count = ?,
-                    current_page_count = ?,
+                    current_word_count = %s,
+                    current_page_count = %s,
                     writer = 'ICDEV Proposal Genesis (AI Draft Reflex)',
                     writer_email = 'proposals@icdev.system',
                     reviewer = 'ICDEV Red Team (WriteGuard + Human)',
-                    updated_at = ?
-                WHERE opportunity_id = ?
+                    updated_at = %s
+                WHERE opportunity_id = %s
                 """,
                 (words, pages, _utcnow_iso(), opp_id),
             )

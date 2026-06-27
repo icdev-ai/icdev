@@ -31,11 +31,11 @@ def export_assessment_as_ft_signal(design_id: str) -> Dict[str, Any]:
         conn = _aadc_conn()
         a_row = conn.execute(
             "SELECT score, nist_rmf_score, owasp_score, findings_json "
-            "FROM aadc_assessments WHERE design_id=? ORDER BY created_at DESC LIMIT 1",
+            "FROM aadc_assessments WHERE design_id=%s ORDER BY created_at DESC LIMIT 1",
             (design_id,),
         ).fetchone()
         d_row = conn.execute(
-            "SELECT name FROM aadc_designs WHERE id=?", (design_id,)
+            "SELECT name FROM aadc_designs WHERE id=%s", (design_id,)
         ).fetchone()
         if a_row:
             assessment = dict(a_row)
@@ -58,7 +58,7 @@ def export_assessment_as_ft_signal(design_id: str) -> Dict[str, Any]:
             try:
                 conn2 = _aadc_conn()
                 row = conn2.execute(
-                    "SELECT graph_json, domain, classification FROM aadc_designs WHERE id=?",
+                    "SELECT graph_json, domain, classification FROM aadc_designs WHERE id=%s",
                     (design_id,),
                 ).fetchone()
             finally:
@@ -118,13 +118,13 @@ def export_assessment_as_ft_signal(design_id: str) -> Dict[str, Any]:
         mconn = _main_conn()
         # Check if a row already exists for this design
         existing = mconn.execute(
-            "SELECT id FROM fine_tuning_datasets WHERE source='aadc' AND source_id=? LIMIT 1",
+            "SELECT id FROM fine_tuning_datasets WHERE source='aadc' AND source_id=%s LIMIT 1",
             (design_id,),
         ).fetchone()
         if existing:
             mconn.execute(
-                "UPDATE fine_tuning_datasets SET input_text=?, expected_output=?, "
-                "quality_signal=?, updated_at=? WHERE id=?",
+                "UPDATE fine_tuning_datasets SET input_text=%s, expected_output=%s, "
+                "quality_signal=%s, updated_at=%s WHERE id=%s",
                 (input_text, expected_output, quality_signal, now, existing[0]),
             )
             dataset_id = existing[0]
@@ -133,7 +133,7 @@ def export_assessment_as_ft_signal(design_id: str) -> Dict[str, Any]:
             cur = mconn.execute(
                 "INSERT INTO fine_tuning_datasets "
                 "(source, source_id, input_text, expected_output, quality_signal, created_at, updated_at) "
-                "VALUES ('aadc', ?, ?, ?, ?, ?, ?) RETURNING id",
+                "VALUES ('aadc', %s, %s, %s, %s, %s, %s) RETURNING id",
                 (design_id, input_text, expected_output, quality_signal, now, now),
             )
             row_back = cur.fetchone()

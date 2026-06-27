@@ -49,7 +49,7 @@ def seed_sam_opp():
                (id, solicitation_number, title, agency, agency_hierarchy,
                 naics_code, notice_type, posted_date, response_deadline,
                 active, classification, first_seen, last_synced, content_hash)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'CUI', ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, 1, 'CUI', %s, %s, %s)""",
             (
                 sam_id, sol_num,
                 "Test AI Platform Modernization Services",
@@ -68,10 +68,10 @@ def seed_sam_opp():
 def cleanup(sam_id, prop_id=None):
     conn = _get_db()
     try:
-        conn.execute("DELETE FROM sam_gov_opportunities WHERE id = ?", (sam_id,))
+        conn.execute("DELETE FROM sam_gov_opportunities WHERE id = %s", (sam_id,))
         if prop_id:
-            conn.execute("DELETE FROM proposal_status_history WHERE entity_id = ?", (prop_id,))
-            conn.execute("DELETE FROM proposal_opportunities WHERE id = ?", (prop_id,))
+            conn.execute("DELETE FROM proposal_status_history WHERE entity_id = %s", (prop_id,))
+            conn.execute("DELETE FROM proposal_opportunities WHERE id = %s", (prop_id,))
         conn.commit()
     finally:
         conn.close()
@@ -115,7 +115,7 @@ def run():
             conn = _get_db()
             try:
                 row = dict(conn.execute(
-                    "SELECT * FROM proposal_opportunities WHERE id = ?", (prop_id,)
+                    "SELECT * FROM proposal_opportunities WHERE id = %s", (prop_id,)
                 ).fetchone() or {})
             finally:
                 conn.close()
@@ -136,7 +136,7 @@ def run():
             conn = _get_db()
             try:
                 sam_row = conn.execute(
-                    "SELECT proposal_opportunity_id FROM sam_gov_opportunities WHERE id = ?",
+                    "SELECT proposal_opportunity_id FROM sam_gov_opportunities WHERE id = %s",
                     (sam_id,)
                 ).fetchone()
             finally:
@@ -152,7 +152,7 @@ def run():
             conn = _get_db()
             try:
                 hist = conn.execute(
-                    "SELECT * FROM proposal_status_history WHERE entity_id = ?", (prop_id,)
+                    "SELECT * FROM proposal_status_history WHERE entity_id = %s", (prop_id,)
                 ).fetchone()
             finally:
                 conn.close()

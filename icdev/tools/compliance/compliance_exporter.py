@@ -407,7 +407,7 @@ def load_assessment_from_db(project_id: str, framework: str = "nist", db_path: O
             try:
                 rows = conn.execute(
                     "SELECT control_id, implementation_status, implementation_details, "
-                    "last_assessed FROM project_controls WHERE project_id = ?",
+                    "last_assessed FROM project_controls WHERE project_id = %s",
                     (project_id,),
                 ).fetchall()
                 for r in rows:

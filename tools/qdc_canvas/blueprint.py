@@ -118,7 +118,7 @@ def _rows_to_list(rows) -> list[dict]:
 def _audit(conn, design_id: str, action: str, detail: str = "", user: str = "system") -> None:
     """Write an append-only audit entry."""
     conn.execute(
-        "INSERT INTO qdc_audit (id, design_id, user, action, detail, created_at) VALUES (?,?,?,?,?,?)",
+        "INSERT INTO qdc_audit (id, design_id, user, action, detail, created_at) VALUES (%s,%s,%s,%s,%s,%s)",
         (_gen_id(), design_id, user, action, detail, _utcnow()),
     )
 
@@ -165,13 +165,13 @@ def new_canvas():
         conn = _get_conn()
         try:
             ex = conn.execute(
-                "SELECT id FROM qdc_designs WHERE template_id=? LIMIT 1",
+                "SELECT id FROM qdc_designs WHERE template_id=%s LIMIT 1",
                 (template_id,),
             ).fetchone()
             if ex:
                 return redirect(url_for("qdc_canvas.canvas_editor", design_id=ex["id"]))
             row = conn.execute(
-                "SELECT name, graph_json FROM qdc_templates WHERE id = ?",
+                "SELECT name, graph_json FROM qdc_templates WHERE id = %s",
                 (template_id,),
             ).fetchone()
             if row:
@@ -187,7 +187,7 @@ def new_canvas():
         conn.execute(
             "INSERT INTO qdc_designs "
             "(id, name, description, graph_json, template_id, classification, "
-            "created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
+            "created_at, updated_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
             (design_id, name, "", graph_json, template_id, "CUI", now, now),
         )
         conn.commit()
@@ -203,7 +203,7 @@ def canvas_editor(design_id: str):
     """Canvas editor page for a specific design."""
     conn = _get_conn()
     try:
-        row = conn.execute("SELECT * FROM qdc_designs WHERE id = ?", (design_id,)).fetchone()
+        row = conn.execute("SELECT * FROM qdc_designs WHERE id = %s", (design_id,)).fetchone()
         if not row:
             return render_template(
                 "qdc_canvas/index.html", designs=[], templates=[], config=_QDC_CONFIG, error="Design not found"
@@ -359,7 +359,7 @@ def remediation_page(design_id: str):
     """Gap analysis / remediation view for a design."""
     conn = _get_conn()
     try:
-        row = conn.execute("SELECT * FROM qdc_designs WHERE id = ?", (design_id,)).fetchone()
+        row = conn.execute("SELECT * FROM qdc_designs WHERE id = %s", (design_id,)).fetchone()
         if not row:
             return render_template(
                 "qdc_canvas/index.html", designs=[], templates=[], config=_QDC_CONFIG, error="Design not found"
@@ -369,7 +369,7 @@ def remediation_page(design_id: str):
         # Get latest assessment
         assess_row = conn.execute(
             "SELECT findings_json, score, uqs_score, uqs_breakdown "
-            "FROM qdc_assessments WHERE design_id = ? ORDER BY created_at DESC LIMIT 1",
+            "FROM qdc_assessments WHERE design_id = %s ORDER BY created_at DESC LIMIT 1",
             (design_id,),
         ).fetchone()
         assessment = _row_to_dict(assess_row) if assess_row else {}
@@ -415,7 +415,7 @@ def api_get_design(design_id: str):
     """Get a design as JSON."""
     conn = _get_conn()
     try:
-        row = conn.execute("SELECT * FROM qdc_designs WHERE id = ?", (design_id,)).fetchone()
+        row = conn.execute("SELECT * FROM qdc_designs WHERE id = %s", (design_id,)).fetchone()
     finally:
         conn.close()
     if not row:
@@ -429,7 +429,7 @@ def api_save_design(design_id: str):
     data = request.get_json(silent=True) or {}
     conn = _get_conn()
     try:
-        existing = conn.execute("SELECT id FROM qdc_designs WHERE id = ?", (design_id,)).fetchone()
+        existing = conn.execute("SELECT id FROM qdc_designs WHERE id = %s", (design_id,)).fetchone()
         if not existing:
             conn.close()
             return jsonify({"error": "Design not found"}), 404
@@ -477,13 +477,13 @@ def api_delete_design(design_id: str):
     """Delete a design."""
     conn = _get_conn()
     try:
-        existing = conn.execute("SELECT id FROM qdc_designs WHERE id = ?", (design_id,)).fetchone()
+        existing = conn.execute("SELECT id FROM qdc_designs WHERE id = %s", (design_id,)).fetchone()
         if not existing:
             conn.close()
             return jsonify({"error": "Design not found"}), 404
 
         _audit(conn, design_id, "delete", "Design deleted")
-        conn.execute("DELETE FROM qdc_designs WHERE id = ?", (design_id,))
+        conn.execute("DELETE FROM qdc_designs WHERE id = %s", (design_id,))
         conn.commit()
     finally:
         conn.close()
@@ -516,7 +516,7 @@ def api_assess_design(design_id: str):
     chain_mode = "cod" if use_cod else ""
     conn = _get_conn()
     try:
-        row = conn.execute("SELECT graph_json FROM qdc_designs WHERE id = ?", (design_id,)).fetchone()
+        row = conn.execute("SELECT graph_json FROM qdc_designs WHERE id = %s", (design_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Design not found"}), 404
@@ -534,7 +534,7 @@ def api_assess_design(design_id: str):
         gate_results_rows = _rows_to_list(
             conn.execute(
                 "SELECT gate_id, status, evidence_json FROM qdc_gate_results "
-                "WHERE design_id = ? ORDER BY executed_at DESC",
+                "WHERE design_id = %s ORDER BY executed_at DESC",
                 (design_id,),
             ).fetchall()
         )
@@ -570,7 +570,7 @@ def api_assess_design(design_id: str):
         conn.execute(
             "INSERT INTO qdc_assessments "
             "(id, design_id, assessment_type, findings_json, score, uqs_score, "
-            "uqs_breakdown, sa11_mapping, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            "uqs_breakdown, sa11_mapping, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 assess_id,
                 design_id,
@@ -586,7 +586,7 @@ def api_assess_design(design_id: str):
 
         # Store UQS history point
         conn.execute(
-            "INSERT INTO qdc_uqs_history (id, design_id, uqs_score, dimension_scores, computed_at) VALUES (?,?,?,?,?)",
+            "INSERT INTO qdc_uqs_history (id, design_id, uqs_score, dimension_scores, computed_at) VALUES (%s,%s,%s,%s,%s)",
             (
                 _gen_id(),
                 design_id,
@@ -635,7 +635,7 @@ def api_get_uqs(design_id: str):
     try:
         row = conn.execute(
             "SELECT uqs_score, uqs_breakdown, created_at "
-            "FROM qdc_assessments WHERE design_id = ? "
+            "FROM qdc_assessments WHERE design_id = %s "
             "ORDER BY created_at DESC LIMIT 1",
             (design_id,),
         ).fetchone()
@@ -661,7 +661,7 @@ def api_get_uqs_history(design_id: str):
         rows = _rows_to_list(
             conn.execute(
                 "SELECT uqs_score, dimension_scores, computed_at "
-                "FROM qdc_uqs_history WHERE design_id = ? "
+                "FROM qdc_uqs_history WHERE design_id = %s "
                 "ORDER BY computed_at ASC",
                 (design_id,),
             ).fetchall()
@@ -681,7 +681,7 @@ def api_get_gates(design_id: str):
             conn.execute(
                 "SELECT id, gate_id, sa11_control, status, evidence_json, "
                 "oscal_artifact, executed_at "
-                "FROM qdc_gate_results WHERE design_id = ? "
+                "FROM qdc_gate_results WHERE design_id = %s "
                 "ORDER BY executed_at DESC",
                 (design_id,),
             ).fetchall()
@@ -696,7 +696,7 @@ def api_get_gaps(design_id: str):
     """Get quality gaps for a design based on latest assessment."""
     conn = _get_conn()
     try:
-        row = conn.execute("SELECT graph_json FROM qdc_designs WHERE id = ?", (design_id,)).fetchone()
+        row = conn.execute("SELECT graph_json FROM qdc_designs WHERE id = %s", (design_id,)).fetchone()
         if not row:
             return jsonify({"error": "Design not found"}), 404
         graph_raw = row[0] if not hasattr(row, "keys") else row["graph_json"]
@@ -720,7 +720,7 @@ def api_get_evidence(design_id: str):
         rows = _rows_to_list(
             conn.execute(
                 "SELECT gate_id, sa11_control, oscal_artifact, executed_at "
-                "FROM qdc_gate_results WHERE design_id = ? "
+                "FROM qdc_gate_results WHERE design_id = %s "
                 "AND oscal_artifact IS NOT NULL AND oscal_artifact != '{}' "
                 "ORDER BY executed_at DESC",
                 (design_id,),
@@ -780,7 +780,7 @@ def api_get_snippet(snippet_id):
     """Get a single snippet by ID."""
     conn = _get_conn()
     try:
-        row = conn.execute("SELECT * FROM qdc_snippets WHERE id = ?", (snippet_id,)).fetchone()
+        row = conn.execute("SELECT * FROM qdc_snippets WHERE id = %s", (snippet_id,)).fetchone()
         if not row:
             return jsonify({"error": "Snippet not found"}), 404
         snippet = dict(row) if hasattr(row, "keys") else {}
@@ -812,7 +812,7 @@ def api_execute_runbook(runbook_id: str):
     conn = _get_conn()
     try:
         row = conn.execute(
-            "SELECT id, name, steps_json, auto_executable, confidence_threshold FROM qdc_runbooks WHERE id = ?",
+            "SELECT id, name, steps_json, auto_executable, confidence_threshold FROM qdc_runbooks WHERE id = %s",
             (runbook_id,),
         ).fetchone()
         if not row:
@@ -822,7 +822,7 @@ def api_execute_runbook(runbook_id: str):
         rb = _row_to_dict(row)
         now = _utcnow()
         conn.execute(
-            "UPDATE qdc_runbooks SET last_run = ?, run_count = run_count + 1, updated_at = ? WHERE id = ?",
+            "UPDATE qdc_runbooks SET last_run = %s, run_count = run_count + 1, updated_at = %s WHERE id = %s",
             (now, now, runbook_id),
         )
         conn.commit()
@@ -867,7 +867,7 @@ def api_update_sop(sop_id: str):
     data = request.get_json(silent=True) or {}
     conn = _get_conn()
     try:
-        existing = conn.execute("SELECT id FROM qdc_sops WHERE id = ?", (sop_id,)).fetchone()
+        existing = conn.execute("SELECT id FROM qdc_sops WHERE id = %s", (sop_id,)).fetchone()
         if not existing:
             conn.close()
             return jsonify({"error": "SOP not found"}), 404
@@ -937,7 +937,7 @@ def api_export_json(design_id: str):
     """Export design as JSON download."""
     conn = _get_conn()
     try:
-        row = conn.execute("SELECT * FROM qdc_designs WHERE id = ?", (design_id,)).fetchone()
+        row = conn.execute("SELECT * FROM qdc_designs WHERE id = %s", (design_id,)).fetchone()
     finally:
         conn.close()
     if not row:
@@ -954,7 +954,7 @@ def api_export_markdown(design_id: str):
     """Export design as markdown."""
     conn = _get_conn()
     try:
-        row = conn.execute("SELECT * FROM qdc_designs WHERE id = ?", (design_id,)).fetchone()
+        row = conn.execute("SELECT * FROM qdc_designs WHERE id = %s", (design_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Design not found"}), 404
@@ -962,7 +962,7 @@ def api_export_markdown(design_id: str):
 
         assess_row = conn.execute(
             "SELECT score, uqs_score, findings_json, sa11_mapping "
-            "FROM qdc_assessments WHERE design_id = ? ORDER BY created_at DESC LIMIT 1",
+            "FROM qdc_assessments WHERE design_id = %s ORDER BY created_at DESC LIMIT 1",
             (design_id,),
         ).fetchone()
         assessment = _row_to_dict(assess_row) if assess_row else {}
@@ -1007,7 +1007,7 @@ def api_export_oscal(design_id: str):
         rows = _rows_to_list(
             conn.execute(
                 "SELECT gate_id, status, evidence_json "
-                "FROM qdc_gate_results WHERE design_id = ? "
+                "FROM qdc_gate_results WHERE design_id = %s "
                 "ORDER BY executed_at DESC",
                 (design_id,),
             ).fetchall()
@@ -1048,7 +1048,7 @@ def api_list_versions(design_id: str):
         rows = _rows_to_list(
             conn.execute(
                 "SELECT id, version_number, change_summary, user_id, created_at "
-                "FROM qdc_versions WHERE design_id = ? "
+                "FROM qdc_versions WHERE design_id = %s "
                 "ORDER BY version_number DESC",
                 (design_id,),
             ).fetchall()
@@ -1064,7 +1064,7 @@ def api_create_version(design_id: str):
     data = request.get_json(silent=True) or {}
     conn = _get_conn()
     try:
-        row = conn.execute("SELECT graph_json FROM qdc_designs WHERE id = ?", (design_id,)).fetchone()
+        row = conn.execute("SELECT graph_json FROM qdc_designs WHERE id = %s", (design_id,)).fetchone()
         if not row:
             conn.close()
             return jsonify({"error": "Design not found"}), 404
@@ -1073,7 +1073,7 @@ def api_create_version(design_id: str):
 
         # Get next version number
         max_row = conn.execute(
-            "SELECT COALESCE(MAX(version_number), 0) FROM qdc_versions WHERE design_id = ?",
+            "SELECT COALESCE(MAX(version_number), 0) FROM qdc_versions WHERE design_id = %s",
             (design_id,),
         ).fetchone()
         next_ver = (max_row[0] if max_row else 0) + 1
@@ -1082,7 +1082,7 @@ def api_create_version(design_id: str):
         conn.execute(
             "INSERT INTO qdc_versions "
             "(id, design_id, version_number, graph_json, change_summary, "
-            "user_id, created_at) VALUES (?,?,?,?,?,?,?)",
+            "user_id, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (
                 vid,
                 design_id,
@@ -1105,7 +1105,7 @@ def api_restore_version(design_id: str, version_id: str):
     conn = _get_conn()
     try:
         ver_row = conn.execute(
-            "SELECT graph_json, version_number FROM qdc_versions WHERE id = ? AND design_id = ?",
+            "SELECT graph_json, version_number FROM qdc_versions WHERE id = %s AND design_id = %s",
             (version_id, design_id),
         ).fetchone()
         if not ver_row:
@@ -1117,7 +1117,7 @@ def api_restore_version(design_id: str, version_id: str):
 
         now = _utcnow()
         conn.execute(
-            "UPDATE qdc_designs SET graph_json = ?, updated_at = ? WHERE id = ?",
+            "UPDATE qdc_designs SET graph_json = %s, updated_at = %s WHERE id = %s",
             (graph_json, now, design_id),
         )
         conn.commit()
@@ -1156,7 +1156,7 @@ def api_collab_join(design_id: str):
     try:
         # Pick a color not yet taken
         taken = conn.execute(
-            "SELECT color FROM qdc_collab_sessions WHERE design_id = ? AND is_active = 1",
+            "SELECT color FROM qdc_collab_sessions WHERE design_id = %s AND is_active = 1",
             (design_id,),
         ).fetchall()
         taken_colors = {r[0] for r in taken}
@@ -1171,7 +1171,7 @@ def api_collab_join(design_id: str):
         conn.execute(
             "INSERT INTO qdc_collab_sessions "
             "(id, design_id, user_id, user_name, color, joined_at, last_seen, is_active) "
-            "VALUES (?,?,?,?,?,?,?,1)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,1)",
             (sid, design_id, user_id, user_name, color, now, now),
         )
         conn.commit()
@@ -1189,7 +1189,7 @@ def api_collab_leave(design_id: str):
     conn = _get_conn()
     try:
         conn.execute(
-            "UPDATE qdc_collab_sessions SET is_active = 0 WHERE id = ? AND design_id = ?",
+            "UPDATE qdc_collab_sessions SET is_active = 0 WHERE id = %s AND design_id = %s",
             (session_id, design_id),
         )
         conn.commit()
@@ -1210,7 +1210,7 @@ def api_collab_push(design_id: str):
         # Update last_seen
         now = _utcnow()
         conn.execute(
-            "UPDATE qdc_collab_sessions SET last_seen = ? WHERE id = ?",
+            "UPDATE qdc_collab_sessions SET last_seen = %s WHERE id = %s",
             (now, session_id),
         )
         conn.commit()
@@ -1229,13 +1229,13 @@ def api_collab_poll(design_id: str):
             conn.execute(
                 "SELECT id, user_id, user_name, color, last_seen "
                 "FROM qdc_collab_sessions "
-                "WHERE design_id = ? AND is_active = 1 "
+                "WHERE design_id = %s AND is_active = 1 "
                 "ORDER BY joined_at",
                 (design_id,),
             ).fetchall()
         )
         row = conn.execute(
-            "SELECT graph_json, updated_at FROM qdc_designs WHERE id = ?",
+            "SELECT graph_json, updated_at FROM qdc_designs WHERE id = %s",
             (design_id,),
         ).fetchone()
         design_state = _row_to_dict(row) if row else {}
@@ -1258,7 +1258,7 @@ def api_collab_participants(design_id: str):
             conn.execute(
                 "SELECT id, user_id, user_name, color, joined_at, last_seen "
                 "FROM qdc_collab_sessions "
-                "WHERE design_id = ? AND is_active = 1 "
+                "WHERE design_id = %s AND is_active = 1 "
                 "ORDER BY joined_at",
                 (design_id,),
             ).fetchall()
@@ -1431,7 +1431,7 @@ def _compute_qdc_governance(graph_data: dict) -> dict:
 def qdc_api_governance(design_id):
     """Run quality governance framework check."""
     conn = _get_conn()
-    row = conn.execute("SELECT graph_json FROM qdc_designs WHERE id=?", (design_id,)).fetchone()
+    row = conn.execute("SELECT graph_json FROM qdc_designs WHERE id=%s", (design_id,)).fetchone()
     if not row:
         conn.close()
         return jsonify({"error": "Not found"}), 404
@@ -1447,7 +1447,7 @@ def qdc_api_governance(design_id):
     conn.execute(
         "INSERT INTO qdc_assessments "
         "(id, design_id, assessment_type, findings_json, score, uqs_score, "
-        "uqs_breakdown, sa11_mapping, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+        "uqs_breakdown, sa11_mapping, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
         (assess_id, design_id, "governance",
          json.dumps([{"title": c["title"], "severity": c["severity"], "status": c["status"]}
                      for c in result["checks"]]),

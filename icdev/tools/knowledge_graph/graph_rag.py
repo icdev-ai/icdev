@@ -1161,7 +1161,7 @@ def _log_retrieval(
                (graph_id, query, query_hash, profile,
                 nodes_returned, edges_returned,
                 compression_applied, retrieval_ms, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 graph_id,
                 query,
@@ -1238,12 +1238,12 @@ def retrieve(
         # KGs where multiple graphs live under one project).
         if graph_id:
             graphs = conn.execute(
-                "SELECT id FROM kg_graphs WHERE id = ?",
+                "SELECT id FROM kg_graphs WHERE id = %s",
                 (graph_id,),
             ).fetchall()
         elif project_id:
             graphs = conn.execute(
-                "SELECT id FROM kg_graphs WHERE project_id = ?",
+                "SELECT id FROM kg_graphs WHERE project_id = %s",
                 (project_id,),
             ).fetchall()
         else:
@@ -1628,11 +1628,11 @@ def expand_bm25_top_k(
         # Determine graph scope
         if graph_id:
             scope_rows = conn.execute(
-                "SELECT id FROM kg_graphs WHERE id = ?", (graph_id,)
+                "SELECT id FROM kg_graphs WHERE id = %s", (graph_id,)
             ).fetchall()
         elif project_id:
             scope_rows = conn.execute(
-                "SELECT id FROM kg_graphs WHERE project_id = ?", (project_id,)
+                "SELECT id FROM kg_graphs WHERE project_id = %s", (project_id,)
             ).fetchall()
         else:
             scope_rows = conn.execute("SELECT id FROM kg_graphs").fetchall()

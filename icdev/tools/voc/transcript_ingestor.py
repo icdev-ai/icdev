@@ -122,7 +122,7 @@ class TranscriptIngestor:
                     INSERT INTO voc_documents
                         (id, filename, source_type, ingested_at, word_count,
                          job_statement_count, classification)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         doc_id,
@@ -141,7 +141,7 @@ class TranscriptIngestor:
                             (id, document_id, raw_text, job_category,
                              frequency, severity_score, strategic_fit_score,
                              composite_score, creative_gap_id, analyzed_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """,
                         (
                             str(uuid.uuid4()),

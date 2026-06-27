@@ -102,7 +102,7 @@ def _forward_to_siem(event: dict) -> bool:
             # a CHECK constraint over a fixed event_type vocabulary).
             conn.execute(
                 "INSERT INTO audit_trail (event_type, actor, action, details, classification) "
-                "VALUES ('compliance_check', ?, ?, ?, ?)",
+                "VALUES ('compliance_check', %s, %s, %s, %s)",
                 (event["principal"], event["decision"], cef, event["classification"]),
             )
             conn.commit()
@@ -133,7 +133,7 @@ def evaluate_data_access(principal: str, dataset: str, classification: str = "CU
 
         # New-access-path signal from baseline
         baseline = conn.execute(
-            "SELECT known_datasets, access_count FROM zig_data_access_baseline WHERE principal=?",
+            "SELECT known_datasets, access_count FROM zig_data_access_baseline WHERE principal=%s",
             (principal,),
         ).fetchone()
         known = set(json.loads(baseline["known_datasets"] or "[]")) if baseline else set()
@@ -157,14 +157,14 @@ def evaluate_data_access(principal: str, dataset: str, classification: str = "CU
             n = (baseline["access_count"] or 0) + 1
             known.add(dataset)
             conn.execute(
-                "UPDATE zig_data_access_baseline SET known_datasets=?, access_count=?, updated_at=? "
-                "WHERE principal=?",
+                "UPDATE zig_data_access_baseline SET known_datasets=%s, access_count=%s, updated_at=%s "
+                "WHERE principal=%s",
                 (json.dumps(sorted(known)), n, now, principal),
             )
         else:
             conn.execute(
                 "INSERT INTO zig_data_access_baseline "
-                "(principal, known_datasets, access_count, updated_at) VALUES (?,?,?,?)",
+                "(principal, known_datasets, access_count, updated_at) VALUES (%s,%s,%s,%s)",
                 (principal, json.dumps([dataset]), 1, now),
             )
 
@@ -177,7 +177,7 @@ def evaluate_data_access(principal: str, dataset: str, classification: str = "CU
         conn.execute(
             "INSERT INTO zig_data_access_events "
             "(principal, dataset, classification, action, decision, risk_score, signals_json, "
-            "siem_forwarded, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            "siem_forwarded, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (principal, dataset, classification, action, decision, risk_score,
              json.dumps(active_signals), int(siem_ok), now),
         )

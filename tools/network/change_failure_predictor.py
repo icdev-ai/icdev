@@ -47,7 +47,7 @@ def _get_concurrent_changes(conn, device_name: str) -> int:
         cur = conn.execute(
             """
             SELECT COUNT(*) FROM nc_change_risk
-            WHERE device_name = ?
+            WHERE device_name = %s
               AND predicted_at >= datetime('now', '-4 hours')
             """,
             (device_name,),
@@ -107,7 +107,7 @@ def _insert_change_risk(conn, rec: dict) -> None:
              concurrent_change_count, maintenance_window_compliant,
              device_criticality, risk_factors_json, risk_tier,
              simulation_verdict, model_version, predicted_at, created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,CURRENT_TIMESTAMP)
         """,
         (
             rec.get("change_request_id", "auto"),

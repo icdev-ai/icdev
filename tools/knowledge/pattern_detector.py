@@ -246,9 +246,9 @@ def detect_frequency_anomaly(
         rows = conn.execute(
             """SELECT error_type, error_message, COUNT(*) as count
                FROM failure_log
-               WHERE project_id = ? AND created_at > ?
+               WHERE project_id = %s AND created_at > %s
                GROUP BY error_type
-               HAVING COUNT(*) > ?
+               HAVING COUNT(*) > %s
                ORDER BY count DESC""",
             (project_id, window_start, threshold),
         ).fetchall()
@@ -259,7 +259,7 @@ def detect_frequency_anomaly(
             recent = conn.execute(
                 """SELECT id, error_message, source, created_at
                    FROM failure_log
-                   WHERE project_id = ? AND error_type = ? AND created_at > ?
+                   WHERE project_id = %s AND error_type = %s AND created_at > %s
                    ORDER BY created_at DESC
                    LIMIT 5""",
                 (project_id, row["error_type"], window_start),
@@ -310,7 +310,7 @@ def detect_deployment_correlation(
         deployments = conn.execute(
             """SELECT id, environment, version, status, created_at, completed_at
                FROM deployments
-               WHERE project_id = ?
+               WHERE project_id = %s
                  AND created_at > datetime('now', '-24 hours')
                ORDER BY created_at DESC""",
             (project_id,),
@@ -325,8 +325,8 @@ def detect_deployment_correlation(
             failures_after = conn.execute(
                 """SELECT COUNT(*) as count
                    FROM failure_log
-                   WHERE project_id = ?
-                     AND created_at BETWEEN ? AND datetime(?, '+' || ? || ' minutes')""",
+                   WHERE project_id = %s
+                     AND created_at BETWEEN %s AND datetime(%s, '+' || %s || ' minutes')""",
                 (project_id, dep_time, dep_time, window_minutes),
             ).fetchone()["count"]
 
@@ -334,9 +334,9 @@ def detect_deployment_correlation(
             baseline = conn.execute(
                 """SELECT COUNT(*) as count
                    FROM failure_log
-                   WHERE project_id = ?
-                     AND created_at BETWEEN datetime(?, '-1 day')
-                     AND datetime(?, '-1 day', '+' || ? || ' minutes')""",
+                   WHERE project_id = %s
+                     AND created_at BETWEEN datetime(%s, '-1 day')
+                     AND datetime(%s, '-1 day', '+' || %s || ' minutes')""",
                 (project_id, dep_time, dep_time, window_minutes),
             ).fetchone()["count"]
 
@@ -348,8 +348,8 @@ def detect_deployment_correlation(
                 failure_details = conn.execute(
                     """SELECT error_type, COUNT(*) as count
                        FROM failure_log
-                       WHERE project_id = ?
-                         AND created_at BETWEEN ? AND datetime(?, '+' || ? || ' minutes')
+                       WHERE project_id = %s
+                         AND created_at BETWEEN %s AND datetime(%s, '+' || %s || ' minutes')
                        GROUP BY error_type
                        ORDER BY count DESC""",
                     (project_id, dep_time, dep_time, window_minutes),
@@ -394,7 +394,7 @@ def update_pattern_confidence(
     conn = _get_db(db_path)
     try:
         current = conn.execute(
-            "SELECT confidence FROM knowledge_patterns WHERE id = ?",
+            "SELECT confidence FROM knowledge_patterns WHERE id = %s",
             (pattern_id,),
         ).fetchone()
 
@@ -413,7 +413,7 @@ def update_pattern_confidence(
         new_conf = max(0.0, min(1.0, old_conf + delta))
 
         conn.execute(
-            "UPDATE knowledge_patterns SET confidence = ?, updated_at = ? WHERE id = ?",
+            "UPDATE knowledge_patterns SET confidence = %s, updated_at = %s WHERE id = %s",
             (new_conf, datetime.now(timezone.utc).isoformat(), pattern_id),
         )
         conn.commit()
@@ -455,7 +455,7 @@ def analyze_project(project_id: str, db_path: Path = None) -> dict:
         recent_failures = conn.execute(
             """SELECT id, error_type, error_message, source, stack_trace, context, created_at
                FROM failure_log
-               WHERE project_id = ? AND resolved = 0
+               WHERE project_id = %s AND resolved = 0
                ORDER BY created_at DESC
                LIMIT 20""",
             (project_id,),
@@ -557,7 +557,7 @@ def seed_code_quality_patterns(db_path: Path = None) -> dict:
         for p in _CODE_QUALITY_PATTERNS:
             # Check if pattern already exists (by description)
             existing = conn.execute(
-                "SELECT id FROM knowledge_patterns WHERE description = ?",
+                "SELECT id FROM knowledge_patterns WHERE description = %s",
                 (p["description"],),
             ).fetchone()
             if existing:
@@ -567,7 +567,7 @@ def seed_code_quality_patterns(db_path: Path = None) -> dict:
                 """INSERT INTO knowledge_patterns
                 (pattern_type, description, root_cause, resolution, confidence,
                  auto_healable, occurrence_count, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)""",
+                VALUES (%s, %s, %s, %s, %s, %s, 0, %s, %s)""",
                 (
                     p["pattern_type"],
                     p["description"],
@@ -626,7 +626,7 @@ def learn_from_tdd_outcome(
                 metrics = conn.execute(
                     """SELECT cyclomatic_complexity, nesting_depth, parameter_count, smell_count
                        FROM code_quality_metrics
-                       WHERE function_name = ?
+                       WHERE function_name = %s
                        ORDER BY created_at DESC LIMIT 1""",
                     (function_name,),
                 ).fetchone()

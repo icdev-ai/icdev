@@ -627,7 +627,7 @@ def _persist(conn: Any, assessment_id: int, manifest: list[dict[str, Any]]) -> N
         conn.execute(
             "INSERT INTO integrity_capabilities "
             "(assessment_id, file_path, function_name, capability_type, evidence, line_start, line_end, risk_weight) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 assessment_id,
                 rec.get("file_path", ""),

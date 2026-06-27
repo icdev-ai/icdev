@@ -57,7 +57,7 @@ def _get_db():
 def _get_profile(project_id: str) -> dict:
     conn = _get_db()
     try:
-        row = conn.execute("SELECT * FROM devsecops_profiles WHERE project_id = ?", (project_id,)).fetchone()
+        row = conn.execute("SELECT * FROM devsecops_profiles WHERE project_id = %s", (project_id,)).fetchone()
         if not row:
             return {}
         return {
@@ -73,7 +73,7 @@ def _get_project_info(project_id: str) -> dict:
     conn = _get_db()
     try:
         row = conn.execute(
-            "SELECT name, classification, impact_level FROM projects WHERE id = ?", (project_id,)
+            "SELECT name, classification, impact_level FROM projects WHERE id = %s", (project_id,)
         ).fetchone()
         if row:
             return dict(row)

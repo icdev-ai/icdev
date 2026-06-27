@@ -438,7 +438,7 @@ def list_signals(limit: int = 50, conn=None) -> None:
         rows = _conn.execute(
             "SELECT aoi_tag, satellite, sensing_date, cloud_pct, relevance_score, status "
             "FROM sg_eo_signals ORDER BY sensing_date DESC, relevance_score DESC "
-            "LIMIT ?",
+            "LIMIT %s",
             (int(limit),),
         ).fetchall()
         total = (_conn.execute("SELECT COUNT(*) FROM sg_eo_signals").fetchone() or [0])[0]

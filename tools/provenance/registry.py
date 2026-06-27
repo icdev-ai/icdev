@@ -61,7 +61,7 @@ def register_citation(
                (id, citation_type, source_table, source_record_id, source_doc,
                 source_hash, anchor_hash, merkle_root, blockchain_tx_id,
                 classification, project_id, trust_score, created_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 reg_id,
                 citation_type,
@@ -95,7 +95,7 @@ def get_citations_for_project(project_id: str, db_path: Path = None) -> List[dic
     conn = get_connection(db_path=str(db_path or DB_PATH))
     try:
         rows = conn.execute(
-            "SELECT * FROM source_citation_registry WHERE project_id = ? ORDER BY created_at DESC",
+            "SELECT * FROM source_citation_registry WHERE project_id = %s ORDER BY created_at DESC",
             (project_id,),
         ).fetchall()
         return [dict(r) for r in rows]
@@ -108,7 +108,7 @@ def get_citation_by_hash(source_hash: str, db_path: Path = None) -> Optional[dic
     conn = get_connection(db_path=str(db_path or DB_PATH))
     try:
         row = conn.execute(
-            "SELECT * FROM source_citation_registry WHERE source_hash = ? LIMIT 1",
+            "SELECT * FROM source_citation_registry WHERE source_hash = %s LIMIT 1",
             (source_hash,),
         ).fetchone()
         return dict(row) if row else None
@@ -121,7 +121,7 @@ def update_trust_score(registry_id: str, trust_score: float, db_path: Path = Non
     conn = get_connection(db_path=str(db_path or DB_PATH))
     try:
         conn.execute(
-            "UPDATE source_citation_registry SET trust_score = ? WHERE id = ?",
+            "UPDATE source_citation_registry SET trust_score = %s WHERE id = %s",
             (trust_score, registry_id),
         )
         conn.commit()
@@ -142,7 +142,7 @@ def update_blockchain_anchor(
     conn = get_connection(db_path=str(db_path or DB_PATH))
     try:
         conn.execute(
-            "UPDATE source_citation_registry SET merkle_root = ?, blockchain_tx_id = ? WHERE id = ?",
+            "UPDATE source_citation_registry SET merkle_root = %s, blockchain_tx_id = %s WHERE id = %s",
             (merkle_root, blockchain_tx_id, registry_id),
         )
         conn.commit()
@@ -160,7 +160,7 @@ def has_cross_reference(registry_id: str, db_path: Path = None) -> bool:
         # A cross-reference exists if the same source_hash appears in multiple source_tables
         row = conn.execute(
             """SELECT COUNT(DISTINCT source_table) as cnt FROM source_citation_registry
-               WHERE source_hash = (SELECT source_hash FROM source_citation_registry WHERE id = ?)""",
+               WHERE source_hash = (SELECT source_hash FROM source_citation_registry WHERE id = %s)""",
             (registry_id,),
         ).fetchone()
         return row is not None and row["cnt"] > 1

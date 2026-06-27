@@ -386,7 +386,7 @@ class LLMResponseCache:
                 row = conn.execute(
                     """
                     SELECT * FROM llm_response_cache
-                    WHERE cache_key = ? AND expires_at > NOW()
+                    WHERE cache_key = %s AND expires_at > NOW()
                     """,
                     (cache_key,),
                 ).fetchone()
@@ -394,7 +394,7 @@ class LLMResponseCache:
                 row = conn.execute(
                     """
                     SELECT * FROM llm_response_cache
-                    WHERE cache_key = ? AND datetime(expires_at) > datetime('now')
+                    WHERE cache_key = %s AND datetime(expires_at) > datetime('now')
                     """,
                     (cache_key,),
                 ).fetchone()
@@ -407,7 +407,7 @@ class LLMResponseCache:
                 """
                 UPDATE llm_response_cache
                 SET hit_count = hit_count + 1
-                WHERE cache_key = ?
+                WHERE cache_key = %s
                 """,
                 (cache_key,),
             )
@@ -454,7 +454,7 @@ class LLMResponseCache:
                          structured_output_json, provider, input_tokens, output_tokens,
                          thinking_tokens, cache_creation_input_tokens, cache_read_input_tokens,
                          duration_ms, stop_reason, hit_count, created_at, expires_at)
-                    VALUES (?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (cache_key) DO UPDATE SET
                         content = EXCLUDED.content,
                         tool_calls_json = EXCLUDED.tool_calls_json,
@@ -490,7 +490,7 @@ class LLMResponseCache:
                          structured_output_json, provider, input_tokens, output_tokens,
                          thinking_tokens, cache_creation_input_tokens, cache_read_input_tokens,
                          duration_ms, stop_reason, hit_count, created_at, expires_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     """,
                     (
                         row["cache_key"], row["function"], row["model_id"], row["content"],
@@ -515,17 +515,17 @@ class LLMResponseCache:
         try:
             if function and agent_id:
                 cur = conn.execute(
-                    "DELETE FROM llm_response_cache WHERE function = ? AND model_id = ?",
+                    "DELETE FROM llm_response_cache WHERE function = %s AND model_id = %s",
                     (function, agent_id),
                 )
             elif function:
                 cur = conn.execute(
-                    "DELETE FROM llm_response_cache WHERE function = ?",
+                    "DELETE FROM llm_response_cache WHERE function = %s",
                     (function,),
                 )
             elif agent_id:
                 cur = conn.execute(
-                    "DELETE FROM llm_response_cache WHERE model_id = ?",
+                    "DELETE FROM llm_response_cache WHERE model_id = %s",
                     (agent_id,),
                 )
             else:
@@ -546,7 +546,7 @@ class LLMResponseCache:
                 "SELECT COALESCE(SUM(hit_count), 0) FROM llm_response_cache"
             ).fetchone()[0]
             expired = conn.execute(
-                "SELECT COUNT(*) FROM llm_response_cache WHERE expires_at < ?",
+                "SELECT COUNT(*) FROM llm_response_cache WHERE expires_at < %s",
                 (datetime.now(timezone.utc).isoformat(),),
             ).fetchone()[0]
             avg_hits = conn.execute(
@@ -583,9 +583,9 @@ class LLMResponseCache:
                 SELECT prompt_hash, model_id, response_hash, input_tokens, output_tokens,
                        latency_ms, created_at
                 FROM ai_telemetry
-                WHERE function = ?
+                WHERE function = %s
                 ORDER BY created_at DESC
-                LIMIT ?
+                LIMIT %s
                 """,
                 (function, limit),
             ).fetchall()
@@ -633,7 +633,7 @@ class LLMResponseCache:
                 WHERE ctid IN (
                     SELECT ctid FROM llm_response_cache
                     ORDER BY hit_count ASC, created_at ASC
-                    LIMIT ?
+                    LIMIT %s
                 )
                 """,
                 (to_evict,),
@@ -645,7 +645,7 @@ class LLMResponseCache:
                 WHERE rowid IN (
                     SELECT rowid FROM llm_response_cache
                     ORDER BY hit_count ASC, created_at ASC
-                    LIMIT ?
+                    LIMIT %s
                 )
                 """,
                 (to_evict,),

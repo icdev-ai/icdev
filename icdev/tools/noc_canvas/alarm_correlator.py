@@ -101,7 +101,7 @@ def suppress_alarm(conn: Any, alarm_id: str, user_id: str) -> bool:
     except Exception:
         try:
             conn.execute(
-                "UPDATE noc_alarms SET suppressed = 1 WHERE id = ?",
+                "UPDATE noc_alarms SET suppressed = 1 WHERE id = %s",
                 (alarm_id,),
             )
             conn.commit()

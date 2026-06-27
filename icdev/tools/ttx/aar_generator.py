@@ -17,7 +17,7 @@ def generate_aar(session_id: int) -> str:
     """Generate a Markdown AAR for a completed session."""
     conn = get_connection()
     session = conn.execute(
-        "SELECT * FROM ttx_sessions WHERE session_id = ?", (session_id,)
+        "SELECT * FROM ttx_sessions WHERE session_id = %s", (session_id,)
     ).fetchone()
     if not session:
         return f"# AAR Error\nSession {session_id} not found."
@@ -26,11 +26,11 @@ def generate_aar(session_id: int) -> str:
     teams = {
         r["team_id"]: dict(r)
         for r in conn.execute(
-            "SELECT * FROM ttx_teams WHERE session_id = ?", (session_id,)
+            "SELECT * FROM ttx_teams WHERE session_id = %s", (session_id,)
         ).fetchall()
     }
     injects = conn.execute(
-        "SELECT * FROM ttx_injects WHERE session_id = ? ORDER BY sequence_num, at_minute",
+        "SELECT * FROM ttx_injects WHERE session_id = %s ORDER BY sequence_num, at_minute",
         (session_id,),
     ).fetchall()
     lb = get_leaderboard(session_id)
@@ -81,7 +81,7 @@ def generate_aar(session_id: int) -> str:
             """SELECT r.*, s.receipt_pts, s.judge_pts, s.time_bonus_pts, s.total_pts, s.judge_rationale_json
                FROM ttx_responses r
                LEFT JOIN ttx_scores s ON s.response_id = r.response_id
-               WHERE r.inject_id = ?
+               WHERE r.inject_id = %s
                ORDER BY r.submitted_at""",
             (inj["inject_id"],),
         ).fetchall()
@@ -109,11 +109,11 @@ def generate_aar(session_id: int) -> str:
     _h("|------|----------------|---------------|")
     for team_id, team in teams.items():
         receipt_count = conn.execute(
-            "SELECT COALESCE(SUM(receipt_count), 0) FROM ttx_scores WHERE team_id = ?",
+            "SELECT COALESCE(SUM(receipt_count), 0) FROM ttx_scores WHERE team_id = %s",
             (team_id,),
         ).fetchone()[0] or 0
         tools_used = conn.execute(
-            "SELECT DISTINCT tool_slug FROM ttx_api_log WHERE team_id = ?",
+            "SELECT DISTINCT tool_slug FROM ttx_api_log WHERE team_id = %s",
             (team_id,),
         ).fetchall()
         tool_list = ", ".join(r["tool_slug"] for r in tools_used) or "None"
@@ -155,7 +155,7 @@ def _collect_aadc_scores(conn, session_id: int, injects, teams: dict) -> list[di
             """SELECT r.team_id, s.judge_pts, s.judge_rationale_json
                FROM ttx_responses r
                LEFT JOIN ttx_scores s ON s.response_id = r.response_id
-               WHERE r.inject_id = ?""",
+               WHERE r.inject_id = %s""",
             (inj["inject_id"],),
         ).fetchall()
         for resp in responses:

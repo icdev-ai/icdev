@@ -171,7 +171,7 @@ def _find_project_by_directory(directory: str, db_path: str) -> dict:
     try:
         conn = get_connection(db_path=str(db_path))
         row = conn.execute(
-            "SELECT * FROM projects WHERE directory_path = ? LIMIT 1",
+            "SELECT * FROM projects WHERE directory_path = %s LIMIT 1",
             (directory,),
         ).fetchone()
         conn.close()
@@ -215,7 +215,7 @@ def _get_compliance_summary(project_id: str, db_path: str) -> dict:
 
         # SSP
         ssp = conn.execute(
-            "SELECT version, status FROM ssp_documents WHERE project_id = ? ORDER BY created_at DESC LIMIT 1",
+            "SELECT version, status FROM ssp_documents WHERE project_id = %s ORDER BY created_at DESC LIMIT 1",
             (project_id,),
         ).fetchone()
         if ssp:
@@ -224,7 +224,7 @@ def _get_compliance_summary(project_id: str, db_path: str) -> dict:
 
         # POAMs open count
         poam = conn.execute(
-            "SELECT COUNT(*) as cnt FROM poam_items WHERE project_id = ? AND status = 'open'",
+            "SELECT COUNT(*) as cnt FROM poam_items WHERE project_id = %s AND status = 'open'",
             (project_id,),
         ).fetchone()
         if poam:
@@ -232,7 +232,7 @@ def _get_compliance_summary(project_id: str, db_path: str) -> dict:
 
         # STIG CAT1/CAT2
         stig_rows = conn.execute(
-            "SELECT severity, COUNT(*) as cnt FROM stig_findings WHERE project_id = ? AND status IN ('Open', 'open') GROUP BY severity",
+            "SELECT severity, COUNT(*) as cnt FROM stig_findings WHERE project_id = %s AND status IN ('Open', 'open') GROUP BY severity",
             (project_id,),
         ).fetchall()
         for r in stig_rows:
@@ -244,7 +244,7 @@ def _get_compliance_summary(project_id: str, db_path: str) -> dict:
 
         # Controls
         controls = conn.execute(
-            "SELECT implementation_status, COUNT(*) as cnt FROM project_controls WHERE project_id = ? GROUP BY implementation_status",
+            "SELECT implementation_status, COUNT(*) as cnt FROM project_controls WHERE project_id = %s GROUP BY implementation_status",
             (project_id,),
         ).fetchall()
         for r in controls:
@@ -255,7 +255,7 @@ def _get_compliance_summary(project_id: str, db_path: str) -> dict:
         # Frameworks (from framework_applicability table if exists)
         try:
             fw_rows = conn.execute(
-                "SELECT framework_id FROM framework_applicability WHERE project_id = ? AND status = 'confirmed'",
+                "SELECT framework_id FROM framework_applicability WHERE project_id = %s AND status = 'confirmed'",
                 (project_id,),
             ).fetchall()
             summary["frameworks"] = [r["framework_id"] for r in fw_rows]
@@ -266,7 +266,7 @@ def _get_compliance_summary(project_id: str, db_path: str) -> dict:
         # cATO readiness
         try:
             cato = conn.execute(
-                "SELECT readiness_score FROM cato_evidence WHERE project_id = ? ORDER BY assessed_at DESC LIMIT 1",
+                "SELECT readiness_score FROM cato_evidence WHERE project_id = %s ORDER BY assessed_at DESC LIMIT 1",
                 (project_id,),
             ).fetchone()
             if cato:
@@ -294,7 +294,7 @@ def _get_dev_profile_summary(project_id: str, db_path: str) -> dict:
     try:
         conn = get_connection(db_path=str(db_path))
         row = conn.execute(
-            "SELECT dimensions FROM dev_profiles WHERE scope = 'project' AND scope_id = ? ORDER BY version DESC LIMIT 1",
+            "SELECT dimensions FROM dev_profiles WHERE scope = 'project' AND scope_id = %s ORDER BY version DESC LIMIT 1",
             (project_id,),
         ).fetchone()
         if row and row["dimensions"]:
@@ -333,7 +333,7 @@ def _get_recent_activity(project_id: str, limit: int = 5, db_path: str = None) -
     try:
         conn = get_connection(db_path=str(db_path))
         rows = conn.execute(
-            "SELECT event_type, actor, action, created_at FROM audit_trail WHERE project_id = ? ORDER BY created_at DESC LIMIT ?",
+            "SELECT event_type, actor, action, created_at FROM audit_trail WHERE project_id = %s ORDER BY created_at DESC LIMIT %s",
             (project_id, limit),
         ).fetchall()
         for r in rows:
@@ -365,7 +365,7 @@ def _get_active_intake_sessions(project_id: str, db_path: str) -> list:
     try:
         conn = get_connection(db_path=str(db_path))
         rows = conn.execute(
-            "SELECT id, customer_name, status, readiness_score, created_at FROM intake_sessions WHERE project_id = ? AND status != 'completed' ORDER BY created_at DESC",
+            "SELECT id, customer_name, status, readiness_score, created_at FROM intake_sessions WHERE project_id = %s AND status != 'completed' ORDER BY created_at DESC",
             (project_id,),
         ).fetchall()
         for r in rows:
@@ -683,8 +683,8 @@ def init_from_manifest(directory: str = None, db_path: str = None) -> dict:
                 tech_stack_backend, directory_path, created_by,
                 impact_level, cloud_environment, target_frameworks,
                 ato_status, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, 'active', ?, ?, 'icdev-yaml',
-                       ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, 'active', %s, %s, 'icdev-yaml',
+                       %s, %s, %s, %s, %s, %s)""",
             (
                 db_id,
                 name,
@@ -707,8 +707,8 @@ def init_from_manifest(directory: str = None, db_path: str = None) -> dict:
             conn.execute(
                 """INSERT INTO audit_trail
                    (project_id, event_type, actor, action, details, classification)
-                   VALUES (?, 'project.init_from_manifest', 'session_context_builder',
-                           ?, ?, ?)""",
+                   VALUES (%s, 'project.init_from_manifest', 'session_context_builder',
+                           %s, %s, %s)""",
                 (
                     db_id,
                     f"Initialized project '{name}' from icdev.yaml",
@@ -730,7 +730,7 @@ def init_from_manifest(directory: str = None, db_path: str = None) -> dict:
                 conn.execute(
                     """INSERT INTO dev_profiles
                        (scope, scope_id, version, template, dimensions, created_by, created_at)
-                       VALUES ('project', ?, 1, ?, '{}', 'icdev-yaml', ?)""",
+                       VALUES ('project', %s, 1, %s, '{}', 'icdev-yaml', %s)""",
                     (db_id, profile_template, now),
                 )
                 conn.commit()

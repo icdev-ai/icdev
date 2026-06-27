@@ -116,7 +116,7 @@ def _compute_adaptive_thresholds(conn) -> dict:
     fetch_buffer = int(ad_cfg.get("fetch_buffer", 10))
 
     rows = conn.execute(
-        "SELECT uqs_score, total_findings FROM quality_snapshots ORDER BY snapshot_at DESC LIMIT ?",
+        "SELECT uqs_score, total_findings FROM quality_snapshots ORDER BY snapshot_at DESC LIMIT %s",
         (min_samples + fetch_buffer,),
     ).fetchall()
 
@@ -182,7 +182,7 @@ def _compute_adaptive_gate_score_threshold(conn) -> float:
     gate_floor = float(bounds.get("gate_score_floor", 50.0))
 
     rows = conn.execute(
-        "SELECT gate_results FROM quality_snapshots ORDER BY snapshot_at DESC LIMIT ?",
+        "SELECT gate_results FROM quality_snapshots ORDER BY snapshot_at DESC LIMIT %s",
         (min_samples + fetch_buffer,),
     ).fetchall()
 
@@ -247,7 +247,7 @@ def run_quality_scan() -> dict:
         conn.execute(
             "INSERT INTO quality_snapshots "
             "(id, snapshot_at, gate_results, uqs_score, grade, tools_available, total_findings, auto_fixed) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
             (snapshot_id, _utcnow(), json.dumps(results), uqs_score, grade, available, total_findings, 0),
         )
         conn.commit()
@@ -319,7 +319,7 @@ def detect_regressions() -> list[dict]:
             regressions.append(reg)
             conn.execute(
                 "INSERT INTO quality_trends (id, detected_at, trend_type, dimension, direction, severity, detail) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (reg["id"], reg["detected_at"], reg["trend_type"], reg["dimension"],
                  reg["direction"], reg["severity"], reg["detail"]),
             )
@@ -343,7 +343,7 @@ def detect_regressions() -> list[dict]:
             regressions.append(reg)
             conn.execute(
                 "INSERT INTO quality_trends (id, detected_at, trend_type, dimension, direction, severity, detail) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (reg["id"], reg["detected_at"], reg["trend_type"], reg["dimension"],
                  reg["direction"], reg["severity"], reg["detail"]),
             )
@@ -426,7 +426,7 @@ def generate_improvement_gkp() -> dict | None:
 
         conn.execute(
             "INSERT INTO quality_gkps (id, created_at, gkp_type, title, body, source_gate, status) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (gkp_id, _utcnow(), "improvement", title, body, gate.get("gate_id"), "pending"),
         )
         conn.commit()

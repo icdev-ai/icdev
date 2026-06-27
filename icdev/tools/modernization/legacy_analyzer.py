@@ -276,7 +276,7 @@ def register_application(project_id, name, source_path, description=None):
                (id, project_id, name, description, source_path, primary_language,
                 analysis_status, loc_total, loc_code, loc_comment, loc_blank,
                 file_count, source_hash, registered_at)
-               VALUES (?, ?, ?, ?, ?, ?, 'registered', ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, 'registered', %s, %s, %s, %s, %s, %s, %s)""",
             (
                 app_id,
                 project_id,
@@ -428,7 +428,7 @@ def analyze_python(app_id, source_path):
                     """INSERT OR IGNORE INTO legacy_components
                        (id, legacy_app_id, name, component_type, file_path,
                         qualified_name, loc, cyclomatic_complexity, properties)
-                       VALUES (?, ?, ?, 'module', ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, 'module', %s, %s, %s, %s, %s)""",
                     (
                         module_comp_id,
                         app_id,
@@ -491,7 +491,7 @@ def analyze_python(app_id, source_path):
                                (id, legacy_app_id, name, component_type, file_path,
                                 qualified_name, parent_component_id, loc,
                                 cyclomatic_complexity, properties)
-                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                             (
                                 class_id,
                                 app_id,
@@ -529,7 +529,7 @@ def analyze_python(app_id, source_path):
                                             """INSERT OR IGNORE INTO legacy_apis
                                                (id, legacy_app_id, component_id, method,
                                                 path, handler_function, parameters)
-                                               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                                               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                                             (
                                                 api_id,
                                                 app_id,
@@ -554,7 +554,7 @@ def analyze_python(app_id, source_path):
                                (id, legacy_app_id, name, component_type, file_path,
                                 qualified_name, parent_component_id, loc,
                                 cyclomatic_complexity, properties)
-                               VALUES (?, ?, ?, 'function', ?, ?, ?, ?, ?, ?)""",
+                               VALUES (%s, %s, %s, 'function', %s, %s, %s, %s, %s, %s)""",
                             (
                                 func_id,
                                 app_id,
@@ -578,7 +578,7 @@ def analyze_python(app_id, source_path):
                                     """INSERT OR IGNORE INTO legacy_apis
                                        (id, legacy_app_id, component_id, method,
                                         path, handler_function, parameters)
-                                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                                       VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                                     (
                                         api_id,
                                         app_id,
@@ -599,7 +599,7 @@ def analyze_python(app_id, source_path):
                         """INSERT OR IGNORE INTO legacy_apis
                            (id, legacy_app_id, component_id, method, path,
                             handler_function)
-                           VALUES (?, ?, ?, ?, ?, ?)""",
+                           VALUES (%s, %s, %s, %s, %s, %s)""",
                         (
                             api_id,
                             app_id,
@@ -874,7 +874,7 @@ def analyze_java(app_id, source_path):
                         """INSERT OR IGNORE INTO legacy_components
                            (id, legacy_app_id, name, component_type, file_path,
                             qualified_name, loc, cyclomatic_complexity, properties)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                         (
                             comp_id,
                             app_id,
@@ -934,7 +934,7 @@ def analyze_java(app_id, source_path):
                                 """INSERT OR IGNORE INTO legacy_apis
                                    (id, legacy_app_id, component_id, method, path,
                                     handler_function)
-                                   VALUES (?, ?, ?, ?, ?, ?)""",
+                                   VALUES (%s, %s, %s, %s, %s, %s)""",
                                 (
                                     api_id,
                                     app_id,
@@ -1017,7 +1017,7 @@ def _detect_struts_actions(source_path, app_id):
                 conn.execute(
                     """INSERT OR IGNORE INTO legacy_apis
                        (id, legacy_app_id, component_id, method, path, handler_function)
-                       VALUES (?, ?, NULL, 'ALL', ?, ?)""",
+                       VALUES (%s, %s, NULL, 'ALL', %s, %s)""",
                     (api_id, app_id, m.group(1), m.group(2)),
                 )
                 count += 1
@@ -1199,7 +1199,7 @@ def analyze_csharp(app_id, source_path):
                         """INSERT OR IGNORE INTO legacy_components
                            (id, legacy_app_id, name, component_type, file_path,
                             qualified_name, loc, cyclomatic_complexity, properties)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                         (
                             comp_id,
                             app_id,
@@ -1244,7 +1244,7 @@ def analyze_csharp(app_id, source_path):
                                 """INSERT OR IGNORE INTO legacy_apis
                                    (id, legacy_app_id, component_id, method, path,
                                     handler_function)
-                                   VALUES (?, ?, ?, 'ALL', ?, ?)""",
+                                   VALUES (%s, %s, %s, 'ALL', %s, %s)""",
                                 (api_id, app_id, comp_id, f"/{op.group(1)}", f"{class_name}.{op.group(1)}"),
                             )
                             apis_added += 1
@@ -1269,7 +1269,7 @@ def analyze_csharp(app_id, source_path):
                                 """INSERT OR IGNORE INTO legacy_apis
                                    (id, legacy_app_id, component_id, method, path,
                                     handler_function)
-                                   VALUES (?, ?, ?, ?, ?, ?)""",
+                                   VALUES (%s, %s, %s, %s, %s, %s)""",
                                 (api_id, app_id, comp_id, http_method, full_path, class_name),
                             )
                             apis_added += 1
@@ -1296,7 +1296,7 @@ def analyze_csharp(app_id, source_path):
                             """INSERT OR IGNORE INTO legacy_apis
                                (id, legacy_app_id, component_id, method, path,
                                 handler_function)
-                               VALUES (?, ?, ?, ?, ?, ?)""",
+                               VALUES (%s, %s, %s, %s, %s, %s)""",
                             (
                                 api_id,
                                 app_id,
@@ -1333,7 +1333,7 @@ def _insert_dependency(conn, app_id, source_comp_id, target_comp_id, dep_type, e
             """INSERT OR IGNORE INTO legacy_dependencies
                (legacy_app_id, source_component_id, target_component_id,
                 dependency_type, evidence)
-               VALUES (?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s)""",
             (app_id, source_comp_id, target_comp_id, dep_type, evidence),
         )
     except sqlite3.IntegrityError:
@@ -1647,7 +1647,7 @@ def _compute_tech_debt(app_id):
     try:
         rows = conn.execute(
             """SELECT loc, cyclomatic_complexity, dependencies_out
-               FROM legacy_components WHERE legacy_app_id = ?""",
+               FROM legacy_components WHERE legacy_app_id = %s""",
             (app_id,),
         ).fetchall()
     finally:
@@ -1703,7 +1703,7 @@ def _compute_maintainability_index(app_id):
     try:
         rows = conn.execute(
             """SELECT loc, cyclomatic_complexity, coupling_score
-               FROM legacy_components WHERE legacy_app_id = ?""",
+               FROM legacy_components WHERE legacy_app_id = %s""",
             (app_id,),
         ).fetchall()
     finally:
@@ -1765,7 +1765,7 @@ def analyze_full(project_id, app_id, source_path_override=None):
     conn = _get_db()
     try:
         row = conn.execute(
-            "SELECT * FROM legacy_applications WHERE id = ? AND project_id = ?",
+            "SELECT * FROM legacy_applications WHERE id = %s AND project_id = %s",
             (app_id, project_id),
         ).fetchone()
     finally:
@@ -1787,7 +1787,7 @@ def analyze_full(project_id, app_id, source_path_override=None):
     conn = _get_db()
     try:
         conn.execute(
-            "UPDATE legacy_applications SET analysis_status = 'analyzing' WHERE id = ?",
+            "UPDATE legacy_applications SET analysis_status = 'analyzing' WHERE id = %s",
             (app_id,),
         )
         conn.commit()
@@ -1811,7 +1811,7 @@ def analyze_full(project_id, app_id, source_path_override=None):
         conn = _get_db()
         try:
             conn.execute(
-                "UPDATE legacy_applications SET analysis_status = 'failed' WHERE id = ?",
+                "UPDATE legacy_applications SET analysis_status = 'failed' WHERE id = %s",
                 (app_id,),
             )
             conn.commit()
@@ -1835,7 +1835,7 @@ def analyze_full(project_id, app_id, source_path_override=None):
     try:
         avg_row = conn.execute(
             """SELECT AVG(cyclomatic_complexity) as avg_cc
-               FROM legacy_components WHERE legacy_app_id = ?""",
+               FROM legacy_components WHERE legacy_app_id = %s""",
             (app_id,),
         ).fetchone()
         avg_complexity = round(avg_row["avg_cc"] or 0.0, 2) if avg_row else 0.0
@@ -1848,11 +1848,11 @@ def analyze_full(project_id, app_id, source_path_override=None):
     try:
         conn.execute(
             """UPDATE legacy_applications
-               SET framework = ?, framework_version = ?,
-                   tech_debt_hours = ?, maintainability_index = ?,
-                   complexity_score = ?, analysis_status = 'analyzed',
-                   analyzed_at = ?
-               WHERE id = ?""",
+               SET framework = %s, framework_version = %s,
+                   tech_debt_hours = %s, maintainability_index = %s,
+                   complexity_score = %s, analysis_status = 'analyzed',
+                   analyzed_at = %s
+               WHERE id = %s""",
             (
                 framework,
                 framework_version,
@@ -1909,14 +1909,14 @@ def _update_dependency_counts(app_id):
         out_counts = conn.execute(
             """SELECT source_component_id, COUNT(*) as cnt
                FROM legacy_dependencies
-               WHERE legacy_app_id = ? AND source_component_id IS NOT NULL
+               WHERE legacy_app_id = %s AND source_component_id IS NOT NULL
                GROUP BY source_component_id""",
             (app_id,),
         ).fetchall()
 
         for row in out_counts:
             conn.execute(
-                "UPDATE legacy_components SET dependencies_out = ? WHERE id = ?",
+                "UPDATE legacy_components SET dependencies_out = %s WHERE id = %s",
                 (row["cnt"], row["source_component_id"]),
             )
 
@@ -1924,14 +1924,14 @@ def _update_dependency_counts(app_id):
         in_counts = conn.execute(
             """SELECT target_component_id, COUNT(*) as cnt
                FROM legacy_dependencies
-               WHERE legacy_app_id = ? AND target_component_id IS NOT NULL
+               WHERE legacy_app_id = %s AND target_component_id IS NOT NULL
                GROUP BY target_component_id""",
             (app_id,),
         ).fetchall()
 
         for row in in_counts:
             conn.execute(
-                "UPDATE legacy_components SET dependencies_in = ? WHERE id = ?",
+                "UPDATE legacy_components SET dependencies_in = %s WHERE id = %s",
                 (row["cnt"], row["target_component_id"]),
             )
 

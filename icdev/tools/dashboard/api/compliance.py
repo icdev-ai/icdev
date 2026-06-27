@@ -27,7 +27,7 @@ def list_ssp():
             rows = conn.execute(
                 "SELECT id, project_id, version, system_name, status, "
                 "approved_by, approved_at, classification, created_at "
-                "FROM ssp_documents WHERE project_id = ? ORDER BY created_at DESC",
+                "FROM ssp_documents WHERE project_id = %s ORDER BY created_at DESC",
                 (project_id,),
             ).fetchall()
         else:
@@ -97,7 +97,7 @@ def list_sbom():
         project_id = request.args.get("project_id")
         if project_id:
             rows = conn.execute(
-                "SELECT * FROM sbom_records WHERE project_id = ? ORDER BY generated_at DESC",
+                "SELECT * FROM sbom_records WHERE project_id = %s ORDER BY generated_at DESC",
                 (project_id,),
             ).fetchall()
         else:
@@ -118,7 +118,7 @@ def list_controls():
                 "SELECT pc.*, cc.family, cc.title as control_title "
                 "FROM project_controls pc "
                 "LEFT JOIN compliance_controls cc ON pc.control_id = cc.id "
-                "WHERE pc.project_id = ? ORDER BY pc.control_id",
+                "WHERE pc.project_id = %s ORDER BY pc.control_id",
                 (project_id,),
             ).fetchall()
         else:

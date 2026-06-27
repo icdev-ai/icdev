@@ -160,7 +160,7 @@ def register_intelligence_routes(bp):
         conn = _get_conn()
         rows = conn.execute(
             "SELECT id, analysis_type, query_text, result_summary, created_at "
-            "FROM ni_analyses WHERE topology_id = ? ORDER BY created_at DESC LIMIT 50",
+            "FROM ni_analyses WHERE topology_id = %s ORDER BY created_at DESC LIMIT 50",
             (topology_id,),
         ).fetchall()
         conn.close()

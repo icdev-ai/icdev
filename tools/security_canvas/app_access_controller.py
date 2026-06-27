@@ -79,7 +79,7 @@ def _compute_behavioral_risk(conn, subject_id: str, hour: int, resource: str) ->
     """Return behavioral risk 0..1 (0 = on-baseline, 1 = highly anomalous)."""
     baseline = conn.execute(
         "SELECT common_hours, common_resources, sample_count "
-        "FROM zig_app_behavior_baseline WHERE subject_id=?",
+        "FROM zig_app_behavior_baseline WHERE subject_id=%s",
         (subject_id,),
     ).fetchone()
     if not baseline or (baseline["sample_count"] or 0) < 3:
@@ -100,7 +100,7 @@ def _update_baseline(conn, subject_id: str, hour: int, resource: str) -> None:
     now = datetime.now(timezone.utc).isoformat()
     row = conn.execute(
         "SELECT common_hours, common_resources, sample_count "
-        "FROM zig_app_behavior_baseline WHERE subject_id=?",
+        "FROM zig_app_behavior_baseline WHERE subject_id=%s",
         (subject_id,),
     ).fetchone()
     if row:
@@ -110,15 +110,15 @@ def _update_baseline(conn, subject_id: str, hour: int, resource: str) -> None:
         if resource:
             resources.add(resource)
         conn.execute(
-            "UPDATE zig_app_behavior_baseline SET common_hours=?, common_resources=?, "
-            "sample_count=sample_count+1, updated_at=? WHERE subject_id=?",
+            "UPDATE zig_app_behavior_baseline SET common_hours=%s, common_resources=%s, "
+            "sample_count=sample_count+1, updated_at=%s WHERE subject_id=%s",
             (json.dumps(sorted(hours)), json.dumps(sorted(resources)), now, subject_id),
         )
     else:
         conn.execute(
             "INSERT INTO zig_app_behavior_baseline "
             "(subject_id, common_hours, common_resources, sample_count, updated_at) "
-            "VALUES (?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s)",
             (subject_id, json.dumps([hour]), json.dumps([resource] if resource else []), 1, now),
         )
 
@@ -170,7 +170,7 @@ def evaluate_access(subject_id: str, application: str, resource: str = "",
         conn.execute(
             "INSERT INTO zig_app_access_decisions "
             "(subject_id, application, resource, decision, access_score, attributes_json, "
-            "behavioral_risk, reason, created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+            "behavioral_risk, reason, created_at) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (subject_id, application, resource, decision, access_score,
              json.dumps(attributes), behavioral_risk, reason, now.isoformat()),
         )

@@ -48,7 +48,7 @@ except ImportError:
         return conn
 
     def _verify_project(conn, project_id):
-        row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
         if not row:
             raise ValueError(f"Project '{project_id}' not found in database.")
         return dict(row)
@@ -58,7 +58,7 @@ except ImportError:
             conn.execute(
                 """INSERT INTO audit_trail
                    (project_id, event_type, actor, action, details, classification)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s)""",
                 (
                     project_id,
                     "cato_evidence_collected",
@@ -149,7 +149,7 @@ def schedule_collections(project_id, db_path=None):
             """SELECT id, control_id, evidence_type, evidence_source,
                       collected_at, automation_frequency, status
                FROM cato_evidence
-               WHERE project_id = ?
+               WHERE project_id = %s
                ORDER BY control_id, evidence_type""",
             (project_id,),
         ).fetchall()

@@ -17,13 +17,13 @@ def take_snapshot(project_id: str, framework_id: str = "FedRAMP Moderate") -> di
     taken_at = _now()
     try:
         control_count = conn.execute(
-            "SELECT COUNT(*) FROM project_controls WHERE project_id=?", (project_id,)
+            "SELECT COUNT(*) FROM project_controls WHERE project_id=%s", (project_id,)
         ).fetchone()[0]
     except Exception:
         control_count = 0
     try:
         evidence_count = conn.execute(
-            "SELECT COUNT(*) FROM evidence WHERE project_id=?", (project_id,)
+            "SELECT COUNT(*) FROM evidence WHERE project_id=%s", (project_id,)
         ).fetchone()[0]
     except Exception:
         evidence_count = 0
@@ -31,7 +31,7 @@ def take_snapshot(project_id: str, framework_id: str = "FedRAMP Moderate") -> di
         conn.execute(
             """INSERT INTO compliance_snapshots
                (snapshot_id, project_id, framework_id, control_id, implementation_status, evidence_ref, taken_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (snap_id, project_id, framework_id, "_meta", "snapshot", "", taken_at),
         )
         conn.commit()
@@ -109,11 +109,11 @@ def crosswalk_drift(project_id: str, fw_src: str, fw_tgt: str) -> dict:
     drifts = []
     try:
         src_rows = conn.execute(
-            "SELECT control_id, implementation_status FROM compliance_snapshots WHERE project_id=? AND framework_id=? ORDER BY taken_at DESC LIMIT 500",
+            "SELECT control_id, implementation_status FROM compliance_snapshots WHERE project_id=%s AND framework_id=%s ORDER BY taken_at DESC LIMIT 500",
             (project_id, fw_src),
         ).fetchall()
         tgt_rows = conn.execute(
-            "SELECT control_id, implementation_status FROM compliance_snapshots WHERE project_id=? AND framework_id=? ORDER BY taken_at DESC LIMIT 500",
+            "SELECT control_id, implementation_status FROM compliance_snapshots WHERE project_id=%s AND framework_id=%s ORDER BY taken_at DESC LIMIT 500",
             (project_id, fw_tgt),
         ).fetchall()
         src_map = {r[0]: r[1] for r in src_rows}

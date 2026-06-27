@@ -223,7 +223,7 @@ def _store_brief(brief_md: str) -> str:
         conn.execute(
             "INSERT INTO pg_proposal_genesis_audit "
             "(id, event_type, reflex_name, risk_tier, details, success, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (
                 f"pgaudit-{uuid.uuid4().hex[:10]}",
                 "brief_generated",
@@ -284,7 +284,7 @@ def _match_awards_to_decisions() -> Dict[str, int]:
             award = None
             if sol_number:
                 award = conn.execute(
-                    "SELECT awardee_name, award_amount, award_date FROM govcon_awards WHERE sol_number = ? LIMIT 1",
+                    "SELECT awardee_name, award_amount, award_date FROM govcon_awards WHERE sol_number = %s LIMIT 1",
                     (sol_number,),
                 ).fetchone()
 
@@ -295,7 +295,7 @@ def _match_awards_to_decisions() -> Dict[str, int]:
                     award = conn.execute(
                         "SELECT awardee_name, award_amount, award_date "
                         "FROM govcon_awards "
-                        "WHERE agency LIKE ? AND naics_code = ? "
+                        "WHERE agency LIKE %s AND naics_code = %s "
                         "AND award_date > datetime('now', '-90 days') "
                         "ORDER BY award_date DESC LIMIT 1",
                         (f"%{agency}%", naics),
@@ -318,7 +318,7 @@ def _match_awards_to_decisions() -> Dict[str, int]:
                 "INSERT INTO pg_bid_decision_outcomes "
                 "(id, bid_decision_id, outcome, actual_award_date, "
                 "award_amount, notes, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (
                     outcome_id,
                     row["decision_id"],
@@ -339,7 +339,7 @@ def _match_awards_to_decisions() -> Dict[str, int]:
                 "(id, opportunity_id, outcome, competitor_name, "
                 "competitor_strengths, our_strengths, our_weaknesses, "
                 "lessons_learned, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     wl_id,
                     opp_id,
@@ -359,7 +359,7 @@ def _match_awards_to_decisions() -> Dict[str, int]:
                 "INSERT INTO pg_proposal_genesis_audit "
                 "(id, event_type, reflex_name, risk_tier, opportunity_id, "
                 "details, success, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     f"pgaudit-{uuid.uuid4().hex[:10]}",
                     "outcome_recorded",

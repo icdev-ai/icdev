@@ -76,7 +76,7 @@ def check_isa_expiry(*, dry_run: bool = False) -> Dict[str, Any]:
                    COALESCE(isa_expiry_date, expiry_date) AS expiry
             FROM bd_isa_tracker
             WHERE COALESCE(isa_expiry_date, expiry_date) IS NOT NULL
-              AND COALESCE(isa_expiry_date, expiry_date) <= ?
+              AND COALESCE(isa_expiry_date, expiry_date) <= %s
               AND status NOT IN ('terminated', 'expired')
             ORDER BY expiry ASC
             """,

@@ -73,7 +73,7 @@ def _log_audit(reflex: str, status: str, payload: dict) -> None:
         conn.execute(
             """INSERT INTO genesis_audit_log
                (reflex_name, status, details_json, created_at)
-               VALUES (?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s)""",
             (reflex, status, json.dumps(payload),
              datetime.now(timezone.utc).isoformat()),
         )

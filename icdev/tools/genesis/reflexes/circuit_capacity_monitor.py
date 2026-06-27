@@ -274,7 +274,7 @@ def _maybe_insert_alarm(conn, circuit: Dict, critical_threshold: float) -> None:
     )
     # Suppress duplicate alarms for the same circuit that are still active
     existing = conn.execute(
-        "SELECT id FROM noc_alarms WHERE circuit_id=? AND alarm_type='circuit' "
+        "SELECT id FROM noc_alarms WHERE circuit_id=%s AND alarm_type='circuit' "
         "AND severity='critical' AND cleared=0 LIMIT 1",
         (cid,),
     ).fetchone()
@@ -282,7 +282,7 @@ def _maybe_insert_alarm(conn, circuit: Dict, critical_threshold: float) -> None:
         # Refresh last_seen
         try:
             conn.execute(
-                "UPDATE noc_alarms SET last_seen=?, description=? WHERE id=?",
+                "UPDATE noc_alarms SET last_seen=%s, description=%s WHERE id=%s",
                 (_now(), desc, existing[0]),
             )
         except Exception:
@@ -296,7 +296,7 @@ def _maybe_insert_alarm(conn, circuit: Dict, critical_threshold: float) -> None:
         conn.execute(
             "INSERT INTO noc_alarms (alarm_source, severity, alarm_type, device_name, "
             "circuit_id, description, first_seen, last_seen, cleared, suppressed, acknowledged) "
-            "VALUES (?,?,?,?,?,?,?,?,0,0,0)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,0,0,0)",
             ("circuit_capacity_monitor", "critical", "circuit",
              f"CCC/{circuit['carrier']}", cid, desc, _now(), _now()),
         )

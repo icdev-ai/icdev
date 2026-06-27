@@ -176,7 +176,7 @@ def _get_user_progress(user_email: str, track_id: str) -> int:
         conn = get_connection()
         row = conn.execute(
             "SELECT tasks_completed FROM aisg_track_progress"
-            " WHERE user_email = ? AND track_id = ?",
+            " WHERE user_email = %s AND track_id = %s",
             (user_email, track_id),
         ).fetchone()
         return int(row[0]) if row else 0
@@ -192,14 +192,14 @@ def activate_track(user_email: str, track_id: str) -> dict:
     if pg:
         conn.execute(
             "INSERT INTO aisg_track_progress (user_email, track_id, activated_at)"
-            " VALUES (?, ?, NOW())"
+            " VALUES (%s, %s, NOW())"
             " ON CONFLICT (user_email, track_id) DO NOTHING",
             (user_email, track_id),
         )
     else:
         conn.execute(
             "INSERT OR IGNORE INTO aisg_track_progress"
-            " (user_email, track_id, activated_at) VALUES (?, ?, datetime('now'))",
+            " (user_email, track_id, activated_at) VALUES (%s, %s, datetime('now'))",
             (user_email, track_id),
         )
     conn.commit()
@@ -211,8 +211,8 @@ def update_progress(user_email: str, track_id: str, tasks_completed: int) -> dic
     from tools.db.storage import get_connection
     conn = get_connection()
     conn.execute(
-        "UPDATE aisg_track_progress SET tasks_completed = ?"
-        " WHERE user_email = ? AND track_id = ?",
+        "UPDATE aisg_track_progress SET tasks_completed = %s"
+        " WHERE user_email = %s AND track_id = %s",
         (tasks_completed, user_email, track_id),
     )
     conn.commit()

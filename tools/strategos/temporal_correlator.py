@@ -215,7 +215,7 @@ def correlate(
             conn.execute(
                 "INSERT OR IGNORE INTO canvas_kg_nodes "
                 "(id, canvas, design_id, node_id, node_type, label, metadata_json, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     f"corr_co_{co['id']}",
                     _KG_CANVAS,
@@ -239,7 +239,7 @@ def correlate(
             conn.execute(
                 "INSERT OR IGNORE INTO canvas_kg_nodes "
                 "(id, canvas, design_id, node_id, node_type, label, metadata_json, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     f"corr_ce_{ce['id']}",
                     _KG_CANVAS,
@@ -277,7 +277,7 @@ def correlate(
                     "INSERT OR IGNORE INTO canvas_kg_edges "
                     "(id, canvas, design_id, source_id, target_id, "
                     " edge_type, metadata_json, updated_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         edge_id,
                         _KG_CANVAS,

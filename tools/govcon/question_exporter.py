@@ -60,7 +60,7 @@ def _audit(conn, action, details="", actor="question_exporter"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (_uuid(), _now(), "govcon.question_export", actor, action, details, "govcon"),
         )
     except Exception:
@@ -275,7 +275,7 @@ def export_questions(opp_id, status_filter=None, output_path=None, company_name=
     try:
         # Get opportunity info
         opp = conn.execute(
-            "SELECT id, title, solicitation_number FROM proposal_opportunities WHERE id = ?",
+            "SELECT id, title, solicitation_number FROM proposal_opportunities WHERE id = %s",
             (opp_id,),
         ).fetchone()
         if not opp:

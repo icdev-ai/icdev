@@ -206,11 +206,11 @@ def _upsert_rows(conn, rows: list[dict]) -> tuple[int, int]:
                      vulnerability_score,
                      metadata_json)
                 VALUES
-                    (?, 'logistics_node', ?, ?,
-                     ?, ?,
-                     'osm', ?,
-                     ?,
-                     ?)
+                    (%s, 'logistics_node', %s, %s,
+                     %s, %s,
+                     'osm', %s,
+                     %s,
+                     %s)
                 """,
                 (
                     entity_id,

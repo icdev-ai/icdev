@@ -270,7 +270,7 @@ def extract_document(
             conn.execute(
                 """INSERT OR IGNORE INTO rag_ingestion_log
                    (source_table, source_id, chunk_count, status, started_at, completed_at)
-                   VALUES (?, ?, ?, 'completed', ?, ?)""",
+                   VALUES (%s, %s, %s, 'completed', %s, %s)""",
                 (f"ft_document:{dataset_id}", doc_id, len(chunks), _now(), _now()),
             )
             conn.commit()

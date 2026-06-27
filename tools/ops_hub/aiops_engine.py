@@ -147,7 +147,7 @@ def get_self_healing_log(limit: int = 30) -> list[dict]:
         rows = conn.execute("""
             SELECT * FROM auto_resolution_log
             ORDER BY created_at DESC
-            LIMIT ?
+            LIMIT %s
         """, (limit,)).fetchall()
         conn.close()
         return [dict(r) for r in rows]

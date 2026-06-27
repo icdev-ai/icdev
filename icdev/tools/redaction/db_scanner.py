@@ -110,7 +110,7 @@ class DBScanner:
     def _scan_table(self, conn, table: str) -> Optional[Dict[str, Any]]:
         """Scan a single table."""
         # Check if table exists
-        exists = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()
+        exists = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=%s", (table,)).fetchone()
         if not exists:
             return None
 

@@ -100,7 +100,7 @@ def _persist_to_ft_datasets(artifacts: list[dict], tournament_data: dict) -> Non
             """
             INSERT INTO gd_ai_training_pairs
                 (tournament_id, team_key, artifact_type, prompt, completion, quality_score, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 tournament_data.get("tournament_id", ""),

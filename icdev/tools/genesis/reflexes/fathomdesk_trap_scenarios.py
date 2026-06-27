@@ -90,7 +90,7 @@ def _fetch_trap_events(conn: Any, since: str) -> List[Dict[str, Any]]:
         rows = conn.execute(
             "SELECT id, ticker, pattern, broken_level, confidence, created_at "
             "FROM ad_trap_events "
-            "WHERE confidence >= ? AND created_at > ? "
+            "WHERE confidence >= %s AND created_at > %s "
             "ORDER BY created_at ASC",
             (CONFIDENCE_THRESHOLD, since),
         ).fetchall()
@@ -113,7 +113,7 @@ def _fetch_trap_events(conn: Any, since: str) -> List[Dict[str, Any]]:
             "FROM ad_options_coach_events "
             "WHERE event_type = 'trap_against_position' "
             "AND severity = 'critical' "
-            "AND created_at > ? "
+            "AND created_at > %s "
             "ORDER BY created_at ASC",
             (since,),
         ).fetchall()

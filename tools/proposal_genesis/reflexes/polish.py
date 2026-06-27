@@ -275,7 +275,7 @@ def _check_plagiarism(text: str, opp_id: str) -> Dict[str, Any]:
         # Get other drafts for different opportunities
         other_drafts = conn.execute(
             "SELECT section_text FROM proposal_section_drafts "
-            "WHERE opportunity_id != ? AND status IN ('draft', 'approved') "
+            "WHERE opportunity_id != %s AND status IN ('draft', 'approved') "
             "ORDER BY created_at DESC LIMIT 20",
             (opp_id,),
         ).fetchall()
@@ -422,7 +422,7 @@ def _check_stub_content(text: str, opportunity_id: str) -> Dict[str, Any]:
         try:
             conn = get_connection()
             opp_row = conn.execute(
-                "SELECT title, agency FROM proposal_opportunities WHERE id = ?", (opportunity_id,)
+                "SELECT title, agency FROM proposal_opportunities WHERE id = %s", (opportunity_id,)
             ).fetchone()
             conn.close()
             if opp_row:
@@ -589,7 +589,7 @@ def _store_quality_score(opp_id: str, draft_id: str, composite: float, checks: D
                  grammar_score, readability_score, tone_score,
                  plagiarism_score, ai_detection_score,
                  check_details, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
             (
                 score_id,
@@ -712,7 +712,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                 try:
                     c2 = get_connection()
                     shall_row = c2.execute(
-                        "SELECT requirement_text FROM rfp_shall_statements WHERE id = ?",
+                        "SELECT requirement_text FROM rfp_shall_statements WHERE id = %s",
                         (row.get("shall_statement_id", ""),),
                     ).fetchone()
                     c2.close()

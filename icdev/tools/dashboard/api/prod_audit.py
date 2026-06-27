@@ -48,7 +48,7 @@ def audit_history():
         rows = conn.execute(
             "SELECT id, overall_pass, total_checks, passed, failed, warned, skipped, "
             "categories_run, duration_ms, created_at FROM production_audits "
-            "ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            "ORDER BY created_at DESC LIMIT %s OFFSET %s",
             (limit, offset),
         ).fetchall()
 

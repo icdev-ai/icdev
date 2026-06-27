@@ -56,7 +56,7 @@ def _audit(conn, action, details=""):
     try:
         conn.execute(
             "INSERT INTO audit_trail (event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             ("hook_event_logged", "risk_manager", action, details, "cpmp"),
         )
     except Exception:
@@ -120,7 +120,7 @@ def get_risk(risk_id):
             FROM   cpmp_risks r
             LEFT JOIN cpmp_milestones       m  ON m.id  = r.milestone_id
             LEFT JOIN cpmp_negative_events  ne ON ne.id = r.negative_event_id
-            WHERE  r.id = ?
+            WHERE  r.id = %s
             """,
             (risk_id,),
         ).fetchone()
@@ -164,7 +164,7 @@ def create_risk(data):
                 (id, contract_id, title, category, probability, impact, exposure,
                  mitigation, owner, status, milestone_id, negative_event_id,
                  classification, tenant_id, metadata, created_at, updated_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """,
             (
                 rid,
@@ -200,7 +200,7 @@ def update_risk(risk_id, data):
     """Update editable fields on a risk."""
     conn = _get_db()
     try:
-        row = conn.execute("SELECT id FROM cpmp_risks WHERE id = ?", (risk_id,)).fetchone()
+        row = conn.execute("SELECT id FROM cpmp_risks WHERE id = %s", (risk_id,)).fetchone()
         if not row:
             return {"status": "error", "message": "Risk not found"}
         allowed = {
@@ -221,7 +221,7 @@ def update_risk(risk_id, data):
         needs_exposure = "probability" in updates or "impact" in updates
         if needs_exposure:
             cur = conn.execute(
-                "SELECT probability, impact FROM cpmp_risks WHERE id = ?", (risk_id,)
+                "SELECT probability, impact FROM cpmp_risks WHERE id = %s", (risk_id,)
             ).fetchone()
             p = int(updates.get("probability", cur["probability"]))
             i = int(updates.get("impact", cur["impact"]))
@@ -247,10 +247,10 @@ def update_risk(risk_id, data):
 def delete_risk(risk_id):
     conn = _get_db()
     try:
-        row = conn.execute("SELECT id FROM cpmp_risks WHERE id = ?", (risk_id,)).fetchone()
+        row = conn.execute("SELECT id FROM cpmp_risks WHERE id = %s", (risk_id,)).fetchone()
         if not row:
             return {"status": "error", "message": "Risk not found"}
-        conn.execute("DELETE FROM cpmp_risks WHERE id = ?", (risk_id,))
+        conn.execute("DELETE FROM cpmp_risks WHERE id = %s", (risk_id,))
         _audit(conn, "delete_risk", f"id={risk_id}")
         conn.commit()
         return {"status": "ok"}

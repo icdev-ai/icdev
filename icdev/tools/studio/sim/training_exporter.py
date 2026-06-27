@@ -157,9 +157,9 @@ def _sync_example_count(dataset_id: str) -> None:
             """UPDATE ft_datasets
                SET example_count = (
                    SELECT COUNT(*) FROM ft_dataset_examples
-                   WHERE dataset_id = ?
+                   WHERE dataset_id = %s
                ), updated_at = datetime('now')
-               WHERE id = ?""",
+               WHERE id = %s""",
             (dataset_id, dataset_id),
         )
         conn.commit()

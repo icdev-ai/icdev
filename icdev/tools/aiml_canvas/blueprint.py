@@ -150,7 +150,7 @@ def create_aiml_blueprint() -> Blueprint | None:
         conn = get_connection()
         try:
             row = conn.execute(
-                "SELECT * FROM aiml_assessments WHERE id=?", (assessment_id,)
+                "SELECT * FROM aiml_assessments WHERE id=%s", (assessment_id,)
             ).fetchone()
             if not row:
                 return redirect(url_for("aiml_canvas.index"))
@@ -309,7 +309,7 @@ def create_aiml_blueprint() -> Blueprint | None:
         try:
             rows = conn.execute(
                 "SELECT id, design_id, artifact_type, title, format, created_at "
-                "FROM aiml_artifacts WHERE design_id=? ORDER BY created_at DESC",
+                "FROM aiml_artifacts WHERE design_id=%s ORDER BY created_at DESC",
                 (design_id,),
             ).fetchall()
             return jsonify([dict(r) for r in rows])
@@ -511,14 +511,14 @@ def create_aiml_blueprint() -> Blueprint | None:
             with _gc() as _conn:
                 if record_id:
                     rows = _conn.execute(
-                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='aimc' AND record_id=? "
-                        "ORDER BY created_at DESC LIMIT ?",
+                        "SELECT * FROM canvas_ai_decisions WHERE canvas_type='aimc' AND record_id=%s "
+                        "ORDER BY created_at DESC LIMIT %s",
                         (record_id, limit),
                     ).fetchall()
                 else:
                     rows = _conn.execute(
                         "SELECT * FROM canvas_ai_decisions WHERE canvas_type='aimc' "
-                        "ORDER BY created_at DESC LIMIT ?",
+                        "ORDER BY created_at DESC LIMIT %s",
                         (limit,),
                     ).fetchall()
             return jsonify({"ok": True, "canvas": "aimc", "decisions": [dict(r) for r in rows]})

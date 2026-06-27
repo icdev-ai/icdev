@@ -95,7 +95,7 @@ class AIBOMGenerator:
 
     def _get_project(self, conn: sqlite3.Connection, project_id: str) -> Dict:
         """Load project data from database."""
-        row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
         if not row:
             raise ValueError(f"Project '{project_id}' not found.")
         return dict(row)
@@ -113,7 +113,7 @@ class AIBOMGenerator:
                 """INSERT INTO audit_trail
                    (project_id, event_type, actor, action, details,
                     affected_files, classification)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                 (
                     project_id,
                     "ai_bom_generated",
@@ -467,7 +467,7 @@ class AIBOMGenerator:
                            (id, project_id, component_type, component_name,
                             version, provider, license, risk_level,
                             classification, created_at, updated_at)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                         (
                             comp_id,
                             project_id,
@@ -486,10 +486,10 @@ class AIBOMGenerator:
                 except sqlite3.IntegrityError:
                     # Component already exists, update it
                     conn.execute(
-                        """UPDATE ai_bom SET version = ?, provider = ?,
-                           license = ?, risk_level = ?, updated_at = ?
-                           WHERE project_id = ? AND component_name = ?
-                           AND component_type = ?""",
+                        """UPDATE ai_bom SET version = %s, provider = %s,
+                           license = %s, risk_level = %s, updated_at = %s
+                           WHERE project_id = %s AND component_name = %s
+                           AND component_type = %s""",
                         (
                             comp.get("version", "unknown"),
                             comp.get("provider", "unknown"),
@@ -537,7 +537,7 @@ class AIBOMGenerator:
 
             # Check if any AI BOM entries exist
             row = conn.execute(
-                "SELECT COUNT(*) as cnt FROM ai_bom WHERE project_id = ?",
+                "SELECT COUNT(*) as cnt FROM ai_bom WHERE project_id = %s",
                 (project_id,),
             ).fetchone()
             bom_count = row["cnt"] if row else 0
@@ -551,7 +551,7 @@ class AIBOMGenerator:
                 stale_row = conn.execute(
                     """SELECT MIN(created_at) as oldest,
                               MAX(created_at) as newest
-                       FROM ai_bom WHERE project_id = ?""",
+                       FROM ai_bom WHERE project_id = %s""",
                     (project_id,),
                 ).fetchone()
                 if stale_row and stale_row["newest"]:
@@ -569,7 +569,7 @@ class AIBOMGenerator:
             # Check for high/critical risk components
             risk_row = conn.execute(
                 """SELECT COUNT(*) as cnt FROM ai_bom
-                   WHERE project_id = ?
+                   WHERE project_id = %s
                    AND risk_level IN ('critical', 'high')""",
                 (project_id,),
             ).fetchone()
@@ -604,7 +604,7 @@ class AIBOMGenerator:
         try:
             rows = conn.execute(
                 """SELECT * FROM ai_bom
-                   WHERE project_id = ?
+                   WHERE project_id = %s
                    ORDER BY component_type, component_name""",
                 (project_id,),
             ).fetchall()

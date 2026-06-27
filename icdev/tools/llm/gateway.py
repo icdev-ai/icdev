@@ -294,7 +294,7 @@ def _check_rate_limit(agent_id: str, function_name: str, cfg: Dict) -> Dict:
         # Check minute window
         row = conn.execute(
             "SELECT request_count FROM llm_gateway_rate_limits "
-            "WHERE agent_id = ? AND function_name = ? AND window_start = ? AND window_type = ?",
+            "WHERE agent_id = %s AND function_name = %s AND window_start = %s AND window_type = %s",
             (agent_id, function_name, minute_window, "minute"),
         ).fetchone()
         minute_count = row[0] if row else 0
@@ -305,7 +305,7 @@ def _check_rate_limit(agent_id: str, function_name: str, cfg: Dict) -> Dict:
         # Check hour window
         row = conn.execute(
             "SELECT request_count FROM llm_gateway_rate_limits "
-            "WHERE agent_id = ? AND function_name = ? AND window_start = ? AND window_type = ?",
+            "WHERE agent_id = %s AND function_name = %s AND window_start = %s AND window_type = %s",
             (agent_id, function_name, hour_window, "hour"),
         ).fetchone()
         hour_count = row[0] if row else 0
@@ -316,14 +316,14 @@ def _check_rate_limit(agent_id: str, function_name: str, cfg: Dict) -> Dict:
         # Increment counters
         conn.execute(
             "INSERT INTO llm_gateway_rate_limits (agent_id, function_name, window_start, window_type, request_count) "
-            "VALUES (?, ?, ?, ?, 1) "
+            "VALUES (%s, %s, %s, %s, 1) "
             "ON CONFLICT(agent_id, function_name, window_start, window_type) "
             "DO UPDATE SET request_count = request_count + 1",
             (agent_id, function_name, minute_window, "minute"),
         )
         conn.execute(
             "INSERT INTO llm_gateway_rate_limits (agent_id, function_name, window_start, window_type, request_count) "
-            "VALUES (?, ?, ?, ?, 1) "
+            "VALUES (%s, %s, %s, %s, 1) "
             "ON CONFLICT(agent_id, function_name, window_start, window_type) "
             "DO UPDATE SET request_count = request_count + 1",
             (agent_id, function_name, hour_window, "hour"),
@@ -590,7 +590,7 @@ def record_audit(
             "pre_check_result, post_check_result, injection_score, "
             "pii_detected, blocked_reason, input_hash, output_hash, "
             "input_length, output_length, latency_ms, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 request_id,
                 agent_id,

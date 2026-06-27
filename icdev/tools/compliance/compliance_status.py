@@ -29,7 +29,7 @@ def _get_connection(db_path=None):
 
 def _verify_project(conn, project_id):
     """Verify project exists."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found.")
     return dict(row)
@@ -41,7 +41,7 @@ def get_ssp_status(conn, project_id):
         """SELECT id, version, system_name, status, file_path,
                   approved_by, approved_at, created_at
            FROM ssp_documents
-           WHERE project_id = ?
+           WHERE project_id = %s
            ORDER BY created_at DESC
            LIMIT 1""",
         (project_id,),
@@ -76,7 +76,7 @@ def get_poam_summary(conn, project_id):
     rows = conn.execute(
         """SELECT severity, status, COUNT(*) as cnt
            FROM poam_items
-           WHERE project_id = ?
+           WHERE project_id = %s
            GROUP BY severity, status
            ORDER BY severity, status""",
         (project_id,),
@@ -115,8 +115,8 @@ def get_poam_summary(conn, project_id):
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     overdue = conn.execute(
         """SELECT COUNT(*) as cnt FROM poam_items
-           WHERE project_id = ? AND status IN ('open', 'in_progress')
-           AND milestone_date < ? AND milestone_date IS NOT NULL""",
+           WHERE project_id = %s AND status IN ('open', 'in_progress')
+           AND milestone_date < %s AND milestone_date IS NOT NULL""",
         (project_id, today),
     ).fetchone()
     summary["overdue"] = overdue["cnt"] if overdue else 0
@@ -129,7 +129,7 @@ def get_stig_summary(conn, project_id):
     rows = conn.execute(
         """SELECT severity, status, COUNT(*) as cnt
            FROM stig_findings
-           WHERE project_id = ?
+           WHERE project_id = %s
            GROUP BY severity, status
            ORDER BY severity, status""",
         (project_id,),
@@ -164,7 +164,7 @@ def get_stig_summary(conn, project_id):
 
     # Get distinct STIGs assessed
     stig_ids = conn.execute(
-        "SELECT DISTINCT stig_id FROM stig_findings WHERE project_id = ?",
+        "SELECT DISTINCT stig_id FROM stig_findings WHERE project_id = %s",
         (project_id,),
     ).fetchall()
     summary["stigs_assessed"] = [r["stig_id"] for r in stig_ids]
@@ -178,7 +178,7 @@ def get_sbom_info(conn, project_id):
         """SELECT version, format, file_path, component_count,
                   vulnerability_count, generated_at
            FROM sbom_records
-           WHERE project_id = ?
+           WHERE project_id = %s
            ORDER BY generated_at DESC
            LIMIT 1""",
         (project_id,),
@@ -222,7 +222,7 @@ def get_control_mapping_status(conn, project_id):
     rows = conn.execute(
         """SELECT control_id, implementation_status
            FROM project_controls
-           WHERE project_id = ?""",
+           WHERE project_id = %s""",
         (project_id,),
     ).fetchall()
 
@@ -255,7 +255,7 @@ def get_control_mapping_status(conn, project_id):
 def _get_cssp_status(conn, project_id):
     """Get CSSP assessment status for a project."""
     rows = conn.execute(
-        "SELECT * FROM cssp_assessments WHERE project_id = ?",
+        "SELECT * FROM cssp_assessments WHERE project_id = %s",
         (project_id,),
     ).fetchall()
 
@@ -333,7 +333,7 @@ def _get_cssp_status(conn, project_id):
 
     # Xacta sync info
     cert_row = conn.execute(
-        "SELECT last_xacta_sync, status FROM cssp_certifications WHERE project_id = ?",
+        "SELECT last_xacta_sync, status FROM cssp_certifications WHERE project_id = %s",
         (project_id,),
     ).fetchone()
     xacta_sync = dict(cert_row) if cert_row else None
@@ -360,7 +360,7 @@ def _get_sbd_status(conn, project_id):
     """Get Secure by Design (SbD) assessment status for a project."""
     try:
         rows = conn.execute(
-            "SELECT * FROM sbd_assessments WHERE project_id = ?",
+            "SELECT * FROM sbd_assessments WHERE project_id = %s",
             (project_id,),
         ).fetchall()
     except Exception:
@@ -432,7 +432,7 @@ def _get_ivv_status(conn, project_id):
     """Get IV&V assessment status for a project."""
     try:
         rows = conn.execute(
-            "SELECT * FROM ivv_assessments WHERE project_id = ?",
+            "SELECT * FROM ivv_assessments WHERE project_id = %s",
             (project_id,),
         ).fetchall()
     except Exception:
@@ -469,7 +469,7 @@ def _get_ivv_status(conn, project_id):
     # Critical findings
     try:
         critical_rows = conn.execute(
-            "SELECT COUNT(*) as cnt FROM ivv_findings WHERE project_id = ? AND severity = 'critical' AND status = 'open'",
+            "SELECT COUNT(*) as cnt FROM ivv_findings WHERE project_id = %s AND severity = 'critical' AND status = 'open'",
             (project_id,),
         ).fetchone()
         critical_findings = critical_rows["cnt"] if critical_rows else 0
@@ -479,7 +479,7 @@ def _get_ivv_status(conn, project_id):
     # Certification status
     try:
         cert_row = conn.execute(
-            "SELECT status, verification_score, validation_score, overall_score FROM ivv_certifications WHERE project_id = ?",
+            "SELECT status, verification_score, validation_score, overall_score FROM ivv_certifications WHERE project_id = %s",
             (project_id,),
         ).fetchone()
         if cert_row:

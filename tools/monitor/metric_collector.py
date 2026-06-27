@@ -379,7 +379,7 @@ def store_snapshot(
                 conn.execute(
                     """INSERT INTO metric_snapshots
                        (project_id, metric_name, metric_value, labels, source, collected_at)
-                       VALUES (?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s)""",
                     (project_id, name, float_val, None, source, now),
                 )
                 count += 1
@@ -531,9 +531,9 @@ def _metric_history(
     try:
         rows = conn.execute(
             """SELECT metric_value FROM metric_snapshots
-               WHERE project_id = ? AND metric_name = ?
+               WHERE project_id = %s AND metric_name = %s
                ORDER BY collected_at DESC, id DESC
-               LIMIT ?""",
+               LIMIT %s""",
             (project_id, metric_name, int(limit)),
         ).fetchall()
     except Exception:

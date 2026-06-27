@@ -69,8 +69,8 @@ def _fetch_high_score_signals(threshold: float = 0.70, limit: int = 10) -> list:
             rows = conn.execute(
                 "SELECT id, title, description, innovation_score, category, "
                 "source_type FROM innovation_signals "
-                "WHERE innovation_score >= ? AND status = 'scored' "
-                "ORDER BY innovation_score DESC LIMIT ?",
+                "WHERE innovation_score >= %s AND status = 'scored' "
+                "ORDER BY innovation_score DESC LIMIT %s",
                 (threshold, limit),
             ).fetchall()
             signals = [dict(r) for r in rows]

@@ -264,7 +264,7 @@ def log_nlq_query(
             """INSERT INTO nlq_queries
                (query_text, generated_sql, result_count, execution_time_ms,
                 actor, status, error_message, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 query_text,
                 generated_sql,

@@ -82,7 +82,7 @@ def _cmd_status(args):
             """SELECT snapshot_id, started_at, completed_at, total_controls,
                       satisfied, partially_satisfied, not_satisfied
                FROM compliance_twin_runs
-               WHERE project_id = ? AND framework = ?
+               WHERE project_id = %s AND framework = %s
                ORDER BY started_at DESC LIMIT 5""",
             (args.project_id, args.framework),
         ).fetchall()

@@ -287,7 +287,7 @@ def resolve_saml_config(tenant_id: str) -> dict:
 
         conn = get_connection()
         row = conn.execute(
-            "SELECT idp_config FROM tenants WHERE id = ?",
+            "SELECT idp_config FROM tenants WHERE id = %s",
             (tenant_id,),
         ).fetchone()
         conn.close()
@@ -769,8 +769,8 @@ def validate_saml_user(
                    t.impact_level, t.slug as tenant_slug
             FROM users u
             JOIN tenants t ON u.tenant_id = t.id
-            WHERE u.tenant_id = ? AND u.auth_method = 'saml' AND u.status = 'active' AND t.status = 'active'
-                  AND u.saml_name_id = ?
+            WHERE u.tenant_id = %s AND u.auth_method = 'saml' AND u.status = 'active' AND t.status = 'active'
+                  AND u.saml_name_id = %s
             LIMIT 1
         """,
             (tenant_id, name_id),
@@ -786,8 +786,8 @@ def validate_saml_user(
                        t.impact_level, t.slug as tenant_slug
                 FROM users u
                 JOIN tenants t ON u.tenant_id = t.id
-                WHERE u.tenant_id = ? AND u.auth_method = 'saml' AND u.status = 'active' AND t.status = 'active'
-                      AND u.cac_cn = ?
+                WHERE u.tenant_id = %s AND u.auth_method = 'saml' AND u.status = 'active' AND t.status = 'active'
+                      AND u.cac_cn = %s
                 LIMIT 1
             """,
                 (tenant_id, mapped_attrs["cac_cn"]),
@@ -803,8 +803,8 @@ def validate_saml_user(
                        t.impact_level, t.slug as tenant_slug
                 FROM users u
                 JOIN tenants t ON u.tenant_id = t.id
-                WHERE u.tenant_id = ? AND u.auth_method = 'saml' AND u.status = 'active' AND t.status = 'active'
-                      AND u.email = ?
+                WHERE u.tenant_id = %s AND u.auth_method = 'saml' AND u.status = 'active' AND t.status = 'active'
+                      AND u.email = %s
                 LIMIT 1
             """,
                 (tenant_id, mapped_attrs["email"]),
@@ -864,7 +864,7 @@ def provision_saml_user(
 
         # Check if user already exists
         row = conn.execute(
-            "SELECT id FROM users WHERE tenant_id = ? AND saml_name_id = ? AND auth_method = 'saml'",
+            "SELECT id FROM users WHERE tenant_id = %s AND saml_name_id = %s AND auth_method = 'saml'",
             (tenant_id, name_id),
         ).fetchone()
 
@@ -882,7 +882,7 @@ def provision_saml_user(
             """
             INSERT INTO users (id, tenant_id, email, display_name, role, auth_method, status,
                              saml_name_id, cac_cn, edipi, last_login)
-            VALUES (?, ?, ?, ?, ?, 'saml', 'active', ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, 'saml', 'active', %s, %s, %s, %s)
         """,
             (
                 user_id,

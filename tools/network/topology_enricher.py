@@ -60,7 +60,7 @@ def enrich_topology(
     """
     conn = get_connection(db_path=str(BASE_DIR / "data" / "network_canvas.db"))
 
-    row = conn.execute("SELECT graph_json, name FROM topologies WHERE id = ?", (topology_id,)).fetchone()
+    row = conn.execute("SELECT graph_json, name FROM topologies WHERE id = %s", (topology_id,)).fetchone()
     if not row:
         conn.close()
         return {"error": f"Topology {topology_id} not found"}
@@ -159,7 +159,7 @@ def enrich_topology(
     try:
         dev_sites = {}
         rows = conn.execute(
-            "SELECT node_id, site FROM ni_devices WHERE topology_id = ? AND site IS NOT NULL AND site != ''",
+            "SELECT node_id, site FROM ni_devices WHERE topology_id = %s AND site IS NOT NULL AND site != ''",
             (topology_id,),
         ).fetchall()
         for r in rows:
@@ -228,16 +228,16 @@ def enrich_topology(
             rack_id = f"rack-{site_key}-r1"
 
             # Create facility if not exists
-            existing_fac = conn.execute("SELECT id FROM nc_facilities WHERE id = ?", (fac_id,)).fetchone()
+            existing_fac = conn.execute("SELECT id FROM nc_facilities WHERE id = %s", (fac_id,)).fetchone()
             if not existing_fac:
                 conn.execute(
-                    "INSERT INTO nc_facilities (id, name, facility_type, city, operator) VALUES (?,?,?,?,?)",
+                    "INSERT INTO nc_facilities (id, name, facility_type, city, operator) VALUES (%s,%s,%s,%s,%s)",
                     (fac_id, site, "colocation", site, "Auto-generated"),
                 )
                 facilities_created += 1
 
             # Create rack if not exists
-            existing_rack = conn.execute("SELECT id FROM nc_racks WHERE id = ?", (rack_id,)).fetchone()
+            existing_rack = conn.execute("SELECT id FROM nc_racks WHERE id = %s", (rack_id,)).fetchone()
             if not existing_rack:
                 has_fiber = bool(dtypes & {"router", "firewall", "load_balancer"})
                 has_copper = bool(dtypes & {"switch", "access_point", "server"})
@@ -252,7 +252,7 @@ def enrich_topology(
                     infra_items.append({"type": "Copper PP", "model": "Panduit CP48WSBLY", "ru": "U37", "ports": 48, "media": "Cat6a RJ45"})
 
                 conn.execute(
-                    "INSERT INTO nc_racks (id, facility_id, rack_name, total_ru, notes) VALUES (?,?,?,?,?)",
+                    "INSERT INTO nc_racks (id, facility_id, rack_name, total_ru, notes) VALUES (%s,%s,%s,%s,%s)",
                     (rack_id, fac_id, f"{site}-R1", 42, json.dumps({"infra": infra_items})),
                 )
                 racks_created += 1
@@ -285,7 +285,7 @@ def enrich_topology(
     graph["nodes"] = new_groups + devices + infra_nodes
 
     if save:
-        conn.execute("UPDATE topologies SET graph_json = ? WHERE id = ?", (json.dumps(graph), topology_id))
+        conn.execute("UPDATE topologies SET graph_json = %s WHERE id = %s", (json.dumps(graph), topology_id))
         conn.commit()
 
     conn.close()
@@ -321,7 +321,7 @@ def save_as_template(topology_id: str, name: str, description: str = "") -> dict
     import uuid
 
     conn = get_connection(db_path=str(BASE_DIR / "data" / "network_canvas.db"))
-    row = conn.execute("SELECT graph_json FROM topologies WHERE id = ?", (topology_id,)).fetchone()
+    row = conn.execute("SELECT graph_json FROM topologies WHERE id = %s", (topology_id,)).fetchone()
     if not row:
         conn.close()
         return {"error": "Topology not found"}
@@ -331,7 +331,7 @@ def save_as_template(topology_id: str, name: str, description: str = "") -> dict
 
     conn.execute(
         "INSERT OR REPLACE INTO nc_templates (id, name, category, description, graph_json, tags) "
-        "VALUES (?, ?, 'Enterprise', ?, ?, ?)",
+        "VALUES (%s, %s, 'Enterprise', %s, %s, %s)",
         (tpl_id, name, desc, row[0], json.dumps(["auto-enriched", "template"])),
     )
     conn.commit()

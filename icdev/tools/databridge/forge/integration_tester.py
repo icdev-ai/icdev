@@ -136,7 +136,7 @@ def _store_validation(
         conn.execute(
             """INSERT INTO db_forge_validations
                (connector_id, stage, passed, details, run_at)
-               VALUES (?, 'integration', ?, ?, ?)""",
+               VALUES (%s, 'integration', %s, %s, %s)""",
             (connector_id, 1 if passed else 0, details[:2000], datetime.now(timezone.utc).isoformat()),
         )
         conn.commit()

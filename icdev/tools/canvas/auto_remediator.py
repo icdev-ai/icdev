@@ -933,7 +933,7 @@ def _load_idc_reference_template(policy_key: str = "idc_reference_template") -> 
     try:
         conn = get_connection(db_path=str(db_path))
         row = conn.execute(
-            "SELECT graph_json FROM idc_templates WHERE name = ? LIMIT 1",  # nosec B608
+            "SELECT graph_json FROM idc_templates WHERE name = %s LIMIT 1",  # nosec B608
             (name,),
         ).fetchone()
         conn.close()
@@ -1215,7 +1215,7 @@ def persist_verify_assessment(canvas: str, design_id: str, findings: list[dict])
                 "INSERT INTO sc_assessments (id, design_id, assessment_type, "
                 "trigger_source, total_threats, total_controls, risk_score, "
                 "posture_grade, findings_json, recommendations_json, ran_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (new_id, design_id, "auto_remediator_verify", "auto_remediator",
                  0, 0, 0.0, "N/A", findings_json, "[]", ts),
             )
@@ -1224,7 +1224,7 @@ def persist_verify_assessment(canvas: str, design_id: str, findings: list[dict])
                 "INSERT INTO bd_assessments (id, design_id, assessment_type, "
                 "findings_json, score, grade, cat1_findings, cat2_findings, "
                 "cat3_findings, nist_coverage_json, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (new_id, design_id, "auto_remediator_verify", findings_json,
                  100.0, "A", 0, 0, 0, "{}", ts),
             )
@@ -1232,14 +1232,14 @@ def persist_verify_assessment(canvas: str, design_id: str, findings: list[dict])
             conn.execute(
                 "INSERT INTO od_assessments (id, design_id, assessment_type, "
                 "findings_json, score, grade, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                 (new_id, design_id, "auto_remediator_verify", findings_json,
                  100.0, "A", ts),
             )
         elif canvas == "infra":
             conn.execute(
                 "INSERT INTO idc_assessments (id, design_id, assessment_type, "
-                "findings_json, score, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                "findings_json, score, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
                 (new_id, design_id, "auto_remediator_verify", findings_json,
                  100.0, ts),
             )
@@ -1263,14 +1263,14 @@ def update_finding_approval(finding_hash: str, target: dict, decision: str,
     try:
         now = _now_iso()
         existing = conn.execute(
-            "SELECT decision FROM finding_approvals WHERE finding_hash = ?",
+            "SELECT decision FROM finding_approvals WHERE finding_hash = %s",
             (finding_hash,),
         ).fetchone()
         if existing:
             conn.execute(
-                "UPDATE finding_approvals SET decision = ?, decision_by = ?, "
-                "decision_at = ?, decision_rationale = ?, updated_at = ? "
-                "WHERE finding_hash = ?",
+                "UPDATE finding_approvals SET decision = %s, decision_by = %s, "
+                "decision_at = %s, decision_rationale = %s, updated_at = %s "
+                "WHERE finding_hash = %s",
                 (decision, reviewer, now, rationale, now, finding_hash),
             )
         else:
@@ -1279,7 +1279,7 @@ def update_finding_approval(finding_hash: str, target: dict, decision: str,
                 "(finding_hash, canvas_source, rule_id, severity, title, "
                 "affected_entity, decision, decision_by, decision_at, "
                 "decision_rationale, classification, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     finding_hash,
                     target.get("canvas_source", ""),

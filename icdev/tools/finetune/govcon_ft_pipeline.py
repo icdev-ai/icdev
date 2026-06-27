@@ -44,7 +44,7 @@ def _load_training_pairs(dataset_name: str) -> list[dict]:
         SELECT e.system_prompt, e.user_input, e.expected_output
         FROM ft_dataset_examples e
         JOIN ft_datasets d ON d.id = e.dataset_id
-        WHERE d.name = ?
+        WHERE d.name = %s
         ORDER BY e.created_at ASC
         """,
         (dataset_name,),
@@ -217,7 +217,7 @@ def _register_adapter(conn, adapter_path: str, base_model: str, metrics: dict) -
         """
         INSERT INTO ft_model_versions
             (id, model_name, base_model, adapter_path, status, eval_custom, classification, created_at)
-        VALUES (?,?,?,?,?,?,?,?)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
         """,
         (
             str(uuid.uuid4()),

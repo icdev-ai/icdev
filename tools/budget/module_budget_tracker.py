@@ -212,7 +212,7 @@ def _get_conn():
 def _get_or_create_period(conn, module_name: str, month: str) -> Dict:
     """Fetch or initialize a budget period row."""
     row = conn.execute(
-        "SELECT * FROM module_budget_periods WHERE module_name = ? AND month = ?",
+        "SELECT * FROM module_budget_periods WHERE module_name = %s AND month = %s",
         (module_name, month),
     ).fetchone()
 
@@ -226,7 +226,7 @@ def _get_or_create_period(conn, module_name: str, month: str) -> Dict:
            (module_name, month, budget_usd, budget_tokens, budget_operations,
             spent_usd, spent_tokens, spent_operations, warning_threshold, hard_stop,
             created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, 0.0, 0, 0, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, 0.0, 0, 0, %s, %s, %s, %s)""",
         (
             module_name,
             month,
@@ -242,7 +242,7 @@ def _get_or_create_period(conn, module_name: str, month: str) -> Dict:
     conn.commit()
 
     row = conn.execute(
-        "SELECT * FROM module_budget_periods WHERE module_name = ? AND month = ?",
+        "SELECT * FROM module_budget_periods WHERE module_name = %s AND month = %s",
         (module_name, month),
     ).fetchone()
     return dict(row) if row else {}
@@ -257,7 +257,7 @@ def _get_monthly_spend(conn, module_name: str, month: str) -> Dict:
                    COALESCE(SUM(operations), 0) AS total_operations,
                    COUNT(*) AS call_count
            FROM module_budget_usage
-           WHERE module_name = ? AND created_at >= ? AND created_at < ?""",
+           WHERE module_name = %s AND created_at >= %s AND created_at < %s""",
         (module_name, start, end),
     ).fetchone()
     return {
@@ -273,8 +273,8 @@ def _sync_period_spent(conn, module_name: str, month: str) -> None:
     spend = _get_monthly_spend(conn, module_name, month)
     conn.execute(
         """UPDATE module_budget_periods
-           SET spent_usd = ?, spent_tokens = ?, spent_operations = ?, updated_at = ?
-           WHERE module_name = ? AND month = ?""",
+           SET spent_usd = %s, spent_tokens = %s, spent_operations = %s, updated_at = %s
+           WHERE module_name = %s AND month = %s""",
         (spend["usd"], spend["tokens"], spend["operations"], _now_iso(), module_name, month),
     )
     conn.commit()
@@ -467,7 +467,7 @@ def record_module_usage(
         """INSERT INTO module_budget_usage
            (id, module_name, function_name, resource_type, amount, tokens, operations,
             project_id, model_id, details_json, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (
             record_id,
             module_name,

@@ -633,7 +633,7 @@ def _insert_prioritized(scored: List[Dict[str, Any]], run_at: str) -> int:
                     "(raw_signal_id, composite_score, posterior_shift_score, "
                     "source_discriminability_score, temporal_recency_score, "
                     "domain_coverage_score, rationale, run_at, created_at) "
-                    "VALUES (?,?,?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         row["raw_signal_id"],
                         row["composite_score"],

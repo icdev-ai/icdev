@@ -35,7 +35,7 @@ def _create_job(db_path, project_id, source_language, target_language, source_pa
             """INSERT INTO translation_jobs
                (id, project_id, source_language, target_language,
                 source_path, output_path, status)
-               VALUES (?, ?, ?, ?, ?, ?, 'pending')""",
+               VALUES (%s, %s, %s, %s, %s, %s, 'pending')""",
             (job_id, project_id, source_language, target_language, str(source_path), str(output_dir)),
         )
         conn.commit()

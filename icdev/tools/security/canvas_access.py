@@ -87,7 +87,7 @@ def grant_access(
             INSERT INTO canvas_access_grants
               (id, tenant_id, principal_type, principal_id, canvas_name,
                access_level, granted_by, granted_at, expires_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (tenant_id, principal_type, principal_id, canvas_name)
             DO UPDATE SET access_level = excluded.access_level,
                           granted_by   = excluded.granted_by,
@@ -118,9 +118,9 @@ def revoke_access(
         conn.execute(
             """
             UPDATE canvas_access_grants
-            SET revoked_at = ?
-            WHERE tenant_id = ? AND principal_type = ? AND principal_id = ?
-              AND canvas_name = ? AND revoked_at IS NULL
+            SET revoked_at = %s
+            WHERE tenant_id = %s AND principal_type = %s AND principal_id = %s
+              AND canvas_name = %s AND revoked_at IS NULL
             """,
             (now, tenant_id, principal_type, principal_id, canvas_name),
         )
@@ -179,10 +179,10 @@ def check_access(
             row = conn.execute(
                 """
                 SELECT access_level FROM canvas_access_grants
-                WHERE tenant_id = ? AND canvas_name = ?
-                  AND principal_type = 'user' AND principal_id = ?
+                WHERE tenant_id = %s AND canvas_name = %s
+                  AND principal_type = 'user' AND principal_id = %s
                   AND revoked_at IS NULL
-                  AND (expires_at IS NULL OR expires_at > ?)
+                  AND (expires_at IS NULL OR expires_at > %s)
                 LIMIT 1
                 """,
                 (tenant_id, canvas_name, user_id, now),
@@ -199,11 +199,11 @@ def check_access(
                 FROM canvas_access_grants cag
                 JOIN group_members gm ON cag.principal_id = gm.group_id
                 JOIN groups g ON g.id = gm.group_id
-                WHERE cag.tenant_id = ? AND cag.canvas_name = ?
-                  AND cag.principal_type = 'group' AND gm.user_id = ?
-                  AND g.tenant_id = ? AND g.status = 'active'
+                WHERE cag.tenant_id = %s AND cag.canvas_name = %s
+                  AND cag.principal_type = 'group' AND gm.user_id = %s
+                  AND g.tenant_id = %s AND g.status = 'active'
                   AND cag.revoked_at IS NULL
-                  AND (cag.expires_at IS NULL OR cag.expires_at > ?)
+                  AND (cag.expires_at IS NULL OR cag.expires_at > %s)
                 """,
                 (tenant_id, canvas_name, user_id, tenant_id, now),
             ).fetchall()
@@ -217,7 +217,7 @@ def check_access(
             resolved_role = user_role
             if not resolved_role:
                 user_row = conn.execute(
-                    "SELECT role FROM users WHERE id = ? AND tenant_id = ?",
+                    "SELECT role FROM users WHERE id = %s AND tenant_id = %s",
                     (user_id, tenant_id),
                 ).fetchone()
                 if user_row:
@@ -226,10 +226,10 @@ def check_access(
                 role_row = conn.execute(
                     """
                     SELECT access_level FROM canvas_access_grants
-                    WHERE tenant_id = ? AND canvas_name = ?
-                      AND principal_type = 'role' AND principal_id = ?
+                    WHERE tenant_id = %s AND canvas_name = %s
+                      AND principal_type = 'role' AND principal_id = %s
                       AND revoked_at IS NULL
-                      AND (expires_at IS NULL OR expires_at > ?)
+                      AND (expires_at IS NULL OR expires_at > %s)
                     LIMIT 1
                     """,
                     (tenant_id, canvas_name, resolved_role, now),
@@ -447,7 +447,7 @@ def _audit(action: str, tenant_id: str, principal_type: str, principal_id: str,
             conn.execute(
                 """
                 INSERT INTO audit_trail (event_type, actor, details, created_at)
-                VALUES (?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s)
                 """,
                 (
                     f"canvas_access_{action}",

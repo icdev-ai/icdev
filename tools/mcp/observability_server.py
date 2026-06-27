@@ -74,7 +74,7 @@ def trace_query_handler(args: dict):
 
         if trace_id:
             rows = conn.execute(
-                "SELECT * FROM otel_spans WHERE trace_id = ? ORDER BY start_time",
+                "SELECT * FROM otel_spans WHERE trace_id = %s ORDER BY start_time",
                 (trace_id,),
             ).fetchall()
         else:

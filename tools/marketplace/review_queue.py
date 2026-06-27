@@ -89,7 +89,7 @@ except ImportError:
         conn = get_connection(db_path=str(path))
         try:
             conn.execute(
-                "UPDATE marketplace_assets SET status = ?, updated_at = ? WHERE id = ?",
+                "UPDATE marketplace_assets SET status = %s, updated_at = %s WHERE id = %s",
                 (status, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), asset_id),
             )
             conn.commit()
@@ -103,7 +103,7 @@ except ImportError:
         conn = get_connection(db_path=str(path))
         try:
             conn.execute(
-                "UPDATE marketplace_assets SET catalog_tier = 'central_vetted', updated_at = ? WHERE id = ?",
+                "UPDATE marketplace_assets SET catalog_tier = 'central_vetted', updated_at = %s WHERE id = %s",
                 (datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), asset_id),
             )
             conn.commit()
@@ -187,7 +187,7 @@ def submit_review(asset_id, version_id, db_path=None):
     try:
         # Verify asset exists
         asset_row = conn.execute(
-            "SELECT id, name, status, publisher_tenant_id FROM marketplace_assets WHERE id = ?",
+            "SELECT id, name, status, publisher_tenant_id FROM marketplace_assets WHERE id = %s",
             (asset_id,),
         ).fetchone()
         if not asset_row:
@@ -195,7 +195,7 @@ def submit_review(asset_id, version_id, db_path=None):
 
         # Verify version exists and belongs to asset
         version_row = conn.execute(
-            "SELECT id, version FROM marketplace_versions WHERE id = ? AND asset_id = ?",
+            "SELECT id, version FROM marketplace_versions WHERE id = %s AND asset_id = %s",
             (version_id, asset_id),
         ).fetchone()
         if not version_row:
@@ -207,7 +207,7 @@ def submit_review(asset_id, version_id, db_path=None):
         conn.execute(
             """INSERT INTO marketplace_reviews
                (id, asset_id, version_id, decision, submitted_at)
-               VALUES (?, ?, ?, 'pending', ?)""",
+               VALUES (%s, %s, %s, 'pending', %s)""",
             (review_id, asset_id, version_id, now),
         )
         conn.commit()
@@ -264,7 +264,7 @@ def assign_reviewer(review_id, reviewer_id, reviewer_role, db_path=None):
     conn = _get_db(db_path)
     try:
         row = conn.execute(
-            "SELECT id, decision FROM marketplace_reviews WHERE id = ?",
+            "SELECT id, decision FROM marketplace_reviews WHERE id = %s",
             (review_id,),
         ).fetchone()
         if not row:
@@ -276,8 +276,8 @@ def assign_reviewer(review_id, reviewer_id, reviewer_role, db_path=None):
         now_iso()
         conn.execute(
             """UPDATE marketplace_reviews
-               SET reviewer_id = ?, reviewer_role = ?
-               WHERE id = ?""",
+               SET reviewer_id = %s, reviewer_role = %s
+               WHERE id = %s""",
             (reviewer_id, reviewer_role, review_id),
         )
         conn.commit()
@@ -347,7 +347,7 @@ def complete_review(
     conn = _get_db(db_path)
     try:
         row = conn.execute(
-            "SELECT id, asset_id, version_id, decision as current_decision FROM marketplace_reviews WHERE id = ?",
+            "SELECT id, asset_id, version_id, decision as current_decision FROM marketplace_reviews WHERE id = %s",
             (review_id,),
         ).fetchone()
         if not row:
@@ -363,11 +363,11 @@ def complete_review(
         # Update review record
         conn.execute(
             """UPDATE marketplace_reviews
-               SET reviewer_id = ?, decision = ?, rationale = ?,
-                   conditions = ?, scan_results_reviewed = ?,
-                   code_reviewed = ?, compliance_reviewed = ?,
-                   reviewed_at = ?
-               WHERE id = ?""",
+               SET reviewer_id = %s, decision = %s, rationale = %s,
+                   conditions = %s, scan_results_reviewed = %s,
+                   code_reviewed = %s, compliance_reviewed = %s,
+                   reviewed_at = %s
+               WHERE id = %s""",
             (
                 reviewer_id,
                 decision,
@@ -544,7 +544,7 @@ def get_review(review_id, db_path=None):
                FROM marketplace_reviews r
                JOIN marketplace_assets a ON r.asset_id = a.id
                JOIN marketplace_versions v ON r.version_id = v.id
-               WHERE r.id = ?""",
+               WHERE r.id = %s""",
             (review_id,),
         ).fetchone()
 
@@ -567,7 +567,7 @@ def get_review(review_id, db_path=None):
                       critical_count, high_count, medium_count, low_count,
                       details, scanned_at
                FROM marketplace_scan_results
-               WHERE asset_id = ? AND version_id = ?
+               WHERE asset_id = %s AND version_id = %s
                ORDER BY scanned_at DESC""",
             (r["asset_id"], r["version_id"]),
         ).fetchall()
@@ -638,7 +638,7 @@ def escalate_review(review_id, escalation_reason, db_path=None):
         row = conn.execute(
             """SELECT id, asset_id, version_id, reviewer_id, reviewer_role,
                       decision, submitted_at
-               FROM marketplace_reviews WHERE id = ?""",
+               FROM marketplace_reviews WHERE id = %s""",
             (review_id,),
         ).fetchone()
         if not row:

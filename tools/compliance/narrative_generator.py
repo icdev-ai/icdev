@@ -240,7 +240,7 @@ class NarrativeGenerator:
             conn.close()
 
     def _verify_project(self, conn: sqlite3.Connection, project_id: str) -> None:
-        row = conn.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
+        row = conn.execute("SELECT id FROM projects WHERE id = %s", (project_id,)).fetchone()
         if not row:
             raise ValueError(f"Project '{project_id}' not found in database.")
 
@@ -252,7 +252,7 @@ class NarrativeGenerator:
             ev = ControlEvidence(control_id=control_id)
 
             row = conn.execute(
-                "SELECT title, description FROM compliance_controls WHERE id = ?",
+                "SELECT title, description FROM compliance_controls WHERE id = %s",
                 (control_id,),
             ).fetchone()
             if row:
@@ -262,7 +262,7 @@ class NarrativeGenerator:
                 """SELECT implementation_status, implementation_description,
                           responsible_role, evidence_path, last_assessed
                    FROM project_controls
-                   WHERE project_id = ? AND control_id = ?""",
+                   WHERE project_id = %s AND control_id = %s""",
                 (project_id, control_id),
             ).fetchone()
             if row:
@@ -277,7 +277,7 @@ class NarrativeGenerator:
             row = conn.execute(
                 """SELECT baseline, status, evidence_description, notes
                    FROM fedramp_assessments
-                   WHERE project_id = ? AND control_id = ?
+                   WHERE project_id = %s AND control_id = %s
                    ORDER BY assessment_date DESC LIMIT 1""",
                 (project_id, control_id),
             ).fetchone()
@@ -286,7 +286,7 @@ class NarrativeGenerator:
             row = conn.execute(
                 """SELECT level, practice_id, domain, status, evidence_description
                    FROM cmmc_assessments
-                   WHERE project_id = ? AND nist_171_id LIKE ?
+                   WHERE project_id = %s AND nist_171_id LIKE %s
                    ORDER BY assessment_date DESC LIMIT 1""",
                 (project_id, f"%{control_id}%"),
             ).fetchone()
@@ -294,7 +294,7 @@ class NarrativeGenerator:
                 ev.cmmc = dict(row)
             rows = conn.execute(
                 """SELECT event_type, actor, details, created_at
-                   FROM audit_trail WHERE project_id = ? AND event_type IN (
+                   FROM audit_trail WHERE project_id = %s AND event_type IN (
                        'compliance_check', 'fedramp_assessed', 'cmmc_assessed',
                        'stig_checked', 'crosswalk_mapped', 'cato_evidence_collected')
                    ORDER BY created_at DESC LIMIT 10""",
@@ -333,7 +333,7 @@ class NarrativeGenerator:
                 ids = control_ids
             else:
                 rows = conn.execute(
-                    "SELECT control_id FROM project_controls WHERE project_id = ?",
+                    "SELECT control_id FROM project_controls WHERE project_id = %s",
                     (project_id,),
                 ).fetchall()
                 ids = [r["control_id"] for r in rows]
@@ -379,7 +379,7 @@ class NarrativeGenerator:
                 """
                 INSERT INTO control_narratives
                     (project_id, control_id, narrative_text, generation_method)
-                VALUES (?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s)
                 ON CONFLICT(project_id, control_id) DO UPDATE SET
                     narrative_text = excluded.narrative_text,
                     generation_method = excluded.generation_method,
@@ -437,7 +437,7 @@ class NarrativeGenerator:
         conn = self._conn()
         try:
             self._verify_project(conn, project_id)
-            row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+            row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
             return dict(row) if row else {}
         finally:
             conn.close()
@@ -447,7 +447,7 @@ class NarrativeGenerator:
         conn = self._conn()
         try:
             rows = conn.execute(
-                "SELECT * FROM project_controls WHERE project_id = ? ORDER BY control_id",
+                "SELECT * FROM project_controls WHERE project_id = %s ORDER BY control_id",
                 (project_id,),
             ).fetchall()
             return [dict(r) for r in rows]
@@ -465,7 +465,7 @@ class NarrativeGenerator:
                               source, control_id, status, corrective_action,
                               milestone_date, responsible_party
                        FROM poam_items
-                       WHERE project_id = ? AND status IN ('open', 'in_progress')
+                       WHERE project_id = %s AND status IN ('open', 'in_progress')
                        ORDER BY CASE severity WHEN 'critical' THEN 0
                            WHEN 'high' THEN 1 WHEN 'moderate' THEN 2
                            WHEN 'low' THEN 3 END, milestone_date""",
@@ -480,7 +480,7 @@ class NarrativeGenerator:
                         """SELECT control_id, implementation_status,
                                   implementation_description, responsible_role
                            FROM project_controls
-                           WHERE project_id = ?
+                           WHERE project_id = %s
                              AND implementation_status IN (
                                  'planned', 'partially_implemented')
                            ORDER BY control_id""",
@@ -520,7 +520,7 @@ class NarrativeGenerator:
                     """SELECT framework_id, total_controls,
                               implemented_count AS implemented_controls,
                               coverage_pct, gate_status, last_assessed
-                       FROM project_framework_status WHERE project_id = ?
+                       FROM project_framework_status WHERE project_id = %s
                        ORDER BY framework_id""",
                     (project_id,),
                 ).fetchall()
@@ -534,7 +534,7 @@ class NarrativeGenerator:
         """Look up a control title from compliance_controls."""
         try:
             row = conn.execute(
-                "SELECT title FROM compliance_controls WHERE id = ?",
+                "SELECT title FROM compliance_controls WHERE id = %s",
                 (control_id,),
             ).fetchone()
             return row["title"] if row else control_id

@@ -148,7 +148,7 @@ def create_case_type(
     try:
         conn.execute(
             """INSERT INTO studio_case_types (type_id, name, lifecycle_json, created_at)
-               VALUES (?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s)""",
             (type_id, name, json.dumps(lifecycle), _now_iso()),
         )
         conn.commit()
@@ -176,7 +176,7 @@ def list_case_types() -> list[dict]:
 def get_case_type(type_id: str) -> dict | None:
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM studio_case_types WHERE type_id = ?", (type_id,)).fetchone()
+        row = conn.execute("SELECT * FROM studio_case_types WHERE type_id = %s", (type_id,)).fetchone()
         return dict(row) if row else None
     finally:
         conn.close()
@@ -215,7 +215,7 @@ def create_case(
             """INSERT INTO studio_cases
                (case_id, type_id, title, description, current_state, priority,
                 assigned_to, created_by, created_at, updated_at, form_submission_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 case_id,
                 type_id,
@@ -234,7 +234,7 @@ def create_case(
         conn.execute(
             """INSERT INTO studio_case_history
                (history_id, case_id, from_state, to_state, changed_by, changed_at, comment)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (_new_id("hist"), case_id, None, initial["id"], created_by, now, "Case created"),
         )
         conn.commit()
@@ -276,13 +276,13 @@ def list_cases(
 def get_case(case_id: str) -> dict | None:
     conn = get_connection()
     try:
-        row = conn.execute("SELECT * FROM studio_cases WHERE case_id = ?", (case_id,)).fetchone()
+        row = conn.execute("SELECT * FROM studio_cases WHERE case_id = %s", (case_id,)).fetchone()
         if not row:
             return None
         case = dict(row)
         # Attach history
         history = conn.execute(
-            "SELECT * FROM studio_case_history WHERE case_id = ? ORDER BY changed_at",
+            "SELECT * FROM studio_case_history WHERE case_id = %s ORDER BY changed_at",
             (case_id,),
         ).fetchall()
         case["history"] = [dict(h) for h in history]
@@ -322,13 +322,13 @@ def transition_case(
     conn = get_connection()
     try:
         conn.execute(
-            "UPDATE studio_cases SET current_state = ?, updated_at = ? WHERE case_id = ?",
+            "UPDATE studio_cases SET current_state = %s, updated_at = %s WHERE case_id = %s",
             (to_state, now, case_id),
         )
         conn.execute(
             """INSERT INTO studio_case_history
                (history_id, case_id, from_state, to_state, changed_by, changed_at, comment)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (_new_id("hist"), case_id, from_state, to_state, changed_by, now, comment),
         )
         conn.commit()

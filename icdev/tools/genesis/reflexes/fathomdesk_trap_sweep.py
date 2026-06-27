@@ -110,12 +110,12 @@ def _calibrate_thresholds_with_ai(conn: Any, base: Dict[str, Any]) -> Dict[str, 
     try:
         cutoff_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
         row = conn.execute(
-            "SELECT COUNT(*) FROM ad_trap_events WHERE created_at > ?",
+            "SELECT COUNT(*) FROM ad_trap_events WHERE created_at > %s",
             (cutoff_24h,),
         ).fetchone()
         trap_24h = row[0] if row else 0
         row = conn.execute(
-            "SELECT COUNT(*) FROM ad_signals WHERE created_at > ?",
+            "SELECT COUNT(*) FROM ad_signals WHERE created_at > %s",
             (cutoff_24h,),
         ).fetchone()
         signal_count = row[0] if row else 0
@@ -196,7 +196,7 @@ def _check_cooldown(conn: Any, key: str, hours: int) -> bool:
     try:
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
         row = conn.execute(
-            "SELECT value FROM ad_reflex_cooldowns WHERE key = ? AND value > ?",
+            "SELECT value FROM ad_reflex_cooldowns WHERE key = %s AND value > %s",
             (key, cutoff),
         ).fetchone()
         return row is None
@@ -214,7 +214,7 @@ def _mark_cooldown(conn: Any, key: str, now: datetime) -> None:
             )
         """)
         conn.execute(
-            "INSERT OR REPLACE INTO ad_reflex_cooldowns (key, value) VALUES (?, ?)",
+            "INSERT OR REPLACE INTO ad_reflex_cooldowns (key, value) VALUES (%s, %s)",
             (key, now.isoformat()),
         )
         conn.commit()
@@ -230,7 +230,7 @@ def _insert_trap_event(conn: Any, event: Dict[str, Any]) -> bool:
         conn.execute(
             "INSERT INTO ad_trap_events "
             "(ticker, pattern, broken_level, confidence, evidence_json, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s)",
             (
                 event["ticker"],
                 event["pattern"],
@@ -262,7 +262,7 @@ def _get_sentiment_weight(conn: Any, ticker: str) -> float:
     try:
         row = conn.execute(
             "SELECT scoring_weights FROM oracle_predictions "
-            "WHERE subject_id = ? ORDER BY created_at DESC LIMIT 1",
+            "WHERE subject_id = %s ORDER BY created_at DESC LIMIT 1",
             (ticker,),
         ).fetchone()
         if row is None:
@@ -332,7 +332,7 @@ def _trap_sweep(conn: Any, cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
         try:
             rows = conn.execute(
                 "SELECT direction, confidence, created_at FROM ad_signals "
-                "WHERE ticker = ? ORDER BY created_at DESC LIMIT 2",
+                "WHERE ticker = %s ORDER BY created_at DESC LIMIT 2",
                 (ticker,),
             ).fetchall()
         except Exception:
@@ -372,7 +372,7 @@ def _trap_sweep(conn: Any, cfg: Dict[str, Any]) -> List[Dict[str, Any]]:
         try:
             existing = conn.execute(
                 "SELECT id FROM ad_trap_events "
-                "WHERE ticker = ? AND pattern = ? AND created_at > ? LIMIT 1",
+                "WHERE ticker = %s AND pattern = %s AND created_at > %s LIMIT 1",
                 (ticker, pattern, dedup_cutoff),
             ).fetchone()
             if existing:

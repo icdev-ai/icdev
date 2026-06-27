@@ -600,7 +600,7 @@ def _load_concept_by_id(concept_id: str) -> Optional[dict]:
                 "SELECT id, run_id, name, slug, problem_statement, proposed_capability, "
                 "target_users, cluster_signal_ids, novelty_score, market_score, fit_score, "
                 "effort_estimate, compliance_risk, composite_score, status "
-                "FROM foundry_concepts WHERE id = ?",
+                "FROM foundry_concepts WHERE id = %s",
                 (concept_id,),
             )
             row = cur.fetchone()

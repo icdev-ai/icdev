@@ -465,7 +465,7 @@ def check_db_schema(report: SmokeReport) -> None:
             # Ask the DB for actual column names
             rows = conn.execute(
                 "SELECT column_name FROM information_schema.columns "
-                "WHERE table_name = ? ORDER BY ordinal_position",
+                "WHERE table_name = %s ORDER BY ordinal_position",
                 (table,),
             ).fetchall()
             actual_cols = {r[0] if not hasattr(r, "keys") else r["column_name"] for r in rows}

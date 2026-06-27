@@ -59,7 +59,7 @@ def generate_ops_config(design_id: str) -> dict[str, Any]:
 
     conn = get_connection()
     row = conn.execute(
-        "SELECT id, name, graph_json FROM aadc_designs WHERE id=?", (design_id,)
+        "SELECT id, name, graph_json FROM aadc_designs WHERE id=%s", (design_id,)
     ).fetchone()
     if not row:
         raise ValueError(f"AADC design not found: {design_id}")
@@ -275,7 +275,7 @@ def create_kanban_tasks(kanban_tasks: list[dict]) -> list[int]:
                 """INSERT INTO kanban_tasks
                    (id, title, description, status, priority,
                     created_at, updated_at, dispatch_source)
-                   VALUES (?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     str(uuid.uuid4()),
                     task["title"],

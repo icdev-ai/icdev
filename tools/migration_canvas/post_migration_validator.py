@@ -351,7 +351,7 @@ def run_validation_suite(session_id: str, targets: list[dict]) -> dict:
                 db.execute(
                     "INSERT OR IGNORE INTO mc_srv_post_migration_tests "
                     "(id, session_id, run_at, check_type, target, status, detail, elapsed_ms) "
-                    "VALUES (?,?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                     (r["id"], session_id, r.get("run_at", run_at),
                      r["check_type"], r["target"], r["status"],
                      r.get("detail", ""), r.get("elapsed_ms", 0)),

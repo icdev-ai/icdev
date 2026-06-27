@@ -212,7 +212,7 @@ def _query_db_evidence(conn, project_id):
     try:
         rows = conn.execute(
             """SELECT finding_id, stig_id, severity, status, assessed_at
-               FROM stig_findings WHERE project_id = ?
+               FROM stig_findings WHERE project_id = %s
                ORDER BY assessed_at DESC""",
             (project_id,),
         ).fetchall()
@@ -234,7 +234,7 @@ def _query_db_evidence(conn, project_id):
     try:
         rows = conn.execute(
             """SELECT version, system_name, status, file_path, created_at
-               FROM ssp_documents WHERE project_id = ?
+               FROM ssp_documents WHERE project_id = %s
                ORDER BY created_at DESC""",
             (project_id,),
         ).fetchall()
@@ -256,7 +256,7 @@ def _query_db_evidence(conn, project_id):
     try:
         rows = conn.execute(
             """SELECT weakness_id, weakness_description, severity, status, created_at
-               FROM poam_items WHERE project_id = ?
+               FROM poam_items WHERE project_id = %s
                ORDER BY created_at DESC""",
             (project_id,),
         ).fetchall()
@@ -278,7 +278,7 @@ def _query_db_evidence(conn, project_id):
         rows = conn.execute(
             """SELECT version, format, file_path, component_count,
                       vulnerability_count, generated_at
-               FROM sbom_records WHERE project_id = ?
+               FROM sbom_records WHERE project_id = %s
                ORDER BY generated_at DESC""",
             (project_id,),
         ).fetchall()
@@ -302,7 +302,7 @@ def _query_db_evidence(conn, project_id):
         rows = conn.execute(
             """SELECT requirement_id, functional_area, status, evidence_description,
                       assessment_date
-               FROM cssp_assessments WHERE project_id = ?
+               FROM cssp_assessments WHERE project_id = %s
                ORDER BY assessment_date DESC""",
             (project_id,),
         ).fetchall()
@@ -326,7 +326,7 @@ def _query_db_evidence(conn, project_id):
             """SELECT scan_type, scanner, scan_date, total_findings,
                       critical_count, high_count, medium_count, low_count,
                       report_path
-               FROM cssp_vuln_management WHERE project_id = ?
+               FROM cssp_vuln_management WHERE project_id = %s
                ORDER BY scan_date DESC""",
             (project_id,),
         ).fetchall()
@@ -529,7 +529,7 @@ def _log_audit_event(conn, project_id, action, details, affected_files=None):
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details,
                 affected_files, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "cssp_evidence_collected",
@@ -564,7 +564,7 @@ def collect_evidence(project_id, project_dir=None, output_dir=None, db_path=None
     conn = _get_connection(db_path)
     try:
         # Load project data
-        row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
         if not row:
             raise ValueError(f"Project '{project_id}' not found in database.")
         project = dict(row)

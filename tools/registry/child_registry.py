@@ -108,7 +108,7 @@ class ChildRegistry:
                 """INSERT INTO audit_trail
                    (project_id, event_type, actor, action, details,
                     affected_files, classification)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
                 (
                     project_id,
                     "child_registry",
@@ -162,7 +162,7 @@ class ChildRegistry:
                    (id, parent_project_id, child_name, child_type,
                     project_path, target_cloud, compliance_required,
                     blueprint_json, status, created_at, updated_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     child_id,
                     parent_project_id,
@@ -237,8 +237,8 @@ class ChildRegistry:
             now = datetime.now(timezone.utc).isoformat()
             result = conn.execute(
                 """UPDATE child_app_registry
-                   SET status = ?, updated_at = ?
-                   WHERE id = ?""",
+                   SET status = %s, updated_at = %s
+                   WHERE id = %s""",
                 (status, now, child_id),
             )
             conn.commit()
@@ -248,7 +248,7 @@ class ChildRegistry:
 
             # Get parent_project_id for audit
             row = conn.execute(
-                "SELECT parent_project_id FROM child_app_registry WHERE id = ?",
+                "SELECT parent_project_id FROM child_app_registry WHERE id = %s",
                 (child_id,),
             ).fetchone()
             parent_id = row["parent_project_id"] if row else ""
@@ -286,7 +286,7 @@ class ChildRegistry:
             self._ensure_tables(conn)
 
             row = conn.execute(
-                "SELECT * FROM child_app_registry WHERE id = ?",
+                "SELECT * FROM child_app_registry WHERE id = %s",
                 (child_id,),
             ).fetchone()
 
@@ -300,7 +300,7 @@ class ChildRegistry:
                 """SELECT capability_name, version, status, source,
                           learned_at, metadata
                    FROM child_capabilities
-                   WHERE child_id = ?
+                   WHERE child_id = %s
                    ORDER BY capability_name""",
                 (child_id,),
             ).fetchall()
@@ -349,7 +349,7 @@ class ChildRegistry:
                 # Get capability count
                 cap_count = conn.execute(
                     """SELECT COUNT(*) as cnt FROM child_capabilities
-                       WHERE child_id = ?""",
+                       WHERE child_id = %s""",
                     (child["id"],),
                 ).fetchone()
                 child["capability_count"] = cap_count["cnt"] if cap_count else 0
@@ -396,7 +396,7 @@ class ChildRegistry:
                 """INSERT OR REPLACE INTO child_capabilities
                    (child_id, capability_name, version, status, source,
                     learned_at, metadata, updated_at)
-                   VALUES (?, ?, ?, 'active', ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, 'active', %s, %s, %s, %s)""",
                 (
                     child_id,
                     capability_name,
@@ -411,7 +411,7 @@ class ChildRegistry:
 
             # Audit
             row = conn.execute(
-                "SELECT parent_project_id FROM child_app_registry WHERE id = ?",
+                "SELECT parent_project_id FROM child_app_registry WHERE id = %s",
                 (child_id,),
             ).fetchone()
             parent_id = row["parent_project_id"] if row else ""
@@ -462,8 +462,8 @@ class ChildRegistry:
 
             result = conn.execute(
                 """UPDATE child_capabilities
-                   SET status = 'disabled', updated_at = ?
-                   WHERE child_id = ? AND capability_name = ?""",
+                   SET status = 'disabled', updated_at = %s
+                   WHERE child_id = %s AND capability_name = %s""",
                 (now, child_id, capability_name),
             )
             conn.commit()

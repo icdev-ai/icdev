@@ -102,7 +102,7 @@ def _audit(conn, action, details="", actor="portfolio_manager"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             ("hook_event_logged", actor, action, details, "cpmp"),
         )
     except Exception:
@@ -112,7 +112,7 @@ def _audit(conn, action, details="", actor="portfolio_manager"):
 def _record_status_change(conn, entity_type, entity_id, old_status, new_status, changed_by=None, reason=None):
     conn.execute(
         "INSERT INTO cpmp_status_history (entity_type, entity_id, old_status, new_status, changed_by, reason) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s)",
         (entity_type, entity_id, old_status, new_status, changed_by, reason),
     )
 
@@ -123,7 +123,7 @@ def _record_status_change(conn, entity_type, entity_id, old_status, new_status, 
 def _score_evm(conn, contract_id):
     """EVM dimension: latest CPI and SPI → 0.0-1.0 score."""
     row = conn.execute(
-        "SELECT cpi, spi FROM cpmp_evm_periods WHERE contract_id = ? ORDER BY period_date DESC LIMIT 1",
+        "SELECT cpi, spi FROM cpmp_evm_periods WHERE contract_id = %s ORDER BY period_date DESC LIMIT 1",
         (contract_id,),
     ).fetchone()
     if not row or row["cpi"] is None:
@@ -140,16 +140,16 @@ def _score_evm(conn, contract_id):
 
 def _score_deliverables(conn, contract_id):
     """Deliverables dimension: ratio of on-time/accepted vs overdue/rejected."""
-    total = conn.execute("SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = ?", (contract_id,)).fetchone()[0]
+    total = conn.execute("SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = %s", (contract_id,)).fetchone()[0]
     if total == 0:
         return 1.0
 
     overdue = conn.execute(
-        "SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = ? AND status = 'overdue'",
+        "SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = %s AND status = 'overdue'",
         (contract_id,),
     ).fetchone()[0]
     rejected = conn.execute(
-        "SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = ? AND status = 'rejected'",
+        "SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = %s AND status = 'rejected'",
         (contract_id,),
     ).fetchone()[0]
 
@@ -167,7 +167,7 @@ def _score_cpars(conn, contract_id):
         "unsatisfactory": 0.15,
     }
     row = conn.execute(
-        "SELECT overall_rating FROM cpmp_cpars_assessments WHERE contract_id = ? ORDER BY period_end DESC LIMIT 1",
+        "SELECT overall_rating FROM cpmp_cpars_assessments WHERE contract_id = %s ORDER BY period_end DESC LIMIT 1",
         (contract_id,),
     ).fetchone()
     if not row or row["overall_rating"] is None:
@@ -182,13 +182,13 @@ def _score_negative_events(conn, contract_id):
     """Negative events dimension: penalize for open/in-progress events."""
     open_events = conn.execute(
         "SELECT COUNT(*) FROM cpmp_negative_events "
-        "WHERE contract_id = ? AND corrective_action_status IN ('open', 'in_progress')",
+        "WHERE contract_id = %s AND corrective_action_status IN ('open', 'in_progress')",
         (contract_id,),
     ).fetchone()[0]
 
     critical = conn.execute(
         "SELECT COUNT(*) FROM cpmp_negative_events "
-        "WHERE contract_id = ? AND severity = 'critical' AND corrective_action_status IN ('open', 'in_progress')",
+        "WHERE contract_id = %s AND severity = 'critical' AND corrective_action_status IN ('open', 'in_progress')",
         (contract_id,),
     ).fetchone()[0]
 
@@ -200,7 +200,7 @@ def _score_negative_events(conn, contract_id):
 def _score_funding(conn, contract_id):
     """Funding dimension: funded_value / total_value ratio."""
     row = conn.execute(
-        "SELECT total_value, funded_value FROM cpmp_contracts WHERE id = ?",
+        "SELECT total_value, funded_value FROM cpmp_contracts WHERE id = %s",
         (contract_id,),
     ).fetchone()
     if not row or not row["total_value"] or row["total_value"] == 0:
@@ -208,7 +208,7 @@ def _score_funding(conn, contract_id):
 
     # Aggregate billed_value from CLINs (billed_value lives on cpmp_clins, not contracts)
     billed_row = conn.execute(
-        "SELECT COALESCE(SUM(billed_value), 0) as billed FROM cpmp_clins WHERE contract_id = ?",
+        "SELECT COALESCE(SUM(billed_value), 0) as billed FROM cpmp_clins WHERE contract_id = %s",
         (contract_id,),
     ).fetchone()
     billed = billed_row["billed"] if billed_row else 0
@@ -227,7 +227,7 @@ def compute_contract_health(contract_id):
     Returns 0.0-1.0 score and green/yellow/red classification.
     """
     conn = _get_db()
-    row = conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone()
+    row = conn.execute("SELECT id FROM cpmp_contracts WHERE id = %s", (contract_id,)).fetchone()
     if not row:
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
@@ -245,7 +245,7 @@ def compute_contract_health(contract_id):
 
     # Update contract health
     conn.execute(
-        "UPDATE cpmp_contracts SET health = ?, updated_at = ? WHERE id = ?",
+        "UPDATE cpmp_contracts SET health = %s, updated_at = %s WHERE id = %s",
         (health, _now(), contract_id),
     )
     conn.commit()
@@ -306,7 +306,7 @@ def get_portfolio_summary():
     upcoming_raw = conn.execute(
         "SELECT d.*, c.contract_number, c.title as contract_title "
         "FROM cpmp_deliverables d JOIN cpmp_contracts c ON d.contract_id = c.id "
-        "WHERE d.due_date >= ? AND d.due_date <= ? "
+        "WHERE d.due_date >= %s AND d.due_date <= %s "
         "AND d.status NOT IN ('accepted', 'rejected') "
         "ORDER BY d.due_date ASC LIMIT 20",
         (_today, _in_30)
@@ -387,7 +387,7 @@ def transition_from_opportunity(opportunity_id, created_by=None):
     conn = _get_db()
 
     # 1. Load opportunity
-    opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = ?", (opportunity_id,)).fetchone()
+    opp = conn.execute("SELECT * FROM proposal_opportunities WHERE id = %s", (opportunity_id,)).fetchone()
     if not opp:
         conn.close()
         return {"status": "error", "message": f"Opportunity {opportunity_id} not found"}
@@ -396,7 +396,7 @@ def transition_from_opportunity(opportunity_id, created_by=None):
         return {"status": "error", "message": f"Opportunity status is '{opp['status']}', must be 'won'"}
 
     # Check not already transitioned
-    existing = conn.execute("SELECT id FROM cpmp_contracts WHERE opportunity_id = ?", (opportunity_id,)).fetchone()
+    existing = conn.execute("SELECT id FROM cpmp_contracts WHERE opportunity_id = %s", (opportunity_id,)).fetchone()
     if existing:
         conn.close()
         return {"status": "error", "message": f"Contract already exists for this opportunity: {existing['id']}"}
@@ -407,7 +407,7 @@ def transition_from_opportunity(opportunity_id, created_by=None):
         "INSERT INTO cpmp_contracts "
         "(id, contract_number, title, agency, naics_code, contract_type, "
         "status, opportunity_id, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             contract_id,
             f"TBD-{opp['solicitation_number'] or opportunity_id[:8]}",
@@ -433,19 +433,19 @@ def transition_from_opportunity(opportunity_id, created_by=None):
 
     # 3. Link opportunity → contract
     try:
-        conn.execute("UPDATE proposal_opportunities SET contract_id = ? WHERE id = ?", (contract_id, opportunity_id))
+        conn.execute("UPDATE proposal_opportunities SET contract_id = %s WHERE id = %s", (contract_id, opportunity_id))
     except Exception:
         pass  # column may not exist yet
 
     # Link customer delivery if exists
     try:
         delivery = conn.execute(
-            "SELECT id FROM customer_deliveries WHERE opportunity_id = ?", (opportunity_id,)
+            "SELECT id FROM customer_deliveries WHERE opportunity_id = %s", (opportunity_id,)
         ).fetchone()
         if delivery:
-            conn.execute("UPDATE customer_deliveries SET contract_id = ? WHERE id = ?", (contract_id, delivery["id"]))
+            conn.execute("UPDATE customer_deliveries SET contract_id = %s WHERE id = %s", (contract_id, delivery["id"]))
             conn.execute(
-                "UPDATE cpmp_contracts SET customer_delivery_id = ? WHERE id = ?", (delivery["id"], contract_id)
+                "UPDATE cpmp_contracts SET customer_delivery_id = %s WHERE id = %s", (delivery["id"], contract_id)
             )
     except Exception:
         pass
@@ -454,7 +454,7 @@ def transition_from_opportunity(opportunity_id, created_by=None):
     deliverables_seeded = 0
     try:
         cdrl_items = conn.execute(
-            "SELECT * FROM proposal_compliance_matrix WHERE opportunity_id = ? AND requirement_type = 'cdrl'",
+            "SELECT * FROM proposal_compliance_matrix WHERE opportunity_id = %s AND requirement_type = 'cdrl'",
             (opportunity_id,),
         ).fetchall()
         for item in cdrl_items:
@@ -463,7 +463,7 @@ def transition_from_opportunity(opportunity_id, created_by=None):
                 "INSERT INTO cpmp_deliverables "
                 "(id, contract_id, cdrl_number, title, description, deliverable_type, "
                 "status, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     deliv_id,
                     contract_id,
@@ -487,7 +487,7 @@ def transition_from_opportunity(opportunity_id, created_by=None):
     wbs_seeded = 0
     try:
         volumes = conn.execute(
-            "SELECT * FROM proposal_volumes WHERE opportunity_id = ? ORDER BY volume_number", (opportunity_id,)
+            "SELECT * FROM proposal_volumes WHERE opportunity_id = %s ORDER BY volume_number", (opportunity_id,)
         ).fetchall()
         for vol in volumes:
             wbs_id = _uuid()
@@ -495,7 +495,7 @@ def transition_from_opportunity(opportunity_id, created_by=None):
                 "INSERT INTO cpmp_wbs "
                 "(id, contract_id, wbs_number, title, level, status, "
                 "created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     wbs_id,
                     contract_id,

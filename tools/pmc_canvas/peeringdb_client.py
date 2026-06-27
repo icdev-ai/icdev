@@ -150,7 +150,7 @@ def sync_peer_from_peeringdb(asn: int, conn) -> dict[str, Any]:
         cur.execute("SELECT id FROM peering_peers WHERE asn = %s", (asn,))
     except Exception:
         cur = conn.cursor()
-        cur.execute("SELECT id FROM peering_peers WHERE asn = ?", (asn,))
+        cur.execute("SELECT id FROM peering_peers WHERE asn = %s", (asn,))
 
     row = cur.fetchone()
     peer_id = row[0] if row else str(uuid.uuid4())
@@ -181,9 +181,9 @@ def sync_peer_from_peeringdb(asn: int, conn) -> dict[str, Any]:
             )
         except Exception:
             conn.execute(
-                """UPDATE peering_peers SET org_name=?, noc_email=?, irr_as_set=?,
-                   ipv4_prefix_count=?, ipv6_prefix_count=?, peeringdb_net_id=?,
-                   rir=?, peeringdb_synced_at=?, updated_at=? WHERE asn=?""",
+                """UPDATE peering_peers SET org_name=%s, noc_email=%s, irr_as_set=%s,
+                   ipv4_prefix_count=%s, ipv6_prefix_count=%s, peeringdb_net_id=%s,
+                   rir=%s, peeringdb_synced_at=%s, updated_at=%s WHERE asn=%s""",
                 (data["org_name"], data["noc_email"], data["irr_as_set"],
                  data["ipv4_prefix_count"], data["ipv6_prefix_count"], data["peeringdb_net_id"],
                  data["rir"], now, now, asn),
@@ -209,7 +209,7 @@ def sync_peer_from_peeringdb(asn: int, conn) -> dict[str, Any]:
                 """INSERT INTO peering_peers (id,asn,org_name,peer_type,policy,status,
                    noc_email,irr_as_set,ipv4_prefix_count,ipv6_prefix_count,
                    peeringdb_net_id,rir,peeringdb_synced_at,created_at,updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (peer_id, asn, data["org_name"], "public", "selective", "evaluation",
                  data["noc_email"], data["irr_as_set"], data["ipv4_prefix_count"],
                  data["ipv6_prefix_count"], data["peeringdb_net_id"], data["rir"],

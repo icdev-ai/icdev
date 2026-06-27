@@ -15,7 +15,7 @@ def get_activity_completion(activity_id: str) -> dict:
     conn = get_connection()
     try:
         row = conn.execute(
-            "SELECT * FROM zig_activity_completions WHERE activity_id=?",
+            "SELECT * FROM zig_activity_completions WHERE activity_id=%s",
             (activity_id,),
         ).fetchone()
         if row:
@@ -41,21 +41,21 @@ def set_activity_status(activity_id: str, status: str, evidence_note: str = None
     conn = get_connection()
     try:
         existing = conn.execute(
-            "SELECT id FROM zig_activity_completions WHERE activity_id=?",
+            "SELECT id FROM zig_activity_completions WHERE activity_id=%s",
             (activity_id,),
         ).fetchone()
 
         if existing:
             conn.execute(
-                "UPDATE zig_activity_completions SET status=?, evidence_note=?, "
-                "completed_by=?, completed_at=?, updated_at=? WHERE activity_id=?",
+                "UPDATE zig_activity_completions SET status=%s, evidence_note=%s, "
+                "completed_by=%s, completed_at=%s, updated_at=%s WHERE activity_id=%s",
                 (status, evidence_note, completed_by, completed_at, now, activity_id),
             )
         else:
             conn.execute(
                 "INSERT INTO zig_activity_completions "
                 "(activity_id, status, evidence_note, completed_by, completed_at, updated_at) "
-                "VALUES (?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s)",
                 (activity_id, status, evidence_note, completed_by, completed_at, now),
             )
         conn.commit()
@@ -78,7 +78,7 @@ def get_phase_completions(phase: str, target_id: str = "icdev-self") -> dict:
     conn = get_connection()
     try:
         acts = conn.execute(
-            "SELECT a.id FROM zig_activities a WHERE a.phase=?", (phase,)
+            "SELECT a.id FROM zig_activities a WHERE a.phase=%s", (phase,)
         ).fetchall()
         act_ids = [a["id"] for a in acts]
         total = len(act_ids)

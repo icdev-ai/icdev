@@ -61,7 +61,7 @@ def _get_db():
 def _audit(conn, event_type, action, details, opportunity_id=None):
     conn.execute(
         "INSERT INTO audit_trail (id, timestamp, event_type, actor, action, details, project_id, session_id) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
         (
             _gen_id("aud"),
             _now(),
@@ -193,7 +193,7 @@ def store_benchmark(labor_category, soc_code, source, hourly_rate, year, region=
     bid = _gen_id("bmk")
     conn.execute(
         "INSERT INTO pg_rate_benchmarks (id, labor_category, soc_code, source, hourly_rate, year, region, contract_vehicle, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (bid, labor_category, soc_code, source, hourly_rate, year, region, vehicle, _now()),
     )
     _audit(conn, "benchmark.store", f"Stored benchmark: {labor_category} ${hourly_rate}/hr", {"id": bid}, None)
@@ -209,7 +209,7 @@ def ptw_analysis(opportunity_id):
 
     rows = conn.execute(
         "SELECT competitor_name, award_amount, period_of_performance, naics_code "
-        "FROM pg_competitor_awards WHERE opportunity_id = ? OR opportunity_id IS NULL "
+        "FROM pg_competitor_awards WHERE opportunity_id = %s OR opportunity_id IS NULL "
         "ORDER BY created_at DESC LIMIT 20",
         (opportunity_id,),
     ).fetchall()
@@ -273,7 +273,7 @@ def generate_cost_volume(opportunity_id, contract_type="ffp"):
 
     # Get LCAT allocations
     allocs = conn.execute(
-        "SELECT labor_category, bls_soc_code, fte_count, hourly_rate FROM pg_lcat_allocations WHERE cost_volume_id = ?",
+        "SELECT labor_category, bls_soc_code, fte_count, hourly_rate FROM pg_lcat_allocations WHERE cost_volume_id = %s",
         (opportunity_id,),
     ).fetchall()
     conn.close()
@@ -319,7 +319,7 @@ def generate_cost_volume(opportunity_id, contract_type="ffp"):
         "INSERT OR REPLACE INTO pg_cost_volumes (id, opportunity_id, contract_type, pricing_strategy, "
         "total_evaluated_price, direct_labor_cost, fringe_rate, overhead_rate, g_and_a_rate, fee_rate, "
         "subcontractor_cost, odc_cost, ptw_estimate_low, ptw_estimate_high, calc_benchmark_median, "
-        "status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "status, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             cv_id,
             opportunity_id,
@@ -368,7 +368,7 @@ def sensitivity_analysis(opportunity_id):
     conn = _get_db()
     row = conn.execute(
         "SELECT direct_labor_cost, fringe_rate, overhead_rate, g_and_a_rate, fee_rate, total_evaluated_price "
-        "FROM pg_cost_volumes WHERE opportunity_id = ? ORDER BY created_at DESC LIMIT 1",
+        "FROM pg_cost_volumes WHERE opportunity_id = %s ORDER BY created_at DESC LIMIT 1",
         (opportunity_id,),
     ).fetchone()
     conn.close()
@@ -417,12 +417,12 @@ def gate_evaluate(opportunity_id):
     conn = _get_db()
     row = conn.execute(
         "SELECT status, total_evaluated_price, direct_labor_cost "
-        "FROM pg_cost_volumes WHERE opportunity_id = ? ORDER BY created_at DESC LIMIT 1",
+        "FROM pg_cost_volumes WHERE opportunity_id = %s ORDER BY created_at DESC LIMIT 1",
         (opportunity_id,),
     ).fetchone()
 
     alloc_count = conn.execute(
-        "SELECT COUNT(*) FROM pg_lcat_allocations WHERE cost_volume_id = ?",
+        "SELECT COUNT(*) FROM pg_lcat_allocations WHERE cost_volume_id = %s",
         (opportunity_id,),
     ).fetchone()
     alloc_n = alloc_count[0] if alloc_count else 0

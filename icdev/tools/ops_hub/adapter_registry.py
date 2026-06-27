@@ -118,7 +118,7 @@ def _persist_health(name: str, health: dict, now: str) -> None:
             INSERT INTO ohc_adapter_status
                 (id, adapter_name, adapter_type, domain, available, version,
                  probe_result, last_probe, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT(adapter_name) DO UPDATE SET
                 available    = excluded.available,
                 adapter_type = excluded.adapter_type,
@@ -141,7 +141,7 @@ def _persist_health(name: str, health: dict, now: str) -> None:
         conn.execute("""
             INSERT INTO ohc_adapter_health_log
                 (id, adapter_name, status, latency_ms, error_msg, checked_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s)
         """, (
             str(uuid.uuid4()),
             name,

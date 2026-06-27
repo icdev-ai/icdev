@@ -147,7 +147,7 @@ def enroll(user_id: str, user_email: str = "") -> EnrollResult:
         conn.execute(
             """
             INSERT INTO user_mfa (user_id, totp_secret, enrolled_at, backup_codes, enabled)
-            VALUES (?, ?, ?, ?, 1)
+            VALUES (%s, %s, %s, %s, 1)
             ON CONFLICT(user_id) DO UPDATE SET
                 totp_secret = excluded.totp_secret,
                 enrolled_at = excluded.enrolled_at,
@@ -181,7 +181,7 @@ def verify(user_id: str, token: str, ip_address: str = "") -> bool:
 
     with _conn() as conn:
         row = conn.execute(
-            "SELECT totp_secret, enabled FROM user_mfa WHERE user_id = ?",
+            "SELECT totp_secret, enabled FROM user_mfa WHERE user_id = %s",
             (user_id,),
         ).fetchone()
 
@@ -203,7 +203,7 @@ def verify(user_id: str, token: str, ip_address: str = "") -> bool:
     if valid:
         with _conn() as conn:
             conn.execute(
-                "UPDATE user_mfa SET last_used_at = ? WHERE user_id = ?",
+                "UPDATE user_mfa SET last_used_at = %s WHERE user_id = %s",
                 (_now(), user_id),
             )
             conn.commit()
@@ -219,7 +219,7 @@ def verify_backup(user_id: str, code: str, ip_address: str = "") -> bool:
 
     with _conn() as conn:
         row = conn.execute(
-            "SELECT backup_codes FROM user_mfa WHERE user_id = ? AND enabled = 1",
+            "SELECT backup_codes FROM user_mfa WHERE user_id = %s AND enabled = 1",
             (user_id,),
         ).fetchone()
 
@@ -241,7 +241,7 @@ def verify_backup(user_id: str, code: str, ip_address: str = "") -> bool:
     hashes.remove(code_hash)
     with _conn() as conn:
         conn.execute(
-            "UPDATE user_mfa SET backup_codes = ?, last_used_at = ? WHERE user_id = ?",
+            "UPDATE user_mfa SET backup_codes = %s, last_used_at = %s WHERE user_id = %s",
             (json.dumps(hashes), _now(), user_id),
         )
         conn.commit()
@@ -260,7 +260,7 @@ def is_enrolled(user_id: str) -> bool:
     try:
         with _conn() as conn:
             row = conn.execute(
-                "SELECT enabled FROM user_mfa WHERE user_id = ?", (user_id,)
+                "SELECT enabled FROM user_mfa WHERE user_id = %s", (user_id,)
             ).fetchone()
         if not row:
             return False
@@ -274,7 +274,7 @@ def disable(user_id: str, disabled_by: str = "system") -> None:
     """Disable MFA for a user (admin action only)."""
     with _conn() as conn:
         conn.execute(
-            "UPDATE user_mfa SET enabled = 0 WHERE user_id = ?", (user_id,)
+            "UPDATE user_mfa SET enabled = 0 WHERE user_id = %s", (user_id,)
         )
         conn.commit()
     logger.warning("MFA disabled for user %s by %s", user_id, disabled_by)
@@ -379,7 +379,7 @@ def _log_attempt(user_id: str, success: bool, method: str, ip_address: str) -> N
             conn.execute(
                 """
                 INSERT INTO mfa_attempts (user_id, success, method, ip_address, recorded_at)
-                VALUES (?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s)
                 """,
                 (user_id, int(success), method, ip_address, _now()),
             )

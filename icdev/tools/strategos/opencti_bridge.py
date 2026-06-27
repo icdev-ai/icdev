@@ -72,7 +72,7 @@ def run(dry_run: bool = False) -> dict:
                 """INSERT INTO sg_opencti_indicators
                    (id, opencti_id, name, indicator_type, pattern, confidence,
                     tlp, valid_from, valid_until, status, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                    ON CONFLICT(opencti_id) DO UPDATE SET
                      name=excluded.name,
                      confidence=excluded.confidence,
@@ -100,7 +100,7 @@ def run(dry_run: bool = False) -> dict:
                 conn.execute(
                     """INSERT INTO sg_ghost_signals
                        (id, signal_type, mmsi, lat, lon, confidence, source, detected_at)
-                       VALUES (?,?,NULL,NULL,NULL,?,?,?)""",
+                       VALUES (%s,%s,NULL,NULL,NULL,%s,%s,%s)""",
                     (
                         str(uuid.uuid4()),
                         sig_type,

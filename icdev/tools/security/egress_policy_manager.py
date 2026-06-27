@@ -259,7 +259,7 @@ class EgressPolicyManager:
         conn.execute(
             """INSERT INTO egress_policy_audit
                (id, agent_role, policy_hash, action, diff_summary, created_at)
-               VALUES (?, ?, ?, 'resolve', ?, ?)""",
+               VALUES (%s, %s, %s, 'resolve', %s, %s)""",
             (
                 str(uuid.uuid4()),
                 role,
@@ -352,7 +352,7 @@ class EgressPolicyManager:
         conn.execute(
             """INSERT INTO egress_policy_audit
                (id, agent_role, policy_hash, action, diff_summary, created_at)
-               VALUES (?, ?, ?, 'generate', ?, ?)""",
+               VALUES (%s, %s, %s, 'generate', %s, %s)""",
             (str(uuid.uuid4()), role, policy["policy_hash"], f"k8s_manifest_{len(egress_rules)}_rules", _now()),
         )
         conn.commit()
@@ -419,7 +419,7 @@ class EgressPolicyManager:
         last = conn.execute(
             """SELECT policy_hash, diff_summary, created_at
                FROM egress_policy_audit
-               WHERE agent_role = ? AND action = 'apply'
+               WHERE agent_role = %s AND action = 'apply'
                ORDER BY created_at DESC LIMIT 1""",
             (role,),
         ).fetchone()
@@ -452,13 +452,13 @@ class EgressPolicyManager:
         if role:
             rows = conn.execute(
                 """SELECT * FROM egress_policy_audit
-                   WHERE agent_role = ? ORDER BY created_at DESC LIMIT ?""",
+                   WHERE agent_role = %s ORDER BY created_at DESC LIMIT %s""",
                 (role, limit),
             ).fetchall()
         else:
             rows = conn.execute(
                 """SELECT * FROM egress_policy_audit
-                   ORDER BY created_at DESC LIMIT ?""",
+                   ORDER BY created_at DESC LIMIT %s""",
                 (limit,),
             ).fetchall()
         conn.close()

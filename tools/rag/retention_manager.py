@@ -139,7 +139,7 @@ def _compute_retention_anomaly_thresholds(
         conn = get_connection()
         for tier, base_days in (("hot", hot_days), ("warm", warm_days)):
             rows = conn.execute(
-                "SELECT created_at FROM rag_chunks WHERE tier = ?",
+                "SELECT created_at FROM rag_chunks WHERE tier = %s",
                 (tier,),
             ).fetchall()
             ages = [
@@ -205,7 +205,7 @@ def detect_retention_anomalies(tenant_id: str = "") -> Dict[str, Any]:
         for tier in ("hot", "warm"):
             limit_days = thresholds.get(tier, _HOT_DAYS if tier == "hot" else _WARM_DAYS)
             for cid, created_at in conn.execute(
-                "SELECT id, created_at FROM rag_chunks WHERE tier = ?",
+                "SELECT id, created_at FROM rag_chunks WHERE tier = %s",
                 (tier,),
             ).fetchall():
                 age = _chunk_age_days(created_at, now)
@@ -271,7 +271,7 @@ def get_migration_candidates(
     hot_to_warm = [
         row[0]
         for row in conn.execute(
-            "SELECT id FROM rag_chunks WHERE tier = 'hot' AND created_at < ?",
+            "SELECT id FROM rag_chunks WHERE tier = 'hot' AND created_at < %s",
             (hot_cutoff,),
         ).fetchall()
     ]
@@ -280,7 +280,7 @@ def get_migration_candidates(
     warm_to_cold = [
         row[0]
         for row in conn.execute(
-            "SELECT id FROM rag_chunks WHERE tier = 'warm' AND created_at < ?",
+            "SELECT id FROM rag_chunks WHERE tier = 'warm' AND created_at < %s",
             (warm_cutoff,),
         ).fetchall()
     ]
@@ -353,7 +353,7 @@ def migrate_chunks(
                 """INSERT INTO rag_ingestion_log
                    (source_type, source_id, source_table, chunks_created, chunks_skipped,
                     ingestion_mode, tenant_id, classification)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, 'CUI')""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, 'CUI')""",
                 (
                     "retention_migration",
                     f"warm:{migrated_warm},cold:{migrated_cold}",
@@ -414,7 +414,7 @@ def rehydrate_chunks(
     import struct
 
     for cid in chunk_ids:
-        row = conn.execute("SELECT content, tier FROM rag_chunks WHERE id = ?", (cid,)).fetchone()
+        row = conn.execute("SELECT content, tier FROM rag_chunks WHERE id = %s", (cid,)).fetchone()
         if not row:
             continue
         content, tier = row
@@ -431,8 +431,8 @@ def rehydrate_chunks(
             blob = struct.pack(f"{len(embedding)}f", *embedding)
             conn.execute(
                 """UPDATE rag_chunks
-                   SET tier = 'hot', embedding = ?, updated_at = CURRENT_TIMESTAMP
-                   WHERE id = ?""",
+                   SET tier = 'hot', embedding = %s, updated_at = CURRENT_TIMESTAMP
+                   WHERE id = %s""",
                 (blob, cid),
             )
             rehydrated += 1

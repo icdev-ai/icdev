@@ -221,7 +221,7 @@ class EventRouter:
             conn = get_connection(db_path=str(self.db_path))
             cursor = conn.execute(
                 "SELECT run_id FROM ci_pipeline_runs "
-                "WHERE session_key = ? AND status IN ('running', 'recovering') "
+                "WHERE session_key = %s AND status IN ('running', 'recovering') "
                 "ORDER BY created_at DESC LIMIT 1",
                 (session_key,),
             )
@@ -301,7 +301,7 @@ class EventRouter:
             conn = get_connection(db_path=str(self.db_path))
             # Check queue depth
             cursor = conn.execute(
-                "SELECT COUNT(*) FROM ci_event_queue WHERE session_key = ? AND status = 'queued'",
+                "SELECT COUNT(*) FROM ci_event_queue WHERE session_key = %s AND status = 'queued'",
                 (envelope.session_key,),
             )
             count = cursor.fetchone()[0]
@@ -313,7 +313,7 @@ class EventRouter:
                 }
 
             conn.execute(
-                "INSERT INTO ci_event_queue (session_key, event_id, envelope_json, status) VALUES (?, ?, ?, 'queued')",
+                "INSERT INTO ci_event_queue (session_key, event_id, envelope_json, status) VALUES (%s, %s, %s, 'queued')",
                 (
                     envelope.session_key,
                     envelope.event_id,
@@ -338,7 +338,7 @@ class EventRouter:
             conn.execute(
                 "INSERT INTO ci_pipeline_runs "
                 "(id, session_key, run_id, platform, workflow, status, trigger_source, event_id) "
-                "VALUES (?, ?, ?, ?, ?, 'running', ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, 'running', %s, %s)",
                 (
                     envelope.event_id,
                     envelope.session_key,
@@ -382,8 +382,8 @@ class EventRouter:
             now = datetime.now(timezone.utc).isoformat()
             completed_at = now if status in ("completed", "failed") else None
             conn.execute(
-                "UPDATE ci_pipeline_runs SET status = ?, completed_at = ? "
-                "WHERE run_id = ? AND status IN ('running', 'recovering')",
+                "UPDATE ci_pipeline_runs SET status = %s, completed_at = %s "
+                "WHERE run_id = %s AND status IN ('running', 'recovering')",
                 (status, completed_at, run_id),
             )
             conn.commit()
@@ -402,7 +402,7 @@ class EventRouter:
             conn = get_connection(db_path=str(self.db_path))
             cursor = conn.execute(
                 "SELECT id, envelope_json FROM ci_event_queue "
-                "WHERE session_key = ? AND status = 'queued' "
+                "WHERE session_key = %s AND status = 'queued' "
                 "ORDER BY created_at ASC",
                 (session_key,),
             )
@@ -438,7 +438,7 @@ class EventRouter:
             conn = get_connection(db_path=str(self.db_path))
             now = datetime.now(timezone.utc).isoformat()
             conn.execute(
-                "UPDATE ci_event_queue SET status = ?, processed_at = ? WHERE id = ?",
+                "UPDATE ci_event_queue SET status = %s, processed_at = %s WHERE id = %s",
                 (status, now, queue_id),
             )
             conn.commit()

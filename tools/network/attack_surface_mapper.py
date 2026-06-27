@@ -185,7 +185,7 @@ def _upsert_surface_row(conn, row: dict) -> None:
            (id, device_id, device_name, ip, cve_id, advisory_id, exposure_type,
             reachable, criticality, surface_score, nqe_source, nessus_scan_id,
             assessed_at, updated_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
            ON CONFLICT(device_name, cve_id) DO UPDATE SET
              ip=excluded.ip,
              advisory_id=excluded.advisory_id,
@@ -221,7 +221,7 @@ def _append_audit_log(conn, action: str, input_text: str, nqe_source: str) -> No
         conn.execute(
             """INSERT INTO nc_nqe_audit_log
                (action, input_text, data_source, created_at)
-               VALUES (?,?,?,?)""",
+               VALUES (%s,%s,%s,%s)""",
             (action, input_text, nqe_source, _now()),
         )
     except Exception:

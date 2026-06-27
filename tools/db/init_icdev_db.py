@@ -11424,7 +11424,7 @@ def init_db(db_path=None):
         _seed_conn.execute(
             "INSERT OR IGNORE INTO intake_sessions "
             "(id, customer_name, customer_org, session_status, classification, context_summary) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s)",
             (
                 "sess-9cc6891cb548",
                 "E2E Test User",

@@ -29,7 +29,7 @@ def _get_db():
 def _table_exists(conn, table_name):
     try:
         row = conn.execute(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?",
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=%s",
             (table_name,),
         ).fetchone()
         return row[0] > 0
@@ -65,7 +65,7 @@ def lineage_graph():
         if _table_exists(conn, "digital_thread_links"):
             rows = conn.execute(
                 "SELECT id, source_type, source_id, target_type, target_id, link_type "
-                "FROM digital_thread_links WHERE project_id = ? ORDER BY id",
+                "FROM digital_thread_links WHERE project_id = %s ORDER BY id",
                 (project_id,),
             ).fetchall()
             seen = set()
@@ -89,7 +89,7 @@ def lineage_graph():
         # --- Provenance entities (W3C PROV) ---
         if _table_exists(conn, "prov_entities") and _table_exists(conn, "prov_relations"):
             entities = conn.execute(
-                "SELECT id AS entity_id, entity_type, label FROM prov_entities WHERE project_id = ?",
+                "SELECT id AS entity_id, entity_type, label FROM prov_entities WHERE project_id = %s",
                 (project_id,),
             ).fetchall()
             for e in entities:
@@ -104,7 +104,7 @@ def lineage_graph():
                 )
 
             relations = conn.execute(
-                "SELECT subject_id AS source_id, object_id AS target_id, relation_type FROM prov_relations WHERE project_id = ?",
+                "SELECT subject_id AS source_id, object_id AS target_id, relation_type FROM prov_relations WHERE project_id = %s",
                 (project_id,),
             ).fetchall()
             for r in relations:
@@ -121,7 +121,7 @@ def lineage_graph():
         if _table_exists(conn, "audit_trail"):
             audit_rows = conn.execute(
                 "SELECT id, event_type, action, actor, created_at "
-                "FROM audit_trail WHERE project_id = ? ORDER BY created_at DESC LIMIT 50",
+                "FROM audit_trail WHERE project_id = %s ORDER BY created_at DESC LIMIT 50",
                 (project_id,),
             ).fetchall()
             for a in audit_rows:
@@ -139,7 +139,7 @@ def lineage_graph():
         # --- SBOM components ---
         if _table_exists(conn, "sbom_records"):
             sbom_rows = conn.execute(
-                "SELECT id, file_path, version FROM sbom_records WHERE project_id = ? LIMIT 100",
+                "SELECT id, file_path, version FROM sbom_records WHERE project_id = %s LIMIT 100",
                 (project_id,),
             ).fetchall()
             for s in sbom_rows:

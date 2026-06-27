@@ -36,7 +36,7 @@ def _get_device(conn: sqlite3.Connection, device_id: str) -> Optional[sqlite3.Ro
         """SELECT id, vendor, model, device_type, firmware_version,
                   replacement_cost, annual_maintenance_cost, eol_date, eos_date,
                   site, rack_location, criticality_score, downstream_count
-           FROM ni_devices WHERE id = ?""",
+           FROM ni_devices WHERE id = %s""",
         (device_id,),
     ).fetchone()
     return row
@@ -47,7 +47,7 @@ def _get_device_by_model(conn: sqlite3.Connection, vendor: str, model: str) -> O
         """SELECT id, vendor, model, device_type, firmware_version,
                   replacement_cost, annual_maintenance_cost, eol_date, eos_date,
                   site, rack_location, criticality_score, downstream_count
-           FROM ni_devices WHERE vendor = ? AND model = ? LIMIT 1""",
+           FROM ni_devices WHERE vendor = %s AND model = %s LIMIT 1""",
         (vendor, model),
     ).fetchone()
     return row
@@ -56,7 +56,7 @@ def _get_device_by_model(conn: sqlite3.Connection, vendor: str, model: str) -> O
 def _get_source_profile(conn: sqlite3.Connection, vendor: str, model: str) -> Optional[sqlite3.Row]:
     row = conn.execute(
         """SELECT * FROM nc_hardware_profiles
-           WHERE vendor = ? AND model = ? LIMIT 1""",
+           WHERE vendor = %s AND model = %s LIMIT 1""",
         (vendor, model),
     ).fetchone()
     return row
@@ -65,8 +65,8 @@ def _get_source_profile(conn: sqlite3.Connection, vendor: str, model: str) -> Op
 def _get_candidates(conn: sqlite3.Connection, device_type: str, exclude_vendor_model: tuple[str, str]) -> List[sqlite3.Row]:
     return conn.execute(
         """SELECT * FROM nc_hardware_profiles
-           WHERE device_type = ?
-             AND NOT (vendor = ? AND model = ?)
+           WHERE device_type = %s
+             AND NOT (vendor = %s AND model = %s)
              AND (eol_date IS NULL OR eol_date > date('now', '+2 years'))
            ORDER BY throughput_gbps DESC""",
         (device_type, exclude_vendor_model[0], exclude_vendor_model[1]),

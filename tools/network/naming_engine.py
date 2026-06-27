@@ -41,7 +41,7 @@ def _load_convention(convention_id: str, conn: sqlite3.Connection | None = None)
     own = conn is None
     if own:
         conn = _get_conn()
-    row = conn.execute("SELECT * FROM nc_naming_conventions WHERE id = ?", (convention_id,)).fetchone()
+    row = conn.execute("SELECT * FROM nc_naming_conventions WHERE id = %s", (convention_id,)).fetchone()
     if own:
         conn.close()
     if not row:
@@ -271,14 +271,14 @@ def next_sequence(convention_id: str, scope_key: str, topology_id: str = "") -> 
     topo = topology_id or ""
     row = conn.execute(
         "SELECT id, current_value FROM nc_naming_sequences "
-        "WHERE convention_id = ? AND scope_key = ? AND topology_id = ?",
+        "WHERE convention_id = %s AND scope_key = %s AND topology_id = %s",
         (convention_id, scope_key, topo),
     ).fetchone()
 
     if row:
         new_val = row["current_value"] + 1
         conn.execute(
-            "UPDATE nc_naming_sequences SET current_value = ? WHERE id = ?",
+            "UPDATE nc_naming_sequences SET current_value = %s WHERE id = %s",
             (new_val, row["id"]),
         )
     else:
@@ -295,7 +295,7 @@ def next_sequence(convention_id: str, scope_key: str, topology_id: str = "") -> 
 
         conn.execute(
             "INSERT INTO nc_naming_sequences (id, convention_id, scope_key, topology_id, current_value) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             (str(uuid.uuid4())[:12], convention_id, scope_key, topo, new_val),
         )
 

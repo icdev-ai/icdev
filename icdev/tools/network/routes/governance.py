@@ -37,12 +37,12 @@ def register_governance_routes(bp, get_conn=None, helpers=None):
             with _nc() as db:
                 if status_filter:
                     rows = db.execute(
-                        "SELECT * FROM nc_change_requests WHERE topology_id=? AND status=? ORDER BY created_at DESC",
+                        "SELECT * FROM nc_change_requests WHERE topology_id=%s AND status=%s ORDER BY created_at DESC",
                         (topo_id, status_filter),
                     ).fetchall()
                 else:
                     rows = db.execute(
-                        "SELECT * FROM nc_change_requests WHERE topology_id=? ORDER BY created_at DESC",
+                        "SELECT * FROM nc_change_requests WHERE topology_id=%s ORDER BY created_at DESC",
                         (topo_id,),
                     ).fetchall()
             return jsonify({"change_requests": [dict(r) for r in rows], "total": len(rows)})
@@ -63,7 +63,7 @@ def register_governance_routes(bp, get_conn=None, helpers=None):
                 "INSERT INTO nc_change_requests "
                 "(id, topology_id, title, description, change_type, risk_level, status, "
                 "requested_by, requested_at, created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     cr_id, topo_id,
                     body["title"],
@@ -79,7 +79,7 @@ def register_governance_routes(bp, get_conn=None, helpers=None):
                 db.execute(
                     "INSERT INTO nc_change_request_items "
                     "(id, change_request_id, item_type, description, object_id, created_at) "
-                    "VALUES (?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s)",
                     (
                         "cri-" + uuid.uuid4().hex[:10],
                         cr_id,
@@ -101,7 +101,7 @@ def register_governance_routes(bp, get_conn=None, helpers=None):
         """Fetch, update status, or delete a change request."""
         with _nc() as db:
             cr = db.execute(
-                "SELECT * FROM nc_change_requests WHERE id=? AND topology_id=?",
+                "SELECT * FROM nc_change_requests WHERE id=%s AND topology_id=%s",
                 (cr_id, topo_id),
             ).fetchone()
             if not cr:
@@ -109,7 +109,7 @@ def register_governance_routes(bp, get_conn=None, helpers=None):
 
             if request.method == "GET":
                 items = db.execute(
-                    "SELECT * FROM nc_change_request_items WHERE change_request_id=?",
+                    "SELECT * FROM nc_change_request_items WHERE change_request_id=%s",
                     (cr_id,),
                 ).fetchall()
                 return jsonify({
@@ -118,8 +118,8 @@ def register_governance_routes(bp, get_conn=None, helpers=None):
                 })
 
             if request.method == "DELETE":
-                db.execute("DELETE FROM nc_change_request_items WHERE change_request_id=?", (cr_id,))
-                db.execute("DELETE FROM nc_change_requests WHERE id=?", (cr_id,))
+                db.execute("DELETE FROM nc_change_request_items WHERE change_request_id=%s", (cr_id,))
+                db.execute("DELETE FROM nc_change_requests WHERE id=%s", (cr_id,))
                 db.commit()
                 return jsonify({"deleted": cr_id})
 
@@ -148,7 +148,7 @@ def register_governance_routes(bp, get_conn=None, helpers=None):
         if request.method == "GET":
             with _nc() as db:
                 rows = db.execute(
-                    "SELECT * FROM nc_intent_policies WHERE topology_id=? ORDER BY created_at DESC",
+                    "SELECT * FROM nc_intent_policies WHERE topology_id=%s ORDER BY created_at DESC",
                     (topo_id,),
                 ).fetchall()
             return jsonify({"intent_policies": [dict(r) for r in rows], "total": len(rows)})
@@ -165,7 +165,7 @@ def register_governance_routes(bp, get_conn=None, helpers=None):
             db.execute(
                 "INSERT INTO nc_intent_policies "
                 "(id, topology_id, name, description, rule_json, severity, enabled, created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     policy_id, topo_id,
                     body["name"],
@@ -190,7 +190,7 @@ def register_governance_routes(bp, get_conn=None, helpers=None):
         """
         with _nc() as db:
             policy = db.execute(
-                "SELECT * FROM nc_intent_policies WHERE id=? AND topology_id=?",
+                "SELECT * FROM nc_intent_policies WHERE id=%s AND topology_id=%s",
                 (policy_id, topo_id),
             ).fetchone()
             if not policy:
@@ -210,7 +210,7 @@ def register_governance_routes(bp, get_conn=None, helpers=None):
             db.execute(
                 "INSERT INTO nc_intent_validations "
                 "(id, topology_id, policy_id, result, detail, validated_at) "
-                "VALUES (?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s)",
                 (val_id, topo_id, policy_id, result, json.dumps(detail), now),
             )
             db.commit()
@@ -262,7 +262,7 @@ def _current_user() -> str:
 
 
 def _table_exists(db, table: str) -> bool:
-    r = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()
+    r = db.execute("SELECT name FROM sqlite_master WHERE type='table' AND name=%s", (table,)).fetchone()
     return r is not None
 
 
@@ -289,7 +289,7 @@ def _evaluate_intent_rule(db, topo_id: str, rule: dict) -> tuple[str, dict]:
 
     if rule_type == "no_open_cat1_findings":
         count = db.execute(
-            "SELECT COUNT(*) FROM nc_compliance_findings WHERE topology_id=? AND severity='cat1' AND status='open'",
+            "SELECT COUNT(*) FROM nc_compliance_findings WHERE topology_id=%s AND severity='cat1' AND status='open'",
             (topo_id,),
         ).fetchone()[0]
         result = "pass" if count == 0 else "fail"
@@ -297,7 +297,7 @@ def _evaluate_intent_rule(db, topo_id: str, rule: dict) -> tuple[str, dict]:
 
     if rule_type == "all_devices_managed":
         unmanaged = db.execute(
-            "SELECT COUNT(*) FROM nc_objects WHERE topology_id=? AND managed=0 AND object_type NOT IN ('label','group','link')",
+            "SELECT COUNT(*) FROM nc_objects WHERE topology_id=%s AND managed=0 AND object_type NOT IN ('label','group','link')",
             (topo_id,),
         ).fetchone()[0] if _col_exists_inner(db, "nc_objects", "managed") else 0
         result = "pass" if unmanaged == 0 else "fail"

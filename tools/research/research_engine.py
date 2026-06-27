@@ -339,7 +339,7 @@ def stage_synthesize(session_id, db_path=None):
         conn = _get_db(db_path)
         try:
             challenges = conn.execute(
-                "SELECT id FROM research_challenges WHERE session_id = ?",
+                "SELECT id FROM research_challenges WHERE session_id = %s",
                 (session_id,),
             ).fetchall()
             mapped = 0
@@ -497,7 +497,7 @@ def run_stage(session_id, stage, db_path=None):
         conn = _get_db(db_path)
         try:
             session = conn.execute(
-                "SELECT vertical_name FROM research_sessions WHERE id = ?",
+                "SELECT vertical_name FROM research_sessions WHERE id = %s",
                 (session_id,),
             ).fetchone()
             vertical = session["vertical_name"] if session else ""
@@ -520,7 +520,7 @@ def get_status(session_id=None, db_path=None):
             if get_session:
                 return get_session(session_id, db_path=db_path)
             # Fallback
-            row = conn.execute("SELECT * FROM research_sessions WHERE id = ?", (session_id,)).fetchone()
+            row = conn.execute("SELECT * FROM research_sessions WHERE id = %s", (session_id,)).fetchone()
             if not row:
                 return {"error": f"Session not found: {session_id}"}
             return dict(row)

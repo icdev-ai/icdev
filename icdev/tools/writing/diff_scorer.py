@@ -111,7 +111,7 @@ def _fetch_text_by_id(analysis_id: str) -> str:
     with get_connection() as conn:
         row = conn.execute(
             "SELECT input_text_hash, overall_quality_score, document_name "
-            "FROM wg_analysis_results WHERE id = ?",
+            "FROM wg_analysis_results WHERE id = %s",
             (analysis_id,),
         ).fetchone()
     if not row:
@@ -126,7 +126,7 @@ def _fetch_scores_by_id(analysis_id: str) -> Dict[str, Any]:
             "SELECT id, overall_quality_score, readability_flesch, "
             "readability_gunning_fog, grammar_error_count, passive_voice_pct, "
             "avg_sentence_length, coherence_score, plagiarism_max_similarity, "
-            "ai_content_score FROM wg_analysis_results WHERE id = ?",
+            "ai_content_score FROM wg_analysis_results WHERE id = %s",
             (analysis_id,),
         ).fetchone()
     if not row:

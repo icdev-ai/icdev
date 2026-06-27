@@ -133,7 +133,7 @@ def _audit(conn, action, details="", actor="cpars_predictor"):
     try:
         conn.execute(
             "INSERT INTO audit_trail (event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s)",
             ("hook_event_logged", actor, action, details, "cpmp"),
         )
     except Exception:
@@ -144,7 +144,7 @@ def _record_status_change(conn, entity_type, entity_id, old_status, new_status, 
     """Record status change in cpmp_status_history (append-only, NIST AU-2)."""
     conn.execute(
         "INSERT INTO cpmp_status_history (entity_type, entity_id, old_status, new_status, changed_by, reason) "
-        "VALUES (?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s)",
         (entity_type, entity_id, old_status, new_status, changed_by, reason),
     )
 
@@ -191,7 +191,7 @@ def _score_quality(conn, contract_id):
         return 1.0
 
     accepted = conn.execute(
-        "SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = ? AND status = 'accepted'",
+        "SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = %s AND status = 'accepted'",
         (contract_id,),
     ).fetchone()[0]
 
@@ -204,7 +204,7 @@ def _score_schedule(conn, contract_id):
     Returns 1.0 if no deliverables exist.
     """
     total = conn.execute(
-        "SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = ?",
+        "SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = %s",
         (contract_id,),
     ).fetchone()[0]
 
@@ -212,7 +212,7 @@ def _score_schedule(conn, contract_id):
         return 1.0
 
     overdue = conn.execute(
-        "SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = ? AND status = 'overdue'",
+        "SELECT COUNT(*) FROM cpmp_deliverables WHERE contract_id = %s AND status = 'overdue'",
         (contract_id,),
     ).fetchone()[0]
 
@@ -225,7 +225,7 @@ def _score_cost(conn, contract_id):
     CPI > 1.0 is favorable but capped. Returns 1.0 if no EVM data.
     """
     row = conn.execute(
-        "SELECT cpi FROM cpmp_evm_periods WHERE contract_id = ? ORDER BY period_date DESC LIMIT 1",
+        "SELECT cpi FROM cpmp_evm_periods WHERE contract_id = %s ORDER BY period_date DESC LIMIT 1",
         (contract_id,),
     ).fetchone()
 
@@ -242,7 +242,7 @@ def _score_management(conn, contract_id):
     """
     open_count = conn.execute(
         "SELECT COUNT(*) FROM cpmp_negative_events "
-        "WHERE contract_id = ? AND corrective_action_status IN ('open', 'in_progress')",
+        "WHERE contract_id = %s AND corrective_action_status IN ('open', 'in_progress')",
         (contract_id,),
     ).fetchone()[0]
 
@@ -257,7 +257,7 @@ def _score_small_business(conn, contract_id):
     Returns 1.0 if no SB plan or no goals set.
     """
     row = conn.execute(
-        "SELECT * FROM cpmp_small_business_plan WHERE contract_id = ? ORDER BY created_at DESC LIMIT 1",
+        "SELECT * FROM cpmp_small_business_plan WHERE contract_id = %s ORDER BY created_at DESC LIMIT 1",
         (contract_id,),
     ).fetchone()
 
@@ -303,7 +303,7 @@ def _compute_ndaa_penalty(conn, contract_id):
     """
     events = conn.execute(
         "SELECT event_type, corrective_action_status FROM cpmp_negative_events "
-        "WHERE contract_id = ? AND corrective_action_status IN ('open', 'in_progress', 'completed')",
+        "WHERE contract_id = %s AND corrective_action_status IN ('open', 'in_progress', 'completed')",
         (contract_id,),
     ).fetchall()
 
@@ -349,7 +349,7 @@ def predict_cpars(contract_id):
         dict with dimension_scores, ndaa_penalty, predicted_score, predicted_rating
     """
     conn = _get_db()
-    row = conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone()
+    row = conn.execute("SELECT id FROM cpmp_contracts WHERE id = %s", (contract_id,)).fetchone()
     if not row:
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
@@ -400,7 +400,7 @@ def create_assessment(contract_id, period_start, period_end, data=None):
     Status starts as 'draft'.
     """
     conn = _get_db()
-    row = conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone()
+    row = conn.execute("SELECT id FROM cpmp_contracts WHERE id = %s", (contract_id,)).fetchone()
     if not row:
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
@@ -416,7 +416,7 @@ def create_assessment(contract_id, period_start, period_end, data=None):
     # Count current negative events for this contract
     neg_event_count = conn.execute(
         "SELECT COUNT(*) FROM cpmp_negative_events "
-        "WHERE contract_id = ? AND corrective_action_status IN ('open', 'in_progress')",
+        "WHERE contract_id = %s AND corrective_action_status IN ('open', 'in_progress')",
         (contract_id,),
     ).fetchone()[0]
 
@@ -426,7 +426,7 @@ def create_assessment(contract_id, period_start, period_end, data=None):
         "cost_rating, management_rating, small_business_rating, overall_rating, "
         "predicted_overall, narrative, negative_event_count, status, "
         "created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
         (
             assessment_id,
             contract_id,
@@ -475,7 +475,7 @@ def update_assessment(assessment_id, data):
     """
     conn = _get_db()
     row = conn.execute(
-        "SELECT id, status FROM cpmp_cpars_assessments WHERE id = ?",
+        "SELECT id, status FROM cpmp_cpars_assessments WHERE id = %s",
         (assessment_id,),
     ).fetchone()
     if not row:
@@ -535,7 +535,7 @@ def get_assessment(assessment_id):
     """Get a single CPARS assessment with its prediction data."""
     conn = _get_db()
     row = conn.execute(
-        "SELECT * FROM cpmp_cpars_assessments WHERE id = ?",
+        "SELECT * FROM cpmp_cpars_assessments WHERE id = %s",
         (assessment_id,),
     ).fetchone()
     if not row:
@@ -547,7 +547,7 @@ def get_assessment(assessment_id):
     # Attach status history
     history = conn.execute(
         "SELECT * FROM cpmp_status_history "
-        "WHERE entity_type = 'cpars_assessment' AND entity_id = ? "
+        "WHERE entity_type = 'cpars_assessment' AND entity_id = %s "
         "ORDER BY created_at DESC",
         (assessment_id,),
     ).fetchall()
@@ -570,13 +570,13 @@ def get_assessment(assessment_id):
 def list_assessments(contract_id):
     """List all CPARS assessments for a contract, ordered by period_end descending."""
     conn = _get_db()
-    row = conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone()
+    row = conn.execute("SELECT id FROM cpmp_contracts WHERE id = %s", (contract_id,)).fetchone()
     if not row:
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
 
     rows = conn.execute(
-        "SELECT * FROM cpmp_cpars_assessments WHERE contract_id = ? ORDER BY period_end DESC",
+        "SELECT * FROM cpmp_cpars_assessments WHERE contract_id = %s ORDER BY period_end DESC",
         (contract_id,),
     ).fetchall()
     conn.close()
@@ -596,7 +596,7 @@ def get_cpars_trend(contract_id):
     ordered chronologically.
     """
     conn = _get_db()
-    row = conn.execute("SELECT id FROM cpmp_contracts WHERE id = ?", (contract_id,)).fetchone()
+    row = conn.execute("SELECT id FROM cpmp_contracts WHERE id = %s", (contract_id,)).fetchone()
     if not row:
         conn.close()
         return {"status": "error", "message": f"Contract {contract_id} not found"}
@@ -607,7 +607,7 @@ def get_cpars_trend(contract_id):
         "cost_rating, management_rating, small_business_rating, "
         "negative_event_count, status "
         "FROM cpmp_cpars_assessments "
-        "WHERE contract_id = ? ORDER BY period_end ASC",
+        "WHERE contract_id = %s ORDER BY period_end ASC",
         (contract_id,),
     ).fetchall()
 

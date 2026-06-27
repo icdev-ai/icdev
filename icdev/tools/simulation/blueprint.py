@@ -84,7 +84,7 @@ def create_simulation_blueprint() -> Blueprint:
         try:
             conn = _get_db()
             conn.execute(
-                "INSERT INTO nc_simulation_sessions (id, canvas_type, metadata) VALUES (?, ?, ?)",
+                "INSERT INTO nc_simulation_sessions (id, canvas_type, metadata) VALUES (%s, %s, %s)",
                 (session_id, canvas_type, "{}"),
             )
             conn.commit()
@@ -158,7 +158,7 @@ def create_simulation_blueprint() -> Blueprint:
             try:
                 _conn = _get_db()
                 _row = _conn.execute(
-                    "SELECT canvas_type FROM nc_simulation_sessions WHERE id = ?",
+                    "SELECT canvas_type FROM nc_simulation_sessions WHERE id = %s",
                     (session_id,),
                 ).fetchone()
                 _conn.close()
@@ -281,7 +281,7 @@ def create_simulation_blueprint() -> Blueprint:
             if canvas_type:
                 rows = conn.execute(
                     "SELECT id, canvas_type, metadata, created_at FROM nc_simulation_sessions "
-                    "WHERE canvas_type = ? ORDER BY created_at DESC LIMIT 100",
+                    "WHERE canvas_type = %s ORDER BY created_at DESC LIMIT 100",
                     (canvas_type,),
                 ).fetchall()
             else:
@@ -299,7 +299,7 @@ def create_simulation_blueprint() -> Blueprint:
         """Delete a simulation chat session by ID."""
         try:
             conn = _get_db()
-            conn.execute("DELETE FROM nc_simulation_sessions WHERE id = ?", (session_id,))
+            conn.execute("DELETE FROM nc_simulation_sessions WHERE id = %s", (session_id,))
             conn.commit()
             conn.close()
             return jsonify({"status": "deleted", "session_id": session_id})

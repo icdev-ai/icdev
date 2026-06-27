@@ -71,7 +71,7 @@ def get_sop_by_id(sop_id):
     """Return a single SOP dict or None."""
     conn = _get_conn()
     try:
-        row = conn.execute("SELECT * FROM idc_sops WHERE id=?", (sop_id,)).fetchone()
+        row = conn.execute("SELECT * FROM idc_sops WHERE id=%s", (sop_id,)).fetchone()
     finally:
         conn.close()
     return _sop_to_dict(row)
@@ -94,7 +94,7 @@ def create_sop(data):
                 steps, status, version, owner, reviewer, approver,
                 effective_date, review_interval_days,
                 nist_controls, tags, classification, created_at, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
             (
                 sop_id,
                 data.get("title", "Untitled SOP"),
@@ -136,11 +136,11 @@ def update_sop(sop_id, data):
     try:
         conn.execute(
             """UPDATE idc_sops SET
-               title=?, category=?, description=?, purpose=?, scope=?,
-               steps=?, version=?, owner=?, reviewer=?, approver=?,
-               effective_date=?, review_interval_days=?,
-               nist_controls=?, tags=?, classification=?, updated_at=?
-               WHERE id=?""",
+               title=%s, category=%s, description=%s, purpose=%s, scope=%s,
+               steps=%s, version=%s, owner=%s, reviewer=%s, approver=%s,
+               effective_date=%s, review_interval_days=%s,
+               nist_controls=%s, tags=%s, classification=%s, updated_at=%s
+               WHERE id=%s""",
             (
                 data.get("title", existing["title"]),
                 data.get("category", existing["category"]),
@@ -215,7 +215,7 @@ def delete_sop(sop_id):
         return False
     conn = _get_conn()
     try:
-        conn.execute("DELETE FROM idc_sops WHERE id=?", (sop_id,))
+        conn.execute("DELETE FROM idc_sops WHERE id=%s", (sop_id,))
         conn.commit()
     finally:
         conn.close()
@@ -440,7 +440,7 @@ def seed_sops():
     try:
         for sop in _SEED_SOPS:
             existing = conn.execute(
-                "SELECT id FROM idc_sops WHERE id=?", (sop["id"],)
+                "SELECT id FROM idc_sops WHERE id=%s", (sop["id"],)
             ).fetchone()
             if existing:
                 continue
@@ -452,7 +452,7 @@ def seed_sops():
                     steps, status, version, owner, reviewer, approver,
                     approved_at, effective_date, review_interval_days,
                     nist_controls, tags, classification, created_at, updated_at)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                 (
                     sop["id"],
                     sop["title"],

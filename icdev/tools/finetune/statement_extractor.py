@@ -513,7 +513,7 @@ def generate_from_rag_source(
         # Fetch chunks for the given source table
         try:
             rows = rag_conn.execute(
-                "SELECT id, content FROM rag_chunks WHERE source_table = ? LIMIT ?",
+                "SELECT id, content FROM rag_chunks WHERE source_table = %s LIMIT %s",
                 (source_table, limit),
             ).fetchall()
         except sqlite3.OperationalError:
@@ -521,7 +521,7 @@ def generate_from_rag_source(
             rag_conn.close()
             rag_conn = _get_db(db_path)
             rows = rag_conn.execute(
-                "SELECT id, content FROM rag_chunks WHERE source_table = ? LIMIT ?",
+                "SELECT id, content FROM rag_chunks WHERE source_table = %s LIMIT %s",
                 (source_table, limit),
             ).fetchall()
 
@@ -591,7 +591,7 @@ def get_statement_stats(dataset_id: str, db_path: Optional[Path] = None) -> Dict
     conn = _get_db(db_path)
     try:
         rows = conn.execute(
-            "SELECT system_prompt FROM ft_dataset_examples WHERE dataset_id = ?",
+            "SELECT system_prompt FROM ft_dataset_examples WHERE dataset_id = %s",
             (dataset_id,),
         ).fetchall()
 

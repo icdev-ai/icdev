@@ -709,7 +709,7 @@ def check_nc_audit_to_siem_forwarder(canvas_project_id: str, odc_design_id: str)
             try:
                 rows = _nc.execute(
                     "SELECT id, name, graph_json FROM topologies "
-                    "WHERE template_id = ? OR id = ? OR description LIKE ?",
+                    "WHERE template_id = %s OR id = %s OR description LIKE %s",
                     (canvas_project_id, canvas_project_id, f"%{canvas_project_id}%"),
                 ).fetchall()
                 ndc_topos = [{"id": r[0], "name": r[1], "graph": _js.loads(r[2] or "{}")} for r in rows]
@@ -726,7 +726,7 @@ def check_nc_audit_to_siem_forwarder(canvas_project_id: str, odc_design_id: str)
             try:
                 cov = _oc.execute(
                     "SELECT source_id FROM odc_sdc_verifications "
-                    "WHERE design_id = ? AND status IN ('pass', 'verified')",
+                    "WHERE design_id = %s AND status IN ('pass', 'verified')",
                     (odc_design_id,),
                 ).fetchall()
                 covered_topo_ids = {r[0] for r in cov}

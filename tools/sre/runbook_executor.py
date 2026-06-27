@@ -137,7 +137,7 @@ def create_runbook(name: str, description: str, trigger_pattern: str, steps: lis
         """INSERT INTO sre_runbooks
            (id, name, description, trigger_pattern, steps_json, risk_level,
             auto_execute, max_executions_per_hour, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (
             runbook_id,
             name,
@@ -220,7 +220,7 @@ def execute_runbook(
     init_tables(conn)
 
     row = conn.execute(
-        "SELECT id, name, steps_json, risk_level, max_executions_per_hour FROM sre_runbooks WHERE id = ?",
+        "SELECT id, name, steps_json, risk_level, max_executions_per_hour FROM sre_runbooks WHERE id = %s",
         (runbook_id,),
     ).fetchone()
 
@@ -235,7 +235,7 @@ def execute_runbook(
     datetime.now(timezone.utc).isoformat()
     recent_count = conn.execute(
         """SELECT COUNT(*) FROM sre_runbook_executions
-           WHERE runbook_id = ? AND created_at >= datetime('now', '-1 hour')""",
+           WHERE runbook_id = %s AND created_at >= datetime('now', '-1 hour')""",
         (runbook_id,),
     ).fetchone()[0]
 
@@ -253,7 +253,7 @@ def execute_runbook(
         """INSERT INTO sre_runbook_executions
            (id, runbook_id, trigger_source, trigger_text, status,
             steps_completed, steps_total, output_log, executed_by, created_at)
-           VALUES (?, ?, ?, ?, 'running', 0, ?, '[]', ?, ?)""",
+           VALUES (%s, %s, %s, %s, 'running', 0, %s, '[]', %s, %s)""",
         (
             execution_id,
             runbook_id,
@@ -351,9 +351,9 @@ def execute_runbook(
 
     conn.execute(
         """UPDATE sre_runbook_executions
-           SET status = ?, steps_completed = ?, output_log = ?,
-               duration_ms = ?, completed_at = ?
-           WHERE id = ?""",
+           SET status = %s, steps_completed = %s, output_log = %s,
+               duration_ms = %s, completed_at = %s
+           WHERE id = %s""",
         (final_status, steps_completed, json.dumps(output_log), duration_ms, completed_at, execution_id),
     )
     conn.commit()
@@ -427,7 +427,7 @@ def get_execution_history(limit: int = 20) -> list:
            FROM sre_runbook_executions e
            LEFT JOIN sre_runbooks r ON e.runbook_id = r.id
            ORDER BY e.created_at DESC
-           LIMIT ?""",
+           LIMIT %s""",
         (limit,),
     ).fetchall()
 

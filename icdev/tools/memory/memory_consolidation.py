@@ -315,7 +315,7 @@ Respond as JSON: {{"action": "ACTION", "target_id": <id_or_null>, "merged_conten
             try:
                 conn = get_connection()
                 conn.execute(
-                    "UPDATE memory_entries SET content = ?, updated_at = ? WHERE id = ?",
+                    "UPDATE memory_entries SET content = %s, updated_at = %s WHERE id = %s",
                     (new_content, datetime.now(timezone.utc).isoformat(), target_id),
                 )
                 conn.commit()
@@ -328,7 +328,7 @@ Respond as JSON: {{"action": "ACTION", "target_id": <id_or_null>, "merged_conten
             try:
                 conn = get_connection()
                 conn.execute(
-                    "UPDATE memory_entries SET content = ?, updated_at = ? WHERE id = ?",
+                    "UPDATE memory_entries SET content = %s, updated_at = %s WHERE id = %s",
                     (merged_content, datetime.now(timezone.utc).isoformat(), target_id),
                 )
                 conn.commit()
@@ -350,7 +350,7 @@ Respond as JSON: {{"action": "ACTION", "target_id": <id_or_null>, "merged_conten
         try:
             conn = get_connection()
             rows = conn.execute(
-                "SELECT id, content, entry_type FROM memory_entries ORDER BY created_at DESC LIMIT ?",
+                "SELECT id, content, entry_type FROM memory_entries ORDER BY created_at DESC LIMIT %s",
                 (batch_size,),
             ).fetchall()
             conn.close()
@@ -457,7 +457,7 @@ Respond as JSON: {{"action": "ACTION", "target_id": <id_or_null>, "merged_conten
                 """INSERT INTO memory_consolidation_log
                    (source_entry_id, target_entry_id, action, method,
                     similarity_score, reasoning, merged_content, dry_run, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (
                     source_entry_id,
                     target_entry_id,

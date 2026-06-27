@@ -69,7 +69,7 @@ def _on_mdc_sop_approved(event_id: str, canvas_id: str, event_type: str, payload
         try:
             # Skip if an IDC design already references this SOP
             existing = conn.execute(
-                "SELECT id FROM infra_designs WHERE name LIKE ?",
+                "SELECT id FROM infra_designs WHERE name LIKE %s",
                 (f"%{sop_id[:8]}%",),
             ).fetchone()
             if existing:
@@ -78,7 +78,7 @@ def _on_mdc_sop_approved(event_id: str, canvas_id: str, event_type: str, payload
             conn.execute(
                 "INSERT INTO infra_designs "
                 "(id, name, description, graph_json, classification, created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
                 (
                     design_id,
                     f"Infrastructure for Migration SOP {sop_id[:8]}",
@@ -121,7 +121,7 @@ def _on_ndc_ipam_added(event_id: str, canvas_id: str, event_type: str, payload: 
             conn.execute(
                 "INSERT INTO idc_infra_resources "
                 "(csp, region, resource_type, resource_name, classification, tags, config, created_at) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     "ndc",
                     vrf,

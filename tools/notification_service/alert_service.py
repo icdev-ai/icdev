@@ -164,21 +164,21 @@ def escalate_cat1_finding(
         # --- DB: fetch finding, POAM, and system metadata ---
         finding_row = conn.execute(
             "SELECT id, title, severity, vid, component, check_id, detected_at, remediation "
-            "FROM stig_findings WHERE id = ? AND project_id = ?",
+            "FROM stig_findings WHERE id = %s AND project_id = %s",
             (finding_id, project_id),
         ).fetchone()
         poam_row = conn.execute(
             "SELECT id, status, due_date, milestone, owner FROM poam_items "
-            "WHERE finding_ref = ? AND project_id = ? LIMIT 1",
+            "WHERE finding_ref = %s AND project_id = %s LIMIT 1",
             (finding_id, project_id),
         ).fetchone()
         project_row = conn.execute(
-            "SELECT name, classification, system_owner FROM projects WHERE id = ?",
+            "SELECT name, classification, system_owner FROM projects WHERE id = %s",
             (project_id,),
         ).fetchone()
         open_cat1_count = conn.execute(
             "SELECT COUNT(*) as cnt FROM stig_findings "
-            "WHERE project_id = ? AND severity = 'I' AND status = 'open'",
+            "WHERE project_id = %s AND severity = 'I' AND status = 'open'",
             (project_id,),
         ).fetchone()
 
@@ -238,7 +238,7 @@ def escalate_cat1_finding(
             elif ch == "audit":
                 conn.execute(
                     "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
-                    "VALUES ('cat1_escalation', ?, 'escalated', 'alert_service', ?)",
+                    "VALUES ('cat1_escalation', %s, 'escalated', 'alert_service', %s)",
                     (finding_id, json.dumps({"rendered": rendered, "recipients": recipients})),
                 )
                 conn.commit()
@@ -282,15 +282,15 @@ def dispatch_stig_alert(
         # --- DB: fetch check details and workload info ---
         check_row = conn.execute(
             "SELECT check_id, check_name, severity, status, remediation, reference_url, workload_id "
-            "FROM govlift_stig_checks WHERE check_id = ? AND workload_id = ?",
+            "FROM govlift_stig_checks WHERE check_id = %s AND workload_id = %s",
             (check_id, workload_id),
         ).fetchone()
         workload_row = conn.execute(
-            "SELECT name, classification, owner FROM govlift_workloads WHERE id = ?",
+            "SELECT name, classification, owner FROM govlift_workloads WHERE id = %s",
             (workload_id,),
         ).fetchone()
         existing_poam = conn.execute(
-            "SELECT id FROM poam_items WHERE finding_ref = ? LIMIT 1",
+            "SELECT id FROM poam_items WHERE finding_ref = %s LIMIT 1",
             (check_id,),
         ).fetchone()
 
@@ -337,7 +337,7 @@ def dispatch_stig_alert(
         if auto_create_poam and not existing_poam and check_row["status"] == "open":
             poam_cursor = conn.execute(
                 "INSERT INTO poam_items (finding_ref, title, severity, status, workload_id, due_date) "
-                "VALUES (?, ?, ?, 'open', ?, DATE('now', '+90 days'))",
+                "VALUES (%s, %s, %s, 'open', %s, DATE('now', '+90 days'))",
                 (check_id, check_row["check_name"], check_row["severity"], workload_id),
             )
             poam_id = poam_cursor.lastrowid
@@ -362,7 +362,7 @@ def dispatch_stig_alert(
             elif ch == "audit":
                 conn.execute(
                     "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
-                    "VALUES ('stig_alert', ?, 'dispatched', 'alert_service', ?)",
+                    "VALUES ('stig_alert', %s, 'dispatched', 'alert_service', %s)",
                     (check_id, rendered),
                 )
                 conn.commit()
@@ -405,20 +405,20 @@ def send_poam_reminder(
         # --- DB: fetch POA&M item + finding + owner contact ---
         poam_row = conn.execute(
             "SELECT id, title, severity, status, due_date, milestone, owner, finding_ref, framework "
-            "FROM poam_items WHERE id = ? AND project_id = ?",
+            "FROM poam_items WHERE id = %s AND project_id = %s",
             (poam_id, project_id),
         ).fetchone()
         days_row = conn.execute(
             "SELECT CAST(julianday(due_date) - julianday('now') AS INTEGER) as days_remaining "
-            "FROM poam_items WHERE id = ?",
+            "FROM poam_items WHERE id = %s",
             (poam_id,),
         ).fetchone()
         owner_row = conn.execute(
-            "SELECT email, name, phone FROM users WHERE username = ?",
+            "SELECT email, name, phone FROM users WHERE username = %s",
             ((poam_row or {}).get("owner", ""),),
         ).fetchone()
         related_findings = conn.execute(
-            "SELECT title, severity FROM stig_findings WHERE id = ? LIMIT 1",
+            "SELECT title, severity FROM stig_findings WHERE id = %s LIMIT 1",
             ((poam_row or {}).get("finding_ref", ""),),
         ).fetchone()
 
@@ -479,7 +479,7 @@ def send_poam_reminder(
             elif ch == "audit":
                 conn.execute(
                     "INSERT INTO audit_trail (resource_type, resource_id, event, actor, detail) "
-                    "VALUES ('poam_reminder', ?, 'reminder_sent', 'system', ?)",
+                    "VALUES ('poam_reminder', %s, 'reminder_sent', 'system', %s)",
                     (poam_id, rendered),
                 )
                 conn.commit()

@@ -58,7 +58,7 @@ class EventCollector:
                     """INSERT INTO usage_events
                        (id, route, method, status_code, duration_ms, skill_invoked,
                         user_session, ip_hash, feature_tag, occurred_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (event_id, route, method, status_code, duration_ms,
                      skill_invoked, user_session, ip_hash, feature_tag, now_iso),
                 )

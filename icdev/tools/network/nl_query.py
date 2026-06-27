@@ -579,7 +579,7 @@ def _compliance_query(
     try:
         rows = conn.execute(
             "SELECT severity, rule_id, description, status FROM nc_compliance_findings "
-            "WHERE topology_id=? ORDER BY "
+            "WHERE topology_id=%s ORDER BY "
             "CASE severity WHEN 'CAT1' THEN 1 WHEN 'CAT2' THEN 2 ELSE 3 END",
             (topology_id,),
         ).fetchall()
@@ -918,7 +918,7 @@ def answer_query(topology_id: str, question: str, conn: Any) -> dict[str, Any]:
 
     # Load topology from DB
     row = conn.execute(
-        "SELECT name, graph_json FROM topologies WHERE id=?",
+        "SELECT name, graph_json FROM topologies WHERE id=%s",
         (topology_id,),
     ).fetchone()
     if not row:
@@ -992,7 +992,7 @@ def answer_query(topology_id: str, question: str, conn: Any) -> dict[str, Any]:
     result["query_id"] = query_id
     try:
         conn.execute(
-            "INSERT INTO nc_query_log (id, topology_id, question, intent, answer, engine, ts) VALUES (?,?,?,?,?,?,?)",
+            "INSERT INTO nc_query_log (id, topology_id, question, intent, answer, engine, ts) VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (
                 query_id,
                 topology_id,

@@ -57,7 +57,7 @@ def _query_status(conn: sqlite3.Connection, project_id: str) -> dict:
     """Internal: run all status queries against the database."""
 
     # ---- Project info ----
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project not found: {project_id}")
 
@@ -108,7 +108,7 @@ def _query_compliance(conn: sqlite3.Connection, project_id: str) -> dict:
         """SELECT version, status, system_name, authorization_type,
                   approved_by, approved_at, created_at
            FROM ssp_documents
-           WHERE project_id = ?
+           WHERE project_id = %s
            ORDER BY created_at DESC LIMIT 1""",
         (project_id,),
     ).fetchone()
@@ -125,7 +125,7 @@ def _query_compliance(conn: sqlite3.Connection, project_id: str) -> dict:
 
     # POA&M counts by status
     poam_rows = conn.execute(
-        "SELECT status, COUNT(*) as cnt FROM poam_items WHERE project_id = ? GROUP BY status",
+        "SELECT status, COUNT(*) as cnt FROM poam_items WHERE project_id = %s GROUP BY status",
         (project_id,),
     ).fetchall()
     poam_summary = {r["status"]: r["cnt"] for r in poam_rows}
@@ -133,14 +133,14 @@ def _query_compliance(conn: sqlite3.Connection, project_id: str) -> dict:
 
     # POA&M counts by severity (for open items)
     poam_severity = conn.execute(
-        "SELECT severity, COUNT(*) as cnt FROM poam_items WHERE project_id = ? AND status = 'open' GROUP BY severity",
+        "SELECT severity, COUNT(*) as cnt FROM poam_items WHERE project_id = %s AND status = 'open' GROUP BY severity",
         (project_id,),
     ).fetchall()
     poam_by_severity = {r["severity"]: r["cnt"] for r in poam_severity}
 
     # STIG findings summary
     stig_rows = conn.execute(
-        "SELECT severity, status, COUNT(*) as cnt FROM stig_findings WHERE project_id = ? GROUP BY severity, status",
+        "SELECT severity, status, COUNT(*) as cnt FROM stig_findings WHERE project_id = %s GROUP BY severity, status",
         (project_id,),
     ).fetchall()
     stig_summary = {}
@@ -155,7 +155,7 @@ def _query_compliance(conn: sqlite3.Connection, project_id: str) -> dict:
 
     # Control implementation status
     control_rows = conn.execute(
-        "SELECT implementation_status, COUNT(*) as cnt FROM project_controls WHERE project_id = ? GROUP BY implementation_status",
+        "SELECT implementation_status, COUNT(*) as cnt FROM project_controls WHERE project_id = %s GROUP BY implementation_status",
         (project_id,),
     ).fetchall()
     controls_summary = {r["implementation_status"]: r["cnt"] for r in control_rows}
@@ -190,7 +190,7 @@ def _query_security(conn: sqlite3.Connection, project_id: str) -> dict:
     last_scan = conn.execute(
         """SELECT created_at, details
            FROM audit_trail
-           WHERE project_id = ? AND event_type = 'security_scan'
+           WHERE project_id = %s AND event_type = 'security_scan'
            ORDER BY created_at DESC LIMIT 1""",
         (project_id,),
     ).fetchone()
@@ -198,10 +198,10 @@ def _query_security(conn: sqlite3.Connection, project_id: str) -> dict:
     # Open vulnerabilities (found after the last resolved)
     open_vulns = conn.execute(
         """SELECT COUNT(*) as cnt FROM audit_trail
-           WHERE project_id = ? AND event_type = 'vulnerability_found'
+           WHERE project_id = %s AND event_type = 'vulnerability_found'
            AND created_at > COALESCE(
                (SELECT MAX(created_at) FROM audit_trail
-                WHERE project_id = ? AND event_type = 'vulnerability_resolved'),
+                WHERE project_id = %s AND event_type = 'vulnerability_resolved'),
                '1970-01-01'
            )""",
         (project_id, project_id),
@@ -210,7 +210,7 @@ def _query_security(conn: sqlite3.Connection, project_id: str) -> dict:
     # Vulnerability counts by type (from details JSON)
     vuln_events = conn.execute(
         """SELECT details FROM audit_trail
-           WHERE project_id = ? AND event_type = 'vulnerability_found'
+           WHERE project_id = %s AND event_type = 'vulnerability_found'
            ORDER BY created_at DESC LIMIT 50""",
         (project_id,),
     ).fetchall()
@@ -230,7 +230,7 @@ def _query_security(conn: sqlite3.Connection, project_id: str) -> dict:
     latest_sbom = conn.execute(
         """SELECT version, format, component_count, vulnerability_count, file_path, generated_at
            FROM sbom_records
-           WHERE project_id = ?
+           WHERE project_id = %s
            ORDER BY generated_at DESC LIMIT 1""",
         (project_id,),
     ).fetchone()
@@ -249,7 +249,7 @@ def _query_security(conn: sqlite3.Connection, project_id: str) -> dict:
         """SELECT branch, status, security_gate_passed, compliance_gate_passed,
                   test_gate_passed, created_at
            FROM code_reviews
-           WHERE project_id = ?
+           WHERE project_id = %s
            ORDER BY created_at DESC LIMIT 1""",
         (project_id,),
     ).fetchone()
@@ -282,10 +282,10 @@ def _query_deployments(conn: sqlite3.Connection, project_id: str) -> dict:
         """SELECT environment, version, status, pipeline_id, deployed_by,
                   health_check_passed, created_at, completed_at
            FROM deployments
-           WHERE project_id = ?
+           WHERE project_id = %s
            AND id IN (
                SELECT MAX(id) FROM deployments
-               WHERE project_id = ?
+               WHERE project_id = %s
                GROUP BY environment
            )
            ORDER BY environment""",
@@ -314,7 +314,7 @@ def _query_tests(conn: sqlite3.Connection, project_id: str) -> dict:
     last_test = conn.execute(
         """SELECT event_type, created_at, details
            FROM audit_trail
-           WHERE project_id = ? AND event_type IN ('test_executed', 'test_passed', 'test_failed')
+           WHERE project_id = %s AND event_type IN ('test_executed', 'test_passed', 'test_failed')
            ORDER BY created_at DESC LIMIT 1""",
         (project_id,),
     ).fetchone()
@@ -323,7 +323,7 @@ def _query_tests(conn: sqlite3.Connection, project_id: str) -> dict:
     pass_rate = conn.execute(
         """SELECT metric_value, collected_at
            FROM metric_snapshots
-           WHERE project_id = ? AND metric_name = 'test_pass_rate'
+           WHERE project_id = %s AND metric_name = 'test_pass_rate'
            ORDER BY collected_at DESC LIMIT 1""",
         (project_id,),
     ).fetchone()
@@ -332,7 +332,7 @@ def _query_tests(conn: sqlite3.Connection, project_id: str) -> dict:
     coverage = conn.execute(
         """SELECT metric_value, collected_at
            FROM metric_snapshots
-           WHERE project_id = ? AND metric_name = 'test_coverage'
+           WHERE project_id = %s AND metric_name = 'test_coverage'
            ORDER BY collected_at DESC LIMIT 1""",
         (project_id,),
     ).fetchone()
@@ -341,7 +341,7 @@ def _query_tests(conn: sqlite3.Connection, project_id: str) -> dict:
     test_counts = conn.execute(
         """SELECT event_type, COUNT(*) as cnt
            FROM audit_trail
-           WHERE project_id = ? AND event_type IN ('test_executed', 'test_passed', 'test_failed', 'test_written')
+           WHERE project_id = %s AND event_type IN ('test_executed', 'test_passed', 'test_failed', 'test_written')
            GROUP BY event_type""",
         (project_id,),
     ).fetchall()

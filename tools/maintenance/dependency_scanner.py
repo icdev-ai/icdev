@@ -47,7 +47,7 @@ def _get_connection(db_path=None):
 
 def _get_project(conn, project_id):
     """Load project from projects table."""
-    row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT * FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         raise ValueError(f"Project '{project_id}' not found in database.")
     return dict(row)
@@ -59,7 +59,7 @@ def _log_audit_event(conn, project_id, action, details):
         conn.execute(
             """INSERT INTO audit_trail
                (project_id, event_type, actor, action, details, classification)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 "dependency_scanned",
@@ -774,7 +774,7 @@ def _store_dependency(conn, project_id, language, dep, latest_version, days_stal
                (project_id, language, package_name, current_version,
                 latest_version, latest_check_date, days_stale, purl,
                 scope, dependency_file, direct, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, datetime('now'))""",
             (
                 project_id,
                 language,

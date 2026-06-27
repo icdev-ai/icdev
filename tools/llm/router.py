@@ -1212,9 +1212,9 @@ class LLMRouter:
             conn = get_connection(db_path=str(db_path))
             row = conn.execute(
                 """SELECT ollama_model_name FROM ft_active_models
-                   WHERE function_name = ? AND deactivated_at IS NULL
-                   AND (tenant_id = ? OR tenant_id = '')
-                   AND (project_id = ? OR project_id = '')
+                   WHERE function_name = %s AND deactivated_at IS NULL
+                   AND (tenant_id = %s OR tenant_id = '')
+                   AND (project_id = %s OR project_id = '')
                    ORDER BY id DESC LIMIT 1""",
                 (function, tenant_id, project_id),
             ).fetchone()

@@ -73,12 +73,12 @@ def _table_exists(conn, table_name):
     try:
         if _is_pg(conn):
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
                 (table_name,),
             ).fetchone()
             return row is not None
         row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
             (table_name,),
         ).fetchone()
         return row is not None
@@ -307,7 +307,7 @@ def ssp_documents():
                 "SELECT id, project_id, version, system_name, system_boundary, "
                 "authorization_type, status, approved_by, approved_at, "
                 "classification, created_at "
-                "FROM ssp_documents WHERE project_id = ? ORDER BY created_at DESC",
+                "FROM ssp_documents WHERE project_id = %s ORDER BY created_at DESC",
                 (project_id,),
             ).fetchall()
         else:

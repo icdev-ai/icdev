@@ -461,7 +461,7 @@ def _fetch_confidence_history(limit: int = 100) -> List[float]:
                 SELECT confidence FROM oracle_predictions
                 WHERE confidence IS NOT NULL
                 ORDER BY created_at DESC
-                LIMIT ?
+                LIMIT %s
                 """,
                 (limit,),
             ).fetchall()

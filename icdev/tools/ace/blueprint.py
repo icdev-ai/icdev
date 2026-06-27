@@ -319,6 +319,16 @@ def evals_page():
         return jsonify({"page": "evals"})
 
 
+@ace_bp.route("/evals/trends")
+def evals_trends_page():
+    """Eval score trending — time-bucketed aggregation chart."""
+    try:
+        return render_template("ace/trends.html")
+    except Exception as exc:  # noqa: BLE001
+        logger.info("ace/trends.html unavailable (%s); JSON fallback", exc)
+        return jsonify({"page": "evals/trends"})
+
+
 @ace_bp.route("/<instance_id>")
 def instance_detail(instance_id: str):
     """Single instance: header, coworkers, message timeline, artifacts."""
@@ -944,6 +954,112 @@ def api_session_eval_suggestions(session_id: str):
             "max_iterations": er.max_iterations,
         },
     })
+
+
+@ace_api_bp.route("/sessions/<session_id>/rerun", methods=["POST"])
+def api_session_rerun(session_id: str):
+    """Launch a new coworker session based on a prior session's config.
+
+    Reads the original problem_text and role_ids from the source instance,
+    optionally prepends improvement suggestions to the problem_text, then
+    launches a new ACE run.
+
+    POST body (all optional):
+        apply_suggestions: bool  (default true)
+        extra_prompt:      str   appended after the patched problem_text
+
+    Returns: {new_instance_id, source_session_id, source_instance_id,
+              patched_prompt_preview: str (first 300 chars)}
+    """
+    data = request.get_json(silent=True) or {}
+    apply_sugg = bool(data.get("apply_suggestions", True))
+    extra_prompt = (data.get("extra_prompt") or "").strip()
+
+    # 1. Resolve source instance from the session
+    from icdev.tools.llm.agent_loop_session import get_session_metadata
+    meta = get_session_metadata(session_id)
+    if meta is None:
+        return jsonify({"error": f"session not found: {session_id}"}), 404
+
+    source_instance_id = meta.get("instance_id") or ""
+
+    # 2. Load original launch config from ace_instances
+    problem_text = ""
+    role_ids: list[str] = []
+    if source_instance_id:
+        try:
+            conn = _db()
+            row = conn.execute(
+                _q(conn, "SELECT config_json FROM ace_instances WHERE id = ?"),
+                (source_instance_id,),
+            ).fetchone()
+            conn.close()
+            if row:
+                cfg = _decode_json(row[0] if isinstance(row, (list, tuple)) else row.get("config_json", ""))
+                problem_text = cfg.get("problem_text", "")
+                role_ids = cfg.get("role_ids") or []
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ace rerun: failed to load source config for %s: %s", source_instance_id, exc)
+
+    # 3. Apply suggestions as a guidance prefix to problem_text
+    if apply_sugg:
+        try:
+            from icdev.tools.ace.evaluator import get_eval, score_session, suggest_improvements, apply_suggestions_to_prompt
+            er = get_eval(session_id) or score_session(session_id)
+            suggestions = suggest_improvements(er)
+            if suggestions:
+                guidance = apply_suggestions_to_prompt("", suggestions)
+                if guidance.strip():
+                    problem_text = guidance + (problem_text or "(re-run with improvements)")
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("ace rerun: suggest_improvements failed for %s: %s", session_id, exc)
+
+    if extra_prompt:
+        problem_text = (problem_text or "") + "\n\n" + extra_prompt
+
+    if not problem_text.strip():
+        return jsonify({"error": "could not reconstruct problem_text from source session"}), 422
+
+    # 4. Launch new run
+    try:
+        new_instance_id = ACEController.get_instance().launch(
+            problem_text=problem_text,
+            trigger_source="rerun",
+            trigger_ref=session_id,
+            user_id="dashboard",
+            role_ids=role_ids or None,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace rerun: launch failed for source %s: %s", session_id, exc)
+        return jsonify({"error": str(exc)}), 500
+
+    return jsonify({
+        "new_instance_id": new_instance_id,
+        "source_session_id": session_id,
+        "source_instance_id": source_instance_id,
+        "patched_prompt_preview": problem_text[:300],
+    }), 202
+
+
+@ace_api_bp.route("/sessions/<session_id>/eval/compare", methods=["GET"])
+def api_session_eval_compare(session_id: str):
+    """Compare this session's eval against a baseline session.
+
+    GET /api/ace/sessions/<id>/eval/compare?baseline=<other_session_id>
+
+    Returns field-by-field deltas and overall_improved flag.
+    baseline is session A; current session_id is session B.
+    """
+    baseline_id = (request.args.get("baseline") or "").strip()
+    if not baseline_id:
+        return jsonify({"error": "baseline query param required"}), 400
+    try:
+        from icdev.tools.ace.evaluator import compare_evals
+        result = compare_evals(baseline_id, session_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace eval compare failed %s vs %s: %s", baseline_id, session_id, exc)
+        return jsonify({"error": str(exc)}), 500
+    return jsonify(result)
 
 
 @ace_api_bp.route("/evals", methods=["GET"])

@@ -138,7 +138,7 @@ def _write_phase_row(
             INSERT INTO awareness_run_log
                 (run_id, phase, started_at, completed_at, status,
                  probes_ok, probes_fail, elapsed_ms, details_json)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT(run_id) DO UPDATE SET
                 completed_at = excluded.completed_at,
                 status       = excluded.status,

@@ -240,7 +240,7 @@ class ExerciseClassifier:
             rows = conn.execute(
                 "SELECT id, signal_text, source, collected_at "
                 "FROM sg_raw_signals "
-                "WHERE date(collected_at) >= date(?, ?) "
+                "WHERE date(collected_at) >= date(%s, %s) "
                 "ORDER BY collected_at DESC",
                 (cutoff, f"-{days} days"),
             ).fetchall()

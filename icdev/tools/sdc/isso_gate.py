@@ -47,15 +47,15 @@ def approve_demo(
     try:
         # Update the step run record
         conn.execute(
-            "UPDATE sdc_workflow_step_runs SET approved_by=?, approved_at=?, status='completed' "
-            "WHERE id=?",
+            "UPDATE sdc_workflow_step_runs SET approved_by=%s, approved_at=%s, status='completed' "
+            "WHERE id=%s",
             (approver, now_iso, step_run_id),
         )
 
         # Write immutable audit record (sc_audit is APPEND-ONLY per NIST AU-6)
         conn.execute(
             "INSERT INTO sc_audit (action, entity_type, entity_id, details, user_id, classification, ts) "
-            "VALUES (?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s)",
             (
                 "isso_approval",
                 "workflow_step",

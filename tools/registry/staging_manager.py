@@ -306,7 +306,7 @@ class StagingManager:
                 """INSERT INTO staging_environments
                    (id, capability_id, genome_version, worktree_path,
                     branch_name, status, created_at, expires_at)
-                   VALUES (?, ?, ?, ?, ?, 'created', ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, 'created', %s, %s)""",
                 (
                     staging_id,
                     capability_id,
@@ -436,8 +436,8 @@ class StagingManager:
         try:
             conn.execute(
                 """UPDATE staging_environments
-                   SET status = ?, test_results_json = ?
-                   WHERE id = ?""",
+                   SET status = %s, test_results_json = %s
+                   WHERE id = %s""",
                 (new_status, json.dumps(test_results), staging_id),
             )
             conn.commit()
@@ -635,10 +635,10 @@ class StagingManager:
         try:
             conn.execute(
                 """UPDATE staging_environments
-                   SET compliance_before_json = ?,
-                       compliance_after_json = ?,
-                       compliance_preserved = ?
-                   WHERE id = ?""",
+                   SET compliance_before_json = %s,
+                       compliance_after_json = %s,
+                       compliance_preserved = %s
+                   WHERE id = %s""",
                 (
                     json.dumps(compliance_before),
                     json.dumps(compliance_after),
@@ -751,8 +751,8 @@ class StagingManager:
         try:
             conn.execute(
                 """UPDATE staging_environments
-                   SET status = 'destroyed', destroyed_at = ?
-                   WHERE id = ?""",
+                   SET status = 'destroyed', destroyed_at = %s
+                   WHERE id = %s""",
                 (_now(), staging_id),
             )
             conn.commit()
@@ -793,7 +793,7 @@ class StagingManager:
         """Get a staging environment record by ID."""
         conn = self._get_conn()
         try:
-            row = conn.execute("SELECT * FROM staging_environments WHERE id = ?", (staging_id,)).fetchone()
+            row = conn.execute("SELECT * FROM staging_environments WHERE id = %s", (staging_id,)).fetchone()
             return dict(row) if row else None
         finally:
             conn.close()
@@ -803,7 +803,7 @@ class StagingManager:
         conn = self._get_conn()
         try:
             conn.execute(
-                "UPDATE staging_environments SET status = ? WHERE id = ?",
+                "UPDATE staging_environments SET status = %s WHERE id = %s",
                 (status, staging_id),
             )
             conn.commit()

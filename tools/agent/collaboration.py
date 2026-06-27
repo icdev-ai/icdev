@@ -84,7 +84,7 @@ def _log_collaboration(
             """INSERT INTO agent_collaboration_history
                (project_id, agent_a_id, agent_b_id, collaboration_type,
                 task_id, workflow_id, outcome, lesson_learned, duration_ms)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 project_id,
                 agent_a_id,
@@ -778,7 +778,7 @@ def escalation_pattern(task_context: dict, escalation_reason: str, project_id: s
             """INSERT OR IGNORE INTO approval_workflows
                (id, session_id, project_id, approval_type, status,
                 submitted_by, reviewers, conditions, classification)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 escalation_id,
                 escalation_id,  # self-referencing session for escalations

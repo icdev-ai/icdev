@@ -233,11 +233,11 @@ def detect_bounded_contexts(app_id, db_path=None):
     conn = _get_db(db_path)
     try:
         components = conn.execute(
-            "SELECT id, name, component_type, qualified_name FROM legacy_components WHERE legacy_app_id = ?",
+            "SELECT id, name, component_type, qualified_name FROM legacy_components WHERE legacy_app_id = %s",
             (app_id,),
         ).fetchall()
         dependencies = conn.execute(
-            "SELECT source_component_id, target_component_id, weight FROM legacy_dependencies WHERE legacy_app_id = ?",
+            "SELECT source_component_id, target_component_id, weight FROM legacy_dependencies WHERE legacy_app_id = %s",
             (app_id,),
         ).fetchall()
     finally:
@@ -404,19 +404,19 @@ def suggest_service_boundaries(app_id, db_path=None):
     try:
         # Load APIs
         apis = conn.execute(
-            "SELECT id, component_id, method, path FROM legacy_apis WHERE legacy_app_id = ?",
+            "SELECT id, component_id, method, path FROM legacy_apis WHERE legacy_app_id = %s",
             (app_id,),
         ).fetchall()
 
         # Load DB schemas (distinct tables per component via qualified_name match)
         db_schemas = conn.execute(
-            "SELECT id, table_name, column_name FROM legacy_db_schemas WHERE legacy_app_id = ?",
+            "SELECT id, table_name, column_name FROM legacy_db_schemas WHERE legacy_app_id = %s",
             (app_id,),
         ).fetchall()
 
         # Load components for table ownership heuristic
         components = conn.execute(
-            "SELECT id, name, qualified_name FROM legacy_components WHERE legacy_app_id = ?",
+            "SELECT id, name, qualified_name FROM legacy_components WHERE legacy_app_id = %s",
             (app_id,),
         ).fetchall()
     finally:
@@ -839,7 +839,7 @@ def generate_anti_corruption_layer(app_id, service_boundary, db_path=None):
 
         # Load app info for language hint
         app_row = conn.execute(
-            "SELECT primary_language FROM legacy_applications WHERE id = ?",
+            "SELECT primary_language FROM legacy_applications WHERE id = %s",
             (app_id,),
         ).fetchone()
     finally:
@@ -957,7 +957,7 @@ def generate_api_facade(app_id, service_boundary=None, db_path=None):
     conn = _get_db(db_path)
     try:
         all_apis = conn.execute(
-            "SELECT id, component_id, method, path FROM legacy_apis WHERE legacy_app_id = ?",
+            "SELECT id, component_id, method, path FROM legacy_apis WHERE legacy_app_id = %s",
             (app_id,),
         ).fetchall()
     finally:
@@ -1048,7 +1048,7 @@ def estimate_decomposition_effort(app_id, db_path=None):
     conn = _get_db(db_path)
     try:
         components = conn.execute(
-            "SELECT id, loc, cyclomatic_complexity FROM legacy_components WHERE legacy_app_id = ?",
+            "SELECT id, loc, cyclomatic_complexity FROM legacy_components WHERE legacy_app_id = %s",
             (app_id,),
         ).fetchall()
     finally:
@@ -1154,7 +1154,7 @@ def create_migration_plan(
     try:
         # Verify app exists
         app_row = conn.execute(
-            "SELECT id, name FROM legacy_applications WHERE id = ?",
+            "SELECT id, name FROM legacy_applications WHERE id = %s",
             (app_id,),
         ).fetchone()
         if not app_row:
@@ -1197,7 +1197,7 @@ def create_migration_plan(
         else:
             # Strategy-based tasks per component
             components = conn.execute(
-                "SELECT id, name FROM legacy_components WHERE legacy_app_id = ?",
+                "SELECT id, name FROM legacy_components WHERE legacy_app_id = %s",
                 (app_id,),
             ).fetchall()
 
@@ -1266,7 +1266,7 @@ def create_migration_plan(
             "target_framework, target_database, target_architecture, "
             "migration_approach, total_tasks, status, estimated_hours, "
             "created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'draft', %s, %s, %s)",
             (
                 plan_id,
                 app_id,
@@ -1291,7 +1291,7 @@ def create_migration_plan(
                 "(id, plan_id, legacy_component_id, task_type, title, "
                 "description, priority, status, estimated_hours, "
                 "dependencies, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                 (
                     t["id"],
                     t["plan_id"],

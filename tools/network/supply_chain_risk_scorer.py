@@ -136,7 +136,7 @@ def _query_vendor_advisories(conn, vendor: str) -> dict:
                 SUM(CASE WHEN exploited_in_wild = '1' THEN 1 ELSE 0 END) AS kev_count,
                 MAX(cvss_score) AS max_cvss
                FROM nc_advisories
-               WHERE vendor LIKE ?""",
+               WHERE vendor LIKE %s""",
             (pattern,),
         ).fetchone()
         if row:
@@ -156,9 +156,9 @@ def _get_top_cves(conn, vendor: str, limit: int = 3) -> list[str]:
     try:
         rows = conn.execute(
             """SELECT cve_id FROM nc_advisories
-               WHERE vendor LIKE ? AND cve_id != ''
+               WHERE vendor LIKE %s AND cve_id != ''
                ORDER BY CAST(cvss_score AS REAL) DESC
-               LIMIT ?""",
+               LIMIT %s""",
             (f"%{vendor}%", limit),
         ).fetchall()
         return [r[0] for r in rows if r[0]]
@@ -248,7 +248,7 @@ def _write_supply_chain_risk(conn, row_data: dict) -> int:
             top_cves_json, nqe_device_sample_json,
             kev_norm, cve_density, critical_ratio,
             model_version, assessed_at, created_at)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+           VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
         (
             row_data["vendor"],
             row_data["device_count"],

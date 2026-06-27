@@ -628,7 +628,7 @@ class DaemonBase(abc.ABC):
                 INSERT INTO daemon_checkpoints
                     (id, daemon_name, reflex_name, phase, partial_results,
                      created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 ON CONFLICT(daemon_name, reflex_name) DO UPDATE SET
                     id = excluded.id,
                     phase = excluded.phase,
@@ -659,7 +659,7 @@ class DaemonBase(abc.ABC):
         conn = get_connection()
         try:
             row = conn.execute(
-                "SELECT * FROM daemon_checkpoints WHERE daemon_name = ? AND reflex_name = ?",
+                "SELECT * FROM daemon_checkpoints WHERE daemon_name = %s AND reflex_name = %s",
                 (self.daemon_name, reflex_name),
             ).fetchone()
             if not row:
@@ -679,7 +679,7 @@ class DaemonBase(abc.ABC):
         conn = get_connection()
         try:
             conn.execute(
-                "DELETE FROM daemon_checkpoints WHERE daemon_name = ? AND reflex_name = ?",
+                "DELETE FROM daemon_checkpoints WHERE daemon_name = %s AND reflex_name = %s",
                 (self.daemon_name, reflex_name),
             )
             conn.commit()

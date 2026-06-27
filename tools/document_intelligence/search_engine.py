@@ -429,7 +429,7 @@ def _normalize_keywords(keywords: list[str] | None) -> list[str]:
 def _doc_meta(conn, doc_id: str) -> dict[str, Any]:
     try:
         cur = conn.execute(
-            "SELECT title, classification, summary FROM dic_documents WHERE doc_id = ?",
+            "SELECT title, classification, summary FROM dic_documents WHERE doc_id = %s",
             (doc_id,),
         )
         row = cur.fetchone()
@@ -449,7 +449,7 @@ def _chunk_meta(conn, chunk_id: str) -> dict[str, Any]:
     result: dict[str, Any] = {"page": 0, "section": "", "doc_id": "", "collection_id": "", "sha256": "", "attribution_pct": 0}
     try:
         cur = conn.execute(
-            "SELECT content, content_hash FROM rag_chunks WHERE id = ?",
+            "SELECT content, content_hash FROM rag_chunks WHERE id = %s",
             (chunk_id,),
         )
         row = cur.fetchone()
@@ -463,7 +463,7 @@ def _chunk_meta(conn, chunk_id: str) -> dict[str, Any]:
         pass
     try:
         cur2 = conn.execute(
-            "SELECT page, section, doc_id, collection_id FROM dic_chunk_links WHERE rag_chunk_id = ?",
+            "SELECT page, section, doc_id, collection_id FROM dic_chunk_links WHERE rag_chunk_id = %s",
             (chunk_id,),
         )
         row2 = cur2.fetchone()

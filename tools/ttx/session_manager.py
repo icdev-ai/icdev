@@ -40,13 +40,13 @@ def create_session(
         """INSERT INTO ttx_sessions
            (scenario_slug, session_mode, state, facilitator_name,
             join_code, duration_minutes, max_teams, config_json, created_at, tenant_id)
-           VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, 'pending', %s, %s, %s, %s, %s, %s, %s)""",
         (scenario_slug, session_mode, facilitator_name,
          code, duration_minutes, max_teams, cfg, _now(), tenant_id),
     )
     conn.commit()
     row = conn.execute(
-        "SELECT * FROM ttx_sessions WHERE join_code = ?", (code,)
+        "SELECT * FROM ttx_sessions WHERE join_code = %s", (code,)
     ).fetchone()
     return dict(row)
 
@@ -55,12 +55,12 @@ def get_session(session_id: int, tenant_id: str | None = None) -> dict[str, Any]
     conn = get_connection()
     if tenant_id is not None:
         row = conn.execute(
-            "SELECT * FROM ttx_sessions WHERE session_id = ? AND tenant_id = ?",
+            "SELECT * FROM ttx_sessions WHERE session_id = %s AND tenant_id = %s",
             (session_id, tenant_id),
         ).fetchone()
     else:
         row = conn.execute(
-            "SELECT * FROM ttx_sessions WHERE session_id = ?", (session_id,)
+            "SELECT * FROM ttx_sessions WHERE session_id = %s", (session_id,)
         ).fetchone()
     return dict(row) if row else None
 
@@ -69,12 +69,12 @@ def get_session_by_code(join_code: str, tenant_id: str | None = None) -> dict[st
     conn = get_connection()
     if tenant_id is not None:
         row = conn.execute(
-            "SELECT * FROM ttx_sessions WHERE join_code = ? AND tenant_id = ?",
+            "SELECT * FROM ttx_sessions WHERE join_code = %s AND tenant_id = %s",
             (join_code.upper(), tenant_id),
         ).fetchone()
     else:
         row = conn.execute(
-            "SELECT * FROM ttx_sessions WHERE join_code = ?", (join_code.upper(),)
+            "SELECT * FROM ttx_sessions WHERE join_code = %s", (join_code.upper(),)
         ).fetchone()
     return dict(row) if row else None
 
@@ -106,23 +106,23 @@ def update_session_state(session_id: int, new_state: str, tenant_id: str | None 
     # Verify tenant ownership before updating
     if tenant_id is not None:
         existing = conn.execute(
-            "SELECT tenant_id FROM ttx_sessions WHERE session_id = ?", (session_id,)
+            "SELECT tenant_id FROM ttx_sessions WHERE session_id = %s", (session_id,)
         ).fetchone()
         if existing and existing["tenant_id"] != tenant_id:
             raise PermissionError("Session does not belong to this tenant")
     if new_state == "active":
         conn.execute(
-            "UPDATE ttx_sessions SET state = ?, started_at = ? WHERE session_id = ?",
+            "UPDATE ttx_sessions SET state = %s, started_at = %s WHERE session_id = %s",
             (new_state, _now(), session_id),
         )
     elif new_state == "ended":
         conn.execute(
-            "UPDATE ttx_sessions SET state = ?, ended_at = ? WHERE session_id = ?",
+            "UPDATE ttx_sessions SET state = %s, ended_at = %s WHERE session_id = %s",
             (new_state, _now(), session_id),
         )
     else:
         conn.execute(
-            "UPDATE ttx_sessions SET state = ? WHERE session_id = ?",
+            "UPDATE ttx_sessions SET state = %s WHERE session_id = %s",
             (new_state, session_id),
         )
     conn.commit()

@@ -72,7 +72,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             # Dedup: skip if alert already exists for this person+type+expiry
             existing_alert = conn.execute(
                 "SELECT id FROM pma_credential_alerts "
-                "WHERE person_id = ? AND alert_type = ? AND expiry_date = ?",
+                "WHERE person_id = %s AND alert_type = %s AND expiry_date = %s",
                 (person_id, alert_type, expiry_date),
             ).fetchone()
 
@@ -83,7 +83,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
                     INSERT INTO pma_credential_alerts
                         (id, person_id, alert_type, expiry_date, days_remaining,
                          severity, created_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                     """,
                     (alert_id, person_id, alert_type, expiry_date, days_remaining, severity, now),
                 )
@@ -114,7 +114,7 @@ def run(config: Dict[str, Any], trust: Any) -> Dict[str, Any]:
             # Check if an open staffing risk already exists for this person
             existing_risk = conn.execute(
                 "SELECT id FROM cpmp_risks "
-                "WHERE contract_id = ? AND title = ? AND status = 'open'",
+                "WHERE contract_id = %s AND title = %s AND status = 'open'",
                 (contract_id, risk_title),
             ).fetchone()
 
@@ -136,7 +136,7 @@ def _seed_kanban_task(conn, title: str, cred: Dict, now: str, results: Dict) -> 
     """Insert a kanban task for a CRITICAL credential expiry. Skips duplicates."""
     existing = conn.execute(
         "SELECT id FROM kanban_tasks "
-        "WHERE title = ? AND dispatch_source = ? AND status NOT IN ('done', 'dismissed')",
+        "WHERE title = %s AND dispatch_source = %s AND status NOT IN ('done', 'dismissed')",
         (title[:120], _DISPATCH_SOURCE),
     ).fetchone()
     if existing:
@@ -166,7 +166,7 @@ def _seed_kanban_task(conn, title: str, cred: Dict, now: str, results: Dict) -> 
         INSERT INTO kanban_tasks
             (id, task_type, title, description, status, priority,
              target_date, tags, dispatch_source, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'suggested', 'high', ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, 'suggested', 'high', %s, %s, %s, %s, %s)
         """,
         (
             task_id,

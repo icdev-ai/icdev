@@ -176,7 +176,7 @@ def _check_digest(cap: Dict, db_path: Path) -> float:
         if cap_id:
             row = conn.execute(
                 """SELECT verification_result FROM blueprint_digests
-                   WHERE entity_id = ? ORDER BY computed_at DESC LIMIT 1""",
+                   WHERE entity_id = %s ORDER BY computed_at DESC LIMIT 1""",
                 (cap_id,),
             ).fetchone()
         else:

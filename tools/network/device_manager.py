@@ -48,7 +48,7 @@ def upsert_device(topology_id: str, node_id: str, conn=None, **kwargs) -> dict:
     now = datetime.now(timezone.utc).isoformat()
 
     existing = conn.execute(
-        "SELECT id FROM ni_devices WHERE topology_id = ? AND node_id = ?",
+        "SELECT id FROM ni_devices WHERE topology_id = %s AND node_id = %s",
         (topology_id, node_id),
     ).fetchone()
 
@@ -82,7 +82,7 @@ def upsert_device(topology_id: str, node_id: str, conn=None, **kwargs) -> dict:
             "vendor, model, firmware_version, eol_date, eos_date, purchase_date, "
             "purchase_cost, annual_maintenance_cost, replacement_cost, site, "
             "rack_location, notes, properties_json, created_at, updated_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 device_id, topology_id, node_id,
                 kwargs.get("label", f"device-{node_id}"),
@@ -148,7 +148,7 @@ def get_device(device_id: str, conn=None) -> dict | None:
     own_conn = conn is None
     if own_conn:
         conn = _get_conn()
-    row = conn.execute("SELECT * FROM ni_devices WHERE id = ?", (device_id,)).fetchone()
+    row = conn.execute("SELECT * FROM ni_devices WHERE id = %s", (device_id,)).fetchone()
     if own_conn:
         conn.close()
     if row is None:
@@ -188,7 +188,7 @@ def bulk_import_devices(topology_id: str, file_path: str, conn=None) -> dict:
 
     # Build label->node_id lookup from existing devices
     existing = conn.execute(
-        "SELECT node_id, label FROM ni_devices WHERE topology_id = ?",
+        "SELECT node_id, label FROM ni_devices WHERE topology_id = %s",
         (topology_id,),
     ).fetchall()
     label_to_node_id: dict[str, str] = {}
@@ -251,7 +251,7 @@ def compute_criticality_scores(topology_id: str, conn=None) -> dict:
 
     # Load topology graph
     row = conn.execute(
-        "SELECT graph_json FROM topologies WHERE id = ?", (topology_id,)
+        "SELECT graph_json FROM topologies WHERE id = %s", (topology_id,)
     ).fetchone()
     if not row:
         return {"error": "Topology not found"}
@@ -294,8 +294,8 @@ def compute_criticality_scores(topology_id: str, conn=None) -> dict:
     for nid, count in downstream_counts.items():
         score = round(count / max_count, 3)
         conn.execute(
-            "UPDATE ni_devices SET criticality_score = ?, downstream_count = ?, updated_at = ? "
-            "WHERE topology_id = ? AND node_id = ?",
+            "UPDATE ni_devices SET criticality_score = %s, downstream_count = %s, updated_at = %s "
+            "WHERE topology_id = %s AND node_id = %s",
             (score, count, now, topology_id, nid),
         )
         updated += 1
@@ -318,8 +318,8 @@ def get_eol_timeline(topology_id: str, years: int = 5, conn=None) -> list[dict]:
     cutoff = f"{now_year + years}-12-31"
 
     rows = conn.execute(
-        "SELECT * FROM ni_devices WHERE topology_id = ? AND eol_date IS NOT NULL "
-        "AND eol_date <= ? ORDER BY eol_date ASC",
+        "SELECT * FROM ni_devices WHERE topology_id = %s AND eol_date IS NOT NULL "
+        "AND eol_date <= %s ORDER BY eol_date ASC",
         (topology_id, cutoff),
     ).fetchall()
 

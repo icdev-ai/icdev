@@ -109,7 +109,7 @@ def _upsert_entries(db, entries: list[dict], source: str = "static_seed"):
         db.execute(
             "INSERT INTO mc_net_eol_data "
             "(id, vendor, model_pattern, eol_date, eos_date, eosm_date, source, synced_at) "
-            "VALUES (?,?,?,?,?,?,?,?) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
             "ON CONFLICT(vendor, model_pattern) DO UPDATE SET "
             "eol_date=excluded.eol_date, eos_date=excluded.eos_date, "
             "eosm_date=excluded.eosm_date, source=excluded.source, synced_at=excluded.synced_at",
@@ -159,7 +159,7 @@ def _sync_cisco(db) -> int:
                     db.execute(
                         "INSERT INTO mc_net_eol_data "
                         "(id, vendor, model_pattern, eol_date, eos_date, source, synced_at) "
-                        "VALUES (?,?,?,?,?,?,?) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s) "
                         "ON CONFLICT(vendor, model_pattern) DO UPDATE SET "
                         "eol_date=excluded.eol_date, eos_date=excluded.eos_date, "
                         "source=excluded.source, synced_at=excluded.synced_at",

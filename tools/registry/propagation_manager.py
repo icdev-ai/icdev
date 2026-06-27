@@ -300,7 +300,7 @@ class PropagationManager:
                    (id, capability_id, capability_name, source_type,
                     target_children_json, status, genome_version_before,
                     rollback_plan, prepared_by, created_at)
-                   VALUES (?, ?, ?, ?, ?, 'prepared', ?, ?, ?, ?)""",
+                   VALUES (%s, %s, %s, %s, %s, 'prepared', %s, %s, %s, %s)""",
                 (
                     propagation_id,
                     capability_id,
@@ -375,8 +375,8 @@ class PropagationManager:
         try:
             conn.execute(
                 """UPDATE propagation_log
-                   SET status = 'approved', approved_by = ?, approved_at = ?
-                   WHERE id = ? AND status = 'prepared'""",
+                   SET status = 'approved', approved_by = %s, approved_at = %s
+                   WHERE id = %s AND status = 'prepared'""",
                 (approver, _now(), propagation_id),
             )
             conn.commit()
@@ -425,8 +425,8 @@ class PropagationManager:
         try:
             conn.execute(
                 """UPDATE propagation_log
-                   SET status = 'executing', executed_at = ?
-                   WHERE id = ? AND status = 'approved'""",
+                   SET status = 'executing', executed_at = %s
+                   WHERE id = %s AND status = 'approved'""",
                 (_now(), propagation_id),
             )
             conn.commit()
@@ -491,10 +491,10 @@ class PropagationManager:
         try:
             conn.execute(
                 """UPDATE propagation_log
-                   SET status = ?, completed_at = ?,
-                       execution_results_json = ?,
-                       genome_version_after = ?
-                   WHERE id = ?""",
+                   SET status = %s, completed_at = %s,
+                       execution_results_json = %s,
+                       genome_version_after = %s
+                   WHERE id = %s""",
                 (
                     final_status,
                     _now(),
@@ -589,7 +589,7 @@ class PropagationManager:
                 conn.execute(
                     """INSERT OR REPLACE INTO child_capabilities
                        (id, child_id, capability_name, version, status, source, learned_at)
-                       VALUES (?, ?, ?, '1.0.0', 'active', 'propagated', ?)""",
+                       VALUES (%s, %s, %s, '1.0.0', 'active', 'propagated', %s)""",
                     (
                         f"cap-{uuid.uuid4().hex[:8]}",
                         child_id,
@@ -606,7 +606,7 @@ class PropagationManager:
             child_row = None
             try:
                 child_row = conn.execute(
-                    "SELECT child_path FROM child_app_registry WHERE id = ?",
+                    "SELECT child_path FROM child_app_registry WHERE id = %s",
                     (child_id,),
                 ).fetchone()
             except Exception:
@@ -663,10 +663,10 @@ class PropagationManager:
             conn.execute(
                 """UPDATE propagation_log
                    SET status = 'rolled_back',
-                       rollback_reason = ?,
-                       rolled_back_at = ?,
-                       rolled_back_by = ?
-                   WHERE id = ?""",
+                       rollback_reason = %s,
+                       rolled_back_at = %s,
+                       rolled_back_by = %s
+                   WHERE id = %s""",
                 (reason, _now(), rolled_back_by, propagation_id),
             )
             conn.commit()
@@ -702,7 +702,7 @@ class PropagationManager:
         """
         conn = self._get_conn()
         try:
-            row = conn.execute("SELECT * FROM propagation_log WHERE id = ?", (propagation_id,)).fetchone()
+            row = conn.execute("SELECT * FROM propagation_log WHERE id = %s", (propagation_id,)).fetchone()
             return dict(row) if row else None
         finally:
             conn.close()
@@ -726,7 +726,7 @@ class PropagationManager:
                               executed_at, completed_at, rollback_reason,
                               rolled_back_at, created_at
                        FROM propagation_log
-                       WHERE status = ?
+                       WHERE status = %s
                        ORDER BY created_at DESC""",
                     (status,),
                 ).fetchall()
@@ -787,7 +787,7 @@ class PropagationManager:
             rows = conn.execute(
                 """SELECT COUNT(*) as count FROM propagation_log
                    WHERE status IN ('executing', 'completed', 'failed')
-                   AND created_at >= ?""",
+                   AND created_at >= %s""",
                 (f"{year}-01-01",),
             ).fetchone()
 

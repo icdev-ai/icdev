@@ -252,7 +252,7 @@ def ingest_event():
             "INSERT OR IGNORE INTO hook_events "
             "(id, hook_type, tool_name, session_id, project_id, "
             " severity, message, payload, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 data.get("id", str(uuid.uuid4())),
                 data.get("hook_type", ""),

@@ -51,7 +51,7 @@ def log_receipt(session_id, team_id, tool_slug):
     conn.execute(
         """INSERT INTO ttx_api_log
            (session_id, team_id, tool_slug, endpoint, call_id, result_hash, called_at)
-           VALUES (?, ?, ?, ?, ?, ?, datetime('now'))""",
+           VALUES (%s, %s, %s, %s, %s, %s, datetime('now'))""",
         (session_id, team_id, tool_slug, tool_slug, call_id, result_hash),
     )
     conn.commit()
@@ -119,8 +119,8 @@ for tname, role_id, pname, missions, level in teams_cfg:
     profile = {"level": level, "xp": xp_map[level], "completed_missions": missions}
     conn = get_connection()
     conn.execute(
-        "UPDATE ttx_team_members SET academy_username=?, academy_profile_json=? "
-        "WHERE member_id=?",
+        "UPDATE ttx_team_members SET academy_username=%s, academy_profile_json=%s "
+        "WHERE member_id=%s",
         (pname.lower().replace(" ", "_"), json.dumps(profile), member["member_id"]),
     )
     conn.commit()

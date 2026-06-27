@@ -118,7 +118,7 @@ def _audit(conn, action: str, details: str = "", actor: str = "color_review_simu
     try:
         conn.execute(
             "INSERT INTO audit_trail (id, created_at, event_type, actor, action, details, session_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
             (generate_id("aud"), _now(), "govcon.color_review", actor, action, details, "govcon"),
         )
     except Exception:
@@ -128,7 +128,7 @@ def _audit(conn, action: str, details: str = "", actor: str = "color_review_simu
 def _table_exists(conn, table_name: str) -> bool:
     """Check if a table exists in the database."""
     row = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+        "SELECT name FROM sqlite_master WHERE type='table' AND name=%s",
         (table_name,),
     ).fetchone()
     return row is not None
@@ -176,7 +176,7 @@ def _get_sections(conn, opportunity_id: str) -> List[Dict]:
     rows = conn.execute(
         "SELECT id, section_number, title, volume_id, word_limit, page_limit, "
         "current_word_count, current_page_count, status "
-        "FROM proposal_sections WHERE opportunity_id = ? ORDER BY sort_order, section_number",
+        "FROM proposal_sections WHERE opportunity_id = %s ORDER BY sort_order, section_number",
         (opportunity_id,),
     ).fetchall()
 
@@ -187,7 +187,7 @@ def _get_sections(conn, opportunity_id: str) -> List[Dict]:
         if _table_exists(conn, "proposal_section_drafts"):
             draft = conn.execute(
                 "SELECT draft_content FROM proposal_section_drafts "
-                "WHERE opportunity_id = ? AND section_id = ? AND status IN ('approved', 'draft') "
+                "WHERE opportunity_id = %s AND section_id = %s AND status IN ('approved', 'draft') "
                 "ORDER BY CASE status WHEN 'approved' THEN 0 ELSE 1 END, created_at DESC LIMIT 1",
                 (opportunity_id, row["id"]),
             ).fetchone()
@@ -205,7 +205,7 @@ def _get_next_iteration(conn, opportunity_id: str, review_type: str) -> int:
         return 1
     row = conn.execute(
         "SELECT COALESCE(MAX(review_iteration), 0) AS max_iter "
-        "FROM pg_review_findings WHERE opportunity_id = ? AND review_type = ?",
+        "FROM pg_review_findings WHERE opportunity_id = %s AND review_type = %s",
         (opportunity_id, review_type),
     ).fetchone()
     return (row["max_iter"] if row else 0) + 1
@@ -232,7 +232,7 @@ def _run_compliance_critic(opportunity_id: str, sections: List[Dict], review_typ
         matrix_rows = conn.execute(
             "SELECT id, requirement_id, requirement_text, compliance_status, "
             "assigned_section, evaluation_factor "
-            "FROM pg_compliance_matrix WHERE opportunity_id = ? AND source_section = 'M'",
+            "FROM pg_compliance_matrix WHERE opportunity_id = %s AND source_section = 'M'",
             (opportunity_id,),
         ).fetchall()
 
@@ -383,7 +383,7 @@ def _run_persuasiveness_critic(opportunity_id: str, sections: List[Dict]) -> Lis
     if _table_exists(conn, "pg_win_themes"):
         theme_rows = conn.execute(
             "SELECT id, theme_type, theme_statement, ghost_competitor, priority, status "
-            "FROM pg_win_themes WHERE opportunity_id = ? AND status = 'active'",
+            "FROM pg_win_themes WHERE opportunity_id = %s AND status = 'active'",
             (opportunity_id,),
         ).fetchall()
 
@@ -833,7 +833,7 @@ def _run_strategy_critic(opportunity_id: str, sections: List[Dict]) -> List[Dict
     theme_count = 0
     if _table_exists(conn, "pg_win_themes"):
         row = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM pg_win_themes WHERE opportunity_id = ? AND status = 'active'",
+            "SELECT COUNT(*) AS cnt FROM pg_win_themes WHERE opportunity_id = %s AND status = 'active'",
             (opportunity_id,),
         ).fetchone()
         theme_count = row["cnt"] if row else 0
@@ -864,7 +864,7 @@ def _run_strategy_critic(opportunity_id: str, sections: List[Dict]) -> List[Dict
     if _table_exists(conn, "pg_win_themes"):
         row = conn.execute(
             "SELECT COUNT(*) AS cnt FROM pg_win_themes "
-            "WHERE opportunity_id = ? AND theme_type = 'ghost' AND status = 'active'",
+            "WHERE opportunity_id = %s AND theme_type = 'ghost' AND status = 'active'",
             (opportunity_id,),
         ).fetchone()
         ghost_count = row["cnt"] if row else 0
@@ -884,7 +884,7 @@ def _run_strategy_critic(opportunity_id: str, sections: List[Dict]) -> List[Dict
     teaming_count = 0
     if _table_exists(conn, "pg_teaming_workshare"):
         row = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM pg_teaming_workshare WHERE opportunity_id = ?",
+            "SELECT COUNT(*) AS cnt FROM pg_teaming_workshare WHERE opportunity_id = %s",
             (opportunity_id,),
         ).fetchone()
         teaming_count = row["cnt"] if row else 0
@@ -923,7 +923,7 @@ def _run_pricing_critic(opportunity_id: str, sections: List[Dict]) -> List[Dict]
     cost_volume = None
     if _table_exists(conn, "pg_cost_volumes"):
         cost_volume = conn.execute(
-            "SELECT * FROM pg_cost_volumes WHERE opportunity_id = ? ORDER BY updated_at DESC LIMIT 1",
+            "SELECT * FROM pg_cost_volumes WHERE opportunity_id = %s ORDER BY updated_at DESC LIMIT 1",
             (opportunity_id,),
         ).fetchone()
 
@@ -996,7 +996,7 @@ def _run_pricing_critic(opportunity_id: str, sections: List[Dict]) -> List[Dict]
     lcat_count = 0
     if _table_exists(conn, "pg_lcat_allocations"):
         row = conn.execute(
-            "SELECT COUNT(*) AS cnt FROM pg_lcat_allocations WHERE cost_volume_id = ?",
+            "SELECT COUNT(*) AS cnt FROM pg_lcat_allocations WHERE cost_volume_id = %s",
             (cost_volume.get("id", ""),),
         ).fetchone()
         lcat_count = row["cnt"] if row else 0
@@ -1155,7 +1155,7 @@ def simulate_review(
                     "(id, opportunity_id, review_type, review_iteration, section_id, "
                     "severity, category, finding_text, recommendation, "
                     "resolution_status, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
                     (
                         finding_id,
                         opportunity_id,
@@ -1227,7 +1227,7 @@ def get_review_history(opportunity_id: str) -> Dict[str, Any]:
         "SELECT id, review_type, review_iteration, section_id, severity, "
         "category, finding_text, recommendation, resolution_status, "
         "resolution_notes, created_at, resolved_at "
-        "FROM pg_review_findings WHERE opportunity_id = ? "
+        "FROM pg_review_findings WHERE opportunity_id = %s "
         "ORDER BY review_type, review_iteration, severity",
         (opportunity_id,),
     ).fetchall()
@@ -1295,7 +1295,7 @@ def get_finding_trends(opportunity_id: str) -> Dict[str, Any]:
 
     rows = conn.execute(
         "SELECT review_type, review_iteration, severity, COUNT(*) AS cnt "
-        "FROM pg_review_findings WHERE opportunity_id = ? "
+        "FROM pg_review_findings WHERE opportunity_id = %s "
         "GROUP BY review_type, review_iteration, severity "
         "ORDER BY review_type, review_iteration",
         (opportunity_id,),
@@ -1396,7 +1396,7 @@ def resolve_finding(
         conn.close()
         return {"status": "error", "error": "pg_review_findings table does not exist."}
 
-    existing = conn.execute("SELECT * FROM pg_review_findings WHERE id = ?", (finding_id,)).fetchone()
+    existing = conn.execute("SELECT * FROM pg_review_findings WHERE id = %s", (finding_id,)).fetchone()
 
     if not existing:
         conn.close()
@@ -1404,7 +1404,7 @@ def resolve_finding(
 
     now = _now()
     conn.execute(
-        "UPDATE pg_review_findings SET resolution_status = ?, resolution_notes = ?, resolved_at = ? WHERE id = ?",
+        "UPDATE pg_review_findings SET resolution_status = %s, resolution_notes = %s, resolved_at = %s WHERE id = %s",
         (status, notes or "", now, finding_id),
     )
 
@@ -1422,7 +1422,7 @@ def resolve_finding(
     )
     conn.commit()
 
-    updated = conn.execute("SELECT * FROM pg_review_findings WHERE id = ?", (finding_id,)).fetchone()
+    updated = conn.execute("SELECT * FROM pg_review_findings WHERE id = %s", (finding_id,)).fetchone()
     conn.close()
 
     return {
@@ -1460,7 +1460,7 @@ def export_review(
     if iteration is None:
         row = conn.execute(
             "SELECT MAX(review_iteration) AS max_iter FROM pg_review_findings "
-            "WHERE opportunity_id = ? AND review_type = ?",
+            "WHERE opportunity_id = %s AND review_type = %s",
             (opportunity_id, review_type),
         ).fetchone()
         iteration = row["max_iter"] if row and row["max_iter"] else 0
@@ -1471,7 +1471,7 @@ def export_review(
 
     rows = conn.execute(
         "SELECT * FROM pg_review_findings "
-        "WHERE opportunity_id = ? AND review_type = ? AND review_iteration = ? "
+        "WHERE opportunity_id = %s AND review_type = %s AND review_iteration = %s "
         "ORDER BY CASE severity "
         "  WHEN 'critical' THEN 0 "
         "  WHEN 'major' THEN 1 "

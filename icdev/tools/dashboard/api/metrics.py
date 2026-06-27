@@ -27,12 +27,12 @@ def list_metric_snapshots():
 
         if project_id:
             rows = conn.execute(
-                "SELECT * FROM metric_snapshots WHERE project_id = ? ORDER BY collected_at DESC LIMIT ?",
+                "SELECT * FROM metric_snapshots WHERE project_id = %s ORDER BY collected_at DESC LIMIT %s",
                 (project_id, limit),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM metric_snapshots ORDER BY collected_at DESC LIMIT ?",
+                "SELECT * FROM metric_snapshots ORDER BY collected_at DESC LIMIT %s",
                 (limit,),
             ).fetchall()
         return jsonify({"snapshots": [dict(r) for r in rows]})
@@ -89,7 +89,7 @@ def list_self_healing():
                 "SELECT she.*, kp.description as pattern_description "
                 "FROM self_healing_events she "
                 "LEFT JOIN knowledge_patterns kp ON she.pattern_id = kp.id "
-                "WHERE she.project_id = ? ORDER BY she.created_at DESC LIMIT ?",
+                "WHERE she.project_id = %s ORDER BY she.created_at DESC LIMIT %s",
                 (project_id, limit),
             ).fetchall()
         else:
@@ -97,7 +97,7 @@ def list_self_healing():
                 "SELECT she.*, kp.description as pattern_description "
                 "FROM self_healing_events she "
                 "LEFT JOIN knowledge_patterns kp ON she.pattern_id = kp.id "
-                "ORDER BY she.created_at DESC LIMIT ?",
+                "ORDER BY she.created_at DESC LIMIT %s",
                 (limit,),
             ).fetchall()
         return jsonify({"events": [dict(r) for r in rows]})
@@ -126,7 +126,7 @@ def push_container_metrics():
                 cpu_percent, memory_percent, memory_rss_mb, memory_limit_mb,
                 disk_read_mb, disk_write_mb, net_rx_mb, net_tx_mb, status,
                 pushed, pushed_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,datetime('now'))""",
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,1,datetime('now'))""",
             [
                 (
                     m.get("container_id", "unknown"),

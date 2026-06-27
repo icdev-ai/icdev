@@ -49,7 +49,7 @@ def take_snapshot(project_id: str, label: str | None = None) -> dict:
     link_count = 0
     try:
         row = conn.execute(
-            "SELECT graph_json FROM topologies WHERE id = ?", (project_id,)
+            "SELECT graph_json FROM topologies WHERE id = %s", (project_id,)
         ).fetchone()
         if row and row["graph_json"]:
             graph = json.loads(row["graph_json"])
@@ -62,7 +62,7 @@ def take_snapshot(project_id: str, label: str | None = None) -> dict:
         conn.execute(
             """INSERT INTO network_twin_snapshots
                (id, project_id, label, device_count, link_count, created_at)
-               VALUES (?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s)""",
             (snap_id, project_id, label, device_count, link_count, taken_at),
         )
         conn.commit()
@@ -279,7 +279,7 @@ def blast_radius(
 
     try:
         row = conn.execute(
-            "SELECT graph_json FROM topologies WHERE id = ?", (project_id,)
+            "SELECT graph_json FROM topologies WHERE id = %s", (project_id,)
         ).fetchone()
 
         if row and row["graph_json"]:

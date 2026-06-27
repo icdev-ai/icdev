@@ -93,7 +93,7 @@ def sync_peers_to_pmc(pmc_conn) -> dict:
                 ).fetchone()
             except Exception:
                 existing = pmc_conn.execute(
-                    "SELECT id FROM peering_peers WHERE asn=?", (asn,)
+                    "SELECT id FROM peering_peers WHERE asn=%s", (asn,)
                 ).fetchone()
 
             if existing:
@@ -121,7 +121,7 @@ def sync_peers_to_pmc(pmc_conn) -> dict:
                        (asn, org_name, peer_type, policy, status,
                         ipv4_prefix_count, ipv6_prefix_count, irr_as_set,
                         peeringdb_sync, classification)
-                       VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
                     (asn, org_name, "public", "selective", "evaluation",
                      ipv4_count, ipv6_count, irr_as_set, 0, "CUI"),
                 )

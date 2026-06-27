@@ -252,7 +252,7 @@ _EXTRACTORS: dict[str, Any] = {
 def _load_session(conn, session_id: str) -> dict[str, Any]:
     row = conn.execute(
         "SELECT id, canvas_type, topology_id, mode, metadata "
-        "FROM nc_simulation_sessions WHERE id = ?",
+        "FROM nc_simulation_sessions WHERE id = %s",
         (session_id,),
     ).fetchone()
     if row is None:
@@ -274,7 +274,7 @@ def _load_graph_json(conn, session: dict[str, Any]) -> dict[str, Any]:
     topology_id = session.get("topology_id")
     if topology_id:
         row = conn.execute(
-            "SELECT graph_json FROM topologies WHERE id = ?",
+            "SELECT graph_json FROM topologies WHERE id = %s",
             (topology_id,),
         ).fetchone()
         if row and row[0]:

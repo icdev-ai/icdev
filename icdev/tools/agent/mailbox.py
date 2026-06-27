@@ -149,7 +149,7 @@ def send(
             """INSERT INTO agent_mailbox
                (id, from_agent_id, to_agent_id, message_type, subject, body,
                 priority, in_reply_to, hmac_signature)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (message_id, from_agent_id, to_agent_id, message_type, subject, body, priority, in_reply_to, signature),
         )
         conn.commit()
@@ -265,7 +265,7 @@ def mark_read(message_id: str, db_path=None) -> bool:
     conn = _get_db(db_path)
     try:
         cursor = conn.execute(
-            "UPDATE agent_mailbox SET read_at = datetime('now') WHERE id = ? AND read_at IS NULL",
+            "UPDATE agent_mailbox SET read_at = datetime('now') WHERE id = %s AND read_at IS NULL",
             (message_id,),
         )
         conn.commit()
@@ -292,7 +292,7 @@ def verify_signature(message_id: str, db_path=None) -> bool:
     """
     conn = _get_db(db_path)
     try:
-        row = conn.execute("SELECT * FROM agent_mailbox WHERE id = ?", (message_id,)).fetchone()
+        row = conn.execute("SELECT * FROM agent_mailbox WHERE id = %s", (message_id,)).fetchone()
 
         if not row:
             logger.error("Message %s not found for verification", message_id)
@@ -387,10 +387,10 @@ def collect_pending_injections(agent_id: str, auto_mark_read: bool = True, db_pa
     try:
         rows = conn.execute(
             """SELECT * FROM agent_mailbox
-               WHERE to_agent_id = ?
+               WHERE to_agent_id = %s
                AND message_type = 'async_result'
                AND read_at IS NULL
-               AND priority >= ?
+               AND priority >= %s
                ORDER BY priority DESC, created_at ASC""",
             (agent_id, PRIORITY_INJECT_NEXT_TURN),
         ).fetchall()
@@ -410,7 +410,7 @@ def collect_pending_injections(agent_id: str, auto_mark_read: bool = True, db_pa
 
             if auto_mark_read:
                 conn.execute(
-                    "UPDATE agent_mailbox SET read_at = datetime('now') WHERE id = ?",
+                    "UPDATE agent_mailbox SET read_at = datetime('now') WHERE id = %s",
                     (row["id"],),
                 )
 
@@ -444,7 +444,7 @@ def get_conversation(message_id: str, db_path=None) -> list:
         # Walk backward through replies
         while current_id and current_id not in visited:
             visited.add(current_id)
-            row = conn.execute("SELECT * FROM agent_mailbox WHERE id = ?", (current_id,)).fetchone()
+            row = conn.execute("SELECT * FROM agent_mailbox WHERE id = %s", (current_id,)).fetchone()
             if not row:
                 break
             thread.append(dict(row))
@@ -457,7 +457,7 @@ def get_conversation(message_id: str, db_path=None) -> list:
         if thread:
             root_id = thread[0]["id"]
             replies = conn.execute(
-                "SELECT * FROM agent_mailbox WHERE in_reply_to = ? ORDER BY created_at",
+                "SELECT * FROM agent_mailbox WHERE in_reply_to = %s ORDER BY created_at",
                 (root_id,),
             ).fetchall()
             for r in replies:

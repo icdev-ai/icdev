@@ -333,7 +333,7 @@ def register_system(
     conn = _get_connection(db_path)
 
     # Validate project exists
-    row = conn.execute("SELECT id FROM projects WHERE id = ?", (project_id,)).fetchone()
+    row = conn.execute("SELECT id FROM projects WHERE id = %s", (project_id,)).fetchone()
     if not row:
         conn.close()
         raise ValueError(f"Project '{project_id}' not found in database.")
@@ -344,7 +344,7 @@ def register_system(
             authorizing_official, accreditation_boundary, impact_level,
             data_types, interconnections, baseline_controls,
             component_inventory, classification, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (
             system_id,
             project_id,
@@ -401,7 +401,7 @@ def get_system(system_id: str, db_path=None) -> dict:
         dict with full system details.
     """
     conn = _get_connection(db_path)
-    row = conn.execute("SELECT * FROM ato_system_registry WHERE id = ?", (system_id,)).fetchone()
+    row = conn.execute("SELECT * FROM ato_system_registry WHERE id = %s", (system_id,)).fetchone()
     conn.close()
 
     if not row:
@@ -441,7 +441,7 @@ def list_systems(project_id: str, db_path=None) -> dict:
         """SELECT id, project_id, system_name, ato_type, ato_expiry,
                   impact_level, classification, created_at
            FROM ato_system_registry
-           WHERE project_id = ?
+           WHERE project_id = %s
            ORDER BY created_at""",
         (project_id,),
     ).fetchall()
@@ -683,14 +683,14 @@ def assess_boundary_impact(
     conn = _get_connection(db_path)
 
     # Load the requirement
-    req_row = conn.execute("SELECT * FROM intake_requirements WHERE id = ?", (requirement_id,)).fetchone()
+    req_row = conn.execute("SELECT * FROM intake_requirements WHERE id = %s", (requirement_id,)).fetchone()
     if not req_row:
         conn.close()
         raise ValueError(f"Requirement '{requirement_id}' not found.")
     req_data = dict(req_row)
 
     # Load the system boundary
-    sys_row = conn.execute("SELECT * FROM ato_system_registry WHERE id = ?", (system_id,)).fetchone()
+    sys_row = conn.execute("SELECT * FROM ato_system_registry WHERE id = %s", (system_id,)).fetchone()
     if not sys_row:
         conn.close()
         raise ValueError(f"System '{system_id}' not found in ato_system_registry.")
@@ -742,7 +742,7 @@ def assess_boundary_impact(
                 affected_controls, affected_components, ssp_sections_impacted,
                 remediation_required, alternative_approach,
                 risk_score, assessed_by, assessed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             (
                 assessment_id,
                 project_id,
@@ -766,11 +766,11 @@ def assess_boundary_impact(
         # Assessment already exists for this requirement+system pair — update it
         conn.execute(
             """UPDATE boundary_impact_assessments
-               SET impact_tier = ?, impact_category = ?, impact_description = ?,
-                   affected_controls = ?, ssp_sections_impacted = ?,
-                   remediation_required = ?, alternative_approach = ?,
-                   risk_score = ?, assessed_by = ?, assessed_at = ?
-               WHERE requirement_id = ? AND system_id = ?""",
+               SET impact_tier = %s, impact_category = %s, impact_description = %s,
+                   affected_controls = %s, ssp_sections_impacted = %s,
+                   remediation_required = %s, alternative_approach = %s,
+                   risk_score = %s, assessed_by = %s, assessed_at = %s
+               WHERE requirement_id = %s AND system_id = %s""",
             (
                 tier,
                 category,
@@ -788,7 +788,7 @@ def assess_boundary_impact(
         )
         # Retrieve the existing ID
         existing = conn.execute(
-            "SELECT id FROM boundary_impact_assessments WHERE requirement_id = ? AND system_id = ?",
+            "SELECT id FROM boundary_impact_assessments WHERE requirement_id = %s AND system_id = %s",
             (requirement_id, system_id),
         ).fetchone()
         if existing:
@@ -853,7 +853,7 @@ def generate_alternatives(
     conn = _get_connection(db_path)
 
     # Load the assessment
-    bia_row = conn.execute("SELECT * FROM boundary_impact_assessments WHERE id = ?", (assessment_id,)).fetchone()
+    bia_row = conn.execute("SELECT * FROM boundary_impact_assessments WHERE id = %s", (assessment_id,)).fetchone()
     if not bia_row:
         conn.close()
         raise ValueError(f"Assessment '{assessment_id}' not found.")
@@ -877,7 +877,7 @@ def generate_alternatives(
     req_text = ""
     if req_id:
         req_row = conn.execute(
-            "SELECT raw_text, refined_text, requirement_type FROM intake_requirements WHERE id = ?",
+            "SELECT raw_text, refined_text, requirement_type FROM intake_requirements WHERE id = %s",
             (req_id,),
         ).fetchone()
         if req_row:
@@ -896,7 +896,7 @@ def generate_alternatives(
         affected_controls = []
 
     # Load system data for context
-    sys_row = conn.execute("SELECT * FROM ato_system_registry WHERE id = ?", (bia_data["system_id"],)).fetchone()
+    sys_row = conn.execute("SELECT * FROM ato_system_registry WHERE id = %s", (bia_data["system_id"],)).fetchone()
     sys_data = dict(sys_row) if sys_row else {}
     system_level = sys_data.get("impact_level", "IL5")
 
@@ -1019,8 +1019,8 @@ def generate_alternatives(
     # Update the assessment with alternatives
     conn.execute(
         """UPDATE boundary_impact_assessments
-           SET alternative_approach = ?, assessed_at = ?
-           WHERE id = ?""",
+           SET alternative_approach = %s, assessed_at = %s
+           WHERE id = %s""",
         (json.dumps(alternatives), datetime.now(timezone.utc).isoformat(), assessment_id),
     )
     conn.commit()

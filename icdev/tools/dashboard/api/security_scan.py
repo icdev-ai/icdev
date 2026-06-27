@@ -32,12 +32,12 @@ def _table_exists(conn, table_name: str) -> bool:
     try:
         if getattr(conn, "_backend", "sqlite") == "postgresql":
             row = conn.execute(
-                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = ?",
+                "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s",
                 (table_name,),
             ).fetchone()
             return row is not None
         row = conn.execute(
-            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name=%s",
             (table_name,),
         ).fetchone()
         return row is not None
@@ -283,7 +283,7 @@ def list_sbom():
             rows = conn.execute(
                 """SELECT id, project_id, version, format, file_path,
                           component_count, vulnerability_count, generated_at
-                   FROM sbom_records WHERE project_id = ?
+                   FROM sbom_records WHERE project_id = %s
                    ORDER BY generated_at DESC""",
                 (project_id,),
             ).fetchall()
