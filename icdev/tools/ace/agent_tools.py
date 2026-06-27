@@ -672,6 +672,42 @@ class AgentToolRegistry:
         if not sub_tools:
             return "spawn_agent error: no valid tools resolved for sub-agent."
 
+        # Allow explicit coordination_namespace override for the child.
+        # Without an override, the child uses self._coordination_namespace via
+        # the bound methods from self.build() — inheritance is automatic.
+        explicit_ns = (inp.get("coordination_namespace") or "").strip()
+        if explicit_ns and explicit_ns != self._coordination_namespace:
+            from icdev.tools.ace.agent_coordination import (
+                post_result as _post_fn,
+                read_result as _read_fn,
+                _NOT_FOUND,
+            )
+            if "post_result" in sub_handlers:
+                def _patched_post(inp_, stop_, _ns=explicit_ns, _inst=self.instance_id):
+                    key = (inp_.get("key") or "").strip()
+                    if not key:
+                        return "error: 'key' is required"
+                    try:
+                        return _post_fn(_ns, key, inp_.get("value"), posted_by=_inst)
+                    except Exception as exc:
+                        return f"error posting result: {exc}"
+                sub_handlers["post_result"] = _patched_post
+            if "read_result" in sub_handlers:
+                def _patched_read(inp_, stop_, _ns=explicit_ns):
+                    key = (inp_.get("key") or "").strip()
+                    if not key:
+                        return "error: 'key' is required"
+                    try:
+                        import icdev.tools.ace.agent_coordination as _m
+                        val = _m.read_result(_ns, key)
+                    except Exception as exc:
+                        return f"error reading result: {exc}"
+                    if val is _NOT_FOUND:
+                        return f"(not found: key={key!r} in namespace={_ns!r})"
+                    import json as _json
+                    return _json.dumps(val, indent=2)
+                sub_handlers["read_result"] = _patched_read
+
         try:
             router = LLMRouter()
         except Exception as exc:
