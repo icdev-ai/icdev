@@ -438,7 +438,6 @@ def _build_card_grid_slide(prs: Presentation, slide_data: dict, n: int, palette:
 
 def _build_table_slide(prs: Presentation, slide_data: dict, n: int, palette: dict) -> None:
     """Render a data table using python-pptx's native table shape."""
-    from pptx.util import Inches as _Inches
     s = _blank(prs)
     _bg(s, _rgb(palette, "bg"))
     accent = _rgb(palette, "accent")

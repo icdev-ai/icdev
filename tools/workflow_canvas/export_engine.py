@@ -13,10 +13,8 @@ from __future__ import annotations
 import json
 import re
 import sys
-import uuid
 from io import BytesIO
 from pathlib import Path
-from typing import Any
 
 _ROOT = Path(__file__).resolve().parents[2]
 if str(_ROOT) not in sys.path:
@@ -24,7 +22,6 @@ if str(_ROOT) not in sys.path:
 
 from tools.slides.pptx_builder import build as build_pptx
 from tools.slides.export_pdf import build_pdf
-from tools.canvas.export_utils import export_svg
 
 
 def _slug(text: str) -> str:
