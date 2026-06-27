@@ -26,3 +26,4 @@ whitelisted_canvases:
   - safety_monitor     # missing blueprint, directory, nav link, IQE adapter, seed queries, widget (pre-existing debt)
   - strategos          # missing IQE seed queries, IQE widget (pre-existing debt)
   - system_graph       # missing nav link, IQE adapter, seed queries, IQE widget (pre-existing debt)
+  - workflow_canvas    # dir name 'workflow_canvas' vs URL slug '/workflow-canvas' (hyphen); nav is registry-driven (not hardcoded in base.html)

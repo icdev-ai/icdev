@@ -1,0 +1,7 @@
+query: "Which workflows use form intake nodes"
+canvas: workflow_canvas
+collection: wfc.workflows
+examples:
+  - "Show workflows with form intake steps"
+  - "Workflows that require human form input"
+  - "Which workflows have form nodes"
