@@ -6,6 +6,34 @@ All notable changes to ICDEV™ are documented in this file.
 
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.20] - 2026-06-27
+
+### Added
+- **Enterprise-Configurable Platform** — registry-driven canvases, child apps, core profiles, and tenant-level component overrides with an append-only component audit log.
+- **Document Intelligence Canvas (DIC)** — grounded search, freshness scoring, HITL+AI generation, RBAC+ABAC+RLS, and air-gap fine-tuning for document workflows.
+- **ACE Co-Worker Engine** — dynamic agentic co-worker teams with role assembly, ThreadPoolExecutor step loop, and HITL gates.
+- **Agent Loop Primitive** — reusable `run_agent_loop` with native tool_use, budget guardrails, token/cost caps, and context-window compression.
+- **ZIG (NSA Zero Trust Architecture)** — 7 pillars, 42 capabilities, 91 activities, 5 engines, and 10 dashboard routes with IQE integration.
+- **SIPA Software Integrity Assessor** — static analysis, quarantine, and HITL review for unauthorized or malicious code.
+- **Universal RAG Subsystem** — multi-source ingestion, adaptive chunking, two-stage retrieval, and PROV-AGENT provenance.
+- **Network Migration Analysis Engine** — 6-dimension LLM+rules analysis at `/network/migration-phases`.
+- **CPMP (Contract Performance Management Portal)** — post-award EVM, CPARS prediction, CDRL generation, and COR portal.
+- **VIZ Visualization & Presentation Layer** — spec-driven PPTX/PNG/SVG/HTML generation with multimodal Ollama AI assist.
+- **Slides Canvas** — LLM-router-driven deck generation with curated-deck workflow and PDF export.
+- **D-AWARE Internal Awareness Engine** — self-scanning component indexer, health prober, drift/gap detectors, and suggested kanban cards.
+- **Kanban GitHub Executor** — unified pure-Kanban flow with auto-decomposition, PR opening, and auto-merge for chore/test/fix tasks.
+
+### Changed
+- PostgreSQL is now the primary runtime backend with SQLite retained as an init-only fallback.
+- Runtime SQL authoring must target PostgreSQL; JSON filters are computed in Python or use explicit `jsonb` branches.
+- Canvas DB initializers must use `get_canvas_connection()` to avoid global RLS predicates.
+
+### Fixed
+- ACE threading conflict: renamed `_context` to `_ace_context` to avoid Py3.14 contextvars collision.
+- Kanban session-limit regex gap that caused infinite dispatch-fail loops.
+- RLS classification read-down exact-match bug; reads now use the dominated classification set.
+- SQLite direct-connect guard across runtime modules via hook + kanban CLI enforcement.
+
 ## [1.2.19] - 2026-04-17
 
 ### Added
