@@ -1459,7 +1459,7 @@ components:
     - analyst
     - technical_writer
   nav:
-    section: Build
+    section: Canvases
     label: Workflow & Forms
     links:
       - label: Dashboard
