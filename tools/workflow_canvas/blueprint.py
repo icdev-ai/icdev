@@ -60,7 +60,7 @@ from tools.studio.form_builder import (
 
 logger = get_logger(__name__)
 
-_INIT_DONE = False
+_INIT_DONE = False  # reset to re-run chain table migration
 
 
 def _now_iso() -> str:
@@ -98,6 +98,33 @@ def _cancel_prior_processify_tasks(workflow_name: str) -> int:
 
 
 _WFC_MIGRATION_PG = """
+CREATE TABLE IF NOT EXISTS wfc_process_chains (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    industry TEXT,
+    status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','active','completed')),
+    created_by TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS wfc_chain_phases (
+    id TEXT PRIMARY KEY,
+    chain_id TEXT NOT NULL,
+    phase_number INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    team_name TEXT,
+    team_role TEXT,
+    workflow_ids TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','active','in_progress','complete')),
+    unlock_threshold INTEGER NOT NULL DEFAULT 100,
+    handoff_checklist TEXT NOT NULL DEFAULT '[]',
+    style_fingerprint TEXT,
+    regen_artifact_path TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(chain_id, phase_number)
+);
 CREATE TABLE IF NOT EXISTS wfc_branding (
     id               TEXT PRIMARY KEY,
     entity_type      TEXT NOT NULL CHECK(entity_type IN ('form','workflow')),
@@ -127,6 +154,33 @@ CREATE INDEX IF NOT EXISTS idx_wfc_form_nodes_workflow ON wfc_workflow_form_node
 """
 
 _WFC_MIGRATION_SQLITE = """
+CREATE TABLE IF NOT EXISTS wfc_process_chains (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT,
+    industry TEXT,
+    status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','active','completed')),
+    created_by TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS wfc_chain_phases (
+    id TEXT PRIMARY KEY,
+    chain_id TEXT NOT NULL,
+    phase_number INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    team_name TEXT,
+    team_role TEXT,
+    workflow_ids TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','active','in_progress','complete')),
+    unlock_threshold INTEGER NOT NULL DEFAULT 100,
+    handoff_checklist TEXT NOT NULL DEFAULT '[]',
+    style_fingerprint TEXT,
+    regen_artifact_path TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(chain_id, phase_number)
+);
 CREATE TABLE IF NOT EXISTS wfc_branding (
     id TEXT PRIMARY KEY,
     entity_type TEXT NOT NULL CHECK(entity_type IN ('form','workflow')),
@@ -1274,7 +1328,6 @@ Process Document:
     def api_list_chains():
         conn = get_connection()
         try:
-            ph = _ph(conn)
             rows = conn.execute(
                 "SELECT id, name, description, industry, status, created_at FROM wfc_process_chains ORDER BY created_at DESC"
             ).fetchall()
