@@ -15,6 +15,13 @@ canvas with enterprise branding, form-to-workflow integration, and multi-format 
 | `tools/studio/form_builder.py` | FIELD_TYPES (10), FORM_TEMPLATES (20+ across 10 industries) |
 | `tools/iqe/adapters/wfc.py` | IQE adapter — wfc.forms, wfc.workflows, wfc.templates, wfc.submissions |
 | `tools/workflow_canvas/doc_regenerator.py` | Process-Ify Document Regenerator — regenerates source documents after a workflow is processified, preserving style/tone/structure via LLM fingerprinting. Exports DOCX/PDF via pptx_builder / build_pdf / python-docx. |
+| `tools/workflow_canvas/bpmn_export.py` | BPMN 2.0 XML export for WFC workflows |
+| `tools/workflow_canvas/chain_deps.py` | Chain dependency analyzer for phase ordering and prerequisites |
+| `tools/workflow_canvas/chain_simulator.py` | Process-chain simulator; loads phases from DB, computes timeline + completion estimates |
+| `tools/workflow_canvas/multi_source_synth.py` | Multi-source workflow synthesis from existing forms, templates, and Studio artifacts |
+| `tools/workflow_canvas/process_code.py` | Process-code generator / exporter for rendered workflows |
+| `tools/workflow_canvas/template_library.py` | WFC industry template library loader and schema bootstrap |
+| `tools/workflow_canvas/workflow_diff.py` | Workflow diff / comparison utility across versions |
 | `args/component_registry.yaml` | Canvas registration under key: wfc |
 
 ## Routes

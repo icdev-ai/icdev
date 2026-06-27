@@ -23,6 +23,26 @@ Routes:
   GET  /workflow-canvas/api/forms                       JSON list of forms
   GET  /workflow-canvas/api/workflows                   JSON list of workflows
   POST /workflow-canvas/api/iqe-query                   IQE natural-language query
+
+  # pif-* Process-Ify Enhancement Suite
+  GET  /workflow-canvas/api/workflows/<id>/bpmn              BPMN 2.0 XML (pif-bpmn-01)
+  POST /workflow-canvas/api/workflows/diff                   Version diff (pif-diff-01)
+  GET  /workflow-canvas/api/chains/<id>/roi                  ROI calc (pif-roi-01)
+  GET  /workflow-canvas/api/chains/<id>/simulate             Timeline sim (pif-sim-01)
+  GET  /workflow-canvas/api/templates                        Template list (pif-lib-01)
+  POST /workflow-canvas/api/templates                        Save template (pif-lib-01)
+  GET  /workflow-canvas/api/templates/<id>                   Get template (pif-lib-01)
+  POST /workflow-canvas/api/workflows/synthesize             Multi-source synth (pif-synth-01)
+  POST /workflow-canvas/api/chains/<cid>/phases/<pid>/handoff  Handoff brief (pif-handoff-01)
+  POST /workflow-canvas/api/workflows/<id>/reverse-regen     Reverse regen (pif-rev-01)
+  GET  /workflow-canvas/api/chains/<id>/dependencies         Dep graph (pif-dep-01)
+  POST /workflow-canvas/api/chains/<id>/dependencies         Add dep (pif-dep-01)
+  GET  /workflow-canvas/api/chains/<id>/export-yaml          Export YAML (pif-code-01)
+  POST /workflow-canvas/api/chains/import-yaml               Import YAML (pif-code-01)
+  GET  /workflow-canvas/api/workflows/<id>/conformance       Conformance (pif-conf-01)
+  GET  /workflow-canvas/api/workflows/<id>/sla-status        SLA gate (pif-sla-01)
+  GET  /workflow-canvas/api/workflows/<id>/steps/<n>/coach   AI coach (pif-coach-01)
+  GET  /workflow-canvas/my-tasks                             My-tasks portal (pif-tasks-01)
 """
 from __future__ import annotations
 
