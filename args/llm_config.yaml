@@ -1150,6 +1150,17 @@ chain_orchestration:
 # Default hard/soft guardrails for the reusable run_agent_loop() primitive.
 # Per-role overrides can be set in role YAML as agent_max_total_tokens,
 # agent_max_cost_usd, agent_context_window_tokens, agent_compression_budget_tokens.
+# -----------------------------------------------------------------------
+# Router Retry / Graceful Degradation (D-GD-1)
+# -----------------------------------------------------------------------
+# When all providers in a chain fail with transient errors (timeout, 503,
+# rate limit), the router retries the full chain with exponential backoff.
+# Non-transient errors (auth, config, CrossGraderViolation) are never retried.
+# invoke(max_retries=N) overrides per-call; this sets the process default.
+router:
+  max_retries: 2                          # total extra attempts (3 tries total)
+  retry_delays_seconds: [5, 15]           # sleep before attempt 2, then attempt 3
+
 agent_loop:
   budgets:
     max_total_tokens: 128000

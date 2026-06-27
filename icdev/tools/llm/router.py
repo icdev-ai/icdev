@@ -90,6 +90,30 @@ def _expand_env(value):
     return re.sub(pattern, replacer, value)
 
 
+# ---------------------------------------------------------------------------
+# Retry / graceful-degradation helpers (module-level so tests can import them)
+# ---------------------------------------------------------------------------
+
+_RETRY_DELAYS: list = [5, 15]
+"""Default sleep seconds between retry attempts (attempt 1→2, 2→3)."""
+
+
+def _is_transient(exc: Exception) -> bool:
+    """Return True when *exc* looks like a temporary infrastructure fault worth retrying.
+
+    Non-retryable types (CrossGraderViolation, ValueError, PermissionError) are
+    excluded unconditionally; everything else is classified by message keywords so
+    the router backs off on timeouts, rate limits, and 5xx responses.
+    """
+    if isinstance(exc, (CrossGraderViolation, ValueError, PermissionError)):
+        return False
+    msg = str(exc).lower()
+    return any(
+        s in msg
+        for s in ("timeout", "rate limit", "503", "502", "temporarily", "overloaded", "connection")
+    )
+
+
 class LLMRouter:
     """Config-driven router that maps ICDEV™ functions to LLM providers.
 
@@ -1594,161 +1618,22 @@ class LLMRouter:
 
         return 0.0
 
-    def invoke(
+    def _invoke_chain(
         self,
         function: str,
         request: LLMRequest,
-        *,
-        exclude_model_ids: list[str] | None = None,
+        chain: list,
+        exclude_model_ids=None,
+        _redaction_session=None,
     ) -> LLMResponse:
-        """Resolve provider for function and invoke with fallback.
+        """Walk *chain* once, trying each provider in order.
 
-        Walks the full fallback chain: if the first provider fails at
-        invocation time (e.g. missing credentials, network error), tries
-        the next model in the chain rather than raising immediately.
-
-        Args:
-            function: ICDEV™ function name (e.g. 'code_generation', 'nlq_sql').
-            request: Vendor-agnostic LLM request.
-            exclude_model_ids: Optional list of ``model_id`` strings to skip.
-                Used by the cross-grader constraint to prevent the same LLM
-                that ran an agent session from grading its own output.
-                Raises :class:`CrossGraderViolation` if all chain entries
-                are excluded.
-
-        Returns:
-            LLMResponse.
-
-        Raises:
-            LLMUnavailableError: If no provider in the chain can serve the
-                request. Subclass of ``RuntimeError`` so existing
-                ``except RuntimeError`` blocks remain compatible. Callers
-                that need to degrade to deterministic behavior should
-                catch ``LLMUnavailableError`` specifically.
-            CrossGraderViolation: If ``exclude_model_ids`` is set and every
-                chain entry is excluded.
+        Returns the first successful LLMResponse.
+        Raises CrossGraderViolation when all entries are excluded, or
+        LLMUnavailableError when all entries fail.  Callers that want
+        exponential-backoff retry should catch LLMUnavailableError and call
+        again after checking _is_transient().
         """
-        # Explicit no-LLM mode: short-circuit before any probing or budget
-        # checks so deterministic-only environments don't pay the network
-        # round-trip cost on every call.
-        if self.is_no_llm_mode():
-            raise LLMUnavailableError(
-                "ICDEV_NO_LLM is set — LLM invocation is disabled. "
-                "Tool '{}' must use its deterministic fallback path.".format(function),
-                function=function,
-                chain=self._get_chain_for_function(function),
-                no_llm_mode=True,
-            )
-
-        # Token budget enforcement (D-BUD-1: Paperclip-inspired per-agent hard-stops)
-        if request.agent_id:
-            try:
-                from tools.agent.token_tracker import check_budget, BudgetExceededError
-
-                budget = check_budget(request.agent_id)
-                if budget["action"] == "block":
-                    raise BudgetExceededError(request.agent_id, budget)
-                if budget["action"] == "warn":
-                    logger.warning("Budget warning for %s: %s", request.agent_id, budget["message"])
-            except ImportError:
-                pass  # token_tracker not available — skip budget check
-            except BudgetExceededError:
-                raise  # re-raise budget errors
-            except Exception as exc:
-                logger.debug("Budget check failed (non-blocking): %s", exc)
-
-        # Module-level budget enforcement for generative_intelligence and predictive_analysis
-        try:
-            from tools.budget.module_budget_tracker import (
-                PREDICTIVE_ANALYSIS_FUNCTIONS,
-                check_module_budget,
-                ModuleBudgetExceededError,
-            )
-
-            _estimated_tokens = sum(
-                len(m.get("content", "")) for m in (request.messages or []) if isinstance(m, dict)
-            ) // 4  # rough token estimate for pre-check
-
-            mod_budget = check_module_budget(
-                "generative_intelligence",
-                function=function,
-                estimated_cost_usd=0.0,  # actual cost recorded post-invoke
-                estimated_tokens=_estimated_tokens,
-            )
-            if mod_budget["action"] == "block":
-                raise ModuleBudgetExceededError("generative_intelligence", mod_budget)
-            if mod_budget["action"] == "warn":
-                logger.warning("Module budget warning: %s", mod_budget["message"])
-
-            # Also enforce predictive_analysis budget when invoking simulation functions
-            if function in PREDICTIVE_ANALYSIS_FUNCTIONS:
-                pa_budget = check_module_budget(
-                    "predictive_analysis",
-                    function=function,
-                    estimated_cost_usd=0.0,
-                    estimated_tokens=_estimated_tokens,
-                )
-                if pa_budget["action"] == "block":
-                    raise ModuleBudgetExceededError("predictive_analysis", pa_budget)
-                if pa_budget["action"] == "warn":
-                    logger.warning("Predictive analysis budget warning: %s", pa_budget["message"])
-        except ImportError:
-            pass
-        except ModuleBudgetExceededError:
-            raise
-        except Exception as exc:
-            logger.debug("Module budget check failed (non-blocking): %s", exc)
-
-        # Scan for prompt injection before invoking (D217)
-        # Skip for trusted internal pipeline calls (e.g. Pulse draft with topic seeds)
-        if not request.skip_injection_scan:
-            injection_action = self._scan_for_injection(request)
-            if injection_action == "block":
-                raise RuntimeError(
-                    "Prompt injection detected with high confidence — request blocked. "
-                    "Review the input content for injection patterns."
-                )
-
-        # D-RDT-1: Pre-invoke redaction — sanitize PII before sending to LLM
-        # Applies to ALL modules. Skips for local-only routing if configured.
-        _redaction_session = self._pre_invoke_redaction(function, request)
-
-        # D-CACHE-2: Apply context cache hints before routing
-        self._apply_context_cache(function, request)
-
-        # Apply configured effort if not set on request
-        if not request.effort or request.effort == "medium":
-            request.effort = self.get_effort(function)
-
-        # D-CACHE-3: Response cache lookup (before provider selection)
-        chain = self._get_chain_for_function(function)
-        if chain:
-            first_model = chain[0]
-            model_cfg_for_key = self._get_model_config(first_model) or {}
-            model_id_for_key = model_cfg_for_key.get("model_id", first_model)
-            cached = self._cache_lookup(function, request, model_id_for_key)
-            if cached is not None:
-                return cached
-
-        # adapt-hd-03: Context compression — apply before fallback chain
-        request = self._compress_request_context(function, request)
-
-        # Two-tier routing: qwen3 worker → Claude planner/reviewer
-        two_tier_result = self._maybe_invoke_two_tier(function, request)
-        if two_tier_result is not None:
-            # D-CACHE-4: Store two-tier results too
-            self._cache_store(function, request, two_tier_result, two_tier_result.model_id)
-            return two_tier_result
-
-        # Chain of Thought / Chain of Debate mode switch
-        if request.chain_mode == "cot":
-            return self.invoke_chain_of_thought(function, request)
-        if request.chain_mode == "cod":
-            return self.invoke_chain_of_debate(function, request)
-
-        chain = self._get_chain_for_function(function)
-        # RL routing: reorder chain by learned Q-values (epsilon-greedy)
-        chain = self._get_rl_router().rank_models(function, chain)
         last_error = None
 
         # D286: Create trace span for LLM invocation
@@ -1914,6 +1799,194 @@ class LLMRouter:
             chain=chain,
             no_llm_mode=False,
         )
+
+    def invoke(
+        self,
+        function: str,
+        request: LLMRequest,
+        *,
+        exclude_model_ids: list[str] | None = None,
+        max_retries: int = 2,
+    ) -> LLMResponse:
+        """Resolve provider for function and invoke with fallback.
+
+        Walks the full fallback chain: if the first provider fails at
+        invocation time (e.g. missing credentials, network error), tries
+        the next model in the chain rather than raising immediately.
+
+        Args:
+            function: ICDEV™ function name (e.g. 'code_generation', 'nlq_sql').
+            request: Vendor-agnostic LLM request.
+            exclude_model_ids: Optional list of ``model_id`` strings to skip.
+                Used by the cross-grader constraint to prevent the same LLM
+                that ran an agent session from grading its own output.
+                Raises :class:`CrossGraderViolation` if all chain entries
+                are excluded.
+
+        Returns:
+            LLMResponse.
+
+        Raises:
+            LLMUnavailableError: If no provider in the chain can serve the
+                request. Subclass of ``RuntimeError`` so existing
+                ``except RuntimeError`` blocks remain compatible. Callers
+                that need to degrade to deterministic behavior should
+                catch ``LLMUnavailableError`` specifically.
+            CrossGraderViolation: If ``exclude_model_ids`` is set and every
+                chain entry is excluded.
+        """
+        # Explicit no-LLM mode: short-circuit before any probing or budget
+        # checks so deterministic-only environments don't pay the network
+        # round-trip cost on every call.
+        if self.is_no_llm_mode():
+            raise LLMUnavailableError(
+                "ICDEV_NO_LLM is set — LLM invocation is disabled. "
+                "Tool '{}' must use its deterministic fallback path.".format(function),
+                function=function,
+                chain=self._get_chain_for_function(function),
+                no_llm_mode=True,
+            )
+
+        # Token budget enforcement (D-BUD-1: Paperclip-inspired per-agent hard-stops)
+        if request.agent_id:
+            try:
+                from tools.agent.token_tracker import check_budget, BudgetExceededError
+
+                budget = check_budget(request.agent_id)
+                if budget["action"] == "block":
+                    raise BudgetExceededError(request.agent_id, budget)
+                if budget["action"] == "warn":
+                    logger.warning("Budget warning for %s: %s", request.agent_id, budget["message"])
+            except ImportError:
+                pass  # token_tracker not available — skip budget check
+            except BudgetExceededError:
+                raise  # re-raise budget errors
+            except Exception as exc:
+                logger.debug("Budget check failed (non-blocking): %s", exc)
+
+        # Module-level budget enforcement for generative_intelligence and predictive_analysis
+        try:
+            from tools.budget.module_budget_tracker import (
+                PREDICTIVE_ANALYSIS_FUNCTIONS,
+                check_module_budget,
+                ModuleBudgetExceededError,
+            )
+
+            _estimated_tokens = sum(
+                len(m.get("content", "")) for m in (request.messages or []) if isinstance(m, dict)
+            ) // 4  # rough token estimate for pre-check
+
+            mod_budget = check_module_budget(
+                "generative_intelligence",
+                function=function,
+                estimated_cost_usd=0.0,  # actual cost recorded post-invoke
+                estimated_tokens=_estimated_tokens,
+            )
+            if mod_budget["action"] == "block":
+                raise ModuleBudgetExceededError("generative_intelligence", mod_budget)
+            if mod_budget["action"] == "warn":
+                logger.warning("Module budget warning: %s", mod_budget["message"])
+
+            # Also enforce predictive_analysis budget when invoking simulation functions
+            if function in PREDICTIVE_ANALYSIS_FUNCTIONS:
+                pa_budget = check_module_budget(
+                    "predictive_analysis",
+                    function=function,
+                    estimated_cost_usd=0.0,
+                    estimated_tokens=_estimated_tokens,
+                )
+                if pa_budget["action"] == "block":
+                    raise ModuleBudgetExceededError("predictive_analysis", pa_budget)
+                if pa_budget["action"] == "warn":
+                    logger.warning("Predictive analysis budget warning: %s", pa_budget["message"])
+        except ImportError:
+            pass
+        except ModuleBudgetExceededError:
+            raise
+        except Exception as exc:
+            logger.debug("Module budget check failed (non-blocking): %s", exc)
+
+        # Scan for prompt injection before invoking (D217)
+        # Skip for trusted internal pipeline calls (e.g. Pulse draft with topic seeds)
+        if not request.skip_injection_scan:
+            injection_action = self._scan_for_injection(request)
+            if injection_action == "block":
+                raise RuntimeError(
+                    "Prompt injection detected with high confidence — request blocked. "
+                    "Review the input content for injection patterns."
+                )
+
+        # D-RDT-1: Pre-invoke redaction — sanitize PII before sending to LLM
+        # Applies to ALL modules. Skips for local-only routing if configured.
+        _redaction_session = self._pre_invoke_redaction(function, request)
+
+        # D-CACHE-2: Apply context cache hints before routing
+        self._apply_context_cache(function, request)
+
+        # Apply configured effort if not set on request
+        if not request.effort or request.effort == "medium":
+            request.effort = self.get_effort(function)
+
+        # D-CACHE-3: Response cache lookup (before provider selection)
+        chain = self._get_chain_for_function(function)
+        if chain:
+            first_model = chain[0]
+            model_cfg_for_key = self._get_model_config(first_model) or {}
+            model_id_for_key = model_cfg_for_key.get("model_id", first_model)
+            cached = self._cache_lookup(function, request, model_id_for_key)
+            if cached is not None:
+                return cached
+
+        # adapt-hd-03: Context compression — apply before fallback chain
+        request = self._compress_request_context(function, request)
+
+        # Two-tier routing: qwen3 worker → Claude planner/reviewer
+        two_tier_result = self._maybe_invoke_two_tier(function, request)
+        if two_tier_result is not None:
+            # D-CACHE-4: Store two-tier results too
+            self._cache_store(function, request, two_tier_result, two_tier_result.model_id)
+            return two_tier_result
+
+        # Chain of Thought / Chain of Debate mode switch
+        if request.chain_mode == "cot":
+            return self.invoke_chain_of_thought(function, request)
+        if request.chain_mode == "cod":
+            return self.invoke_chain_of_debate(function, request)
+
+        chain = self._get_chain_for_function(function)
+        # RL routing: reorder chain by learned Q-values (epsilon-greedy)
+        chain = self._get_rl_router().rank_models(function, chain)
+
+        # Graceful degradation: retry the full chain on transient infrastructure failures
+        # (timeouts, 503s, rate limits). Non-transient errors (auth, config) raise immediately.
+        _router_cfg = self._config.get("router", {})
+        _retry_delays = _router_cfg.get("retry_delays_seconds", _RETRY_DELAYS)
+        _eff_retries = min(max_retries, _router_cfg.get("max_retries", max_retries))
+
+        for _attempt in range(_eff_retries + 1):
+            try:
+                return self._invoke_chain(
+                    function, request, chain, exclude_model_ids, _redaction_session
+                )
+            except CrossGraderViolation:
+                raise  # non-retryable: cross-grader config issue
+            except LLMUnavailableError as _exc:
+                if _attempt < _eff_retries and _is_transient(_exc):
+                    _delay = (
+                        _retry_delays[_attempt]
+                        if _attempt < len(_retry_delays)
+                        else (_retry_delays[-1] if _retry_delays else 5)
+                    )
+                    logger.warning(
+                        "router: all providers failed (attempt %d/%d), retrying in %ds — %s",
+                        _attempt + 1,
+                        _eff_retries + 1,
+                        _delay,
+                        _exc,
+                    )
+                    time.sleep(_delay)
+                    continue
+                raise
 
     def invoke_chain_of_thought(self, function: str, request: LLMRequest) -> LLMResponse:
         """Invoke Chain of Thought via ChainOrchestrator.
