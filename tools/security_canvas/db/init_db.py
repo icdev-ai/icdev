@@ -38,11 +38,10 @@ def get_connection():
     """
     if _SC_BACKEND == "postgresql":
         try:
-            from tools.db.storage import get_connection as _icdev_conn
-
-            # Use ICDEV's storage layer which handles PG translation
-            conn = _icdev_conn(db_path=os.environ.get("SC_PG_DATABASE", "security_canvas"))
-            return conn
+            from tools.db.storage import get_canvas_connection
+            # Canvas tables (security_designs, sc_assessments, zig_*) have no
+            # classification/tenant_id columns — must bypass RLS via get_canvas_connection.
+            return get_canvas_connection("SC_STORAGE_BACKEND")
         except ImportError:
             pass  # Fall through to SQLite
     # SQLite (default) — per-canvas DB, distinct from icdev.db

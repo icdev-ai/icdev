@@ -195,7 +195,7 @@ def verify_path(ttp_ids: Sequence[str], design_id: str = "") -> dict:
 
             conn.execute(
                 "INSERT INTO od_audit"
-                " (design_id, user, action, detail, classification, created_at)"
+                " (design_id, actor, action, detail, classification, created_at)"
                 " VALUES (%s, %s, %s, %s, %s, %s)",
                 (
                     design_id or "",

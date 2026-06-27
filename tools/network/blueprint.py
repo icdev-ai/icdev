@@ -14789,7 +14789,8 @@ Planning rules:
     @bp.route("/diagram-analysis")
     def nc_diagram_analysis():
         """Network Diagram Analysis — upload PNG/PDF/draw.io for AI analysis."""
-        return render_template("network/diagram_analysis.html")
+        from tools.network.constants import DIAGRAM_ANALYSIS_INDUSTRIES
+        return render_template("network/diagram_analysis.html", industries=DIAGRAM_ANALYSIS_INDUSTRIES)
 
     # ── Migration Phases landing (alias → hub) ────────────────────────────
     @bp.route("/migration-phases")
