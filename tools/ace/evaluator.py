@@ -257,7 +257,7 @@ def score_session(
     try:
         row = conn.execute(
             "SELECT coworker_id, turns, total_input_tokens, total_output_tokens, "
-            "total_cost_usd, result_subtype, done, session_json "
+            "total_cost_usd, result_subtype, messages_json "
             "FROM agent_loop_sessions WHERE session_id = %s",
             (session_id,),
         ).fetchone()
@@ -273,11 +273,10 @@ def score_session(
     tok_out = int(row[3] or 0)
     cost = float(row[4] or 0.0)
     subtype = row[5]
-    done_val = row[6]
-    session_json = row[7]
+    session_json = row[6]
 
-    done = bool(done_val)
-    outcome = subtype or ("success" if done else "unknown")
+    done = subtype == "success"
+    outcome = subtype or "unknown"
     eff = round(max(0.0, 1.0 - (turns / max_iterations)), 3) if max_iterations else 0.0
 
     reasoning_metrics = _extract_reasoning_metrics(session_json or "[]")
@@ -851,33 +850,50 @@ def get_eval_trends(
         [{period, role, count, avg_efficiency, avg_reasoning_coverage,
           avg_tool_error_rate, pct_done}]
     """
+    from datetime import timezone, timedelta
     days = min(int(days), 365)
     bucket = bucket if bucket in ("day", "week", "month") else "week"
 
     conn = _get_conn()
     if conn is None:
         return []
-    try:
-        cursor = conn.cursor()
 
+    # Compute cutoff in Python — avoids dialect-specific datetime() calls
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+
+    is_pg = getattr(conn, "_backend", "postgresql") == "postgresql"
+
+    if is_pg:
+        ph = "%s"
+        if bucket == "day":
+            trunc_expr = "DATE_TRUNC('day', graded_at)::date"
+        elif bucket == "week":
+            trunc_expr = "DATE_TRUNC('week', graded_at)::date"
+        else:
+            trunc_expr = "DATE_TRUNC('month', graded_at)::date"
+        role_filter = "AND s.role = %s" if role else ""
+    else:
+        ph = "?"
         if bucket == "day":
             trunc_expr = "date(graded_at)"
         elif bucket == "week":
             trunc_expr = "date(graded_at, 'weekday 0', '-6 days')"
         else:
             trunc_expr = "strftime('%Y-%m-01', graded_at)"
-
         role_filter = "AND s.role = ?" if role else ""
-        params: list = [f"-{days} days"]
-        if role:
-            params.append(role)
 
+    params: list = [cutoff]
+    if role:
+        params.append(role)
+
+    try:
+        cursor = conn.cursor()
         try:
             cursor.execute(
                 f"""
                 SELECT
                     {trunc_expr} AS period,
-                    COALESCE(s.role, 'unknown') AS role,
+                    COALESCE(ai.role_id, 'unknown') AS role,
                     COUNT(*) AS count,
                     AVG(e.efficiency_score) AS avg_efficiency,
                     AVG(e.reasoning_coverage) AS avg_reasoning_coverage,
@@ -885,7 +901,8 @@ def get_eval_trends(
                     SUM(CASE WHEN e.done = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS pct_done
                 FROM agent_evals e
                 LEFT JOIN ace_sessions s ON s.session_id = e.session_id
-                WHERE e.graded_at >= datetime('now', %s)
+                LEFT JOIN ace_instances ai ON ai.id = s.instance_id
+                WHERE e.graded_at >= {ph}
                 {role_filter}
                 GROUP BY period, role
                 ORDER BY period ASC
@@ -895,6 +912,8 @@ def get_eval_trends(
             rows = cursor.fetchall()
             col_names = [d[0] for d in cursor.description]
         except Exception:
+            # Fallback: no session/instance join — reset aborted PG txn first
+            conn.rollback()
             cursor.execute(
                 f"""
                 SELECT
@@ -906,11 +925,11 @@ def get_eval_trends(
                     AVG(tool_error_rate) AS avg_tool_error_rate,
                     SUM(CASE WHEN done = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS pct_done
                 FROM agent_evals
-                WHERE graded_at >= datetime('now', %s)
+                WHERE graded_at >= {ph}
                 GROUP BY period
                 ORDER BY period ASC
                 """,
-                [f"-{days} days"],
+                [cutoff],
             )
             rows = cursor.fetchall()
             col_names = [d[0] for d in cursor.description]
@@ -919,7 +938,7 @@ def get_eval_trends(
         for row in rows:
             d = dict(zip(col_names, row))
             results.append({
-                "period": d.get("period", ""),
+                "period": str(d.get("period", "") or ""),
                 "role": d.get("role", "all"),
                 "count": int(d.get("count", 0)),
                 "avg_efficiency": round(float(d.get("avg_efficiency") or 0), 3),
@@ -928,5 +947,8 @@ def get_eval_trends(
                 "pct_done": round(float(d.get("pct_done") or 0), 1),
             })
         return results
+    except Exception as exc:
+        logger.warning("get_eval_trends failed: %s", exc)
+        return []
     finally:
         conn.close()
