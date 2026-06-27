@@ -1847,19 +1847,19 @@ Process Document:
     # ── pif-tasks-01: Role-Based My-Tasks Portal ──────────────────────────────
     @bp.route("/api/my-tasks")
     def api_my_tasks():
-        role = request.args.get("role", "")
+        task_type = request.args.get("task_type", "")
         try:
             conn = get_connection()
             ph = sql_placeholder(conn)
-            if role:
+            if task_type:
                 tasks = conn.execute(
-                    f"SELECT id, title, status, priority, assignee_role, updated_at FROM kanban_tasks WHERE assignee_role = {ph} AND status != {ph} ORDER BY updated_at DESC LIMIT 200",
-                    (role, "done"),
+                    f"SELECT id, title, status, priority, task_type, updated_at FROM kanban_tasks WHERE id LIKE {ph} AND task_type = {ph} AND status != {ph} ORDER BY updated_at DESC LIMIT 200",
+                    ("processify-%", task_type, "done"),
                 ).fetchall()
             else:
                 tasks = conn.execute(
-                    f"SELECT id, title, status, priority, assignee_role, updated_at FROM kanban_tasks WHERE status != {ph} ORDER BY updated_at DESC LIMIT 200",
-                    ("done",),
+                    f"SELECT id, title, status, priority, task_type, updated_at FROM kanban_tasks WHERE id LIKE {ph} AND status != {ph} ORDER BY updated_at DESC LIMIT 200",
+                    ("processify-%", "done"),
                 ).fetchall()
             conn.close()
             return jsonify({"tasks": [dict(t) if hasattr(t, "keys") else {} for t in tasks]})
@@ -1869,35 +1869,35 @@ Process Document:
 
     @bp.route("/my-tasks")
     def page_my_tasks():
-        role = request.args.get("role", "")
+        task_type = request.args.get("task_type", "")
         try:
             conn = get_connection()
             ph = sql_placeholder(conn)
-            if role:
+            if task_type:
                 tasks = conn.execute(
-                    f"SELECT * FROM kanban_tasks WHERE assignee_role = {ph} AND status != {ph} ORDER BY updated_at DESC LIMIT 200",
-                    (role, "done"),
+                    f"SELECT * FROM kanban_tasks WHERE id LIKE {ph} AND task_type = {ph} AND status != {ph} ORDER BY updated_at DESC LIMIT 200",
+                    ("processify-%", task_type, "done"),
                 ).fetchall()
             else:
                 tasks = conn.execute(
-                    f"SELECT * FROM kanban_tasks WHERE status != {ph} ORDER BY updated_at DESC LIMIT 200",
-                    ("done",),
+                    f"SELECT * FROM kanban_tasks WHERE id LIKE {ph} AND status != {ph} ORDER BY updated_at DESC LIMIT 200",
+                    ("processify-%", "done"),
                 ).fetchall()
-            # Gather distinct roles for filter dropdown
-            roles_rows = conn.execute(
-                "SELECT DISTINCT assignee_role FROM kanban_tasks WHERE assignee_role IS NOT NULL AND assignee_role != '' ORDER BY assignee_role"
+            types_rows = conn.execute(
+                f"SELECT DISTINCT task_type FROM kanban_tasks WHERE id LIKE {ph} AND task_type IS NOT NULL AND task_type != '' ORDER BY task_type",
+                ("processify-%",),
             ).fetchall()
             conn.close()
             tasks_list = [dict(t) if hasattr(t, "keys") else {} for t in tasks]
-            roles_list = [r[0] for r in roles_rows]
+            types_list = [r[0] for r in types_rows]
         except Exception as exc:
             logger.error("my-tasks error: %s", exc, exc_info=True)
-            tasks_list, roles_list = [], []
+            tasks_list, types_list = [], []
         return render_template(
             "workflow_canvas/my_tasks.html",
             tasks=tasks_list,
-            roles=roles_list,
-            current_role=role,
+            roles=types_list,
+            current_role=task_type,
         )
 
 
