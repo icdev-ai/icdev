@@ -6,6 +6,7 @@ from icdev.tools.ace.evaluator import (  # noqa: F401
     save_eval,
     get_eval,
     grade_output_quality,
+    suggest_improvements,
     _extract_reasoning_metrics,
     _extract_tool_metrics,
     _extract_tool_metrics_from_messages,

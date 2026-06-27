@@ -519,3 +519,166 @@ def grade_output_quality(
         grade = {"error": str(exc), "overall": 0.0}
 
     return grade
+
+
+# ---------------------------------------------------------------------------
+# Improvement suggestions (rule-based, no LLM calls)
+# ---------------------------------------------------------------------------
+
+_SEVERITY_HIGH = "high"
+_SEVERITY_MEDIUM = "medium"
+_SEVERITY_LOW = "low"
+
+
+def suggest_improvements(eval_result: EvalResult) -> list[dict]:
+    """Rule-based improvement suggestions derived from eval metrics.
+
+    Returns a list of suggestion dicts with keys:
+        issue       — what is wrong
+        suggestion  — actionable fix (usually a system prompt addition)
+        field       — which config field to target: "system_prompt", "max_iterations",
+                      "folder_access", or "reasoning_style"
+        severity    — "high" | "medium" | "low"
+
+    No LLM calls.  Pure rule evaluation against EvalResult fields.
+    """
+    suggestions: list[dict] = []
+
+    # --- Outcome-based ---
+    if eval_result.outcome == "error_max_turns":
+        suggestions.append({
+            "issue": f"Session hit max iterations limit ({eval_result.max_iterations} turns)",
+            "suggestion": (
+                f"Increase max_iterations to at least {eval_result.max_iterations + 6}. "
+                "Consider breaking the task into smaller sub-tasks if it is complex."
+            ),
+            "field": "max_iterations",
+            "severity": _SEVERITY_HIGH,
+        })
+
+    if eval_result.scope_violations > 0:
+        suggestions.append({
+            "issue": f"{eval_result.scope_violations} scope violation(s) detected",
+            "suggestion": (
+                "Restrict folder_access in the coworker spec to only the directories "
+                "the task requires. The agent attempted to access paths outside its allowed scope."
+            ),
+            "field": "folder_access",
+            "severity": _SEVERITY_HIGH,
+        })
+
+    if eval_result.trust_denials > 0:
+        suggestions.append({
+            "issue": f"{eval_result.trust_denials} trust-tier denial(s)",
+            "suggestion": (
+                "Upgrade the coworker trust_tier if the denied operations are legitimate, "
+                "or add an explicit instruction: 'Do not attempt privileged operations.'"
+            ),
+            "field": "system_prompt",
+            "severity": _SEVERITY_HIGH,
+        })
+
+    # --- Tool quality ---
+    if eval_result.tool_error_rate > 0.35 and eval_result.total_tool_calls >= 3:
+        suggestions.append({
+            "issue": f"High tool error rate: {eval_result.tool_error_rate:.0%} of calls failed",
+            "suggestion": (
+                "Add to system prompt: 'Before calling a tool, verify the inputs are "
+                "correct and within scope. If a tool fails, try a different approach "
+                "rather than retrying the same call.'"
+            ),
+            "field": "system_prompt",
+            "severity": _SEVERITY_HIGH if eval_result.tool_error_rate > 0.5 else _SEVERITY_MEDIUM,
+        })
+
+    if eval_result.tool_precision < 0.3 and eval_result.total_tool_calls >= 5:
+        suggestions.append({
+            "issue": (
+                f"Low tool precision: only {len(eval_result.unique_tools)} unique tools "
+                f"across {eval_result.total_tool_calls} calls — high repetition"
+            ),
+            "suggestion": (
+                "Add to system prompt: 'Do not repeat a tool call with identical inputs. "
+                "If a tool returned an error or unexpected result, change your approach.'"
+            ),
+            "field": "system_prompt",
+            "severity": _SEVERITY_MEDIUM,
+        })
+
+    # --- CoT/CoD reasoning ---
+    if not eval_result.plan_stated and eval_result.turns_used >= 2:
+        suggestions.append({
+            "issue": "No planning reasoning in first turn",
+            "suggestion": (
+                "Add to system prompt: 'Before taking any action, write a brief plan: "
+                "what you will do, in what order, and what success looks like.'"
+            ),
+            "field": "system_prompt",
+            "severity": _SEVERITY_MEDIUM,
+        })
+
+    if eval_result.reasoning_coverage < 0.5 and eval_result.total_tool_calls >= 3:
+        suffix = (
+            " Consider using Chain-of-Draft (CoD) style: short but complete reasoning drafts."
+            if eval_result.reasoning_style == "cot" else ""
+        )
+        suggestions.append({
+            "issue": f"Low reasoning coverage: only {eval_result.reasoning_coverage:.0%} of turns have reasoning text",
+            "suggestion": (
+                "Add to system prompt: 'Think step by step before each action. "
+                "Write your reasoning before calling any tool — explain WHY, not just what.'"
+                + suffix
+            ),
+            "field": "system_prompt",
+            "severity": _SEVERITY_MEDIUM,
+        })
+
+    if eval_result.avg_reasoning_chars < 50 and eval_result.reasoning_coverage > 0.5:
+        suggestions.append({
+            "issue": f"Reasoning is very terse (avg {eval_result.avg_reasoning_chars:.0f} chars per turn)",
+            "suggestion": (
+                "Add to system prompt: 'When reasoning, include at least one sentence explaining "
+                "your approach and what you expect the tool to return.'"
+            ),
+            "field": "system_prompt",
+            "severity": _SEVERITY_LOW,
+        })
+
+    if not eval_result.has_error_recovery_reasoning and eval_result.error_tool_calls >= 2:
+        suggestions.append({
+            "issue": "No error-recovery reasoning after tool failures",
+            "suggestion": (
+                "Add to system prompt: 'After a tool error, reason explicitly about what "
+                "went wrong before trying an alternative approach.'"
+            ),
+            "field": "system_prompt",
+            "severity": _SEVERITY_MEDIUM,
+        })
+
+    # --- Efficiency ---
+    if eval_result.efficiency_score < 0.25 and eval_result.outcome != "error_max_turns":
+        suggestions.append({
+            "issue": f"Low efficiency: used {eval_result.turns_used} of {eval_result.max_iterations} turns",
+            "suggestion": (
+                "Add to system prompt: 'Be concise and efficient. Combine related operations "
+                "where possible and avoid redundant file reads.'"
+            ),
+            "field": "system_prompt",
+            "severity": _SEVERITY_LOW,
+        })
+
+    if eval_result.reasoning_style == "" and eval_result.total_tool_calls >= 3:
+        suggestions.append({
+            "issue": "No reasoning style specified",
+            "suggestion": (
+                "Set reasoning_style to 'cod' (Chain-of-Draft) for concise, focused reasoning "
+                "before each action, or 'cot' for more verbose step-by-step analysis."
+            ),
+            "field": "reasoning_style",
+            "severity": _SEVERITY_LOW,
+        })
+
+    # Sort: high first, then medium, then low
+    _order = {_SEVERITY_HIGH: 0, _SEVERITY_MEDIUM: 1, _SEVERITY_LOW: 2}
+    suggestions.sort(key=lambda s: _order.get(s["severity"], 3))
+    return suggestions
