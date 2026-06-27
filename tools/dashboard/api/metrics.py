@@ -4,7 +4,7 @@ Flask Blueprint for metrics API.
 Queries metric_snapshots, alerts, and self_healing_events tables.
 """
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, sql_placeholder
 from flask import Blueprint, jsonify, request
 
 from tools.dashboard.config import DB_PATH
@@ -44,6 +44,7 @@ def list_metric_snapshots():
 def list_alerts():
     """Return alerts, optionally filtered by project_id and/or status."""
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         project_id = request.args.get("project_id")
         status = request.args.get("status")
@@ -52,12 +53,12 @@ def list_alerts():
         query = "SELECT * FROM alerts WHERE 1=1"
         params: list = []
         if project_id:
-            query += " AND project_id = ?"
+            query += f" AND project_id = {ph}"
             params.append(project_id)
         if status:
-            query += " AND status = ?"
+            query += f" AND status = {ph}"
             params.append(status)
-        query += " ORDER BY created_at DESC LIMIT ?"
+        query += f" ORDER BY created_at DESC LIMIT {ph}"
         params.append(limit)
 
         rows = conn.execute(query, params).fetchall()
@@ -157,6 +158,7 @@ def push_container_metrics():
 def list_container_metrics():
     """Return recent container metrics, optionally filtered by host or container_name."""
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         host = request.args.get("host")
         container = request.args.get("container")
@@ -165,12 +167,12 @@ def list_container_metrics():
         query = "SELECT * FROM container_metrics WHERE 1=1"
         params: list = []
         if host:
-            query += " AND host = ?"
+            query += f" AND host = {ph}"
             params.append(host)
         if container:
-            query += " AND container_name LIKE ?"
+            query += f" AND container_name LIKE {ph}"
             params.append(f"%{container}%")
-        query += " ORDER BY collected_at DESC LIMIT ?"
+        query += f" ORDER BY collected_at DESC LIMIT {ph}"
         params.append(limit)
 
         rows = conn.execute(query, params).fetchall()

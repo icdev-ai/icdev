@@ -5,7 +5,7 @@
 import os
 import sqlite3
 import sys
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, sql_placeholder
 from pathlib import Path
 
 from flask import Blueprint, jsonify, request
@@ -107,14 +107,15 @@ def get_appeals():
     status = request.args.get("status")
     try:
         conn = _get_db()
+        ph = sql_placeholder(conn)
         sql = "SELECT * FROM ai_accountability_appeals"
         params = []
         wheres = []
         if project_id:
-            wheres.append("project_id = ?")
+            wheres.append(f"project_id = {ph}")
             params.append(project_id)
         if status:
-            wheres.append("appeal_status = ?")
+            wheres.append(f"appeal_status = {ph}")
             params.append(status)
         if wheres:
             sql += " WHERE " + " AND ".join(wheres)
@@ -133,14 +134,15 @@ def get_incidents():
     severity = request.args.get("severity")
     try:
         conn = _get_db()
+        ph = sql_placeholder(conn)
         sql = "SELECT * FROM ai_incident_log"
         params = []
         wheres = []
         if project_id:
-            wheres.append("project_id = ?")
+            wheres.append(f"project_id = {ph}")
             params.append(project_id)
         if severity:
-            wheres.append("severity = ?")
+            wheres.append(f"severity = {ph}")
             params.append(severity)
         if wheres:
             sql += " WHERE " + " AND ".join(wheres)
@@ -158,10 +160,11 @@ def get_overdue():
     project_id = request.args.get("project_id")
     try:
         conn = _get_db()
+        ph = sql_placeholder(conn)
         sql = "SELECT * FROM ai_reassessment_schedule WHERE next_due < date('now')"
         params = []
         if project_id:
-            sql += " AND project_id = ?"
+            sql += f" AND project_id = {ph}"
             params.append(project_id)
         sql += " ORDER BY next_due ASC"
         rows = conn.execute(sql, params).fetchall()

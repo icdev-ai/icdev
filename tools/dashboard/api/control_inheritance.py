@@ -242,6 +242,7 @@ def list_controls():
     family_filter = request.args.get("family")
 
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         has_controls = _table_exists(conn, "compliance_controls")
         has_project = _table_exists(conn, "project_controls")
@@ -253,7 +254,7 @@ def list_controls():
         params = []
 
         if family_filter:
-            query += " AND family = ?"
+            query += f" AND family = {ph}"
             params.append(family_filter)
 
         query += " ORDER BY family, id"

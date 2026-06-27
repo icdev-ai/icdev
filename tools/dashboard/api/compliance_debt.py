@@ -12,7 +12,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, sql_placeholder  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
@@ -62,6 +62,7 @@ def _table_exists(conn, table_name: str) -> bool:
 def debt_summary():
     """Overall compliance debt score, optionally filtered by project_id."""
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         project_id = request.args.get("project_id")
 
@@ -71,7 +72,7 @@ def debt_summary():
             q = "SELECT severity, COUNT(*) AS cnt FROM poam_items WHERE status NOT IN ('completed','accepted_risk')"
             params = []
             if project_id:
-                q += " AND project_id = ?"
+                q += f" AND project_id = {ph}"
                 params.append(project_id)
             q += " GROUP BY severity"
             for row in conn.execute(q, params).fetchall():
@@ -87,7 +88,7 @@ def debt_summary():
             )
             params = []
             if project_id:
-                q += " AND project_id = ?"
+                q += f" AND project_id = {ph}"
                 params.append(project_id)
             row = conn.execute(q, params).fetchone()
             control_debt = (row["cnt"] if row else 0) * CONTROL_WEIGHT
@@ -98,7 +99,7 @@ def debt_summary():
             q = "SELECT severity, COUNT(*) AS cnt FROM stig_findings WHERE status = 'Open'"
             params = []
             if project_id:
-                q += " AND project_id = ?"
+                q += f" AND project_id = {ph}"
                 params.append(project_id)
             q += " GROUP BY severity"
             for row in conn.execute(q, params).fetchall():
@@ -123,7 +124,7 @@ def debt_summary():
                 )
                 params = [today]
             if project_id:
-                q += " AND project_id = ?"
+                q += f" AND project_id = {ph}"
                 params.append(project_id)
             row = conn.execute(q, params).fetchone()
             ato_debt = (row["cnt"] if row else 0) * 10
@@ -144,7 +145,7 @@ def debt_summary():
                 t_params_opened = [today]
                 t_params_closed = [today]
             if project_id:
-                base_filter = " AND project_id = ?"
+                base_filter = f" AND project_id = {ph}"
                 t_params_opened.append(project_id)
                 t_params_closed.append(project_id)
 
