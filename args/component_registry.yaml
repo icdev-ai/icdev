@@ -824,7 +824,7 @@ components:
   default_enabled: false
   module: tools.aisg.blueprint
   blueprint_attr: bp
-  url_prefix: /ai-skills
+  url_prefix: ''
   min_il: IL4
   default_roles: []
   nav:

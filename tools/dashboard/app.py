@@ -4070,6 +4070,12 @@ def create_app(testing: bool = False) -> Flask:
             generated_at=generated_at,
         )
 
+    @app.route("/skillhub")
+    def skillhub_page():
+        """SkillHub — redirect to Marketplace skill catalog."""
+        from flask import redirect
+        return redirect("/studio/marketplace")
+
     @app.route("/quick-paths")
     def quick_paths_page():
         """Quick Path workflow templates — pre-built shortcuts for common tasks."""
