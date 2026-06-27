@@ -4116,6 +4116,80 @@ def check_profile_sync(changed_files: Optional[List[Path]] = None) -> CoherenceC
 
 
 # ---------------------------------------------------------------------------
+# Canvas RLS Bypass Check (OPT-CC-01)
+# ---------------------------------------------------------------------------
+
+def check_canvas_rls_bypass() -> "CoherenceCheck":
+    """Detect canvas db/init_db.py files that use get_connection() instead of
+    get_canvas_connection().
+
+    Canvas-specific tables lack classification/tenant_id columns. Using
+    get_connection() injects RLS predicates that reference those columns and
+    raises UndefinedColumn on every query. Every canvas db/init_db.py must use
+    get_canvas_connection("ENV_VAR") or call conn.set_security_context(None).
+    """
+    violations: List[str] = []
+    checked: List[str] = []
+
+    # Search both canonical (icdev/tools/) and legacy (tools/) namespaces
+    for base in [PROJECT_ROOT / "tools", PROJECT_ROOT / "icdev" / "tools"]:
+        for init_db in base.glob("*/db/init_db.py"):
+            rel = str(init_db.relative_to(PROJECT_ROOT))
+            # Skip test fixtures and the storage module itself
+            if "test" in rel or "storage.py" in rel:
+                continue
+            checked.append(rel)
+            try:
+                content = init_db.read_text(encoding="utf-8", errors="replace")
+            except Exception:
+                continue
+
+            # If the file doesn't use get_connection at all, no issue
+            if "get_connection" not in content:
+                continue
+
+            # If it already uses the safe patterns, skip
+            safe = (
+                "get_canvas_connection" in content
+                or "set_security_context(None)" in content
+                or "security_context=None" in content
+            )
+            if safe:
+                continue
+
+            violations.append(rel)
+
+    if violations:
+        return CoherenceCheck(
+            check_id="canvas_rls_bypass",
+            check_name="Canvas RLS Bypass (get_canvas_connection)",
+            status="fail",
+            expected=["get_canvas_connection() or set_security_context(None)"],
+            actual=violations,
+            missing=violations,
+            extra=[],
+            message=(
+                f"{len(violations)} canvas db/init_db.py file(s) call get_connection() "
+                "without RLS bypass — canvas tables lack classification/tenant_id columns "
+                "and will raise UndefinedColumn on every PG query. "
+                "Replace with get_canvas_connection('ENV_VAR'). "
+                f"Affected: {', '.join(violations)}"
+            ),
+        )
+
+    return CoherenceCheck(
+        check_id="canvas_rls_bypass",
+        check_name="Canvas RLS Bypass (get_canvas_connection)",
+        status="pass",
+        expected=["get_canvas_connection() or set_security_context(None)"],
+        actual=checked,
+        missing=[],
+        extra=[],
+        message=f"All {len(checked)} canvas db/init_db.py files use safe RLS bypass patterns.",
+    )
+
+
+# ---------------------------------------------------------------------------
 # Check Registry & Orchestrator
 # ---------------------------------------------------------------------------
 
@@ -4140,6 +4214,7 @@ CHECK_REGISTRY = {
     "hitl_workflow": check_hitl_workflow,
     "mcp_security": check_mcp_security,
     "security_context": check_security_context,
+    "canvas_rls_bypass": check_canvas_rls_bypass,
     "log_standard": check_log_standard_compliance,
     "nav_route_parity": check_nav_route_parity,
     "blueprint_imports": check_blueprint_imports,
@@ -4183,6 +4258,7 @@ _FIX_REGISTRY: Dict[str, str] = {
     "hitl_workflow": "skip",  # module fixes require human judgment
     "mcp_security": "skip",  # scanner module creation requires human judgment
     "security_context": "skip",  # RLS bypass documentation and wiring fixes require human judgment
+    "canvas_rls_bypass": "skip",  # get_canvas_connection() migration requires human judgment per canvas
     "canvas_placeholder_style": "skip",  # SQL placeholder fixes require human judgment (search+replace in SQL strings)
     "runtime_placeholder_style": "skip",  # SQL placeholder fixes require human judgment (search+replace in SQL strings)
     "ace_yaml_listen_topics": "skip",  # YAML restructuring requires human judgment

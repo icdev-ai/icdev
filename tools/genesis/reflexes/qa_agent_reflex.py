@@ -30,6 +30,7 @@ logger = get_logger("qa_agent_reflex")
 
 IMPLEMENTATION_STATUS = "full"
 
+_SMOKE_TASK_TITLE_PREFIX = "[QA-SMOKE]"
 _SWEEP_TASK_TITLE = "[QA-AGENT] Full E2E Suite Sweep"
 _SWEEP_TASK_DESC = (
     "QA Agent: run the full Playwright E2E suite and report results.\n\n"
@@ -117,6 +118,66 @@ def _pending_gap_task_exists(conn, canvas_key: str) -> bool:
     return row is not None
 
 
+def _pending_smoke_bug_exists(conn, route: str) -> bool:
+    fragment = f"{_SMOKE_TASK_TITLE_PREFIX} {route}"
+    row = conn.execute(
+        """
+        SELECT id FROM kanban_tasks
+        WHERE title LIKE %s
+          AND status IN ('backlog', 'in_progress')
+        LIMIT 1
+        """,
+        (f"%{fragment}%",),
+    ).fetchone()
+    return row is not None
+
+
+def _insert_smoke_bug_task(conn, route: str, status: object, error: str) -> str:
+    task_id = f"task-qa-smoke-{uuid.uuid4().hex[:8]}"
+    now = _utcnow().isoformat()
+    title = f"{_SMOKE_TASK_TITLE_PREFIX} {route} returned {status}"
+    desc = (
+        f"Route smoke detected a failure on `{route}` (HTTP {status}).\n\n"
+        f"**Error:** {error}\n\n"
+        "Steps to remediate:\n"
+        "1. Start the dashboard: `python -m tools.dashboard.app --port 5050`\n"
+        f"2. Open `{route}` in a browser and confirm the error.\n"
+        "3. Check the relevant `blueprint.py` and `db/init_db.py` for the canvas.\n"
+        "   - If 500: likely an RLS/`get_canvas_connection()` issue or missing template variable.\n"
+        "   - If 404: route may be missing from blueprint or url_prefix mismatch in registry.\n"
+        "4. Fix the root cause and re-run: `python tools/testing/route_smoke.py --all --json`\n"
+        "5. Close this task when smoke passes.\n"
+    )
+    conn.execute(
+        """
+        INSERT INTO kanban_tasks
+            (id, title, description, task_type, priority, status,
+             scheduled_at, created_at, updated_at, dispatch_source)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        (
+            task_id, title, desc,
+            "bug", "critical", "backlog",
+            now, now, now, "qa_agent_reflex",
+        ),
+    )
+    return task_id
+
+
+def _run_route_smoke(base: str = "http://localhost:5050") -> list:
+    """Run route smoke against NAV_ROUTES; return list of failed result dicts.
+
+    Returns [] if the server is unreachable (skip gracefully, not a hard failure).
+    """
+    try:
+        from tools.testing.route_smoke import run_smoke, NAV_ROUTES
+        _ok, results = run_smoke(NAV_ROUTES, base=base, verbose=False)
+        return [r for r in results if not r.get("ok")]
+    except Exception as exc:
+        logger.warning("qa_agent_reflex: route smoke failed to run: %s", exc)
+        return []
+
+
 def _insert_sweep_task(conn) -> str:
     task_id = f"task-qa-sweep-{uuid.uuid4().hex[:8]}"
     now = _utcnow().isoformat()
@@ -175,6 +236,8 @@ def run(config: dict, state: object) -> dict:
         "gap_tasks_created": 0,
         "gap_task_ids": [],
         "skipped_pending_sweep": False,
+        "smoke_failures": 0,
+        "smoke_bug_task_ids": [],
     }
 
     conn = None
@@ -229,9 +292,30 @@ def run(config: dict, state: object) -> dict:
             created_gap_ids.append(gap_id)
             logger.info("qa_agent_reflex: gap task %s for canvas %s", gap_id, canvas_key)
 
+        # --- Phase 4: Direct route smoke (catches 500/404 regressions immediately) ---
+        smoke_failed = _run_route_smoke()
+        smoke_bug_ids: list[str] = []
+        for fail in smoke_failed:
+            route = fail.get("route", "")
+            if not route:
+                continue
+            if _pending_smoke_bug_exists(conn, route):
+                logger.debug("qa_agent_reflex: smoke bug task already pending for %s", route)
+                continue
+            bug_id = _insert_smoke_bug_task(
+                conn,
+                route=route,
+                status=fail.get("status", "?"),
+                error=fail.get("error", "unknown"),
+            )
+            smoke_bug_ids.append(bug_id)
+            logger.warning("qa_agent_reflex: smoke BUG task %s for route %s", bug_id, route)
+
         conn.commit()
         result["gap_tasks_created"] = len(created_gap_ids)
         result["gap_task_ids"] = created_gap_ids
+        result["smoke_failures"] = len(smoke_failed)
+        result["smoke_bug_task_ids"] = smoke_bug_ids
 
     except Exception as exc:
         result["error"] = str(exc)

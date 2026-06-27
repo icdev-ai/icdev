@@ -120,6 +120,20 @@ NAV_ROUTES: List[str] = [
     "/data/ask",
     "/observability/ask",
     "/infra/ask",
+    # Canvas home routes — regression-tested 2026-06-27
+    "/security",
+    "/observability",
+    "/network/diagram-analysis",
+    "/ai-builder",
+    "/ai-learning",
+    "/ai-roi",
+    "/ai-skills",
+    "/ai-handoff",
+    "/skillhub",
+    "/security/zig",
+    "/dashboard/executive-view",
+    "/dashboard/compliance-view",
+    "/dashboard/pm-view",
 ]
 
 # Body text that indicates a broken response (even with 200 status)
