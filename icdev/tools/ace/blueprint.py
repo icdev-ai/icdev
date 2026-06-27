@@ -908,6 +908,44 @@ def api_session_eval_post(session_id: str):
     }), 201
 
 
+@ace_api_bp.route("/sessions/<session_id>/eval/suggestions", methods=["GET"])
+def api_session_eval_suggestions(session_id: str):
+    """Return rule-based improvement suggestions for a session.
+
+    GET /api/ace/sessions/<session_id>/eval/suggestions
+    First loads the stored eval (if any); if none exists, scores on-the-fly.
+    Returns: {session_id, suggestions: [{issue, suggestion, field, severity}],
+              eval_summary: {outcome, efficiency_score, reasoning_coverage, tool_error_rate}}
+    """
+    try:
+        from icdev.tools.ace.evaluator import get_eval, score_session, suggest_improvements
+        er = get_eval(session_id)
+        if er is None:
+            er = score_session(session_id)
+        if er.outcome == "not_found":
+            return jsonify({"error": f"session not found: {session_id}"}), 404
+        suggestions = suggest_improvements(er)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace eval suggestions failed for %s: %s", session_id, exc)
+        return jsonify({"error": str(exc)}), 500
+
+    return jsonify({
+        "session_id": session_id,
+        "suggestions": suggestions,
+        "eval_summary": {
+            "outcome": er.outcome,
+            "done": er.done,
+            "efficiency_score": er.efficiency_score,
+            "reasoning_coverage": er.reasoning_coverage,
+            "tool_error_rate": er.tool_error_rate,
+            "scope_violations": er.scope_violations,
+            "plan_stated": er.plan_stated,
+            "turns_used": er.turns_used,
+            "max_iterations": er.max_iterations,
+        },
+    })
+
+
 @ace_api_bp.route("/evals", methods=["GET"])
 def api_evals_list():
     """List all stored eval results.

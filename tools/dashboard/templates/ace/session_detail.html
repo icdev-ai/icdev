@@ -117,6 +117,7 @@
     <div class="loading-state">Loading session…</div>
   </div>
   <div id="eval-container"></div>
+  <div id="suggestions-container"></div>
 
 </div>
 
@@ -334,6 +335,7 @@ async function loadEval() {
     }
     container.innerHTML = renderEvalPanel(data);
     _evalLoaded = true;
+    loadSuggestions();
   } catch(e) {
     container.innerHTML = '<div style="margin-top:20px;color:var(--text-secondary,#7a8cb0);font-size:12px;">(eval load failed)</div>';
   }
@@ -352,9 +354,50 @@ async function runEval() {
     }
     container.innerHTML = renderEvalPanel(data);
     _evalLoaded = true;
+    loadSuggestions();
   } catch(e) {
     container.innerHTML = '<div style="margin-top:20px;color:#e74c3c;font-size:13px;">Eval error: ' + esc(String(e)) + '</div>';
   }
+}
+
+async function loadSuggestions() {
+  var suggestionsDiv = document.getElementById('suggestions-container');
+  if (!suggestionsDiv) return;
+  try {
+    var res = await fetch('/api/ace/sessions/' + SESSION_ID + '/eval/suggestions');
+    var data = await res.json();
+    if (data.error || !data.suggestions || !data.suggestions.length) {
+      suggestionsDiv.innerHTML = '';
+      return;
+    }
+    suggestionsDiv.innerHTML = renderSuggestions(data.suggestions);
+  } catch(e) {
+    suggestionsDiv.innerHTML = '';
+  }
+}
+
+function renderSuggestions(suggestions) {
+  if (!suggestions || !suggestions.length) return '';
+  var sevColor = {high: '#e74c3c', medium: '#f39c12', low: '#7f8c8d'};
+  var sevBg    = {high: 'rgba(231,76,60,.1)', medium: 'rgba(243,156,18,.1)', low: 'rgba(127,140,141,.1)'};
+
+  var items = suggestions.map(function(s) {
+    var clr = sevColor[s.severity] || '#aaa';
+    var bg  = sevBg[s.severity]   || 'rgba(100,100,100,.08)';
+    return '<div style="border:1px solid ' + clr + ';border-radius:5px;padding:12px 14px;margin-bottom:8px;background:' + bg + ';">' +
+      '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px;">' +
+        '<strong style="font-size:13px;color:var(--text-primary,#e2e8f0);">' + esc(s.issue) + '</strong>' +
+        '<span style="font-size:10px;font-weight:700;text-transform:uppercase;color:' + clr + ';white-space:nowrap;border:1px solid ' + clr + ';padding:2px 6px;border-radius:3px;">' + esc(s.severity) + '</span>' +
+      '</div>' +
+      '<div style="font-size:12px;color:var(--text-secondary,#7a8cb0);">' + esc(s.suggestion) + '</div>' +
+      '<div style="font-size:10px;color:' + clr + ';margin-top:5px;text-transform:uppercase;letter-spacing:.04em;">Fix: ' + esc(s.field) + '</div>' +
+    '</div>';
+  }).join('');
+
+  return '<div style="border:1px solid var(--border-color,#2a2a4a);border-radius:6px;padding:18px;background:var(--bg-secondary,#1a1a2e);margin-top:16px;">' +
+    '<div style="font-size:15px;font-weight:600;margin-bottom:14px;">Improvement Suggestions</div>' +
+    items +
+  '</div>';
 }
 
 document.addEventListener('DOMContentLoaded', loadSession);
