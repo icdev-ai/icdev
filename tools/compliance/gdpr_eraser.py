@@ -169,7 +169,7 @@ def erase_tenant_data(
             set_sql = ", ".join(f"{col} = NULL" for col in pii_cols)
             try:
                 cur = conn.execute(
-                    f"UPDATE {table} SET {set_sql} WHERE tenant_id = ?",
+                    f"UPDATE {table} SET {set_sql} WHERE tenant_id = %s",
                     (tenant_id,),
                 )
                 if getattr(cur, "rowcount", 0) > 0:

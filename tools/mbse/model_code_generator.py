@@ -153,7 +153,7 @@ def _fetch_elements_multi(project_id: str, element_types: List[str], conn: sqlit
     """Fetch sysml_elements matching any of the given types."""
     placeholders = ",".join("?" for _ in element_types)
     cur = conn.execute(
-        f"SELECT * FROM sysml_elements WHERE project_id = ? AND element_type IN ({placeholders})",  # nosec B608 -- table/column names are internal constants, not user input
+        f"SELECT * FROM sysml_elements WHERE project_id = %s AND element_type IN ({placeholders})",  # nosec B608 -- table/column names are internal constants, not user input
         [project_id] + element_types,
     )
     return [dict(row) for row in cur.fetchall()]

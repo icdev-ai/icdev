@@ -347,7 +347,7 @@ def record_trial_result(
         set_clause = ", ".join(f"{k} = ?" for k in updates)  # nosec B608 — keys are internal constants
         values = list(updates.values()) + [search_id]
         conn.execute(
-            f"UPDATE ft_hp_searches SET {set_clause} WHERE id = ?",  # nosec B608
+            f"UPDATE ft_hp_searches SET {set_clause} WHERE id = %s",  # nosec B608
             values,
         )
 

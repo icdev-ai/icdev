@@ -105,7 +105,7 @@ class OMBM2604Assessor(BaseAssessor):
                 try:
                     for table in ["xai_assessments", "shap_attributions"]:
                         rows = conn.execute(
-                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
+                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = %s",  # nosec B608 -- table/column names are internal constants, not user input
                             (project_id,),
                         ).fetchone()
                         if rows and rows["cnt"] > 0:

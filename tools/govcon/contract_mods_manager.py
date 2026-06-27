@@ -142,7 +142,7 @@ def transition_mod(
             params.append(v)
         params.append(mod_id)
         conn.execute(
-            f"UPDATE cpmp_contract_mods SET {', '.join(set_clauses)} WHERE id = ?",
+            f"UPDATE cpmp_contract_mods SET {', '.join(set_clauses)} WHERE id = %s",
             params,
         )
         _record_status_history(conn, "contract_mod", mod_id, old_status, new_status, actor, reason)

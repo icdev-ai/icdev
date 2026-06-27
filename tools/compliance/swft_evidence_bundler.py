@@ -119,7 +119,7 @@ def _collect_artifact_evidence(project_id: str, category: str, conn) -> dict:
     table, id_col = query_info
     try:
         row = conn.execute(
-            f"SELECT COUNT(*) as cnt FROM {table} WHERE {id_col} = ?",  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT COUNT(*) as cnt FROM {table} WHERE {id_col} = %s",  # nosec B608 -- table/column names are internal constants, not user input
             (project_id,),
         ).fetchone()
         if row and row["cnt"] > 0:
@@ -128,7 +128,7 @@ def _collect_artifact_evidence(project_id: str, category: str, conn) -> dict:
 
         # Get latest date
         date_row = conn.execute(
-            f"SELECT MAX(created_at) as latest FROM {table} WHERE {id_col} = ?",  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT MAX(created_at) as latest FROM {table} WHERE {id_col} = %s",  # nosec B608 -- table/column names are internal constants, not user input
             (project_id,),
         ).fetchone()
         if date_row and date_row["latest"]:

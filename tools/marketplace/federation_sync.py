@@ -182,7 +182,7 @@ def pull_available(tenant_id, consumer_il, db_path=None):
                   AND a.impact_level IN ({placeholders})
                   AND a.id NOT IN (
                       SELECT asset_id FROM marketplace_installations
-                      WHERE tenant_id = ? AND status = 'active'
+                      WHERE tenant_id = %s AND status = 'active'
                   )
                 ORDER BY a.avg_rating DESC, a.install_count DESC""",  # nosec B608 -- table/column names are internal constants, not user input
             (*compatible_ils, tenant_id),

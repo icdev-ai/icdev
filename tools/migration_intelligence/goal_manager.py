@@ -113,7 +113,7 @@ def update_goal(goal_id: str, updates: dict[str, Any], db_path: str | None = Non
     set_clause = ", ".join(f"{k} = ?" for k in cols)
     conn = _get_conn(db_path)
     try:
-        conn.execute(f"UPDATE mi_goals SET {set_clause} WHERE id = ?", [*cols.values(), goal_id])
+        conn.execute(f"UPDATE mi_goals SET {set_clause} WHERE id = %s", [*cols.values(), goal_id])
         conn.commit()
         return True
     finally:

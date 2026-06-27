@@ -616,7 +616,7 @@ def delete_design(design_id):
     conn = _get_conn()
     try:
         for tbl in _IDC_CHILD_TABLES:
-            conn.execute(f"DELETE FROM {tbl} WHERE design_id=?", (design_id,))  # nosec B608
+            conn.execute(f"DELETE FROM {tbl} WHERE design_id=%s", (design_id,))  # nosec B608
         conn.execute("DELETE FROM infra_designs WHERE id=%s", (design_id,))
         conn.commit()
     finally:
@@ -632,7 +632,7 @@ def delete_all_designs():
         ids = [r[0] for r in conn.execute("SELECT id FROM infra_designs").fetchall()]
         for did in ids:
             for tbl in _IDC_CHILD_TABLES:
-                conn.execute(f"DELETE FROM {tbl} WHERE design_id=?", (did,))  # nosec B608
+                conn.execute(f"DELETE FROM {tbl} WHERE design_id=%s", (did,))  # nosec B608
             conn.execute("DELETE FROM infra_designs WHERE id=%s", (did,))
         conn.commit()
     finally:

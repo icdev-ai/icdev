@@ -175,7 +175,7 @@ def _read_json_canvas(db_filename: str, table: str, json_col: str, time_col: str
     out: list[dict] = []
     try:
         rows = c.execute(
-            f"SELECT {json_col}, {time_col} FROM {table} ORDER BY {time_col} DESC LIMIT ?",  # nosec B608
+            f"SELECT {json_col}, {time_col} FROM {table} ORDER BY {time_col} DESC LIMIT %s",  # nosec B608
             (JSON_RECENT_LIMIT,),
         ).fetchall()
         for row in rows:
@@ -206,7 +206,7 @@ def _read_direct_canvas(db_filename: str, table: str, label: str, slug: str) -> 
         rows = c.execute(
             f"SELECT id, rule_id, severity, title, description, affected_entity, "  # nosec B608
             f"affected_type, status, created_at FROM {table} "
-            f"ORDER BY created_at DESC LIMIT ?",
+            f"ORDER BY created_at DESC LIMIT %s",
             (DIRECT_RECENT_LIMIT,),
         ).fetchall()
         for row in rows:

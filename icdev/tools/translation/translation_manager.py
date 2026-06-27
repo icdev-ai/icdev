@@ -62,7 +62,7 @@ def _update_job_status(db_path, job_id, status, **kwargs):
         values.append(job_id)
 
         c.execute(
-            f"UPDATE translation_jobs SET {', '.join(sets)} WHERE id = ?",  # nosec B608 -- table/column names are internal constants, not user input
+            f"UPDATE translation_jobs SET {', '.join(sets)} WHERE id = %s",  # nosec B608 -- table/column names are internal constants, not user input
             values,
         )
         conn.commit()

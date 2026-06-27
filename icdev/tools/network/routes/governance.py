@@ -134,7 +134,7 @@ def register_governance_routes(bp, get_conn=None, helpers=None):
             updates["updated_at"] = now
             set_clause = ", ".join(f"{k}=?" for k in updates)
             db.execute(
-                f"UPDATE nc_change_requests SET {set_clause} WHERE id=?",
+                f"UPDATE nc_change_requests SET {set_clause} WHERE id=%s",
                 list(updates.values()) + [cr_id],
             )
             db.commit()

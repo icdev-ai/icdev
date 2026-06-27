@@ -88,7 +88,7 @@ def trace_query_handler(args: dict):
             where = "WHERE " + " AND ".join(clauses) if clauses else ""
             params.append(limit)
             rows = conn.execute(
-                f"SELECT * FROM otel_spans {where} ORDER BY start_time DESC LIMIT ?",  # nosec B608 -- table/column names are internal constants, not user input
+                f"SELECT * FROM otel_spans {where} ORDER BY start_time DESC LIMIT %s",  # nosec B608 -- table/column names are internal constants, not user input
                 params,
             ).fetchall()
 

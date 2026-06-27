@@ -116,7 +116,7 @@ def _update_status(
                 val = extra["details"]
                 params.append(json.dumps(val) if isinstance(val, dict) else str(val))
         params.append(resolution_id)
-        conn.execute(f"UPDATE auto_resolution_log SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE auto_resolution_log SET {', '.join(sets)} WHERE id = %s", params)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
     finally:
         conn.close()

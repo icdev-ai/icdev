@@ -127,7 +127,7 @@ def assess_fairness(
                 try:
                     for table in ["xai_assessments", "shap_attributions"]:
                         row = conn.execute(
-                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
+                            f"SELECT COUNT(*) as cnt FROM {table} WHERE project_id = %s",  # nosec B608 -- table/column names are internal constants, not user input
                             (project_id,),
                         ).fetchone()
                         if row and row["cnt"] > 0:

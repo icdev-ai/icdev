@@ -199,7 +199,7 @@ def transition_status(sop_id, new_status, actor=""):
     conn = _get_conn()
     try:
         conn.execute(
-            f"UPDATE idc_sops SET status=?{extra_fields}, updated_at=? WHERE id=?",
+            f"UPDATE idc_sops SET status=%s{extra_fields}, updated_at=%s WHERE id=%s",
             [new_status] + extra_params + [now, sop_id],
         )
         conn.commit()

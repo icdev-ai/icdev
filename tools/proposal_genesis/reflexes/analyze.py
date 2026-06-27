@@ -182,7 +182,7 @@ def _get_competitor_data(opportunity_id: str) -> Optional[Dict]:
             FROM govcon_awards
             WHERE naics_code IN (
                 SELECT naics_code FROM sam_gov_opportunities
-                WHERE id = ?
+                WHERE id = %s
             )
             ORDER BY award_date DESC LIMIT {_COMPETITOR_FETCH_LIMIT}
         """,

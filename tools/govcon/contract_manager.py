@@ -259,7 +259,7 @@ def update_contract(contract_id, data):
     params.append(_now())
     params.append(contract_id)
 
-    conn.execute(f"UPDATE cpmp_contracts SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
+    conn.execute(f"UPDATE cpmp_contracts SET {', '.join(sets)} WHERE id = %s", params)  # nosec B608 -- table/column names are internal constants, not user input
     _audit(conn, "update_contract", f"Updated contract {contract_id}: {list(data.keys())}")
     conn.commit()
     conn.close()
@@ -358,7 +358,7 @@ def update_clin(clin_id, data):
         return {"status": "error", "message": "No updatable fields provided"}
     sets.append("updated_at = ?")
     params.extend([_now(), clin_id])
-    conn.execute(f"UPDATE cpmp_clins SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
+    conn.execute(f"UPDATE cpmp_clins SET {', '.join(sets)} WHERE id = %s", params)  # nosec B608 -- table/column names are internal constants, not user input
     conn.commit()
     conn.close()
     return {"status": "ok", "clin_id": clin_id}
@@ -473,7 +473,7 @@ def update_wbs(wbs_id, data):
 
     sets.append("updated_at = ?")
     params.extend([_now(), wbs_id])
-    conn.execute(f"UPDATE cpmp_wbs SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
+    conn.execute(f"UPDATE cpmp_wbs SET {', '.join(sets)} WHERE id = %s", params)  # nosec B608 -- table/column names are internal constants, not user input
 
     if "status" in data and data["status"] != old_status:
         _record_status_change(conn, "wbs", wbs_id, old_status, data["status"])
@@ -602,7 +602,7 @@ def update_deliverable(deliverable_id, data):
         return {"status": "error", "message": "No updatable fields provided"}
     sets.append("updated_at = ?")
     params.extend([_now(), deliverable_id])
-    conn.execute(f"UPDATE cpmp_deliverables SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
+    conn.execute(f"UPDATE cpmp_deliverables SET {', '.join(sets)} WHERE id = %s", params)  # nosec B608 -- table/column names are internal constants, not user input
     conn.commit()
     conn.close()
     return {"status": "ok", "deliverable_id": deliverable_id}
@@ -636,7 +636,7 @@ def transition_deliverable(deliverable_id, new_status, changed_by=None, reason=N
 
     set_clauses = ", ".join(f"{k} = ?" for k in updates)
     params = list(updates.values()) + [deliverable_id]
-    conn.execute(f"UPDATE cpmp_deliverables SET {set_clauses} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
+    conn.execute(f"UPDATE cpmp_deliverables SET {set_clauses} WHERE id = %s", params)  # nosec B608 -- table/column names are internal constants, not user input
     _record_status_change(conn, "deliverable", deliverable_id, old_status, new_status, changed_by, reason)
     _audit(conn, "transition_deliverable", f"Deliverable {deliverable_id}: {old_status} → {new_status}")
     conn.commit()

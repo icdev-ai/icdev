@@ -308,7 +308,7 @@ class BaseAssessor(ABC):
                         requirement_title, family, status,
                         evidence_description, automation_result,
                         nist_800_53_crosswalk, updated_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (
                         project_id,
                         now,
@@ -421,7 +421,7 @@ class BaseAssessor(ABC):
             rows = conn.execute(
                 f"""SELECT requirement_id, requirement_title, family, status
                     FROM {self.TABLE_NAME}
-                    WHERE project_id = ?""",  # nosec B608 -- table/column names are internal constants, not user input
+                    WHERE project_id = %s""",  # nosec B608 -- table/column names are internal constants, not user input
                 (project_id,),
             ).fetchall()
 

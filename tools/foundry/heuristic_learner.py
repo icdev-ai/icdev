@@ -138,7 +138,7 @@ def _fetch(conn, outcomes: tuple[str, ...], limit: int) -> list[dict[str, Any]]:
           LEFT JOIN foundry_concepts fc ON fo.concept_id = fc.id
          WHERE fo.outcome IN ({placeholders})
          ORDER BY fo.created_at DESC, fo.id DESC
-         LIMIT ?
+         LIMIT %s
         """,
         (*outcomes, limit),
     ).fetchall()

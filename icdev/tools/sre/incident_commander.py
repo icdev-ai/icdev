@@ -238,7 +238,7 @@ def triage_incident(incident_id: str, root_cause: str = None) -> dict:
 
     # SQLite doesn't have updated_at column, just use timeline
     conn.execute(
-        f"UPDATE sre_incidents SET status = 'triaging'{', root_cause = ?' if root_cause else ''} WHERE id = ?",  # nosec B608
+        f"UPDATE sre_incidents SET status = 'triaging'{', root_cause = ?' if root_cause else ''} WHERE id = %s",  # nosec B608
         ([root_cause, incident_id] if root_cause else [incident_id]),
     )
 
@@ -456,7 +456,7 @@ def get_incident(incident_id: str) -> dict:
     ]
 
     row = conn.execute(
-        f"SELECT {', '.join(cols)} FROM sre_incidents WHERE id = ?",  # nosec B608
+        f"SELECT {', '.join(cols)} FROM sre_incidents WHERE id = %s",  # nosec B608
         (incident_id,),
     ).fetchone()
 

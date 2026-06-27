@@ -176,7 +176,7 @@ def update_pir(pir_id: str, **fields) -> Optional[Dict[str, Any]]:
     conn = get_connection()
     try:
         result = conn.execute(
-            f"UPDATE sg_pir_requirements SET {set_clause} WHERE id = ?",  # nosec B608 — set_clause from validated allowlist
+            f"UPDATE sg_pir_requirements SET {set_clause} WHERE id = %s",  # nosec B608 — set_clause from validated allowlist
             params
         )
         conn.commit()

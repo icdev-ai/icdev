@@ -148,7 +148,7 @@ def update_project(project_id: str, **kwargs: Any) -> dict:
     conn = get_connection()
     try:
         conn.execute(
-            f"UPDATE canvas_projects SET {set_clause} WHERE id = ?",  # noqa: S608
+            f"UPDATE canvas_projects SET {set_clause} WHERE id = %s",  # noqa: S608
             values,
         )
         conn.commit()

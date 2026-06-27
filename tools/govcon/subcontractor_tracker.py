@@ -220,7 +220,7 @@ def update_subcontractor(sub_id, data):
     params.append(_now())
     params.append(sub_id)
 
-    conn.execute(f"UPDATE cpmp_subcontractors SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
+    conn.execute(f"UPDATE cpmp_subcontractors SET {', '.join(sets)} WHERE id = %s", params)  # nosec B608 -- table/column names are internal constants, not user input
 
     # Record status change if status was modified
     if "status" in data and data["status"] != old_status:

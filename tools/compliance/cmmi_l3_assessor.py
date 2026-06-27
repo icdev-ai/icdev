@@ -151,7 +151,7 @@ def _fetch_pa_statuses(project_id: Optional[str]) -> Dict[str, str]:
             try:
                 if project_id:
                     rows = conn.execute(
-                        f"SELECT requirement_id, status FROM {table} WHERE project_id = ?",  # noqa: S608
+                        f"SELECT requirement_id, status FROM {table} WHERE project_id = %s",  # noqa: S608
                         (project_id,),
                     ).fetchall()
                 else:

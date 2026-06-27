@@ -346,7 +346,7 @@ class AgentTrustScorer:
         try:
             row = conn.execute(
                 f"SELECT COUNT(*) FROM {table} "  # nosec B608 -- table/column names are internal constants, not user input
-                f"WHERE {agent_col} = ? AND {condition} AND created_at >= ?",
+                f"WHERE {agent_col} = %s AND {condition} AND created_at >= %s",
                 (agent_id, cutoff),
             ).fetchone()
             return row[0] if row else 0

@@ -64,7 +64,7 @@ class CanvasCollabManager:
             conn.execute(
                 f"INSERT OR REPLACE INTO {self.collab_table} "  # noqa: S608
                 "(id, design_id, user_id, user_name, color, joined_at, last_seen, is_active) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, 1)",
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, 1)",
                 (session_id, design_id, user_id, user_name, color, self._now(), self._now()),
             )
             conn.commit()
@@ -78,7 +78,7 @@ class CanvasCollabManager:
         try:
             conn.execute(
                 f"UPDATE {self.collab_table} SET is_active = 0 "  # noqa: S608
-                "WHERE design_id = ? AND user_id = ?",
+                "WHERE design_id = %s AND user_id = %s",
                 (design_id, user_id),
             )
             conn.commit()
@@ -91,8 +91,8 @@ class CanvasCollabManager:
         conn = self._get_conn()
         try:
             conn.execute(
-                f"UPDATE {self.collab_table} SET last_seen = ? "  # noqa: S608
-                "WHERE design_id = ? AND user_id = ? AND is_active = 1",
+                f"UPDATE {self.collab_table} SET last_seen = %s "  # noqa: S608
+                "WHERE design_id = %s AND user_id = %s AND is_active = 1",
                 (self._now(), design_id, user_id),
             )
             conn.commit()
@@ -106,7 +106,7 @@ class CanvasCollabManager:
         try:
             rows = conn.execute(
                 f"SELECT user_id, user_name, color, last_seen FROM {self.collab_table} "  # noqa: S608
-                "WHERE design_id = ? AND is_active = 1 ORDER BY joined_at",
+                "WHERE design_id = %s AND is_active = 1 ORDER BY joined_at",
                 (design_id,),
             ).fetchall()
             return {"participants": [dict(r) for r in rows], "polled_at": self._now()}

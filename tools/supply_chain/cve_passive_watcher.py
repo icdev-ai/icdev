@@ -347,7 +347,7 @@ def watch_scan(project_id, since_id=None, db_path=None, auto_triage=True, ato_on
         audit_rows = conn.execute(
             f"""SELECT id, project_id, event_type, actor, action, details, created_at
                 FROM audit_trail
-                WHERE id > ?
+                WHERE id > %s
                   AND event_type IN ({placeholders})
                 ORDER BY id ASC""",
             [since_id] + list(ATO_EVENT_TYPES),

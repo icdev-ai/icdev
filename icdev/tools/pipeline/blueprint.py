@@ -475,7 +475,7 @@ def create_pipeline_blueprint():
         params.append(now_isoformat())
         params.append(pipe_id)
         conn.execute(
-            f"UPDATE pipelines SET {', '.join(sets)} WHERE id=?",
+            f"UPDATE pipelines SET {', '.join(sets)} WHERE id=%s",
             params,
         )
         conn.commit()

@@ -396,7 +396,7 @@ def list_trajectories():
             FROM ft_trajectories
             {where_sql}
             ORDER BY created_at DESC
-            LIMIT ?
+            LIMIT %s
             """,
             params + [limit],
         ).fetchall()

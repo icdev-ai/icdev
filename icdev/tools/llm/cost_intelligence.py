@@ -385,7 +385,7 @@ def project_monthly_spend(agent_id: str | None = None) -> dict:
                    SUM(cost_estimate_usd) as spent,
                    COUNT(*) as calls
             FROM agent_token_usage
-            WHERE created_at >= ? AND created_at < ?{agent_filter}
+            WHERE created_at >= %s AND created_at < %s{agent_filter}
             GROUP BY agent_id""",  # nosec B608 — agent_filter is hardcoded
         params,
     ).fetchall()
@@ -400,7 +400,7 @@ def project_monthly_spend(agent_id: str | None = None) -> dict:
     budget_rows = conn.execute(
         f"""SELECT agent_id, budget_usd, spent_usd, warning_threshold
             FROM agent_token_budgets
-            WHERE month = ?{budget_filter}""",  # nosec B608 — budget_filter is hardcoded
+            WHERE month = %s{budget_filter}""",  # nosec B608 — budget_filter is hardcoded
         budget_params,
     ).fetchall()
     budgets: dict[str, dict] = {}

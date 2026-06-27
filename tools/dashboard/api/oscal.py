@@ -84,7 +84,7 @@ def list_validations():
         params = (project_id,) if project_id else ()
 
         rows = conn.execute(
-            f"SELECT * FROM oscal_validation_log {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT * FROM oscal_validation_log {where} ORDER BY created_at DESC LIMIT %s OFFSET %s",  # nosec B608 -- table/column names are internal constants, not user input
             params + (limit, offset),
         ).fetchall()
 
@@ -115,7 +115,7 @@ def list_artifacts():
         params = (project_id,) if project_id else ()
 
         rows = conn.execute(
-            f"SELECT * FROM oscal_artifacts {where} ORDER BY generated_at DESC LIMIT ? OFFSET ?",  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT * FROM oscal_artifacts {where} ORDER BY generated_at DESC LIMIT %s OFFSET %s",  # nosec B608 -- table/column names are internal constants, not user input
             params + (limit, offset),
         ).fetchall()
 

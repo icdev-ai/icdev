@@ -1859,7 +1859,7 @@ def update_workflow(
     conn = get_connection()
     try:
         conn.execute(
-            f"UPDATE studio_workflows SET {', '.join(sets)} WHERE workflow_id = ?",  # noqa: S608  # nosec B608 — column names are hardcoded, not user input
+            f"UPDATE studio_workflows SET {', '.join(sets)} WHERE workflow_id = %s",  # noqa: S608  # nosec B608 — column names are hardcoded, not user input
             vals,
         )
         conn.commit()

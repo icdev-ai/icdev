@@ -528,7 +528,7 @@ class GNS3TrafficEngine:
             conn.execute(f"""
                 INSERT INTO {self.db_table}
                 (collected_at, src, dst_ip, label, scenario, reachable, avg_rtt_ms, loss_pct, hops, raw_output)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """, (ts, f["src"], f.get("dst_ip", f.get("dst", "")), f["label"], f["scenario"],
                   1 if f.get("reachable") else 0,
                   f.get("avg_rtt_ms"), f.get("loss_pct", 0),

@@ -425,7 +425,7 @@ def update_dashboard(
     conn = get_connection()
     try:
         conn.execute(
-            f"UPDATE studio_dashboards SET {', '.join(sets)} WHERE dashboard_id = ?",  # nosec B608
+            f"UPDATE studio_dashboards SET {', '.join(sets)} WHERE dashboard_id = %s",  # nosec B608
             vals,
         )
         conn.commit()

@@ -673,7 +673,7 @@ def update_form(
     conn = get_connection()
     try:
         conn.execute(
-            f"UPDATE studio_forms SET {', '.join(sets)} WHERE form_id = ?",  # nosec B608 — column names are hardcoded
+            f"UPDATE studio_forms SET {', '.join(sets)} WHERE form_id = %s",  # nosec B608 — column names are hardcoded
             vals,
         )
         conn.commit()

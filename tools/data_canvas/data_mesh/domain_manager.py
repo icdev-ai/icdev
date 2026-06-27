@@ -78,7 +78,7 @@ def update_domain(domain_id: str, data: dict) -> dict | None:
         values = list(fields.values()) + [now, domain_id]
         with get_connection() as conn:
             conn.execute(
-                f"UPDATE dm_domains SET {set_clause}, updated_at=? WHERE id=?",
+                f"UPDATE dm_domains SET {set_clause}, updated_at=%s WHERE id=%s",
                 values,
             )
             conn.commit()

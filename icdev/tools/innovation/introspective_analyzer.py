@@ -277,8 +277,8 @@ def analyze_gate_failures(db_path=None, min_failures=None, days=None):
         rows = conn.execute(
             f"""SELECT event_type, project_id, COUNT(*) AS cnt,
                        MIN(created_at) AS first_f, MAX(created_at) AS last_f
-                FROM audit_trail WHERE event_type IN ({ph}) AND created_at >= ?
-                GROUP BY event_type, project_id HAVING COUNT(*) >= ?
+                FROM audit_trail WHERE event_type IN ({ph}) AND created_at >= %s
+                GROUP BY event_type, project_id HAVING COUNT(*) >= %s
                 ORDER BY cnt DESC LIMIT 50""",  # nosec B608 -- table/column names are internal constants, not user input
             (*gate_evts, cutoff, mf),
         ).fetchall()
@@ -384,7 +384,7 @@ def analyze_slow_pipelines(db_path=None, threshold_seconds=None):
                           ON s.project_id=e.project_id AND e.created_at>s.created_at
                              AND e.event_type IN ({eph})
                         WHERE s.event_type IN ({sph})
-                          AND CAST((julianday(e.created_at)-julianday(s.created_at))*86400 AS INTEGER) > ?
+                          AND CAST((julianday(e.created_at)-julianday(s.created_at))*86400 AS INTEGER) > %s
                         ORDER BY dur DESC LIMIT 20""",  # nosec B608 -- table/column names are internal constants, not user input
                     (*ends, *starts, th),
                 ).fetchall()

@@ -570,7 +570,7 @@ def get_canvas_activity_trend(days: int = 7) -> list[dict]:
             rows = conn.execute(
                 f"SELECT substr({time_col}, 1, 10) AS day, COUNT(*) AS cnt"  # nosec B608
                 f" FROM {audit_tbl}"
-                f" WHERE {time_col} >= ?"
+                f" WHERE {time_col} >= %s"
                 f" GROUP BY day",
                 (cutoff,),
             ).fetchall()

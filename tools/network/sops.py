@@ -154,7 +154,7 @@ def list_sops(category: str | None = None, status: str | None = None,
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
         params.append(int(limit))
         rows = conn.execute(
-            f"SELECT * FROM ndc_sops{where} ORDER BY updated_at DESC LIMIT ?",  # nosec B608
+            f"SELECT * FROM ndc_sops{where} ORDER BY updated_at DESC LIMIT %s",  # nosec B608
             params,
         ).fetchall()
         return [_row_to_sop(r) for r in rows]
@@ -199,7 +199,7 @@ def update_sop(sop_id: str, **fields: Any) -> dict:
     conn = _get_conn()
     try:
         conn.execute(
-            f"UPDATE ndc_sops SET {', '.join(updates)} WHERE sop_id = ?",  # nosec B608
+            f"UPDATE ndc_sops SET {', '.join(updates)} WHERE sop_id = %s",  # nosec B608
             params,
         )
         _log_action(conn, sop_id, fields.get("actor", "system"), "updated",

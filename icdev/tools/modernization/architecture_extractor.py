@@ -171,7 +171,7 @@ def extract_call_graph(app_id: str) -> dict:
         ph = ",".join("?" for _ in CALL_GRAPH_DEP_TYPES)
         edge_rows = conn.execute(
             f"SELECT source_component_id, target_component_id, dependency_type, weight "  # nosec B608 -- table/column names are internal constants, not user input
-            f"FROM legacy_dependencies WHERE legacy_app_id=? AND dependency_type IN ({ph}) "
+            f"FROM legacy_dependencies WHERE legacy_app_id=%s AND dependency_type IN ({ph}) "
             f"AND target_component_id IS NOT NULL",
             (app_id, *CALL_GRAPH_DEP_TYPES),
         ).fetchall()

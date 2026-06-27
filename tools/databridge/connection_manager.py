@@ -205,7 +205,7 @@ def update_connection(
     try:
         conn = _get_conn(db)
         conn.execute(
-            f"UPDATE db_connections SET {set_clause} WHERE id = ?",  # nosec B608 -- column names validated against allowlist above
+            f"UPDATE db_connections SET {set_clause} WHERE id = %s",  # nosec B608 -- column names validated against allowlist above
             values,
         )
         conn.commit()

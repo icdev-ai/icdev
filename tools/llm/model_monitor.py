@@ -695,7 +695,7 @@ def get_drift_history(limit: int = 50, model_id: Optional[str] = None) -> List[d
                    baseline_value, current_value, deviation_pct,
                    severity, action_taken, window_start, window_end, created_at
             FROM model_drift_events {where_clause}
-            ORDER BY created_at DESC LIMIT ?""",  # nosec B608
+            ORDER BY created_at DESC LIMIT %s""",  # nosec B608
         params + [limit],
     ).fetchall()
 

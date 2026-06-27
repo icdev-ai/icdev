@@ -382,7 +382,7 @@ def create_boundary_blueprint():
             params.append(now)
             params.append(design_id)
             conn.execute(
-                f"UPDATE boundary_designs SET {', '.join(updates)} WHERE id=?",  # noqa: S608  # nosec B608 — columns from hardcoded allowlist
+                f"UPDATE boundary_designs SET {', '.join(updates)} WHERE id=%s",  # noqa: S608  # nosec B608 — columns from hardcoded allowlist
                 params,
             )
         _audit(design_id, "UPDATE", json.dumps(list(data.keys())))
@@ -436,7 +436,7 @@ def create_boundary_blueprint():
         with get_connection() as conn:
             for table in child_tables:
                 conn.execute(
-                    f"DELETE FROM {table} WHERE design_id=?",  # nosec B608 — table from hardcoded tuple
+                    f"DELETE FROM {table} WHERE design_id=%s",  # nosec B608 — table from hardcoded tuple
                     (design_id,),  # noqa: S608
                 )
             conn.execute("DELETE FROM boundary_designs WHERE id=%s", (design_id,))
@@ -452,7 +452,7 @@ def create_boundary_blueprint():
             ids = [r[0] for r in conn.execute("SELECT id FROM boundary_designs").fetchall()]
             for did in ids:
                 for table in child_tables:
-                    conn.execute(f"DELETE FROM {table} WHERE design_id=?", (did,))  # nosec B608
+                    conn.execute(f"DELETE FROM {table} WHERE design_id=%s", (did,))  # nosec B608
                 conn.execute("DELETE FROM boundary_designs WHERE id=%s", (did,))
         return jsonify({"deleted": len(ids)})
 

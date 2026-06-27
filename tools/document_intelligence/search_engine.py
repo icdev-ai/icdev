@@ -1379,7 +1379,7 @@ class DICSearchEngine:
             like_clauses = " OR ".join(["content LIKE ?" for _ in terms])
             params = [f"%{t}%" for t in terms]
             cur = conn.execute(
-                f"SELECT chunk_id, content, source_id FROM rag_chunks WHERE {like_clauses} LIMIT ?",
+                f"SELECT chunk_id, content, source_id FROM rag_chunks WHERE {like_clauses} LIMIT %s",
                 params + [top_k],
             )
             rows = cur.fetchall()

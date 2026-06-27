@@ -1380,7 +1380,7 @@ def remediate_one(target: dict, dry_run: bool = False,
     conn = get_connection(str(db_path))
     try:
         row = conn.execute(
-            f"SELECT graph_json FROM {cfg['design_table']} WHERE id = ?",  # noqa: S608  # nosec B608
+            f"SELECT graph_json FROM {cfg['design_table']} WHERE id = %s",  # noqa: S608  # nosec B608
             (design_id,),
         ).fetchone()
         if not row:
@@ -1409,7 +1409,7 @@ def remediate_one(target: dict, dry_run: bool = False,
 
         # Save mutated graph
         conn.execute(
-            f"UPDATE {cfg['design_table']} SET graph_json = ?, updated_at = ? WHERE id = ?",  # noqa: S608  # nosec B608
+            f"UPDATE {cfg['design_table']} SET graph_json = %s, updated_at = %s WHERE id = %s",  # noqa: S608  # nosec B608
             (json.dumps(graph), _now_iso(), design_id),
         )
         conn.commit()

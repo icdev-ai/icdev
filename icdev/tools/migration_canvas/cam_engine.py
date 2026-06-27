@@ -58,7 +58,7 @@ def _find_sop(conn, sop_source: str, *keywords: str) -> tuple[str, str] | tuple[
                 for kw in keywords:
                     row = c.execute(
                         f"SELECT {id_col}, title FROM {table} "
-                        f"WHERE {status_col}=? AND lower(title) LIKE ? LIMIT 1",
+                        f"WHERE {status_col}=%s AND lower(title) LIKE %s LIMIT 1",
                         (status, f"%{kw.lower()}%"),
                     ).fetchone()
                     if row:
@@ -66,7 +66,7 @@ def _find_sop(conn, sop_source: str, *keywords: str) -> tuple[str, str] | tuple[
             # Fallback: any status
             for kw in keywords:
                 row = c.execute(
-                    f"SELECT {id_col}, title FROM {table} WHERE lower(title) LIKE ? LIMIT 1",
+                    f"SELECT {id_col}, title FROM {table} WHERE lower(title) LIKE %s LIMIT 1",
                     (f"%{kw.lower()}%",),
                 ).fetchone()
                 if row:
@@ -210,7 +210,7 @@ def _load_sop_steps(sop_source: str, sop_id: str) -> list[dict]:
     try:
         c = _canvas_conn(sop_source)
         try:
-            row = c.execute(f"SELECT {steps_col} FROM {table} WHERE {id_col}=?", (sop_id,)).fetchone()
+            row = c.execute(f"SELECT {steps_col} FROM {table} WHERE {id_col}=%s", (sop_id,)).fetchone()
             if not row:
                 return []
             raw = row[0] if row else None

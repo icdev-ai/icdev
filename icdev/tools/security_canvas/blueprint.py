@@ -384,7 +384,7 @@ def create_security_blueprint():
             params.append(now)
             params.append(design_id)
             conn.execute(
-                f"UPDATE security_designs SET {', '.join(updates)} WHERE id=?",  # nosec B608 -- keys from hardcoded allowlist
+                f"UPDATE security_designs SET {', '.join(updates)} WHERE id=%s",  # nosec B608 -- keys from hardcoded allowlist
                 params,
             )
         _audit("UPDATE", "design", design_id, json.dumps(list(data.keys())))
@@ -439,7 +439,7 @@ def create_security_blueprint():
         )
         with get_connection() as conn:
             for table in child_tables:
-                conn.execute(f"DELETE FROM {table} WHERE design_id=?", (design_id,))  # nosec B608 -- table from hardcoded tuple
+                conn.execute(f"DELETE FROM {table} WHERE design_id=%s", (design_id,))  # nosec B608 -- table from hardcoded tuple
             conn.execute("DELETE FROM security_designs WHERE id=%s", (design_id,))
         _audit("DELETE", "design", design_id, "")
         return jsonify({"deleted": design_id})

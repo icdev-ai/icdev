@@ -1333,7 +1333,7 @@ def validate_thread_integrity(project_id: str, db_path=None) -> dict:
         if src_type in type_table_map:
             table, col = type_table_map[src_type]
             try:
-                c.execute(f"SELECT 1 FROM {table} WHERE {col} = ? LIMIT 1", (src_id,))  # nosec B608 -- table/column names are internal constants, not user input
+                c.execute(f"SELECT 1 FROM {table} WHERE {col} = %s LIMIT 1", (src_id,))  # nosec B608 -- table/column names are internal constants, not user input
                 if not c.fetchone():
                     issues.append(
                         {
@@ -1350,7 +1350,7 @@ def validate_thread_integrity(project_id: str, db_path=None) -> dict:
         if tgt_type in type_table_map:
             table, col = type_table_map[tgt_type]
             try:
-                c.execute(f"SELECT 1 FROM {table} WHERE {col} = ? LIMIT 1", (tgt_id,))  # nosec B608 -- table/column names are internal constants, not user input
+                c.execute(f"SELECT 1 FROM {table} WHERE {col} = %s LIMIT 1", (tgt_id,))  # nosec B608 -- table/column names are internal constants, not user input
                 if not c.fetchone():
                     issues.append(
                         {

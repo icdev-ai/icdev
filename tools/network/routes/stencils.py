@@ -184,7 +184,7 @@ def register_stencil_routes(bp: Blueprint) -> None:
                 f"JOIN nc_stencil_libraries l ON l.id=s.library_id "
                 f"{where_sql} "
                 f"ORDER BY l.vendor, s.category, s.name "
-                f"LIMIT ? OFFSET ?",
+                f"LIMIT %s OFFSET %s",
                 params + [limit, offset],
             ).fetchall()
             shapes = [dict(r) for r in rows]

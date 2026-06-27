@@ -271,7 +271,7 @@ def findings():
                 ORDER BY
                     CASE severity WHEN 'CAT1' THEN 1 WHEN 'CAT2' THEN 2 ELSE 3 END,
                     created_at DESC
-                LIMIT ? OFFSET ?""",  # nosec B608 -- table/column names are internal constants, not user input
+                LIMIT %s OFFSET %s""",  # nosec B608 -- table/column names are internal constants, not user input
             params + [per_page, offset],
         ).fetchall()
 

@@ -153,7 +153,7 @@ def _check_amendment_drift(opp_id: str) -> Dict[str, Any]:
             f"""
             SELECT ad.id, ad.amendment_number, ad.change_summary
             FROM pg_amendment_diffs ad
-            WHERE ad.opportunity_id = ?
+            WHERE ad.opportunity_id = %s
             AND ad.re_extracted = 1
             AND ad.matrix_updated = 0
             ORDER BY ad.created_at DESC

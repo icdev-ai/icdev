@@ -411,14 +411,14 @@ def _find_open_card(
     try:
         row = conn.execute(
             f"SELECT id, title, status FROM kanban_tasks "
-            f"WHERE source_prediction_id = ? AND status IN ({placeholders}) LIMIT 1",
+            f"WHERE source_prediction_id = %s AND status IN ({placeholders}) LIMIT 1",
             (prediction_id, *OPEN_STATUSES),
         ).fetchone()
         if row:
             return dict(row)
         row = conn.execute(
             f"SELECT id, title, status FROM kanban_tasks "
-            f"WHERE title = ? AND status IN ({placeholders}) LIMIT 1",
+            f"WHERE title = %s AND status IN ({placeholders}) LIMIT 1",
             (title, *OPEN_STATUSES),
         ).fetchone()
         if row:

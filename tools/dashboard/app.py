@@ -2690,7 +2690,7 @@ def create_app(testing: bool = False) -> Flask:
                     continue
                 try:
                     rows = conn.execute(
-                        f"SELECT {id_col}, {ts_col}, {label_col} FROM {table} ORDER BY {ts_col} DESC LIMIT ?",  # nosec B608
+                        f"SELECT {id_col}, {ts_col}, {label_col} FROM {table} ORDER BY {ts_col} DESC LIMIT %s",  # nosec B608
                         (limit,),
                     ).fetchall()
                     for r in rows:
@@ -5101,7 +5101,7 @@ def create_app(testing: bool = False) -> Flask:
                 try:
                     total = conn.execute(f"SELECT COUNT(*) as cnt FROM {table}").fetchone()["cnt"]  # nosec B608 -- table/column names are internal constants, not user input
                     impl = conn.execute(
-                        f"SELECT COUNT(*) as cnt FROM {table} WHERE {col} = ?",  # nosec B608 -- table/column from internal frameworks list, not user input
+                        f"SELECT COUNT(*) as cnt FROM {table} WHERE {col} = %s",  # nosec B608 -- table/column from internal frameworks list, not user input
                         (val,),
                     ).fetchone()["cnt"]
                     result["frameworks"].append({"name": name, "total": total, "implemented": impl, "status": "Active"})

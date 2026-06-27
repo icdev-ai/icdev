@@ -305,7 +305,7 @@ def create_wf_blueprint() -> Blueprint:
                     params.append(status)
                 where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
                 rows = conn.execute(
-                    f"SELECT * FROM wf_instances {where} ORDER BY created_at DESC LIMIT ?",
+                    f"SELECT * FROM wf_instances {where} ORDER BY created_at DESC LIMIT %s",
                     params + [limit],
                 ).fetchall()
                 instances = [dict(r) for r in rows]

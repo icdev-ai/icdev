@@ -402,7 +402,7 @@ def update_opportunity(opp_id):
         sets.append("updated_at = ?")
         params.append(now_iso())
         params.append(opp_id)
-        conn.execute(f"UPDATE proposal_opportunities SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE proposal_opportunities SET {', '.join(sets)} WHERE id = %s", params)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         return jsonify({"id": opp_id, "updated": True})
     finally:
@@ -572,7 +572,7 @@ def update_volume(vol_id):
         sets.append("updated_at = ?")
         params.append(now_iso())
         params.append(vol_id)
-        conn.execute(f"UPDATE proposal_volumes SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE proposal_volumes SET {', '.join(sets)} WHERE id = %s", params)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         return jsonify({"id": vol_id, "updated": True})
     finally:
@@ -750,7 +750,7 @@ def update_section(sec_id):
         sets.append("updated_at = ?")
         params.append(now_iso())
         params.append(sec_id)
-        conn.execute(f"UPDATE proposal_sections SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE proposal_sections SET {', '.join(sets)} WHERE id = %s", params)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         return jsonify({"id": sec_id, "updated": True})
     finally:
@@ -1007,7 +1007,7 @@ def update_compliance_item(item_id):
         sets.append("updated_at = ?")
         params.append(now_iso())
         params.append(item_id)
-        conn.execute(f"UPDATE proposal_compliance_matrix SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE proposal_compliance_matrix SET {', '.join(sets)} WHERE id = %s", params)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         return jsonify({"id": item_id, "updated": True})
     finally:
@@ -1129,7 +1129,7 @@ def update_review(rev_id):
             return jsonify({"error": "No valid fields to update"}), 400
 
         params.append(rev_id)
-        conn.execute(f"UPDATE proposal_reviews SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE proposal_reviews SET {', '.join(sets)} WHERE id = %s", params)  # nosec B608 -- table/column names are internal constants, not user input
 
         if "status" in data and data["status"] != old["status"]:
             _record_status_change(conn, "review", rev_id, old["status"], data["status"], data.get("changed_by"))
@@ -1216,7 +1216,7 @@ def update_finding(find_id):
             return jsonify({"error": "No valid fields to update"}), 400
 
         params.append(find_id)
-        conn.execute(f"UPDATE proposal_review_findings SET {', '.join(sets)} WHERE id = ?", params)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE proposal_review_findings SET {', '.join(sets)} WHERE id = %s", params)  # nosec B608 -- table/column names are internal constants, not user input
 
         if "status" in data and data["status"] != old["status"]:
             _record_status_change(conn, "finding", find_id, old["status"], data["status"], data.get("changed_by"))
@@ -1674,7 +1674,7 @@ def update_question(q_id):
     conn = _get_db()
     try:
         conn.execute(
-            f"UPDATE proposal_questions SET {set_clause} WHERE id = ?",
+            f"UPDATE proposal_questions SET {set_clause} WHERE id = %s",
             list(updates.values()) + [q_id],
         )
         conn.commit()
@@ -1754,7 +1754,7 @@ def update_question_response(qr_id):
     conn = _get_db()
     try:
         conn.execute(
-            f"UPDATE proposal_question_responses SET {set_clause} WHERE id = ?",
+            f"UPDATE proposal_question_responses SET {set_clause} WHERE id = %s",
             list(updates.values()) + [qr_id],
         )
         conn.commit()
@@ -1838,7 +1838,7 @@ def update_amendment(amend_id):
     conn = _get_db()
     try:
         conn.execute(
-            f"UPDATE proposal_amendments SET {set_clause} WHERE id = ?",
+            f"UPDATE proposal_amendments SET {set_clause} WHERE id = %s",
             list(updates.values()) + [amend_id],
         )
         conn.commit()
@@ -1890,7 +1890,7 @@ def update_capture_fields(opp_id):
     conn = _get_db()
     try:
         conn.execute(
-            f"UPDATE proposal_opportunities SET {set_clause} WHERE id = ?",
+            f"UPDATE proposal_opportunities SET {set_clause} WHERE id = %s",
             list(updates.values()) + [opp_id],
         )
         conn.commit()
@@ -1955,7 +1955,7 @@ def update_competitor(cid):
     conn = _get_db()
     try:
         conn.execute(
-            f"UPDATE proposal_competitors SET {set_clause} WHERE id = ?",
+            f"UPDATE proposal_competitors SET {set_clause} WHERE id = %s",
             list(updates.values()) + [cid],
         )
         conn.commit()
@@ -2031,7 +2031,7 @@ def update_teaming_partner(tid):
     conn = _get_db()
     try:
         conn.execute(
-            f"UPDATE proposal_teaming_partners SET {set_clause} WHERE id = ?",
+            f"UPDATE proposal_teaming_partners SET {set_clause} WHERE id = %s",
             list(updates.values()) + [tid],
         )
         conn.commit()
@@ -2215,7 +2215,7 @@ def update_shred_item(item_id):
     conn = _get_db()
     try:
         conn.execute(
-            f"UPDATE proposal_shred_items SET {set_clause} WHERE id = ?",
+            f"UPDATE proposal_shred_items SET {set_clause} WHERE id = %s",
             list(updates.values()) + [item_id],
         )
         conn.commit()
@@ -2534,7 +2534,7 @@ def update_blackhat_assessment(bh_id):
     try:
         _ensure_blackhat_table(conn)
         conn.execute(
-            f"UPDATE proposal_blackhat_assessments SET {set_clause} WHERE id = ?",
+            f"UPDATE proposal_blackhat_assessments SET {set_clause} WHERE id = %s",
             list(updates.values()) + [bh_id],
         )
         conn.commit()
@@ -2698,7 +2698,7 @@ def update_annotation(ann_id):
     try:
         _ensure_annotations_table(conn)
         conn.execute(
-            f"UPDATE proposal_section_annotations SET {set_clause} WHERE id = ?",  # noqa: S608
+            f"UPDATE proposal_section_annotations SET {set_clause} WHERE id = %s",  # noqa: S608
             list(updates.values()) + [ann_id],
         )
         conn.commit()

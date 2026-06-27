@@ -92,7 +92,7 @@ def _gather_pillar_evidence(project_id: str, pillar: str, conn) -> dict:
         placeholders = ",".join("?" * len(nist_controls))
         rows = conn.execute(
             f"""SELECT control_id, status FROM project_controls
-                WHERE project_id = ? AND control_id IN ({placeholders})""",  # nosec B608 -- table/column names are internal constants, not user input
+                WHERE project_id = %s AND control_id IN ({placeholders})""",  # nosec B608 -- table/column names are internal constants, not user input
             [project_id] + nist_controls,
         ).fetchall()
 

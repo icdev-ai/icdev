@@ -1719,7 +1719,7 @@ def _get_due_tasks() -> list:
             "  WHEN 'medium' THEN 2 "
             "  ELSE 3 END, "
             "kt.created_at ASC "
-            "LIMIT ?",
+            "LIMIT %s",
             ("QUARANTINED by self_debug%", slots),
         ).fetchall()
         result.extend(dict(r) for r in backlog)
@@ -2238,7 +2238,7 @@ def _close_orphaned_rca_children(parent_task_id: str, actor: str = "scheduler") 
             placeholders = ",".join("?" * len(open_statuses))
             rows = conn.execute(
                 f"SELECT id FROM kanban_tasks "  # nosec B608
-                f"WHERE (id LIKE ? OR (title LIKE ? AND task_type IN ('chore','research','fix'))) "
+                f"WHERE (id LIKE %s OR (title LIKE %s AND task_type IN ('chore','research','fix'))) "
                 f"  AND status IN ({placeholders})",
                 (f"{prefix}%", f"%{parent_task_id}%", *open_statuses),
             ).fetchall()
@@ -2246,8 +2246,8 @@ def _close_orphaned_rca_children(parent_task_id: str, actor: str = "scheduler") 
             if orphan_ids:
                 ph = ",".join("?" * len(orphan_ids))
                 conn.execute(
-                    f"UPDATE kanban_tasks SET status='done', completed_at=?, updated_at=?, "  # nosec B608
-                    f"last_failure_reason=? WHERE id IN ({ph})",
+                    f"UPDATE kanban_tasks SET status='done', completed_at=%s, updated_at=%s, "  # nosec B608
+                    f"last_failure_reason=%s WHERE id IN ({ph})",
                     (now, now, f"auto-closed: parent {parent_task_id} resolved", *orphan_ids),
                 )
                 logger.info(

@@ -155,7 +155,7 @@ def update_option_period(option_id: str, data: Dict[str, Any]) -> Dict[str, Any]
         set_clause = ", ".join(f"{k} = ?" for k in updates)
         set_clause += ", updated_at = datetime('now')"
         conn.execute(
-            f"UPDATE cpmp_option_periods SET {set_clause} WHERE id = ?",
+            f"UPDATE cpmp_option_periods SET {set_clause} WHERE id = %s",
             list(updates.values()) + [option_id],
         )
         _audit(conn, "option_period_updated", f"option_id={option_id}")

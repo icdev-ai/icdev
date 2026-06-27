@@ -92,7 +92,7 @@ def set_field(session_id: str, **kwargs: Any) -> bool:
     values = list(kwargs.values()) + [session_id]
     with get_connection() as conn:
         cur = conn.execute(
-            f"UPDATE idr_sessions SET {set_clause} WHERE id = ?", values
+            f"UPDATE idr_sessions SET {set_clause} WHERE id = %s", values
         )
         conn.commit()
     return cur.rowcount == 1
@@ -182,7 +182,7 @@ def set_upload_status(
     values = list(updates.values()) + [upload_id]
     with get_connection() as conn:
         cur = conn.execute(
-            f"UPDATE idr_uploads SET {set_clause} WHERE id=?", values
+            f"UPDATE idr_uploads SET {set_clause} WHERE id=%s", values
         )
         conn.commit()
     return cur.rowcount == 1

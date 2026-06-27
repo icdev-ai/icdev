@@ -278,7 +278,7 @@ def update_pi_status(
         params.extend([project_id, pi_number])
 
         conn.execute(
-            f"UPDATE project_pi_timeline SET {', '.join(fields)} WHERE project_id = ? AND pi_number = ?",
+            f"UPDATE project_pi_timeline SET {', '.join(fields)} WHERE project_id = %s AND pi_number = %s",
             tuple(params),
         )
         conn.commit()

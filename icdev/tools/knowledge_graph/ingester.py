@@ -674,7 +674,7 @@ def ingest_from_table(
         col_list = ", ".join(select_cols)
 
         rows = conn.execute(
-            f"SELECT {col_list} FROM {table_name} LIMIT ?",  # noqa: S608  # nosec B608 -- table/column names are internal constants, not user input
+            f"SELECT {col_list} FROM {table_name} LIMIT %s",  # noqa: S608  # nosec B608 -- table/column names are internal constants, not user input
             (limit,),
         ).fetchall()
 

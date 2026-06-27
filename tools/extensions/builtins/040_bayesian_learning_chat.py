@@ -139,7 +139,7 @@ def _get_fallback_advisory(project_id: str) -> dict | None:
             ).fetchone()
             if (row[0] if isinstance(row, (tuple, list)) else row["cnt"]) > 0:
                 cnt = conn.execute(  # nosec B608 — tbl from hardcoded constant list
-                    f"SELECT COUNT(*) as cnt FROM {tbl} WHERE project_id = ?",  # nosec B608 -- table/column names are internal constants, not user input
+                    f"SELECT COUNT(*) as cnt FROM {tbl} WHERE project_id = %s",  # nosec B608 -- table/column names are internal constants, not user input
                     (project_id,),
                 ).fetchone()
                 assessment_count += cnt[0] if isinstance(cnt, (tuple, list)) else cnt["cnt"]

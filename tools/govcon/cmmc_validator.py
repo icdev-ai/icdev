@@ -340,7 +340,7 @@ def update_member(member_id, **kwargs):
     params.append(member_id)
 
     conn.execute(
-        f"UPDATE pg_cmmc_supply_chain SET {', '.join(sets)} WHERE id = ?",
+        f"UPDATE pg_cmmc_supply_chain SET {', '.join(sets)} WHERE id = %s",
         params,  # nosec B608 -- table/column names are internal constants, not user input
     )
     _audit(conn, "update_member", f"Updated member {member_id}: {list(kwargs.keys())}, status={effective_status}")
