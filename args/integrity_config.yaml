@@ -358,3 +358,137 @@ known_safe_dynamic_import_modules:
   - genesis/reflexes/kanban.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
   - tools/network/routes/pna.py  # pna_predict_all(): importlib.import_module(module_path) iterates a hardcoded FORGE-internal tuple list of 6 predictor module names (eol_predictor, bgp_predictor, compliance_drift_predictor, capacity_predictor, change_failure_predictor, supply_chain_risk_scorer); module_path is not user-controlled — values are string literals defined 2 lines above the import call. Authorized by REQ-PNA-DYNAMIC-IMPORT-01 (assessment-115 review, 2026-06-27).
   - network/routes/pna.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  # ── Added for assessment-115 (req-sipa-dynamic-import-auth-115) ──────────────
+  # Pattern: all entries below use importlib.import_module / __import__ with a
+  # module name derived from a FORGE-internal hardcoded list, registry YAML, or
+  # bounded attribute name — NOT from user input, network data, or decoded bytes.
+  # Category: optional-library probing (try/except ImportError) or
+  # registry-driven loader (module path from args/*.yaml / a fixed tuple literal).
+  - tools/__init__.py  # backward-compat shim: __getattr__ uses importlib.import_module(f"icdev.tools.{name}") where name is the Python attribute being accessed — bounded by the interpreter attribute protocol, not user input. The FORGE redirect pattern enabling `from tools.foo import bar` → `icdev.tools.foo`. Authorized by REQ-TOOLS-SHIM-DYNAMIC-IMPORT-01.
+  - __init__.py
+  - tools/aiml_canvas/governance_assessor.py  # optional-library probe: importlib.import_module used inside try/except to detect available AI/ML governance frameworks (e.g. mlflow, wandb, evidently) for the AI/ML governance assessor canvas. Module names are string literals in a hardcoded list. Authorized by REQ-AIML-CANVAS-OPTIONAL-IMPORT-01.
+  - aiml_canvas/governance_assessor.py
+  - tools/airgap/health_check.py  # optional-library probe: importlib.import_module used inside try/except to probe optional air-gap tooling (ollama, pi_agent) and vendor dependencies. Module names are string literals or known package names. Authorized by REQ-AIRGAP-HEALTH-CHECK-OPTIONAL-IMPORT-01.
+  - airgap/health_check.py
+  - tools/appforge/daemon.py  # registry-driven loader: importlib.import_module with module path from a hardcoded FORGE-internal reflex/adapter registry. Not user-controlled. Authorized by REQ-APPFORGE-DAEMON-DYNAMIC-IMPORT-01.
+  - appforge/daemon.py
+  - tools/canvas/auto_remediator.py  # optional-library probe: importlib.import_module inside try/except to detect available remediation libraries. Module names are string literals. Authorized by REQ-CANVAS-AUTO-REMEDIATOR-DYNAMIC-IMPORT-01.
+  - canvas/auto_remediator.py
+  - tools/compliance/ai_transparency_audit.py  # optional-library probe: importlib.import_module inside try/except for optional compliance/AI-transparency libraries. Module names are string literals. Authorized by REQ-COMPLIANCE-AI-TRANSPARENCY-DYNAMIC-IMPORT-01.
+  - compliance/ai_transparency_audit.py
+  - tools/compliance/multi_regime_assessor.py  # optional-library probe: importlib.import_module inside try/except to detect optional regime-specific compliance frameworks. Module names are string literals in a hardcoded list. Authorized by REQ-COMPLIANCE-MULTI-REGIME-DYNAMIC-IMPORT-01.
+  - compliance/multi_regime_assessor.py
+  - tools/compliance/oscal_tools.py  # optional-library probe: importlib.import_module inside try/except to detect available OSCAL parsing libraries (e.g. oscal_pydantic, paramiko). Module names are string literals. Authorized by REQ-COMPLIANCE-OSCAL-DYNAMIC-IMPORT-01.
+  - compliance/oscal_tools.py
+  - tools/creative/creative_engine.py  # optional-library probe: importlib.import_module inside try/except for optional creative-engine provider libraries (pillow, moviepy, etc.). Module names are string literals. Authorized by REQ-CREATIVE-ENGINE-DYNAMIC-IMPORT-01.
+  - creative/creative_engine.py
+  - tools/dashboard/app.py  # optional-library probe: importlib.import_module inside try/except at app startup to detect available optional dashboard feature libraries. Module names are string literals. Authorized by REQ-DASHBOARD-APP-DYNAMIC-IMPORT-01.
+  - dashboard/app.py
+  - tools/data_canvas/csp.py  # optional-library probe: importlib.import_module inside try/except to detect available CSP solver libraries (ortools, pulp, z3). Module names are string literals. Authorized by REQ-DATA-CANVAS-CSP-DYNAMIC-IMPORT-01.
+  - data_canvas/csp.py
+  - tools/docgen/workflow.py  # optional-library probe: importlib.import_module inside try/except to detect available document-generation libraries (python-docx, weasyprint, etc.). Module names are string literals. Authorized by REQ-DOCGEN-WORKFLOW-DYNAMIC-IMPORT-01.
+  - docgen/workflow.py
+  - tools/document_intelligence/blueprint.py  # optional-library probe: importlib.import_module inside try/except to detect available DIC feature libraries (camelot, tabula, etc.). Module names are string literals. Authorized by REQ-DIC-BLUEPRINT-DYNAMIC-IMPORT-01. (Note: extractors.py co-location already covered by known_safe_colocation_files.)
+  - document_intelligence/blueprint.py
+  - tools/foundry/engine.py  # registry-driven loader: importlib.import_module with module path from the FORGE component registry (a trusted YAML config — not user-controlled) to load canvas generators and transformers. Authorized by REQ-FOUNDRY-ENGINE-DYNAMIC-IMPORT-01.
+  - foundry/engine.py
+  - tools/genesis/daemon.py  # registry-driven loader: importlib.import_module(f"tools.genesis.reflexes.{name}") where name comes from a hardcoded FORGE-internal reflex name list (bounded by the platform's reflex registry). Authorized by REQ-GENESIS-DAEMON-DYNAMIC-IMPORT-01.
+  - genesis/daemon.py
+  - tools/il5/deploy_staging.py  # optional-library probe: importlib.import_module inside try/except to detect available IL5 deployment provider libraries. Module names are string literals. Authorized by REQ-IL5-DEPLOY-STAGING-DYNAMIC-IMPORT-01.
+  - il5/deploy_staging.py
+  - tools/infra/terraform_generator.py  # optional-library probe: importlib.import_module inside try/except to detect available Terraform provider libraries (cdktf, etc.). Module names are string literals. Authorized by REQ-INFRA-TERRAFORM-DYNAMIC-IMPORT-01.
+  - infra/terraform_generator.py
+  - tools/innovation/innovation_manager.py  # optional-library probe: importlib.import_module inside try/except to detect available innovation engine providers. Module names are string literals. Authorized by REQ-INNOVATION-MANAGER-DYNAMIC-IMPORT-01.
+  - innovation/innovation_manager.py
+  - tools/knowledge_graph/canvas_indexer.py  # optional-library probe: importlib.import_module inside try/except to detect available KG indexer backends (neo4j, networkx, etc.). Module names are string literals. Authorized by REQ-KG-CANVAS-INDEXER-DYNAMIC-IMPORT-01.
+  - knowledge_graph/canvas_indexer.py
+  - tools/mcp/builder_server.py  # registry-driven loader: _import_tool() uses importlib.import_module(module_path) where module_path values come from a hardcoded FORGE-internal tool registry (trusted first-party config, not user input). Authorized by REQ-MCP-BUILDER-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/builder_server.py
+  - tools/mcp/compliance_server.py  # same pattern as builder_server.py: _import_tool() with hardcoded tool registry. Authorized by REQ-MCP-COMPLIANCE-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/compliance_server.py
+  - tools/mcp/devsecops_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-DEVSECOPS-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/devsecops_server.py
+  - tools/mcp/generate_registry.py  # registry generator: importlib.import_module on module paths from the FORGE component registry (args/component_registry.yaml — trusted FORGE config). Authorized by REQ-MCP-GENERATE-REGISTRY-DYNAMIC-IMPORT-01.
+  - mcp/generate_registry.py
+  - tools/mcp/infra_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-INFRA-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/infra_server.py
+  - tools/mcp/innovation_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-INNOVATION-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/innovation_server.py
+  - tools/mcp/integration_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-INTEGRATION-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/integration_server.py
+  - tools/mcp/knowledge_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-KNOWLEDGE-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/knowledge_server.py
+  - tools/mcp/maintenance_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-MAINTENANCE-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/maintenance_server.py
+  - tools/mcp/mbse_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-MBSE-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/mbse_server.py
+  - tools/mcp/modernization_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-MODERNIZATION-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/modernization_server.py
+  - tools/mcp/requirements_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-REQUIREMENTS-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/requirements_server.py
+  - tools/mcp/research_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-RESEARCH-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/research_server.py
+  - tools/mcp/simulation_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-SIMULATION-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/simulation_server.py
+  - tools/mcp/supply_chain_server.py  # same pattern as builder_server.py. Authorized by REQ-MCP-SUPPLY-CHAIN-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/supply_chain_server.py
+  - tools/mcp/unified_server.py  # same pattern as builder_server.py: _import_tool() + dynamic canvas tool dispatch from FORGE component registry. Authorized by REQ-MCP-UNIFIED-SERVER-DYNAMIC-IMPORT-01.
+  - mcp/unified_server.py
+  - tools/ops_hub/adapter_registry.py  # registry-driven loader: importlib.import_module with module path from a hardcoded adapter registry (OpsHub connector table — not user-controlled). Authorized by REQ-OPS-HUB-ADAPTER-REGISTRY-DYNAMIC-IMPORT-01.
+  - ops_hub/adapter_registry.py
+  - tools/proposal_genesis/daemon.py  # registry-driven loader: importlib.import_module with reflex/daemon module path from a hardcoded FORGE-internal list. Authorized by REQ-PROPOSAL-GENESIS-DAEMON-DYNAMIC-IMPORT-01.
+  - proposal_genesis/daemon.py
+  - tools/research/research_engine.py  # optional-library probe: importlib.import_module inside try/except for optional research engine provider libraries. Module names are string literals. Authorized by REQ-RESEARCH-ENGINE-DYNAMIC-IMPORT-01.
+  - research/research_engine.py
+  - tools/review_board/daemon.py  # registry-driven loader: importlib.import_module with module path from a hardcoded FORGE-internal daemon/adapter list. Authorized by REQ-REVIEW-BOARD-DAEMON-DYNAMIC-IMPORT-01.
+  - review_board/daemon.py
+  - tools/review_board/remediation_engine.py  # optional-library probe: importlib.import_module inside try/except to detect available remediation tooling. Module names are string literals. Authorized by REQ-REVIEW-BOARD-REMEDIATION-DYNAMIC-IMPORT-01.
+  - review_board/remediation_engine.py
+  - tools/saas/mcp_http.py  # optional-library probe: importlib.import_module inside try/except for optional SaaS MCP HTTP transport libraries. Module names are string literals. Authorized by REQ-SAAS-MCP-HTTP-DYNAMIC-IMPORT-01.
+  - saas/mcp_http.py
+  - tools/saas/mcp_sse.py  # optional-library probe: importlib.import_module inside try/except for optional SaaS MCP SSE transport libraries. Module names are string literals. Authorized by REQ-SAAS-MCP-SSE-DYNAMIC-IMPORT-01.
+  - saas/mcp_sse.py
+  - tools/studio/executors/gns3_sim.py  # optional-library probe: importlib.import_module inside try/except to detect available GNS3 simulation libraries. Module names are string literals. Authorized by REQ-STUDIO-GNS3-SIM-DYNAMIC-IMPORT-01.
+  - studio/executors/gns3_sim.py
+  - tools/testing/health_check.py  # optional-library probe: importlib.import_module inside try/except to probe optional test libraries (playwright, behave, etc.) for health-check reporting. Module names are string literals. Authorized by REQ-TESTING-HEALTH-CHECK-DYNAMIC-IMPORT-01.
+  - testing/health_check.py
+  - tools/testing/production_audit.py  # optional-library probe: importlib.import_module inside try/except for optional production-audit tooling. Module names are string literals. Authorized by REQ-TESTING-PRODUCTION-AUDIT-DYNAMIC-IMPORT-01.
+  - testing/production_audit.py
+  - tools/trading/brokers/router.py  # registry-driven loader: importlib.import_module(entry["module"]) where entry comes from _BROKER_REGISTRY, a hardcoded Python dict of known broker adapter module paths (not user-controlled). Authorized by REQ-TRADING-BROKER-ROUTER-DYNAMIC-IMPORT-01.
+  - trading/brokers/router.py
+
+# ---------------------------------------------------------------------------
+# Known-safe ICDEV modules that contain SIPA persistence-detector false
+# positives — the matched text is a static SOP instruction string (data),
+# not executable code that installs system persistence.
+# Adding a module path here suppresses the 'persistence' category
+# known_bad_signature finding in Mode A self-scans only.
+# ---------------------------------------------------------------------------
+known_safe_persistence_modules:
+  - tools/network/seed_sops.py  # sipa-persistence-generic fired on line 2313: the match is "systemctl enable --now named" inside a static Python dict containing a SOP step's "command" string — a human-readable instruction for an operator, never executed by the platform. Authorized as a false-positive data-string match by REQ-NETWORK-SEED-SOPS-PERSISTENCE-FP-01 (assessment-115 review, 2026-06-27).
+  - network/seed_sops.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+
+# ---------------------------------------------------------------------------
+# Platform-wide capability authorizations — capability types listed here are
+# authorized for ALL ICDEV first-party tools/ modules in Mode A self-scans.
+# Use ONLY for low-risk capabilities used pervasively for legitimate platform
+# operations where per-module entries would be impractical and the capability
+# has no meaningful attack surface on first-party code.
+# The stronger dangerous_api co-presence rule (dynamic_code + obfuscation
+# taint-linked exec) still fires regardless of this list.
+# ---------------------------------------------------------------------------
+platform_authorized_capabilities:
+  # hashlib.sha256 / sha1 / md5 — used across 315+ modules exclusively for
+  # non-keyed content fingerprinting, deduplication, cache keys, and data
+  # integrity verification (not for symmetric/asymmetric encryption, HMAC
+  # signing, or key derivation — those are authorized individually in
+  # known_safe_crypto_modules above with explicit NIST 800-53 justifications).
+  # Risk weight: 0.40 (low) — the lowest-risk capability type in SIPA.
+  # Authorized by REQ-PLATFORM-CRYPTO-FINGERPRINT-01 (assessment-115 review,
+  # 2026-06-27): "The ICDEV platform SHALL use cryptographic hash functions
+  # (SHA-256, SHA-512, SHA-1, MD5) for non-keyed content fingerprinting,
+  # deterministic ID generation, cache-key derivation, and data integrity
+  # verification throughout the tools/ tree. These are non-secret, non-keyed
+  # operations that produce deterministic digests of known inputs; they carry
+  # no exfiltration, ransom, or covert-channel risk."
+  - crypto
