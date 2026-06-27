@@ -168,10 +168,12 @@ def _rag_retrieve(query_text: str, scope: str | None = None, top_k: int = 5) -> 
         cur = conn.cursor()
         params: list[Any] = []
         sql = "SELECT file_path, symbols FROM codebase_index"
+        from tools.db.storage import sql_placeholder as _sqlph
+        ph = _sqlph(conn)
         if scope:
-            sql += " WHERE module = ?"
+            sql += f" WHERE module = {ph}"
             params.append(scope)
-        sql += " LIMIT ?"
+        sql += f" LIMIT {ph}"
         params.append(top_k * 3)  # over-fetch for simple relevance filter
         cur.execute(sql, params)
 

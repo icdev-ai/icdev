@@ -331,17 +331,17 @@ def debt_poams():
             params = [today, today]
 
         if project_id:
-            q += " AND project_id = ?"
+            q += f" AND project_id = {ph}"
             params.append(project_id)
         if severity:
-            q += " AND severity = ?"
+            q += f" AND severity = {ph}"
             params.append(severity)
         if status:
-            q += " AND status = ?"
+            q += f" AND status = {ph}"
             params.append(status)
         if overdue and overdue.lower() in ("true", "1", "yes"):
             q += (
-                " AND milestone_date IS NOT NULL AND milestone_date < ? AND status NOT IN ('completed','accepted_risk')"
+                f" AND milestone_date IS NOT NULL AND milestone_date < {ph} AND status NOT IN ('completed','accepted_risk')"
             )
             params.append(today)
 
@@ -351,7 +351,7 @@ def debt_poams():
 
         # Sort and paginate
         q += " ORDER BY days_overdue DESC, severity, created_at DESC"
-        q += " LIMIT ? OFFSET ?"
+        q += f" LIMIT {ph} OFFSET {ph}"
         params.extend([per_page, (page - 1) * per_page])
 
         rows = conn.execute(q, params).fetchall()
@@ -405,7 +405,7 @@ def debt_controls():
 
         params = []
         if project_id:
-            q += " AND pc.project_id = ?" if has_cc else " AND project_id = ?"
+            q += f" AND pc.project_id = {ph}" if has_cc else f" AND project_id = {ph}"
             params.append(project_id)
 
         rows = conn.execute(q, params).fetchall()
@@ -527,14 +527,14 @@ def sla_compliance():
             base_filter = ""
             params = [today, str(max_days)]
             if project_id:
-                base_filter = " AND project_id = ?"
+                base_filter = f" AND project_id = {ph}"
                 params.append(project_id)
 
             # Completed POAMs for this severity
             proj_params = params[2:] if project_id else []
             completed_q = (
                 "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
-                "WHERE severity = ? AND status = 'completed'" + base_filter
+                f"WHERE severity = {ph} AND status = 'completed'" + base_filter
             )
             if _is_pg(conn):
                 days_diff_expr = (
@@ -542,29 +542,29 @@ def sla_compliance():
                 )
                 within_sla_q = (
                     "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
-                    "WHERE severity = ? AND status = 'completed' "
+                    f"WHERE severity = {ph} AND status = 'completed' "
                     "AND completion_date IS NOT NULL AND created_at IS NOT NULL "
-                    f"AND {days_diff_expr} <= ?" + base_filter
+                    f"AND {days_diff_expr} <= {ph}" + base_filter
                 )
                 open_days_expr = "CAST(EXTRACT(EPOCH FROM (NOW() - created_at::timestamp)) / 86400 AS INTEGER)"
                 open_past_q = (
                     "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
-                    "WHERE severity = ? AND status NOT IN ('completed','accepted_risk') "
+                    f"WHERE severity = {ph} AND status NOT IN ('completed','accepted_risk') "
                     "AND created_at IS NOT NULL "
-                    f"AND {open_days_expr} > ?" + base_filter
+                    f"AND {open_days_expr} > {ph}" + base_filter
                 )
             else:
                 within_sla_q = (
                     "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
-                    "WHERE severity = ? AND status = 'completed' "
+                    f"WHERE severity = {ph} AND status = 'completed' "
                     "AND completion_date IS NOT NULL AND created_at IS NOT NULL "
-                    "AND CAST(julianday(completion_date) - julianday(created_at) AS INTEGER) <= ?" + base_filter
+                    f"AND CAST(julianday(completion_date) - julianday(created_at) AS INTEGER) <= {ph}" + base_filter
                 )
                 open_past_q = (
                     "SELECT COUNT(*) AS cnt FROM poam_items "  # nosec B608 -- table/column names are internal constants, not user input
-                    "WHERE severity = ? AND status NOT IN ('completed','accepted_risk') "
+                    f"WHERE severity = {ph} AND status NOT IN ('completed','accepted_risk') "
                     "AND created_at IS NOT NULL "
-                    "AND CAST(julianday(?) - julianday(created_at) AS INTEGER) > ?" + base_filter
+                    f"AND CAST(julianday({ph}) - julianday(created_at) AS INTEGER) > {ph}" + base_filter
                 )
 
             total_completed = conn.execute(completed_q, [sev] + proj_params).fetchone()["cnt"]

@@ -29,7 +29,6 @@ if str(BASE_DIR) not in sys.path:
 
 from tools.logging.icdev_logger import get_logger  # noqa: E402
 from tools.db.storage import get_connection  # noqa: E402
-from icdev.tools.forecast.timesfm_adapter import forecast as _run_forecast, get_job as _get_forecast_job  # noqa: E402
 
 from flask import (
     Flask,
@@ -57,6 +56,7 @@ from tools.dashboard.config import (  # noqa: E402
     HOST,
     DEBUG,
 )
+from tools.dashboard.brand import brand_context_processor  # noqa: E402
 from tools.dashboard.auth import register_dashboard_auth, validate_api_key, log_auth_event, require_role  # noqa: E402
 from tools.dashboard.websocket import init_socketio, get_socketio  # noqa: E402
 from tools.dashboard.findings_aggregator import (  # noqa: E402
@@ -145,6 +145,16 @@ from tools.config.component_registry import get_registry  # noqa: E402
 
 _REGISTRY = get_registry()
 
+
+def _get_active_tier_safe() -> str:
+    """Return the active license tier; falls back to 'community' if unavailable."""
+    try:
+        from tools.billing.tier import get_active_tier
+        return get_active_tier()
+    except Exception:
+        return "community"
+
+
 # URL prefixes for all canvases; used by base.html to highlight the Canvases menu.
 _CANVAS_URL_PREFIXES = tuple(
     comp.url_prefix
@@ -180,6 +190,21 @@ for _comp in _REGISTRY.iter_enabled(kind="child_app"):
     except Exception as _exc:
         get_logger("icdev.dashboard").warning(
             "App module %s import failed (%s): %s", _comp.key, _comp.module, _exc
+        )
+
+# ── Core Extensions (registry-driven, e.g. admin_console) ──────────────────
+_CORE_EXT_BLUEPRINTS: dict[str, object] = {}
+
+for _comp in _REGISTRY.iter_enabled(kind="core_extension"):
+    if not getattr(_comp, "blueprint_attr", None):
+        continue
+    try:
+        _bp = _comp.get_blueprint()
+        if _bp:
+            _CORE_EXT_BLUEPRINTS[_comp.key] = _bp
+    except Exception as _exc:
+        get_logger("icdev.dashboard").warning(
+            "Core extension %s import failed (%s): %s", _comp.key, _comp.module, _exc
         )
 
 # ---------------------------------------------------------------------------
@@ -1584,6 +1609,60 @@ def _get_chat_models() -> tuple[list[dict], str]:
     return result, default_model
 
 
+def _aggregate_chat_sources(conn, tenant_id: str, context_id: str) -> list[dict]:
+    """Aggregate chat-upload RAG chunks by source_id.
+
+    Parses JSON metadata in Python so no SQLite-only json_extract() appears
+    in the SQL — making the query run on PostgreSQL without modification.
+    Mirrors the logic of the original GROUP-BY json_extract query.
+    """
+    import json as _json
+    from tools.db.storage import sql_placeholder as _sqlph
+    ph = _sqlph(conn)
+
+    params: list = ["chat_upload"]
+    sql = (
+        "SELECT source_id, metadata, created_at "
+        "FROM rag_chunks "
+        f"WHERE source_type = {ph}"
+    )
+    if tenant_id:
+        sql += f" AND tenant_id = {ph}"
+        params.append(tenant_id)
+    sql += " ORDER BY created_at DESC"
+
+    rows = conn.execute(sql, params).fetchall()
+
+    agg: dict = {}
+    for row in rows:
+        r = dict(row)
+        sid = r["source_id"]
+        try:
+            meta = _json.loads(r.get("metadata") or "{}")
+        except (ValueError, TypeError):
+            meta = {}
+        row_ctx = meta.get("context_id", "")
+        if context_id and row_ctx != context_id:
+            continue
+        if sid not in agg:
+            agg[sid] = {
+                "source_id": sid,
+                "filename": meta.get("filename", ""),
+                "context_id": row_ctx,
+                "chunk_count": 0,
+                "indexed_at": r.get("created_at"),
+            }
+        agg[sid]["chunk_count"] += 1
+        if not agg[sid]["filename"] and meta.get("filename"):
+            agg[sid]["filename"] = meta.get("filename", "")
+        cur_ts = r.get("created_at")
+        if cur_ts and (not agg[sid]["indexed_at"] or cur_ts > agg[sid]["indexed_at"]):
+            agg[sid]["indexed_at"] = cur_ts
+
+    result = sorted(agg.values(), key=lambda x: x.get("indexed_at") or "", reverse=True)
+    return result[:50]
+
+
 def create_app(testing: bool = False) -> Flask:
     app = Flask(
         __name__,
@@ -1604,6 +1683,13 @@ def create_app(testing: bool = False) -> Flask:
 
     # Register UX filters (glossary, timestamps, error recovery, quick paths)
     register_ux_filters(app)
+
+    # Register CLI bridge toggle middleware (silences 404 in cli_bridge_indicator)
+    try:
+        from tools.dashboard.api.cli_bridge_api import register_cli_bridge
+        register_cli_bridge(app)
+    except Exception as _exc:
+        app.logger.warning("CLI bridge middleware skipped: %s", _exc)
 
     # Register dashboard auth middleware (D169-D172)
     register_dashboard_auth(app)
@@ -1641,18 +1727,12 @@ def create_app(testing: bool = False) -> Flask:
     except Exception as _exc:
         app.logger.warning("Budget services skipped: %s", _exc)
 
-    # Liveness probe — used by /start, container healthchecks, and uptime monitors.
-    # Cheap, no DB call. For deeper checks see /api/platform/health.
-    @app.route("/health", methods=["GET"])
-    def health():
-        return (
-            {
-                "status": "ok",
-                "service": "icdev-dashboard",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            },
-            200,
-        )
+    # Health / readiness / liveness probes (ECR-OBS-03)
+    try:
+        from tools.observability.health_blueprint import health_bp as _health_bp
+        app.register_blueprint(_health_bp)
+    except Exception as _exc:
+        app.logger.warning("Health blueprint skipped: %s", _exc)
 
     @app.route("/api/_introspect/routes", methods=["GET"])
     def _introspect_routes():
@@ -2013,8 +2093,14 @@ def create_app(testing: bool = False) -> Flask:
                 flask_request.path.startswith(prefix)
                 for prefix in _CANVAS_URL_PREFIXES
             ),
+            # License tier context — used by nav lock indicators and tier_gate.html
+            "active_tier": _get_active_tier_safe(),
+            "tier_order": {"community": 0, "professional": 1, "enterprise": 2},
             "unseen_release": _unseen_release,
         }
+
+    # ---- Brand + banner context processor (DSW-1) ----
+    app.context_processor(brand_context_processor)
 
     # ---- Air-gap route guard: friendly message for disabled pages ----
     if _AIRGAP_MODE:
@@ -2053,6 +2139,19 @@ def create_app(testing: bool = False) -> Flask:
             from tools.dashboard.brand import get_brand
             upgrade_url = get_brand().get("support_url", "")
             return jsonify({"error": "Demo mode: read-only", "upgrade_url": upgrade_url}), 403
+
+    # ---- ECR-BILL-02: API call metering (fire-and-forget after_request) ----
+    @app.after_request
+    def _meter_api_call(response):
+        try:
+            if flask_request.path.startswith("/api/"):
+                from flask import g as _g
+                _tenant = getattr(_g, "tenant_id", None) or "system"
+                from tools.billing.metering import record_usage as _rec
+                _rec(_tenant, "api_call")
+        except Exception:
+            pass
+        return response
 
     # ---- Auto-register A2A agents from card files ----
     try:
@@ -2177,39 +2276,6 @@ def create_app(testing: bool = False) -> Flask:
             cards = []
         return render_template("canvas_compliance.html", cards=cards)
 
-    # ---- Platform Updates (CHANGELOG.md viewer) ----
-    try:
-        from tools.dashboard.changelog import parse_changelog as _parse_changelog
-        import os as _os
-
-        @app.route("/updates")
-        def updates_page():
-            _changelog_path = _os.path.join(_os.path.dirname(__file__), "..", "..", "..", "CHANGELOG.md")
-            try:
-                releases = _parse_changelog(_changelog_path)
-            except Exception as _exc:
-                app.logger.warning("Failed to parse CHANGELOG.md: %s", _exc)
-                releases = []
-                return render_template("updates/page.html", releases=releases, error=str(_exc))
-            return render_template("updates/page.html", releases=releases, error=None)
-
-        app.logger.info("Updates route registered at /updates")
-    except Exception as _exc:
-        app.logger.warning("Updates route failed to register: %s", _exc)
-
-    # ---- ECR-CL-02: Mark current version as seen ----
-    @app.route("/api/user/prefs/seen-version", methods=["PATCH"])
-    def api_user_prefs_seen_version():
-        try:
-            from tools.dashboard.brand import get_brand as _get_brand_sv
-            _brand_ver = _get_brand_sv().get("version", "")
-        except Exception as _exc:
-            app.logger.warning("seen-version PATCH failed: %s", _exc)
-            return jsonify({"error": str(_exc)}), 500
-        resp = jsonify({"ok": True, "seen_version": _brand_ver})
-        resp.set_cookie("icdev_seen_version", _brand_ver, max_age=31536000, samesite="Lax")
-        return resp
-
     # ---- Design Canvases (registry-driven) ----
     try:
         from tools.security.canvas_access import guard_component_access
@@ -2326,8 +2392,9 @@ def create_app(testing: bool = False) -> Flask:
                 return resp
 
             app.add_url_rule("/dat", "dat_page_alias", _dat_page_alias)
+            app.add_url_rule("/mcip", "mcip_page_alias", _dat_page_alias)
             app.add_url_rule("/api/dat/dti", "dat_dti_api", _dat_dti_api)
-            app.logger.info("DAT aliases registered at /dat and /api/dat/dti")
+            app.logger.info("DAT aliases registered at /dat, /mcip, and /api/dat/dti")
         except Exception as _exc:
             app.logger.warning("Strategos blueprint failed to register: %s", _exc)
     else:
@@ -2384,6 +2451,14 @@ def create_app(testing: bool = False) -> Flask:
             app.logger.info("App module %s registered", _ak)
         except Exception as _exc:
             app.logger.warning("App module %s registration failed: %s", _ak, _exc)
+
+    # ---- Core Extension Blueprints (registry-driven, e.g. admin_console) ----
+    for _ek, _ebp in _CORE_EXT_BLUEPRINTS.items():
+        try:
+            app.register_blueprint(_ebp)
+            app.logger.info("Core extension %s registered", _ek)
+        except Exception as _exc:
+            app.logger.warning("Core extension %s registration failed: %s", _ek, _exc)
 
     # ---- HITL Workflow API Blueprint (always registered when importable; gated per-route) ----
     try:
@@ -2472,6 +2547,76 @@ def create_app(testing: bool = False) -> Flask:
         app.logger.info("SaaS Portal blueprint registered at /portal")
     except Exception as _exc:
         app.logger.warning("SaaS Portal blueprint failed to register: %s", _exc)
+
+    # ---- Enterprise SSO Blueprint (SAML 2.0 + OIDC) ----
+    try:
+        from tools.auth.blueprint import bp as _auth_bp
+        app.register_blueprint(_auth_bp)
+        app.logger.info("Enterprise SSO blueprint registered at /auth/saml")
+    except Exception as _exc:
+        app.logger.warning("Enterprise SSO blueprint failed to register: %s", _exc)
+
+    # ---- Onboarding API Blueprint ----
+    try:
+        from tools.auth.blueprint import onboarding_bp as _onboarding_bp
+        app.register_blueprint(_onboarding_bp)
+        app.logger.info("Onboarding API blueprint registered at /api/onboarding")
+    except Exception as _exc:
+        app.logger.warning("Onboarding API blueprint failed to register: %s", _exc)
+
+    # ---- Stripe Webhook Blueprint (no auth, signature-verified) ----
+    try:
+        from tools.admin.blueprint import create_stripe_webhook_blueprint as _stripe_wh_factory
+        _stripe_wh_bp = _stripe_wh_factory()
+        app.register_blueprint(_stripe_wh_bp)
+        app.logger.info("Stripe webhook blueprint registered at /webhooks/stripe")
+    except Exception as _exc:
+        app.logger.warning("Stripe webhook blueprint failed to register: %s", _exc)
+
+    # ---- Centralized Logs viewer ----
+    try:
+        from tools.logging.blueprint import create_logs_blueprint as _create_logs_bp
+        _logs_bp = _create_logs_bp()
+        if _logs_bp is not None:
+            app.register_blueprint(_logs_bp)
+            app.logger.info("Logs blueprint registered at /logs")
+        else:
+            app.logger.info("Logs blueprint disabled (ICDEV_LOGS_ENABLED=false)")
+    except Exception as _exc:
+        app.logger.warning("Logs blueprint failed to register: %s", _exc)
+
+    # ---- Platform Updates (CHANGELOG.md viewer) ----
+    try:
+        from tools.dashboard.changelog import parse_changelog as _parse_changelog
+        import os as _os
+
+        @app.route("/updates")
+        def updates_page():
+            _changelog_path = _os.path.join(_os.path.dirname(__file__), "..", "..", "CHANGELOG.md")
+            try:
+                releases = _parse_changelog(_changelog_path)
+            except Exception as _exc:
+                app.logger.warning("Failed to parse CHANGELOG.md: %s", _exc)
+                releases = []
+                return render_template("updates/page.html", releases=releases, error=str(_exc))
+            return render_template("updates/page.html", releases=releases, error=None)
+
+        app.logger.info("Updates route registered at /updates")
+    except Exception as _exc:
+        app.logger.warning("Updates route failed to register: %s", _exc)
+
+    # ---- ECR-CL-02: Mark current version as seen ----
+    @app.route("/api/user/prefs/seen-version", methods=["PATCH"])
+    def api_user_prefs_seen_version():
+        try:
+            from tools.dashboard.brand import get_brand as _get_brand_sv
+            _brand_ver = _get_brand_sv().get("version", "")
+        except Exception as _exc:
+            app.logger.warning("seen-version PATCH failed: %s", _exc)
+            return jsonify({"error": str(_exc)}), 500
+        resp = jsonify({"ok": True, "seen_version": _brand_ver})
+        resp.set_cookie("icdev_seen_version", _brand_ver, max_age=31536000, samesite="Lax")
+        return resp
 
     # ---- Convenience JSON routes that match the spec ----
 
@@ -3441,6 +3586,7 @@ def create_app(testing: bool = False) -> Flask:
         _CANVAS_MAP = _REGISTRY.get_iqe_mapping()
         # Supplement with app.py-registered canvases not in component_registry.yaml
         _CANVAS_MAP.setdefault("updates", ("tools.iqe.adapters.updates", ["updates.releases"]))
+        _CANVAS_MAP.setdefault("logs", ("tools.iqe.adapters.logs", ["logs.entries", "logs.errors"]))
 
         data = flask_request.get_json(silent=True) or {}
         question = (data.get("question") or "").strip()
@@ -3535,65 +3681,6 @@ def create_app(testing: bool = False) -> Flask:
                 unresolved_failures=0,
                 health_status="unknown",
             )
-        finally:
-            conn.close()
-
-    @app.route("/monitoring/forecast")
-    def monitoring_forecast_page():
-        """Time-series forecasting page using TimesFM."""
-        conn = _get_db()
-        try:
-            recent_jobs = conn.execute(
-                "SELECT id, source, context, input_rows, status, created_at, completed_at "
-                "FROM forecast_jobs ORDER BY created_at DESC LIMIT 20"
-            ).fetchall()
-            from icdev.tools.forecast.timesfm_adapter import health as _forecast_health
-
-            model_status = _forecast_health()
-            return render_template(
-                "monitoring/forecast.html",
-                recent_jobs=[dict(r) for r in recent_jobs],
-                model_status=model_status,
-            )
-        except Exception as exc:
-            get_logger(__name__).error("monitoring_forecast_page DB error: %s", exc)
-            return render_template(
-                "monitoring/forecast.html",
-                recent_jobs=[],
-                model_status={"available": False, "error": str(exc)},
-            )
-        finally:
-            conn.close()
-
-    @app.route("/api/forecast", methods=["POST"])
-    def api_forecast():
-        """Run a TimesFM forecast job."""
-        try:
-            payload = flask_request.get_json(force=True)
-            if not isinstance(payload, dict):
-                return jsonify({"error": "JSON object required"}), 400
-            result = _run_forecast(payload)
-            return jsonify(result), 200
-        except ValueError as exc:
-            return jsonify({"error": str(exc)}), 400
-        except RuntimeError as exc:
-            return jsonify({"error": str(exc), "available": False}), 503
-        except Exception as exc:
-            get_logger(__name__).error("api_forecast error: %s", exc)
-            return jsonify({"error": str(exc)}), 500
-
-    @app.route("/api/forecast/<job_id>")
-    def api_forecast_status(job_id):
-        """Fetch a forecast job by ID."""
-        conn = _get_db()
-        try:
-            row = _get_forecast_job(conn, job_id)
-            if row is None:
-                return jsonify({"error": "job not found"}), 404
-            return jsonify(row), 200
-        except Exception as exc:
-            get_logger(__name__).error("api_forecast_status error: %s", exc)
-            return jsonify({"error": str(exc)}), 500
         finally:
             conn.close()
 
@@ -8287,6 +8374,51 @@ def create_app(testing: bool = False) -> Flask:
             conn.close()
         return render_template("filesync.html", stats=stats, jobs=jobs, log_entries=log_entries)
 
+    try:
+        from tools.security.exceptions import TierAccessDenied as _TierAccessDenied
+
+        @app.errorhandler(_TierAccessDenied)
+        def tier_gate_handler(e):
+            from tools.billing.tier import get_active_tier as _get_active_tier
+            _active = _get_active_tier()
+            if flask_request.is_json or flask_request.path.startswith("/api/"):
+                return jsonify({
+                    "error": "TierAccessDenied",
+                    "canvas": e.canvas_key,
+                    "required_tier": e.required_tier,
+                    "active_tier": _active,
+                    "message": str(e),
+                }), 403
+            return render_template(
+                "errors/tier_gate.html",
+                canvas_key=e.canvas_key,
+                required_tier=e.required_tier,
+                active_tier=_active,
+            ), 403
+    except ImportError:
+        pass
+
+    @app.route("/api/license/tier", methods=["GET"])
+    def api_license_tier():
+        """Return active tier, available features, and locked features."""
+        from tools.billing.tier import get_active_tier as _gat, tier_satisfies as _ts
+        _active = _gat()
+        _available: list[str] = []
+        _locked: list[str] = []
+        try:
+            for _comp in _REGISTRY.iter_canvases():
+                if _ts(_active, _comp.min_tier):
+                    _available.append(_comp.key)
+                else:
+                    _locked.append(_comp.key)
+        except Exception:
+            pass
+        return jsonify({
+            "active_tier": _active,
+            "available_features": sorted(_available),
+            "locked_features": sorted(_locked),
+        })
+
     @app.errorhandler(401)
     def unauthorized(e):
         if flask_request.is_json or flask_request.path.startswith("/api/"):
@@ -9698,27 +9830,8 @@ def create_app(testing: bool = False) -> Flask:
         context_id = flask_request.args.get("context_id", "")
         try:
             with get_connection() as conn:
-                rows = conn.execute(
-                    """
-                    SELECT DISTINCT source_id,
-                           MAX(json_extract(metadata, '$.filename')) AS filename,
-                           MAX(json_extract(metadata, '$.context_id')) AS context_id,
-                           COUNT(*) AS chunk_count,
-                           MAX(created_at) AS indexed_at
-                    FROM rag_chunks
-                    WHERE source_type = 'chat_upload'
-                      AND (%s = '' OR tenant_id = %s)
-                      AND (%s = '' OR json_extract(metadata, '$.context_id') = %s)
-                    GROUP BY source_id
-                    ORDER BY indexed_at DESC
-                    LIMIT 50
-                    """,
-                    (tenant_id, tenant_id, context_id, context_id),
-                ).fetchall()
-                return jsonify({
-                    "sources": [dict(r) for r in rows],
-                    "total": len(rows),
-                })
+                sources = _aggregate_chat_sources(conn, tenant_id, context_id)
+                return jsonify({"sources": sources, "total": len(sources)})
         except Exception as exc:
             app.logger.warning("api_chat_sources error: %s", exc)
             return jsonify({"sources": [], "total": 0})
@@ -11008,6 +11121,29 @@ def create_app(testing: bool = False) -> Flask:
 
     if _track_request is not None:
         _track_request(app)
+
+    # ---- ECR-OBS-01: Prometheus /metrics endpoint ----
+    try:
+        from tools.observability.metrics import (
+            wire_flask_metrics as _wire_metrics,
+            registry as _prom_registry,
+            generate_latest as _gen_latest,
+            CONTENT_TYPE_LATEST as _PROM_CT,
+        )
+
+        _wire_metrics(app)
+
+        @app.route("/metrics", methods=["GET"])
+        def prometheus_metrics():
+            if _prom_registry is None or _gen_latest is None:
+                return Response("# prometheus_client not installed\n",
+                                status=503, mimetype="text/plain")
+            data = _gen_latest(_prom_registry)
+            return Response(data, status=200, mimetype=_PROM_CT)
+
+        _wire_metrics(app)
+    except Exception as _prom_exc:
+        app.logger.debug("Prometheus metrics init skipped: %s", _prom_exc)
 
     return app
 

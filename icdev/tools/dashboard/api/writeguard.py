@@ -28,7 +28,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, sql_placeholder  # noqa: E402
 
 logger = get_logger(__name__)
 
@@ -248,6 +248,7 @@ def list_glossary():
     Query params: opp_id (scopes to project), term_type, domain, q (search).
     """
     conn = get_connection()
+    ph = sql_placeholder(conn)
     try:
         opp_id = request.args.get("opp_id", "").strip()
         term_type = request.args.get("term_type", "").strip()
@@ -257,18 +258,18 @@ def list_glossary():
         clauses = ["is_active = 1"]
         params = []
         if opp_id:
-            clauses.append("scope = 'project' AND scope_id = ?")
+            clauses.append(f"scope = 'project' AND scope_id = {ph}")
             params.append(opp_id)
         else:
             clauses.append("scope = 'platform'")
         if term_type:
-            clauses.append("term_type = ?")
+            clauses.append(f"term_type = {ph}")
             params.append(term_type)
         if domain:
-            clauses.append("domain = ?")
+            clauses.append(f"domain = {ph}")
             params.append(domain)
         if q:
-            clauses.append("(term LIKE ? OR definition LIKE ? OR replacement LIKE ?)")
+            clauses.append(f"(term LIKE {ph} OR definition LIKE {ph} OR replacement LIKE {ph})")
             params.extend([f"%{q}%", f"%{q}%", f"%{q}%"])
 
         query = "SELECT * FROM wg_glossary WHERE " + " AND ".join(clauses) + " ORDER BY term_type, term"

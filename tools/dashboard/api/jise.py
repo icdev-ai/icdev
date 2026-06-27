@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
 
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, sql_placeholder
 
 logger = get_logger("icdev.api.jise")
 
@@ -77,6 +77,7 @@ def requirements():
         limit = 100
 
     conn = _db()
+    ph = sql_placeholder(conn)
     try:
         query = (
             "SELECT id, title, description, status, priority, "
@@ -85,9 +86,9 @@ def requirements():
         )
         params: list = []
         if status_filter:
-            query += " WHERE status = ?"
+            query += f" WHERE status = {ph}"
             params.append(status_filter)
-        query += " ORDER BY created_at DESC LIMIT ?"
+        query += f" ORDER BY created_at DESC LIMIT {ph}"
         params.append(limit)
 
         try:
@@ -130,6 +131,7 @@ def intelligence():
         limit = 50
 
     conn = _db()
+    ph = sql_placeholder(conn)
     try:
         # Pull from security_scan_results if available
         query = (
@@ -139,9 +141,9 @@ def intelligence():
         )
         params: list = []
         if severity_filter:
-            query += " WHERE severity = ?"
+            query += f" WHERE severity = {ph}"
             params.append(severity_filter)
-        query += " ORDER BY created_at DESC LIMIT ?"
+        query += f" ORDER BY created_at DESC LIMIT {ph}"
         params.append(limit)
 
         try:

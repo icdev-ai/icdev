@@ -1617,15 +1617,17 @@ def _aggregate_chat_sources(conn, tenant_id: str, context_id: str) -> list[dict]
     Mirrors the logic of the original GROUP-BY json_extract query.
     """
     import json as _json
+    from tools.db.storage import sql_placeholder as _sqlph
+    ph = _sqlph(conn)
 
     params: list = ["chat_upload"]
     sql = (
         "SELECT source_id, metadata, created_at "
         "FROM rag_chunks "
-        "WHERE source_type = ?"
+        f"WHERE source_type = {ph}"
     )
     if tenant_id:
-        sql += " AND tenant_id = ?"
+        sql += f" AND tenant_id = {ph}"
         params.append(tenant_id)
     sql += " ORDER BY created_at DESC"
 
