@@ -24,7 +24,7 @@ from typing import Any
 
 from tools.slides.constants import (
     LLM_FN_CONTENT, LLM_FN_REVISION, LLM_FN_MERMAID, LLM_FN_THREE, LLM_FN_EXCALIDRAW,
-    TONE_STYLE_HINTS,
+    LLM_FN_TABLE, TONE_STYLE_HINTS,
 )
 
 _ICDEV_ROOT = Path(__file__).resolve().parents[3]
@@ -141,7 +141,9 @@ def _parse_slide(raw: str, title: str) -> dict:
 
 def _extract_type_hint(title: str) -> tuple[str, str | None]:
     """Strip [TYPE:xxx] tag from title and return (clean_title, type_hint|None)."""
-    m = re.search(r'\[TYPE:(mermaid_diagram|three_animation|excalidraw_sketch)\]', title)
+    m = re.search(
+        r'\[TYPE:(mermaid_diagram|three_animation|excalidraw_sketch|table|card_grid)\]', title
+    )
     if m:
         return title[:m.start()].strip(), m.group(1)
     return title, None
@@ -348,6 +350,74 @@ def _generate_excalidraw_slide(title: str, raw_content: dict[str, Any], tone: st
     }
 
 
+def _generate_table_slide(title: str, raw_content: dict[str, Any], tone: str) -> dict:
+    """Generate a structured data table slide.
+
+    The 'bullets' field stores table data as a dict:
+    {"headers": [...], "rows": [[...], ...], "footer": [...]}
+    """
+    system_prompt = (
+        "You are a presentation data analyst. Generate a structured table for the slide topic.\n"
+        "Output ONLY valid JSON with exactly these keys:\n"
+        '{"headers": ["Column 1", "Column 2", ...], '
+        '"rows": [["row1col1", "row1col2", ...], ...], '
+        '"footer": ["Total label", "Total value", ...]}\n'
+        "Rules:\n"
+        "- 2-4 columns, 3-8 rows\n"
+        "- Right-align numeric columns by prefixing header with '$' or '%' hint (model decides)\n"
+        "- footer is optional: empty list [] if not needed\n"
+        "- Keep cell values concise (under 40 chars)\n"
+        "Output ONLY the JSON object, no explanation."
+    )
+    context = f"Slide title: {title}\nTone: {tone}"
+    for src_key, src_data in raw_content.items():
+        if isinstance(src_data, dict) and "summary" in src_data:
+            context += f"\n[{src_key.upper()}]: {src_data['summary'][:300]}"
+
+    table_data = None
+    try:
+        from tools.llm.router import LLMRouter
+        from tools.llm.provider import LLMRequest
+
+        router = LLMRouter()
+        request = LLMRequest(
+            messages=[{"role": "user", "content": context}],
+            system_prompt=system_prompt,
+            max_tokens=512,
+            temperature=0.2,
+            agent_id="slides-table",
+            classification="CUI",
+            effort="medium",
+            skip_injection_scan=True,
+        )
+        response = router.invoke(LLM_FN_TABLE, request)
+        raw = _strip_fences(response.content or "")
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict) and "headers" in parsed and "rows" in parsed:
+            table_data = parsed
+    except Exception:
+        pass
+
+    if not table_data:
+        table_data = {
+            "headers": ["Item", "Value", "Notes"],
+            "rows": [[title[:30], "—", "See speaker notes"]],
+            "footer": [],
+        }
+
+    return {
+        "title": title,
+        "slide_type": "table",
+        "bullets": table_data,
+        "speaker_notes": f"This table summarizes {title.lower()}. Walk the audience through each row.",
+        "visual_context": f"Structured data table for {title.lower()}",
+        "citations": [],
+        "mermaid_code": None,
+        "three_scene_config": None,
+        "excalidraw_elements": None,
+    }
+
+
 def _generate_one(
     title: str,
     position: int,
@@ -369,6 +439,8 @@ def _generate_one(
         return _generate_three_scene_slide(title, raw_content, tone, theme)
     if slide_type_hint == "excalidraw_sketch":
         return _generate_excalidraw_slide(title, raw_content, tone)
+    if slide_type_hint == "table":
+        return _generate_table_slide(title, raw_content, tone)
 
     tone_hint = TONE_STYLE_HINTS.get(tone, TONE_STYLE_HINTS["professional"])
     if is_title_slide:
