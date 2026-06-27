@@ -1150,6 +1150,7 @@ agent_loop:
     max_cost_usd: 5.00
     tool_timeout_seconds: 30
     tool_result_max_chars: 4000
+    max_consecutive_errors: 3
 
 # -----------------------------------------------------------------------
 # Response Cache + Context Caching (D-CACHE-1 through D-CACHE-10)

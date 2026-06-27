@@ -126,6 +126,9 @@ class ResultSubtype:
     error_max_structured_output_retries = "error_max_structured_output_retries"
     """``output_schema`` provided but valid JSON not produced within retry limit."""
 
+    error_consecutive_tool_failures = "error_consecutive_tool_failures"
+    """Every tool call in each of N consecutive turns returned an error."""
+
 
 # ---------------------------------------------------------------------------
 # Result

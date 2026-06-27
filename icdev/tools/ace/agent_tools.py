@@ -79,6 +79,40 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             },
         },
     },
+    "patch_file": {
+        "type": "function",
+        "is_read_only": False,
+        "function": {
+            "name": "patch_file",
+            "is_read_only": False,
+            "description": (
+                "Apply a targeted string replacement to a file within the role's "
+                "declared folder_access scopes. Finds old_string exactly once in the "
+                "file and replaces it with new_string. Fails if old_string appears "
+                "zero or more than once (provide more context to make it unique). "
+                "Safer than write_file for partial edits."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["path", "old_string", "new_string"],
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the file to patch (within folder_access scope).",
+                    },
+                    "old_string": {
+                        "type": "string",
+                        "description": "Exact string to find in the file (must appear exactly once).",
+                    },
+                    "new_string": {
+                        "type": "string",
+                        "description": "Replacement string.",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
     "list_files": {
         "type": "function",
         "is_read_only": True,
@@ -295,6 +329,14 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
                         "type": "integer",
                         "description": "Max LLM turns for the sub-agent (default 6, max 20).",
                     },
+                    "coordination_namespace": {
+                        "type": "string",
+                        "description": (
+                            "Optional coordination namespace for the spawned agent. "
+                            "Defaults to the parent's namespace. Set an explicit value "
+                            "to create an isolated or shared artifact space."
+                        ),
+                    },
                 },
                 "required": ["task"],
             },
@@ -380,6 +422,8 @@ class AgentToolRegistry:
             return self._read_file
         if name == "write_file":
             return self._write_file
+        if name == "patch_file":
+            return self._patch_file
         if name == "list_files":
             return self._list_files
         if name == "search_files":
@@ -417,6 +461,57 @@ class AgentToolRegistry:
         broker = FileAccessBroker(self._folder_access)
         n = broker.write(path, content, coworker_id=self._coworker_id, instance_id=self.instance_id)
         return f"Wrote {n} bytes to {path}"
+
+    def _patch_file(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
+        from icdev.tools.ace.file_access_broker import FileAccessBroker, ScopeViolationError
+
+        path = _path_arg(inp)
+        old_string = inp.get("old_string")
+        new_string = inp.get("new_string")
+
+        if not path:
+            return "error: 'path' is required"
+        if old_string is None:
+            return "error: 'old_string' is required"
+        if new_string is None:
+            return "error: 'new_string' is required"
+
+        broker = FileAccessBroker(self._folder_access)
+        try:
+            resolved = broker._resolve(path, need_write=True)  # noqa: SLF001
+        except ScopeViolationError:
+            raise
+
+        if not resolved.exists():
+            return f"error: file not found: {path}"
+        if resolved.is_dir():
+            return f"error: '{path}' is a directory, not a file"
+
+        try:
+            content = resolved.read_text(encoding="utf-8")
+        except Exception as exc:
+            return f"error reading {path}: {exc}"
+
+        count = content.count(old_string)
+        if count == 0:
+            return f"error: old_string not found in {path}"
+        if count > 1:
+            return (
+                f"error: old_string appears {count} times in {path} — "
+                "provide more surrounding context to make it unique"
+            )
+
+        new_content = content.replace(old_string, new_string, 1)
+        try:
+            resolved.write_text(new_content, encoding="utf-8")
+        except Exception as exc:
+            return f"error writing {path}: {exc}"
+
+        net_lines = new_string.count("\n") - old_string.count("\n")
+        return (
+            f"Patched {path}: replaced {len(old_string)} chars → {len(new_string)} chars "
+            f"(net {net_lines:+d} lines)"
+        )
 
     def _list_files(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
         from icdev.tools.ace.file_access_broker import FileAccessBroker, ScopeViolationError
