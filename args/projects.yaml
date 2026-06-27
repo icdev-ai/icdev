@@ -530,6 +530,9 @@ projects:
   - key: register
     title: Registration Checklist -- APPEND_ONLY + conftest + MCP + docs
     priority: medium
+  - key: eval
+    title: Agent Evaluation System -- CoT/CoD metrics + suggestions + rerun + trends
+    priority: high
 - key: portal
   name: Portal Project
   description: Auto-registered project for tasks with prefix 'portal-'. Update name
