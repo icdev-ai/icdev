@@ -511,6 +511,19 @@ class CoWorkerThread(threading.Thread):
             except Exception as _exc:
                 logger.debug("ace: session save failed for %s: %s", _coworker_id, _exc)
 
+            try:
+                from icdev.tools.ace import event_bus as _eb
+                _eb.publish(_instance_id, {
+                    "type": "loop_done",
+                    "coworker_id": _coworker_id,
+                    "result_subtype": loop_result.result_subtype,
+                    "turns": loop_result.turns,
+                    "done": loop_result.done,
+                    "session_id": loop_result.session_id,
+                })
+            except Exception:
+                pass
+
         try:
             result = run_agent_loop(
                 router,
@@ -564,6 +577,18 @@ class CoWorkerThread(threading.Thread):
         self._set_assigned_step(f"agent_turn_{turn + 1}")
         self._audit("agent_turn", f"turn={turn + 1} tools={tool_summary}")
         self._persist_agent_turn(turn + 1, text, tool_summary)
+
+        try:
+            from icdev.tools.ace import event_bus as _eb
+            _eb.publish(self.instance_id, {
+                "type": "agent_turn",
+                "coworker_id": self.spec.coworker_id,
+                "turn": turn + 1,
+                "tool_summary": tool_summary,
+                "text_len": len(text),
+            })
+        except Exception:
+            pass
 
         # Behavioral compliance check every monitor_interval turns.
         self._step_count += 1

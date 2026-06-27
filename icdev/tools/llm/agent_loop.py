@@ -241,8 +241,6 @@ def _load_budget_defaults() -> dict[str, Any]:
             defaults["tool_timeout_seconds"] = float(budgets["tool_timeout_seconds"])
         if "tool_result_max_chars" in budgets:
             defaults["tool_result_max_chars"] = int(budgets["tool_result_max_chars"])
-        if "max_consecutive_errors" in budgets:
-            defaults["max_consecutive_errors"] = int(budgets["max_consecutive_errors"])
     except Exception as exc:
         logger.debug("agent_loop: failed to load budget defaults: %s", exc)
     return defaults
@@ -557,8 +555,8 @@ def run_agent_loop(
         tool_timeout_seconds = budget_defaults["tool_timeout_seconds"]
     if tool_result_max_chars is None and "tool_result_max_chars" in budget_defaults:
         tool_result_max_chars = budget_defaults["tool_result_max_chars"]
-    if max_consecutive_errors is None and "max_consecutive_errors" in budget_defaults:
-        max_consecutive_errors = budget_defaults["max_consecutive_errors"]
+    # max_consecutive_errors: Python default=3, None=explicitly disabled.
+    # Do NOT load from budget_defaults — None must mean "disable", not "use config".
 
     # Build set of read-only tool names for parallel execution.
     _read_only_tools = _build_read_only_set(tools)

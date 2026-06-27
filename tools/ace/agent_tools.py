@@ -322,6 +322,57 @@ class AgentToolRegistry:
         n = broker.write(path, content, coworker_id=self._coworker_id, instance_id=self.instance_id)
         return f"Wrote {n} bytes to {path}"
 
+    def _patch_file(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
+        from icdev.tools.ace.file_access_broker import FileAccessBroker, ScopeViolationError
+
+        path = _path_arg(inp)
+        old_string = inp.get("old_string")
+        new_string = inp.get("new_string")
+
+        if not path:
+            return "error: 'path' is required"
+        if old_string is None:
+            return "error: 'old_string' is required"
+        if new_string is None:
+            return "error: 'new_string' is required"
+
+        broker = FileAccessBroker(self._folder_access)
+        try:
+            resolved = broker._resolve(path, need_write=True)  # noqa: SLF001
+        except ScopeViolationError:
+            raise
+
+        if not resolved.exists():
+            return f"error: file not found: {path}"
+        if resolved.is_dir():
+            return f"error: '{path}' is a directory, not a file"
+
+        try:
+            content = resolved.read_text(encoding="utf-8")
+        except Exception as exc:
+            return f"error reading {path}: {exc}"
+
+        count = content.count(old_string)
+        if count == 0:
+            return f"error: old_string not found in {path}"
+        if count > 1:
+            return (
+                f"error: old_string appears {count} times in {path} — "
+                "provide more surrounding context to make it unique"
+            )
+
+        new_content = content.replace(old_string, new_string, 1)
+        try:
+            resolved.write_text(new_content, encoding="utf-8")
+        except Exception as exc:
+            return f"error writing {path}: {exc}"
+
+        net_lines = new_string.count("\n") - old_string.count("\n")
+        return (
+            f"Patched {path}: replaced {len(old_string)} chars → {len(new_string)} chars "
+            f"(net {net_lines:+d} lines)"
+        )
+
     def _list_files(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
         from icdev.tools.ace.file_access_broker import FileAccessBroker, ScopeViolationError
 
