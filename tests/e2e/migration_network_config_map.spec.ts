@@ -131,8 +131,19 @@ test.describe('Network Migration Wizard — Config Mapping Lifecycle', () => {
     const parsedText = await page.textContent('body');
     expect(parsedText).toContain('Parsed');
 
+    // Step 2b: The auto-generated topology sidecar should render from parsed config.
+    expect(parsedText).toContain('Auto-generated Topology');
+    await expect(page.locator('#topology-paper svg')).toBeVisible({ timeout: 5000 });
+    const topologyNodeCount = await page.locator('#topology-paper svg .joint-cell').count();
+    expect(topologyNodeCount).toBeGreaterThan(0);
+
     await page.screenshot({
       path: `${SCREENSHOT_DIR}/mig_net_04_parsed.png`,
+      fullPage: true,
+    });
+
+    await page.screenshot({
+      path: `${SCREENSHOT_DIR}/mig_net_04b_topology.png`,
       fullPage: true,
     });
 

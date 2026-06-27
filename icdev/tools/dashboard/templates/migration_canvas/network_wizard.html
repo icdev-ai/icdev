@@ -248,6 +248,13 @@
 .chip-skipped { background: #3a3a3a; color: #7a8cb0; }
 .chip-total { background: #16213e; color: #eaeaea; border: 1px solid #1e3a6e; }
 
+/* ── Step 2 — Topology sidecar ─────────────────────────────────── */
+.topology-sidecar { display: none; margin-top: 24px; }
+.topology-sidecar-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.topology-paper-wrap { background: #0a1624; border: 1px solid #1e3a6e; border-radius: 6px; height: 440px; overflow: hidden; }
+#topology-paper { width: 100%; height: 100%; }
+.topology-empty { color: #4a6080; font-size: 12px; padding: 18px; }
+
 /* ── Step 1 — COA questionnaire & recommendation ─────────────── */
 .coa-panel { background: #0d1b2e; border: 1px solid #1e3a6e; border-radius: 6px; padding: 14px; margin: 14px 0; }
 .coa-panel h4 { margin: 0 0 10px; font-size: 13px; color: #27ae60; }
@@ -585,6 +592,20 @@
               </tbody>
             </table>
           </div>
+        </div>
+
+        <!-- Auto-generated topology sidecar -->
+        <div class="topology-sidecar" id="topology-sidecar">
+          <div class="topology-sidecar-header">
+            <div class="section-title" style="margin:0">Auto-generated Topology</div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-secondary" style="font-size:11px" onclick="refreshTopologySidecar(false)">Refresh Topology</button>
+            </div>
+          </div>
+          <div class="topology-paper-wrap">
+            <div id="topology-paper"></div>
+          </div>
+          <div class="info-chips" id="topology-chips" style="margin-top:10px"></div>
         </div>
 
         <div class="nw-actions" style="margin-top:16px">
@@ -1045,6 +1066,13 @@
 </div><!-- /.nw-shell -->
 
 <div class="toast" id="toast"></div>
+
+<!-- JointJS read-only topology renderer (deps: jquery → lodash → backbone → joint) -->
+<script src="/static/js/vendor/jquery.min.js"></script>
+<script src="/static/js/vendor/lodash.min.js"></script>
+<script src="/static/js/vendor/backbone.min.js"></script>
+<script src="/static/js/vendor/joint.js"></script>
+<script src="/static/js/migration-topology.js"></script>
 
 <script>
 const SESSION_ID = {{ session_id | tojson }};
@@ -1823,6 +1851,33 @@ function renderParsedResult(data) {
   }
 
   document.getElementById('parse-result').style.display='block';
+  loadTopologySidecar();
+}
+
+// ── STEP 2 — Topology sidecar helpers ─────────────────────────────
+async function loadTopologySidecar() {
+  if (!_sid || typeof joint === 'undefined') return;
+  document.getElementById('topology-sidecar').style.display = 'block';
+  await refreshTopologySidecar(true);
+}
+
+async function refreshTopologySidecar(silent=false) {
+  if (!_sid || typeof joint === 'undefined') return;
+  const paper = document.getElementById('topology-paper');
+  paper.innerHTML = '<div class="spinner" style="margin:18px"></div> <span style="color:#7a8cb0;font-size:12px">' + (silent ? 'Building topology...' : 'Refreshing topology...') + '</span>';
+  try {
+    const data = await refreshMigrationTopology(_sid, 'topology-paper');
+    const n = ((data.graph_json || {}).nodes || []).length;
+    const e = ((data.graph_json || {}).edges || []).length;
+    document.getElementById('topology-chips').innerHTML =
+      `<div class="chip">Nodes: <strong>${n}</strong></div>` +
+      `<div class="chip">Links: <strong>${e}</strong></div>` +
+      `<div class="chip">Neighbors: <strong>${(data.neighbors || []).length}</strong></div>`;
+    if (!silent) toast('Topology refreshed');
+  } catch(err) {
+    paper.innerHTML = `<div class="topology-empty">Topology ${silent ? 'unavailable' : 'refresh failed'}: ${escapeHtml(err.message)}</div>`;
+    if (silent) document.getElementById('topology-chips').innerHTML = '';
+  }
 }
 
 // ── STEP 3 ────────────────────────────────────────────────────────
