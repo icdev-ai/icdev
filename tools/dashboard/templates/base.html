@@ -165,7 +165,7 @@
                     <li class="nav-section-label">DevOps</li>
                     <li><a href="/projects">Projects</a></li>
                     <li><a href="/agents">Agents</a></li>
-                    {# Co-Worker Teams (ACE) — link restored once the /coworker blueprint is registered (currently 404s) #}
+                    <li><a href="/coworker/sessions">Co-Worker (ACE)</a></li>
                     <li><a href="/kanban">Task Board</a></li>
                     <li><a href="/cicd">CI/CD</a></li>
                     <li><a href="/orchestration">Orchestration</a></li>
@@ -826,6 +826,8 @@
             [/^\/mcip/, 'dat'],
             [/^\/updates/, 'updates'],
             [/^\/docgen/, 'docgen'],
+            [/^\/monitoring\/forecast/, 'forecast'],
+            [/^\/monitoring/, 'logs'],
         ];
 
         function detectCanvas() {
