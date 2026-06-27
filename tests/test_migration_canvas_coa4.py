@@ -1,15 +1,23 @@
+#!/usr/bin/env python3
+# CUI // SP-CTI
+"""Unit tests for Network Migration COA (Courses of Action) recommendation engine."""
+
 import sys
 from pathlib import Path
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import uuid
+
 import pytest
+
 from tools.migration_canvas.db import init_db as init_db_mod
 from tools.migration_canvas import network_migration as nm
 
 
 @pytest.fixture
 def session_id(tmp_path, monkeypatch):
+    """Create a network migration session."""
     db_path = tmp_path / "migration_canvas_coa.db"
     monkeypatch.setenv("MC_DB_PATH", str(db_path))
     monkeypatch.setattr(init_db_mod, "DB_PATH", db_path)
@@ -30,10 +38,30 @@ set protocols bgp group external neighbor 10.0.0.2 peer-as 65001
     return sid
 
 
-def test_save_and_context(session_id):
-    context = "Replacement is layer 2 only. Downstream OSPF/BGP is not under my control. We have a very tight maintenance window with no time for parallel validation."
-    before = nm.get_coa_questions(session_id)
-    print("BEFORE", [(q["question_key"], q["user_answer"]) for q in before])
+def test_seed_coa_questions_creates_defaults(session_id):
+    questions = nm.get_coa_questions(session_id)
+    keys = {q["question_key"] for q in questions}
+    expected = {
+        "spare_ports_available",
+        "same_mgmt_vlan_ok",
+        "igp_controlled",
+        "tight_maintenance_window",
+        "l2_only_replacement",
+        "rollback_familiar",
+    }
+    assert keys == expected
+
+
+def test_recommend_coa_defaults_to_side_by_side(session_id):
+    result = nm.recommend_coa(session_id)
+    assert result["recommended"] == "coa_a"
+
+
+def test_context_and_answers_can_recommend_cold_cutover(session_id):
+    context = (
+        "Replacement is layer 2 only. Downstream OSPF/BGP is not under my control. "
+        "We have a very tight maintenance window with no time for parallel validation."
+    )
     nm.save_coa_answers(
         session_id,
         {
@@ -45,13 +73,14 @@ def test_save_and_context(session_id):
             "rollback_familiar": 0,
         },
     )
-    after = nm.get_coa_questions(session_id)
-    print("AFTER save", [(q["question_key"], q["user_answer"]) for q in after])
     with init_db_mod.get_connection() as conn:
-        conn.execute("UPDATE mc_net_sessions SET engineer_context=? WHERE id=?", (context, session_id))
+        conn.execute(
+            "UPDATE mc_net_sessions SET engineer_context=? WHERE id=?",
+            (context, session_id),
+        )
         conn.commit()
-    final = nm.get_coa_questions(session_id)
-    print("AFTER context", [(q["question_key"], q["user_answer"]) for q in final])
-    assert any(q["question_key"] == "spare_ports_available" and q["user_answer"] == 0 for q in final)
+    qs = nm.get_coa_questions(session_id)
+    print("AFTER", [(q["question_key"], q["user_answer"]) for q in qs])
     result = nm.recommend_coa(session_id)
     print("REC", result["recommended"], result["scores"])
+    assert result["recommended"] == "coa_c"
