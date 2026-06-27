@@ -1394,74 +1394,78 @@ window._loadCharts = function() {
     fetch('/api/charts/overview')
         .then(function(r) { return r.json(); })
         .then(function(d) {
-            // Compliance posture — multi-canvas bar chart (canvas scores only, no Oracle)
-            if (d.compliance && d.compliance.canvases && d.compliance.canvases.length > 0) {
-                // Separate Oracle entry — it tracks CAT prediction counts, not a 0-100 score
+            // Compliance posture — stacked bar of POA&M + STIG open vs closed (main DB,
+            // always available), plus a compact canvas-score summary row below.
+            if (d.compliance) {
+                var _poam = d.compliance.poam || { open: 0, closed: 0 };
+                var _stig = d.compliance.stig || { open: 0, closed: 0 };
                 var _oracleEntry = null;
-                d.compliance.canvases.forEach(function(c) { if (c.is_oracle) _oracleEntry = c; });
-                var _chartCanvases = d.compliance.canvases.filter(function(c) { return !c.is_oracle; });
-                // Horizontal bar chart — scales naturally with canvas count,
-                // shows "No data" for canvases with empty assessment tables.
+                (d.compliance.canvases || []).forEach(function(c) { if (c.is_oracle) _oracleEntry = c; });
+                var _chartCanvases = (d.compliance.canvases || []).filter(function(c) { return !c.is_oracle; });
+
+                // 1. Primary chart: POA&M / STIG open-closed stacked bars
                 (function() {
                     var el = document.getElementById('chart-compliance');
                     if (!el) return;
                     var W = el.offsetWidth || 800;
-                    var COLS = 2, BAR_H = 16, GAP = 4, LABEL_W = 80, PAD_R = 38, PAD_T = 4, PAD_B = 4;
-                    var colW = Math.floor(W / COLS);
-                    var plotW = colW - LABEL_W - PAD_R;
-                    var rows = Math.ceil(_chartCanvases.length / COLS);
-                    var svgH = PAD_T + rows * (BAR_H + GAP) + PAD_B;
-                    var parts = ['<svg width="' + W + '" height="' + svgH + '" style="display:block;overflow:visible;" role="img" aria-label="Compliance posture by canvas">'];
-                    _chartCanvases.forEach(function(c, i) {
-                        var col = i % COLS;
-                        var row = Math.floor(i / COLS);
-                        var xOff = col * colW;
-                        var y = PAD_T + row * (BAR_H + GAP);
-                        var barW = c.score > 0 ? Math.max(2, (c.score / 100) * plotW) : 0;
-                        var clr = c.score >= 80 ? '#28a745' : c.score >= 60 ? '#ffc107' : c.score > 0 ? '#dc3545' : '#3a3a4a';
-                        parts.push('<text x="' + (xOff + LABEL_W - 5) + '" y="' + (y + BAR_H / 2 + 4) + '" text-anchor="end" font-size="11" fill="#aaa" font-family="inherit">' + c.name + '</text>');
-                        parts.push('<rect x="' + (xOff + LABEL_W) + '" y="' + y + '" width="' + plotW + '" height="' + BAR_H + '" fill="rgba(255,255,255,0.04)" rx="3"/>');
-                        if (barW > 0) {
-                            parts.push('<rect x="' + (xOff + LABEL_W) + '" y="' + y + '" width="' + barW + '" height="' + BAR_H + '" fill="' + clr + '" rx="3"/>');
-                            parts.push('<text x="' + (xOff + LABEL_W + barW + 5) + '" y="' + (y + BAR_H / 2 + 4) + '" font-size="11" fill="#ccc" font-family="inherit">' + c.score + '</text>');
+                    var ROWS = [
+                        { label: 'POA&M', open: _poam.open, closed: _poam.closed },
+                        { label: 'STIG',  open: _stig.open,  closed: _stig.closed }
+                    ];
+                    var BAR_H = 22, GAP = 8, LABEL_W = 60, PAD_R = 12, PAD_T = 6, PAD_B = 6;
+                    var plotW = W - LABEL_W - PAD_R;
+                    var svgH = PAD_T + ROWS.length * (BAR_H + GAP) + PAD_B - GAP;
+                    var parts = ['<svg width="' + W + '" height="' + svgH + '" style="display:block;overflow:visible;" role="img" aria-label="POA&M and STIG open vs closed">'];
+                    ROWS.forEach(function(r, i) {
+                        var y = PAD_T + i * (BAR_H + GAP);
+                        var total = r.open + r.closed;
+                        var openW = total > 0 ? Math.max(2, (r.open / total) * plotW) : 0;
+                        var closedW = total > 0 ? Math.max(2, (r.closed / total) * plotW) : 0;
+                        parts.push('<text x="' + (LABEL_W - 8) + '" y="' + (y + BAR_H / 2 + 4) + '" text-anchor="end" font-size="12" fill="#aaa" font-family="inherit">' + r.label + '</text>');
+                        parts.push('<rect x="' + LABEL_W + '" y="' + y + '" width="' + plotW + '" height="' + BAR_H + '" fill="rgba(255,255,255,0.04)" rx="3"/>');
+                        if (total === 0) {
+                            parts.push('<text x="' + (LABEL_W + 8) + '" y="' + (y + BAR_H / 2 + 4) + '" font-size="11" fill="#555" font-family="inherit">No data</text>');
                         } else {
-                            parts.push('<text x="' + (xOff + LABEL_W + 7) + '" y="' + (y + BAR_H / 2 + 4) + '" font-size="10" fill="#555" font-family="inherit">No data</text>');
+                            if (openW > 0) {
+                                parts.push('<rect x="' + LABEL_W + '" y="' + y + '" width="' + openW + '" height="' + BAR_H + '" fill="#dc3545" rx="3"/>');
+                                if (openW > 30) parts.push('<text x="' + (LABEL_W + openW / 2) + '" y="' + (y + BAR_H / 2 + 4) + '" text-anchor="middle" font-size="11" fill="#fff" font-family="inherit">' + r.open + ' open</text>');
+                            }
+                            if (closedW > 0) {
+                                parts.push('<rect x="' + (LABEL_W + openW) + '" y="' + y + '" width="' + closedW + '" height="' + BAR_H + '" fill="#28a745" rx="3"/>');
+                                if (closedW > 30) parts.push('<text x="' + (LABEL_W + openW + closedW / 2) + '" y="' + (y + BAR_H / 2 + 4) + '" text-anchor="middle" font-size="11" fill="#fff" font-family="inherit">' + r.closed + ' closed</text>');
+                            }
+                            parts.push('<text x="' + (LABEL_W + plotW + 6) + '" y="' + (y + BAR_H / 2 + 4) + '" font-size="12" fill="#ccc" font-family="inherit">' + total + '</text>');
                         }
                     });
                     parts.push('</svg>');
                     el.innerHTML = parts.join('');
                 }());
-                // Fetch and render sparkline trend indicators + Oracle CAT breakdown
-                fetch('/api/charts/compliance-trend')
-                    .then(function(r) { return r.json(); })
-                    .then(function(td) {
-                        var trendEl = document.getElementById('chart-compliance-trend');
-                        if (!trendEl || !td.canvases) return;
-                        var html = '';
-                        td.canvases.forEach(function(c) {
-                            var arrow = '—', color = '#888', sign = '';
-                            if (c.direction === 'up') { arrow = '▲'; color = '#28a745'; sign = '+'; }
-                            else if (c.direction === 'down') { arrow = '▼'; color = '#dc3545'; }
-                            var deltaStr = c.delta !== 0 ? (sign + c.delta.toFixed(1)) : '';
-                            html += '<span style="font-size:11px;color:' + color + ';white-space:nowrap;padding:2px 5px;background:rgba(0,0,0,0.15);border-radius:3px;" title="' + c.name + ' 30d trend">' +
-                                '<span style="font-size:9px;color:#aaa;margin-right:2px;">' + c.name + '</span>' +
-                                arrow + (deltaStr ? ' ' + deltaStr : '') +
-                                '</span>';
-                        });
-                        // Oracle CAT indicator (forward-looking; high count = more risk)
-                        if (_oracleEntry) {
-                            var _oc = (_oracleEntry.cat1 > 0) ? '#dc3545' : (_oracleEntry.cat2 > 0) ? '#ffc107' : '#28a745';
-                            var _otip = 'Oracle pending compliance-risk predictions — CAT1(critical/high): ' + _oracleEntry.cat1 + ', CAT2(medium): ' + _oracleEntry.cat2 + ', CAT3(low/info): ' + _oracleEntry.cat3;
-                            html += '<span style="font-size:11px;color:' + _oc + ';white-space:nowrap;padding:2px 5px;background:rgba(0,0,0,0.15);border-radius:3px;" title="' + _otip + '">' +
-                                '<span style="font-size:9px;color:#aaa;margin-right:2px;">Oracle</span>' +
-                                'C1:' + _oracleEntry.cat1 + ' C2:' + _oracleEntry.cat2 + ' C3:' + _oracleEntry.cat3 +
-                                '</span>';
-                        }
-                        trendEl.innerHTML = html || '';
-                    })
-                    .catch(function() {});
+
+                // 2. Secondary row: canvas posture mini-bars + overall score + Oracle CAT
+                (function() {
+                    var trendEl = document.getElementById('chart-compliance-trend');
+                    if (!trendEl) return;
+                    var html = '';
+                    if (d.compliance.overall_score !== undefined && d.compliance.overall_score !== null) {
+                        var score = parseFloat(d.compliance.overall_score) || 0;
+                        var scoreColor = score >= 80 ? '#28a745' : score >= 60 ? '#ffc107' : '#dc3545';
+                        html += '<span style="font-size:12px;color:' + scoreColor + ';white-space:nowrap;padding:3px 8px;background:rgba(0,0,0,0.2);border-radius:4px;font-weight:600;" title="Average canvas posture score">Overall ' + score + '%</span>';
+                    }
+                    _chartCanvases.forEach(function(c) {
+                        if (!c.score && c.score !== 0) return;
+                        var clr = c.score >= 80 ? '#28a745' : c.score >= 60 ? '#ffc107' : c.score > 0 ? '#dc3545' : '#555';
+                        html += '<span style="font-size:11px;color:' + clr + ';white-space:nowrap;padding:2px 6px;background:rgba(0,0,0,0.15);border-radius:3px;" title="' + c.name + ' posture score">' + c.name + ' ' + c.score + '</span>';
+                    });
+                    if (_oracleEntry) {
+                        var _oc = (_oracleEntry.cat1 > 0) ? '#dc3545' : (_oracleEntry.cat2 > 0) ? '#ffc107' : '#28a745';
+                        var _otip = 'Oracle pending compliance-risk predictions — CAT1(critical/high): ' + _oracleEntry.cat1 + ', CAT2(medium): ' + _oracleEntry.cat2 + ', CAT3(low/info): ' + _oracleEntry.cat3;
+                        html += '<span style="font-size:11px;color:' + _oc + ';white-space:nowrap;padding:2px 6px;background:rgba(0,0,0,0.15);border-radius:3px;" title="' + _otip + '">Oracle C1:' + _oracleEntry.cat1 + ' C2:' + _oracleEntry.cat2 + ' C3:' + _oracleEntry.cat3 + '</span>';
+                    }
+                    trendEl.innerHTML = html || '';
+                }());
             } else {
-                document.getElementById('chart-compliance').innerHTML = '<p class="text-muted" style="text-align:center;padding:60px 0;">No canvas assessments yet</p>';
+                document.getElementById('chart-compliance').innerHTML = '<p class="text-muted" style="text-align:center;padding:60px 0;">Compliance data unavailable</p>';
+                document.getElementById('chart-compliance-trend').innerHTML = '';
             }
             // Activity trend line chart
             if (d.activity_trend && d.activity_trend.length > 0) {
