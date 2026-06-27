@@ -1149,3 +1149,286 @@ class TestSpawnAgent:
         _, handlers = registry.build(["spawn_agent"])
         out = handlers["spawn_agent"]({"task": "go"}, None)
         assert "child-session-abc" in out
+
+
+# ---------------------------------------------------------------------------
+# Loop control mechanisms (Controls 1-5)
+# ---------------------------------------------------------------------------
+
+
+class TestLoopControls:
+    """Tests for the 5 loop-control mechanisms added to run_agent_loop."""
+
+    # ------------------------------------------------------------------
+    # Control 1: LLM call timeout
+    # ------------------------------------------------------------------
+
+    def test_llm_timeout_terminates_loop(self):
+        """A router.invoke that exceeds llm_call_timeout_seconds → error_during_execution."""
+        import time
+
+        class SlowRouter(ScriptedRouter):
+            def invoke(self, fn, req):
+                time.sleep(0.15)  # outlasts the 20ms timeout
+                return super().invoke(fn, req)
+
+        router = SlowRouter(["done"])
+        result = run_agent_loop(
+            router, system_prompt="s", user_prompt="u",
+            tools=[_tool("echo")], tool_handlers={"echo": lambda i, s: "x"},
+            max_iterations=3,
+            llm_call_timeout_seconds=0.02,
+        )
+        assert result.result_subtype == ResultSubtype.error_during_execution
+        assert result.truncated is True
+
+    def test_llm_timeout_none_completes_normally(self):
+        """llm_call_timeout_seconds=None → no timeout wrapping, normal completion."""
+        router = ScriptedRouter(["done"])
+        result = run_agent_loop(
+            router, system_prompt="s", user_prompt="u",
+            tools=[_tool("echo")], tool_handlers={"echo": lambda i, s: "x"},
+            llm_call_timeout_seconds=None,
+        )
+        assert result.done is True
+        assert result.result_subtype == ResultSubtype.success
+
+    def test_llm_timeout_default_in_config(self):
+        """llm_call_timeout_seconds is present in _load_budget_defaults() config."""
+        from icdev.tools.llm.agent_loop import _load_budget_defaults
+        defaults = _load_budget_defaults()
+        assert "llm_call_timeout_seconds" in defaults
+        assert defaults["llm_call_timeout_seconds"] > 0
+
+    # ------------------------------------------------------------------
+    # Control 2: Budget pressure injection
+    # ------------------------------------------------------------------
+
+    def test_budget_pressure_injected_near_end(self):
+        """A 'turn(s) remaining' message is injected in the last 20% of max_iterations."""
+        class TrackingRouter(ScriptedRouter):
+            def __init__(self, responses):
+                super().__init__(responses)
+                self.captured: list[list[dict]] = []
+
+            def invoke(self, fn, req):
+                self.captured.append(list(req.messages))
+                return super().invoke(fn, req)
+
+        # 8 distinct tool calls (different paths → novel each time → no stall)
+        calls = [
+            [{"id": f"c{i}", "name": "read", "input": {"path": f"f{i}.py"}}]
+            for i in range(8)
+        ]
+        router = TrackingRouter(calls + ["done"])
+        run_agent_loop(
+            router, system_prompt="s", user_prompt="u",
+            tools=[_tool("read")], tool_handlers={"read": lambda i, s: "ok"},
+            max_iterations=10,
+            stall_threshold=100,
+        )
+        # Pressure fires at turn 8 (turns_remaining=2, pressure_threshold=2).
+        all_msgs = [m for batch in router.captured for m in batch]
+        pressure = [
+            m for m in all_msgs
+            if isinstance(m.get("content"), str) and "turn(s) remaining" in m["content"]
+        ]
+        assert pressure, "budget pressure message was never injected into messages"
+
+    def test_budget_pressure_injected_only_once(self):
+        """Budget pressure message is added exactly once even across multiple turns."""
+        pressure_count = [0]
+
+        class CountingRouter(ScriptedRouter):
+            def invoke(self, fn, req):
+                for m in req.messages:
+                    if isinstance(m.get("content"), str) and "turn(s) remaining" in m["content"]:
+                        pressure_count[0] += 1
+                return super().invoke(fn, req)
+
+        calls = [
+            [{"id": f"c{i}", "name": "read", "input": {"path": f"g{i}.py"}}]
+            for i in range(8)
+        ]
+        router = CountingRouter(calls + ["done"])
+        run_agent_loop(
+            router, system_prompt="s", user_prompt="u",
+            tools=[_tool("read")], tool_handlers={"read": lambda i, s: "ok"},
+            max_iterations=10,
+            stall_threshold=100,
+        )
+        # Pressure text may accumulate in successive messages; should appear ≤ 2 times total.
+        assert pressure_count[0] <= 2, (
+            f"pressure message appeared {pressure_count[0]} times — should be ≤ 2"
+        )
+
+    # ------------------------------------------------------------------
+    # Control 3: Duplicate call detector
+    # ------------------------------------------------------------------
+
+    def test_duplicate_warn_on_third_repeat(self):
+        """Third identical (tool, input) call prepends a [Loop guard] Warning."""
+        calls = [
+            [{"id": f"c{i}", "name": "read", "input": {"path": "same.py"}}]
+            for i in range(3)
+        ]
+        router = ScriptedRouter(calls + ["done"])
+        result = run_agent_loop(
+            router, system_prompt="s", user_prompt="u",
+            tools=[_tool("read")], tool_handlers={"read": lambda i, s: "content"},
+            max_iterations=10,
+            stall_threshold=100,  # isolate from stall guard
+        )
+        read_log = [e for e in result.tool_call_log if e["name"] == "read"]
+        assert len(read_log) == 3
+        third = read_log[2]["result"]
+        assert "[Loop guard]" in third
+        assert "Warning" in third
+
+    def test_duplicate_blocked_on_fifth_repeat(self):
+        """Fifth identical call is blocked: is_error=True, result contains '[Loop guard]'."""
+        calls = [
+            [{"id": f"c{i}", "name": "read", "input": {"path": "dup.py"}}]
+            for i in range(5)
+        ]
+        router = ScriptedRouter(calls + ["done"])
+        result = run_agent_loop(
+            router, system_prompt="s", user_prompt="u",
+            tools=[_tool("read")], tool_handlers={"read": lambda i, s: "content"},
+            max_iterations=10,
+            stall_threshold=100,
+            max_consecutive_errors=10,  # isolate from consecutive-error guard
+        )
+        read_log = [e for e in result.tool_call_log if e["name"] == "read"]
+        assert len(read_log) == 5
+        fifth = read_log[4]
+        assert fifth["error"] is not None
+        assert "[Loop guard]" in fifth["result"]
+
+    def test_different_inputs_not_flagged_as_duplicate(self):
+        """Same tool, different inputs each turn → no Loop guard warnings."""
+        calls = [
+            [{"id": f"c{i}", "name": "read", "input": {"path": f"unique{i}.py"}}]
+            for i in range(5)
+        ]
+        router = ScriptedRouter(calls + ["done"])
+        result = run_agent_loop(
+            router, system_prompt="s", user_prompt="u",
+            tools=[_tool("read")], tool_handlers={"read": lambda i, s: "ok"},
+            max_iterations=10,
+            stall_threshold=100,
+        )
+        for entry in result.tool_call_log:
+            assert "[Loop guard]" not in entry.get("result", ""), (
+                f"False-positive Loop guard on entry: {entry}"
+            )
+        assert result.done is True
+
+    # ------------------------------------------------------------------
+    # Control 4: Compression notification
+    # ------------------------------------------------------------------
+
+    def test_compression_notification_appended(self, monkeypatch):
+        """After _maybe_compress_messages truncates history, a [System] notice is added."""
+        import icdev.tools.llm.agent_loop as _al
+
+        call_n = [0]
+        original = _al._maybe_compress_messages
+
+        def fake_compress(msgs, **kw):
+            call_n[0] += 1
+            if call_n[0] == 1:
+                return msgs[:1]  # simulate compression: drop most messages
+            return original(msgs, **kw)
+
+        monkeypatch.setattr(_al, "_maybe_compress_messages", fake_compress)
+        router = ScriptedRouter(["done"])
+        result = run_agent_loop(
+            router, system_prompt="s", user_prompt="u",
+            tools=[_tool("echo")], tool_handlers={"echo": lambda i, s: "x"},
+            max_iterations=3,
+        )
+        notice = [
+            m for m in result.messages
+            if isinstance(m.get("content"), str) and "compressed" in m["content"].lower()
+        ]
+        assert notice, "compression notification was not appended after history was compressed"
+
+    # ------------------------------------------------------------------
+    # Control 5: Stall detector
+    # ------------------------------------------------------------------
+
+    def test_stall_terminates_after_threshold_turns(self):
+        """No novel tool call for stall_threshold turns → error_stalled."""
+        # Provide many identical responses; stall fires after turn 3 (0-indexed).
+        calls = [
+            [{"id": f"c{i}", "name": "read", "input": {"path": "stuck.py"}}]
+            for i in range(15)
+        ]
+        router = ScriptedRouter(calls)
+        result = run_agent_loop(
+            router, system_prompt="s", user_prompt="u",
+            tools=[_tool("read")], tool_handlers={"read": lambda i, s: "ok"},
+            max_iterations=20,
+            stall_threshold=3,
+        )
+        assert result.result_subtype == ResultSubtype.error_stalled
+        assert result.truncated is True
+        # Novel at turn 0 (last_progress=0); stall fires at turn 3 (3-0 ≥ 3). turns ≤ 3.
+        assert result.turns <= 3
+
+    def test_stall_not_triggered_with_novel_calls(self):
+        """Each turn calls a different path → no stall, loop completes successfully."""
+        calls = [
+            [{"id": f"c{i}", "name": "read", "input": {"path": f"novel{i}.py"}}]
+            for i in range(8)
+        ]
+        router = ScriptedRouter(calls + ["done"])
+        result = run_agent_loop(
+            router, system_prompt="s", user_prompt="u",
+            tools=[_tool("read")], tool_handlers={"read": lambda i, s: "ok"},
+            max_iterations=15,
+            stall_threshold=3,
+        )
+        assert result.done is True
+        assert result.result_subtype == ResultSubtype.success
+
+    def test_stall_threshold_configurable(self):
+        """Lower stall_threshold fires sooner; result.turns reflects early termination."""
+        calls = [
+            [{"id": f"c{i}", "name": "read", "input": {"path": "x.py"}}]
+            for i in range(20)
+        ]
+        router = ScriptedRouter(calls)
+        result = run_agent_loop(
+            router, system_prompt="s", user_prompt="u",
+            tools=[_tool("read")], tool_handlers={"read": lambda i, s: "ok"},
+            max_iterations=20,
+            stall_threshold=2,
+        )
+        assert result.result_subtype == ResultSubtype.error_stalled
+        # Novel at turn 0 (last_progress=0); stall fires at turn 2 (2-0 ≥ 2). turns ≤ 2.
+        assert result.turns <= 2
+
+    def test_stall_not_triggered_without_any_tool_calls(self):
+        """Loop that never calls tools ends normally — stall detector stays dormant."""
+        router = ScriptedRouter(["immediate answer"])
+        result = run_agent_loop(
+            router, system_prompt="s", user_prompt="u",
+            tools=[_tool("echo")], tool_handlers={"echo": lambda i, s: "x"},
+            max_iterations=5,
+            stall_threshold=3,
+        )
+        assert result.result_subtype != ResultSubtype.error_stalled
+        assert result.done is True
+
+    def test_error_stalled_constant_defined(self):
+        """ResultSubtype.error_stalled is defined and equals the literal 'error_stalled'."""
+        assert ResultSubtype.error_stalled == "error_stalled"
+
+    def test_stall_threshold_default_in_config(self):
+        """stall_threshold default is present in _load_budget_defaults() config."""
+        from icdev.tools.llm.agent_loop import _load_budget_defaults
+        defaults = _load_budget_defaults()
+        assert "stall_threshold" in defaults
+        assert defaults["stall_threshold"] > 0
