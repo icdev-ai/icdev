@@ -593,7 +593,7 @@ def api_instances():
                     conn,
                     "SELECT id, name, role_id, state, trust_tier, created_at, updated_at, "
                     f"completed_at FROM ace_instances {where} "
-                    "ORDER BY created_at DESC LIMIT %s OFFSET ?",
+                    "ORDER BY created_at DESC LIMIT %s OFFSET %s",
                 ),
                 tuple(params) + (limit, offset),
             )
@@ -647,7 +647,7 @@ def api_messages(instance_id: str):
                         "SELECT id, coworker_id, message_type, role, content, created_at "
                         "FROM ace_messages WHERE instance_id = %s "
                         "AND (created_at > %s OR (created_at = %s AND id > %s)) "
-                        "ORDER BY created_at ASC, id ASC LIMIT ?",
+                        "ORDER BY created_at ASC, id ASC LIMIT %s",
                     ),
                     (instance_id, after_ts, after_ts, after, limit),
                 )
@@ -659,7 +659,7 @@ def api_messages(instance_id: str):
                         conn,
                         "SELECT id, coworker_id, message_type, role, content, created_at "
                         "FROM ace_messages WHERE instance_id = %s "
-                        "ORDER BY created_at ASC, id ASC LIMIT ?",
+                        "ORDER BY created_at ASC, id ASC LIMIT %s",
                     ),
                     (instance_id, limit),
                 )
@@ -760,7 +760,7 @@ def api_hitl_resolve(instance_id: str):
                 conn.execute(
                     "INSERT INTO ace_audit_log "
                     "(instance_id, coworker_id, action, detail, actor, created_at) "
-                    "VALUES (?, ?, 'hitl_rejected', ?, 'hitl_gate', ?)",
+                    "VALUES (%s, %s, 'hitl_rejected', %s, 'hitl_gate', %s)",
                     (instance_id, coworker_id, detail, now),
                 )
                 conn.commit()
@@ -1165,7 +1165,7 @@ def api_coworker_stats(coworker_id: str):
                 _q(
                     conn,
                     "SELECT COUNT(*) AS n FROM ace_audit_log "
-                    "WHERE coworker_id = ? AND action = 'agent_turn'",
+                    "WHERE coworker_id = %s AND action = 'agent_turn'",
                 ),
                 (coworker_id,),
             )
@@ -1175,7 +1175,7 @@ def api_coworker_stats(coworker_id: str):
                 _q(
                     conn,
                     "SELECT MAX(created_at) AS last_active FROM ace_messages "
-                    "WHERE coworker_id = ?",
+                    "WHERE coworker_id = %s",
                 ),
                 (coworker_id,),
             )
@@ -1419,7 +1419,7 @@ def api_nova_state(instance_id: str):
                     _q(
                         conn_nova,
                         "SELECT task_type, improvement_text FROM agent_improvement_artifacts "
-                        "WHERE status = %s ORDER BY applied_at DESC LIMIT ?",
+                        "WHERE status = %s ORDER BY applied_at DESC LIMIT %s",
                     ),
                     ("applied", 20),
                 )
@@ -1488,7 +1488,7 @@ def api_ace_chat():
                 _q(
                     conn,
                     "SELECT conversation_history, history_json, turn_count, resume_token "
-                    "FROM ace_sessions WHERE session_id = %s AND instance_id = ?",
+                    "FROM ace_sessions WHERE session_id = %s AND instance_id = %s",
                 ),
                 (session_id, _CHAT_INSTANCE_ID),
             )
