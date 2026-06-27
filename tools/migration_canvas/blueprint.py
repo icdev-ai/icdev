@@ -804,15 +804,19 @@ def create_migration_blueprint():
         sid = "nmig-" + _uuid.uuid4().hex[:12]
         src_model = data.get("src_model", "")
         tgt_model = data.get("tgt_model", "")
+        engineer_context = data.get("engineer_context", "") or ""
+        selected_coa = data.get("selected_coa", "") or ""
 
         with get_connection() as conn:
             conn.execute(
                 "INSERT INTO mc_net_sessions "
-                "(id, design_id, src_model, tgt_model, src_device_name, tgt_device_name, src_site, created_at, updated_at) "
-                "VALUES (?,?,?,?,?,?,?,?,?)",
+                "(id, design_id, src_model, tgt_model, src_device_name, tgt_device_name, src_site, "
+                "engineer_context, selected_coa, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (sid, data.get("design_id"), src_model, tgt_model,
                  data.get("src_device_name", ""), data.get("tgt_device_name", ""),
-                 data.get("src_site", ""), now_isoformat(), now_isoformat()),
+                 data.get("src_site", ""), engineer_context, selected_coa,
+                 now_isoformat(), now_isoformat()),
             )
             # Link back on design if provided
             if data.get("design_id"):
@@ -821,6 +825,11 @@ def create_migration_blueprint():
                     (sid, data["design_id"]),
                 )
             conn.commit()
+
+        try:
+            _nm.seed_coa_questions(sid)
+        except Exception:
+            pass
 
         try:
             _nm._update_kg(sid, data.get("design_id"))
@@ -887,7 +896,7 @@ def create_migration_blueprint():
     def mc_net_api_update(sid):
         """Update top-level session fields (device names, site, status)."""
         data = request.get_json(force=True, silent=True) or {}
-        allowed = {"src_device_name", "tgt_device_name", "src_site", "status", "src_model", "tgt_model"}
+        allowed = {"src_device_name", "tgt_device_name", "src_site", "status", "src_model", "tgt_model", "engineer_context", "selected_coa"}
         fields = {k: v for k, v in data.items() if k in allowed}
         if not fields:
             return jsonify({"error": "No valid fields"}), 400
@@ -1214,6 +1223,43 @@ def create_migration_blueprint():
         _audit(sid, "compat_check_run", f"{len(checks)} checks; {sum(1 for c in checks if c['status']=='fail')} fails")
         return jsonify({"checks": checks, "total": len(checks),
                         "blockers": sum(1 for c in checks if c["status"]=="fail" and not c.get("override_reason"))})
+
+    # ── COA selection (engineer context + yes/no questions + recommendation) ────
+
+    @bp.route("/api/network-migration/<sid>/coa-questions", methods=["GET"])
+    @mdc_login_required
+    def mc_net_api_get_coa_questions(sid):
+        """Get yes/no questions used to recommend a Course of Action."""
+        return jsonify(_nm.get_coa_questions(sid))
+
+    @bp.route("/api/network-migration/<sid>/coa-questions", methods=["POST"])
+    @mdc_login_required
+    def mc_net_api_save_coa_questions(sid):
+        """Save COA question answers and return a fresh recommendation."""
+        data = request.get_json(force=True, silent=True) or {}
+        answers = data.get("answers", {})
+        _nm.save_coa_answers(sid, answers)
+        result = _nm.recommend_coa(sid)
+        return jsonify(result)
+
+    @bp.route("/api/network-migration/<sid>/recommend-coa", methods=["GET"])
+    @mdc_login_required
+    def mc_net_api_recommend_coa(sid):
+        """Return the current COA recommendation."""
+        return jsonify(_nm.recommend_coa(sid))
+
+    @bp.route("/api/network-migration/<sid>/select-coa", methods=["POST"])
+    @mdc_login_required
+    def mc_net_api_select_coa(sid):
+        """Accept or override the recommended COA."""
+        data = request.get_json(force=True, silent=True) or {}
+        coa = data.get("coa", "").strip().lower()
+        context = data.get("engineer_context", "")
+        if coa not in ("coa_a", "coa_b", "coa_c"):
+            return jsonify({"error": "coa must be one of coa_a, coa_b, coa_c"}), 400
+        result = _nm.select_coa(sid, coa, context=context)
+        _audit(sid, "coa_selected", coa)
+        return jsonify(result)
 
     # ── Config mapping (AI-assisted, HITL-reviewed) ───────────────────────────
 

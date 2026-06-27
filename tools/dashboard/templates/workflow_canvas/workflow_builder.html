@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if not is_new else 'New' }} Workflow — ICDEV™{% endblock %}
+
+{% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner('CUI') }}
+
+<div class="page-container" style="padding:16px">
+
+  <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:12px">
+    <a href="/workflow-canvas/">Workflow &amp; Forms</a> /
+    <a href="/workflow-canvas/workflows">Workflows</a> /
+    {{ workflow.name if workflow else 'New Workflow' }}
+  </div>
+
+  <!-- Action bar -->
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+    <input id="wf-name-input" type="text" value="{{ workflow.name if workflow else '' }}" placeholder="Workflow name…"
+           style="font-size:1.1rem;font-weight:600;padding:6px 10px;border:1px solid var(--border-color);border-radius:6px;min-width:220px">
+    <button class="btn btn-primary" onclick="saveWorkflow()">💾 Save</button>
+    {% if not is_new %}
+    <div style="position:relative;display:inline-block">
+      <button class="btn btn-secondary" onclick="toggleExportMenu()">📤 Export ▾</button>
+      <div id="export-menu" style="display:none;position:absolute;top:110%;left:0;background:var(--bg-primary);border:1px solid var(--border-color);border-radius:6px;min-width:180px;z-index:999;box-shadow:0 4px 12px rgba(0,0,0,.15)">
+        {% for fmt in export_formats %}
+        <div style="padding:10px 14px;cursor:pointer"
+             onmouseenter="this.style.background='var(--bg-secondary)'"
+             onmouseleave="this.style.background=''"
+             onclick="exportWorkflow('{{ fmt.id }}')">{{ fmt.label }}</div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Workflow editor layout: existing studio workflow editor + form node panel -->
+  <div style="display:grid;grid-template-columns:1fr 280px;gap:16px;height:calc(100vh - 200px)">
+
+    <!-- DAG canvas area — loads the existing workflow-studio.js -->
+    <div style="background:var(--bg-secondary);border-radius:8px;overflow:hidden;position:relative">
+      <div id="wfc-studio-container" style="width:100%;height:100%">
+        <!-- The workflow studio JS renders into this container -->
+        <div id="workflow-studio-root" data-workflow-id="{{ workflow.workflow_id if workflow else '' }}" style="width:100%;height:100%"></div>
+      </div>
+      <div id="wfc-empty-hint" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;color:var(--text-secondary);pointer-events:none">
+        <div style="font-size:2rem;margin-bottom:8px">⚙️</div>
+        <div>Open the full <a href="/studio/workflows" target="_blank" style="pointer-events:all">Workflow Studio</a> to build the DAG,<br>then return here to set branding and export.</div>
+      </div>
+    </div>
+
+    <!-- Right: Form Intake + Branding -->
+    <div style="background:var(--bg-secondary);border-radius:8px;overflow-y:auto;padding:12px">
+
+      <!-- Form Intake nodes -->
+      <div style="margin-bottom:20px">
+        <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary);margin-bottom:10px">Form Intake Nodes</div>
+        <p style="font-size:0.82rem;color:var(--text-secondary);margin:0 0 10px">Connect a form as a checkpoint in the workflow pipeline. The pipeline pauses until the form is submitted.</p>
+        <select id="form-picker" style="width:100%;padding:7px 8px;border-radius:5px;border:1px solid var(--border-color);margin-bottom:8px;font-size:0.85rem">
+          <option value="">— Pick a published form —</option>
+          {% for f in forms %}
+          <option value="{{ f.form_id }}">{{ f.name }}</option>
+          {% endfor %}
+        </select>
+        <input id="form-node-label" type="text" placeholder="Node label (optional)"
+               style="width:100%;padding:7px 8px;border-radius:5px;border:1px solid var(--border-color);margin-bottom:8px;font-size:0.85rem">
+        <button class="btn btn-secondary" style="width:100%" onclick="addFormIntakeNode()">+ Add Form Intake Node</button>
+        <div id="form-nodes-list" style="margin-top:10px"></div>
+      </div>
+
+      <hr style="border:none;border-top:1px solid var(--border-color);margin:16px 0">
+
+      <!-- Branding -->
+      <div>
+        <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary);margin-bottom:10px">Enterprise Branding</div>
+        <label style="font-size:0.82rem;display:block;margin-bottom:4px">Organization Name</label>
+        <input id="brand-org" type="text" value="{{ branding.org_name or '' }}" placeholder="Acme Corp"
+               style="width:100%;padding:6px 8px;border-radius:5px;border:1px solid var(--border-color);margin-bottom:8px">
+        <label style="font-size:0.82rem;display:block;margin-bottom:4px">Primary Color</label>
+        <div style="display:flex;gap:6px;margin-bottom:8px">
+          <input id="brand-color" type="color" value="{{ branding.primary_color or '#1a365d' }}" style="width:40px;height:32px;border:none;cursor:pointer">
+          <input id="brand-color-hex" type="text" value="{{ branding.primary_color or '#1a365d' }}"
+                 style="flex:1;padding:6px 8px;border-radius:5px;border:1px solid var(--border-color)" oninput="syncColorHex()">
+        </div>
+        <label style="font-size:0.82rem;display:block;margin-bottom:4px">Header HTML</label>
+        <textarea id="brand-header" rows="2" style="width:100%;padding:6px 8px;border-radius:5px;border:1px solid var(--border-color);font-size:0.8rem;margin-bottom:8px">{{ branding.header_html or '' }}</textarea>
+        <label style="font-size:0.82rem;display:block;margin-bottom:4px">Footer HTML</label>
+        <textarea id="brand-footer" rows="2" style="width:100%;padding:6px 8px;border-radius:5px;border:1px solid var(--border-color);font-size:0.8rem;margin-bottom:8px">{{ branding.footer_html or '' }}</textarea>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+const WF_ID = {{ ('"' ~ workflow.workflow_id ~ '"') | safe if workflow else 'null' }};
+const IS_NEW = {{ 'true' if is_new else 'false' }};
+let formNodes = [];
+
+function addFormIntakeNode() {
+  const formId = document.getElementById('form-picker').value;
+  const label = document.getElementById('form-node-label').value || 'Form Intake';
+  if (!formId) { alert('Please select a form.'); return; }
+  const nodeId = 'fi_' + Date.now();
+  formNodes.push({id: nodeId, form_id: formId, label, required_before_next: true});
+  renderFormNodes();
+  document.getElementById('form-picker').value = '';
+  document.getElementById('form-node-label').value = '';
+}
+
+function removeFormNode(id) {
+  formNodes = formNodes.filter(n => n.id !== id);
+  renderFormNodes();
+}
+
+function renderFormNodes() {
+  const el = document.getElementById('form-nodes-list');
+  el.innerHTML = formNodes.map(n =>
+    '<div style="background:var(--bg-primary);border:1px solid var(--border-color);border-radius:6px;padding:8px 10px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between">' +
+    '<div><div style="font-size:0.85rem;font-weight:600">📋 ' + escHtml(n.label) + '</div>' +
+    '<div style="font-size:0.75rem;color:var(--text-secondary)">' + n.form_id + '</div></div>' +
+    '<button onclick="removeFormNode(\'' + n.id + '\')" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:1rem">✕</button>' +
+    '</div>'
+  ).join('');
+}
+
+function escHtml(s) { const d=document.createElement('div');d.textContent=s;return d.innerHTML; }
+
+function syncColorHex() {
+  const hex = document.getElementById('brand-color-hex').value;
+  if (/^#[0-9a-fA-F]{6}$/.test(hex)) document.getElementById('brand-color').value = hex;
+}
+document.getElementById('brand-color').addEventListener('input', function() {
+  document.getElementById('brand-color-hex').value = this.value;
+});
+
+function getBranding() {
+  return {
+    org_name: document.getElementById('brand-org').value,
+    primary_color: document.getElementById('brand-color-hex').value,
+    header_html: document.getElementById('brand-header').value,
+    footer_html: document.getElementById('brand-footer').value,
+  };
+}
+
+async function saveWorkflow() {
+  const name = document.getElementById('wf-name-input').value.trim();
+  if (!name) { alert('Please enter a workflow name.'); return; }
+  if (!WF_ID) {
+    alert('Use the Workflow Studio (/studio/workflows) to create a new workflow DAG, then return here to add branding and form intake nodes.');
+    return;
+  }
+  const branding = getBranding();
+  await fetch('/workflow-canvas/api/branding/workflow/' + WF_ID, {
+    method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(branding),
+  });
+  window.location.href = '/workflow-canvas/workflows/' + WF_ID;
+}
+
+function toggleExportMenu() {
+  const m = document.getElementById('export-menu');
+  if (m) m.style.display = m.style.display === 'none' ? 'block' : 'none';
+}
+document.addEventListener('click', e => {
+  if (!e.target.closest('#export-menu') && !e.target.matches('[onclick*="toggleExportMenu"]')) {
+    const m = document.getElementById('export-menu');
+    if (m) m.style.display = 'none';
+  }
+});
+
+async function exportWorkflow(fmt) {
+  if (!WF_ID) { alert('Save the workflow first.'); return; }
+  const resp = await fetch('/workflow-canvas/api/workflows/' + WF_ID + '/export/' + fmt, {method:'POST'});
+  if (!resp.ok) { const d = await resp.json(); alert(d.error || 'Export failed'); return; }
+  const blob = await resp.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (document.getElementById('wf-name-input').value||'workflow').toLowerCase().replace(/\s+/g,'_') + '.' + fmt;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+</script>
+{% endblock %}

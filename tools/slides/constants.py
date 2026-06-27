@@ -126,7 +126,12 @@ SOURCE_TYPES: list[str] = [
 # ── Deck Status ───────────────────────────────────────────────────────────────
 DECK_STATUSES: list[str] = [
     "pending",    # Generation queued
-    "running",    # LLM pipeline active
+    "running",    # LLM pipeline active (legacy alias)
+    "gathering",  # Phase 1: gathering source data
+    "planning",   # Phase 2: planning outline
+    "generating", # Phase 3: writing slide content
+    "graphics",   # Phase 4: generating images
+    "building",   # Phase 5: assembling PPTX/exports
     "completed",  # PPTX ready for download
     "failed",     # Pipeline error
     "auto",       # Genesis daemon auto-generated

@@ -1959,13 +1959,14 @@ def _detect_context_signals(context: str) -> dict[str, bool]:
     text = (context or "").lower()
     signals = {
         "l2_only": any(t in text for t in [
-            "layer 2", "layer2", "l2 ", "l2-only", "strictly l2", "no routing", "downstream igp"
+            "layer 2", "layer2", "layer-2", "l2 ", "l2-only", "strictly l2", "no routing", "downstream igp"
         ]),
         "no_igp_control": any(t in text for t in [
             "not under my control", "not controlled", "downstream", "another team", "provider managed"
         ]),
         "tight_window": any(t in text for t in [
-            "tight window", "short window", "no time", "limited maintenance", "brief outage"
+            "tight window", "tight maintenance", "short window", "no time", "limited maintenance",
+            "brief outage", "maintenance window too short"
         ]),
         "spare_ports": any(t in text for t in [
             "spare port", "available port", "extra port", "same vlan", "parallel connection"

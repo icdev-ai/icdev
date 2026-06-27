@@ -45,6 +45,9 @@ class DeckRequest:
     upload_text: str = ""
     upload_file_path: str = ""
     enable_graphics: bool = True
+    enable_rich_diagrams: bool = False
+    audience_mode: str | None = None
+    output_language: str = "English"
 
 
 @dataclass
@@ -66,16 +69,51 @@ class DeckEngine:
     """Main orchestration engine for slide deck generation."""
 
     def run(self, req: DeckRequest) -> DeckResult:
-        """Run the full generation pipeline."""
+        """Run the full generation pipeline synchronously."""
         deck_id = self._create_deck_record(req)
+        return self._run_phases(req, deck_id)
+
+    def run_async(self, req: DeckRequest) -> int | None:
+        """Create the deck record and start generation in a background thread.
+
+        Returns deck_id immediately so the caller can poll /api/<deck_id>/status.
+        """
+        import threading
+        deck_id = self._create_deck_record(req)
+        t = threading.Thread(target=self._run_phases, args=(req, deck_id), daemon=True)
+        t.start()
+        return deck_id
+
+    def _set_phase(self, deck_id: int | None, phase: str) -> None:
+        """Update the deck status column to a phase label for progress polling."""
+        if deck_id is None:
+            return
+        try:
+            from tools.slides.db.init_db import get_connection
+            conn = get_connection()
+            try:
+                conn.execute(
+                    "UPDATE slides_decks SET status=? WHERE deck_id=?",
+                    (phase, deck_id),
+                )
+                conn.commit()
+            finally:
+                conn.close()
+        except Exception:
+            pass
+
+    def _run_phases(self, req: DeckRequest, deck_id: int | None) -> DeckResult:
+        """Internal: run all phases with phase status updates."""
         pdf_path = ""
         html_path = ""
 
         try:
             # Phase 1: Gather
+            self._set_phase(deck_id, "gathering")
             raw = self._gather(req)
 
             # Phase 2: Plan outline
+            self._set_phase(deck_id, "planning")
             from tools.slides import orchestrator
             outline = orchestrator.plan_outline(
                 raw_content=raw,
@@ -86,21 +124,30 @@ class DeckEngine:
                 target_audience=req.target_audience,
                 min_slides=req.min_slides,
                 max_slides=req.max_slides,
+                enable_rich_diagrams=req.enable_rich_diagrams,
+                audience_mode=req.audience_mode,
+                output_language=req.output_language,
             )
 
             # Phase 3: Generate content (parallel)
+            self._set_phase(deck_id, "generating")
             from tools.slides import content_agent
             slides = content_agent.generate_all(
                 outline, raw,
                 tone=req.tone,
                 citation_style=req.citation_style,
+                enable_rich_diagrams=req.enable_rich_diagrams,
+                theme=req.theme,
+                output_language=req.output_language,
             )
 
             # Phase 4: Graphics (parallel, optional)
             if req.enable_graphics and os.environ.get("SLIDES_IMAGE_ENABLED", "true").lower() in ("true", "1", "yes"):
+                self._set_phase(deck_id, "graphics")
                 slides = self._generate_graphics(slides, theme=req.theme, tone=req.tone)
 
             # Phase 5: Build PPTX
+            self._set_phase(deck_id, "building")
             from tools.slides import pptx_builder
             pptx_path = ""
             if "pptx" in req.output_formats:
@@ -125,6 +172,7 @@ class DeckEngine:
                             "tone": req.tone,
                             "target_audience": req.target_audience,
                         },
+                        enable_rich_diagrams=req.enable_rich_diagrams,
                     )
                 except Exception as html_exc:
                     self._audit(deck_id, "html_export_warning", {"error": str(html_exc)})
@@ -236,7 +284,8 @@ class DeckEngine:
 
         def _gen_one(slide_data: dict) -> dict:
             slide_type = slide_data.get("slide_type", "content")
-            if slide_type in ("title", "outro"):
+            if slide_type in ("title", "outro", "mermaid_diagram", "three_animation",
+                              "excalidraw_sketch", "card_grid"):
                 return slide_data
             title = slide_data.get("title", "")
             bullets = slide_data.get("bullets", [])
@@ -265,12 +314,14 @@ class DeckEngine:
                 cur = conn.execute(
                     "INSERT INTO slides_decks "
                     "(title, deck_type, theme, tone, occasion, target_audience, citation_style, "
-                    "output_formats, status, source_types) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?) RETURNING deck_id",
+                    "output_formats, status, source_types, enable_rich_diagrams, audience_mode) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?) RETURNING deck_id",
                     (
                         req.title, req.deck_type, req.theme, req.tone,
                         req.occasion, req.target_audience, req.citation_style,
                         output_formats_json, source_types_json,
+                        bool(req.enable_rich_diagrams),
+                        req.audience_mode,
                     ),
                 )
                 row = cur.fetchone()
@@ -278,7 +329,9 @@ class DeckEngine:
                 return int(row[0]) if row else None
             finally:
                 conn.close()
-        except Exception:
+        except Exception as e:
+            import traceback
+            print(f"[slides] _create_deck_record error: {e}\n{traceback.format_exc()}")
             return None
 
     def _update_deck_record(
@@ -300,11 +353,13 @@ class DeckEngine:
                 )
                 # Persist slides
                 for i, slide_data in enumerate(slides):
+                    three_cfg = slide_data.get("three_scene_config")
+                    exc_elems = slide_data.get("excalidraw_elements")
                     conn.execute(
                         "INSERT INTO slides_slides "
                         "(deck_id, position, slide_type, title, bullets, speaker_notes, citations, "
-                        "image_path, image_prompt) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "image_path, image_prompt, mermaid_code, three_scene_config, excalidraw_elements) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         (
                             deck_id, i + 1,
                             slide_data.get("slide_type", "content"),
@@ -314,6 +369,9 @@ class DeckEngine:
                             json.dumps(slide_data.get("citations", [])),
                             slide_data.get("image_path"),
                             slide_data.get("image_prompt"),
+                            slide_data.get("mermaid_code"),
+                            json.dumps(three_cfg) if three_cfg is not None else None,
+                            json.dumps(exc_elems) if exc_elems is not None else None,
                         ),
                     )
                 conn.commit()

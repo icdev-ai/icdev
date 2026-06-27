@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Workflows — ICDEV™{% endblock %}
+
+{% block content %}
+{% from "includes/classification_macros.html" import design_classification_banner %}
+{{ design_classification_banner('CUI') }}
+
+<div class="page-container" style="padding:24px">
+  <div class="page-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px">
+    <div>
+      <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:4px">
+        <a href="/workflow-canvas/">Workflow &amp; Forms</a> / Workflows
+      </div>
+      <h1 style="margin:0;font-size:1.5rem">Workflow Library</h1>
+    </div>
+    <a href="/workflow-canvas/workflows/new" class="btn btn-primary">+ New Workflow</a>
+  </div>
+
+  {% if workflows %}
+  <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px">
+    {% for wf in workflows %}
+    <div style="background:var(--bg-secondary);border-radius:10px;padding:18px;border:1px solid var(--border-color)">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px">
+        <h3 style="margin:0;font-size:1rem">{{ wf.name }}</h3>
+      </div>
+      {% if wf.description %}
+      <p style="font-size:0.85rem;color:var(--text-secondary);margin:0 0 12px">{{ wf.description }}</p>
+      {% endif %}
+      <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:12px">
+        {{ wf.category or 'custom' }} · v{{ wf.version }} · {{ wf.updated_at[:10] if wf.updated_at else '' }}
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <a href="/workflow-canvas/workflows/{{ wf.workflow_id }}" class="btn btn-xs btn-ghost">View</a>
+        <a href="/workflow-canvas/workflows/{{ wf.workflow_id }}/edit" class="btn btn-xs btn-secondary">Edit</a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div style="text-align:center;padding:60px;color:var(--text-secondary)">
+    <div style="font-size:3rem;margin-bottom:12px">⚙️</div>
+    <div style="font-size:1.1rem;margin-bottom:8px">No workflows yet</div>
+    <a href="/workflow-canvas/workflows/new" class="btn btn-primary">Create your first workflow</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
