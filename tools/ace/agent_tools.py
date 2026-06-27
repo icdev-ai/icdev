@@ -71,6 +71,40 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             },
         },
     },
+    "patch_file": {
+        "type": "function",
+        "is_read_only": False,
+        "function": {
+            "name": "patch_file",
+            "is_read_only": False,
+            "description": (
+                "Apply a targeted string replacement to a file within the role's "
+                "declared folder_access scopes. Finds old_string exactly once in the "
+                "file and replaces it with new_string. Fails if old_string appears "
+                "zero or more than once (provide more context to make it unique). "
+                "Safer than write_file for partial edits."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["path", "old_string", "new_string"],
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path to the file to patch (within folder_access scope).",
+                    },
+                    "old_string": {
+                        "type": "string",
+                        "description": "Exact string to find in the file (must appear exactly once).",
+                    },
+                    "new_string": {
+                        "type": "string",
+                        "description": "Replacement string.",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
     "list_files": {
         "type": "function",
         "function": {
@@ -254,6 +288,8 @@ class AgentToolRegistry:
             return self._read_file
         if name == "write_file":
             return self._write_file
+        if name == "patch_file":
+            return self._patch_file
         if name == "list_files":
             return self._list_files
         if name == "run_tool":

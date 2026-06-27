@@ -241,6 +241,8 @@ def _load_budget_defaults() -> dict[str, Any]:
             defaults["tool_timeout_seconds"] = float(budgets["tool_timeout_seconds"])
         if "tool_result_max_chars" in budgets:
             defaults["tool_result_max_chars"] = int(budgets["tool_result_max_chars"])
+        if "max_consecutive_errors" in budgets:
+            defaults["max_consecutive_errors"] = int(budgets["max_consecutive_errors"])
     except Exception as exc:
         logger.debug("agent_loop: failed to load budget defaults: %s", exc)
     return defaults
@@ -453,6 +455,7 @@ def run_agent_loop(
     max_structured_output_retries: int = 3,
     resume_session_id: str | None = None,
     tool_result_max_chars: int | None = None,
+    max_consecutive_errors: int | None = 3,
 ) -> AgentLoopResult:
     """Run an agentic LLM loop with native tool use until the task is done.
 
@@ -521,6 +524,11 @@ def run_agent_loop(
             ``None`` means no truncation (default). Loaded from
             ``args/llm_config.yaml`` ``agent_loop.budgets.tool_result_max_chars``
             when not explicitly set.
+        max_consecutive_errors: If every tool call in each of N consecutive turns
+            returns an error (``is_error=True``), abort with
+            ``ResultSubtype.error_consecutive_tool_failures``. ``None`` disables
+            this guard. Default 3. Loaded from
+            ``args/llm_config.yaml`` ``agent_loop.budgets.max_consecutive_errors``.
 
     Returns:
         :class:`AgentLoopResult`.
@@ -549,6 +557,8 @@ def run_agent_loop(
         tool_timeout_seconds = budget_defaults["tool_timeout_seconds"]
     if tool_result_max_chars is None and "tool_result_max_chars" in budget_defaults:
         tool_result_max_chars = budget_defaults["tool_result_max_chars"]
+    if max_consecutive_errors is None and "max_consecutive_errors" in budget_defaults:
+        max_consecutive_errors = budget_defaults["max_consecutive_errors"]
 
     # Build set of read-only tool names for parallel execution.
     _read_only_tools = _build_read_only_set(tools)
@@ -587,6 +597,7 @@ def run_agent_loop(
 
     # Single executor shared across all turns for parallel read-only tool execution
     # and per-tool timeouts on sequential tools.
+    _consecutive_all_error_turns = 0
     with _futures.ThreadPoolExecutor(max_workers=16) as executor:
         for turn in range(max_iterations):
             if stop_event is not None and stop_event.is_set():
@@ -724,6 +735,14 @@ def run_agent_loop(
                     tc_results[i] = (err, True, err)
                     logger.warning("agent_loop: handler %s raised: %s", tc_name, exc)
 
+            # Circuit breaker: track turns where EVERY tool call errored.
+            if tc_results:
+                all_errors_this_turn = all(is_err for _, is_err, _ in tc_results.values())
+                if all_errors_this_turn:
+                    _consecutive_all_error_turns += 1
+                else:
+                    _consecutive_all_error_turns = 0
+
             # -- Append results in original call order --
             done_signalled = False
             for i, tc in enumerate(tool_calls):
@@ -808,6 +827,19 @@ def run_agent_loop(
             if done_signalled:
                 result.done = True
                 result.result_subtype = ResultSubtype.success
+                break
+
+            if (
+                max_consecutive_errors is not None
+                and _consecutive_all_error_turns >= max_consecutive_errors
+            ):
+                result.truncated = True
+                result.result_subtype = ResultSubtype.error_consecutive_tool_failures
+                result.truncation_reason = "error_consecutive_tool_failures"
+                logger.warning(
+                    "agent_loop: aborting after %d consecutive all-error turns",
+                    _consecutive_all_error_turns,
+                )
                 break
 
             if stop_event is not None and stop_event.is_set():

@@ -12856,13 +12856,13 @@ Planning rules:
 
         # Fetch migration phases linked to any project that uses this topology
         phases = conn.execute(
-            """
+            f"""
             SELECT mp.id, mp.phase_num, mp.title, mp.description,
                    mp.duration_days, mp.parallel_run, mp.rollback_criteria,
                    mp.maintenance_window, mp.dependencies, mp.status
             FROM nc_migration_phases mp
             JOIN nc_project_topologies pt ON pt.project_id = mp.project_id
-            WHERE pt.topology_id = ?
+            WHERE pt.topology_id = {_ph}
             ORDER BY mp.phase_num
             """,
             (topo_id,),
@@ -12910,14 +12910,14 @@ Planning rules:
         current_graph = _json.loads(graph_json) if graph_json else {"nodes": [], "edges": []}
 
         phases = conn.execute(
-            """
+            f"""
             SELECT mp.id, mp.phase_num, mp.title, mp.description,
                    mp.duration_days, mp.parallel_run, mp.rollback_criteria,
                    mp.maintenance_window, mp.dependencies, mp.status,
                    mp.properties_json
             FROM nc_migration_phases mp
             JOIN nc_project_topologies pt ON pt.project_id = mp.project_id
-            WHERE pt.topology_id = ?
+            WHERE pt.topology_id = {_ph}
             ORDER BY mp.phase_num
             """,
             (topo_id,),
@@ -13144,16 +13144,18 @@ Planning rules:
             return jsonify({"error": "project_id is required"}), 400
 
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         try:
             phase_ids = []
             for ph in phases_data:
                 pid = str(_uuid.uuid4())
                 conn.execute(
-                    """INSERT INTO nc_migration_phases
+                    f"""INSERT INTO nc_migration_phases
                        (id, project_id, phase_num, title, description,
                         duration_days, parallel_run, rollback_criteria,
                         maintenance_window, classification, impact_level, status)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,'planned')""",
+                       VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},'planned')""",
+
                     (
                         pid,
                         project_id,
@@ -13186,10 +13188,11 @@ Planning rules:
                             link_id = str(_uuid.uuid4())
                             try:
                                 conn.execute(
-                                    """INSERT OR IGNORE INTO nc_phase_documents
+                                    f"""INSERT OR IGNORE INTO nc_phase_documents
                                        (id, phase_id, project_id, doc_source, doc_id,
                                         doc_title, doc_type, relevance_note, display_order)
-                                       VALUES (?,?,?,?,?,?,?,?,0)""",
+                                       VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},0)""",
+
                                     (link_id, pid, project_id, "sop",
                                      sop_row["sop_id"], sop_row["title"],
                                      "sop", "auto-linked by keyword match"),
@@ -13239,15 +13242,15 @@ Planning rules:
                 return jsonify({"error": "phase not found"}), 404
             phase = dict(phase_row)
 
-            update_fields = ["status=?"]
+            update_fields = [f"status={_ph}"]
             update_vals: list = [new_status]
             classification = data.get("classification")
             impact_level = data.get("impact_level")
             if classification:
-                update_fields.append("classification=?")
+                update_fields.append(f"classification={_ph}")
                 update_vals.append(classification)
             if impact_level:
-                update_fields.append("impact_level=?")
+                update_fields.append(f"impact_level={_ph}")
                 update_vals.append(impact_level)
             update_vals.extend([phase_id])
 
@@ -13268,8 +13271,9 @@ Planning rules:
                     post_graph = generate_phase_graph(current_graph, phase_meta)
                     snapshot_id = str(_uuid.uuid4())
                     conn.execute(
-                        """INSERT INTO nc_topology_snapshots (id, topo_id, phase_id, label, graph_json)
-                           VALUES (?,?,?,?,?)""",
+                        f"""INSERT INTO nc_topology_snapshots (id, topo_id, phase_id, label, graph_json)
+                           VALUES ({_ph},{_ph},{_ph},{_ph},{_ph})""",
+
                         (
                             snapshot_id,
                             topo_id,
@@ -13434,13 +13438,15 @@ Planning rules:
             return jsonify({"error": f"Missing fields: {missing}"}), 400
 
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         try:
             doc_id = str(_uuid.uuid4())
             conn.execute(
-                """INSERT INTO nc_phase_documents
+                f"""INSERT INTO nc_phase_documents
                    (id, phase_id, project_id, doc_source, doc_id,
                     doc_title, doc_type, relevance_note, display_order)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                   VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})""",
+
                 (
                     doc_id,
                     data["phase_id"],
@@ -13995,11 +14001,13 @@ Planning rules:
         """Append an audit-log entry for the export (best-effort; non-blocking)."""
         try:
             conn = get_connection()
+            _ph = sql_placeholder(conn)
             conn.execute(
-                """INSERT INTO nc_nqe_audit_log
+                f"""INSERT INTO nc_nqe_audit_log
                    (session_id, user_session, action, input_text, result_summary,
                     raw_response_hash, advisory_id, created_at)
-                   VALUES (?,?,?,?,?,?,?,?)""",
+                   VALUES ({_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph},{_ph})""",
+
                 (
                     session.get("session_id", ""),
                     session.get("user", ""),
