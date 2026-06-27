@@ -69,6 +69,8 @@ icdev_tools:
   - "python tools/testing/qa_agent_runner.py --status $RUN_ID --json"
   - "python tools/testing/route_smoke.py --all --json"
   - "python tools/testing/screenshot_validator.py --check --json"
+  - "python tools/testing/selector_healer.py --stderr-file $STDERR_FILE --json"
+  - "python tools/testing/selector_healer.py --selector $SELECTOR --spec-file $SPEC_FILE --screenshot $SCREENSHOT --json"
 
 personality:
   domain: Quality Assurance & E2E Test Automation
