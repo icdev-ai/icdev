@@ -2,8 +2,8 @@
 // E2E Test: Network Migration Wizard — Config Mapping Full Lifecycle
 // Verifies the new Step 5 AI-assisted configuration mapping end-to-end:
 // create session, import Juniper config, answer yes/no questions, generate
-// rule-based proposals, approve/reject/skip, apply to target config, and
-// navigate to Step 6 Config Preview.
+// rule-based proposals, approve/reject/skip, apply to target config, generate
+// and preview the converted target config, and download it.
 
 import { test, expect } from '@playwright/test';
 
@@ -52,7 +52,7 @@ async function answerAllYes(page: any) {
 }
 
 test.describe('Network Migration Wizard — Config Mapping Lifecycle', () => {
-  test('full lifecycle: create session, import config, map, apply, preview', async ({ page }) => {
+  test('full lifecycle: create session, import config, map, apply, preview, download', async ({ page }) => {
     // Step 1: Navigate to new migration wizard.
     await page.goto('/migration-canvas/network-migration/new');
     await page.waitForLoadState('domcontentloaded');
@@ -80,7 +80,7 @@ test.describe('Network Migration Wizard — Config Mapping Lifecycle', () => {
     });
 
     // Step 3: Create session and continue.
-    await page.getByRole('button', { name: 'Create Session & Continue →' }).click();
+    await page.getByRole('button', { name: /Create Session & Continue/ }).click();
     await page.waitForTimeout(1000);
 
     const url = page.url();
@@ -100,7 +100,7 @@ test.describe('Network Migration Wizard — Config Mapping Lifecycle', () => {
     await page
       .getByRole('textbox', { name: /Paste Juniper|Paste Running Config/i })
       .fill(SAMPLE_JUNIPER_CONFIG);
-    await page.getByRole('button', { name: 'Parse Config →' }).click();
+    await page.getByRole('button', { name: /Parse Config/ }).click();
     await page.waitForTimeout(1500);
 
     const parsedText = await page.textContent('body');
@@ -133,7 +133,7 @@ test.describe('Network Migration Wizard — Config Mapping Lifecycle', () => {
     });
 
     // Step 7: Save answers and generate proposals.
-    await page.getByRole('button', { name: 'Save Answers & Generate Proposals' }).click();
+    await page.getByRole('button', { name: /Save Answers & Generate Proposals/ }).click();
     await page.waitForTimeout(2000);
 
     const proposalText = await page.textContent('body');
@@ -175,7 +175,7 @@ test.describe('Network Migration Wizard — Config Mapping Lifecycle', () => {
     });
 
     // Step 9: Apply approved mappings to target config.
-    await page.getByRole('button', { name: 'Apply Approved to Target Config' }).click();
+    await page.getByRole('button', { name: /Apply Approved to Target Config/ }).click();
     await page.waitForTimeout(2000);
 
     await page.screenshot({
@@ -184,15 +184,54 @@ test.describe('Network Migration Wizard — Config Mapping Lifecycle', () => {
     });
 
     // Step 10: Continue to Step 6 Config Preview.
-    await page.getByRole('button', { name: 'Continue →' }).click();
+    await page.getByRole('button', { name: /Continue/ }).click();
     await page.waitForTimeout(1000);
 
     const step6Text = await page.textContent('body');
     expect(step6Text).toContain('Step 6 — Config Conversion & Preview');
     expect(step6Text).not.toContain('Internal Server Error');
+    await dismissTour(page);
+
+    // Step 11: Generate and preview the target config before downloading.
+    await page.getByRole('button', { name: 'Generate Target Config' }).click();
+    await page.waitForTimeout(2000);
+
+    // Verify the diff view and stats bar appear with rendered content.
+    await expect(page.locator('#diff-view')).toBeVisible();
+    await expect(page.locator('#diff-stats-bar')).toBeVisible();
+    const targetConfigText = await page.locator('#diff-target').textContent();
+    expect(targetConfigText).toContain('host-name');
+    expect(targetConfigText).toContain('core-rtr-01');
+
+    // Verify commit-check simulation panel renders.
+    await expect(page.locator('#cc-panel')).toBeVisible();
+    const ccText = await page.locator('#cc-panel').textContent();
+    expect(ccText).toContain('Commit-Check Simulation');
 
     await page.screenshot({
       path: `${SCREENSHOT_DIR}/mig_net_10_step6_preview.png`,
+      fullPage: true,
+    });
+
+    // Step 12: Download the generated target config and verify suggested filename.
+    const suggestedFilename = await page.evaluate(() => {
+      const origCreateObjectURL = URL.createObjectURL;
+      URL.createObjectURL = () => 'blob:captured';
+      let capturedDownload: string | null = null;
+      const origClick = HTMLAnchorElement.prototype.click;
+      HTMLAnchorElement.prototype.click = function () {
+        capturedDownload = this.download;
+        return;
+      };
+      (window as any).downloadTargetConfig();
+      URL.createObjectURL = origCreateObjectURL;
+      HTMLAnchorElement.prototype.click = origClick;
+      return capturedDownload;
+    });
+    expect(suggestedFilename).toMatch(/-config\.txt$/);
+
+    await page.screenshot({
+      path: `${SCREENSHOT_DIR}/mig_net_11_downloaded.png`,
       fullPage: true,
     });
   });

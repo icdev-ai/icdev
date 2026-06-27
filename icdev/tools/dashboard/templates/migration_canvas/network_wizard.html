@@ -2142,7 +2142,7 @@ async function convertConfig(silent=false) {
   statusEl.textContent = 'Generating…';
   try {
     const data = await api('POST', `/api/network-migration/${_sid}/convert-config`);
-    targetConfigText = data.target || '';
+    targetConfigText = data.target_config || '';
     renderDiff(data);
     renderCommitCheck(data.commit_check || []);
     document.getElementById('diff-view').style.display = 'grid';
@@ -2186,7 +2186,7 @@ function renderDiff(data) {
       return `<div class="diff-line ${cls}"><span class="diff-lnum">${num}</span><span class="diff-ltext">${escapeHtml(d.line||'')}</span></div>`;
     }).join('');
   } else {
-    const tgtLines = (data.target || '').split('\n');
+    const tgtLines = (data.target_config || '').split('\n');
     tgtPre.innerHTML = tgtLines.map((l, i) =>
       `<div class="diff-line keep"><span class="diff-lnum">${i + 1}</span><span class="diff-ltext">${escapeHtml(l)}</span></div>`
     ).join('');
