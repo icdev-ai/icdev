@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from typing import Any, Optional
 
@@ -67,7 +68,12 @@ def _db():
 
 
 def _q(conn, sql: str) -> str:
-    """Translate ``?`` placeholders to ``%s`` for the PostgreSQL backend."""
+    """Normalize SQL for the active canvas backend.
+
+    Source code uses ``%s`` (psycopg2 style). On SQLite we translate those
+    back to ``?`` and keep SQLite-specific constructs intact. On PostgreSQL
+    we translate SQLite-isms like ``INSERT OR IGNORE`` to ``ON CONFLICT``.
+    """
     declared = getattr(conn, "_backend", None)
     if declared:
         is_pg = str(declared).lower().startswith(("postgre", "pg"))
@@ -77,7 +83,13 @@ def _q(conn, sql: str) -> str:
             "postgres",
             "pg",
         )
-    return sql.replace("?", "%s") if is_pg else sql
+    if not is_pg:
+        return sql.replace("%s", "?")
+    # PG branch: translate INSERT OR IGNORE → ON CONFLICT DO NOTHING
+    sql = re.sub(r"INSERT\s+OR\s+IGNORE\s+INTO\b", "INSERT INTO", sql, flags=re.IGNORECASE)
+    if re.search(r"INSERT\s+INTO\b", sql, re.IGNORECASE) and "ON CONFLICT" not in sql.upper():
+        sql = sql.rstrip().rstrip(";") + " ON CONFLICT DO NOTHING"
+    return sql
 
 
 def _rows(cur) -> list[dict]:
@@ -353,7 +365,7 @@ def instance_detail(instance_id: str):
                         conn,
                         "SELECT id, role_id, display_name, state, trust_tier, "
                         "assigned_step, last_active_at FROM ace_coworkers "
-                        "WHERE instance_id = ? ORDER BY created_at ASC",
+                        "WHERE instance_id = %s ORDER BY created_at ASC",
                     ),
                     (instance_id,),
                 )
@@ -363,7 +375,7 @@ def instance_detail(instance_id: str):
                     _q(
                         conn,
                         "SELECT id, coworker_id, message_type, role, content, "
-                        "created_at FROM ace_messages WHERE instance_id = ? "
+                        "created_at FROM ace_messages WHERE instance_id = %s "
                         "ORDER BY created_at ASC, id ASC",
                     ),
                     (instance_id,),
@@ -375,7 +387,7 @@ def instance_detail(instance_id: str):
                         conn,
                         "SELECT id, coworker_id, artifact_type, title, classification, "
                         "content_json, content_md, created_at FROM ace_artifacts "
-                        "WHERE instance_id = ? ORDER BY created_at DESC",
+                        "WHERE instance_id = %s ORDER BY created_at DESC",
                     ),
                     (instance_id,),
                 )
@@ -431,7 +443,7 @@ def instance_resume(instance_id: str):
                 _q(
                     conn,
                     "SELECT session_id, conversation_history, turn_count "
-                    "FROM ace_sessions WHERE resume_token = ? AND instance_id = ?",
+                    "FROM ace_sessions WHERE resume_token = %s AND instance_id = ?",
                 ),
                 (token, instance_id),
             )
@@ -540,7 +552,7 @@ def api_launch():
                 conn.execute(
                     _q(conn,
                        "INSERT INTO coworker_dic_contexts (id, instance_id, collection_id) "
-                       "VALUES (?, ?, ?)"),
+                       "VALUES (%s, %s, %s)"),
                     (_uuid.uuid4().hex, instance_id, col_id),
                 )
             conn.commit()
@@ -566,7 +578,7 @@ def api_instances():
         where = ""
         params: list[Any] = []
         if state:
-            where = "WHERE state = ?"
+            where = "WHERE state = %s"
             params.append(state)
         total_row = _one(
             conn.execute(
@@ -581,7 +593,7 @@ def api_instances():
                     conn,
                     "SELECT id, name, role_id, state, trust_tier, created_at, updated_at, "
                     f"completed_at FROM ace_instances {where} "
-                    "ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                    "ORDER BY created_at DESC LIMIT %s OFFSET ?",
                 ),
                 tuple(params) + (limit, offset),
             )
@@ -633,8 +645,8 @@ def api_messages(instance_id: str):
                     _q(
                         conn,
                         "SELECT id, coworker_id, message_type, role, content, created_at "
-                        "FROM ace_messages WHERE instance_id = ? "
-                        "AND (created_at > ? OR (created_at = ? AND id > ?)) "
+                        "FROM ace_messages WHERE instance_id = %s "
+                        "AND (created_at > %s OR (created_at = %s AND id > %s)) "
                         "ORDER BY created_at ASC, id ASC LIMIT ?",
                     ),
                     (instance_id, after_ts, after_ts, after, limit),
@@ -646,7 +658,7 @@ def api_messages(instance_id: str):
                     _q(
                         conn,
                         "SELECT id, coworker_id, message_type, role, content, created_at "
-                        "FROM ace_messages WHERE instance_id = ? "
+                        "FROM ace_messages WHERE instance_id = %s "
                         "ORDER BY created_at ASC, id ASC LIMIT ?",
                     ),
                     (instance_id, limit),
@@ -674,7 +686,7 @@ def api_artifacts(instance_id: str):
                     conn,
                     "SELECT id, coworker_id, artifact_type, title, classification, "
                     "content_json, content_md, created_at FROM ace_artifacts "
-                    "WHERE instance_id = ? ORDER BY created_at DESC",
+                    "WHERE instance_id = %s ORDER BY created_at DESC",
                 ),
                 (instance_id,),
             )
@@ -925,7 +937,7 @@ def api_evals_list():
     try:
         from icdev.tools.db.storage import get_canvas_connection
         conn = get_canvas_connection("ACE_DB_PATH")
-        where = "WHERE outcome = ?" if outcome else ""
+        where = "WHERE outcome = %s" if outcome else ""
         params: tuple = (outcome,) if outcome else ()
         cnt = _one(conn.execute(_q(conn, f"SELECT COUNT(*) AS n FROM agent_evals {where}"), params))
         total = (cnt or {}).get("n", 0)
@@ -933,7 +945,7 @@ def api_evals_list():
             _q(conn, f"SELECT session_id, outcome, done, turns_used, efficiency_score, "
                f"tool_error_rate, total_cost_usd, reasoning_coverage, plan_stated, "
                f"scope_violations, graded_at, grading_version "
-               f"FROM agent_evals {where} ORDER BY graded_at DESC LIMIT ? OFFSET ?"),
+               f"FROM agent_evals {where} ORDER BY graded_at DESC LIMIT %s OFFSET ?"),
             params + (limit, offset),
         ))
     except Exception as exc:  # noqa: BLE001
@@ -1098,7 +1110,7 @@ def api_profiles_preview():
 def api_profiles_generate():
     """Create and persist a new coworker profile.
 
-    Body: {name, description?, spec?}
+    Body: {name, description%s, spec?}
     If spec is provided (from a prior /preview call) it is used as-is,
     skipping a second LLM call.  Returns {role_id, files_written}.
     """
@@ -1362,7 +1374,7 @@ def api_nova_state(instance_id: str):
                     conn_ace,
                     "SELECT id, role_id, display_name, state, trust_tier, "
                     "assigned_step, last_active_at, created_at "
-                    "FROM ace_coworkers WHERE instance_id = ? ORDER BY created_at",
+                    "FROM ace_coworkers WHERE instance_id = %s ORDER BY created_at",
                 ),
                 (instance_id,),
             )
@@ -1407,7 +1419,7 @@ def api_nova_state(instance_id: str):
                     _q(
                         conn_nova,
                         "SELECT task_type, improvement_text FROM agent_improvement_artifacts "
-                        "WHERE status = ? ORDER BY applied_at DESC LIMIT ?",
+                        "WHERE status = %s ORDER BY applied_at DESC LIMIT ?",
                     ),
                     ("applied", 20),
                 )
@@ -1449,7 +1461,7 @@ def _chat_ensure_instance(conn) -> None:
     conn.execute(
         _q(
             conn,
-            "INSERT OR IGNORE INTO ace_instances (id, name, role_id, state) VALUES (?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO ace_instances (id, name, role_id, state) VALUES (%s, %s, %s, %s)",
         ),
         (_CHAT_INSTANCE_ID, "ACE Chat", "chat", "active"),
     )
@@ -1476,7 +1488,7 @@ def api_ace_chat():
                 _q(
                     conn,
                     "SELECT conversation_history, history_json, turn_count, resume_token "
-                    "FROM ace_sessions WHERE session_id = ? AND instance_id = ?",
+                    "FROM ace_sessions WHERE session_id = %s AND instance_id = ?",
                 ),
                 (session_id, _CHAT_INSTANCE_ID),
             )
@@ -1528,7 +1540,7 @@ def api_ace_chat():
             _q(
                 conn,
                 "INSERT INTO ace_sessions (session_id, instance_id, conversation_history, history_json, resume_token, turn_count) "
-                "VALUES (?, ?, ?, ?, ?, ?) "
+                "VALUES (%s, %s, %s, %s, %s, %s) "
                 "ON CONFLICT(session_id) DO UPDATE SET "
                 "  conversation_history = excluded.conversation_history, "
                 "  history_json = excluded.history_json, "

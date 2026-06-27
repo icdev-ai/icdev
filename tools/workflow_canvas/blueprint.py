@@ -1309,7 +1309,7 @@ Process Document:
         if not name:
             return jsonify({"error": "name required"}), 400
         chain_id = _new_id("chn")
-        conn = get_connection()
+        conn = get_canvas_connection("ICDEV_WFC_ENABLED")
         try:
             ph = _ph(conn)
             conn.execute(
@@ -1326,7 +1326,7 @@ Process Document:
 
     @bp.route("/api/workflows/chains", methods=["GET"])
     def api_list_chains():
-        conn = get_connection()
+        conn = get_canvas_connection("ICDEV_WFC_ENABLED")
         try:
             rows = conn.execute(
                 "SELECT id, name, description, industry, status, created_at FROM wfc_process_chains ORDER BY created_at DESC"
@@ -1337,7 +1337,7 @@ Process Document:
 
     @bp.route("/api/workflows/chains/<chain_id>", methods=["GET"])
     def api_get_chain(chain_id: str):
-        conn = get_connection()
+        conn = get_canvas_connection("ICDEV_WFC_ENABLED")
         try:
             ph = _ph(conn)
             chain = conn.execute(
@@ -1360,7 +1360,7 @@ Process Document:
         name = (data.get("name") or "").strip()
         if not name:
             return jsonify({"error": "name required"}), 400
-        conn = get_connection()
+        conn = get_canvas_connection("ICDEV_WFC_ENABLED")
         try:
             ph = _ph(conn)
             # Auto-number: find max phase_number for this chain
@@ -1392,7 +1392,7 @@ Process Document:
         if not workflow_id:
             return jsonify({"error": "workflow_id required — run processify first and pass the result"}), 400
 
-        conn = get_connection()
+        conn = get_canvas_connection("ICDEV_WFC_ENABLED")
         try:
             ph = _ph(conn)
             row = conn.execute(
@@ -1424,7 +1424,7 @@ Process Document:
     @bp.route("/api/workflows/chains/<chain_id>/progress", methods=["GET"])
     def api_chain_progress(chain_id: str):
         """Return progress across all phases of a chain."""
-        conn = get_connection()
+        conn = get_canvas_connection("ICDEV_WFC_ENABLED")
         try:
             ph = _ph(conn)
             chain = conn.execute(
