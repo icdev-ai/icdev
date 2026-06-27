@@ -13,8 +13,11 @@ Routes:
   GET  /workflow-canvas/workflows/<id>/edit  Edit workflow
   GET  /workflow-canvas/templates            Template library
 
-  POST /workflow-canvas/api/forms/<id>/export/<fmt>     Download form as pptx|pdf|docx
-  POST /workflow-canvas/api/workflows/<id>/export/<fmt> Download workflow as pptx|pdf|docx
+  GET  /workflow-canvas/digitize                         Process Digitizer page
+  POST /workflow-canvas/api/workflows/digitize           Extract + AI-structure a process document
+  POST /workflow-canvas/api/workflows/save-digitized     Save digitized workflow (creates forms + DAG)
+  POST /workflow-canvas/api/forms/<id>/export/<fmt>      Download form as pptx|pdf|docx
+  POST /workflow-canvas/api/workflows/<id>/export/<fmt>  Download workflow as pptx|pdf|docx
   GET  /workflow-canvas/api/branding/<type>/<id>        Get branding
   POST /workflow-canvas/api/branding/<type>/<id>        Save branding
   GET  /workflow-canvas/api/forms                       JSON list of forms
@@ -456,6 +459,15 @@ def create_wfc_blueprint() -> Blueprint:
             all_templates=FORM_TEMPLATES,
         )
 
+    # ── Process Digitizer page ────────────────────────────────────────────
+
+    @bp.route("/digitize")
+    def digitize():
+        return render_template(
+            "workflow_canvas/process_digitizer.html",
+            industry_categories=INDUSTRY_CATEGORIES,
+        )
+
     # ── AI-assisted form generation helpers ──────────────────────────────
 
     _VALID_FIELD_TYPES = {"text","textarea","number","date","select","multiselect","checkbox","email","file","richtext"}
@@ -605,6 +617,334 @@ Form description: {text}"""
                     pathlib.Path(tmp_path).unlink(missing_ok=True)
                 except Exception:
                     pass
+
+    # ── Process Digitization API ──────────────────────────────────────────
+
+    _ACE_ROLE_HINTS = [
+        ("review", "doc_reviewer"), ("document", "document_reviewer"),
+        ("compliance", "compliance_manager"), ("security", "security_analyst"),
+        ("test", "qa_manager"), ("quality", "qa_manager"),
+        ("requirement", "requirements_engineer"), ("submit", "document_contributor"),
+        ("approve", "compliance_manager"), ("verify", "adversarial_verifier"),
+        ("deploy", "devops_engineer"), ("analyze", "data_analyst"),
+        ("research", "researcher"), ("write", "technical_writer"),
+        ("report", "technical_writer"),
+    ]
+
+    def _suggest_ace_role(title: str, description: str) -> str:
+        text = (title + " " + description).lower()
+        for keyword, role in _ACE_ROLE_HINTS:
+            if keyword in text:
+                return role
+        return "doc_reviewer"
+
+    @bp.route("/api/workflows/digitize", methods=["POST"])
+    def api_digitize_workflow():
+        """Upload a process document and AI-convert it into a structured workflow definition."""
+        import re
+        import tempfile
+        import pathlib
+        import json as _json
+
+        file = request.files.get("file")
+        manual_text = (request.form.get("text") or "").strip()
+        if not file and not manual_text:
+            return jsonify({"error": "Provide a file or paste text"}), 400
+
+        industry = (request.form.get("industry") or "General").strip()
+        source_name = "Process Document"
+        text = ""
+
+        if file and file.filename:
+            ext = pathlib.Path(file.filename).suffix.lower()
+            if ext not in {".pdf", ".docx", ".png", ".jpg", ".jpeg", ".txt"}:
+                return jsonify({"error": f"Unsupported format '{ext}'. Use: PDF, DOCX, PNG, JPG, or TXT."}), 400
+            source_name = pathlib.Path(file.filename).stem
+            tmp_path = None
+            try:
+                with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+                    file.save(tmp)
+                    tmp_path = tmp.name
+                try:
+                    from tools.document_intelligence.extractors import extract_file
+                    extraction = extract_file(tmp_path)
+                    text = (extraction.text or "").strip()
+                except Exception as e1:
+                    logger.warning("digitize: extractors failed (%s)", e1)
+                if not text:
+                    try:
+                        from tools.document_intelligence.converters.markitdown_adapter import convert as md_convert
+                        extraction = md_convert(pathlib.Path(tmp_path))
+                        text = (extraction.text or "").strip()
+                    except Exception as e2:
+                        logger.warning("digitize: markitdown failed (%s)", e2)
+            finally:
+                if tmp_path:
+                    try:
+                        pathlib.Path(tmp_path).unlink(missing_ok=True)
+                    except Exception:
+                        pass
+        else:
+            text = manual_text
+
+        if not text:
+            return jsonify({"error": "Could not extract text. Try a clearer document or paste text directly."}), 422
+
+        prompt = f"""You are a business process analyst. Analyze the following process document and convert it into a structured digital workflow.
+
+Industry: {industry}
+Document: {source_name}
+
+Return a JSON object with this exact structure:
+{{
+  "workflow_name": "concise workflow name",
+  "workflow_description": "one sentence describing the process",
+  "industry": "{industry}",
+  "estimated_duration_days": 30,
+  "steps": [
+    {{
+      "id": "step-1",
+      "title": "Step title",
+      "phase": "Phase name (Initiation|Review|Approval|Completion etc.)",
+      "description": "What happens in this step",
+      "checklist_items": ["Item from document 1", "Item from document 2"],
+      "form_fields": [
+        {{"label": "Field label", "type": "text", "required": true, "options": null}}
+      ],
+      "assignee_role": "Who performs this step",
+      "reviewer_role": "Who reviews (or empty string)",
+      "approver_role": "Who approves (or empty string)",
+      "sla_days": 5,
+      "dependencies": [],
+      "ace_role": "snake_case_ai_coworker_role_specific_to_this_step"
+    }}
+  ]
+}}
+
+Rules:
+- Extract ALL steps/tasks/requirements found in the document
+- checklist_items should be concrete, verbatim items from the document
+- form_fields capture data that must be submitted at this step
+- assignee_role/reviewer_role/approver_role are human job titles (e.g. "Provider", "Network Director")
+- dependencies lists step ids that must complete first (first step has empty [])
+- Aim for 5-15 steps covering the full process
+- field type must be one of: text textarea number date select multiselect checkbox email file
+- ace_role: suggest a specific, domain-appropriate AI coworker role in snake_case (e.g. credentialing_specialist, dhcs_compliance_auditor, loan_underwriter, permit_reviewer, safety_inspector) — be specific to the industry, not generic
+- Return ONLY valid JSON. No markdown fences, no explanation.
+
+Process Document:
+{text[:8000]}"""
+
+        try:
+            from tools.llm.router import LLMRouter
+            from tools.llm.provider import LLMRequest
+            router = LLMRouter()
+            req = LLMRequest(
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=4096,
+                temperature=0.2,
+            )
+            result = router.invoke("process_digitization", req)
+            if hasattr(result, "content"):
+                raw = result.content or ""
+            elif isinstance(result, dict):
+                raw = result.get("content") or result.get("text") or result.get("response") or str(result)
+            else:
+                raw = str(result or "")
+
+            match = re.search(r'\{[\s\S]*\}', raw)
+            if not match:
+                raise ValueError(f"LLM did not return valid JSON. Raw: {raw[:300]}")
+            workflow_def = _json.loads(match.group())
+
+            steps = workflow_def.get("steps", [])
+            for i, step in enumerate(steps):
+                if "id" not in step:
+                    step["id"] = f"step-{i + 1}"
+                # Use LLM-suggested role first; keyword-hint map is the fallback
+                if not step.get("ace_role"):
+                    step["ace_role"] = _suggest_ace_role(
+                        step.get("title", ""), step.get("description", "")
+                    )
+                step["form_fields"] = _validate_fields(step.get("form_fields") or [])
+                step.setdefault("checklist_items", [])
+                step.setdefault("dependencies", [])
+            workflow_def["steps"] = steps
+            workflow_def["source_name"] = source_name
+            return jsonify({"status": "ok", "workflow": workflow_def})
+        except Exception as exc:
+            logger.error("wfc digitize error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/workflows/save-digitized", methods=["POST"])
+    def api_save_digitized_workflow():
+        """Persist a digitized workflow: creates per-step WFC forms + workflow record."""
+        try:
+            return _do_save_digitized()
+        except Exception as exc:
+            logger.error("wfc save-digitized error: %s", exc, exc_info=True)
+            return jsonify({"error": str(exc)}), 500
+
+    def _do_save_digitized():
+        import yaml as _yaml
+        data = request.get_json(force=True) or {}
+        workflow_def = data.get("workflow") or {}
+        if not workflow_def:
+            return jsonify({"error": "workflow data required"}), 400
+
+        steps = workflow_def.get("steps", [])
+        workflow_name = (workflow_def.get("workflow_name") or "Digitized Workflow").strip()
+        workflow_desc = (workflow_def.get("workflow_description") or "").strip()
+        industry = (workflow_def.get("industry") or "General").strip()
+
+        # Create a WFC form for each step that has form_fields
+        step_form_ids: dict[str, str] = {}
+        for step in steps:
+            raw_fields = step.get("form_fields") or []
+            if not raw_fields:
+                continue
+            form_result = create_form(
+                name=f"{workflow_name} — {step.get('title') or step['id']}",
+                fields=_validate_fields(raw_fields),
+                description=step.get("description", ""),
+                created_by="process_digitizer",
+                status="draft",
+            )
+            if form_result.get("form_id"):
+                step_form_ids[step["id"]] = form_result["form_id"]
+
+        # Build YAML DAG
+        yaml_steps = []
+        for step in steps:
+            yaml_steps.append({
+                "id": step["id"],
+                "title": step.get("title", ""),
+                "phase": step.get("phase", ""),
+                "description": step.get("description", ""),
+                "assignee_role": step.get("assignee_role", ""),
+                "reviewer_role": step.get("reviewer_role", ""),
+                "approver_role": step.get("approver_role", ""),
+                "sla_days": step.get("sla_days"),
+                "ace_role": step.get("ace_role", ""),
+                "checklist": step.get("checklist_items", []),
+                "form_id": step_form_ids.get(step["id"]),
+                "dependencies": step.get("dependencies", []),
+            })
+
+        workflow_yaml = _yaml.dump({
+            "name": workflow_name,
+            "description": workflow_desc,
+            "industry": industry,
+            "estimated_duration_days": workflow_def.get("estimated_duration_days"),
+            "source": workflow_def.get("source_name", ""),
+            "steps": yaml_steps,
+        }, default_flow_style=False, allow_unicode=True)
+
+        workflow_id = _new_id("wfl")
+        conn = get_connection()
+        try:
+            ph = _ph(conn)
+            conn.execute(
+                f"""INSERT INTO studio_workflows
+                    (workflow_id, name, description, template_yaml, category,
+                     created_by, created_at, updated_at, version, shared)
+                    VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})""",
+                (workflow_id, workflow_name, workflow_desc, workflow_yaml,
+                 industry, "process_digitizer", _now_iso(), _now_iso(), 1, 0),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        # Link forms to workflow nodes
+        if step_form_ids:
+            wfc_conn = get_canvas_connection("ICDEV_WFC_ENABLED")
+            try:
+                wfc_ph = _ph(wfc_conn)
+                for step in steps:
+                    form_id = step_form_ids.get(step["id"])
+                    if form_id:
+                        wfc_conn.execute(
+                            f"""INSERT INTO wfc_workflow_form_nodes
+                                (id, workflow_id, node_key, form_id, node_label, required_before_next, created_at)
+                                VALUES ({wfc_ph},{wfc_ph},{wfc_ph},{wfc_ph},{wfc_ph},{wfc_ph},{wfc_ph})""",
+                            (_new_id("wfn"), workflow_id, step["id"],
+                             form_id, step.get("title", ""), 1, _now_iso()),
+                        )
+                wfc_conn.commit()
+            finally:
+                wfc_conn.close()
+
+        # Optionally seed kanban tasks
+        kanban_ids: list = []
+        if data.get("create_kanban_tasks"):
+            try:
+                from tools.kanban.task_factory import create_tasks
+                wfl_prefix = workflow_id[:8]
+                task_specs = []
+                for step in steps:
+                    deps = step.get("dependencies", [])
+                    task_specs.append({
+                        "id": f"digitize-{wfl_prefix}-{step['id']}",
+                        "title": f"{workflow_name}: {step.get('title') or step['id']}",
+                        "description": step.get("description", ""),
+                        "task_type": "build",
+                        "priority": "medium",
+                        "status": "backlog",
+                        "depends_on_task_id": f"digitize-{wfl_prefix}-{deps[0]}" if deps else None,
+                        "dispatch_source": "process_digitizer",
+                    })
+                kanban_ids = create_tasks(task_specs)
+            except Exception as exc:
+                logger.warning("wfc: kanban seeding failed: %s", exc)
+
+        logger.info(
+            "wfc: saved digitized workflow %s — %d steps, %d forms, %d kanban tasks",
+            workflow_id, len(steps), len(step_form_ids), len(kanban_ids),
+        )
+        return jsonify({
+            "status": "ok",
+            "workflow_id": workflow_id,
+            "forms_created": len(step_form_ids),
+            "kanban_tasks": len(kanban_ids),
+        })
+
+    @bp.route("/api/workflows/ensure-roles", methods=["POST"])
+    def api_ensure_roles():
+        """Ensure ACE coworker roles exist — auto-generates any missing ones via profile_generator."""
+        data = request.get_json(force=True) or {}
+        role_requests = data.get("roles", [])  # [{role_id, description}]
+        if not role_requests:
+            return jsonify({"existing": [], "generated": [], "errors": []})
+
+        try:
+            from icdev.tools.ace.profile_generator import list_profiles, generate_profile
+            existing_ids = {p["role_id"] for p in list_profiles()}
+        except Exception as exc:
+            logger.warning("ensure_roles: could not load profiles: %s", exc)
+            return jsonify({"existing": [], "generated": [], "errors": [str(exc)]})
+
+        existing, generated, errors = [], [], []
+        for role_req in role_requests:
+            role_id = (role_req.get("role_id") or "").strip()
+            description = (role_req.get("description") or "").strip()
+            if not role_id:
+                continue
+            if role_id in existing_ids:
+                existing.append(role_id)
+                continue
+            try:
+                result = generate_profile(
+                    name=role_id.replace("_", " ").title(),
+                    description=description or f"AI co-worker for {role_id} tasks",
+                )
+                generated.append(result["role_id"])
+                logger.info("ensure_roles: generated profile for %s", role_id)
+            except Exception as exc:
+                logger.warning("ensure_roles: failed to generate %s: %s", role_id, exc)
+                errors.append({"role_id": role_id, "error": str(exc)})
+
+        return jsonify({"existing": existing, "generated": generated, "errors": errors})
 
     # ── API routes ────────────────────────────────────────────────────────
 

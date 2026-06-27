@@ -1,0 +1,266 @@
+<!-- CUI // SP-CTI — ACE Agent Session Detail -->
+{% extends "base.html" %}
+{% block title %}Session {{ session_id[:8] }} — Agent Sessions — ICDEV™{% endblock %}
+
+{% block content %}
+<style>
+  .detail-page { padding: 20px 28px; max-width: 1100px; }
+
+  .meta-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 10px; margin-bottom: 20px;
+  }
+  .meta-card {
+    padding: 12px 14px; border-radius: 6px;
+    background: var(--bg-secondary, #1a1a2e);
+    border: 1px solid var(--border-color, #2a2a4a);
+  }
+  .meta-card .lbl { font-size: 10px; color: var(--text-secondary, #7a8cb0); text-transform: uppercase; letter-spacing: .04em; }
+  .meta-card .val { font-size: 15px; font-weight: 600; margin-top: 3px; word-break: break-all; }
+  .meta-card .val.mono { font-family: monospace; font-size: 12px; }
+
+  .badge-subtype {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em;
+  }
+  .badge-success         { background: rgba(39,174,96,.2);  color: #27ae60; border: 1px solid #27ae60; }
+  .badge-error_max_turns { background: rgba(230,126,34,.2); color: #e67e22; border: 1px solid #e67e22; }
+  .badge-error_max_budget_tokens { background: rgba(155,89,182,.2); color: #9b59b6; border: 1px solid #9b59b6; }
+  .badge-error_max_budget_cost   { background: rgba(231,76,60,.2);  color: #e74c3c; border: 1px solid #e74c3c; }
+  .badge-error_during_execution  { background: rgba(192,57,43,.2);  color: #c0392b; border: 1px solid #c0392b; }
+  .badge-error_stop_event        { background: rgba(127,140,141,.2); color: #7f8c8d; border: 1px solid #7f8c8d; }
+  .badge-error_max_structured_output_retries { background: rgba(243,156,18,.2); color: #f39c12; border: 1px solid #f39c12; }
+  .badge-unknown { background: rgba(100,100,100,.2); color: #aaa; border: 1px solid #555; }
+
+  .turn-block {
+    margin-bottom: 16px; border: 1px solid var(--border-color, #2a2a4a); border-radius: 6px; overflow: hidden;
+  }
+  .turn-header {
+    padding: 8px 14px; background: var(--bg-secondary, #1a1a2e);
+    display: flex; align-items: center; gap: 12px;
+    border-bottom: 1px solid var(--border-color, #2a2a4a);
+    font-size: 12px; font-weight: 600; color: var(--text-secondary, #7a8cb0);
+  }
+  .turn-header .turn-num { color: var(--text-primary, #e2e8f0); font-size: 13px; }
+
+  .msg-section { padding: 12px 16px; }
+  .msg-section + .msg-section { border-top: 1px solid rgba(255,255,255,.05); }
+
+  .role-tag {
+    display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; padding: 2px 7px; border-radius: 3px; margin-bottom: 6px;
+  }
+  .role-user      { background: rgba(74,158,255,.15); color: #4a9eff; border: 1px solid rgba(74,158,255,.3); }
+  .role-assistant { background: rgba(39,174,96,.12);  color: #27ae60; border: 1px solid rgba(39,174,96,.3); }
+  .role-system    { background: rgba(127,140,141,.15); color: #7f8c8d; border: 1px solid rgba(127,140,141,.3); }
+
+  .msg-text {
+    font-size: 13px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+    color: var(--text-primary, #e2e8f0);
+  }
+
+  .tool-calls-section { padding: 10px 16px; }
+  .tool-call-card {
+    margin-bottom: 8px; border: 1px solid var(--border-color, #2a2a4a); border-radius: 4px; overflow: hidden;
+  }
+  .tool-call-header {
+    padding: 6px 12px; background: rgba(74,158,255,.08);
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 1px solid var(--border-color, #2a2a4a);
+    font-size: 12px;
+  }
+  .tool-name { font-family: monospace; font-weight: 600; color: #4a9eff; }
+  .tool-error-tag { color: #e74c3c; font-size: 11px; font-weight: 600; }
+  .tool-call-body { padding: 8px 12px; }
+  .tool-call-input {
+    font-family: monospace; font-size: 11px; color: var(--text-secondary, #7a8cb0);
+    background: var(--bg-primary, #0f0f23); padding: 6px 10px; border-radius: 3px;
+    margin-bottom: 6px; white-space: pre-wrap; word-break: break-all; max-height: 120px; overflow-y: auto;
+  }
+  .tool-result-text {
+    font-size: 12px; color: var(--text-primary, #e2e8f0);
+    background: rgba(255,255,255,.03); padding: 6px 10px; border-radius: 3px;
+    white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto;
+  }
+  .tool-result-error { color: #e74c3c; }
+
+  .collapsible-header {
+    display: flex; align-items: center; gap: 8px; cursor: pointer;
+    padding: 10px 0; font-size: 13px; font-weight: 600;
+    color: var(--text-secondary, #7a8cb0); border-bottom: 1px solid var(--border-color, #2a2a4a);
+    margin-bottom: 12px; user-select: none;
+  }
+  .collapsible-header:hover { color: var(--text-primary, #e2e8f0); }
+  .collapse-icon { font-size: 10px; transition: transform .2s; }
+  .collapsed .collapse-icon { transform: rotate(-90deg); }
+
+  .section-heading { font-size: 15px; font-weight: 600; margin: 24px 0 12px; }
+
+  .loading-state { text-align: center; padding: 60px 20px; color: var(--text-secondary, #7a8cb0); }
+  .error-state { text-align: center; padding: 60px 20px; color: #e74c3c; }
+</style>
+
+<div class="detail-page">
+
+  <!-- Breadcrumbs -->
+  <div class="breadcrumbs">
+    <a href="/">Home</a>
+    <span class="separator">/</span>
+    <a href="/coworker">Co-Worker Engine</a>
+    <span class="separator">/</span>
+    <a href="/coworker/sessions">Agent Sessions</a>
+    <span class="separator">/</span>
+    <span>{{ session_id[:8] }}…</span>
+  </div>
+
+  <div id="page-content">
+    <div class="loading-state">Loading session…</div>
+  </div>
+
+</div>
+
+<script>
+var SESSION_ID = {{ session_id | tojson }};
+
+function subtypeBadge(sub) {
+  var cls = sub ? 'badge-' + sub : 'badge-unknown';
+  return '<span class="badge-subtype ' + cls + '">' + (sub || 'unknown') + '</span>';
+}
+
+function fmtDate(s) {
+  if (!s) return '—';
+  var d = new Date(s.replace(' ', 'T') + (s.includes('+') ? '' : 'Z'));
+  return isNaN(d) ? s : d.toLocaleString();
+}
+
+function esc(s) {
+  if (!s) return '';
+  return s.toString()
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function renderToolCall(tc) {
+  var errorTag = tc.is_error ? '<span class="tool-error-tag">ERROR</span>' : '';
+  var inputStr = tc.input ? JSON.stringify(tc.input, null, 2) : '';
+  var resultCls = tc.is_error ? 'tool-result-text tool-result-error' : 'tool-result-text';
+  return '<div class="tool-call-card">' +
+    '<div class="tool-call-header">' +
+      '<span class="tool-name">' + esc(tc.name) + '</span>' +
+      errorTag +
+    '</div>' +
+    '<div class="tool-call-body">' +
+      (inputStr ? '<div class="tool-call-input">' + esc(inputStr) + '</div>' : '') +
+      '<div class="' + resultCls + '">' + esc(tc.result || '(no result)') + '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function renderTurn(turn, idx) {
+  var toolCallsHtml = (turn.tool_calls || []).map(renderToolCall).join('');
+  var toolSection = toolCallsHtml
+    ? '<div class="tool-calls-section">' +
+        '<div style="font-size:11px; color:var(--text-secondary,#7a8cb0); margin-bottom:6px; text-transform:uppercase; letter-spacing:.04em;">Tool Calls (' + turn.tool_calls.length + ')</div>' +
+        toolCallsHtml +
+      '</div>'
+    : '';
+
+  var userSection = turn.user_input != null
+    ? '<div class="msg-section">' +
+        '<span class="role-tag role-user">User</span>' +
+        '<div class="msg-text">' + esc(turn.user_input) + '</div>' +
+      '</div>'
+    : '';
+
+  var assistantSection = turn.assistant_text
+    ? '<div class="msg-section">' +
+        '<span class="role-tag role-assistant">Assistant</span>' +
+        '<div class="msg-text">' + esc(turn.assistant_text) + '</div>' +
+      '</div>'
+    : '';
+
+  var toolCountTag = (turn.tool_calls && turn.tool_calls.length)
+    ? '<span style="background:rgba(74,158,255,.12); color:#4a9eff; padding:2px 8px; border-radius:3px; font-size:11px;">' +
+        turn.tool_calls.length + ' tool call' + (turn.tool_calls.length !== 1 ? 's' : '') +
+      '</span>'
+    : '';
+
+  return '<div class="turn-block">' +
+    '<div class="turn-header">' +
+      '<span class="turn-num">Turn ' + (idx + 1) + '</span>' +
+      toolCountTag +
+    '</div>' +
+    userSection +
+    toolSection +
+    assistantSection +
+  '</div>';
+}
+
+function toggleCollapsible(el) {
+  var body = el.nextElementSibling;
+  var collapsed = el.classList.toggle('collapsed');
+  body.style.display = collapsed ? 'none' : '';
+}
+
+async function loadSession() {
+  var content = document.getElementById('page-content');
+  try {
+    var res  = await fetch('/api/ace/sessions/' + SESSION_ID);
+    var data = await res.json();
+
+    if (data.error) {
+      content.innerHTML = '<div class="error-state">Error: ' + esc(data.error) + '</div>';
+      return;
+    }
+
+    var s = data;
+    var sub = s.result_subtype || '';
+
+    var metaHtml =
+      '<div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px; margin-bottom:20px; margin-top:10px;">' +
+        '<div>' +
+          '<h1 style="margin:0; font-size:20px; font-weight:700; font-family:monospace;">' + esc(SESSION_ID) + '</h1>' +
+          '<div style="margin-top:6px;">' + subtypeBadge(sub) + '</div>' +
+        '</div>' +
+        '<a href="/coworker/sessions" style="font-size:12px; color:var(--accent-color,#4a9eff); text-decoration:none;">&#8592; All Sessions</a>' +
+      '</div>' +
+      '<div class="meta-grid">' +
+        '<div class="meta-card"><div class="lbl">Co-Worker</div><div class="val mono">' + esc(s.coworker_id || '—') + '</div></div>' +
+        '<div class="meta-card"><div class="lbl">Instance</div><div class="val mono">' + esc(s.instance_id || '—') + '</div></div>' +
+        '<div class="meta-card"><div class="lbl">LLM Function</div><div class="val mono">' + esc(s.llm_function || '—') + '</div></div>' +
+        '<div class="meta-card"><div class="lbl">Turns</div><div class="val">' + (s.turns != null ? s.turns : 0) + '</div></div>' +
+        '<div class="meta-card"><div class="lbl">Tokens In</div><div class="val">' + ((s.total_input_tokens || 0)).toLocaleString() + '</div></div>' +
+        '<div class="meta-card"><div class="lbl">Tokens Out</div><div class="val">' + ((s.total_output_tokens || 0)).toLocaleString() + '</div></div>' +
+        '<div class="meta-card"><div class="lbl">Cost</div><div class="val">$' + parseFloat(s.total_cost_usd || 0).toFixed(4) + '</div></div>' +
+        '<div class="meta-card"><div class="lbl">Created</div><div class="val" style="font-size:12px;">' + fmtDate(s.created_at) + '</div></div>' +
+      '</div>';
+
+    var turnsArr = s.turns_parsed || [];
+    var turnsHtml = turnsArr.map(renderTurn).join('');
+    var timelineHtml = turnsHtml
+      ? '<h2 class="section-heading">Turn-by-Turn Replay (' + turnsArr.length + ' turns)</h2>' + turnsHtml
+      : '<div style="text-align:center; padding:40px; color:var(--text-secondary,#7a8cb0);">No turn data available for this session.</div>';
+
+    var systemPrompt = s.system_prompt || '';
+    var sysHtml = systemPrompt
+      ? '<div style="margin-top:24px;">' +
+          '<div class="collapsible-header" onclick="toggleCollapsible(this)">' +
+            '<span class="collapse-icon">&#9660;</span>' +
+            ' System Prompt' +
+          '</div>' +
+          '<pre style="font-size:12px; white-space:pre-wrap; word-break:break-word; color:var(--text-secondary,#7a8cb0); padding:12px; background:var(--bg-secondary,#1a1a2e); border-radius:4px; max-height:300px; overflow-y:auto;">' + esc(systemPrompt) + '</pre>' +
+        '</div>'
+      : '';
+
+    content.innerHTML = metaHtml + timelineHtml + sysHtml;
+
+  } catch(e) {
+    content.innerHTML = '<div class="error-state">Network error: ' + esc(String(e)) + '</div>';
+  }
+}
+
+document.addEventListener('DOMContentLoaded', loadSession);
+</script>
+{% endblock %}
