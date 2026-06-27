@@ -1953,6 +1953,17 @@ def create_app(testing: bool = False) -> Flask:
             _route_map = {}
 
         theme_pref = flask_request.cookies.get("icdev_theme", "dark")
+
+        # ECR-CL-02: unseen-release badge — compare brand.version to cookie-stored last seen
+        _unseen_release = False
+        try:
+            from tools.dashboard.brand import get_brand as _get_brand_ctx
+            _bv = _get_brand_ctx().get("version", "")
+            _seen_ver = flask_request.cookies.get("icdev_seen_version", "")
+            _unseen_release = bool(_bv) and _seen_ver != _bv
+        except Exception:
+            pass
+
         return {
             "cui_banner_top": CUI_BANNER_TOP,
             "cui_banner_bottom": CUI_BANNER_BOTTOM,
@@ -2001,6 +2012,7 @@ def create_app(testing: bool = False) -> Flask:
                 flask_request.path.startswith(prefix)
                 for prefix in _CANVAS_URL_PREFIXES
             ),
+            "unseen_release": _unseen_release,
         }
 
     # ---- Air-gap route guard: friendly message for disabled pages ----
@@ -2163,6 +2175,39 @@ def create_app(testing: bool = False) -> Flask:
             app.logger.warning("canvas_compliance: get_all_cards failed: %s", _exc)
             cards = []
         return render_template("canvas_compliance.html", cards=cards)
+
+    # ---- Platform Updates (CHANGELOG.md viewer) ----
+    try:
+        from tools.dashboard.changelog import parse_changelog as _parse_changelog
+        import os as _os
+
+        @app.route("/updates")
+        def updates_page():
+            _changelog_path = _os.path.join(_os.path.dirname(__file__), "..", "..", "..", "CHANGELOG.md")
+            try:
+                releases = _parse_changelog(_changelog_path)
+            except Exception as _exc:
+                app.logger.warning("Failed to parse CHANGELOG.md: %s", _exc)
+                releases = []
+                return render_template("updates/page.html", releases=releases, error=str(_exc))
+            return render_template("updates/page.html", releases=releases, error=None)
+
+        app.logger.info("Updates route registered at /updates")
+    except Exception as _exc:
+        app.logger.warning("Updates route failed to register: %s", _exc)
+
+    # ---- ECR-CL-02: Mark current version as seen ----
+    @app.route("/api/user/prefs/seen-version", methods=["PATCH"])
+    def api_user_prefs_seen_version():
+        try:
+            from tools.dashboard.brand import get_brand as _get_brand_sv
+            _brand_ver = _get_brand_sv().get("version", "")
+        except Exception as _exc:
+            app.logger.warning("seen-version PATCH failed: %s", _exc)
+            return jsonify({"error": str(_exc)}), 500
+        resp = jsonify({"ok": True, "seen_version": _brand_ver})
+        resp.set_cookie("icdev_seen_version", _brand_ver, max_age=31536000, samesite="Lax")
+        return resp
 
     # ---- Design Canvases (registry-driven) ----
     try:
@@ -3393,6 +3438,8 @@ def create_app(testing: bool = False) -> Flask:
         from tools.iqe.executor import execute_query
 
         _CANVAS_MAP = _REGISTRY.get_iqe_mapping()
+        # Supplement with app.py-registered canvases not in component_registry.yaml
+        _CANVAS_MAP.setdefault("updates", ("tools.iqe.adapters.updates", ["updates.releases"]))
 
         data = flask_request.get_json(silent=True) or {}
         question = (data.get("question") or "").strip()
