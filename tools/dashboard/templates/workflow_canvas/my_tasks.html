@@ -61,7 +61,7 @@
               {{ task.priority|title }} priority
             </span>
             <span style="font-size:0.75rem;color:var(--text-secondary)">
-              Updated {{ task.updated_at[:10] if task.updated_at else '—' }}
+              Updated {{ task.updated_at|string|truncate(10, killwords=True, end='') if task.updated_at else '—' }}
             </span>
             <span style="font-size:0.72rem;font-family:monospace;color:var(--text-secondary)">
               {{ task.id }}
