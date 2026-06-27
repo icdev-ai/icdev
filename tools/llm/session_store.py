@@ -26,11 +26,12 @@ without it — it just cannot resume from a prior turn.
 from __future__ import annotations
 
 import json
-import logging
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
 
 _TABLE = "agent_loop_checkpoints"
 

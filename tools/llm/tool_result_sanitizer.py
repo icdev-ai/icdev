@@ -15,12 +15,13 @@ Configuration: args/llm_config.yaml -> tool_result_sanitizer:
 """
 from __future__ import annotations
 
-import logging
 import re
 from dataclasses import dataclass, field
 from typing import Literal
 
-logger = logging.getLogger(__name__)
+from tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
 
 SanitizerMode = Literal["warn", "strip", "block"]
 

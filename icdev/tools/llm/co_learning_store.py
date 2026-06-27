@@ -29,11 +29,12 @@ Usage:
 """
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timezone
 from typing import Any
 
-logger = logging.getLogger(__name__)
+from icdev.tools.logging.icdev_logger import get_logger
+
+logger = get_logger(__name__)
 
 _TABLE = "ace_colearning_suggestions"
 

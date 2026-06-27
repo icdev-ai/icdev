@@ -29,7 +29,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.logging.icdev_logger import get_logger  # noqa: E402
-from tools.db.storage import get_connection, get_canvas_connection, is_pg, sql_placeholder  # noqa: E402
+from tools.db.storage import get_connection, sql_placeholder  # noqa: E402
 
 from flask import (
     Flask,
@@ -2794,7 +2794,7 @@ def create_app(testing: bool = False) -> Flask:
                         mod = importlib.import_module(mod_name)
                         cconn = mod.get_connection()
                         try:
-                            cconn.set_security_context(None)
+                            cconn.set_security_context(None)  # rls-bypass: canvas tables lack tenant_id/classification; module-level canvas connection disables RLS
                         except Exception:
                             pass
                         return cconn
@@ -3011,7 +3011,7 @@ def create_app(testing: bool = False) -> Flask:
                     from tools.aiify.db.init_db import get_connection as _aiify_cn
                     _ac = _aiify_cn()
                     try:
-                        _ac.set_security_context(None)
+                        _ac.set_security_context(None)  # rls-bypass: aiify canvas tables lack tenant_id/classification; use canvas connection with RLS disabled
                     except Exception:
                         pass
                     try:
@@ -3167,7 +3167,7 @@ def create_app(testing: bool = False) -> Flask:
                 mod = importlib.import_module(module_name)
                 cconn = mod.get_connection()
                 try:
-                    cconn.set_security_context(None)
+                    cconn.set_security_context(None)  # rls-bypass: canvas tables lack tenant_id/classification; use module-level canvas connection with RLS disabled
                 except Exception:
                     pass
                 return cconn
@@ -3249,7 +3249,7 @@ def create_app(testing: bool = False) -> Flask:
             from tools.aiify.db.init_db import get_connection as _aiify_trend_cn
             aconn = _aiify_trend_cn()
             try:
-                aconn.set_security_context(None)
+                aconn.set_security_context(None)  # rls-bypass: aiify canvas tables lack tenant_id/classification; use canvas connection with RLS disabled
             except Exception:
                 pass
             try:

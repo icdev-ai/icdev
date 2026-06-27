@@ -2794,7 +2794,7 @@ def create_app(testing: bool = False) -> Flask:
                         mod = importlib.import_module(mod_name)
                         cconn = mod.get_connection()
                         try:
-                            cconn.set_security_context(None)
+                            cconn.set_security_context(None)  # rls-bypass: canvas tables lack tenant_id/classification; module-level canvas connection disables RLS
                         except Exception:
                             pass
                         return cconn
@@ -3011,7 +3011,7 @@ def create_app(testing: bool = False) -> Flask:
                     from tools.aiify.db.init_db import get_connection as _aiify_cn
                     _ac = _aiify_cn()
                     try:
-                        _ac.set_security_context(None)
+                        _ac.set_security_context(None)  # rls-bypass: aiify canvas tables lack tenant_id/classification; use canvas connection with RLS disabled
                     except Exception:
                         pass
                     try:
@@ -3167,7 +3167,7 @@ def create_app(testing: bool = False) -> Flask:
                 mod = importlib.import_module(module_name)
                 cconn = mod.get_connection()
                 try:
-                    cconn.set_security_context(None)
+                    cconn.set_security_context(None)  # rls-bypass: canvas tables lack tenant_id/classification; use module-level canvas connection with RLS disabled
                 except Exception:
                     pass
                 return cconn
@@ -3249,7 +3249,7 @@ def create_app(testing: bool = False) -> Flask:
             from tools.aiify.db.init_db import get_connection as _aiify_trend_cn
             aconn = _aiify_trend_cn()
             try:
-                aconn.set_security_context(None)
+                aconn.set_security_context(None)  # rls-bypass: aiify canvas tables lack tenant_id/classification; use canvas connection with RLS disabled
             except Exception:
                 pass
             try:
