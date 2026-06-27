@@ -12,7 +12,7 @@ from pathlib import Path
 from flask import Blueprint, jsonify, request
 
 from tools.awareness.value_scorer import annotate_tasks_with_value
-from tools.db.storage import get_connection
+from tools.db.storage import get_connection, sql_placeholder
 from tools.dashboard.sse_manager import sse_manager
 
 try:
@@ -606,6 +606,7 @@ def update_task(task_id):
     """Update a kanban task (status, priority, title, etc.)."""
     data = request.get_json(force=True)
     conn = get_connection()
+    ph = sql_placeholder(conn)
     try:
         existing = conn.execute("SELECT * FROM kanban_tasks WHERE id = %s", (task_id,)).fetchone()
         if not existing:
@@ -643,7 +644,7 @@ def update_task(task_id):
         vals = []
         for field in allowed:
             if field in data:
-                sets.append(f"{field} = ?")
+                sets.append(f"{field} = {ph}")
                 vals.append(data[field])
 
         if not sets:
@@ -651,13 +652,13 @@ def update_task(task_id):
 
         # Auto-set completed_at when moving to done
         if data.get("status") == "done" and existing["status"] != "done":
-            sets.append("completed_at = ?")
+            sets.append(f"completed_at = {ph}")
             vals.append(_utcnow())
         # Clear completed_at if moving out of done
         elif data.get("status") and data["status"] != "done" and existing["status"] == "done":
             sets.append("completed_at = NULL")
 
-        sets.append("updated_at = ?")
+        sets.append(f"updated_at = {ph}")
         vals.append(_utcnow())
         vals.append(task_id)
 
@@ -793,7 +794,7 @@ def task_heartbeat(task_id):
     """
     conn = get_connection()
     if hasattr(conn, "set_security_context"):
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: kanban_tasks has no tenant_id column; internal system table
     try:
         row = conn.execute(
             "SELECT status FROM kanban_tasks WHERE id = %s", (task_id,)
@@ -837,7 +838,7 @@ def task_handoff(task_id):
 
     conn = get_connection()
     if hasattr(conn, "set_security_context"):
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: kanban_tasks has no tenant_id column; internal system table
     try:
         row = conn.execute(
             "SELECT id FROM kanban_tasks WHERE id = %s", (task_id,)
@@ -891,7 +892,7 @@ def task_subscribe(task_id):
 
     conn = get_connection()
     if hasattr(conn, "set_security_context"):
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: kanban_task_subscriptions has no tenant_id column; internal system table
     try:
         row = conn.execute("SELECT id FROM kanban_tasks WHERE id = %s", (task_id,)).fetchone()
         if not row:
@@ -914,7 +915,7 @@ def list_subscriptions(task_id):
     """List all webhook subscriptions for a task."""
     conn = get_connection()
     if hasattr(conn, "set_security_context"):
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: kanban_task_subscriptions has no tenant_id column; internal system table
     try:
         rows = conn.execute(
             "SELECT id, channel, target, events, created_at "
@@ -931,7 +932,7 @@ def delete_subscription(sub_id):
     """Remove a webhook subscription."""
     conn = get_connection()
     if hasattr(conn, "set_security_context"):
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: kanban_task_subscriptions has no tenant_id column; internal system table
     try:
         conn.execute("DELETE FROM kanban_task_subscriptions WHERE id = %s", (sub_id,))
         conn.commit()
@@ -998,7 +999,7 @@ def specify_task():
         try:
             conn = get_connection()
             if hasattr(conn, "set_security_context"):
-                conn.set_security_context(None)
+                conn.set_security_context(None)  # rls-bypass: kanban_tasks has no tenant_id column; internal system table
             try:
                 conn.execute(
                     "UPDATE kanban_tasks SET acceptance_criteria = %s, updated_at = %s WHERE id = %s",
@@ -1026,7 +1027,7 @@ def judge_task(task_id):
 
     conn = get_connection()
     if hasattr(conn, "set_security_context"):
-        conn.set_security_context(None)
+        conn.set_security_context(None)  # rls-bypass: kanban_tasks has no tenant_id column; internal system table
     try:
         row = conn.execute(
             "SELECT title, acceptance_criteria FROM kanban_tasks WHERE id = %s", (task_id,)
@@ -1123,12 +1124,13 @@ def bulk_move_tasks():
     moved = 0
     failed = []
     conn = get_connection()
+    ph = sql_placeholder(conn)
     try:
         # Gather source_prediction_id for dismiss path before we
         # UPDATE so we can mark the predictions in the same transaction.
         rows = conn.execute(
             "SELECT id, status, source_prediction_id FROM kanban_tasks "
-            f"WHERE id IN ({','.join(['?'] * len(task_ids))})",  # nosec B608 -- placeholders only
+            f"WHERE id IN ({','.join([ph] * len(task_ids))})",  # nosec B608 -- placeholders only
             tuple(task_ids),
         ).fetchall()
         by_id = {dict(r)["id"]: dict(r) for r in rows}
@@ -1139,14 +1141,14 @@ def bulk_move_tasks():
                 failed.append({"id": tid, "error": "not found"})
                 continue
             try:
-                sql = "UPDATE kanban_tasks SET status = ?, updated_at = ?"
+                sql = f"UPDATE kanban_tasks SET status = {ph}, updated_at = {ph}"
                 vals = [new_status, now]
                 if new_status == "done" and existing["status"] != "done":
-                    sql += ", completed_at = ?"
+                    sql += f", completed_at = {ph}"
                     vals.append(now)
                 elif new_status != "done" and existing["status"] == "done":
                     sql += ", completed_at = NULL"
-                sql += " WHERE id = ?"
+                sql += f" WHERE id = {ph}"
                 vals.append(tid)
                 conn.execute(sql, tuple(vals))
 
@@ -1235,6 +1237,7 @@ def promote_all_suggested():
 
     now = _utcnow()
     conn = get_connection()
+    ph = sql_placeholder(conn)
     try:
         # Fetch suggested cards with oracle metadata (same JOIN as list_tasks)
         select = (
@@ -1247,7 +1250,7 @@ def promote_all_suggested():
             "LEFT JOIN oracle_predictions op "
             "ON kt.source_prediction_id = op.id "
             "WHERE kt.status = 'suggested' "
-            "AND (kt.last_failure_reason IS NULL OR kt.last_failure_reason NOT LIKE ?) "
+            f"AND (kt.last_failure_reason IS NULL OR kt.last_failure_reason NOT LIKE {ph}) "
         )
         rows = conn.execute(select, ("QUARANTINED by self_debug%",)).fetchall()
         tasks = [dict(r) for r in rows]
@@ -1346,6 +1349,7 @@ def move_task(task_id):
 
     now = _utcnow()
     conn = get_connection()
+    ph = sql_placeholder(conn)
     if hasattr(conn, "set_security_context"):
         conn.set_security_context(None)  # rls-bypass: kanban_tasks has no classification/tenant_id columns
     try:
@@ -1427,16 +1431,16 @@ def move_task(task_id):
                 except Exception:
                     pass
 
-        sql = "UPDATE kanban_tasks SET status = ?, updated_at = ?"
+        sql = f"UPDATE kanban_tasks SET status = {ph}, updated_at = {ph}"
         vals = [new_status, now]
         if new_status == "done" and existing["status"] != "done":
-            sql += ", completed_at = ?"
+            sql += f", completed_at = {ph}"
             vals.append(now)
             if bypass:
                 sql += ", completed_via_bypass = 1"
         elif new_status != "done" and existing["status"] == "done":
             sql += ", completed_at = NULL, completed_via_bypass = 0"
-        sql += " WHERE id = ?"
+        sql += f" WHERE id = {ph}"
         vals.append(task_id)
 
         conn.execute(sql, tuple(vals))
@@ -2008,20 +2012,21 @@ def list_lessons():
 
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
     conn = get_connection()
+    ph = sql_placeholder(conn)
     try:
         sql = (
             "SELECT id, content, created_at, importance "
-            "FROM memory_entries WHERE type = ? AND created_at >= ?"
+            f"FROM memory_entries WHERE type = {ph} AND created_at >= {ph}"
         )
         params: List[Any] = ["lesson_learned", since]
         if pattern_filter:
-            sql += " AND content LIKE ?"
+            sql += f" AND content LIKE {ph}"
             params.append(f'%"pattern": "{pattern_filter}"%')
         if systemic_filter is not None:
-            sql += " AND content LIKE ?"
+            sql += f" AND content LIKE {ph}"
             target = "true" if systemic_filter in ("1", "true", "yes") else "false"
             params.append(f'%"is_systemic": {target}%')
-        sql += " ORDER BY created_at DESC LIMIT ?"
+        sql += f" ORDER BY created_at DESC LIMIT {ph}"
         params.append(limit)
         rows = conn.execute(sql, tuple(params)).fetchall()
         lessons: List[Dict[str, Any]] = []

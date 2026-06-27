@@ -11,7 +11,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, sql_placeholder  # noqa: E402
 
 DB_PATH = BASE_DIR / "data" / "icdev.db"
 
@@ -138,6 +138,7 @@ def iac_stats():
 def list_artifacts():
     """GET /api/iac/artifacts -- List IaC artifacts with optional filters."""
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         if not _table_exists(conn, "migration_artifacts"):
             return jsonify({"artifacts": [], "total": 0, "page": 1, "per_page": 25})
@@ -147,16 +148,16 @@ def list_artifacts():
         page = max(int(request.args.get("page", "1")), 1)
         per_page = min(max(int(request.args.get("per_page", "25")), 1), 100)
 
-        placeholders = ",".join("?" for _ in IAC_ARTIFACT_TYPES)
+        placeholders = ",".join(ph for _ in IAC_ARTIFACT_TYPES)
         base_where = f"artifact_type IN ({placeholders})"
         params = list(IAC_ARTIFACT_TYPES)
 
         if plan_id:
-            base_where += " AND plan_id = ?"
+            base_where += f" AND plan_id = {ph}"
             params.append(plan_id)
 
         if artifact_type and artifact_type in IAC_ARTIFACT_TYPES:
-            base_where += " AND artifact_type = ?"
+            base_where += f" AND artifact_type = {ph}"
             params.append(artifact_type)
 
         # Total count

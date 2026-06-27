@@ -19,9 +19,26 @@ if str(BASE_DIR) not in sys.path:
 ai_transparency_api = Blueprint("ai_transparency_api", __name__, url_prefix="/api/ai-transparency")
 
 
+class _PGCompatConn:
+    """Silently pre-translate ? → %s for PG so translate_sql never warns."""
+    def __init__(self, conn):
+        self._conn = conn
+        self._pg = getattr(conn, "_backend", "sqlite") == "postgresql"
+    def _fix(self, sql):
+        return sql.replace("?", "%s") if self._pg and "?" in sql else sql
+    def execute(self, sql, params=()):
+        return self._conn.execute(self._fix(sql), params)
+    def executemany(self, sql, seq):
+        return self._conn.executemany(self._fix(sql), seq)
+    def commit(self): return self._conn.commit()
+    def rollback(self): return self._conn.rollback()
+    def close(self): return self._conn.close()
+    def __getattr__(self, name): return getattr(self._conn, name)
+
+
 def _get_db() -> sqlite3.Connection:
     conn = get_connection(db_path=str(DB_PATH))
-    return conn
+    return _PGCompatConn(conn)
 
 
 def _resolve_project_id(explicit: str = None) -> str:
