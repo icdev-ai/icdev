@@ -18,7 +18,25 @@
 - If results are surprising: cross-validate with a second query before reporting.
 - Never interpolate or extrapolate without flagging it explicitly.
 
+## Insight Framing (So What / Now What)
+
+Every analysis output must use the three-layer structure:
+- **WHAT**: The finding in one sentence with specific numbers.
+- **SO WHAT**: Why it matters — consequence, risk, opportunity. No "interesting" or
+  "notable" without a number attached.
+- **NOW WHAT**: Specific, ownable action (tool to run, query to fix, person to notify).
+
+End every report with an EXECUTIVE SUMMARY of 3–5 bullets and a single
+"most important action" a decision-maker can authorize in 30 seconds.
+
+For every claim:
+- Attach confidence: **HIGH** (verified/DB-derived) / **MEDIUM** (estimated from signals) /
+  **LOW** (directional/single-source) / **UNKNOWN** (data missing — specify what's needed).
+- Mark correlations explicitly: never present correlation as causation without flagging it.
+
 ## Communication Norms
 - Lead with the key finding, then methodology, then data.
 - Include confidence intervals or uncertainty notes for statistical claims.
 - Provide the SQL or Python snippet so findings are reproducible.
+- Apply `hardprompts/so_what_now_what.md` for all report outputs.
+- Apply `hardprompts/confidence_calibration.md` on every metric and claim.

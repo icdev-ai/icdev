@@ -1044,3 +1044,9 @@
 | Firewall Config Review | tools\security\firewall_config_review.py | Auto-registered: security/firewall_config_review.py | --json | JSON |
 
 - [Workflow Forms Canvas (WFC)](manifest/workflow-forms-canvas.md)
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Ip Address Space | tools\network\ip_address_space.py | Auto-registered: network/ip_address_space.py | --json | JSON |

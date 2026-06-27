@@ -3075,6 +3075,38 @@ def create_app(testing: bool = False) -> Flask:
             total_agents = conn.execute("SELECT COUNT(*) as cnt FROM agents").fetchone()["cnt"]
             active_agents = conn.execute("SELECT COUNT(*) as cnt FROM agents WHERE status = 'active'").fetchone()["cnt"]
 
+            # ----------------------------------------------------------------
+            # 5b. POA&M / STIG open-closed counts for the home bar chart
+            # live.js renders #chart-compliance from d.compliance.poam / d.compliance.stig
+            # ----------------------------------------------------------------
+            poam_open = 0
+            poam_closed = 0
+            try:
+                poam_row = conn.execute(
+                    "SELECT "
+                    "SUM(CASE WHEN status IN ('open', 'in_progress') THEN 1 ELSE 0 END) as open_cnt, "
+                    "SUM(CASE WHEN status IN ('completed', 'accepted_risk') THEN 1 ELSE 0 END) as closed_cnt "
+                    "FROM poam_items"
+                ).fetchone()
+                poam_open = int(poam_row["open_cnt"] or 0)
+                poam_closed = int(poam_row["closed_cnt"] or 0)
+            except Exception:
+                pass
+
+            stig_open = 0
+            stig_closed = 0
+            try:
+                stig_row = conn.execute(
+                    "SELECT "
+                    "SUM(CASE WHEN status = 'Open' THEN 1 ELSE 0 END) as open_cnt, "
+                    "SUM(CASE WHEN status IN ('NotAFinding', 'Not_Applicable') THEN 1 ELSE 0 END) as closed_cnt "
+                    "FROM stig_findings"
+                ).fetchone()
+                stig_open = int(stig_row["open_cnt"] or 0)
+                stig_closed = int(stig_row["closed_cnt"] or 0)
+            except Exception:
+                pass
+
             return jsonify(
                 {
                     "task_statuses": [dict(r) for r in task_statuses],
@@ -3082,6 +3114,8 @@ def create_app(testing: bool = False) -> Flask:
                     "compliance": {
                         "canvases": canvases_with_oracle,
                         "overall_score": overall_score,
+                        "poam": {"open": poam_open, "closed": poam_closed},
+                        "stig": {"open": stig_open, "closed": stig_closed},
                     },
                     "agent_health": {
                         "total": total_agents,

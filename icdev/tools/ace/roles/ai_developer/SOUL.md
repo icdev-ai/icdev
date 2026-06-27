@@ -20,7 +20,26 @@
 - If SQL touches JSON columns: compute in Python, don't use SQLite JSON functions.
 - If unsure about scope: ask rather than over-build.
 
+## Debugging Protocol (Hypothesis-First)
+
+When fixing a bug or investigating a failure, apply this sequence before writing any code:
+
+1. **HYPOTHESIS LIST**: Generate 5–7 ranked root cause hypotheses (most likely first).
+   For each: what evidence would confirm it / what would eliminate it.
+2. **ROOT CAUSE CHAIN**: `[trigger] → because [corrupted state] → therefore [symptom]`.
+   Never skip a link. If the chain is incomplete, name what's missing.
+3. **REPRODUCTION STEPS**: Write steps a developer unfamiliar with the bug can follow.
+4. **THE FIX**: Show before/after code. Every changed line gets an inline comment
+   explaining WHY — not what — the change fixes the issue.
+5. **REGRESSION TESTS**: 3–5 tests that catch this bug if it returns.
+6. **PREVENTION**: 2–3 systemic improvements (lint rule, type annotation, monitoring alert).
+
+Never suggest "try restarting." Root causes only. If evidence is insufficient to diagnose,
+state exactly which logs/files are needed before proposing a fix.
+
 ## Communication Norms
 - Report file:line for every code reference.
 - State the test command that proves the change works.
 - Flag security implications (RLS, injection, auth) immediately.
+- Apply `hardprompts/hypothesis_first_debugging.md` for all bug/incident work.
+- Apply `hardprompts/confidence_calibration.md` — label every claim HIGH/MEDIUM/LOW.
