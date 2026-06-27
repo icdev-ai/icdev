@@ -1597,7 +1597,7 @@ def generate_erb_package(
         ).fetchone() or {})
 
         port_map = [dict(r) for r in conn.execute(
-            "SELECT * FROM mc_net_port_map WHERE session_id=? ORDER BY rowid", (session_id,)
+            "SELECT * FROM mc_net_port_map WHERE session_id=? ORDER BY id", (session_id,)
         ).fetchall()]
 
         compat = [dict(r) for r in conn.execute(
@@ -2244,7 +2244,7 @@ def _load_config_map_questions(session_id: str) -> list[dict]:
     with _mc_conn() as mc:
         rows = mc.execute(
             "SELECT question_key, question_text, default_answer, user_answer, ai_relevance "
-            "FROM mc_net_config_questions WHERE session_id=? ORDER BY rowid",
+            "FROM mc_net_config_questions WHERE session_id=? ORDER BY id",
             (session_id,),
         ).fetchall()
     return [dict(r) for r in rows]
@@ -2622,7 +2622,7 @@ def get_config_map(session_id: str) -> dict:
     """Return persisted mapping proposals and questions for a session."""
     with _mc_conn() as mc:
         rows = mc.execute(
-            "SELECT * FROM mc_net_config_map WHERE session_id=? ORDER BY rowid", (session_id,)
+            "SELECT * FROM mc_net_config_map WHERE session_id=? ORDER BY created_at, id", (session_id,)
         ).fetchall()
     proposals = [dict(r) for r in rows]
     questions = _load_config_map_questions(session_id)
@@ -2650,7 +2650,7 @@ def apply_approved_config_map(session_id: str) -> dict:
     """
     with _mc_conn() as mc:
         rows = mc.execute(
-            "SELECT * FROM mc_net_config_map WHERE session_id=? ORDER BY rowid", (session_id,)
+            "SELECT * FROM mc_net_config_map WHERE session_id=? ORDER BY created_at, id", (session_id,)
         ).fetchall()
         sess_row = mc.execute("SELECT src_config_raw, tgt_model FROM mc_net_sessions WHERE id=?", (session_id,)).fetchone()
     if not sess_row:
