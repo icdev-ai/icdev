@@ -134,6 +134,8 @@ known_safe_filesystem_modules:
 known_safe_process_exec_modules:
   - tools/testing/cleanup_utils.py  # Signal-aware subprocess wrapper (run_with_cleanup) for graceful CI shutdown; subprocess.Popen tracks the active child so SIGTERM/SIGINT handlers can terminate it before the runner exits. Authorized by REQ-TESTING-GRACEFUL-SHUTDOWN-01 (pgp-vfy-03-d4).
   - testing/cleanup_utils.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
+  - tools/autonomy/self_evolve.py  # Safety-pipeline quality gates: _run_coherence_check() → coherence_checker.py --all --json; _compile_check() → py_compile; _lint_check() → ruff. All three use fixed arg lists (shell=False, no user-controlled interpolation), target only known in-repo tools, and are bounded by timeouts. Required by the mandatory coherence gate before any autonomous commit (D-AE-7) and post-action compile/lint verification (D-AE-8). Authorized by REQ-AUTONOMY-PROCESS-EXEC-01 (assessment-115 review, 2026-06-27).
+  - autonomy/self_evolve.py  # same file — relative path when scanning from tools/ root (Genesis self-scan)
 
 # ---------------------------------------------------------------------------
 # Known-safe ICDEV modules that legitimately use the obfuscation-flagged APIs
