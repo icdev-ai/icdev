@@ -18,8 +18,8 @@ Provider selection respects:
 """
 from __future__ import annotations
 
-import hashlib
 import json
+import zlib
 import os
 import time
 from dataclasses import dataclass, field
@@ -198,21 +198,19 @@ def _configured_priority() -> List[str]:
 
 def _cache_key(req: AssetRequest) -> str:
     """Deterministic 16-char cache key from request inputs."""
-    h = hashlib.sha256()
-    h.update(req.context.encode("utf-8"))
-    h.update(req.title.encode("utf-8"))
-    h.update(";".join(req.bullets).encode("utf-8"))
-    h.update(req.visual_context.encode("utf-8"))
-    h.update(req.prompt.encode("utf-8"))
-    h.update(req.category.encode("utf-8"))
-    h.update(req.topic.encode("utf-8"))
-    h.update(req.theme.encode("utf-8"))
-    h.update(req.tone.encode("utf-8"))
-    h.update(f"{req.width}x{req.height}".encode("utf-8"))
+    parts = [
+        req.context, req.title, ";".join(req.bullets),
+        req.visual_context, req.prompt, req.category,
+        req.topic, req.theme, req.tone,
+        f"{req.width}x{req.height}",
+    ]
     for payload in (req.chart_json, req.table_json, req.diagram_json, req.kpis_json):
         if payload:
-            h.update(json.dumps(payload, sort_keys=True).encode("utf-8"))
-    return h.hexdigest()[:16]
+            parts.append(json.dumps(payload, sort_keys=True))
+    data = "\x00".join(parts).encode("utf-8")
+    lo = zlib.crc32(data) & 0xFFFFFFFF
+    hi = zlib.crc32(data[::-1]) & 0xFFFFFFFF
+    return f"{hi:08x}{lo:08x}"
 
 
 def _cache_path(key: str, ext: str, output_dir: Path) -> Path:
@@ -487,8 +485,8 @@ class AssetGenerator:
             width = req.width
             height = req.height
 
-            h = hashlib.md5(title.encode("utf-8"), usedforsecurity=False).hexdigest()
-            hue1 = int(h[:3], 16) % 360
+            _seed = zlib.crc32(title.encode("utf-8")) & 0xFFFFFFFF
+            hue1 = _seed % 360
             hue2 = (hue1 + 40) % 360
             accent = f"hsl({(hue1 + 180) % 360}, 70%, 85%)"
 
@@ -622,8 +620,7 @@ def _build_image_prompt(title: str, category: str = "", topic: str = "") -> str:
 
     if matches:
         scene = matches[0][2]
-        h = hashlib.md5(title.encode("utf-8"), usedforsecurity=False).hexdigest()
-        style_idx = int(h[:2], 16) % 5
+        style_idx = (zlib.crc32(title.encode("utf-8")) & 0xFFFFFFFF) % 5
         styles = [
             "photorealistic digital art, cinematic lighting, detailed, high quality, 4k, dark blue and teal color palette",
             "isometric 3D illustration, clean geometric shapes, soft studio lighting, high quality, 4k, purple and blue color palette",
