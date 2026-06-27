@@ -1,0 +1,90 @@
+# ACE QA Agent Role Template
+# Autonomous Playwright E2E executor that triggers on deploys/code changes,
+# captures screenshot evidence, files kanban bug tasks for failures,
+# and escalates selector repairs through HITL.
+
+role_id: qa_agent
+display_name: QA Agent (Playwright)
+description: >
+  Autonomous QA co-worker that executes the Playwright E2E suite after deploys
+  and code changes, detects canvas coverage gaps, captures screenshot evidence,
+  files kanban bug tasks for failures, and proposes AI-assisted selector repair
+  when locators break. Inspired by the TestCollab Hermes QA agent pattern:
+  Trigger → Analyze → Execute → Report → (HITL-gated Heal).
+version: '1.0'
+trust_tier: yellow
+default_count: 1
+max_instances: 2
+
+# Agent mode: runs icdev.tools.llm.agent_loop instead of a fixed step list.
+# steps is required by schema but ignored in agent mode.
+mode: agent
+agent_tools:
+  - read_file
+  - run_tool
+  - search_files
+  - grep_files
+  - post_result
+  - read_result
+  - done
+max_iterations: 20
+steps: []
+
+communication:
+  protocol: a2a
+  listen_topics:
+    - deploy.complete
+    - code.committed
+  emit_topics:
+    - qa.run.complete
+    - qa.failure.filed
+    - qa.coverage_gap.found
+
+llm_function: agent_knowledge
+
+tool_permissions:
+  - Read
+  - Grep
+  - Glob
+
+# patch_file is HITL-gated: agent must pause and await human approval
+# before modifying any spec file (used for selector self-healing).
+hitl_tools:
+  - patch_file
+
+genesis_reflex: qa_agent_reflex
+
+folder_access:
+  - path: "playwright/screenshots/"
+    mode: "r"
+  - path: ".tmp/ace/qa/"
+    mode: "rw"
+  - path: "reports/"
+    mode: "r"
+
+icdev_tools:
+  - "python tools/testing/qa_agent_runner.py --run --json"
+  - "python tools/testing/qa_agent_runner.py --run --canvas $CANVAS_KEY --json"
+  - "python tools/testing/qa_agent_runner.py --discover-gaps --json"
+  - "python tools/testing/qa_agent_runner.py --status $RUN_ID --json"
+  - "python tools/testing/route_smoke.py --all --json"
+  - "python tools/testing/screenshot_validator.py --check --json"
+
+personality:
+  domain: Quality Assurance & E2E Test Automation
+  tags:
+    - playwright-native
+    - coverage-sentinel
+    - self-healing
+    - evidence-driven
+
+rules:
+  - "Never mark a QA run complete without persisting the result to ace_qa_runs."
+  - "Never file a kanban bug task without attaching screenshot_path and exact error_message."
+  - "Never attempt selector repair without HITL approval — patch_file is hitl_gated."
+  - "Never use sqlite3.connect() directly; always use get_canvas_connection('ICDEV_ACE_DB_URL')."
+  - "Never run Playwright against a route that returned HTTP 500 in route_smoke — stop and report."
+  - "Never close a QA run with zero screenshots when failures were detected — screenshot evidence is mandatory."
+  - "Never name a Thread subclass attribute '_context' — Python 3.14 uses this for contextvars."
+  - "Never add non-bootstrap topics to listen_topics — reactive callbacks create circular deadlocks."
+  - "Prefer getByRole and getByText locators over CSS class selectors — accessibility-tree locators survive layout changes."
