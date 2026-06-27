@@ -88,40 +88,40 @@ def _find_sop_any_canvas(*keywords: str) -> tuple[str, str, str] | tuple[None, N
 def _reset(project_id: str) -> None:
     mc = _mc_conn()
     try:
-        mc.execute("DELETE FROM mc_project_phase_sops WHERE project_id=?", (project_id,))
-        mc.execute("DELETE FROM mc_ai_opportunities WHERE project_id=?", (project_id,))
-        mc.execute("DELETE FROM mc_project_phases WHERE project_id=?", (project_id,))
-        mc.execute("DELETE FROM mc_wave_plans WHERE design_id=?", (project_id,))
-        mc.execute("DELETE FROM mc_projects WHERE id=?", (project_id,))
-        mc.execute("DELETE FROM migration_designs WHERE id=? AND description LIKE 'CAM project anchor%'", (project_id,))
-        mc.execute("DELETE FROM mc_data_migration WHERE session_id=?", (_SESSION_ID,))
+        mc.execute("DELETE FROM mc_project_phase_sops WHERE project_id=%s", (project_id,))
+        mc.execute("DELETE FROM mc_ai_opportunities WHERE project_id=%s", (project_id,))
+        mc.execute("DELETE FROM mc_project_phases WHERE project_id=%s", (project_id,))
+        mc.execute("DELETE FROM mc_wave_plans WHERE design_id=%s", (project_id,))
+        mc.execute("DELETE FROM mc_projects WHERE id=%s", (project_id,))
+        mc.execute("DELETE FROM migration_designs WHERE id=%s AND description LIKE 'CAM project anchor%'", (project_id,))
+        mc.execute("DELETE FROM mc_data_migration WHERE session_id=%s", (_SESSION_ID,))
         mc.execute("DELETE FROM mc_app_data_sources WHERE app_id IN "
-                   "(SELECT id FROM mc_app_inventory WHERE session_id=?)", (_SESSION_ID,))
-        mc.execute("DELETE FROM mc_app_inventory WHERE session_id=?", (_SESSION_ID,))
-        mc.execute("DELETE FROM mc_srv_sessions WHERE id=?", (_SESSION_ID,))
+                   "(SELECT id FROM mc_app_inventory WHERE session_id=%s)", (_SESSION_ID,))
+        mc.execute("DELETE FROM mc_app_inventory WHERE session_id=%s", (_SESSION_ID,))
+        mc.execute("DELETE FROM mc_srv_sessions WHERE id=%s", (_SESSION_ID,))
         mc.commit()
     finally:
         mc.close()
 
     ddc = _ddc_conn()
     try:
-        ddc.execute("DELETE FROM dd_lineage WHERE design_id=?", (_DDC_DESIGN_ID,))
-        ddc.execute("DELETE FROM data_nodes WHERE design_id=?", (_DDC_DESIGN_ID,))
-        ddc.execute("DELETE FROM data_designs WHERE id=?", (_DDC_DESIGN_ID,))
+        ddc.execute("DELETE FROM dd_lineage WHERE design_id=%s", (_DDC_DESIGN_ID,))
+        ddc.execute("DELETE FROM data_nodes WHERE design_id=%s", (_DDC_DESIGN_ID,))
+        ddc.execute("DELETE FROM data_designs WHERE id=%s", (_DDC_DESIGN_ID,))
         ddc.commit()
     finally:
         ddc.close()
 
     idc = _idc_conn()
     try:
-        idc.execute("DELETE FROM infra_designs WHERE id=?", (_IDC_DESIGN_ID,))
+        idc.execute("DELETE FROM infra_designs WHERE id=%s", (_IDC_DESIGN_ID,))
         idc.commit()
     finally:
         idc.close()
 
     ndc = _ndc_conn()
     try:
-        ndc.execute("DELETE FROM topologies WHERE id=?", (_NDC_TOPO_ID,))
+        ndc.execute("DELETE FROM topologies WHERE id=%s", (_NDC_TOPO_ID,))
         ndc.commit()
     finally:
         ndc.close()
@@ -165,7 +165,7 @@ def _seed_ddc() -> str:
     ddc = _ddc_conn()
     try:
         ddc.execute(
-            "INSERT OR IGNORE INTO data_designs (id, name, description, graph_json, classification) VALUES (?,?,?,?,?)",
+            "INSERT OR IGNORE INTO data_designs (id, name, description, graph_json, classification) VALUES (%s,%s,%s,%s,%s)",
             (_DDC_DESIGN_ID, "Oracle → Aurora Migration Schema",
              "Data lineage: Oracle 19c source tables → AWS DMS replication → Aurora PostgreSQL target",
              graph_json, "CUI // SP-CTI"),
@@ -173,14 +173,14 @@ def _seed_ddc() -> str:
         for n in nodes:
             ddc.execute(
                 "INSERT OR IGNORE INTO data_nodes (id, design_id, node_type, label, x, y, properties_json, classification) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                 (n["id"], _DDC_DESIGN_ID, n["node_type"], n["label"], n["x"], n["y"],
                  n.get("properties_json", "{}"), "CUI // SP-CTI"),
             )
         for l in lineage:
             ddc.execute(
                 "INSERT OR IGNORE INTO dd_lineage (id, design_id, source_node_id, target_node_id, lineage_type, transform_desc, classification) "
-                "VALUES (?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
                 (l["id"], _DDC_DESIGN_ID, l["source_node_id"], l["target_node_id"],
                  l["lineage_type"], l["transform_desc"], "CUI // SP-CTI"),
             )
@@ -223,7 +223,7 @@ def _seed_idc() -> str:
     idc = _idc_conn()
     try:
         idc.execute(
-            "INSERT OR IGNORE INTO infra_designs (id, name, description, graph_json, classification) VALUES (?,?,?,?,?)",
+            "INSERT OR IGNORE INTO infra_designs (id, name, description, graph_json, classification) VALUES (%s,%s,%s,%s,%s)",
             (_IDC_DESIGN_ID, "K8s → EKS Fargate Migration Infrastructure",
              "Infrastructure design: on-prem K8s cluster → EKS Fargate + Aurora + ElastiCache + OpenSearch + Amplify",
              json.dumps(graph), "CUI // SP-CTI"),
@@ -268,7 +268,7 @@ def _seed_ndc() -> str:
     ndc = _ndc_conn()
     try:
         ndc.execute(
-            "INSERT OR IGNORE INTO topologies (id, name, description, graph_json, classification) VALUES (?,?,?,?,?)",
+            "INSERT OR IGNORE INTO topologies (id, name, description, graph_json, classification) VALUES (%s,%s,%s,%s,%s)",
             (_NDC_TOPO_ID, "AWS Landing Zone — Analytics VPC",
              "AWS VPC: 3 AZs, public/private subnets, IGW, NAT, Transit Gateway, Direct Connect to on-prem K8s",
              json.dumps(graph), "CUI // SP-CTI"),
@@ -287,7 +287,7 @@ def _seed_mc(project_def: dict, ddc_id: str, idc_id: str, ndc_id: str) -> None:
         # 1. Session (app inventory bucket)
         mc.execute(
             "INSERT OR IGNORE INTO mc_srv_sessions "
-            "(id, migration_type, tgt_platform, tgt_region, status, classification) VALUES (?,?,?,?,?,?)",
+            "(id, migration_type, tgt_platform, tgt_region, status, classification) VALUES (%s,%s,%s,%s,%s,%s)",
             (_SESSION_ID, "app_cloud_migration", "aws", "us-east-1", "completed", "CUI // SP-CTI"),
         )
 
@@ -337,7 +337,7 @@ def _seed_mc(project_def: dict, ddc_id: str, idc_id: str, ndc_id: str) -> None:
                 "INSERT OR IGNORE INTO mc_app_inventory "
                 "(id, session_id, name, version, language, framework, app_type, "
                 " migration_strategy, criticality, environment, migration_status, classification) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     app_id, _SESSION_ID, cfg["name"], item.get("version", ""),
                     cfg["language"], cfg["framework"], cfg["app_type"],
@@ -372,7 +372,7 @@ def _seed_mc(project_def: dict, ddc_id: str, idc_id: str, ndc_id: str) -> None:
                 "INSERT OR IGNORE INTO mc_app_data_sources "
                 "(id, app_id, source_type, port, database_name, schema_version, "
                 " estimated_size_gb, migration_method, migration_status) "
-                "VALUES (?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     f"ds-{_PROJECT_ID}-{tech}", app_map[tech],
                     ds_cfg["source_type"], ds_cfg["port"], ds_cfg["database_name"],
@@ -387,7 +387,7 @@ def _seed_mc(project_def: dict, ddc_id: str, idc_id: str, ndc_id: str) -> None:
                 "INSERT OR IGNORE INTO mc_data_migration "
                 "(id, session_id, app_id, source_type, source_db, target_type, target_db, "
                 " migration_method, estimated_size_gb, cutover_type, status, classification) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     f"dm-{_PROJECT_ID}-oracle", _SESSION_ID, app_map["oracle"],
                     "oracle", "ORCL", "aurora_postgresql", "analytics",
@@ -399,7 +399,7 @@ def _seed_mc(project_def: dict, ddc_id: str, idc_id: str, ndc_id: str) -> None:
                 "INSERT OR IGNORE INTO mc_data_migration "
                 "(id, session_id, app_id, source_type, source_db, target_type, target_db, "
                 " migration_method, estimated_size_gb, cutover_type, status, classification) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     f"dm-{_PROJECT_ID}-redis", _SESSION_ID, app_map["redis"],
                     "redis", "db0", "elasticache_redis", "cluster",
@@ -410,7 +410,7 @@ def _seed_mc(project_def: dict, ddc_id: str, idc_id: str, ndc_id: str) -> None:
         # 4b. Anchor migration_designs row (satisfies FK on mc_wave_plans.design_id)
         mc.execute(
             "INSERT OR IGNORE INTO migration_designs "
-            "(id, name, description, migration_type, classification) VALUES (?,?,?,?,?)",
+            "(id, name, description, migration_type, classification) VALUES (%s,%s,%s,%s,%s)",
             (
                 _PROJECT_ID,
                 project_def.get("name", "Analytics Platform — K8s to AWS Cloud Native"),
@@ -429,7 +429,7 @@ def _seed_mc(project_def: dict, ddc_id: str, idc_id: str, ndc_id: str) -> None:
             mc.execute(
                 "INSERT OR IGNORE INTO mc_wave_plans "
                 "(id, design_id, wave_number, name, strategy, status, estimated_hours, risk_score) "
-                "VALUES (?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     f"wave-{_PROJECT_ID}-{wc['num']}", _PROJECT_ID,
                     wc["num"], wc["name"], wc["strategy"], "planned",
@@ -456,7 +456,7 @@ def _seed_mc(project_def: dict, ddc_id: str, idc_id: str, ndc_id: str) -> None:
             "(id, name, description, customer, status, owner, classification, impact_level, "
             " mc_session_id, ddc_design_id, idc_design_id, ndc_topology_id, "
             " source_stack_json, target_stack_json) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
             (
                 _PROJECT_ID,
                 project_def.get("name", "Analytics Platform — K8s to AWS Cloud Native"),
@@ -478,7 +478,7 @@ def _seed_mc(project_def: dict, ddc_id: str, idc_id: str, ndc_id: str) -> None:
                 "INSERT OR IGNORE INTO mc_project_phases "
                 "(id, project_id, phase_num, title, description, wave_num, "
                 " duration_days, maintenance_window, rollback_criteria, status, classification) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     phase_id, _PROJECT_ID,
                     phase_def["phase_num"],
@@ -503,7 +503,7 @@ def _seed_mc(project_def: dict, ddc_id: str, idc_id: str, ndc_id: str) -> None:
                 mc.execute(
                     "INSERT OR IGNORE INTO mc_project_phase_sops "
                     "(id, phase_id, project_id, sop_source, sop_id, sop_title, display_order) "
-                    "VALUES (?,?,?,?,?,?,?)",
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s)",
                     (link_id, phase_id, _PROJECT_ID, sop_source, sop_id, sop_title, order),
                 )
 
@@ -515,7 +515,7 @@ def _seed_mc(project_def: dict, ddc_id: str, idc_id: str, ndc_id: str) -> None:
                 "INSERT OR IGNORE INTO mc_ai_opportunities "
                 "(id, project_id, app_id, component_name, opportunity_title, "
                 " aws_ai_service, benefit_category, effort_days, status, notes) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 (
                     f"ai-{_PROJECT_ID}-{tech}",
                     _PROJECT_ID, app_id, tech,
@@ -553,7 +553,7 @@ def seed(project_slug: str = "analytics-k8s-aws", reset: bool = False) -> dict:
     # Check if already seeded
     mc = _mc_conn()
     try:
-        existing = mc.execute("SELECT id FROM mc_projects WHERE id=?", (_PROJECT_ID,)).fetchone()
+        existing = mc.execute("SELECT id FROM mc_projects WHERE id=%s", (_PROJECT_ID,)).fetchone()
     finally:
         mc.close()
 
@@ -570,16 +570,16 @@ def seed(project_slug: str = "analytics-k8s-aws", reset: bool = False) -> dict:
     mc = _mc_conn()
     try:
         phase_count = mc.execute(
-            "SELECT COUNT(*) FROM mc_project_phases WHERE project_id=?", (_PROJECT_ID,)
+            "SELECT COUNT(*) FROM mc_project_phases WHERE project_id=%s", (_PROJECT_ID,)
         ).fetchone()[0]
         sop_link_count = mc.execute(
-            "SELECT COUNT(*) FROM mc_project_phase_sops WHERE project_id=?", (_PROJECT_ID,)
+            "SELECT COUNT(*) FROM mc_project_phase_sops WHERE project_id=%s", (_PROJECT_ID,)
         ).fetchone()[0]
         ai_count = mc.execute(
-            "SELECT COUNT(*) FROM mc_ai_opportunities WHERE project_id=?", (_PROJECT_ID,)
+            "SELECT COUNT(*) FROM mc_ai_opportunities WHERE project_id=%s", (_PROJECT_ID,)
         ).fetchone()[0]
         app_count = mc.execute(
-            "SELECT COUNT(*) FROM mc_app_inventory WHERE session_id=?", (_SESSION_ID,)
+            "SELECT COUNT(*) FROM mc_app_inventory WHERE session_id=%s", (_SESSION_ID,)
         ).fetchone()[0]
     finally:
         mc.close()
