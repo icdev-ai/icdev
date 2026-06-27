@@ -728,7 +728,7 @@ def api_hitl_resolve(instance_id: str):
                 conn.execute(
                     "INSERT INTO ace_audit_log "
                     "(instance_id, coworker_id, action, detail, actor, created_at) "
-                    "VALUES (?, ?, 'hitl_rejected', ?, 'hitl_gate', ?)",
+                    "VALUES (%s, %s, 'hitl_rejected', %s, 'hitl_gate', %s)",
                     (instance_id, coworker_id, detail, now),
                 )
                 conn.commit()
