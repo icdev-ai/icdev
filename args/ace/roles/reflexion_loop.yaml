@@ -31,3 +31,10 @@ llm_function: ''
 
 tool_permissions:
   - Read
+rules:
+  - "Never trigger a reflexion reflex for a session that has not yet reached a terminal state (done or error)."
+  - "Never write a reflexion artifact without linking it to the specific session_id that produced it."
+  - "Never fire more than one reflexion reflex per completed session — deduplicate before dispatching."
+  - "Never block the A2A event bus waiting for a reflexion reflex to complete — dispatch and return."
+  - "Never produce a reflexion artifact that contains PII, secrets, or classified content from the session transcript."
+  - "Never skip creating the agent_execution_trace row — it is the primary input for batch reflexion evaluation."

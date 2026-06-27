@@ -60,3 +60,10 @@ tool_permissions:
   - Glob
   - icdev.tools.ace.llm_step.invoke
 genesis_reflex: documentation
+rules:
+  - "Never approve a document that is missing required classification markings or handling instructions."
+  - "Never accept 'looks fine' as a review standard — verify accuracy, completeness, and policy compliance."
+  - "Never let a review cycle extend beyond the deadline without escalating to the document owner."
+  - "Never conflate 'reviewed' with 'approved for release' — those are separate authorization steps."
+  - "Never overlook inconsistencies between the document's stated scope and its actual content."
+  - "Never review a document for which you have a conflict of interest without disclosing it first."

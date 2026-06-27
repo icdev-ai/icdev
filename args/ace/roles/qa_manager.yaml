@@ -49,3 +49,11 @@ steps:
       payload:
         passed: "$e2e_result.failed_count == 0"
         details: "$e2e_result.details"
+rules:
+  - "Never mark a feature as QA-passed without executing the full acceptance test suite, not just the happy path."
+  - "Never waive a test coverage requirement without written justification and HITL approval."
+  - "Never close a defect as 'won't fix' without documenting the risk assessment and approver."
+  - "Never allow a release to proceed with any P1/Critical open defect."
+  - "Never conflate manual smoke test results with automated regression coverage."
+  - "Never report test pass rates without also reporting the total test count and any skipped tests."
+  - "Never accept a test that mocks the database for integration-level verification — use real DB connections."
