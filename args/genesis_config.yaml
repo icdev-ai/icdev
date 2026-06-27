@@ -1139,6 +1139,22 @@ reflexes:
       threshold: 0
       operator: gte  # 0 = no usage yesterday (healthy), > 0 = rows rolled up
 
+  episodic_distiller:
+    enabled: true
+    risk_tier: yellow
+    schedule: "every 6h"
+    description: "Distill accumulated episodic memory events into durable semantic facts (Phase A harness memory)"
+    trigger_count: 20          # min undistilled episodic entries before running
+    batch_size: 50             # max entries to process per run
+    cluster_threshold: 0.35   # cosine similarity threshold for grouping events
+    max_facts_per_cluster: 3  # max semantic facts produced per cluster
+    model_function: "summarization"  # LLM router function (cheap model preferred)
+    use_llm: true             # set false to use heuristic fallback (zero tokens)
+    success_metric:
+      name: semantic_facts_written
+      threshold: 0
+      operator: gte
+
 # ── Promoter Configuration ───────────────────────────────────────────────────
 
 promoter:

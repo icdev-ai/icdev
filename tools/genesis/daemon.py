@@ -115,6 +115,7 @@ REFLEX_NAMES = [
     "evolution",           # nova-sela: weekly GEPA-style skill text mutation + promotion
     "wiki_lint",           # karpathy-wiki: nightly health checks on memory wiki (orphans/stale/overflow)
     "usage_rollup",        # ecr-bill-01: daily billing rollup from usage_events (00:05 UTC)
+    "episodic_distiller",  # phase-a: distill episodic events → semantic facts every 6h
 ]
 
 # Backward-compat aliases for module-level access used by other code
