@@ -56,6 +56,19 @@
 .slide-exc-svg { width: 100%; max-height: 420px; }
 .slide-placeholder-msg { color: #C8D2DC; font-style: italic; font-size: 1rem; text-align: center; padding: 40px; }
 
+/* Table slide */
+.slide-table-type { padding: 20px 40px; flex: 1; overflow: auto; display: flex; flex-direction: column; }
+.slide-table-body { flex: 1; overflow: auto; display: flex; align-items: flex-start; justify-content: center; margin-top: 12px; }
+.slide-data-table { width: 100%; border-collapse: collapse; font-size: 1rem; }
+.slide-data-table thead tr { background: #D4A017; }
+.slide-data-table thead th { color: #0A1628; font-weight: 700; padding: 10px 16px; text-align: left; font-size: 0.9rem; }
+.slide-data-table tbody tr { border-bottom: 1px solid rgba(200,210,220,0.15); }
+.slide-data-table tbody tr:nth-child(even) { background: rgba(255,255,255,0.04); }
+.slide-data-table tbody td { color: #E0E6F0; padding: 10px 16px; font-size: 0.9rem; vertical-align: top; }
+.slide-data-table tbody td:nth-child(2) { color: #D4A017; font-weight: 600; }
+.slide-data-table tfoot tr { background: rgba(212,160,23,0.15); border-top: 2px solid #D4A017; }
+.slide-data-table tfoot td { color: #D4A017; font-weight: 700; padding: 10px 16px; font-size: 0.95rem; }
+
 /* Card grid */
 .slide-card-grid-type { padding: 20px 40px; flex: 1; overflow: auto; }
 .card-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
@@ -123,9 +136,11 @@
       {% elif slide.slide_type == 'mermaid_diagram' %}
       <div class="slide-diagram-type">
         <div class="slide-diagram-title">{{ slide.title }}</div>
-        <div class="slide-diagram-body">
+        <div class="slide-diagram-body" style="flex:1; min-height:0; align-items:stretch; padding:0 20px 20px;">
           {% if slide.mermaid_code %}
-          <pre class="mermaid" style="background:rgba(255,255,255,0.04); border-radius:10px; padding:20px; max-width:100%; overflow-x:auto;">{{ slide.mermaid_code | e }}</pre>
+          <div class="mermaid-render-target" id="mermaid-slide-{{ slide.slide_id }}"
+               data-mermaid-code='{{ slide.mermaid_code | tojson }}'
+               style="background:rgba(255,255,255,0.04); border-radius:10px; padding:20px; width:100%; overflow:auto; display:flex; align-items:center; justify-content:center;"></div>
           {% else %}
           <div class="slide-placeholder-msg">No diagram data available.</div>
           {% endif %}
@@ -136,12 +151,12 @@
       {% elif slide.slide_type == 'three_animation' %}
       <div class="slide-diagram-type" style="position:relative;">
         <div class="slide-diagram-title">{{ slide.title }}</div>
-        <div class="slide-diagram-body" style="position:relative; min-height:350px;">
+        <div class="slide-diagram-body" id="three-body-{{ loop.index }}" style="flex:1; min-height:0; position:relative;">
           {% if slide.three_scene_config %}
           <canvas class="slide-three-canvas"
                   id="three-present-{{ loop.index }}"
-                  data-scene="{{ slide.three_scene_config | tojson | e }}"
-                  style="width:100%; height:400px; display:block; border-radius:8px;"></canvas>
+                  data-scene='{{ slide.three_scene_config | tojson }}'
+                  style="position:absolute; inset:0; width:100%; height:100%; display:block; border-radius:8px;"></canvas>
           {% else %}
           <div class="slide-placeholder-msg">🌐 3D animation not configured.</div>
           {% endif %}
@@ -152,15 +167,45 @@
       {% elif slide.slide_type == 'excalidraw_sketch' %}
       <div class="slide-diagram-type">
         <div class="slide-diagram-title">{{ slide.title }}</div>
-        <div class="slide-diagram-body">
+        <div class="slide-diagram-body" style="flex:1; min-height:0; align-items:stretch; padding:0 20px 20px;">
           {% if slide.excalidraw_elements %}
           <svg class="slide-exc-svg"
                id="exc-present-{{ loop.index }}"
                viewBox="0 0 800 450"
-               data-elements="{{ slide.excalidraw_elements | tojson | e }}"
-               style="width:100%; max-height:420px;"></svg>
+               data-elements='{{ slide.excalidraw_elements | tojson }}'
+               style="width:100%; height:100%; max-height:none;"></svg>
           {% else %}
           <div class="slide-placeholder-msg">✏️ Sketch data not available.</div>
+          {% endif %}
+        </div>
+      </div>
+
+      {# ── Table ── #}
+      {% elif slide.slide_type == 'table' %}
+      <div class="slide-table-type">
+        <div class="slide-diagram-title">{{ slide.title }}</div>
+        <div class="slide-table-body">
+          {% if slide.bullets is mapping %}
+          {% set tbl = slide.bullets %}
+          <table class="slide-data-table">
+            {% if tbl.headers %}
+            <thead>
+              <tr>{% for h in tbl.headers %}<th>{{ h }}</th>{% endfor %}</tr>
+            </thead>
+            {% endif %}
+            <tbody>
+              {% for row in (tbl.rows or []) %}
+              <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+              {% endfor %}
+            </tbody>
+            {% if tbl.footer %}
+            <tfoot>
+              <tr>{% for cell in tbl.footer %}<td>{{ cell }}</td>{% endfor %}</tr>
+            </tfoot>
+            {% endif %}
+          </table>
+          {% else %}
+          <div class="slide-placeholder-msg">Table data not available.</div>
           {% endif %}
         </div>
       </div>
@@ -294,11 +339,21 @@
   function initThreeSlide(slideEl) {
     var canvas = slideEl.querySelector('canvas[data-scene]');
     if (!canvas || threeInstances[canvas.id]) return;
-    try {
-      var cfg = JSON.parse(canvas.getAttribute('data-scene'));
-      var inst = window.ICDEVThreeRenderer && ICDEVThreeRenderer.init(canvas, cfg);
-      if (inst) threeInstances[canvas.id] = inst;
-    } catch(e) {}
+    // Defer one animation frame so the layout resolves and canvas gets dimensions
+    requestAnimationFrame(function() {
+      try {
+        var cfg = JSON.parse(canvas.getAttribute('data-scene'));
+        if (!window.ICDEVThreeRenderer) return;
+        // Force canvas pixel dimensions from parent
+        var parent = canvas.parentElement;
+        if (parent && parent.offsetWidth > 0) {
+          canvas.width = parent.offsetWidth;
+          canvas.height = parent.offsetHeight || 400;
+        }
+        var inst = ICDEVThreeRenderer.init(canvas, cfg);
+        if (inst) threeInstances[canvas.id] = inst;
+      } catch(e) { console.warn('Three.js init error:', e); }
+    });
   }
 
   function stopThreeSlide(slideEl) {
@@ -320,13 +375,55 @@
     } catch(e) {}
   }
 
+  function initMermaidSlide(slideEl) {
+    var target = slideEl.querySelector('.mermaid-render-target');
+    if (!target || target._rendered) return;
+    var rawCode = target.getAttribute('data-mermaid-code');
+    // tojson wraps a string in JSON quotes — unwrap it
+    var code;
+    try { code = JSON.parse(rawCode); } catch(e) { code = rawCode; }
+    if (!code || !window.mermaid) return;
+    target._rendered = true;
+    var uid = 'mermaid-' + target.id + '-' + Date.now();
+    try {
+      // mermaid.render() returns a Promise in v10+
+      var result = mermaid.render(uid, code);
+      if (result && typeof result.then === 'function') {
+        result.then(function(r) {
+          target.innerHTML = r.svg || r;
+          // Make SVG fill available space
+          var svg = target.querySelector('svg');
+          if (svg) {
+            svg.removeAttribute('width');
+            svg.removeAttribute('height');
+            svg.style.cssText = 'width:100%; height:100%; max-width:none; max-height:none;';
+          }
+        }).catch(function(e) { console.warn('Mermaid async error:', e); target._rendered = false; });
+      } else if (result && result.svg) {
+        target.innerHTML = result.svg;
+      } else if (typeof result === 'string') {
+        target.innerHTML = result;
+      }
+    } catch(e) {
+      console.warn('Mermaid render error:', e);
+      // Fallback: try mermaid.run() on a fresh pre element
+      target._rendered = false;
+      var pre = document.createElement('pre');
+      pre.className = 'mermaid';
+      pre.textContent = code;
+      target.innerHTML = '';
+      target.appendChild(pre);
+      if (typeof mermaid.run === 'function') mermaid.run({ nodes: [pre] });
+    }
+  }
+
   function initSlide(idx) {
     var el = getSlide(idx);
     if (!el) return;
     var type = el.getAttribute('data-slide-type');
     if (type === 'three_animation') initThreeSlide(el);
     if (type === 'excalidraw_sketch') initExcalidrawSlide(el);
-    // Mermaid auto-renders via mermaid-icdev.js in base.html
+    if (type === 'mermaid_diagram') initMermaidSlide(el);
   }
 
   function showSlide(idx) {

@@ -48,7 +48,7 @@
                     <input type="text" id="target_audience" class="form-control"
                            placeholder="e.g. C-suite executives, new hires, investors, patients">
                 </div>
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px;">
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; margin-top:16px;">
                     <div class="form-group">
                         <label class="form-label">Deck Type</label>
                         <select id="deck_type" class="form-control" onchange="onDeckTypeChange()">
@@ -57,6 +57,21 @@
                                 {{ dt | replace('_', ' ') | title }}
                             </option>
                             {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Presentation Language</label>
+                        <select id="output_language" class="form-control">
+                            <option value="English" selected>English</option>
+                            <option value="Spanish">Spanish</option>
+                            <option value="French">French</option>
+                            <option value="German">German</option>
+                            <option value="Japanese">Japanese</option>
+                            <option value="Korean">Korean</option>
+                            <option value="Chinese (Simplified)">Chinese (Simplified)</option>
+                            <option value="Portuguese">Portuguese</option>
+                            <option value="Arabic">Arabic</option>
+                            <option value="Italian">Italian</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -261,9 +276,26 @@
         </div>
 
         <div id="progress" style="display:none; margin-bottom:16px;">
-            <div style="background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; padding:20px; text-align:center;">
-                <div class="spinner" style="margin:0 auto 12px;"></div>
-                <div id="progress-msg" style="color:var(--text-secondary);">Generating your deck — researching, planning outline, writing slides…</div>
+            <div style="background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; padding:20px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+                    <span style="font-weight:600; font-size:14px;">Generating your deck…</span>
+                    <span id="progress-msg" style="font-size:13px; color:var(--text-secondary);">Starting…</span>
+                </div>
+                <!-- Phase steps -->
+                <div style="display:flex; gap:0; margin-bottom:16px;" id="phase-steps">
+                    {% for phase_label in ['Gather', 'Plan', 'Write', 'Images', 'Build'] %}
+                    <div class="phase-step" data-phase="{{ loop.index }}"
+                         style="flex:1; text-align:center; padding:8px 4px; font-size:11px; font-weight:600;
+                                border-bottom:3px solid var(--border-color); color:var(--text-secondary);
+                                transition:all 0.3s;">
+                        {{ loop.index }}. {{ phase_label }}
+                    </div>
+                    {% endfor %}
+                </div>
+                <!-- Progress bar -->
+                <div style="background:var(--bg-primary); border-radius:4px; height:6px; overflow:hidden;">
+                    <div id="progress-bar" style="height:100%; background:#D4A017; width:0%; transition:width 0.5s ease;"></div>
+                </div>
             </div>
         </div>
 
@@ -400,7 +432,38 @@ document.getElementById('generate-form').addEventListener('submit', async functi
         upload_text: document.getElementById('upload_text').value,
         enable_rich_diagrams: document.getElementById('enable_rich_diagrams').checked,
         audience_mode: (audienceModeEl && audienceModeEl.value) ? audienceModeEl.value : null,
+        output_language: document.getElementById('output_language').value,
     };
+
+    var _phaseMap = {
+        'running':    {step: 0, pct: 5},
+        'gathering':  {step: 1, pct: 10},
+        'planning':   {step: 2, pct: 30},
+        'generating': {step: 3, pct: 55},
+        'graphics':   {step: 4, pct: 75},
+        'building':   {step: 5, pct: 90},
+        'completed':  {step: 5, pct: 100},
+        'auto':       {step: 5, pct: 100},
+    };
+
+    function _updateProgress(status, label) {
+        var info = _phaseMap[status] || {step: 0, pct: 5};
+        document.getElementById('progress-msg').textContent = label;
+        document.getElementById('progress-bar').style.width = info.pct + '%';
+        document.querySelectorAll('#phase-steps .phase-step').forEach(function(el, i) {
+            var stepNum = parseInt(el.dataset.phase);
+            if (stepNum < info.step) {
+                el.style.borderBottomColor = '#51cf66';
+                el.style.color = '#51cf66';
+            } else if (stepNum === info.step) {
+                el.style.borderBottomColor = '#D4A017';
+                el.style.color = '#D4A017';
+            } else {
+                el.style.borderBottomColor = 'var(--border-color)';
+                el.style.color = 'var(--text-secondary)';
+            }
+        });
+    }
 
     try {
         var resp = await fetch('/slides/api/generate', {
@@ -409,15 +472,41 @@ document.getElementById('generate-form').addEventListener('submit', async functi
             body: JSON.stringify(payload),
         });
         var data = await resp.json();
-        if (data.deck_id) {
-            window.location.href = '/slides/' + data.deck_id;
-        } else {
-            errorMsg.textContent = data.error || 'Generation failed.';
+        if (!data.deck_id) {
+            errorMsg.textContent = data.error || 'Failed to start generation.';
             errorMsg.style.display = '';
             btn.disabled = false;
             btn.textContent = 'Generate Deck ✨';
             progress.style.display = 'none';
+            return;
         }
+
+        // Poll status until done
+        var deckId = data.deck_id;
+        _updateProgress('running', 'Starting…');
+
+        var pollInterval = setInterval(async function() {
+            try {
+                var sr = await fetch('/slides/api/' + deckId + '/status');
+                var sd = await sr.json();
+                _updateProgress(sd.status, sd.phase_label || sd.status);
+                if (sd.done) {
+                    clearInterval(pollInterval);
+                    if (sd.error && sd.status === 'failed') {
+                        errorMsg.textContent = 'Generation failed. Check the deck for details.';
+                        errorMsg.style.display = '';
+                        btn.disabled = false;
+                        btn.textContent = 'Generate Deck ✨';
+                        progress.style.display = 'none';
+                    } else {
+                        window.location.href = '/slides/' + deckId;
+                    }
+                }
+            } catch(pollErr) {
+                // Network hiccup — keep polling
+            }
+        }, 2000);
+
     } catch(err) {
         errorMsg.textContent = 'Network error: ' + err.message;
         errorMsg.style.display = '';

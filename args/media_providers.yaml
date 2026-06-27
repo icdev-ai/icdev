@@ -2,11 +2,17 @@
 # Air-gap mode automatically removes non-native providers.
 providers:
   priority:
+    - dalle           # OpenAI DALL-E 3 — requires OPENAI_API_KEY
     - pulse_sdxl      # local GPU SDXL Turbo (requires CUDA >= 6 GB VRAM + diffusers)
     - slides_matplotlib  # deterministic matplotlib-themed graphic
     - slides_svg      # zero-dependency SVG fallback
 
 # Optional per-provider settings
+dalle:
+  model: gpt-image-1          # set OPENAI_IMAGE_MODEL env var to override
+  size: 1536x1024             # gpt-image-1 landscape; use 1792x1024 for dall-e-3
+  quality: medium             # gpt-image-1: low/medium/high/auto
+
 pulse_sdxl:
   model_id: stabilityai/sdxl-turbo
   steps: 4

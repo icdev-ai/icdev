@@ -430,6 +430,7 @@ def _generate_one(
     feedback: str | None = None,
     slide_type_hint: str | None = None,
     theme: str = "midnight_executive",
+    lang_suffix: str = "",
 ) -> dict:
     """Generate content for a single slide."""
     # Dispatch to rich-type generators before standard path
@@ -497,7 +498,7 @@ def _generate_one(
         router = LLMRouter()
         request = LLMRequest(
             messages=[{"role": "user", "content": user_msg}],
-            system_prompt=_build_system_prompt(tone),
+            system_prompt=_build_system_prompt(tone) + lang_suffix,
             max_tokens=768,
             temperature=0.35,
             agent_id=f"slides-content-{position}",
@@ -525,6 +526,21 @@ def _generate_one(
     return _parse_slide("", title)
 
 
+def _generate_one_with_lang(
+    title: str, position: int, raw_content: dict[str, Any],
+    is_title_slide: bool, is_outro: bool, tone: str, citation_style: str,
+    previous: dict | None, feedback: str | None, slide_type_hint: str | None,
+    theme: str, lang_suffix: str,
+) -> dict:
+    """Wrapper that passes lang_suffix into _generate_one for language-aware output."""
+    return _generate_one(
+        title=title, position=position, raw_content=raw_content,
+        is_title_slide=is_title_slide, is_outro=is_outro, tone=tone,
+        citation_style=citation_style, previous=previous, feedback=feedback,
+        slide_type_hint=slide_type_hint, theme=theme, lang_suffix=lang_suffix,
+    )
+
+
 def generate_all(
     outline: list[str],
     raw_content: dict[str, Any],
@@ -533,12 +549,18 @@ def generate_all(
     citation_style: str = "inline_links",
     enable_rich_diagrams: bool = False,
     theme: str = "midnight_executive",
+    output_language: str = "English",
 ) -> list[dict]:
     """Generate content for all slides in parallel."""
     if not outline:
         return []
 
     n = len(outline)
+    # Append language suffix to system prompt for non-English decks
+    lang_suffix = ""
+    if output_language and output_language.lower() != "english":
+        lang_suffix = f"\n\nIMPORTANT: Write all slide content (bullets, speaker notes) in {output_language}."
+
     args_list: list[tuple] = []
     for i, raw_title in enumerate(outline):
         is_title = i == 0
@@ -550,13 +572,13 @@ def generate_all(
             clean_title, type_hint = raw_title, None
         args_list.append((
             clean_title, i + 1, raw_content, is_title, is_outro, tone, citation_style,
-            None, None, type_hint, theme,
+            None, None, type_hint, theme, lang_suffix,
         ))
 
     results: list[dict | None] = [None] * n
     with ThreadPoolExecutor(max_workers=min(max_workers, n)) as pool:
         futures = {
-            pool.submit(_generate_one, *args): idx
+            pool.submit(_generate_one_with_lang, *args): idx
             for idx, args in enumerate(args_list)
         }
         for future in as_completed(futures):

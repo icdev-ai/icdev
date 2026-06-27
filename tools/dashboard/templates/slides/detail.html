@@ -71,8 +71,15 @@
                 <span style="color:#C8A951; font-weight:700; font-size:13px;">
                     {{ loop.index }}. {{ slide.slide_type | upper }}
                 </span>
-                <span style="color:#E0E6F0; font-size:11px;">
-                    {% if slide.image_path %}<span title="Has image">🖼</span>{% endif %}
+                <span style="display:flex; align-items:center; gap:6px;">
+                    {% if slide.image_path %}<span title="Has image" style="color:#E0E6F0; font-size:11px;">🖼</span>{% endif %}
+                    <button class="btn btn-sm" style="padding:2px 8px; font-size:11px; background:rgba(200,169,81,0.12); color:#C8A951; border:1px solid rgba(200,169,81,0.4);"
+                            title="Regenerate this slide"
+                            onclick="quickRegenSlide({{ deck.deck_id }}, {{ slide.slide_id }}, this)">🔄</button>
+                    <button class="btn btn-sm" style="padding:2px 8px; font-size:11px; background:rgba(212,160,23,0.15); color:#D4A017; border:1px solid #D4A017;"
+                            onclick="openSlideEditor({{ slide.slide_id }}, {{ deck.deck_id }})">✏️ Edit</button>
+                    <button class="btn btn-sm" style="padding:2px 8px; font-size:11px; background:rgba(220,53,69,0.12); color:#ff6b6b; border:1px solid rgba(220,53,69,0.4);"
+                            onclick="deleteSlide({{ slide.slide_id }}, {{ deck.deck_id }}, '{{ slide.title | e }}')">🗑 Delete</button>
                 </span>
             </div>
 
@@ -120,9 +127,32 @@
                 <div style="font-size:12px; color:#C8D2DC; font-style:italic; margin-bottom:8px;">
                     Card grid: {{ slide.bullets | length }} cards
                 </div>
+                {% elif slide.slide_type == 'table' and slide.bullets is mapping %}
+                {% set tbl = slide.bullets %}
+                <div style="overflow-x:auto; margin-bottom:10px;">
+                <table style="width:100%; border-collapse:collapse; font-size:11px;">
+                    {% if tbl.headers %}
+                    <thead><tr style="background:#D4A017;">
+                        {% for h in tbl.headers %}<th style="color:#0A1628; padding:4px 8px; text-align:left; font-weight:700;">{{ h }}</th>{% endfor %}
+                    </tr></thead>
+                    {% endif %}
+                    <tbody>
+                    {% for row in (tbl.rows or [])[:5] %}
+                    <tr style="border-bottom:1px solid rgba(200,210,220,0.15);">
+                        {% for cell in row %}<td style="color:{% if loop.index == 2 %}#D4A017{% else %}#C8D2DC{% endif %}; padding:4px 8px;">{{ cell }}</td>{% endfor %}
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                    {% if tbl.footer %}
+                    <tfoot><tr style="background:rgba(212,160,23,0.1); border-top:2px solid #D4A017;">
+                        {% for cell in tbl.footer %}<td style="color:#D4A017; font-weight:700; padding:4px 8px;">{{ cell }}</td>{% endfor %}
+                    </tr></tfoot>
+                    {% endif %}
+                </table>
+                </div>
                 {% endif %}
 
-                {% if slide.bullets and slide.slide_type not in ('mermaid_diagram', 'three_animation', 'excalidraw_sketch', 'card_grid') %}
+                {% if slide.bullets and slide.slide_type not in ('mermaid_diagram', 'three_animation', 'excalidraw_sketch', 'card_grid', 'table') %}
                 <ul style="margin:0; padding-left:18px; font-size:13px; color:var(--text-secondary); line-height:1.7;">
                     {% for bullet in slide.bullets[:5] %}
                     <li>{{ bullet }}</li>
@@ -222,6 +252,31 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 
+async function quickRegenSlide(deckId, slideId, btn) {
+    var orig = btn.textContent;
+    btn.textContent = '⏳';
+    btn.disabled = true;
+    try {
+        var resp = await fetch('/slides/api/' + deckId + '/regenerate-slide', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({slide_id: slideId}),
+        });
+        var data = await resp.json();
+        if (data.slide) {
+            btn.textContent = '✓';
+            setTimeout(function() { window.location.reload(); }, 600);
+        } else {
+            btn.textContent = '✗';
+            btn.disabled = false;
+            setTimeout(function() { btn.textContent = orig; btn.disabled = false; }, 2000);
+        }
+    } catch(err) {
+        btn.textContent = orig;
+        btn.disabled = false;
+    }
+}
+
 async function reviseSlide(deckId, slideId) {
     var feedback = document.getElementById('feedback-' + slideId).value.trim();
     if (!feedback) return;
@@ -267,6 +322,270 @@ async function regenerateSlide(deckId, slideId) {
     } catch(err) {
         statusEl.textContent = 'Network error: ' + err.message;
     }
+}
+</script>
+
+<!-- Slide Editor Modal -->
+<div id="slide-edit-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.75); z-index:9100; overflow-y:auto; padding:40px 20px;">
+  <div style="max-width:720px; margin:0 auto; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:12px; overflow:hidden;">
+    <div style="background:#0A1628; padding:16px 24px; border-bottom:2px solid #D4A017; display:flex; align-items:center; justify-content:space-between;">
+      <span style="color:#D4A017; font-weight:700; font-size:15px;">✏️ Edit Slide</span>
+      <button onclick="closeSlideEditor()" style="background:none; border:none; color:#C8D2DC; font-size:20px; cursor:pointer; line-height:1;">×</button>
+    </div>
+    <div style="padding:24px;">
+      <input type="hidden" id="edit-slide-id">
+      <input type="hidden" id="edit-deck-id">
+
+      <div class="form-group" style="margin-bottom:16px;">
+        <label class="form-label" style="font-weight:600;">Slide Title</label>
+        <input type="text" id="edit-title" class="form-control">
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:16px;">
+        <div class="form-group">
+          <label class="form-label" style="font-weight:600;">Slide Type</label>
+          <select id="edit-slide-type" class="form-control" onchange="onEditTypeChange()">
+            {% for st in slide_types %}
+            <option value="{{ st }}">{{ st | replace('_', ' ') | title }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label" style="font-weight:600;">Position</label>
+          <input type="number" id="edit-position" class="form-control" min="1">
+        </div>
+      </div>
+
+      <!-- Bullets / content (shown for standard types) -->
+      <div id="edit-bullets-section" class="form-group" style="margin-bottom:16px;">
+        <label class="form-label" style="font-weight:600;">Bullets <span style="font-weight:400; font-size:12px; color:var(--text-secondary);">(one per line)</span></label>
+        <textarea id="edit-bullets" class="form-control" rows="6" placeholder="Bullet 1&#10;Bullet 2&#10;Bullet 3"></textarea>
+      </div>
+
+      <!-- Mermaid code (shown for mermaid_diagram) -->
+      <div id="edit-mermaid-section" class="form-group" style="display:none; margin-bottom:16px;">
+        <label class="form-label" style="font-weight:600;">Mermaid Code</label>
+        <textarea id="edit-mermaid-code" class="form-control" rows="8" placeholder="flowchart LR&#10;    A[Start] --> B[Process] --> C[End]" style="font-family:monospace; font-size:12px;"></textarea>
+        <div style="font-size:11px; color:var(--text-secondary); margin-top:4px;">Supports: flowchart, sequenceDiagram, classDiagram, stateDiagram-v2</div>
+      </div>
+
+      <!-- Table data (shown for table type) -->
+      <div id="edit-table-section" class="form-group" style="display:none; margin-bottom:16px;">
+        <label class="form-label" style="font-weight:600;">Table Data <span style="font-weight:400; font-size:12px; color:var(--text-secondary);">(JSON: {"headers":[...], "rows":[[...]], "footer":[...]})</span></label>
+        <textarea id="edit-table-data" class="form-control" rows="10" style="font-family:monospace; font-size:12px;"></textarea>
+        <div style="font-size:11px; color:var(--text-secondary); margin-top:4px;">
+          Example: {"headers":["Item","Value","Notes"],"rows":[["Pipeline uplift","$75M","15% lift"]],"footer":["Total","$277.5M",""]}
+        </div>
+      </div>
+
+      <!-- Excalidraw elements (shown for excalidraw_sketch) -->
+      <div id="edit-excalidraw-section" class="form-group" style="display:none; margin-bottom:16px;">
+        <label class="form-label" style="font-weight:600;">Excalidraw Elements <span style="font-weight:400; font-size:12px; color:var(--text-secondary);">(JSON array)</span></label>
+        <textarea id="edit-excalidraw-elements" class="form-control" rows="8" style="font-family:monospace; font-size:12px;"></textarea>
+      </div>
+
+      <!-- Three.js scene config (shown for three_animation) -->
+      <div id="edit-three-section" class="form-group" style="display:none; margin-bottom:16px;">
+        <label class="form-label" style="font-weight:600;">Three.js Scene Config <span style="font-weight:400; font-size:12px; color:var(--text-secondary);">(JSON object)</span></label>
+        <textarea id="edit-three-config" class="form-control" rows="12" style="font-family:monospace; font-size:12px;"></textarea>
+        <div style="font-size:11px; color:var(--text-secondary); margin-top:4px;">Keys: background, camera, lights[], objects[], preset</div>
+      </div>
+
+      <div class="form-group" style="margin-bottom:16px;">
+        <label class="form-label" style="font-weight:600;">Speaker Notes</label>
+        <textarea id="edit-speaker-notes" class="form-control" rows="3"></textarea>
+      </div>
+
+      <div id="edit-save-status" style="display:none; margin-bottom:12px; padding:8px 12px; border-radius:6px; font-size:13px;"></div>
+
+      <div style="display:flex; gap:10px; justify-content:flex-end;">
+        <button class="btn btn-secondary" onclick="closeSlideEditor()">Cancel</button>
+        <button class="btn btn-primary" onclick="saveSlideEdit()" id="edit-save-btn">💾 Save Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Slide editor — all slide data is embedded via data-* at render time
+var _slideData = {};
+{% for slide in slides %}
+_slideData[{{ slide.slide_id }}] = {
+  title: {{ slide.title | tojson }},
+  slide_type: {{ slide.slide_type | tojson }},
+  position: {{ slide.position }},
+  bullets: {{ slide.bullets | tojson }},
+  mermaid_code: {{ (slide.mermaid_code or '') | tojson }},
+  three_scene_config: {{ (slide.three_scene_config | tojson) if slide.three_scene_config else 'null' }},
+  excalidraw_elements: {{ (slide.excalidraw_elements | tojson) if slide.excalidraw_elements else 'null' }},
+  speaker_notes: {{ (slide.speaker_notes or '') | tojson }},
+};
+{% endfor %}
+
+function openSlideEditor(slideId, deckId) {
+  var d = _slideData[slideId];
+  if (!d) return;
+  document.getElementById('edit-slide-id').value = slideId;
+  document.getElementById('edit-deck-id').value = deckId;
+  document.getElementById('edit-title').value = d.title;
+  document.getElementById('edit-position').value = d.position;
+  document.getElementById('edit-speaker-notes').value = d.speaker_notes || '';
+  document.getElementById('edit-slide-type').value = d.slide_type;
+
+  // Bullets: handle array vs object (table)
+  if (Array.isArray(d.bullets)) {
+    document.getElementById('edit-bullets').value = d.bullets.join('\n');
+  } else {
+    document.getElementById('edit-bullets').value = '';
+  }
+  document.getElementById('edit-mermaid-code').value = d.mermaid_code || '';
+  document.getElementById('edit-table-data').value = d.bullets && typeof d.bullets === 'object' && !Array.isArray(d.bullets)
+    ? JSON.stringify(d.bullets, null, 2) : '{"headers":[],"rows":[],"footer":[]}';
+  document.getElementById('edit-excalidraw-elements').value = d.excalidraw_elements
+    ? JSON.stringify(d.excalidraw_elements, null, 2) : '[]';
+  document.getElementById('edit-three-config').value = d.three_scene_config
+    ? JSON.stringify(d.three_scene_config, null, 2) : '{}';
+
+  var statusEl = document.getElementById('edit-save-status');
+  statusEl.style.display = 'none';
+  statusEl.textContent = '';
+  document.getElementById('edit-save-btn').disabled = false;
+  document.getElementById('edit-save-btn').textContent = '💾 Save Changes';
+
+  onEditTypeChange();
+  document.getElementById('slide-edit-modal').style.display = '';
+}
+
+function closeSlideEditor() {
+  document.getElementById('slide-edit-modal').style.display = 'none';
+}
+
+function onEditTypeChange() {
+  var type = document.getElementById('edit-slide-type').value;
+  document.getElementById('edit-bullets-section').style.display =
+    !['mermaid_diagram', 'three_animation', 'excalidraw_sketch', 'table', 'card_grid'].includes(type) ? '' : 'none';
+  document.getElementById('edit-mermaid-section').style.display = type === 'mermaid_diagram' ? '' : 'none';
+  document.getElementById('edit-table-section').style.display = type === 'table' ? '' : 'none';
+  document.getElementById('edit-excalidraw-section').style.display = type === 'excalidraw_sketch' ? '' : 'none';
+  document.getElementById('edit-three-section').style.display = type === 'three_animation' ? '' : 'none';
+}
+
+async function saveSlideEdit() {
+  var slideId = parseInt(document.getElementById('edit-slide-id').value);
+  var deckId = parseInt(document.getElementById('edit-deck-id').value);
+  var type = document.getElementById('edit-slide-type').value;
+  var statusEl = document.getElementById('edit-save-status');
+  var btn = document.getElementById('edit-save-btn');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  var payload = {
+    title: document.getElementById('edit-title').value.trim(),
+    slide_type: type,
+    position: parseInt(document.getElementById('edit-position').value) || 1,
+    speaker_notes: document.getElementById('edit-speaker-notes').value,
+  };
+
+  if (['content', 'data', 'agenda', 'quote', 'two_column', 'outro'].includes(type)) {
+    payload.bullets = document.getElementById('edit-bullets').value
+      .split('\n').map(l => l.trim()).filter(Boolean);
+  } else if (type === 'mermaid_diagram') {
+    payload.mermaid_code = document.getElementById('edit-mermaid-code').value.trim();
+    payload.bullets = [];
+  } else if (type === 'table') {
+    try {
+      payload.bullets = JSON.parse(document.getElementById('edit-table-data').value);
+    } catch(e) {
+      statusEl.textContent = 'Invalid table JSON: ' + e.message;
+      statusEl.style.background = 'rgba(220,53,69,0.15)';
+      statusEl.style.color = '#ff6b6b';
+      statusEl.style.display = '';
+      btn.disabled = false;
+      btn.textContent = '💾 Save Changes';
+      return;
+    }
+  } else if (type === 'excalidraw_sketch') {
+    try {
+      payload.excalidraw_elements = JSON.parse(document.getElementById('edit-excalidraw-elements').value);
+      payload.bullets = [];
+    } catch(e) {
+      statusEl.textContent = 'Invalid Excalidraw JSON: ' + e.message;
+      statusEl.style.display = '';
+      btn.disabled = false;
+      btn.textContent = '💾 Save Changes';
+      return;
+    }
+  } else if (type === 'three_animation') {
+    try {
+      payload.three_scene_config = JSON.parse(document.getElementById('edit-three-config').value);
+      payload.bullets = [];
+    } catch(e) {
+      statusEl.textContent = 'Invalid Three.js config JSON: ' + e.message;
+      statusEl.style.display = '';
+      btn.disabled = false;
+      btn.textContent = '💾 Save Changes';
+      return;
+    }
+  }
+
+  try {
+    var resp = await fetch('/slides/api/' + deckId + '/slides/' + slideId, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    var data = await resp.json();
+    if (data.ok) {
+      statusEl.textContent = '✓ Saved — reload to see changes.';
+      statusEl.style.background = 'rgba(40,167,69,0.15)';
+      statusEl.style.color = '#51cf66';
+      statusEl.style.display = '';
+      btn.textContent = '✓ Saved';
+      // Update local cache
+      _slideData[slideId] = Object.assign(_slideData[slideId] || {}, payload);
+      setTimeout(function() { window.location.reload(); }, 800);
+    } else {
+      statusEl.textContent = 'Error: ' + (data.error || 'unknown');
+      statusEl.style.background = 'rgba(220,53,69,0.15)';
+      statusEl.style.color = '#ff6b6b';
+      statusEl.style.display = '';
+      btn.disabled = false;
+      btn.textContent = '💾 Save Changes';
+    }
+  } catch(err) {
+    statusEl.textContent = 'Network error: ' + err.message;
+    statusEl.style.display = '';
+    btn.disabled = false;
+    btn.textContent = '💾 Save Changes';
+  }
+}
+
+// Close on backdrop click
+document.getElementById('slide-edit-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeSlideEditor();
+});
+
+async function deleteSlide(slideId, deckId, title) {
+  if (!confirm('Delete slide "' + title + '"?\n\nThis cannot be undone.')) return;
+  try {
+    var resp = await fetch('/slides/api/' + deckId + '/slides/' + slideId, { method: 'DELETE' });
+    var data = await resp.json();
+    if (data.ok) {
+      // Remove card from DOM immediately
+      var card = document.getElementById('slide-' + slideId);
+      if (card) {
+        card.style.transition = 'opacity 0.3s';
+        card.style.opacity = '0';
+        setTimeout(function() { card.remove(); }, 300);
+      } else {
+        window.location.reload();
+      }
+    } else {
+      alert('Error: ' + (data.error || 'Could not delete slide'));
+    }
+  } catch(err) {
+    alert('Network error: ' + err.message);
+  }
 }
 </script>
 {% endblock %}

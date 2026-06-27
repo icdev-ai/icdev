@@ -774,6 +774,10 @@ routing:
     chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
 
+  slides_table_generation:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: low
+
   default:
     chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium

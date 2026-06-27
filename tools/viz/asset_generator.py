@@ -166,8 +166,8 @@ def _available_providers() -> List[str]:
     providers: List[str] = ["slides_svg", "slides_matplotlib"]
     if _gpu_available():
         providers.insert(0, "pulse_sdxl")
-    # viz_kernel is reserved for the tools/viz/ branch; it will be added once that
-    # rendering kernel is present in the tree.
+    if os.environ.get("OPENAI_API_KEY"):
+        providers.insert(0, "dalle")
     return providers
 
 
@@ -293,6 +293,8 @@ class AssetGenerator:
         return candidates
 
     def _run_provider(self, provider: str, req: AssetRequest, cache_key: str) -> Dict[str, Any]:
+        if provider == "dalle":
+            return self._provider_dalle(req, cache_key)
         if provider == "pulse_sdxl":
             return self._provider_sdxl(req, cache_key)
         if provider == "slides_matplotlib":
@@ -302,6 +304,53 @@ class AssetGenerator:
         if provider == "viz_kernel":
             return self._provider_viz_kernel(req, cache_key)
         return {"success": False, "error": f"unknown provider {provider}", "method": provider}
+
+    # ── Provider: OpenAI Image (gpt-image-1 / DALL-E) ───────────────────────────
+
+    def _provider_dalle(self, req: AssetRequest, cache_key: str) -> Dict[str, Any]:
+        api_key = os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            return {"success": False, "error": "OPENAI_API_KEY not set", "method": "dalle"}
+
+        start = time.time()
+        prompt = req.prompt or _build_image_prompt(req.title, req.category, req.topic)
+        output_path = self._resolve_output_path(req, cache_key, "png")
+
+        try:
+            import base64
+            import openai
+
+            client = openai.OpenAI(api_key=api_key)
+
+            # Probe available models: prefer gpt-image-1 (latest), fall back to dall-e-3
+            _model = os.environ.get("OPENAI_IMAGE_MODEL", "gpt-image-1")
+            _size = "1536x1024"   # gpt-image-1 landscape size
+            _quality = "medium"   # gpt-image-1 quality tiers: low/medium/high/auto
+            _kw: Dict[str, Any] = {"model": _model, "prompt": prompt, "n": 1, "size": _size, "quality": _quality}
+
+            response = client.images.generate(**_kw)
+            img_data = response.data[0]
+
+            if getattr(img_data, "b64_json", None):
+                img_bytes = base64.b64decode(img_data.b64_json)
+                Path(output_path).write_bytes(img_bytes)
+            elif getattr(img_data, "url", None):
+                import urllib.request
+                urllib.request.urlretrieve(img_data.url, output_path)
+            else:
+                return {"success": False, "error": "no image data in response", "method": "dalle"}
+
+            return {
+                "success": True,
+                "path": output_path,
+                "method": "dalle",
+                "model": _model,
+                "prompt": prompt,
+                "revised_prompt": getattr(img_data, "revised_prompt", None),
+                "elapsed_ms": int((time.time() - start) * 1000),
+            }
+        except Exception as exc:
+            return {"success": False, "error": str(exc), "method": "dalle", "prompt": prompt}
 
     # ── Provider: SDXL Turbo ─────────────────────────────────────────────────
 

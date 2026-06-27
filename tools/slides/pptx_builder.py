@@ -436,6 +436,68 @@ def _build_card_grid_slide(prs: Presentation, slide_data: dict, n: int, palette:
         _notes(s, notes_text)
 
 
+def _build_table_slide(prs: Presentation, slide_data: dict, n: int, palette: dict) -> None:
+    """Render a data table using python-pptx's native table shape."""
+    from pptx.util import Inches as _Inches
+    s = _blank(prs)
+    _bg(s, _rgb(palette, "bg"))
+    accent = _rgb(palette, "accent")
+    dark = _rgb(palette, "dark")
+    subtext = _rgb(palette, "subtext")
+    text_c = _rgb(palette, "text")
+
+    _rect(s, 0, 0, Inches(0.12), H, accent)
+    _rect(s, Inches(0.12), 0, W - Inches(0.12), Inches(0.72), dark)
+    title = slide_data.get("title", "")[:80]
+    _box(s, Inches(0.24), Inches(0.12), CW, Inches(0.55),
+         title, size=22, bold=True, color=accent)
+    _accent_bar(s, palette, top=Inches(0.72), h=Inches(0.04))
+
+    tbl_data = slide_data.get("bullets") or {}
+    if isinstance(tbl_data, str):
+        import json as _json
+        try:
+            tbl_data = _json.loads(tbl_data)
+        except Exception:
+            tbl_data = {}
+
+    headers = tbl_data.get("headers", []) if isinstance(tbl_data, dict) else []
+    rows = tbl_data.get("rows", []) if isinstance(tbl_data, dict) else []
+    footer = tbl_data.get("footer", []) if isinstance(tbl_data, dict) else []
+
+    all_rows = ([headers] if headers else []) + rows + ([footer] if footer else [])
+    if not all_rows:
+        _box(s, LM, Inches(1.5), CW, Inches(1.0), "No table data.", size=14, color=subtext)
+        _footer(s, n, palette)
+        return
+
+    num_rows = len(all_rows)
+    num_cols = max(len(r) for r in all_rows) if all_rows else 1
+    row_h = min(Inches(0.5), (H - Inches(2.0)) / num_rows)
+
+    tbl_shape = s.shapes.add_table(num_rows, num_cols, LM, Inches(0.9), CW, row_h * num_rows)
+    tbl = tbl_shape.table
+
+    for ri, row_data in enumerate(all_rows):
+        is_header = ri == 0 and bool(headers)
+        is_footer = ri == len(all_rows) - 1 and bool(footer)
+        for ci in range(num_cols):
+            cell = tbl.cell(ri, ci)
+            val = str(row_data[ci]) if ci < len(row_data) else ""
+            cell.text = val
+            tf = cell.text_frame
+            tf.paragraphs[0].font.size = Pt(11 if (is_header or is_footer) else 12)
+            tf.paragraphs[0].font.bold = is_header or is_footer
+            tf.paragraphs[0].font.color.rgb = accent if (is_header or is_footer) else text_c
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = dark if (is_header or is_footer) else _rgb(palette, "bg")
+
+    _footer(s, n, palette)
+    notes_text = slide_data.get("speaker_notes", "")
+    if notes_text:
+        _notes(s, notes_text)
+
+
 def _build_outro_slide(prs: Presentation, slide_data: dict, n: int, palette: dict) -> None:
     s = _blank(prs)
     _bg(s, _rgb(palette, "bg"))
@@ -491,6 +553,8 @@ def build(
             _build_excalidraw_placeholder_slide(prs, slide_data, n, palette)
         elif slide_type == "card_grid":
             _build_card_grid_slide(prs, slide_data, n, palette)
+        elif slide_type == "table":
+            _build_table_slide(prs, slide_data, n, palette)
         else:
             _build_content_slide(prs, slide_data, n, palette, image_path)
 
