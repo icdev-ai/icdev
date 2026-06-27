@@ -16,10 +16,15 @@ def session_id(tmp_path, monkeypatch):
     monkeypatch.setattr(nm, "_MC_DB_PATH", db_path)
     init_db_mod.init_db()
     sid = f"nmig-coa-test-{uuid.uuid4().hex[:8]}"
+    raw_config = """
+set system host-name core-rtr-01
+set interfaces ge-0/0/0 unit 0 family inet address 10.0.0.1/30
+set protocols bgp group external neighbor 10.0.0.2 peer-as 65001
+"""
     with init_db_mod.get_connection() as conn:
         conn.execute(
-            "INSERT INTO mc_net_sessions (id, src_model, tgt_model) VALUES (?,?,?)",
-            (sid, "Juniper MX204", "Cisco ASR-9901"),
+            "INSERT INTO mc_net_sessions (id, src_model, tgt_model, src_config_raw) VALUES (?,?,?,?)",
+            (sid, "Juniper MX204", "Cisco ASR-9901", raw_config),
         )
         conn.commit()
     return sid
