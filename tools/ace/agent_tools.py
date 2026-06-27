@@ -85,6 +85,56 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             },
         },
     },
+    "post_result": {
+        "type": "function",
+        "is_read_only": False,
+        "function": {
+            "name": "post_result",
+            "is_read_only": False,
+            "description": (
+                "Share a typed artifact with sibling agents via the coordination namespace. "
+                "The value is stored under the given key and can be read by any agent "
+                "in the same coordination namespace."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["key", "value"],
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "description": "Artifact key (e.g. 'analysis_result', 'file_list').",
+                    },
+                    "value": {
+                        "description": "Value to store. Must be JSON-serializable.",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    "read_result": {
+        "type": "function",
+        "is_read_only": True,
+        "function": {
+            "name": "read_result",
+            "is_read_only": True,
+            "description": (
+                "Read a shared artifact posted by a sibling agent. "
+                "Returns the stored value or '(not found)' if the key doesn't exist."
+            ),
+            "parameters": {
+                "type": "object",
+                "required": ["key"],
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "description": "Artifact key to read.",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
     "run_tool": {
         "type": "function",
         "function": {
@@ -169,6 +219,7 @@ class AgentToolRegistry:
         self._trust_tier = getattr(spec, "trust_tier", "green")
         self._folder_access = list(getattr(spec, "folder_access", []) or [])
         self._icdev_tools = list(getattr(spec, "icdev_tools", []) or [])
+        self._coordination_namespace = getattr(spec, "coordination_namespace", None) or instance_id
 
     def build(self, tool_names: list[str]) -> tuple[list[dict[str, Any]], dict[str, ToolHandler]]:
         """Return ``(tools, tool_handlers)`` filtered to *tool_names*.
@@ -209,6 +260,10 @@ class AgentToolRegistry:
             return self._run_tool
         if name == "done":
             return self._done
+        if name == "post_result":
+            return self._post_result
+        if name == "read_result":
+            return self._read_result
         return None
 
     # ------------------------------------------------------------------
@@ -278,3 +333,30 @@ class AgentToolRegistry:
         self.done_summary = summary  # type: ignore[attr-defined]
         self.done_changed_files = list(changed)  # type: ignore[attr-defined]
         return DONE
+
+    def _post_result(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
+        from icdev.tools.ace.agent_coordination import post_result as _post
+
+        key = (inp.get("key") or "").strip()
+        if not key:
+            return "error: 'key' is required"
+        value = inp.get("value")
+        try:
+            return _post(self._coordination_namespace, key, value, posted_by=self.instance_id)
+        except Exception as exc:
+            return f"error posting result: {exc}"
+
+    def _read_result(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
+        import json as _json
+        from icdev.tools.ace.agent_coordination import read_result as _read, _NOT_FOUND
+
+        key = (inp.get("key") or "").strip()
+        if not key:
+            return "error: 'key' is required"
+        try:
+            val = _read(self._coordination_namespace, key)
+        except Exception as exc:
+            return f"error reading result: {exc}"
+        if val is _NOT_FOUND:
+            return f"(not found: key={key!r} in namespace={self._coordination_namespace!r})"
+        return _json.dumps(val, indent=2)
