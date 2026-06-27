@@ -256,7 +256,7 @@ def score_session(
         row = conn.execute(
             "SELECT coworker_id, turns, total_input_tokens, total_output_tokens, "
             "total_cost_usd, result_subtype, done, session_json "
-            "FROM agent_loop_sessions WHERE session_id = ?",
+            "FROM agent_loop_sessions WHERE session_id = %s",
             (session_id,),
         ).fetchone()
     finally:
@@ -344,7 +344,7 @@ def save_eval(eval_result: EvalResult, *, overwrite: bool = True) -> str:
         if overwrite:
             try:
                 conn.execute(
-                    "DELETE FROM agent_evals WHERE session_id = ?",
+                    "DELETE FROM agent_evals WHERE session_id = %s",
                     (eval_result.session_id,)
                 )
             except Exception:
@@ -358,7 +358,7 @@ def save_eval(eval_result: EvalResult, *, overwrite: bool = True) -> str:
             "reasoning_coverage, avg_reasoning_chars, has_error_recovery_reasoning, "
             "plan_stated, scope_violations, trust_denials, llm_grade_json, "
             "reasoning_style, graded_at, grading_version"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
             (
                 eval_id,
                 eval_result.session_id,
@@ -405,7 +405,7 @@ def get_eval(session_id: str):
             "reasoning_coverage, avg_reasoning_chars, has_error_recovery_reasoning, "
             "plan_stated, scope_violations, trust_denials, llm_grade_json, "
             "reasoning_style, graded_at, grading_version "
-            "FROM agent_evals WHERE session_id = ? "
+            "FROM agent_evals WHERE session_id = %s "
             "ORDER BY graded_at DESC LIMIT 1",
             (session_id,),
         ).fetchone()
@@ -847,7 +847,7 @@ def get_eval_trends(
                     SUM(CASE WHEN e.done = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS pct_done
                 FROM agent_evals e
                 LEFT JOIN ace_sessions s ON s.session_id = e.session_id
-                WHERE e.graded_at >= datetime('now', ?)
+                WHERE e.graded_at >= datetime('now', %s)
                 {role_filter}
                 GROUP BY period, role
                 ORDER BY period ASC
@@ -868,7 +868,7 @@ def get_eval_trends(
                     AVG(tool_error_rate) AS avg_tool_error_rate,
                     SUM(CASE WHEN done = 1 THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS pct_done
                 FROM agent_evals
-                WHERE graded_at >= datetime('now', ?)
+                WHERE graded_at >= datetime('now', %s)
                 GROUP BY period
                 ORDER BY period ASC
                 """,
