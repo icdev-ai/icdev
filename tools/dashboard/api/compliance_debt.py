@@ -191,6 +191,7 @@ def debt_summary():
 def debt_burndown():
     """Monthly burndown chart data for POAMs."""
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         project_id = request.args.get("project_id")
         months = int(request.args.get("months", 6))
@@ -202,7 +203,7 @@ def debt_burndown():
         base_filter = ""
         params_base = []
         if project_id:
-            base_filter = " AND project_id = ?"
+            base_filter = f" AND project_id = {ph}"
             params_base = [project_id]
 
         # Opened per month
@@ -294,6 +295,7 @@ def debt_burndown():
 def debt_poams():
     """POAM breakdown with filters and pagination."""
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         if not _table_exists(conn, "poam_items"):
             return jsonify({"poam_items": [], "total": 0, "page": 1, "per_page": 25})
@@ -375,6 +377,7 @@ def debt_poams():
 def debt_controls():
     """Unassessed/unimplemented controls grouped by family."""
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         if not _table_exists(conn, "project_controls"):
             return jsonify({"families": [], "total_needing_attention": 0})
@@ -459,6 +462,7 @@ def debt_controls():
 def expiring_atos():
     """ATOs expiring within N days."""
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         if not _table_exists(conn, "cssp_certifications"):
             return jsonify({"expiring": [], "total": 0})
@@ -510,6 +514,7 @@ def expiring_atos():
 def sla_compliance():
     """SLA compliance for POAM remediation by severity."""
     conn = _get_db()
+    ph = sql_placeholder(conn)
     try:
         if not _table_exists(conn, "poam_items"):
             return jsonify({"sla": []})
