@@ -14,7 +14,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from tools.integrity.constants import CAPABILITY_TYPES, RISK_WEIGHTS_CAPABILITY
+from tools.integrity.constants import RISK_WEIGHTS_CAPABILITY
 
 
 # --------------------------------------------------------------------------- #

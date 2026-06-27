@@ -1238,7 +1238,8 @@ def create_migration_blueprint():
         """Generate (or regenerate) AI config mapping proposals."""
         data = request.get_json(force=True, silent=True) or {}
         use_llm = data.get("use_llm", True)
-        result = _nm.propose_config_mapping(sid, use_llm=use_llm)
+        answers = data.get("answers", {})
+        result = _nm.propose_config_mapping(sid, answers=answers, use_llm=use_llm)
         return jsonify(result)
 
     @bp.route("/api/network-migration/<sid>/config-map", methods=["GET"])
