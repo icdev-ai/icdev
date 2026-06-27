@@ -94,6 +94,8 @@ test.describe('Network Migration Wizard — Config Mapping Lifecycle', () => {
       fullPage: true,
     });
 
+    await dismissTour(page);
+
     // Step 4: Paste config and parse.
     await page
       .getByRole('textbox', { name: /Paste Juniper|Paste Running Config/i })
@@ -149,15 +151,17 @@ test.describe('Network Migration Wizard — Config Mapping Lifecycle', () => {
       fullPage: true,
     });
 
+    await dismissTour(page);
+
     // Step 8: Approve system, reject interfaces, skip firewall.
     const proposalRows = page.locator('#cfgmap-tgt-scroll .cfgmap-mapping-row');
     await expect(proposalRows).toHaveCount(5);
     await proposalRows.nth(0).locator('button:has-text("Approve")').click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(500);
     await proposalRows.nth(1).locator('button:has-text("Reject")').click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(500);
     await proposalRows.nth(4).locator('button:has-text("Skip")').click();
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(1000);
 
     const decisionText = await page.textContent('body');
     expect(decisionText).toContain('Approved: 1');
