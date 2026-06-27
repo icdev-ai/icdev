@@ -100,7 +100,7 @@ CREATE INDEX IF NOT EXISTS idx_qdc_versions_design ON qdc_versions(design_id);
 CREATE TABLE IF NOT EXISTS qdc_audit (
     id              TEXT PRIMARY KEY,
     design_id       TEXT,
-    user            TEXT,
+    "user"          TEXT,
     action          TEXT,
     detail          TEXT,
     classification  TEXT DEFAULT 'CUI',
