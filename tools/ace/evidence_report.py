@@ -96,7 +96,7 @@ def _collect(instance_id: str) -> dict[str, Any]:
         cw_rows = conn.execute(
             "SELECT id, role_id, display_name, state, trust_tier, assigned_step, "
             "last_active_at, created_at "
-            "FROM ace_coworkers WHERE instance_id = ? ORDER BY created_at",
+            f"FROM ace_coworkers WHERE instance_id = {_ph} ORDER BY created_at",
             (instance_id,),
         ).fetchall()
         coworkers = [
@@ -112,7 +112,7 @@ def _collect(instance_id: str) -> dict[str, Any]:
         audit_rows = conn.execute(
             "SELECT id, coworker_id, action, detail, actor, classification, "
             "control_refs, created_at "
-            "FROM ace_audit_log WHERE instance_id = ? ORDER BY created_at",
+            f"FROM ace_audit_log WHERE instance_id = {_ph} ORDER BY created_at",
             (instance_id,),
         ).fetchall()
 
@@ -132,7 +132,7 @@ def _collect(instance_id: str) -> dict[str, Any]:
         # Artifacts
         artifact_rows = conn.execute(
             "SELECT id, coworker_id, artifact_type, title, classification, created_at "
-            "FROM ace_artifacts WHERE instance_id = ? ORDER BY created_at",
+            f"FROM ace_artifacts WHERE instance_id = {_ph} ORDER BY created_at",
             (instance_id,),
         ).fetchall()
         artifacts = [
