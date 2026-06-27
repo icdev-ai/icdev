@@ -49,8 +49,7 @@ steps:
 communication:
   protocol: a2a
   listen_topics:
-    - task.assigned
-    - doc.review_feedback
+    - task.assigned              # bootstrap only — doc.review_feedback handled by reactive step trigger
   emit_topics:
     - doc.draft_ready
     - doc.report_ready

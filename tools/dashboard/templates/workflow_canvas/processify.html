@@ -9,15 +9,29 @@
 
   <!-- ── Intent screen ──────────────────────────────────────────────────── -->
   <div id="intent-screen">
-    <div style="margin-bottom:28px">
+    <div style="margin-bottom:24px">
       <div style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:4px">
         <a href="/workflow-canvas/">Workflow &amp; Forms</a> / Process-Ify
       </div>
       <h1 style="margin:0 0 8px;font-size:1.6rem;font-weight:700">Process-Ify</h1>
-      <p style="margin:0;font-size:0.95rem;color:var(--text-secondary);line-height:1.5">
+      <p style="margin:0 0 16px;font-size:0.95rem;color:var(--text-secondary);line-height:1.5">
         Drop any process document and AI converts it into a live, tracked workflow — with assigned roles, step forms, and AI coworkers enforcing every step.
       </p>
+      <!-- Mode toggle -->
+      <div style="display:flex;gap:0;border:1px solid var(--border-color);border-radius:8px;overflow:hidden;width:fit-content">
+        <button id="tab-single" onclick="setMode('single')"
+                style="padding:8px 20px;background:#1d72ff;color:#fff;border:none;border-right:1px solid var(--border-color);font-size:0.85rem;font-weight:600;cursor:pointer">
+          Single Process
+        </button>
+        <button id="tab-chain" onclick="setMode('chain')"
+                style="padding:8px 20px;background:transparent;color:var(--text-secondary);border:none;font-size:0.85rem;cursor:pointer">
+          Process Chain
+        </button>
+      </div>
     </div>
+
+    <!-- ── Single Process UI (default) ──────────────────────────────────── -->
+    <div id="single-mode-panel">
 
     <!-- Upload + paste -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
@@ -83,6 +97,49 @@
           Click <strong>Launch Process</strong> first — steps will appear here for review before saving.
         </div>
       </div>
+    </div>
+    </div><!-- /single-mode-panel -->
+
+    <!-- ── Process Chain UI ──────────────────────────────────────────────── -->
+    <div id="chain-mode-panel" style="display:none">
+      <div style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:12px;padding:20px;margin-bottom:16px">
+        <div style="font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-secondary);margin-bottom:10px">Chain Name</div>
+        <input id="chain-name-input" type="text" placeholder="e.g. Federal Network Peering Lifecycle"
+               style="width:100%;background:var(--bg-primary,#0d1117);border:1px solid var(--border-color);border-radius:8px;padding:10px 14px;color:var(--text-primary);font-size:0.95rem;outline:none;box-sizing:border-box">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+          <div>
+            <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:4px">Industry</div>
+            <select id="chain-industry-select"
+                    style="width:100%;background:var(--bg-primary,#0d1117);border:1px solid var(--border-color);border-radius:6px;padding:8px 10px;color:var(--text-primary);font-size:0.85rem;outline:none">
+              {% for cat in industry_categories %}<option value="{{ cat }}">{{ cat }}</option>{% endfor %}
+            </select>
+          </div>
+          <div>
+            <div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:4px">Description (optional)</div>
+            <input id="chain-desc-input" type="text" placeholder="What does this chain accomplish?"
+                   style="width:100%;background:var(--bg-primary,#0d1117);border:1px solid var(--border-color);border-radius:6px;padding:8px 10px;color:var(--text-primary);font-size:0.85rem;outline:none;box-sizing:border-box">
+          </div>
+        </div>
+      </div>
+
+      <div style="font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-secondary);margin-bottom:10px">
+        Phases <span style="font-weight:400;text-transform:none;letter-spacing:0">(each phase is one team's workflow)</span>
+      </div>
+      <div id="chain-phases-list"></div>
+
+      <button onclick="addChainPhase()"
+              style="width:100%;padding:10px;background:var(--bg-secondary);border:1px dashed var(--border-color);border-radius:8px;color:var(--text-secondary);font-size:0.88rem;cursor:pointer;margin-bottom:16px">
+        + Add Phase
+      </button>
+
+      <div style="display:flex;gap:10px;align-items:center">
+        <button onclick="launchChain()" id="chain-launch-btn"
+                style="padding:10px 32px;background:#1d72ff;color:#fff;border:none;border-radius:8px;font-size:1rem;font-weight:700;cursor:pointer">
+          🔗 Launch Chain
+        </button>
+        <span style="font-size:0.8rem;color:var(--text-secondary)">Each phase processes sequentially</span>
+      </div>
+      <div id="chain-status-msg" style="margin-top:10px;font-size:0.85rem;color:var(--text-secondary)"></div>
     </div>
   </div>
 
@@ -159,6 +216,30 @@
         <button id="btn-cleanup" onclick="cleanupPriorRuns()" style="padding:10px 20px;background:rgba(220,38,38,0.12);color:#fca5a5;border:1px solid rgba(220,38,38,0.3);border-radius:7px;font-size:0.9rem;cursor:pointer" title="Cancel all previous backlog tasks from test runs for this workflow">🗑 Clean Up Old Runs</button>
       </div>
       <div id="cleanup-msg" style="margin-top:10px;font-size:0.82rem;color:#86efac;display:none"></div>
+    </div>
+
+    <!-- Gen Doc section -->
+    <div id="regen-doc-section" style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:12px;padding:20px;margin-bottom:16px">
+      <div style="font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-secondary);margin-bottom:12px">
+        📄 Generate Updated Document
+      </div>
+      <p style="margin:0 0 12px;font-size:0.85rem;color:var(--text-secondary);line-height:1.5">
+        Regenerate the original document with updated content reflecting the processified workflow — same style, tone, and structure as the source.
+      </p>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <select id="regen-format" style="background:var(--bg-primary,#0d1117);border:1px solid var(--border-color);border-radius:6px;padding:8px 10px;color:var(--text-primary);font-size:0.85rem;outline:none">
+          <option value="all">All formats (MD + HTML + DOCX)</option>
+          <option value="html">HTML only</option>
+          <option value="docx">DOCX only</option>
+          <option value="pdf">PDF (if available)</option>
+        </select>
+        <button onclick="startRegenDoc('single')"
+                style="padding:8px 20px;background:#1d72ff;color:#fff;border:none;border-radius:7px;font-size:0.88rem;font-weight:600;cursor:pointer">
+          Generate Document
+        </button>
+      </div>
+      <div id="regen-status" style="margin-top:10px;font-size:0.82rem;color:var(--text-secondary);display:none"></div>
+      <div id="regen-downloads" style="margin-top:10px;display:none"></div>
     </div>
 
     <!-- Error card (shown instead if something failed) -->
@@ -239,6 +320,11 @@
 var workflowDef = null;
 var pendingFile = null;
 var _advLoaded = false;
+var sourceDocText = null;   // original document text for style fingerprinting
+var _currentWorkflowId = null;  // workflow_id of last saved processify run
+var _chainPhases = [];          // [{name, teamName, teamRole, file, text}] for chain mode
+var _currentChainId = null;     // chain_id after chain is created
+var _regenPollTimer = null;
 
 var PHASE_COLORS = {
   initiation:'#3b82f6',intake:'#3b82f6',submission:'#3b82f6',
@@ -326,6 +412,7 @@ async function launchProcess() {
     if (digitizeData.error) throw new Error('Digitize: ' + digitizeData.error);
 
     workflowDef = digitizeData.workflow;
+    sourceDocText = digitizeData.source_doc_text || '';
     var steps = workflowDef.steps || [];
     setStep(1, 'done', 'Content extracted');
     setStep(2, 'done', steps.length + ' steps structured');
@@ -339,11 +426,12 @@ async function launchProcess() {
     var saveResp = await fetch('/workflow-canvas/api/workflows/save-processify', {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({workflow: workflowDef, create_kanban_tasks: true})
+      body: JSON.stringify({workflow: workflowDef, create_kanban_tasks: true, source_doc_text: sourceDocText})
     });
     saveData = await saveResp.json();
     if (saveData.error) throw new Error('Save: ' + saveData.error);
     workflowId = saveData.workflow_id;
+    _currentWorkflowId = workflowId;
     var kanbanData = saveData;
     setStep(3, 'done', saveData.forms_created + ' forms created');
     setStep(4, 'done', (saveData.kanban_tasks || 0) + ' tasks queued');
@@ -473,7 +561,8 @@ function showResult(wfDef, workflowId, saveData, kanbanData, coworkerCount) {
   try {
     sessionStorage.setItem('processify_result', JSON.stringify({
       wfDef: wfDef, workflowId: workflowId,
-      saveData: saveData, kanbanData: kanbanData, coworkerCount: coworkerCount
+      saveData: saveData, kanbanData: kanbanData, coworkerCount: coworkerCount,
+      sourceDocText: sourceDocText
     }));
   } catch(e) { /* storage quota exceeded — best-effort */ }
 }
@@ -571,8 +660,10 @@ async function cleanupPriorRuns() {
 /* ── Reset ── */
 function resetToIntent() {
   stopTaskProgressPolling();
+  stopRegenPoll();
   sessionStorage.removeItem('processify_result');
-  workflowDef = null; pendingFile = null;
+  workflowDef = null; pendingFile = null; sourceDocText = null;
+  _currentWorkflowId = null; _currentChainId = null;
   document.getElementById('dz-icon').textContent = '📄';
   document.getElementById('dz-label').textContent = 'Drop file or click to browse';
   document.getElementById('paste-text').value = '';
@@ -645,6 +736,255 @@ function toggleResultDetails() {
   arrow.textContent = open ? '▶' : '▼';
 }
 
+/* ── Mode toggle (Single / Chain) ── */
+function setMode(mode) {
+  var isSingle = mode === 'single';
+  document.getElementById('single-mode-panel').style.display = isSingle ? '' : 'none';
+  document.getElementById('chain-mode-panel').style.display = isSingle ? 'none' : '';
+  document.getElementById('tab-single').style.background = isSingle ? '#1d72ff' : 'transparent';
+  document.getElementById('tab-single').style.color = isSingle ? '#fff' : 'var(--text-secondary)';
+  document.getElementById('tab-chain').style.background = isSingle ? 'transparent' : '#1d72ff';
+  document.getElementById('tab-chain').style.color = isSingle ? 'var(--text-secondary)' : '#fff';
+  if (mode === 'chain' && _chainPhases.length === 0) {
+    addChainPhase(); addChainPhase(); // default 2 phases
+  }
+}
+
+/* ── Process Chain builder ── */
+function addChainPhase() {
+  _chainPhases.push({name: '', teamName: '', teamRole: '', file: null, text: ''});
+  renderChainPhases();
+}
+function removeChainPhase(idx) {
+  _chainPhases.splice(idx, 1);
+  renderChainPhases();
+}
+function renderChainPhases() {
+  var list = document.getElementById('chain-phases-list');
+  if (!_chainPhases.length) { list.innerHTML = ''; return; }
+  list.innerHTML = _chainPhases.map(function(p, i) {
+    return '<div style="background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:10px;padding:16px;margin-bottom:10px">' +
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">' +
+        '<span style="width:28px;height:28px;border-radius:50%;background:#1d72ff;color:#fff;display:flex;align-items:center;justify-content:center;font-size:0.78rem;font-weight:700;flex-shrink:0">' + (i+1) + '</span>' +
+        '<input type="text" value="' + esc(p.name) + '" placeholder="Phase name (e.g. Peering Agreement)" ' +
+               'oninput="_chainPhases[' + i + '].name=this.value" ' +
+               'style="flex:1;background:var(--bg-primary,#0d1117);border:1px solid var(--border-color);border-radius:6px;padding:7px 10px;color:var(--text-primary);font-size:0.88rem;outline:none">' +
+        (_chainPhases.length > 1
+          ? '<button onclick="removeChainPhase(' + i + ')" style="background:none;border:none;cursor:pointer;color:var(--text-secondary);font-size:1rem;padding:4px">✕</button>'
+          : '') +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">' +
+        '<input type="text" value="' + esc(p.teamName) + '" placeholder="Team name (e.g. Network Team)" ' +
+               'oninput="_chainPhases[' + i + '].teamName=this.value" ' +
+               'style="background:var(--bg-primary,#0d1117);border:1px solid var(--border-color);border-radius:6px;padding:7px 10px;color:var(--text-primary);font-size:0.82rem;outline:none">' +
+        '<input type="text" value="' + esc(p.teamRole) + '" placeholder="Lead role (e.g. network_engineer)" ' +
+               'oninput="_chainPhases[' + i + '].teamRole=this.value" ' +
+               'style="background:var(--bg-primary,#0d1117);border:1px solid var(--border-color);border-radius:6px;padding:7px 10px;color:var(--text-primary);font-size:0.82rem;outline:none">' +
+      '</div>' +
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">' +
+        '<label style="border:1px dashed var(--border-color);border-radius:6px;padding:8px 12px;text-align:center;cursor:pointer;font-size:0.78rem;color:var(--text-secondary)">' +
+          (p.file ? '📎 ' + esc(p.file.name) : '📄 Upload document') +
+          '<input type="file" accept=".pdf,.docx,.png,.jpg,.jpeg,.txt" ' +
+                 'style="position:fixed;top:-200px;left:-200px;width:1px;height:1px;opacity:0" ' +
+                 'onchange="_chainPhases[' + i + '].file=this.files[0];renderChainPhases()">' +
+        '</label>' +
+        '<textarea placeholder="Or paste process text…" rows="2" ' +
+                  'oninput="_chainPhases[' + i + '].text=this.value" ' +
+                  'style="background:var(--bg-primary,#0d1117);border:1px solid var(--border-color);border-radius:6px;padding:8px 10px;color:var(--text-primary);font-size:0.78rem;resize:none;outline:none">' + esc(p.text) + '</textarea>' +
+      '</div>' +
+      (p.workflowId
+        ? '<div style="margin-top:8px;font-size:0.78rem;color:#86efac">✅ Processified — Workflow ID: ' + esc(p.workflowId) + '</div>'
+        : '') +
+    '</div>';
+  }).join('');
+}
+
+async function launchChain() {
+  var chainName = (document.getElementById('chain-name-input').value || '').trim();
+  if (!chainName) { alert('Please enter a chain name first.'); return; }
+  var hasContent = _chainPhases.some(function(p) { return p.file || p.text.trim() || p.name.trim(); });
+  if (!hasContent) { alert('Add at least one phase with a name or document.'); return; }
+
+  var btn = document.getElementById('chain-launch-btn');
+  var msg = document.getElementById('chain-status-msg');
+  btn.disabled = true; btn.textContent = '⏳ Creating chain…';
+
+  try {
+    // 1. Create chain record
+    var chainResp = await fetch('/workflow-canvas/api/workflows/chains', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        name: chainName,
+        description: document.getElementById('chain-desc-input').value || '',
+        industry: document.getElementById('chain-industry-select').value
+      })
+    });
+    var chainData = await chainResp.json();
+    if (chainData.error) throw new Error(chainData.error);
+    _currentChainId = chainData.chain_id;
+
+    // 2. For each phase: add phase + processify its document
+    for (var i = 0; i < _chainPhases.length; i++) {
+      var phase = _chainPhases[i];
+      if (!phase.name.trim() && !phase.file && !phase.text.trim()) continue;
+
+      btn.textContent = '⏳ Processing phase ' + (i+1) + ' of ' + _chainPhases.length + '…';
+      msg.textContent = 'Phase ' + (i+1) + ': ' + (phase.name || 'Phase ' + (i+1));
+
+      // Add phase
+      var phResp = await fetch('/workflow-canvas/api/workflows/chains/' + _currentChainId + '/phases', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({name: phase.name || ('Phase ' + (i+1)), team_name: phase.teamName, team_role: phase.teamRole})
+      });
+      var phData = await phResp.json();
+      if (phData.error) throw new Error('Phase ' + (i+1) + ': ' + phData.error);
+      var phaseId = phData.phase_id;
+
+      // Processify the phase document (if any)
+      if (phase.file || phase.text.trim()) {
+        var fd = new FormData();
+        if (phase.file) fd.append('file', phase.file);
+        if (phase.text.trim()) fd.append('text', phase.text.trim());
+        fd.append('industry', document.getElementById('chain-industry-select').value);
+        var pResp = await fetch('/workflow-canvas/api/workflows/processify', {method:'POST', body:fd});
+        var pData = await pResp.json();
+        if (pData.error) throw new Error('Phase ' + (i+1) + ' processify: ' + pData.error);
+
+        // Save the workflow
+        var sResp = await fetch('/workflow-canvas/api/workflows/save-processify', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({workflow: pData.workflow, create_kanban_tasks: true, source_doc_text: pData.source_doc_text || ''})
+        });
+        var sData = await sResp.json();
+        if (sData.error) throw new Error('Phase ' + (i+1) + ' save: ' + sData.error);
+
+        // Link workflow to phase
+        await fetch('/workflow-canvas/api/workflows/chains/' + _currentChainId + '/phases/' + phaseId + '/processify', {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({workflow_id: sData.workflow_id})
+        });
+        _chainPhases[i].workflowId = sData.workflow_id;
+      }
+      renderChainPhases();
+    }
+
+    msg.style.color = '#86efac';
+    msg.textContent = '✅ Chain launched! All ' + _chainPhases.length + ' phases processified. Chain ID: ' + _currentChainId;
+    btn.textContent = '✅ Chain Launched';
+
+    // Show chain result with gen doc option
+    showChainResult(_currentChainId, chainName);
+
+  } catch(err) {
+    msg.style.color = '#fca5a5';
+    msg.textContent = '❌ ' + err.message;
+    btn.disabled = false; btn.textContent = '🔗 Launch Chain';
+  }
+}
+
+function showChainResult(chainId, chainName) {
+  document.getElementById('intent-screen').style.display = 'none';
+  document.getElementById('result-screen').style.display = 'block';
+  // Reuse result screen with chain context
+  document.getElementById('result-name').textContent = chainName + ' (Chain)';
+  document.getElementById('btn-workflow').href = '/workflow-canvas/workflows';
+  document.getElementById('btn-workflow').textContent = 'View Workflows';
+  document.getElementById('result-meta').innerHTML =
+    '<span>🔗 ' + _chainPhases.length + ' phases</span>' +
+    '<span>Chain ID: ' + esc(chainId.slice(0,8)) + '</span>';
+
+  // Swap gen doc section for chain mode
+  var regenSection = document.getElementById('regen-doc-section');
+  regenSection.querySelector('p').textContent =
+    'Regenerate a phase document or one unified end-to-end document for the full chain.';
+  var genBtn = regenSection.querySelector('button');
+  genBtn.onclick = function() { startRegenDoc('chain'); };
+  genBtn.textContent = 'Generate Full Chain Document';
+
+  // Add per-phase buttons
+  var extraBtns = '';
+  _chainPhases.forEach(function(p, i) {
+    if (p.workflowId) {
+      extraBtns += '<button onclick="startRegenDoc(\'workflow\',\'' + esc(p.workflowId) + '\')" ' +
+        'style="padding:6px 14px;background:var(--bg-secondary);border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary);font-size:0.78rem;cursor:pointer;margin-top:8px;margin-right:6px">' +
+        '📄 Phase ' + (i+1) + ': ' + esc(p.name || 'Phase ' + (i+1)) + '</button>';
+    }
+  });
+  if (extraBtns) {
+    var extraDiv = document.createElement('div');
+    extraDiv.style.marginTop = '10px';
+    extraDiv.innerHTML = '<div style="font-size:0.78rem;color:var(--text-secondary);margin-bottom:6px">Or regenerate per phase:</div>' + extraBtns;
+    regenSection.appendChild(extraDiv);
+  }
+}
+
+/* ── Doc Regeneration ── */
+async function startRegenDoc(scope, workflowIdOverride) {
+  var fmt = document.getElementById('regen-format').value;
+  var statusEl = document.getElementById('regen-status');
+  var dlEl = document.getElementById('regen-downloads');
+  statusEl.style.display = 'block';
+  statusEl.textContent = '⏳ Generating updated document…';
+  dlEl.style.display = 'none';
+
+  try {
+    var resp, data;
+    if (scope === 'chain' && _currentChainId) {
+      resp = await fetch('/workflow-canvas/api/chains/' + _currentChainId + '/regen-doc', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({format: fmt})
+      });
+    } else {
+      var wfId = workflowIdOverride || _currentWorkflowId;
+      if (!wfId) { statusEl.textContent = '❌ No workflow ID — launch a process first.'; return; }
+      resp = await fetch('/workflow-canvas/api/workflows/' + wfId + '/regen-doc', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({format: fmt})
+      });
+    }
+    data = await resp.json();
+    if (data.error) throw new Error(data.error);
+    pollRegenStatus(data.job_id);
+  } catch(err) {
+    statusEl.textContent = '❌ ' + err.message;
+  }
+}
+
+function stopRegenPoll() {
+  if (_regenPollTimer) { clearInterval(_regenPollTimer); _regenPollTimer = null; }
+}
+
+function pollRegenStatus(jobId) {
+  stopRegenPoll();
+  _regenPollTimer = setInterval(async function() {
+    try {
+      var resp = await fetch('/workflow-canvas/api/regen-jobs/' + jobId + '/status');
+      var job = await resp.json();
+      var statusEl = document.getElementById('regen-status');
+      var dlEl = document.getElementById('regen-downloads');
+      if (job.status === 'running') {
+        statusEl.textContent = '⏳ Generating… (this may take 30-60 seconds)';
+      } else if (job.status === 'done') {
+        stopRegenPoll();
+        statusEl.textContent = '✅ Document ready: ' + esc(job.title || '');
+        dlEl.style.display = 'block';
+        dlEl.innerHTML = '<div style="font-size:0.78rem;font-weight:700;color:var(--text-secondary);margin-bottom:8px">Download:</div>' +
+          (job.files || []).map(function(f) {
+            var icons = {markdown:'📝', html:'🌐', docx:'📄', pdf:'📋'};
+            return '<a href="/workflow-canvas/api/regen-jobs/' + esc(jobId) + '/download/' + esc(f.filename) + '" ' +
+              'download="' + esc(f.filename) + '" ' +
+              'style="display:inline-block;margin-right:8px;margin-bottom:6px;padding:6px 14px;background:var(--bg-secondary);' +
+              'border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary);text-decoration:none;font-size:0.82rem">' +
+              (icons[f.format] || '📁') + ' ' + f.filename + '</a>';
+          }).join('');
+      } else if (job.status === 'error') {
+        stopRegenPoll();
+        statusEl.textContent = '❌ ' + (job.error || 'Generation failed');
+      }
+    } catch(e) { /* silent */ }
+  }, 3000);
+}
+
 /* ── Restore result screen after Back-button navigation ── */
 window.addEventListener('DOMContentLoaded', function() {
   try {
@@ -653,6 +993,8 @@ window.addEventListener('DOMContentLoaded', function() {
     var s = JSON.parse(saved);
     if (!s || !s.wfDef || !s.workflowId) return;
     workflowDef = s.wfDef;
+    sourceDocText = s.sourceDocText || '';
+    _currentWorkflowId = s.workflowId;
     showResult(s.wfDef, s.workflowId, s.saveData || {}, s.kanbanData || {}, s.coworkerCount || 0);
   } catch(e) { /* corrupted storage — ignore */ }
 });

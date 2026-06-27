@@ -14,6 +14,7 @@ canvas with enterprise branding, form-to-workflow integration, and multi-format 
 | `tools/workflow_canvas/db/migrations/001_wfc_init.sql` | wfc_branding, wfc_workflow_form_nodes tables |
 | `tools/studio/form_builder.py` | FIELD_TYPES (10), FORM_TEMPLATES (20+ across 10 industries) |
 | `tools/iqe/adapters/wfc.py` | IQE adapter — wfc.forms, wfc.workflows, wfc.templates, wfc.submissions |
+| `tools/workflow_canvas/doc_regenerator.py` | Process-Ify Document Regenerator — regenerates source documents after a workflow is processified, preserving style/tone/structure via LLM fingerprinting. Exports DOCX/PDF via pptx_builder / build_pdf / python-docx. |
 | `args/component_registry.yaml` | Canvas registration under key: wfc |
 
 ## Routes

@@ -2,7 +2,7 @@
 """User Risk Engine — ZIG User Pillar, Activities p2-02, p2-05.
 
 Continuous user risk scoring with behavioral analytics wired into the access
-decision. Each user carries a live risk score derived from authentication
+decision. Each user carries a live risk score computed from authentication
 signals, behavioral deviation, and threat context; the score raises or lowers
 the assurance required for subsequent access (risk-adaptive authentication).
 
