@@ -97,7 +97,7 @@ class TestRouterExcludeModelIds:
 # 3. grade_output_quality — default function changed
 # ---------------------------------------------------------------------------
 
-_ROUTER_PATH = "tools.llm.router.LLMRouter"
+_ROUTER_PATH = "icdev.tools.llm.router.LLMRouter"
 
 
 class TestGradeOutputQualityRouting:
