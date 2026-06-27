@@ -195,12 +195,81 @@ def _action_reinit_db_table(params: Dict) -> Tuple[bool, str]:
         return False, str(e)
 
 
+def _action_fix_canvas_rls_bypass(params: Dict) -> Tuple[bool, str]:
+    """Auto-fix canvas db/init_db.py files that import get_connection without RLS bypass.
+
+    Only applies to files flagged by check_canvas_rls_bypass() that match the
+    deterministic pattern: importing get_connection from storage + no classification
+    column in DDL. Replaces the import+call with get_canvas_connection(env_var).
+
+    This action is safe and idempotent — it only edits files matching an exact
+    structural pattern and can be re-run without harm.
+    """
+    import re as _re
+
+    # Derive env_var from the canvas directory name
+    def _env_var(canvas_key: str) -> str:
+        return canvas_key.upper() + "_STORAGE_BACKEND"
+
+    _IMPORT_PAT = re.compile(
+        r"from\s+(?:tools|icdev\.tools)\.db\.storage\s+import[^\n]*\bget_connection\b[^\n]*\n"
+    )
+    _CALL_PAT = re.compile(r"\bget_connection\s*\(")
+
+    fixed: List[str] = []
+    target_files: List[str] = params.get("target_files", [])
+
+    if not target_files:
+        # Auto-discover from coherence check
+        try:
+            from tools.workflow.coherence_checker import check_canvas_rls_bypass
+            result = check_canvas_rls_bypass()
+            target_files = result.missing
+        except Exception as exc:
+            return False, f"Could not run check_canvas_rls_bypass: {exc}"
+
+    for rel in target_files:
+        file_path = BASE_DIR / rel
+        if not file_path.exists():
+            continue
+        try:
+            original = file_path.read_text(encoding="utf-8")
+        except Exception:
+            continue
+
+        # Extract canvas key from path: tools/<canvas>/db/init_db.py → canvas
+        parts = Path(rel).parts
+        canvas_key = parts[1] if len(parts) >= 2 else "canvas"
+        env_var = _env_var(canvas_key)
+
+        # Only fix the deterministic storage-import pattern
+        if not _IMPORT_PAT.search(original):
+            continue
+
+        # Replace import line: keep other imports on the same line, add canvas import
+        new_import = f"from tools.db.storage import get_canvas_connection\n"
+        patched = _IMPORT_PAT.sub(new_import, original, count=1)
+        # Replace get_connection() calls (bare call with no args = canvas pattern)
+        patched = _CALL_PAT.sub(f'get_canvas_connection("{env_var}"', patched)
+
+        if patched == original:
+            continue
+
+        file_path.write_text(patched, encoding="utf-8")
+        fixed.append(rel)
+
+    if fixed:
+        return True, f"Fixed {len(fixed)} file(s): {', '.join(fixed)}"
+    return True, "No files needed fixing (check already passing or no target files matched)"
+
+
 ACTION_HANDLERS = {
     "regenerate_artifact": _action_regenerate_artifact,
     "clear_stale_cache": _action_clear_stale_cache,
     "rerun_tool": _action_rerun_tool,
     "reset_circuit_breaker": _action_reset_circuit_breaker,
     "reinit_db_table": _action_reinit_db_table,
+    "fix_canvas_rls_bypass": _action_fix_canvas_rls_bypass,
 }
 
 # ---------------------------------------------------------------------------

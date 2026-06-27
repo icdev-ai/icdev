@@ -2951,7 +2951,37 @@ def check_new_page_completeness() -> CoherenceCheck:
             rel = (canvas_subdir / name).relative_to(PROJECT_ROOT)
             mirror_violations.append(f"{rel}: icdev/ mirror missing")
 
-    all_violations = violations + mirror_violations
+    # ------------------------------------------------------------------
+    # Sub-check: registry-registered canvases with no templates directory.
+    # The page.html loop above is keyed on existing page.html files — a canvas
+    # that ships enabled but has never had a template created is completely
+    # invisible to the 8-component gate.  This sub-check closes that gap by
+    # cross-referencing component_registry.yaml against the templates directory.
+    # ------------------------------------------------------------------
+    registry_violations: List[str] = []
+    try:
+        import yaml as _yaml
+        registry_path = PROJECT_ROOT / "args" / "component_registry.yaml"
+        registry_data = _yaml.safe_load(registry_path.read_text(encoding="utf-8")) or {}
+        canvases_in_registry = [
+            c for c in registry_data.get("components", [])
+            if c.get("kind") == "canvas" and c.get("default_enabled", False)
+        ]
+        for canvas_entry in canvases_in_registry:
+            key = canvas_entry.get("key", "")
+            if not key or key in whitelist:
+                continue
+            canvas_tmpl_dir = templates_dir / key
+            if not canvas_tmpl_dir.exists():
+                registry_violations.append(
+                    f"{key}: enabled in component_registry.yaml but "
+                    f"tools/dashboard/templates/{key}/ does not exist "
+                    "(invisible to 8-component gate)"
+                )
+    except Exception:
+        pass  # registry unavailable — skip this sub-check
+
+    all_violations = violations + mirror_violations + registry_violations
     status = "fail" if all_violations else "pass"
     canvas_count = len(list(templates_dir.rglob("*/page.html")))
     checked_count = canvas_count - whitelisted_count
@@ -4280,17 +4310,32 @@ def check_canvas_rls_bypass() -> "CoherenceCheck":
             except Exception:
                 continue
 
-            # If the file doesn't use get_connection at all, no issue
-            if "get_connection" not in content:
+            # Only flag files that IMPORT get_connection from the storage layer.
+            # Files that define their own local get_connection() (e.g. sqlite3-only
+            # modules) or that use the global DB intentionally are not violations.
+            import re as _re2
+            if not _re2.search(
+                r"from\s+(?:tools|icdev\.tools)\.db\.storage\s+import[^\n]*\bget_connection\b",
+                content,
+            ):
                 continue
 
-            # If it already uses the safe patterns, skip
+            # If it already uses the safe bypass patterns, skip
             safe = (
                 "get_canvas_connection" in content
                 or "set_security_context(None)" in content
                 or "security_context=None" in content
             )
             if safe:
+                continue
+
+            # Exclude files whose DDL defines classification or tenant_id columns —
+            # those tables participate correctly in RLS and don't need the bypass.
+            has_rls_columns = bool(
+                _re2.search(r"\bclassification\b.*TEXT", content)
+                or _re2.search(r"\btenant_id\b.*TEXT", content)
+            )
+            if has_rls_columns:
                 continue
 
             violations.append(rel)

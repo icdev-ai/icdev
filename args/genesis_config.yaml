@@ -490,6 +490,52 @@ reflexes:
       threshold: 0
       operator: gte
 
+  dead_code_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 24h"
+    interval_seconds: 86400
+    description: "Dead code sweep — orphan files, dead functions, import cycles → [DEAD-CODE] kanban tasks"
+    success_metric:
+      name: dead_items_found
+      threshold: 0
+      operator: gte
+
+  critical_task_watchdog_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 5m"
+    interval_seconds: 300
+    description: "Poll for newly-filed critical kanban tasks; emit watchdog_alerts + file-based sidecar notifications in data/alerts/"
+    success_metric:
+      name: new_critical_tasks
+      threshold: 0
+      operator: gte
+
+  api_contract_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    interval_seconds: 21600
+    description: "Hit live API endpoints and validate responses against OpenAPI spec; file [API-CONTRACT] bug tasks for schema drift"
+    success_metric:
+      name: failed
+      threshold: 0
+      operator: lte
+
+  route_perf_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    interval_seconds: 21600
+    threshold_multiplier: 2.5
+    min_runs: 5
+    description: "Full NAV_ROUTES smoke (auto-persists elapsed_ms to route_perf.db) + p50 latency regression detection; files [PERF] kanban tasks for routes exceeding threshold"
+    success_metric:
+      name: regressions_found
+      threshold: 0
+      operator: gte
+
   cpmp_monitor:
     enabled: true
     risk_tier: yellow

@@ -121,10 +121,11 @@ def _column_exists(conn, table: str, column: str) -> bool:
 
 def init_nova_tables(conn=None) -> dict:
     """Create all NOVA tables. Safe to call on any DB state (idempotent)."""
-    from tools.db.storage import get_connection
+    from tools.db.storage import get_canvas_connection
+    # NOVA system tables have no classification/tenant_id — bypass RLS.
     _close = conn is None
     if conn is None:
-        conn = get_connection()
+        conn = get_canvas_connection("NOVA_STORAGE_BACKEND")
     try:
         conn.execute(_AGENT_EXECUTION_TRACES_DDL)
         conn.execute(_AGENT_IMPROVEMENT_ARTIFACTS_DDL)
