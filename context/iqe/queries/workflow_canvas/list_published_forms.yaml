@@ -1,0 +1,7 @@
+query: "List all published forms"
+canvas: workflow_canvas
+collection: wfc.forms
+examples:
+  - "Show published forms"
+  - "What forms are available"
+  - "Which forms are ready to use"
