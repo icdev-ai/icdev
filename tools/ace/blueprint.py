@@ -299,6 +299,26 @@ def session_detail(session_id: str):
         return jsonify(get_session_metadata(session_id) or {"error": "not found"})
 
 
+@ace_bp.route("/live/<instance_id>")
+def live_monitor(instance_id: str):
+    """Real-time agent loop monitoring via SSE stream."""
+    try:
+        return render_template("ace/live.html", instance_id=instance_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.info("ace/live.html unavailable (%s); JSON fallback", exc)
+        return jsonify({"instance_id": instance_id, "stream": f"/api/ace/{instance_id}/stream"})
+
+
+@ace_bp.route("/evals")
+def evals_page():
+    """Agent eval suite — run history and pass/fail trends."""
+    try:
+        return render_template("ace/evals.html")
+    except Exception as exc:  # noqa: BLE001
+        logger.info("ace/evals.html unavailable (%s); JSON fallback", exc)
+        return jsonify({"page": "evals"})
+
+
 @ace_bp.route("/<instance_id>")
 def instance_detail(instance_id: str):
     """Single instance: header, coworkers, message timeline, artifacts."""
@@ -728,7 +748,7 @@ def api_hitl_resolve(instance_id: str):
                 conn.execute(
                     "INSERT INTO ace_audit_log "
                     "(instance_id, coworker_id, action, detail, actor, created_at) "
-                    "VALUES (%s, %s, 'hitl_rejected', %s, 'hitl_gate', %s)",
+                    "VALUES (?, ?, 'hitl_rejected', ?, 'hitl_gate', ?)",
                     (instance_id, coworker_id, detail, now),
                 )
                 conn.commit()
@@ -787,6 +807,143 @@ def api_session_detail(session_id: str):
     turns_parsed = _parse_turns(messages)
 
     return jsonify({**meta, "turns_parsed": turns_parsed})
+
+
+@ace_api_bp.route("/sessions/<session_id>/eval", methods=["GET"])
+def api_session_eval_get(session_id: str):
+    """Return stored eval metrics for a session (if any).
+
+    GET /api/ace/sessions/<session_id>/eval
+    Returns: EvalResult fields as JSON, or {error: not_found}.
+    """
+    try:
+        from icdev.tools.ace.evaluator import get_eval
+        er = get_eval(session_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace eval get failed for %s: %s", session_id, exc)
+        return jsonify({"error": str(exc)}), 500
+    if er is None:
+        return jsonify({"error": "no eval found", "session_id": session_id}), 404
+    return jsonify({
+        "session_id": er.session_id,
+        "outcome": er.outcome,
+        "done": er.done,
+        "turns_used": er.turns_used,
+        "efficiency_score": er.efficiency_score,
+        "total_tool_calls": er.total_tool_calls,
+        "error_tool_calls": er.error_tool_calls,
+        "tool_error_rate": er.tool_error_rate,
+        "unique_tools": er.unique_tools,
+        "tool_precision": er.tool_precision,
+        "total_cost_usd": er.total_cost_usd,
+        "total_input_tokens": er.total_input_tokens,
+        "total_output_tokens": er.total_output_tokens,
+        "reasoning_coverage": er.reasoning_coverage,
+        "avg_reasoning_chars": er.avg_reasoning_chars,
+        "has_error_recovery_reasoning": er.has_error_recovery_reasoning,
+        "plan_stated": er.plan_stated,
+        "scope_violations": er.scope_violations,
+        "trust_denials": er.trust_denials,
+        "llm_grade": er.llm_grade,
+        "reasoning_style": er.reasoning_style,
+        "graded_at": er.graded_at,
+        "grading_version": er.grading_version,
+    })
+
+
+@ace_api_bp.route("/sessions/<session_id>/eval", methods=["POST"])
+def api_session_eval_post(session_id: str):
+    """Score a session and persist the eval result.
+
+    POST /api/ace/sessions/<session_id>/eval
+    Body (optional): {max_iterations: int, reasoning_style: str, judge: bool,
+                      user_prompt: str, final_content: str}
+    Returns: the new EvalResult as JSON.
+    """
+    data = request.get_json(silent=True) or {}
+    max_iter = int(data.get("max_iterations") or 12)
+    reasoning_style = str(data.get("reasoning_style") or "")
+    run_judge = bool(data.get("judge", False))
+    user_prompt = str(data.get("user_prompt") or "")
+    final_content = str(data.get("final_content") or "")
+
+    try:
+        from icdev.tools.ace.evaluator import score_session, save_eval, grade_output_quality
+        er = score_session(session_id, max_iterations=max_iter, reasoning_style=reasoning_style)
+        if er.outcome == "not_found":
+            return jsonify({"error": f"session not found: {session_id}"}), 404
+        if run_judge and user_prompt and final_content:
+            grade = grade_output_quality(er, user_prompt=user_prompt, final_content=final_content)
+            er.llm_grade = grade
+        eval_id = save_eval(er)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace eval post failed for %s: %s", session_id, exc)
+        return jsonify({"error": str(exc)}), 500
+
+    return jsonify({
+        "eval_id": eval_id,
+        "session_id": er.session_id,
+        "outcome": er.outcome,
+        "done": er.done,
+        "turns_used": er.turns_used,
+        "efficiency_score": er.efficiency_score,
+        "total_tool_calls": er.total_tool_calls,
+        "error_tool_calls": er.error_tool_calls,
+        "tool_error_rate": er.tool_error_rate,
+        "unique_tools": er.unique_tools,
+        "tool_precision": er.tool_precision,
+        "total_cost_usd": er.total_cost_usd,
+        "total_input_tokens": er.total_input_tokens,
+        "total_output_tokens": er.total_output_tokens,
+        "reasoning_coverage": er.reasoning_coverage,
+        "avg_reasoning_chars": er.avg_reasoning_chars,
+        "has_error_recovery_reasoning": er.has_error_recovery_reasoning,
+        "plan_stated": er.plan_stated,
+        "scope_violations": er.scope_violations,
+        "trust_denials": er.trust_denials,
+        "llm_grade": er.llm_grade,
+        "reasoning_style": er.reasoning_style,
+        "graded_at": er.graded_at,
+        "grading_version": er.grading_version,
+    }), 201
+
+
+@ace_api_bp.route("/evals", methods=["GET"])
+def api_evals_list():
+    """List all stored eval results.
+
+    GET /api/ace/evals?limit=50&offset=0&outcome=success
+    Returns: {evals: [...], count, total}.
+    """
+    limit = _int_arg("limit", _DEFAULT_LIMIT, lo=1, hi=_MAX_LIMIT)
+    offset = _int_arg("offset", 0, lo=0, hi=10_000_000)
+    outcome = (request.args.get("outcome") or "").strip()
+
+    items: list[dict] = []
+    total = 0
+    conn = None
+    try:
+        from icdev.tools.db.storage import get_canvas_connection
+        conn = get_canvas_connection("ACE_DB_PATH")
+        where = "WHERE outcome = ?" if outcome else ""
+        params: tuple = (outcome,) if outcome else ()
+        cnt = _one(conn.execute(_q(conn, f"SELECT COUNT(*) AS n FROM agent_evals {where}"), params))
+        total = (cnt or {}).get("n", 0)
+        items = _rows(conn.execute(
+            _q(conn, f"SELECT session_id, outcome, done, turns_used, efficiency_score, "
+               f"tool_error_rate, total_cost_usd, reasoning_coverage, plan_stated, "
+               f"scope_violations, graded_at, grading_version "
+               f"FROM agent_evals {where} ORDER BY graded_at DESC LIMIT ? OFFSET ?"),
+            params + (limit, offset),
+        ))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ace evals list failed: %s", exc)
+        return jsonify({"error": str(exc)}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+    return jsonify({"evals": items, "count": len(items), "total": total, "limit": limit, "offset": offset})
 
 
 def _parse_turns(messages: list[dict]) -> list[dict]:

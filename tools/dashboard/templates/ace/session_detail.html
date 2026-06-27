@@ -116,6 +116,7 @@
   <div id="page-content">
     <div class="loading-state">Loading session…</div>
   </div>
+  <div id="eval-container"></div>
 
 </div>
 
@@ -255,9 +256,104 @@ async function loadSession() {
       : '';
 
     content.innerHTML = metaHtml + timelineHtml + sysHtml;
+    loadEval();
 
   } catch(e) {
     content.innerHTML = '<div class="error-state">Network error: ' + esc(String(e)) + '</div>';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Eval section
+// ---------------------------------------------------------------------------
+var _evalLoaded = false;
+
+function evalScoreBar(v, label) {
+  var p = Math.round((v || 0) * 100);
+  var clr = p >= 70 ? '#27ae60' : p >= 40 ? '#f39c12' : '#e74c3c';
+  return '<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">' +
+    '<span style="font-size:12px;width:160px;color:var(--text-secondary,#7a8cb0);">' + esc(label) + '</span>' +
+    '<div style="flex:1;max-width:160px;height:6px;background:rgba(255,255,255,.1);border-radius:3px;">' +
+      '<div style="width:' + p + '%;height:100%;background:' + clr + ';border-radius:3px;"></div>' +
+    '</div>' +
+    '<span style="font-size:12px;">' + p + '%</span>' +
+  '</div>';
+}
+
+function renderEvalPanel(e) {
+  var boolTag = function(v, yes, no) {
+    return v
+      ? '<span style="color:#27ae60;font-weight:600;">' + (yes || 'Yes') + '</span>'
+      : '<span style="color:var(--text-secondary,#7a8cb0);">' + (no || 'No') + '</span>';
+  };
+  return '<div style="border:1px solid var(--border-color,#2a2a4a);border-radius:6px;padding:18px;background:var(--bg-secondary,#1a1a2e);margin-top:20px;">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">' +
+      '<div style="font-size:15px;font-weight:600;">Eval Metrics</div>' +
+      '<span style="font-size:11px;color:var(--text-secondary,#7a8cb0);">graded ' + fmtDate(e.graded_at) + ' · v' + esc(e.grading_version || '1.0') + '</span>' +
+    '</div>' +
+    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">' +
+      '<div>' +
+        '<div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-secondary,#7a8cb0);margin-bottom:8px;">Performance</div>' +
+        evalScoreBar(e.efficiency_score || 0, 'Efficiency') +
+        evalScoreBar(1 - (e.tool_error_rate || 0), 'Tool success rate') +
+        evalScoreBar(e.tool_precision || 0, 'Tool precision') +
+      '</div>' +
+      '<div>' +
+        '<div style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-secondary,#7a8cb0);margin-bottom:8px;">Reasoning (CoT/CoD)</div>' +
+        evalScoreBar(e.reasoning_coverage || 0, 'Reasoning coverage') +
+        '<div style="margin-bottom:6px;font-size:12px;color:var(--text-secondary,#7a8cb0);">Avg reasoning chars: <strong style="color:var(--text-primary,#e2e8f0);">' + Math.round(e.avg_reasoning_chars || 0) + '</strong></div>' +
+        '<div style="margin-bottom:6px;font-size:12px;color:var(--text-secondary,#7a8cb0);">Plan stated: ' + boolTag(e.plan_stated) + '</div>' +
+        '<div style="font-size:12px;color:var(--text-secondary,#7a8cb0);">Error recovery reasoning: ' + boolTag(e.has_error_recovery_reasoning) + '</div>' +
+      '</div>' +
+    '</div>' +
+    '<div style="margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.05);display:flex;gap:20px;font-size:12px;color:var(--text-secondary,#7a8cb0);">' +
+      '<span>Scope violations: <strong style="color:' + (e.scope_violations ? '#e74c3c' : '#27ae60') + ';">' + (e.scope_violations || 0) + '</strong></span>' +
+      '<span>Trust denials: <strong style="color:' + (e.trust_denials ? '#e74c3c' : '#27ae60') + ';">' + (e.trust_denials || 0) + '</strong></span>' +
+    '</div>' +
+  '</div>';
+}
+
+async function loadEval() {
+  if (_evalLoaded) return;
+  var container = document.getElementById('eval-container');
+  if (!container) return;
+  try {
+    var res = await fetch('/api/ace/sessions/' + SESSION_ID + '/eval');
+    if (res.status === 404) {
+      container.innerHTML =
+        '<div style="margin-top:20px;border:1px dashed var(--border-color,#2a2a4a);border-radius:6px;padding:20px;text-align:center;">' +
+          '<div style="color:var(--text-secondary,#7a8cb0);font-size:13px;margin-bottom:10px;">No eval yet for this session.</div>' +
+          '<button onclick="runEval()" style="padding:7px 18px;border-radius:5px;background:rgba(74,158,255,.15);border:1px solid rgba(74,158,255,.4);color:#4a9eff;font-size:13px;cursor:pointer;font-weight:600;">Run Eval</button>' +
+        '</div>';
+      return;
+    }
+    var data = await res.json();
+    if (data.error) {
+      container.innerHTML = '<div style="margin-top:20px;color:#e74c3c;font-size:13px;">Eval error: ' + esc(data.error) + '</div>';
+      return;
+    }
+    container.innerHTML = renderEvalPanel(data);
+    _evalLoaded = true;
+  } catch(e) {
+    container.innerHTML = '<div style="margin-top:20px;color:var(--text-secondary,#7a8cb0);font-size:12px;">(eval load failed)</div>';
+  }
+}
+
+async function runEval() {
+  var container = document.getElementById('eval-container');
+  if (!container) return;
+  container.innerHTML = '<div style="margin-top:20px;text-align:center;padding:20px;color:var(--text-secondary,#7a8cb0);">Running eval…</div>';
+  try {
+    var res = await fetch('/api/ace/sessions/' + SESSION_ID + '/eval', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({})});
+    var data = await res.json();
+    if (data.error) {
+      container.innerHTML = '<div style="margin-top:20px;color:#e74c3c;font-size:13px;">Eval failed: ' + esc(data.error) + '</div>';
+      return;
+    }
+    container.innerHTML = renderEvalPanel(data);
+    _evalLoaded = true;
+  } catch(e) {
+    container.innerHTML = '<div style="margin-top:20px;color:#e74c3c;font-size:13px;">Eval error: ' + esc(String(e)) + '</div>';
   }
 }
 
