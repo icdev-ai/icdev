@@ -1682,6 +1682,13 @@ def create_app(testing: bool = False) -> Flask:
     # Register UX filters (glossary, timestamps, error recovery, quick paths)
     register_ux_filters(app)
 
+    # Register CLI bridge toggle middleware (silences 404 in cli_bridge_indicator)
+    try:
+        from tools.dashboard.api.cli_bridge_api import register_cli_bridge
+        register_cli_bridge(app)
+    except Exception as _exc:
+        app.logger.warning("CLI bridge middleware skipped: %s", _exc)
+
     # Register dashboard auth middleware (D169-D172)
     register_dashboard_auth(app)
 

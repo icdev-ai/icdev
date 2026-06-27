@@ -71,6 +71,32 @@ def _new_id(prefix: str = "wfc") -> str:
     return f"{prefix}-{uuid.uuid4().hex[:12]}"
 
 
+def _cancel_prior_digitize_tasks(workflow_name: str) -> int:
+    """Cancel non-terminal process_digitizer tasks for *workflow_name*. Returns count."""
+    from tools.db.storage import get_connection, sql_placeholder
+    try:
+        conn = get_connection()
+        ph = sql_placeholder(conn)
+        title_prefix = f"{workflow_name}:%"
+        cur = conn.execute(
+            f"""UPDATE kanban_tasks
+                SET status = 'cancelled', updated_at = {ph}
+                WHERE dispatch_source = 'process_digitizer'
+                  AND status NOT IN ('done', 'cancelled')
+                  AND title LIKE {ph}""",
+            (_now_iso(), title_prefix),
+        )
+        n = cur.rowcount if cur else 0
+        conn.commit()
+        conn.close()
+        if n:
+            logger.info("wfc: cancelled %d prior digitize task(s) for '%s'", n, workflow_name)
+        return n
+    except Exception as exc:
+        logger.warning("wfc: could not cancel prior digitize tasks: %s", exc)
+        return 0
+
+
 _WFC_MIGRATION_PG = """
 CREATE TABLE IF NOT EXISTS wfc_branding (
     id               TEXT PRIMARY KEY,
@@ -877,10 +903,16 @@ Process Document:
 
         # Optionally seed kanban tasks
         kanban_ids: list = []
+        conflict_mode = data.get("conflict_mode", "replace")  # replace | append
         if data.get("create_kanban_tasks"):
             try:
                 from tools.kanban.task_factory import create_tasks
                 wfl_prefix = workflow_id[:8]
+
+                # "replace": cancel prior process_digitizer tasks for the same workflow name
+                if conflict_mode == "replace":
+                    _cancel_prior_digitize_tasks(workflow_name)
+
                 task_specs = []
                 for step in steps:
                     deps = step.get("dependencies", [])
@@ -909,6 +941,51 @@ Process Document:
             "kanban_tasks": len(kanban_ids),
         })
 
+    @bp.route("/api/workflows/cleanup-digitized", methods=["POST"])
+    def api_cleanup_digitized_tasks():
+        """Cancel process_digitizer kanban tasks, optionally filtered by workflow_name.
+
+        Body (all optional):
+          workflow_name  — only cancel tasks for this workflow (title LIKE "name:%")
+          status_filter  — list of statuses to cancel; default ["backlog", "in_progress"]
+        Returns: {"cancelled": N}
+        """
+        data = request.get_json(force=True) or {}
+        wf_name = (data.get("workflow_name") or "").strip()
+        status_filter = data.get("status_filter") or ["backlog", "in_progress"]
+
+        from tools.db.storage import get_connection, sql_placeholder
+        try:
+            conn = get_connection()
+            ph = sql_placeholder(conn)
+            placeholders = ",".join([ph] * len(status_filter))
+            base_params: list = [_now_iso()] + list(status_filter)
+            if wf_name:
+                cur = conn.execute(
+                    f"""UPDATE kanban_tasks
+                        SET status = 'cancelled', updated_at = {ph}
+                        WHERE dispatch_source = 'process_digitizer'
+                          AND status IN ({placeholders})
+                          AND title LIKE {ph}""",
+                    base_params + [f"{wf_name}:%"],
+                )
+            else:
+                cur = conn.execute(
+                    f"""UPDATE kanban_tasks
+                        SET status = 'cancelled', updated_at = {ph}
+                        WHERE dispatch_source = 'process_digitizer'
+                          AND status IN ({placeholders})""",
+                    base_params,
+                )
+            n = cur.rowcount if cur else 0
+            conn.commit()
+            conn.close()
+            logger.info("wfc: cleanup-digitized cancelled %d task(s) (filter=%r)", n, wf_name or "*")
+            return jsonify({"cancelled": n})
+        except Exception as exc:
+            logger.error("wfc: cleanup-digitized error: %s", exc, exc_info=True)
+            return jsonify({"error": str(exc)}), 500
+
     @bp.route("/api/workflows/ensure-roles", methods=["POST"])
     def api_ensure_roles():
         """Ensure ACE coworker roles exist — auto-generates any missing ones via profile_generator."""
@@ -934,9 +1011,32 @@ Process Document:
                 existing.append(role_id)
                 continue
             try:
+                display_name = role_id.replace("_", " ").title()
+                role_desc = description or f"AI co-worker for {role_id} tasks"
+                minimal_spec = {
+                    "role_id": role_id,
+                    "display_name": display_name,
+                    "description": role_desc,
+                    "version": "1.0",
+                    "source": "generated",
+                    "trust_tier": "yellow",
+                    "default_count": 1,
+                    "max_instances": 2,
+                    "steps": ["analyze", "execute", "report"],
+                    "llm_function": "task_decomposition",
+                    "tool_permissions": ["Read", "Grep", "Glob"],
+                    "genesis_reflex": "maintain",
+                    "communication": {
+                        "protocol": "a2a",
+                        "listen_topics": [],
+                        "emit_topics": ["task.completed"],
+                    },
+                    "personality": {"domain": display_name, "supported_verticals": ["enterprise"]},
+                }
                 result = generate_profile(
-                    name=role_id.replace("_", " ").title(),
-                    description=description or f"AI co-worker for {role_id} tasks",
+                    name=display_name,
+                    description=role_desc,
+                    spec_override=minimal_spec,
                 )
                 generated.append(result["role_id"])
                 logger.info("ensure_roles: generated profile for %s", role_id)

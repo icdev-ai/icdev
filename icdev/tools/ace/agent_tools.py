@@ -95,6 +95,78 @@ _SCHEMAS: dict[str, dict[str, Any]] = {
             },
         },
     },
+    "search_files": {
+        "type": "function",
+        "is_read_only": True,
+        "function": {
+            "name": "search_files",
+            "is_read_only": True,
+            "description": (
+                "Find files matching a glob pattern within the role's declared folder_access "
+                "scopes. Returns one matching path per line. Use '**/*.py' for recursive "
+                "search, '*.yaml' for a flat directory search. The 'path' argument sets the "
+                "search root (defaults to '.' — repo root). Runs in parallel with other "
+                "read-only tools."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Glob pattern, e.g. '**/*.py', '*.yaml', 'test_*.py'.",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": (
+                            "Directory to search in (relative to repository root). "
+                            "Defaults to '.' (repo root)."
+                        ),
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum number of paths to return (default 100, max 500).",
+                    },
+                },
+                "required": ["pattern"],
+            },
+        },
+    },
+    "grep_files": {
+        "type": "function",
+        "is_read_only": True,
+        "function": {
+            "name": "grep_files",
+            "is_read_only": True,
+            "description": (
+                "Search file contents for a text substring or regex pattern within the "
+                "role's declared folder_access scopes. Returns matches in "
+                "'filepath:line_num:content' format. Searches recursively when 'path' is a "
+                "directory; searches a single file when 'path' is a file. Runs in parallel "
+                "with other read-only tools."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Text substring or Python regex to search for.",
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": (
+                            "File or directory to search (relative to repository root). "
+                            "Defaults to '.' (repo root)."
+                        ),
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum number of matching lines to return (default 50, max 200).",
+                    },
+                },
+                "required": ["pattern"],
+            },
+        },
+    },
     "run_tool": {
         "type": "function",
         "function": {
@@ -259,6 +331,10 @@ class AgentToolRegistry:
             return self._write_file
         if name == "list_files":
             return self._list_files
+        if name == "search_files":
+            return self._search_files
+        if name == "grep_files":
+            return self._grep_files
         if name == "run_tool":
             return self._run_tool
         if name == "done":
@@ -303,6 +379,94 @@ class AgentToolRegistry:
             return str(resolved)
         entries = sorted(p.name for p in resolved.iterdir())
         return "\n".join(entries) if entries else "(empty)"
+
+    def _search_files(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
+        import re as _re
+        from icdev.tools.ace.file_access_broker import FileAccessBroker, ScopeViolationError
+
+        pattern = (inp.get("pattern") or "").strip()
+        if not pattern:
+            return "error: 'pattern' is required"
+        path = _path_arg(inp) or "."
+        max_results = min(int(inp.get("max_results") or 100), 500)
+
+        broker = FileAccessBroker(self._folder_access)
+        try:
+            resolved = broker._resolve(path, need_write=False)  # noqa: SLF001
+        except ScopeViolationError:
+            raise
+        if not resolved.is_dir():
+            return f"error: '{path}' is not a directory"
+
+        try:
+            matches = sorted(
+                str(p.relative_to(resolved))
+                for p in resolved.glob(pattern)
+                if p.is_file()
+            )
+        except Exception as exc:
+            return f"error: glob failed — {exc}"
+
+        truncated = len(matches) > max_results
+        matches = matches[:max_results]
+        out = "\n".join(matches) if matches else "(no matches)"
+        if truncated:
+            out += f"\n[truncated — showing first {max_results}; narrow the pattern or reduce max_results]"
+        elif matches:
+            out = f"Found {len(matches)} file(s):\n{out}"
+        return out
+
+    def _grep_files(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
+        import re as _re
+        from icdev.tools.ace.file_access_broker import FileAccessBroker, ScopeViolationError
+
+        pattern = (inp.get("pattern") or "").strip()
+        if not pattern:
+            return "error: 'pattern' is required"
+        path = _path_arg(inp) or "."
+        max_results = min(int(inp.get("max_results") or 50), 200)
+
+        broker = FileAccessBroker(self._folder_access)
+        try:
+            resolved = broker._resolve(path, need_write=False)  # noqa: SLF001
+        except ScopeViolationError:
+            raise
+
+        # Compile pattern as regex; fall back to literal substring search on error.
+        try:
+            rx = _re.compile(pattern)
+        except _re.error:
+            rx = None
+
+        def _matches(line: str) -> bool:
+            return bool(rx.search(line)) if rx is not None else (pattern in line)
+
+        results: list[str] = []
+        search_files_iter = (
+            resolved.rglob("*") if resolved.is_dir() else [resolved]
+        )
+        for file_path in search_files_iter:
+            if stop is not None and stop.is_set():
+                results.append("[search interrupted — stop event fired]")
+                break
+            if not file_path.is_file():
+                continue
+            try:
+                text = file_path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            rel = str(file_path.relative_to(resolved)) if resolved.is_dir() else file_path.name
+            for line_num, line in enumerate(text.splitlines(), 1):
+                if _matches(line):
+                    results.append(f"{rel}:{line_num}:{line.strip()[:120]}")
+                    if len(results) >= max_results:
+                        results.append(
+                            f"[truncated — {max_results} matches reached; "
+                            "narrow the pattern or reduce max_results]"
+                        )
+                        return "\n".join(results)
+
+        return "\n".join(results) if results else "(no matches)"
 
     def _run_tool(self, inp: dict[str, Any], stop: threading.Event | None) -> str:
         from icdev.tools.ace.tool_runner import ToolRunner

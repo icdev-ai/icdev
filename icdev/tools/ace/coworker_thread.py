@@ -435,7 +435,7 @@ class CoWorkerThread(threading.Thread):
         self._audit("agent_loop_start", f"tools={tool_inventory} max_iter={max_iter}")
 
         # ----------------------------------------------------------------
-        # Trust-tier pre-tool hook (Task #1)
+        # Trust-tier pre-tool hook
         # Block write/exec tools before the handler is invoked when the
         # co-worker is not green-tier, giving the LLM a clear permission
         # message rather than a TrustKernelDeniedError traceback.
@@ -450,6 +450,39 @@ class CoWorkerThread(threading.Thread):
                     f"this co-worker is trust_tier={_trust_tier!r}. "
                     "Use a read-only tool or request promotion to green tier."
                 )
+            return None
+
+        # ----------------------------------------------------------------
+        # HITL mid-turn checkpoint hook
+        # If the role spec declares hitl_tools, pause and wait for human
+        # approval before executing any of those tools mid-loop.
+        # ----------------------------------------------------------------
+        _hitl_tool_names = frozenset(getattr(role, "hitl_tools", []) or [])
+        _hitl_hook = None
+        if _hitl_tool_names:
+            try:
+                from icdev.tools.llm.agent_hitl import build_hitl_hook as _build_hitl
+                _hitl_hook = _build_hitl(
+                    trigger_tools=_hitl_tool_names,
+                    instance_id=self.instance_id,
+                    coworker_id=self.spec.coworker_id,
+                    stop_event=self._stop_event,
+                    timeout_seconds=300,
+                    poll_interval_seconds=5.0,
+                )
+                self._audit(
+                    "agent_hitl_armed",
+                    f"hitl_tools={sorted(_hitl_tool_names)}",
+                )
+            except Exception as _hitl_exc:  # noqa: BLE001
+                logger.warning("ace: HITL hook init failed for %s: %s", self.spec.coworker_id, _hitl_exc)
+
+        def _combined_pre_hook(name: str, inp: dict) -> "str | None":
+            blocked = _trust_pre_hook(name, inp)
+            if blocked:
+                return blocked
+            if _hitl_hook is not None:
+                return _hitl_hook(name, inp)
             return None
 
         # ----------------------------------------------------------------
@@ -489,7 +522,7 @@ class CoWorkerThread(threading.Thread):
                 max_iterations=max_iter,
                 stop_event=self._stop_event,
                 on_turn=self._on_agent_turn,
-                on_pre_tool_use=_trust_pre_hook,
+                on_pre_tool_use=_combined_pre_hook,
                 on_stop=_on_stop_hook,
                 max_total_tokens=max_total_tokens,
                 max_cost_usd=max_cost_usd,
