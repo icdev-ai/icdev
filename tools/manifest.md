@@ -1059,3 +1059,9 @@
 | Session Store | tools\llm\session_store.py | Auto-registered: llm/session_store.py | --json | JSON |
 | Tool Result Sanitizer | tools\llm\tool_result_sanitizer.py | Auto-registered: llm/tool_result_sanitizer.py | --json | JSON |
 | Episodic Distiller | tools\genesis\reflexes\episodic_distiller.py | Auto-registered: reflexes/episodic_distiller.py | --json | JSON |
+
+
+## Auto-Registered (Coherence Fix)
+| Tool | File | Description | Input | Output |
+|------|------|-------------|-------|--------|
+| Technical Legal Review | tools\network\technical_legal_review.py | Auto-registered: network/technical_legal_review.py | --json | JSON |

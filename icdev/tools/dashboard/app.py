@@ -11,12 +11,13 @@ Usage:
 """
 
 import argparse
+import importlib
 import json
 import os  # noqa: F811 — needed directly (not just as _os)
 import sys
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
 
@@ -28,7 +29,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools.logging.icdev_logger import get_logger  # noqa: E402
-from tools.db.storage import get_connection  # noqa: E402
+from tools.db.storage import get_connection, get_canvas_connection, is_pg, sql_placeholder  # noqa: E402
 
 from flask import (
     Flask,
@@ -2744,37 +2745,32 @@ def create_app(testing: bool = False) -> Flask:
                 canvas_compliance = _cached_entry["canvas_compliance"]
                 overall_score = _cached_entry["overall_score"]
             else:
-                _CANVAS_DBS = [
-                    ("Security", BASE_DIR / "data" / "security_canvas.db"),
-                    ("Network", BASE_DIR / "data" / "network_canvas.db"),
-                    ("Pipeline", BASE_DIR / "data" / "pipeline_canvas.db"),
-                    ("Infra", BASE_DIR / "data" / "infra_canvas.db"),
-                    ("Data", BASE_DIR / "data" / "data_canvas.db"),
-                    ("Boundary", BASE_DIR / "data" / "boundary_canvas.db"),
-                    ("Observability", BASE_DIR / "data" / "observability_canvas.db"),
-                    ("Agentic AI", BASE_DIR / "data" / "agentic_ai_canvas.db"),
-                    ("AI/ML", BASE_DIR / "data" / "aiml_canvas.db"),
-                    ("QDC", BASE_DIR / "data" / "qdc_canvas.db"),
-                    ("Migration", BASE_DIR / "data" / "migration_canvas.db"),
-                ]
+                # Map dashboard-facing canvas names to the canvas init_db module
+                # that exports a backend-aware get_connection().  This respects each
+                # canvas's own STORAGE_BACKEND / PG_DATABASE env vars so the dashboard
+                # reads from PostgreSQL when the canvas is configured for PG instead
+                # of the stale per-canvas SQLite file.
+                _CANVAS_MODULES = {
+                    "Security": "tools.security_canvas.db.init_db",
+                    "Network": "tools.network.db.init_db",
+                    "Pipeline": "tools.pipeline.db.init_db",
+                    "Infra": "tools.infra_canvas.db.init_db",
+                    "Data": "tools.data_canvas.db.init_db",
+                    "Boundary": "tools.boundary_canvas.db.init_db",
+                    "Observability": "tools.observability_canvas.db.init_db",
+                    "Agentic AI": "tools.agentic_ai_canvas.db.init_db",
+                    "AI/ML": "tools.aiml_canvas.db.init_db",
+                    "QDC": "tools.qdc_canvas.db.init_db",
+                    "Migration": "tools.migration_canvas.db.init_db",
+                }
 
                 canvas_compliance = []
                 overall_scores = []
 
-                # OPT-47 — latest-per-design scoring. Old code averaged every
-                # assessment row ever written, which let stale failed assessments
-                # from days or weeks ago drag scores down forever (e.g. Infra was
-                # pinned at 61.5 for 18 identical rows from 2026-04-03 even after
-                # new 100.0 rows landed). The subquery below picks the most recent
-                # assessment per design_id, then averages across designs. That
-                # reflects the *current* state of the canvas, not historical noise.
-                #
-                # Network and Pipeline canvases are unchanged — they use
-                # status-based open/closed counts on a direct findings table, not
-                # historical assessment rows.
+                # OPT-47 — latest-per-design scoring. Pick the most recent assessment
+                # per design_id, then average across designs. Works on both SQLite
+                # and PostgreSQL (correlated subquery form).
                 def _latest_per_design_avg(cc, table: str, score_col: str = "score") -> float:
-                    """Average of the latest score per design_id. Works on SQLite
-                    and on the Postgres storage layer (correlated subquery form)."""
                     q = (
                         f"SELECT AVG({score_col}) FROM {table} a1 "  # nosec B608
                         f"WHERE created_at = ("
@@ -2786,147 +2782,156 @@ def create_app(testing: bool = False) -> Flask:
                         r = cc.execute(q).fetchone()
                         return float(r[0] or 0)
                     except Exception:
-                        # Fall back to historical average if the subquery form isn't
-                        # supported by this backend.
                         fallback = cc.execute(f"SELECT AVG({score_col}) FROM {table}").fetchone()  # nosec B608
                         return float(fallback[0] or 0)
 
-                for canvas_name, db_path in _CANVAS_DBS:
-                    if not db_path.exists():
+                def _open_canvas_connection(canvas_name):
+                    """Open a backend-aware canvas connection with RLS disabled."""
+                    mod_name = _CANVAS_MODULES.get(canvas_name)
+                    if not mod_name:
+                        return None
+                    try:
+                        mod = importlib.import_module(mod_name)
+                        cconn = mod.get_connection()
+                        try:
+                            cconn.set_security_context(None)
+                        except Exception:
+                            pass
+                        return cconn
+                    except Exception:
+                        return None
+
+                for canvas_name in _CANVAS_MODULES:
+                    cconn = _open_canvas_connection(canvas_name)
+                    if not cconn:
                         continue
                     try:
-                        cconn = get_connection(str(db_path))
-                        try:
-                            if canvas_name == "Security":
-                                # Security stores risk_score (inverted) in sc_assessments.
-                                # Pick the latest risk_score per design_id, invert, average.
-                                try:
-                                    r = cconn.execute(
-                                        "SELECT AVG(risk_score) FROM sc_assessments a1 "
-                                        "WHERE ran_at = (SELECT MAX(ran_at) FROM sc_assessments a2 "
-                                        "WHERE a2.design_id = a1.design_id)"
-                                    ).fetchone()
-                                    avg_risk = float(r[0] or 0)
-                                except Exception:
-                                    avg_risk = float(cconn.execute(
-                                        "SELECT AVG(risk_score) FROM sc_assessments"
-                                    ).fetchone()[0] or 0)
-                                total_threats = int(cconn.execute(
-                                    "SELECT COUNT(*) FROM sc_assessments"
+                        if canvas_name == "Security":
+                            try:
+                                r = cconn.execute(
+                                    "SELECT AVG(risk_score) FROM sc_assessments a1 "
+                                    "WHERE ran_at = (SELECT MAX(ran_at) FROM sc_assessments a2 "
+                                    "WHERE a2.design_id = a1.design_id)"
+                                ).fetchone()
+                                avg_risk = float(r[0] or 0)
+                            except Exception:
+                                avg_risk = float(cconn.execute(
+                                    "SELECT AVG(risk_score) FROM sc_assessments"
                                 ).fetchone()[0] or 0)
-                                score = round(max(0.0, 100.0 - avg_risk), 1)
-                                open_f = total_threats
-                                closed_f = 0
-                            elif canvas_name in ("Network", "Pipeline"):
-                                checks_tbl = "nc_compliance_checks" if canvas_name == "Network" else "pc_compliance_checks"
-                                findings_tbl = "nc_compliance_findings" if canvas_name == "Network" else "pc_compliance_findings"
-                                try:
-                                    r = cconn.execute(
-                                        f"SELECT SUM(passed) as p, SUM(failed) as f FROM {checks_tbl}"  # nosec B608
-                                    ).fetchone()
-                                    passed_c = int(r["p"] or 0)
-                                    failed_c = int(r["f"] or 0)
-                                    total_c = passed_c + failed_c
-                                    if total_c == 0:
-                                        raise ValueError("no checks")
-                                    score = round(passed_c / total_c * 100, 1)
-                                    open_f = failed_c
-                                    closed_f = passed_c
-                                except Exception:
-                                    # Fall back to findings table if checks table absent
-                                    open_f = cconn.execute(
-                                        f"SELECT COUNT(*) as cnt FROM {findings_tbl} WHERE status = 'open'"  # nosec B608
-                                    ).fetchone()["cnt"]
-                                    closed_f = cconn.execute(
-                                        f"SELECT COUNT(*) as cnt FROM {findings_tbl} WHERE status != 'open'"  # nosec B608
-                                    ).fetchone()["cnt"]
-                                    total_f = open_f + closed_f
-                                    score = round((closed_f / total_f * 100) if total_f > 0 else 100.0, 1)
-                            elif canvas_name in ("Infra", "Data"):
-                                tbl = "idc_assessments" if canvas_name == "Infra" else "dd_assessments"
-                                score = round(_latest_per_design_avg(cconn, tbl), 1)
-                                open_f = 0
-                                closed_f = 0
-                            elif canvas_name == "Boundary":
-                                # Latest-per-design score; sum the cat counts across the latest rows
-                                try:
-                                    score = round(_latest_per_design_avg(cconn, "bd_assessments"), 1)
-                                    cat_row = cconn.execute(
-                                        "SELECT SUM(cat1_findings) as c1, SUM(cat2_findings) as c2, "
-                                        "SUM(cat3_findings) as c3 FROM bd_assessments a1 "
-                                        "WHERE created_at = (SELECT MAX(created_at) FROM bd_assessments a2 "
-                                        "WHERE a2.design_id = a1.design_id)"
-                                    ).fetchone()
-                                    open_f = int((cat_row["c1"] or 0) + (cat_row["c2"] or 0) + (cat_row["c3"] or 0))
-                                except Exception:
-                                    row = cconn.execute(
-                                        "SELECT SUM(cat1_findings) as cat1, SUM(cat2_findings) as cat2, "
-                                        "SUM(cat3_findings) as cat3, AVG(score) as avg_score FROM bd_assessments"
-                                    ).fetchone()
-                                    score = round(float(row["avg_score"] or 0), 1)
-                                    open_f = int((row["cat1"] or 0) + (row["cat2"] or 0) + (row["cat3"] or 0))
-                                closed_f = 0
-                            elif canvas_name == "Observability":
-                                score = round(_latest_per_design_avg(cconn, "od_assessments"), 1)
-                                open_f = 0
-                                closed_f = 0
-                            elif canvas_name == "Agentic AI":
-                                score = round(_latest_per_design_avg(cconn, "aadc_assessments"), 1)
-                                open_f = 0
-                                closed_f = 0
-                            elif canvas_name == "AI/ML":
-                                score = round(_latest_per_design_avg(cconn, "aiml_assessments"), 1)
-                                open_f = 0
-                                closed_f = 0
-                            elif canvas_name == "QDC":
-                                score = round(_latest_per_design_avg(cconn, "qdc_assessments"), 1)
-                                open_f = 0
-                                closed_f = 0
-                            elif canvas_name == "Migration":
-                                # Validation rows always write score=0 (engine bug); derive
-                                # score from CAT findings using migration_engine formula:
-                                # score = max(0, 100 - cat1*20 - cat2*10 - cat3*5)
-                                try:
-                                    cat_row = cconn.execute(
-                                        "SELECT SUM(cat1_findings) as c1, SUM(cat2_findings) as c2, "
-                                        "SUM(cat3_findings) as c3 FROM mc_assessments a1 "
-                                        "WHERE assessment_type = 'validation' "
-                                        "AND created_at = (SELECT MAX(created_at) FROM mc_assessments a2 "
-                                        "WHERE a2.design_id = a1.design_id AND a2.assessment_type = 'validation')"
-                                    ).fetchone()
-                                    c1 = int(cat_row["c1"] or 0)
-                                    c2 = int(cat_row["c2"] or 0)
-                                    c3 = int(cat_row["c3"] or 0)
-                                    score = round(max(0.0, 100.0 - c1 * 20 - c2 * 10 - c3 * 5), 1)
-                                    open_f = c1 + c2 + c3
-                                except Exception:
-                                    row = cconn.execute(
-                                        "SELECT SUM(cat1_findings) as cat1, SUM(cat2_findings) as cat2, "
-                                        "SUM(cat3_findings) as cat3 FROM mc_assessments"
-                                    ).fetchone()
-                                    c1 = int(row["cat1"] or 0)
-                                    c2 = int(row["cat2"] or 0)
-                                    c3 = int(row["cat3"] or 0)
-                                    score = round(max(0.0, 100.0 - c1 * 20 - c2 * 10 - c3 * 5), 1)
-                                    open_f = c1 + c2 + c3
-                                closed_f = 0
-                            else:
-                                continue
+                            total_threats = int(cconn.execute(
+                                "SELECT COUNT(*) FROM sc_assessments"
+                            ).fetchone()[0] or 0)
+                            score = round(max(0.0, 100.0 - avg_risk), 1)
+                            open_f = total_threats
+                            closed_f = 0
+                        elif canvas_name in ("Network", "Pipeline"):
+                            checks_tbl = "nc_compliance_checks" if canvas_name == "Network" else "pc_compliance_checks"
+                            findings_tbl = "nc_compliance_findings" if canvas_name == "Network" else "pc_compliance_findings"
+                            try:
+                                r = cconn.execute(
+                                    f"SELECT SUM(passed) as p, SUM(failed) as f FROM {checks_tbl}"  # nosec B608
+                                ).fetchone()
+                                passed_c = int(r["p"] or 0)
+                                failed_c = int(r["f"] or 0)
+                                total_c = passed_c + failed_c
+                                if total_c == 0:
+                                    raise ValueError("no checks")
+                                score = round(passed_c / total_c * 100, 1)
+                                open_f = failed_c
+                                closed_f = passed_c
+                            except Exception:
+                                open_f = cconn.execute(
+                                    f"SELECT COUNT(*) as cnt FROM {findings_tbl} WHERE status = 'open'"  # nosec B608
+                                ).fetchone()["cnt"]
+                                closed_f = cconn.execute(
+                                    f"SELECT COUNT(*) as cnt FROM {findings_tbl} WHERE status != 'open'"  # nosec B608
+                                ).fetchone()["cnt"]
+                                total_f = open_f + closed_f
+                                score = round((closed_f / total_f * 100) if total_f > 0 else 100.0, 1)
+                        elif canvas_name in ("Infra", "Data"):
+                            tbl = "idc_assessments" if canvas_name == "Infra" else "dd_assessments"
+                            score = round(_latest_per_design_avg(cconn, tbl), 1)
+                            open_f = 0
+                            closed_f = 0
+                        elif canvas_name == "Boundary":
+                            try:
+                                score = round(_latest_per_design_avg(cconn, "bd_assessments"), 1)
+                                cat_row = cconn.execute(
+                                    "SELECT SUM(cat1_findings) as c1, SUM(cat2_findings) as c2, "
+                                    "SUM(cat3_findings) as c3 FROM bd_assessments a1 "
+                                    "WHERE created_at = (SELECT MAX(created_at) FROM bd_assessments a2 "
+                                    "WHERE a2.design_id = a1.design_id)"
+                                ).fetchone()
+                                open_f = int((cat_row["c1"] or 0) + (cat_row["c2"] or 0) + (cat_row["c3"] or 0))
+                            except Exception:
+                                row = cconn.execute(
+                                    "SELECT SUM(cat1_findings) as cat1, SUM(cat2_findings) as cat2, "
+                                    "SUM(cat3_findings) as cat3, AVG(score) as avg_score FROM bd_assessments"
+                                ).fetchone()
+                                score = round(float(row["avg_score"] or 0), 1)
+                                open_f = int((row["cat1"] or 0) + (row["cat2"] or 0) + (row["cat3"] or 0))
+                            closed_f = 0
+                        elif canvas_name == "Observability":
+                            score = round(_latest_per_design_avg(cconn, "od_assessments"), 1)
+                            open_f = 0
+                            closed_f = 0
+                        elif canvas_name == "Agentic AI":
+                            score = round(_latest_per_design_avg(cconn, "aadc_assessments"), 1)
+                            open_f = 0
+                            closed_f = 0
+                        elif canvas_name == "AI/ML":
+                            score = round(_latest_per_design_avg(cconn, "aiml_assessments"), 1)
+                            open_f = 0
+                            closed_f = 0
+                        elif canvas_name == "QDC":
+                            score = round(_latest_per_design_avg(cconn, "qdc_assessments"), 1)
+                            open_f = 0
+                            closed_f = 0
+                        elif canvas_name == "Migration":
+                            try:
+                                cat_row = cconn.execute(
+                                    "SELECT SUM(cat1_findings) as c1, SUM(cat2_findings) as c2, "
+                                    "SUM(cat3_findings) as c3 FROM mc_assessments a1 "
+                                    "WHERE assessment_type = 'validation' "
+                                    "AND created_at = (SELECT MAX(created_at) FROM mc_assessments a2 "
+                                    "WHERE a2.design_id = a1.design_id AND a2.assessment_type = 'validation')"
+                                ).fetchone()
+                                c1 = int(cat_row["c1"] or 0)
+                                c2 = int(cat_row["c2"] or 0)
+                                c3 = int(cat_row["c3"] or 0)
+                                score = round(max(0.0, 100.0 - c1 * 20 - c2 * 10 - c3 * 5), 1)
+                                open_f = c1 + c2 + c3
+                            except Exception:
+                                row = cconn.execute(
+                                    "SELECT SUM(cat1_findings) as cat1, SUM(cat2_findings) as cat2, "
+                                    "SUM(cat3_findings) as cat3 FROM mc_assessments"
+                                ).fetchone()
+                                c1 = int(row["cat1"] or 0)
+                                c2 = int(row["cat2"] or 0)
+                                c3 = int(row["cat3"] or 0)
+                                score = round(max(0.0, 100.0 - c1 * 20 - c2 * 10 - c3 * 5), 1)
+                                open_f = c1 + c2 + c3
+                            closed_f = 0
+                        else:
+                            continue
 
-                            canvas_compliance.append(
-                                {
-                                    "name": canvas_name,
-                                    "score": score,
-                                    "open_findings": open_f,
-                                    "closed_findings": closed_f,
-                                }
-                            )
-                            if score > 0:
-                                overall_scores.append(score)
-                        finally:
-                            cconn.close()
+                        canvas_compliance.append(
+                            {
+                                "name": canvas_name,
+                                "score": score,
+                                "open_findings": open_f,
+                                "closed_findings": closed_f,
+                            }
+                        )
+                        if score > 0:
+                            overall_scores.append(score)
                     except Exception:
-                        pass  # Graceful if canvas DB has no data yet
+                        pass  # Graceful if canvas has no data / table missing
+                    finally:
+                        try:
+                            cconn.close()
+                        except Exception:
+                            pass
 
                 # GovLift STIG checks (stored in main icdev.db, not a canvas DB)
                 try:
@@ -2952,11 +2957,10 @@ def create_app(testing: bool = False) -> Flask:
                 except Exception:
                     pass  # GovLift tables may not be initialized yet
 
-                # ZIG Zero Trust maturity (security_canvas.db — zig_* tables)
+                # ZIG Zero Trust maturity (security_canvas backend — zig_* tables)
                 try:
-                    zig_db_path = BASE_DIR / "data" / "security_canvas.db"
-                    if zig_db_path.exists():
-                        zconn = get_connection(str(zig_db_path))
+                    zconn = _open_canvas_connection("Security")
+                    if zconn:
                         try:
                             r = zconn.execute(
                                 "SELECT AVG(score) FROM zig_maturity_scores m1 "
@@ -3006,6 +3010,10 @@ def create_app(testing: bool = False) -> Flask:
                     from tools.aiify.posture import compute_posture as _aiify_cp
                     from tools.aiify.db.init_db import get_connection as _aiify_cn
                     _ac = _aiify_cn()
+                    try:
+                        _ac.set_security_context(None)
+                    except Exception:
+                        pass
                     try:
                         _ap = _aiify_cp(_ac)
                     finally:
@@ -3138,91 +3146,90 @@ def create_app(testing: bool = False) -> Flask:
             return jsonify({"canvases": _cached_entry["data"]})
 
         _TREND_CANVASES = [
-            (
-                "Security",
-                BASE_DIR / "data" / "security_canvas.db",
-                "sc_assessments",
-                "risk_score",
-                "ran_at",
-                "inverted",
-            ),
+            ("Security", "tools.security_canvas.db.init_db", "sc_assessments", "risk_score", "ran_at", "inverted"),
             ("Network", None, None, None, None, "skip"),
             ("Pipeline", None, None, None, None, "skip"),
-            ("Infra", BASE_DIR / "data" / "infra_canvas.db", "idc_assessments", "score", "created_at", "direct"),
-            ("Data", BASE_DIR / "data" / "data_canvas.db", "dd_assessments", "score", "created_at", "direct"),
-            ("Boundary", BASE_DIR / "data" / "boundary_canvas.db", "bd_assessments", "score", "created_at", "direct"),
-            (
-                "Observability",
-                BASE_DIR / "data" / "observability_canvas.db",
-                "od_assessments",
-                "score",
-                "created_at",
-                "direct",
-            ),
-            (
-                "Agentic AI",
-                BASE_DIR / "data" / "agentic_ai_canvas.db",
-                "aadc_assessments",
-                "score",
-                "created_at",
-                "direct",
-            ),
-            ("AI/ML", BASE_DIR / "data" / "aiml_canvas.db", "aiml_assessments", "score", "created_at", "direct"),
-            ("QDC", BASE_DIR / "data" / "qdc_canvas.db", "qdc_assessments", "score", "created_at", "direct"),
+            ("Infra", "tools.infra_canvas.db.init_db", "idc_assessments", "score", "created_at", "direct"),
+            ("Data", "tools.data_canvas.db.init_db", "dd_assessments", "score", "created_at", "direct"),
+            ("Boundary", "tools.boundary_canvas.db.init_db", "bd_assessments", "score", "created_at", "direct"),
+            ("Observability", "tools.observability_canvas.db.init_db", "od_assessments", "score", "created_at", "direct"),
+            ("Agentic AI", "tools.agentic_ai_canvas.db.init_db", "aadc_assessments", "score", "created_at", "direct"),
+            ("AI/ML", "tools.aiml_canvas.db.init_db", "aiml_assessments", "score", "created_at", "direct"),
+            ("QDC", "tools.qdc_canvas.db.init_db", "qdc_assessments", "score", "created_at", "direct"),
             ("Migration", None, None, None, None, "skip"),
             ("GovLift", None, None, None, None, "skip"),
         ]
 
+        def _trend_canvas_conn(module_name):
+            if not module_name:
+                return None
+            try:
+                mod = importlib.import_module(module_name)
+                cconn = mod.get_connection()
+                try:
+                    cconn.set_security_context(None)
+                except Exception:
+                    pass
+                return cconn
+            except Exception:
+                return None
+
+        _cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+
         results = []
-        for canvas_name, db_path, table, score_col, ts_col, mode in _TREND_CANVASES:
-            if mode == "skip" or db_path is None or not db_path.exists():
+        for canvas_name, module_name, table, score_col, ts_col, mode in _TREND_CANVASES:
+            if mode == "skip" or not module_name:
+                results.append({"name": canvas_name, "scores": [], "direction": "flat", "delta": 0.0})
+                continue
+            cconn = _trend_canvas_conn(module_name)
+            if not cconn:
                 results.append({"name": canvas_name, "scores": [], "direction": "flat", "delta": 0.0})
                 continue
             try:
-                cconn = get_connection(str(db_path))
-                try:
-                    # score_col/ts_col/table come from _TREND_CANVASES constant
-                    # defined above — a module-internal whitelist of 7-tuples,
-                    # not user input. Safe to interpolate.
-                    rows = cconn.execute(
-                        f"SELECT {score_col} as raw_score, DATE({ts_col}) as day "  # nosec B608 -- whitelist from _TREND_CANVASES
-                        f"FROM {table} "  # nosec B608
-                        f"WHERE {ts_col} >= DATE('now', '-30 days') "  # nosec B608
-                        f"ORDER BY {ts_col} DESC LIMIT 30"  # nosec B608
-                    ).fetchall()
-                    scores = []
-                    for r in rows:
-                        raw = float(r["raw_score"] or 0)
-                        s = round(max(0.0, 100.0 - raw), 1) if mode == "inverted" else round(raw, 1)
-                        scores.append({"score": s, "date": r["day"]})
-                    # Direction: compare latest to oldest in window (up to 7 days ago)
-                    direction = "flat"
-                    delta = 0.0
-                    if len(scores) >= 2:
-                        latest = scores[0]["score"]
-                        oldest = scores[-1]["score"]
-                        delta = round(latest - oldest, 1)
-                        if delta >= 2.0:
-                            direction = "up"
-                        elif delta <= -2.0:
-                            direction = "down"
-                    results.append({"name": canvas_name, "scores": scores, "direction": direction, "delta": delta})
-                finally:
-                    cconn.close()
+                ph = sql_placeholder(cconn)
+                rows = cconn.execute(
+                    f"SELECT {score_col} as raw_score, DATE({ts_col}) as day "  # nosec B608 -- whitelist from _TREND_CANVASES
+                    f"FROM {table} "  # nosec B608
+                    f"WHERE {ts_col} >= {ph} "  # nosec B608
+                    f"ORDER BY {ts_col} DESC LIMIT 30",  # nosec B608
+                    (_cutoff,),
+                ).fetchall()
+                scores = []
+                for r in rows:
+                    raw = float(r["raw_score"] or 0)
+                    s = round(max(0.0, 100.0 - raw), 1) if mode == "inverted" else round(raw, 1)
+                    scores.append({"score": s, "date": r["day"]})
+                direction = "flat"
+                delta = 0.0
+                if len(scores) >= 2:
+                    latest = scores[0]["score"]
+                    oldest = scores[-1]["score"]
+                    delta = round(latest - oldest, 1)
+                    if delta >= 2.0:
+                        direction = "up"
+                    elif delta <= -2.0:
+                        direction = "down"
+                results.append({"name": canvas_name, "scores": scores, "direction": direction, "delta": delta})
             except Exception:
                 results.append({"name": canvas_name, "scores": [], "direction": "flat", "delta": 0.0})
+            finally:
+                try:
+                    cconn.close()
+                except Exception:
+                    pass
 
         # ZIG trend — daily average of pillar scores from zig_maturity_scores
         try:
-            zig_db_path = BASE_DIR / "data" / "security_canvas.db"
-            if zig_db_path.exists():
-                zconn = get_connection(str(zig_db_path))
+            zconn = _trend_canvas_conn("tools.security_canvas.db.init_db")
+            if zconn:
                 try:
+                    ph = sql_placeholder(zconn)
                     rows = zconn.execute(
                         "SELECT AVG(score) * 100 as raw_score, DATE(assessment_run_at) as day "
                         "FROM zig_maturity_scores "
-                        "WHERE assessment_run_at >= DATE('now', '-30 days') "
-                        "GROUP BY DATE(assessment_run_at) ORDER BY day DESC LIMIT 30"
+                        "WHERE assessment_run_at >= %s "
+                        "GROUP BY DATE(assessment_run_at) ORDER BY day DESC LIMIT 30",
+                        (_cutoff,),
                     ).fetchall()
                     scores = [{"score": round(float(r["raw_score"] or 0), 1), "date": r["day"]} for r in rows]
                     direction, delta = "flat", 0.0
@@ -3239,28 +3246,31 @@ def create_app(testing: bool = False) -> Flask:
 
         # AI-ify trend — per-scan average composite_score grouped by day
         try:
-            aiify_db_path = BASE_DIR / "data" / "aiify_canvas.db"
-            if aiify_db_path.exists():
-                aconn = get_connection(str(aiify_db_path))
-                try:
-                    rows = aconn.execute(
-                        "SELECT AVG(s.composite_score) * 100 as raw_score, DATE(sc.created_at) as day "
-                        "FROM aiify_scores s "
-                        "JOIN aiify_opportunities o ON o.opportunity_id = s.opportunity_id "
-                        "JOIN aiify_scans sc ON sc.scan_id = o.scan_id "
-                        "WHERE sc.created_at >= DATE('now', '-30 days') "
-                        "GROUP BY DATE(sc.created_at) ORDER BY day DESC LIMIT 30"
-                    ).fetchall()
-                    scores = [{"score": round(float(r["raw_score"] or 0), 1), "date": r["day"]} for r in rows]
-                    direction, delta = "flat", 0.0
-                    if len(scores) >= 2:
-                        delta = round(scores[0]["score"] - scores[-1]["score"], 1)
-                        direction = "up" if delta >= 2.0 else "down" if delta <= -2.0 else "flat"
-                    results.append({"name": "AI-ify", "scores": scores, "direction": direction, "delta": delta})
-                finally:
-                    aconn.close()
-            else:
-                results.append({"name": "AI-ify", "scores": [], "direction": "flat", "delta": 0.0})
+            from tools.aiify.db.init_db import get_connection as _aiify_trend_cn
+            aconn = _aiify_trend_cn()
+            try:
+                aconn.set_security_context(None)
+            except Exception:
+                pass
+            try:
+                ph = sql_placeholder(aconn)
+                rows = aconn.execute(
+                    "SELECT AVG(s.composite_score) * 100 as raw_score, DATE(sc.created_at) as day "
+                    "FROM aiify_scores s "
+                    "JOIN aiify_opportunities o ON o.opportunity_id = s.opportunity_id "
+                    "JOIN aiify_scans sc ON sc.scan_id = o.scan_id "
+                    f"WHERE sc.created_at >= {ph} "
+                    "GROUP BY DATE(sc.created_at) ORDER BY day DESC LIMIT 30",
+                    (_cutoff,),
+                ).fetchall()
+                scores = [{"score": round(float(r["raw_score"] or 0), 1), "date": r["day"]} for r in rows]
+                direction, delta = "flat", 0.0
+                if len(scores) >= 2:
+                    delta = round(scores[0]["score"] - scores[-1]["score"], 1)
+                    direction = "up" if delta >= 2.0 else "down" if delta <= -2.0 else "flat"
+                results.append({"name": "AI-ify", "scores": scores, "direction": direction, "delta": delta})
+            finally:
+                aconn.close()
         except Exception:
             results.append({"name": "AI-ify", "scores": [], "direction": "flat", "delta": 0.0})
 
