@@ -1727,19 +1727,20 @@ def create_network_blueprint():
     def nc_api_update_topology(topo_id):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         fields, values = [], []
         for k in ["name", "description", "graph_json", "classification"]:
             if k in data:
                 val = json.dumps(data[k]) if k == "graph_json" and isinstance(data[k], dict) else data[k]
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(val)
         if not fields:
             conn.close()
             return jsonify({"error": "No fields"}), 400
-        fields.append("updated_at=?")
+        fields.append("updated_at={_ph}")
         values.append(_now())
         values.append(topo_id)
-        conn.execute(f"UPDATE topologies SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE topologies SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE", "topology", topo_id)
@@ -2440,7 +2441,7 @@ def create_network_blueprint():
         fields, values = [], []
         for k in ["name", "description", "category"]:
             if k in data:
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if "tags" in data:
             fields.append("tags=?")
@@ -2454,7 +2455,7 @@ def create_network_blueprint():
             conn.close()
             return jsonify({"error": "No fields to update"}), 400
         values.append(tpl_id)
-        conn.execute(f"UPDATE nc_templates SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE nc_templates SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE_TEMPLATE", "template", tpl_id, json.dumps(list(data.keys())))
@@ -3264,7 +3265,7 @@ def create_network_blueprint():
                 v = data[k]
                 if k == "commands_json" and isinstance(v, dict):
                     v = json.dumps(v)
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(v)
         # Allow adding commands to built-in profiles
         if row[0] and "commands" in data:
@@ -3280,7 +3281,7 @@ def create_network_blueprint():
             values.append(pid)
             conn.execute(
                 f"UPDATE nc_device_profiles "  # nosec B608
-                f"SET {', '.join(fields)} WHERE id=?",
+                f"SET {', '.join(fields)} WHERE id={_ph}",
                 values,
             )
             conn.commit()
@@ -4211,6 +4212,7 @@ def create_network_blueprint():
     def nc_api_update_peering(aid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         allowed = [
             "peer_name",
             "peer_asn",
@@ -4238,7 +4240,7 @@ def create_network_blueprint():
         fields, values = [], []
         for k in allowed:
             if k in data:
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if "locations" in data:
             locs = data["locations"]
@@ -4247,12 +4249,12 @@ def create_network_blueprint():
             fields.append("locations=?")
             values.append(locs)
         if fields:
-            fields.append("updated_at=?")
+            fields.append("updated_at={_ph}")
             values.append(_now())
             values.append(aid)
             conn.execute(
                 f"UPDATE nc_peering_agreements "  # nosec B608
-                f"SET {', '.join(fields)} WHERE id=?",
+                f"SET {', '.join(fields)} WHERE id={_ph}",
                 values,
             )
             conn.commit()
@@ -4985,17 +4987,18 @@ def create_network_blueprint():
     def nc_api_update_idea(iid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         allowed = ["status", "project_id"]
         fields, values = [], []
         for k in allowed:
             if k in data:
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if fields:
             values.append(iid)
             conn.execute(
                 f"UPDATE nc_innovation_ideas "  # nosec B608
-                f"SET {', '.join(fields)} WHERE id=?",
+                f"SET {', '.join(fields)} WHERE id={_ph}",
                 values,
             )
             conn.commit()
@@ -5064,18 +5067,18 @@ def create_network_blueprint():
         fields, values = [], []
         for k in ["technology", "ring", "category", "description", "updated_by"]:
             if k in data:
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if new_ring and old and new_ring != old[0]:
             fields.append("moved_from=?")
             values.append(old[0])
         if fields:
-            fields.append("updated_at=?")
+            fields.append("updated_at={_ph}")
             values.append(_now())
             values.append(tid)
             conn.execute(
                 f"UPDATE nc_tech_radar "  # nosec B608
-                f"SET {', '.join(fields)} WHERE id=?",
+                f"SET {', '.join(fields)} WHERE id={_ph}",
                 values,
             )
             conn.commit()
@@ -6233,15 +6236,15 @@ def create_network_blueprint():
         fields, values = [], []
         for k in allowed:
             if k in data:
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if not fields:
             conn.close()
             return jsonify({"error": "No fields"}), 400
-        fields.append("updated_at=?")
+        fields.append("updated_at={_ph}")
         values.append(_now())
         values.append(cid)
-        conn.execute(f"UPDATE nc_circuits SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE nc_circuits SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE", "circuit", cid)
@@ -6302,17 +6305,18 @@ def create_network_blueprint():
     def nc_api_update_customer(cid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         allowed = ["name", "customer_type", "contact_name", "contact_email", "contract_ref", "notes"]
         fields, values = [], []
         for k in allowed:
             if k in data:
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if not fields:
             conn.close()
             return jsonify({"error": "No fields"}), 400
         values.append(cid)
-        conn.execute(f"UPDATE nc_customers SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE nc_customers SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE", "customer", cid)
@@ -6375,17 +6379,18 @@ def create_network_blueprint():
     def nc_api_update_site(sid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         allowed = ["customer_id", "name", "address", "city", "state", "country", "site_type", "classification"]
         fields, values = [], []
         for k in allowed:
             if k in data:
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if not fields:
             conn.close()
             return jsonify({"error": "No fields"}), 400
         values.append(sid)
-        conn.execute(f"UPDATE nc_sites SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE nc_sites SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE", "site", sid)
@@ -6460,17 +6465,18 @@ def create_network_blueprint():
     def nc_api_update_ipam(bid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         allowed = ["network", "vlan_id", "vrf", "description", "site_id", "gateway", "utilization_pct", "topology_id"]
         fields, values = [], []
         for k in allowed:
             if k in data:
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if not fields:
             conn.close()
             return jsonify({"error": "No fields"}), 400
         values.append(bid)
-        conn.execute(f"UPDATE nc_ipam_blocks SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE nc_ipam_blocks SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE", "ipam_block", bid)
@@ -6537,6 +6543,7 @@ def create_network_blueprint():
     def nc_api_update_cable(cid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         allowed = [
             "cable_id",
             "cable_type",
@@ -6553,13 +6560,13 @@ def create_network_blueprint():
         fields, values = [], []
         for k in allowed:
             if k in data:
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if not fields:
             conn.close()
             return jsonify({"error": "No fields"}), 400
         values.append(cid)
-        conn.execute(f"UPDATE nc_cables SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE nc_cables SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE", "cable", cid)
@@ -6731,15 +6738,15 @@ def create_network_blueprint():
         fields, values = [], []
         for k in allowed:
             if k in data:
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if not fields:
             conn.close()
             return jsonify({"error": "No fields"}), 400
-        fields.append("updated_at=?")
+        fields.append("updated_at={_ph}")
         values.append(_now())
         values.append(cid)
-        conn.execute(f"UPDATE nc_cross_connects SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE nc_cross_connects SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         _audit("UPDATE", "cross_connect", cid)
@@ -7065,13 +7072,13 @@ def create_network_blueprint():
         for k in ["regimes", "classification", "environment", "auto_audit"]:
             if k in data:
                 val = json.dumps(data[k]) if k == "regimes" and isinstance(data[k], list) else data[k]
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(val)
         if fields:
-            fields.append("updated_at=?")
+            fields.append("updated_at={_ph}")
             values.append(_now())
             values.append(profile["id"])
-            conn.execute(f"UPDATE nc_compliance_profiles SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
+            conn.execute(f"UPDATE nc_compliance_profiles SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
             conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -8185,6 +8192,7 @@ def create_network_blueprint():
     def nc_api_update_group(topo_id, gid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         allowed = [
             "parent_id",
             "label",
@@ -8200,13 +8208,13 @@ def create_network_blueprint():
         fields, values = [], []
         for k in allowed:
             if k in data:
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(data[k])
         if not fields:
             conn.close()
             return jsonify({"error": "No fields"}), 400
         values.append(gid)
-        conn.execute(f"UPDATE nc_groups SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE nc_groups SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -8420,6 +8428,7 @@ def create_network_blueprint():
     def nc_api_update_boundary(topo_id, bid):
         data = request.get_json(force=True, silent=True) or {}
         conn = get_connection()
+        _ph = sql_placeholder(conn)
         allowed = [
             "label",
             "classification",
@@ -8440,15 +8449,15 @@ def create_network_blueprint():
                 v = data[k]
                 if k in ("node_ids", "stig_tags") and isinstance(v, list):
                     v = json.dumps(v)
-                fields.append(f"{k}=?")
+                fields.append(f"{k}={_ph}")
                 values.append(v)
         if not fields:
             conn.close()
             return jsonify({"error": "No fields"}), 400
-        fields.append("updated_at=?")
+        fields.append("updated_at={_ph}")
         values.append(_now())
         values.append(bid)
-        conn.execute(f"UPDATE nc_boundaries SET {', '.join(fields)} WHERE id=?", values)  # nosec B608 -- table/column names are internal constants, not user input
+        conn.execute(f"UPDATE nc_boundaries SET {', '.join(fields)} WHERE id={_ph}", values)  # nosec B608 -- table/column names are internal constants, not user input
         conn.commit()
         conn.close()
         return jsonify({"ok": True})
@@ -11054,7 +11063,7 @@ Respond with ONLY this JSON (no other text):
                 params.append(data[col])
         if updates:
             params.append(cid)
-            conn.execute(f"UPDATE nc_naming_conventions SET {', '.join(updates)} WHERE id = ?", params)  # nosec B608 — columns from hardcoded whitelist
+            conn.execute(f"UPDATE nc_naming_conventions SET {', '.join(updates)} WHERE id = {_ph}", params)  # nosec B608 — columns from hardcoded whitelist
             conn.commit()
         conn.close()
         return jsonify({"updated": cid})
@@ -11657,7 +11666,7 @@ Respond with ONLY this JSON (no other text):
             """UPDATE nc_packet_captures
                SET status='complete', size_bytes=?, sha256=?, expiry_at=?,
                    stopped_at=?, pcap_data=?
-               WHERE id=?""",
+               WHERE id={_ph}""",
             (len(pcap_bytes), sha, expiry, now, pcap_bytes, cap_id),
         )
 
@@ -12063,7 +12072,7 @@ Respond with ONLY this JSON (no other text):
 
             # Build adapters for topology node/edge data
             def _nodes_adapter(c):
-                row = c.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+                row = c.execute("SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
                 if not row:
                     return []
                 import json as _json
@@ -12093,7 +12102,7 @@ Respond with ONLY this JSON (no other text):
                 return result
 
             def _edges_adapter(c):
-                row = c.execute("SELECT graph_json FROM topologies WHERE id=?", (topo_id,)).fetchone()
+                row = c.execute("SELECT graph_json FROM topologies WHERE id={_ph}", (topo_id,)).fetchone()
                 if not row:
                     return []
                 import json as _json
@@ -13239,7 +13248,7 @@ Planning rules:
             update_vals.extend([phase_id])
 
             conn.execute(
-                f"UPDATE nc_migration_phases SET {', '.join(update_fields)} WHERE id=?",
+                f"UPDATE nc_migration_phases SET {', '.join(update_fields)} WHERE id={_ph}",
                 update_vals,
             )
 
@@ -13912,7 +13921,7 @@ Planning rules:
             except Exception:
                 return None
 
-        advisory = _q1("SELECT * FROM nc_advisories WHERE id = ?", (advisory_id,))
+        advisory = _q1("SELECT * FROM nc_advisories WHERE id = {_ph}", (advisory_id,))
 
         assessments = _q(
             "SELECT * FROM nc_advisory_assessments WHERE advisory_id = ? ORDER BY created_at ASC",
