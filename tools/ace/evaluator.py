@@ -745,10 +745,10 @@ def compare_evals(session_a: str, session_b: str) -> dict:
         if va is None or vb is None:
             continue
         delta = (vb - va) if isinstance(vb, (int, float)) else None
-        if delta is not None:
-            improved: bool | None = (delta > 0) if higher_is_better else (delta < 0)
-        else:
-            improved = None
+        # delta==0 (unchanged) → neutral (None), not a regression
+        improved: bool | None = (
+            (delta > 0 if higher_is_better else delta < 0) if delta else None
+        )
         if improved is True:
             improvements += 1
         elif improved is False:
@@ -765,7 +765,8 @@ def compare_evals(session_a: str, session_b: str) -> dict:
     for fname in _BOOL_FIELDS:
         va = getattr(ea, fname, None)
         vb = getattr(eb, fname, None)
-        imp: bool | None = (bool(vb) and not bool(va)) if va is not None and vb is not None else None
+        # va==vb (unchanged) → neutral; False→True → improved; True→False → regressed
+        imp: bool | None = None if (va is None or vb is None or va == vb) else (bool(vb) and not bool(va))
         if imp is True:
             improvements += 1
         elif imp is False:
