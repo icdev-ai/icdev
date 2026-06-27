@@ -456,18 +456,54 @@ def create_wfc_blueprint() -> Blueprint:
             all_templates=FORM_TEMPLATES,
         )
 
-    # ── AI-assisted form generation ───────────────────────────────────────
+    # ── AI-assisted form generation helpers ──────────────────────────────
 
-    @bp.route("/api/forms/generate", methods=["POST"])
-    def api_generate_form():
-        """Generate form fields from a natural-language description using LLM."""
-        data = request.get_json(force=True) or {}
-        description = (data.get("description") or "").strip()
-        industry = data.get("industry", "")
-        if not description:
-            return jsonify({"error": "description is required"}), 400
+    _VALID_FIELD_TYPES = {"text","textarea","number","date","select","multiselect","checkbox","email","file","richtext"}
 
-        prompt = f"""You are a form designer. Given the description below, generate a JSON list of form fields.
+    def _validate_fields(raw_fields: list) -> list:
+        """Coerce and validate a list of raw field dicts from LLM output."""
+        cleaned = []
+        for i, f in enumerate(raw_fields):
+            if not isinstance(f, dict):
+                continue
+            cleaned.append({
+                "id": str(f.get("id") or f"f{i+1}"),
+                "type": str(f.get("type", "text")) if f.get("type") in _VALID_FIELD_TYPES else "text",
+                "label": str(f.get("label") or f"Field {i+1}"),
+                "required": bool(f.get("required", False)),
+                "placeholder": str(f.get("placeholder", "")) if f.get("placeholder") else "",
+                "options": [str(o) for o in f["options"]] if f.get("options") and isinstance(f["options"], list) else None,
+            })
+        return cleaned
+
+    def _generate_fields_from_text(text: str, mode: str = "describe") -> list:
+        """Call LLM to extract form fields from text.
+
+        mode='describe' — text is a natural-language description
+        mode='import'   — text was extracted from an uploaded form document
+        """
+        import re
+        import json as _json
+        from tools.llm.router import LLMRouter, LLMRequest
+
+        if mode == "import":
+            prompt = f"""You are a form designer. The text below was extracted from an existing form template document.
+Reconstruct it as a JSON list of form fields that faithfully represents every input, checkbox, dropdown, and text area in the original.
+
+Each field must be a JSON object with these keys:
+  - id: unique string like "f1", "f2" etc.
+  - type: one of text, textarea, number, date, select, multiselect, checkbox, email, file, richtext
+  - label: the field label or question text from the document
+  - required: true if the field appears mandatory, otherwise false
+  - options: array of strings (only for select/multiselect types — use values from the document)
+  - placeholder: optional hint text
+
+Return ONLY a valid JSON array. No markdown, no explanation.
+
+Extracted form text:
+{text[:6000]}"""
+        else:
+            prompt = f"""You are a form designer. Given the description below, generate a JSON list of form fields.
 Each field must be a JSON object with these keys:
   - id: unique string like "f1", "f2" etc.
   - type: one of text, textarea, number, date, select, multiselect, checkbox, email, file, richtext
@@ -478,46 +514,97 @@ Each field must be a JSON object with these keys:
 
 Return ONLY a valid JSON array. No markdown, no explanation.
 
-Industry context: {industry or 'General'}
-Form description: {description}"""
+Form description: {text}"""
 
+        router = LLMRouter()
+        req = LLMRequest(function_id="form_generation", prompt=prompt)
+        result = router.invoke("form_generation", req)
+        if hasattr(result, "content"):
+            raw = result.content or ""
+        elif isinstance(result, dict):
+            raw = result.get("content") or result.get("text") or result.get("response") or str(result)
+        else:
+            raw = str(result or "")
+
+        match = re.search(r"\[[\s\S]*\]", raw)
+        if not match:
+            raise ValueError(f"LLM did not return a valid JSON array. Raw: {raw[:300]}")
+        return _validate_fields(_json.loads(match.group()))
+
+    # ── AI-assisted form generation ───────────────────────────────────────
+
+    @bp.route("/api/forms/generate", methods=["POST"])
+    def api_generate_form():
+        """Generate form fields from a natural-language description using LLM."""
+        data = request.get_json(force=True) or {}
+        description = (data.get("description") or "").strip()
+        industry = (data.get("industry") or "General").strip()
+        if not description:
+            return jsonify({"error": "description is required"}), 400
         try:
-            from tools.llm.router import LLMRouter, LLMRequest
-            router = LLMRouter()
-            req = LLMRequest(function_id="form_generation", prompt=prompt)
-            result = router.invoke("form_generation", req)
-            # Result may be LLMResponse object, dict, or string
-            if hasattr(result, "content"):
-                raw = result.content or ""
-            elif isinstance(result, dict):
-                raw = result.get("content") or result.get("text") or result.get("response") or str(result)
-            else:
-                raw = str(result or "")
-            import re
-            # Extract JSON array from the response
-            match = re.search(r"\[[\s\S]*\]", raw)
-            if not match:
-                return jsonify({"error": "LLM did not return a valid JSON array", "raw": raw[:500]}), 500
-            import json as _json
-            fields = _json.loads(match.group())
-            # Validate each field has minimum required keys
-            valid_types = {"text","textarea","number","date","select","multiselect","checkbox","email","file","richtext"}
-            cleaned = []
-            for i, f in enumerate(fields):
-                if not isinstance(f, dict):
-                    continue
-                cleaned.append({
-                    "id": str(f.get("id") or f"f{i+1}"),
-                    "type": str(f.get("type","text")) if f.get("type") in valid_types else "text",
-                    "label": str(f.get("label") or f"Field {i+1}"),
-                    "required": bool(f.get("required", False)),
-                    "placeholder": str(f.get("placeholder","")) if f.get("placeholder") else "",
-                    "options": [str(o) for o in f["options"]] if f.get("options") and isinstance(f["options"], list) else None,
-                })
-            return jsonify({"status": "ok", "fields": cleaned, "count": len(cleaned)})
+            text = f"Industry context: {industry}\n{description}"
+            fields = _generate_fields_from_text(text, mode="describe")
+            return jsonify({"status": "ok", "fields": fields, "count": len(fields)})
         except Exception as exc:
             logger.error("wfc generate_form LLM error: %s", exc)
             return jsonify({"error": str(exc)}), 500
+
+    @bp.route("/api/forms/import", methods=["POST"])
+    def api_import_form():
+        """Extract text from an uploaded file and generate form fields via LLM."""
+        import tempfile
+        import pathlib
+
+        file = request.files.get("file")
+        if not file or not file.filename:
+            return jsonify({"error": "No file uploaded"}), 400
+
+        ext = pathlib.Path(file.filename).suffix.lower()
+        allowed = {".pdf", ".docx", ".png", ".jpg", ".jpeg"}
+        if ext not in allowed:
+            return jsonify({"error": f"Unsupported format '{ext}'. Use: PDF, DOCX, PNG, or JPG."}), 400
+
+        # Save to temp so extractors can open by path
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+                file.save(tmp)
+                tmp_path = tmp.name
+
+            # Try DIC extractors first (handles pdf/docx/image with OCR fallback)
+            text = ""
+            try:
+                from tools.document_intelligence.extractors import extract_file
+                extraction = extract_file(tmp_path)
+                text = (extraction.text or "").strip()
+            except Exception as e1:
+                logger.warning("wfc import: extractors failed (%s), trying markitdown", e1)
+
+            # Fallback: markitdown (high-fidelity DOCX/PPTX structure)
+            if not text:
+                try:
+                    from tools.document_intelligence.converters.markitdown_adapter import convert as md_convert
+                    extraction = md_convert(pathlib.Path(tmp_path))
+                    text = (extraction.text or "").strip()
+                except Exception as e2:
+                    logger.warning("wfc import: markitdown failed (%s)", e2)
+
+            if not text:
+                return jsonify({"error": "Could not extract text from the uploaded file. The file may be image-only — try a clearer scan or a DOCX version."}), 422
+
+            fields = _generate_fields_from_text(text, mode="import")
+            source_name = pathlib.Path(file.filename).stem
+            return jsonify({"status": "ok", "fields": fields, "count": len(fields), "source_file": source_name})
+
+        except Exception as exc:
+            logger.error("wfc import_form error: %s", exc)
+            return jsonify({"error": str(exc)}), 500
+        finally:
+            if tmp_path:
+                try:
+                    pathlib.Path(tmp_path).unlink(missing_ok=True)
+                except Exception:
+                    pass
 
     # ── API routes ────────────────────────────────────────────────────────
 
