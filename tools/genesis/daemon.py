@@ -94,6 +94,7 @@ REFLEX_NAMES = [
     "migration_canvas",
     "academy_reflex",
     "e2e_runner",
+    "qa_agent_reflex",  # 6-hour QA coverage gap sweep + E2E sweep scheduling
     "log_triage",
     "inspect_adapt",
     "cpmp_monitor",

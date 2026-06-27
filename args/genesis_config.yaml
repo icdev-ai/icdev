@@ -439,6 +439,19 @@ reflexes:
     interval_hours: 24
     success_metric:
       name: tasks_created
+
+  qa_agent_reflex:
+    enabled: true
+    risk_tier: green
+    schedule: "every 6h"
+    interval_seconds: 21600  # 6 hours
+    description: "QA Agent sweep — detect E2E coverage gaps per canvas and schedule targeted Playwright runs via kanban tasks"
+    interval_hours: 6
+    max_gap_tasks_per_run: 5  # cap gap tasks per cycle to avoid kanban flood
+    success_metric:
+      name: gap_tasks_created
+      threshold: 0
+      operator: gte  # 0 = no gaps (healthy); > 0 = gap tasks filed
       threshold: 0
       operator: gte
 
