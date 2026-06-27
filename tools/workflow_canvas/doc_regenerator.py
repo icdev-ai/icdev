@@ -433,38 +433,41 @@ def _run_regen_workflow(job_id: str, workflow_id: str, output_format: str) -> No
 def _run_regen_chain(job_id: str, chain_id: str, phase_id: str | None, output_format: str) -> None:
     try:
         import yaml
-        from tools.db.storage import get_connection, sql_placeholder
+        from tools.db.storage import get_connection, get_canvas_connection, sql_placeholder
 
-        conn = get_connection()
-        ph = sql_placeholder(conn)
+        # Canvas connection for wfc_* tables (no classification/tenant_id columns)
+        cc = get_canvas_connection("ICDEV_WFC_ENABLED")
+        cc_ph = sql_placeholder(cc)
 
-        chain_row = conn.execute(
-            f"SELECT * FROM wfc_process_chains WHERE id = {ph}", (chain_id,)
+        chain_row = cc.execute(
+            f"SELECT * FROM wfc_process_chains WHERE id = {cc_ph}", (chain_id,)
         ).fetchone()
         if not chain_row:
-            conn.close()
+            cc.close()
             _REGEN_JOBS[job_id] = {"status": "error", "error": f"Chain {chain_id} not found"}
             return
         chain = dict(chain_row)
 
-        phases_rows = conn.execute(
-            f"SELECT * FROM wfc_chain_phases WHERE chain_id = {ph} ORDER BY phase_number",
+        phases_rows = cc.execute(
+            f"SELECT * FROM wfc_chain_phases WHERE chain_id = {cc_ph} ORDER BY phase_number",
             (chain_id,),
         ).fetchall()
         phases = [dict(r) for r in phases_rows]
+        cc.close()
 
         if phase_id:
             phases = [p for p in phases if p["id"] == phase_id]
             if not phases:
-                conn.close()
                 _REGEN_JOBS[job_id] = {"status": "error", "error": f"Phase {phase_id} not found"}
                 return
 
-        # Enrich each phase with its workflow data
+        # Enrich each phase with its workflow data (studio_workflows has classification → regular conn)
         phases_data: list[dict] = []
         primary_fingerprint: dict = {}
         primary_excerpt = ""
 
+        conn = get_connection()
+        ph = sql_placeholder(conn)
         for phase in phases:
             wf_ids = json.loads(phase.get("workflow_ids") or "[]")
             phase_workflows = []
