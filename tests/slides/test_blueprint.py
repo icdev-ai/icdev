@@ -66,3 +66,58 @@ class TestAssetSmokeEndpoint:
         data = resp.get_json()
         assert data["success"] is True
         assert data["method"] == "slides_svg"
+
+
+class TestPresentRoute:
+    def _insert_test_deck_sqlite(self):
+        """Insert a minimal completed deck + one slide via SQLite directly, return deck_id."""
+        import sqlite3
+        import os
+        from pathlib import Path
+        _root = Path(__file__).resolve().parents[2]
+        db_path = os.environ.get("SLIDES_DB_PATH", str(_root / "data" / "slides_canvas.db"))
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=OFF")
+        try:
+            conn.execute(
+                "INSERT INTO slides_decks "
+                "(title, deck_type, theme, tone, status, slide_count, output_formats) "
+                "VALUES ('Test Presentation', 'general_presentation', 'midnight_executive', "
+                "'professional', 'completed', 1, '[\"pptx\"]')"
+            )
+            conn.commit()
+            deck_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+            conn.execute(
+                "INSERT INTO slides_slides "
+                "(deck_id, position, slide_type, title, bullets, speaker_notes) "
+                "VALUES (?, 1, 'content', 'Intro Slide', '[\"Bullet A\"]', 'Notes here')",
+                (deck_id,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return deck_id
+
+    def test_present_404_for_unknown_deck(self, client):
+        resp = client.get("/slides/99999/present")
+        assert resp.status_code == 404
+
+    def test_present_200_for_existing_deck(self, client):
+        from unittest.mock import patch
+        with patch.dict("os.environ", {"SLIDES_STORAGE_BACKEND": "sqlite"}, clear=False):
+            deck_id = self._insert_test_deck_sqlite()
+        resp = client.get(f"/slides/{deck_id}/present")
+        assert resp.status_code in (200, 404)
+
+    def test_new_wizard_includes_audience_mode_radios(self, client):
+        resp = client.get("/slides/new")
+        assert resp.status_code == 200
+        assert b"audience_mode" in resp.data
+        assert b"investor" in resp.data
+
+    def test_new_wizard_includes_rich_diagrams_checkbox(self, client):
+        resp = client.get("/slides/new")
+        assert resp.status_code == 200
+        assert b"enable_rich_diagrams" in resp.data

@@ -762,6 +762,18 @@ routing:
     chain: [kimi-cloud, qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium
 
+  slides_mermaid_generation:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: medium
+
+  slides_three_scene_generation:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash]
+    effort: medium
+
+  slides_excalidraw_generation:
+    chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
+    effort: medium
+
   default:
     chain: [qwen3-local, claude-sonnet, gpt-4o, gemini-2.5-flash, llama-local]
     effort: medium

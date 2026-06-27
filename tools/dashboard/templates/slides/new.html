@@ -66,6 +66,36 @@
                         <span id="slides-val" style="font-weight:600; margin-left:8px;">10</span> slides
                     </div>
                 </div>
+
+                {# Audience Mode #}
+                <div class="form-group" style="margin-top:20px;">
+                    <label class="form-label" style="font-weight:700;">Audience Mode <span style="font-weight:400; color:var(--text-secondary); font-size:12px;">(optional — tailors narrative arc)</span></label>
+                    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:8px;" id="audience-mode-radios">
+                        <label style="display:flex; align-items:center; gap:6px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; padding:8px 14px; cursor:pointer; font-size:13px;">
+                            <input type="radio" name="audience_mode" value="" checked onchange="onAudienceModeChange('')"> None
+                        </label>
+                        {% for mode in audience_modes %}
+                        <label style="display:flex; align-items:center; gap:6px; background:var(--bg-secondary); border:1px solid var(--border-color); border-radius:8px; padding:8px 14px; cursor:pointer; font-size:13px;">
+                            <input type="radio" name="audience_mode" value="{{ mode }}" onchange="onAudienceModeChange('{{ mode }}')">
+                            {{ mode | replace('_', ' ') | title }}
+                        </label>
+                        {% endfor %}
+                    </div>
+                    <div id="audience-hint" style="display:none; margin-top:10px; padding:10px 14px; background:rgba(212,160,23,0.08); border-left:3px solid #D4A017; border-radius:4px; font-size:12px; color:var(--text-secondary);"></div>
+                </div>
+
+                {# Pitch Template Presets #}
+                {% if pitch_templates %}
+                <div class="form-group" style="margin-top:16px;">
+                    <label class="form-label" style="font-weight:700;">Pitch Template <span style="font-weight:400; color:var(--text-secondary); font-size:12px;">(optional preset)</span></label>
+                    <select id="pitch_template" class="form-control" style="margin-top:6px;" onchange="onPitchTemplateChange()">
+                        <option value="">— Custom / Manual —</option>
+                        {% for key, tmpl in pitch_templates.items() %}
+                        <option value="{{ key }}">{{ tmpl.label }} ({{ tmpl.slides }} slides)</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                {% endif %}
             </div>
         </div>
         <div style="display:flex; justify-content:flex-end;">
@@ -179,6 +209,23 @@
         </div>
 
         <div class="card" style="margin-bottom:20px;">
+            <div class="card-header"><h3 style="margin:0;">🌐 Rich Diagrams & 3D Animations</h3></div>
+            <div class="card-body">
+                <label style="display:flex; align-items:flex-start; gap:10px; cursor:pointer;">
+                    <input type="checkbox" id="enable_rich_diagrams" style="margin-top:3px;">
+                    <div>
+                        <div style="font-weight:600;">Enable rich diagrams (Three.js · Mermaid · Excalidraw)</div>
+                        <div style="font-size:12px; color:var(--text-secondary); margin-top:4px;">
+                            Adds interactive 3D animations, flowchart diagrams, and hand-drawn sketches to applicable slides.
+                            <strong>Best experienced in the web presentation viewer (▶ Present).</strong>
+                            PPTX export shows styled placeholder cards; HTML export embeds the interactive renderers (self-contained, air-gap safe).
+                        </div>
+                    </div>
+                </label>
+            </div>
+        </div>
+
+        <div class="card" style="margin-bottom:20px;">
             <div class="card-header"><h3 style="margin:0;">Graphics</h3></div>
             <div class="card-body">
                 <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
@@ -231,6 +278,9 @@
 </form>
 
 <script>
+var AUDIENCE_HINTS = {{ audience_mode_hints | tojson | safe }};
+var PITCH_TEMPLATES = {{ pitch_templates | tojson | safe }};
+
 var TONE_HINTS = {
     'professional': 'Polished, concise, and authoritative; clean corporate visuals.',
     'fun': 'Light, playful, conversational; friendly flat illustrations and warm accents.',
@@ -272,6 +322,55 @@ function onDeckTypeChange() {
     }
 }
 
+function onAudienceModeChange(mode) {
+    var hintEl = document.getElementById('audience-hint');
+    if (!mode || !AUDIENCE_HINTS[mode]) {
+        hintEl.style.display = 'none';
+        return;
+    }
+    var hint = AUDIENCE_HINTS[mode];
+    hintEl.innerHTML = '<strong>' + mode.replace('_', ' ').replace(/\b\w/g, function(c){ return c.toUpperCase(); }) + ' arc:</strong> ' +
+        hint.narrative + '<br><span style="opacity:0.8;">Emphasis: ' + hint.emphasis + '</span>';
+    hintEl.style.display = '';
+    // Auto-set tone if mode recommends one and tone hasn't been manually changed
+    if (hint.tone_override) {
+        var toneEl = document.getElementById('tone');
+        if (toneEl && !toneEl.dataset.manuallySet) {
+            toneEl.value = hint.tone_override;
+            updateToneHint();
+        }
+    }
+}
+
+function onPitchTemplateChange() {
+    var key = document.getElementById('pitch_template').value;
+    if (!key || !PITCH_TEMPLATES[key]) return;
+    var tmpl = PITCH_TEMPLATES[key];
+    // Auto-fill deck_type and max_slides
+    var deckTypeEl = document.getElementById('deck_type');
+    if (deckTypeEl && tmpl.deck_type) {
+        deckTypeEl.value = tmpl.deck_type;
+        onDeckTypeChange();
+    }
+    var maxSlidesEl = document.getElementById('max_slides');
+    if (maxSlidesEl && tmpl.slides) {
+        maxSlidesEl.value = tmpl.slides;
+    }
+    // Show a brief toast-style note
+    var note = document.getElementById('pitch-template-note');
+    if (!note) {
+        note = document.createElement('div');
+        note.id = 'pitch-template-note';
+        note.style.cssText = 'font-size:12px; color:#D4A017; margin-top:6px;';
+        document.getElementById('pitch_template').parentElement.appendChild(note);
+    }
+    note.textContent = 'Arc: ' + (tmpl.arc || []).join(' → ');
+}
+
+document.getElementById('tone').addEventListener('change', function() {
+    this.dataset.manuallySet = '1';
+});
+
 document.getElementById('generate-form').addEventListener('submit', async function(e) {
     e.preventDefault();
     var btn = document.getElementById('submit-btn');
@@ -286,6 +385,7 @@ document.getElementById('generate-form').addEventListener('submit', async functi
     var sources = Array.from(document.querySelectorAll('input[name=sources]:checked')).map(i => i.value);
     var outputFormats = Array.from(document.querySelectorAll('input[name=output_formats]:checked')).map(i => i.value);
 
+    var audienceModeEl = document.querySelector('input[name=audience_mode]:checked');
     var payload = {
         title: document.getElementById('title').value,
         occasion: document.getElementById('occasion').value,
@@ -298,6 +398,8 @@ document.getElementById('generate-form').addEventListener('submit', async functi
         output_formats: outputFormats,
         sources: sources,
         upload_text: document.getElementById('upload_text').value,
+        enable_rich_diagrams: document.getElementById('enable_rich_diagrams').checked,
+        audience_mode: (audienceModeEl && audienceModeEl.value) ? audienceModeEl.value : null,
     };
 
     try {
