@@ -15,16 +15,19 @@ import pytest
 @pytest.fixture()
 def app():
     """Minimal Flask app with ace_api_bp registered (SQLite in-memory)."""
-    import os, sqlite3, uuid
-    from unittest.mock import patch, MagicMock
+    import os
 
     os.environ.setdefault("ICDEV_STORAGE_BACKEND", "sqlite")
 
     from flask import Flask
+    from icdev.tools.ace import blueprint as bp_mod
     from icdev.tools.ace.blueprint import ace_api_bp
 
     flask_app = Flask(__name__)
     flask_app.config["TESTING"] = True
+
+    # Suppress DB init attempts — tests stub _db() per-test.
+    bp_mod._state["db_ready"] = True
 
     # Avoid duplicate registration across test runs
     if "ace_api" not in flask_app.blueprints:
@@ -154,7 +157,7 @@ class TestSSEStreamRoute:
 
     def test_stream_includes_ping_on_timeout(self, client):
         """With timeout=0.05 and no events, generator yields a ping keep-alive."""
-        resp = client.get("/api/ace/inst-ping-test/stream?timeout=0.05")
+        resp = client.get("/api/ace/inst-ping-test/stream?timeout=0.05&max_pings=1")
         assert resp.status_code == 200
         raw = resp.data.decode()
         assert ": ping" in raw
