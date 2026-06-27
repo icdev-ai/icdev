@@ -73,6 +73,16 @@
         <div id="ai-status" style="font-size:0.75rem;color:var(--text-secondary);margin-top:4px;display:none"></div>
       </div>
 
+      <!-- Import existing form template -->
+      <div style="margin-top:16px">
+        <div style="font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary);margin-bottom:6px">📎 Import Template</div>
+        <label style="display:block;border:1px dashed #4a5568;border-radius:6px;padding:10px;text-align:center;cursor:pointer;font-size:0.8rem;color:var(--text-secondary)" ondragover="event.preventDefault()" ondrop="handleImportDrop(event)">
+          Upload PDF, DOCX, or Image
+          <input type="file" id="import-file-input" accept=".pdf,.docx,.png,.jpg,.jpeg" style="display:none" onchange="importFormFromFile(this.files[0])">
+        </label>
+        <div id="import-status" style="font-size:0.75rem;color:var(--text-secondary);margin-top:4px;display:none"></div>
+      </div>
+
       <div style="margin-top:16px;font-size:0.75rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--text-secondary);margin-bottom:8px">Templates</div>
         {% for tpl in templates %}
         <div class="tpl-card" data-industry="{{ tpl.industry|default('All') }}" data-category="{{ tpl.category }}"
@@ -289,6 +299,42 @@ async function generateFromDescription() {
   }
 }
 
+// ── Import form from uploaded file ────────────────────────────────────────────
+function handleImportDrop(evt) {
+  evt.preventDefault();
+  const file = evt.dataTransfer && evt.dataTransfer.files && evt.dataTransfer.files[0];
+  if (file) importFormFromFile(file);
+}
+
+async function importFormFromFile(file) {
+  if (!file) return;
+  const status = document.getElementById('import-status');
+  status.style.display = 'block';
+  status.textContent = '⏳ Extracting & analyzing…';
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const resp = await fetch('/workflow-canvas/api/forms/import', {method: 'POST', body: formData});
+    const data = await resp.json();
+    if (data.error) { status.textContent = '❌ ' + data.error; return; }
+    if (!data.fields || data.fields.length === 0) { status.textContent = '⚠️ No fields found in file.'; return; }
+    if (fields.length > 0 && !confirm('Replace current fields with imported fields from "' + file.name + '"?')) return;
+    fields = data.fields.map((f, i) => Object.assign({id: 'f'+(Date.now()+i)}, f));
+    selectedIdx = null;
+    render();
+    updatePropsPanel();
+    // Auto-fill form name from filename if still blank
+    const nameInput = document.getElementById('form-name-input');
+    if (!nameInput.value || nameInput.value === 'Untitled Form') {
+      nameInput.value = data.source_file || file.name.replace(/\.[^.]+$/, '');
+    }
+    status.textContent = `✅ Imported ${data.count} fields — edit below`;
+    document.getElementById('import-file-input').value = '';
+  } catch (e) {
+    status.textContent = '❌ Error: ' + e.message;
+  }
+}
+
 // ── Templates ─────────────────────────────────────────────────────────────────
 function loadTemplate(tpl) {
   if (fields.length > 0 && !confirm('Replace current fields with template "' + tpl.name + '"?')) return;
@@ -388,6 +434,27 @@ async function exportForm(fmt) {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+// Check for fields pre-loaded from the library Import button (via sessionStorage)
+(function() {
+  try {
+    const raw = sessionStorage.getItem('wfc_import');
+    if (raw) {
+      sessionStorage.removeItem('wfc_import');
+      const payload = JSON.parse(raw);
+      if (payload.fields && payload.fields.length > 0) {
+        fields = payload.fields.map((f, i) => Object.assign({id: 'f'+(Date.now()+i)}, f));
+        selectedIdx = null;
+        const nameInput = document.getElementById('form-name-input');
+        if ((!nameInput.value || nameInput.value === 'Untitled Form') && payload.source_file) {
+          nameInput.value = payload.source_file;
+        }
+        const st = document.getElementById('import-status');
+        st.style.display = 'block';
+        st.textContent = `✅ Imported ${fields.length} fields — edit below`;
+      }
+    }
+  } catch(e) {}
+})();
 render();
 </script>
 {% endblock %}
