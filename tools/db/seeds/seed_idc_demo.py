@@ -399,13 +399,13 @@ def seed_infra_resources(conn) -> int:
 
 def seed_infra_snapshots(conn) -> int:
     sql = """INSERT OR IGNORE INTO idc_infra_snapshots (
-        id, snapshot_id, csp, region, classification, resource_count,
+        id, snapshot_id, taken_at, csp, region, classification, resource_count,
         baseline_hash, notes, created_at
-    ) VALUES (?,?,?,?,?,?,?,?,?)"""
+    ) VALUES (?,?,?,?,?,?,?,?,?,?)"""
     count = 0
     for row in _INFRA_SNAPSHOTS:
         _safe_execute(conn, sql, (
-            row["id"], row["snapshot_id"], row["csp"], row["region"],
+            row["id"], row["snapshot_id"], _ts(count * 4), row["csp"], row["region"],
             row["classification"], row["resource_count"], row["baseline_hash"],
             row["notes"], _ts(count * 4),
         ))
