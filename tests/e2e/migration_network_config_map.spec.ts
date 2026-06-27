@@ -199,6 +199,8 @@ test.describe('Network Migration Wizard — Config Mapping Lifecycle', () => {
     // Verify the diff view and stats bar appear with rendered content.
     await expect(page.locator('#diff-view')).toBeVisible();
     await expect(page.locator('#diff-stats-bar')).toBeVisible();
+    const sourceConfigText = await page.locator('#diff-source').textContent();
+    expect(sourceConfigText).toContain('set system host-name');
     const targetConfigText = await page.locator('#diff-target').textContent();
     expect(targetConfigText).toContain('host-name');
     expect(targetConfigText).toContain('core-rtr-01');
