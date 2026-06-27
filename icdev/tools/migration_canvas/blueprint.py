@@ -850,6 +850,12 @@ def create_migration_blueprint():
                 "SELECT * FROM mc_net_cutover_steps WHERE session_id=? ORDER BY seq_no", (sid,)).fetchall()]
             sess["erb"] = _row_to_dict(conn.execute(
                 "SELECT * FROM mc_net_erb_metadata WHERE session_id=?", (sid,)).fetchone())
+            sess["config_map"] = [_row_to_dict(r) for r in conn.execute(
+                "SELECT * FROM mc_net_config_map WHERE session_id=? ORDER BY src_section_type, created_at",
+                (sid,)).fetchall()]
+            sess["config_map_questions"] = [_row_to_dict(r) for r in conn.execute(
+                "SELECT * FROM mc_net_config_questions WHERE session_id=? ORDER BY question_key",
+                (sid,)).fetchall()]
         hw = {}
         try:
             hw = _nm.fetch_hardware_profiles(sess.get("src_model", ""), sess.get("tgt_model", ""))
@@ -870,6 +876,8 @@ def create_migration_blueprint():
             "test_cases": sess["test_cases"],
             "cutover_steps": sess["cutover_steps"],
             "erb": sess["erb"],
+            "config_map": sess["config_map"],
+            "config_map_questions": sess["config_map_questions"],
             "hardware_profiles": hw,
             "parsed_interfaces": parsed_ifs,
         })
@@ -1206,6 +1214,67 @@ def create_migration_blueprint():
         _audit(sid, "compat_check_run", f"{len(checks)} checks; {sum(1 for c in checks if c['status']=='fail')} fails")
         return jsonify({"checks": checks, "total": len(checks),
                         "blockers": sum(1 for c in checks if c["status"]=="fail" and not c.get("override_reason"))})
+
+    # ── Config mapping (AI-assisted, HITL-reviewed) ───────────────────────────
+
+    @bp.route("/api/network-migration/<sid>/config-map/questions", methods=["GET"])
+    @mdc_login_required
+    def mc_net_api_get_config_questions(sid):
+        """Get yes/no questions for config mapping."""
+        return jsonify(_nm.generate_config_map_questions(sid))
+
+    @bp.route("/api/network-migration/<sid>/config-map/questions", methods=["POST"])
+    @mdc_login_required
+    def mc_net_api_save_config_questions(sid):
+        """Save user answers and regenerate proposals."""
+        data = request.get_json(force=True, silent=True) or {}
+        answers = data.get("answers", {})
+        result = _nm.propose_config_mapping(sid, answers=answers)
+        return jsonify(result)
+
+    @bp.route("/api/network-migration/<sid>/config-map/generate", methods=["POST"])
+    @mdc_login_required
+    def mc_net_api_generate_config_map(sid):
+        """Generate (or regenerate) AI config mapping proposals."""
+        data = request.get_json(force=True, silent=True) or {}
+        use_llm = data.get("use_llm", True)
+        result = _nm.propose_config_mapping(sid, use_llm=use_llm)
+        return jsonify(result)
+
+    @bp.route("/api/network-migration/<sid>/config-map", methods=["GET"])
+    @mdc_login_required
+    def mc_net_api_get_config_map(sid):
+        """List persisted config mapping proposals."""
+        return jsonify(_nm.get_config_map(sid))
+
+    @bp.route("/api/network-migration/<sid>/config-map/<mid>/decide", methods=["POST"])
+    @mdc_login_required
+    def mc_net_api_decide_config_map(sid, mid):
+        """Approve / reject / skip a single mapping row."""
+        data = request.get_json(force=True, silent=True) or {}
+        decision = data.get("decision", "pending")
+        note = data.get("note", "")
+        result = _nm.decide_config_map_row(sid, mid, decision, note)
+        if result.get("error"):
+            return jsonify(result), 400
+        return jsonify(result)
+
+    @bp.route("/api/network-migration/<sid>/config-map/apply", methods=["POST"])
+    @mdc_login_required
+    def mc_net_api_apply_config_map(sid):
+        """Apply approved mapping rows to produce target config."""
+        result = _nm.apply_approved_config_map(sid)
+        if result.get("error"):
+            return jsonify(result), 400
+        _audit(sid, "config_map_applied", f"approved={result.get('approved_count',0)}")
+        return jsonify(result)
+
+    @bp.route("/api/network-migration/<sid>/config-map/export", methods=["GET"])
+    @mdc_login_required
+    def mc_net_api_export_config_map(sid):
+        """Export the config map as JSON."""
+        data = _nm.get_config_map(sid)
+        return jsonify(data)
 
     @bp.route("/api/network-migration/<sid>/convert-config", methods=["POST"])
     @mdc_login_required

@@ -349,6 +349,7 @@ CREATE TABLE IF NOT EXISTS mc_net_sessions (
     src_site        TEXT DEFAULT '',
     tgt_site        TEXT DEFAULT '',
     src_config_raw  TEXT DEFAULT '',
+    target_config   TEXT DEFAULT '',
     config_parsed   INTEGER DEFAULT 0,
     readiness_score REAL DEFAULT 0,
     status          TEXT DEFAULT 'in_progress',
@@ -482,6 +483,39 @@ CREATE TABLE IF NOT EXISTS mc_net_protocol_plans (
 );
 CREATE INDEX IF NOT EXISTS idx_mc_net_proto_session ON mc_net_protocol_plans(session_id);
 
+CREATE TABLE IF NOT EXISTS mc_net_config_map (
+    id                  TEXT PRIMARY KEY,
+    session_id          TEXT NOT NULL REFERENCES mc_net_sessions(id) ON DELETE CASCADE,
+    src_section_type    TEXT NOT NULL,
+    src_stanza_text     TEXT NOT NULL,
+    src_lines_json      TEXT DEFAULT '[]',
+    tgt_section_type    TEXT DEFAULT '',
+    tgt_stanza_text     TEXT DEFAULT '',
+    mapping_action      TEXT NOT NULL CHECK(mapping_action IN ('direct','rename','merge','split','remove','manual','skip')) DEFAULT 'direct',
+    confidence          REAL DEFAULT 0,
+    ai_rationale        TEXT DEFAULT '',
+    ai_question_key     TEXT DEFAULT '',
+    status              TEXT NOT NULL CHECK(status IN ('pending','approved','rejected','skipped','needs_review')) DEFAULT 'pending',
+    reviewer_note       TEXT DEFAULT '',
+    applied_to_target   INTEGER DEFAULT 0,
+    created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at          TEXT DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_mc_net_cfgmap_session ON mc_net_config_map(session_id);
+CREATE INDEX IF NOT EXISTS idx_mc_net_cfgmap_status ON mc_net_config_map(status);
+
+CREATE TABLE IF NOT EXISTS mc_net_config_questions (
+    id              TEXT PRIMARY KEY,
+    session_id      TEXT NOT NULL REFERENCES mc_net_sessions(id) ON DELETE CASCADE,
+    question_key    TEXT NOT NULL,
+    question_text   TEXT NOT NULL,
+    default_answer  INTEGER DEFAULT NULL,
+    user_answer     INTEGER DEFAULT NULL,
+    ai_relevance    TEXT DEFAULT '',
+    UNIQUE(session_id, question_key)
+);
+CREATE INDEX IF NOT EXISTS idx_mc_net_cfgq_session ON mc_net_config_questions(session_id);
+
 CREATE TABLE IF NOT EXISTS mc_net_parallel_timelines (
     id                   TEXT PRIMARY KEY,
     session_id           TEXT NOT NULL,
@@ -505,6 +539,12 @@ def _migrate_network_tables(conn):
     # Add network_session_id to migration_designs if not present (ALTER TABLE is idempotent via try/except)
     try:
         conn.execute("ALTER TABLE migration_designs ADD COLUMN network_session_id TEXT DEFAULT NULL")
+        conn.commit()
+    except Exception:
+        pass  # column already exists
+    # Add target_config to mc_net_sessions if not present.
+    try:
+        conn.execute("ALTER TABLE mc_net_sessions ADD COLUMN target_config TEXT DEFAULT ''")
         conn.commit()
     except Exception:
         pass  # column already exists

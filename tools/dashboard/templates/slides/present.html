@@ -1,0 +1,451 @@
+{% extends "base.html" %}
+{% block title %}{{ deck.title }} — Present - ICDEV™{% endblock %}
+
+{% block extra_css %}
+<style>
+/* Full-screen overlay hides nav/sidebar */
+.present-container {
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 9000;
+  background: #0a1628;
+  display: flex; flex-direction: column;
+  font-family: system-ui, "Segoe UI", sans-serif;
+}
+.present-stage {
+  flex: 1; position: relative; overflow: hidden;
+}
+.present-slide {
+  position: absolute; inset: 0;
+  display: none; flex-direction: column;
+  padding: 0;
+}
+.present-slide.active { display: flex; }
+
+/* Transitions */
+[data-transition="fade"] .present-slide { transition: opacity 0.35s ease; opacity: 0; }
+[data-transition="fade"] .present-slide.active { opacity: 1; }
+[data-transition="zoom"] .present-slide { transition: transform 0.3s ease, opacity 0.3s ease; transform: scale(0.96); opacity: 0; }
+[data-transition="zoom"] .present-slide.active { transform: scale(1); opacity: 1; }
+[data-transition="slide"] .present-slide { transition: transform 0.35s ease; transform: translateX(100%); }
+[data-transition="slide"] .present-slide.active { transform: translateX(0); }
+
+/* Slide type styles */
+.slide-title-type { justify-content: center; align-items: center; text-align: center; padding: 60px; }
+.slide-title-type .slide-main-title { font-size: clamp(2rem, 5vw, 4rem); font-weight: 800; color: #D4A017; margin-bottom: 16px; }
+.slide-title-type .slide-subtitle { font-size: 1.1rem; color: #C8D2DC; max-width: 700px; }
+
+.slide-content-type { padding: 40px 60px; }
+.slide-content-type .slide-header { border-left: 6px solid #D4A017; padding-left: 20px; margin-bottom: 24px; }
+.slide-content-type .slide-header h2 { font-size: clamp(1.5rem, 3vw, 2.2rem); font-weight: 700; color: #D4A017; margin: 0; }
+.slide-bullets { list-style: none; margin: 0; padding: 0; }
+.slide-bullets li {
+  padding: 10px 0 10px 28px; position: relative;
+  font-size: clamp(1rem, 2vw, 1.3rem); color: #E0E6F0; line-height: 1.5;
+  opacity: 0; transform: translateX(-16px);
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+.slide-bullets li::before { content: "▸"; position: absolute; left: 0; color: #D4A017; font-size: 0.9em; }
+.slide-bullets li.revealed { opacity: 1; transform: translateX(0); }
+
+.slide-mermaid-type { padding: 30px 60px; }
+.slide-diagram-type { flex: 1; display: flex; flex-direction: column; padding: 20px 40px; }
+.slide-diagram-title { font-size: clamp(1.2rem, 2.5vw, 1.8rem); font-weight: 700; color: #D4A017; margin-bottom: 16px; border-left: 5px solid #D4A017; padding-left: 16px; }
+.slide-diagram-body { flex: 1; display: flex; align-items: center; justify-content: center; }
+.slide-diagram-body .mermaid { background: rgba(255,255,255,0.04); border-radius: 10px; padding: 20px; max-width: 100%; }
+.slide-three-canvas { width: 100%; height: 100%; display: block; min-height: 350px; }
+.slide-exc-svg { width: 100%; max-height: 420px; }
+.slide-placeholder-msg { color: #C8D2DC; font-style: italic; font-size: 1rem; text-align: center; padding: 40px; }
+
+/* Card grid */
+.slide-card-grid-type { padding: 20px 40px; flex: 1; overflow: auto; }
+.card-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 12px; }
+.cap-card { background: #0D1F3C; border-radius: 8px; padding: 14px; border-top: 3px solid #00B4D8; }
+.cap-card .cap-label { font-size: 0.75rem; font-weight: 700; color: #00B4D8; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+.cap-card .cap-title { font-size: 0.95rem; font-weight: 600; color: #fff; margin-bottom: 6px; }
+.cap-card .cap-body { font-size: 0.8rem; color: #C8D2DC; line-height: 1.4; margin-bottom: 6px; }
+.cap-card .cap-meta { font-size: 0.72rem; color: #00B4D8; margin-top: 6px; }
+
+/* Bottom controls bar */
+.present-controls {
+  height: 52px; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px);
+  display: flex; align-items: center; gap: 12px; padding: 0 20px;
+  border-top: 1px solid rgba(255,255,255,0.1);
+  flex-shrink: 0;
+}
+.present-controls button, .present-controls a {
+  background: rgba(255,255,255,0.1); border: none; color: #fff;
+  padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px;
+  text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+  transition: background 0.2s;
+}
+.present-controls button:hover, .present-controls a:hover { background: rgba(255,255,255,0.2); }
+.present-controls button.active { background: #D4A017; color: #000; }
+.slide-counter { color: #C8D2DC; font-size: 13px; min-width: 60px; text-align: center; }
+.progress-bar-wrap { flex: 1; height: 4px; background: rgba(255,255,255,0.15); border-radius: 2px; overflow: hidden; }
+.progress-bar-fill { height: 100%; background: #D4A017; transition: width 0.3s ease; }
+.autoplay-indicator { color: #D4A017; font-size: 11px; min-width: 80px; }
+
+/* Speaker notes overlay (hidden by default, toggle with N) */
+.notes-overlay {
+  position: absolute; bottom: 52px; left: 0; right: 0;
+  background: rgba(0,0,0,0.85); backdrop-filter: blur(6px);
+  padding: 16px 40px; font-size: 13px; color: #C8D2DC;
+  display: none; max-height: 120px; overflow-y: auto;
+  border-top: 1px solid rgba(255,255,255,0.1);
+}
+.notes-overlay.visible { display: block; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="present-container" data-transition="{{ transition }}" id="presentApp">
+  <div class="present-stage" id="presentStage">
+
+    {% for slide in slides %}
+    <div class="present-slide {% if loop.first %}active{% endif %}"
+         data-slide-index="{{ loop.index0 }}"
+         data-slide-type="{{ slide.slide_type }}"
+         data-speaker-notes="{{ slide.speaker_notes | default('', true) | e }}">
+
+      {# ── Title slide ── #}
+      {% if slide.slide_type == 'title' %}
+      <div class="slide-title-type" style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center;">
+        <div style="position:absolute; top:0; left:0; right:0; height:6px; background:#D4A017;"></div>
+        <div class="slide-main-title">{{ slide.title }}</div>
+        <div style="width:120px; height:2px; background:#D4A017; margin:16px auto;"></div>
+        {% if slide.speaker_notes %}
+        <div class="slide-subtitle">{{ slide.speaker_notes[:200] }}</div>
+        {% endif %}
+        <div style="position:absolute; bottom:0; left:0; right:0; height:6px; background:#D4A017;"></div>
+      </div>
+
+      {# ── Mermaid diagram ── #}
+      {% elif slide.slide_type == 'mermaid_diagram' %}
+      <div class="slide-diagram-type">
+        <div class="slide-diagram-title">{{ slide.title }}</div>
+        <div class="slide-diagram-body">
+          {% if slide.mermaid_code %}
+          <pre class="mermaid" style="background:rgba(255,255,255,0.04); border-radius:10px; padding:20px; max-width:100%; overflow-x:auto;">{{ slide.mermaid_code | e }}</pre>
+          {% else %}
+          <div class="slide-placeholder-msg">No diagram data available.</div>
+          {% endif %}
+        </div>
+      </div>
+
+      {# ── Three.js 3D animation ── #}
+      {% elif slide.slide_type == 'three_animation' %}
+      <div class="slide-diagram-type" style="position:relative;">
+        <div class="slide-diagram-title">{{ slide.title }}</div>
+        <div class="slide-diagram-body" style="position:relative; min-height:350px;">
+          {% if slide.three_scene_config %}
+          <canvas class="slide-three-canvas"
+                  id="three-present-{{ loop.index }}"
+                  data-scene="{{ slide.three_scene_config | tojson | e }}"
+                  style="width:100%; height:400px; display:block; border-radius:8px;"></canvas>
+          {% else %}
+          <div class="slide-placeholder-msg">🌐 3D animation not configured.</div>
+          {% endif %}
+        </div>
+      </div>
+
+      {# ── Excalidraw sketch ── #}
+      {% elif slide.slide_type == 'excalidraw_sketch' %}
+      <div class="slide-diagram-type">
+        <div class="slide-diagram-title">{{ slide.title }}</div>
+        <div class="slide-diagram-body">
+          {% if slide.excalidraw_elements %}
+          <svg class="slide-exc-svg"
+               id="exc-present-{{ loop.index }}"
+               viewBox="0 0 800 450"
+               data-elements="{{ slide.excalidraw_elements | tojson | e }}"
+               style="width:100%; max-height:420px;"></svg>
+          {% else %}
+          <div class="slide-placeholder-msg">✏️ Sketch data not available.</div>
+          {% endif %}
+        </div>
+      </div>
+
+      {# ── Card grid ── #}
+      {% elif slide.slide_type == 'card_grid' %}
+      <div class="slide-card-grid-type">
+        <div class="slide-diagram-title">{{ slide.title }}</div>
+        <div class="card-grid">
+          {% for card in slide.bullets %}
+          {% if card is mapping %}
+          <div class="cap-card" style="border-top-color: {{ card.accent_color | default('#00B4D8') }};">
+            {% if card.label %}<div class="cap-label">{{ card.label }}</div>{% endif %}
+            {% if card.title %}<div class="cap-title">{{ card.title }}</div>{% endif %}
+            {% if card.body %}<div class="cap-body">{{ card.body }}</div>{% endif %}
+            {% if card.meta %}<div class="cap-meta">{{ card.meta }}</div>{% endif %}
+          </div>
+          {% else %}
+          <div class="cap-card"><div class="cap-body">{{ card }}</div></div>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+
+      {# ── Outro / closing ── #}
+      {% elif slide.slide_type == 'outro' %}
+      <div class="slide-title-type" style="flex:1; display:flex; flex-direction:column; justify-content:center; align-items:center;">
+        <div style="position:absolute; top:0; left:0; right:0; height:6px; background:#D4A017;"></div>
+        <div class="slide-main-title">{{ slide.title }}</div>
+        <div style="width:120px; height:2px; background:#D4A017; margin:16px auto;"></div>
+        {% if slide.bullets %}
+        <ul class="slide-bullets" style="list-style:none; padding:0; text-align:center; max-width:600px;">
+          {% for b in slide.bullets %}
+          <li class="revealed" style="text-align:center; padding:8px; opacity:1; transform:none;">{{ b }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+        <div style="position:absolute; bottom:0; left:0; right:0; height:6px; background:#D4A017;"></div>
+      </div>
+
+      {# ── Standard content (bullet) slide ── #}
+      {% else %}
+      <div class="slide-content-type" style="flex:1; display:flex; flex-direction:column;">
+        <div style="position:absolute; top:0; left:0; bottom:0; width:5px; background:#D4A017;"></div>
+        <div class="slide-header">
+          <h2>{{ slide.title }}</h2>
+        </div>
+        {% if slide.image_path %}
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:24px; flex:1;">
+          <div>
+            <ul class="slide-bullets" id="bullets-{{ loop.index }}">
+              {% for bullet in slide.bullets %}
+              <li>{{ bullet }}</li>
+              {% endfor %}
+            </ul>
+          </div>
+          <div style="display:flex; align-items:center; justify-content:center;">
+            <img src="/slides/api/image?path={{ slide.image_path | urlencode }}"
+                 alt="" style="max-width:100%; max-height:380px; border-radius:8px;"
+                 onerror="this.parentElement.style.display='none'">
+          </div>
+        </div>
+        {% else %}
+        <ul class="slide-bullets" id="bullets-{{ loop.index }}">
+          {% for bullet in slide.bullets %}
+          <li>{{ bullet }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+      {% endif %}
+
+    </div>
+    {% endfor %}
+
+    {# Speaker notes overlay #}
+    <div class="notes-overlay" id="notesOverlay"></div>
+  </div>
+
+  {# Controls bar #}
+  <div class="present-controls">
+    <button onclick="prevSlide()" title="Previous (←)">◀ Prev</button>
+    <span class="slide-counter" id="slideCounter">1 / {{ slides | length }}</span>
+    <div class="progress-bar-wrap">
+      <div class="progress-bar-fill" id="progressBar" style="width: {{ (1 / (slides | length) * 100) | round(1) }}%;"></div>
+    </div>
+    <button onclick="nextSlide()" title="Next (→ or Space)">Next ▶</button>
+    <button onclick="toggleAutoplay()" id="autoplayBtn" title="Auto-play (A)">⏵ Auto</button>
+    <span class="autoplay-indicator" id="autoplayIndicator"></span>
+    <button onclick="toggleNotes()" title="Speaker notes (N)">📝 Notes</button>
+    <a href="/slides/{{ deck_id }}" title="Exit presentation">✕ Exit</a>
+    {% if deck.status in ('completed', 'auto') %}
+    <a href="/slides/api/{{ deck_id }}/download" title="Download PPTX">↓ PPTX</a>
+    {% endif %}
+  </div>
+</div>
+
+{# Load vendor libs and renderers at end of content block (Jinja2 constraint: no nested blocks) #}
+<script src="{{ url_for('static', filename='vendor/threejs/three.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/roughjs/rough.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/slides-three-renderer.js') }}"></script>
+<script src="{{ url_for('static', filename='js/slides-excalidraw-renderer.js') }}"></script>
+
+<script>
+(function() {
+  'use strict';
+
+  var TOTAL = {{ slides | length }};
+  var current = 0;
+  var bulletRevealIdx = {};   // slideIndex -> next bullet to reveal
+  var threeInstances = {};    // canvasId -> { stop() }
+  var autoplayTimer = null;
+  var autoplayActive = false;
+  var AUTOPLAY_DELAY = 8000;  // ms
+  var notesVisible = false;
+
+  var slides = document.querySelectorAll('.present-slide');
+  var counter = document.getElementById('slideCounter');
+  var progressBar = document.getElementById('progressBar');
+  var notesOverlay = document.getElementById('notesOverlay');
+  var autoplayBtn = document.getElementById('autoplayBtn');
+  var autoplayInd = document.getElementById('autoplayIndicator');
+
+  function getSlide(idx) { return slides[idx]; }
+
+  function updateUI() {
+    counter.textContent = (current + 1) + ' / ' + TOTAL;
+    progressBar.style.width = ((current + 1) / TOTAL * 100).toFixed(1) + '%';
+  }
+
+  function initThreeSlide(slideEl) {
+    var canvas = slideEl.querySelector('canvas[data-scene]');
+    if (!canvas || threeInstances[canvas.id]) return;
+    try {
+      var cfg = JSON.parse(canvas.getAttribute('data-scene'));
+      var inst = window.ICDEVThreeRenderer && ICDEVThreeRenderer.init(canvas, cfg);
+      if (inst) threeInstances[canvas.id] = inst;
+    } catch(e) {}
+  }
+
+  function stopThreeSlide(slideEl) {
+    if (!slideEl) return;
+    var canvas = slideEl.querySelector('canvas[data-scene]');
+    if (canvas && threeInstances[canvas.id]) {
+      threeInstances[canvas.id].stop();
+      delete threeInstances[canvas.id];
+    }
+  }
+
+  function initExcalidrawSlide(slideEl) {
+    var svg = slideEl.querySelector('svg[data-elements]');
+    if (!svg || svg._rendered) return;
+    try {
+      var elems = JSON.parse(svg.getAttribute('data-elements'));
+      if (window.ICDEVExcalidrawRenderer) ICDEVExcalidrawRenderer.render(svg, elems);
+      svg._rendered = true;
+    } catch(e) {}
+  }
+
+  function initSlide(idx) {
+    var el = getSlide(idx);
+    if (!el) return;
+    var type = el.getAttribute('data-slide-type');
+    if (type === 'three_animation') initThreeSlide(el);
+    if (type === 'excalidraw_sketch') initExcalidrawSlide(el);
+    // Mermaid auto-renders via mermaid-icdev.js in base.html
+  }
+
+  function showSlide(idx) {
+    if (idx < 0 || idx >= TOTAL) return;
+    var prev = getSlide(current);
+    if (prev) {
+      stopThreeSlide(prev);
+      prev.classList.remove('active');
+    }
+    current = idx;
+    var el = getSlide(current);
+    if (el) {
+      el.classList.add('active');
+      updateNotes(el);
+      initSlide(current);
+    }
+    bulletRevealIdx[current] = bulletRevealIdx[current] || 0;
+    updateUI();
+  }
+
+  function revealNextBullet() {
+    var el = getSlide(current);
+    if (!el) return false;
+    var bullets = el.querySelectorAll('.slide-bullets li:not(.revealed)');
+    if (bullets.length > 0) {
+      bullets[0].classList.add('revealed');
+      bulletRevealIdx[current] = (bulletRevealIdx[current] || 0) + 1;
+      return true;  // consumed
+    }
+    return false;  // no more bullets, advance slide
+  }
+
+  function nextSlide() {
+    if (revealNextBullet()) return;
+    if (current < TOTAL - 1) showSlide(current + 1);
+  }
+
+  function prevSlide() {
+    if (current > 0) {
+      // Reset bullet state for previous slide when going back
+      bulletRevealIdx[current] = 0;
+      var el = getSlide(current);
+      if (el) el.querySelectorAll('.slide-bullets li.revealed').forEach(function(li) {
+        li.classList.remove('revealed');
+      });
+      showSlide(current - 1);
+    }
+  }
+
+  function toggleAutoplay() {
+    autoplayActive = !autoplayActive;
+    autoplayBtn.classList.toggle('active', autoplayActive);
+    if (autoplayActive) {
+      autoplayInd.textContent = '⏵ ' + (AUTOPLAY_DELAY / 1000) + 's';
+      scheduleAutoplay();
+    } else {
+      autoplayInd.textContent = '';
+      if (autoplayTimer) { clearTimeout(autoplayTimer); autoplayTimer = null; }
+    }
+  }
+
+  function scheduleAutoplay() {
+    if (!autoplayActive) return;
+    autoplayTimer = setTimeout(function() {
+      nextSlide();
+      scheduleAutoplay();
+    }, AUTOPLAY_DELAY);
+  }
+
+  function toggleNotes() {
+    notesVisible = !notesVisible;
+    notesOverlay.classList.toggle('visible', notesVisible);
+  }
+
+  function updateNotes(el) {
+    if (!el) return;
+    var notes = el.getAttribute('data-speaker-notes') || '';
+    notesOverlay.textContent = notes || '(No speaker notes)';
+  }
+
+  // Keyboard handler
+  document.addEventListener('keydown', function(e) {
+    switch (e.key) {
+      case 'ArrowRight':
+      case ' ':
+        e.preventDefault();
+        nextSlide();
+        break;
+      case 'ArrowLeft':
+        e.preventDefault();
+        prevSlide();
+        break;
+      case 'a':
+      case 'A':
+        toggleAutoplay();
+        break;
+      case 'n':
+      case 'N':
+        toggleNotes();
+        break;
+      case 'Escape':
+        window.location.href = '/slides/{{ deck_id }}';
+        break;
+    }
+  });
+
+  // Init first slide
+  updateUI();
+  initSlide(0);
+  // Reveal all bullets on title/outro slides immediately
+  slides.forEach(function(sl) {
+    var t = sl.getAttribute('data-slide-type');
+    if (t === 'title' || t === 'outro') {
+      sl.querySelectorAll('.slide-bullets li').forEach(function(li) {
+        li.classList.add('revealed');
+      });
+    }
+  });
+
+})();
+</script>
+{% endblock %}

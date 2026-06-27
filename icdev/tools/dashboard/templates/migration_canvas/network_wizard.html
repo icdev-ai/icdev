@@ -200,7 +200,55 @@
 .override-apply-btn { background: #f39c12; color: #000; border: none; border-radius: 3px; padding: 3px 10px; cursor: pointer; font-size: 11px; font-weight: 700; }
 .override-cancel-btn { background: #1e3a6e; color: #eaeaea; border: none; border-radius: 3px; padding: 3px 10px; cursor: pointer; font-size: 11px; }
 
-/* ── Step 5 — Enhanced diff ───────────────────────────────────── */
+/* ── Step 5 — Config mapping ───────────────────────────────────── */
+.cfgmap-questions-panel { background: #0d1b2e; border: 1px solid #1e3a6e; border-radius: 6px; padding: 14px; margin-bottom: 14px; }
+.cfgmap-questions-panel h4 { margin: 0 0 10px; font-size: 13px; color: #27ae60; }
+.cfgmap-question { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid #1a2d4a; font-size: 12px; color: #eaeaea; }
+.cfgmap-question:last-child { border-bottom: none; }
+.cfgmap-question-text { flex: 1; }
+.cfgmap-toggle { display: flex; gap: 6px; }
+.cfgmap-toggle button { padding: 4px 14px; border-radius: 4px; border: 1px solid #1e3a6e; background: #0a1624; color: #7a8cb0; cursor: pointer; font-size: 12px; }
+.cfgmap-toggle button.active-yes { background: #1a5e2d; color: #27ae60; border-color: #27ae60; }
+.cfgmap-toggle button.active-no { background: #3d1515; color: #e74c3c; border-color: #e74c3c; }
+.cfgmap-hint { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; background: #1e3a6e; color: #7a8cb0; font-size: 11px; cursor: help; margin-left: 6px; }
+.cfgmap-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.cfgmap-pane { background: #0a1624; border: 1px solid #1e3a6e; border-radius: 6px; overflow: hidden; }
+.cfgmap-pane-title { padding: 8px 12px; font-size: 11px; color: #7a8cb0; border-bottom: 1px solid #1e3a6e; text-transform: uppercase; letter-spacing: 0.5px; }
+.cfgmap-pane-scroll { max-height: 420px; overflow-y: auto; padding: 10px; }
+.cfgmap-section { background: #16213e; border: 1px solid #1e3a6e; border-radius: 5px; margin-bottom: 10px; overflow: hidden; }
+.cfgmap-section-hdr { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; cursor: pointer; background: #111f35; }
+.cfgmap-section-type { font-size: 12px; font-weight: 600; color: #eaeaea; }
+.cfgmap-section-badge { font-size: 10px; padding: 1px 6px; border-radius: 3px; }
+.cfgmap-section-body { padding: 10px; font-family: monospace; font-size: 11px; color: #7a8cb0; white-space: pre-wrap; line-height: 1.4; }
+.cfgmap-section-body code { color: #eaeaea; }
+.cfgmap-mapping-row { background: #16213e; border: 1px solid #1e3a6e; border-radius: 5px; padding: 10px; margin-bottom: 10px; }
+.cfgmap-mapping-row.approved { border-color: #27ae60; background: rgba(39,174,96,0.06); }
+.cfgmap-mapping-row.rejected { border-color: #e74c3c; background: rgba(231,76,60,0.06); }
+.cfgmap-mapping-row.skipped { border-color: #4a6080; background: rgba(74,96,128,0.06); }
+.cfgmap-mapping-row.needs_review { border-color: #f39c12; background: rgba(243,156,18,0.06); }
+.cfgmap-row-header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.cfgmap-row-types { font-size: 12px; color: #eaeaea; }
+.cfgmap-row-types .arrow { color: #7a8cb0; margin: 0 6px; }
+.cfgmap-row-actions { display: flex; gap: 5px; }
+.cfgmap-row-actions button { padding: 3px 10px; border-radius: 3px; border: none; cursor: pointer; font-size: 11px; }
+.cfgmap-btn-approve { background: #1a5e2d; color: #27ae60; }
+.cfgmap-btn-reject { background: #3d1515; color: #e74c3c; }
+.cfgmap-btn-skip { background: #1e3a6e; color: #7a8cb0; }
+.cfgmap-row-rationale { font-size: 11px; color: #7a8cb0; margin-bottom: 8px; line-height: 1.4; }
+.cfgmap-row-rationale strong { color: #27ae60; }
+.cfgmap-confidence { font-size: 10px; color: #4a6080; }
+.cfgmap-confidence .bar { display: inline-block; width: 40px; height: 4px; background: #1e3a6e; border-radius: 2px; margin: 0 5px; vertical-align: middle; }
+.cfgmap-confidence .fill { display: inline-block; height: 4px; border-radius: 2px; background: #27ae60; }
+.cfgmap-row-note { width: 100%; background: #0a1624; border: 1px solid #1a2d4a; border-radius: 3px; color: #eaeaea; padding: 4px 6px; font-size: 11px; box-sizing: border-box; margin-top: 6px; }
+.cfgmap-summary { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.cfgmap-chip { padding: 4px 10px; border-radius: 12px; font-size: 11px; }
+.chip-pending { background: #1e3a6e; color: #7a8cb0; }
+.chip-approved { background: #1a5e2d; color: #27ae60; }
+.chip-rejected { background: #3d1515; color: #e74c3c; }
+.chip-skipped { background: #3a3a3a; color: #7a8cb0; }
+.chip-total { background: #16213e; color: #eaeaea; border: 1px solid #1e3a6e; }
+
+/* ── Step 6 — Enhanced diff ───────────────────────────────────── */
 .diff-stats-bar { display: flex; align-items: center; gap: 14px; margin-bottom: 10px; background: #0d1b2e; border: 1px solid #1e3a6e; border-radius: 6px; padding: 8px 14px; flex-wrap: wrap; }
 .diff-stat { font-size: 12px; font-weight: 600; }
 .diff-stat-add { color: #27ae60; }
@@ -286,12 +334,13 @@
       (2,'Config Import'),
       (3,'Port Mapping'),
       (4,'Compatibility'),
-      (5,'Config Preview'),
-      (6,'Test Plan'),
-      (7,'Cutover Planner'),
-      (8,'ERB / CCB Package'),
-      (9,'Protocol Plan'),
-      (10,'Parallel Timeline')
+      (5,'Config Mapping'),
+      (6,'Config Preview'),
+      (7,'Test Plan'),
+      (8,'Cutover Planner'),
+      (9,'ERB / CCB Package'),
+      (10,'Protocol Plan'),
+      (11,'Parallel Timeline')
     ] %}
     {% for num, label in steps %}
     <div class="nw-step-link" id="step-link-{{ num }}" onclick="goStep({{ num }})">
@@ -672,10 +721,63 @@
       </div>
     </div>
 
-    <!-- ════════════════ STEP 5 — Config Preview ════════════════ -->
+    <!-- ════════════════ STEP 5 — Config Mapping ════════════════ -->
     <div class="nw-page" id="page-5">
       <div class="nw-header">
-        <h2>Step 5 — Config Conversion &amp; Preview</h2>
+        <h2>Step 5 — Configuration Mapping (AI-assisted)</h2>
+        <p>Map entire source device configuration sections to the target device. Review AI proposals, answer yes/no questions, and approve each mapping before generating the target config.</p>
+      </div>
+
+      <!-- AI yes/no questions -->
+      <div class="cfgmap-questions-panel" id="cfgmap-questions-panel">
+        <h4>AI Preference Questions
+          <span class="cfgmap-hint" title="Your answers guide how the AI proposes target configuration stanzas.">?</span>
+        </h4>
+        <div id="cfgmap-questions-list"></div>
+        <div style="margin-top:10px">
+          <button class="btn btn-primary" onclick="saveConfigMapQuestions()">Save Answers &amp; Generate Proposals</button>
+          <span id="cfgmap-questions-status" style="font-size:12px;color:#7a8cb0;margin-left:10px"></span>
+        </div>
+      </div>
+
+      <!-- Action bar -->
+      <div style="display:flex;align-items:center;gap:10px;margin:16px 0">
+        <button class="btn btn-primary" onclick="generateConfigMap()" id="cfgmap-generate-btn">Generate AI Proposals</button>
+        <button class="btn btn-secondary" onclick="applyApprovedConfigMap()" id="cfgmap-apply-btn" disabled>Apply Approved to Target Config</button>
+        <span id="cfgmap-status" style="font-size:12px;color:#7a8cb0"></span>
+      </div>
+
+      <!-- Summary chips -->
+      <div class="cfgmap-summary" id="cfgmap-summary" style="display:none">
+        <span class="cfgmap-chip chip-pending" id="cfgmap-chip-pending">Pending: 0</span>
+        <span class="cfgmap-chip chip-approved" id="cfgmap-chip-approved">Approved: 0</span>
+        <span class="cfgmap-chip chip-rejected" id="cfgmap-chip-rejected">Rejected: 0</span>
+        <span class="cfgmap-chip chip-skipped" id="cfgmap-chip-skipped">Skipped: 0</span>
+        <span class="cfgmap-chip chip-total" id="cfgmap-chip-total">Total: 0</span>
+      </div>
+
+      <!-- Split-pane mapping table -->
+      <div class="cfgmap-grid" id="cfgmap-grid">
+        <div class="cfgmap-pane">
+          <div class="cfgmap-pane-title">Source Configuration Sections</div>
+          <div class="cfgmap-pane-scroll" id="cfgmap-src-scroll"></div>
+        </div>
+        <div class="cfgmap-pane">
+          <div class="cfgmap-pane-title">AI-Proposed Target Mapping</div>
+          <div class="cfgmap-pane-scroll" id="cfgmap-tgt-scroll"></div>
+        </div>
+      </div>
+
+      <div class="nw-actions">
+        <button class="btn btn-primary" onclick="goStep(6)" id="cfgmap-next-btn" disabled>Continue →</button>
+        <button class="btn btn-secondary" onclick="goStep(4)">← Back</button>
+      </div>
+    </div>
+
+    <!-- ════════════════ STEP 6 — Config Preview ════════════════ -->
+    <div class="nw-page" id="page-6">
+      <div class="nw-header">
+        <h2>Step 6 — Config Conversion &amp; Preview</h2>
         <p>Split-pane diff view of source vs. generated target config. Commit-check simulation reports errors, warnings, and info findings.</p>
       </div>
 
@@ -723,15 +825,15 @@
       </div>
 
       <div class="nw-actions">
-        <button class="btn btn-primary" onclick="goStep(6)">Continue →</button>
-        <button class="btn btn-secondary" onclick="goStep(4)">← Back</button>
+        <button class="btn btn-primary" onclick="goStep(7)">Continue →</button>
+        <button class="btn btn-secondary" onclick="goStep(5)">← Back</button>
       </div>
     </div>
 
-    <!-- ════════════════ STEP 6 — Test Plan ════════════════ -->
-    <div class="nw-page" id="page-6">
+    <!-- ════════════════ STEP 7 — Test Plan ════════════════ -->
+    <div class="nw-page" id="page-7">
       <div class="nw-header">
-        <h2>Step 6 — Test Plan</h2>
+        <h2>Step 7 — Test Plan</h2>
         <p>Pre-migration baseline, cutover smoke tests, and 24h post-monitoring checklist.</p>
       </div>
 
@@ -752,15 +854,15 @@
       <div id="tests-post" style="display:none"></div>
 
       <div class="nw-actions">
-        <button class="btn btn-primary" onclick="saveTests(); goStep(7)">Save &amp; Continue →</button>
-        <button class="btn btn-secondary" onclick="goStep(5)">← Back</button>
+        <button class="btn btn-primary" onclick="saveTests(); goStep(8)">Save &amp; Continue →</button>
+        <button class="btn btn-secondary" onclick="goStep(6)">← Back</button>
       </div>
     </div>
 
-    <!-- ════════════════ STEP 7 — Cutover Planner ════════════════ -->
-    <div class="nw-page" id="page-7">
+    <!-- ════════════════ STEP 8 — Cutover Planner ════════════════ -->
+    <div class="nw-page" id="page-8">
       <div class="nw-header">
-        <h2>Step 7 — Cutover Sequence Planner</h2>
+        <h2>Step 8 — Cutover Sequence Planner</h2>
         <p>Ordered circuit cutover plan with drain/cutover/verify/rollback actions.</p>
       </div>
 
@@ -788,16 +890,16 @@
       <div id="cutover-list"></div>
 
       <div class="nw-actions">
-        <button class="btn btn-primary" onclick="saveCutover(); goStep(8)">Save &amp; Continue →</button>
+        <button class="btn btn-primary" onclick="saveCutover(); goStep(9)">Save &amp; Continue →</button>
         <button class="btn btn-secondary" onclick="saveCutover()">Save Plan</button>
-        <button class="btn btn-secondary" onclick="goStep(6)">← Back</button>
+        <button class="btn btn-secondary" onclick="goStep(7)">← Back</button>
       </div>
     </div>
 
-    <!-- ════════════════ STEP 8 — ERB / CCB Package ════════════════ -->
-    <div class="nw-page" id="page-8">
+    <!-- ════════════════ STEP 9 — ERB / CCB Package ════════════════ -->
+    <div class="nw-page" id="page-9">
       <div class="nw-header">
-        <h2>Step 8 — ERB / CCB Package</h2>
+        <h2>Step 9 — ERB / CCB Package</h2>
         <p>Change request package for Engineering Review Board and Change Control Board submission.</p>
       </div>
 
@@ -841,14 +943,14 @@
         <button class="btn btn-primary" onclick="saveErbMetadata()" id="erb-save-btn">Save Metadata</button>
         <button class="btn btn-primary" onclick="submitErb()" id="erb-submit-btn" disabled>Submit to ERB/CCB Approval Flow</button>
         <a href="#" onclick="openErbPdf()" class="btn btn-secondary">Export PDF</a>
-        <button class="btn btn-secondary" onclick="goStep(7)">← Back</button>
+        <button class="btn btn-secondary" onclick="goStep(8)">← Back</button>
       </div>
     </div>
 
-    <!-- ════════════════ STEP 9 — Protocol Migration Plan ════════════════ -->
-    <div class="nw-page" id="page-9">
+    <!-- ════════════════ STEP 10 — Protocol Migration Plan ════════════════ -->
+    <div class="nw-page" id="page-10">
       <div class="nw-header">
-        <h2>Step 9 — Protocol Migration Plan</h2>
+        <h2>Step 10 — Protocol Migration Plan</h2>
         <p>Per-protocol migration steps auto-generated from your imported config. Requires Step 2 config import.</p>
       </div>
       <div id="proto-empty-state" style="color:#7a8cb0;font-size:13px;margin-bottom:16px">
@@ -856,18 +958,18 @@
       </div>
       <div class="nw-actions" style="margin-bottom:16px;margin-top:0">
         <button class="btn btn-primary" onclick="generateProtocolPlan()">Generate Protocol Plan</button>
-        <button class="btn btn-secondary" onclick="goStep(8)">← Back</button>
+        <button class="btn btn-secondary" onclick="goStep(9)">← Back</button>
       </div>
       <div id="proto-accordion"></div>
       <div class="nw-actions" style="margin-top:16px">
-        <button class="btn btn-primary" onclick="goStep(10)">Continue → Parallel Timeline</button>
+        <button class="btn btn-primary" onclick="goStep(11)">Continue → Parallel Timeline</button>
       </div>
     </div>
 
-    <!-- ════════════════ STEP 10 — Parallel Operation Timeline ════════════════ -->
-    <div class="nw-page" id="page-10">
+    <!-- ════════════════ STEP 11 — Parallel Operation Timeline ════════════════ -->
+    <div class="nw-page" id="page-11">
       <div class="nw-header">
-        <h2>Step 10 — Parallel Operation Timeline</h2>
+        <h2>Step 11 — Parallel Operation Timeline</h2>
         <p>Structured milestone plan for running old and new devices side-by-side to minimize outages.</p>
       </div>
       <div style="display:flex;gap:14px;align-items:flex-end;margin-bottom:16px">
@@ -876,7 +978,7 @@
           <input type="date" id="cutover-date" style="background:#0d1b2e;border:1px solid #1e3a6e;border-radius:5px;color:#eaeaea;padding:6px 10px;font-size:12px">
         </div>
         <button class="btn btn-primary" onclick="generateTimeline()">Generate Timeline</button>
-        <button class="btn btn-secondary" onclick="goStep(9)">← Back</button>
+        <button class="btn btn-secondary" onclick="goStep(10)">← Back</button>
       </div>
       <div id="timeline-empty" style="color:#7a8cb0;font-size:13px">No timeline yet — click Generate Timeline.</div>
       <div id="timeline-gantt" style="display:none"></div>
@@ -1097,7 +1199,7 @@ document.getElementById('ai-input').addEventListener('keydown', e => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) sendAI();
 });
 
-// ── NMCE: Load data for steps 9+10 when navigated to ─────────────
+// ── NMCE: Load data for steps 10+11 when navigated to ────────────
 const _origGoStep = typeof goStep === 'function' ? goStep : null;
 
 // ── State ─────────────────────────────────────────────────────────
@@ -1124,17 +1226,19 @@ function showToast(msg, type) { toast(msg, type === 'warn' || type === 'error');
 
 // ── Step navigation ───────────────────────────────────────────────
 function goStep(n) {
+  if (n < 1 || n > 11) return;
   document.querySelectorAll('.nw-page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nw-step-link').forEach(l => l.classList.remove('active'));
   document.getElementById('page-' + n).classList.add('active');
-  if (n === 9) loadProtocolPlan();
-  if (n === 10) loadTimeline();
+  if (n === 10) loadProtocolPlan();
+  if (n === 11) loadTimeline();
   document.getElementById('step-link-' + n).classList.add('active');
   currentStep = n;
   if (n === 4 && _sid && !_compatChecked) runCompatCheck(true);
-  if (n === 5 && _sid && !targetConfigText) convertConfig(true);
-  if (n === 6 && Object.keys(testCases).length === 0) loadTests();
-  if (n === 8) loadReadiness();
+  if (n === 5 && _sid) loadConfigMap();
+  if (n === 6 && _sid && !targetConfigText) convertConfig(true);
+  if (n === 7 && Object.keys(testCases).length === 0) loadTests();
+  if (n === 9) loadReadiness();
 }
 
 function showStep(n) { goStep(n); }
@@ -1800,7 +1904,223 @@ function applyOverride(cat, idx) {
   toast(`Override applied: ${reason}`);
 }
 
-// ── STEP 5 ────────────────────────────────────────────────────────
+// ── STEP 5 — Config Mapping ───────────────────────────────────────
+let _configMap = [];
+let _configMapQuestions = [];
+
+async function loadConfigMap() {
+  if (!_sid) return;
+  await loadConfigMapQuestions();
+  try {
+    const data = await api('GET', `/api/network-migration/${_sid}/config-map`);
+    _configMap = data.proposals || [];
+    renderConfigMap(_configMap);
+  } catch(e) { console.warn('loadConfigMap', e); }
+}
+
+async function loadConfigMapQuestions() {
+  if (!_sid) return;
+  try {
+    const data = await api('GET', `/api/network-migration/${_sid}/config-map/questions`);
+    _configMapQuestions = data.questions || [];
+    renderConfigMapQuestions(_configMapQuestions);
+  } catch(e) { console.warn('loadConfigMapQuestions', e); }
+}
+
+function renderConfigMapQuestions(questions) {
+  const container = document.getElementById('cfgmap-questions-list');
+  if (!container) return;
+  if (!questions.length) {
+    container.innerHTML = '<div style="color:#4a6080;font-size:12px">No preference questions needed for this configuration.</div>';
+    return;
+  }
+  container.innerHTML = questions.map(q => {
+    const key = escapeHtml(q.question_key);
+    const text = escapeHtml(q.question_text);
+    const yesCls = q.user_answer === 1 ? ' active-yes' : '';
+    const noCls = q.user_answer === 0 ? ' active-no' : '';
+    return `<div class="cfgmap-question" data-key="${key}">
+      <div class="cfgmap-question-text">${text}</div>
+      <div class="cfgmap-toggle">
+        <button class="${yesCls}" onclick="setQuestionAnswer('${key}', 1)" id="q-${key}-yes">Yes</button>
+        <button class="${noCls}" onclick="setQuestionAnswer('${key}', 0)" id="q-${key}-no">No</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function setQuestionAnswer(key, answer) {
+  const q = _configMapQuestions.find(x => x.question_key === key);
+  if (q) q.user_answer = answer;
+  const yesBtn = document.getElementById('q-' + key + '-yes');
+  const noBtn = document.getElementById('q-' + key + '-no');
+  if (yesBtn) yesBtn.classList.toggle('active-yes', answer === 1);
+  if (noBtn) noBtn.classList.toggle('active-no', answer === 0);
+}
+
+async function saveConfigMapQuestions() {
+  if (!_sid) { toast('Session required', true); return; }
+  const unanswered = _configMapQuestions.filter(q => q.user_answer === null || q.user_answer === undefined);
+  if (unanswered.length) {
+    toast(`Answer all ${unanswered.length} question(s) before generating proposals.`, true);
+    return;
+  }
+  const statusEl = document.getElementById('cfgmap-questions-status');
+  statusEl.textContent = 'Saving…';
+  try {
+    const answers = {};
+    _configMapQuestions.forEach(q => answers[q.question_key] = q.user_answer);
+    await api('POST', `/api/network-migration/${_sid}/config-map/questions`, {answers});
+    statusEl.textContent = 'Saved. Generating AI proposals…';
+    await generateConfigMap();
+    statusEl.textContent = '';
+  } catch(e) {
+    statusEl.textContent = '';
+    toast('Error saving answers: ' + e.message, true);
+  }
+}
+
+async function generateConfigMap() {
+  if (!_sid) { toast('Session required', true); return; }
+  const btn = document.getElementById('cfgmap-generate-btn');
+  const statusEl = document.getElementById('cfgmap-status');
+  btn.disabled = true;
+  statusEl.textContent = 'Generating proposals…';
+  try {
+    const answers = {};
+    _configMapQuestions.forEach(q => { if (q.user_answer !== null && q.user_answer !== undefined) answers[q.question_key] = q.user_answer; });
+    const data = await api('POST', `/api/network-migration/${_sid}/config-map/generate`, {answers, use_llm: true});
+    _configMap = data.proposals || [];
+    renderConfigMap(_configMap);
+    toast(`Generated ${_configMap.length} configuration mappings.`, 'ok');
+  } catch(e) {
+    toast('Error generating proposals: ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+    statusEl.textContent = '';
+  }
+}
+
+function renderConfigMap(rows) {
+  const srcScroll = document.getElementById('cfgmap-src-scroll');
+  const tgtScroll = document.getElementById('cfgmap-tgt-scroll');
+  const summary = document.getElementById('cfgmap-summary');
+  const applyBtn = document.getElementById('cfgmap-apply-btn');
+  const nextBtn = document.getElementById('cfgmap-next-btn');
+  if (!rows.length) {
+    srcScroll.innerHTML = '<div style="color:#4a6080;font-size:12px;text-align:center;padding:20px 0">No proposals yet. Answer questions and click Generate AI Proposals.</div>';
+    tgtScroll.innerHTML = '<div style="color:#4a6080;font-size:12px;text-align:center;padding:20px 0">No proposals yet.</div>';
+    summary.style.display = 'none';
+    applyBtn.disabled = true;
+    nextBtn.disabled = true;
+    return;
+  }
+  summary.style.display = 'flex';
+  updateConfigMapSummary(rows);
+
+  // Source pane: grouped by source section type
+  const srcByType = {};
+  rows.forEach(r => { (srcByType[r.src_section_type] ||= []).push(r); });
+  srcScroll.innerHTML = Object.entries(srcByType).map(([type, rs]) => {
+    const body = rs.map(r => `<div class="cfgmap-section-body">${escapeHtml(r.src_stanza_text)}</div>`).join('');
+    return `<div class="cfgmap-section">
+      <div class="cfgmap-section-hdr" onclick="this.nextElementSibling.classList.toggle('open')">
+        <span class="cfgmap-section-type">${escapeHtml(type)} (${rs.length})</span>
+        <span class="cfgmap-section-badge badge-pending">${rs[0].src_section_type}</span>
+      </div>
+      ${body}
+    </div>`;
+  }).join('');
+
+  // Target pane: one mapping card per proposal
+  tgtScroll.innerHTML = rows.map(r => {
+    const status = r.status || 'pending';
+    const actionLabels = {direct:'Direct', rename:'Rename', merge:'Merge', split:'Split', remove:'Remove', manual:'Manual', skip:'Skip'};
+    const action = actionLabels[r.mapping_action] || r.mapping_action || 'Direct';
+    const confPct = Math.round((r.confidence || 0) * 100);
+    const confColor = confPct >= 80 ? '#27ae60' : confPct >= 50 ? '#f39c12' : '#e74c3c';
+    const rationale = (r.ai_rationale || 'No rationale provided.').replace(/\n/g, '<br>');
+    return `<div class="cfgmap-mapping-row ${status}" id="cfgmap-row-${r.id}">
+      <div class="cfgmap-row-header">
+        <div class="cfgmap-row-types">
+          <strong>${escapeHtml(r.src_section_type)}</strong>
+          <span class="arrow">→</span>
+          <strong>${escapeHtml(r.tgt_section_type || action)}</strong>
+          <span class="badge badge-${status === 'approved' ? 'ok' : status === 'rejected' ? 'fail' : status === 'skipped' ? 'na' : 'pending'}" style="margin-left:8px">${status.toUpperCase()}</span>
+        </div>
+        <div class="cfgmap-row-actions">
+          <button class="cfgmap-btn-approve" onclick="decideConfigMapRow('${r.id}', 'approved')">Approve</button>
+          <button class="cfgmap-btn-reject" onclick="decideConfigMapRow('${r.id}', 'rejected')">Reject</button>
+          <button class="cfgmap-btn-skip" onclick="decideConfigMapRow('${r.id}', 'skipped')">Skip</button>
+        </div>
+      </div>
+      <div class="cfgmap-row-rationale" title="AI rationale">
+        <strong>AI rationale:</strong> ${rationale}
+      </div>
+      <div class="cfgmap-confidence">
+        Confidence:
+        <span class="bar"><span class="fill" style="width:${confPct}%;background:${confColor}"></span></span>
+        ${confPct}%
+      </div>
+      <div style="font-family:monospace;font-size:11px;color:#7a8cb0;white-space:pre-wrap;margin-top:6px;border-left:2px solid #1e3a6e;padding-left:8px">${escapeHtml(r.tgt_stanza_text || '(no target stanza)')}</div>
+      <input type="text" class="cfgmap-row-note" placeholder="Reviewer note (optional)" value="${escapeHtml(r.reviewer_note || '')}" id="note-${r.id}" />
+    </div>`;
+  }).join('');
+
+  const approved = rows.filter(r => r.status === 'approved').length;
+  const applied = rows.some(r => r.applied_to_target);
+  applyBtn.disabled = approved === 0;
+  nextBtn.disabled = !applied;
+}
+
+function updateConfigMapSummary(rows) {
+  const counts = {pending:0, approved:0, rejected:0, skipped:0};
+  rows.forEach(r => { counts[r.status] = (counts[r.status] || 0) + 1; });
+  document.getElementById('cfgmap-chip-pending').textContent = 'Pending: ' + counts.pending;
+  document.getElementById('cfgmap-chip-approved').textContent = 'Approved: ' + counts.approved;
+  document.getElementById('cfgmap-chip-rejected').textContent = 'Rejected: ' + counts.rejected;
+  document.getElementById('cfgmap-chip-skipped').textContent = 'Skipped: ' + counts.skipped;
+  document.getElementById('cfgmap-chip-total').textContent = 'Total: ' + rows.length;
+}
+
+async function decideConfigMapRow(rowId, decision) {
+  if (!_sid) { toast('Session required', true); return; }
+  const note = document.getElementById('note-' + rowId)?.value || '';
+  try {
+    const data = await api('POST', `/api/network-migration/${_sid}/config-map/${rowId}/decide`, {decision, note});
+    const row = _configMap.find(r => r.id === rowId);
+    if (row) {
+      row.status = data.status || decision;
+      row.reviewer_note = note;
+    }
+    renderConfigMap(_configMap);
+    toast(`Mapping ${decision}.`, 'ok');
+  } catch(e) { toast('Error: ' + e.message, true); }
+}
+
+async function applyApprovedConfigMap() {
+  if (!_sid) { toast('Session required', true); return; }
+  const approved = _configMap.filter(r => r.status === 'approved');
+  if (!approved.length) { toast('Approve at least one mapping before applying.', true); return; }
+  const btn = document.getElementById('cfgmap-apply-btn');
+  const statusEl = document.getElementById('cfgmap-status');
+  btn.disabled = true;
+  statusEl.textContent = 'Applying approved mappings to target config…';
+  try {
+    const data = await api('POST', `/api/network-migration/${_sid}/config-map/apply`);
+    targetConfigText = data.target_config || '';
+    markStepDone(5);
+    toast('Approved mappings applied. Continue to Config Preview.', 'ok');
+    document.getElementById('cfgmap-next-btn').disabled = false;
+  } catch(e) {
+    toast('Error applying mappings: ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+    statusEl.textContent = '';
+  }
+}
+
+// ── STEP 6 ────────────────────────────────────────────────────────
 let _syncScrolling = false;
 
 function syncScroll(origin) {
@@ -1829,7 +2149,7 @@ async function convertConfig(silent=false) {
     renderCommitCheck(data.commit_check || []);
     document.getElementById('diff-view').style.display = 'grid';
     document.getElementById('cc-panel').style.display = 'block';
-    markStepDone(5);
+    markStepDone(6);
     if (!silent) toast('Config generated');
     const errs = (data.commit_check||[]).filter(c => c.status === 'fail').length;
     statusEl.textContent = errs ? `⚠ ${errs} commit-check error${errs > 1 ? 's' : ''}` : '✓ Commit-check clean';
@@ -1938,7 +2258,7 @@ function downloadTargetConfig() {
   a.download = (_sid||'target') + '-config.txt'; a.click();
 }
 
-// ── STEP 6 ────────────────────────────────────────────────────────
+// ── STEP 7 ────────────────────────────────────────────────────────
 let currentTestTab = 'pre';
 
 async function loadTests() {
@@ -2018,12 +2338,12 @@ async function saveTests() {
   const all = [...(testCases.pre||[]), ...(testCases.cutover||[]), ...(testCases.post||[])];
   try {
     await api('POST', `/api/network-migration/${_sid}/test-cases`, {test_cases: all});
-    markStepDone(6);
+    markStepDone(7);
     toast('Test plan saved');
   } catch(e) { toast('Save failed: ' + e.message, true); }
 }
 
-// ── STEP 7 ────────────────────────────────────────────────────────
+// ── STEP 8 ────────────────────────────────────────────────────────
 let _dragSrcIdx = null;
 
 async function generateCutover() {
@@ -2112,12 +2432,12 @@ async function saveCutover() {
   if (!_sid) return;
   try {
     await api('POST', `/api/network-migration/${_sid}/cutover-steps`, {action:'save', steps: cutoverSteps});
-    markStepDone(7);
+    markStepDone(8);
     toast('Cutover plan saved');
   } catch(e) { toast('Save failed: ' + e.message, true); }
 }
 
-// ── STEP 8 ────────────────────────────────────────────────────────
+// ── STEP 9 ────────────────────────────────────────────────────────
 async function loadReadiness() {
   if (!_sid) return;
   try {
@@ -2247,9 +2567,16 @@ function escapeHtml(s) {
         renderCompatChecks(_compatChecks);
         markStepDone(4); resumeStep = 5;
       }
-      if (data.session && data.session.target_config) { markStepDone(5); resumeStep = 6; }
-      if ((data.test_cases||[]).length > 0) { markStepDone(6); resumeStep = 7; }
-      if ((data.cutover_steps||[]).length > 0) { markStepDone(7); resumeStep = 8; }
+      if ((data.config_map||[]).length > 0) {
+        _configMap = data.config_map;
+        renderConfigMap(_configMap);
+        const applied = _configMap.some(r => r.applied_to_target);
+        if (applied) { markStepDone(5); resumeStep = 6; }
+        else { resumeStep = 5; }
+      }
+      if (data.session && data.session.target_config) { markStepDone(6); resumeStep = 7; }
+      if ((data.test_cases||[]).length > 0) { markStepDone(7); resumeStep = 8; }
+      if ((data.cutover_steps||[]).length > 0) { markStepDone(8); resumeStep = 9; }
       goStep(resumeStep);
     } catch(e) { goStep(1); }
   } else {

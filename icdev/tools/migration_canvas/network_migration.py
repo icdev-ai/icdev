@@ -17,6 +17,7 @@ from tools.logging.icdev_logger import get_logger
 import json
 import re
 import sqlite3
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -1946,6 +1947,755 @@ def load_device_config_from_db(device_id: str) -> str | None:
     except Exception:
         return None
     return row[0] if row else None
+
+
+# ---------------------------------------------------------------------------
+# Configuration-section mapping (AI-assisted, HITL-reviewed)
+# ---------------------------------------------------------------------------
+
+_CONFIG_SECTION_TYPES: tuple[str, ...] = (
+    "system", "interfaces", "routing-options", "protocols",
+    "policy-options", "firewall", "class-of-service", "services",
+    "snmp", "ntp", "syslog", "aaa", "management", "vlans", "unknown",
+)
+
+# Mapping of source section type -> likely target section type (vendor-agnostic).
+_SECTION_TYPE_MAP: dict[str, str] = {
+    "interfaces": "interfaces",
+    "routing-options": "routing-options",
+    "protocols": "protocols",
+    "policy-options": "policy-options",
+    "firewall": "firewall",
+    "class-of-service": "class-of-service",
+    "services": "services",
+    "snmp": "snmp",
+    "ntp": "ntp",
+    "syslog": "syslog",
+    "aaa": "aaa",
+    "system": "system",
+    "management": "management",
+    "vlans": "vlans",
+}
+
+
+def _detect_section_type_juniper(line: str) -> str:
+    """Return the top-level config section for a Juniper line.
+
+    Handles both `set` style and curly-brace hierarchical style.
+    """
+    stripped = line.strip()
+    parts = stripped.split()
+    if len(parts) >= 2 and parts[0].lower() == "set":
+        sec = parts[1].lower().rstrip(";")
+        return sec if sec in _CONFIG_SECTION_TYPES else "unknown"
+    # Curly-brace style: top-level sections look like "system {" or "interfaces {"
+    if parts:
+        first = parts[0].lower().rstrip(";")
+        if first in _CONFIG_SECTION_TYPES:
+            return first
+    return "unknown"
+
+
+def _detect_section_type_cisco(line: str) -> str:
+    """Return the section type for a Cisco/Arista block-style config line."""
+    lowered = line.strip().lower()
+    if lowered.startswith("interface "):
+        return "interfaces"
+    if lowered.startswith("router ") or lowered.startswith("ipv6 router "):
+        return "protocols"
+    if lowered.startswith("routing "):
+        return "routing-options"
+    if lowered.startswith("ip route ") or lowered.startswith("ipv6 route "):
+        return "routing-options"
+    if lowered.startswith("ip access-list ") or lowered.startswith("ipv6 access-list "):
+        return "firewall"
+    if lowered.startswith("route-map ") or lowered.startswith("ip prefix-list "):
+        return "policy-options"
+    if lowered.startswith("vlan ") or lowered.startswith("vlan database"):
+        return "vlans"
+    if lowered.startswith("hostname "):
+        return "system"
+    if lowered.startswith("banner ") or lowered.startswith("ip domain-") or lowered.startswith("service "):
+        return "system"
+    if lowered.startswith("snmp-") or lowered.startswith("snmp "):
+        return "snmp"
+    if lowered.startswith("ntp ") or lowered.startswith("clock "):
+        return "ntp"
+    if lowered.startswith("logging ") or lowered.startswith("syslog "):
+        return "syslog"
+    if lowered.startswith("aaa ") or lowered.startswith("username ") or lowered.startswith("enable "):
+        return "aaa"
+    if lowered.startswith("line ") or lowered.startswith("archive") or lowered.startswith("mgmt "):
+        return "management"
+    return "unknown"
+
+
+def _detect_section_type_arista(line: str) -> str:
+    """Arista EOS is Cisco-like with a few extra keywords."""
+    lowered = line.strip().lower()
+    if lowered.startswith("router ") or lowered.startswith("ipv6 route "):
+        return "protocols"
+    if lowered.startswith("ip routing") or lowered.startswith("vrf instance "):
+        return "routing-options"
+    if lowered.startswith("interface "):
+        return "interfaces"
+    if lowered.startswith("ip access-list ") or lowered.startswith("ipv6 access-list "):
+        return "firewall"
+    if lowered.startswith("route-map ") or lowered.startswith("ip prefix-list "):
+        return "policy-options"
+    if lowered.startswith("vlan "):
+        return "vlans"
+    if lowered.startswith("hostname "):
+        return "system"
+    return "unknown"
+
+
+def _section_detector(vendor: str):
+    if vendor == "juniper":
+        return _detect_section_type_juniper
+    if vendor in ("cisco_ios", "cisco_nxos"):
+        return _detect_section_type_cisco
+    if vendor == "arista":
+        return _detect_section_type_arista
+    # Generic: prefer Cisco-style block detection, then Juniper-style set detection.
+    return lambda line: _detect_section_type_cisco(line) or _detect_section_type_juniper(line)
+
+
+def _extract_config_sections(config_text: str, parsed: dict | None = None) -> list[dict]:
+    """Split a device config into semantic sections.
+
+    Returns a list of dicts:
+      {
+        "section_type": str,
+        "start_line": int,    # 1-based
+        "end_line": int,
+        "lines": [str],
+        "stanza_text": str,   # joined lines
+      }
+    """
+    vendor = (parsed or {}).get("vendor", "")
+    detector = _section_detector(vendor)
+    lines = config_text.splitlines()
+    sections: list[dict] = []
+    current: dict | None = None
+
+    for idx, raw in enumerate(lines, start=1):
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        sec_type = detector(raw)
+        # Juniper: every line is a full command; start a new section on type change.
+        if vendor == "juniper":
+            # For curly-brace style, nested lines inherit the current top-level section.
+            if sec_type == "unknown" and current is not None:
+                sec_type = current["section_type"]
+            if current is None or current["section_type"] != sec_type:
+                if current is not None:
+                    sections.append(current)
+                current = {"section_type": sec_type, "start_line": idx, "end_line": idx, "lines": [raw], "stanza_text": raw}
+            else:
+                current["lines"].append(raw)
+                current["end_line"] = idx
+                current["stanza_text"] += "\n" + raw
+            continue
+
+        # Block-style vendors: section headers start a new block.
+        is_header = (
+            stripped.startswith("!")
+            or stripped.startswith("interface ")
+            or stripped.startswith("router ")
+            or stripped.startswith("routing ")
+            or stripped.startswith("ip access-list ")
+            or stripped.startswith("ipv6 access-list ")
+            or stripped.startswith("route-map ")
+            or stripped.startswith("ip prefix-list ")
+            or stripped.startswith("policy-map ")
+            or stripped.startswith("class-map ")
+            or stripped.startswith("vlan ")
+            or stripped.startswith("vrf ")
+            or stripped.startswith("vrf instance ")
+            or stripped.startswith("hostname ")
+            or stripped.startswith("banner ")
+            or stripped.startswith("line ")
+            or stripped.startswith("aaa ")
+            or stripped.startswith("archive")
+            or stripped.startswith("management ")
+            or stripped.startswith("system ")
+        )
+        if is_header or current is None:
+            if current is not None and current["lines"]:
+                sections.append(current)
+            current = {"section_type": sec_type, "start_line": idx, "end_line": idx, "lines": [raw], "stanza_text": raw}
+        else:
+            current["lines"].append(raw)
+            current["end_line"] = idx
+            current["stanza_text"] += "\n" + raw
+            # If a header also changes section type, update it.
+            if is_header:
+                current["section_type"] = sec_type
+
+    if current is not None and current["lines"]:
+        sections.append(current)
+
+    return sections
+
+
+def _target_vendor_from_model(tgt_model: str) -> str:
+    """Infer target vendor from model name or hardware profile."""
+    if not tgt_model:
+        return ""
+    lowered = tgt_model.lower()
+    if "mx" in lowered or "ex" in lowered or "qfx" in lowered or "srx" in lowered:
+        return "juniper"
+    if "nexus" in lowered or "catalyst" in lowered or "asr" in lowered or "csr" in lowered or "ios" in lowered:
+        return "cisco_ios" if "nx" not in lowered else "cisco_nxos"
+    if "eos" in lowered or "arista" in lowered or "dcs" in lowered:
+        return "arista"
+    if "timos" in lowered or "sr" in lowered:
+        return "nokia"
+    if "ironware" in lowered or "brocade" in lowered or "ruckus" in lowered:
+        return "brocade"
+    # Fallback: query hardware profile DB if available.
+    try:
+        with _nc_conn() as nc:
+            row = nc.execute(
+                "SELECT vendor FROM nc_hardware_profiles WHERE LOWER(model)=LOWER(?) OR LOWER(id)=LOWER(?) LIMIT 1",
+                (tgt_model, f"hw-{lowered.replace(' ', '-')}"),
+            ).fetchone()
+        if row:
+            return (row["vendor"] if isinstance(row, sqlite3.Row) else row[0]).lower()
+    except Exception:
+        pass
+    return ""
+
+
+def _build_default_questions(parsed: dict, src_vendor: str, tgt_vendor: str) -> list[dict]:
+    """Generate the initial yes/no question set for config mapping."""
+    hostname = parsed.get("hostname", "source-device")
+    questions: list[dict] = []
+
+    # Hostname preservation.
+    questions.append({
+        "question_key": "preserve_hostname",
+        "question_text": f"Preserve the source hostname '{hostname}' on the target device?",
+        "default_answer": 0,
+        "user_answer": None,
+        "ai_relevance": "When 'yes', the target config keeps the original hostname. When 'no', a placeholder target hostname is used.",
+    })
+
+    # VRF/routing-instance naming.
+    if parsed.get("l3vpn_vrfs"):
+        questions.append({
+            "question_key": "preserve_vrf_names",
+            "question_text": "Preserve existing VRF / routing-instance names on the target device?",
+            "default_answer": 1,
+            "user_answer": None,
+            "ai_relevance": "When 'yes', VRF names are copied verbatim. When 'no', VRFs are renamed to a target convention.",
+        })
+
+    # Cross-vendor syntax conversion.
+    if src_vendor and tgt_vendor and src_vendor != tgt_vendor:
+        questions.append({
+            "question_key": "convert_vendor_syntax",
+            "question_text": f"Convert {src_vendor} configuration syntax to {tgt_vendor} style where possible?",
+            "default_answer": 1,
+            "user_answer": None,
+            "ai_relevance": "When 'yes', AI proposes vendor-specific target stanzas. When 'no', sections are flagged as 'manual'.",
+        })
+
+    # Firewall/filter migration.
+    if parsed.get("firewall_filters"):
+        questions.append({
+            "question_key": "migrate_firewall_filters",
+            "question_text": "Migrate all firewall / filter stanzas instead of dropping deprecated ones?",
+            "default_answer": 1,
+            "user_answer": None,
+            "ai_relevance": "When 'yes', filters are mapped to target syntax. When 'no', deprecated filters are removed.",
+        })
+
+    # Management interfaces.
+    questions.append({
+        "question_key": "preserve_mgmt_interfaces",
+        "question_text": "Preserve management / out-of-band interface configuration?",
+        "default_answer": 1,
+        "user_answer": None,
+        "ai_relevance": "When 'yes', mgmt/fxp/em0 stanzas are kept. When 'no', they are skipped to avoid target conflicts.",
+    })
+
+    # BGP neighbor details.
+    if parsed.get("bgp_neighbors"):
+        questions.append({
+            "question_key": "preserve_bgp_peers",
+            "question_text": "Keep existing BGP neighbor IPs, ASNs, and group names exactly?",
+            "default_answer": 1,
+            "user_answer": None,
+            "ai_relevance": "When 'yes', BGP neighbor definitions are copied with interface renames only. When 'no', AI may suggest redesign.",
+        })
+
+    return questions
+
+
+def _load_config_map_questions(session_id: str) -> list[dict]:
+    with _mc_conn() as mc:
+        rows = mc.execute(
+            "SELECT question_key, question_text, default_answer, user_answer, ai_relevance "
+            "FROM mc_net_config_questions WHERE session_id=? ORDER BY rowid",
+            (session_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def _save_config_map_questions(session_id: str, questions: list[dict]) -> None:
+    with _mc_conn() as mc:
+        for q in questions:
+            mc.execute(
+                "INSERT INTO mc_net_config_questions (id, session_id, question_key, question_text, "
+                "default_answer, user_answer, ai_relevance) VALUES (?,?,?,?,?,?,?) "
+                "ON CONFLICT(session_id, question_key) DO UPDATE SET "
+                "question_text=excluded.question_text, default_answer=excluded.default_answer, "
+                "user_answer=excluded.user_answer, ai_relevance=excluded.ai_relevance",
+                (str(uuid.uuid4()), session_id, q["question_key"], q["question_text"],
+                 q.get("default_answer"), q.get("user_answer"), q.get("ai_relevance", "")),
+            )
+        mc.commit()
+
+
+def generate_config_map_questions(session_id: str) -> dict:
+    """Return (and seed if missing) the yes/no questions for config mapping.
+
+    Returns {"questions": [...]} where each question has:
+      question_key, question_text, default_answer, user_answer, ai_relevance
+    """
+    existing = _load_config_map_questions(session_id)
+    if existing:
+        return {"questions": existing}
+
+    sess: dict = {}
+    parsed: dict = {}
+    try:
+        with _mc_conn() as mc:
+            row = mc.execute(
+                "SELECT src_model, tgt_model, src_config_raw FROM mc_net_sessions WHERE id=?",
+                (session_id,),
+            ).fetchone()
+        if row:
+            sess = dict(row)
+    except Exception as e:
+        logger.warning("generate_config_map_questions: session load failed: %s", e)
+
+    if sess.get("src_config_raw"):
+        try:
+            parsed = parse_source_config(sess["src_config_raw"])
+        except Exception as e:
+            logger.warning("generate_config_map_questions: parse failed: %s", e)
+
+    src_vendor = parsed.get("vendor", "")
+    tgt_vendor = _target_vendor_from_model(sess.get("tgt_model", ""))
+    questions = _build_default_questions(parsed, src_vendor, tgt_vendor)
+    _save_config_map_questions(session_id, questions)
+    return {"questions": questions}
+
+
+def _get_question_answers(session_id: str) -> dict[str, int | None]:
+    """Return {question_key: user_answer|default_answer}."""
+    rows = _load_config_map_questions(session_id)
+    return {
+        r["question_key"]: (r["user_answer"] if r.get("user_answer") is not None else r.get("default_answer"))
+        for r in rows
+    }
+
+
+def _rule_based_config_mapping(
+    sections: list[dict],
+    parsed: dict,
+    port_map: dict[str, str],
+    src_vendor: str,
+    tgt_vendor: str,
+    answers: dict[str, int | None],
+) -> list[dict]:
+    """Deterministic fallback that maps sections when LLM is unavailable."""
+    deprecated_patterns = _get_deprecated_patterns(src_vendor)
+    preserve_hostname = bool(answers.get("preserve_hostname", 0))
+    convert_vendor = bool(answers.get("convert_vendor_syntax", 1))
+    preserve_mgmt = bool(answers.get("preserve_mgmt_interfaces", 1))
+    migrate_fw = bool(answers.get("migrate_firewall_filters", 1))
+
+    proposals: list[dict] = []
+    for sec in sections:
+        stype = sec["section_type"]
+        src_text = sec["stanza_text"]
+        lines = sec["lines"]
+
+        # Build a default target stanza by applying port renames and removing deprecated lines.
+        tgt_lines: list[str] = []
+        removed_reasons: list[str] = []
+        for line in lines:
+            removed = False
+            for pat, reason in deprecated_patterns:
+                if pat.search(line):
+                    removed = True
+                    removed_reasons.append(reason)
+                    break
+            if removed:
+                continue
+            # Apply port/interface renames.
+            out = line
+            for src_if, tgt_if in port_map.items():
+                if re.search(r"\b" + re.escape(src_if.split(".")[0]) + r"\b", out):
+                    out = re.sub(
+                        r"\b" + re.escape(src_if.split(".")[0]) + r"\b",
+                        tgt_if.split(".")[0],
+                        out,
+                    )
+            tgt_lines.append(out)
+
+        tgt_text = "\n".join(tgt_lines)
+
+        # Decide action and rationale.
+        action = "direct"
+        rationale = "Copy to target with interface renames applied."
+        confidence = 0.85
+
+        if stype == "interfaces":
+            action = "rename"
+            rationale = "Map source interfaces to target interfaces using the port map."
+            confidence = 0.90
+        elif stype == "system":
+            if not preserve_hostname and re.search(r"^\s*(hostname|set\s+system\s+host-name)", src_text, re.M | re.I):
+                tgt_text = re.sub(r"(hostname|set\s+system\s+host-name)\s+\S+", r"\1 <target-hostname>", tgt_text, flags=re.I)
+                rationale = "Source hostname replaced with target hostname."
+            else:
+                rationale = "System-level settings copied (hostname, banner, etc.)."
+        elif stype in ("protocols", "routing-options"):
+            if src_vendor != tgt_vendor and not convert_vendor:
+                action = "manual"
+                confidence = 0.55
+                rationale = f"Cross-vendor {stype} stanza requires manual syntax conversion from {src_vendor} to {tgt_vendor}."
+            else:
+                action = "direct" if src_vendor == tgt_vendor or convert_vendor else "manual"
+                rationale = f"{stype} stanza migrated; verify neighbor/interface references." if action == "direct" else f"{stype} syntax may need vendor-specific adjustments."
+                confidence = 0.80 if action == "direct" else 0.60
+        elif stype == "firewall":
+            if not migrate_fw:
+                action = "remove"
+                rationale = "User chose to drop deprecated firewall/filter stanzas."
+                confidence = 0.95
+            elif src_vendor != tgt_vendor:
+                action = "manual"
+                rationale = f"Firewall/filter syntax differs between {src_vendor} and {tgt_vendor}."
+                confidence = 0.60
+            else:
+                rationale = "Firewall/filter stanza copied with interface renames."
+        elif stype == "management":
+            if not preserve_mgmt:
+                action = "skip"
+                rationale = "Management interfaces skipped per user preference."
+                confidence = 0.95
+            else:
+                rationale = "Management/oob configuration preserved."
+        elif removed_reasons:
+            action = "remove"
+            rationale = f"Deprecated / platform-specific content removed: {removed_reasons[0]}"
+            confidence = 0.90
+
+        if action in ("manual", "remove", "skip"):
+            confidence = min(confidence, 0.65)
+
+        proposals.append({
+            "id": str(uuid.uuid4()),
+            "src_section_type": stype,
+            "src_stanza_text": src_text,
+            "src_lines_json": json.dumps([{"line_no": sec["start_line"] + i, "text": ln} for i, ln in enumerate(lines)]),
+            "tgt_section_type": _SECTION_TYPE_MAP.get(stype, stype),
+            "tgt_stanza_text": tgt_text if action not in ("remove", "skip") else "",
+            "mapping_action": action,
+            "confidence": round(confidence, 2),
+            "ai_rationale": rationale,
+            "ai_question_key": "",
+            "status": "pending",
+            "reviewer_note": "",
+        })
+
+    return proposals
+
+
+def _llm_config_mapping(
+    sections: list[dict],
+    parsed: dict,
+    port_map: dict[str, str],
+    src_vendor: str,
+    tgt_vendor: str,
+    answers: dict[str, int | None],
+    session_id: str,
+) -> list[dict]:
+    """Use LLM to propose section-level config mapping. Falls back to rule-based."""
+    try:
+        from tools.llm.router import LLMRouter  # type: ignore
+        from tools.llm.provider import LLMRequest  # type: ignore
+    except Exception as e:
+        logger.warning("_llm_config_mapping: LLM imports unavailable: %s", e)
+        return _rule_based_config_mapping(sections, parsed, port_map, src_vendor, tgt_vendor, answers)
+
+    # Trim section text to keep prompt size reasonable.
+    trimmed_sections = []
+    for sec in sections:
+        text = sec["stanza_text"]
+        if len(text) > 2000:
+            text = text[:2000] + "\n... [truncated for LLM prompt]"
+        trimmed_sections.append({
+            "section_type": sec["section_type"],
+            "start_line": sec["start_line"],
+            "end_line": sec["end_line"],
+            "stanza_text": text,
+        })
+
+    prompt = (
+        f"You are a senior network architect migrating a {src_vendor} device to a {tgt_vendor} device.\n\n"
+        f"Source hostname: {parsed.get('hostname','unknown')}\n"
+        f"User migration preferences (yes/no answers):\n{json.dumps(answers, indent=2)}\n\n"
+        f"Port map (source interface -> target interface):\n{json.dumps(port_map, indent=2)}\n\n"
+        "Source config sections:\n"
+        f"{json.dumps(trimmed_sections, indent=2)}\n\n"
+        "For each section, propose a target configuration stanza and classify the action as one of: "
+        "direct, rename, merge, split, remove, manual, skip.\n\n"
+        "Return valid JSON only, no markdown, no commentary:\n"
+        "{\n"
+        '  "sections": [\n'
+        "    {\n"
+        '      "src_section_type": "...",\n'
+        '      "tgt_section_type": "...",\n'
+        '      "tgt_stanza_text": "...",\n'
+        '      "mapping_action": "direct",\n'
+        '      "confidence": 0.92,\n'
+        '      "ai_rationale": "Tooltip explanation for HITL reviewer",\n'
+        '      "ai_question_key": ""\n'
+        "    }\n"
+        "  ]\n"
+        "}\n"
+    )
+
+    try:
+        router = LLMRouter()
+        req = LLMRequest(
+            messages=[{"role": "user", "content": prompt}],
+            system_prompt="You are a network architect. Respond with valid JSON only.",
+            effort="high",
+        )
+        resp = router.invoke("code_generation", req)
+        result = json.loads(resp.content)
+    except Exception as e:
+        logger.warning("_llm_config_mapping: LLM call failed: %s", e)
+        return _rule_based_config_mapping(sections, parsed, port_map, src_vendor, tgt_vendor, answers)
+
+    llm_sections = result.get("sections", [])
+    if not llm_sections:
+        return _rule_based_config_mapping(sections, parsed, port_map, src_vendor, tgt_vendor, answers)
+
+    # Enforce every returned section has required fields and generate an id.
+    proposals: list[dict] = []
+    for ls in llm_sections:
+        stype = ls.get("src_section_type", "unknown")
+        # Match back to original stanza if possible.
+        orig = next((s for s in sections if s["section_type"] == stype), None)
+        src_text = orig["stanza_text"] if orig else ""
+        src_lines = orig["lines"] if orig else []
+        proposals.append({
+            "id": str(uuid.uuid4()),
+            "src_section_type": stype,
+            "src_stanza_text": src_text,
+            "src_lines_json": json.dumps([{"line_no": (orig["start_line"] if orig else 1) + i, "text": ln} for i, ln in enumerate(src_lines)]),
+            "tgt_section_type": ls.get("tgt_section_type", _SECTION_TYPE_MAP.get(stype, stype)),
+            "tgt_stanza_text": ls.get("tgt_stanza_text", ""),
+            "mapping_action": ls.get("mapping_action", "manual"),
+            "confidence": max(0.0, min(1.0, float(ls.get("confidence", 0.7)))),
+            "ai_rationale": ls.get("ai_rationale", "AI-proposed target stanza."),
+            "ai_question_key": ls.get("ai_question_key", ""),
+            "status": "pending",
+            "reviewer_note": "",
+        })
+
+    # If LLM dropped sections, backfill with rule-based to ensure full coverage.
+    covered_types = {p["src_section_type"] for p in proposals}
+    for sec in sections:
+        if sec["section_type"] not in covered_types:
+            rule_props = _rule_based_config_mapping([sec], parsed, port_map, src_vendor, tgt_vendor, answers)
+            proposals.extend(rule_props)
+
+    return proposals
+
+
+def propose_config_mapping(
+    session_id: str,
+    answers: dict[str, int] | None = None,
+    use_llm: bool = True,
+) -> dict:
+    """Generate and persist section-level config mapping proposals.
+
+    Args:
+        session_id: Network migration session id.
+        answers: Optional override mapping {question_key: 1|0}. If provided, answers are saved.
+        use_llm: If True, try LLM; otherwise deterministic rule-based.
+
+    Returns:
+        {"proposals": [...], "questions": [...], "model": str|""}
+    """
+    # Ensure questions exist.
+    generate_config_map_questions(session_id)
+    if answers:
+        existing = _load_config_map_questions(session_id)
+        for q in existing:
+            if q["question_key"] in answers:
+                q["user_answer"] = answers[q["question_key"]]
+        _save_config_map_questions(session_id, existing)
+
+    # Load session and port map.
+    sess: dict = {}
+    with _mc_conn() as mc:
+        row = mc.execute("SELECT * FROM mc_net_sessions WHERE id=?", (session_id,)).fetchone()
+        if row:
+            sess = dict(row)
+        port_rows = mc.execute("SELECT * FROM mc_net_port_map WHERE session_id=?", (session_id,)).fetchall()
+    port_map = {r["src_interface"]: r["tgt_interface"] for r in port_rows if r.get("src_interface") and r.get("tgt_interface")}
+
+    if not sess:
+        return {"error": "Session not found", "proposals": [], "questions": [], "model": ""}
+
+    src_config_raw = sess.get("src_config_raw", "")
+    if not src_config_raw:
+        return {"error": "No source config imported", "proposals": [], "questions": [], "model": ""}
+
+    parsed = parse_source_config(src_config_raw)
+    src_vendor = parsed.get("vendor", "")
+    tgt_vendor = _target_vendor_from_model(sess.get("tgt_model", ""))
+
+    sections = _extract_config_sections(src_config_raw, parsed)
+    current_answers = _get_question_answers(session_id)
+
+    if use_llm:
+        proposals = _llm_config_mapping(sections, parsed, port_map, src_vendor, tgt_vendor, current_answers, session_id)
+        model = "llm"
+    else:
+        proposals = _rule_based_config_mapping(sections, parsed, port_map, src_vendor, tgt_vendor, current_answers)
+        model = "rule-based"
+
+    # Persist proposals (replace prior auto-generated pending proposals).
+    with _mc_conn() as mc:
+        mc.execute("DELETE FROM mc_net_config_map WHERE session_id=? AND status='pending'", (session_id,))
+        for p in proposals:
+            mc.execute(
+                "INSERT INTO mc_net_config_map (id, session_id, src_section_type, src_stanza_text, "
+                "src_lines_json, tgt_section_type, tgt_stanza_text, mapping_action, confidence, "
+                "ai_rationale, ai_question_key, status, reviewer_note, applied_to_target) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (p["id"], session_id, p["src_section_type"], p["src_stanza_text"],
+                 p["src_lines_json"], p["tgt_section_type"], p["tgt_stanza_text"],
+                 p["mapping_action"], p["confidence"], p["ai_rationale"],
+                 p["ai_question_key"], p["status"], p["reviewer_note"], 0),
+            )
+        mc.commit()
+
+    # Save LLM usage to audit trail.
+    if session_id:
+        try:
+            with _mc_conn() as mc:
+                mc.execute(
+                    "INSERT INTO mc_net_ai_sessions (id, session_id, role, message, model_used, created_at) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (str(uuid.uuid4()), session_id, "assistant",
+                     f"[Config mapping] generated {len(proposals)} proposals via {model}",
+                     model, _now()),
+                )
+                mc.commit()
+        except Exception:
+            pass
+
+    questions = _load_config_map_questions(session_id)
+    return {"proposals": proposals, "questions": questions, "model": model, "count": len(proposals)}
+
+
+def get_config_map(session_id: str) -> dict:
+    """Return persisted mapping proposals and questions for a session."""
+    with _mc_conn() as mc:
+        rows = mc.execute(
+            "SELECT * FROM mc_net_config_map WHERE session_id=? ORDER BY rowid", (session_id,)
+        ).fetchall()
+    proposals = [dict(r) for r in rows]
+    questions = _load_config_map_questions(session_id)
+    return {"proposals": proposals, "questions": questions}
+
+
+def decide_config_map_row(session_id: str, row_id: str, decision: str, note: str = "") -> dict:
+    """Approve / reject / skip a single mapping row."""
+    if decision not in ("approved", "rejected", "skipped", "pending"):
+        return {"error": "Invalid decision"}
+    with _mc_conn() as mc:
+        cur = mc.execute(
+            "UPDATE mc_net_config_map SET status=?, reviewer_note=?, updated_at=? "
+            "WHERE session_id=? AND id=?",
+            (decision, note, _now(), session_id, row_id),
+        )
+        mc.commit()
+    return {"ok": True, "updated": cur.rowcount}
+
+
+def apply_approved_config_map(session_id: str) -> dict:
+    """Assemble target config from approved mapping rows and port map.
+
+    Returns {"target_config": str, "approved_count": int, "rejected_count": int, "skipped_count": int}
+    """
+    with _mc_conn() as mc:
+        rows = mc.execute(
+            "SELECT * FROM mc_net_config_map WHERE session_id=? ORDER BY rowid", (session_id,)
+        ).fetchall()
+        sess_row = mc.execute("SELECT src_config_raw, tgt_model FROM mc_net_sessions WHERE id=?", (session_id,)).fetchone()
+    if not sess_row:
+        return {"error": "Session not found"}
+
+    proposals = [dict(r) for r in rows]
+    approved = [p for p in proposals if p.get("status") == "approved"]
+
+    # Build target config by concatenating approved target stanzas in source order.
+    # We use the original line numbers stored in src_lines_json to recover ordering.
+    ordered: list[tuple[int, dict]] = []
+    for p in approved:
+        try:
+            lines = json.loads(p.get("src_lines_json") or "[]")
+            start_line = lines[0]["line_no"] if lines else 999999
+        except Exception:
+            start_line = 999999
+        ordered.append((start_line, p))
+    ordered.sort(key=lambda x: x[0])
+
+    target_parts: list[str] = []
+    for _, p in ordered:
+        if p.get("mapping_action") in ("remove", "skip"):
+            continue
+        tgt = (p.get("tgt_stanza_text") or "").strip()
+        if tgt:
+            target_parts.append(tgt)
+
+    target_config = "\n\n".join(target_parts)
+
+    # Mark as applied.
+    with _mc_conn() as mc:
+        mc.execute(
+            "UPDATE mc_net_config_map SET applied_to_target=1, updated_at=? "
+            "WHERE session_id=? AND status='approved'",
+            (_now(), session_id),
+        )
+        mc.execute(
+            "UPDATE mc_net_sessions SET target_config=?, updated_at=? WHERE id=?",
+            (target_config, _now(), session_id),
+        )
+        mc.commit()
+
+    return {
+        "target_config": target_config,
+        "approved_count": len(approved),
+        "rejected_count": sum(1 for p in proposals if p.get("status") == "rejected"),
+        "skipped_count": sum(1 for p in proposals if p.get("status") == "skipped"),
+        "pending_count": sum(1 for p in proposals if p.get("status") == "pending"),
+    }
 
 
 def recommend_hardware(

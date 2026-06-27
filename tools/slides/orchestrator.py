@@ -15,7 +15,9 @@ import json
 import re
 from typing import Any
 
-from tools.slides.constants import LLM_FN_OUTLINE, MIN_SLIDES, DEFAULT_MAX_SLIDES, TONE_STYLE_HINTS
+from tools.slides.constants import (
+    LLM_FN_OUTLINE, MIN_SLIDES, DEFAULT_MAX_SLIDES, TONE_STYLE_HINTS, AUDIENCE_MODE_HINTS,
+)
 
 _ICDEV_SYSTEM_PROMPT = """You are a presentation architect for a US federal AI DevSecOps platform called ICDEV™.
 Your task: given raw content about ICDEV's capabilities, design a compelling slide deck outline.
@@ -52,6 +54,21 @@ _REVISION_SUFFIX = """
 Previous outline: {previous_outline}
 User feedback: {feedback}
 Revise the outline incorporating the feedback. Return ONLY a JSON array of strings.
+"""
+
+_AUDIENCE_HINT = """
+Audience mode: {audience_mode}
+Narrative arc to follow: {narrative}
+Emphasis: {emphasis}
+Structure your slide titles to follow this narrative arc exactly.
+"""
+
+_RICH_DIAGRAM_HINT = """
+For complex concept slides, append a type tag to the title:
+  [TYPE:mermaid_diagram] — for flows, sequences, architectures, pipelines
+  [TYPE:three_animation] — for neural networks, 3D systems, data pipelines, AI concepts
+  [TYPE:excalidraw_sketch] — for hand-drawn concept maps and "how it works" diagrams
+Max 3 rich-type slides per deck. Example: "Data Ingestion Pipeline [TYPE:mermaid_diagram]"
 """
 
 
@@ -109,6 +126,8 @@ def plan_outline(
     max_slides: int = DEFAULT_MAX_SLIDES,
     previous_outline: list[str] | None = None,
     feedback: str | None = None,
+    enable_rich_diagrams: bool = False,
+    audience_mode: str | None = None,
 ) -> list[str]:
     """Call LLM to produce a slide title outline.
 
@@ -138,6 +157,19 @@ def plan_outline(
         )
     else:
         system = _ICDEV_SYSTEM_PROMPT.format(min_slides=min_slides, max_slides=max_slides)
+
+    # Inject audience mode narrative hint
+    if audience_mode and audience_mode in AUDIENCE_MODE_HINTS:
+        hints = AUDIENCE_MODE_HINTS[audience_mode]
+        system += _AUDIENCE_HINT.format(
+            audience_mode=audience_mode,
+            narrative=hints["narrative"],
+            emphasis=hints["emphasis"],
+        )
+
+    # Inject rich diagram type hint
+    if enable_rich_diagrams:
+        system += _RICH_DIAGRAM_HINT
 
     if previous_outline and feedback:
         user_msg = content_str + "\n" + _REVISION_SUFFIX.format(

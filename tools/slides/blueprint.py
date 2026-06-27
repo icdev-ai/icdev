@@ -24,6 +24,7 @@ from tools.slides.constants import (
     DECK_TYPES, THEMES, TONES, CITATION_STYLES, OUTPUT_FORMATS,
     SOURCE_TYPES, DEFAULT_THEME, DEFAULT_DECK_TYPE, DEFAULT_TONE,
     DEFAULT_CITATION_STYLE, DEFAULT_OUTPUT_FORMATS,
+    AUDIENCE_MODES, AUDIENCE_MODE_HINTS, PITCH_TEMPLATES,
 )
 from tools.slides.db.init_db import get_connection, init_db
 from tools.logging.icdev_logger import get_logger
@@ -106,6 +107,9 @@ def new_deck():
         default_tone=DEFAULT_TONE,
         default_citation_style=DEFAULT_CITATION_STYLE,
         default_output_formats=DEFAULT_OUTPUT_FORMATS,
+        audience_modes=AUDIENCE_MODES,
+        audience_mode_hints=AUDIENCE_MODE_HINTS,
+        pitch_templates=PITCH_TEMPLATES,
         env=os.environ,
     )
 
@@ -147,7 +151,73 @@ def detail(deck_id: int):
             except Exception:
                 deck[col] = []
 
+    # Deserialize new JSON columns for rich slides
+    for slide in slides:
+        for col in ("three_scene_config", "excalidraw_elements"):
+            if isinstance(slide.get(col), str):
+                try:
+                    import json as _json
+                    slide[col] = _json.loads(slide[col])
+                except Exception:
+                    slide[col] = None
+
     return render_template("slides/detail.html", deck=deck, slides=slides, themes=THEMES, tones=TONES)
+
+
+@slides_bp.route("/<int:deck_id>/present")
+def present(deck_id: int):
+    """Full-screen web presentation viewer with Three.js / Mermaid / Excalidraw."""
+    import json as _json
+    conn = _conn()
+    try:
+        deck = conn.execute(
+            f"SELECT * FROM slides_decks WHERE deck_id = {_ph(conn)}", (deck_id,)
+        ).fetchone()
+        if not deck:
+            return render_template("slides/index.html", decks=[], error="Deck not found"), 404
+        deck = dict(deck)
+
+        slides_rows = conn.execute(
+            f"SELECT * FROM slides_slides WHERE deck_id = {_ph(conn)} ORDER BY position",
+            (deck_id,),
+        ).fetchall()
+        slides = []
+        for row in slides_rows:
+            s = dict(row)
+            for col in ("bullets", "citations"):
+                if isinstance(s.get(col), str):
+                    try:
+                        s[col] = _json.loads(s[col])
+                    except Exception:
+                        s[col] = []
+            for col in ("three_scene_config", "excalidraw_elements"):
+                if isinstance(s.get(col), str):
+                    try:
+                        s[col] = _json.loads(s[col])
+                    except Exception:
+                        s[col] = None
+            slides.append(s)
+    finally:
+        conn.close()
+
+    for col in ("source_types", "output_formats"):
+        if isinstance(deck.get(col), str):
+            try:
+                deck[col] = _json.loads(deck[col])
+            except Exception:
+                deck[col] = []
+
+    # Determine slide transition style from tone
+    tone = deck.get("tone", "professional")
+    transition = "zoom" if tone == "bold" else ("slide" if tone in ("creative", "adventurous") else "fade")
+
+    return render_template(
+        "slides/present.html",
+        deck=deck,
+        slides=slides,
+        transition=transition,
+        deck_id=deck_id,
+    )
 
 
 # ── API Routes ───────────────────────────────────────────────────────────────
@@ -167,6 +237,8 @@ def api_generate():
     sources = data.get("sources", ["icdev_capabilities", "canvases", "kanban"])
     max_slides = int(data.get("max_slides", 10))
     upload_text = data.get("upload_text", "")
+    enable_rich_diagrams = bool(data.get("enable_rich_diagrams", False))
+    audience_mode = data.get("audience_mode") or None
 
     from tools.slides.engine import DeckEngine, DeckRequest
     req = DeckRequest(
@@ -181,6 +253,8 @@ def api_generate():
         sources=sources,
         max_slides=max_slides,
         upload_text=upload_text,
+        enable_rich_diagrams=enable_rich_diagrams,
+        audience_mode=audience_mode,
     )
     result = DeckEngine().run(req)
 

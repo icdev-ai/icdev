@@ -45,6 +45,8 @@ class DeckRequest:
     upload_text: str = ""
     upload_file_path: str = ""
     enable_graphics: bool = True
+    enable_rich_diagrams: bool = False
+    audience_mode: str | None = None
 
 
 @dataclass
@@ -86,6 +88,8 @@ class DeckEngine:
                 target_audience=req.target_audience,
                 min_slides=req.min_slides,
                 max_slides=req.max_slides,
+                enable_rich_diagrams=req.enable_rich_diagrams,
+                audience_mode=req.audience_mode,
             )
 
             # Phase 3: Generate content (parallel)
@@ -94,6 +98,8 @@ class DeckEngine:
                 outline, raw,
                 tone=req.tone,
                 citation_style=req.citation_style,
+                enable_rich_diagrams=req.enable_rich_diagrams,
+                theme=req.theme,
             )
 
             # Phase 4: Graphics (parallel, optional)
@@ -125,6 +131,7 @@ class DeckEngine:
                             "tone": req.tone,
                             "target_audience": req.target_audience,
                         },
+                        enable_rich_diagrams=req.enable_rich_diagrams,
                     )
                 except Exception as html_exc:
                     self._audit(deck_id, "html_export_warning", {"error": str(html_exc)})
@@ -236,7 +243,8 @@ class DeckEngine:
 
         def _gen_one(slide_data: dict) -> dict:
             slide_type = slide_data.get("slide_type", "content")
-            if slide_type in ("title", "outro"):
+            if slide_type in ("title", "outro", "mermaid_diagram", "three_animation",
+                              "excalidraw_sketch", "card_grid"):
                 return slide_data
             title = slide_data.get("title", "")
             bullets = slide_data.get("bullets", [])
@@ -265,12 +273,14 @@ class DeckEngine:
                 cur = conn.execute(
                     "INSERT INTO slides_decks "
                     "(title, deck_type, theme, tone, occasion, target_audience, citation_style, "
-                    "output_formats, status, source_types) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?) RETURNING deck_id",
+                    "output_formats, status, source_types, enable_rich_diagrams, audience_mode) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'running', ?, ?, ?) RETURNING deck_id",
                     (
                         req.title, req.deck_type, req.theme, req.tone,
                         req.occasion, req.target_audience, req.citation_style,
                         output_formats_json, source_types_json,
+                        1 if req.enable_rich_diagrams else 0,
+                        req.audience_mode,
                     ),
                 )
                 row = cur.fetchone()
@@ -300,11 +310,13 @@ class DeckEngine:
                 )
                 # Persist slides
                 for i, slide_data in enumerate(slides):
+                    three_cfg = slide_data.get("three_scene_config")
+                    exc_elems = slide_data.get("excalidraw_elements")
                     conn.execute(
                         "INSERT INTO slides_slides "
                         "(deck_id, position, slide_type, title, bullets, speaker_notes, citations, "
-                        "image_path, image_prompt) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "image_path, image_prompt, mermaid_code, three_scene_config, excalidraw_elements) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         (
                             deck_id, i + 1,
                             slide_data.get("slide_type", "content"),
@@ -314,6 +326,9 @@ class DeckEngine:
                             json.dumps(slide_data.get("citations", [])),
                             slide_data.get("image_path"),
                             slide_data.get("image_prompt"),
+                            slide_data.get("mermaid_code"),
+                            json.dumps(three_cfg) if three_cfg is not None else None,
+                            json.dumps(exc_elems) if exc_elems is not None else None,
                         ),
                     )
                 conn.commit()

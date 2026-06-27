@@ -43,6 +43,9 @@
         <a href="/slides/api/{{ deck.deck_id }}/download/html" class="btn btn-secondary">↓ HTML</a>
         {% endif %}
         {% endif %}
+        {% if deck.status in ('completed', 'auto') %}
+        <a href="/slides/{{ deck.deck_id }}/present" class="btn btn-primary" style="background:#D4A017; color:#000; font-weight:700;">▶ Present</a>
+        {% endif %}
         <a href="/slides/new" class="btn btn-secondary">+ New Deck</a>
     </div>
 </div>
@@ -86,7 +89,40 @@
                 <div style="font-weight:700; font-size:15px; margin-bottom:10px; color:var(--text-primary);">
                     {{ slide.title }}
                 </div>
-                {% if slide.bullets %}
+
+                {# Rich diagram preview #}
+                {% if slide.slide_type == 'mermaid_diagram' and slide.mermaid_code %}
+                <div style="background:#0a1628; border-radius:6px; padding:10px; margin-bottom:10px; overflow-x:auto; max-height:180px;">
+                    <pre class="mermaid" style="font-size:11px; margin:0;">{{ slide.mermaid_code | e }}</pre>
+                </div>
+                {% elif slide.slide_type == 'three_animation' %}
+                <div style="background:#0a1628; border-radius:6px; padding:10px; margin-bottom:10px; min-height:80px; display:flex; align-items:center; justify-content:center;">
+                    {% if slide.three_scene_config %}
+                    <canvas id="three-preview-{{ slide.slide_id }}"
+                            style="width:100%; height:160px; display:block; border-radius:4px;"
+                            data-scene="{{ slide.three_scene_config | tojson | e }}"></canvas>
+                    {% else %}
+                    <span style="color:#C8D2DC; font-size:12px; font-style:italic;">🌐 3D Animation (open Presenter to view)</span>
+                    {% endif %}
+                </div>
+                {% elif slide.slide_type == 'excalidraw_sketch' %}
+                <div style="background:#0a1628; border-radius:6px; padding:10px; margin-bottom:10px;">
+                    {% if slide.excalidraw_elements %}
+                    <svg id="exc-preview-{{ slide.slide_id }}"
+                         viewBox="0 0 800 450"
+                         style="width:100%; height:160px;"
+                         data-elements="{{ slide.excalidraw_elements | tojson | e }}"></svg>
+                    {% else %}
+                    <span style="color:#C8D2DC; font-size:12px; font-style:italic;">✏️ Sketch (open Presenter to view)</span>
+                    {% endif %}
+                </div>
+                {% elif slide.slide_type == 'card_grid' %}
+                <div style="font-size:12px; color:#C8D2DC; font-style:italic; margin-bottom:8px;">
+                    Card grid: {{ slide.bullets | length }} cards
+                </div>
+                {% endif %}
+
+                {% if slide.bullets and slide.slide_type not in ('mermaid_diagram', 'three_animation', 'excalidraw_sketch', 'card_grid') %}
                 <ul style="margin:0; padding-left:18px; font-size:13px; color:var(--text-secondary); line-height:1.7;">
                     {% for bullet in slide.bullets[:5] %}
                     <li>{{ bullet }}</li>
@@ -165,7 +201,27 @@
 <!-- IQE Query Widget -->
 {% include "includes/iqe_query_widget.html" %}
 
+<script src="{{ url_for('static', filename='vendor/threejs/three.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/roughjs/rough.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/slides-three-renderer.js') }}"></script>
+<script src="{{ url_for('static', filename='js/slides-excalidraw-renderer.js') }}"></script>
 <script>
+// Init rich diagram previews in detail view
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('canvas[data-scene]').forEach(function(canvas) {
+    try {
+      var cfg = JSON.parse(canvas.getAttribute('data-scene'));
+      if (window.ICDEVThreeRenderer) ICDEVThreeRenderer.init(canvas, cfg);
+    } catch(e) {}
+  });
+  document.querySelectorAll('svg[data-elements]').forEach(function(svg) {
+    try {
+      var elems = JSON.parse(svg.getAttribute('data-elements'));
+      if (window.ICDEVExcalidrawRenderer) ICDEVExcalidrawRenderer.render(svg, elems);
+    } catch(e) {}
+  });
+});
+
 async function reviseSlide(deckId, slideId) {
     var feedback = document.getElementById('feedback-' + slideId).value.trim();
     if (!feedback) return;
