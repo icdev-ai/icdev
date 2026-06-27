@@ -1157,6 +1157,24 @@ def run_agent_loop(
 
     result.messages = messages
 
+    # Output redaction — IL4/IL5 compliance: scrub PII/credentials from final content
+    # before it is returned to the caller or persisted to ace_sessions / agent_evals.
+    if result.final_content:
+        try:
+            from icdev.tools.llm.output_redactor import redact as _rd, load_config as _rd_cfg
+            _rd_conf = _rd_cfg()
+            if _rd_conf.get("enabled", True):
+                _rd_result = _rd(
+                    result.final_content,
+                    mode=_rd_conf.get("mode", "redact"),
+                    placeholder=_rd_conf.get("placeholder", "[REDACTED]"),
+                )
+                if _rd_result.flagged:
+                    result.final_content = _rd_result.redacted_text
+                    result.output_redacted = True
+        except Exception:
+            pass  # non-fatal
+
     # Delete checkpoint on clean completion — avoids stale checkpoints accumulating.
     if result.done and not result.truncated:
         try:

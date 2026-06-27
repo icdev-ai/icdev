@@ -187,6 +187,10 @@ class AgentLoopResult:
     """Tenant ID for cost attribution (set via run_agent_loop parameter)."""
     user_id: str = ""
     """User ID for cost attribution (set via run_agent_loop parameter)."""
+    trace_id: str = ""
+    """Correlation ID threaded through memory writes, evals, and OTel spans (migration 229)."""
+    output_redacted: bool = False
+    """True when output_redactor replaced PII/credentials in final_content (IL4/IL5)."""
 
 
 # Type aliases for callback hooks.
@@ -645,6 +649,9 @@ def run_agent_loop(
     # Assign a unique session ID so callers can persist and resume this loop.
     session_id = str(_uuid.uuid4())
 
+    # Correlation ID: threads this loop run through memory writes, evals, and OTel spans.
+    trace_id = str(_uuid.uuid4())
+
     # Resume: if a prior session ID is given, load its message history instead
     # of starting fresh. Falls back to a new conversation if the session is not
     # found or the DB is unavailable.
@@ -691,6 +698,7 @@ def run_agent_loop(
     result.parent_session_id = parent_session_id
     result.tenant_id = tenant_id
     result.user_id = user_id
+    result.trace_id = trace_id
 
     response: Any = None
 
@@ -1148,6 +1156,24 @@ def run_agent_loop(
                     break
 
     result.messages = messages
+
+    # Output redaction — IL4/IL5 compliance: scrub PII/credentials from final content
+    # before it is returned to the caller or persisted to ace_sessions / agent_evals.
+    if result.final_content:
+        try:
+            from icdev.tools.llm.output_redactor import redact as _rd, load_config as _rd_cfg
+            _rd_conf = _rd_cfg()
+            if _rd_conf.get("enabled", True):
+                _rd_result = _rd(
+                    result.final_content,
+                    mode=_rd_conf.get("mode", "redact"),
+                    placeholder=_rd_conf.get("placeholder", "[REDACTED]"),
+                )
+                if _rd_result.flagged:
+                    result.final_content = _rd_result.redacted_text
+                    result.output_redacted = True
+        except Exception:
+            pass  # non-fatal
 
     # Delete checkpoint on clean completion — avoids stale checkpoints accumulating.
     if result.done and not result.truncated:

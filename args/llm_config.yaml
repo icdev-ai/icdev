@@ -1177,6 +1177,23 @@ agent_loop:
     top_k: 5            # max memory entries to retrieve per agent run
     chat_top_k: 3       # max entries to retrieve per chat turn
     tier: "episodic|semantic"  # which tiers to search
+  # Per-role cost caps (USD). Loop exits with error_max_budget_cost when exceeded.
+  # Set a role to null to remove its cap. Roles not listed fall through to 'default'.
+  role_cost_caps:
+    ai_developer: 2.00
+    agent_developer: 2.00
+    architect: 3.00
+    researcher: 5.00
+    data_analyst: 3.00
+    security_analyst: 3.00
+    compliance_manager: 2.00
+    qa_manager: 2.00
+    docs_writer: 1.50
+    product_manager: 2.00
+    business_analyst: 2.00
+    devops_engineer: 2.00
+    requirements_engineer: 2.00
+    default: 3.00       # cap for any role not explicitly listed above
 
 # -----------------------------------------------------------------------
 # Tool Result Sanitizer — Prompt Injection Defense
@@ -1187,6 +1204,18 @@ tool_result_sanitizer:
   mode: warn                # warn | strip | block
   max_result_chars: 32768   # truncate before scanning (DoS guard)
   patterns: []              # additional regex patterns appended to the 18 core patterns
+
+# -----------------------------------------------------------------------
+# Output Redactor — PII / Credential Scrubbing (IL4/IL5 Compliance)
+# -----------------------------------------------------------------------
+# Scans final_content after the agent loop exits before returning to caller
+# or persisting to ace_sessions / agent_evals.
+# mode: redact = replace with placeholder; warn = log only; off = disabled.
+output_redactor:
+  enabled: true
+  mode: redact              # redact | warn | off
+  placeholder: "[REDACTED]"
+  patterns: []              # additional user-defined patterns
 
 # -----------------------------------------------------------------------
 # Response Cache + Context Caching (D-CACHE-1 through D-CACHE-10)
